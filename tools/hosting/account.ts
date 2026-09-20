@@ -8,8 +8,10 @@ interface Account {
   servers: { key: string }[];
 }
 export function sessionValue(raw: string) {
-  const session = raw.trim().replace(/^(["'])(.*)\1$/, "$2");
-  if (!/^\d+-[^\s]+$/.test(session)) throw new Error("Invalid game session");
+  const session = raw.trim().replace(/^(["'])([\s\S]*)\1$/, "$2").trim();
+  // MongoDB accounts use US_ IDs; older accounts may still export numeric IDs.
+  if (!/^(?:\d+|US_[A-Za-z0-9_]+)-[A-Za-z0-9._~-]+$/.test(session))
+    throw new Error("Invalid game session format. Copy the full user ID and auth value shown by the CODE command above.");
   return session;
 }
 function record(value: unknown): Record<string, unknown> {
