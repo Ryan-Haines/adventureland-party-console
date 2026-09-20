@@ -117,5 +117,27 @@ test('game session starts masked, toggles visibly without changing it, and clear
   toggle.click();el('connect').click();await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(calls,[{session:'US_Abc123-privateToken',realm:'SR_USII'}]);
   assert.equal(input.value,'');assert.equal(input.type,'password');assert.equal(el('account').hidden,true);
+  assert.equal(el('success').hidden,false);assert.match(el('success').textContent,/Returning to dashboard in 5/);
  }finally{dom.window.close();}
+});
+
+test('successful setup counts down in green; failed authentication never starts a redirect',async()=>{
+ const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
+ for(const accepted of [true,false]) {
+  let tick,cleared=false;
+  const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){
+   w.setInterval=(fn,delay)=>{assert.equal(delay,1000);tick=fn;return 42;};
+   w.clearInterval=id=>{if(id===42)cleared=true;};
+   w.fetch=async url=>({ok:url!=='/setup/session'||accepted,json:async()=>({configured:accepted,canConfigureAccount:true,requirePairing:false,error:'Invalid game session'})});
+  }});
+  try {
+   await new Promise(r=>setImmediate(r));
+   const el=id=>dom.window.document.getElementById(id);
+   el('connect').click();await new Promise(r=>setImmediate(r));
+   if(!accepted){assert.equal(tick,undefined);assert.equal(el('success').hidden,true);assert.equal(el('error').textContent,'Invalid game session');continue;}
+   assert.equal(el('success').style.color,'rgb(134, 239, 172)');assert.equal(el('error').textContent,'');
+   for(const remaining of [4,3,2,1]){tick();assert.ok(el('success').textContent.includes('in '+remaining));}
+   dom.window.dispatchEvent(new dom.window.Event('pagehide'));assert.equal(cleared,true);
+  }finally{dom.window.close();}
+ }
 });
