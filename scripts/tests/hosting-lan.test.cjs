@@ -98,3 +98,24 @@ test('setup omits pairing when off and account setup where unsupported',async()=
   }finally{dom.window.close();}
  }
 });
+
+test('game session starts masked, toggles visibly without changing it, and clears after connecting',async()=>{
+ const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
+ const calls=[];let configured=false;
+ const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){w.fetch=async(url,options)=>{
+  if(url==='/setup/session'){calls.push(JSON.parse(options.body));configured=true;}
+  return {ok:true,json:async()=>({configured,requirePairing:false,canConfigureAccount:true})};
+ };}});
+ try {
+  await new Promise(resolve=>setImmediate(resolve));
+  const el=id=>dom.window.document.getElementById(id),input=el('session'),toggle=el('toggleSession');
+  assert.equal(input.type,'password');assert.equal(toggle.getAttribute('aria-pressed'),'false');
+  input.value='US_Abc123-privateToken';toggle.click();
+  assert.equal(input.type,'text');assert.equal(toggle.getAttribute('aria-label'),'Hide game session');
+  assert.equal(toggle.getAttribute('aria-pressed'),'true');assert.equal(input.value,'US_Abc123-privateToken');
+  toggle.click();assert.equal(input.type,'password');assert.equal(toggle.getAttribute('aria-label'),'Show game session');
+  toggle.click();el('connect').click();await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(calls,[{session:'US_Abc123-privateToken',realm:'SR_USII'}]);
+  assert.equal(input.value,'');assert.equal(input.type,'password');assert.equal(el('account').hidden,true);
+ }finally{dom.window.close();}
+});

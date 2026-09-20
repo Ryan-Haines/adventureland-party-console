@@ -14,6 +14,16 @@ test('onboarding accepts current and legacy account payloads and normalizes quot
  assert.equal(sessionValue('"1234-private"'),'1234-private');assert.throws(()=>sessionValue('broken session'),/Invalid/);
 });
 
+test('session format accepts MongoDB and legacy account IDs without changing the credential',()=>{
+ for(const session of ['US_Abc123-privateToken','US_123456-private_token.1~','123456-privateToken']) {
+  for(const raw of [session,'  '+session+'\n','"'+session+'"',"'"+session+"'",'  " '+session+' "  ',"'\n"+session+"\n'"])
+   assert.equal(sessionValue(raw),session);
+ }
+ for(const raw of ['', 'privateToken', 'US_-privateToken', 'US_Abc123-', 'US_Abc123-token\r\nCookie: injected', 'US_Abc123-token; other=value']) {
+  assert.throws(()=>sessionValue(raw),/Invalid game session format.*full user ID and auth/);
+ }
+});
+
 test('ALData preparation opens a mail draft and makes no paid send request',async()=>{
  const vm=require('node:vm'),ts=require('typescript');
  const file=await fs.readFile(path.join(__dirname,'../../dashboard/features/party/use-party-console.tsx'),'utf8');
