@@ -65,7 +65,7 @@ Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**.
    docker compose up -d
    ```
 
-4. Open the address printed by the helper. With the manual commands, open [http://localhost:3010](http://localhost:3010), or `http://<host-LAN-IP>:3010` from another computer. You only need to connect your account once. In the **Adventure Land Steam client**, log in to a character, open **CODE**, paste the following line, and click **Engage**. Copy the displayed session into **Game session** in the console, select a realm, and click **Connect account**. The session starts hidden; use the eye button to check what you pasted:
+4. Open the address printed by the helper. With the manual commands, open [http://localhost:3010](http://localhost:3010), or `http://<host-LAN-IP>:3010` from another computer. You only need to connect your account once. In the **Adventure Land Steam client**, log in to a character, open **CODE**, paste the following line, and click **Engage**. Copy the displayed session into **Game session** in the console, select a realm, and click **Connect account**.
 
    ```javascript
    show_json(parent.user_id + "-" + parent.user_auth)
