@@ -1,0 +1,35 @@
+const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),Module=require('node:module');
+const {buildSync}=require('esbuild');
+const React=require('../../dashboard/node_modules/react');
+const {create,act}=require('../../dashboard/node_modules/react-test-renderer');
+const filename=path.resolve('dashboard/features/party/farming-mode-control.tsx');
+const bundle=buildSync({entryPoints:[filename],bundle:true,packages:'external',external:['@/components/ui/dialog','@/components/ui/checkbox'],platform:'node',format:'cjs',write:false});
+const compiled=new Module(filename,module); compiled.filename=filename; compiled.paths=Module._nodeModulePaths(path.dirname(filename));
+compiled.require=function(id){
+ if(id==='@/components/ui/dialog')return Object.fromEntries(['Dialog','DialogContent','DialogDescription','DialogFooter','DialogHeader','DialogTitle'].map(name=>[name,props=>React.createElement('section',props)]));
+ if(id==='@/components/ui/checkbox')return {Checkbox:props=>React.createElement('input',{...props,type:'checkbox'})};
+ return Module.prototype.require.call(this,id);
+};
+compiled._compile(bundle.outputFiles[0].text,filename);
+const {FarmingModeControl}=compiled.exports;
+global.IS_REACT_ACT_ENVIRONMENT=true;
+test('following keeps saved Hunt selected, allows saved mode edits while keeping inherited settings read-only',async()=>{
+ let selected;
+ const props={policy:'hunt',effectivePolicy:'auto',effectiveMode:'default',followingLeader:'W',settingsOwner:'W',blacklist:{rat:{at:1,deaths:1}},catalog:[],onSelect(mode){selected=mode},onClearBlacklist:async()=>{},onHuntSettingsSave:async()=>{}};
+ let tree;
+ await act(async()=>{tree=create(React.createElement(FarmingModeControl,props))});
+ await act(async()=>tree.root.findAllByType('button').find(b=>b.props['aria-expanded']!==undefined).props.onClick());
+ const buttons=tree.root.findAllByType('button').filter(b=>b.props['aria-pressed']!==undefined);
+ assert.equal(buttons.length,4); assert.ok(buttons.every(b=>!b.props.disabled));
+ assert.equal(buttons.find(b=>b.children.includes('Hunt')).props['aria-pressed'],true);
+ await act(async()=>buttons.find(b=>b.children.includes('Scatter')).props.onClick());
+ assert.equal(selected,'scatter');
+ assert.match(JSON.stringify(tree.toJSON()),/Copy leader/);
+ assert.match(JSON.stringify(tree.toJSON()),/Used when Follow is off/);
+ assert.ok(tree.root.findAllByType('input').filter(i=>i.props.type==='number').every(i=>i.props.disabled));
+ const clear=tree.root.findAllByType('button').filter(b=>b.children.includes('Clear')||b.children.includes('Clear all'));
+ assert.ok(clear.length); assert.ok(clear.every(b=>b.props.disabled));
+ await act(async()=>tree.update(React.createElement(FarmingModeControl,{...props,followingLeader:undefined,effectivePolicy:'hunt',settingsOwner:'R'})));
+ assert.ok(tree.root.findAllByType('button').filter(b=>b.props['aria-pressed']!==undefined).every(b=>!b.props.disabled));
+ await act(async()=>tree.unmount());
+});

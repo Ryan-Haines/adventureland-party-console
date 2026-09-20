@@ -1,0 +1,1052 @@
+diff --git a/account_info.js b/account_info.js
+index 567fa38..24c7138 100644
+--- a/account_info.js
++++ b/account_info.js
+@@ -12,15 +12,33 @@ class Info {
+         method: "POST",
+         headers: {
+           Cookie: "auth=" + this.session,
+-          "Content-Type": "application/x-www-form-urlencoded",
++          "Content-Type": "application/json; charset=utf-8",
+         },
+-        body: "method=servers_and_characters",
++        body: "{}",
+       },
+     );
+     if (!raw.ok) {
+       throw new Error(`failed to update account info: ${raw.statusText}`);
+     }
+-    const res = (await raw.json())[0];
++    const payload = await raw.json();
++    // Legacy responses were one-element arrays. The current JSON API returns
++    // action information under `infs`.
++    const res = Array.isArray(payload)
++      ? payload[0]
++      : payload.servers && payload.characters
++        ? payload
++        : Array.isArray(payload.infs)
++          ? payload.infs.find((info) => info.type === "servers_and_characters")
++          : null;
++    if (
++      !res ||
++      !Array.isArray(res.servers) ||
++      !Array.isArray(res.characters)
++    ) {
++      const reason =
++        (payload && (payload.reason || payload.message)) || "unexpected response";
++      throw new Error(`failed to read account info: ${reason}`);
++    }
+     console.log(
+       `found ${res.servers.length} servers and ${res.characters.length} characters`,
+     );
+diff --git a/game_files.js b/game_files.js
+index 4ff7825..5ea65df 100644
+--- a/game_files.js
++++ b/game_files.js
+@@ -12,18 +12,23 @@ const { console } = require("./src/LogUtils");
+ function get_runner_files() {
+   return [
+     "/js/common_functions.js",
++    "/js/old_common_functions.js",
+     "/js/runner_functions.js",
+     "/js/runner_compat.js",
+   ];
+ }
+ function get_game_files() {
+   return [
++    "/js/phrases.js",
++    "/phrases/en.js",
+     "/js/pixi/fake/pixi.min.js",
+     "/js/libraries/combined.js",
+     "/js/codemirror/fake/codemirror.js",
+ 
+     "/js/common_functions.js",
++    "/js/old_common_functions.js",
+     "/js/functions.js",
++    "/js/merrit_stand_notice.js",
+     "/js/game.js",
+     "/js/html.js",
+     "/js/payments.js",
+@@ -86,19 +91,36 @@ function locate_game_file(resource, version) {
+ 
+ async function ensure_latest() {
+   const version = await get_latest_version();
++  const target_files = get_game_files()
++    .concat(get_runner_files())
++    //remove duplicates
++    .filter(function (item, pos, self) {
++      return self.indexOf(item) == pos;
++    });
+   if ((await available_versions()).includes(version)) {
+     console.log(`version ${version} is already downloaded`);
++    // The website can add a prerequisite without incrementing—or after we
++    // already cached—the current game build. Backfill every newly declared
++    // file instead of assuming an existing version directory is complete.
++    const missing = [];
++    for (const resource of target_files) {
++      try {
++        await fs.access(locate_game_file(resource, version));
++      } catch (_missing) {
++        missing.push(resource);
++      }
++    }
++    if (missing.length) {
++      console.log(`downloading ${missing.length} missing game files for version ${version}`);
++      await Promise.all(missing.map((resource) =>
++        download_file(base_url + resource, locate_game_file(resource, version)),
++      ));
++    }
+   } else {
+     console.log(`downloading version ${version}`);
+     const fpath = "./game_files/" + version;
+     try {
+       await fs.mkdir(fpath);
+-      const target_files = get_game_files()
+-        .concat(get_runner_files())
+-        //remove duplicates
+-        .filter(function (item, pos, self) {
+-          return self.indexOf(item) == pos;
+-        });
+       const tasks = target_files.map((itm) =>
+         download_file(base_url + itm, locate_game_file(itm, version)),
+       );
+diff --git a/html_vars.js b/html_vars.js
+index 3fa380b..a714358 100644
+--- a/html_vars.js
++++ b/html_vars.js
+@@ -2,7 +2,9 @@ var inside = "login";
+ var user_id = "",
+   user_auth = "";
+ var base_url = "https://adventure.land";
+-var server_addr = "",
++var server_address = "",
++  server_path = "",
++  server_addr = "",
+   server_port = "";
+ var server_names = { US: "Americas", EU: "Europas", ASIA: "Eastlands" };
+ var sound_music = "",
+@@ -13,14 +15,21 @@ var perfect_pixels = "1";
+ var screenshot_mode = "";
+ var pro_mode = "1";
+ var tutorial_ui = "1";
++// UI-only proximity help is disabled in the headless client.
++var proximity_guides = false;
+ var new_attacks = "1";
+ var recording_mode = "";
+ var cached_map = "1",
+   scale = "2";
+ var d_lines = "1";
+ var sd_lines = "1";
++var Prod = "";
++var Dev = "";
++var Local = "";
++var Staging = "";
+ var is_sdk = "";
+ var is_electron = "",
++  is_tauri = "",
+   electron_data = {};
+ var is_comm = false;
+ var no_eval = false;
+@@ -43,10 +52,14 @@ var auto_reload = "auto",
+   character_to_load = "",
+   mstand_to_load = null;
+ // It's pretty complicated but there are 2 persistence, auto login routines, the above one is the first, the below one is the second, second one uses the URL data
+-var url_ip = "",
++var url_address = "",
++  url_path = "",
++  url_ip = "",
+   url_port = "",
+   url_character = "";
+ var update_notes = [];
++var update_notes_more = [],
++  last_deploy = {};
+ var server_regions = { US: "Americas", EU: "Europas", ASIA: "Eastlands" };
+ var X = {};
+ function payment_logic() {}
+diff --git a/main.js b/main.js
+index 208d1ef..b405cc0 100644
+--- a/main.js
++++ b/main.js
+@@ -2,6 +2,38 @@ const { COORDINATOR_MODULE_PATH } = require("./src/CONSTANTS");
+ const ConfigUtil = require("./src/ConfigUtil");
+ const StreamMultiplexer = require("./src/StreamMultiplexer");
+ const fs = require("fs");
++const path = require("path");
++
++// One supervisor owns the coordinator and its append/compaction store. Without
++// this guard, two launchers can periodically replace the same file with
++// different in-memory snapshots.
++const supervisorLockPath = path.resolve(__dirname, ".caracal-supervisor.lock");
++let supervisorLock;
++try {
++  supervisorLock = fs.openSync(supervisorLockPath, "wx");
++  fs.writeFileSync(supervisorLock, String(process.pid));
++} catch (error) {
++  let stale = false;
++  try {
++    const owner = Number(fs.readFileSync(supervisorLockPath, "utf8"));
++    if (!Number.isSafeInteger(owner)) stale = true;
++    else try { process.kill(owner, 0); } catch (_missingOwner) { stale = true; }
++  } catch (_unreadableLock) { stale = true; }
++  if (stale) {
++    try { fs.unlinkSync(supervisorLockPath); } catch (_unlinkError) {}
++    supervisorLock = fs.openSync(supervisorLockPath, "wx");
++    fs.writeFileSync(supervisorLock, String(process.pid));
++  } else {
++    throw new Error("Another caracAL supervisor already owns " + supervisorLockPath);
++  }
++}
++function releaseSupervisorLock() {
++  if (supervisorLock === undefined) return;
++  try { fs.closeSync(supervisorLock); } catch (_closeError) {}
++  supervisorLock = undefined;
++  try { fs.unlinkSync(supervisorLockPath); } catch (_unlinkError) {}
++}
++process.once("exit", releaseSupervisorLock);
+ 
+ async function get_webpack_started(cfg) {
+   try {
+@@ -65,5 +97,79 @@ async function get_webpack_started(cfg) {
+     ],
+     ["node", "./standalones/LogPrinter.js"],
+   ];
+-  StreamMultiplexer.setup_log_pipes(log_sinks, COORDINATOR_MODULE_PATH);
++  let coordinator;
++  let coordinatorRestartTimer;
++  let coordinatorStartTimer;
++  let coordinatorWatcher;
++  let restartCoordinator = false;
++  let shuttingDown = false;
++
++  function startCoordinator() {
++    coordinator = StreamMultiplexer.setup_log_pipes(
++      log_sinks,
++      COORDINATOR_MODULE_PATH,
++    );
++    coordinator.once("exit", (code, signal) => {
++      coordinator = null;
++      if (shuttingDown) return process.exit();
++      if (restartCoordinator && !shuttingDown) {
++        restartCoordinator = false;
++        console.log("Coordinator stopped; loading updated code");
++        startCoordinator();
++      } else {
++        console.error(`Coordinator exited unexpectedly (${signal || code}); retrying in 2 seconds`);
++        clearTimeout(coordinatorStartTimer);
++        coordinatorStartTimer = setTimeout(startCoordinator, 2000);
++      }
++    });
++  }
++
++  function sendCoordinator(message) {
++    if (!coordinator || !coordinator.connected) return false;
++    try {
++      coordinator.send(message, (error) => {
++        if (error && !restartCoordinator && !shuttingDown)
++          console.error("Failed to message coordinator", error);
++      });
++      return true;
++    } catch (error) {
++      if (!restartCoordinator && !shuttingDown)
++        console.error("Failed to message coordinator", error);
++      return false;
++    }
++  }
++
++  startCoordinator();
++
++  if (cfg.watch_CODE) {
++    coordinatorWatcher = fs.watch(COORDINATOR_MODULE_PATH, () => {
++      clearTimeout(coordinatorRestartTimer);
++      coordinatorRestartTimer = setTimeout(() => {
++        if (shuttingDown) return;
++        if (!coordinator) {
++          clearTimeout(coordinatorStartTimer);
++          coordinatorStartTimer = setTimeout(startCoordinator, 100);
++          return;
++        }
++        if (restartCoordinator) return;
++        restartCoordinator = true;
++        console.log("Coordinator code changed; restarting caracAL workers");
++        if (!sendCoordinator({ type: "coordinator_shutdown" })) {
++          restartCoordinator = false;
++          coordinator.kill();
++        }
++      }, 400);
++    });
++    console.log(`Watching ${COORDINATOR_MODULE_PATH} for coordinator changes`);
++  }
++
++  ["SIGINT", "SIGTERM", "SIGQUIT"].forEach((signal) =>
++    process.on(signal, () => {
++      shuttingDown = true;
++      clearTimeout(coordinatorRestartTimer);
++      clearTimeout(coordinatorStartTimer);
++      if (coordinatorWatcher) coordinatorWatcher.close();
++      if (!sendCoordinator({ type: "coordinator_shutdown" })) process.exit();
++    }),
++  );
+ })();
+diff --git a/package-lock.json b/package-lock.json
+index b57eb4f..9c19f97 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -373,6 +373,7 @@
+       "version": "8.11.3",
+       "resolved": "https://registry.npmjs.org/acorn/-/acorn-8.11.3.tgz",
+       "integrity": "sha512-Y9rRfJG5jcKOE0CLisYbojUjIrIEE7AGMzA/Sm4BslANhbS+cDMpgBdcPT91oJ7OuJ9hYJBx59RjbhxVnrF8Xg==",
++      "peer": true,
+       "bin": {
+         "acorn": "bin/acorn"
+       },
+@@ -424,6 +425,7 @@
+       "version": "6.12.6",
+       "resolved": "https://registry.npmjs.org/ajv/-/ajv-6.12.6.tgz",
+       "integrity": "sha512-j3fVLgvTo527anyYyJOGTYJbG+vnnQYvE0m5mmkc1TK+nxAppkCLMIL0aZ4dblVCNoGShhm+kzE4ZUykBoMg4g==",
++      "peer": true,
+       "dependencies": {
+         "fast-deep-equal": "^3.1.1",
+         "fast-json-stable-stringify": "^2.0.0",
+@@ -627,6 +629,7 @@
+           "url": "https://github.com/sponsors/ai"
+         }
+       ],
++      "peer": true,
+       "dependencies": {
+         "caniuse-lite": "^1.0.30001587",
+         "electron-to-chromium": "^1.4.668",
+@@ -3578,6 +3581,7 @@
+       "version": "5.4.2",
+       "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.4.2.tgz",
+       "integrity": "sha512-+2/g0Fds1ERlP6JsakQQDXjZdZMM+rqpamFZJEKh4kwTIn3iDkgKtby0CeNd5ATNZ4Ry1ax15TMx0W2V+miizQ==",
++      "peer": true,
+       "bin": {
+         "tsc": "bin/tsc",
+         "tsserver": "bin/tsserver"
+@@ -3725,6 +3729,7 @@
+       "version": "5.90.3",
+       "resolved": "https://registry.npmjs.org/webpack/-/webpack-5.90.3.tgz",
+       "integrity": "sha512-h6uDYlWCctQRuXBs1oYpVe6sFcWedl0dpcVaTf/YF67J9bKvwJajFulMVSYKHrksMB3I/pIagRzDxwxkebuzKA==",
++      "peer": true,
+       "dependencies": {
+         "@types/eslint-scope": "^3.7.3",
+         "@types/estree": "^1.0.5",
+@@ -3771,6 +3776,7 @@
+       "version": "5.1.4",
+       "resolved": "https://registry.npmjs.org/webpack-cli/-/webpack-cli-5.1.4.tgz",
+       "integrity": "sha512-pIDJHIEI9LR0yxHXQ+Qh95k2EvXpWzZ5l+d+jIo+RdSm9MiHfzazIxwwni/p7+x4eJZuvG1AJwgC4TNQ7NRgsg==",
++      "peer": true,
+       "dependencies": {
+         "@discoveryjs/json-ext": "^0.5.0",
+         "@webpack-cli/configtest": "^2.1.1",
+diff --git a/src/CharacterThread.js b/src/CharacterThread.js
+index 8785424..4845b60 100644
+--- a/src/CharacterThread.js
++++ b/src/CharacterThread.js
+@@ -1,3 +1,4 @@
++const { createRunnerHost } = require("../../.build/runtime/lifecycle.cjs");
+ const vm = require("vm");
+ const io = require("socket.io-client");
+ const fs = require("fs").promises;
+@@ -55,98 +56,17 @@ function make_context(upper = null) {
+ async function ev_files(locations, context) {
+   for (let location of locations) {
+     let text = await fs.readFile(location, "utf8");
+-    vm.runInContext(text + "\n//# sourceURL=file://" + location, context);
+-  }
+-}
+-
+-async function make_runner(upper, CODE_file, version, is_typescript) {
+-  const runner_sources = game_files
+-    .get_runner_files()
+-    .map((f) => game_files.locate_game_file(f, version));
+-  console.log("constructing runner instance");
+-  console.debug("source files:\n%s", runner_sources);
+-  const runner_context = make_context(upper);
+-  //contents of adventure.land/runner
+-  //its an html file but not labeled as such
+-  //TODO in the future i should consider parsing the relevant parts out of the html files directly
+-  //for the runners as well as the instances
+-  vm.runInContext(
+-    "var active=false,catch_errors=true,is_code=1,is_server=0,is_game=0,is_bot=parent.is_bot,is_cli=parent.is_cli,is_sdk=parent.is_sdk;",
+-    runner_context,
+-  );
+-  await ev_files(runner_sources, runner_context);
+-  runner_context.send_cm = function (to, data) {
+-    process.send({
+-      type: "cm",
+-      to,
+-      data,
+-    });
+-  };
+-  //we need to do this here because of scoping
+-  upper.caracAL.load_scripts = async function (locations) {
+-    if (!is_typescript) {
+-      return await ev_files(
+-        locations.map((x) => "./CODE/" + x),
+-        runner_context,
+-      );
+-    } else {
+-      throw new Exception(
+-        "Runtime Loading Code is not supported in Typescript Mode.\nUse an import instead",
++    // The current client marks String.prototype.hashCode as non-configurable.
++    // jsdom VM contexts share that prototype, while caracAL evaluates this file
++    // once for the game and again for the CODE runner. Keep it reloadable.
++    if (location.endsWith("common_functions.js")) {
++      text = text.replace(
++        'Object.defineProperty(String.prototype, "hashCode", {',
++        'Object.defineProperty(String.prototype, "hashCode", { configurable: true,',
+       );
+     }
+-  };
+-  vm.runInContext(
+-    "active = true;parent.code_active = true;set_message('Code Active');if (character.rip) character.trigger('death', {past: true});",
+-    runner_context,
+-  );
+-
+-  process.on("message", (m) => {
+-    switch (m.type) {
+-      case "closing_client":
+-        console.log("terminating self");
+-        vm.runInContext("on_destroy()", runner_context);
+-        process.exit();
+-        //vscode says this is unreachable.
+-        //with how whack node is better be safe
+-        break;
+-    }
+-  });
+-
+-  //so.
+-  //these should send a shutdown to parent
+-  //parent deletes instance and marks them inactive
+-  //if its duplicate then no instance and no double shutdown
+-  ["SIGINT", "SIGTERM", "SIGQUIT"].forEach((signal) =>
+-    process.on(signal, async () => {
+-      console.log(`Received ${signal} on client. Requesting termination`);
+-      process.send({
+-        type: "shutdown",
+-      });
+-    }),
+-  );
+-
+-  //awaits the arrival of a message from parent process
+-  //indicating the servers_and_characters proxy that we use
+-  const connected_signoff = new Promise((resolve) => {
+-    process.on("message", (m) => {
+-      switch (m.type) {
+-        case "siblings_and_acc":
+-          resolve();
+-          break;
+-      }
+-    });
+-  });
+-
+-  process.send({ type: "connected" });
+-
+-  console.log("runner instance constructed");
+-  monitoring_util.register_stat_beat(upper);
+-  //Fix a bug where parent.X is initially empty
+-  await connected_signoff;
+-  await ev_files([CODE_file], runner_context);
+-  //TODO put a process end handler here
+-
+-  return runner_context;
++    vm.runInContext(text + "\n//# sourceURL=file://" + location, context);
++  }
+ }
+ 
+ async function make_game(proc_args) {
+@@ -161,7 +81,13 @@ async function make_game(proc_args) {
+   game_context.bowser = {};
+   await ev_files(game_sources, game_context);
+   game_context.VERSION = "" + game_context.G.version;
+-  game_context.server_addr = proc_args.realm_addr;
++  const realmAddress = /^[a-z]+:\/\//i.test(proc_args.realm_address)
++    ? proc_args.realm_address
++    : "https://" + proc_args.realm_address;
++  game_context.server_address = realmAddress;
++  game_context.server_path = proc_args.realm_path;
++  // Preserve aliases used by older downloaded game clients.
++  game_context.server_addr = realmAddress;
+   game_context.server_port = proc_args.realm_port;
+   game_context.user_id = proc_args.sess.split("-")[0];
+   game_context.user_auth = proc_args.sess.split("-")[1];
+@@ -193,6 +119,7 @@ async function make_game(proc_args) {
+ 
+   game_context.caracAL = extensions;
+ 
++  let runnerHost;
+   const old_ng_logic = game_context.new_game_logic;
+   game_context.new_game_logic = function () {
+     old_ng_logic();
+@@ -206,15 +133,28 @@ async function make_game(proc_args) {
+     const target_script = is_typescript
+       ? "./TYPECODE.out/" + proc_args.typescript_file
+       : "./CODE/" + proc_args.script_file;
+-    (async function () {
+-      const runner_context = await make_runner(
+-        game_context,
+-        target_script,
+-        proc_args.version,
+-        is_typescript,
+-      );
+-      extensions.runner = runner_context;
+-    })();
++    if (runnerHost) return;
++    if (is_typescript) throw new Error("Use the repository TypeScript build and compiled CODE entrypoints");
++    runnerHost = createRunnerHost({
++      upper: game_context, createContext: make_context, evaluateFiles: ev_files,
++      runnerFiles: game_files.get_runner_files().map(f => game_files.locate_game_file(f, proc_args.version)),
++      codeFile: target_script, send: message => process.send(message),
++      codeDependencies: ["farming-zones.js", "shared.js", "profiles.js", "roles.js"].map(file => "./CODE/adventure_land/" + file),
++      connected: () => new Promise(resolve => {
++        const listener = message => {
++          if (message.type !== "siblings_and_acc") return;
++          process.off("message", listener);
++          resolve();
++        };
++        process.on("message", listener);
++        process.send({ type: "connected" });
++      }),
++    });
++    monitoring_util.register_stat_beat(game_context);
++    runnerHost.start().catch(error => {
++      console.error("CODE startup failed", error);
++      extensions.deploy();
++    });
+   };
+   const old_dc = game_context.disconnect;
+   game_context.disconnect = function () {
+@@ -259,6 +199,12 @@ async function make_game(proc_args) {
+   process.send({ type: "initialized" });
+   process.on("message", (m) => {
+     switch (m.type) {
++      case "reload_code":
++        if (runnerHost) void runnerHost.reload({ id: m.id, generation: m.generation, script: m.script });
++        break;
++      case "closing_client":
++        Promise.resolve(runnerHost?.dispose()).finally(() => process.exit());
++        break;
+       case "siblings_and_acc":
+         extensions.siblings = m.siblings;
+         game_context.handle_information([m.account]);
+@@ -275,6 +221,9 @@ async function make_game(proc_args) {
+         break;
+     }
+   });
++  ["SIGINT", "SIGTERM", "SIGQUIT"].forEach(signal => process.on(signal, () => {
++    process.send({ type: "shutdown" });
++  }));
+   vm.runInContext("the_game()", game_context);
+   const reload_timeout = 14;
+   const reload_task = setTimeout(
+@@ -299,7 +248,19 @@ process.on("message", async (msg) => {
+     );
+     const new_log = LogUtils.log.child({ cname, clid });
+     LogUtils.log = new_log;
+-    await make_game(msg.arguments);
++    try {
++      await make_game(msg.arguments);
++    } catch (error) {
++      // An initialization rejection used to leave this child alive forever,
++      // with its coordinator slot stuck at "starting". Report the failure so
++      // the parent can repair/backfill its game cache, then exit to activate
++      // the existing per-character restart path.
++      console.error("game bootstrap failed", error);
++      try {
++        process.send({ type: "bootstrap_failed", error: String(error && (error.stack || error.message) || error) });
++      } catch (_bootstrapReportError) {}
++      setTimeout(() => process.exit(1), 25);
++    }
+   }
+ });
+ 
+diff --git a/src/FileStoredKeyValues.js b/src/FileStoredKeyValues.js
+index 61169f7..e59a7aa 100644
+--- a/src/FileStoredKeyValues.js
++++ b/src/FileStoredKeyValues.js
+@@ -7,6 +7,9 @@ class FileStoredKeyValues {
+   #backend;
+   #handle;
+   #refactorTask;
++  #lockPath;
++  #lockHandle;
++  #closed = false;
+ 
+   constructor(
+     main_path = "garage.jsonl",
+@@ -20,6 +23,22 @@ class FileStoredKeyValues {
+     }
+     this.#main_path = main_path;
+     this.#replacer_path = replacer_path;
++    this.#lockPath = main_path + ".writer.lock";
++    try {
++      this.#lockHandle = fs.openSync(this.#lockPath, "wx");
++      fs.writeFileSync(this.#lockHandle, String(process.pid));
++    } catch (error) {
++      let stale = false;
++      try {
++        const owner = Number(fs.readFileSync(this.#lockPath, "utf8"));
++        if (!Number.isSafeInteger(owner)) stale = true;
++        else try { process.kill(owner, 0); } catch (_missingOwner) { stale = true; }
++      } catch (_unreadableLock) { stale = true; }
++      if (!stale) throw new Error(`Storage already has a live writer: ${main_path}`);
++      try { fs.unlinkSync(this.#lockPath); } catch (_unlinkError) {}
++      this.#lockHandle = fs.openSync(this.#lockPath, "wx");
++      fs.writeFileSync(this.#lockHandle, String(process.pid));
++    }
+     this.#backend = new Map();
+     this.#initializeHandle();
+     this.#refactorTask = setInterval(() => this.refactor(), refactor_interval);
+@@ -79,8 +98,12 @@ class FileStoredKeyValues {
+   }
+ 
+   close() {
++    if (this.#closed) return;
++    this.#closed = true;
+     clearInterval(this.#refactorTask);
+     fs.closeSync(this.#handle);
++    try { fs.closeSync(this.#lockHandle); } catch (_closeError) {}
++    try { fs.unlinkSync(this.#lockPath); } catch (_unlinkError) {}
+   }
+ 
+   //i dont guarantee functionality if you set values that are not strings
+diff --git a/src/StreamMultiplexer.js b/src/StreamMultiplexer.js
+index 6e9da64..5d9045a 100644
+--- a/src/StreamMultiplexer.js
++++ b/src/StreamMultiplexer.js
+@@ -17,7 +17,11 @@ function spawn_sink(command, ...args) {
+ 
+ function redirect_into_process(stdout, stderr, target_proc) {
+   function err_handler(err) {
+-    if (err) throw err;
++    if (!err) return;
++    // A watched worker intentionally closes these pipes during a reload. Throwing
++    // from a pipeline callback would crash the long-lived supervisor.
++    if (err.code === "ERR_STREAM_PREMATURE_CLOSE" || err.code === "EPIPE") return;
++    console.error("log pipeline failed", err);
+   }
+   if (target_proc) {
+     pipeline(stdout, target_proc.stdin, err_handler);
+diff --git a/standalones/CharacterCoordinator.js b/standalones/CharacterCoordinator.js
+index 53a8bea..ac2cc6b 100644
+--- a/standalones/CharacterCoordinator.js
++++ b/standalones/CharacterCoordinator.js
+@@ -1,411 +1,8 @@
+-const child_process = require("node:child_process");
+-const account_info = require("../account_info");
+-const game_files = require("../game_files");
+-const bwi = require("bot-web-interface");
+-const monitoring_util = require("../monitoring_util");
+-const express = require("express");
+-const fs_regular = require("node:fs");
+-const {
+-  LOCALSTORAGE_PATH,
+-  LOCALSTORAGE_ROTA_PATH,
+-  STAT_BEAT_INTERVAL,
+-} = require("../src/CONSTANTS");
+-const { log, console, ctype_to_clid } = require("../src/LogUtils");
++// Adventure Land coordinator application launcher; implementation lives in runtime/coordinator/application.ts.
++const { startCoordinatorApplication } = require("../../.build/runtime/coordinator-application.cjs");
+ 
+-const FileStoredKeyValues = require("../src/FileStoredKeyValues");
+-
+-//TODO check for invalid session
+-//TODO improve termination
+-//MAYBE improve linux service
+-//MAYBE exclude used versions
+-
+-function partition(a, fun) {
+-  const ret = [[], []];
+-  for (let i = 0; i < a.length; i++)
+-    if (fun(a[i])) ret[0].push(a[i]);
+-    else ret[1].push(a[i]);
+-  return ret;
+-}
+-
+-//note to self: how to promisify event emitter(once)
+-//const someAsyncFunction = util.promisify(myEmitter.once).bind(myEmitter);
+-
+-function migrate_old_storage(path, localStorage) {
+-  let file_contents;
+-  try {
+-    file_contents = fs_regular.readFileSync(path, "utf8");
+-  } catch (err) {
+-    log.info(
+-      { type: "ls_migration_none", path },
+-      "localStorage migration unnecessary",
+-    );
+-    return;
+-  }
+-  if (file_contents.length > 0) {
+-    const json_object = JSON.parse(file_contents);
+-    for (let [key, value] of Object.entries(json_object)) {
+-      localStorage.set(key, value);
+-    }
+-    log.info(
+-      { type: "ls_migration", path, value: Object.keys(json_object).length },
+-      "localStorage migrated",
+-    );
+-  }
+-  fs_regular.unlinkSync(path);
+-  log.info({ type: "ls_migration_done", path }, "old localStorage deleted");
+-  return;
+-}
+-
+-(async () => {
+-  const localStorage = new FileStoredKeyValues(
+-    LOCALSTORAGE_PATH,
+-    LOCALSTORAGE_ROTA_PATH,
+-  );
+-
+-  //migrate from old library which stored everything in single file
+-  migrate_old_storage("./localStorage/storage.json", localStorage);
+-
+-  const sessionStorage = new Map();
+-  localStorage.set("caracAL", "Yeah");
+-  sessionStorage.set("caracAL", "Yup");
+-
+-  const version = await game_files.ensure_latest();
+-
+-  const cfg = require("../config");
+-  if (cfg.cull_versions) {
+-    await game_files.cull_versions([version]);
+-  }
+-  const sess = process.env.AL_SESSION || cfg.session;
+-  const my_acc = await account_info(sess);
+-  const default_realm = my_acc.response.servers[0];
+-
+-  const character_manage = cfg.characters;
+-
+-  //TODO right now this server wont terminate.
+-  //this is fine atm because caracAL does not terminate when all chars stop.
+-  //when I change this in the future this might change as well.
+-  let bwi_instance = {};
+-  try {
+-    if (cfg.web_app && (cfg.web_app.enable_bwi || cfg.web_app.enable_minimap)) {
+-      bwi_instance = new bwi({
+-        port: cfg.web_app.port,
+-        password: null,
+-        updateRate: STAT_BEAT_INTERVAL,
+-      });
+-    }
+-    let express_inst = bwi_instance.router;
+-    if (cfg.web_app && cfg.web_app.expose_CODE) {
+-      if (!express_inst) {
+-        express_inst = express();
+-        express_inst.listen(cfg.web_app.port);
+-      }
+-      log.info(
+-        { type: "CODE_exposed", src_path: __dirname + "/../CODE" },
+-        "Serving CODE statically",
+-      );
+-      express_inst.use("/CODE", express.static(__dirname + "/../CODE"));
+-    }
+-    if (cfg.web_app && cfg.web_app.expose_TYPECODE && cfg.enable_TYPECODE) {
+-      if (!express_inst) {
+-        express_inst = express();
+-        express_inst.listen(cfg.web_app.port);
+-      }
+-      log.info(
+-        { type: "TYPECODE_exposed", src_path: __dirname + "/../TYPECODE.out" },
+-        "Serving TYPECODE statically",
+-      );
+-      express_inst.use(
+-        "/TYPECODE",
+-        express.static(__dirname + "/../TYPECODE.out"),
+-      );
+-    }
+-  } catch (e) {
+-    console.error(`failed to start web services.`, e);
+-    console.error(`no web services will be available`);
+-  }
+-
+-  function safe_send(target, data) {
+-    if (target) {
+-      target.send(data, undefined, undefined, (e) => {
+-        //This can occur due to node closing ipc
+-        //before firing its close handlers
+-        if (e) {
+-          //console.error(`failed to send ipc`);
+-          //console.error(`target: `,target);
+-        }
+-      });
+-    }
+-  }
+-
+-  function sleep(ms) {
+-    return new Promise((resolve) => setTimeout(resolve, ms));
+-  }
+-  //attempts to softkill child processes
+-  //by sending an ipc if the client is connected and giving some timeout
+-  //why not actual SIGTERM? cause windows cant even
+-  async function softkill_block(char_block) {
+-    const proc = char_block.instance;
+-    char_block.instance = null;
+-    if (proc) {
+-      if (char_block.connected) {
+-        console.log("telling client to self-terminate");
+-        safe_send(proc, {
+-          type: "closing_client",
+-        });
+-        const ended_graceful = await Promise.race([
+-          sleep(500),
+-          new Promise((resolve) => {
+-            proc.on("exit", function () {
+-              console.log("Client terminated gracefully");
+-              resolve(true);
+-            });
+-          }),
+-        ]);
+-        if (ended_graceful) {
+-          return;
+-        }
+-      }
+-      console.log("Hard-terminating client");
+-      proc.kill("SIGKILL");
+-    }
+-  }
+-
+-  function update_siblings_and_acc(info) {
+-    const sib_names = Object.keys(character_manage)
+-      .filter((x) => character_manage[x].connected)
+-      .sort();
+-
+-    sib_names.forEach((char) => {
+-      safe_send(character_manage[char].instance, {
+-        type: "siblings_and_acc",
+-        account: info,
+-        siblings: sib_names,
+-      });
+-    });
+-  }
+-
+-  function start_char(char_name) {
+-    const char_block = character_manage[char_name];
+-    let realm = my_acc.resolve_realm(char_block.realm);
+-    if (!realm) {
+-      console.warn(
+-        `could not find realm ${char_block.realm},`,
+-        `falling back to realm ${default_realm.key}`,
+-      );
+-      char_block.realm = default_realm.key;
+-      realm = default_realm;
+-    }
+-    const char = my_acc.resolve_char(char_name);
+-    //class is char.type
+-    if (!char) {
+-      console.error(
+-        `could not resolve character ${char_name}`,
+-        `this character will not be started`,
+-      );
+-      console.error(
+-        "are you sure you own this character and have not deleted it?",
+-      );
+-      char_block.enabled = false;
+-      return;
+-    }
+-    const g_version = char_block.version || version;
+-    console.log(
+-      `starting ${char_name} running version ${g_version} in ${char_block.realm}`,
+-    );
+-    const args = {
+-      version: g_version,
+-      realm_addr: realm.addr,
+-      realm_port: realm.port,
+-      sess: sess,
+-      cid: char.id,
+-      script_file: char_block.script,
+-      enable_map: !!(cfg.web_app && cfg.web_app.enable_minimap),
+-      cname: char_name,
+-      clid: ctype_to_clid[char.type] || -1,
+-    };
+-    if (cfg.enable_TYPECODE) {
+-      args.typescript_file = char_block.typescript;
+-    }
+-
+-    const result = child_process.fork("./src/CharacterThread.js", [], {
+-      stdio: ["ignore", "pipe", "pipe", "ipc"],
+-    });
+-
+-    result.stdout.pipe(process.stdout);
+-    result.stderr.pipe(process.stderr);
+-    char_block.instance = result;
+-    result.on("exit", () => {
+-      if (char_block.monitor) {
+-        //close monitor
+-        char_block.monitor.destroy();
+-        char_block.monitor = null;
+-      }
+-      char_block.connected = false;
+-      char_block.instance = null;
+-      if (char_block.enabled) {
+-        start_char(char_name);
+-      }
+-    });
+-    result.on("message", (m) => {
+-      switch (m.type) {
+-        case "process_ready":
+-          safe_send(result, {
+-            type: "process_args",
+-            arguments: args,
+-          });
+-          break;
+-        case "initialized":
+-          break;
+-        case "connected":
+-          char_block.connected = true;
+-          update_siblings_and_acc(my_acc.response);
+-          break;
+-        case "deploy":
+-          //check for existing charblock, adjust parameters and kill it
+-          //or not find any, make a new one and start it
+-          const new_char_name = m.character || char_name;
+-          const candidate = character_manage[new_char_name] || {};
+-          character_manage[new_char_name] = candidate;
+-          candidate.enabled = true;
+-          candidate.realm = m.realm || char_block.realm;
+-          if (char_block.typescript && char_block.typescript.length > 0) {
+-            candidate.typescript = m.script || char_block.typescript;
+-          } else {
+-            candidate.script = m.script || char_block.script;
+-            candidate.typescript = null;
+-          }
+-          candidate.script = m.script || char_block.script;
+-          candidate.version = m.version || char_block.version;
+-          if (candidate.instance) {
+-            softkill_block(candidate);
+-            candidate.connected = false; //TODO i need to refractor lifecycle management
+-          } else {
+-            candidate.connected = false;
+-            start_char(new_char_name);
+-          }
+-          break;
+-        case "shutdown":
+-          if (m.character) {
+-            const candidate = character_manage[m.character] || {};
+-
+-            console.log(
+-              `shutdown requested for ${m.character} from ${char_name}`,
+-            );
+-            candidate.enabled = false;
+-            softkill_block(candidate);
+-          } else {
+-            console.log("shutdown requested from " + char_name);
+-            char_block.enabled = false;
+-            softkill_block(char_block);
+-          }
+-          break;
+-        case "cm":
+-          let recipients = m.to;
+-          if (!Array.isArray(recipients)) {
+-            recipients = [recipients];
+-          }
+-          const [locs, globs] = partition(
+-            recipients,
+-            (x) => character_manage[x] && character_manage[x].connected,
+-          );
+-          if (globs.length > 0) {
+-            safe_send(char_block.instance, {
+-              type: "send_cm",
+-              to: globs,
+-              data: m.data,
+-            });
+-          }
+-          locs.forEach((blk) => {
+-            safe_send(character_manage[blk].instance, {
+-              type: "receive_cm",
+-              name: char_name,
+-              data: m.data,
+-            });
+-          });
+-          break;
+-        //localStorage and sessionStorage related
+-        case "stor":
+-          const trg_store = m.ident == "ls" ? localStorage : sessionStorage;
+-          switch (m.op) {
+-            case "set":
+-              for (let key in m.data) {
+-                trg_store.set(key, m.data[key]);
+-              }
+-              break;
+-            case "del":
+-              for (let key of m.data) {
+-                trg_store.delete(key);
+-              }
+-              break;
+-            case "clear":
+-              for (let [key, value] of trg_store.entries()) {
+-                trg_store.delete(key);
+-              }
+-              break;
+-            case "init":
+-              const catchup_data = {};
+-              for (let [key, value] of trg_store.entries()) {
+-                catchup_data[key] = value;
+-              }
+-              safe_send(char_block.instance, {
+-                type: "stor",
+-                op: "set",
+-                ident: m.ident,
+-                data: catchup_data,
+-              });
+-              break;
+-            default:
+-              break;
+-          }
+-          if (m.op != "init") {
+-            //forward to other running processes
+-            Object.values(character_manage)
+-              .filter((x) => x.instance)
+-              .forEach((block) => {
+-                safe_send(block.instance, m);
+-              });
+-          }
+-          break;
+-        default:
+-          break;
+-      }
+-    });
+-    if (bwi_instance.publisher) {
+-      char_block.monitor = monitoring_util.create_monitor_ui(
+-        bwi_instance,
+-        char_name,
+-        char_block,
+-        cfg.web_app.enable_minimap,
+-      );
+-    }
+-
+-    return result;
+-  }
+-  //TODO beta new logic for #5
+-  //i need to implement decent lifecycle-handling
+-  ["SIGINT", "SIGTERM", "SIGQUIT"].forEach((signal) =>
+-    process.on(signal, async () => {
+-      console.log(`Received ${signal} on master. Rounding up clients`);
+-      //softkill all chars, giving them chance to shutdown
+-      await Promise.all(
+-        Object.values(character_manage).map((char_block) => {
+-          char_block.enabled = false;
+-          return softkill_block(char_block);
+-        }),
+-      );
+-      console.log("now truly exiting");
+-      process.exit();
+-    }),
+-  );
+-
+-  const tasks = Object.keys(character_manage).forEach((c_name) => {
+-    const char = character_manage[c_name];
+-    char.connected = false;
+-    if (char.enabled) {
+-      start_char(c_name);
+-    }
+-  });
+-  my_acc.add_listener(update_siblings_and_acc);
+-})().catch((e) => {
+-  console.error("failed to start caracAL", e);
++module.exports = startCoordinatorApplication({
++  require,
++  directory: __dirname,
++  loadFetch: async () => (await import("node-fetch")).default,
+ });

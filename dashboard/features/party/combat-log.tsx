@@ -1,0 +1,65 @@
+"use client";
+import { usePartyAction } from "./query-actions";
+import { CombatLogEntry } from "./combat-log-entry";
+
+export function CombatLog({
+  character,
+  entries,
+  expanded = false,
+}: {
+  character: string;
+  entries: CombatLogEntry[];
+  expanded?: boolean;
+}) {
+  const action = usePartyAction();
+  const colors: Record<string, string> = {
+    skill: "text-cyan-300",
+    kill: "text-rose-300",
+    loot: "text-amber-300",
+    death: "text-red-400",
+    item: "text-emerald-300",
+  };
+  return (
+    <details open={expanded || undefined} className="mt-4 border-t border-emerald-900/70 pt-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between font-mono text-[10px] uppercase text-emerald-200/70 [&::-webkit-details-marker]:hidden">
+        <span>Combat log</span>
+        <span className="text-emerald-100/35">{entries.length} ▸</span>
+      </summary>
+      <div className="mt-2 flex justify-end">
+        {entries.length ? (
+          <button
+            type="button"
+            className="font-mono text-[9px] text-rose-300 hover:text-rose-200"
+            onClick={async () => {
+              await action.mutateAsync({ path: `/combat-log/${encodeURIComponent(character)}/clear`, body: {} }).catch(() => {});
+            }}
+          >
+            Clear history
+          </button>
+        ) : null}
+      </div>
+      {action.isError && <p role="alert" className="text-xs text-rose-200">{action.error.message}</p>}
+      <div className="mt-1 max-h-36 space-y-1 overflow-y-auto font-mono text-[10px]">
+        {entries.length ? (
+          entries
+            .slice(-50)
+            .reverse()
+            .map((entry, index) => (
+              <p key={`${entry.at}-${index}`} className="flex gap-2 text-emerald-100/65">
+                <span className="shrink-0 text-emerald-100/30">
+                  {new Date(entry.at).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </span>
+                <span className={colors[entry.type] || undefined}>{entry.message}</span>
+              </p>
+            ))
+        ) : (
+          <p className="text-emerald-100/35">No combat events yet</p>
+        )}
+      </div>
+    </details>
+  );
+}

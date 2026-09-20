@@ -1,0 +1,19 @@
+services:
+  party-console:
+    build: .
+    ports:
+      - "${AL_HOST:-0.0.0.0}:${AL_PORT:-3010}:3010"
+    environment:
+      AL_PUBLIC_URL: ${AL_PUBLIC_URL:-}
+      AL_DATA_URL: ${AL_DATA_URL:-https://aldata.earthiverse.ca}
+    volumes:
+      - party-data:/data
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  party-data:

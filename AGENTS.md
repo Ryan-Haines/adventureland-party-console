@@ -1,0 +1,18 @@
+# Repository UI guidance
+
+- Keep dashboard controls on dark, opaque backgrounds with explicit high-contrast text and borders.
+- Do not rely on the default outline-button colors; they can render as light gray on white in this dashboard.
+- For outline, icon, cancel, and secondary-action buttons, set background, text, border, and hover colors explicitly and verify readability against the surrounding panel.
+
+# Coordinator development
+
+- Read [the coordinator README](runtime/coordinator/README.md) before changing coordinator behavior or build/deployment wiring. It maps domains and documents manual validation and activation.
+- Edit maintained TypeScript under `runtime/coordinator/`; do not edit generated `.build/runtime/coordinator-*.cjs` bundles or the installed caracAL launcher. The launcher template lives under `tools/caracal/`.
+- Building and activating are different operations. Follow the README's supported restart workflow; do not claim a build has reloaded the live coordinator without verifying it. Preserve current character assets when deploying coordinator-only changes.
+
+# Game TypeScript types
+
+- Prefer `typed-adventureland` types when describing the same game object. Use `Pick`, `Partial`, or indexed access for subsets instead of repeating compatible fields.
+- Extend upstream types for additional fields. When field semantics differ, use `Omit` plus explicit replacements; document why broader IDs, optional fields, or normalized values are needed.
+- Keep application protocols, jobs, and intentionally different external payloads local. Do not force partial wire data into complete game-object types.
+- Document verified upstream gaps alongside compatibility extensions and review them when upgrading the package. Do not add casts solely to hide incompatible contracts.

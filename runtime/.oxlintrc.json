@@ -1,0 +1,13 @@
+{
+  "$schema": "../dashboard/node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "import"],
+  "categories": { "correctness": "error" },
+  "options": { "typeAware": true, "typeCheck": true },
+  "rules": {
+    "complexity": ["error", 10],
+    "no-var": "error",
+    "prefer-const": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/ban-ts-comment": "error"
+  }
+}

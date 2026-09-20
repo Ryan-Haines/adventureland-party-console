@@ -1,0 +1,2084 @@
+[
+  {
+    "name": "successful receipts and stat-scroll equipment merge",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {
+        "F": {
+          "id": 10,
+          "type": "apply-stat-scrolls",
+          "items": [
+            {
+              "name": "strscroll"
+            }
+          ],
+          "equipItems": [
+            {
+              "name": "sword",
+              "level": 8
+            }
+          ]
+        }
+      },
+      "nextCommandId": 11,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {
+        "F": 100000
+      },
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": []
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": []
+      },
+      "merchantMarked": {
+        "F": []
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true,
+            "awaitingEquip": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "upgrades",
+        "F",
+        [
+          {
+            "name": "sword"
+          }
+        ]
+      ],
+      [
+        "incoming",
+        "F",
+        {
+          "name": "sword",
+          "level": 8
+        }
+      ],
+      [
+        "log",
+        "Merchant job completed for F",
+        "success",
+        null
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "BankBoi yield preserves cargo and partial receipts",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [
+        {
+          "id": "merchant-100000-10",
+          "target": "F",
+          "reason": "service",
+          "resumedFrom": "job",
+          "retryCount": 0,
+          "rendezvousRetryCount": 0,
+          "retryAt": 0,
+          "queuedAt": 100000
+        }
+      ],
+      "commands": {},
+      "nextCommandId": 11,
+      "standSearch": null,
+      "merchantCargo": {
+        "bank": [
+          {
+            "name": "leather"
+          }
+        ],
+        "gold": 50
+      },
+      "mluckCastAt": {
+        "F": 100000
+      },
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": []
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [],
+        "M": []
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant paused for Bankboi storage; preserving job",
+        "info",
+        "bankboi_pending"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "commerce interruption has no arbitrary retry limit",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [
+        {
+          "id": "merchant-100000-10",
+          "target": "F",
+          "reason": "merchant commerce",
+          "retryCount": 100,
+          "resumedFrom": "job",
+          "rendezvousRetryCount": 0,
+          "retryAt": 0,
+          "queuedAt": 100000
+        }
+      ],
+      "commands": {},
+      "nextCommandId": 11,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant commerce interrupted; preserving it for retry",
+        "info",
+        "interrupted"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "capacity block preserves improvement intent",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {},
+      "nextCommandId": 10,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {
+        "F\nupgrades and compounds": {
+          "error": "bank_full",
+          "capacitySignature": "capacity",
+          "bankGold": 500,
+          "merchantGold": 100
+        }
+      },
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Improvement paused until inventory or bank contents change",
+        "error",
+        {
+          "target": "F",
+          "reason": "upgrades and compounds",
+          "error": "bank_full"
+        }
+      ],
+      [
+        "log",
+        "Merchant job failed for F",
+        "error",
+        "bank_full"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "rendezvous retry has separate count and delay",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [
+        {
+          "id": "merchant-100000-10",
+          "target": "F",
+          "reason": "merchant luck",
+          "resumedFrom": "job",
+          "retryCount": 0,
+          "rendezvousRetryCount": 1,
+          "retryAt": 110000,
+          "queuedAt": 100000
+        }
+      ],
+      "commands": {},
+      "nextCommandId": 11,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant rendezvous stalled; retrying in ten seconds",
+        "info",
+        "F rendezvous timed out"
+      ],
+      [
+        "log",
+        "Retrying failed Merchant's Luck itinerary leg without returning to stand",
+        "info",
+        {
+          "target": "F",
+          "attempt": 2
+        }
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "exhausted rendezvous retries stop requeueing",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {},
+      "nextCommandId": 10,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant job failed for F",
+        "error",
+        "F rendezvous route timed out"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "anniversary pause does not consume retries",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [
+        {
+          "id": "merchant-100000-10",
+          "target": "F",
+          "reason": "service",
+          "retryCount": 2,
+          "resumedFrom": "job",
+          "rendezvousRetryCount": 0,
+          "retryAt": 0,
+          "queuedAt": 100000
+        }
+      ],
+      "commands": {},
+      "nextCommandId": 11,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant paused for anniversary; preserving job",
+        "info",
+        "merchant_anniversary_reserved"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "authentication schedules confirmation",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {
+        "F": {
+          "type": "merchant-handoff"
+        }
+      },
+      "nextCommandId": 10,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "YES",
+        "authCheckedAt": 100000,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant job completed for F",
+        "success",
+        null
+      ],
+      [
+        "persistALData"
+      ],
+      [
+        "timer",
+        65000
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "search and purchases remain recorded after later failure",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {},
+      "nextCommandId": 10,
+      "standSearch": {
+        "status": "error",
+        "itemId": "ring",
+        "listings": [
+          {
+            "item": {
+              "name": "ring"
+            }
+          }
+        ],
+        "error": null,
+        "searchedAt": 100000
+      },
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      },
+      "standListingCache": [
+        {
+          "item": {
+            "name": "ring"
+          }
+        }
+      ]
+    },
+    "calls": [
+      [
+        "bid",
+        {
+          "name": "ring",
+          "level": 0
+        },
+        3
+      ],
+      [
+        "log",
+        "Merchant job failed for F",
+        "error",
+        "later failure"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ],
+      [
+        "timer",
+        1000
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "deferred improvements survive luck completion",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {
+        "F": {
+          "type": "merchant-handoff"
+        }
+      },
+      "nextCommandId": 10,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant job completed for F",
+        "success",
+        null
+      ],
+      [
+        "queue",
+        [
+          "F"
+        ],
+        "manual upgrades"
+      ],
+      [
+        "queue",
+        [
+          "F"
+        ],
+        "manual compounds"
+      ],
+      [
+        "queue",
+        [
+          "F"
+        ],
+        "manual buying"
+      ],
+      [
+        "queue",
+        [
+          "F"
+        ],
+        "auto compound"
+      ],
+      [
+        "log",
+        "Queued deferred merchant work",
+        "info",
+        {
+          "character": "F",
+          "routines": [
+            "manual upgrades",
+            "manual compounds",
+            "manual buying",
+            "auto compound"
+          ]
+        }
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "cleanout requeues unfinished inventory",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {
+        "F": {
+          "type": "merchant-handoff"
+        }
+      },
+      "nextCommandId": 10,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant job completed for F",
+        "success",
+        null
+      ],
+      [
+        "queue",
+        [
+          "F"
+        ],
+        "inventory cleanout"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "marketplace sales return home",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {
+        "F": {
+          "type": "merchant-handoff"
+        }
+      },
+      "nextCommandId": 10,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "log",
+        "Merchant job completed for F",
+        "success",
+        null
+      ],
+      [
+        "home",
+        "WTB completion"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "mail reports failure",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": null,
+      "merchantQueue": [],
+      "commands": {},
+      "nextCommandId": 10,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [
+      [
+        "mail",
+        "mail",
+        false,
+        "failed"
+      ],
+      [
+        "log",
+        "Merchant job failed for F",
+        "error",
+        "failed"
+      ],
+      [
+        "bank"
+      ],
+      [
+        "persist"
+      ],
+      [
+        "dispatch"
+      ]
+    ],
+    "response": {
+      "code": 200,
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  {
+    "name": "stale completion does not mutate current work",
+    "state": {
+      "merchantCharacter": "M",
+      "merchantCurrent": {
+        "id": "job",
+        "target": "F",
+        "reason": "service"
+      },
+      "merchantQueue": [],
+      "commands": {
+        "M": {
+          "type": "merchant-service"
+        },
+        "F": {
+          "type": "merchant-handoff"
+        }
+      },
+      "nextCommandId": 10,
+      "standSearch": null,
+      "merchantCargo": null,
+      "mluckCastAt": {},
+      "marked": {
+        "F": [
+          {
+            "name": "leather"
+          },
+          {
+            "name": "leather"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "upgrades": {
+        "F": [
+          {
+            "name": "sword"
+          }
+        ]
+      },
+      "statScrolls": {
+        "F": [
+          {
+            "name": "strscroll"
+          }
+        ]
+      },
+      "compounds": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ]
+      },
+      "autoCompounds": {
+        "F": [
+          {
+            "name": "ring"
+          },
+          {
+            "name": "amulet"
+          }
+        ]
+      },
+      "withdrawals": {
+        "F": [
+          {
+            "name": "ring"
+          }
+        ],
+        "M": [
+          {
+            "name": "ore"
+          }
+        ]
+      },
+      "purchases": {
+        "F": [
+          {
+            "name": "potion"
+          }
+        ]
+      },
+      "merchantMarked": {
+        "F": [
+          {
+            "name": "cape"
+          }
+        ]
+      },
+      "merchantDeliveries": {
+        "F": [
+          {
+            "item": {
+              "name": "sword",
+              "level": 8
+            },
+            "equipOnDelivery": true
+          }
+        ]
+      },
+      "npcSaleMarks": [],
+      "merchantJobBlocks": {},
+      "bankSnapshot": {
+        "gold": 500
+      },
+      "statuses": {
+        "M": {
+          "gold": 100,
+          "items": []
+        }
+      },
+      "aldata": {
+        "auth": "NO",
+        "authCheckedAt": 0,
+        "key": "key"
+      }
+    },
+    "calls": [],
+    "response": {
+      "code": 409,
+      "body": {
+        "error": "merchant job is no longer current"
+      }
+    }
+  }
+]

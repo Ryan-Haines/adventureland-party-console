@@ -1,0 +1,22 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {formatDuration,durationStat}=require('../../dashboard/features/party/format-duration.ts');
+test('duration stats respect skill milliseconds and elixir hours',()=>{
+ assert.equal(durationStat('duration',8000,{type:'skill'}),'8s');
+ assert.equal(durationStat('cooldown',60000,{type:'skill'}),'1m');
+ assert.equal(durationStat('cooldown',60000,{type:'elixir'}),'1m');
+ assert.equal(durationStat('cooldown',250),'0.25s');
+ assert.equal(durationStat('reuse_cooldown',7440000),'2h 4m');
+ assert.equal(durationStat('cooldown_multiplier',1.5),null);
+ assert.equal(durationStat('duration',2,{type:'elixir'}),'2h');
+ assert.equal(durationStat('duration',0.1,{type:'elixir'}),'6m');
+ assert.equal(durationStat('duration',0.002,{type:'elixir'}),'7.2s');
+ assert.equal(durationStat('duration',0.0005,{type:'elixir'}),'1.8s');
+ assert.equal(durationStat('duration_min',200),'0.2s');
+ assert.equal(durationStat('duration_max',15000),'15s');
+ assert.equal(durationStat('ms',800,{type:'elixir'}),'0.8s');
+ assert.equal(durationStat('duration',48,{type:'elixir'}),'48h');
+ assert.equal(formatDuration(3661500),'1h 1m 1.5s');
+ assert.equal(formatDuration(0),'0s');
+ assert.equal(formatDuration(0.0000036),'<0.001s');
+ assert.equal(durationStat('range',8000),null);
+});

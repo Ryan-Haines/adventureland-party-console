@@ -1,0 +1,254 @@
+import { splitLegacyWork } from './routines.ts';
+import { mergePickupJobs } from './pickup-jobs.ts';
+import { batchMarketplaceVisits } from "./marketplace-batch.ts";
+import { createPartyRealmCheck, normalizedRealm } from "./party-realm.ts";
+import { ownCommandDescription } from "./command-kind.ts";
+import { gatheringCastActive } from "./gathering.ts";
+import { luckMerchantCommand, ownMerchantCommand, partyMerchantCommand } from "./commands.ts";
+import type {
+  CommandInputs,
+  MarketListing,
+  MerchantCommand,
+  MerchantWork,
+  ServiceStatus,
+} from "./work.ts";
+
+interface DispatchState {
+  queue: MerchantWork[];
+  current: MerchantWork | null;
+}
+interface AnniversaryControl {
+  featured: boolean;
+  reserved: boolean;
+  kissDue: boolean;
+  busy: boolean;
+}
+export interface DispatchPorts {
+  enabled?(job: MerchantWork): boolean;
+  travel?(realm: string): Promise<unknown>;
+  headless?(): boolean;
+  now(): number;
+  nextCommand(): number;
+  merchant(): string | null;
+  returningHome(): boolean;
+  ensureHome(reason: string): boolean;
+  routineNeedsHome(reason: string): boolean;
+  bankboi(name: string | null): boolean;
+  storagePending(): boolean;
+  startStorage(): Promise<void>;
+  anniversary(): AnniversaryControl;
+  forcedStand(): boolean;
+  manualEquipmentPending(): boolean;
+  gatheringModes(): string[];
+  gatheringCooldown(mode: string): number | undefined;
+  routinePriority(reason: string): number;
+  priority(job: MerchantWork): number;
+  capacityBlocked(job: MerchantWork): boolean;
+  collectionReady(job: MerchantWork): boolean;
+  pick(): MerchantWork | null;
+  stamp(job: MerchantWork): MerchantWork;
+  status(name: string | null): ServiceStatus | undefined;
+  planPonty(
+    listings: MarketListing[],
+    quantity: number,
+    server: string | undefined,
+    automatic: boolean,
+  ): MarketListing[] | null;
+  inputs(): CommandInputs;
+  command(name: string | null, command: MerchantCommand): void;
+  idle(): void;
+  persist(): void;
+  log(message: string, level: "info" | "error", details?: unknown): void;
+}
+
+/** Assigns one job while preserving storage, event, gathering, and realm ownership. */
+export function createMerchantDispatcher(state: DispatchState, ports: DispatchPorts) {
+  const realmCheck = createPartyRealmCheck(state, ports);
+  let capacityBankAt = -Infinity;
+  function clearCollectionCapacity(): boolean {
+    if (!state.queue.some(job => ports.capacityBlocked(job))) return false;
+    const merchant = ports.merchant()!, work = ports.inputs().work(merchant);
+    if (!work.marked.length || ports.now() - capacityBankAt < 60000) return false;
+    const existing = state.queue.find(job => job.target === merchant && job.reason === "manual bank exchange");
+    if (existing && !ready(existing)) return false;
+    capacityBankAt = ports.now();
+    if (existing) state.queue = state.queue.filter(job => job !== existing);
+    const job = existing || ports.stamp({ id: "capacity-" + ports.nextCommand(), target: merchant, reason: "manual bank exchange", capacityRecovery: true });
+    ports.log("Freeing merchant inventory for queued party cleanouts", "info");
+    dispatchJob(job);
+    return true;
+  }
+  function reserved(): boolean {
+    if (ports.storagePending()) {
+      void ports
+        .startStorage()
+        .catch((error) =>
+          ports.log(
+            "Bankboi scheduler failed",
+            "error",
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
+      return true;
+    }
+    const anniversary = ports.anniversary();
+    if (anniversary.featured) {
+      ports.idle();
+      return true;
+    }
+    if (anniversary.reserved || anniversary.kissDue || anniversary.busy) return true;
+    if (ports.forcedStand()) {
+      ports.idle();
+      return true;
+    }
+    return false;
+  }
+
+  function ready(job: MerchantWork): boolean {
+    return (
+      !job.realmBlockedReason &&
+      Number(job.retryAt || 0) <= ports.now() &&
+      !job.blockedOnBankboi &&
+      !ports.capacityBlocked(job) &&
+      ports.collectionReady(job)
+    );
+  }
+
+  function gatherBefore(readyJobs: readonly MerchantWork[]): boolean {
+    const modes = ports
+      .gatheringModes()
+      .filter((mode) => Number(ports.gatheringCooldown(mode) || 0) <= ports.now())
+      .sort((a, b) => ports.routinePriority(b) - ports.routinePriority(a));
+    const best = readyJobs.length ? Math.max(...readyJobs.map((job) => ports.priority(job))) : -1;
+    if (!modes.length || ports.routinePriority(modes[0]) <= best) return false;
+    if (ports.ensureHome("gathering"))
+      ports.command(ports.merchant(), {
+        id: ports.nextCommand(),
+        type: "merchant-gather",
+        modes: ports.gatheringModes().slice(),
+      });
+    return true;
+  }
+
+  function batch(job: MerchantWork): void {
+    const result = batchMarketplaceVisits(job, state.queue);
+    if (!result) return;
+    state.queue = result.queue;
+    if (!result.batchedOrders) return;
+    ports.log(
+      "Combined " +
+        result.batchedOrders +
+        " additional marketplace order" +
+        (result.batchedOrders === 1 ? "" : "s") +
+        " for the same merchant visit",
+      "info",
+      {
+        sellers: result.sellers,
+        listings: result.listingCount,
+      },
+    );
+  }
+
+  function targetStatus(job: MerchantWork): ServiceStatus | null {
+    const target = ports.status(job.target),
+      merchant = ports.status(ports.merchant());
+    if (
+      !target ||
+      target.seenAt < ports.now() - 10_000 ||
+      !merchant ||
+      merchant.seenAt < ports.now() - 10_000 ||
+      (!ports.travel && normalizedRealm(merchant.server) !== normalizedRealm(target.server))
+    ) {
+      state.queue.push(ports.stamp(job));
+      ports.persist();
+      return null;
+    }
+    return target;
+  }
+
+  function planPonty(job: MerchantWork): void {
+    if (job.reason !== "Ponty purchases" || job.pontyPlanned) return;
+    const quantity =
+      job.pontyQuantity ||
+      (job.listings || []).reduce((sum, entry) => sum + Number(entry.quantity), 0);
+    job.listings =
+      ports.planPonty(
+        job.pontyCandidates || job.listings || [],
+        quantity,
+        ports.status(ports.merchant())?.server,
+        !job.manual,
+      ) || job.listings;
+    job.pontyPlanned = true;
+  }
+
+  function assign(job: MerchantWork, status: ServiceStatus): void {
+    planPonty(job);
+    const commandId = ports.nextCommand();
+    state.current = {
+      ...job,
+      commandId,
+      phase: "assigned",
+      startedAt: ports.now(),
+      heartbeatAt: null,
+      handoff: null,
+    };
+    const merchant = ports.merchant(),
+      inputs = ports.inputs();
+    if (job.reason === "merchant luck" && job.target === merchant) {
+      ports.command(merchant, luckMerchantCommand(commandId, job, status, inputs.npcSales));
+      ports.log("Merchant dispatched to refresh Merchant's Luck on " + job.target, "info", {
+        target: job.target,
+      });
+    } else if (job.target === merchant) {
+      planPonty(job);
+      ports.command(merchant, ownMerchantCommand(commandId, job, status, inputs));
+      ports.log(ownCommandDescription(job), "info");
+    } else {
+      ports.command(merchant, partyMerchantCommand(commandId, job, status, inputs));
+      ports.log("Merchant dispatched to " + job.target, "info", { reason: job.reason });
+    }
+    ports.persist();
+  }
+
+  function hasQueuedWork(job: MerchantWork): boolean {
+    if (job.reason !== "manual compounds") return true;
+    if (ports.inputs().work(job.target).compounds.length) return true;
+    ports.log("Discarded empty manual compound job", "info", {jobId: job.id, target: job.target});
+    return false;
+  }
+
+  function available(): boolean {
+    state.queue = mergePickupJobs(state.queue, ports.merchant()).map(job => ports.stamp(job));
+    if (ports.returningHome() && !ports.ensureHome("resuming merchant work")) return false;
+    state.queue = state.queue.flatMap(job => splitLegacyWork(job)).filter(hasQueuedWork).filter((job) => !ports.bankboi(job.target) && ports.enabled?.(job) !== false && !(job.reason === "join giveaway" && Number(job.expiresAt) < ports.now()));
+    return !state.current && !!ports.merchant() && !ports.manualEquipmentPending() && !reserved();
+  }
+
+  function dispatch(): void {
+    if (gatheringCastActive(ports.status(ports.merchant()), ports.now())) return;
+    if (realmCheck.advance()) return;
+    state.queue.forEach(realmCheck.eligibility);
+    if (!available()) return;
+    if (clearCollectionCapacity()) return;
+    const jobs = state.queue.filter(ready);
+    if (gatherBefore(jobs)) return;
+    if (!jobs.length) {
+      ports.idle();
+      return;
+    }
+    const job = ports.pick();
+    if (!job) return;
+    dispatchJob(job);
+  }
+  function dispatchJob(job: MerchantWork): void {
+    if (job.target === ports.merchant() && ports.routineNeedsHome(job.reason) && !ports.ensureHome(job.reason)) {
+      state.queue.push(job);
+      return;
+    }
+    batch(job);
+    const status = targetStatus(job);
+    if (status && !realmCheck.begin(job, status)) assign(job, status);
+  }
+
+  return { dispatch };
+}

@@ -1,0 +1,56 @@
+[
+  {
+    "choice": {
+      "id": "wcap",
+      "upgradeable": true,
+      "cost": 2000
+    },
+    "quantity": 1,
+    "target": 0,
+    "result": null
+  },
+  {
+    "choice": {
+      "id": "wcap",
+      "upgradeable": true,
+      "cost": 2000
+    },
+    "quantity": 2,
+    "target": 5,
+    "result": {
+      "attempts": 9,
+      "budget": 58000,
+      "scrolls": [
+        40,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  {
+    "choice": {
+      "id": "wcap",
+      "upgradeable": true,
+      "cost": 2000,
+      "grades": [
+        3,
+        6,
+        9
+      ],
+      "upgradeGrade": 1
+    },
+    "quantity": 1,
+    "target": 8,
+    "result": {
+      "attempts": 433,
+      "budget": 147430000,
+      "scrolls": [
+        1284,
+        832,
+        70,
+        0
+      ]
+    }
+  }
+]

@@ -1,0 +1,152 @@
+'use client';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { API } from './api';
+import { createLiveReceiver, type LiveMessage } from './live-protocol';
+import { domainOptions, key, useVisible } from './query-cache';
+import type { Char } from './char';
+import {
+  dashboardLiveMetrics,
+  receivedLiveRecord,
+  clearLiveMetrics,
+} from './live-metrics';
+
+export const liveConnectionKey = ['party', 'connection'] as const;
+export const characterKey = (
+  name: string,
+  kind: 'vitals' | 'inventory' | 'diagnostics' | 'presence',
+) => ['party', 'character', name, kind] as const;
+export interface LiveConnection {
+  healthy: boolean;
+  version: number;
+}
+export function useLiveHealthy() {
+  return (
+    useQuery({
+      queryKey: liveConnectionKey,
+      queryFn: () => ({ healthy: false, version: 0 }),
+      enabled: false,
+      select: (value: LiveConnection) => value.healthy,
+    }).data || false
+  );
+}
+export function useCharacterData(
+  name: string,
+  kind: 'vitals' | 'inventory' | 'diagnostics' | 'presence',
+) {
+  return useQuery({
+    queryKey: characterKey(name, kind),
+    enabled: false,
+    staleTime: Infinity,
+    gcTime: 60000,
+    queryFn: (): Partial<Char> => ({}),
+  }).data;
+}
+export function DashboardLive() {
+  const client = useQueryClient();
+  const visible = useVisible();
+  const healthy = useLiveHealthy();
+  // Compatibility reads are shared once per tab. They stop as soon as a snapshot arrives.
+  useQuery({ ...domainOptions(client, 'fast'), enabled: visible && !healthy });
+  useQuery({
+    ...domainOptions(client, 'inventory'),
+    enabled: visible && !healthy,
+  });
+  useEffect(() => {
+    if (!visible) return;
+    let stream: EventSource | undefined,
+      stopped = false,
+      lastHeartbeat = Date.now();
+    let reconnect: ReturnType<typeof setTimeout> | undefined;
+    const status = (healthy: boolean) => {
+      const version =
+        (client.getQueryData<LiveConnection>(liveConnectionKey)?.version || 0) +
+        1;
+      client.setQueryData(liveConnectionKey, { healthy, version });
+    };
+    const receiver = createLiveReceiver((name, record) => {
+      if (!record) {
+        client.setQueryData(characterKey(name, 'vitals'), null);
+        client.setQueryData(characterKey(name, 'inventory'), null);
+        return;
+      }
+      if (record.sample > 0) receivedLiveRecord(name, record.sampledAt);
+      client.setQueryData(characterKey(name, 'vitals'), record.vitals);
+      const size =
+        Number(record.vitals.inventorySize) || Object.keys(record.items).length;
+      client.setQueryData(characterKey(name, 'inventory'), {
+        items: Array.from(
+          { length: size },
+          (_, index) => record.items[String(index)] || null,
+        ),
+        inventorySize: size,
+        slots: record.slots,
+      });
+    });
+    function fail() {
+      if (stopped) return;
+      stream?.close();
+      status(false);
+      if (!stopped && !reconnect)
+        reconnect = setTimeout(() => {
+          reconnect = undefined;
+          connect();
+        }, 1000);
+    }
+    function connect() {
+      if (stopped) return;
+      lastHeartbeat = Date.now();
+      const source = new EventSource(`${API}/dashboard-stream`);
+      stream = source;
+      source.onerror = () => {
+        if (stream === source) fail();
+      };
+      source.onmessage = (event) => {
+        if (stopped || stream !== source) return;
+        try {
+          dashboardLiveMetrics.messages++;
+          dashboardLiveMetrics.bytes += new TextEncoder().encode(
+            event.data,
+          ).length;
+          const message = JSON.parse(event.data) as LiveMessage;
+          if (!receiver.accept(message)) return;
+          if (message.type === 'heartbeat' || message.type === 'snapshot')
+            lastHeartbeat = Date.now();
+          if (message.type === 'snapshot') {
+            void client.cancelQueries({ queryKey: key('fast') });
+            void client.cancelQueries({ queryKey: key('inventory') });
+            status(true);
+          }
+        } catch {
+          fail();
+        }
+      };
+    }
+    status(false);
+    connect();
+    Object.assign(window, { dashboardLiveMetrics });
+    const unsubscribe = client.getQueryCache().subscribe((event) => {
+      if (
+        event.type === 'removed' &&
+        event.query.queryKey[1] === 'connection'
+      ) {
+        stopped = true;
+        stream?.close();
+        clearTimeout(reconnect);
+      }
+    });
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastHeartbeat > 15000) fail();
+    }, 1000);
+    return () => {
+      stopped = true;
+      clearLiveMetrics();
+      unsubscribe();
+      clearInterval(watchdog);
+      clearTimeout(reconnect);
+      stream?.close();
+      status(false);
+    };
+  }, [client, visible]);
+  return null;
+}

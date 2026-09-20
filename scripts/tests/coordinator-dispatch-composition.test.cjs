@@ -1,0 +1,42 @@
+const test = require('node:test'), assert = require('node:assert/strict');
+const { createCoordinatorMerchantDispatcher } = require('../../runtime/coordinator/merchant/dispatch-composition.ts');
+function fixture() {
+  const state = { merchantQueue: [{ id: 'job', target: 'M', reason: 'restock' }], merchantCurrent: null,
+    nextCommandId: 7, merchantCharacter: 'M', bankbois: {}, bankboiTransaction: null, commands: {}, gatheringModes: [], gatheringCooldowns: {},
+    statuses: { M: { seenAt: 100, server: 'USII' } }, activeRealm: 'SR_USII', aldata: { key: 'fixture' }, threshold: 100,
+    merchantCargo: {}, npcSaleMarks: [], standListings: [], marked: {}, upgrades: {}, purchases: {}, compounds: {}, autoCompounds: {},
+    withdrawals: {}, statScrolls: {}, merchantDeliveries: {}, goldTargets: {} };
+  const calls = [], restock = { hp: { max: 20 } };
+  const ports = { now: () => 100, ensureHome: () => true, routineNeedsHome: () => false,
+    storageBusy: () => false, storagePlan: () => null, startStorage: async () => calls.push('storage'),
+    anniversary: () => ({}), routinePriority: () => 0, priority: () => 1, capacityBlocked: () => false, collectionReady: () => true,
+    pick: () => state.merchantQueue.shift(), stamp: job => job, planPonty: () => null,
+    restock: () => restock, idle: () => calls.push('idle'), persist: () => calls.push('persist'), log() {} };
+  return { state, calls, ports, restock, service: createCoordinatorMerchantDispatcher(state, ports) };
+}
+test('dispatch composition reads current work and preserves command payload references', () => {
+  const f = fixture(), upgrades = [{ slot: 3 }], withdrawals = [{ pack: 'items0' }];
+  f.state.upgrades.M = upgrades; f.state.withdrawals.M = withdrawals;
+  f.service.dispatch();
+  assert.equal(f.state.merchantCurrent.id, 'job'); assert.equal(f.state.merchantCurrent.phase, 'assigned');
+  assert.equal(f.state.commands.M.id, 7); assert.equal(f.state.nextCommandId, 8);
+  assert.deepEqual(f.state.commands.M.upgrades, []); assert.equal(f.state.commands.M.merchantWithdrawals, withdrawals);
+  assert.equal(f.state.commands.M.restock, f.restock); assert.deepEqual(f.calls, ['persist']);
+});
+test('manual equipment ownership suppresses dispatch before storage scheduling; pending storage suppresses jobs', () => {
+  const f = fixture(); f.state.bankboiTransaction = {}; f.state.commands.M = { type: 'equip' };
+  f.service.dispatch(); assert.deepEqual(f.calls, []);
+  delete f.state.commands.M; f.service.dispatch(); assert.deepEqual(f.calls, ['storage']);
+  assert.equal(f.state.merchantCurrent, null); assert.equal(f.state.merchantQueue.length, 1);
+});
+
+test('party collection carries the recipient delivery and equip instruction across dispatch', () => {
+  const f = fixture(), delivery = {slot:24,item:{name:'wattire',level:8,stat_type:'int'},equipOnDelivery:true};
+  f.state.merchantDeliveries.QwenTina = [delivery];
+  f.state.statuses.QwenTina = {seenAt:100,server:'USII',map:'winterland',x:500,y:500,items:[]};
+  f.state.merchantQueue = [{id:'delivery',target:'QwenTina',reason:'party collection'}];
+  f.service.dispatch();
+  assert.equal(f.state.commands.M.target,'QwenTina');
+  assert.deepEqual(f.state.commands.M.merchantDeliveries,[delivery]);
+  assert.equal(f.state.commands.M.merchantDeliveries[0].equipOnDelivery,true);
+});

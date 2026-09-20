@@ -1,0 +1,149 @@
+type Item = { name: string; level?: number; [key: string]: unknown };
+interface Journal { from: number; to: number; item: Item; displaced: Item | null; scrollDisplaced?: boolean; offeringDisplaced?: boolean; phase: 'preparing' | 'running' | 'restoring'; result?: Item | null }
+interface Ports {
+  item(slot: number): Item | null;
+  busy(): boolean;
+  swap(a: number, b: number): Promise<unknown>;
+  read(): Journal | null;
+  write(value: Journal | null): void;
+  sleep(ms: number): Promise<void>;
+  now(): number;
+  current(): boolean;
+  log(slot: number): void;
+}
+const copy = (item: Item | null): Item | null => item && JSON.parse(JSON.stringify(item));
+const same = (a: Item | null, b: Item | null) => JSON.stringify(a) === JSON.stringify(b);
+const level = (item: Item) => Number(item.level || 0);
+function describe(error: unknown): string { return error instanceof Error ? error.message : JSON.stringify(error); }
+function reconcileScroll(j: Journal, current: Item | null): void {
+  if (!(j.scrollDisplaced || j.offeringDisplaced) || j.phase !== 'running') return;
+  const consumed = copy(j.displaced), quantity = Number(j.displaced?.q || 1);
+  if (consumed && quantity > 1) consumed.q = quantity - 1;
+  if (same(current, quantity > 1 ? consumed : null)) j.displaced = copy(current);
+}
+function originalLayout(j: Journal, from: Item | null, to: Item | null): boolean {
+  // Once a nonempty result is back in its source slot, an originally empty
+  // lucky slot can already have received loot or an incoming item transfer.
+  // That delivery does not undo the confirmed return and must not be swapped.
+  if (j.phase === 'restoring' && j.displaced === null && j.result && same(from, j.result)) return true;
+  if (!same(to, j.displaced)) return false;
+  return j.phase === 'preparing' && same(from, j.item) || j.phase === 'restoring' && same(from, j.result ?? null);
+}
+function validResult(j: Journal, result: Item | null): boolean {
+  return !result || result.name === j.item.name && [level(j.item), level(j.item) + 1].includes(level(result));
+}
+const validSlot = (slot: unknown) => Number.isInteger(slot) && Number(slot) >= 0 && Number(slot) < 42;
+function failure(reason: string): Error & {reason: string; code: string} {
+  const message = "Couldn't use lucky slot: " + reason;
+  return Object.assign(new Error(message), {reason: message, code: 'lucky_slot_unavailable'});
+}
+export function createLuckyUpgrade(ports: Ports) {
+  let active = false;
+  async function wait(check: () => boolean, reason: string): Promise<void> {
+    if (!ports.current()) throw failure('runtime interrupted');
+    const end = ports.now() + 5000;
+    while (!check()) {
+      if (!ports.current() || ports.now() >= end) throw failure(reason);
+      await ports.sleep(100);
+    }
+  }
+  async function swapConfirmed(a: number, b: number, check: () => boolean): Promise<void> {
+    let rejected: unknown;
+    // Inventory confirmation, not deferred settlement, authorizes the next step.
+    try { void Promise.resolve(ports.swap(a, b)).catch(error => { rejected = error; }); }
+    catch (error) { throw failure(describe(error)); }
+    await wait(() => {
+      if (rejected) throw failure('swap rejected: ' + describe(rejected));
+      return check();
+    }, 'swap was not confirmed');
+  }
+  async function restore(j: Journal): Promise<void> {
+    await wait(() => !ports.busy(), 'upgrade still pending; inventory recovery required');
+    if (originalLayout(j, ports.item(j.from), ports.item(j.to))) {
+      ports.write(null); return;
+    }
+    reconcileScroll(j, ports.item(j.from));
+    // A send/loot event can fill the source cell while the upgrade runs.
+    // Adopt that incoming item as the displaced contents before the return
+    // swap, so both items remain accounted for across interruption/restart.
+    if (j.phase === 'running' && j.displaced === null && ports.item(j.from) &&
+        validResult(j, ports.item(j.to))) {
+      j.displaced = copy(ports.item(j.from)); ports.write(j);
+    }
+    if (!same(ports.item(j.from), j.displaced)) throw failure('displaced item changed; inventory recovery required');
+    const result = ports.item(j.to);
+    if (!validResult(j, result))
+      throw failure('upgrade slot changed; inventory recovery required');
+    j.result = copy(result); j.phase = 'restoring'; ports.write(j);
+    await swapConfirmed(j.from, j.to, () => originalLayout(j, ports.item(j.from), ports.item(j.to)));
+    ports.write(null);
+  }
+  async function recover(): Promise<void> {
+    if (active) throw failure('another upgrade owns the inventory');
+    await wait(() => !ports.busy(), 'upgrade still pending; inventory recovery required');
+    const journal = ports.read();
+    if (journal) await restore(journal);
+  }
+  function runInput(from: number, scroll: number, lucky: unknown, offering?: number) {
+    if (active) throw failure('another upgrade owns the inventory');
+    if (!validSlot(lucky)) throw failure('no verified slot configured');
+    const to = Number(lucky), item = copy(ports.item(from)), scrollItem = copy(ports.item(scroll));
+    if (!item || !scrollItem || from === scroll) throw failure('item or scroll unavailable');
+    return {to, item, scrollItem, offeringItem: offeringInput(from, scroll, offering)};
+  }
+  function offeringInput(from: number, scroll: number, offering?: number) {
+    if (offering === undefined) return null;
+    const item = copy(ports.item(offering));
+    if (!item || offering === from || offering === scroll) throw failure('offering unavailable');
+    return item;
+  }
+  async function run<T>(from: number, scroll: number, lucky: unknown, action: (slot: number, scroll: number, offering?: number) => Promise<T>, offering?: number): Promise<T> {
+    await recover();
+    const {to, item, scrollItem, offeringItem} = runInput(from, scroll, lucky, offering);
+    active = true;
+    try {
+      if (from === to) { ports.log(to); return await action(from, scroll, offering); }
+      const journal: Journal = {from, to, item, displaced: copy(ports.item(to)), scrollDisplaced: scroll === to, offeringDisplaced: offering === to, phase: 'preparing'};
+      ports.write(journal);
+      await swapConfirmed(from, to, () => same(ports.item(to), item) && same(ports.item(from), journal.displaced));
+      const nextScroll = scroll === to ? from : scroll;
+      const nextOffering = offering === to ? from : offering;
+      if (nextOffering !== undefined && !same(ports.item(nextOffering), offeringItem)) throw failure("offering changed during preparation");
+      if (!same(ports.item(nextScroll), scrollItem)) throw failure('scroll changed during preparation');
+      // A scroll displaced from the lucky slot will be consumed by the operation.
+      journal.phase = 'running'; ports.write(journal); ports.log(to);
+      try { return await action(to, nextScroll, nextOffering); }
+      finally {
+        await restore(journal);
+      }
+    } finally { active = false; }
+  }
+  async function tidy(lucky: unknown): Promise<void> {
+    await recover();
+    if (active || !validSlot(lucky)) return;
+    const ordered = Array.from({length: 42}, (_, i) => copy(ports.item(i))).filter((item): item is Item => !!item);
+    if (ordered.length > 41) throw failure('no room to keep lucky slot empty');
+    active = true;
+    try {
+      for (let index = 0; index < ordered.length; index++) {
+        const target = index >= Number(lucky) ? index + 1 : index, wanted = ordered[index];
+        if (same(ports.item(target), wanted)) continue;
+        const from = Array.from({length: 42}, (_, i) => i).find(i => (i >= target || i === lucky) && same(ports.item(i), wanted));
+        if (from === undefined) throw failure('inventory changed while tidying');
+        await emptyTarget(target, lucky);
+        await swapConfirmed(from, target, () => same(ports.item(target), wanted) && !ports.item(from));
+      }
+    } finally { active = false; }
+  }
+  async function emptyTarget(target: number, lucky: unknown): Promise<void> {
+    const displaced = copy(ports.item(target));
+    if (!displaced) return;
+    const empty = Array.from({length: 42}, (_, i) => i).find(i => i !== lucky && !ports.item(i));
+    if (empty === undefined) throw failure('no spare slot for inventory tidying');
+    // imove merges compatible stacks. Move through an empty cell instead of
+    // ever swapping two occupied cells while packing the bag.
+    await swapConfirmed(target, empty, () => !ports.item(target) && same(ports.item(empty), displaced));
+  }
+  return {run, recover, tidy, pending: () => active || !!ports.read()};
+}
+(globalThis as unknown as {createPartyLuckyUpgrade: typeof createLuckyUpgrade}).createPartyLuckyUpgrade = createLuckyUpgrade;

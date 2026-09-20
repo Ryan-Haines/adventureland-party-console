@@ -1,0 +1,84 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Access } from "./access.ts";
+import { body, json, text } from "./http.ts";
+import { steamBootstrap } from "../../runtime/steam/connection.ts";
+import { validBrowser } from "./authorize.ts";
+export interface Options {
+  updates?: import('../update/hosting.ts').UpdateRoutes;
+  access: Access;
+  configured(): boolean;
+  healthy?(): Promise<boolean>;
+  configure?(session: string, realm: string): Promise<void>;
+  dashboardPort: number;
+  apiPort?: number;
+  publicUrl?: string;
+}
+export const loaderCode = steamBootstrap;
+async function steamLoader(options: Options, input: Record<string, unknown>) {
+  const address = new URL(text(input.origin));
+  if (
+    !["http:", "https:"].includes(address.protocol) ||
+    address.username ||
+    address.password ||
+    address.pathname !== "/" ||
+    address.search ||
+    address.hash
+  )
+    throw new Error("Enter the server origin, without a path");
+  const suffix = options.access.required ? "/bridge/" + await options.access.steam() : "";
+  return { code: loaderCode(address.origin + suffix) };
+}
+export async function pair(req: IncomingMessage, res: ServerResponse, options: Options) {
+  const credential = await options.access.pair(text((await body(req)).token));
+  browserCookie(req, res, credential);
+  json(res, 200, { ok: true });
+}
+function browserCookie(req: IncomingMessage, res: ServerResponse, credential: string) {
+  // Use the validated requesting origin: LAN HTTP must still work alongside a public HTTPS URL.
+  const secure = req.headers.origin?.startsWith("https:") ? "; Secure" : "";
+  res.setHeader(
+    "Set-Cookie",
+    `party=${credential}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000${secure}`,
+  );
+}
+export async function setupRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  pathname: string,
+  options: Options,
+) {
+  if (pathname === "/setup/state" && req.method === "GET") {
+    json(res, 200, { configured: options.configured(), requirePairing: options.access.required, canConfigureAccount: !!options.configure });
+    return;
+  }
+  if (req.method !== "POST") {
+    json(res, 405, { error: "POST required" });
+    return;
+  }
+  const input = await body(req);
+  if (options.access.required && !validBrowser(req, options)) {
+    json(res, 401, { error: "Pair this browser before changing setup" }); return;
+  }
+  const handlers: Record<string, () => Promise<unknown>> = {
+    "/setup/pairing": async () => {
+      if (typeof input.requirePairing !== "boolean") throw new Error("requirePairing must be a boolean");
+      const credential = await options.access.setRequired(input.requirePairing);
+      if (credential) browserCookie(req, res, credential);
+      return { requirePairing: options.access.required };
+    },
+    "/setup/session": async () => {
+      if (!options.configure) throw new Error("Configure this account in the Windows launcher");
+      await options.configure(text(input.session), text(input.realm));
+      return { ok: true };
+    },
+    "/setup/invite": async () => ({ token: await options.access.invitation() }),
+    "/setup/revoke": async () => {
+      await options.access.revokeSteam();
+      return { ok: true };
+    },
+    "/setup/steam": () => steamLoader(options, input),
+  };
+  const handler = handlers[pathname];
+  if (handler) json(res, 200, await handler());
+  else json(res, 404, { error: "Unknown setup action" });
+}

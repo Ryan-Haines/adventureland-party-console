@@ -1,0 +1,11 @@
+{
+  "name": "offline-alclient-benchmark",
+  "private": true,
+  "scripts": {
+    "setup": "node setup.cjs",
+    "benchmark": "node run.cjs"
+  },
+  "dependencies": {
+    "alpathfinder": "0.6.0"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "adventureland-party-console",
+  "private": true,
+  "version": "1.0.0",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "builds": "node tools/build-history.mts",
+    "prebuild": "npm run typecheck",
+    "prebuild:shared": "npm run typecheck",
+    "pretest": "npm run build:shared && node tools/build-runtime.mts && node tools/game/build.mts",
+    "build:shared": "node tools/build-shared.mts",
+    "build": "node tools/build-shared.mts && node tools/build-runtime.mts && node tools/game/build.mts && node tools/dashboard/build.mts",
+    "build:runtime": "tsc -p runtime/tsconfig.json && node tools/build-runtime.mts",
+    "build:characters": "tsc -p runtime/tsconfig.json && node tools/game/build.mts",
+    "test": "node --test scripts/tests/*.test.cjs",
+    "pretest:ci": "npm run pretest",
+    "test:ci": "node --test --test-reporter=tap scripts/tests/*.test.cjs",
+    "typecheck": "tsc -p dashboard/tsconfig.json --noEmit && tsc -p tools/tsconfig.json && tsc -p runtime/tsconfig.json",
+    "dev": "node tools/dashboard/supervisor.mts",
+    "build:dashboard": "npm --prefix dashboard run build",
+    "dev:dashboard": "npm --prefix dashboard run dev",
+    "lint": "npm --prefix dashboard run lint && npm run lint:runtime",
+    "lint:runtime": "oxlint --config runtime/.oxlintrc.json runtime tools",
+    "format": "oxfmt runtime tools dashboard/features/party dashboard/hooks",
+    "benchmark:movement": "node tools/game/benchmark-pathfinder.mts"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "alpathfinder": "0.6.0",
+    "esbuild": "0.25.12",
+    "oxfmt": "0.61.0",
+    "oxlint": "1.76.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "semantic-release": "25.0.9",
+    "typed-adventureland": "0.0.57",
+    "typescript": "5.9.3"
+  }
+}
