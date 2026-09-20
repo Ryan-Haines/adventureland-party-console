@@ -6,13 +6,13 @@ Run Adventure Land characters in Steam or headless, and manage them from a brows
 
 ## Windows installation
 
-Install Git and Node **22.18+**. Run these commands in PowerShell; replace `<repository-url>` with this repository's clone URL.
+Install Git and Node **22.18+**. Run these commands in PowerShell.
 
 1. Clone the repository:
 
    ```powershell
-   git clone <repository-url> adventure_land
-   cd adventure_land
+   git clone https://github.com/Ryan-Haines/adventureland-party-console.git
+   cd adventureland-party-console
    ```
 
 2. Install dependencies and caracAL:
@@ -27,13 +27,13 @@ Install Git and Node **22.18+**. Run these commands in PowerShell; replace `<rep
    .\scripts\start-caracal.ps1
    ```
 
-   When prompted for your game session, obtain it from a logged-in Steam character's CODE:
+   You only need to connect your account once. In the **Adventure Land Steam client**, log in to a character, open **CODE**, paste the following line, and click **Engage**. Copy the displayed session into the PowerShell prompt:
 
    ```javascript
    show_json(parent.user_id + "-" + parent.user_auth)
    ```
 
-4. Open [http://localhost:3010](http://localhost:3010). Visit `/setup`, generate a Steam loader, and paste the generated line into Steam CODE and run it.
+4. Open [http://localhost:3010](http://localhost:3010). Open **Interface settings > Load setup**, click **Generate Steam loader**, then copy the generated line into Steam **CODE** and click **Engage**. The server address is detected automatically.
 5. Select your characters in the dashboard and play!
 6. Optional: [set up ALData](#optional-aldata-setup) to publish market classifieds.
 
@@ -41,13 +41,13 @@ From another computer, use `http://<host-LAN-IP>:3010`, including when generatin
 
 ## Docker installation
 
-Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**. Replace `<repository-url>` with this repository's clone URL.
+Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**.
 
 1. Clone the repository:
 
    ```sh
-   git clone <repository-url> adventure_land
-   cd adventure_land
+   git clone https://github.com/Ryan-Haines/adventureland-party-console.git
+   cd adventureland-party-console
    ```
 
 2. Build the image; this installs dependencies automatically:
@@ -62,13 +62,13 @@ Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**. Repl
    docker compose up -d
    ```
 
-4. Open [http://localhost:3010](http://localhost:3010), or `http://<host-LAN-IP>:3010` from another computer. Enter your game session, select a realm, and click **Connect account**. Obtain the session from a logged-in Steam character's CODE:
+4. Open [http://localhost:3010](http://localhost:3010), or `http://<host-LAN-IP>:3010` from another computer. Enter your game session, select a realm, and click **Connect account**. You only need to connect your account once. In the **Adventure Land Steam client**, log in to a character, open **CODE**, paste the following line, and click **Engage**. Copy the displayed session into **Game session** in the console:
 
    ```javascript
    show_json(parent.user_id + "-" + parent.user_auth)
    ```
 
-   To connect Steam, visit `/setup`, generate a loader, and paste the generated line into Steam CODE and run it.
+   To connect Steam, open **Interface settings > Load setup**, click **Generate Steam loader**, and paste the generated line into Steam **CODE**. Click **Engage**, then **Return to dashboard** in the console. No server address needs to be entered.
 5. Select offline characters in the dashboard to run headless, and play!
 6. Optional: [set up ALData](#optional-aldata-setup).
 

@@ -112,6 +112,9 @@ jobs:
         run: |
           for arch in amd64 arm64; do
             docker run --rm --platform linux/$arch --entrypoint node ghcr.io/ryan-haines/adventureland-party-console@${{ steps.build.outputs.digest }} --check .build/runtime/coordinator-application.cjs
+            # The runner's classic image store cannot retain two architectures
+            # under one manifest digest. Remove only this completed local test image.
+            docker image rm ghcr.io/ryan-haines/adventureland-party-console@${{ steps.build.outputs.digest }}
           done
   publish:
     needs: [version, windows, docker]

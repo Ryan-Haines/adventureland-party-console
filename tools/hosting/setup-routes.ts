@@ -3,6 +3,7 @@ import type { Access } from "./access.ts";
 import { body, json, text } from "./http.ts";
 import { steamBootstrap } from "../../runtime/steam/connection.ts";
 import { validBrowser } from "./authorize.ts";
+import { setupAddress } from "./address.ts";
 export interface Options {
   updates?: import('../update/hosting.ts').UpdateRoutes;
   access: Access;
@@ -48,7 +49,7 @@ export async function setupRoute(
   options: Options,
 ) {
   if (pathname === "/setup/state" && req.method === "GET") {
-    json(res, 200, { configured: options.configured(), requirePairing: options.access.required, canConfigureAccount: !!options.configure });
+    json(res, 200, { configured: options.configured(), requirePairing: options.access.required, canConfigureAccount: !!options.configure, serverAddress: setupAddress(req, options.publicUrl) });
     return;
   }
   if (req.method !== "POST") {

@@ -8,7 +8,7 @@ export function HostingSettings() {
   useEffect(() => {
     let active = true;
     fetch("/setup/state").then(async response => {
-      if (!response.ok) throw new Error("Open /setup to pair this browser.");
+      if (!response.ok) throw new Error("Choose Load setup to pair this browser.");
       const state = await response.json() as { requirePairing: boolean; error?: string };
       if (active) setRequired(state.requirePairing);
     }).catch(error => { if (active) setError(error.message); });
@@ -31,7 +31,7 @@ export function HostingSettings() {
     </label>
     <p>Require paired browsers and private Steam connection tokens. Recommended when hosting at a publicly accessible URL; use HTTPS. When off, anyone who can reach this dashboard can control it.</p>
     {required && <p className="text-amber-200">This browser is authorized. Unpaired browsers and tokenless Steam loaders must reconnect using an invitation or a new private loader.</p>}
-    <Button onClick={() => { location.href = "/setup"; }} variant="outline" className="border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white">{required ? "Browser invitations and Steam loaders" : "Generate Steam loader"}</Button>
+    <Button onClick={() => { location.href = "/setup"; }} variant="outline" className="border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white">Load setup</Button>
     {error && <p role="alert" className="text-rose-300">{error}</p>}
   </section>;
 }

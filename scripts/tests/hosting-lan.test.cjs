@@ -3,8 +3,18 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
 const {createServer,request}=require('node:http');
 const {Access}=require('../../tools/hosting/access.ts');
 const {gateway}=require('../../tools/hosting/gateway.ts');
+const {setupAddress}=require('../../tools/hosting/address.ts');
 const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve(server.address().port)));
 const close=server=>new Promise(resolve=>server.close(resolve));
+
+test('setup detects the reachable address without exposing a Docker container IP',()=>{
+ const interfaces={Ethernet:[{address:'192.168.1.25',family:'IPv4',internal:false}]};
+ const req={headers:{host:'localhost:3010'}};
+ assert.equal(setupAddress(req,undefined,interfaces,'win32'),'http://192.168.1.25:3010');
+ assert.equal(setupAddress(req,undefined,interfaces,'linux'),'http://localhost:3010');
+ assert.equal(setupAddress({headers:{host:'192.168.1.30:8080'}},undefined,interfaces,'linux'),'http://192.168.1.30:8080');
+ assert.equal(setupAddress(req,'https://party.example',interfaces,'win32'),'https://party.example');
+});
 
 test('legacy credential files remain protected; explicit off persists despite credentials',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'lan-migration-')),file=path.join(dir,'access.json');
@@ -27,7 +37,7 @@ test('LAN gateway toggles without lockout, forwards API/builds, and guards both 
  const post=(route,data,extra={})=>fetch(base+route,{method:'POST',headers:{...headers,...extra},body:JSON.stringify(data)});
  try {
   assert.equal((await fetch(base)).status,200);
-  assert.deepEqual(await (await fetch(base+'/setup/state')).json(),{configured:true,requirePairing:false,canConfigureAccount:false});
+  assert.deepEqual(await (await fetch(base+'/setup/state')).json(),{configured:true,requirePairing:false,canConfigureAccount:false,serverAddress:lan});
   assert.equal((await (await post('/setup/steam',{origin:lan})).json()).code,'$.getScript("'+lan+'/CODE/adventure_land/universal-loader.js");');
   assert.equal((await post('/setup/pairing',{requirePairing:'yes'})).status,400);
   assert.equal((await post('/setup/pairing',{requirePairing:true},{Origin:'https://evil.example'})).status,403);
@@ -84,7 +94,7 @@ test('setup omits pairing when off and account setup where unsupported',async()=
    const el=id=>dom.window.document.getElementById(id);
    assert.equal(el('pair').hidden,true);assert.equal(el('settings').hidden,false);
    assert.equal(el('account').hidden,!state.canConfigureAccount||state.configured);
-   assert.equal(el('invite').hidden,!state.requirePairing);assert.equal(el('address').value,'http://lan:3010');
+   assert.equal(el('invite').hidden,!state.requirePairing);assert.equal(el('address').textContent,'http://lan:3010');
   }finally{dom.window.close();}
  }
 });
