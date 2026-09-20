@@ -4,6 +4,11 @@ The public home is https://github.com/ryan-haines/adventureland-party-console.
 Gitea remains the private development repository. Public releases have their own
 history, starting at 1.0.0, with one reviewed Conventional Commit per promotion.
 
+Production dashboards use the same Vinext Node server on Windows and Linux,
+including Docker and Raspberry Pi. Wrangler is not required at production
+startup. Release checks start the dashboard and fetch its HTML and JavaScript
+assets; a successful image build alone is not considered a startup check.
+
 ## Windows: editable, without global tools
 
 Download the Windows x64 ZIP from GitHub Releases, extract it to a writable folder,

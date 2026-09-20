@@ -16,6 +16,13 @@ try {
     await delay(1000);
   }
   if (!healthy) throw new Error('Clean editable package did not become healthy');
+  const dashboard = await fetch('http://127.0.0.1:13303/');
+  const html = await dashboard.text();
+  if (!dashboard.ok || !html.includes('<html')) throw new Error('Dashboard did not render');
+  const asset = html.match(/src="([^" ]+\.js[^" ]*)"/);
+  if (!asset) throw new Error('Dashboard JavaScript asset missing');
+  const script = await fetch(new URL(asset[1], 'http://127.0.0.1:13303'));
+  if (!script.ok || !script.headers.get('content-type')?.includes('javascript')) throw new Error('Dashboard JavaScript asset unavailable');
   const page = await fetch('http://127.0.0.1:13010/setup');
   if (!page.ok || !(await page.text()).includes('Party Console')) throw new Error('Setup page missing');
   const update = await (await fetch('http://127.0.0.1:13010/console-update')).json() as { managed?: boolean };

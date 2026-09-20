@@ -21,6 +21,7 @@ if ! "${compose[@]}" build; then
   exit 1
 fi
 echo 'Party Console built! Starting…'
+echo 'Waiting for Party Console to become ready (up to five minutes)…'
 if ! "${compose[@]}" up -d --wait --wait-timeout 300; then
   echo 'Party Console did not become ready within five minutes, or startup failed.' >&2
   "${compose[@]}" ps >&2 || true
