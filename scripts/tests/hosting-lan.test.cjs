@@ -117,18 +117,20 @@ test('game session starts masked, toggles visibly without changing it, and clear
   toggle.click();el('connect').click();await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(calls,[{session:'US_Abc123-privateToken',realm:'SR_USII'}]);
   assert.equal(input.value,'');assert.equal(input.type,'password');assert.equal(el('account').hidden,true);
-  assert.equal(el('success').hidden,false);assert.match(el('success').textContent,/Returning to dashboard in 5/);
+  assert.equal(el('success').hidden,false);assert.match(el('success').textContent,/Account connected/);
+  assert.doesNotMatch(el('success').textContent,/Returning/);assert.equal(el('paths').hidden,false);
  }finally{dom.window.close();}
 });
 
-test('successful setup counts down in green; failed authentication never starts a redirect',async()=>{
+test('only a connected client starts the green countdown; failed authentication never redirects',async()=>{
  const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  for(const accepted of [true,false]) {
-  let tick,cleared=false;
+  let tick,poll,cleared=false,connected=false;
   const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){
    w.setInterval=(fn,delay)=>{assert.equal(delay,1000);tick=fn;return 42;};
    w.clearInterval=id=>{if(id===42)cleared=true;};
-   w.fetch=async url=>({ok:url!=='/setup/session'||accepted,json:async()=>({configured:accepted,canConfigureAccount:true,requirePairing:false,error:'Invalid game session'})});
+   w.setTimeout=fn=>{poll=fn;return 43;};w.clearTimeout=()=>{};
+   w.fetch=async url=>({ok:url!=='/setup/session'||accepted,json:async()=>({connected,code:'loader',configured:accepted,canConfigureAccount:true,requirePairing:false,error:'Invalid game session'})});
   }});
   try {
    await new Promise(r=>setImmediate(r));
@@ -136,8 +138,29 @@ test('successful setup counts down in green; failed authentication never starts 
    el('connect').click();await new Promise(r=>setImmediate(r));
    if(!accepted){assert.equal(tick,undefined);assert.equal(el('success').hidden,true);assert.equal(el('error').textContent,'Invalid game session');continue;}
    assert.equal(el('success').style.color,'rgb(134, 239, 172)');assert.equal(el('error').textContent,'');
+   assert.equal(tick,undefined);assert.equal(el('code').value,'loader');
+   connected=true;await poll();assert.match(el('success').textContent,/Client connected. Returning to dashboard in 5/);
    for(const remaining of [4,3,2,1]){tick();assert.ok(el('success').textContent.includes('in '+remaining));}
    dom.window.dispatchEvent(new dom.window.Event('pagehide'));assert.equal(cleared,true);
   }finally{dom.window.close();}
  }
+});
+
+test('revisiting setup does not poll until generating a loader; LAN copy fallback selects code',async()=>{
+ const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
+ const calls=[];let tick,poll;
+ const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){
+  w.setInterval=fn=>{tick=fn;return 1;};w.clearInterval=()=>{};
+  w.setTimeout=fn=>{poll=fn;return 2;};w.clearTimeout=()=>{};
+  w.fetch=async(url,options)=>{calls.push([url,options]);if(url.includes('/connection'))throw Error('unavailable');return {ok:true,json:async()=>({configured:true,code:'client loader',serverAddress:'http://192.168.1.10:3010'})};};
+ }});
+ try {
+  const flush=()=>new Promise(r=>setImmediate(r));await flush();const el=id=>dom.window.document.getElementById(id);
+  assert.equal(calls.length,1);assert.equal(tick,undefined);assert.equal(poll,undefined);
+  el('loader').click();await flush();assert.deepEqual(JSON.parse(calls[1][1].body),{origin:'http://192.168.1.10:3010'});
+  assert.equal(tick,undefined);assert.match(el('linkStatus').textContent,/retry/);
+  el('copy').click();await flush();assert.equal(el('code').selectionStart,0);assert.equal(el('code').selectionEnd,'client loader'.length);
+  assert.equal(el('continue').getAttribute('href'),'/');el('continue').onclick();
+  const count=calls.length;await poll();assert.equal(calls.length,count,'headless continuation stops polling without starting characters');
+ }finally{dom.window.close();}
 });

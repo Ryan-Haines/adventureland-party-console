@@ -21,6 +21,7 @@ function payload(request:Request):Record<string,unknown>|null|undefined {
 }
 type Handler = (request: Request, response: Response) => void | Promise<void>;
 interface Router {
+  get(path: string, handler: Handler): void;
   post(path: string, handler: Handler): void;
 }
 interface Member {
@@ -51,6 +52,9 @@ export function installRosterRoutes(
   });
   const group: SteamGroup = new SteamGroup(state, { ...ports, bridgeReady: (): boolean => bridge.ready(2), prepareSteam: name => ports.prepareSteam?.(name) || Promise.resolve() });
   const bridge: BridgeSession = new BridgeSession(state, service, ports, group);
+  router.get("/party-api/steam/connection", (_request, response) => {
+    response.json({ connected: bridge.connected() });
+  });
   if (state.handoff && !["complete", "awaiting-realm-choice"].includes(state.handoff.phase)) {
     state.handoff.phase = "failed";
     state.handoff.error =

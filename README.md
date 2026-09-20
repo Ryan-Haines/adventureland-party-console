@@ -33,7 +33,7 @@ Install Git and Node **22.18+**. Run these commands in PowerShell.
    show_json(parent.user_id + "-" + parent.user_auth)
    ```
 
-4. Open [http://localhost:3010](http://localhost:3010). Open **Interface settings > Load setup**, click **Generate Steam loader**, then copy the generated line into Steam **CODE** and click **Engage**. The server address is detected automatically.
+4. Open [http://localhost:3010](http://localhost:3010), then **Interface settings > Load setup**. To control characters in Steam or a browser, click **Generate client loader**, paste the code into your game client's **CODE** window, and click **Engage**. Once connected, setup returns to the dashboard automatically. For fully headless play, log out your characters from other game windows and click **Continue to dashboard**.
 5. Select your characters in the dashboard and play!
 6. Optional: [set up ALData](#optional-aldata-setup) to publish market classifieds.
 
@@ -71,7 +71,7 @@ Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**.
    show_json(parent.user_id + "-" + parent.user_auth)
    ```
 
-   To connect Steam, open **Interface settings > Load setup**, click **Generate Steam loader**, and paste the generated line into Steam **CODE**. Click **Engage**, then **Return to dashboard** in the console. No server address needs to be entered.
+   Setup then offers two paths: paste the generated loader into your Steam or browser client's **CODE** window and click **Engage**, or log out your characters from other game windows and click **Continue to dashboard** for fully headless play. A connected client triggers a five-second return to the dashboard. The server address is detected automatically. You can revisit this step through **Interface settings > Load setup**.
 5. Select offline characters in the dashboard to run headless, and play!
 6. Optional: [set up ALData](#optional-aldata-setup).
 

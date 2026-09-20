@@ -15,7 +15,7 @@ function fixture() {
     async confirmOffline(name) { return !online.has(name); },
     nativeBusy: () => false, bridgeChanged() {}, realm: () => 'SR_USII', members: () => [],
   };
-  const installed = installRosterRoutes({ post: (route, handler) => routes.set(route, handler) }, state, ports);
+  const installed = installRosterRoutes({ get: (route, handler) => routes.set(route, handler), post: (route, handler) => routes.set(route, handler) }, state, ports);
   const request = async (path, body = {}, slot = '') => {
     const response = { code: 200, body: undefined, status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
     await routes.get('/party-api' + path)({ body, params: { slot } }, response);
@@ -24,6 +24,19 @@ function fixture() {
   const bridge = (body = {}) => request('/steam/bridge', { version: 1, clientId: 'window', character: 'Priest', ...body });
   return { state, ports, online, installed, request, bridge, advance: value => { now += value; } };
 }
+test('connection status requires a live bridge, its current character, and a fresh code heartbeat',async()=>{
+ const f=fixture();let fresh=false;f.ports.codeRunning=()=>fresh;
+ try {
+  const connected=async()=>(await f.request('/steam/connection')).body.connected;
+  assert.equal(await connected(),false);
+  await f.bridge();assert.equal(await connected(),false);
+  fresh=true;assert.equal(await connected(),true);
+  fresh=false;assert.equal(await connected(),false);
+  fresh=true;f.advance(9000);assert.equal(await connected(),false);
+  await f.bridge({character:null});assert.equal(await connected(),false);
+ }finally{f.installed.dispose();}
+});
+
 test('roster endpoints reject primitive and empty request bodies without changing ownership',async()=>{
   const f=fixture(),before=JSON.stringify(f.state);
   try {
