@@ -175,7 +175,7 @@
   }
 
   // runtime/steam/connection.ts
-  var steamBridgeVersion = 4;
+  var steamBridgeVersion = 5;
   function serverAddress(host = globalThis) {
     return (host.__partyServer || host.parent?.__partyServer || "http://127.0.0.1:924").replace(
       /\/$/,
@@ -345,7 +345,13 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
       return owned(name, latest) && !deliberatelyStopped(host.localStorage, name);
     }
     function owned(name, reply) {
-      return reply.primary === host.character?.name && reply.steam?.includes(name) && (!reply.operation || reply.operation.phase === "complete");
+      if (reply.primary !== host.character?.name || !reply.steam?.includes(name)) return false;
+      const op = reply.operation;
+      if (!op || op.phase === "complete") return true;
+      if (!op.releasedAt || !op.multi || !["navigate", "failed"].includes(op.phase)) return false;
+      if (op.multi.primary !== reply.primary || !op.multi.desired.includes(name)) return false;
+      const game = gameFor(name);
+      return !!op.destinationRealm && !!game && "SR_" + game.server_region + game.server_identifier === op.destinationRealm;
     }
     function observeState(name, game, now) {
       let state = states.get(name);

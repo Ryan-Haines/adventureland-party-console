@@ -228,6 +228,14 @@ npm run build:runtime
 ```
 
 Building the coordinator bundles alone does **not** reload the running process.
+Steam CODE recovery can repair connected runners during failed/navigating group
+arrivals only after confirmed release, with matching primary, assigned membership,
+and destination realm. It never logs a character in or transfers ownership.
+Bridge revisions invalidate class artifacts so existing one-line loaders install
+the updated bridge automatically. Validate with `steam-recovery.test.cjs` and
+`loader-connection.test.cjs`; publish character assets through the full restart.
+Retained combat nominations wait safely when the leader has no heartbeat during
+startup (`nomination-retention.test.cjs`).
 Hunt returns require `huntReturnProtocol: 1` from every participant and use one
 shared itinerary through walking, Town and transport, with one initial departure
 window. The leader compares validated walking-only and Town-enabled candidates.

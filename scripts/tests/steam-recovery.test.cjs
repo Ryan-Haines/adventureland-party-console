@@ -70,6 +70,31 @@ test('handoffs, disconnects, ownership changes and occupied CODE suppress recove
   } finally {f.close();}
 });
 
+test('confirmed Steam arrivals repair stale connected CODE after a coordinator restart', async t => {
+  let now=1000; t.mock.method(Date,'now',()=>now); const f=fixture();
+  try {
+    f.host.code_active=true;
+    f.host.document.getElementById('maincode').contentWindow.__partyStatusSuccessAt=now;
+    Object.assign(f.companion,{code_active:true,server_region:'US',server_identifier:'II'});
+    f.reply.operation={phase:'failed',releasedAt:500,destinationRealm:'SR_USII',multi:{primary:'P',desired:['P','C']}};
+    await f.supervisor.tick(f.reply); now=22000;
+    await f.supervisor.tick(f.reply);
+    assert.deepEqual(f.starts,['C']);
+    // Wrong realm, unconfirmed release, removed ownership, deliberate stops,
+    // and disconnected games must never be restarted by arrival recovery.
+    for (const change of [
+      ()=>{f.companion.server_identifier='I';},
+      ()=>{f.companion.server_identifier='II';f.reply.operation.releasedAt=undefined;},
+      ()=>{f.reply.operation.releasedAt=500;f.reply.operation.multi.desired=['P'];},
+      ()=>{f.reply.operation.multi.desired=['P','C'];f.host.localStorage.setItem('party-code-stopped:C','1');},
+      ()=>{f.host.localStorage.removeItem('party-code-stopped:C');f.companion.socket.connected=false;},
+    ]) { change(); now+=30000; await f.supervisor.tick(f.reply); }
+    assert.deepEqual(f.starts,['C']);
+    f.companion.socket.connected=true;f.reply.operation.phase='navigate';now+=30000;
+    await f.supervisor.tick(f.reply);assert.deepEqual(f.starts,['C','C']);
+  } finally {f.close();}
+});
+
 test('one pending restart, capped backoff, and disposal during persistence', async t => {
   let now=1000; t.mock.method(Date,'now',()=>now); const f=fixture(); let release;
   try {
@@ -120,7 +145,7 @@ test('managed slot upgrades preserve unrelated saved code and install primary an
     try {
       let disposed=0;f.host.__partySteamBridge={realmProtocol:2,dispose(){disposed++;}};
       installSteamBridge(f.host);await new Promise(r=>setImmediate(r));
-      assert.equal(disposed,1);assert.equal(f.host.__partySteamBridge.version,4);assert.equal(f.host.__partySteamBridge.server,base);
+      assert.equal(disposed,1);assert.equal(f.host.__partySteamBridge.version,5);assert.equal(f.host.__partySteamBridge.server,base);
       assert.equal(saved.length,1);
       assert.equal(saved[0].slot==='party-console-existing',!unrelated);
       const stored=JSON.parse(cache.get('code_cache'));

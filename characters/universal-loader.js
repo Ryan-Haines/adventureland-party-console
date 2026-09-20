@@ -20,7 +20,7 @@
   }
 
   // runtime/steam/connection.ts
-  var steamBridgeVersion = 4;
+  var steamBridgeVersion = 5;
   function needsSteamBridge(bridge, server2) {
     return !bridge || bridge.version !== steamBridgeVersion || bridge.server !== server2;
   }

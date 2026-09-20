@@ -7,6 +7,7 @@ import { classes, digest, verifyManifest, type GameManifest, type Artifact } fro
 import { adaptLegacyRuntime } from "./legacy-boundary.ts";
 import { withBuildLock, readJson } from '../build-store.ts';
 import { gameStore, rememberCurrent, rememberGame, cleanGame } from './history.ts';
+import { steamBridgeVersion } from '../../runtime/steam/connection.ts';
 
 export async function buildGame(root: string, publish = false): Promise<GameManifest> {
   return withBuildLock(gameStore(root), () => buildLocked(root, publish));
@@ -46,7 +47,9 @@ async function buildLocked(root: string, publish: boolean): Promise<GameManifest
           },
         ],
         banner: {
-          js: "// Generated class bundle. Edit runtime/characters and run npm run build:characters; do not edit.",
+          // Bridge changes must invalidate class signatures so existing native
+          // loaders replace their iframe and install the new bridge as well.
+          js: `// Generated class bundle. Edit runtime/characters and run npm run build:characters; do not edit.\n// Steam bridge revision: ${steamBridgeVersion}`,
         },
       });
       const content = result.outputFiles[0].text;

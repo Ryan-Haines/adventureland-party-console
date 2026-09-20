@@ -4,6 +4,8 @@ export interface GameWindow {
   document: Document;
   character?: { name: string };
   socket?: { connected: boolean };
+  server_region?: string;
+  server_identifier?: string;
   code_active?: boolean;
   event?: Event;
   start_runner?: (id?: string, code?: string) => void;
@@ -81,8 +83,21 @@ export function createSteamRecovery(host: GameWindow & { localStorage: Storage }
     return owned(name, latest) && !deliberatelyStopped(host.localStorage, name);
   }
   function owned(name: string, reply: BridgeReply) {
-    return reply.primary === host.character?.name && reply.steam?.includes(name) &&
-      (!reply.operation || reply.operation.phase === "complete");
+    if (reply.primary !== host.character?.name || !reply.steam?.includes(name)) return false;
+    const op = reply.operation;
+    if (!op || op.phase === "complete") return true;
+    return confirmedArrival(name, reply);
+  }
+  function confirmedArrival(name: string, reply: BridgeReply) {
+    const op = reply.operation!;
+    // Release was authoritatively confirmed before ownership was assigned to
+    // Steam. Repair only an existing connected CODE frame, never a login or
+    // ownership transfer. Otherwise a stale runner deadlocks failed arrivals.
+    if (!op.releasedAt || !op.multi || !["navigate", "failed"].includes(op.phase)) return false;
+    if (op.multi.primary !== reply.primary || !op.multi.desired.includes(name)) return false;
+    const game = gameFor(name);
+    return !!op.destinationRealm && !!game &&
+      "SR_" + game.server_region + game.server_identifier === op.destinationRealm;
   }
   function observeState(name: string, game: GameWindow, now: number): RecoveryState {
       let state = states.get(name);

@@ -22,6 +22,13 @@ test('one party observer preserves an admitted target and primary identity despi
  const g=reconcileQueue({queue:[target],target,fights:[]},m,'W',1000,'key');
  assert.equal(g.target.id,'A');assert.deepEqual(g.queue.map(t=>t.id),['A','B']);
 });
+
+test('retained nominations wait safely while the leader has no heartbeat after restart',()=>{
+ const m=members();delete m[0].status;
+ m[1].status.groupedCombat.retentions[0].eligible=true;
+ const g=reconcileQueue({queue:[target],target,fights:[]},m,'W',1000,'key');
+ assert.equal(g.target,null);assert.deepEqual(g.queue,[]);
+});
 test('neutral visibility retirement requires every party member; stale observer prevents removal',()=>{
  const m=members();m[2].status.seenAt=0;
  assert.equal(retainNominations([target],m,4000).length,1);

@@ -66,7 +66,7 @@ export function reconcileQueue(old: Group | undefined | null, members: Member[],
     .filter(t => m.name === leader || t.passiveRare === true)
     .filter(t => m.status!.server === s?.server && t.map === m.status!.map && t.in === m.status!.in));
   const retained=retainNominations((old?.queue||[]).filter(t=>t.startedAt>=resetAt),members,now);
-  const unique:Candidate[] = [...new Map<string,Candidate>([...reported,...retained].map(t => [identity({...t,server:s!.server}),t])).values()];
+  const unique:Candidate[] = s ? [...new Map<string,Candidate>([...reported,...retained].map(t => [identity({...t,server:s.server}),t])).values()] : [];
   const candidates=(selector&&fresh(selector)?unique:[])
     .filter(t=>t.map===s?.map&&t.in===s?.in&&!excluded({...t,server:s!.server},now)&&!rejected({...t,server:s!.server})&&!(old?.pursuitExclusions||[]).some(e=>e.until>now&&e.identity===targetIdentity({...t,server:s!.server}))&&!fights.some(f=>identity(f)===identity({...t,server:s!.server})))
     .map(t=>({...t,server:s!.server,fighter:leader,startedAt:old?.queue?.find(c=>c.id===t.id&&c.map===t.map&&c.in===t.in)?.startedAt??now,state:'planned' as const,score:score(t)}))
