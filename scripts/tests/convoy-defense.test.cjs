@@ -63,6 +63,15 @@ test('client interruption releases its route and ignores stale convoy signals',(
  assert.equal(c.convoyTraveling,null);assert.equal(c.root.__partyConvoyDefense,'C');assert.equal(stops,1);
  c.convoyTraveling={id:'E',epoch:1,purpose:'escape-recovery'};c.interruptConvoyForDefense();assert.ok(c.convoyTraveling);
 });
+test('protocol 4 local defense retains an identifiable handle until the coordinator acknowledges it',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync('characters/shared.js','utf8');let stops=0,freezes=0;
+ const convoy={id:'C',epoch:3,commandId:42,navigationRevision:9,routeProtocol:4,purpose:'monster-hunt',freezeRoute(){freezes++;}};
+ const c=vm.createContext({root:{partyRoleRunner:{wake(){}}},convoyTraveling:convoy,releaseConvoyCruise(){},stop(){stops++;}});
+ vm.runInContext(source.slice(source.indexOf('  function interruptConvoyForDefense('),source.indexOf('  function groupedFarming(')),c);
+ c.interruptConvoyForDefense();c.interruptConvoyForDefense();
+ assert.equal(c.convoyTraveling,convoy);assert.equal(convoy.phase,'defending');assert.equal(convoy.defensePaused,true);
+ assert.equal(convoy.commandId,42);assert.equal(convoy.navigationRevision,9);assert.equal(stops,1);assert.equal(freezes,1);
+});
 
 test('an old invisible engagement cannot hold departure, but a visible party attacker can',()=>{
  const {p,t}=fixture();for(const s of Object.values(p.statuses))s.groupedCombat.sightings=[];

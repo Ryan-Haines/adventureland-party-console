@@ -1,4 +1,5 @@
 import { recordOfferingWait } from './offering-waits.ts';
+import { rememberUpgradeContinuation } from './upgrade-continuation.ts';
 import { offeringRule, isUpgradeOffering, type UpgradeOfferingRule } from '../../upgrade-offerings.ts';
 import { itemRuleConflicts, type ConflictState } from "./shared-rules.ts";
 import { requestObject, requestText, type HttpRouter } from '../http/contracts.ts';
@@ -63,6 +64,7 @@ export function beginProduction(state: State, body: Record<string, unknown>) {
   automaticGuard(state,requestObject(body.automatic));
   offeringGuard(state, body, name, level - 1);
   if (body.automatic && itemRuleConflicts(state,requestObject(body.item)).length) throw Error("Conflicting automatic rules");
+  rememberUpgradeContinuation(state, body);
   const attempt: ProductionAttempt = {name,level,kind,rules:targets(state,name,level,kind)};
   if (typeof body.requestId === "string") attempt.requestId = body.requestId;
   if (isUpgradeOffering(body.offering)) attempt.offering = body.offering;

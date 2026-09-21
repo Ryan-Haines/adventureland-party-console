@@ -592,6 +592,9 @@
   var gatheringStandListings = [];
   var merchantWeapon = null;
   var luckyUpgradeSlot = null;
+  var upgradePreviewSession = Date.now() + ":" + Math.random();
+  var upgradePreviewActive = false;
+  var lastUpgradePreview = null;
   var luckyUpgradeService = null;
   var merchantIdleActive = false;
   var merchantIdlePending = null;
@@ -2101,10 +2104,48 @@
   }
 
   function consoleMaintenanceBusy() {
-    return !!(banking || stocking || upgrading || gatheringActive || anniversaryBusy ||
+    return !!(root.__partyUpgradePreviewInFlight || banking || stocking || upgrading || gatheringActive || anniversaryBusy ||
       root.__merchantActiveJob || merchantIdleActive || root.__merchantInventoryTidy ||
       luckyUpgradeService && luckyUpgradeService.pending() ||
       character.q && Object.keys(character.q).length || currentTravelAttackers().length);
+  }
+  async function handleUpgradePreview(previewRequest) {
+    if (previewRequest.id === lastUpgradePreview || previewRequest.session !== upgradePreviewSession ||
+        previewRequest.executor !== character.name || upgradePreviewActive) return;
+    lastUpgradePreview = previewRequest.id;
+    var reason = consoleMaintenanceBusy() || character.rip || character.moving ||
+      root.localStorage.getItem(productionJournalKey()) ||
+      root.localStorage.getItem("party-lucky-upgrade:" + character.name) ||
+      parent.deferreds && parent.deferreds.upgrade && parent.deferreds.upgrade.length
+      ? "Merchant busy" : null;
+    var result;
+    if (reason) {
+      result = {executor:character.name,item:previewRequest.item,options:{}};
+      ["none","offeringp","offering","offeringx"].forEach(function (option) { result.options[option]={reason:reason}; });
+    } else {
+      upgradePreviewActive = true;
+      upgrading = true;
+      // Retain the guard until the official deferred settles, including after an
+      // HTTP timeout: a late upgrade_chance must never resolve an actual upgrade.
+      var work = root.previewPartyUpgrade(previewRequest, {
+        items:function () { return character.items; }, grade:item_grade,
+        current:function () { return runtimeCurrent() && previewRequest.session === upgradePreviewSession; },
+        now:function () { return Date.now() + coordinatorClockOffset; }, preview:upgrade,
+      }).finally(function () {
+        upgradePreviewActive=false; upgrading=false;
+        if (root.__partyUpgradePreviewInFlight === work) root.__partyUpgradePreviewInFlight=null;
+      });
+      root.__partyUpgradePreviewInFlight=work;
+      var timeout;
+      try {
+        result = await Promise.race([work, new Promise(function (resolve) {
+          timeout=setTimeout(function () { resolve(null); }, 9000);
+        })]);
+      } finally { clearTimeout(timeout); }
+    }
+    if (result && runtimeCurrent()) await request("/upgrade-preview/result", {method:"POST",body:{
+      character:character.name,id:previewRequest.id,session:upgradePreviewSession,result:result,
+    }}).catch(function () {});
   }
   function consoleMaintenanceReport() {
     var pause = root.__partyConsoleMaintenance;
@@ -2154,6 +2195,9 @@
       runtime: parent.caracAL ? "headless" : "native",
       clientVersion: parent.__partyClientVersion || Number(G.version),
       clientInstance: parent.__partyClientInstance || null,
+      upgradePreviewSession: upgradePreviewSession,
+      upgradeInventoryBusy: !!(root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending() ||
+        root.localStorage.getItem("party-lucky-upgrade:" + character.name)),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
       escape: escapeLocal,
       platform: parent.caracAL ? "caracal" : (parent.game && parent.game.platform || "browser"),
@@ -3766,6 +3810,7 @@
   }
 
   async function observedUpgradeConfirmed(itemSlot, scrollSlot, expectedName, expectedLevel, offeringAttempt) {
+    var intendedScroll = character.items[scrollSlot] && character.items[scrollSlot].name;
     await verifyMerchantItemMarks();
     if (character.ctype !== "merchant") return upgradeAtSlotConfirmed(itemSlot, scrollSlot, expectedName, expectedLevel);
     var offeringSlot;
@@ -3775,6 +3820,9 @@
       offeringSlot = carriedOffering(await upgradeOfferingCheckpoint(job), offeringAttempt.offering);
     }
     if (offeringSlot !== undefined && offeringSlot < 0) throw Error("Required upgrade offering missing");
+    // Checkpoints yield to inventory updates. Do not use a scroll index that
+    // has since moved or was consumed by the preceding step.
+    if (intendedScroll) scrollSlot = findInventoryItemByName(intendedScroll);
     var outcome = await merchantLuckyUpgrade().run(itemSlot, scrollSlot, luckyUpgradeSlot, function (slot, scroll, offering) {
       return upgradeAtSlotConfirmed(slot, scroll, expectedName, expectedLevel, offering);
     }, offeringSlot);
@@ -4600,14 +4648,24 @@
   function findUpgradeMarkSlot(mark, used) {
     if (!mark || !mark.item) return -1;
     // The requested level is anchored to the original mark, not the level
-    // reached before an interruption. Only the original slot may resume a
-    // changed level; fallback searches must still match the original item.
+    // reached before an interruption. Durable automatic passes may follow a
+    // unique survivor to another slot after inventory recovery.
     var start = Number(mark.item.level) || 0;
     var target = Math.min(maximumItemLevel(G.items[mark.item.name]), start + (Number(mark.tiers) || 1));
     var slot = mark.slot, item = Number.isInteger(slot) && character.items[slot];
     if (item && !used[slot] && (Number(item.level) || 0) >= start &&
         (Number(item.level) || 0) <= target &&
         sameItem(Object.assign({}, item, { level: mark.item.level }), mark.item)) return slot;
+    if (mark.auto && mark.passId) {
+      var survivors = [];
+      character.items.forEach(function (candidate, index) {
+        if (!used[index] && candidate && (Number(candidate.level) || 0) >= start &&
+            (Number(candidate.level) || 0) <= target &&
+            sameItem(Object.assign({},candidate,{level:mark.item.level}),mark.item)) survivors.push(index);
+      });
+      if (survivors.length > 1) throw Error("Automatic upgrade survivor is ambiguous; waiting for inventory recovery");
+      if (survivors.length === 1) return survivors[0];
+    }
     return character.items.findIndex(function (candidate, index) {
       return !used[index] && sameItem(candidate, mark.item);
     });
@@ -4711,6 +4769,7 @@
       used[slot] = true;
       var targetLevel = Math.min(maximumItemLevel(G.items[mark.item.name]),
         (Number(mark.item.level) || 0) + (Number(mark.tiers) || 1));
+      if (mark.auto && !mark.passId) mark.passId = character.name + ":upgrade:" + Date.now() + ":" + Math.random().toString(36).slice(2);
       while (character.items[slot] && (Number(character.items[slot].level) || 0) < targetLevel) {
         var liveBeforeOffering = fingerprint(character.items[slot]);
         var offeringAttempt = await prepareUpgradeOffering(command, mark, slot, activity);
@@ -4735,7 +4794,7 @@
         await productionBuff();
         try {
           var before = character.items[slot].level || 0;
-          var outcome = await upgradeConfirmed(slot, scrollSlot, undefined, undefined, mark.auto ? {family:"upgrade",key:mark.item.name+"@+"+(mark.item.level||0)} : undefined, offeringAttempt);
+          var outcome = await upgradeConfirmed(slot, scrollSlot, undefined, undefined, mark.auto ? {family:"upgrade",key:mark.item.name+"@+"+(mark.item.level||0),mark:Object.assign({},mark,{slot:slot,equipped:false})} : undefined, offeringAttempt);
           if (mark.offering) {
             activity.push({level:outcome && outcome.success === false ? "info" : "success", message:"Completed one upgrade attempt with " + mark.offering});
             break;
@@ -7386,6 +7445,7 @@
   }
 
   async function merchantIdle(command) {
+    if (root.__partyUpgradePreviewInFlight) return {state:"deferred"};
     if (root.__merchantActiveJob && !(command.inPlace && command.jobId === root.__merchantActiveJob.jobId)) return { state: "skipped" };
     // The gathering cooldown loop and coordinator can both request an idle
     // refresh. Never discard the newer request: wait for the in-flight stand
@@ -8266,6 +8326,7 @@
   }
 
   async function handleCommand(command) {
+    if (root.__partyUpgradePreviewInFlight) return;
     if (root.__partyConsoleMaintenance) return;
     if (!command || command.id <= lastCommand) return;
     if (command.type === "party-monster-travel" && command.phase === "event-walk-release") {
@@ -8930,6 +8991,7 @@
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');
         return;
       }
+      if (state.upgradePreview) await handleUpgradePreview(state.upgradePreview);
       if (character.ctype === "merchant") await flushNativePurchaseReceipts();
       if (character.ctype === "merchant" && character.stand && !merchantIdleActive && !root.__merchantActiveJob &&
           !root.__merchantInventoryTidy && !merchantLuckyUpgrade().pending())
@@ -11367,14 +11429,14 @@
     if(!c && !id)return;
     if(c && (c.returnWalking || c.continuousReturn === 1))return;
     root.__partyConvoyDefense=id || c.id;
-    if(c && c.purpose==='monster-hunt' && c.nonPreemptible) {
+    if(c && (c.routeProtocol===4 || c.purpose==='monster-hunt' && c.nonPreemptible)) {
       if(c.defensePaused)return;
       if(c.freezeRoute)c.freezeRoute();
       if(c.detachRoute)c.detachRoute();
       if(c.townAttempt && c.townAttempt.state==='casting')c.townAttempt.state='interrupted';
       c.defensePaused=true;c.phase='defending';c.routeReady=false;
       try {Promise.resolve(stop()).catch(function(){});}catch(_){}
-      root.__partyNavigationDetail='Clearing attackers before Hunt return';
+      root.__partyNavigationDetail='Defending party; convoy will resume after combat';
       if(root.partyQueueClient && root.partyQueueClient.flush)root.partyQueueClient.flush();
       if(root.partyRoleRunner)root.partyRoleRunner.wake();
       return;
@@ -12622,6 +12684,7 @@
 
   async function coordinatedMonsterTravel(command) {
     var convoy = { id: command.convoyId, epoch: Number(command.epoch), commandId: command.id,
+      routeProtocol: command.routeProtocol,
       navigationRevision: Number(command.navigationRevision) || 0,
       generation: runtimeGeneration, destination: command.location, cancelled: false,
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
@@ -13890,6 +13953,7 @@
     },
     isBanking: function () { return banking || bankQueued; },
     isOccupied: function () {
+      if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
       if (convoyTraveling && convoyTraveling.continuousReturn === 1) {
         root.__partyCombatOwner = "convoy:" + convoyTraveling.phase;

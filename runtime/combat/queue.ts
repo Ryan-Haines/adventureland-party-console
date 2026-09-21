@@ -5,6 +5,7 @@ import type {Member, Target, Fight, Group, Death} from './grouped.ts';
 import {reconcileClaims} from './claims.ts';
 import {releaseResetFights} from './reset-fight.ts';
 import {retainNominations} from './nomination-retention.ts';
+import {releaseUnseenPrimary} from './unseen-primary.ts';
 export interface Candidate extends Target {priority?: number; passiveRare?: boolean}
 export interface Evidence extends Target {server: string|undefined; at: number; startedAt?: number; action: string; state: 'pending' | 'engaged' | 'rejected'}
 export function reconcileQueue(old: Group | undefined | null, members: Member[], leader: string, now: number, key: string, resetAt=0, pullsPaused=false, huntTarget: string | null = null) {
@@ -73,6 +74,12 @@ export function reconcileQueue(old: Group | undefined | null, members: Member[],
     .filter(t=>t.map===s?.map&&t.in===s?.in&&!excluded({...t,server:s!.server},now)&&!rejected({...t,server:s!.server})&&!(old?.pursuitExclusions||[]).some(e=>e.until>now&&e.identity===targetIdentity({...t,server:s!.server}))&&!fights.some(f=>identity(f)===identity({...t,server:s!.server})))
     .map(t=>({...t,server:s!.server,fighter:leader,startedAt:old?.queue?.find(c=>c.id===t.id&&c.map===t.map&&c.in===t.in)?.startedAt??now,state:'planned' as const,score:score(t)}))
     .sort((a,b)=>(b.priority??50)-(a.priority??50)||a.score-b.score||a.id.localeCompare(b.id));
+  const released = releaseUnseenPrimary(old?.target, fights, candidates, members, recovery.searches, now, pullsPaused);
+  if (released) {
+    lostTargets.push(released);
+    fights.splice(fights.findIndex(f => targetIdentity(f) === targetIdentity(released)), 1);
+    delete recovery.searches[targetIdentity(released)];
+  }
   const visibleThreat=(f:Fight)=>reports.some(m=>m.status!.server===f.server&&(m.status!.groupedCombat?.threats||[]).some(t=>t.id===f.id&&t.map===f.map&&t.in===f.in));
   const missingHead=old?.target && recovery.searches[targetIdentity(old.target as Fight)];
   const defense=missingHead&&fights.find(visibleThreat);

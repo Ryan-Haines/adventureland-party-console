@@ -73,6 +73,7 @@ export interface HuntCycle extends Hunt {
   endReason?: string;
 }
 export interface HuntStatus {
+  anniversaryState?: { busy?: boolean };
   activeCombatTarget?: { id: string; map: string; in?: string | number; server: string };
   groupedCombat?: {
     currentAttackersAt?: number;
@@ -111,6 +112,9 @@ export interface LootProgress {
   error?: string;
 }
 interface HuntConvoyState {
+  participants?: string[];
+  walkingActivity?: string;
+  walkingParents?: Record<string, { revision: number }>;
   continuousReturn?: number;
   returnTown?: import('../navigation/return-town.ts').ReturnTownPolicy;
   cause?: "farming-conflict";
@@ -187,11 +191,9 @@ export interface HuntTickState extends HuntFailureState {
   >;
   eventReturn: unknown;
   anniversary?: {
-    eventCycle?: {
-      returnCompletedAt?: number;
-      supersededAt?: number;
-      combatHandoffAt?: number;
-    } | null;
+    eventCycle?: Partial<Pick<import("../anniversary/contracts.ts").AnniversaryCycle,
+      "endsAt" | "participants" | "waypoints" | "returnDispatchedAt" | "kissOperations" |
+      "returnReason" | "returnCompletedAt" | "supersededAt" | "combatHandoffAt">> | null;
   };
   monsterSearchRadiusByCharacter: Record<string, number>;
   combatLogs?: Record<string, StoredCombatLogEntry[]>;

@@ -58,6 +58,7 @@ function compatible(state: SharedState, c: SharedConvoy, now: number): boolean {
   });
 }
 function begin(state: SharedState, c: SharedConvoy, now: number): boolean {
+  delete c.missingRoutes;
   const leader = state.statuses[c.leader];
   if (!compatible(state, c, now) || !leader || leader.moving) return false;
   c.phase = "shared-prepare";
@@ -241,6 +242,8 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
       return false;
     }
     if (c.phase === "scheduled") { c.phase = "travel"; return true; }
+    const missing = missingTravelRoute(state, c, now);
+    if (missing) return recover(state, "Travel route disappeared: " + missing, now);
     // Native legacy completion/leg barriers still own workflow advancement.
     return c.returnRouting && !c.continuousReturn ? legacy.step(state, now) : false;
   }
@@ -366,6 +369,22 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     propagateHuntTarget(state);
     return changed || checkpoint;
   }, signal, hold, engage };
+}
+
+// Health/ownership checks run first. Only fresh, continuously missing handles
+// authorize regrouping; completed members and superseding navigation never do.
+function missingTravelRoute(state: SharedState, c: SharedConvoy, now: number): string | undefined {
+  const missing = c.missingRoutes ||= {};
+  for (const name of members(c)) {
+    const status = state.statuses[name]!;
+    if (status.convoyNavigation) { delete missing[name]; continue; }
+    const previous = missing[name];
+    if (!previous || status.seenAt - previous.observedAt > 3000)
+      missing[name] = { since: now, observedAt: status.seenAt };
+    else previous.observedAt = status.seenAt;
+    if (now - missing[name]!.since >= 3000) return name;
+  }
+  return undefined;
 }
 
 function departureDelay(c:SharedConvoy):number {

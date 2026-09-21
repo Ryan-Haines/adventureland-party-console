@@ -105,7 +105,6 @@ function casualty(p: Party, c: Convoy): boolean {
   return c.participants.some(name => { const s = p.statuses[name] as Status | undefined; return s?.rip || s?.hp === 0; });
 }
 function localDefense(p: Party, c: Convoy): boolean {
-  if (!c.continuousReturn) return false;
   return c.participants.some(name => {
     const command = p.commands[name] as {id?:number;convoyId?:string;epoch?:number;navigationRevision?:number} | undefined;
     const s = p.statuses[name] as {convoyNavigation?: {id:string;epoch:number;commandId:number;navigationRevision:number;runtimeId:string;phase:string};combatSelection?:{runtimeId?:string}} | undefined;

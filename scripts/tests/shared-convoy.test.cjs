@@ -111,6 +111,49 @@ function party(){
  activeConvoy:{id:'test',epoch:7,routeProtocol:4,phase:'assemble',leader:'L',participants:names,completed:[],slowestSpeed:57,
  rally:{map:'main',x:0,y:0},location:{map:'main',x:120,y:0},purpose:null,combatHandoffAllowed:true}};
 }
+function travellingParty() {
+ const p=party(),e=engine();e.step(p,1000);
+ for(const name of p.activeConvoy.participants){report(p,name,'travelling',1000);p.statuses[name].combatSelection={runtimeId:name};}
+ p.activeConvoy.phase='travel';return {p,e};
+}
+test('missing local routes regroup the Bee stop without replacing the Stoneworm destination',()=>{
+ const {p,e}=travellingParty(),c=p.activeConvoy;
+ c.purpose='monster-hunt';c.huntTarget='stoneworm';c.location={map:'spookytown',x:677,y:129};
+ const destination=c.location;delete p.statuses.L.convoyNavigation;delete p.statuses.F.convoyNavigation;
+ e.step(p,1000);assert.equal(c.phase,'travel');
+ for(const s of Object.values(p.statuses))s.seenAt=4000;
+ e.step(p,4000);assert.equal(c.phase,'shared-hold');assert.match(c.failure,/route disappeared/);
+ for(const name of c.participants)report(p,name,'held',4001);
+ e.step(p,4001);assert.equal(c.phase,'shared-prepare');assert.equal(c.location,destination);
+ assert.equal(c.huntTarget,'stoneworm');assert.equal(c.recoveryAttempts,1);
+});
+test('transient missing reports reset and newer navigation cannot be overwritten by the watchdog',()=>{
+ const {p,e}=travellingParty();delete p.statuses.F.convoyNavigation;e.step(p,1000);
+ report(p,'F','travelling',2000);e.step(p,2000);delete p.statuses.F.convoyNavigation;
+ for(const s of Object.values(p.statuses))s.seenAt=4000;
+ e.step(p,4000);assert.equal(p.activeConvoy.phase,'travel');
+ p.commands.F={id:999,type:'manual'};
+ for(const s of Object.values(p.statuses))s.seenAt=7000;
+ e.step(p,7000);assert.equal(p.activeConvoy.failureCode,'owner-lost');assert.equal(p.commands.F.id,999);
+});
+test('missing-route recovery does not count report gaps or override manual cancellation',()=>{
+ const {p,e}=travellingParty();delete p.statuses.F.convoyNavigation;e.step(p,1000);
+ for(const s of Object.values(p.statuses))s.seenAt=10000;
+ e.step(p,10000);assert.equal(p.activeConvoy.phase,'travel','a stale gap restarts the observation window');
+ p.navigationIntents={F:{revision:0,cancelled:true}};
+ for(const s of Object.values(p.statuses))s.seenAt=13000;
+ e.step(p,13000);assert.equal(p.activeConvoy.failureCode,'owner-lost');assert.equal(p.activeConvoy.recoveryAttempts,undefined);
+});
+test('a reported local defensive stop survives a threat disappearing before coordinator observation',()=>{
+ const {p}=travellingParty(),c=p.activeConvoy;
+ require('./helpers/travel-observations.cjs').observeTravel(p.statuses);
+ c.purpose='monster-hunt';c.huntTarget='stoneworm';report(p,'F','defending',1000);
+ const e=createSharedConvoyNavigation(legacy,require('../../runtime/coordinator/navigation/convoy-defense.ts').step);
+ const destination=c.location;e.step(p,1000);assert.equal(c.phase,'defending');
+ e.step(p,1100);assert.ok(c.loot);
+ p.statuses.L.convoyLoot={...c.loot,complete:true,observedAt:1101};
+ e.step(p,1101);e.step(p,1102);assert.equal(c.phase,'shared-prepare');assert.equal(c.location,destination);
+});
 function report(p,name,phase='route-ready',at=1000){const c=p.activeConvoy,cmd=p.commands[name],s=p.statuses[name];
  s.seenAt=at;s.convoyNavigation={id:c.id,epoch:c.epoch,commandId:cmd.id,navigationRevision:cmd.navigationRevision,
  runtimeId:name,routeVersion:c.routeVersion,phase,routeReady:phase==='route-ready'};}

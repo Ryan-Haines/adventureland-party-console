@@ -57,6 +57,7 @@ export interface SharedConvoy extends PartyConvoy {
   sharedStartedAt?: number; sharedProgressAt?: number; sharedDistances?: Record<string, number>;
   sharedReadySince?: number; routePublishedAt?: number; sharedStoppedAt?: number;
   sharedWaitingAt?: number;
+  missingRoutes?: Record<string, { since: number; observedAt: number }>;
   walkingActivity?: string;
   routeServer?: string;
   retryExhausted?: boolean;

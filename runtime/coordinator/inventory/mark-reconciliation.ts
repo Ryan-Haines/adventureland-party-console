@@ -15,6 +15,7 @@ interface UpgradeState extends ConflictState, CraftReservationState {
   autoUpgradeMarks: Record<string, Parameters<typeof reconcileUpgradeMarks>[1] | undefined>;
 }
 interface InventoryStatus {
+  upgradeInventoryBusy?: boolean;
   items?: unknown;
   slots?: Record<string, {item: import("../contracts/item.ts").Item} | null | undefined>;
 }
@@ -51,6 +52,9 @@ export function reconcileCoordinatorUpgradeMarks(
   name: string,
   status?: InventoryStatus | null,
 ): boolean {
+  // Lucky-slot swaps and recovery temporarily hide the item at its source slot.
+  // This is not evidence that the item broke or its target was cancelled.
+  if (!Array.isArray(status?.items) || status.upgradeInventoryBusy) return false;
   const result = reconcileUpgradeMarks(
     state.upgrades[name] || [],
     state.autoUpgradeMarks[ruleOwner(state, name)] || {},

@@ -6,6 +6,7 @@ import { createHuntParticipants } from "./participants.ts";
 import { createHuntTravel } from "./travel.ts";
 import { huntLootPending } from "./loot.ts";
 import { stepHuntBackup } from "./backup.ts";
+import { recoverHuntFarmWalk } from "./farm-walk.ts";
 
 /** Keeps turn-in ownership ahead of optional event, farming, and participant changes. */
 export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
@@ -54,6 +55,7 @@ export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
       hunt.message = state.combatRecovery.reason || "Recovering after party death";
       return;
     }
+    if (recoverHuntFarmWalk(hunt, state, ports)) return;
     if (recovery.pause(hunt) || hunt.participants.some((name) => state.statuses[name]?.rip)) return;
     if (hunt.stage === "checking-quests") {
       ports.prepare(hunt);

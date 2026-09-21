@@ -2031,7 +2031,10 @@
       }, 3e3);
       socket.once("entities", observe);
     });
-    const rare = createDepartureLoot(ports), hunt = createDepartureLoot(ports), convoy = createDepartureLoot(ports);
+    const rare = createDepartureLoot(ports), hunt = createDepartureLoot({
+      ...ports,
+      defending: () => mission?.encounter && ports.huntEncounterDefending ? ports.huntEncounterDefending() : ports.defending()
+    }), convoy = createDepartureLoot(ports);
     let convoyHold = false;
     let lastState = 0, lastRare = null, mission = null, finalKill = null, finalKillAt = 0;
     const activeMission = () => mission && !["ended", "failed-return", "backup-travel", "backup-farming"].includes(mission.stage);

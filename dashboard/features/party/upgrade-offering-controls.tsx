@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { ChevronRight, Sparkles, X } from 'lucide-react';
 import { ItemSprite } from './item-sprite';
 import { itemMaximumLevel } from './item-maximum-level';
 import type { Item } from './item';
@@ -12,27 +13,36 @@ import { upgradeOfferings, offeringOverlap, type UpgradeOffering, type UpgradeOf
 export type OfferingSource = {slot:number | string; equipped?:boolean};
 type Selection = {item:Item; meta?:ItemMeta | null; source?:OfferingSource; offering?:UpgradeOffering; rule?:UpgradeOfferingRule};
 interface Controls {
+  character:string;
+  executor?:string | null;
   stock:Partial<Record<UpgradeOffering,number>>;
   rules:UpgradeOfferingRule[];
   catalog:MerchantCatalogItem[];
   select:(selection:Selection) => void;
   remove:(rule:UpgradeOfferingRule) => Promise<void>;
+  clear:() => Promise<void>;
 }
 const Context = createContext<Controls | null>(null);
 export const useUpgradeOfferings = () => useContext(Context);
 const secondary = 'border-slate-600 bg-slate-900 text-slate-100 hover:bg-slate-800 hover:text-white';
 const control = 'rounded border border-slate-600 bg-slate-900 p-2 text-slate-100 disabled:text-slate-500';
 
-export function UpgradeOfferingProvider({children, character, stock, rules, catalog, post}: {
+export function UpgradeOfferingProvider({children, character, executor, stock, rules, catalog, post}: {
   children:ReactNode; character:string; stock:Controls['stock']; rules:UpgradeOfferingRule[];
+  executor?:string | null;
   catalog:MerchantCatalogItem[]; post:(path:"/command", body:Record<string,unknown>) => Promise<unknown>;
 }) {
   const [selection, select] = useState<Selection | null>(null);
   const [error, setError] = useState('');
   const save = (body:Record<string,unknown>) => post('/command', {character, ...body});
-  return <Context.Provider value={{stock, rules, catalog, select, remove:async rule => {
+  return <Context.Provider value={{character, executor, stock, rules, catalog, select, remove:async rule => {
     try { await save({type:'upgrade-offering-rule', rule:{id:rule.id}, remove:true}); setError(''); }
     catch (e) { setError(e instanceof Error ? e.message : 'Could not remove rule'); }
+  }, clear:async () => {
+    setError('');
+    try {
+      for (const rule of rules) await save({type:'upgrade-offering-rule', rule:{id:rule.id}, remove:true});
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not clear upgrade rules'); }
   }}}>
     {children}
     {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
@@ -43,7 +53,7 @@ export function UpgradeOfferingProvider({children, character, stock, rules, cata
 
 function OfferingIcon({name, catalog}: {name:string; catalog:MerchantCatalogItem[]}) {
   const item = catalog.find(entry => entry.id === name);
-  return <span className="relative inline-block h-8 w-8 shrink-0 overflow-hidden rounded border border-slate-600 bg-black" aria-label={item?.name || name}>
+  return <span className="relative inline-block h-14 w-14 shrink-0 overflow-hidden rounded border border-slate-600 bg-black" aria-label={item?.name || name}>
     {item?.sprite && <ItemSprite sprite={item.sprite} />}
   </span>;
 }
@@ -108,16 +118,39 @@ function OfferingDialog({selection, rules, stock, catalog, close, save}: {
 export function UpgradeOfferingRules() {
   const controls = useUpgradeOfferings();
   const [open,setOpen] = useState(false);
+  const [clearArmed,setClearArmed] = useState(false);
+  const [clearing,setClearing] = useState(false);
   if (!controls) return null;
-  return <section className="mt-2 rounded border border-slate-700 bg-slate-950 p-2">
-    <Button variant="outline" className={secondary} aria-expanded={open} onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Show'} upgrade rules ({controls.rules.length})</Button>
-    {open && <div className="mt-2 space-y-2">{!controls.rules.length && <p className="p-2 text-sm text-slate-400">No upgrade rules.</p>}
-      {controls.rules.map(rule => <div key={rule.id} className="flex flex-wrap items-center gap-2 rounded border border-slate-700 bg-slate-900 p-2 text-sm text-slate-100">
+  async function clearRules() {
+    if (!controls || clearing) return;
+    setClearing(true);
+    try { await controls.clear(); }
+    finally { setClearing(false); setClearArmed(false); }
+  }
+  return <section className="-mx-5 border-y border-sky-800 bg-black text-sky-300">
+    <div className="flex h-10 w-full items-stretch bg-black">
+    <button type="button" aria-label="Upgrade rules" aria-expanded={open} onClick={() => {setOpen(!open); setClearArmed(false);}}
+      className="flex min-w-0 flex-1 items-center gap-2 border-0 bg-black px-5 text-left text-xs text-sky-300 transition-colors hover:bg-slate-900 hover:text-sky-100">
+      <ChevronRight className={`h-4 w-4 transition-transform duration-300 ${open ? 'rotate-90' : ''}`} />
+      <Sparkles className="h-4 w-4" /><span>Upgrade rules</span>
+      <span className="ml-auto font-mono opacity-70">{controls.rules.length}</span>
+    </button>
+    <button type="button" disabled={!controls.rules.length || clearing}
+      aria-label={clearArmed ? 'Really clear all Upgrade rules' : 'Clear all Upgrade rules'}
+      title={clearArmed ? 'Click again to clear all' : 'Clear all'}
+      onClick={() => {if (clearArmed) void clearRules(); else setClearArmed(true);}}
+      className={`flex shrink-0 items-center justify-center overflow-hidden border-l transition-all duration-300 disabled:border-slate-800 disabled:text-slate-700 ${clearArmed ? 'w-24 border-rose-300 bg-rose-600 px-2 text-white hover:bg-rose-500' : 'w-10 border-rose-900 bg-black text-rose-400 hover:bg-rose-950 hover:text-white'}`}>
+      <span className={`whitespace-nowrap text-[10px] font-semibold transition-opacity ${clearArmed ? 'opacity-100' : 'opacity-0 w-0'}`}>Really?</span>
+      <X className="h-4 w-4 shrink-0" />
+    </button>
+    </div>
+    {open && <div className="space-y-2 border-t border-sky-800 bg-black px-5 py-3">{!controls.rules.length && <p className="text-sm text-slate-400">No upgrade rules.</p>}
+      {controls.rules.map(rule => <div key={rule.id} className="flex flex-wrap items-center gap-2 border-b border-white/10 py-1 text-xs text-slate-100 last:border-b-0">
         <OfferingIcon name={rule.name} catalog={controls.catalog}/><span>{controls.catalog.find(item => item.id === rule.name)?.name || rule.name}</span>
         <span>+{rule.floor} → +{rule.ceiling}</span><OfferingIcon name={rule.offering} catalog={controls.catalog}/><span>{upgradeOfferings[rule.offering]}</span>
         <span className="text-sky-200">{rule.required ? 'Required' : 'When available'}</span>
-        <Button variant="outline" className={secondary} onClick={() => controls.select({item:{name:rule.name},rule})}>Edit</Button>
-        <Button variant="outline" className={secondary} onClick={() => void controls.remove(rule)}>Remove</Button>
+        <Button variant="outline" className={secondary} disabled={clearing} onClick={() => controls.select({item:{name:rule.name},rule})}>Edit</Button>
+        <Button variant="outline" className={secondary} disabled={clearing} onClick={() => void controls.remove(rule)}>Remove</Button>
       </div>)}
     </div>}
   </section>;

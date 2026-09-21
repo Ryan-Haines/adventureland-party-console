@@ -557,6 +557,7 @@
     }
     function outcome(done, reason) {
       if (done) return "Native fallback succeeded";
+      if (reason === "Combat handoff") return "Travel paused for combat";
       return /cancelled|replaced|superseded/i.test(reason || "") ? "Movement cancelled" : "Movement failed";
     }
     function fallback(j, issue) {
@@ -792,6 +793,9 @@
       },
       install: importRoute,
       last: () => last,
+      combatHandoff() {
+        finish(false, "Combat handoff");
+      },
       report: () => journey ? {
         id: journey.id,
         engine: engine(journey),
@@ -1041,6 +1045,57 @@
     };
   }
   Object.assign(globalThis, { partyCreateBankStacks: createBankStacks });
+
+  // runtime/upgrade-preview.ts
+  var previewOptions = ["none", "offeringp", "offering", "offeringx"];
+  function unavailablePreview(executor, item, reason) {
+    return { executor, item, options: Object.fromEntries(previewOptions.map((option) => [option, { reason }])) };
+  }
+
+  // runtime/characters/upgrade-preview.ts
+  var same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  function matchesPreviewItem(live, wanted) {
+    return !!live && Object.entries(wanted).every(([key, value]) => same(live[key], value));
+  }
+  async function previewUpgrade(request, ports) {
+    const live = ports.items()[request.slot];
+    if (!matchesPreviewItem(live, request.item)) return unavailablePreview(request.executor, request.item, "Item changed; reopen the menu");
+    const original = JSON.stringify(live);
+    const result = unavailablePreview(request.executor, request.item, "Preview expired; refresh");
+    for (const option of previewOptions) {
+      if (!ports.current() || ports.now() >= request.expiresAt) break;
+      if (JSON.stringify(ports.items()[request.slot]) !== original)
+        return unavailablePreview(request.executor, request.item, "Item changed; reopen the menu");
+      result.options[option] = await previewOption(request, ports, live, option);
+      if (!ports.current() || JSON.stringify(ports.items()[request.slot]) !== original)
+        return unavailablePreview(request.executor, request.item, "Item or session changed; reopen the menu");
+    }
+    return result;
+  }
+  async function previewOption(request, ports, live, option) {
+    const scrollName = "scroll" + ports.grade(live);
+    const scroll = ports.items().findIndex((item) => item?.name === scrollName);
+    const offering = option === "none" ? null : ports.items().findIndex((item) => item?.name === option && !item.l);
+    if (scroll < 0) return { reason: "Missing " + scrollName + " in merchant inventory" };
+    if (offering === -1) return { reason: "Offering not in merchant inventory" };
+    try {
+      const preview = await ports.preview(request.slot, scroll, offering, true);
+      if (!validPreview(preview, request.item, scrollName, option)) throw Error("Mismatched server preview");
+      return { preview, observedAt: ports.now() };
+    } catch (error) {
+      return { reason: previewError(error) };
+    }
+  }
+  function validPreview(preview, item, scroll, option) {
+    return preview.calculate === true && Number.isFinite(preview.chance) && preview.chance >= 0 && preview.scroll === scroll && (preview.offering || void 0) === (option === "none" ? void 0 : option) && matchesPreviewItem(preview.item, item);
+  }
+  function previewError(error) {
+    if (error instanceof Error) return error.message;
+    const data = error;
+    const reason = data?.reason || data?.response || "Server preview unavailable";
+    return { cant_in_bank: "Merchant is in the bank", distance: "Merchant must be near the upgrader or have a computer", upgrade_in_progress: "Merchant busy", item_locked: "Item is locked" }[reason] || reason;
+  }
+  globalThis.previewPartyUpgrade = previewUpgrade;
 
   // runtime/characters/legacy-entry.ts
   var root = globalThis;

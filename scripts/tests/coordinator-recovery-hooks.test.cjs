@@ -11,12 +11,26 @@ function fixture(){
 test('rare recovery resets the supplied Hunt before optional quest preparation and reads current turn-in ownership',()=>{
  const {state,calls,hooks}=fixture();assert.equal(hooks.rare.turnIn(),false);
  state.monsterHunt={stage:'at-daisy'};assert.equal(hooks.rare.turnIn(),true);
+ state.monsterHunt={stage:'returning',turnIn:{phase:'returning'}};assert.equal(hooks.rare.turnIn(),true);
  state.monsterHunt={stage:'travel',turnIn:{phase:'claiming'}};assert.equal(hooks.rare.turnIn(),true);
  const hunt={cycleId:'saved',turnIn:{phase:'claiming'},stage:'farming',target:'rat',currentIndex:2,missions:[{}],pickupPending:true,waitForExpiry:true};
  hooks.rare.resumeHunt(hunt,false);assert.equal(calls.length,0);
  assert.deepEqual(hunt,{cycleId:'saved',stage:'checking-quests',target:null,currentIndex:-1,missions:[],pickupPending:false,waitForExpiry:false});
  hooks.rare.resumeHunt(hunt,true);assert.deepEqual(calls,[['prepare',hunt]]);
  assert.equal(state.monsterHunt.stage,'travel','reset applies to the supplied saved Hunt');
+});
+test('real rare-controller wiring cannot repeatedly replace a protected Daisy return with Tiny P',()=>{
+ const {createRareHunting}=require('../../runtime/coordinator/navigation/rare-hunting.ts');
+ const f=fixture(),now=100000;
+ Object.assign(f.state,{leader:'P',farmingPolicy:'hunt',monsterFocus:['ghost'],location:{map:'main',x:126,y:-413},
+  passiveRareHunts:{tinyp:true},statuses:{P:{ctype:'warrior',seenAt:now,map:'halloween',in:'halloween',server:'USII',hp:100,x:0,y:0,
+    rareSightings:[{id:'225',mtype:'tinyp',x:20,y:0,hp:100,visible:true}]}},
+  monsterHunt:{cycleId:'hunt',stage:'returning',participants:['P'],turnIn:{owner:'P',phase:'returning'}},
+  activeConvoy:{id:'daisy',purpose:'monster-hunt',phase:'shared-prepare'}});
+ const convoy=f.state.activeConvoy;
+ const rare=createRareHunting(f.state,{...f.hooks.rare,now:()=>now});
+ for(let i=0;i<5;i++){rare.report('P',f.state.statuses.P);rare.tick();}
+ assert.equal(rare.encounter(),false);assert.equal(f.state.activeConvoy,convoy);assert.equal(f.calls.includes('cancel'),false);
 });
 test('Escape cancellation reads participants and commands after convoy cancellation and preserves unrelated commands',()=>{
  const {state,calls,ports}=fixture();

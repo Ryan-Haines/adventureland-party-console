@@ -65,6 +65,13 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
+Protocol 4 defensive stops retain their local convoy identity until the coordinator
+acknowledges the stop, even when a short-lived attacker dies or is classified as a
+passing encounter before the next heartbeat. The shared travel watchdog regroups
+after three seconds of fresh missing local route reports, preserving the destination
+and checking navigation ownership first. Validate with `shared-convoy.test.cjs`,
+`convoy-defense.test.cjs`, and `passive-hunting.test.cjs`.
+
 Managed public distributions use the host's authenticated update controller. Its
 expiring `AL_DATA_DIR/updates/pause.json` lease suppresses new merchant/bank
 dispatch and returns a maintenance-only heartbeat until each fresh character
@@ -134,6 +141,17 @@ pre-start deferrals release queue ownership without extending the worker watchdo
 Validate with `merchant-delivery-recovery.test.cjs` and merchant recovery/completion
 tests; publish character and coordinator assets together using the ordinary restart.
 
+Manual upgrade menus request server previews through `/party-api/upgrade-preview`.
+The auxiliary heartbeat request and `/upgrade-preview/result` response are ephemeral
+and expire after ten seconds; they never create merchant jobs. Only the executing
+merchant's exact inventory item and currently carried scroll/offerings are queried.
+The runtime always uses `upgrade(item, scroll, offering, true)` and serializes it
+against inventory/production work. A timed-out official deferred retains its guard
+until it settles, so a late preview cannot resolve a real upgrade. The menu shows
+unavailable reasons instead of estimates, and labels the server percentage without
+the separate lucky-slot roll adjustment. Validate with `upgrade-preview.test.cjs`
+and `upgrade-offerings-ui.test.cjs`; publish character and coordinator assets together.
+
 Fresh inventory reports relocate delivery marks to the item's current slot before
 scheduling work. Existing matching slots retain ownership before displaced marks
 claim other copies; merged stacks reserve each request's original quantity across
@@ -184,6 +202,16 @@ An unissued manual attempt can be abandoned during recovery without losing its
 request. Validate with `upgrade-offerings*.test.cjs`,
 `upgrade-offering-recovery.test.cjs`, and `lucky-upgrade.test.cjs`. Publish character
 and coordinator assets together through the supported restart below.
+
+Automatic upgrade passes persist their original item, target and `passId` before
+the first production attempt, including bank withdrawals. Reconciliation pauses
+during lucky-slot swaps/recovery and inventory tidying, and follows a uniquely
+matching relocated survivor. Intermediate levels remain reserved for processing;
+completion clears the pass by ID. Missing scroll/item inputs retry instead of
+creating a capacity block. Validate with `merchant-upgrade-recovery.test.cjs`,
+`coordinator-mark-reconciliation.test.cjs`, `coordinator-merchant-completion.test.cjs`
+and `upgrade-offerings-client.test.cjs`. Publish character and coordinator assets
+together through the supported full restart.
 
 Finite upgrade/compound quantities mean remaining successful target-level outputs,
 not desired stock. `inventory/production.ts` persists admission and completion
@@ -315,12 +343,34 @@ fresh compatible reports arrive. Hunt and event returns keep their own recovery;
 completed event returns release leftover convoys instead of starting another trip.
 Manual cancellation and newer navigation are never authorization to retry old travel.
 
+Hunt's own `farm-recovery` shared walk yields at the three-minute Daisy threshold,
+before event-pause handling. Failed farming walks also release on fresh reports,
+with matching parent revisions and command ownership. Actual event travel, Escape,
+death recovery and manual navigation keep priority. Test `hunt-farm-walk.test.cjs`.
+Rare acquisition uses the same turn-in priority during travel and claims, so a new
+Tiny P sighting cannot repeatedly cancel the Daisy convoy. Cover the real wiring
+with `coordinator-recovery-hooks.test.cjs`.
+An unseen engaged queue head may yield to a visible eligible alternative after
+eight seconds of fresh party absence observations even when local search cannot
+reach its last position. This releases an obligation, not a death: old attack
+evidence stays retired and a new living sighting can nominate the monster again.
+Sightings, attackers and fresh attack evidence preserve the current fight; stale
+reports and activity pauses do not advance the timer. Validate with
+`unseen-primary.test.cjs` and `bee-recovery.test.cjs`; coordinator-only restart suffices.
+
 Event recovery retires an overlapping `farm-recovery` shared walk or failed event
 entry walk when its saved navigation revisions still match, including after
 restart. It preserves event-return commands and captured waypoints, and rejects
 late farming/event-entry walking requests and event departure permission until
 the event return releases ownership. This lets Goobrawl's transporter approach
 and Ice Golem's exit from Winterland run before returning to the saved checkpoint.
+A combat event ending during a protected Daisy return preserves the Hunt's owned
+travel command. Once fresh participants have exited to Mainland, matching event
+recovery yields directly to Daisy instead of dispatching a checkpoint convoy.
+Legacy returns failed by an `event-return-town` replacement are retired only after
+matching navigation revisions and completed Town reports; unrelated failures,
+manual cancellation, newer commands, Escape, and death recovery stay protected.
+Validate with `hunt-ab-return.test.cjs`; coordinator-only activation suffices.
 If deferred participants reach Main after checkpoint travel was dispatched, their
 matching saved navigation is included in a rebuilt return plan. A newer manual
 navigation revision cannot rejoin the old return.

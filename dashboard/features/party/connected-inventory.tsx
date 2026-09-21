@@ -48,7 +48,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
     return <p role="status" className="border-t border-emerald-900/70 bg-[#0b1916] p-5 text-emerald-100">Loading inventory…</p>;
   }
   return (
-    <UpgradeOfferingProvider character={char.name} stock={state.upgradeOfferingStock || {}} rules={state.upgradeOfferingRules || []} catalog={state.merchantCatalog?.allItems || []} post={model.post}>
+    <UpgradeOfferingProvider character={char.name} executor={state.merchantCharacter} stock={state.upgradeOfferingStock || {}} rules={state.upgradeOfferingRules || []} catalog={state.merchantCatalog?.allItems || []} post={model.post}>
     <InventoryPanel
       character={char}
       sharedRules={!!state.merchantRules}

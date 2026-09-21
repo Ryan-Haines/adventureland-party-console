@@ -281,13 +281,13 @@ export function InventoryPanel({
               setPendingAutomaticRemoval(null);
               setEditingAutomaticRule(null);
             }}
-            className="flex min-w-0 flex-1 items-center gap-2 px-5 text-left text-xs transition-colors hover:bg-white/5"
+            className="flex min-w-0 flex-1 items-center gap-2 border-0 bg-black px-5 text-left text-xs text-inherit transition-colors hover:bg-slate-900 hover:text-white"
           >
             <ChevronRight
               className={`h-4 w-4 transition-transform duration-300 ${open ? "rotate-90" : ""}`}
             />
             {icon}
-            <span>Show {title}</span>
+            <span>{title}</span>
             <span className="ml-auto font-mono opacity-70">{entries.length}</span>
           </button>
           <button
@@ -1101,7 +1101,7 @@ export function InventoryPanel({
       <div className={`${character.name !== merchant ? "mt-2" : "mt-5"} grid gap-2`}>
         {automaticSection(
               "npc",
-              "auto NPC sales",
+              "Auto NPC sales",
               <DollarSign className="h-4 w-4" />,
               "border-rose-800 text-rose-300",
               [...Object.entries(autoNpcSales).filter(([, rule]) => character.name === merchant ? !rule.character : rule.character === character.name).map(([key, rule]) => ({
@@ -1114,7 +1114,7 @@ export function InventoryPanel({
               }))],
             )}
         {automaticSection(
-          "deconstruction", "auto deconstruction", <BrokenStickIcon className="h-4 w-4" />,
+          "deconstruction", "Auto deconstruction", <BrokenStickIcon className="h-4 w-4" />,
           "border-orange-800 text-orange-300",
           [...Object.entries(autoDeconstruction).map(([key, rule]) => ({
             key, item: rule.item, detail: 'Automatic',
@@ -1130,7 +1130,7 @@ export function InventoryPanel({
           <>
             {automaticSection(
               "stand",
-              "auto stand marks",
+              "Auto stand marks",
               <ShoppingCart className="h-4 w-4" />,
               "border-amber-800 text-amber-300",
               Object.entries(autoStandMarks).map(([key, rule]) => ({
@@ -1142,7 +1142,7 @@ export function InventoryPanel({
             )}
             {automaticSection(
               "upgrade",
-              "auto upgrades",
+              "Auto upgrades",
               <Sparkles className="h-4 w-4" />,
               "border-sky-800 text-sky-300",
               Object.entries(allAutoUpgradeMarks).flatMap(([owner, rules]) =>
@@ -1194,7 +1194,7 @@ export function InventoryPanel({
             <UpgradeOfferingRules />
             {automaticSection(
               "compound",
-              "auto compounds",
+              "Auto compounds",
               <Blender className="h-4 w-4" />,
               "border-fuchsia-800 text-fuchsia-300",
               Object.entries(allAutoCompoundMarks).flatMap(([owner, rules]) =>
@@ -1253,7 +1253,7 @@ export function InventoryPanel({
         {character.name === merchant
           ? automaticSection(
               "merchant",
-              "auto merchant marks",
+              "Auto merchant marks",
               <PackageOpen className="h-4 w-4" />,
               "border-purple-800 text-purple-300",
               Object.entries(autoItemMarks)
@@ -1271,7 +1271,7 @@ export function InventoryPanel({
           : null}
         {automaticSection(
           "bank",
-          "auto bank marks",
+          "Auto bank marks",
           <Landmark className="h-4 w-4" />,
           "border-amber-800 text-amber-300",
           Object.entries(autoItemMarks)

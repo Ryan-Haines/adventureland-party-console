@@ -1,13 +1,13 @@
 import type {Fight, Member} from './grouped.ts';
 export interface LostTarget extends Fight {retiredAt:number;reason:string}
-export interface SearchState {missingSince:number;coverageAt?:number;lastObservation?:number}
+export interface SearchState {missingSince:number;coverageAt?:number;lastObservation?:number;unseenMs?:number;lastUnseenAt?:number}
 export const targetIdentity=(t:{id:string;server?:string;map:string;in?:string|number})=>JSON.stringify([t.server,t.map,t.in,String(t.id)]);
 /** Absence is evidence only after an actual entity observation near the last sighting. */
 export function recoverLostTargets(fights:Fight[], members:Member[], previous:Record<string,SearchState>, now:number) {
  const searches:Record<string,SearchState>={},lost:LostTarget[]=[];
  for(const f of fights){
   const key=targetIdentity(f),same=members.filter(m=>m.status&&!m.status.rip&&m.status.hp>0&&now-m.status.seenAt<=3000&&m.status.server===f.server&&m.status.map===f.map&&m.status.in===f.in);
-  const positive=same.some(m=>[...(m.status!.groupedCombat?.sightings||[]),...(m.status!.groupedCombat?.threats||[])].some(t=>t.id===f.id&&t.map===f.map&&t.in===f.in)||
+  const positive=same.some(m=>[...(m.status!.groupedCombat?.sightings||[]),...(m.status!.groupedCombat?.threats||[]),...(m.status!.groupedCombat?.currentAttackers||[])].some(t=>t.id===f.id&&t.map===f.map&&t.in===f.in)||
     (m.status!.groupedCombat?.evidence||[]).some(e=>targetIdentity(e)===key&&e.state!=='rejected'&&now-e.at<=3000));
   if(positive)continue;
   const search={...(previous[key]||{missingSince:now})};

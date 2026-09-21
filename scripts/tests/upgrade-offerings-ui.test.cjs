@@ -7,8 +7,8 @@ m.require=function(id){if(id.startsWith('@/components/ui/'))return new Proxy({},
 m._compile(buildSync({stdin:{contents:"export {UpgradeActions} from './upgrade-actions'; export {UpgradeOfferingProvider, UpgradeOfferingRules} from './upgrade-offering-controls';",resolveDir:path.dirname(filename),loader:'tsx'},bundle:true,packages:'external',external:['@/components/ui/*'],platform:'node',format:'cjs',write:false}).outputFiles[0].text,filename);
 const {UpgradeActions,UpgradeOfferingProvider,UpgradeOfferingRules}=m.exports;
 const text=n=>typeof n==='string'?n:(n.children||[]).map(text).join('');
-async function render({rules=[],stock={offeringp:1},post=async()=>{}}={}){
- let view;await act(async()=>{view=create(React.createElement(UpgradeOfferingProvider,{character:'M',stock,rules,catalog:[{id:'sword',name:'Sword',meta:{upgradeable:true,maxLevel:13,definition:{}}}],post},
+async function render({rules=[],stock={offeringp:1},executor,post=async()=>{}}={}){
+ let view;await act(async()=>{view=create(React.createElement(UpgradeOfferingProvider,{character:'M',executor,stock,rules,catalog:[{id:'sword',name:'Sword',meta:{upgradeable:true,maxLevel:13,definition:{}}}],post},
   React.createElement(UpgradeActions,{item:{name:'sword',level:8},meta:{upgradeable:true,maxLevel:13,definition:{}},offeringSource:{slot:2},onMark(){},onAutoMark(){},onBuy(){}}),React.createElement(UpgradeOfferingRules)));});return view;
 }
 function button(view,label){return view.root.findAllByType('Button').find(n=>text(n)===label);}
@@ -17,7 +17,7 @@ test('manual offering options are last and individually disabled; confirmation s
  const calls=[],v=await render({post:async(...args)=>calls.push(args)});
  try{
   const sub=v.root.findAllByType('ContextMenuSubContent')[0],labels=sub.findAllByType('ContextMenuItem').map(text);
-  assert.deepEqual(labels.slice(-3),['Upgrade with Primling','Upgrade with Primordial Essence','Upgrade with Primordial X']);
+  assert.deepEqual(labels.filter(label=>label.startsWith('Upgrade with ')),['Upgrade with Primling','Upgrade with Primordial Essence','Upgrade with Primordial X']);
   assert.equal(menu(v,'Upgrade with Primling').props.disabled,false);assert.equal(menu(v,'Upgrade with Primordial Essence').props.disabled,true);
   await act(async()=>menu(v,'Upgrade with Primling').props.onClick());
   assert.match(text(v.root.findByType('DialogDescription')),/Use Primling to upgrade Sword from \+8 to \+9/);
@@ -25,6 +25,25 @@ test('manual offering options are last and individually disabled; confirmation s
   await act(async()=>menu(v,'Upgrade with Primling').props.onClick());await act(async()=>button(v,'Confirm').props.onClick());
   assert.deepEqual(calls,[['/command',{character:'M',type:'upgrade-mark',item:{name:'sword',level:8},slot:2,tiers:1,offering:'offeringp'}]]);
  }finally{await act(async()=>v.unmount());}
+});
+
+test('manual preview loads only while open, formats percentages, refreshes and uses white menus',async()=>{
+ const previous=global.fetch,calls=[];
+ global.fetch=async(url,options)=>{calls.push([url,JSON.parse(options.body)]);return {ok:true,json:async()=>({executor:'M',item:{name:'sword',level:8},options:{
+  none:{preview:{chance:0.15321},observedAt:1000},offeringp:{preview:{chance:0.24256},observedAt:1000},
+  offering:{reason:'Offering not in merchant inventory'},offeringx:{reason:'Offering not in merchant inventory'},
+ }})};};
+ let v;
+ try {
+  v=await render({executor:'M'});assert.equal(calls.length,0);
+  for(const sub of v.root.findAllByType('ContextMenuSubContent')){assert.match(sub.props.className,/!bg-white/);assert.match(sub.props.className,/!text-black/);}
+  await act(async()=>v.root.findAllByType('ContextMenuSub')[0].props.onOpenChange(true));
+  assert.equal(calls.length,1);assert.deepEqual(calls[0][1],{character:'M',slot:2,item:{name:'sword',level:8}});
+  const panel=v.root.findByProps({'aria-label':'Upgrade chances'});assert.match(text(panel),/15\.32%/);assert.match(text(panel),/24\.26%/);assert.match(text(panel),/Offering not in merchant inventory/);
+  assert.equal(menu(v,'Refresh chances').props.closeOnClick,false);
+  await act(async()=>menu(v,'Refresh chances').props.onClick());assert.equal(calls.length,2);
+  await act(async()=>v.root.findAllByType('ContextMenuSub')[0].props.onOpenChange(false));assert.equal(calls.length,2);
+ } finally {if(v)await act(async()=>v.unmount());global.fetch=previous;}
 });
 test('overlap is visible before confirmation and adjacent ranges can be saved with no owned offering',async()=>{
  const calls=[],v=await render({stock:{},rules:[{id:'old',name:'sword',floor:7,ceiling:9,offering:'offeringp',required:true}],post:async(...args)=>calls.push(args)});
@@ -36,7 +55,7 @@ test('overlap is visible before confirmation and adjacent ranges can be saved wi
   await act(async()=>v.root.findByProps({'aria-label':'Upgrade offering'}).props.onChange({target:{value:'offering'}}));
   await act(async()=>v.root.findAllByType('input')[1].props.onChange());assert.equal(button(v,'Confirm').props.disabled,false);
   await act(async()=>button(v,'Confirm').props.onClick());assert.deepEqual(calls[0][1].rule,{id:'',name:'sword',floor:9,ceiling:13,offering:'offering',required:false});
-  await act(async()=>button(v,'Show upgrade rules (1)').props.onClick());assert.ok(button(v,'Edit'));assert.ok(button(v,'Remove'));assert.match(text(v.root),/Required/);
+  await act(async()=>v.root.findByProps({'aria-label':'Upgrade rules'}).props.onClick());assert.ok(button(v,'Edit'));assert.ok(button(v,'Remove'));assert.match(text(v.root),/Required/);
  }finally{await act(async()=>v.unmount());}
 });
 test('server rejection remains visible in the dialog',async()=>{
