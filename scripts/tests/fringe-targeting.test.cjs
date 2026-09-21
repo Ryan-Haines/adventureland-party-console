@@ -30,3 +30,17 @@ test('queue filters claims and path exclusions before choosing zone, while passi
  assert.equal(c.root.__partyNomination.rejected.fringe,'zone or target eligibility');
 });
 
+test('a follower nominates nearby ghosts outside the original spawn area for all three target rings',()=>{
+ const source=fs.readFileSync('characters/shared.js','utf8');
+ const entities=Object.fromEntries([1,2,3].map(i=>['g'+i,{id:'g'+i,mtype:'ghost',type:'monster',visible:true,hp:100,map:'halloween',in:'halloween',x:i*20,y:0}]));
+ const c=require('./helpers/client-dependencies.cjs').passingContext({root:{partyFarmingZones:zones},parent:{entities},
+  character:{name:'M',map:'halloween',in:'halloween',x:0,y:0},leader:'W',navigationIntent:{},partyConvoyActive:false,
+  groupedFarming:()=>true,combatRecoveryActive:()=>false,monsterFocus:['ghost'],huntCombatTarget:'ghost',passiveRareHunts:{},
+  partyLocation:area,monsterSearchRadius:200,farmApproach:{failed:{}},isExternallyClaimedMonster:t=>!!t.claimed,
+  groupedEntityReport:t=>t,monsterPriority:()=>50});
+ vm.runInContext(source.slice(source.indexOf('  function inFarmArea('),source.indexOf('  var farmAreaEvidence'))+
+  source.slice(source.indexOf('  function queueCandidates('),source.indexOf('  function queueReport(')),c);
+ assert.deepEqual(Array.from(c.queueCandidates(),t=>t.id),['g1','g2','g3']);
+ entities.g1.claimed=true;entities.g2.x=250;entities.g3.in='other';assert.deepEqual(Array.from(c.queueCandidates()),[]);
+});
+

@@ -3,6 +3,7 @@ import type { HuntCycle, HuntEncounter, HuntTickPorts, HuntTickState } from "./c
 import { encounterLootPending } from "./loot.ts";
 import { shouldReturn } from "../../hunt/policy.ts";
 import { encounterNavigationBlocked as blocked } from "./encounter-ownership.ts";
+import { nearbyHuntTarget } from "./nearby-target.ts";
 
 function sameTarget(target: { id: string; map: string; in?: string | number; server?: string }, encounter: HuntEncounter): boolean {
   const expected = encounter.target;
@@ -80,6 +81,7 @@ export function createHuntEncounter(state: HuntTickState, ports: HuntTickPorts) 
     if (blocked(hunt, state, ports, encounter.revisions)) { lastSample = undefined; return true; }
     hunt.message = "Fighting encountered " + hunt.target + "; continuing to hunt area afterward";
     if (!observe(hunt, encounter)) return true;
+    if (continueNearby(hunt, encounter)) return true;
     if (encounterLootPending(hunt, state, ports)) { ports.persist(); return true; }
     // Travel owns only the completed handoff's commands, never a later command.
     for (const name of hunt.participants) {
@@ -91,6 +93,20 @@ export function createHuntEncounter(state: HuntTickState, ports: HuntTickPorts) 
     hunt.convoyId = null;
     hunt.stage = "mission-travel";
     ports.persist();
+    return false;
+  }
+  function continueNearby(hunt: HuntCycle, encounter: HuntEncounter): boolean {
+    const next = !shouldReturn(hunt, state.leader!, state.statuses) && nearbyHuntTarget(hunt, state, ports);
+    if (next && !sameTarget(next, encounter)) {
+      encounter.target = next;
+      encounter.startedAt = ports.now();
+      encounter.missingMs = 0;
+      delete encounter.resumeReason;
+      lastSample = undefined;
+      hunt.message = "Monster Hunt: " + hunt.target;
+      ports.persist();
+      return true;
+    }
     return false;
   }
   return { step, pause: () => { lastSample = undefined; } };

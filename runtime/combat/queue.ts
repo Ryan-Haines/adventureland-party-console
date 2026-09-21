@@ -66,7 +66,7 @@ export function reconcileQueue(old: Group | undefined | null, members: Member[],
   const s=selector?.status;
   const score=(t:Target)=>s ? Math.hypot(s.x-t.x,s.y-t.y) : Infinity;
   const reported = reports.flatMap(m => (m.status!.groupedCombat?.candidates || [])
-    .filter(t => m.name === leader || t.passiveRare === true)
+    .filter(t => m.name === leader || t.passiveRare === true || t.mtype === huntTarget)
     .filter(t => m.status!.server === s?.server && t.map === m.status!.map && t.in === m.status!.in));
   const retained=retainNominations((old?.queue||[]).filter(t=>t.startedAt>=resetAt),members,now);
   const unique:Candidate[] = s ? [...new Map<string,Candidate>([...reported,...retained].map(t => [identity({...t,server:s.server}),t])).values()] : [];

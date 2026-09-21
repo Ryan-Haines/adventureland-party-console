@@ -49,7 +49,7 @@ function fixture(){
 test('Poisio (-48,704) is a temporary stop on the way to (-121,1360); death and loot resume the retained spawn',()=>{
  const r=fixture(),response=r.handoff();assert.equal(response.handoff,'temporary');assert.deepEqual(response.destination,r.original);
  assert.equal(r.hunt.arrivalHandoff,undefined);assert.deepEqual(r.hunt.missions[0].destination,r.original);
- assert.equal(r.state.commands.B.location.y,704);assert.equal(r.hunt.stage,'farming');
+ assert.equal(r.state.commands.B,undefined);assert.equal(r.hunt.stage,'farming');
  r.tick();assert.match(r.hunt.message,/Fighting encountered poisio; continuing/);assert.equal(r.starts.length,0);
  r.time(3000);r.death();r.tick();assert.equal(r.starts.length,0);assert.match(r.hunt.message,/loot/);
  r.loot();r.tick();assert.equal(r.starts.length,1);assert.deepEqual(r.starts[0].location,r.original);
@@ -160,4 +160,33 @@ test('delayed completion of the retired convoy cannot complete or cancel resumed
  const routes=createConvoyAcknowledgementRoutes(r.state,{owned:()=>true,valid:b=>legacy.validReport(r.state,b)});
  let status;routes.complete({body:r.body},{status(code){status=code;return this;},json(){}});
  assert.equal(status,409);assert.equal(r.state.activeConvoy.id,'new');
+});
+
+test('a follower sees the next hunt monster: continue the encounter without a loot departure or regroup',()=>{
+ const r=fixture();r.handoff();r.death();
+ const next={...r.target,id:'p2',x:r.target.x+20};
+ r.state.statuses.B.groupedCombat.candidates=[next];
+ r.tick();assert.equal(r.starts.length,0);assert.equal(r.hunt.encounter.target.id,'p2');
+ assert.equal(r.hunt.loot,undefined);assert.equal(r.hunt.stage,'farming');
+ assert.deepEqual(r.hunt.missions[0].destination,r.original);
+ r.restart();r.tick();assert.equal(r.starts.length,0);assert.equal(r.hunt.encounter.target.id,'p2');
+});
+
+test('farming outside the origin area waits for a follower nomination instead of dispatching recovery',()=>{
+ const r=fixture();r.state.activeConvoy=null;r.state.commands={};r.hunt.stage='farming';r.hunt.convoyId=null;
+ r.state.statuses.A.groupedCombat.candidates=[];
+ r.tick();assert.equal(r.starts.length,0);
+ r.absent();r.tick();assert.equal(r.starts.length,1);
+});
+
+for(const invalid of ['dead','claimed','wrong-type','different-instance','far','stale'])test('next encounter rejects '+invalid+' candidates',()=>{
+ const r=fixture();r.handoff();r.death();const next={...r.target,id:'p2'};
+ r.state.statuses.B.groupedCombat.candidates=[next];
+ if(invalid==='dead')next.hp=0;
+ if(invalid==='claimed')r.state.statuses.A.groupedCombat.claims=[{...next,external:true,at:r.now}];
+ if(invalid==='wrong-type')next.mtype='goo';
+ if(invalid==='different-instance')next.in='other';
+ if(invalid==='far')next.x+=1000;
+ if(invalid==='stale')r.state.statuses.B.seenAt=-10000;
+ r.tick();assert.equal(r.hunt.encounter.target.id,'p1');
 });

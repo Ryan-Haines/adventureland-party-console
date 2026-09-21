@@ -1,18 +1,21 @@
 import { createAnniversaryReturns } from "./returns.ts";
 import type { AnniversaryRecoveryPorts, AnniversaryRecoveryState } from "./return-contracts.ts";
+import { ownsWorkflowWalk } from "../events/walk-ownership.ts";
+import type { ReturnConvoy } from "../events/return-types.ts";
 
 type RecoveryPorts = AnniversaryRecoveryPorts;
 interface CoordinatorState {
   anniversary: AnniversaryRecoveryState;
   merchantCharacter: string | null;
   deferredEventReturns: Record<string, Parameters<RecoveryPorts["defer"]>[1]>;
-  activeConvoy: unknown;
+  activeConvoy: ReturnConvoy | null;
   townCycle: unknown;
 }
 type CompositionPorts = Pick<
   RecoveryPorts,
   "now" | "participants" | "activeNames" | "log" | "persist" | "schedule"
 > & {
+  cancelConvoy(): void;
   navigation: Pick<RecoveryPorts, "intent" | "location" | "capture"> & {
     dispatch: (
       cycle: Parameters<RecoveryPorts["dispatch"]>[0],
@@ -41,6 +44,14 @@ export function createCoordinatorAnniversaryReturns(
     log: (message, level) => ports.log(message, level),
     persist: () => ports.persist(),
     convoyBusy: () => !!state.activeConvoy,
+    releaseFarmingWalk: cycle => {
+      const convoy = state.activeConvoy;
+      if (!convoy || !["farm-recovery", "anniversary-staging"].includes(convoy.walkingActivity || "")) return;
+      if (convoy.participants.some(name => ports.navigation.intent(name).cancelled)) return;
+      if (!ownsWorkflowWalk(convoy, cycle, ports.navigation.capture(convoy.participants))) return;
+      ports.cancelConvoy();
+      ports.persist();
+    },
     townBusy: () => !!state.townCycle,
     dispatch: (cycle, names) => ports.navigation.dispatch(cycle, "anniversary-return", names),
     capture: (names) => ports.navigation.capture(names),

@@ -2,6 +2,7 @@ import * as policy from "../../hunt/policy.ts";
 import type { HuntCycle, HuntStatus, HuntTickPorts, HuntTickState } from "./contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
 import { createHuntEncounter, reconcileHuntDestination } from "./encounter.ts";
+import { nearbyHuntTarget } from "./nearby-target.ts";
 
 export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
   const encounter = createHuntEncounter(state, ports);
@@ -213,7 +214,7 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
     const destination = ports.destination(hunt),
       leader = state.statuses[String(state.leader)]!;
     const arrived = atTarget(destination, leader);
-    const handoff = currentHandoff();
+    const handoff = currentHandoff(hunt);
     const protectedArrival = ports.arrivalProtected(hunt, leader, destination);
     confirmArrival(hunt, leader, protectedArrival, arrived);
     if (recoveryPending(hunt, destination) || returnIfDue(hunt) || ports.partyFighting(hunt))
@@ -225,8 +226,8 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
     advanceIfFinished(hunt);
   }
 
-  function currentHandoff(): unknown {
-    return state.commands[String(state.leader)]?.convoyHandoff;
+  function currentHandoff(hunt: HuntCycle): unknown {
+    return state.commands[String(state.leader)]?.convoyHandoff || nearbyHuntTarget(hunt, state, ports);
   }
 
   function step(hunt: HuntCycle): void {

@@ -52,14 +52,14 @@ export function createConvoyEngagementRoutes(
       active.participants.map((name) => [name, ports.intent(name).revision]),
     );
     const group = ports.group();
-    if (group && (!group.ready || group.anchor?.map !== requestObject(body.target).map))
+    if (!active.huntTarget && group && (!group.ready || group.anchor?.map !== requestObject(body.target).map))
       return res
         .status(409)
         .json({ error: "Waiting for grouped arrival: " + group.blockers.join("; ") });
     if (
       !ports.engage(body, {
         revisions,
-        radius: Number(state.monsterSearchRadiusByCharacter[state.leader || name]) || 400,
+        radius: Number(state.monsterSearchRadiusByCharacter[active.huntTarget ? name : state.leader || name]) || 400,
         focus: focus(),
       })
     )
@@ -83,7 +83,7 @@ export function createConvoyEngagementRoutes(
       intent = ports.intent(name);
     if (!active || intent.cancelled)
       return res.status(409).json({ error: "inactive farming convoy" });
-    if (state.partyFarmingMode !== "scatter" && name !== state.leader)
+    if (!active.huntTarget && state.partyFarmingMode !== "scatter" && name !== state.leader)
       return res
         .status(409)
         .json({ error: "only the leader may nominate a grouped farming target" });

@@ -358,6 +358,24 @@ Sightings, attackers and fresh attack evidence preserve the current fight; stale
 reports and activity pauses do not advance the timer. Validate with
 `unseen-primary.test.cjs` and `bee-recovery.test.cjs`; coordinator-only restart suffices.
 
+Hunt candidates use each observing party member's local search radius. Followers
+can nominate the current Hunt species, including outside the original spawn area.
+A completed temporary encounter continues with a fresh eligible nearby candidate
+before installing a departure loot barrier or resuming the saved spawn route.
+The original destination remains the fallback when no valid candidates remain.
+Hunt convoy acquisition also runs during assembly and shared route preparation;
+it does not require returning to the route origin first. Normal target revision
+acknowledgements still govern attacks. Validate with `hunt-temporary-encounter`,
+`hunt-route-acquisition`, `combat-queue`, and `fringe-targeting` tests. Publish
+character and coordinator assets together with the full restart workflow.
+
+Anniversary return readiness is retried on every coordinator tick, not only at
+the event deadline. Once party visits complete, a matching saved farming or
+staging walk yields to the return, including a failed walk. Saved/current
+navigation revisions must match; newer manual movement and protected convoys
+remain authoritative. The featured-party-member one-minute hold is unchanged.
+Validate with `farming-navigation` and `coordinator-anniversary-return-composition`.
+
 Event recovery retires an overlapping `farm-recovery` shared walk or failed event
 entry walk when its saved navigation revisions still match, including after
 restart. It preserves event-return commands and captured waypoints, and rejects

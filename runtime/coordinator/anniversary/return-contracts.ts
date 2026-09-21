@@ -9,6 +9,7 @@ export interface AnniversaryRecoveryState {
   returnReady?: Record<string, unknown>;
 }
 export interface AnniversaryRecoveryPorts {
+  releaseFarmingWalk?(cycle: AnniversaryCycle): void;
   now(): number;
   merchant(): string | null;
   participants(): string[];

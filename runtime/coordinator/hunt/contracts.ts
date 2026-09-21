@@ -80,7 +80,7 @@ export interface HuntStatus {
     deaths?: Death[];
     claims?: import("../../combat/claims.ts").ClaimObservation[];
     sightings?: NonNullable<NonNullable<Member["status"]>["groupedCombat"]>["sightings"];
-    candidates?: Pick<import("../../combat/grouped.ts").Target, "id" | "map" | "in" | "hp">[];
+    candidates?: NonNullable<NonNullable<Member["status"]>["groupedCombat"]>["candidates"];
     retentions?: { id: string; eligible: boolean }[];
   };
   region?: string;

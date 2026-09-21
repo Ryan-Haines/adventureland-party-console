@@ -6,6 +6,20 @@ function fixture(){const members=['W','P','M'].map((name,i)=>({name,ctype:['warr
  let now=1000,g=null;
  return {members,get g(){return g;},tick(){members.forEach(m=>m.status.seenAt=now);g=evaluateGroup(g,members,'W',now);now+=100;return g;},ack(){members.forEach(m=>{m.status.groupedCombat.ack=g.selection;m.status.groupedCombat.queueAck=g.queueRevision;});}};}
 const monster=(id,x=80,priority=50)=>({id,mtype:'boar',map:'cave',in:'cave',x,y:0,priority});
+test('hunt queue promotes follower nominations after death and retains three ring targets',()=>{
+ const f=fixture();const status=f.members[1].status;
+ status.groupedCombat.candidates=['A','B','C','D'].map((id,i)=>monster(id,80+i*10));
+ let group=null;
+ for(let now=1000;now<=1600;now+=100){
+  for(const m of f.members){m.status.seenAt=now;m.status.groupedCombat.ack=group?.selection;m.status.groupedCombat.queueAck=group?.queueRevision;}
+  group=evaluateGroup(group,f.members,'W',now,0,false,'boar');
+ }
+ assert.deepEqual(group.queue.map(t=>t.id),['A','B','C']);assert.equal(group.committed,true);
+ status.groupedCombat.deaths=[{...monster('A'),server:'USII',at:1600}];
+ group=evaluateGroup(group,f.members,'W',1600,0,false,'boar');
+ assert.deepEqual(group.queue.map(t=>t.id),['B','C','D']);assert.equal(group.committed,true);
+ const ordinary=evaluateGroup(null,f.members,'W',1600);assert.equal(ordinary.target,null);
+});
 function huntFixture() {
  const f=fixture();let group=null,now=1000;
  f.members[0].status.groupedCombat.candidates=[monster('A',80),monster('B',120)];

@@ -14,7 +14,7 @@ interface Command {
 interface State extends ConvoyHistoryState {
   activeConvoy: SharedConvoy | null;
   commands: Record<string, Command | undefined>;
-  statuses: Record<string, SharedStatus | undefined>;
+  statuses: Record<string, (SharedStatus & Pick<import("./contracts.ts").HuntStatus, "activeEvent" | "joinedEvent">) | undefined>;
   farmingPolicy: string;
   monsterHunt: HuntCycle | null;
   monsterChoices?: Catalog;
@@ -56,9 +56,12 @@ function nearby(status: SharedStatus | undefined, target: Target, radius: number
 function authorized(state: State, c: SharedConvoy, options: Options): boolean {
   return c.participants.every(name => {
     const command = state.commands[name], intent = state.navigationIntents?.[name];
-    return !intent?.cancelled && (!intent || intent.revision === options.revisions[name]) &&
+    return participantAvailable(state.statuses[name]) && !intent?.cancelled && (!intent || intent.revision === options.revisions[name]) &&
       !!command && command.convoyId === c.id && command.navigationRevision === options.revisions[name];
   });
+}
+function participantAvailable(s: State["statuses"][string]): boolean {
+  return !!s && !s.rip && s.hp !== 0 && !s.activeEvent && !s.joinedEvent;
 }
 
 function destination(state: State, target: Target): ReturnLocation | null {
@@ -81,7 +84,7 @@ function handoff(state: State, c: SharedConvoy, body: Record<string, unknown>, t
   state.location = { ...location };
   for (const name of c.participants) {
     state.characterLocations[name] = { ...location };
-    if (name === body.character) delete state.commands[name];
+    if (name === body.character || nearby(state.statuses[name], target, options.radius, now)) delete state.commands[name];
     else state.commands[name] = { id: state.nextCommandId++, type: "event-resume-travel",
       convoyHandoff: c.id, location: { map: target.map, in: target.in, x: target.x, y: target.y }, navigationRevision: options.revisions[name],
       label: spawn ? "the encountered hunt spawn" : "the temporary hunt encounter" };
@@ -93,8 +96,8 @@ function handoff(state: State, c: SharedConvoy, body: Record<string, unknown>, t
 
 /** Only mission travel uses a character-centered radius; ordinary routes retain their area rule. */
 function departed(c: SharedConvoy, now: number): boolean {
-  return c.cause !== "farming-conflict" && c.combatHandoffAllowed && ["scheduled", "travel"].includes(c.phase) &&
-    c.departAt != null && now >= c.departAt;
+  return c.cause !== "farming-conflict" && c.combatHandoffAllowed &&
+    (["assemble", "shared-prepare"].includes(c.phase) || ["scheduled", "travel"].includes(c.phase) && c.departAt != null && now >= c.departAt);
 }
 function validTarget(state: State, c: SharedConvoy, body: Record<string, unknown>, options: Options, now: number): body is Record<string, unknown> & { target: Target } {
   const target = body.target as Target | undefined, name = String(body.character);

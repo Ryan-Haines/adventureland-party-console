@@ -11565,7 +11565,7 @@
     if(blocked){diagnostic.blocked=blocked;return [];}
     var eligible=Object.values(parent.entities||{}).filter(function(e){return e && e.type==='monster' && e.visible && !e.dead &&
       !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id)) && e.mtype!=='fieldgen0' &&
-      !isExternallyClaimedMonster(e) && !isPassingEncounter(e) && (passiveRareCandidate(e) || character.name===leader && e.mtype!=='tinyp' &&
+      !isExternallyClaimedMonster(e) && !isPassingEncounter(e) && (passiveRareCandidate(e) || (character.name===leader || typeof huntCombatTarget!=='undefined' && e.mtype===huntCombatTarget) && e.mtype!=='tinyp' &&
       (monsterFocus.indexOf('all')>=0 || monsterFocus.indexOf(e.mtype)>=0) &&
       !(farmApproach.failed[e.id]>Date.now()));
     });
@@ -11573,7 +11573,7 @@
     Object.values(parent.entities||{}).filter(function(e){return e && e.type==='monster' && e.visible && !e.dead;}).forEach(function(e){
       var reason=isExternallyClaimedMonster(e)?'external claim':farmApproach.failed[e.id]>Date.now()?'failed approach':
         !passiveRareCandidate(e)&&monsterFocus.indexOf('all')<0&&monsterFocus.indexOf(e.mtype)<0?'focus':
-        !passiveRareCandidate(e)&&character.name!==leader?'follower':
+        !passiveRareCandidate(e)&&character.name!==leader&&!(typeof huntCombatTarget!=='undefined'&&e.mtype===huntCombatTarget)?'follower':
         !passiveRareCandidate(e)&&normal.indexOf(e)<0?'zone or target eligibility':null;
       if(reason)diagnostic.rejected[e.id]=reason;else diagnostic.eligible.push(e.id);
     });
@@ -11593,7 +11593,8 @@
       else if(isExternallyClaimedMonster(e))reason='external claim';
       else if(farmApproach.failed[t.id]>Date.now())reason='failed approach';
       else if(!passiveRareCandidate(e)&&monsterFocus.indexOf('all')<0&&monsterFocus.indexOf(e.mtype)<0)reason='focus changed';
-      else if(!(root.__partyFarmingEngagement && root.__partyFarmingEngagement.target.id===t.id) && !passiveRareCandidate(e)&&!inFarmArea(e,partyLocation,150)&&
+      else if(!(typeof huntCombatTarget!=='undefined' && e.mtype===huntCombatTarget && Math.hypot(e.x-character.x,e.y-character.y)<=monsterSearchRadius) &&
+        !(root.__partyFarmingEngagement && root.__partyFarmingEngagement.target.id===t.id) && !passiveRareCandidate(e)&&!inFarmArea(e,partyLocation,150)&&
         !((!e.map||e.map===partyLocation.map)&&Math.hypot(e.x-partyLocation.x,e.y-partyLocation.y)<=monsterSearchRadius+150))reason='retention boundary';
       return Object.assign({},t,e&&e.visible?groupedEntityReport(e):{},{at:at,eligible:!reason,reason:reason});
     });
@@ -11916,7 +11917,9 @@
         groupedCombat.target && groupedCombat.target.id === target.id &&
         groupedCombat.target.map === character.map && groupedCombat.target.in === character.in &&
         groupedCombat.target.server === reunionRealm()) return true;
-    if (!huntTravel && character.map !== "goobrawl" && !activeCombatEvent() && !joinedEvent && !isPartyThreat(target) &&
+    var nearbyHunt = typeof huntCombatTarget !== "undefined" && target.mtype === huntCombatTarget &&
+      Math.hypot(target.x-character.x,target.y-character.y)<=monsterSearchRadius;
+    if (!huntTravel && !nearbyHunt && character.map !== "goobrawl" && !activeCombatEvent() && !joinedEvent && !isPartyThreat(target) &&
         (!(inFarmArea(target, partyLocation, target.id === combatTargetId && target.id === lastAttackTarget && Date.now()-lastAttackAt<5000 ? 150 : 0) || inFarmRadius(target) || typeof queueRetentions==='function' && queueRetentions().some(function(t){return t.id===target.id && t.eligible;})) || farmApproach.failed[target.id]>Date.now())) return false;
     var convoyThreat = convoyTraveling && partyThreats.some(function (threat) {
       return threat && threat.id === target.id;
@@ -12041,6 +12044,10 @@
       Math.hypot(target.x-partyLocation.x,target.y-partyLocation.y)<=monsterSearchRadius;
   }
   function selectFarmCandidates(targets) {
+    if (typeof huntCombatTarget !== "undefined" && huntCombatTarget) return targets.filter(function(t) {
+      return t.mtype===huntCombatTarget && (!t.map || t.map===character.map) &&
+        (t.in===undefined || t.in===character.in) && Math.hypot(t.x-character.x,t.y-character.y)<=monsterSearchRadius;
+    });
     if(root.partyFarmingZones && root.partyFarmingZones.candidates)return root.partyFarmingZones.candidates(partyLocation,targets,monsterSearchRadius);
     var bounded=targets.filter(function(t){return inFarmArea(t,partyLocation);});
     return bounded.length ? bounded : targets.filter(inFarmRadius);
@@ -12282,6 +12289,11 @@
   }
   async function sharedConvoyRendezvous(convoy,command,ownsConvoy,phase) {
     phase("rendezvous");
+    if(command.huntTarget) {
+      sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
+      while(ownsConvoy() && convoy.handoffPending)await new Promise(function(resolve){setTimeout(resolve,80);});
+      if(!ownsConvoy())return;
+    }
     var rally=command.rally,deadline=Date.now()+120000;
     if(character.name===command.leader) {
       if(sharedConvoyDistance(sharedConvoyPoint(),rally)>1)throw new Error("Leader moved from planning origin");
@@ -12322,7 +12334,7 @@
   }
   function sharedConvoyEngagement(convoy,command,ownsConvoy,phase) {
     if(command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
-    if(typeof farmingTravelTarget!=="function" || typeof groupedFollower==="function" && groupedFollower())return;
+    if(typeof farmingTravelTarget!=="function" || !command.huntTarget && typeof groupedFollower==="function" && groupedFollower())return;
     var target=farmingTravelTarget(command);
     var approach=target && typeof combatApproachPoint==="function"?combatApproachPoint(target):target;
     if(!target || !(typeof is_in_range==="function" && is_in_range(target) || approach && can_move_to(approach.x,approach.y)))return;
@@ -12337,7 +12349,7 @@
         root.__partyTravelCombat=null; root.__partyTravelCombatAt=result.serverNow;
         root.__partyNavigationDetail=result.handoff==='temporary' ? 'Fighting encountered '+command.huntTarget+'; continuing to hunt area afterward' : 'Farming encountered hunt spawn';
       }
-      convoy.engaged=true;phase("engaging-target");releaseConvoyCruise(convoy);convoy.detachRoute();
+      convoy.engaged=true;phase("engaging-target");releaseConvoyCruise(convoy);if(convoy.detachRoute)convoy.detachRoute();
       if(typeof movement!=="undefined" && movement.combatHandoff)movement.combatHandoff();
       Promise.resolve(stop("smart")).catch(function(){});
       convoy.cancelled=true;convoyTraveling=null;combatTargetId=target.id;
@@ -12447,7 +12459,7 @@
           throw new Error("Shared route coordinator signal expired");
         }
         if(["failed","shared-hold","defending"].indexOf(signal.phase)>=0)throw new Error("Party requested hold");
-        if(!released && !command.huntTarget)sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
+        if(!released)sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
         if(smart.on_done!==onDone || smart.plot!==plot || !smart.moving)throw new Error("Shared route ownership lost");
         if(released)return walk();
         if(character.rip || character.moving || sharedConvoyDistance(sharedConvoyPoint(),origin)>1)throw new Error("Route origin changed before departure");
@@ -12749,6 +12761,11 @@
       // packet. Wait for that physical stop before declaring assembly ready.
       await stopForConvoy();
       if (!ownsConvoy()) return;
+      if(command.huntTarget && command.combatHandoffAllowed) {
+        sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
+        while(ownsConvoy() && convoy.handoffPending)await new Promise(function(resolve){setTimeout(resolve,80);});
+        if(!ownsConvoy())return;
+      }
       if (command.phase === "hold") {
         convoy.failure = command.reason || "Convoy held; request a fresh convoy to retry";
         phase("failed");

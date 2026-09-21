@@ -354,6 +354,7 @@ export function startCoordinatorApplication(
       persist: persistSettings,
     });
     const anniversaryReturns = coordinatorPolicies.createCoordinatorAnniversaryReturns(party, {
+      cancelConvoy: cancelActiveConvoy,
       now: () => Date.now(),
       participants: anniversaryCombatParticipants,
       activeNames,

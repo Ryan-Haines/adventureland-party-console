@@ -24,7 +24,6 @@ export function createAnniversaryReturns(
       !!cycle.returnCompletedAt ||
       !!cycle.supersededAt ||
       !!cycle.combatHandoffAt ||
-      ports.convoyBusy() ||
       ports.townBusy()
     );
   }
@@ -73,7 +72,9 @@ export function createAnniversaryReturns(
     const names = (cycle!.participants || ports.participants()).filter((name) =>
       ports.activeNames().includes(name),
     );
-    if (waiting(cycle!, names, force) || !ports.dispatch(cycle!, names)) return false;
+    if (waiting(cycle!, names, force)) return false;
+    ports.releaseFarmingWalk?.(cycle!);
+    if (ports.convoyBusy() || !ports.dispatch(cycle!, names)) return false;
     reportDispatch(cycle!, force);
     return true;
   }
@@ -147,11 +148,10 @@ export function createAnniversaryReturns(
     if (
       !cycle ||
       cycle.returnDispatchedAt ||
-      !Number.isFinite(Number(cycle.endsAt)) ||
-      (!cycle.abortedAt && ports.now() < deadline(cycle))
+      !Number.isFinite(Number(cycle.endsAt))
     )
       return;
-    dispatch(true);
+    dispatch(!!cycle.abortedAt || ports.now() >= deadline(cycle));
   }
   const aborts = createAnniversaryAbort(state, ports, () => {
     dispatch(true);
