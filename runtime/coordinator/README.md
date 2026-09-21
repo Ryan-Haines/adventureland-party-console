@@ -203,6 +203,12 @@ withdrawing from the bank, and selecting each live triplet. It refreshes protect
 through a read-only `protectionOnly` merchant checkpoint before consuming stock.
 Allocated source locations are preferred; missing allocations relocate against
 current inventory. Completed/cancelled orders release reservations automatically.
+Merchant bank errands refresh these reservations before each marked deposit,
+including when another job interrupts crafting. Reserved ingredients and partially
+reserved stacks stay in inventory, with their bank marks pending. Resumed crafts
+normalize absent material levels to zero when locating bank stock; other marked
+item lookups retain strict fingerprints. Validate with `merchant-bank-full.test.cjs`
+and `merchant-crafting.test.cjs`, including a six-ring order resumed after four crafts.
 Legacy orders use their saved requirements and the current recipe catalog; an
 unrecoverable recipe produces a diagnostic and blocks automatic compounding.
 

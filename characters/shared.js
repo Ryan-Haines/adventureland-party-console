@@ -2904,16 +2904,19 @@
     }
   }
 
-  function findBankItem(wanted, preferredPack, preferredSlot) {
+  function findBankItem(wanted, preferredPack, preferredSlot, normalizeLevel) {
+    function matches(item) {
+      return sameItem(normalizeLevel && item ? Object.assign({}, item, {level:Number(item.level)||0}) : item, wanted);
+    }
     if (character.bank && character.bank[preferredPack] &&
-        sameItem(character.bank[preferredPack][preferredSlot], wanted)) {
+        matches(character.bank[preferredPack][preferredSlot])) {
       return { pack: preferredPack, slot: preferredSlot };
     }
     var packs = Object.keys(character.bank || {});
     for (var p = 0; p < packs.length; p += 1) {
       if (!Array.isArray(character.bank[packs[p]])) continue;
       for (var slot = 0; slot < character.bank[packs[p]].length; slot += 1) {
-        if (sameItem(character.bank[packs[p]][slot], wanted))
+        if (matches(character.bank[packs[p]][slot]))
           return { pack: packs[p], slot: slot };
       }
     }
@@ -4458,6 +4461,21 @@
     command._merchantWithdrawalsCompleted = [];
     command._merchantBankedCompleted = [];
     command._npcSalesRetrieved = [];
+    async function reservedForCrafting(slot) {
+      var protection = command.craftProtection;
+      if (command.jobId) {
+        var result = await request('/merchant/checkpoint', {method:'POST',body:{jobId:command.jobId,protectionOnly:true}});
+        protection = result && result.craftProtection;
+        if (!protection) throw Error('Craft reservations unavailable; bank deposit deferred');
+      }
+      if (!protection) return false;
+      if (protection.error) return true;
+      var entries=character.items.map(function(item,index){return item ? {item:item,slot:index,craftLocation:'inventory:'+character.name} : null;});
+      var available=globalThis.partyAvailableCraftStock(entries,protection);
+      // Keep a partially reserved stack intact; its surplus can be banked once
+      // the craft completes. A deferred mark must not be acknowledged as banked.
+      return !available[slot] || (Number(available[slot].item.q)||1) < (Number(character.items[slot].q)||1);
+    }
     var goldTarget = Number.isInteger(command.merchantGoldTarget)
       ? Math.max(0, command.merchantGoldTarget)
       : Number.isInteger(command.goldTarget) ? Math.max(0, command.goldTarget) : 0;
@@ -4514,6 +4532,10 @@
         continue;
       }
       try {
+        if (await reservedForCrafting(slot)) {
+          activity.push({level:'info',message:'Kept ' + bankingItem.name + ' reserved for crafting or delivery'});
+          continue;
+        }
         await bankStoreFully(slot);
       } catch (error) {
         if (String(error && (error.reason || error.message) || error) !== "bank_full") throw error;
@@ -5876,7 +5898,8 @@
         for (var need of requirements) {
           var remaining = Math.max(0, need.quantity - exactInventoryQuantity(need.id, need.level));
           while (remaining > 0) {
-            var found = findBankItem({ name: need.id, level: need.level || 0 });
+            // Scroll stacks omit level; recipes describe them as level zero.
+            var found = findBankItem({ name: need.id, level: need.level || 0 }, undefined, undefined, true);
             if (!found) break;
             var liveItem = character.bank[found.pack][found.slot];
             var before = exactInventoryQuantity(need.id, need.level);
