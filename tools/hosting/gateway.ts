@@ -19,7 +19,12 @@ async function continueSetup(req: import('node:http').IncomingMessage, res: Serv
     else json(res, 404, { error: 'Managed updater unavailable' });
     return true;
   }
-  if (url.pathname !== '/setup/continue' || req.method !== 'POST') return false;
+  if (url.pathname === '/setup/check-https' && req.method === 'POST') {
+    await acceptTransfer(req, res, options, true); return true;
+  }
+  if (url.pathname !== '/setup/continue') return false;
+  if (req.method === 'GET') { res.writeHead(303, { Location: '/setup' }); res.end(); return true; }
+  if (req.method !== 'POST') return false;
   await acceptTransfer(req, res, options); return true;
 }
 export function gateway(options: Options) {
@@ -34,6 +39,9 @@ export function gateway(options: Options) {
         return;
       }
       if (url.pathname === "/setup" && req.method === "GET") {
+        // A form POST from HTTP setup to HTTPS needs its source Origin.
+        // no-referrer makes browsers send Origin: null for this navigation.
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.end(setupPage);
         return;

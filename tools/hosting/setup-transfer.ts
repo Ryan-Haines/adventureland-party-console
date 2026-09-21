@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Options } from './setup-routes.ts';
-import { body } from './http.ts';
+import { body, json } from './http.ts';
 import { requestOrigin } from './request-origin.ts';
 type Transfer = { until: number; source: string; target: string; pairing: boolean; location: string };
 const pending = new WeakMap<Options, Map<string, Transfer>>();
@@ -15,17 +15,24 @@ export async function transfer(req: IncomingMessage, options: Options, input: Re
  const query = new URLSearchParams({ placement: String(input.placement), client: String(input.client), https: '1' });
  entries.set(ticket, { until: Date.now() + 120000, source: requestOrigin(req, options), target: origin,
   pairing: options.access.required, location: '/setup?' + query });
- return { ticket, action: origin + '/setup/continue' };
+ return { ticket, action: origin + '/setup/check-https' };
 }
 function validTransfer(req: IncomingMessage, options: Options, entry: Transfer | undefined): entry is Transfer {
  return !!entry && entry.until >= Date.now() && req.headers.origin === entry.source && requestOrigin(req, options) === entry.target && !!options.tls?.trusted(req);
 }
-export async function acceptTransfer(req: IncomingMessage, res: ServerResponse, options: Options) {
+export async function acceptTransfer(req: IncomingMessage, res: ServerResponse, options: Options, inline = false) {
  const ticket = String((await body(req)).ticket); const entries = pending.get(options), entry = entries?.get(ticket);
  if (!validTransfer(req, options, entry))
   throw Error('Secure setup check expired or came from a different address; return to HTTP setup and retry');
  entries!.delete(ticket);
  if (options.access.required && !entry.pairing) throw Error('Browser pairing was enabled; pair this browser and retry');
+ if (inline) {
+  // A simple CORS POST proves this browser trusts HTTPS without navigating or
+  // relying on cross-site cookies. Only the ticket's verified origin can read it.
+  res.setHeader('Access-Control-Allow-Origin', entry.source);
+  res.setHeader('Vary', 'Origin');
+  json(res, 200, { ok: true, origin: entry.target }); return;
+ }
  if (entry.pairing && options.access.required) {
   const credential = await options.access.browserCredential();
   res.setHeader('Set-Cookie', `party=${credential}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=31536000`);

@@ -13,5 +13,8 @@ $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
 try {
     if ($Remove) { $store.Remove($certificate) } else { $store.Add($certificate) }
 } finally { $store.Close() }
-Write-Host "$operation complete. Restart Adventure Land and your browser, then return to setup."
-Write-Host 'If Firefox still rejects the certificate, use its Certificates > Authorities > Import option with the certificate from setup.'
+Write-Host "$operation complete. Restart the Adventure Land Steam client, or the browser you play in."
+Write-Host 'Refresh setup. Restart that browser only if it still reports a certificate error.'
+Write-Host 'To check Firefox trust, open the HTTPS /setup address, not /setup/continue.'
+Write-Host 'If needed: Firefox menu > Settings; search certificates > View Certificates > Authorities > Import.'
+Write-Host 'Select party-console-root.crt from Download certificate in setup, and enable trust for identifying websites.'

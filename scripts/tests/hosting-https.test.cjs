@@ -23,6 +23,27 @@ test('setup matrix uses localhost only for supported same-machine clients and ke
   }finally{dom.window.close()}
  }
 });
+test('HTTPS check stays on setup and shows inline success or certificate troubleshooting',async()=>{
+ const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
+ let fail=false;const secure='https://192.168.1.239:3443';
+ const dom=new JSDOM(setupPage,{url:'http://192.168.1.239:3010/setup',runScripts:'dangerously',beforeParse(w){
+  w.AbortSignal.timeout=()=>undefined;
+  w.fetch=async(url,options)=>{
+   if(String(url).startsWith(secure)){if(fail)throw Error('certificate error');assert.equal(options.credentials,'omit');assert.equal(options.body.get('ticket'),'one-time');return {ok:true,json:async()=>({ok:true,origin:secure})}}
+   const values={'/setup/state':{configured:true,serverAddress:'http://192.168.1.239:3010',tls:{ready:true}},'/setup/https':{origin:secure,fingerprint:'test'},'/setup/transfer':{action:secure+'/setup/check-https',ticket:'one-time'}};
+   return {ok:true,json:async()=>values[url]};
+  };
+ }});
+ try{
+  await delay(0);const el=id=>dom.window.document.getElementById(id);
+  el('placement').value='remote';el('client').value='windows-steam';el('client').onchange();
+  await el('prepare').onclick();await el('checkHttps').onclick();
+  assert.match(el('httpsStatus').textContent,/connection verified/);assert.equal(el('loaderArea').hidden,false);
+  assert.equal(el('address').textContent,secure);assert.equal(dom.window.location.pathname,'/setup');assert.equal(dom.window.document.querySelector('form'),null);
+  fail=true;await el('checkHttps').onclick();assert.match(el('httpsStatus').textContent,/Could not verify HTTPS/);assert.ok(el('httpsStatus').textContent.includes(secure+'/setup'));
+ }finally{dom.window.close()}
+});
+
 test('real Caddy HTTPS preserves CA, proxies CODE, enforces origins, and transfers pairing without URL credentials',async()=>{
  const temporary=await fs.mkdtemp(path.join(os.tmpdir(),'party-tls-'));
  const upstream=http.createServer((req,res)=>{res.setHeader('Content-Type','application/javascript');res.end('/* fixture */')});
@@ -46,6 +67,9 @@ test('real Caddy HTTPS preserves CA, proxies CODE, enforces origins, and transfe
  try{
   await tls.start();await ready();const ca=await tls.certificate();await tls.prepare(base);
   const secured=await request('/setup',ca);assert.equal(secured.status,200);assert.match(secured.body,/Choose/);
+  assert.equal(secured.headers['referrer-policy'],'strict-origin-when-cross-origin');
+  assert.equal((await fetch(base+'/setup')).headers.get('referrer-policy'),'strict-origin-when-cross-origin');
+  const direct=await request('/setup/continue',ca);assert.equal(direct.status,303);assert.equal(direct.headers.location,'/setup');
   assert.equal(await upgrade(ca),101);
   await assert.rejects(request('/setup',undefined));
   const game=await request('/CODE/adventure_land/universal-loader.js',ca,{headers:{Origin:'https://adventure.land'}});assert.equal(game.status,200);assert.equal(game.headers['access-control-allow-origin'],'https://adventure.land');
@@ -63,10 +87,17 @@ test('real Caddy HTTPS preserves CA, proxies CODE, enforces origins, and transfe
   const credential=await access.setRequired(true),cookie='party='+credential;
   assert.equal(await upgrade(ca),403);assert.equal(await upgrade(ca,cookie),101);
   const transfer=await(await fetch(base+'/setup/transfer',{method:'POST',headers:{Origin:base,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({origin:base,placement:'remote',client:'windows-steam'})})).json();
-  assert.equal(transfer.action,'https://127.0.0.1:'+tlsPort+'/setup/continue');assert.equal(transfer.action.includes(transfer.ticket),false);
+  assert.equal(transfer.action,'https://127.0.0.1:'+tlsPort+'/setup/check-https');assert.equal(transfer.action.includes(transfer.ticket),false);
+  for(const origin of ['null','https://evil.example'])assert.equal((await request('/setup/continue',ca,{method:'POST',headers:{Origin:origin,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({ticket:transfer.ticket}).toString()})).status,400);
   const moved=await request('/setup/continue',ca,{method:'POST',headers:{Origin:base,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({ticket:transfer.ticket}).toString()});
   assert.equal(moved.status,303);assert.ok(moved.headers['set-cookie'][0].includes('Secure'));assert.ok(!moved.headers.location.includes(transfer.ticket));
   const newCookie=moved.headers['set-cookie'][0].split(';')[0];assert.equal((await request('/setup/state',ca,{headers:{Cookie:newCookie}})).status,200);
+  const inline=await(await fetch(base+'/setup/transfer',{method:'POST',headers:{Origin:base,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({origin:base,placement:'remote',client:'windows-steam'})})).json();
+  const check={method:'POST',headers:{Origin:base,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({ticket:inline.ticket}).toString()};
+  const verified=await request('/setup/check-https',ca,check);
+  assert.equal(verified.status,200);assert.equal(verified.headers['access-control-allow-origin'],base);assert.equal(verified.headers['set-cookie'],undefined);
+  assert.deepEqual(JSON.parse(verified.body),{ok:true,origin:'https://127.0.0.1:'+tlsPort});
+  assert.equal((await request('/setup/check-https',ca,check)).status,400);
   const download=await request('/setup/trust/windows',ca,{headers:{Cookie:newCookie}});assert.equal(download.status,200);assert.ok(!download.body.includes('PRIVATE KEY'));assert.match(download.body,/CurrentUser/);assert.ok(!download.body.includes('__CERT_'));
   const linux=await request('/setup/trust/linux',ca,{headers:{Cookie:newCookie}});assert.match(linux.body,/update-ca-trust/);assert.ok(!linux.body.includes('__CERT_'));
   assert.equal((await request('/setup/trust/windows',ca)).status,401);

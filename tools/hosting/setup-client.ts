@@ -17,12 +17,14 @@ function restorePreferences(){
 function selection(){
  stopLinking();savePreferences();loaderOrigin='';secureOrigin='';el('code').value='';el('copy').disabled=true;
  el('success').hidden=true;el('linkStatus').textContent='';el('instructions').hidden=true;el('tlsSteps').hidden=true;el('loaderArea').hidden=true;
+ el('httpsStatus').textContent='';
  const p=preferences();if(!p.placement||!p.client)return;
  const https=forceHttps||p.placement==='remote'||p.client==='linux-steam';
  el('instructions').hidden=false;el('fallback').hidden=https;
  if(https){
   el('tlsSteps').hidden=false;el('helper').href='/setup/trust/'+(p.client.startsWith('linux')?'linux':'windows');
   el('helperCommand').textContent=p.client.startsWith('linux')?'bash ~/Downloads/party-console-trust.sh':'powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME\\Downloads\\party-console-trust.ps1"';
+  el('restartHelp').textContent=p.client.endsWith('-steam')?'The helper asks before trusting this console’s certificate. Restart the Adventure Land Steam client afterward. Refresh setup in this browser; restart the browser only if it still reports a certificate error.':'The helper asks before trusting this console’s certificate. Restart the browser running Adventure Land afterward, then reopen setup.';
   el('tlsState').textContent=state.tls?.error||'Prepare HTTPS, then install this console’s certificate on the computer running Adventure Land.';
   el('trustDownloads').hidden=true;el('prepare').disabled=!state.tls?.ready;
   if(state.secure){secureOrigin=location.origin;loaderOrigin=secureOrigin;el('tlsState').textContent='HTTPS works in this browser. After restarting your game client, use the code below.';el('loaderArea').hidden=false}
@@ -64,10 +66,15 @@ action('prepare',async()=>{
  el('tlsState').textContent='HTTPS prepared at '+secureOrigin+'. Install the certificate, then check the connection.';
 });
 action('checkHttps',async()=>{
- if(!secureOrigin)throw Error('Prepare HTTPS first');savePreferences();
- const result=await call('transfer',{origin:secureOrigin,...preferences()});
- const form=document.createElement('form');form.method='POST';form.action=result.action;
- const input=document.createElement('input');input.type='hidden';input.name='ticket';input.value=result.ticket;form.append(input);document.body.append(form);form.submit();
+ if(!secureOrigin)throw Error('Prepare HTTPS first');savePreferences();stopLinking();const generation=linkGeneration;
+ const status=el('httpsStatus');status.style.color='#f4f4f5';status.textContent='Checking HTTPS…';
+ try{
+  const result=await call('transfer',{origin:secureOrigin,...preferences()});if(generation!==linkGeneration)return;
+  const response=await fetch(result.action,{method:'POST',mode:'cors',credentials:'omit',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({ticket:result.ticket}),signal:AbortSignal.timeout(15000)});
+  if(!response.ok)throw Error('HTTPS check rejected');const checked=await response.json();if(!checked.ok)throw Error('HTTPS check rejected');if(generation!==linkGeneration)return;
+  loaderOrigin=checked.origin;el('address').textContent=loaderOrigin;el('loaderArea').hidden=false;
+  status.style.color='#86efac';status.textContent='HTTPS connection verified. This browser trusts Party Console. Generate your client loader below.';
+ }catch(e){if(generation!==linkGeneration)return;status.style.color='#fca5a5';status.textContent='Could not verify HTTPS. Open '+secureOrigin+'/setup in a new tab to see any certificate error. After resolving it, return here and click Check HTTPS connection again.'}
 });
 action('pairButton',async()=>{await call('pair',{token:location.hash.slice(1)});history.replaceState(null,'','/setup');await refresh()});
 action('connect',async()=>{await call('session',{session:el('session').value,realm:el('realm').value});el('session').value='';sessionVisible(false);await refresh();el('success').hidden=false;el('success').textContent='Account connected. Choose how to run your characters below.'});
