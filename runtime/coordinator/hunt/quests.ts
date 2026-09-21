@@ -134,7 +134,7 @@ export function createHuntQuests(state: HuntTickState, ports: HuntQuestPorts) {
         "Picking up Monster Hunt for " + selected.owner,
         "daisy-sync-travel",
       );
-    } else if (selected.action === "claim" || selected.quest!.remainingMs <= policy.TURN_IN_MS) {
+    } else if (selected.action === "claim") {
       hunt.waitForExpiry = selected.action !== "claim";
       returnToDaisy(hunt);
     } else if (

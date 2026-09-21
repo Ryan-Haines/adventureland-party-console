@@ -163,8 +163,8 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
 
   function advanceIfFinished(hunt: HuntCycle): void {
     const remaining = policy.quest(hunt, state.leader!, state.statuses)?.remainingMs || 0;
-    if (remaining <= policy.TURN_IN_MS) {
-      hunt.waitForExpiry = true;
+    if (remaining <= 0) {
+      hunt.waitForExpiry = false;
       ports.returnToDaisy(hunt);
       return;
     }

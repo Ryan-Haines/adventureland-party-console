@@ -237,7 +237,7 @@ export function FarmingModeControl({
               {hunt?.backup ? <div className="mt-1 text-amber-200">
                 <p>Next batch after every blacklisted quest expires · {durationLabel(Math.max(0,...Object.values(hunt.backup.members).map(m=>m.remainingMs)))}</p>
                 {Object.entries(hunt.backup.members).map(([name,m])=><p key={name}>{name}: {!m.fresh ? 'waiting for fresh status' : m.ready ? 'ready' : `${m.target} · ${durationLabel(m.remainingMs)}`}</p>)}
-              </div> : <p className="mt-1 text-amber-200">Quest owner{hunt?.owner ? `: ${hunt.owner}` : ""} · return at 3 minutes</p>}
+              </div> : <p className="mt-1 text-amber-200">Quest owner{hunt?.owner ? `: ${hunt.owner}` : ""} · when complete or expired</p>}
               {hunt?.turnIn && hunt.turnIn.phase !== "complete" ? <p className="mt-1 text-amber-200">Events wait until Daisy reward claims finish.</p> : null}
               {hunt?.target ? <p className="mt-1 text-amber-300">Target: {hunt.target}</p> : null}
               {characterHunt ? (

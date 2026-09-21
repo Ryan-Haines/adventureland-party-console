@@ -1,4 +1,3 @@
-export const TURN_IN_MS = 3 * 60 * 1000;
 interface Quest { id: string; count: number; remainingMs: number }
 interface Status { monsterHunt?: Quest | null; huntEventPending?: boolean }
 type Statuses = Record<string, Status | undefined>;
@@ -31,7 +30,7 @@ export function quest(hunt: Hunt, leader: string, statuses: Statuses): Quest | n
 }
 export function shouldReturn(hunt: Hunt, leader: string, statuses: Statuses): boolean {
   const current = quest(hunt, leader, statuses);
-  return !current || current.count === 0 || current.remainingMs <= TURN_IN_MS;
+  return !current || current.count === 0;
 }
 export function selection(hunt: Hunt, leader: string, statuses: Statuses, blacklist: Record<string, unknown>) {
   const names = [...new Set([leader, ...hunt.participants])];

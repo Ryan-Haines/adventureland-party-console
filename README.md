@@ -117,8 +117,6 @@ For Windows development, start with `.\scripts\start-console.ps1 -DevDashboard`.
 
 For a full Windows rebuild and publication, stop the launcher and rerun `.\scripts\start-console.ps1`. For coordinator-only changes, use `.\scripts\start-console.ps1 -CoordinatorOnly`; this rebuilds and restarts services while preserving installed character assets.
 
-The old Windows command, `.\scripts\start-caracal.ps1`, remains a compatibility shortcut with the same switches.
-
 For native Linux development, use `./scripts/start-console.sh`. Dashboard and character edits reload automatically. After coordinator, hosting, or dependency changes (including a `git pull` containing them), press Ctrl+C and run it again to rebuild and restart. The launcher does not automatically restart the coordinator during gameplay.
 
 For Docker, `./scripts/start-docker.sh` enables hot reload using `compose.dev.yaml`. Edit files in the checkout on the Docker host, directly or through VS Code Remote SSH. Changes in a separate Windows checkout do not automatically reach your Pi.

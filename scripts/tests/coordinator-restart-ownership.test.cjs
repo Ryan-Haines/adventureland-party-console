@@ -22,11 +22,10 @@ test('restart retires its own service launcher and leaves an unrelated parent al
    default {throw "Unexpected process lookup: $Filter"}
   }
  }
- foreach ($script:starterName in @('start-console.ps1','start-caracal.ps1')) {
+ $script:starterName='start-console.ps1'
   $script:hostCommand='node '+(Join-Path $repoRoot 'tools/hosting/local.mts');$script:stopped=0
   Stop-ExistingCaracalSupervisor
   if ($script:stopped -ne 10) {throw "Expected old launcher 10; stopped $script:stopped"}
- }
  $script:hostCommand='node '+(Join-Path (Split-Path $repoRoot) 'other/tools/hosting/local.mts');$script:stopped=0
  Stop-ExistingCaracalSupervisor
  if ($script:stopped -ne 30) {throw "Unrelated parent must survive; stopped $script:stopped"}

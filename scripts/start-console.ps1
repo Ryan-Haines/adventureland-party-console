@@ -85,7 +85,7 @@ function Stop-ExistingCaracalSupervisor {
         $stopRoot = [int]$parentInfo.ProcessId
         $starter = Get-CimInstance Win32_Process -Filter "ProcessId=$($parentInfo.ParentProcessId)"
         if ($starter.Name -in @('pwsh.exe', 'powershell.exe') -and
-            $starter.CommandLine -match 'start-(?:console|caracal)\.ps1' -and $starter.ProcessId -ne $PID) {
+            $starter.CommandLine -match 'start-console\.ps1' -and $starter.ProcessId -ne $PID) {
             $stopRoot = [int]$starter.ProcessId
         }
     }

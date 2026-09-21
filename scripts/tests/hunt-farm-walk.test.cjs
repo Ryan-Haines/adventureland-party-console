@@ -8,7 +8,7 @@ function fixture(){
   missions:[{target:'ghost',owners:['W'],destination:{map:'halloween',x:-405,y:-1642},destinationVersion:1}],currentIndex:0,target:'ghost',turnIn:{owner:'W',phase:'complete'}};
  const state={leader:'W',followers:{P:true},monsterHunt:hunt,farmingPolicy:'hunt',commands:{},statuses:{},navigationIntents:{},monsterHunterLocation:daisy,monsterSearchRadiusByCharacter:{},combatLogs:{},
   activeConvoy:{id:'farm',purpose:'shared-walk',walkingActivity:'farm-recovery',phase:'failed',failureCode:'assembly-timeout',participants:names,walkingParents:{W:{revision:3},P:{revision:4}}}};
- for(const [i,n]of names.entries()){state.navigationIntents[n]={revision:3+i};state.commands[n]={id:i,type:'party-monster-travel',convoyId:'farm'};state.statuses[n]={seenAt:now,hp:100,map:'halloween',x:218,y:-584,monsterHunt:n==='W'?{id:'ghost',count:22,remainingMs:40000}:null};}
+ for(const [i,n]of names.entries()){state.navigationIntents[n]={revision:3+i};state.commands[n]={id:i,type:'party-monster-travel',convoyId:'farm'};state.statuses[n]={seenAt:now,hp:100,map:'halloween',x:218,y:-584,monsterHunt:n==='W'?{id:'ghost',count:22,remainingMs:0}:null};}
  let starts=0;const cancel=()=>{const id=state.activeConvoy?.id;for(const n of names)if(state.commands[n]?.convoyId===id)delete state.commands[n];state.activeConvoy=null;};
  const ports={now:()=>now,rareEncounter:()=>false,ownsTravel:policy.priority,intent:n=>state.navigationIntents[n],fresh:()=>names.every(n=>now-state.statuses[n].seenAt<=3000),
   cancelConvoy:cancel,cancelHuntConvoy(){if(state.activeConvoy?.purpose==='monster-hunt')cancel();},persist(){},recordDeaths:()=>[],participants:()=>names,
@@ -23,10 +23,11 @@ for(const phase of ['failed','shared-travel'])test('Daisy deadline preempts owne
 test('expired quest stranded behind failed farm walk still goes to Daisy without restarting the hunt',()=>{
  const f=fixture();f.state.statuses.W.monsterHunt=null;f.tick();assert.equal(f.hunt.stage,'returning');assert.equal(f.hunt.cycleId,'hunt');
 });
-test('healthy farming walk remains owned until the three-minute threshold, then yields exactly once',()=>{
+test('healthy farming walk remains owned through the final second, then yields exactly once',()=>{
  const f=fixture();f.state.activeConvoy.phase='shared-travel';f.state.statuses.W.monsterHunt.remainingMs=180001;
  f.tick();assert.equal(f.starts(),0);assert.equal(f.hunt.stage,'paused-event');
- f.state.statuses.W.monsterHunt.remainingMs=180000;f.tick();assert.equal(f.starts(),1);assert.equal(f.hunt.stage,'returning');
+ for(const remaining of [180000,179999,40000,1]){f.state.statuses.W.monsterHunt.remainingMs=remaining;f.tick();assert.equal(f.starts(),0);}
+ f.state.statuses.W.monsterHunt.remainingMs=0;f.tick();assert.equal(f.starts(),1);assert.equal(f.hunt.stage,'returning');
 });
 test('restored failed farming walk with fresh reports recovers without changing quest progress',()=>{
  const f=fixture();f.state.activeConvoy=JSON.parse(JSON.stringify(f.state.activeConvoy));

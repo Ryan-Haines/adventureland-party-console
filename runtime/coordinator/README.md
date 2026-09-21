@@ -343,7 +343,9 @@ fresh compatible reports arrive. Hunt and event returns keep their own recovery;
 completed event returns release leftover convoys instead of starting another trip.
 Manual cancellation and newer navigation are never authorization to retry old travel.
 
-Hunt's own `farm-recovery` shared walk yields at the three-minute Daisy threshold,
+Hunts return to Daisy when the selected quest is complete or expired, never merely
+because it has less than three minutes remaining. The selected owner may keep
+farming through the final second. Hunt's own `farm-recovery` shared walk yields on completion or expiry,
 before event-pause handling. Failed farming walks also release on fresh reports,
 with matching parent revisions and command ownership. Actual event travel, Escape,
 death recovery and manual navigation keep priority. Test `hunt-farm-walk.test.cjs`.
