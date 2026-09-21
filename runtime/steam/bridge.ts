@@ -259,6 +259,7 @@ export function installSteamBridge(host: NativeHost): void {
         version: 2,
         clientId,
         character: host.socket?.connected ? host.character?.name : null,
+        realm: host.socket?.connected ? "SR_" + host.server_region + host.server_identifier : null,
         observations: steamObservations(host, name => deliberatelyStopped(host.localStorage, name), starting, startErrors),
         running: [ ...(host.socket?.connected && host.character && host.code_active ? [host.character.name] : []),
           ...Object.entries(host.get_active_characters?.() || {}).filter(([, state]) => state === "code").map(([name]) => name) ],

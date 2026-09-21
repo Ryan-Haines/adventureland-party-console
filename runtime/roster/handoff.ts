@@ -33,7 +33,7 @@ export interface RosterOwnership {
   handoff: Handoff | null;
 }
 export interface HandoffPorts {
-  realmContext?(): { current: string | null; home: string | null };
+  realmContext?(): { current: string | null; home: string | null } | undefined;
   observedRealm?(name: string, since?: number): string | null;
   prepareSteam?(name: string): Promise<void>;
   now(): number;

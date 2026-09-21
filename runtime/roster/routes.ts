@@ -47,11 +47,15 @@ export function installRosterRoutes(
   ports: RosterRoutesPorts,
 ) {
   let rosterBusy = false;
+  const realmContext = () => {
+    const context = ports.realmContext?.();
+    return context ? { ...context, current: bridge.currentRealm() || context.current } : undefined;
+  };
   const service: SteamHandoff = new SteamHandoff(state, {
     ...ports,
     bridgeReady: () => bridge.ready(),
   });
-  const group: SteamGroup = new SteamGroup(state, { ...ports, bridgeReady: (): boolean => bridge.ready(2), prepareSteam: name => ports.prepareSteam?.(name) || Promise.resolve() });
+  const group: SteamGroup = new SteamGroup(state, { ...ports, realmContext, bridgeReady: (): boolean => bridge.ready(2), prepareSteam: name => ports.prepareSteam?.(name) || Promise.resolve() });
   const bridge: BridgeSession = new BridgeSession(state, service, ports, group);
   router.get("/party-api/steam/connection", (_request, response) => {
     response.json({ connected: bridge.connected() });
@@ -107,7 +111,7 @@ export function installRosterRoutes(
   function needsRealmChoice(action: unknown, name: string): boolean {
     if (!["login", "primary"].includes(String(action)) || !state.native) return false;
     if (name === state.native && (state.steam?.length || 0) <= 1) return false;
-    const context = ports.realmContext?.();
+    const context = realmContext();
     return !!context && (!context.current || !context.home || context.current !== context.home);
   }
   route("/party-api/steam/action", async request => {

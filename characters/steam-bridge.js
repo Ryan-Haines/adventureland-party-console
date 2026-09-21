@@ -175,7 +175,7 @@
   }
 
   // runtime/steam/connection.ts
-  var steamBridgeVersion = 5;
+  var steamBridgeVersion = 7;
   function serverAddress(host = globalThis) {
     return (host.__partyServer || host.parent?.__partyServer || "http://127.0.0.1:924").replace(
       /\/$/,
@@ -204,7 +204,13 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
 
   // runtime/steam/realm-choice.ts
   function realmLabel(realm) {
-    return realm ? realm.replace(/^SR_/, "").replace(/^(US|EU|ASIA)/, "$1 ") : "waiting for observation";
+    return realm ? realm.replace(/^SR_/, "").replace(/^(US|EU|ASIA)/, "$1 ") : "unknown";
+  }
+  function realmMessage(context) {
+    if (!context.current) return "Detecting which realm your Adventure Land client is connected to. Login will continue once the realm is confirmed.";
+    if (!context.home) return `You're currently on ${realmLabel(context.current)}. Detecting your home realm before continuing login.`;
+    if (context.current === context.home) return `You're on your home realm, ${realmLabel(context.current)}. Continuing login\u2026`;
+    return `You're currently on ${realmLabel(context.current)}. Your home realm is ${realmLabel(context.home)}. Choose which realm to use before logging in the next character.`;
   }
   function createRealmChoice(document, choose) {
     let dialog = null;
@@ -228,19 +234,21 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
       dialog.setAttribute("aria-label", "Choose Steam realm");
       dialog.style.cssText = "background:#151515;color:#fff;border:3px solid #aaa;padding:20px;max-width:480px;font:24px Pixel,monospace";
       const text = document.createElement("p");
-      text.textContent = `You are currently on ${realmLabel(context.current)}, but your home realm is ${realmLabel(context.home)}. Switch now before logging in the next character?`;
+      const known = !!context.current && !!context.home;
+      text.textContent = realmMessage(context);
       const error = document.createElement("p");
       error.style.color = "#ffcc77";
       const controls = document.createElement("div");
-      controls.style.cssText = "display:flex;gap:12px";
+      controls.style.cssText = "display:flex;gap:12px;flex-wrap:wrap";
       let busy = false;
+      const submittedDialog = dialog;
       async function submit(choice) {
         if (busy) return;
         busy = true;
         for (const button of controls.querySelectorAll("button")) button.disabled = true;
         try {
           await choose(operation.id, choice);
-          close();
+          if (dialog === submittedDialog) close();
         } catch (failure) {
           error.textContent = String(failure);
         } finally {
@@ -248,10 +256,12 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
           for (const button of controls.querySelectorAll("button")) button.disabled = false;
         }
       }
-      for (const [label, choice] of [
-        ["Switch", "switch"],
-        ["Stay on this realm", "stay"]
-      ]) {
+      const actions = known && context.current !== context.home ? [
+        [`Switch to ${realmLabel(context.home)} realm`, "switch"],
+        [`Stay on ${realmLabel(context.current)} realm`, "stay"]
+      ] : [];
+      actions.push(["Cancel login", "cancel"]);
+      for (const [label, choice] of actions) {
         const button = document.createElement("button");
         button.textContent = label;
         button.style.cssText = "background:#242424;color:#fff;border:2px solid #aaa;padding:8px;font:inherit;cursor:pointer";
@@ -261,7 +271,6 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
         button.onmouseleave = () => {
           button.style.backgroundColor = "#242424";
         };
-        button.disabled = !context.current || !context.home;
         button.onclick = () => {
           void submit(choice);
         };
@@ -348,6 +357,10 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
       if (reply.primary !== host.character?.name || !reply.steam?.includes(name)) return false;
       const op = reply.operation;
       if (!op || op.phase === "complete") return true;
+      return confirmedArrival(name, reply);
+    }
+    function confirmedArrival(name, reply) {
+      const op = reply.operation;
       if (!op.releasedAt || !op.multi || !["navigate", "failed"].includes(op.phase)) return false;
       if (op.multi.primary !== reply.primary || !op.multi.desired.includes(name)) return false;
       const game = gameFor(name);
@@ -419,6 +432,20 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
     } };
   }
 
+  // runtime/steam/observations.ts
+  function steamObservations(host, stopped, starting, errors) {
+    const active = { ...host.get_active_characters?.() };
+    for (const name of starting) active[name] ||= "loading";
+    for (const name of errors.keys()) active[name] ||= "waiting";
+    if (host.character)
+      active[host.character.name] = host.socket?.connected ? host.code_active ? "code" : "loading" : "waiting";
+    return Object.entries(active).map(([name, value]) => {
+      const state = stopped(name) ? "stopped" : value === "code" ? "code" : value === "loading" ? "loading" : "waiting";
+      if (state === "code") errors.delete(name);
+      return { name, state, primary: name === host.character?.name, error: errors.get(name) };
+    });
+  }
+
   // runtime/steam/bridge.ts
   var slotKey = "party-console-bootstrap-slot-v1";
   var operationKey = "party-console-steam-operation-v1";
@@ -449,6 +476,7 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
     const switcher = createSwitcher(host, (character, action = "primary") => post("/steam/action", { character, action }));
     const realmChoice = createRealmChoice(host.document, (operationId, choice) => post("/steam/realm-choice", { operationId, choice }));
     const starting = /* @__PURE__ */ new Set();
+    const startErrors = /* @__PURE__ */ new Map();
     let missingSince = 0;
     const recovery = createSteamRecovery(
       host,
@@ -585,6 +613,7 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
             const slot = await ensureBootstrap(name);
             starting.add(name);
             void Promise.resolve(host.start_character_runner(name, slot)).catch((error) => {
+              startErrors.set(name, String(error?.reason || error));
               console.warn("[Steam bridge] Starting " + name + ": " + String(error?.reason || error));
             }).finally(() => host.setTimeout(() => starting.delete(name), 3e3));
           }
@@ -617,6 +646,8 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
           version: 2,
           clientId,
           character: host.socket?.connected ? host.character?.name : null,
+          realm: host.socket?.connected ? "SR_" + host.server_region + host.server_identifier : null,
+          observations: steamObservations(host, (name) => deliberatelyStopped(host.localStorage, name), starting, startErrors),
           running: [
             ...host.socket?.connected && host.character && host.code_active ? [host.character.name] : [],
             ...Object.entries(host.get_active_characters?.() || {}).filter(([, state]) => state === "code").map(([name]) => name)
