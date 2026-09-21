@@ -46,12 +46,11 @@ test('Tracktrix invalidation and retired code cannot publish stale preparation',
   }
 });
 
-test('known catalogs avoid startup work and failed preparation can retry', async () => {
+test('known server catalogs still warm local item metadata asynchronously; failures can retry', async () => {
   const f = fixture(); f.context.catalogKnown = true;
-  await f.context.prepareCatalog(); assert.equal(f.timers.length, 0);
-  f.context.catalogKnown = false;
   f.context.itemWorldInfo = () => { throw Error('bad catalog'); };
-  const pending = f.context.prepareCatalog(); await f.step(); await pending;
+  const pending = f.context.prepareCatalog(); assert.equal(f.timers.length, 1);
+  assert.equal(f.warmed.length, 0); await f.step(); await pending;
   assert.equal(f.context.catalogPreparing, false); assert.equal(f.context.catalogPrepared, false);
   assert.match(f.errors[0], /bad catalog/);
   f.context.itemWorldInfo = id => f.warmed.push(id);

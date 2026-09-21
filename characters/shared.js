@@ -1514,7 +1514,9 @@
       scaling: safeFields(definition.upgrade || definition.compound || {}),
       maxLevel: maximumItemLevel(definition),
       usage: itemUsage(definition),
-      world: itemWorldInfo(item.name),
+      // Live inventory/bank reports must never construct the entire drop graph.
+      // Until background preparation finishes, the dashboard uses its catalog.
+      world: itemWorldCache[item.name],
       sprite: pack && position ? {
         url: "https://adventure.land" + pack.file,
         tileSize: pack.size,
@@ -1904,7 +1906,7 @@
   // Catalog discovery must not starve the game socket before the first status.
   // Warm the expensive per-item caches cooperatively after a successful report.
   async function prepareCatalog() {
-    if (catalogPreparing || catalogPrepared || catalogKnown) return;
+    if (catalogPreparing || catalogPrepared) return;
     catalogPreparing = true;
     var generation = catalogGeneration;
     try {
@@ -9106,7 +9108,7 @@
       partyFarmingMonsterType = typeof state.partyFarmingMonsterType === "string" ? state.partyFarmingMonsterType : null;
       scatterBreakTarget = state.scatterBreakTarget && state.scatterBreakTarget.id ? state.scatterBreakTarget : null;
       catalogKnown = !state.needsCatalog;
-      if (!catalogKnown) void prepareCatalog();
+      void prepareCatalog();
       flushStatusDiagnostics();
       statusPhase = "dispatch command";
       handle(state.command).catch(function (error) {

@@ -38,10 +38,15 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   const char = state.characters[name];
   useEffect(() => {
     committedLiveRecord(name);
-  }, [name, char.items, char.slots]);
+  }, [name, char?.items, char?.slots]);
   const ruleName = state.merchantRules ? String(state.merchantCharacter) : name;
   const marked = state.marked[name] || [];
   const [deconstructionSelection, setDeconstructionSelection] = useState<DeconstructionSelection | null>(null);
+  // Presence and inventory arrive independently, including after reconnects.
+  // Missing inventory is still loading, not an empty bag.
+  if (!char || !Array.isArray(char.items) || !char.slots) {
+    return <p role="status" className="border-t border-emerald-900/70 bg-[#0b1916] p-5 text-emerald-100">Loading inventory…</p>;
+  }
   return (
     <UpgradeOfferingProvider character={char.name} stock={state.upgradeOfferingStock || {}} rules={state.upgradeOfferingRules || []} catalog={state.merchantCatalog?.allItems || []} post={model.post}>
     <InventoryPanel
