@@ -72,7 +72,13 @@ export function PendingCharacterCards({ model }: { model: PartyConsoleModel }) {
       </p>
       {entry.error && <p className="mt-2 text-rose-200">{entry.error}</p>}
       {entry.delayed && (
-        <p className="mt-2 text-amber-200">Taking longer than expected.</p>
+        <p className="mt-2 text-amber-200">{entry.status === 'stopped'
+          ? 'CODE is stopped. Click Engage in the game client when you want to resume.'
+          : entry.status === 'lost'
+            ? 'The game client stopped reporting. Check that it is open and can reach Party Console.'
+            : entry.status === 'code'
+              ? 'Party Console hasn’t received this character’s status yet. If it stays stuck, click Disengage, then Engage in the Steam client’s CODE window.'
+              : 'Still waiting for the game client to finish loading. Check its window for a connection or loading error.'}</p>
       )}
     </article>
   ));

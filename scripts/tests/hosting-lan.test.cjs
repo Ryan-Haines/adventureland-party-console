@@ -143,8 +143,9 @@ test('only a connected client starts the green countdown; failed authentication 
    assert.equal(dom.window.getComputedStyle(el('success')).color,'rgb(134, 239, 172)');assert.equal(el('error').textContent,'');
    el('placement').value='same';el('client').value='windows-steam';el('client').onchange();await new Promise(r=>setImmediate(r));
    assert.equal(tick,undefined);assert.equal(el('code').value,'loader');
-   connected=true;await poll();assert.match(el('success').textContent,/Client connected. Returning to dashboard in 5/);
-   for(const remaining of [4,3,2,1]){tick();assert.ok(el('success').textContent.includes('in '+remaining));}
+   connected=true;await poll();assert.match(el('linkStatus').textContent,/Client connected. Taking you to the dashboard in 5/);
+   assert.equal(dom.window.getComputedStyle(el('linkStatus')).color,'rgb(134, 239, 172)');
+   for(const remaining of [4,3,2,1]){tick();assert.ok(el('linkStatus').textContent.includes('in '+remaining));}
    dom.window.dispatchEvent(new dom.window.Event('pagehide'));assert.equal(cleared,true);
   }finally{dom.window.close();}
  }
@@ -168,4 +169,33 @@ test('choosing a supported local setup generates its loader automatically; LAN c
   assert.equal(el('continue').getAttribute('href'),'/');el('continue').onclick();
   const count=calls.length;await poll();assert.equal(calls.length,count,'headless continuation stops polling without starting characters');
  }finally{dom.window.close();}
+});
+
+test('setup bounds connection requests, rechecks on focus, and starts only one inline countdown',async()=>{
+ const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
+ const timers=new Map();let next=1,requests=0,countdowns=0,connected=false;
+ const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){
+  w.setTimeout=(fn,ms)=>{const id=next++;timers.set(id,{fn,ms});return id};w.clearTimeout=id=>timers.delete(id);
+  w.setInterval=()=>{countdowns++;return 50};w.clearInterval=()=>{};
+  w.fetch=async(url,options)=>{
+   if(url.includes('/connection')){requests++;if(requests===1)return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(Error('timeout'))));return {ok:true,json:async()=>({connected})}}
+   return {ok:true,json:async()=>({configured:true,code:'loader'})};
+  };
+ }});
+ const flush=()=>new Promise(r=>setImmediate(r));
+ try{
+  await flush();const el=id=>dom.window.document.getElementById(id);
+  el('placement').value='same';el('client').value='windows-steam';el('client').onchange();await flush();
+  dom.window.dispatchEvent(new dom.window.Event('focus'));assert.equal(requests,1);
+  [...timers.values()].find(t=>t.ms===8000).fn();await flush();assert.match(el('linkStatus').textContent,/retry/);
+  connected=true;dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
+  assert.equal(requests,2);assert.equal(countdowns,1);assert.match(el('linkStatus').textContent,/dashboard in 5/);
+  dom.window.dispatchEvent(new dom.window.Event('focus'));dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));await flush();
+  assert.equal(countdowns,1);assert.equal(requests,2);
+  el('client').value='linux-steam';el('client').onchange();assert.equal(el('linkStatus').textContent,'');
+  assert.equal(el('certificateHelp').previousElementSibling.id,'helperCommand');
+  assert.equal(el('certificateHelp').open,false);
+  assert.ok(el('certificateHelp').querySelector('a[href="/setup/trust/certificate"]'));
+  assert.doesNotMatch(dom.window.document.body.textContent,/Trust applies to certificates|Restart the Adventure Land Steam client afterward/);
+ }finally{dom.window.close()}
 });
