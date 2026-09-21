@@ -30,7 +30,7 @@ export async function updateHosting(root: string, data: string): Promise<UpdateR
       json(res, response.status, await response.json());
     },
   };
-  const release = await exists(path.join(root, 'release.json')) ? await readJson<Release>(path.join(root, 'release.json')) : undefined;
+  const release = process.env.AL_DOCKER_DEV !== '1' && await exists(path.join(root, 'release.json')) ? await readJson<Release>(path.join(root, 'release.json')) : undefined;
   const config = await readJson<{ repository: string }>(path.join(root, 'distribution.json'));
   const updates = new Updates(release, path.join(data, 'updates/preferences.json'), undefined, config.repository);
   await updates.load(); void updates.poll();

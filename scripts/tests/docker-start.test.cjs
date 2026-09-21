@@ -16,7 +16,7 @@ if [[ "$*" == 'compose version' ]]; then exit "\${COMPOSE_EXIT:-0}"; fi
 if [[ "$*" == 'info' ]]; then exit "\${INFO_EXIT:-0}"; fi
 case "$*" in
  *' build') exit "\${BUILD_EXIT:-0}" ;;
- *' up -d --wait --wait-timeout 300') exit "\${UP_EXIT:-0}" ;;
+ *' up -d --force-recreate --wait --wait-timeout 300') exit "\${UP_EXIT:-0}" ;;
  *' exec -T '*) printf '%s\\n' "\${PUBLIC_URL:-}" ;;
  *' port party-console 3010') printf '%s\\n' "\${BINDING:-0.0.0.0:3010}" ;;
  *' ps'|*' logs '*) echo 'startup diagnostic' ;;
@@ -36,8 +36,8 @@ test('Docker helper builds from the repository, waits, and prints the host LAN a
  const r=run();assert.equal(r.status,0,r.stderr);
  assert.match(r.stdout,/Party Console built! Starting/);
  assert.match(r.stdout,/Party Console ready! Open at http:\/\/192\.168\.1\.30:3010/);
- assert.match(r.calls,/--project-directory .* -f .*\/compose.yaml build/);
- assert.match(r.calls,/up -d --wait --wait-timeout 300/);
+ assert.match(r.calls,/--project-directory .* -f .*\/compose.yaml -f .*\/compose.dev.yaml build/);
+ assert.match(r.calls,/up -d --force-recreate --wait --wait-timeout 300/);
  assert.doesNotMatch(r.calls,/\bdown\b|\bvolume\b/);
 });
 test('Docker helper respects public URLs, custom ports, and loopback bindings',()=>{

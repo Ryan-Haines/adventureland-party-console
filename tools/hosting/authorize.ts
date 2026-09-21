@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Options } from "./setup-routes.ts";
 import { pair, setupRoute } from "./setup-routes.ts";
 import { json, redirect } from "./http.ts";
+import { requestOrigin } from './request-origin.ts';
 export function authorizeSteam(
   req: IncomingMessage,
   res: ServerResponse,
@@ -38,7 +39,7 @@ export function validBrowser(req: IncomingMessage, options: Options) {
   return options.access.valid("browsers", cookie);
 }
 export function sameBrowserOrigin(req: IncomingMessage, options: Options) {
-  return [options.publicUrl, `http://${req.headers.host}`].includes(req.headers.origin || "");
+  return [options.publicUrl, requestOrigin(req, options)].includes(req.headers.origin || "");
 }
 export function gamePath(path: string) { return /^\/(party-api\/|CODE\/adventure_land\/)/.test(path); }
 function browserOriginAllowed(req: IncomingMessage, sameOrigin: boolean) {

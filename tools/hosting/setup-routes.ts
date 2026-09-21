@@ -4,7 +4,12 @@ import { body, json, text } from "./http.ts";
 import { steamBootstrap } from "../../runtime/steam/connection.ts";
 import { validBrowser } from "./authorize.ts";
 import { setupAddress } from "./address.ts";
+import type { LocalTLS } from './tls.ts';
+import { trustHelper } from './trust.ts';
+import { requestOrigin } from './request-origin.ts';
+import { transfer } from './setup-transfer.ts';
 export interface Options {
+  tls?: LocalTLS;
   updates?: import('../update/hosting.ts').UpdateRoutes;
   access: Access;
   configured(): boolean;
@@ -42,16 +47,35 @@ function browserCookie(req: IncomingMessage, res: ServerResponse, credential: st
     `party=${credential}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000${secure}`,
   );
 }
-export async function setupRoute(
+async function setupState(req: IncomingMessage, options: Options) {
+  const secure = options.tls?.trusted(req);
+  const origin = options.publicUrl || (secure ? requestOrigin(req, options) : undefined);
+  const tls = options.tls ? { tls: await options.tls.status(), secure, httpPort: Number(process.env.AL_HTTP_PUBLIC_PORT || process.env.AL_PORT || 3010) } : {};
+  return { configured: options.configured(), requirePairing: options.access.required, canConfigureAccount: !!options.configure, serverAddress: setupAddress(req, origin), ...tls };
+}
+async function readSetup(
   req: IncomingMessage,
   res: ServerResponse,
   pathname: string,
   options: Options,
 ) {
   if (pathname === "/setup/state" && req.method === "GET") {
-    json(res, 200, { configured: options.configured(), requirePairing: options.access.required, canConfigureAccount: !!options.configure, serverAddress: setupAddress(req, options.publicUrl) });
-    return;
+    json(res, 200, await setupState(req, options));
+    return true;
   }
+  if (req.method === 'GET' && /^\/setup\/trust\/(certificate|windows|linux)$/.test(pathname)) {
+    if (!options.tls) throw Error('HTTPS is not installed');
+    const kind = pathname.split('/').pop();
+    const pem = await options.tls.certificate();
+    const file = kind === 'certificate' ? 'party-console-root.crt' : 'party-console-trust.' + (kind === 'windows' ? 'ps1' : 'sh');
+    res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.end(kind === 'certificate' ? pem : await trustHelper(pem, kind as 'windows' | 'linux')); return true;
+  }
+  return false;
+}
+export async function setupRoute(req: IncomingMessage, res: ServerResponse, pathname: string, options: Options) {
+  if (await readSetup(req, res, pathname, options)) return;
   if (req.method !== "POST") {
     json(res, 405, { error: "POST required" });
     return;
@@ -61,6 +85,11 @@ export async function setupRoute(
     json(res, 401, { error: "Pair this browser before changing setup" }); return;
   }
   const handlers: Record<string, () => Promise<unknown>> = {
+    '/setup/transfer': () => transfer(req, options, input),
+    '/setup/https': async () => {
+      if (!options.tls) throw Error('HTTPS is not installed');
+      return options.tls.prepare(text(input.origin));
+    },
     "/setup/pairing": async () => {
       if (typeof input.requirePairing !== "boolean") throw new Error("requirePairing must be a boolean");
       const credential = await options.access.setRequired(input.requirePairing);

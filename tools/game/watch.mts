@@ -1,4 +1,6 @@
 import { watch } from "node:fs";
+import { readdir, stat } from 'node:fs/promises';
+import path from 'node:path';
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { buildGame } from "./build.mts";
@@ -48,7 +50,9 @@ function changed(): void {
   clearTimeout(timer);
   timer = setTimeout(() => void rebuild(), 250);
 }
-const watchers = ["runtime/characters", "dashboard/lib"].map((directory) =>
+const polling = process.env.AL_WATCH_POLL === '1';
+const directories = ['runtime/characters', 'dashboard/lib'];
+const watchers = polling ? [] : directories.map((directory) =>
   watch(
     new URL(directory + "/", new URL("../../", import.meta.url)),
     { recursive: true },
@@ -58,10 +62,31 @@ const watchers = ["runtime/characters", "dashboard/lib"].map((directory) =>
   ),
 );
 // Transitional source dependency; generated output files are never watched.
-watchers.push(watch(new URL("../../characters/shared.js", import.meta.url), changed));
+if (!polling) watchers.push(watch(new URL("../../characters/shared.js", import.meta.url), changed));
+let snapshot = '';
+let pollingTimer: ReturnType<typeof setTimeout> | undefined;
+async function poll(): Promise<void> {
+  try {
+    const files = ['characters/shared.js'];
+    for (const directory of directories) {
+      const names = await readdir(path.join(root, directory), { recursive: true });
+      files.push(...names.filter(name => name.endsWith('.ts')).map(name => path.join(directory, name)));
+    }
+    const values = await Promise.all(files.sort().map(async name => {
+      const info = await stat(path.join(root, name));
+      return `${name}:${info.mtimeMs}:${info.size}`;
+    }));
+    const next = values.join('\n');
+    if (snapshot && snapshot !== next) changed();
+    snapshot = next;
+  } catch (error) { console.error('Character source polling failed:', error); }
+  if (!closed) pollingTimer = setTimeout(() => void poll(), 1000);
+}
+if (polling) void poll();
 function close(): void {
   closed = true;
   clearTimeout(timer);
+  clearTimeout(pollingTimer);
   for (const watcher of watchers) watcher.close();
 }
 process.once("SIGINT", close);

@@ -17,6 +17,8 @@ for ((attempt=0; attempt<60; attempt++)); do
     if(!asset)process.exit(1);
     const script=await fetch(new URL(asset[1],"http://127.0.0.1:3030"));
     if(!script.ok || !script.headers.get("content-type")?.includes("javascript"))process.exit(1);
+    const {verifyHTTPS}=await import("./tools/hosting/verify-https.mts");
+    await verifyHTTPS("/data",3443);
   ' >/dev/null 2>&1; then
     echo "Party Console startup passed on $arch"
     exit 0

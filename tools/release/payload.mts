@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { run } from '../update/process.ts';
 import { atomic, sourceManifest } from '../update/files.ts';
 import { version } from '../update/contracts.ts';
+import { installCaddy } from '../hosting/install-caddy.mts';
 const root = fileURLToPath(new URL('../../', import.meta.url));
+await installCaddy(root);
 const tag = process.argv[2]; version(tag);
 const destination = path.resolve(process.argv[3] || path.join(root, '.build/release/windows'));
 if (!destination.startsWith(path.join(root, '.build') + path.sep)) throw new Error('Release staging must be inside .build');
@@ -16,7 +18,7 @@ for (const file of tracked) {
   const target = path.join(destination, 'app', file);
   await mkdir(path.dirname(target), { recursive: true }); await cp(path.join(root, file), target);
 }
-for (const directory of ['node_modules', 'dashboard/node_modules', '.build/runtime', '.build/shared', 'dashboard/.build/container', 'characters/generated']) {
+for (const directory of ['node_modules', 'dashboard/node_modules', '.build/runtime', '.build/shared', '.build/caddy', 'dashboard/.build/container', 'characters/generated']) {
   await cp(path.join(root, directory), path.join(destination, 'app', directory), { recursive: true });
 }
 for (const file of ['characters/manifest.json', 'characters/shared.js', 'characters/profiles.js', 'characters/roles.js', 'characters/party-member.js'])

@@ -1,0 +1,80 @@
+export const setupClient = String.raw`
+const el=id=>document.getElementById(id);
+let state={},serverAddress=location.origin,loaderOrigin='',secureOrigin='',forceHttps=false;
+let returnTimer,pollTimer,linkGeneration=0;
+function stopLinking(){linkGeneration++;clearTimeout(pollTimer);clearInterval(returnTimer)}
+function sessionVisible(visible){el('session').type=visible?'text':'password';const label=visible?'Hide game session':'Show game session';el('toggleSession').setAttribute('aria-label',label);el('toggleSession').setAttribute('aria-pressed',String(visible));el('toggleSession').title=label;el('sessionSlash').style.display=visible?'':'none'}
+el('toggleSession').onclick=()=>sessionVisible(el('session').type==='password');
+async function call(path,body){const r=await fetch('/setup/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const data=await r.json();if(!r.ok)throw Error(data.error||'Setup request failed');return data}
+const action=(id,fn)=>el(id).onclick=async()=>{el(id).disabled=true;el('error').textContent='';try{await fn()}catch(e){el('error').textContent=e.message}finally{el(id).disabled=false}};
+function preferences(){return {placement:el('placement').value,client:el('client').value,https:forceHttps}}
+function savePreferences(){try{localStorage.setItem('party-connection-setup',JSON.stringify(preferences()))}catch{}}
+function restorePreferences(){
+ let p={};try{p=JSON.parse(localStorage.getItem('party-connection-setup')||'{}')}catch{}
+ const q=new URLSearchParams(location.search);if(q.has('placement'))p={placement:q.get('placement'),client:q.get('client'),https:q.get('https')==='1'};
+ el('placement').value=p.placement||'';el('client').value=p.client||'';forceHttps=p.https===true;
+}
+function selection(){
+ stopLinking();savePreferences();loaderOrigin='';secureOrigin='';el('code').value='';el('copy').disabled=true;
+ el('success').hidden=true;el('linkStatus').textContent='';el('instructions').hidden=true;el('tlsSteps').hidden=true;el('loaderArea').hidden=true;
+ const p=preferences();if(!p.placement||!p.client)return;
+ const https=forceHttps||p.placement==='remote'||p.client==='linux-steam';
+ el('instructions').hidden=false;el('fallback').hidden=https;
+ if(https){
+  el('tlsSteps').hidden=false;el('helper').href='/setup/trust/'+(p.client.startsWith('linux')?'linux':'windows');
+  el('helperCommand').textContent=p.client.startsWith('linux')?'bash ~/Downloads/party-console-trust.sh':'powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME\\Downloads\\party-console-trust.ps1"';
+  el('tlsState').textContent=state.tls?.error||'Prepare HTTPS, then install this console’s certificate on the computer running Adventure Land.';
+  el('trustDownloads').hidden=true;el('prepare').disabled=!state.tls?.ready;
+  if(state.secure){secureOrigin=location.origin;loaderOrigin=secureOrigin;el('tlsState').textContent='HTTPS works in this browser. After restarting your game client, use the code below.';el('loaderArea').hidden=false}
+ }else{
+  loaderOrigin='http://127.0.0.1:'+(state.httpPort||new URL(serverAddress).port||3010);el('loaderArea').hidden=false;
+ }
+ el('address').textContent=loaderOrigin||serverAddress;
+}
+el('placement').onchange=()=>{forceHttps=false;selection()};el('client').onchange=()=>{forceHttps=false;selection()};
+el('fallback').onclick=()=>{forceHttps=true;selection()};
+function returnToDashboard(){
+ clearInterval(returnTimer);let seconds=5;el('success').hidden=false;el('error').textContent='';
+ const update=()=>el('success').textContent='Client connected. Returning to dashboard in '+seconds+'…';update();
+ returnTimer=setInterval(()=>{seconds--;if(seconds===0){clearInterval(returnTimer);location.assign(state.secure?location.origin+'/':'/');return}update()},1000);
+}
+async function watchConnection(generation){
+ if(generation!==linkGeneration)return;
+ try{const r=await fetch('/party-api/steam/connection',{cache:'no-store'});if(!r.ok)throw Error('unavailable');const s=await r.json();if(generation!==linkGeneration)return;
+  if(s.connected===true){el('linkStatus').textContent='Client connected.';returnToDashboard();return}el('linkStatus').textContent='Waiting for your client to connect…';
+ }catch{if(generation!==linkGeneration)return;el('linkStatus').textContent='Waiting for the console. Connection check will retry…'}
+ pollTimer=setTimeout(()=>watchConnection(generation),2000);
+}
+async function generateLoader(){
+ if(!loaderOrigin)throw Error('Choose your setup and check HTTPS first');stopLinking();const generation=linkGeneration;
+ const r=await call('steam',{origin:loaderOrigin});if(generation!==linkGeneration)return;
+ el('code').value=r.code;el('copy').disabled=false;el('linkStatus').textContent='Waiting for your client to connect…';void watchConnection(generation);
+}
+async function refresh(){
+ state=await call('state');serverAddress=state.serverAddress||location.origin;el('address').textContent=serverAddress;
+ el('pair').hidden=true;el('settings').hidden=false;el('account').hidden=!state.canConfigureAccount||state.configured;el('paths').hidden=!state.configured;el('invite').hidden=!state.requirePairing;
+ el('loaderHelp').textContent=state.requirePairing?'Keep this code private: it grants control of this console.':'';
+ el('error').textContent='';selection();
+}
+action('prepare',async()=>{
+ stopLinking();const generation=linkGeneration;
+ const origin=el('override').value.trim()||(el('placement').value==='same'?'http://127.0.0.1:'+(state.httpPort||3010):serverAddress);
+ const result=await call('https',{origin});if(generation!==linkGeneration)return;
+ secureOrigin=result.origin;el('trustDownloads').hidden=false;el('fingerprint').textContent=result.fingerprint;
+ el('tlsState').textContent='HTTPS prepared at '+secureOrigin+'. Install the certificate, then check the connection.';
+});
+action('checkHttps',async()=>{
+ if(!secureOrigin)throw Error('Prepare HTTPS first');savePreferences();
+ const result=await call('transfer',{origin:secureOrigin,...preferences()});
+ const form=document.createElement('form');form.method='POST';form.action=result.action;
+ const input=document.createElement('input');input.type='hidden';input.name='ticket';input.value=result.ticket;form.append(input);document.body.append(form);form.submit();
+});
+action('pairButton',async()=>{await call('pair',{token:location.hash.slice(1)});history.replaceState(null,'','/setup');await refresh()});
+action('connect',async()=>{await call('session',{session:el('session').value,realm:el('realm').value});el('session').value='';sessionVisible(false);await refresh();el('success').hidden=false;el('success').textContent='Account connected. Choose how to run your characters below.'});
+action('loader',async()=>{el('success').hidden=true;await generateLoader()});
+action('copy',async()=>{try{await navigator.clipboard.writeText(el('code').value);el('linkStatus').textContent='Copied. Paste into CODE and click Engage.'}catch{el('code').focus();el('code').select();el('linkStatus').textContent='Code selected. Copy it and paste into CODE.'}});
+action('revoke',async()=>{if(confirm('Revoke private client tokens? Direct tokenless loaders are unaffected.')){await call('revoke',{});stopLinking();el('success').hidden=true;el('code').value='';el('copy').disabled=true;el('linkStatus').textContent='Client tokens revoked. Generate a new loader.'}});
+action('invite',async()=>{const r=await call('invite',{});el('invitation').textContent=location.origin+'/setup#'+r.token});
+el('continue').onclick=stopLinking;addEventListener('pagehide',stopLinking);restorePreferences();
+refresh().catch(e=>{el('pair').hidden=false;el('error').textContent=e.message});
+`;

@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: npm --prefix dashboard ci
       - run: node tools/caracal/setup.mts
+      - run: node tools/hosting/install-caddy.mts
       - run: npm --prefix .caracal ci
       - run: node scripts/ci/restore-game-fixtures.cjs
       - name: Full regression suite

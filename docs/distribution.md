@@ -9,6 +9,53 @@ including Docker and Raspberry Pi. Wrangler is not required at production
 startup. Release checks start the dashboard and fetch its HTML and JavaScript
 assets; a successful image build alone is not considered a startup check.
 
+## Linking Steam and browsers on your LAN
+
+Open HTTP `/setup` after connecting the account. Two questions select the connection steps:
+
+| Game computer | Same computer as console | Different computer |
+| --- | --- | --- |
+| Windows Steam | Localhost HTTP | HTTPS |
+| Windows Chrome/Edge/Firefox | Localhost HTTP | HTTPS |
+| Native Linux Steam (WebKitGTK) | HTTPS | HTTPS |
+| Linux Chrome/Chromium/Firefox | Localhost HTTP | HTTPS |
+
+Other browsers can select **Use HTTPS instead**. Fully headless users can skip linking.
+The initial account setup remains available over HTTP; that initial submission is not encrypted.
+
+Caddy is bundled and supervised by the same launcher, including inside Docker.
+Default ports are HTTP 3010 and HTTPS 3443. In Compose, `AL_PORT` and
+`AL_HTTPS_PORT` select published ports; `AL_HTTP_PUBLIC_PORT` and
+`AL_HTTPS_PUBLIC_PORT` communicate those mappings to setup. Native launchers use
+`AL_PORT` and `AL_HTTPS_PORT` directly. Allow these ports on your private network;
+no public domain, router port forwarding, or public certificate service is needed.
+
+Setup prepares HTTPS for the reachable address and provides a one-time trust helper
+to run on the **game computer**. Windows installs the public CA for the current user.
+Native Linux supports Debian/Ubuntu, Fedora-family, and Arch-family system trust;
+existing NSS databases can also be updated when `certutil` is installed. Firefox
+and sandboxed clients may require manual certificate import. Flatpak, Snap, Proton,
+and other distributions are guided fallbacks, not automatically configured clients.
+Restart the game client/browser after installing trust. Setup separately checks
+the HTTPS page and the actual game connection; neither a build nor a successful
+browser check establishes Steam compatibility.
+
+The installation's unique CA and private keys live in `AL_DATA_DIR/tls` (Docker:
+`/data/tls`), outside replaceable releases. Keep the data volume when rebuilding or
+updating. Caddy renews server certificates automatically. Never publish or share
+this directory; only the downloadable public certificate belongs on game computers.
+Use `-Remove` with the Windows helper or `--remove` with the Linux helper to remove
+that installation's trust. Visiting setup does not install trust automatically.
+
+Prefer a router DHCP reservation. If the address changes, use setup's advanced
+address correction and regenerate the loader; the existing CA remains trusted.
+An HTTPS port conflict leaves HTTP setup accessible with an error. For source
+installations missing Caddy, run `node tools/hosting/install-caddy.mts` and restart.
+
+Automated validation covers Windows-hosted Caddy, gateway authorization, and
+Linux Docker HTTPS smoke checks. Actual Steam/WebKitGTK and individual browser
+trust combinations still require device validation; do not infer them from a server test.
+
 ## Windows: editable, without global tools
 
 Download the Windows x64 ZIP from GitHub Releases, extract it to a writable folder,
@@ -29,6 +76,15 @@ outside replaceable versions; a release requiring a new updater protocol require
 a manual installer upgrade. Do not run two installations for the same characters.
 
 ## Docker
+
+The repository README recommends `./scripts/start-docker.sh`, which combines
+`compose.yaml` with `compose.dev.yaml` for source development. It mounts the
+checkout, runs Node dashboard HMR and the verified character watcher, and keeps
+dependencies/caracAL/build caches in separate volumes. The helper rebuilds and
+recreates the service for coordinator or dependency changes. It preserves the
+same `party-data` volume, including HTTPS trust. Development checkouts use manual
+source updates, not package installation. Plain `docker compose up -d --build`
+selects the production image instead.
 
 Download `compose.yaml` from GitHub Releases and run `docker compose up -d`.
 The image supports Linux AMD64 and ARM64. The `party-data` volume survives updates.

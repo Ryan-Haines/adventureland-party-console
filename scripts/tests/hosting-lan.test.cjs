@@ -42,7 +42,10 @@ test('LAN gateway toggles without lockout, forwards API/builds, and guards both 
   assert.equal((await post('/setup/pairing',{requirePairing:'yes'})).status,400);
   assert.equal((await post('/setup/pairing',{requirePairing:true},{Origin:'https://evil.example'})).status,403);
   const forwarded=await (await post('/__dashboard/mode',{mode:'development'})).json();assert.equal(forwarded.origin,'http://127.0.0.1:'+port);
+  assert.equal((await (await post('/',{})).json()).origin,'http://127.0.0.1:'+port);
+  assert.equal((await post('/',{}, {Origin:'https://evil.example'})).status,403);
   const game=await post('/party-api/state',{}, {Origin:'https://adventure.land'});assert.equal(game.status,200);assert.equal(game.headers.get('access-control-allow-origin'),'https://adventure.land');
+  assert.equal((await game.json()).origin,'https://adventure.land');
   assert.equal((await post('/party-api/state',{}, {Origin:'https://evil.example'})).status,403);
   const enabled=await post('/setup/pairing',{requirePairing:true});assert.equal(enabled.status,200);
   const Cookie=enabled.headers.get('set-cookie').split(';')[0];
@@ -137,7 +140,8 @@ test('only a connected client starts the green countdown; failed authentication 
    const el=id=>dom.window.document.getElementById(id);
    el('connect').click();await new Promise(r=>setImmediate(r));
    if(!accepted){assert.equal(tick,undefined);assert.equal(el('success').hidden,true);assert.equal(el('error').textContent,'Invalid game session');continue;}
-   assert.equal(el('success').style.color,'rgb(134, 239, 172)');assert.equal(el('error').textContent,'');
+   assert.equal(dom.window.getComputedStyle(el('success')).color,'rgb(134, 239, 172)');assert.equal(el('error').textContent,'');
+   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();el('loader').click();await new Promise(r=>setImmediate(r));
    assert.equal(tick,undefined);assert.equal(el('code').value,'loader');
    connected=true;await poll();assert.match(el('success').textContent,/Client connected. Returning to dashboard in 5/);
    for(const remaining of [4,3,2,1]){tick();assert.ok(el('success').textContent.includes('in '+remaining));}
@@ -157,7 +161,8 @@ test('revisiting setup does not poll until generating a loader; LAN copy fallbac
  try {
   const flush=()=>new Promise(r=>setImmediate(r));await flush();const el=id=>dom.window.document.getElementById(id);
   assert.equal(calls.length,1);assert.equal(tick,undefined);assert.equal(poll,undefined);
-  el('loader').click();await flush();assert.deepEqual(JSON.parse(calls[1][1].body),{origin:'http://192.168.1.10:3010'});
+  el('placement').value='same';el('client').value='windows-steam';el('client').onchange();
+  el('loader').click();await flush();assert.deepEqual(JSON.parse(calls[1][1].body),{origin:'http://127.0.0.1:3010'});
   assert.equal(tick,undefined);assert.match(el('linkStatus').textContent,/retry/);
   el('copy').click();await flush();assert.equal(el('code').selectionStart,0);assert.equal(el('code').selectionEnd,'client loader'.length);
   assert.equal(el('continue').getAttribute('href'),'/');el('continue').onclick();

@@ -3,8 +3,11 @@ export class Services {
   private children = new Set<ChildProcess>();
   private stopping = false;
   launch(file: string, cwd: string, env: NodeJS.ProcessEnv, args: string[] = []) {
+    return this.launchBinary(process.execPath, [file, ...args], cwd, env);
+  }
+  launchBinary(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
     if (this.stopping) return;
-    const child = spawn(process.execPath, [file, ...args], {
+    const child = spawn(command, args, {
       cwd,
       env,
       stdio: "inherit",
@@ -18,7 +21,7 @@ export class Services {
       finished = true;
       this.children.delete(child);
       this.stopTree(child);
-      if (!this.stopping) setTimeout(() => this.launch(file, cwd, env, args), 3000);
+      if (!this.stopping) setTimeout(() => this.launchBinary(command, args, cwd, env), 3000);
     };
     child.once("exit", exited);
     child.on("error", (error) => { console.error("Service startup failed:", error.message); exited(); });

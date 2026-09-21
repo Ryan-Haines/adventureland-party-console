@@ -14,6 +14,8 @@ $configPath = Join-Path $caracalRoot "config.js"
 $configTemplate = Join-Path $PSScriptRoot "caracal.config.js"
 $sessionPath = Join-Path $caracalRoot "session.clixml"
 $dashboardRoot = Join-Path $repoRoot "dashboard"
+& node (Join-Path $repoRoot 'tools/hosting/install-caddy.mts')
+if ($LASTEXITCODE -ne 0) { throw 'HTTPS service installation failed.' }
 
 function Stop-ProcessTree {
     param([Parameter(Mandatory)][int]$RootProcessId)

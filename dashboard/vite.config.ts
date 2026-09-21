@@ -35,7 +35,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command }) => {
   const output = process.env.AL_DASHBOARD_OUT_DIR || 'dist';
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
@@ -44,7 +44,13 @@ export default defineConfig(async () => {
   process.env.MINIFLARE_REGISTRY_PATH ??= '.wrangler/registry';
 
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
-  const { cloudflare } = await import('@cloudflare/vite-plugin');
+  // Development uses Vinext's Node runtime on every OS, including ARM64.
+  const cloudflarePlugins = command === 'build'
+    ? [(await import('@cloudflare/vite-plugin')).cloudflare({
+        viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
+        config: localBindingConfig,
+      })]
+    : [];
 
   return {
     build: { outDir: output },
@@ -57,7 +63,7 @@ export default defineConfig(async () => {
     server: {
       port: Number(process.env.AL_DASHBOARD_PORT) || 3010,
       strictPort: true,
-      ...(isCodexSeatbeltSandbox
+      ...(isCodexSeatbeltSandbox || process.env.AL_WATCH_POLL === '1'
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),
     },
@@ -67,10 +73,7 @@ export default defineConfig(async () => {
         ssrOutDir: path.join(output, 'server/ssr'),
       }),
       sites(),
-      cloudflare({
-        viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
-        config: localBindingConfig,
-      }),
+      ...cloudflarePlugins,
     ],
   };
 });

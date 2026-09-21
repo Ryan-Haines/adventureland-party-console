@@ -9,6 +9,7 @@ import { Services } from "./services.ts";
 import { servicesHealthy } from "./health.ts";
 import { updateHosting } from '../update/hosting.ts';
 import { notifyBoot, waitForRelease } from '../update/boot.ts';
+import { LocalTLS } from './tls.ts';
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const data = path.resolve(process.env.AL_DATA_DIR || path.join(root, ".build/hosting-data"));
@@ -20,6 +21,8 @@ await access.load();
 let configured = false,
   configuring = false;
 const services = new Services();
+const development = process.env.AL_DOCKER_DEV === '1';
+const tls = new LocalTLS(root, data);
 async function configure(raw: string, realm: string) {
   if (configuring || configured)
     throw new Error(
@@ -66,10 +69,13 @@ for (const name of ["localStorage", "game_files", "logs"]) {
 services.launch(path.join(root, "tools/dashboard/supervisor.mts"), path.join(root, "dashboard"), {
   ...process.env,
   AL_DASHBOARD_PUBLIC_PORT: String(dashboardPort),
-  AL_DASHBOARD_PREBUILT: ".build/container",
-});
+  AL_DASHBOARD_PREBUILT: development ? undefined : ".build/container",
+  NODE_ENV: development ? 'development' : 'production',
+}, development ? ['--development'] : []);
+if (development) services.launch(path.join(root, 'tools/game/watch.mts'), root, process.env);
 await notifyBoot(data);
 const server = gateway({
+  tls,
   access,
   updates: await updateHosting(root, data),
   configure,
@@ -79,10 +85,12 @@ const server = gateway({
   publicUrl: process.env.AL_PUBLIC_URL || undefined,
 });
 await listen(server, access);
+await tls.start();
 void startGame().catch(error => {
   if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Game startup failed:', error.message);
 });
 function shutdown() {
+  tls.stop();
   server.close();
   services.stop();
   setTimeout(() => process.exit(0), 15000).unref();

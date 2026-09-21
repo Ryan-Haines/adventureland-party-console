@@ -33,11 +33,11 @@ Install Git and Node **22.18+**. Run these commands in PowerShell.
    show_json(parent.user_id + "-" + parent.user_auth)
    ```
 
-4. Open [http://localhost:3010](http://localhost:3010), then **Interface settings > Load setup**. To control characters in Steam or a browser, click **Generate client loader**, paste the code into your game client's **CODE** window, and click **Engage**. Once connected, setup returns to the dashboard automatically. For fully headless play, log out your characters from other game windows and click **Continue to dashboard**.
+4. Open [http://localhost:3010](http://localhost:3010), then **Interface settings > Load setup**. Your account is already connected through the launcher. Setup asks where and how you play Adventure Land, then shows you the right steps to link it. Some setups include a one-time security certificate installation on the computer running the game. For headless play, you can skip linking and continue to the dashboard.
 5. Select your characters in the dashboard and play!
 6. Optional: [set up ALData](#optional-aldata-setup) to publish market classifieds.
 
-From another computer, use `http://<host-LAN-IP>:3010`, including when generating its Steam loader. Allow Node through Windows Firewall on Private networks.
+From another computer, use `http://<host-LAN-IP>:3010`. Setup generates the appropriate loader address. Allow Party Console's HTTP (3010) and HTTPS (3443) ports through the host's firewall on your private network.
 
 ## Docker installation
 
@@ -56,22 +56,18 @@ Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**.
    ./scripts/start-docker.sh
    ```
 
-   This builds from your checked-out source, starts the container in the background, and waits up to five minutes for it to become ready. When ready, it prints **Party Console ready! Open at** followed by your server address. Your saved account and character data are preserved when you run it again.
+   The helper script builds and starts the container with hot reload enabled. Dashboard and character-code edits update automatically. It waits up to five minutes for startup, then prints **Party Console ready! Open at** followed by your server address. Your saved account, character data, and HTTPS certificates are preserved when you run it again.
 
-3. If you prefer to build and start separately, use these commands instead:
+3. If you prefer a production container without hot reload, use these commands instead:
 
    ```sh
    docker compose build
    docker compose up -d
    ```
 
-4. Open the address printed by the helper. With the manual commands, open [http://localhost:3010](http://localhost:3010), or `http://<host-LAN-IP>:3010` from another computer. You only need to connect your account once. In the **Adventure Land Steam client**, log in to a character, open **CODE**, paste the following line, and click **Engage**. Copy the displayed session into **Game session** in the console, select a realm, and click **Connect account**.
+   These commands also switch an existing development container to production. To switch back, run `./scripts/start-docker.sh`. Both modes use the same saved data. View logs with `docker compose logs -f`; stop the container with `docker compose down`. Do not add `-v` unless you intend to delete your saved data.
 
-   ```javascript
-   show_json(parent.user_id + "-" + parent.user_auth)
-   ```
-
-   Setup then offers two paths: paste the generated loader into your Steam or browser client's **CODE** window and click **Engage**, or log out your characters from other game windows and click **Continue to dashboard** for fully headless play. A connected client triggers a five-second return to the dashboard. The server address is detected automatically. You can revisit this step through **Interface settings > Load setup**.
+4. Open the address printed by the helper. With the manual commands, open [http://localhost:3010](http://localhost:3010), or `http://<host-LAN-IP>:3010` from another computer. Setup first walks you through getting your game session and connecting your account. It then asks where and how you play Adventure Land and shows you the right steps to link it. Some setups include a one-time security certificate installation on the computer running the game. For headless play, you can skip linking and continue to the dashboard. You can revisit these steps through **Interface settings > Load setup**.
 5. Select offline characters in the dashboard to run headless, and play!
 6. Optional: [set up ALData](#optional-aldata-setup).
 
@@ -93,7 +89,15 @@ For Windows development, start with `.\scripts\start-caracal.ps1 -DevDashboard`.
 
 For a full Windows rebuild and publication, stop the launcher and rerun `.\scripts\start-caracal.ps1`. For coordinator-only changes, use `.\scripts\start-caracal.ps1 -CoordinatorOnly`; this rebuilds and restarts services while preserving installed character assets.
 
-For Docker changes, rebuild and restart:
+For Docker, `./scripts/start-docker.sh` enables hot reload using `compose.dev.yaml`. Edit files in the checkout on the Docker host, directly or through VS Code Remote SSH. Changes in a separate Windows checkout do not automatically reach your Pi.
+
+- **Dashboard or character logic:** save your edits (or pull those changes) and let the watchers update them. No container rebuild is needed. A character build that fails validation leaves the previous version running.
+- **Coordinator or hosting code:** rerun the helper to build and restart the services. Coordinator changes do not restart gameplay automatically.
+- **Dependencies, Dockerfile, or Compose configuration:** rerun the helper to rebuild the image and refresh its development dependencies.
+
+The helper keeps dependencies and build caches in Docker volumes, separate from your checkout and saved game data. Its restart briefly interrupts console services. If file changes are not detected on a Docker Desktop bind mount, start with `AL_WATCH_POLL=1 ./scripts/start-docker.sh`.
+
+For the production container, rebuild and restart after changes:
 
 ```sh
 docker compose up -d --build

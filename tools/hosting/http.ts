@@ -21,12 +21,13 @@ export async function body(req: IncomingMessage): Promise<Record<string, unknown
     value += chunk;
     if (value.length > 16384) throw new Error("Request too large");
   }
-  const parsed = JSON.parse(value || "{}");
+  const parsed = req.headers['content-type']?.startsWith('application/x-www-form-urlencoded')
+    ? Object.fromEntries(new URLSearchParams(value)) : JSON.parse(value || "{}");
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     throw new Error("JSON object required");
   return parsed;
 }
-export function proxy(req: IncomingMessage, res: ServerResponse, port: number) {
+export function proxy(req: IncomingMessage, res: ServerResponse, port: number, dashboard = false) {
   const upstream = request(
     {
       hostname: "127.0.0.1",
@@ -34,8 +35,9 @@ export function proxy(req: IncomingMessage, res: ServerResponse, port: number) {
       path: req.url,
       method: req.method,
       headers: { ...req.headers, cookie: "", host: `127.0.0.1:${port}`,
+        'x-party-tls': '',
         // The gateway already checked the browser origin; the loopback supervisor checks it again.
-        ...(req.url?.startsWith("/__dashboard/") ? { origin: `http://127.0.0.1:${port}` } : {}) },
+        ...(req.url?.startsWith("/__dashboard/") || (dashboard && req.headers.origin) ? { origin: `http://127.0.0.1:${port}` } : {}) },
     },
     (reply) => {
       const headers = { ...reply.headers };
