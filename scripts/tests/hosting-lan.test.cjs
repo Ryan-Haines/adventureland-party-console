@@ -141,7 +141,7 @@ test('only a connected client starts the green countdown; failed authentication 
    el('connect').click();await new Promise(r=>setImmediate(r));
    if(!accepted){assert.equal(tick,undefined);assert.equal(el('success').hidden,true);assert.equal(el('error').textContent,'Invalid game session');continue;}
    assert.equal(dom.window.getComputedStyle(el('success')).color,'rgb(134, 239, 172)');assert.equal(el('error').textContent,'');
-   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();el('loader').click();await new Promise(r=>setImmediate(r));
+   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();await new Promise(r=>setImmediate(r));
    assert.equal(tick,undefined);assert.equal(el('code').value,'loader');
    connected=true;await poll();assert.match(el('success').textContent,/Client connected. Returning to dashboard in 5/);
    for(const remaining of [4,3,2,1]){tick();assert.ok(el('success').textContent.includes('in '+remaining));}
@@ -150,7 +150,7 @@ test('only a connected client starts the green countdown; failed authentication 
  }
 });
 
-test('revisiting setup does not poll until generating a loader; LAN copy fallback selects code',async()=>{
+test('choosing a supported local setup generates its loader automatically; LAN copy fallback selects code',async()=>{
  const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  const calls=[];let tick,poll;
  const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){
@@ -162,7 +162,7 @@ test('revisiting setup does not poll until generating a loader; LAN copy fallbac
   const flush=()=>new Promise(r=>setImmediate(r));await flush();const el=id=>dom.window.document.getElementById(id);
   assert.equal(calls.length,1);assert.equal(tick,undefined);assert.equal(poll,undefined);
   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();
-  el('loader').click();await flush();assert.deepEqual(JSON.parse(calls[1][1].body),{origin:'http://127.0.0.1:3010'});
+  await flush();assert.equal(el('loader'),null);assert.deepEqual(JSON.parse(calls[1][1].body),{origin:'http://127.0.0.1:3010'});
   assert.equal(tick,undefined);assert.match(el('linkStatus').textContent,/retry/);
   el('copy').click();await flush();assert.equal(el('code').selectionStart,0);assert.equal(el('code').selectionEnd,'client loader'.length);
   assert.equal(el('continue').getAttribute('href'),'/');el('continue').onclick();

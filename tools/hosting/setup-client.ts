@@ -32,6 +32,7 @@ function selection(){
   loaderOrigin='http://127.0.0.1:'+(state.httpPort||new URL(serverAddress).port||3010);el('loaderArea').hidden=false;
  }
  el('address').textContent=loaderOrigin||serverAddress;
+ if(loaderOrigin)void generateLoader().catch(e=>{el('error').textContent=e.message});
 }
 el('placement').onchange=()=>{forceHttps=false;selection()};el('client').onchange=()=>{forceHttps=false;selection()};
 el('fallback').onclick=()=>{forceHttps=true;selection()};
@@ -49,7 +50,8 @@ async function watchConnection(generation){
 }
 async function generateLoader(){
  if(!loaderOrigin)throw Error('Choose your setup and check HTTPS first');stopLinking();const generation=linkGeneration;
- const r=await call('steam',{origin:loaderOrigin});if(generation!==linkGeneration)return;
+ el('linkStatus').textContent='Preparing your client code…';
+ let r;try{r=await call('steam',{origin:loaderOrigin})}catch(e){if(generation!==linkGeneration)return;el('linkStatus').textContent='Could not prepare client code. Choose your setup again to retry.';throw e}if(generation!==linkGeneration)return;
  el('code').value=r.code;el('copy').disabled=false;el('linkStatus').textContent='Waiting for your client to connect…';void watchConnection(generation);
 }
 async function refresh(){
@@ -67,20 +69,21 @@ action('prepare',async()=>{
 });
 action('checkHttps',async()=>{
  if(!secureOrigin)throw Error('Prepare HTTPS first');savePreferences();stopLinking();const generation=linkGeneration;
+ loaderOrigin='';el('code').value='';el('copy').disabled=true;el('loaderArea').hidden=true;
  const status=el('httpsStatus');status.style.color='#f4f4f5';status.textContent='Checking HTTPS…';
  try{
   const result=await call('transfer',{origin:secureOrigin,...preferences()});if(generation!==linkGeneration)return;
   const response=await fetch(result.action,{method:'POST',mode:'cors',credentials:'omit',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({ticket:result.ticket}),signal:AbortSignal.timeout(15000)});
   if(!response.ok)throw Error('HTTPS check rejected');const checked=await response.json();if(!checked.ok)throw Error('HTTPS check rejected');if(generation!==linkGeneration)return;
   loaderOrigin=checked.origin;el('address').textContent=loaderOrigin;el('loaderArea').hidden=false;
-  status.style.color='#86efac';status.textContent='HTTPS connection verified. This browser trusts Party Console. Generate your client loader below.';
- }catch(e){if(generation!==linkGeneration)return;status.style.color='#fca5a5';status.textContent='Could not verify HTTPS. Open '+secureOrigin+'/setup in a new tab to see any certificate error. After resolving it, return here and click Check HTTPS connection again.'}
+  status.style.color='#86efac';status.textContent='HTTPS connection verified. This browser trusts Party Console. Paste the code below into your game client.';
+ }catch(e){if(generation!==linkGeneration)return;status.style.color='#fca5a5';status.textContent='Could not verify HTTPS. Open '+secureOrigin+'/setup in a new tab to see any certificate error. After resolving it, return here and click Check HTTPS connection again.';return}
+ await generateLoader();
 });
 action('pairButton',async()=>{await call('pair',{token:location.hash.slice(1)});history.replaceState(null,'','/setup');await refresh()});
 action('connect',async()=>{await call('session',{session:el('session').value,realm:el('realm').value});el('session').value='';sessionVisible(false);await refresh();el('success').hidden=false;el('success').textContent='Account connected. Choose how to run your characters below.'});
-action('loader',async()=>{el('success').hidden=true;await generateLoader()});
 action('copy',async()=>{try{await navigator.clipboard.writeText(el('code').value);el('linkStatus').textContent='Copied. Paste into CODE and click Engage.'}catch{el('code').focus();el('code').select();el('linkStatus').textContent='Code selected. Copy it and paste into CODE.'}});
-action('revoke',async()=>{if(confirm('Revoke private client tokens? Direct tokenless loaders are unaffected.')){await call('revoke',{});stopLinking();el('success').hidden=true;el('code').value='';el('copy').disabled=true;el('linkStatus').textContent='Client tokens revoked. Generate a new loader.'}});
+action('revoke',async()=>{if(confirm('Revoke private client tokens? Direct tokenless loaders are unaffected.')){await call('revoke',{});stopLinking();el('success').hidden=true;el('code').value='';el('copy').disabled=true;el('linkStatus').textContent='Client tokens revoked. Choose your setup again to create a new loader.'}});
 action('invite',async()=>{const r=await call('invite',{});el('invitation').textContent=location.origin+'/setup#'+r.token});
 el('continue').onclick=stopLinking;addEventListener('pagehide',stopLinking);restorePreferences();
 refresh().catch(e=>{el('pair').hidden=false;el('error').textContent=e.message});

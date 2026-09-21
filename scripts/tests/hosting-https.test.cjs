@@ -30,7 +30,8 @@ test('HTTPS check stays on setup and shows inline success or certificate trouble
   w.AbortSignal.timeout=()=>undefined;
   w.fetch=async(url,options)=>{
    if(String(url).startsWith(secure)){if(fail)throw Error('certificate error');assert.equal(options.credentials,'omit');assert.equal(options.body.get('ticket'),'one-time');return {ok:true,json:async()=>({ok:true,origin:secure})}}
-   const values={'/setup/state':{configured:true,serverAddress:'http://192.168.1.239:3010',tls:{ready:true}},'/setup/https':{origin:secure,fingerprint:'test'},'/setup/transfer':{action:secure+'/setup/check-https',ticket:'one-time'}};
+   if(url==='/setup/steam'){assert.deepEqual(JSON.parse(options.body),{origin:secure});return {ok:true,json:async()=>({code:'$.getScript("'+secure+'/CODE/adventure_land/universal-loader.js");'})}}
+   const values={'/setup/state':{configured:true,serverAddress:'http://192.168.1.239:3010',tls:{ready:true}},'/setup/https':{origin:secure,fingerprint:'test'},'/setup/transfer':{action:secure+'/setup/check-https',ticket:'one-time'},'/party-api/steam/connection':{connected:false}};
    return {ok:true,json:async()=>values[url]};
   };
  }});
@@ -39,8 +40,11 @@ test('HTTPS check stays on setup and shows inline success or certificate trouble
   el('placement').value='remote';el('client').value='windows-steam';el('client').onchange();
   await el('prepare').onclick();await el('checkHttps').onclick();
   assert.match(el('httpsStatus').textContent,/connection verified/);assert.equal(el('loaderArea').hidden,false);
+  assert.equal(el('loader'),null);assert.equal(el('copy').disabled,false);
+  assert.equal(el('code').value,'$.getScript("'+secure+'/CODE/adventure_land/universal-loader.js");');
   assert.equal(el('address').textContent,secure);assert.equal(dom.window.location.pathname,'/setup');assert.equal(dom.window.document.querySelector('form'),null);
   fail=true;await el('checkHttps').onclick();assert.match(el('httpsStatus').textContent,/Could not verify HTTPS/);assert.ok(el('httpsStatus').textContent.includes(secure+'/setup'));
+  assert.equal(el('loaderArea').hidden,true);assert.equal(el('code').value,'');
  }finally{dom.window.close()}
 });
 
