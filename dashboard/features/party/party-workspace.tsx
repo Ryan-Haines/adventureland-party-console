@@ -42,9 +42,9 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
             onValueChange={(value) => formation({ leader: value })}
             className="grid items-start gap-4 @3xl:grid-cols-2 @7xl:grid-cols-4"
           >
-            <RosterControls slots={state.activeSlots || []} operation={state.steamSwitch} onChoose={setPickerSlot} />
-            <PendingCharacterCards model={model} />
             {chars.filter(char => !pending.some(entry => entry.name === char.name)).map(char => <ConnectedCharacterCard key={char.name} name={char.name} model={model} />)}
+            <PendingCharacterCards model={model} />
+            <RosterControls slots={state.activeSlots || []} operation={state.steamSwitch} onChoose={setPickerSlot} />
             {state.bankboiTransaction ? (
               <article className="grid min-h-[34rem] place-items-center self-stretch border-2 border-dashed border-cyan-500/80 bg-[#071315] px-8 text-center shadow-[inset_0_0_40px_rgba(34,211,238,0.06)]">
                 <div>

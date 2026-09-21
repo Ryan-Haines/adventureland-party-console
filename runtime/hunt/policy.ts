@@ -14,6 +14,7 @@ export interface Hunt {
   returnRetryAt?: number;
   returnRetries?: number;
   returnDisableTown?: boolean;
+  returnTown?: import('../coordinator/navigation/return-town.ts').ReturnTownPolicy;
 }
 export function priority(hunt: Hunt | null | undefined): boolean {
   if (!hunt || ["ended", "failed-return"].includes(hunt.stage)) return false;
@@ -58,6 +59,7 @@ export function beginTurnIn(hunt: Hunt, leader: string): void {
     hunt.returnRetries = 0;
     hunt.returnRetryAt = 0;
     hunt.returnDisableTown = false;
+    delete hunt.returnTown;
   }
 }
 export function completeTurnIn(hunt: Hunt, now: number): void {

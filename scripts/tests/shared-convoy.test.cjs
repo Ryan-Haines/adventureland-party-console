@@ -257,7 +257,7 @@ test('shared route transport preserves leave metadata and rejects conflicting fl
 
 test('return preparation identifies missing acknowledgements and clears the reason after readiness',()=>{
  const p=party(),e=engine();p.activeConvoy.returnRouting=true;p.activeConvoy.continuousReturn=1;
- e.step(p,1000);e.step(p,1001);assert.match(p.activeConvoy.preparationBlocker,/acknowledgement: L, F, P/);
+ e.step(p,1000);e.step(p,1001);assert.match(p.activeConvoy.preparationBlocker,/acknowledgement: L \(no local return handle\), F \(no local return handle\), P \(no local return handle\)/);
  for(const name of ['L','F','P'])report(p,name);
  e.step(p,1100);assert.match(p.activeConvoy.preparationBlocker,/L to publish/);
  assert.equal(publishSharedRoute(p,publication(p),1100),null);

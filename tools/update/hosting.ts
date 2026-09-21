@@ -19,7 +19,7 @@ export async function updateHosting(root: string, data: string): Promise<UpdateR
       if (req.headers.authorization !== `Bearer ${token}` || req.method !== 'GET' || pathname !== '/console-control/maintenance') {
         json(res, 403, { error: 'Updater authentication required' }); return;
       }
-      const response = await fetch('http://127.0.0.1:924/party-api/console-maintenance', { signal: AbortSignal.timeout(3000) });
+      const response = await fetch(`http://127.0.0.1:${Number(process.env.AL_INTERNAL_API_PORT) || 924}/party-api/console-maintenance`, { signal: AbortSignal.timeout(3000) });
       json(res, response.status, await response.json());
     },
     async route(req, res, pathname) {

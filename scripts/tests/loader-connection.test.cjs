@@ -20,9 +20,12 @@ test('bridge download retries without another Engage, serializes requests, and r
     return {ok:true,text:async()=>url.includes('manifest.json')?JSON.stringify({schema:1,classes:{warrior:{file:`generated/${hash}/warrior.js`,sha256:hash}}}):code};
    },bridgeReady:()=>installs++});
   const flush=async()=>{for(let n=0;n<10;n++)await new Promise(r=>setImmediate(r));};
+  const until=async predicate=>{for(let n=0;n<200&&!predicate();n++)await new Promise(r=>setTimeout(r,10));assert.ok(predicate());};
   try{
    if(mode==='stopped')w.localStorage.setItem('party-code-stopped:P','1');
    w.eval(loader);await flush();assert.equal(attempts,1);
+   // WebCrypto completes on a worker thread; event-loop turns are not a deadline.
+   if(mode!=='stopped')await until(()=>w.characterInstalled===true);
    interval();interval();await flush();assert.equal(attempts,2);
    if(mode==='dispose')w.__partyCodeLoader.dispose();
    release();await flush();interval();await flush();
@@ -30,7 +33,7 @@ test('bridge download retries without another Engage, serializes requests, and r
    assert.equal(w.characterInstalled,mode==='stopped'?undefined:true);
    if(mode==='stopped'){
     assert.equal(w.localStorage.getItem('party-code-stopped:P'),'1');
-    w.localStorage.setItem('party-code-stopped:P','0');interval();await flush();assert.equal(w.characterInstalled,true);
+    w.localStorage.setItem('party-code-stopped:P','0');interval();await until(()=>w.characterInstalled===true);assert.equal(w.characterInstalled,true);
    }
   }finally{w.__partyCodeLoader?.dispose();w.close();}
  }

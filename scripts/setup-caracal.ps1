@@ -20,5 +20,5 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Runtime build failed.' }
     node tools/game/build.mts --publish
     if ($LASTEXITCODE -ne 0) { throw 'Character build failed.' }
-    Write-Host 'Setup complete. Run .\scripts\start-caracal.ps1.'
+    Write-Host 'Setup complete. Run .\scripts\start-console.ps1.'
 } finally { Pop-Location }

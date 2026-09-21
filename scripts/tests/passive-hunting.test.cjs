@@ -27,7 +27,7 @@ function fixture(){
   escapeOwns:()=>false,combatRecoveryActive:()=>false,activeCombatEvent:()=>false,rareActive:()=>false,unfinishedFight:()=>false,
   reunionRealm:()=> 'USII',get_entity:id=>Object.values(c.parent.entities).find(e=>e.id===id),is_in_range:e=>Math.hypot(e.x,e.y)<=100,
   isExternallyClaimedMonster:e=>!!e.claimed,currentPartyList:()=>['W'],sameEventTeamMember:()=>true,equip:()=>{throw Error('unexpected deployment');},rareFields:()=>[]});
- const names=['passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
+ const names=['returnDepartureDefense','passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
  vm.runInContext(names.map(n=>namedFunction(source,n)).join('\n'),c);
  return {c,bee};
 }
@@ -108,12 +108,12 @@ test('passing retaliation cannot cancel a return convoy; unrelated attackers sti
  const {c,bee}=fixture();c.beginPassingAttack(bee);bee.target='W';
  let stops=0,evidence=0;c.stop=async()=>{stops++;};c.releaseConvoyCruise=()=>{};c.eventTargetTypes=[];
  c.root.partyQueueClient={evidence(){evidence++;}};
- c.convoyTraveling={id:'return',epoch:1,purpose:'monster-hunt',nonPreemptible:true};
- vm.runInContext(['defendPartyHit','interruptConvoyForDefense'].map(n=>namedFunction(source,n)).join('\n'),c);
+ c.convoyTraveling={id:'return',epoch:1,phase:'travelling',purpose:'monster-hunt',nonPreemptible:true};
+ vm.runInContext(['returnDepartureDefense','defendPartyHit','interruptConvoyForDefense'].map(n=>namedFunction(source,n)).join('\n'),c);
  const convoy=c.convoyTraveling;c.defendPartyHit({id:'W',hid:bee.id});
  assert.equal(c.convoyTraveling,convoy);assert.equal(convoy.cancelled,undefined);assert.equal(stops,0);assert.equal(evidence,0);
  c.parent.entities.other={...bee,id:'other'};c.defendPartyHit({id:'W',hid:'other'});
- assert.equal(c.convoyTraveling,null);assert.equal(convoy.cancelled,true);assert.equal(stops,1);assert.equal(evidence,1);
+ assert.equal(c.convoyTraveling,convoy);assert.equal(convoy.defensePaused,true);assert.equal(convoy.phase,'defending');assert.equal(stops,1);assert.equal(evidence,1);
 });
 
 test('Hunt return passing attacks wait for an owned travelling route and yield to every transition',()=>{

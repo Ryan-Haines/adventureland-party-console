@@ -16,6 +16,10 @@ interface ConvoyStatus {
   convoyNavigation?: { runtimeId?: string };
 }
 export interface PartyConvoy {
+  returnTown?: import('./return-town.ts').ReturnTownPolicy;
+  townRetry?: boolean;
+  townRetryAt?: number;
+  returnTownRally?: { map: string; x: number; y: number };
   cause?: "farming-conflict";
   huntTarget?: string;
   routeProtocol?: number;

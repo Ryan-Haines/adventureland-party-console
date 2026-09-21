@@ -175,7 +175,7 @@
   }
 
   // runtime/steam/connection.ts
-  var steamBridgeVersion = 7;
+  var steamBridgeVersion = 8;
   function serverAddress(host = globalThis) {
     return (host.__partyServer || host.parent?.__partyServer || "http://127.0.0.1:924").replace(
       /\/$/,

@@ -173,7 +173,9 @@
       if (transition && !current.acknowledged) return false;
       if (transition) alignArrival(current, p);
       if (distance(p, current.step) > 1) return false;
+      notifyTown(current, options, "complete");
       if (!transitionReady(current, options, !!transition)) return false;
+      notifyTransition(current, options);
       state.plot.shift();
       if (transition) index++;
       issued = void 0;
@@ -197,7 +199,10 @@
       return true;
     }
     function observe(current, options) {
-      if (current.error) throw Error(isTransition(current.step) ? transitionLabel(current.step) + ": " + current.error : current.error);
+      if (current.error) {
+        notifyTownRejection(current, options);
+        throw Error(isTransition(current.step) ? transitionLabel(current.step) + ": " + current.error : current.error);
+      }
       if (complete(current, options)) return;
       const p = position();
       if (arrivedTransition(current, p)) return;
@@ -206,7 +211,10 @@
         current.progressAt = now();
       }
       const transition = isTransition(current.step);
-      if (transition && now() - current.at > 12e3) throw Error(`Failed ${transitionLabel(current.step)}`);
+      if (transition && now() - current.at > 12e3) {
+        notifyTown(current, options, "interrupted");
+        throw Error(`Failed ${transitionLabel(current.step)}`);
+      }
       if (!transition && now() - current.progressAt > 5e3) throw Error("Stalled walking movement (5 seconds without progress)");
     }
     function arrivedTransition(current, p) {
@@ -230,22 +238,28 @@
     function dispatch(current, options) {
       if (current.error) throw Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : current.error);
       if (!lootReady(current.step)) return;
+      if (!readyTown(current, options)) return;
       if (isTransition(current.step) && !barrier(options, current.step, false)) return;
-      if (current.step.town && !townReady()) throw Error("Town warp unavailable during combat or pending loot");
       current.finished = false;
       current.at = now();
       current.progressAt = now();
       const captured = current;
+      notifyTown(current, options, "casting");
       try {
         void Promise.resolve(send(captured)).then((result) => {
-          if (result && typeof result === "object" && "failed" in result && result.failed) throw Error("Movement command rejected by game");
+          if (result && typeof result === "object" && "failed" in result && result.failed) throw result;
           if (issued === captured) captured.acknowledged = true;
         }).catch((error) => {
-          if (issued === captured) captured.error = String(error);
+          if (issued === captured) rejected(captured, error);
         });
       } catch (error) {
-        captured.error = String(error);
+        rejected(captured, error);
       }
+    }
+    function rejected(current, error) {
+      const reason = error && typeof error === "object" && "reason" in error ? String(error.reason) : String(error);
+      current.error = reason;
+      current.townUnavailable = /cooldown|unavailable|not.ready|no.mp|disabled/i.test(reason);
     }
     function tick(options) {
       sample();
@@ -262,7 +276,6 @@
       if (!canStart()) return false;
       const step = state.plot[0], p = position(), reason = stepIssue(validation, p, step, state.use_town);
       if (reason) throw Error(`${reason} between ${p.map} (${p.x}, ${p.y}) and ${step.map} (${step.x}, ${step.y})`);
-      checkTownAvailability(step);
       issued = { step, from: point(p), at: now(), progressAt: now(), position: p, finished: true };
       dispatch(issued, options);
       return false;
@@ -275,6 +288,22 @@
       lootWaitAt ??= now();
       if (now() - lootWaitAt >= 3e4) throw Error("Pending nearby loot prevented map transition for 30 seconds");
       return false;
+    }
+    function notifyTownRejection(current, options) {
+      notifyTown(current, options, current.townUnavailable ? "unavailable" : "interrupted");
+    }
+    function notifyTown(current, options, outcome) {
+      if (current.step.town) options.townAttempt?.(outcome, index, current.from, current.step);
+    }
+    function notifyTransition(current, options) {
+      if (isTransition(current.step)) options.transitionComplete?.(current.step);
+    }
+    function readyTown(current, options) {
+      if (!current.step.town || townReady() && host.can_use("use_town")) return true;
+      if (!options.townAttempt) throw Error("Town warp currently unavailable");
+      if (now() - current.at < 5e3) return false;
+      notifyTown(current, options, "unavailable");
+      throw Error("Town unavailable for 5 seconds; use walking route");
     }
     function sample() {
       const at = now();
@@ -290,9 +319,6 @@
     }
     function canStart() {
       return !host.character.moving && host.can_walk(host.character) && !host.is_transporting(host.character);
-    }
-    function checkTownAvailability(step) {
-      if (step.town && !host.can_use("use_town")) throw Error("Town warp currently unavailable");
     }
     return {
       tick,

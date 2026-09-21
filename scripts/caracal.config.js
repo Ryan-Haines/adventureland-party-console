@@ -1,5 +1,5 @@
 // Local caracAL configuration template. The session is supplied through the
-// AL_SESSION environment variable by start-caracal.ps1 and is never stored here.
+// AL_SESSION environment variable by start-console.ps1 and is never stored here.
 module.exports = {
   session: "",
   cull_versions: true,

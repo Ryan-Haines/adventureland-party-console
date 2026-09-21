@@ -24,7 +24,7 @@ Install Git and Node **22.18+**. Run these commands in PowerShell.
 3. Start the console and leave it running:
 
    ```powershell
-   .\scripts\start-caracal.ps1
+   .\scripts\start-console.ps1
    ```
 
    You only need to connect your account once. In the **Adventure Land Steam client**, log in to a character, open **CODE**, paste the following line, and click **Engage**. Copy the displayed session into the PowerShell prompt:
@@ -71,6 +71,33 @@ Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**.
 5. Select offline characters in the dashboard to run headless, and play!
 6. Optional: [set up ALData](#optional-aldata-setup).
 
+## Linux installation
+
+### Linux terminal
+
+Use a **64-bit Linux system (x64 or arm64)**, including a Raspberry Pi with a 64-bit OS. Install Node **22.18+**, npm, Git, tar, and util-linux (which provides `flock`). Run the launcher as your normal user, without `sudo`.
+
+1. Clone the repository:
+
+   ```sh
+   git clone https://github.com/Ryan-Haines/adventureland-party-console.git
+   cd adventureland-party-console
+   ```
+
+2. Start the console and leave the terminal open:
+
+   ```sh
+   ./scripts/start-console.sh
+   ```
+
+   The first launch installs dependencies, caracAL, and the HTTPS service, then builds the console. Later launches reuse them and reinstall dependencies when their package files change. Dashboard and character-code hot reload are enabled by default.
+
+3. Open a **Dashboard** address printed in the terminal. Setup walks you through getting your game session, connecting your account, and linking your game client. Any certificate installation is part of that guided setup. For headless play, skip linking and select your characters in the dashboard. You can return through **Interface settings > Load setup**.
+
+4. Press **Ctrl+C** in the terminal to stop. Run `./scripts/start-console.sh` again to restart; your account, settings, and certificates are kept. To run without hot reload, use `./scripts/start-console.sh --production` instead.
+
+From another computer, use the printed LAN address. Allow HTTP (3010) and HTTPS (3443) through the host's firewall on your private network. Keep the old console stopped when moving between machines.
+
 ## Optional ALData setup
 
 ALData provides public market and Ponty listings without a key. Authentication lets you publish WTS/WTB classifieds. No separate ALData container is needed.
@@ -83,11 +110,16 @@ ALData provides public market and Ponty listings without a key. Authentication l
 
 - **Dashboard:** `dashboard/`.
 - **Character logic:** `runtime/characters/`; legacy shared routines are in `characters/shared.js`.
+- **Generated role compatibility bundle:** `characters/roles.js` is built from `runtime/characters/roles/compat.ts`; edit the TypeScript source. `characters/shared.js` is still maintained source used by current character builds.
 - **Coordinator:** `runtime/coordinator/`. Read its [README](runtime/coordinator/README.md) before changing behavior.
 
-For Windows development, start with `.\scripts\start-caracal.ps1 -DevDashboard`. Dashboard edits reload automatically; character edits rebuild and publish automatically. Edit source files, not generated bundles.
+For Windows development, start with `.\scripts\start-console.ps1 -DevDashboard`. Dashboard edits reload automatically; character edits rebuild and publish automatically. Edit source files, not generated bundles.
 
-For a full Windows rebuild and publication, stop the launcher and rerun `.\scripts\start-caracal.ps1`. For coordinator-only changes, use `.\scripts\start-caracal.ps1 -CoordinatorOnly`; this rebuilds and restarts services while preserving installed character assets.
+For a full Windows rebuild and publication, stop the launcher and rerun `.\scripts\start-console.ps1`. For coordinator-only changes, use `.\scripts\start-console.ps1 -CoordinatorOnly`; this rebuilds and restarts services while preserving installed character assets.
+
+The old Windows command, `.\scripts\start-caracal.ps1`, remains a compatibility shortcut with the same switches.
+
+For native Linux development, use `./scripts/start-console.sh`. Dashboard and character edits reload automatically. After coordinator, hosting, or dependency changes (including a `git pull` containing them), press Ctrl+C and run it again to rebuild and restart. The launcher does not automatically restart the coordinator during gameplay.
 
 For Docker, `./scripts/start-docker.sh` enables hot reload using `compose.dev.yaml`. Edit files in the checkout on the Docker host, directly or through VS Code Remote SSH. Changes in a separate Windows checkout do not automatically reach your Pi.
 
@@ -110,6 +142,7 @@ State is local data; cloning or pushing Git does not transfer it.
 | Installation | State file |
 | --- | --- |
 | Windows/local | `.caracal/localStorage/caraGarage.jsonl` inside the checkout |
+| Native Linux | `.build/hosting-data/localStorage/caraGarage.jsonl` by default; an existing `.caracal/localStorage` directory is preserved and used if present |
 | Docker | `/data/localStorage/caraGarage.jsonl` inside the container |
 
 1. Stop the old installation and copy its state file. Keep the original as a backup.

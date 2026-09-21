@@ -4,7 +4,7 @@ import type { MovementHost, MovementOptions, MoveState } from './movement-host.t
 function transitionLabel(step: Step): string {
   return step.method === 'leave' ? 'leave transition' : step.town ? 'town warp' : 'map transition';
 }
-interface Issued { step: Step; from: Point; at: number; progressAt: number; position: Point; error?: string; acknowledged?: boolean; finished?: boolean; aligned?: boolean }
+interface Issued { step: Step; from: Point; at: number; progressAt: number; position: Point; error?: string; townUnavailable?: boolean; acknowledged?: boolean; finished?: boolean; aligned?: boolean }
 export function createMovementExecutor(host: MovementHost, state: MoveState, validation: ValidationPorts, now: () => number, townReady = () => true, lootCollected = () => true) {
   let issued: Issued | undefined, index = 0, barrierPending = false, barrierReady = false, lastBarrier = 0, waitingBarrier = false;
   let sampledAt = now(), sampledPhase = 'idle';
@@ -39,7 +39,9 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     if (transition && !current.acknowledged) return false;
     if (transition) alignArrival(current, p);
     if (distance(p, current.step) > 1) return false;
+    notifyTown(current,options,'complete');
     if (!transitionReady(current, options, !!transition)) return false;
+    notifyTransition(current,options);
     state.plot.shift(); if (transition) index++; issued = undefined; barrierReady = false; return true;
   }
   function alignArrival(current: Issued, p: Point) {
@@ -55,14 +57,20 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     return true;
   }
   function observe(current: Issued, options: MovementOptions) {
-    if (current.error) throw Error(isTransition(current.step) ? transitionLabel(current.step) + ': ' + current.error : current.error);
+    if (current.error) {
+      notifyTownRejection(current,options);
+      throw Error(isTransition(current.step) ? transitionLabel(current.step) + ': ' + current.error : current.error);
+    }
     if (complete(current, options)) return;
     const p = position();
     // Once arrival is confirmed, wait for the party barrier, not the cast timer.
     if (arrivedTransition(current,p)) return;
     if (distance(p, current.position) >= 2) { current.position = p; current.progressAt = now(); }
     const transition = isTransition(current.step);
-    if (transition && now() - current.at > 12000) throw Error(`Failed ${transitionLabel(current.step)}`);
+    if (transition && now() - current.at > 12000) {
+      notifyTown(current,options,'interrupted');
+      throw Error(`Failed ${transitionLabel(current.step)}`);
+    }
     if (!transition && now() - current.progressAt > 5000) throw Error('Stalled walking movement (5 seconds without progress)');
   }
   function arrivedTransition(current: Issued, p: Point): boolean {
@@ -84,15 +92,21 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
   function dispatch(current: Issued, options: MovementOptions) {
       if (current.error) throw Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : current.error);
       if (!lootReady(current.step)) return;
+      if(!readyTown(current,options))return;
       if ((isTransition(current.step)) && !barrier(options, current.step, false)) return;
-      if (current.step.town && !townReady()) throw Error('Town warp unavailable during combat or pending loot');
       current.finished = false; current.at = now(); current.progressAt = now();
       const captured = current;
+      notifyTown(current,options,'casting');
       try { void Promise.resolve(send(captured)).then(result => {
-        if (result && typeof result === 'object' && 'failed' in result && result.failed) throw Error('Movement command rejected by game');
+        if (result && typeof result === 'object' && 'failed' in result && result.failed) throw result;
         if (issued === captured) captured.acknowledged = true;
-      }).catch(error => { if (issued === captured) captured.error = String(error); }); }
-      catch (error) { captured.error = String(error); }
+      }).catch(error => { if (issued === captured) rejected(captured,error); }); }
+      catch (error) { rejected(captured,error); }
+  }
+  function rejected(current:Issued,error:unknown):void {
+    const reason=error && typeof error==='object' && 'reason' in error ? String(error.reason) : String(error);
+    current.error=reason;
+    current.townUnavailable=/cooldown|unavailable|not.ready|no.mp|disabled/i.test(reason);
   }
   function tick(options: MovementOptions): boolean {
     sample();
@@ -103,7 +117,6 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     if (!canStart()) return false;
     const step = state.plot[0], p = position(), reason = stepIssue(validation, p, step, state.use_town);
     if (reason) throw Error(`${reason} between ${p.map} (${p.x}, ${p.y}) and ${step.map} (${step.x}, ${step.y})`);
-    checkTownAvailability(step);
     issued = { step, from: point(p), at: now(), progressAt: now(), position: p, finished: true };
     dispatch(issued, options);
     return false;
@@ -113,6 +126,22 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     lootWaitAt ??= now();
     if (now() - lootWaitAt >= 30000) throw Error('Pending nearby loot prevented map transition for 30 seconds');
     return false;
+  }
+  function notifyTownRejection(current:Issued,options:MovementOptions) {
+    notifyTown(current,options,current.townUnavailable?'unavailable':'interrupted');
+  }
+  function notifyTown(current:Issued,options:MovementOptions,outcome:'casting'|'interrupted'|'complete'|'unavailable') {
+    if(current.step.town)options.townAttempt?.(outcome,index,current.from,current.step);
+  }
+  function notifyTransition(current:Issued,options:MovementOptions) {
+    if(isTransition(current.step))options.transitionComplete?.(current.step);
+  }
+  function readyTown(current:Issued,options:MovementOptions):boolean {
+    if(!current.step.town || townReady() && host.can_use('use_town'))return true;
+    if(!options.townAttempt)throw Error('Town warp currently unavailable');
+    if(now()-current.at<5000)return false;
+    notifyTown(current,options,'unavailable');
+    throw Error('Town unavailable for 5 seconds; use walking route');
   }
   function sample(): void {
     const at=now();durations[sampledPhase]=(durations[sampledPhase]||0)+Math.max(0,at-sampledAt);
@@ -125,9 +154,6 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     return isTransition(issued.step)?transitionLabel(issued.step):'walking';
   }
   function canStart(): boolean { return !host.character.moving && host.can_walk(host.character) && !host.is_transporting(host.character); }
-  function checkTownAvailability(step: Step) {
-    if (step.town && !host.can_use('use_town')) throw Error('Town warp currently unavailable');
-  }
   return { tick, reset, cancel, pause, progress: () => ({step:index,phase:phase(),destination:issued?.step,durations:{...durations}}),
     transition: () => issued && isTransition(issued.step) ? (issued.step.town ? 'town' : 'transport') : null,
     remaining: () => state.plot.map(p => ({ ...p })) };

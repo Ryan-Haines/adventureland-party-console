@@ -16,7 +16,10 @@ function returnLeg(convoy: HuntConvoy): string {
 
 export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
   function preparationMessage(convoy: HuntConvoy): string {
-    return convoy.phase === 'shared-prepare' && convoy.preparationBlocker ? '; ' + convoy.preparationBlocker : '';
+    if(convoy.returnTown?.walking)return '; walking out of '+convoy.returnTown.map+'; Town available again on the next map';
+    const count=convoy.returnTown?.interruptions;
+    const town=count ? '; Town interrupted '+count+'/3 times on '+convoy.returnTown!.map : '';
+    return town+(convoy.phase === 'shared-prepare' && convoy.preparationBlocker ? '; ' + convoy.preparationBlocker : '');
   }
   function cancelled(hunt: HuntCycle): boolean {
     return hunt.participants.some((name) => ports.intent(name).cancelled);
@@ -68,7 +71,7 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     )
       return false;
     if (retryBlocked(hunt)) return true;
-    if (state.activeConvoy!.failureCode === "town-unavailable") hunt.returnDisableTown = true;
+    if(state.activeConvoy!.returnTown)hunt.returnTown=state.activeConvoy!.returnTown;
     hunt.returnRetries = (hunt.returnRetries || 0) + 1;
     hunt.returnRetryAt = ports.now();
     ports.cancelHuntConvoy();

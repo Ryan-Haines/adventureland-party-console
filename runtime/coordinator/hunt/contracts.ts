@@ -91,6 +91,8 @@ export interface LootProgress {
   error?: string;
 }
 interface HuntConvoyState {
+  continuousReturn?: number;
+  returnTown?: import('../navigation/return-town.ts').ReturnTownPolicy;
   cause?: "farming-conflict";
   huntTarget?: string;
   label?: string;

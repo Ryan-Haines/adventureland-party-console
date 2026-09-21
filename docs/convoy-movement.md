@@ -99,7 +99,7 @@ three runners, copied queues, blocked-waypoint interception, unconsumed-waypoint
 reuse, native Town/transport operations, protocol mismatch, stale publications,
 request coalescing, command continuation and cancellation.
 
-For activation use the supported `scripts/start-caracal.ps1` workflow from the
+For activation use the supported `scripts/start-console.ps1` workflow from the
 coordinator README. It builds and publishes character assets and restarts services.
 A bundle build alone does not reload the live coordinator. Preserve concurrent
 work and verify protocol/readiness/search telemetry on both browser and caracAL

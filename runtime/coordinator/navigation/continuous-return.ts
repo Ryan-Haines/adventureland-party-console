@@ -57,8 +57,8 @@ export function checkpointContinuousReturn(state: SharedState, now: number): boo
 /** Upgrade only at a stopped assembly boundary; never change an executing route. */
 export function prepareContinuousReturn(state: SharedState, c: SharedConvoy): boolean {
   if (c.purpose !== "monster-hunt" || !c.returnRouting || c.phase !== "assemble") return false;
-  if (c.participants.some((n) => state.statuses[n]?.huntReturnProtocol !== 1)) {
-    c.failure = "Waiting for Hunt return protocol 1 on every participant";
+  if (c.participants.some((n) => state.statuses[n]?.huntReturnProtocol !== 2)) {
+    c.failure = "Waiting for Hunt return protocol 2 on every participant";
     return true;
   }
   c.continuousReturn = 1;

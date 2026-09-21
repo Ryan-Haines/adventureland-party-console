@@ -50,7 +50,7 @@ remain external dependencies with explicit consumer contracts.
 ## Build and validate
 
 `npm run build:runtime` stages the application and policy bundles under
-`.build/runtime/`, with source maps. Windows start-caracal and Docker build
+`.build/runtime/`, with source maps. Windows start-console and Docker build
 these artifacts before starting the game. The launcher template lives at
 `tools/caracal/CharacterCoordinator.cjs`; the installer copies it into caracAL.
 
@@ -224,7 +224,7 @@ From the repository root, after editing TypeScript:
 npm run typecheck
 npm test
 npm run build:runtime
-.\scripts\start-caracal.ps1
+.\scripts\start-console.ps1
 ```
 
 Building the coordinator bundles alone does **not** reload the running process.
@@ -236,13 +236,27 @@ the updated bridge automatically. Validate with `steam-recovery.test.cjs` and
 `loader-connection.test.cjs`; publish character assets through the full restart.
 Retained combat nominations wait safely when the leader has no heartbeat during
 startup (`nomination-retention.test.cjs`).
-Hunt returns require `huntReturnProtocol: 1` from every participant and use one
+Hunt returns require `huntReturnProtocol: 2` from every participant and use one
 shared itinerary through walking, Town and transport, with one initial departure
 window. The leader compares validated walking-only and Town-enabled candidates.
-Failed Town casts disable Town for regrouping and replanning. Passing attacks are
+Hunt defense retains a reported local return handle while combat interrupts its
+executor; the coordinator acknowledges defense and issues fresh resume commands
+after current attackers and their loot are cleared. Town-first returns release
+after route readiness and the 500 ms formation check, without the four-second
+walking departure countdown. Cast outcomes identify a party round, so duplicate
+or simultaneous interruption reports count once. Three interrupted rounds on a map
+select walking until every participant completes the next map transition. Town
+then becomes eligible again; a same-map Daisy return simply walks to Daisy.
+Unavailable Town also selects walking, without counting an interrupted cast.
+The map policy persists through recovery; legacy disabled-Town state is scoped to
+the current map. Partial Town arrivals stay at the destination while others catch
+up. Validate with `hunt-return-town.test.cjs` and the continuous return tests.
+Passing attacks are
 suppressed during return assembly, route preparation, all map transitions and Daisy
-claims; they resume only on an owned travelling return route. Passing retaliation
-does not cancel the client convoy or publish defensive combat ownership. All map
+claims; they resume only on an owned travelling return route, except during walking
+fallback, which suppresses attacks and continues through incoming hits. Before
+Town, current attackers must be cleared even if previously classified as passing.
+Ordinary passing retaliation does not cancel the client convoy. All map
 transitions wait for nearby loot, with a reported failure after 30 seconds rather
 than silently abandoning it. Transient loot cooldown/opening responses retry at
 the ordinary 250 ms cadence. Validate with `passive-hunting.test.cjs`,
@@ -274,7 +288,7 @@ These changes include `characters/shared.js`, so they
 require the full restart. An already exhausted return uses the existing
 `/party-api/monster-hunt/retry-return` action after fresh runtimes connect.
 
-For coordinator/dashboard-only changes, use `scripts/start-caracal.ps1 -CoordinatorOnly`.
+For coordinator/dashboard-only changes, use `scripts/start-console.ps1 -CoordinatorOnly`.
 This verifies the installed launcher, builds the coordinator, and restarts services
 without installing or publishing character assets or starting their build watcher.
 Use the ordinary restart when character changes must also be published.

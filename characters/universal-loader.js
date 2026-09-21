@@ -20,7 +20,7 @@
   }
 
   // runtime/steam/connection.ts
-  var steamBridgeVersion = 7;
+  var steamBridgeVersion = 8;
   function needsSteamBridge(bridge, server2) {
     return !bridge || bridge.version !== steamBridgeVersion || bridge.server !== server2;
   }
@@ -59,6 +59,7 @@
   var abort = new AbortController();
   var lastSource = null;
   var loading = false;
+  var bridgeLoading = false;
   var timer;
   async function source(file) {
     const response = await fetch(baseUrl + file + "?t=" + Date.now(), {
@@ -122,11 +123,22 @@
       clearInterval(timer);
     }
   };
-  if (!root.parent.caracAL) {
-    void source("steam-bridge.js").then((text) => {
+  async function refreshBridge() {
+    if (bridgeLoading || !current() || !needsSteamBridge(root.parent.__partySteamBridge, server)) return;
+    bridgeLoading = true;
+    try {
+      const text = await source("steam-bridge.js");
       if (current() && needsSteamBridge(root.parent.__partySteamBridge, server)) root.parent.eval(text);
-    }).catch((error) => root.game_log("Steam bridge unavailable: " + String(error), "red"));
+    } catch (error) {
+      if (current()) root.game_log("Steam bridge unavailable; retrying: " + String(error), "red");
+    } finally {
+      bridgeLoading = false;
+    }
+  }
+  if (!root.parent.caracAL) {
+    void refreshBridge();
     timer = setInterval(() => {
+      void refreshBridge();
       if (!deliberatelyStopped()) void refresh();
     }, 2e3);
   }

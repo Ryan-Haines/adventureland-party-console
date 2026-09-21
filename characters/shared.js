@@ -824,7 +824,7 @@
   function defendPartyHit(data) {
     if(data && currentPartyList().indexOf(String(data.id))>=0) {
       var aggressor=get_entity(data.hid || data.actor);
-      if(aggressor && aggressor.type==='monster' && !isPassingEncounter(aggressor) && !joinedEvent && !eventTargetTypes.length) {
+      if(aggressor && aggressor.type==='monster' && (!isPassingEncounter(aggressor) || returnDepartureDefense()) && !joinedEvent && !eventTargetTypes.length) {
         root.__partyDefensiveHit={target:groupedEntityReport(aggressor),at:Date.now()};
         interruptConvoyForDefense();
         if(root.partyQueueClient)root.partyQueueClient.evidence(aggressor,'engaged');
@@ -2137,14 +2137,16 @@
       combatSelection: { id: combatSelection.id, revision: combatSelection.revision,
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
-      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
-      huntReturnProtocol: 1,
+      huntReturnProtocol: 2,
       movement: movement.report() || movement.last(),
       convoyNavigation: convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
         navigationRevision: convoyTraveling.navigationRevision,
         returnPlan: convoyTraveling.returnPlan || null,
         commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
+        townAttempt: convoyTraveling.townAttempt || null,
+        transitionMap: convoyTraveling.transitionMap || null,
         runtimeId: convoyRuntimeId, routeReady: !!convoyTraveling.routeReady,
         routeVersion: convoyTraveling.routeVersion || 0, routeSource: convoyTraveling.routeSource || null,
         destinationSearches: convoyTraveling.destinationSearches || 0, rendezvousSearches: convoyTraveling.rendezvousSearches || 0,
@@ -2435,6 +2437,7 @@
       !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
   }
   function passingTravelAllowed() {
+    if (typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.returnWalking) return false;
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
     var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
     var pending = root.partyLootClient && root.partyLootClient.huntPending();
@@ -8229,7 +8232,11 @@
       return;
     }
     if(command.type==='party-monster-travel' && command.phase==='defending') {
-      lastCommand=command.id;root.__partyLastCommand=lastCommand;interruptConvoyForDefense(command.convoyId);return;
+      lastCommand=command.id;root.__partyLastCommand=lastCommand;interruptConvoyForDefense(command.convoyId,command.epoch);
+      if(convoyTraveling && convoyTraveling.defensePaused && convoyTraveling.id===command.convoyId) {
+        convoyTraveling.commandId=command.id;convoyTraveling.epoch=Number(command.epoch);
+      }
+      return;
     }
     if(command.type==='party-monster-travel')root.__partyConvoyDefense=null;
     // Stand return can travel safely before checking inventory recovery. Its
@@ -11240,7 +11247,7 @@
   }
 
   function isAttackingPartyMember(target) {
-    if (!target || target.type !== "monster" || isPassingEncounter(target)) return false;
+    if (!target || target.type !== "monster" || isPassingEncounter(target) && !returnDepartureDefense()) return false;
     target = get_entity(target.id) || target;
     if (target.target === character.name) return true;
     if (!target.target || currentPartyList().indexOf(target.target) < 0)
@@ -11292,12 +11299,30 @@
     return currentPartyList().indexOf(target.target) < 0;
   }
 
+  function returnDepartureDefense() {
+    var c=typeof convoyTraveling !== 'undefined' && convoyTraveling;
+    return !!(c && c.purpose==='monster-hunt' && c.nonPreemptible && !c.returnWalking &&
+      (c.phase!=='travelling' || typeof movement!=='undefined' && movement.transition && movement.transition()==='town'));
+  }
   function interruptConvoyForDefense(id, epoch) {
     var c=convoyTraveling;
     if(c && id && (c.id!==id || Number(epoch)<c.epoch))return;
     if(c && ((c.navigationExempt && c.purpose!=='anniversary-return') || ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol'].indexOf(c.purpose)>=0))return;
     if(!c && !id)return;
+    if(c && c.returnWalking)return;
     root.__partyConvoyDefense=id || c.id;
+    if(c && c.purpose==='monster-hunt' && c.nonPreemptible) {
+      if(c.defensePaused)return;
+      if(c.freezeRoute)c.freezeRoute();
+      if(c.detachRoute)c.detachRoute();
+      if(c.townAttempt && c.townAttempt.state==='casting')c.townAttempt.state='interrupted';
+      c.defensePaused=true;c.phase='defending';c.routeReady=false;
+      try {Promise.resolve(stop()).catch(function(){});}catch(_){}
+      root.__partyNavigationDetail='Clearing attackers before Hunt return';
+      if(root.partyQueueClient && root.partyQueueClient.flush)root.partyQueueClient.flush();
+      if(root.partyRoleRunner)root.partyRoleRunner.wake();
+      return;
+    }
     if(c) {
       c.cancelled=true;releaseConvoyCruise(c);if(c.release)c.release();convoyTraveling=null;
       try {Promise.resolve(stop()).catch(function(){});}catch(_){}
@@ -11458,7 +11483,7 @@
   function queueReport() {
     return {name:character.name,rareObservation:rareObservationReport(),map:character.map,in:character.in,server:reunionRealm(),x:character.x,y:character.y,hp:character.hp,max_hp:character.max_hp,lastDeath:lastDeathInfo,rip:!!character.rip,
       combatSelection:Object.assign({},combatSelection,{runtimeId:convoyRuntimeId,target:groupedNomination()}),
-      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
+      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
         threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision,
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
@@ -11620,6 +11645,7 @@
     return root.partyQueueClient.sight.tick(fight.id,fight,remembered,allies);
   }
   function groupedMovement() {
+    if(convoyTraveling && !convoyTraveling.defensePaused)return true;
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
     if (groupedDefensiveTarget() && !navigationIntent.cancelled && !character.rip && !root.sharedRoutine.isOccupied()) {
       cancelGroupRoute(); cancelFightRoute(); cancelFarmApproach("defending visible party attackers");
@@ -12105,11 +12131,19 @@
   }
   function sharedMovementOptions(command) {
     return { shared: true, avoidLeave: !!command.avoidLeave, native: !!command.nativeFallback, speed: command.slowestSpeed,
+      transitionComplete:function(destination) {
+        if(convoyTraveling && convoyTraveling.commandId===command.id)convoyTraveling.transitionMap=destination.map;
+      },
       compareTown: command.continuousReturn === 1 && !command.disableTown,
       town: command.purpose !== 'monster-hunt' || command.continuousReturn === 1 && !command.disableTown || command.phase === 'plan-return' && !!command.allowTown,
+      townAttempt: command.continuousReturn !== 1 ? undefined : function(state, index, from, destination) {
+        var c=convoyTraveling;
+        if(!c || c.id!==command.convoyId || c.commandId!==command.id)return;
+        c.townAttempt={round:[command.epoch,command.routeVersion,index].join(':'),map:from.map,state:state,destination:destination};
+      },
       barrier: command.phase === 'plan-return' || command.routeVersion == null ? undefined : function(step, index, completed) {
         return request('/movement-barrier', {method:'POST',timeout:2000,body:Object.assign(sharedConvoyIdentity(command),{
-          step:index, destination:step, completed:completed, ready:completed || !departureCombatPending() && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
+          step:index, destination:step, completed:completed, ready:completed || (command.returnWalking && !step.town || !departureCombatPending()) && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
         })}).then(function(result){return !!result.ready;});
       }
     };
@@ -12303,13 +12337,13 @@
         if(leaderRoute)plan();else if(!installed)fetchRoute(signal);
         if(!convoy.routeReady || !signal.departAt || ["scheduled","travel"].indexOf(signal.phase)<0)return;
         if(!convoy.scheduledAt) {
-          if(now>=Number(signal.departAt))throw new Error("Departure signal arrived too late");
+          if(!signal.immediateDeparture && now>=Number(signal.departAt))throw new Error("Departure signal arrived too late");
           convoy.scheduledAt=Number(signal.departAt);
         }
         if(convoy.scheduledAt!==Number(signal.departAt))throw new Error("Departure changed");
         phase("waiting-for-departure");
         if(now<convoy.scheduledAt)return;
-        if(now-convoy.scheduledAt>500)throw new Error("Missed convoy departure window");
+        if(!signal.immediateDeparture && now-convoy.scheduledAt>500)throw new Error("Missed convoy departure window");
         released=true;convoy.departedAt=now;phase("travelling");
         if (root.partyPorcupineEquipment) root.partyPorcupineEquipment.depart(command.purpose);
         return walk();
@@ -12532,13 +12566,13 @@
       navigationRevision: Number(command.navigationRevision) || 0,
       generation: runtimeGeneration, destination: command.location, cancelled: false,
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
-      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible };
+      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,returnWalking:!!command.returnWalking };
     convoyTraveling = convoy;
     if(command.purpose === "party-force-travel")forceTraveling=true;
     if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose||""))
       partyLocation = command.purpose === "franky-exit" ? null : command.location;
     function ownsConvoy() {
-      return runtimeCurrent() && !convoy.cancelled && convoyTraveling === convoy &&
+      return runtimeCurrent() && !convoy.cancelled && !convoy.defensePaused && convoyTraveling === convoy &&
         (!navigationIntent.cancelled || command.navigationExempt) && Number(command.navigationRevision || 0) === Number(navigationIntent.revision);
     }
     function phase(value) {
@@ -12575,7 +12609,7 @@
     }
     function navigate(destination) {
       convoy.routeStarts += 1;
-      var result = smart_move(destination);
+      var result = smart_move(destination,undefined,command.continuousReturn===1 ? Object.assign({},sharedMovementOptions(command),{barrier:undefined}) : undefined);
       var onDone = smart.on_done;
       smart.on_done = function (done, reason) {
         if (!done && ownsConvoy()) convoy.interruption = {
@@ -12700,13 +12734,17 @@
       await request("/convoy-failed", { method: "POST", body: {
         character: character.name, convoyId: command.convoyId,
         epoch: Number(command.epoch), commandId: command.id, runtimeId: convoyRuntimeId, reason: reason,
-        failureCode: command.phase === "town" ? "town-unavailable" : "route-failed",
+        failureCode: convoy.townAttempt && ['interrupted','unavailable'].indexOf(convoy.townAttempt.state)>=0 ? 'town-interrupted' : command.phase === "town" ? "town-unavailable" : "route-failed",
+        townAttempt: convoy.townAttempt || null,
+        routeVersion: command.routeVersion,
         details: { phase: convoy.phase, routeStarts: convoy.routeStarts,
           map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null },
       }}).catch(function () {});
       game_log("Convoy movement failed: " + reason, "red");
       if (ownsConvoy()) await new Promise(function (resolve) { convoy.release = resolve; });
     } finally {
+      if(convoy.defensePaused && !convoy.cancelled && convoyTraveling===convoy)
+        await new Promise(function(resolve){convoy.release=resolve;});
       if (convoy.detachRoute) convoy.detachRoute();
       // A cancelled assembly coroutine can finish after travel has started.
       // It must never reset the new route's speed, label, or smart state.
@@ -13807,7 +13845,7 @@
       // passing threat lets kiting/follow movement replace smart_move, which
       // caused QwenTina's one-step search/restart loop. Late joiners still use
       // the coordinator flag below and are not blocked without a local route.
-      var convoyBlocksCombat = !!convoyTraveling;
+      var convoyBlocksCombat = !!convoyTraveling && !convoyTraveling.defensePaused;
       root.__partyCombatOwner = convoyTraveling ? "convoy:" + convoyTraveling.phase : eventTraveling ? "event-travel" : followingLeader ? "follow" : null;
       if (reunion && !reunionBlocked() || banking || stocking || upgrading || forceTraveling || townTraveling || partyTownActive || convoyBlocksCombat || gatheringActive || followingLeader || eventTraveling || (anniversaryBusy || anniversaryStaging) && !root.__partyConvoyDefense) return true;
       if (departurePending || bankQueued) return !engagedMonster();

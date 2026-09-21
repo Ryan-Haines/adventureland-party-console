@@ -51,7 +51,7 @@ edits, all purchase channels, partial/full fills, restart, duplicates, exact
 levels and ambiguous outcomes. `native-stand-client.test.cjs` runs the real client
 reconciler against the coordinator handler, including a fill racing with removal.
 
-Activation requires the ordinary `scripts/start-caracal.ps1` workflow because the
+Activation requires the ordinary `scripts/start-console.ps1` workflow because the
 character protocol in `characters/shared.js` changes along with the coordinator.
 A coordinator-only restart cannot activate this feature's client protocol. After
 activation, first confirm defaults and existing terms, then enable an order and

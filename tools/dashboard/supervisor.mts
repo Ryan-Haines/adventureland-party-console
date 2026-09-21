@@ -268,7 +268,7 @@ function supervisorState() {
 const server = createServer(async (req, res) => {
   if (req.url === '/__dashboard/builds') { await handleBuilds(req, res); return; }
   if (req.url?.startsWith("/party-api/")) {
-    proxy(req, res, { port: 924 } as Running);
+    proxy(req, res, { port: Number(process.env.AL_INTERNAL_API_PORT) || 924 } as Running);
     return;
   }
   if (req.url === "/__dashboard/state" && req.method === "GET") {

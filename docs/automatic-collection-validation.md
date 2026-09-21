@@ -7,7 +7,7 @@ Validated on Windows, September 20, 2026.
   manual-job separation and dashboard labels.
 - Typechecking, changed-file lint, character syntax and supported startup builds
   pass. The character merge retains concurrently added bank-sort behavior.
-- Restarted through `scripts/start-caracal.ps1 -ProductionDashboard`. Merchant
+- Restarted through `scripts/start-console.ps1 -ProductionDashboard`. Merchant
   work was paused before a handoff, during travel with no banking, upgrading or
   BankBoi transaction active, and resumed after activation.
 - The local dashboard returns HTTP 200 and all four characters report fresh

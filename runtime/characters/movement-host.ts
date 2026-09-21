@@ -40,6 +40,8 @@ export interface MovementContext {
   runtime: string; revision: number; current: boolean; paused: boolean;
 }
 export interface MovementOptions {
+  transitionComplete?: (destination: Point) => void;
+  townAttempt?: (state: 'casting' | 'interrupted' | 'complete' | 'unavailable', index: number, from: Point, destination: Point) => void;
   compareTown?: boolean;
   avoidLeave?: boolean; town?: boolean; native?: boolean; shared?: boolean; speed?: number;
   arrivalTolerance?: number;

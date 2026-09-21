@@ -1,9 +1,12 @@
 import { classifyTravelDefense, normalTravel, type DefenseState } from "./travel-defense.ts";
+import { returnWalking, type ReturnTownPolicy } from './return-town.ts';
 export { classifyTravelDefense } from "./travel-defense.ts";
 interface Loot { id: string; after: number; realm: string; map: string; in: string; x: number; y: number; complete: boolean; progress?: Progress }
 interface Progress { id: string; observedAt: number; realm: string; map: string; in: string; complete: boolean; error?: string }
 interface Status { seenAt: number; rip?: boolean; hp: number; map: string; in?: string; region?: string; server: string; x: number; y: number; convoyLoot?: Progress; activeEvent?: unknown; joinedEvent?: unknown; mapEvent?: unknown }
 interface Convoy {
+  continuousReturn?: number; returnTown?: ReturnTownPolicy; townRetry?: boolean;
+  returnTownRally?: {map:string;x:number;y:number};
   farmingEngagement?: {target: {id:string;map:string;in?:string|number;server?:string};at:number;finished?:boolean};
   id: string; epoch: number; phase: string; purpose?: string | null; force?: boolean; navigationExempt?: boolean;
   participants: string[]; leader: string; label?: string; loot?: Loot; defenseAt?: number; defenseReason?: string | null;
@@ -50,6 +53,7 @@ function lootComplete(p: Party, c: Convoy, now: number): boolean {
   return false;
 }
 function resume(c: Convoy): void {
+  c.townRetry = false;
   delete c.farmingEngagement;
   delete c.loot;
   c.phase = "assemble"; c.epoch++; c.observedPhase = null; c.assembledSince = 0;
@@ -78,7 +82,7 @@ function resumeObservation<S, C>(input: S, p: Party, c: Convoy,
 function finishDefense(p: Party, c: Convoy, now: number): boolean {
   if (!lootComplete(p, c, now)) return false;
   const lead = p.statuses[c.leader] as Status;
-  resume(c); c.rally = { map: lead.map, x: lead.x, y: lead.y };
+  resume(c); c.rally = c.returnTownRally || { map: lead.map, x: lead.x, y: lead.y };
   return true;
 }
 function defend(c: Convoy, now: number, message: string): boolean {
@@ -89,7 +93,7 @@ function defend(c: Convoy, now: number, message: string): boolean {
 }
 function ownedConvoy(p: Party): Convoy | null {
   const c = p.activeConvoy;
-  return c && eligible(p, c) && !cancelled(p, c) && !superseded(p, c) && !casualty(p, c) ? c : null;
+  return c && !returnWalking(c) && eligible(p, c) && !cancelled(p, c) && !superseded(p, c) && !casualty(p, c) ? c : null;
 }
 function superseded(p: Party, c: Convoy): boolean {
   return c.participants.some(name => {
@@ -100,6 +104,17 @@ function superseded(p: Party, c: Convoy): boolean {
 function casualty(p: Party, c: Convoy): boolean {
   return c.participants.some(name => { const s = p.statuses[name] as Status | undefined; return s?.rip || s?.hp === 0; });
 }
+function localDefense(p: Party, c: Convoy): boolean {
+  if (!c.continuousReturn) return false;
+  return c.participants.some(name => {
+    const command = p.commands[name] as {id?:number;convoyId?:string;epoch?:number;navigationRevision?:number} | undefined;
+    const s = p.statuses[name] as {convoyNavigation?: {id:string;epoch:number;commandId:number;navigationRevision:number;runtimeId:string;phase:string};combatSelection?:{runtimeId?:string}} | undefined;
+    const n=s?.convoyNavigation;
+    if(!n || !command || n.phase!=='defending')return false;
+    return [command.convoyId===c.id,n.id===c.id,n.epoch===c.epoch,n.commandId===command.id,
+      n.navigationRevision===command.navigationRevision,n.runtimeId===s?.combatSelection?.runtimeId].every(Boolean);
+  });
+}
 /** All route implementations share this barrier and keep their own command identities. */
 export function step<S, C>(input: S, now: number, commandFor: (state: S, convoy: C, phase: string, name: string) => unknown): boolean {
   const p = input as Party, c = ownedConvoy(p);
@@ -109,7 +124,7 @@ export function step<S, C>(input: S, now: number, commandFor: (state: S, convoy:
   if (decision.state === "waiting-for-observations") return observeHold(input, p, c, decision.message, commandFor);
   const observationResumed=resumeObservation(input, p, c, commandFor);
   if ([observationResumed,decision.state === "clear"].every(Boolean)) return true;
-  if (decision.state === "defending") {
+  if (needsDefense(p,c,decision.state)) {
     if (!defend(c, now, decision.message)) return true;
   } else {
     if (c.phase !== "defending") { c.defenseReason = null; return false; }
@@ -129,4 +144,8 @@ function farmingEngagementPending(p: Party, c: Convoy, now: number): boolean {
   encounter.finished=retired.some(matches) ||
     now-encounter.at>15000 && group?.target?.id!==encounter.target.id;
   return !encounter.finished;
+}
+
+function needsDefense(p:Party,c:Convoy,state:string):boolean {
+  return state==='defending' || c.phase!=='defending' && localDefense(p,c);
 }
