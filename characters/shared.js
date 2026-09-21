@@ -511,6 +511,9 @@
   var partyTargets = [];
   var lastSeparationAt = 0;
   var catalogKnown = false;
+  var catalogPrepared = false;
+  var catalogPreparing = false;
+  var catalogGeneration = 0;
   var forceTraveling = false;
   var mapTelemetryEnabled = false;
   var mapTelemetryBusy = false;
@@ -686,6 +689,8 @@
       itemValuationCache = {};
       lootOutcomeCache = {};
       catalogKnown = false;
+      catalogPrepared = false;
+      catalogGeneration++;
     }
   };
   var playerDirectoryListener = function (data) {
@@ -1896,6 +1901,27 @@
     }, {});
   }
 
+  // Catalog discovery must not starve the game socket before the first status.
+  // Warm the expensive per-item caches cooperatively after a successful report.
+  async function prepareCatalog() {
+    if (catalogPreparing || catalogPrepared || catalogKnown) return;
+    catalogPreparing = true;
+    var generation = catalogGeneration;
+    try {
+      var items = Object.keys(G.items || {});
+      for (var index = 0; index < items.length; index++) {
+        await new Promise(function (resolve) { setTimeout(resolve, 0); });
+        if (!runtimeCurrent() || generation !== catalogGeneration) return;
+        itemWorldInfo(items[index]);
+      }
+      catalogPrepared = true;
+    } catch (error) {
+      game_log("Catalog preparation failed: " + String(error && error.message || error), "red");
+    } finally {
+      catalogPreparing = false;
+    }
+  }
+
   function merchantCatalog() {
     var upgradeChanceTable = {
       0: [1, 0.9999999, 0.98, 0.95, 0.7, 0.6, 0.4, 0.25, 0.15, 0.07, 0.024, 0.14, 0.11],
@@ -2325,7 +2351,7 @@
       bank: bankSnapshot(),
       bankVaults: bankVaultCatalog(),
     };
-    if (!catalogKnown) {
+    if (!catalogKnown && catalogPrepared) {
       status.merchantCatalogVersion = merchantCatalogVersion;
       status.travelPlaces = travelPlaces();
       status.monsterChoices = monsterChoices();
@@ -9080,6 +9106,7 @@
       partyFarmingMonsterType = typeof state.partyFarmingMonsterType === "string" ? state.partyFarmingMonsterType : null;
       scatterBreakTarget = state.scatterBreakTarget && state.scatterBreakTarget.id ? state.scatterBreakTarget : null;
       catalogKnown = !state.needsCatalog;
+      if (!catalogKnown) void prepareCatalog();
       flushStatusDiagnostics();
       statusPhase = "dispatch command";
       handle(state.command).catch(function (error) {
@@ -13748,6 +13775,7 @@
       }
     },
     stop: function () {
+      catalogGeneration++;
       retirePartyCombatSockets(partyCombatSocketOwner);
       cancelGroupRoute();
       cancelFightRoute();
