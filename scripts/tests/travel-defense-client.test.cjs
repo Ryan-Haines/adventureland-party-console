@@ -67,3 +67,26 @@ test('the shared confirmed-death record excludes a cached monster whose old targ
  assert.equal(c.currentTravelAttackers().length,0);assert.equal(c.departureCombatPending(),false);
  c.groupedCombat.deaths[0].in='other';assert.equal(c.currentTravelAttackers().length,1);
 });
+
+test('continuous Hunt return reports passing attackers for the walking policy without granting normal combat ownership',()=>{
+ const {c,passive}=fixture(true);
+ const {namedFunction}=require('./helpers/named-function.cjs');
+ Object.assign(c,{convoyTraveling:{purpose:'monster-hunt',nonPreemptible:true,continuousReturn:1,phase:'travelling'},
+  get_entity:id=>id===passive.id?passive:null,currentPartyList:()=>['W','P'],
+  partyPositions:[{name:'P',map:'main'}],sameEventTeamMember:()=>true});
+ vm.runInContext(['isAttackingPartyMember','leaderLockAllows'].map(n=>namedFunction(source,n)).join('\n'),c);
+ c.peerPassingEncounters=[{...passive,map:'main',in:'main',server:'USII',at:Date.now()}];
+ passive.target='P';
+ assert.equal(c.currentTravelAttackers().length,1);
+ const diagnostic={};
+ assert.equal(c.isAllowedTarget(passive,null,diagnostic),false);
+ assert.equal(diagnostic.reason,'passing attack owns this encounter');
+ c.groupedCombat.target=null;
+ assert.equal(c.isAllowedTarget(passive),false,'still requires the group selection');
+ c.groupedCombat.target={...passive,map:'main',in:'main',server:'USII',state:'engaged'};
+ passive.target='outsider';assert.equal(c.isAllowedTarget(passive),false);
+ passive.target='P';c.convoyTraveling.phase='travelling';
+ assert.equal(c.currentTravelAttackers().length,1,'passing retaliation remains visible to the walking policy');
+ c.convoyTraveling.phase='defending';c.convoyTraveling.returnWalking=true;
+ assert.equal(c.isAllowedTarget(passive),false,'walking fallback retains movement ownership');
+});

@@ -239,12 +239,12 @@ startup (`nomination-retention.test.cjs`).
 Hunt returns require `huntReturnProtocol: 2` from every participant and use one
 shared itinerary through walking, Town and transport, with one initial departure
 window. The leader compares validated walking-only and Town-enabled candidates.
-Hunt defense retains a reported local return handle while combat interrupts its
-executor; the coordinator acknowledges defense and issues fresh resume commands
-after current attackers and their loot are cleared. Town-first returns release
+Continuous Hunt returns retain movement ownership under attack. Nearby attackers
+use the passing-attack path without chasing, kiting, or cancelling the route.
+Fresh attackers select walking instead of waiting to clear combat. Town-first returns release
 after route readiness and the 500 ms formation check, without the four-second
 walking departure countdown. Cast outcomes identify a party round, so duplicate
-or simultaneous interruption reports count once. Three interrupted rounds on a map
+or simultaneous interruption reports count once. The first interrupted round on a map
 select walking until every participant completes the next map transition. Town
 then becomes eligible again; a same-map Daisy return simply walks to Daisy.
 Unavailable Town also selects walking, without counting an interrupted cast.
@@ -253,9 +253,9 @@ the current map. Partial Town arrivals stay at the destination while others catc
 up. Validate with `hunt-return-town.test.cjs` and the continuous return tests.
 Passing attacks are
 suppressed during return assembly, route preparation, all map transitions and Daisy
-claims; they resume only on an owned travelling return route, except during walking
-fallback, which suppresses attacks and continues through incoming hits. Before
-Town, current attackers must be cleared even if previously classified as passing.
+claims; they resume only on an owned travelling return route, including walking
+fallback. Retaliation against nearby attackers does not require a passive hunting
+rule. Town interrupted by incoming damage falls back to walking.
 Ordinary passing retaliation does not cancel the client convoy. All map
 transitions wait for nearby loot, with a reported failure after 30 seconds rather
 than silently abandoning it. Transient loot cooldown/opening responses retry at

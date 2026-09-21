@@ -133,6 +133,19 @@ test('Hunt return passing attacks wait for an owned travelling route and yield t
  c.convoyTraveling=null;assert.equal(c.passingTarget(),null,'Daisy claims have no travelling route');
 });
 
+test('Hunt return attacks nearby aggressors while walking without requiring a passive hunting rule',()=>{
+ const {c,bee}=fixture();c.passiveHunting.rules={};bee.target='W';
+ c.convoyRuntimeId='runtime';c.navigationIntent.revision=3;
+ c.convoyTraveling={id:'return',epoch:2,commandId:4,navigationRevision:3,purpose:'monster-hunt',nonPreemptible:true,continuousReturn:1,returnWalking:true,phase:'travelling'};
+ c.convoySignal={id:'return',epoch:2,commandId:4,runtimeId:'runtime',phase:'travel',validUntil:Date.now()+10000};
+ c.unfinishedFight=()=>true;c.groupedCombat={target:bee};
+ assert.equal(c.passingTarget(),bee);
+ bee.x=200;assert.equal(c.passingTarget(),null,'never chases an attacker');bee.x=20;
+ bee.target='outsider';assert.equal(c.passingTarget(),null);bee.target='W';
+ c.movement={transition:()=> 'town'};assert.equal(c.passingTarget(),null,'never interrupts Town');
+ c.movement.transition=()=>null;c.navigationIntent.cancelled=true;assert.equal(c.passingTarget(),null);
+});
+
 test('a pending passing attack burst cannot send again after the return starts preparing',async()=>{
  const {createAttackController}=require('../../runtime/characters/roles/attack-controller.ts');
  const keys=['parent','character','sharedRoutine','attack','can_attack','is_in_range','get_entity','setTimeout','clearTimeout'];

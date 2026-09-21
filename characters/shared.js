@@ -827,6 +827,8 @@
     }, "skill:" + skill);
   };
   function defendPartyHit(data) {
+    // Continuous Hunt returns keep navigation ownership, including under fire.
+    if (convoyTraveling && convoyTraveling.continuousReturn === 1) return;
     if(data && currentPartyList().indexOf(String(data.id))>=0) {
       var aggressor=get_entity(data.hid || data.actor);
       if(aggressor && aggressor.type==='monster' && (!isPassingEncounter(aggressor) || returnDepartureDefense()) && !joinedEvent && !eventTargetTypes.length) {
@@ -2465,7 +2467,6 @@
       !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
   }
   function passingTravelAllowed() {
-    if (typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.returnWalking) return false;
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
     var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
     var pending = root.partyLootClient && root.partyLootClient.huntPending();
@@ -2479,14 +2480,16 @@
   }
   function passingTarget() {
     if (!passingTravelAllowed()) return null;
+    var returning = typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.continuousReturn === 1;
     if (character.rip || Number(character.max_hp)>0 && character.hp/character.max_hp<0.35 || character.ctype === 'merchant' || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive() ||
         partyTownActive || banking || stocking || upgrading || gatheringActive || forceTraveling || townTraveling || eventTraveling || joinedEvent || activeCombatEvent() ||
-        (rareActive() && rareControlState.kind !== "patrol") || unfinishedFight()) return null;
+        (rareActive() && rareControlState.kind !== "patrol") || !returning && unfinishedFight()) return null;
     var candidates = Object.values(parent.entities || {}).filter(function(e) {
       var rule = e && passiveHunting.rules[e.mtype];
-      return rule && rule.enabled && rule.keepMoving && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
+      var defending = returning && e && (e.target === character.name || currentPartyList().indexOf(e.target) >= 0);
+      return (defending || rule && rule.enabled && rule.keepMoving) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
         (!e.map || e.map === character.map) && e.mtype !== 'fieldgen0' && is_in_range(e) &&
-        !isExternallyClaimedMonster(e) && (!groupedCombat || !groupedCombat.target || groupedCombat.target.id !== e.id) &&
+        !isExternallyClaimedMonster(e) && (returning || !groupedCombat || !groupedCombat.target || groupedCombat.target.id !== e.id) &&
         !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id));
     });
     candidates.sort(function(a,b) {return monsterPriority(b)-monsterPriority(a) || Math.hypot(character.x-a.x,character.y-a.y)-Math.hypot(character.x-b.x,character.y-b.y) || String(a.id).localeCompare(String(b.id));});
@@ -11276,7 +11279,8 @@
   }
 
   function isAttackingPartyMember(target) {
-    if (!target || target.type !== "monster" || isPassingEncounter(target) && !returnDepartureDefense()) return false;
+    if (!target || target.type !== "monster" || isPassingEncounter(target) && !returnDepartureDefense() &&
+        !(typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.continuousReturn === 1)) return false;
     target = get_entity(target.id) || target;
     if (target.target === character.name) return true;
     if (!target.target || currentPartyList().indexOf(target.target) < 0)
@@ -11338,7 +11342,7 @@
     if(c && id && (c.id!==id || Number(epoch)<c.epoch))return;
     if(c && ((c.navigationExempt && c.purpose!=='anniversary-return') || ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol'].indexOf(c.purpose)>=0))return;
     if(!c && !id)return;
-    if(c && c.returnWalking)return;
+    if(c && (c.returnWalking || c.continuousReturn === 1))return;
     root.__partyConvoyDefense=id || c.id;
     if(c && c.purpose==='monster-hunt' && c.nonPreemptible) {
       if(c.defensePaused)return;
@@ -12172,7 +12176,7 @@
       },
       barrier: command.phase === 'plan-return' || command.routeVersion == null ? undefined : function(step, index, completed) {
         return request('/movement-barrier', {method:'POST',timeout:2000,body:Object.assign(sharedConvoyIdentity(command),{
-          step:index, destination:step, completed:completed, ready:completed || (command.returnWalking && !step.town || !departureCombatPending()) && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
+          step:index, destination:step, completed:completed, ready:completed || (command.continuousReturn === 1 && !step.town || !departureCombatPending()) && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
         })}).then(function(result){return !!result.ready;});
       }
     };
@@ -12595,7 +12599,7 @@
       navigationRevision: Number(command.navigationRevision) || 0,
       generation: runtimeGeneration, destination: command.location, cancelled: false,
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
-      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,returnWalking:!!command.returnWalking };
+      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
     convoyTraveling = convoy;
     if(command.purpose === "party-force-travel")forceTraveling=true;
     if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose||""))
@@ -13861,6 +13865,10 @@
     isBanking: function () { return banking || bankQueued; },
     isOccupied: function () {
       if (root.__partyConsoleMaintenance) return true;
+      if (convoyTraveling && convoyTraveling.continuousReturn === 1) {
+        root.__partyCombatOwner = "convoy:" + convoyTraveling.phase;
+        return true;
+      }
       if (character.ctype === "merchant" && (root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending())) return true;
       if (travelCombatActive() && !departureCombatPending()) return true;
       if(root.partyLootClient && root.partyLootClient.huntPending() && !departureCombatPending())return true;

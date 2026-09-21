@@ -93,7 +93,7 @@ function defend(c: Convoy, now: number, message: string): boolean {
 }
 function ownedConvoy(p: Party): Convoy | null {
   const c = p.activeConvoy;
-  return c && !returnWalking(c) && eligible(p, c) && !cancelled(p, c) && !superseded(p, c) && !casualty(p, c) ? c : null;
+  return c && !c.continuousReturn && !returnWalking(c) && eligible(p, c) && !cancelled(p, c) && !superseded(p, c) && !casualty(p, c) ? c : null;
 }
 function superseded(p: Party, c: Convoy): boolean {
   return c.participants.some(name => {

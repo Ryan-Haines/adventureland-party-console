@@ -26,7 +26,7 @@ for(const map of ['mansion','winterland'])for(const disableTown of [false,true])
   const r=runtime({plan:async b=>{await settle();requests.push([n,b.town]);return {...b,ms:1,plot:b.from.map==='main'?[{map:'main',x:120,y:0}]:[
    {map,x:0,y:0,...(b.town?{town:true}:{})},{map:'main',x:0,y:0,transport:true,s:0},{map:'main',x:120,y:0}]};}});
   const c=r.context;c.character.name=n;c.character.map=map;c.character.x=1000;c.convoyRuntimeId=n;
-  c.currentPartyList=()=>names;c.isPassingEncounter=t=>t.id==='passing-armadillo';
+  c.currentPartyList=()=>names;c.isPassingEncounter=()=>false;
   c.get_entity=()=>({id:'passing-armadillo',type:'monster',mtype:'armadillo',target:n});
   c.groupedEntityReport=t=>t;c.joinedEvent=false;c.eventTargetTypes=[];
   vm.runInContext(['returnDepartureDefense','defendPartyHit','interruptConvoyForDefense'].map(name=>namedFunction(source,name)).join('\n'),c);
@@ -46,7 +46,7 @@ for(const map of ['mansion','winterland'])for(const disableTown of [false,true])
   now+=100;
   runners.forEach((r,j)=>{
    r.setNow(now-50);const c=r.context,s=p.statuses[names[j]],local=c.convoyTraveling;
-   if(local && local.phase==='travelling' && !c.movement.transition()) { c.defendPartyHit({id:names[j],hid:'passing-armadillo'});assert.equal(c.convoyTraveling,local,'passing retaliation must retain return ownership'); }
+   if(local) { c.defendPartyHit({id:names[j],hid:'passing-armadillo'});assert.equal(c.convoyTraveling,local,'incoming hits must retain return ownership');assert.notEqual(local.phase,'defending'); }
    Object.assign(s,{seenAt:now,map:c.character.map,x:c.character.x,y:c.character.y,moving:!!c.character.moving});
    if(local)s.convoyNavigation={...local,runtimeId:names[j],navigationRevision:0};
    c.convoySignal=engine.signal(p,names[j],now);

@@ -18,13 +18,13 @@ function party(){
   id:c.id,epoch:c.epoch,commandId:cmd.id,navigationRevision:0,runtimeId:name,phase:'route-ready'};}
  return p;
 }
-test('three interrupted party rounds persist, deduplicate members, and reset only after everyone changes map',()=>{
+test('the first interrupted Town round selects walking, deduplicates members, and resets only after everyone changes map',()=>{
  const p=party(),c=p.activeConvoy;observeReturnTown(p,c,1000);
  const attempt={round:'1:1:0',map:'main',state:'interrupted',destination:{map:'main',x:0,y:0}};
  for(let round=1;round<=3;round++){
   for(const name of c.participants)p.statuses[name].convoyNavigation.townAttempt={...attempt,round:round+':1:0'};
   observeReturnTown(p,c,1000);observeReturnTown(p,c,1000);
-  assert.equal(c.returnTown.interruptions,round);assert.equal(c.returnTown.walking,round===3);
+  assert.equal(c.returnTown.interruptions,round);assert.equal(c.returnTown.walking,true);
  }
  assert.deepEqual(JSON.parse(JSON.stringify(p.monsterHunt.returnTown)),c.returnTown);
  c.epoch++;observeReturnTown(p,c,1000);assert.equal(c.returnTown.interruptions,3);
@@ -48,20 +48,25 @@ test('partial Town failure waits for other casts and regroups at the successful 
  p.statuses.L.convoyNavigation.townAttempt.state='complete';p.statuses.L.x=0;p.statuses.L.y=0;
  for(const s of Object.values(p.statuses))s.seenAt=1100;
  engine.step(p,1100);assert.equal(c.phase,'assemble');assert.deepEqual(c.rally,destination);
- assert.deepEqual(p.commands.F.rally,destination);assert.equal(p.commands.F.disableTown,false);
+ assert.deepEqual(p.commands.F.rally,destination);assert.equal(p.commands.F.disableTown,true);
  engine.step(p,1200);assert.equal(c.phase,'assemble','wait for failed members without sending successful ones back');
  for(const s of Object.values(p.statuses)){s.x=0;s.y=0;s.seenAt=1300;}
  engine.step(p,1300);assert.equal(c.phase,'shared-prepare');assert.equal(c.returnTownRally,undefined);
  const restored=JSON.parse(JSON.stringify(p));observeReturnTown(restored,restored.activeConvoy,1300);
  assert.equal(restored.monsterHunt.returnTown.interruptions,1);
 });
-test('a local hit acknowledgement is recovered even when the attacker dies before the next heartbeat',()=>{
+test('continuous return ignores defense holds from hits instead of stopping for combat and loot',()=>{
  const p=party(),c=p.activeConvoy;p.statuses.F.convoyNavigation.phase='defending';
- assert.equal(defense.step(p,1000,sharedCommand),true);assert.equal(c.phase,'defending');
- defense.step(p,1001,sharedCommand);assert.ok(c.loot);
- p.statuses.L.convoyLoot={...c.loot,observedAt:1002,complete:true};
- defense.step(p,1002,sharedCommand);assert.equal(c.phase,'assemble');assert.equal(c.epoch,2);
- assert.ok(c.participants.every(name=>p.commands[name].phase==='assemble'));
+ assert.equal(defense.step(p,1000,sharedCommand),false);assert.equal(c.phase,'shared-prepare');
+ assert.equal(c.loot,undefined);assert.equal(c.epoch,1);
+});
+
+test('fresh attackers select walking immediately; stale reports cannot change the route',()=>{
+ const p=party(),c=p.activeConvoy;
+ p.statuses.F.groupedCombat.currentAttackers=[{id:'tortoise',mtype:'tortoise',map:'main',in:'main',hp:50,target:'F'}];
+ observeReturnTown(p,c,5000);assert.equal(c.returnTown.walking,false);
+ observeReturnTown(p,c,1000);assert.equal(c.returnTown.walking,true);assert.equal(c.townRetry,true);
+ assert.equal(c.returnTown.interruptions,0);assert.equal(defense.step(p,1000,sharedCommand),false);
 });
 test('walking fallback retains movement ownership under live attackers, but cancellation still wins',()=>{
  const p=party(),c=p.activeConvoy;c.returnTown={map:'main',interruptions:3,walking:true};
@@ -71,7 +76,7 @@ test('walking fallback retains movement ownership under live attackers, but canc
  const engine=createSharedConvoyNavigation(legacy,defense.step);c.routeServer='USII';engine.step(p,1000);
  assert.equal(c.phase,'failed');assert.equal(c.failureCode,'owner-lost');
 });
-test('real client preparation survives a bee hit as an acknowledged defense hold until a fresh command',async()=>{
+test('real client preparation keeps its route and command when an attacker hits',async()=>{
  const r=runtime(),c=r.context;
  c.currentPartyList=()=>['F'];c.get_entity=()=>({id:'bee',type:'monster',mtype:'bee',target:'F'});
  c.isPassingEncounter=()=>false;c.groupedEntityReport=x=>x;c.joinedEvent=false;c.eventTargetTypes=[];
@@ -80,8 +85,8 @@ test('real client preparation survives a bee hit as an acknowledged defense hold
   navigationRevision:0,leader:'F',rally:{map:'main',x:0,y:0},location:{map:'main',x:120,y:0},slowestSpeed:57};
  const started=await r.start(cmd),handle=c.convoyTraveling;
  c.defendPartyHit({id:'F',hid:'bee'});await settle();
- assert.equal(c.convoyTraveling,handle);assert.equal(handle.commandId,2);assert.equal(handle.phase,'defending');
- assert.equal(handle.cancelled,false);assert.equal(handle.routeReady,false);
+ assert.equal(c.convoyTraveling,handle);assert.equal(handle.commandId,2);assert.notEqual(handle.phase,'defending');
+ assert.equal(handle.cancelled,false);assert.equal(handle.defensePaused,undefined);
  c.defendPartyHit({id:'F',hid:'bee'});await settle();assert.equal(c.convoyTraveling,handle);
  await r.cancel();await started.promise;assert.equal(c.convoyTraveling,null);
 });

@@ -1,6 +1,7 @@
 import type { SharedState, SharedConvoy, RoutePoint } from './shared-route-types.ts';
 import { reportMatches } from './shared-route-types.ts';
 import { recordConvoyHistory } from './convoy-history.ts';
+import { classifyTravelDefense } from './travel-defense.ts';
 
 export interface ReturnTownPolicy {
   map: string;
@@ -24,7 +25,7 @@ export function recordTownAttempt(c: Pick<SharedConvoy, 'continuousReturn' | 're
   if (policy.map !== attempt.map || policy.lastRound === attempt.round) return;
   policy.lastRound = attempt.round;
   if(attempt.state==='interrupted')policy.interruptions++;
-  policy.walking = attempt.state==='unavailable' || policy.interruptions >= 3;
+  policy.walking = true;
   c.disableTown = policy.walking;
   c.townRetry = true;
   c.townRetryAt = now;
@@ -35,6 +36,7 @@ export function observeReturnTown(state: SharedState, c: SharedConvoy, now: numb
   if (!lead) return false;
   c.returnTown ||= { map: lead.map, interruptions: c.disableTown ? 3 : 0, walking: !!c.disableTown };
   observeAttempts(state,c,now);
+  avoidTownUnderFire(state,c,now);
   if (state.monsterHunt) state.monsterHunt.returnTown = c.returnTown;
   // Never reset on a Town warp, an epoch change, or a partially crossed door.
   if (!newMapReady(state,c,lead.map,lead.server,now))return false;
@@ -45,6 +47,11 @@ export function observeReturnTown(state: SharedState, c: SharedConvoy, now: numb
   if (state.monsterHunt) state.monsterHunt.returnTown = c.returnTown;
   if (wasWalking) recordConvoyHistory(state, c, 'Town eligible on new map', now, { map: lead.map });
   return wasWalking;
+}
+function avoidTownUnderFire(state: SharedState,c: SharedConvoy,now:number): void {
+  if (c.returnTown!.walking || classifyTravelDefense(state,c.participants,now).state !== 'defending') return;
+  c.returnTown!.walking=true;c.disableTown=true;c.townRetry=true;c.townRetryAt=now;
+  recordConvoyHistory(state,c,'Continuing Hunt return on foot under attack',now,{map:c.returnTown!.map});
 }
 function returnReportMatches(state: SharedState,c: SharedConvoy,name: string): boolean {
   if(reportMatches(state,name))return true;
