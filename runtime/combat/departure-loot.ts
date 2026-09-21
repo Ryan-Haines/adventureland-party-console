@@ -46,7 +46,8 @@ export function installLootClient(root:any,shared:any) {
     const timeout=setTimeout(()=>{socket.off('entities',observe);reject(new Error('waiting for fresh chest observation'));},3000);
     socket.once('entities',observe);
   });
-  const rare=createDepartureLoot(ports),hunt=createDepartureLoot(ports),convoy=createDepartureLoot(ports);
+  const rare=createDepartureLoot(ports),hunt=createDepartureLoot({...ports,
+    defending:()=>mission?.encounter && ports.huntEncounterDefending ? ports.huntEncounterDefending() : ports.defending()}),convoy=createDepartureLoot(ports);
   let convoyHold=false;
   let lastState=0,lastRare:any=null,mission:any=null,finalKill:string|null=null,finalKillAt=0;
   const activeMission=()=>mission && !['ended','failed-return','backup-travel','backup-farming'].includes(mission.stage);

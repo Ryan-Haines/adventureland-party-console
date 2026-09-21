@@ -61,16 +61,22 @@ function authorized(state: State, c: SharedConvoy, options: Options): boolean {
   });
 }
 
-function destination(state: State, target: Target): ReturnLocation {
+function destination(state: State, target: Target): ReturnLocation | null {
   const zone = zones(state.monsterChoices || [], [target.mtype])
     .find(area => zoneDistance(area, target) === 0);
-  return { ...(zone || { map: target.map, x: target.x, y: target.y }), in: target.in };
+  return zone ? { ...zone, in: target.in } : null;
 }
 
 function handoff(state: State, c: SharedConvoy, body: Record<string, unknown>, target: Target, options: Options, now: number): void {
-  const location = destination(state, target);
-  recordConvoyHistory(state, c, "hunt handoff", now, { target: { ...target }, adoptedDestination: { ...location } });
-  state.monsterHunt!.missions[state.monsterHunt!.currentIndex]!.destination = location;
+  const spawn = destination(state, target);
+  const hunt = state.monsterHunt!, mission = hunt.missions[hunt.currentIndex]!;
+  const location = spawn || { map: target.map, in: target.in, x: target.x, y: target.y };
+  if (spawn) { mission.destination = spawn; mission.destinationVersion = 1; delete hunt.encounter; }
+  else hunt.encounter = { target: { ...target, server: state.statuses[String(body.character)]!.server! },
+    cycleId: hunt.cycleId, missionIndex: hunt.currentIndex, missionRevision: hunt.missionRevision || 0,
+    convoyId: c.id, revisions: { ...options.revisions }, startedAt: now };
+  recordConvoyHistory(state, c, "hunt handoff", now, { target: { ...target },
+    handoff: spawn ? "spawn" : "temporary", retainedDestination: mission.destination, encounterPosition: location });
   c.location = location;
   state.location = { ...location };
   for (const name of c.participants) {
@@ -78,7 +84,7 @@ function handoff(state: State, c: SharedConvoy, body: Record<string, unknown>, t
     if (name === body.character) delete state.commands[name];
     else state.commands[name] = { id: state.nextCommandId++, type: "event-resume-travel",
       convoyHandoff: c.id, location: { map: target.map, in: target.in, x: target.x, y: target.y }, navigationRevision: options.revisions[name],
-      label: "the encountered hunt spawn" };
+      label: spawn ? "the encountered hunt spawn" : "the temporary hunt encounter" };
   }
   state.lastConvoyEngagement = { character: body.character, target: { ...target }, at: now,
     convoyId: c.id, epoch: c.epoch };

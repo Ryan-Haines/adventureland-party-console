@@ -44,10 +44,12 @@ test('hunt acquisition fails closed on stale identities, positions, wrong type a
   const r=fixture();change(r);assert.equal(engageHunt(r.state,r.body,r.options,legacy,2000),false);assert.ok(r.state.activeConvoy);assert.equal(r.state.location,r.original);
  }
 });
-test('uncatalogued encounter uses its position; duplicate cannot cancel a later route',()=>{
+test('uncatalogued encounter retains the mission destination; duplicate cannot cancel a later route',()=>{
  const r=fixture();r.state.monsterChoices=[];const previous=r.state.activeConvoy;
  assert.equal(engageHunt(r.state,r.body,r.options,legacy,2000),true);
  assert.equal(r.state.location.x,110);
+ assert.deepEqual(r.state.monsterHunt.missions[0].destination,r.original);
+ assert.equal(r.state.monsterHunt.encounter.target.id,r.body.target.id);
  r.state.activeConvoy={...previous,id:'new'};
  assert.equal(engageHunt(r.state,r.body,r.options,legacy,2000),false);assert.equal(r.state.activeConvoy.id,'new');
 });
@@ -156,6 +158,17 @@ test('grouped hunt scan retains safety, chooses a new nearest candidate, and rat
  for(let i=0;i<50;i++)c.farmingTravelTarget(command);
  assert.equal(logs.length,count);assert.equal(logs.at(-1)[1],'Hunt acquisition: attack position unreachable');
  now+=10000;c.farmingTravelTarget(command);assert.equal(logs.length,count+1);
+});
+
+test('a delayed handoff response cannot stop a newer client journey',async()=>{
+ const {c}=groupedClient();let respond,stops=0;
+ const command={purpose:'monster-hunt',huntTarget:'cgoo',combatHandoffAllowed:true,location:{map:'main',x:1000,y:1000}};
+ c.parent.entities={target:{id:'c1',type:'monster',mtype:'cgoo',map:'main',in:'main',visible:true,hp:100,x:100,y:0}};
+ const convoy={detachRoute(){throw Error('must retain newer route');}};
+ let owns=true;Object.assign(c,{sharedConvoyIdentity:()=>({}),releaseConvoyCruise(){},stop(){stops++;},request:()=>new Promise(resolve=>respond=resolve)});
+ c.sharedConvoyEngagement(convoy,command,()=>owns,()=>{});owns=false;
+ respond({ok:true,handoff:'temporary',location:{map:'main',x:100,y:0},serverNow:2000});
+ await new Promise(setImmediate);assert.equal(stops,0);assert.equal(convoy.engaged,undefined);
 });
 
  test('handoff success is logged even immediately after a rejected attempt',()=>{

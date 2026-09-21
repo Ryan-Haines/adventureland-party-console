@@ -12,6 +12,13 @@ function acceptArrival(hunt, convoy, body, now) {
   }
   if (!hunt || hunt.stage !== 'mission-travel' || hunt.convoyId !== convoy.id ||
       convoy.purpose !== 'monster-hunt' || hunt.target !== body.target.mtype) return false;
+  if (hunt.encounter?.convoyId === convoy.id) {
+    delete hunt.arrivalHandoff;
+    hunt.convoyId = null;
+    hunt.stage = 'farming';
+    hunt.message = 'Fighting encountered ' + hunt.target + '; continuing to hunt area afterward';
+    return true;
+  }
   hunt.arrivalHandoff = { cycleId: hunt.cycleId, missionIndex: hunt.currentIndex, target: hunt.target,
     convoyId: convoy.id, epoch: convoy.epoch, character: body.character, runtimeId: body.runtimeId,
     revision: Number(body.navigationRevision), destination: destinationKey(convoy.location), at: now };
@@ -20,6 +27,7 @@ function acceptArrival(hunt, convoy, body, now) {
   return true;
 }
 function arrivalProtected(hunt, leader, status, intent, destination, now) {
+  if (hunt.encounter) return false;
   const h = hunt.arrivalHandoff;
   if (!h) return false;
   const runtimeId = status?.combatSelection?.runtimeId || status?.convoyNavigation?.runtimeId;

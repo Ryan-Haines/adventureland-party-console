@@ -61,6 +61,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   function engine(j: Journey) { return j.importedEngine || (j.native ? 'native' : 'alclient'); }
   function outcome(done: boolean, reason?: string): string {
     if (done) return 'Native fallback succeeded';
+    if (reason === 'Combat handoff') return 'Travel paused for combat';
     return /cancelled|replaced|superseded/i.test(reason || '') ? 'Movement cancelled' : 'Movement failed';
   }
   function fallback(j: Journey, issue: Issue) {
@@ -202,6 +203,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     return install(plot, true);
   }
   const service = { state, move, stop, tick, planTick, gate, transition: executor.transition, get identity() { return {version, fingerprint}; }, install: importRoute, last: () => last,
+    combatHandoff() { finish(false, 'Combat handoff'); },
     report: () => journey ? { id: journey.id, engine: engine(journey), retries: journey.retries, fingerprint, version, remaining: state.plot.length,
       elapsedMs:ports.now()-journey.started,plannerMs:journey.plannerMs,requestMs:journey.requestMs,progress:executor.progress() } : null,
     dispose() { finish(false, 'Runtime replaced'); disposed = true; gate.owner = null; if (host.smart_move_logic === scheduler) host.smart_move_logic = native.tick; host.smart_move = native.move; host.stop = native.stop; },

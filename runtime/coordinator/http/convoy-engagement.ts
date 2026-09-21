@@ -30,12 +30,17 @@ export function createConvoyEngagementRoutes(
       details: {
         ...requestObject(body.target),
         convoyId: active.id,
-        huntArrivalAccepted: accepted,
+        ...arrivalDetails(active, accepted),
         positionAgeMs: status ? ports.now() - status.seenAt : null,
         reportedMap: status?.map,
       },
     });
     ports.persist();
+  }
+  function arrivalDetails(active: RouteConvoy, accepted: boolean) {
+    const hunt = state.monsterHunt, temporary = hunt?.encounter?.convoyId === active.id;
+    return { huntArrivalAccepted: accepted && !temporary, combatHandoffAccepted: accepted,
+      handoff: temporary ? "temporary" : "spawn", retainedDestination: hunt?.missions?.[hunt.currentIndex]?.destination };
   }
   function accept(
     name: string,
@@ -62,7 +67,13 @@ export function createConvoyEngagementRoutes(
         .status(409)
         .json({ error: "stale convoy or target outside destination hunt area" });
     recordEngagement(name, active, body);
-    return res.json({ ok: true, ...(active.huntTarget ? { location: active.location, serverNow: ports.now() } : {}) });
+    return res.json({ ok: true, ...handoffResponse(active) });
+  }
+  function handoffResponse(active: RouteConvoy) {
+    if (!active.huntTarget) return {};
+    const hunt = state.monsterHunt;
+    return { location: active.location, handoff: hunt?.encounter?.convoyId === active.id ? "temporary" : "spawn",
+      destination: hunt?.missions[hunt.currentIndex]?.destination, serverNow: ports.now() };
   }
   function engage(req: HttpRequest, res: HttpResponse): unknown {
     const body = requestObject(req.body),

@@ -12273,8 +12273,10 @@
       if(command.huntTarget && result.location) {
         partyLocation=result.location; huntCombatTarget=command.huntTarget; partyConvoyActive=false;
         root.__partyTravelCombat=null; root.__partyTravelCombatAt=result.serverNow;
+        root.__partyNavigationDetail=result.handoff==='temporary' ? 'Fighting encountered '+command.huntTarget+'; continuing to hunt area afterward' : 'Farming encountered hunt spawn';
       }
       convoy.engaged=true;phase("engaging-target");releaseConvoyCruise(convoy);convoy.detachRoute();
+      if(typeof movement!=="undefined" && movement.combatHandoff)movement.combatHandoff();
       Promise.resolve(stop("smart")).catch(function(){});
       convoy.cancelled=true;convoyTraveling=null;combatTargetId=target.id;
       if(typeof publishCombatSelection==="function")publishCombatSelection(target,false);
@@ -12472,13 +12474,14 @@
                   phase("engaging-target");
                   releaseConvoyCruise(convoy);
                   convoy.detachRoute();
+                  if(movement.combatHandoff)movement.combatHandoff();
                   // Cancel native routing before giving combat direct movement.
                   Promise.resolve(stop("smart")).catch(function () {});
                   convoy.cancelled = true;
                   convoyTraveling = null;
                   combatTargetId = target.id;
                   if (typeof publishCombatSelection === "function") publishCombatSelection(target, false);
-                  root.__partyNavigationDetail = "Engaging " + target.mtype + " along the route";
+                  root.__partyNavigationDetail = result.handoff==='temporary' ? 'Fighting encountered '+command.huntTarget+'; continuing to hunt area afterward' : "Engaging " + target.mtype + " along the route";
                 }).catch(function (error) {
                   convoy.handoffRetryAt = Date.now() + 1000;
                   if (command.huntTarget) huntAcquisitionLog(command,target,"handoff rejected",{error:String(error && error.message || error).slice(0,240)},"response");
@@ -14314,6 +14317,9 @@
       position:function(){return {realm:':'+String(parent.server_region||'')+String(parent.server_identifier||''),map:character.map,in:String(character.in||character.map),x:character.x,y:character.y};},
       cancelled:function(){return navigationIntent.cancelled || character.rip || escapeOwns() || !!joinedEvent;},
       defending:departureCombatPending,
+      huntEncounterDefending:function(){return Object.values(parent.entities||{}).some(function(e){
+        return e && e.type==='monster' && !isPassingEncounter(e) && departureTargetEngaged(e);
+      });},
       loot:function(){return smartLoot(eligibleDepartureChests());},chests:eligibleDepartureChests,
       socket:function(){return parent.socket;},afterDraw:function(done){parent.draw_trigger(done);}
     };},

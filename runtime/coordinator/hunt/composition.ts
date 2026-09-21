@@ -104,6 +104,7 @@ export function createCoordinatorHunt(state: CoordinatorHuntState, ports: HuntCo
     participants: ports.participants,
     returnToDaisy: (hunt) => quests.returnToDaisy(hunt),
     destination: ports.missionDestination,
+    monsterDestination: ports.monsterDestination,
     processDaisy: (hunt) => quests.process(hunt),
     contains: ports.contains,
     arrivalProtected: ports.arrivalProtected,

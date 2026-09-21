@@ -37,6 +37,14 @@ function fixture(options={}) {
  return {service,host,c,calls,logs,ports,get request(){return request;},get searches(){return searches;},setNow:t=>now=t,supersede:()=>revision++,reload:()=>runtime='new',
   async ticks(count=8){for(let i=0;i<count;i++){host.smart_move_logic();await settle();}},dispose:()=>service.dispose()};
 }
+
+test('combat handoff records an intentional travel pause without reporting a navigation failure',async()=>{
+ const r=fixture({pending:true}),journey=r.service.move({map:'main',x:100,y:0});
+ const rejected=assert.rejects(journey,/Combat handoff/);r.service.combatHandoff();await rejected;
+ assert.equal(r.service.last().reason,'Combat handoff');
+ assert.ok(r.logs.some(log=>log.phase==='Travel paused for combat'));
+ assert.ok(!r.logs.some(log=>log.phase==='Movement failed'));r.dispose();
+});
 test('ALClient planning executes validated segments, uses actual speed and permits town',async()=>{
  const r=fixture();const p=r.service.move({map:'main',x:100,y:0});await r.ticks();await p;
  assert.equal(r.request.town,true);assert.equal(r.request.speed,60);assert.equal(r.searches,0);assert.equal(r.c.x,100);r.dispose();

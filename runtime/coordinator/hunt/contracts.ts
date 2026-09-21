@@ -2,8 +2,22 @@ import type {HuntFailureState} from "./settings.ts";
 import type { Hunt } from "../../hunt/policy.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
 import type { StoredCombatLogEntry } from "../telemetry/combat-log.ts";
+import type { Death, Member } from "../../combat/grouped.ts";
+
+export interface HuntEncounter {
+  target: import("../../combat/grouped.ts").Target & { server: string };
+  cycleId: string;
+  missionIndex: number;
+  missionRevision: number;
+  convoyId: string;
+  revisions: Record<string, number>;
+  startedAt: number;
+  missingMs?: number;
+  resumeReason?: string;
+}
 
 export interface HuntCycle extends Hunt {
+  encounter?: HuntEncounter;
   travelCheckpoint?: import('../navigation/continuous-return.ts').HuntTravelCheckpoint;
   travelCause?: "farming-conflict";
   expiryAttempts?: Record<string, import("./expiry.ts").HuntExpiryAttempt>;
@@ -38,6 +52,8 @@ export interface HuntCycle extends Hunt {
     skipped?: boolean;
     skipReason?: string;
     destination?: ReturnLocation | null;
+    destinationVersion?: number;
+    destinationRevisions?: Record<string, number>;
   }[];
   currentIndex: number;
   target: string | null;
@@ -59,7 +75,11 @@ export interface HuntCycle extends Hunt {
 export interface HuntStatus {
   activeCombatTarget?: { id: string; map: string; in?: string | number; server: string };
   groupedCombat?: {
-    candidates?: { id: string; map: string; in?: string | number }[];
+    currentAttackersAt?: number;
+    deaths?: Death[];
+    claims?: import("../../combat/claims.ts").ClaimObservation[];
+    sightings?: NonNullable<NonNullable<Member["status"]>["groupedCombat"]>["sightings"];
+    candidates?: Pick<import("../../combat/grouped.ts").Target, "id" | "map" | "in" | "hp">[];
     retentions?: { id: string; eligible: boolean }[];
   };
   region?: string;
@@ -126,6 +146,7 @@ export interface HuntCommand {
   action?: string;
   convoyId?: string;
   convoyHandoff?: unknown;
+  navigationRevision?: number;
   purpose?: string | null;
   issuedAt?: number;
   combatHandoffAllowed?: boolean;
@@ -133,6 +154,8 @@ export interface HuntCommand {
   returnRouting?: unknown;
 }
 export interface HuntTickState extends HuntFailureState {
+  monsterChoices?: import("../../../dashboard/lib/farming-zones.ts").Catalog | null;
+  groupedCombat?: { deaths?: Death[] } | null;
   huntEventTrips?: import("../events/hunt-trip.ts").HuntEventTrips["huntEventTrips"];
   combatRecovery?: { phase: string; reason?: string } | null;
   farmingPolicy: string;
@@ -198,6 +221,7 @@ export interface HuntTickPorts {
   participants(): string[];
   returnToDaisy(hunt: HuntCycle): unknown;
   destination(hunt: HuntCycle): ReturnLocation | null | undefined;
+  monsterDestination?(target: string): ReturnLocation | null | undefined;
   processDaisy(hunt: HuntCycle): void;
   contains(
     destination: ReturnLocation,
