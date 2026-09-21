@@ -860,6 +860,7 @@ export function startCoordinatorApplication(
       party,
       LOCALSTORAGE_PATH,
       {
+        rosterReady: () => rosterPayload().length > 0,
         owned: ownedCharacter,
         crypto,
         files: fs_regular,

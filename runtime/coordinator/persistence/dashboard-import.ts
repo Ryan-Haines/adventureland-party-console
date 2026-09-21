@@ -90,6 +90,7 @@ const perCharacter = new Set([
   "eventsByCharacter",
   "eventSelectionsByCharacter",
   "restockPolicies",
+  "autoDeconstruction",
 ]);
 
 function safeKeys(value: unknown, depth = 0): void {
@@ -106,6 +107,7 @@ export interface DashboardImport {
   values: ObjectValue;
   fields: string[];
   characters: string[];
+  skippedCharacters?: Record<string, string[]>;
 }
 
 function parseRecord(line: string, lineNumber: number): [string, unknown] {
@@ -153,19 +155,40 @@ function replayRecords(source: string): Map<string, ObjectValue> {
 function validatedValues(merged: ObjectValue, owned: (name: string) => boolean) {
   const values: ObjectValue = {},
     characters = new Set<string>();
+  const skippedCharacters: Record<string, string[]> = {};
+  const include = (name: string, field: string) => {
+    if (owned(name)) { characters.add(name); return true; }
+    const fields = skippedCharacters[name] ||= [];
+    if (!fields.includes(field)) fields.push(field);
+    return false;
+  };
   for (const [key, check] of Object.entries(validators)) {
     if (!(key in merged)) continue;
-    const value = merged[key];
+    let value = merged[key];
     if (!check(value)) throw new Error(`Invalid saved ${key}; nothing was imported`);
-    if (perCharacter.has(key))
-      for (const name of Object.keys(value as ObjectValue)) {
-        if (!owned(name))
-          throw new Error(`Character ${name} is not owned by this account; nothing was imported`);
-        characters.add(name);
-      }
+    if (perCharacter.has(key)) {
+      const entries = Object.entries(value as ObjectValue);
+      value = Object.fromEntries(entries.filter(([name]) => include(name, key)));
+      if (entries.length && !Object.keys(value as ObjectValue).length) continue;
+    }
+    value = filterCharacterReferences(key, value, include);
+    if (value === undefined) continue;
     values[key] = value;
   }
-  return { values, characters };
+  return { values, characters, skippedCharacters };
+}
+
+// These collections use item IDs as keys; character references live in their values.
+function filterCharacterReferences(key: string, value: unknown, include: (name: string, field: string) => boolean): unknown {
+  if (!['deconstructionMarks', 'npcSaleMarks', 'autoNpcSales'].includes(key)) return value;
+  const entries = Object.entries(value as ObjectValue);
+  const kept = entries.filter(([, entry]) => {
+    const record = entry as ObjectValue;
+    const name = key === 'deconstructionMarks' ? record.owner : record.character;
+    return typeof name !== 'string' || !name || include(name, key);
+  });
+  if (entries.length && !kept.length) return undefined;
+  return Array.isArray(value) ? kept.map(([, entry]) => entry) : Object.fromEntries(kept);
 }
 
 export function exportDashboardSettings(state: ObjectValue) {
@@ -193,11 +216,11 @@ export function parseDashboardImport(
   if (Buffer.byteLength(source, "utf8") > 128 * 1024 * 1024)
     throw new Error("State file exceeds 128 MB");
   const merged = importedSettings(source);
-  const { values, characters } = validatedValues(merged, owned);
+  const { values, characters, skippedCharacters } = validatedValues(merged, owned);
 
-  if (!Object.keys(values).length)
+  if (!Object.keys(values).length && !Object.keys(skippedCharacters).length)
     throw new Error("No supported dashboard settings or marks found in this file");
-  return { values, fields: Object.keys(values).sort(), characters: [...characters].sort() };
+  return { values, fields: Object.keys(values).sort(), characters: [...characters].sort(), skippedCharacters };
 }
 
 export function applyDashboardImport(state: ObjectValue, parsed: DashboardImport): void {

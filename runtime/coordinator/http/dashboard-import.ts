@@ -7,6 +7,7 @@ import {
 } from "../persistence/dashboard-import.ts";
 
 interface ImportPorts {
+  rosterReady?(): boolean;
   owned(name: string): boolean;
   digest(source: string): string;
   previewDigest(req: HttpRequest): unknown;
@@ -53,11 +54,13 @@ export function createDashboardImportRoutes(state: State, ports: ImportPorts) {
   }
   function handle(req: HttpRequest, res: HttpResponse, preview: boolean): unknown {
     try {
+      if (ports.rosterReady && !ports.rosterReady()) throw new Error('Account roster is still loading; retry the import shortly');
       const source = req.body as string,
         parsed = parseDashboardImport(source, (name) => ports.owned(name)),
-        digest = ports.digest(source);
-      const summary = { fields: parsed.fields, characters: parsed.characters, digest };
+        digest = ports.digest(JSON.stringify({ source, parsed }));
+      const summary = { fields: parsed.fields, characters: parsed.characters, skippedCharacters: parsed.skippedCharacters, digest };
       if (preview) return res.json(summary);
+      if (!parsed.fields.length) throw new Error('Nothing to import: all saved characters were skipped');
       if (ports.previewDigest(req) !== digest)
         return res.status(409).json({ error: "Preview this file before importing it" });
       const backupPath = ports

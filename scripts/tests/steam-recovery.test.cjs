@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { JSDOM } = require('../../.caracal/node_modules/jsdom');
 const { createSteamRecovery } = require('../../runtime/steam/recovery.ts');
-const { steamBootstrap, previousSteamBootstrap } = require('../../runtime/steam/connection.ts');
+const { steamBootstrap, previousSteamBootstrap, steamBridgeVersion } = require('../../runtime/steam/connection.ts');
 const { installSteamBridge } = require('../../runtime/steam/bridge.ts');
 
 function fixture() {
@@ -145,7 +145,7 @@ test('managed slot upgrades preserve unrelated saved code and install primary an
     try {
       let disposed=0;f.host.__partySteamBridge={realmProtocol:2,dispose(){disposed++;}};
       installSteamBridge(f.host);await new Promise(r=>setImmediate(r));
-      assert.equal(disposed,1);assert.equal(f.host.__partySteamBridge.version,5);assert.equal(f.host.__partySteamBridge.server,base);
+      assert.equal(disposed,1);assert.equal(f.host.__partySteamBridge.version,steamBridgeVersion);assert.equal(f.host.__partySteamBridge.server,base);
       assert.equal(saved.length,1);
       assert.equal(saved[0].slot==='party-console-existing',!unrelated);
       const stored=JSON.parse(cache.get('code_cache'));

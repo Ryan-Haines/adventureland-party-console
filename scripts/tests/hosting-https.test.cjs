@@ -98,7 +98,18 @@ test('real Caddy HTTPS preserves CA, proxies CODE, enforces origins, and transfe
   assert.equal(verified.status,200);assert.equal(verified.headers['access-control-allow-origin'],base);assert.equal(verified.headers['set-cookie'],undefined);
   assert.deepEqual(JSON.parse(verified.body),{ok:true,origin:'https://127.0.0.1:'+tlsPort});
   assert.equal((await request('/setup/check-https',ca,check)).status,400);
-  const download=await request('/setup/trust/windows',ca,{headers:{Cookie:newCookie}});assert.equal(download.status,200);assert.ok(!download.body.includes('PRIVATE KEY'));assert.match(download.body,/CurrentUser/);assert.ok(!download.body.includes('__CERT_'));
+  const download=await request('/setup/trust/windows',ca,{headers:{Cookie:newCookie}});assert.equal(download.status,200);
+  assert.match(download.headers['content-disposition'],/party-console-trust.cmd/);
+  const helper=Buffer.from(download.body.split('::PARTY_PAYLOAD::').at(-1),'base64').toString('utf16le');
+  assert.ok(!helper.includes('PRIVATE KEY'));assert.match(helper,/CurrentUser/);assert.ok(!helper.includes('__CERT_'));assert.match(helper,/already installed/);
+  if(process.platform==='win32'){
+   const helperPath=path.join(temporary,'party console trust.cmd');
+   await fs.writeFile(helperPath,download.body);
+   const run=require('node:child_process').spawnSync(process.env.ComSpec||'cmd.exe',['/d','/c',`call "${helperPath}"`],{input:'NO\r\n\r\n',encoding:'utf8',timeout:15000,windowsHide:true,windowsVerbatimArguments:true});
+   assert.equal(run.status,0,run.stdout+run.stderr);
+   assert.match(run.stdout,/Cancelled\. No certificate was changed\./);
+  }
+  assert.ok(download.body.split('\r\n').filter(line=>!line.startsWith('::PARTY_PAYLOAD::')).every(line=>line.length<8191));
   const linux=await request('/setup/trust/linux',ca,{headers:{Cookie:newCookie}});assert.match(linux.body,/update-ca-trust/);assert.ok(!linux.body.includes('__CERT_'));
   assert.equal((await request('/setup/trust/windows',ca)).status,401);
   const loader=await request('/setup/steam',ca,{method:'POST',headers:{Cookie:newCookie,Origin:'https://127.0.0.1:'+tlsPort,'Content-Type':'application/json'},body:JSON.stringify({origin:'https://127.0.0.1:'+tlsPort})});

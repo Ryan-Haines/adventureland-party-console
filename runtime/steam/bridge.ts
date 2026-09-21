@@ -3,6 +3,7 @@ import type { Handoff } from "../roster/handoff.ts";
 import { serverAddress, steamBootstrap, previousSteamBootstrap, steamBridgeVersion } from "./connection.ts";
 import { createRealmChoice } from "./realm-choice.ts";
 import { createSteamRecovery, deliberatelyStopped, type GameWindow } from "./recovery.ts";
+import { steamObservations } from './observations.ts';
 
 const slotKey = "party-console-bootstrap-slot-v1";
 const operationKey = "party-console-steam-operation-v1";
@@ -87,6 +88,7 @@ export function installSteamBridge(host: NativeHost): void {
   const switcher = createSwitcher(host, (character, action = "primary") => post("/steam/action", { character, action }));
   const realmChoice = createRealmChoice(host.document, (operationId, choice) => post("/steam/realm-choice", { operationId, choice }));
   const starting = new Set<string>();
+  const startErrors = new Map<string, string>();
   let missingSince = 0;
   const recovery = createSteamRecovery(host as NativeHost & GameWindow, bootstrap, ensureBootstrap,
     message => { console.warn("[Steam recovery] " + message); host.add_log?.(message, "#ffcc77"); });
@@ -223,6 +225,7 @@ export function installSteamBridge(host: NativeHost): void {
           // The game launch promise can outlive several bridge polls. Keep
           // heartbeats flowing and retry stale account-roster rejections.
           void Promise.resolve(host.start_character_runner(name, slot)).catch(error => {
+            startErrors.set(name, String(error?.reason || error));
             console.warn("[Steam bridge] Starting " + name + ": " + String(error?.reason || error));
           }).finally(() => host.setTimeout(() => starting.delete(name), 3000));
         }
@@ -256,6 +259,7 @@ export function installSteamBridge(host: NativeHost): void {
         version: 2,
         clientId,
         character: host.socket?.connected ? host.character?.name : null,
+        observations: steamObservations(host, name => deliberatelyStopped(host.localStorage, name), starting, startErrors),
         running: [ ...(host.socket?.connected && host.character && host.code_active ? [host.character.name] : []),
           ...Object.entries(host.get_active_characters?.() || {}).filter(([, state]) => state === "code").map(([name]) => name) ],
         operationId: host.localStorage.getItem(operationKey),

@@ -23,7 +23,7 @@ function selection(){
  el('instructions').hidden=false;el('fallback').hidden=https;
  if(https){
   el('tlsSteps').hidden=false;el('helper').href='/setup/trust/'+(p.client.startsWith('linux')?'linux':'windows');
-  el('helperCommand').textContent=p.client.startsWith('linux')?'bash ~/Downloads/party-console-trust.sh':'powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME\\Downloads\\party-console-trust.ps1"';
+  el('helperCommand').textContent=p.client.startsWith('linux')?'bash ~/Downloads/party-console-trust.sh':'Double-click party-console-trust.cmd in Downloads. No terminal command is needed.';
   el('restartHelp').textContent=p.client.endsWith('-steam')?'The helper asks before trusting this console’s certificate. Restart the Adventure Land Steam client afterward. Refresh setup in this browser; restart the browser only if it still reports a certificate error.':'The helper asks before trusting this console’s certificate. Restart the browser running Adventure Land afterward, then reopen setup.';
   el('tlsState').textContent=state.tls?.error||'Prepare HTTPS, then install this console’s certificate on the computer running Adventure Land.';
   el('trustDownloads').hidden=true;el('prepare').disabled=!state.tls?.ready;

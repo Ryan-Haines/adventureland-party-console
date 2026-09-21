@@ -1,6 +1,8 @@
 import { RosterConflict, type SteamHandoff, type RosterOwnership } from "./handoff.ts";
 import type { SteamGroup } from "./steam-group.ts";
+import { parseObservations, type SteamObservation } from './connection-status.ts';
 interface BridgePorts {
+  observationsChanged?(entries: SteamObservation[]): void;
   now(): number;
   owned(name: string): boolean;
   bridgeChanged(character: string | null): void;
@@ -43,6 +45,7 @@ export class BridgeSession {
   }
   async receive(body: Record<string, unknown>): Promise<void> {
     const character = this.renew(body);
+    this.ports.observationsChanged?.(parseObservations(body, name => this.ports.owned(name)));
     this.character = character;
     if (body.version === 2 && this.group && (!this.state.handoff || this.state.handoff.multi || this.state.handoff.phase === "complete")) {
       const op = this.state.handoff;

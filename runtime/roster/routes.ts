@@ -31,6 +31,7 @@ interface Member {
   online: boolean;
 }
 export interface RosterRoutesPorts extends HandoffPorts {
+  observationsChanged?(entries: import('./connection-status.ts').SteamObservation[]): void;
   members(): Member[];
   realm(): string;
   nativeBusy(): boolean;

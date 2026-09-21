@@ -1,5 +1,5 @@
-import type { DeconstructionMark, DeconstructionCatalog } from "./deconstruction";
 "use client";
+import type { DeconstructionMark, DeconstructionCatalog } from "./deconstruction";
 import { ActiveSlot } from "./active-slot";
 import { ALDataState } from "./aldata-state";
 import { AppearanceChoice } from "./appearance-choice";
@@ -68,6 +68,7 @@ export type PartyState = {
   characters: Record<string, Char>;
   roster?: RosterMember[];
   activeSlots?: ActiveSlot[];
+  characterConnections?: import('../../../runtime/roster/connection-status').CharacterConnection[];
   classChoices?: string[];
   appearanceChoices?: Record<string, AppearanceChoice[]>;
   steamSwitch?: SteamSwitch | null;

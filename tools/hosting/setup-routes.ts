@@ -67,7 +67,7 @@ async function readSetup(
     if (!options.tls) throw Error('HTTPS is not installed');
     const kind = pathname.split('/').pop();
     const pem = await options.tls.certificate();
-    const file = kind === 'certificate' ? 'party-console-root.crt' : 'party-console-trust.' + (kind === 'windows' ? 'ps1' : 'sh');
+    const file = kind === 'certificate' ? 'party-console-root.crt' : 'party-console-trust.' + (kind === 'windows' ? 'cmd' : 'sh');
     res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
     res.setHeader('Content-Type', 'application/octet-stream');
     res.end(kind === 'certificate' ? pem : await trustHelper(pem, kind as 'windows' | 'linux')); return true;

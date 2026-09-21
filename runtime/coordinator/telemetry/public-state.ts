@@ -1,4 +1,5 @@
 import { offeringStock } from '../inventory/offering-stock.ts';
+import { characterConnections } from '../../roster/connection-status.ts';
 import { gameLogs } from "./game-logs.ts";
 import { requestText, type HttpRequest, type HttpResponse } from "../http/contracts.ts";
 import { selectSnapshot } from "../persistence/snapshots.ts";
@@ -78,6 +79,8 @@ function fullPayload(
     ...(dashboardCore ? {} : { characters: state.statuses }),
     roster: ports.roster(),
     activeSlots: ports.slots(),
+    characterConnections: characterConnections(state, ports.now(), name =>
+      state.statuses[name]?.runtime === 'native' && state.statuses[name].seenAt > ports.now() - 5000),
     classChoices: ports.classes,
     steamSwitch,
     partyLocation: state.location,

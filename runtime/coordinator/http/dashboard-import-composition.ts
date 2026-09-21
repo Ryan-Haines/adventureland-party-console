@@ -2,6 +2,7 @@ import { createDashboardImportRoutes } from "./dashboard-import.ts";
 import type { HttpRequest } from "./contracts.ts";
 
 interface ImportCompositionPorts {
+  rosterReady?(): boolean;
   owned: (name: string) => unknown;
   crypto: {
     createHash: (algorithm: string) => {
@@ -26,6 +27,7 @@ export function createCoordinatorDashboardImport(
   ports: ImportCompositionPorts,
 ) {
   return createDashboardImportRoutes(state, {
+    rosterReady: () => ports.rosterReady?.() ?? true,
     owned: (name) => !!ports.owned(name),
     digest: (source) => ports.crypto.createHash("sha256").update(source).digest("hex"),
     previewDigest: (request) => ports.header(request, "X-State-Preview"),
