@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import type { UpdateStatus } from '../../../tools/update/contracts';
 
 const colors = 'border border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white';
-function useUpdates() {
+export function useUpdates() {
   const [state, setState] = useState<UpdateStatus | null>(null), [error, setError] = useState('');
   useEffect(() => {
     let alive = true;

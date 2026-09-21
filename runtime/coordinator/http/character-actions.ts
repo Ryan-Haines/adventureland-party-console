@@ -1,4 +1,5 @@
 import { createOfferingCommands } from '../inventory/upgrade-offerings.ts';
+import { createFocusSelection, type FocusState } from '../navigation/focus.ts';
 import { createCharacterCommandRoute } from "./character-command.ts";
 import { createUpgradeCommands } from "../inventory/upgrade-commands.ts";
 import { createCompoundCommands } from "../inventory/compound-commands.ts";
@@ -10,7 +11,7 @@ import { createClearItemMarks } from "../inventory/clear-item-marks.ts";
 import type { Item } from "../contracts/item.ts";
 import type { CommandOutcome } from "../navigation/manual-commands.ts";
 
-type CommandState = Parameters<typeof createOfferingCommands>[0] & Parameters<typeof createCharacterCommandRoute>[0] &
+type CommandState = FocusState & Parameters<typeof createOfferingCommands>[0] & Parameters<typeof createCharacterCommandRoute>[0] &
   Parameters<typeof createClearItemMarks>[0] &
   Parameters<typeof createUpgradeCommands>[0] &
   Parameters<typeof createCompoundCommands>[0] &
@@ -21,6 +22,7 @@ type CommandState = Parameters<typeof createOfferingCommands>[0] & Parameters<ty
 type CompoundPorts = Parameters<typeof createCompoundCommands>[1];
 type MerchantItemPorts = Parameters<typeof createMerchantItemCommands>[1];
 interface CharacterActionPorts {
+  farmingState?(name: string): FocusState;
   navigation: (body: Record<string, unknown>) => CommandOutcome;
   farmingLocation: Parameters<typeof createCharacterCommandRoute>[1]["farmingLocation"];
   key: (item: Item) => string;
@@ -86,6 +88,13 @@ export function createCoordinatorCharacterCommands(
   const stats = createStatScrollCommands(state, { persist: ports.persist, queue: ports.queue });
   return createCharacterCommandRoute(state, {
     managed,
+    farmingFocus: (name, ids) => {
+      // A validated farming destination always supplies nonempty focus; clearing
+      // focus (the only operation that invalidates navigation) is not possible here.
+      createFocusSelection(ports.farmingState?.(name) || state, { members: () => [], invalidate: () => {} })
+        .select(name, [...new Set(ids)], undefined, undefined);
+      ports.persist();
+    },
     farmingLocation: ports.farmingLocation,
     handlers: [
       createOfferingCommands(state, ports.persist),

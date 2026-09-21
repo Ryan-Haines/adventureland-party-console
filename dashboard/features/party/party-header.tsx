@@ -13,13 +13,13 @@ import { PartyGold } from "./party-gold";
 import type { PartyConsoleModel } from "./use-party-console";
 import { MailCount } from "./mail-count";
 import { StandCount } from "./stand-count";
-import { ConsoleUpdateIndicator } from './console-updates';
+import { ConsoleUpdateIndicator, useUpdates } from './console-updates';
 
 function ListCode({className}:{className:string}) { return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 4h18M3 8h18M3 12h7M7 16l-4 3 4 3m10-6 4 3-4 3m-3-7-3 8" /></svg>; }
 
 export function PartyHeader({ model, onLogs }: { model: PartyConsoleModel; onLogs: () => void }) {
+  const { state: updates } = useUpdates();
   const {
-    setAnniversaryOpen,
     state,
     setMailOpen,
     setCatalogOpen,
@@ -38,7 +38,7 @@ export function PartyHeader({ model, onLogs }: { model: PartyConsoleModel; onLog
       <header className="border-b border-emerald-900/70 bg-[#091614] px-5 py-5 md:px-10">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-5">
           <div className="relative"><div className="flex items-center"><h1 className="text-3xl font-semibold">Party Console</h1><ConsoleUpdateIndicator open={() => setSettingsOpen(true)} /></div>
-            {state.gameVersion ? <span className="absolute left-0 top-full mt-1 whitespace-nowrap font-mono text-[10px] leading-3 text-emerald-100/50">Game v{state.gameVersion}</span> : null}
+            <span className="mt-1 block font-mono text-[10px] leading-3 text-emerald-100/70">{state.gameVersion ? `Game v${state.gameVersion} · ` : ''}Console {updates ? `v${updates.displayVersion || updates.current}` : 'loading…'}</span>
           </div>
           <div className="flex items-center gap-3">
             <Button

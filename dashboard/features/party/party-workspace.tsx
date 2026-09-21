@@ -27,11 +27,11 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
     <>
       <section className="px-5 py-7 md:px-10">
         <div className="mx-auto max-w-[1500px]">
-        <RosterControls
+        {!chars.length && !pending.length && <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><RosterControls
           slots={state.activeSlots || []}
           operation={state.steamSwitch}
           onChoose={setPickerSlot}
-        />
+        /></div>}
         {!chars.length && !pending.length ? (
           <div className="grid min-h-64 place-items-center border border-dashed border-emerald-900 bg-[#071315] text-emerald-100">
             {model.coordinatorLoading ? 'Party Console is loading…' : model.coordinatorUnavailable ? 'Reconnecting to Party Console…' : <p>No characters connected yet. Load a character or <button type="button" className="rounded border border-cyan-700 bg-[#071315] px-2 text-cyan-200 hover:bg-cyan-950 hover:text-cyan-100" onClick={() => window.location.assign('/setup')}>open setup</button> to link Steam.</p>}
@@ -42,6 +42,7 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
             onValueChange={(value) => formation({ leader: value })}
             className="grid items-start gap-4 @3xl:grid-cols-2 @7xl:grid-cols-4"
           >
+            <RosterControls slots={state.activeSlots || []} operation={state.steamSwitch} onChoose={setPickerSlot} />
             <PendingCharacterCards model={model} />
             {chars.filter(char => !pending.some(entry => entry.name === char.name)).map(char => <ConnectedCharacterCard key={char.name} name={char.name} model={model} />)}
             {state.bankboiTransaction ? (

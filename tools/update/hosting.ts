@@ -5,6 +5,7 @@ import { Updates } from './service.ts';
 import { exists, readJson } from './files.ts';
 import type { Release } from './contracts.ts';
 import { body, json } from '../hosting/http.ts';
+import { versionLabel } from './version-label.ts';
 
 export interface UpdateRoutes {
   route(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void>;
@@ -33,6 +34,7 @@ export async function updateHosting(root: string, data: string): Promise<UpdateR
   const release = process.env.AL_DOCKER_DEV !== '1' && await exists(path.join(root, 'release.json')) ? await readJson<Release>(path.join(root, 'release.json')) : undefined;
   const config = await readJson<{ repository: string }>(path.join(root, 'distribution.json'));
   const updates = new Updates(release, path.join(data, 'updates/preferences.json'), undefined, config.repository);
+  updates.state.displayVersion = await versionLabel(root, release);
   await updates.load(); void updates.poll();
   setInterval(() => void updates.poll(), 6 * 3600000).unref();
   return { route: (req, res, pathname) => updateRoute(updates, req, res, pathname.replace('/console-update', '') || '/') };

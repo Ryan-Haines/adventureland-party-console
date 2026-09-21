@@ -837,6 +837,7 @@ export function startCoordinatorApplication(
       character_manage,
       {
         navigation: manualNavigationCommands.handle,
+        farmingState: name => farmingScopes.effective(name),
         farmingLocation: validFarmingLocation,
         key: autoItemRuleKey,
         mode: autoItemRuleMode,

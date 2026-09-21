@@ -16,6 +16,7 @@ export interface PublishedRelease {
 }
 export interface UpdateStatus {
   current: string;
+  displayVersion?: string;
   available?: string;
   notes?: string;
   automatic: boolean;

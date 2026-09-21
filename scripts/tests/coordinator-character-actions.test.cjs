@@ -29,6 +29,23 @@ test('character action validation rejects unavailable farming and inherited work
   assert.equal(t.state.marked.Ghost[0].item.name, 'leather');
 });
 
+test('accepted solo farm commands set personal focus without selecting a party leader',()=>{
+ const t=fixture();Object.assign(t.state,{leader:null,followers:{},farmingProfiles:{},monsterFocus:[],monsterFocusByCharacter:{},monsterPrioritiesByCharacter:{},monsterSearchRadiusByCharacter:{},characterLocations:{}});
+ const scopes=require('../../runtime/coordinator/hunt/scopes.ts').createFarmingScopes(t.state);
+ t.ports.farmingState=name=>scopes.effective(name);
+ t.ports.farmingLocation=(_catalog,_ids,location)=>location;
+ t.ports.navigation=()=>null;
+ const route=createCoordinatorCharacterCommands(t.state,t.workers,t.ports);
+ const send=()=>{let status=200;route({body:{character:'W',type:'character-travel',farmingMonsterIds:['goo'],location:{map:'main',x:0,y:780}}},{status(n){status=n;return this},json(){}});return status};
+ assert.equal(send(),200);assert.deepEqual(scopes.profile('W').monsterFocus,['goo']);assert.equal(t.state.leader,null);assert.deepEqual(t.state.followers,{});
+ assert.deepEqual(require('../../runtime/coordinator/status/response-party.ts').monsterFocus(scopes.effective('W'),'W'),['goo']);
+ scopes.profile('W').monsterFocus=[];t.ports.navigation=()=>({status:409,body:{error:'busy'}});
+ // Recreate because handlers capture the navigation function at composition time.
+ const rejected=createCoordinatorCharacterCommands(t.state,t.workers,t.ports);
+ rejected({body:{character:'W',type:'character-travel',farmingMonsterIds:['goo'],location:{map:'main',x:0,y:780}}},{status(){return this},json(){}});
+ assert.deepEqual(scopes.profile('W').monsterFocus,[]);
+});
+
 test('character action dispatch keeps navigation first and acknowledges the current mark collections', () => {
   const t = fixture(), item = {name: 'leather'}, body = {character: 'W', type: 'mark', slot: 1, item};
   const first = t.invoke(body); assert.equal(first.status, 200);
