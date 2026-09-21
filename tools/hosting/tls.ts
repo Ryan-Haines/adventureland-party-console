@@ -59,9 +59,9 @@ export class LocalTLS {
   try {
    const host = await tlsHost(origin);
    if (!(await this.status()).ready) throw Error((await this.status()).error);
-   if (!this.hosts.includes(host)) {
-    if (this.hosts.length >= 20) throw Error('Too many configured HTTPS addresses');
-    const previous = this.hosts; this.hosts = [...previous, host];
+   if (this.hosts.at(-1) !== host) {
+    if (!this.hosts.includes(host) && this.hosts.length >= 20) throw Error('Too many configured HTTPS addresses');
+    const previous = this.hosts; this.hosts = [...previous.filter(value => value !== host), host];
     const response = await fetch(`http://127.0.0.1:${this.admin}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${this.admin}` }, body: JSON.stringify(this.config()), signal: AbortSignal.timeout(10000) });
     if (!response.ok) { this.hosts = previous; throw Error('HTTPS configuration failed; check server logs for port conflicts'); }
     await writeFile(path.join(this.data, 'hosts.json'), JSON.stringify(this.hosts), { mode: 0o600 });

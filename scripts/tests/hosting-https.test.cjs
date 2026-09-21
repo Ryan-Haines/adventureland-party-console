@@ -1,6 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const http=require('node:http'),https=require('node:https');
+const nodeTLS=require('node:tls');
 const {LocalTLS}=require('../../tools/hosting/tls.ts');
 const {tlsHost}=require('../../tools/hosting/tls-config.ts');
 const {Access}=require('../../tools/hosting/access.ts');
@@ -51,6 +52,14 @@ test('real Caddy HTTPS preserves CA, proxies CODE, enforces origins, and transfe
   assert.equal((await request('/setup/state',ca,{headers:{Origin:'https://evil.example'}})).status,403);
   const spoof=await fetch(base+'/setup/state',{headers:{Origin:'https://127.0.0.1:'+tlsPort,'X-Forwarded-Proto':'https','X-Party-TLS':'fake'}});assert.equal(spoof.status,403);
   const added=await tls.prepare('http://192.168.1.239:3010');assert.equal(added.origin,'https://192.168.1.239:'+tlsPort);assert.equal(await tls.certificate(),ca);
+  // Simulate Docker NAT: the local socket IP differs from the browser's URL,
+  // and an IP URL sends no SNI. Still verify both the CA and intended IP.
+  const noSNI=()=>new Promise((resolve,reject)=>{
+   const socket=nodeTLS.connect({host:'127.0.0.2',port:tlsPort,servername:'',ca,
+    checkServerIdentity:(_host,cert)=>nodeTLS.checkServerIdentity('192.168.1.239',cert)},()=>{socket.end();resolve()});
+   socket.setTimeout(5000,()=>socket.destroy(Error('No-SNI TLS timed out')));socket.on('error',reject);
+  });
+  for(let attempt=0;;attempt++){try{await noSNI();break}catch(error){if(attempt===30)throw error;await delay(100)}}
   const credential=await access.setRequired(true),cookie='party='+credential;
   assert.equal(await upgrade(ca),403);assert.equal(await upgrade(ca,cookie),101);
   const transfer=await(await fetch(base+'/setup/transfer',{method:'POST',headers:{Origin:base,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({origin:base,placement:'remote',client:'windows-steam'})})).json();
@@ -65,5 +74,6 @@ test('real Caddy HTTPS preserves CA, proxies CODE, enforces origins, and transfe
   assert.match(JSON.parse(loader.body).code,/https:\/\/127\.0\.0\.1:\d+\/bridge\/[a-f0-9]{64}\//);
   assert.equal((await request('/setup/continue',ca,{method:'POST',headers:{Origin:base,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({ticket:transfer.ticket}).toString()})).status,400);
   tls.stop();await delay(1000);tls=new LocalTLS(path.resolve(__dirname,'../..'),temporary,port);options.tls=tls;await tls.start();await ready();assert.equal(await tls.certificate(),ca);
+  await noSNI();
  }finally{tls.stop();for(const socket of sockets)socket.destroy();await close(server);await close(upstream);if(old===undefined)delete process.env.AL_HTTPS_PORT;else process.env.AL_HTTPS_PORT=old;await delay(1000);await fs.rm(temporary,{recursive:true,force:true})}
 });
