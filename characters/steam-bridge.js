@@ -1,7 +1,7 @@
 // Generated from TypeScript; run npm run build:runtime -- --publish. Do not edit.
 "use strict";
 (() => {
-  // runtime/roster/character-order.ts
+  // ../runtime/roster/character-order.ts
   function orderCharacters(characters, roster, primary, merchant, steam = []) {
     const order = new Map(roster.map((member, index) => [member.name, index]));
     const steamNames = new Set(steam);
@@ -15,7 +15,7 @@
     );
   }
 
-  // runtime/steam/switcher.ts
+  // ../runtime/steam/switcher.ts
   var minimizedKey = "party-steam-minimized-v1";
   var buttonStyle = "font:inherit;background:#242424;color:#fff;border:2px solid #888;border-radius:0;padding:3px 6px;cursor:pointer;box-shadow:inset -2px -2px #080808;line-height:20px";
   function createSwitcher(host, action) {
@@ -174,7 +174,7 @@
     } };
   }
 
-  // runtime/steam/connection.ts
+  // ../runtime/steam/connection.ts
   var steamBridgeVersion = 8;
   function serverAddress(host = globalThis) {
     return (host.__partyServer || host.parent?.__partyServer || "http://127.0.0.1:924").replace(
@@ -202,7 +202,7 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
 })();`;
   }
 
-  // runtime/steam/realm-choice.ts
+  // ../runtime/steam/realm-choice.ts
   function realmLabel(realm) {
     return realm ? realm.replace(/^SR_/, "").replace(/^(US|EU|ASIA)/, "$1 ") : "unknown";
   }
@@ -287,7 +287,7 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
     return { show, dispose: close };
   }
 
-  // runtime/steam/recovery.ts
+  // ../runtime/steam/recovery.ts
   var stopKey = (name) => "party-code-stopped:" + name;
   function deliberatelyStopped(storage, name) {
     return storage.getItem(stopKey(name)) === "1";
@@ -432,7 +432,7 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
     } };
   }
 
-  // runtime/steam/observations.ts
+  // ../runtime/steam/observations.ts
   function steamObservations(host, stopped, starting, errors) {
     const active = { ...host.get_active_characters?.() };
     for (const name of starting) active[name] ||= "loading";
@@ -446,7 +446,7 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
     });
   }
 
-  // runtime/steam/bridge.ts
+  // ../runtime/steam/bridge.ts
   var slotKey = "party-console-bootstrap-slot-v1";
   var operationKey = "party-console-steam-operation-v1";
   var releaseKey = "party-console-steam-release-v1";
@@ -682,6 +682,6 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
     void poll();
   }
 
-  // runtime/steam/entry.ts
+  // ../runtime/steam/entry.ts
   installSteamBridge(globalThis);
 })();
