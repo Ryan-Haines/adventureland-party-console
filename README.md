@@ -18,7 +18,7 @@ Install Git and Node **22.18+**. Run these commands in PowerShell.
 2. Install dependencies and caracAL:
 
    ```powershell
-   .\scripts\setup-caracal.ps1
+   .\scripts\setup-console.ps1
    ```
 
 3. Start the console and leave it running:
