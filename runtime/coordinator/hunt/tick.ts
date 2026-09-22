@@ -7,6 +7,7 @@ import { createHuntTravel } from "./travel.ts";
 import { huntLootPending } from "./loot.ts";
 import { stepHuntBackup } from "./backup.ts";
 import { recoverHuntFarmWalk } from "./farm-walk.ts";
+import { reconcileCurrentHuntParty } from "./current-party.ts";
 
 /** Keeps turn-in ownership ahead of optional event, farming, and participant changes. */
 export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
@@ -72,6 +73,7 @@ export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
       if (!state.activeConvoy) ports.begin();
       return;
     }
+    if (reconcileCurrentHuntParty(hunt, state, ports.now(), () => ports.cancelHuntConvoy())) ports.persist();
     if (hunt.stage === "failed-return") {
       recovery.failedReturn(hunt);
       return;

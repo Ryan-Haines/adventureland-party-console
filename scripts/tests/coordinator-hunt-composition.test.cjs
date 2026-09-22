@@ -40,6 +40,54 @@ test('resuming Hunt retains the newly selected backup area and focus', () => {
   assert.equal(hunt.returnFocus, JSON.stringify(['bat']));
 });
 
+test('new Hunt excludes saved offline followers and characters outside the current party', () => {
+  const {state, service} = fixture();
+  Object.assign(state.followers, {Offline: true, Stale: true, OtherRealm: true, Merchant: true});
+  state.statuses.Stale = {...state.statuses.P, seenAt: 80000};
+  state.statuses.OtherRealm = {...state.statuses.P, server: 'III'};
+  state.statuses.Merchant = {...state.statuses.P, ctype: 'merchant'};
+  state.statuses.Independent = {...state.statuses.P};
+  service.lifecycle.begin();
+  assert.deepEqual(state.monsterHunt.participants, ['W', 'P']);
+  assert.equal(state.monsterHunt.stage, 'mission-travel');
+});
+
+for (const stage of ['checking-quests', 'mission-travel', 'returning', 'backup-farming']) {
+  test(`persisted ${stage} Hunt releases an offline quest owner and resumes current party quests`, () => {
+    const {state, service} = fixture();
+    service.lifecycle.begin();
+    const hunt = state.monsterHunt;
+    state.followers.Offline = true;
+    hunt.participants.push('Offline');
+    hunt.owner = 'Offline';
+    hunt.missions = [{target: 'bee', owners: ['Offline']}];
+    hunt.target = 'bee';
+    hunt.stage = stage;
+    if (stage === 'returning') hunt.turnIn = {owner: 'Offline', phase: 'returning'};
+    if (stage === 'backup-farming') hunt.backup = {startedAt: 90000, members: {}};
+    state.commands.Offline = {type: 'monster-hunt-interact', purpose: 'monster-hunt', cycleId: hunt.cycleId};
+    service.tick.tick();
+    assert.deepEqual(hunt.participants, ['W', 'P']);
+    assert.equal(hunt.owner, 'W');
+    assert.equal(hunt.turnIn, undefined);
+    assert.equal(state.commands.Offline, undefined);
+    assert.equal(hunt.target, 'rat');
+    assert.equal(hunt.stage, 'mission-travel');
+  });
+}
+
+test('checking quests keeps fresh dead members and waits when the leader is stale', () => {
+  const {state, service} = fixture();
+  state.statuses.P.rip = true;
+  service.lifecycle.begin();
+  assert.deepEqual(state.monsterHunt.participants, ['W', 'P']);
+  assert.match(state.monsterHunt.message, /Waiting for fresh Hunt status from P/);
+  state.statuses.W.seenAt = 1;
+  state.monsterHunt.participants.push('Offline');
+  service.quests.prepare(state.monsterHunt);
+  assert.deepEqual(state.monsterHunt.participants, ['W', 'P', 'Offline']);
+});
+
 test('backup repairs a persisted area that does not contain the selected monster and departs', () => {
   const {state, service, calls, farm} = fixture();
   service.lifecycle.begin('auto', {map:'main',x:0,y:0,monsterIds:['goo']});

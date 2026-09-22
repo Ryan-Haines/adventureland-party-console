@@ -352,6 +352,13 @@ fresh compatible reports arrive. Hunt and event returns keep their own recovery;
 completed event returns release leftover convoys instead of starting another trip.
 Manual cancellation and newer navigation are never authorization to retry old travel.
 
+Hunt rosters include only fresh combat members following the current leader on
+the same server. Saved Follow preferences do not enroll offline characters.
+Existing cycles prune departed members before quest, backup and return handling;
+departed quest owners release their selection so the current party can continue.
+A stale leader report defers reconciliation rather than emptying the roster.
+Validate with `coordinator-hunt-composition.test.cjs`; coordinator-only restart suffices.
+
 Hunts return to Daisy when the selected quest is complete or expired, never merely
 because it has less than three minutes remaining. The selected owner may keep
 farming through the final second. Hunt's own `farm-recovery` shared walk yields on completion or expiry,
