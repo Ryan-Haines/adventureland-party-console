@@ -8,6 +8,8 @@ export type HandoffPhase =
   | "complete"
   | "failed";
 export interface Handoff {
+  /** Game-window session that requested the operation; CODE reloads retain it. */
+  steamSessionId?: string;
   destinationRealm?: string;
   realmChoice?: { current: string | null; home: string | null };
   bulkRemaining?: string[];
@@ -33,6 +35,7 @@ export interface RosterOwnership {
   handoff: Handoff | null;
 }
 export interface HandoffPorts {
+  steamSessionId?(): string | undefined;
   realmContext?(): { current: string | null; home: string | null } | undefined;
   observedRealm?(name: string, since?: number): string | null;
   prepareSteam?(name: string): Promise<void>;
@@ -120,6 +123,7 @@ export class SteamHandoff {
     this.ports.validateParticipants(participants);
     return {
       id: this.ports.id(),
+      steamSessionId: this.ports.steamSessionId?.(),
       from,
       target,
       returnToHeadless,

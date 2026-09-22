@@ -65,6 +65,15 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
+Steam logout recovery uses a game-window session ID that survives CODE reloads
+but changes on a fresh game page. A connected Engage can retire a pending logout;
+headless and primary-transfer operations retain their ownership safeguards. Old
+release receipts are replayed as acknowledgements, never as another disconnect.
+Validate with `roster-routes.test.cjs` and `steam-bridge.test.cjs`. Publish both the
+coordinator and character assets, then test console logout followed by Steam login
+and Engage for the same and a different character, including a primary with Steam
+companions. Confirm the new primary stays connected and headless slots stay assigned.
+
 Protocol 4 defensive stops retain their local convoy identity until the coordinator
 acknowledges the stop, even when a short-lived attacker dies or is classified as a
 passing encounter before the next heartbeat. The shared travel watchdog regroups
