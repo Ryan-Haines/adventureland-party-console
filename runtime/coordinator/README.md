@@ -131,6 +131,20 @@ with the ordinary supported restart below; a coordinator-only restart is not
 sufficient for this feature. Live character reports expose `bankSortProtocol: 1`.
 
 
+Merchant heartbeat stock checks complete only the merchant's own restock job.
+Party restock assignments await the service completion flow; the merchant's full
+potion stacks cannot clear another character's delivery. Validate with
+`coordinator-recovery-composition.test.cjs` and `coordinator-merchant-recovery.test.cjs`.
+This change needs only the coordinator-only restart.
+
+All active merchant visits reveal their recipient within transfer range, including
+restocks, item delivery, pickups and gold collection. Fresh same-realm/map/instance
+positions and the current merchant command authorize a short heartbeat visibility
+lease; the recipient verifies local proximity before stopping invisibility. The
+rogue skill runtime suppresses automatic invisibility while that lease is active.
+Validate with `merchant-visibility.test.cjs` and `merchant-rendezvous.test.cjs`.
+Publish both coordinator and character assets with the ordinary restart.
+
 Merchant deliveries carry durable IDs. `/party-api/merchant/delivery-receipt` accepts
 `deliveryReceipt: true`, merchant `character`, `target`, `deliveryId`, and a phase
 of `uncertain` or `confirmed`. The runtime journals before sending and acknowledges

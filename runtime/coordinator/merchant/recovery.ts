@@ -64,7 +64,7 @@ function reportChanged(
 export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPorts) {
   function completeRestock(name: string, items: (InventoryEntry | null)[] | undefined): void {
     const job = state.current;
-    if (!job || job.reason !== "restock" || !ports.restockSatisfied(name, items)) return;
+    if (!job || job.reason !== "restock" || job.target !== name || !ports.restockSatisfied(name, items)) return;
     ports.clearCommand(name, job.id);
     state.current = null;
     ports.log("Merchant potion restock completed", "success", { character: name, jobId: job.id });

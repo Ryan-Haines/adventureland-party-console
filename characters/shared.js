@@ -8967,6 +8967,16 @@
     }, 100);
   }
 
+  var merchantVisibilityUntil = 0;
+  async function applyMerchantVisibility(merchant) {
+    var player = merchant && get_player(merchant);
+    var nearby = player && !player.rip && (!player.map || player.map === character.map) &&
+      (player.in == null || character.in == null || player.in === character.in) &&
+      Math.hypot(player.x - character.x, player.y - character.y) <= 180;
+    merchantVisibilityUntil = nearby ? Date.now() + 5000 : 0;
+    if (nearby && character.s && character.s.invis) await stop("invis");
+  }
+
   async function tick() {
     observeBankSortVisit();
     if (busy) return;
@@ -8992,6 +9002,7 @@
         return;
       }
       if (state.upgradePreview) await handleUpgradePreview(state.upgradePreview);
+      await applyMerchantVisibility(state.merchantVisibility);
       if (character.ctype === "merchant") await flushNativePurchaseReceipts();
       if (character.ctype === "merchant" && character.stand && !merchantIdleActive && !root.__merchantActiveJob &&
           !root.__merchantInventoryTidy && !merchantLuckyUpgrade().pending())
@@ -13831,6 +13842,7 @@
   }
 
   root.sharedRoutine = {
+    merchantVisibilityActive: function () { return Date.now() < merchantVisibilityUntil; },
     describeAttackRange: function (target) {
       if (!target || target.mtype !== "crab" || typeof get_width !== "function" || typeof get_height !== "function") return null;
       var dimensions = G.dimensions && G.dimensions.crab;

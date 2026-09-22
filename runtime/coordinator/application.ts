@@ -1,6 +1,7 @@
 import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
 import { consoleMaintenance } from './lifecycle/console-maintenance.ts';
 import { createUpgradePreviews } from './merchant/upgrade-preview.ts';
+import { merchantVisibility } from './merchant/visibility.ts';
 import { loadCoordinatorDependencies } from "./infrastructure/dependencies.ts";
 import * as coordinatorPolicies from "./index.ts";
 import type { CatalogDefinitions } from './status/catalog-validation.ts';
@@ -975,6 +976,7 @@ export function startCoordinatorApplication(
           const lease = mode ? undefined : dashboardStream.lease(name);
           return { ...(soloFor(name)?.heartbeatResponse || heartbeatResponse).response(name, mode),
             upgradePreview: upgradePreviews.next(name),
+            merchantVisibility: merchantVisibility(party, name, Date.now()),
             ...(party.statuses[name]?.dashboardRuntime ? { dashboardLease: lease } : {}) };
         },
       },

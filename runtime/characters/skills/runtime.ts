@@ -38,7 +38,7 @@ export function installSkillRuntime(root: CombatRoot) {
       actor, context, skills, now: Date.now(),
       item: name => (G.items as Record<string, { wtype?: string; type?: string; charge?: number }>)[name],
       condition: name => (G.conditions as Record<string, ReturnType<SkillWorld['condition']>>)[name],
-      cooldown: id => Number(host.next_skill?.[id]) > Date.now(),
+      cooldown: id => id === 'invis' && !!shared.merchantVisibilityActive?.() || Number(host.next_skill?.[id]) > Date.now(),
       damageMultiplier: host.damage_multiplier || mitigation,
       incoming: t => projectiles.incoming(t.id, Date.now()),
       range: (t, id) => skillRange(actor, t, skills[id]),
