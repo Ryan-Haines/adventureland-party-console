@@ -72,10 +72,19 @@ jobs:
       - name: Package editable installation
         shell: pwsh
         run: |
-          tar.exe -a -c -f .build/release/adventureland-party-console-${{ needs.version.outputs.version }}-windows-x64.zip -C .build/release/windows .
+          # Archive the children, not ".": WinRAR warns when extracting a ./ root entry.
+          # -Force also includes hidden payload files and directories.
+          $entries = @(Get-ChildItem -LiteralPath .build/release/windows -Force | Select-Object -ExpandProperty Name)
+          tar.exe -a -c -f .build/release/adventureland-party-console-${{ needs.version.outputs.version }}-windows-x64.zip -C .build/release/windows -- @entries
           if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+      - name: Extract release archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path .build/release/windows-extracted | Out-Null
+          tar.exe -x -f .build/release/adventureland-party-console-${{ needs.version.outputs.version }}-windows-x64.zip -C .build/release/windows-extracted
+          if ($LASTEXITCODE -ne 0) { throw 'Extraction failed' }
       - name: Verify clean package startup
-        run: node tools/release/smoke.mts .build/release/windows
+        run: node tools/release/smoke.mts .build/release/windows-extracted
       - uses: actions/upload-artifact@v4
         with:
           name: windows
