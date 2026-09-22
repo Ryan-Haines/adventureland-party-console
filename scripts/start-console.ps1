@@ -99,7 +99,7 @@ function Stop-ExistingCaracalSupervisor {
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $caracalRoot "main.js"))) {
-    throw "caracAL is not installed. Run .\scripts\setup-caracal.ps1 first."
+    throw "caracAL is not installed. Run .\scripts\setup-console.ps1 first."
 }
 
 if (-not (Test-Path -LiteralPath $configPath)) {

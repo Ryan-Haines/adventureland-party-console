@@ -64,7 +64,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.14.0'
-      - run: ./scripts/setup-caracal.ps1
+      - run: ./scripts/setup-console.ps1
       - run: node tools/dashboard/build.mts
         env:
           AL_DASHBOARD_OUT_DIR: .build/container
