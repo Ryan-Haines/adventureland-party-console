@@ -161,11 +161,16 @@ test('game-window bridge persists one generic bootstrap, releases once, and wait
     const codeCache = JSON.parse(cache.get('code_cache'));
     assert.equal(codeCache['run_mage-id'], '1');
     assert.equal(codeCache['slot_mage-id'], saved[0].payload.slot);
-    operation.phase = 'confirm-release';
+    const sessionId = requests[0].body.sessionId;
+    assert.equal(typeof sessionId, 'string');
+    // A bridge/CODE reload can happen before the server receives the receipt.
     installSteamBridge(host); await settle();
+    assert.equal(requests.at(-1).body.sessionId, sessionId);
     assert.equal(requests.at(-1).body.released, true);
     assert.equal(requests.at(-1).body.character, null);
     assert.equal(stops, 1);
+    operation.phase = 'confirm-release';
+    timer(); await settle();
     operation.phase = 'navigate';
     timer(); await settle();
     assert.equal(host.location.href, '/character/Mage/in/US/II/');

@@ -55,6 +55,7 @@ interface NativeHost extends Pick<
   no_html?: boolean;
   is_bot?: boolean;
   code_active?: boolean;
+  __partySteamSessionId?: string;
   get_active_characters?(): Record<string, string>;
   start_character_runner?(name: string, slot: string): Promise<unknown>;
   stop_character_runner?(name: string): void;
@@ -79,12 +80,14 @@ export function installSteamBridge(host: NativeHost): void {
   host.__partySteamBridge?.dispose();
   const lifecycle = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let releasing: string | null = null;
   let released = restoreRelease(host.sessionStorage);
+  let releasing: string | null = released?.operationId || null;
   let navigating: string | null = null;
   let failure: { operationId: string; error: string } | null = null;
   const clientId = host.sessionStorage.getItem("party-steam-client") || crypto.randomUUID();
   host.sessionStorage.setItem("party-steam-client", clientId);
+  // Window-local: survives CODE/bridge replacement, changes on a fresh game page.
+  const sessionId = host.__partySteamSessionId ||= crypto.randomUUID();
   const switcher = createSwitcher(host, (character, action = "primary") => post("/steam/action", { character, action }));
   const realmChoice = createRealmChoice(host.document, (operationId, choice) => post("/steam/realm-choice", { operationId, choice }));
   const starting = new Set<string>();
@@ -152,6 +155,7 @@ export function installSteamBridge(host: NativeHost): void {
       // Prepare persistence before disconnecting, so a save error leaves the
       // current native game usable and the coordinator can retain ownership.
       if (operation.target) await ensureBootstrap(operation.target);
+      if (lifecycle.signal.aborted) return;
       host.localStorage.setItem(operationKey, operation.id);
       host.stop_runner();
       host.socket?.disconnect();
@@ -181,6 +185,7 @@ export function installSteamBridge(host: NativeHost): void {
     const operation = reply.operation;
     realmChoice.show(operation);
     await recovery.tick(reply);
+    if (lifecycle.signal.aborted) return;
     if (operation?.phase === "awaiting-realm-choice") return;
     if ((!operation || operation.phase === "complete") && reply.primary === host.character?.name && host.socket?.connected) {
       for (const name of reply.steam || []) await ensureBootstrap(name);
@@ -199,6 +204,7 @@ export function installSteamBridge(host: NativeHost): void {
       if (operation.phase === "release" && releasing !== operation.id) {
         // Save every bootstrap before touching a running character.
         for (const name of group.desired) await ensureBootstrap(name);
+        if (lifecycle.signal.aborted) return;
         host.localStorage.setItem(operationKey, operation.id);
         for (const name of group.release) {
           if (name === host.character?.name) { host.stop_runner(); host.socket?.disconnect(); }
@@ -258,6 +264,7 @@ export function installSteamBridge(host: NativeHost): void {
       reply = await post("/steam/bridge", {
         version: 2,
         clientId,
+        sessionId,
         character: host.socket?.connected ? host.character?.name : null,
         realm: host.socket?.connected ? "SR_" + host.server_region + host.server_identifier : null,
         observations: steamObservations(host, name => deliberatelyStopped(host.localStorage, name), starting, startErrors),
@@ -267,6 +274,7 @@ export function installSteamBridge(host: NativeHost): void {
         ...released,
         ...failure,
       });
+      if (lifecycle.signal.aborted) return;
       clearCompleted(reply);
       switcher.render(reply);
       await act(reply);
