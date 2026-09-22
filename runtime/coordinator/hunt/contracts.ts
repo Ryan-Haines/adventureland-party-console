@@ -112,6 +112,7 @@ export interface LootProgress {
   error?: string;
 }
 interface HuntConvoyState {
+  nativeFallback?: boolean;
   participants?: string[];
   walkingActivity?: string;
   walkingParents?: Record<string, { revision: number }>;
@@ -143,6 +144,7 @@ export type HuntConvoy = HuntConvoyState &
     | { returnLegs: { type: string }[]; legIndex: number }
   );
 export interface HuntCommand {
+  nativeFallback?: boolean;
   huntTarget?: string;
   id?: number;
   type: string;

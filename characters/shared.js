@@ -12852,11 +12852,18 @@
       phase("arrived");
       var completion;
       do {
-        completion = await request("/convoy-complete", { method: "POST", body: {
+        try { completion = await request("/convoy-complete", { method: "POST", body: {
           character: character.name, convoyId: command.convoyId,
           epoch: Number(command.epoch), commandId: command.id, runtimeId: convoyRuntimeId,
           navigationRevision:Number(command.navigationRevision)||0,routeVersion:command.routeVersion,
-        }});
+        }}); } catch(error) {
+          if (!/stale convoy completion/.test(String(error && (error.message || error)))) throw error;
+          // Another member can fail while our arrival request is in flight.
+          // Keep arrival observational; wait for the replacement command instead
+          // of reporting a second failure against the retired generation.
+          if (ownsConvoy()) await new Promise(function(resolve){convoy.release=resolve;});
+          return;
+        }
         if(completion && completion.waiting)await new Promise(function(resolve){setTimeout(resolve,250);});
       } while(ownsConvoy() && completion && completion.waiting);
       if(!ownsConvoy())return;
@@ -12877,7 +12884,8 @@
         townAttempt: convoy.townAttempt || null,
         routeVersion: command.routeVersion,
         details: { phase: convoy.phase, routeStarts: convoy.routeStarts,
-          map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null },
+          map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null,
+          movement: movement.report() || movement.last() },
       }}).catch(function () {});
       game_log("Convoy movement failed: " + reason, "red");
       if (ownsConvoy()) await new Promise(function (resolve) { convoy.release = resolve; });

@@ -53,6 +53,16 @@ function schedule(r, at = 4000) {
   r.context.convoySignal = { ...r.context.convoySignal, phase: 'scheduled', departAt: at, validUntil: at+3000 };
   r.tick();
 }
+
+test('a stale arrival response after party regroup does not report another movement failure',async()=>{
+ const r=runtime();const original=r.context.request;
+ r.context.request=async(url,opts)=>{if(url==='/convoy-complete')throw Error('POST /convoy-complete · HTTP 409 · http: stale convoy completion');return original(url,opts);};
+ const {promise}=await r.start();await r.ready();schedule(r);r.setNow(3950);
+ for(let i=0;i<100;i++){r.tick();await settle();if(r.context.convoyTraveling?.phase==='arrived')break;}
+ await settle();assert.equal(r.context.convoyTraveling.phase,'arrived');
+ assert.equal(r.calls.some(c=>c[1]==='/convoy-failed'),false);
+ await r.cancel();await promise;
+});
 test('anniversary planning yields immediately to defense and late route ticks cannot restart movement',async()=>{
  const r=runtime();let attacked=false;r.context.departureCombatPending=()=>attacked;
  vm.runInContext(source.slice(source.indexOf('  function interruptConvoyForDefense('),source.indexOf('  function groupedFarming(')),r.context);

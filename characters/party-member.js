@@ -1,7 +1,7 @@
 // Generated from TypeScript; run npm run build:runtime -- --publish. Do not edit.
 "use strict";
 (() => {
-  // ../runtime/navigation/contracts.ts
+  // runtime/navigation/contracts.ts
   var isTransition = (step) => !!(step.town || step.transport || step.method === "leave");
   var point = (p) => ({ map: p.map, x: p.x, y: p.y, ...p.in === void 0 ? {} : { in: p.in } });
   var distance = (a, b) => a.map === b.map && (a.in === void 0 || b.in === void 0 || a.in === b.in) ? Math.hypot(a.x - b.x, a.y - b.y) : Infinity;
@@ -26,7 +26,7 @@
     return `${(a >>> 0).toString(16)}-${(b >>> 0).toString(16)}-${value.length}`;
   }
 
-  // ../runtime/navigation/validation.ts
+  // runtime/navigation/validation.ts
   function atSpawn(g, p, spawn) {
     const xy = g.maps[p.map]?.spawns[spawn];
     return !!xy && Math.hypot(p.x - xy[0], p.y - xy[1]) <= 1;
@@ -70,7 +70,7 @@
     return ["cyberland", "jail"].includes(from.map) && to.map === "main" && (to.in === void 0 || to.in === "main") && atSpawn(game, to, 0) ? null : "invalid leave exit";
   }
 
-  // ../runtime/characters/native-planner.ts
+  // runtime/characters/native-planner.ts
   function createNativePlanner(host, native) {
     let running = false, failure = "", deadline = 0, serial = 0;
     function cancel() {
@@ -109,7 +109,7 @@
     return { begin, tick, cancel };
   }
 
-  // ../runtime/characters/movement-executor.ts
+  // runtime/characters/movement-executor.ts
   function transitionLabel(step) {
     return step.method === "leave" ? "leave transition" : step.town ? "town warp" : "map transition";
   }
@@ -215,7 +215,18 @@
         notifyTown(current, options, "interrupted");
         throw Error(`Failed ${transitionLabel(current.step)}`);
       }
-      if (!transition && now() - current.progressAt > 5e3) throw Error("Stalled walking movement (5 seconds without progress)");
+      observeWalk(current, p);
+    }
+    function observeWalk(current, p) {
+      if (isTransition(current.step)) return;
+      if (now() - current.progressAt > 5e3) throw Error("Stalled walking movement (5 seconds without progress)");
+      retryStoppedWalk(current, p);
+    }
+    function retryStoppedWalk(current, p) {
+      if (current.reissued || now() - current.progressAt < 250 || !canStart()) return;
+      if (stepIssue(validation, p, current.step, state.use_town)) return;
+      current.reissued = true;
+      sendObserved(current);
     }
     function arrivedTransition(current, p) {
       return isTransition(current.step) && !!current.acknowledged && distance(p, current.step) <= 1;
@@ -245,15 +256,20 @@
       current.progressAt = now();
       const captured = current;
       notifyTown(current, options, "casting");
+      sendObserved(captured);
+    }
+    function sendObserved(captured) {
+      const version = captured.sendVersion = (captured.sendVersion || 0) + 1;
       try {
         void Promise.resolve(send(captured)).then((result) => {
+          if (issued !== captured || captured.sendVersion !== version) return;
           if (result && typeof result === "object" && "failed" in result && result.failed) throw result;
-          if (issued === captured) captured.acknowledged = true;
+          captured.acknowledged = true;
         }).catch((error) => {
-          if (issued === captured) rejected(captured, error);
+          if (issued === captured && captured.sendVersion === version) rejected(captured, error);
         });
       } catch (error) {
-        rejected(captured, error);
+        if (issued === captured) rejected(captured, error);
       }
     }
     function rejected(current, error) {
@@ -325,13 +341,21 @@
       reset,
       cancel,
       pause,
-      progress: () => ({ step: index, phase: phase(), destination: issued?.step, durations: { ...durations } }),
+      progress: () => ({
+        step: index,
+        phase: phase(),
+        destination: issued?.step,
+        durations: { ...durations },
+        position: position(),
+        noProgressMs: issued ? now() - issued.progressAt : 0,
+        reissued: !!issued?.reissued
+      }),
       transition: () => issued && isTransition(issued.step) ? issued.step.town ? "town" : "transport" : null,
       remaining: () => state.plot.map((p) => ({ ...p }))
     };
   }
 
-  // ../runtime/characters/movement-destination.ts
+  // runtime/characters/movement-destination.ts
   function resolveDestination(host, input) {
     if (input && typeof input === "object") {
       const p = { map: host.character.map, ...input };
@@ -362,7 +386,7 @@
     return { map: "main", x: 56, y: -122 };
   }
 
-  // ../runtime/characters/movement-diagnostics.ts
+  // runtime/characters/movement-diagnostics.ts
   var coordinates = (p) => `${p.map} (${Math.round(p.x * 100) / 100}, ${Math.round(p.y * 100) / 100})`;
   function movementDiagnostics(ports, name, version, fingerprint) {
     const recent = /* @__PURE__ */ new Map();
@@ -383,7 +407,7 @@
     };
   }
 
-  // ../runtime/navigation/door-approach.ts
+  // runtime/navigation/door-approach.ts
   function approaches(ports, from, to) {
     const doors = (ports.game.maps[from.map]?.doors || []).filter((d) => d[4] === to.map && Number(d[5] || 0) === to.s).flatMap((d) => {
       const x = Number(d[0]), y = Number(d[1]), w = Number(d[2]), h = Number(d[3]);
@@ -438,7 +462,7 @@
     return result;
   }
 
-  // ../runtime/characters/return-planner.ts
+  // runtime/characters/return-planner.ts
   function routeDuration(request, plot) {
     let at = request.from, ms = 0;
     for (const step of plot) {
@@ -475,7 +499,7 @@
     return { ...selected, id: request.id };
   }
 
-  // ../runtime/characters/movement.ts
+  // runtime/characters/movement.ts
   function arrivalTolerance(options) {
     const tolerance = options.arrivalTolerance ?? 20;
     if (!Number.isFinite(tolerance) || tolerance < 1) throw Error("Arrival tolerance must be at least 1");
@@ -822,7 +846,7 @@
   }
   Object.assign(globalThis, { installPartyMovement });
 
-  // ../runtime/bank-stacks.ts
+  // runtime/bank-stacks.ts
   var stackQuantity = (item) => item ? Number(item.q) || 1 : 0;
   function stackIdentity(item) {
     return JSON.stringify(["name", "level", "p", "stat_type", "data", "rid", "b", "m", "l"].map((key) => key === "level" ? Number(item?.level) || 0 : item?.[key] ?? null));
@@ -858,7 +882,7 @@
     return null;
   }
 
-  // ../runtime/characters/bank-stacks.ts
+  // runtime/characters/bank-stacks.ts
   function createBankStacks(p) {
     const at = (o) => p.bank()[o.pack]?.[o.slot] || null;
     const origin = (l) => ({ pack: l.pack, slot: l.slot, floor: p.floor(l.pack) });
@@ -1046,13 +1070,13 @@
   }
   Object.assign(globalThis, { partyCreateBankStacks: createBankStacks });
 
-  // ../runtime/upgrade-preview.ts
+  // runtime/upgrade-preview.ts
   var previewOptions = ["none", "offeringp", "offering", "offeringx"];
   function unavailablePreview(executor, item, reason) {
     return { executor, item, options: Object.fromEntries(previewOptions.map((option) => [option, { reason }])) };
   }
 
-  // ../runtime/characters/upgrade-preview.ts
+  // runtime/characters/upgrade-preview.ts
   var same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   function matchesPreviewItem(live, wanted) {
     return !!live && Object.entries(wanted).every(([key, value]) => same(live[key], value));
@@ -1097,7 +1121,7 @@
   }
   globalThis.previewPartyUpgrade = previewUpgrade;
 
-  // ../runtime/characters/legacy-entry.ts
+  // runtime/characters/legacy-entry.ts
   var root = globalThis;
   root.__partyReady = root.parent.caracAL.load_scripts([
     "adventure_land/farming-zones.js",

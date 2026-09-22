@@ -65,6 +65,20 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
+Shared convoy departure tolerates matching travel reports within 500 ms of the
+scheduled departure. Transient readiness changes stop and reprepare under the
+original 60-second readiness deadline without spending a movement retry.
+Walking execution may reissue one stopped, collision-checked owned segment;
+only observed displacement resets its five-second progress deadline. A repeated
+walking stall switches the shared planner to native within the two-regroup limit.
+Hunt return retries preserve that fallback and pending Daisy rewards. Stale arrival
+responses wait for replacement commands instead of reporting another failure.
+Validate `shared-convoy`, `movement-service`, `convoy`, and Hunt return tests;
+publish character and coordinator assets together through the full restart.
+
+Explicit Send to party requests survive a disabled automatic-collection toggle.
+Automatic pickups still obey the toggle. Validate `manual-party-collection`.
+
 Steam logout recovery uses a game-window session ID that survives CODE reloads
 but changes on a fresh game page. A connected Engage can retire a pending logout;
 headless and primary-transfer operations retain their ownership safeguards. Old

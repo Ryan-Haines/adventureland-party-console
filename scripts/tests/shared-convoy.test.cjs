@@ -5,6 +5,50 @@ const {publishSharedRoute,sharedRoute}=require('../../runtime/coordinator/naviga
 const legacy=require('../convoy-navigation.cjs');
 const engine=()=>createSharedConvoyNavigation(legacy);
 const copy=x=>JSON.parse(JSON.stringify(x));
+
+function scheduledParty() {
+ const p=party(),e=engine();e.step(p,1000);publishSharedRoute(p,publication(p),1000);
+ for(const n of ['L','F','P'])report(p,n);
+ e.step(p,1000);e.step(p,1600);return {p,e,c:p.activeConvoy};
+}
+test('clock-skewed matching departure reports do not consume regroup attempts',()=>{
+ const {p,e,c}=scheduledParty(),at=c.departAt-100;
+ for(const name of c.participants)report(p,name,'route-ready',at);
+ Object.assign(p.statuses.F,{moving:true,x:9});
+ Object.assign(p.statuses.F.convoyNavigation,{phase:'travelling',departedAt:c.departAt});
+ e.step(p,at);assert.equal(c.phase,'scheduled');assert.equal(c.recoveryAttempts,undefined);
+ e.step(p,c.departAt);assert.equal(c.phase,'travel');
+});
+for(const field of ['routeVersion','epoch','commandId','navigationRevision'])test('early departure cannot bypass '+field+' validation',()=>{
+ const {p,e,c}=scheduledParty(),at=c.departAt-100;
+ for(const name of c.participants)report(p,name,'route-ready',at);
+ Object.assign(p.statuses.F,{moving:true,x:9});
+ Object.assign(p.statuses.F.convoyNavigation,{phase:'travelling',departedAt:c.departAt});
+ p.statuses.F.convoyNavigation[field]++;
+ e.step(p,at);assert.equal(c.phase,'shared-hold');assert.match(c.preparationBlocker,/F:/);
+ assert.equal(c.recoveryAttempts,undefined);
+});
+test('transient readiness withdrawal preserves deadline through repeated preparations',()=>{
+ const {p,e,c}=scheduledParty();p.statuses.F.speed=100;e.step(p,1800);
+ assert.equal(c.phase,'shared-hold');assert.match(c.preparationBlocker,/F: waiting for cruise/);
+ assert.equal(c.readinessStartedAt,1000);assert.equal(c.recoveryAttempts,undefined);
+ for(const name of c.participants){p.statuses[name].speed=57;report(p,name,'held',1900);}
+ e.step(p,1900);assert.equal(c.phase,'shared-prepare');assert.equal(c.readinessStartedAt,1000);
+ for(const name of c.participants)report(p,name,'route-ready',61000);
+ e.step(p,61000);assert.equal(c.recoveryAttempts,1);assert.equal(c.readinessStartedAt,undefined);
+ assert.match(c.failure,/readiness timed out/);
+});
+test('repeated walking stalls change planner before bounded exhaustion',()=>{
+ const p=party(),e=engine();e.step(p,1000);
+ e.hold(p,'L: Stalled walking movement (5 seconds without progress)');
+ assert.equal(p.activeConvoy.nativeFallback,false);
+ for(const name of ['L','F','P'])report(p,name,'held',1100);
+ e.step(p,1100);e.hold(p,'L: Stalled walking movement (5 seconds without progress)');
+ assert.equal(p.activeConvoy.nativeFallback,true);
+ for(const name of ['L','F','P']){assert.equal(p.commands[name].nativeFallback,true);report(p,name,'held',1200);}
+ e.step(p,1200);e.hold(p,'L: Stalled walking movement (5 seconds without progress)');
+ assert.equal(p.activeConvoy.phase,'failed');assert.equal(p.activeConvoy.recoveryAttempts,2);
+});
 test('Phoenix planning origin is captured only after matching stopped assembly reports',()=>{
  const p=party(),e=engine();p.activeConvoy.purpose='phoenix-patrol';
  e.step(p,1000);assert.equal(p.activeConvoy.phase,'assemble');

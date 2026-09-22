@@ -13,6 +13,7 @@ export interface Hunt {
   returnRetryAt?: number;
   returnRetries?: number;
   returnDisableTown?: boolean;
+  returnNativeFallback?: boolean;
   returnTown?: import('../coordinator/navigation/return-town.ts').ReturnTownPolicy;
 }
 export function priority(hunt: Hunt | null | undefined): boolean {
@@ -58,6 +59,7 @@ export function beginTurnIn(hunt: Hunt, leader: string): void {
     hunt.returnRetries = 0;
     hunt.returnRetryAt = 0;
     hunt.returnDisableTown = false;
+    delete hunt.returnNativeFallback;
     delete hunt.returnTown;
   }
 }

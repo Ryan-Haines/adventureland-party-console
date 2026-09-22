@@ -72,6 +72,7 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
       return false;
     if (retryBlocked(hunt)) return true;
     if(state.activeConvoy!.returnTown)hunt.returnTown=state.activeConvoy!.returnTown;
+    hunt.returnNativeFallback ||= !!state.activeConvoy!.nativeFallback;
     hunt.returnRetries = (hunt.returnRetries || 0) + 1;
     hunt.returnRetryAt = ports.now();
     ports.cancelHuntConvoy();

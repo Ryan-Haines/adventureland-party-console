@@ -17,7 +17,7 @@ export interface SharedReport {
   townAttempt?: import('./return-town.ts').ReturnTownAttempt;
   id: string; epoch: number; commandId: number; navigationRevision: number;
   runtimeId: string; phase: string; routeReady?: boolean; routeVersion?: number;
-  failure?: string; waypointCount?: number;
+  failure?: string; waypointCount?: number; departedAt?: number;
 }
 export interface SharedStatus extends RoutePoint {
   huntReturnProtocol?: number;
@@ -57,6 +57,8 @@ export interface SharedConvoy extends PartyConvoy {
   sharedStartedAt?: number; sharedProgressAt?: number; sharedDistances?: Record<string, number>;
   sharedReadySince?: number; routePublishedAt?: number; sharedStoppedAt?: number;
   sharedWaitingAt?: number;
+  readinessStartedAt?: number;
+  walkingFailures?: number;
   missingRoutes?: Record<string, { since: number; observedAt: number }>;
   walkingActivity?: string;
   routeServer?: string;
