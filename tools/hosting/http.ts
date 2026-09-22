@@ -1,4 +1,5 @@
 import { request, type IncomingMessage, type ServerResponse } from "node:http";
+import { gatewayHeaders } from '../dashboard/gateway-access.ts';
 export function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   res.end(JSON.stringify(body));
@@ -36,6 +37,7 @@ export function proxy(req: IncomingMessage, res: ServerResponse, port: number, d
       method: req.method,
       headers: { ...req.headers, cookie: "", host: `127.0.0.1:${port}`,
         'x-party-tls': '',
+        ...(dashboard ? gatewayHeaders() : {}),
         // The gateway already checked the browser origin; the loopback supervisor checks it again.
         ...(req.url?.startsWith("/__dashboard/") || (dashboard && req.headers.origin) ? { origin: `http://127.0.0.1:${port}` } : {}) },
     },

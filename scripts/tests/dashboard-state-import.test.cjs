@@ -127,7 +127,7 @@ test('legacy blacklist-only import is ignored without changing runtime state',()
  assert.deepEqual(f.party.anniversary,{blacklist:[],round:7});assert.deepEqual(f.party.merchantQueue,[{id:'keep'}]);
 });
 
-test('Settings import previews a file before confirmation and shows its canonical path and backup',async()=>{
+for(const metadataFailure of [false,true])test(metadataFailure ? 'loading import settings cannot claim a file import failed' : 'Settings import previews a file before confirmation and shows its canonical path and backup',async()=>{
  const ts=require('../../node_modules/typescript');
  const code=ts.transpileModule(fs.readFileSync('dashboard/features/party/dashboard-state-import.tsx','utf8')
   .replace(/^import .*;\r?\n/gm,'').replace('export function','function'),
@@ -137,7 +137,7 @@ test('Settings import previews a file before confirmation and shows its canonica
   useState:v=>{const i=cursor++;if(!(i in slots))slots[i]=v;return[slots[i],v=>slots[i]=v];},
   useRef:v=>{const i=cursor++;return slots[i] ||= {current:v};},useEffect:fn=>{const i=cursor++;if(!slots[i]){slots[i]=true;effects.push(fn);}},
   React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})},
-  fetch:async(url,options)=>{requests.push({url,options});const data=url.endsWith('/preview')?
+  fetch:async(url,options)=>{requests.push({url,options});if(metadataFailure)return {ok:false,text:async()=>JSON.stringify({error:'Service unavailable'})};const data=url.endsWith('/preview')?
    {fields:['marked'],characters:['W'],digest:'hash'}:url.endsWith('/import')?
    {fields:['marked'],characters:['W'],digest:'hash',backupPath:'/data/localStorage/backup.jsonl'}:
    {canonicalPath:'/data/localStorage/caraGarage.jsonl',maxBytes:128*1024*1024};return {ok:true,json:async()=>data,text:async()=>JSON.stringify(data)};}});
@@ -145,6 +145,11 @@ test('Settings import previews a file before confirmation and shows its canonica
  const nodes=t=>t&&typeof t==='object'?[t,...t.children.flatMap(nodes)]:[];
  const flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
  let tree=render();effects.forEach(fn=>fn());await flush();tree=render();
+ if(metadataFailure){
+  const alert=nodes(tree).find(n=>n.props.role==='alert');assert.ok(alert);
+  assert.match(alert.children.join(''),/Could not load import\/export settings: Service unavailable/);
+  assert.doesNotMatch(alert.children.join(''),/Error importing state file/);return;
+ }
  assert.ok(nodes(tree).some(n=>n.children.includes('/data/localStorage/caraGarage.jsonl')));
  const input=nodes(tree).find(n=>n.type==='input');input.props.ref.current={value:''};
  input.props.onChange({target:{files:[{name:'caraGarage.jsonl',size:10,text:async()=>source({marked:{W:[]}})}]}});

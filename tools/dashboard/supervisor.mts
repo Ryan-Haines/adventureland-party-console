@@ -1,6 +1,7 @@
 import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
+import { redirectInternal, fromGateway, dashboardReadyMessage } from './gateway-access.ts';
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,7 +116,7 @@ async function activate(candidate: Running): Promise<void> {
     try { await pin(); await cleanup(true); }
     catch (error) { console.error('Dashboard cleanup deferred:', error); }
   }
-  console.log("Dashboard " + candidate.mode + " ready at http://127.0.0.1:" + publicPort);
+  console.log(dashboardReadyMessage(candidate.mode, publicPort));
 }
 async function rejectCandidate(candidate: Running | undefined, error: unknown): Promise<void> {
   await stop(candidate?.process || pending);
@@ -266,6 +267,7 @@ function supervisorState() {
     instance: active?.id || null, ready: !!active && active.process.exitCode === null && !busy && !failure};
 }
 const server = createServer(async (req, res) => {
+  if (req.url !== '/__dashboard/state' && redirectInternal(req, res)) return;
   if (req.url === '/__dashboard/builds') { await handleBuilds(req, res); return; }
   if (req.url?.startsWith("/party-api/")) {
     proxy(req, res, { port: Number(process.env.AL_INTERNAL_API_PORT) || 924 } as Running);
@@ -287,6 +289,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
+  if (!fromGateway(req)) { socket.destroy(); return; }
   if (!active) {
     socket.destroy();
     return;

@@ -10,6 +10,7 @@ import { servicesHealthy } from "./health.ts";
 import { updateHosting } from '../update/hosting.ts';
 import { notifyBoot, waitForRelease } from '../update/boot.ts';
 import { LocalTLS } from './tls.ts';
+import { configureDashboardGateway } from '../dashboard/gateway-access.ts';
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const data = path.resolve(process.env.AL_DATA_DIR || path.join(root, ".build/hosting-data"));
@@ -22,6 +23,7 @@ await access.load();
 let configured = false,
   configuring = false;
 const services = new Services();
+configureDashboardGateway();
 const development = process.env.AL_DOCKER_DEV === '1' || process.argv.includes('--development');
 const tls = new LocalTLS(root, data);
 // A failed native startup must not leave detached dashboard/game services behind.

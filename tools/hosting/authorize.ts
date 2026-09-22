@@ -46,6 +46,9 @@ function browserOriginAllowed(req: IncomingMessage, sameOrigin: boolean) {
   if (req.headers.origin && !sameOrigin) return false;
   return ["GET", "HEAD"].includes(req.method || "") || sameOrigin;
 }
+function requiresAccountSetup(options: Options): boolean {
+  return !options.configured() && !!options.configure;
+}
 export async function authorizeBrowser(
   req: IncomingMessage,
   res: ServerResponse,
@@ -54,6 +57,10 @@ export async function authorizeBrowser(
 ) {
   const sameOrigin = sameBrowserOrigin(req, options);
   if (!options.access.required && gamePath(url.pathname) && !sameOrigin) {
+    if (requiresAccountSetup(options)) {
+      json(res, 503, { error: 'Connect your game account in setup before using Party Console.', setupUrl: '/setup' });
+      return false;
+    }
     return authorizeDirectGame(req, res);
   }
   if (!browserOriginAllowed(req, sameOrigin)) {

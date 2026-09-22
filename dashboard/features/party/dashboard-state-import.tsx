@@ -18,6 +18,7 @@ export function DashboardStateImport() {
   const [filename, setFilename] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [errorContext, setErrorContext] = useState("Could not load import/export settings");
   const [backup, setBackup] = useState("");
   const [skipped, setSkipped] = useState<string[]>([]);
   const content = useRef("");
@@ -51,6 +52,7 @@ export function DashboardStateImport() {
     if (!file) return;
     const revision = ++selection.current;
     setError(""); setBackup(""); setPreview(null); content.current = ""; setFilename(file.name);
+    setErrorContext("Error reading state file");
     if (file.size > (info?.maxBytes || 128 * 1024 * 1024)) { setError("Choose a state file smaller than 128 MB."); return; }
     setBusy(true);
     try {
@@ -64,6 +66,7 @@ export function DashboardStateImport() {
   async function apply() {
     if (!preview || busy) return;
     setBusy(true); setError("");
+    setErrorContext("Error importing state file");
     try {
       const result = await request("import", content.current, preview.digest);
       setSkipped(Object.keys(result.skippedCharacters || {}));
@@ -103,7 +106,7 @@ export function DashboardStateImport() {
         <Button disabled={busy} onClick={() => { setPreview(null); content.current = ""; }} className="border border-slate-500 bg-[#101c1a] text-slate-100 hover:bg-slate-700 hover:text-white">Cancel</Button>
       </div>
     </div>}
-    {error && <p role="alert" className="mt-3 break-words text-sm text-rose-200">Error importing state file: {error}</p>}
+    {error && <p role="alert" className="mt-3 break-words text-sm text-rose-200">{errorContext}: {error}</p>}
     {backup && <output className="mt-3 block break-all text-sm text-emerald-200">Dashboard state imported. {skipped.length > 0 && `Skipped: ${skipped.join(', ')}. `}Backup: <span className="font-mono">{backup}</span></output>}
   </section>;
 }
