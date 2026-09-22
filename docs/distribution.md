@@ -77,14 +77,14 @@ a manual installer upgrade. Do not run two installations for the same characters
 
 ## Docker
 
-The repository README recommends `./scripts/start-docker.sh`, which combines
+The source-development helper `./scripts/start-docker.sh` combines
 `compose.yaml` with `compose.dev.yaml` for source development. It mounts the
 checkout, runs Node dashboard HMR and the verified character watcher, and keeps
 dependencies/caracAL/build caches in separate volumes. The helper rebuilds and
 recreates the service for coordinator or dependency changes. It preserves the
 same `party-data` volume, including HTTPS trust. Development checkouts use manual
 source updates, not package installation. Plain `docker compose up -d --build`
-selects the production image instead.
+selects a locally built production image instead; it still has no managed updater.
 
 Download `compose.yaml` from GitHub Releases and run `docker compose up -d`.
 The image supports Linux AMD64 and ARM64. The `party-data` volume survives updates.

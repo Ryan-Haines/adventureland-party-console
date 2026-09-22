@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { protectInternalServer } from './gateway-access.ts';
 import { startProdServer } from '../../dashboard/node_modules/vinext/dist/server/prod-server.js';
 
 // Packaged deployments need no Cloudflare bindings. Native Node also supports
@@ -6,4 +7,5 @@ import { startProdServer } from '../../dashboard/node_modules/vinext/dist/server
 const port = Number(process.argv[2]);
 if (!Number.isInteger(port) || port < 1 || port > 65535 || !process.argv[3])
   throw new Error('Usage: node node-server.mts <port> <build-directory>');
-await startProdServer({ port, host: '127.0.0.1', outDir: path.resolve(process.argv[3]) });
+const { server } = await startProdServer({ port, host: '127.0.0.1', outDir: path.resolve(process.argv[3]), silent: !!process.env.AL_DASHBOARD_GATEWAY_URL });
+protectInternalServer(server);

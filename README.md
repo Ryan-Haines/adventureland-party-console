@@ -6,6 +6,19 @@ Run Adventure Land characters in Steam or headless, and manage them from a brows
 
 ## Windows installation
 
+### Release package (recommended; supports automatic updates)
+
+1. Download the Windows x64 ZIP from [GitHub Releases](https://github.com/Ryan-Haines/adventureland-party-console/releases/latest).
+2. Extract it to a writable folder and double-click **`Start.cmd`**. Keep the console window open. First startup prepares its private Node runtime; you do not need to install Git or Node separately.
+3. Open [http://localhost:3010](http://localhost:3010). A fresh installation automatically opens setup to connect your game account and Steam/browser clients, or select characters for headless play. It needs its own account setup even if you previously configured another installation on the same computer. Internal dashboard ports redirect to this public entry point.
+4. In settings, enable **Automatically download and install new versions when available** if desired. Updates download while running and wait for **Restart now**. When you stop the console and start it again through `Start.cmd`, enabled automatic updates install before characters start. After a successful update, the displayed version changes and the green **!** disappears unless another newer release exists.
+
+Use `Start.cmd` from the extracted release ZIP. The repository's `distribution/Start.cmd` is a packaging template and cannot turn a Git checkout into a managed installation. Local application edits can block installation until reconciled. Keep the package's `data` folder: it contains your settings and credentials. Before moving from an existing source installation, preserve its data and stop it; do not run both installations for the same characters. See [Distribution and updates](docs/distribution.md) for installation details.
+
+### Source checkout (development; manual updates)
+
+Use this option to work on the code. These launchers provide update notifications only; switching Git branches does not enable automatic installation.
+
 Install Git and Node **22.18+**. Run these commands in PowerShell.
 
 1. Clone the repository:
@@ -40,6 +53,18 @@ Install Git and Node **22.18+**. Run these commands in PowerShell.
 From another computer, use `http://<host-LAN-IP>:3010`. Setup generates the appropriate loader address. Allow Party Console's HTTP (3010) and HTTPS (3443) ports through the host's firewall on your private network.
 
 ## Docker installation
+
+### Release deployment (supports automatic updates)
+
+Download **`compose.yaml` from the GitHub release assets** into a deployment folder, then run:
+
+```sh
+docker compose up -d
+```
+
+This release file includes the updater service needed for the dashboard's automatic-update setting. Keep that service and its `AL_UPDATER_URL` configuration. The repository's Compose files and `start-docker.sh` do not include managed release updates. See [Docker distribution instructions](docs/distribution.md#docker), especially before migrating an existing installation: preserve its Compose project name and data volume.
+
+### Source deployment (development or local builds; manual updates)
 
 Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**.
 

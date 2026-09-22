@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { Services } from "./services.ts";
 import { updateHosting } from '../update/hosting.ts';
 import { LocalTLS } from './tls.ts';
+import { configureDashboardGateway } from '../dashboard/gateway-access.ts';
+configureDashboardGateway();
 const root = fileURLToPath(new URL("../../", import.meta.url)),
   services = new Services();
 const data = path.resolve(process.env.AL_DATA_DIR || path.join(root, ".build/hosting-data"));

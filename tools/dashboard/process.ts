@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { gatewayHeaders } from './gateway-access.ts';
 
 export function launch(
   script: string,
@@ -56,6 +57,7 @@ export async function waitForHealthy(
       if (child.exitCode !== null) throw new Error("Dashboard exited before it became healthy");
       try {
         const response = await fetch(`http://127.0.0.1:${port}/`, {
+          headers: gatewayHeaders(),
           signal: AbortSignal.timeout(15_000),
         });
         await response.body?.cancel();
