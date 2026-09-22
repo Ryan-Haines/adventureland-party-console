@@ -10,15 +10,14 @@ for ((attempt=0; attempt<60; attempt++)); do
     const base="http://127.0.0.1:3010";
     const health=await fetch(base+"/health");
     if(!health.ok)process.exit(1);
-    const dashboard=await fetch("http://127.0.0.1:3030/");
-    const html=await dashboard.text();
-    if(!dashboard.ok || !html.includes("<html"))process.exit(1);
-    const asset=html.match(/src="([^" ]+\.js[^" ]*)"/);
-    if(!asset)process.exit(1);
-    const script=await fetch(new URL(asset[1],"http://127.0.0.1:3030"));
-    if(!script.ok || !script.headers.get("content-type")?.includes("javascript"))process.exit(1);
+    const {verifyFirstRun,verifyDashboardBuild}=await import("./tools/release/verify-startup.ts");
+    await verifyFirstRun(base,"http://127.0.0.1:3030");
+    await verifyDashboardBuild(process.cwd());
     const {verifyHTTPS}=await import("./tools/hosting/verify-https.mts");
     await verifyHTTPS("/data",3443);
+    // All checks finished; Vinext keeps background cache timers after server close.
+    await new Promise(resolve=>setTimeout(resolve,100));
+    process.exit(0);
   ' >/dev/null 2>&1; then
     echo "Party Console startup passed on $arch"
     exit 0
