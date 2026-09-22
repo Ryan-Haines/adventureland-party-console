@@ -2,6 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {createServer}=require('node:http'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {Access}=require('../../tools/hosting/access.ts');
 const {gateway}=require('../../tools/hosting/gateway.ts');
+const {verifyFirstRun}=require('../../tools/release/verify-startup.ts');
 const {protectInternalServer,gatewayHeaders,dashboardReadyMessage}=require('../../tools/dashboard/gateway-access.ts');
 const listen=s=>new Promise(r=>s.listen(0,'127.0.0.1',()=>r(s.address().port)));
 const close=s=>new Promise(r=>{s.closeAllConnections();s.close(r);});
@@ -18,6 +19,7 @@ test('fresh packaged installation redirects internal ports through public setup,
  const base='http://127.0.0.1:'+await listen(publicServer),internal='http://127.0.0.1:'+appPort;
  process.env.AL_DASHBOARD_GATEWAY_URL=base;process.env.AL_DASHBOARD_GATEWAY_TOKEN='test-proxy-token';
  try {
+  await verifyFirstRun(base,internal);
   for(const route of ['/','/setup','/console-update']){
    const reply=await fetch(internal+route,{redirect:'manual'});
    assert.equal(reply.status,302);assert.equal(reply.headers.get('location'),base+route);
@@ -34,6 +36,7 @@ test('fresh packaged installation redirects internal ports through public setup,
   assert.equal(new URL(forged.headers.get('location')).origin,base);
   const health=await fetch(internal+'/',{headers:gatewayHeaders()});assert.equal(await health.text(),'dashboard');
   configured=true;
+  await assert.rejects(verifyFirstRun(base,internal), /true !== false/);
   const ready=await fetch(internal+'/');assert.equal(ready.url,base+'/');assert.equal(await ready.text(),'dashboard');
   assert.equal(dashboardReadyMessage('production',appPort),'Party Console ready. Open '+base+' (first-time installations continue to setup).');
  }finally{
