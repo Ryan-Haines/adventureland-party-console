@@ -56,7 +56,7 @@ test('Hunt still waits for a genuine event return even when already standing in 
  t.party.anniversary.eventCycle.returnCompletedAt=99999;t.r.monsterHuntTick();assert.equal(t.party.activeConvoy.id,'manual');
 });
 test('mission destination stays pinned as nearest spawn changes; combat outside radius cannot start regroup convoy',()=>{
- const t=fixture(),count=t.convoys.length;t.destination.y=-300;t.party.statuses.W.y=-1450;t.party.statuses.W.target={hp:100,mtype:'mole'};t.r.monsterHuntTick();
+ const t=fixture(),count=t.convoys.length;t.hunt.originArrivedAt=99900;t.destination.y=-300;t.party.statuses.W.y=-1450;t.party.statuses.W.target={hp:100,mtype:'mole'};t.r.monsterHuntTick();
  assert.equal(t.convoys.length,count);assert.equal(t.hunt.missions[0].destination.y,-1000);
  t.party.statuses.W.target=null;t.party.statuses.P.threats=[{hp:100}];t.r.monsterHuntTick();assert.equal(t.convoys.length,count);
 });
@@ -388,16 +388,11 @@ function arrivalFixture() {
  assert.equal(accepted,true);assert.equal(t.hunt.stage,'farming');
  return {...t,follower};
 }
-test('accepted arrival survives delayed and out-of-order outside heartbeats without rebuilding',()=>{
- const t=arrivalFixture(),before=t.convoys.length;
- t.r.monsterHuntTick();t.advance(1000);t.r.monsterHuntTick();
- Object.assign(t.party.statuses.W,t.destination);t.advance(1000);t.r.monsterHuntTick();
- assert.ok(t.hunt.arrivalHandoff.confirmedAt);
- t.party.statuses.W.map='main';t.advance(1000);t.r.monsterHuntTick();
- assert.equal(t.convoys.length,before);assert.equal(t.party.commands.P,t.follower);
- Object.assign(t.party.statuses.W,t.destination);t.advance(8000);t.r.monsterHuntTick();
- assert.equal(t.convoys.length,before);assert.equal(t.hunt.stage,'farming');
+test('old early handoff receipt does not bypass full-party origin arrival',()=>{
+ const t=arrivalFixture(),before=t.convoys.length;t.r.monsterHuntTick();
+ assert.equal(t.convoys.length,before+1);assert.equal(t.hunt.stage,'mission-travel');
 });
+
 test('arrival grace expires and permits recovery from a genuine outside position',()=>{
  const t=arrivalFixture(),before=t.convoys.length;t.advance(10000);t.r.monsterHuntTick();
  assert.equal(t.convoys.length,before+1);assert.equal(t.hunt.stage,'mission-travel');

@@ -41,6 +41,10 @@ interface GroupedPorts {
   blocksPulls: () => boolean;
 }
 
+function farmingHuntTarget(state: GroupedState): string | null {
+  return state.farmingPolicy === "hunt" && state.monsterHunt?.stage === "farming" ? state.monsterHunt.target : null;
+}
+
 function participantNames(state: GroupedState, leader: string): string[] {
   const assigned = new Set([...state.headlessSlots, ...state.steamMembers].filter(Boolean));
   return [
@@ -142,7 +146,7 @@ function evaluateParticipants(
       ports.now(),
       state.groupedCombatResetAt || 0,
       travelling || ports.blocksPulls() || ports.disengagementActive(),
-      state.farmingPolicy === "hunt" && state.monsterHunt?.stage === "farming" ? state.monsterHunt.target : null,
+      travelling ? null : farmingHuntTarget(state),
     ),
   );
   state.groupedCombat = group;

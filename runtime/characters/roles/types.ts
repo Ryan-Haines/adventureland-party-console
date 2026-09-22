@@ -11,7 +11,9 @@ export interface Role {
   usePotion(): Promise<boolean>;
 }
 export interface SharedCombat {
+  merchantEventCombatActive?(): boolean;
   combatContext?(): import('../skills/types.ts').CombatContext;
+  merchantVisibilityActive?(): boolean;
   skillTargetAllowed?(target: Target): boolean;
   skillSupport?(): Promise<boolean>;
   skillOffense?(target: Target): Promise<boolean>;

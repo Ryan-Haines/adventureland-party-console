@@ -31,6 +31,7 @@ export interface HuntCycle extends Hunt {
   batchPickup?: boolean;
   eventTrips?: import("../events/hunt-trip.ts").HuntEventTrips["huntEventTrips"];
   missionRevision?: number;
+  originArrivedAt?: number;
   loot?: {
     id: string;
     after: number;
@@ -112,6 +113,7 @@ export interface LootProgress {
   error?: string;
 }
 interface HuntConvoyState {
+  geometryRepair?: import('../navigation/shared-route-types.ts').SharedConvoy['geometryRepair'];
   nativeFallback?: boolean;
   participants?: string[];
   walkingActivity?: string;
@@ -174,7 +176,8 @@ export interface HuntTickState extends HuntFailureState {
   commands: Record<string, HuntCommand | undefined>;
   escape?: { stage: string } | null;
   monsterHunterLocation: ReturnLocation | null;
-  farmAreaState?: {
+    farmAreaState?: {
+      message?: string | null;
     pending?: unknown;
     paused?: boolean;
     failures?: Record<string, unknown>;

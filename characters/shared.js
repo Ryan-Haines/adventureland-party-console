@@ -484,7 +484,6 @@
   var merchantCashTarget = 0;
   var anniversaryPlan = null;
   var anniversaryPendingHandoff = root.__anniversaryPendingHandoff || null;
-  var anniversaryLastCraftAttempt = Number(root.__anniversaryLastCraftAttempt) || 0;
   var anniversaryStaging = false;
   var anniversaryReturnReported = null;
   var anniversaryStagingReported = null;
@@ -596,6 +595,22 @@
   var upgradePreviewActive = false;
   var lastUpgradePreview = null;
   var luckyUpgradeService = null;
+  var luckySlotTracker = null;
+  function luckySlotTracking() {
+    if (!luckySlotTracker) {
+      var key = "party-lucky-slot-tracking:" + character.owner + ":" + character.name;
+      luckySlotTracker = root.createPartyLuckySlotTracker({
+        read: function () { return JSON.parse(root.localStorage.getItem(key) || "null"); },
+        write: function (value) { root.localStorage.setItem(key, JSON.stringify(value)); },
+        now: Date.now,
+        isUpgradeScroll: function (name) { return !!(G.items[name] && G.items[name].type === "uscroll"); }
+      });
+    }
+    return luckySlotTracker;
+  }
+  function luckySlotRollListener(event) {
+    if (runtimeCurrent()) luckySlotTracking().observe(event);
+  }
   var merchantIdleActive = false;
   var merchantIdlePending = null;
   var followingLeader = false;
@@ -762,6 +777,7 @@
 
   if (parent.socket && typeof parent.socket.on === "function") {
     parent.socket.on("game_response", donationRateListener);
+    parent.socket.on("q_data", luckySlotRollListener);
     parent.socket.on("tracker", trackerCatalogListener);
     parent.socket.on("player", trackerInventoryListener);
     parent.socket.on("players", playerDirectoryListener);
@@ -2196,6 +2212,8 @@
       clientVersion: parent.__partyClientVersion || Number(G.version),
       clientInstance: parent.__partyClientInstance || null,
       upgradePreviewSession: upgradePreviewSession,
+      luckySlotTracking: luckySlotTracking().report(),
+      merchantEventReserved: merchantEventWorkReserved(),
       upgradeInventoryBusy: !!(root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending() ||
         root.localStorage.getItem("party-lucky-upgrade:" + character.name)),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
@@ -2213,6 +2231,7 @@
       queueTiming: root.__partyQueueTiming || null,
       groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
+      movementGeometry: movement.identity,
       huntReturnProtocol: 2,
       movement: movement.report() || movement.last(),
       convoyNavigation: convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
@@ -2489,6 +2508,13 @@
   }
 
   // Passing encounters own attacks only, never navigation, kiting, or loot waits.
+  function committedHuntEncounter(target) {
+    // The coordinator supplies huntCombatTarget only after verified origin arrival.
+    return !!(target && typeof huntCombatTarget !== 'undefined' && huntCombatTarget && target.mtype === huntCombatTarget &&
+      !(typeof partyConvoyActive !== 'undefined' && partyConvoyActive) &&
+      !(typeof convoyTraveling !== 'undefined' && convoyTraveling) &&
+      !(typeof travelCombatActive === 'function' && travelCombatActive()));
+  }
   function passingKey(target) {
     return JSON.stringify([target.server || reunionRealm(), target.map || character.map,
       String(target.in == null ? character.in || character.map : target.in), String(target.id)]);
@@ -2498,13 +2524,14 @@
     Object.keys(passingEncounters).forEach(function(key) {
       var entry = passingEncounters[key], e = get_entity(entry.id);
       if (entry.server !== reunionRealm() || entry.map !== character.map || String(entry.in || entry.map) !== String(character.in || character.map) ||
-          e && (e.dead || e.hp === 0) || now - entry.at > 60000) delete passingEncounters[key];
+          e && (e.dead || e.hp === 0) || committedHuntEncounter(entry) || now - entry.at > 60000) delete passingEncounters[key];
       else if (e && e.visible) entry.at = now;
     });
     return Object.values(passingEncounters).slice(-128);
   }
   function isPassingEncounter(target) {
     if (!target) return false;
+    if (committedHuntEncounter(target)) return false;
     var key = passingKey(target), now = Date.now() + coordinatorClockOffset;
     if (peerPassingEncounters.some(function(e){return passingKey(e)===key && now-e.at<60000;})) return true;
     return !!(passingEncounters[key] && now - passingEncounters[key].at < 60000) ||
@@ -2514,9 +2541,9 @@
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
     var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
     var pending = root.partyLootClient && root.partyLootClient.huntPending();
-    if (!pending && !(convoy && convoy.purpose === 'monster-hunt' && convoy.nonPreemptible)) return true;
+    if (!pending && !(convoy && convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget))) return true;
     var signal = typeof convoySignal !== 'undefined' && convoySignal;
-    return !!(convoy && !convoy.cancelled && convoy.purpose === 'monster-hunt' && convoy.nonPreemptible &&
+    return !!(convoy && !convoy.cancelled && convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget) &&
       convoy.phase === 'travelling' && signal && signal.phase === 'travel' &&
       signal.id === convoy.id && Number(signal.epoch) === convoy.epoch && Number(signal.commandId) === convoy.commandId &&
       signal.runtimeId === convoyRuntimeId && Number(signal.validUntil) > Date.now() + coordinatorClockOffset &&
@@ -2524,14 +2551,16 @@
   }
   function passingTarget() {
     if (!passingTravelAllowed()) return null;
-    var returning = typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.continuousReturn === 1;
+    var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
+    var hunting = convoy && convoy.purpose === 'monster-hunt' && convoy.huntTarget;
+    var returning = convoy && (convoy.continuousReturn === 1 || hunting);
     if (character.rip || Number(character.max_hp)>0 && character.hp/character.max_hp<0.35 || character.ctype === 'merchant' || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive() ||
         partyTownActive || banking || stocking || upgrading || gatheringActive || forceTraveling || townTraveling || eventTraveling || joinedEvent || activeCombatEvent() ||
         (rareActive() && rareControlState.kind !== "patrol") || !returning && unfinishedFight()) return null;
     var candidates = Object.values(parent.entities || {}).filter(function(e) {
       var rule = e && passiveHunting.rules[e.mtype];
       var defending = returning && e && (e.target === character.name || currentPartyList().indexOf(e.target) >= 0);
-      return (defending || rule && rule.enabled && rule.keepMoving) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
+      return (defending || hunting && e && e.mtype === hunting || rule && rule.enabled && rule.keepMoving) && !committedHuntEncounter(e) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
         (!e.map || e.map === character.map) && e.mtype !== 'fieldgen0' && is_in_range(e) &&
         !isExternallyClaimedMonster(e) && (returning || !groupedCombat || !groupedCombat.target || groupedCombat.target.id !== e.id) &&
         !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id));
@@ -3744,6 +3773,7 @@
   async function trackedProduction(kind, slots, automatic, operation, offeringAttempt) {
     if (character.ctype !== "merchant") return operation();
     await recoverProductionJournal();
+    await yieldMerchantForEvent();
     if (automatic) await verifyProductionProtection(slots);
     var item=fingerprint(character.items[slots[0]]), id=character.name+":"+Date.now()+":"+Math.random().toString(36).slice(2);
     if (offeringAttempt && offeringAttempt.requestId) id="manual-offering:"+offeringAttempt.requestId;
@@ -3823,7 +3853,10 @@
     // Checkpoints yield to inventory updates. Do not use a scroll index that
     // has since moved or was consumed by the preceding step.
     if (intendedScroll) scrollSlot = findInventoryItemByName(intendedScroll);
-    var outcome = await merchantLuckyUpgrade().run(itemSlot, scrollSlot, luckyUpgradeSlot, function (slot, scroll, offering) {
+    var selectedUpgradeSlot = Number.isInteger(luckyUpgradeSlot) && luckyUpgradeSlot >= 0 && luckyUpgradeSlot < 42
+      ? luckyUpgradeSlot : luckySlotTracking().select();
+    var outcome = await merchantLuckyUpgrade().run(itemSlot, scrollSlot, selectedUpgradeSlot, function (slot, scroll, offering) {
+      luckySlotTracking().begin();
       return upgradeAtSlotConfirmed(slot, scroll, expectedName, expectedLevel, offering);
     }, offeringSlot);
     return outcome && Object.assign({}, outcome, {slot: itemSlot});
@@ -3840,7 +3873,7 @@
       write: function (value) { if (value) root.localStorage.setItem(key, JSON.stringify(value)); else root.localStorage.removeItem(key); },
       sleep: sleep, now: Date.now, current: runtimeCurrent,
       log: function (slot) {
-        var message = "Using lucky upgrade slot " + slot + " (inventory position " + (slot + 1) + ")";
+        var message = "Using upgrade slot " + slot + " (" + (slot === luckyUpgradeSlot ? "verified" : "lucky-slot search") + ", inventory position " + (slot + 1) + ")";
         game_log(message, "#facc15");
         var job = root.__merchantActiveJob;
         if (job) request("/merchant/activity", {method:"POST",body:{character:character.name,jobId:job.jobId,
@@ -8371,9 +8404,12 @@
     // The coordinator normally stops dispatching these commands two minutes
     // before the round. This local gate closes the heartbeat-sized race where
     // an already-delivered command could otherwise begin during that window.
+    if (character.ctype === "merchant" && /^merchant-/.test(command.type) && merchantEventWorkReserved()) {
+      reportMerchantCommand(command, "deferred", "event"); return;
+    }
     if (character.ctype === "merchant" && command.type !== "merchant-idle" && command.type !== "merchant-stand-sync" &&
         /^merchant-/.test(command.type) && merchantAnniversaryWorkReserved()) {
-      reportMerchantCommand(command, "deferred", "anniversary"); return;
+      reportMerchantCommand(command, "deferred", merchantEventWorkReserved() ? "event" : "anniversary"); return;
     }
     if (character.ctype === "merchant" && !await gatheringCommandHandoff(command)) return;
     if (command.id <= lastCommand) return;
@@ -8967,6 +9003,16 @@
     }, 100);
   }
 
+  var merchantVisibilityUntil = 0;
+  async function applyMerchantVisibility(merchant) {
+    var player = merchant && get_player(merchant);
+    var nearby = player && !player.rip && (!player.map || player.map === character.map) &&
+      (player.in == null || character.in == null || player.in === character.in) &&
+      Math.hypot(player.x - character.x, player.y - character.y) <= 180;
+    merchantVisibilityUntil = nearby ? Date.now() + 5000 : 0;
+    if (nearby && character.s && character.s.invis) await stop("invis");
+  }
+
   async function tick() {
     observeBankSortVisit();
     if (busy) return;
@@ -8992,6 +9038,7 @@
         return;
       }
       if (state.upgradePreview) await handleUpgradePreview(state.upgradePreview);
+      await applyMerchantVisibility(state.merchantVisibility);
       if (character.ctype === "merchant") await flushNativePurchaseReceipts();
       if (character.ctype === "merchant" && character.stand && !merchantIdleActive && !root.__merchantActiveJob &&
           !root.__merchantInventoryTidy && !merchantLuckyUpgrade().pending())
@@ -9053,6 +9100,7 @@
       huntTurnInPriority = !!state.huntTurnInPriority;
       if (releasedHuntTurnIn) setTimeout(function () { pollEvents(); runAnniversaryKiss(); }, 0);
       convoySignal = state.convoySignal || null;
+      reloadConvoyGeometry(convoySignal);
       if (convoyTraveling && convoySignal && convoySignal.id === convoyTraveling.id &&
           Number(convoySignal.epoch) === convoyTraveling.epoch && convoySignal.phase === "failed" &&
           convoyTraveling.fail) convoyTraveling.fail(convoySignal.reason || "Convoy held by coordinator");
@@ -9074,7 +9122,8 @@
       var previousSelections = enabledEventSelections;
       statusPhase = "apply event selections";
       enabledEventSelections = Array.isArray(state.eventSelections) ? state.eventSelections : null;
-      eventsEnabled = !!state.eventsEnabled && character.ctype !== "merchant";
+      eventsEnabled = !!state.eventsEnabled;
+      root.__merchantCoordinatorEventRecovery = !!state.merchantEventRecoveryReserved;
       if (previousSelections && enabledEventSelections && previousSelections.join(",") !== enabledEventSelections.join(",")) {
         eventSelectionRevision++;
         pendingEventDisables = root.__partyPendingEventDisables = Array.from(new Set(pendingEventDisables.concat(previousSelections.filter(function(id) { return !eventSelected(id); }))));
@@ -9130,6 +9179,7 @@
       gatheringStandListings = nextStandListings;
       merchantWeapon = state.merchantWeapon || null;
       luckyUpgradeSlot = state.luckyUpgradeSlots && state.luckyUpgradeSlots[character.name];
+      luckySlotTracking().sync(state.luckySlotTracking && state.luckySlotTracking[character.name]);
       merchantForceStand = !!state.merchantForceStand;
       merchantCashTarget = Math.max(0, Number(state.merchantGoldTarget) || 0);
       if (character.ctype === "merchant" && !root.__merchantActiveJob && !gatheringActive &&
@@ -9209,6 +9259,7 @@
         game_log("Party command failed: " + (error.reason || error.message || error), "red");
       });
       if (character.ctype === "merchant" && !state.command && !root.__merchantActiveJob && !root.__merchantInventoryTidy &&
+          !merchantEventWorkReserved() &&
           !banking && !upgrading && !stocking && !gatheringActive && !merchantIdleActive && !anniversaryBusy && !character.rip) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot).catch(function (error) {
           game_log(String(error.message || error), "red");
@@ -9294,7 +9345,24 @@
     return round && (anniversaryCompletedRounds[round] || root.__merchantAnniversaryReleasedRound === round) ? round : null;
   }
 
+  function merchantEventWorkReserved() {
+    return character.ctype === "merchant" && (!!joinedEvent || eventTraveling || eventReturnPending ||
+      !!root.__merchantCoordinatorEventRecovery || eventsEnabled && !navigationIntent.cancelled && !!activeCombatEvent());
+  }
+
+  async function yieldMerchantForEvent() {
+    var active = root.__merchantActiveJob;
+    if (!active || !merchantEventWorkReserved()) return;
+    // Settle journals before this boundary; do not admit another production
+    // operation once event ownership has reserved the merchant.
+    var result = await request("/merchant/checkpoint", { method: "POST", body: {
+      jobId: active.jobId, eventOnly: true,
+    } });
+    if (result.yield) throw new Error("merchant_yield");
+  }
+
   function merchantAnniversaryWorkReserved() {
+    if (merchantEventWorkReserved()) return true;
     if (character.ctype !== "merchant" || !root.partyMerchantAnniversaryControl) return false;
     var event = eventStatus().anniversary, ticket = character.s && character.s.anniversary_visit;
     var round = event && anniversaryRoundId(event, ticket);
@@ -9619,6 +9687,7 @@
   }
 
   async function runAnniversaryKiss() {
+    if (merchantEventWorkReserved()) return;
     if (!eventSelected("anniversary")) return;
     if (await applyAnniversaryAbort()) return;
     var staleKiss = root.__partyAnniversaryKissOperation;
@@ -10228,64 +10297,6 @@
     finally { anniversaryBusy = false; }
   }
 
-  async function runAnniversaryCake() {
-    if (character.ctype !== "merchant" || anniversaryBusy || merchantForceStand || root.__merchantActiveJob ||
-        gatheringActive || merchantIdleActive || banking ||
-        !anniversaryPlan || !anniversaryPlan.craftReady || anniversaryPlan.live ||
-        Date.now() - anniversaryLastCraftAttempt < 60000) return;
-    anniversaryLastCraftAttempt = root.__anniversaryLastCraftAttempt = Date.now();
-    anniversaryBusy = true;
-    anniversaryStage = "assembling Sixfold Cake";
-    if (gatheringSession) gatheringSession.atStandForCooldown = false;
-    try {
-      if (character.stand) await close_stand();
-      await smart_move("bank");
-      var missingSlices = [];
-      for (var i = 0; i < anniversarySliceNames.length; i += 1) {
-        var supply = await retrieveFromBankUntil(anniversarySliceNames[i], 1);
-        if (supply.onPlayer < 1) missingSlices.push(anniversarySliceNames[i]);
-      }
-      if (missingSlices.length) {
-        var supplies = await request("/anniversary/cake-supplies", { method: "POST", body: {
-          character: character.name, missing: missingSlices,
-        }});
-        if (supplies && supplies.pending && supplies.pending.length)
-          throw new Error("waiting for bankboi ingredients: " + supplies.pending.join(", ") +
-            (supplies.missing.length ? "; unavailable locally: " + supplies.missing.join(", ") : ""));
-        throw new Error("missing " + missingSlices.join(", "));
-      }
-      if (character.gold < 100000) {
-        var bankGold = Number(character.bank && character.bank.gold) || 0;
-        var shortage = 100000 - character.gold;
-        if (bankGold < shortage) throw new Error("need 100,000 gold for Mira");
-        await withdrawMerchantCash(shortage);
-      }
-      var beforeCakes = inventoryQuantity("sixcake");
-      await smart_move({ map: "main", x: 64, y: -88 });
-      await auto_craft("sixcake");
-      if (inventoryQuantity("sixcake") <= beforeCakes) throw new Error("Mira did not return a Sixfold Cake");
-      await smart_move("bank");
-      var cakeSlot = findInventoryItemByName("sixcake");
-      if (cakeSlot < 0) throw new Error("crafted cake could not be found");
-      await bankStoreFully(cakeSlot);
-      await request("/anniversary/cake-complete", { method: "POST", body: { character: character.name } });
-      anniversaryStage = "Sixfold Cake banked";
-      root.__anniversaryCraftResult = { at: anniversaryLastCraftAttempt, success: true };
-      game_log("Sixfold Cake crafted and banked intact", "#ff69b4");
-    } catch (error) {
-      anniversaryStage = "cake deferred";
-      root.__anniversaryCraftResult = { at: anniversaryLastCraftAttempt, success: false,
-        error: String(error.reason || error.message || error) };
-      game_log("Anniversary cake deferred: " + (error.reason || error.message || error), "#f0b429");
-    } finally {
-      anniversaryBusy = false;
-      if (gatheringSession) gatheringSession.atStandForCooldown = false;
-      // Publish released ownership so normal scheduling can recover the stand.
-      try { await request("/status", { method: "POST", body: snapshot() }); }
-      catch (_cakeStatusError) { /* The normal status poll retries reporting. */ }
-    }
-  }
-
   async function runAnniversaryChatAdvertisement() {
     if (character.ctype !== "merchant" || anniversaryChatSending || anniversaryBusy ||
         !anniversaryPlan || !anniversaryPlan.chatAdvertisement) return;
@@ -10307,7 +10318,6 @@
     await runAnniversaryChatAdvertisement();
     await runAnniversaryReturns();
     await runAnniversaryHandoff();
-    await runAnniversaryCake();
   }
 
   function currentPartyList() {
@@ -10715,10 +10725,24 @@
   async function pollEvents() {
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
-    if (eventPollBusy || character.ctype === "merchant") return;
+    if (eventPollBusy) return;
     if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return;
     eventPollBusy = true;
     try {
+      if (character.ctype === "merchant" && merchantEventWorkReserved()) {
+        // Never take movement from an unsettled inventory operation or worker.
+        if (root.__merchantActiveJob || root.__merchantInventoryTidy || merchantIdleActive ||
+            banking || stocking || upgrading || root.__partyUpgradePreviewInFlight ||
+            luckyUpgradeService && luckyUpgradeService.pending()) return;
+        var gatheringAttempt = root.__merchantGatheringAttempt;
+        if (gatheringAttempt) {
+          gatheringAttempt.cancelled = "event attendance";
+          if (gatheringAttempt.phase !== "casting" && typeof stop === "function") await stop("smart");
+          return;
+        }
+        if (gatheringActive) return;
+        await closeMerchantStandForTravel();
+      }
       if (!eventsEnabled) {
         eventTargetTypes = [];
         joinedEvent = null;
@@ -10798,7 +10822,11 @@
       }
       if (eventTraveling || banking || stocking || upgrading || departurePending || bankQueued) return;
       if (!await eventTravelAllowed(event.name)) return;
-      if (nearestEventTarget()) return;
+      if (nearestEventTarget()) {
+        joinedEvent = event.name;
+        root.__partyJoinedEvent = event.name;
+        return;
+      }
       eventTraveling = true;
       travellingEventName = event.name;
       var travelSelectionRevision = eventSelectionRevision;
@@ -11102,7 +11130,7 @@
 
   async function rejoinActiveEventAfterRespawn() {
     if (escapeOwns() || navigationIntent.cancelled) return { status: "cancelled" };
-    if (!eventsEnabled || character.ctype === "merchant") return { status: "not-applicable" };
+    if (!eventsEnabled) return { status: "not-applicable" };
     var requiredEventName = root.__partyEventRejoinRequired;
     var event = activeCombatEvent();
     if (!event && requiredEventName) return { status: "cancelled" };
@@ -11427,7 +11455,7 @@
     if(c && id && (c.id!==id || Number(epoch)<c.epoch))return;
     if(c && ((c.navigationExempt && c.purpose!=='anniversary-return') || ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol'].indexOf(c.purpose)>=0))return;
     if(!c && !id)return;
-    if(c && (c.returnWalking || c.continuousReturn === 1))return;
+    if(c && (c.returnWalking || c.continuousReturn === 1 || c.purpose === 'monster-hunt' && c.huntTarget))return;
     root.__partyConvoyDefense=id || c.id;
     if(c && (c.routeProtocol===4 || c.purpose==='monster-hunt' && c.nonPreemptible)) {
       if(c.defensePaused)return;
@@ -12246,6 +12274,26 @@
   function sharedConvoyPoint() {
     return {map:character.map,in:character.in,x:character.real_x,y:character.real_y};
   }
+  function reloadConvoyGeometry(signal) {
+    var repair=signal && signal.geometryReload, convoy=convoyTraveling;
+    if (!repair || repair.runtimeId!==convoyRuntimeId || repair.deadline<Date.now()+coordinatorClockOffset || !convoy ||
+        convoy.phase!=='held' || signal.id!==convoy.id || signal.epoch!==convoy.epoch || signal.commandId!==convoy.commandId ||
+        navigationIntent.cancelled || convoy.navigationRevision!==navigationIntent.revision) return;
+    if (parent.__partyGeometryReloaded===repair.id) return;
+    parent.__partyGeometryReloaded=repair.id;
+    var url=(parent.__partyServer || 'http://127.0.0.1:924')+'/CODE/adventure_land/universal-loader.js?t=';
+    var bootstrap="$.ajax({url:"+JSON.stringify(url)+"+Date.now(),dataType:'text',cache:false}).then(function(source){(0,eval)(source);});";
+    game_log('Reloading runtime once to repair shared-route geometry', '#f0b429');
+    parent.setTimeout(function(){
+      if(!runtimeCurrent())return;
+      if(!parent.caracAL && repair.expected && Number(movement.identity.version)!==repair.expected.version && parent.location) {
+        parent.location.reload();
+        return;
+      }
+      if(!parent.caracAL && typeof parent.start_runner==='function')parent.start_runner('maincode',bootstrap);
+      else (0,eval)(bootstrap);
+    },0);
+  }
   function sharedConvoyDistance(a,b) {
     if(a.map!==b.map || String(a.in==null?a.map:a.in)!==String(b.in==null?b.map:b.in))return Infinity;
     return Math.hypot(a.x-b.x,a.y-b.y);
@@ -12268,7 +12316,7 @@
       },
       barrier: command.phase === 'plan-return' || command.routeVersion == null ? undefined : function(step, index, completed) {
         return request('/movement-barrier', {method:'POST',timeout:2000,body:Object.assign(sharedConvoyIdentity(command),{
-          step:index, destination:step, completed:completed, ready:completed || (command.continuousReturn === 1 && !step.town || !departureCombatPending()) && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
+          step:index, destination:step, completed:completed, ready:completed || ((command.continuousReturn === 1 || command.huntTarget) && !step.town || !departureCombatPending()) && (command.huntTarget || eligibleDepartureChests().length === 0) && (!step.town || can_use('use_town'))
         })}).then(function(result){return !!result.ready;});
       }
     };
@@ -12333,7 +12381,7 @@
     return {destination:segment.location,plot:segment.plot,source:"itinerary"};
   }
   function sharedConvoyEngagement(convoy,command,ownsConvoy,phase) {
-    if(command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
+    if(command.purpose === "monster-hunt" || command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
     if(typeof farmingTravelTarget!=="function" || !command.huntTarget && typeof groupedFollower==="function" && groupedFollower())return;
     var target=farmingTravelTarget(command);
     var approach=target && typeof combatApproachPoint==="function"?combatApproachPoint(target):target;
@@ -12700,7 +12748,7 @@
       navigationRevision: Number(command.navigationRevision) || 0,
       generation: runtimeGeneration, destination: command.location, cancelled: false,
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
-      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
+      purpose:command.purpose,huntTarget:command.huntTarget,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
     convoyTraveling = convoy;
     if(command.purpose === "party-force-travel")forceTraveling=true;
     if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose||""))
@@ -13839,6 +13887,7 @@
   }
 
   root.sharedRoutine = {
+    merchantVisibilityActive: function () { return Date.now() < merchantVisibilityUntil; },
     describeAttackRange: function (target) {
       if (!target || target.mtype !== "crab" || typeof get_width !== "function" || typeof get_height !== "function") return null;
       var dimensions = G.dimensions && G.dimensions.crab;
@@ -13945,6 +13994,7 @@
         parent.socket.off("test", receiveEventClock);
         parent.socket.off("connect", syncEventClock);
         parent.socket.off("game_response", donationRateListener);
+        parent.socket.off("q_data", luckySlotRollListener);
         parent.socket.off("tracker", trackerCatalogListener);
         parent.socket.off("player", trackerInventoryListener);
         parent.socket.off("players", playerDirectoryListener);
@@ -13977,10 +14027,14 @@
       if (root.on_party_request === acceptConfiguredPartyRequest) root.on_party_request = previousPartyRequestHandler;
     },
     isBanking: function () { return banking || bankQueued; },
+    merchantEventCombatActive: function () {
+      return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
+        !eventReturnPending && !root.__merchantActiveJob;
+    },
     isOccupied: function () {
       if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
-      if (convoyTraveling && convoyTraveling.continuousReturn === 1) {
+      if (convoyTraveling && (convoyTraveling.continuousReturn === 1 || convoyTraveling.purpose === 'monster-hunt' && convoyTraveling.huntTarget)) {
         root.__partyCombatOwner = "convoy:" + convoyTraveling.phase;
         return true;
       }

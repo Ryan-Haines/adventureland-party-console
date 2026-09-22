@@ -177,6 +177,7 @@ export function createDeconstruction(state: DeconstructionState, ports: Ports) {
     items: (InventoryEntry | null)[],
     used: Set<number>,
   ) {
+    recoverMissingAutomatic(mark, items, used);
     if (held(mark)) return;
     if (conflictingAutomatic(mark)) {
       mark.state="blocked"; mark.error="Conflicting automatic rules"; release(mark); return;
@@ -209,6 +210,15 @@ export function createDeconstruction(state: DeconstructionState, ports: Ports) {
       [mark.owner],
       mark.state === "collecting" ? "marked items" : "deconstruction",
     );
+  }
+  function recoverMissingAutomatic(mark: DeconstructionMark, items: (InventoryEntry | null)[], used: Set<number>) {
+    if (!mark.auto || mark.state !== 'blocked' || mark.storage || mark.attempt ||
+        mark.error !== 'Marked item is missing; refresh inventory before retrying') return;
+    if (!automaticRule(mark.owner, mark.item)) return;
+    const entry = items.find(e => e?.item && !used.has(e.slot!) && sameMarkedItem(e.item, mark.item));
+    if (!entry) return;
+    mark.state = mark.owner === state.merchantCharacter ? 'ready' : 'collecting';
+    delete mark.error;
   }
   function reconcile(name: string) {
     const status = state.statuses[name];

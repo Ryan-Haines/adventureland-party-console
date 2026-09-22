@@ -65,6 +65,41 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
+Shared-route geometry mismatches have a separate one-reload repair budget. Heartbeats
+carry numeric game versions and geometry fingerprints; import failures include both
+expected and actual identities. The coordinator holds every participant, asks only
+affected runtimes to reload, and waits up to 60 seconds for fresh compatible reports
+before creating new route commands. An older browser game version requires a game-page
+reload; CODE alone cannot replace its game data. Repair targets the newest reported
+game build, including when the leader is older. Repair identity and deadline survive restart.
+Hunt roster reconciliation retains reloading participants through the repair wait
+and its terminal geometry hold, rather than treating a heartbeat gap as departure.
+A repeated mismatch stays held with a geometry-specific error and does not blacklist
+the farming zone. New navigation supersedes repair. Hunt clears an orphaned failed
+farming relocation only when its destination and every navigation revision still
+match the current mission, then resumes origin travel or a due Daisy return. This
+also releases an expired anniversary checkpoint whose dispatched farming return
+failed; live event returns and newer commands remain protected.
+Validate geometry reload, shared convoy/walk, movement service, and Hunt farm-walk
+tests; publish character and coordinator assets together with the full restart.
+
+Anniversary participation never automatically crafts Sixfold Cakes. Complete slice
+sets remain available for the normal exchange menu. Publish character and coordinator
+assets together when retiring the legacy cake routine; snapshot `craftReady` stays
+false for older clients. Validate anniversary snapshots and merchant exchange tests.
+
+Outbound Monster Hunt convoys retain their installed path until all members reach
+its endpoint. Sightings cannot hand off movement or adopt an earlier spawn. Only
+in-range basic attacks run during an owned travelling phase; preparation and map
+transitions suppress them. Completion records verified origin arrival before free
+combat resumes. Premature persisted farming states return to their saved origin.
+On entering farming, the Hunt target sheds passing-attack ownership from travel,
+including cached peer reports, so it can enter the normal combat queue. Unrelated
+passing encounters retain their movement restrictions.
+Validate Hunt route acquisition, passive hunting, shared convoy endpoint arrival,
+and Hunt composition tests. Publish both character and coordinator assets with
+the full restart, then verify every member reaches the destination before farming.
+
 Shared convoy departure tolerates matching travel reports within 500 ms of the
 scheduled departure. Transient readiness changes stop and reprepare under the
 original 60-second readiness deadline without spending a movement retry.
@@ -73,6 +108,9 @@ only observed displacement resets its five-second progress deadline. A repeated
 walking stall switches the shared planner to native within the two-regroup limit.
 Hunt return retries preserve that fallback and pending Daisy rewards. Stale arrival
 responses wait for replacement commands instead of reporting another failure.
+If a final Hunt-return completion request never settles, three seconds of verified
+arrival reports let the coordinator finish the convoy and proceed to Daisy claims.
+Fresh route, runtime, command, and navigation ownership checks still apply.
 Validate `shared-convoy`, `movement-service`, `convoy`, and Hunt return tests;
 publish character and coordinator assets together through the full restart.
 
@@ -154,6 +192,20 @@ with the ordinary supported restart below; a coordinator-only restart is not
 sufficient for this feature. Live character reports expose `bankSortProtocol: 1`.
 
 
+Merchant heartbeat stock checks complete only the merchant's own restock job.
+Party restock assignments await the service completion flow; the merchant's full
+potion stacks cannot clear another character's delivery. Validate with
+`coordinator-recovery-composition.test.cjs` and `coordinator-merchant-recovery.test.cjs`.
+This change needs only the coordinator-only restart.
+
+All active merchant visits reveal their recipient within transfer range, including
+restocks, item delivery, pickups and gold collection. Fresh same-realm/map/instance
+positions and the current merchant command authorize a short heartbeat visibility
+lease; the recipient verifies local proximity before stopping invisibility. The
+rogue skill runtime suppresses automatic invisibility while that lease is active.
+Validate with `merchant-visibility.test.cjs` and `merchant-rendezvous.test.cjs`.
+Publish both coordinator and character assets with the ordinary restart.
+
 Merchant deliveries carry durable IDs. `/party-api/merchant/delivery-receipt` accepts
 `deliveryReceipt: true`, merchant `character`, `target`, `deliveryId`, and a phase
 of `uncertain` or `confirmed`. The runtime journals before sending and acknowledges
@@ -175,6 +227,25 @@ unavailable reasons instead of estimates, and labels the server percentage witho
 the separate lucky-slot roll adjustment. Validate with `upgrade-preview.test.cjs`
 and `upgrade-offerings-ui.test.cjs`; publish character and coordinator assets together.
 
+Lucky-slot discovery records only ordinary upgrade-scroll `q_data` rolls, excluding
+compound, stat-scroll and offering-only operations. Unknown slots no longer block
+upgrades. Normal jobs rotate through the least-sampled slots until a slot meets
+the statistical inference threshold, then continue testing that slot.
+Inventory swaps use the existing durable upgrade recovery journal. No extra
+upgrade jobs are created. Explicitly verified saved slots remain authoritative;
+the legacy hardcoded GoldMajesty slot-7 default is retired. Statistical candidates never populate
+`luckyUpgradeSlots` or trigger inventory tidying as if verified.
+
+`luckySlotTracking` persists per-character client streams in coordinator settings.
+Clients retain their stream and last roll receipt locally, replay cumulative counts
+on heartbeats, and receive other clients' history before selecting a slot. Replayed
+or older counters cannot double-count or replace newer evidence. The merchant's
+Lucky slots dialog shows combined evidence and search confidence. A slot is labeled
+inferred at 99.9% model confidence after at least 100 observations there; continued
+observations may change that conclusion. See [the source audit](../../docs/lucky-slot-discovery.md).
+Validate lucky-slot tracking/UI, lucky-upgrade recovery, heartbeat and persistence
+tests. Publish character and coordinator assets together with the full restart.
+
 Fresh inventory reports relocate delivery marks to the item's current slot before
 scheduling work. Existing matching slots retain ownership before displaced marks
 claim other copies; merged stacks reserve each request's original quantity across
@@ -190,6 +261,11 @@ documents in `merchantRules.backup`; merchant rules take precedence and unresolv
 fighter conflicts remain inactive until selected. Manual requests retain their
 character and equipment-slot ownership. Automatic processing pickups use the
 normal collection threshold and nearby exception.
+Deconstruction reservations match item identity as well as slot, so stale records
+cannot block NPC-sale pickups for replacement items. Automatic missing-item marks
+recover when fresh inventory contains an available copy; uncertain attempts and
+other blocked operations still require review. Validate player NPC sales,
+deconstruction, and automatic collection; activate with a coordinator-only restart.
 Manual bank/merchant collection marks override an opposing automatic collection
 rule for the marked stack, including after slot relocation. Other stacks still
 follow the rule; removing the manual mark restores automatic handling. Validate
@@ -487,3 +563,14 @@ to work with every future server change. Native/Steam sessions remain browser-ow
 
 The dashboard core publishes `gameVersion` and `clientUpdate`. The header displays
 that coordinator-selected version without changing header layout height.
+
+
+Merchants can independently select all supported events. Combat attendance uses
+current equipment and the normal attack controller, without enabling farming.
+New merchant jobs, gathering, and stand work pause while event ownership is
+active. Production yields before its next admission and crafting uses durable
+checkpoints; other in-flight work finishes before travel. Event sessions and
+return ownership retain this reservation through coordinator restart. Publish
+character and coordinator assets together with the ordinary full restart.
+Validate with `merchant-events`, `shared-walk`, event selection/return, and
+merchant checkpoint/recovery tests.

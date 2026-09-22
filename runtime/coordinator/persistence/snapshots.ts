@@ -102,6 +102,7 @@ export const settingsFields = [
   "merchantForceStand",
   "merchantWeapon",
   "luckyUpgradeSlots",
+  "luckySlotTracking",
   "merchantQueue",
   "merchantCurrent",
   "merchantCargo",

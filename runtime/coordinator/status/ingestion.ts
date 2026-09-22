@@ -1,6 +1,7 @@
 import {rememberCharacterAppearance, type AppearanceState} from "./character-appearance.ts";
 import { requestObject, type HttpRequest, type HttpResponse } from "../http/contracts.ts";
 import { createCombatIngestion, preserveNewerCombat } from "./combat-ingestion.ts";
+import { receiveLuckySlotTracking, type LuckySlotState } from "./lucky-slot-tracking.ts";
 
 export interface StatusReport {
   name: string;
@@ -9,7 +10,7 @@ export interface StatusReport {
   seenAt?: number;
 }
 
-interface IngestionState<Report extends StatusReport> extends AppearanceState {
+interface IngestionState<Report extends StatusReport> extends AppearanceState, LuckySlotState {
   statuses: Record<string, Report | undefined>;
   headlessSlots: (string | null)[];
   steamMembers: string[];
@@ -96,6 +97,7 @@ export function createStatusIngestion<Report extends StatusReport>(
       return channel.handle(raw.name, raw, res);
     // Report fields are decoded by their domain consumer; unrecognized fields remain available to the dashboard.
     const body = raw as unknown as Report;
+    if (receiveLuckySlotTracking(state, raw.name, raw.luckySlotTracking)) ports.persist();
     if (rememberCharacterAppearance(state, body, ports.now())) ports.persistRoster();
     const learned = consume(body);
     const previous = state.statuses[body.name];

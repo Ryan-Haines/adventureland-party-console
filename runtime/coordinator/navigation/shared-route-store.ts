@@ -114,6 +114,15 @@ export function sharedArrivalReady(input: unknown, now: number): boolean {
     const status = state.statuses[name];
     if (!status || status.seenAt < now - 3000 || !reportMatches(state, name)) return false;
     if (status.convoyNavigation?.phase !== "arrived" || status.convoyNavigation.routeVersion !== c.routeVersion) return false;
-    return c.purpose === "franky-exit" ? status.map === "main" : contains(c.location, status, 0, 100);
+    return arrivedPosition(c, status);
   });
+}
+
+function arrivedPosition(c: SharedConvoy, status: import('./shared-route-types.ts').SharedStatus): boolean {
+  if (c.purpose === 'monster-hunt' && c.huntTarget) {
+    const destination = sharedRoute(c)?.destination;
+    return !!destination && !status.rip && status.hp !== 0 && samePlace(destination, status) &&
+      Math.hypot(status.x - destination.x, status.y - destination.y) <= 50;
+  }
+  return c.purpose === 'franky-exit' ? status.map === 'main' : contains(c.location, status, 0, 100);
 }

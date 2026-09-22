@@ -85,6 +85,13 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
   function returnMessage(hunt: HuntCycle): void {
     const convoy = state.activeConvoy;
     if (hunt.stage !== "returning" || !convoy) return;
+    describeReturn(hunt,convoy);
+  }
+  function describeReturn(hunt: HuntCycle, convoy: HuntConvoy): void {
+    if (convoy.geometryRepair?.phase === 'waiting') {
+      hunt.message='Returning to Daisy: repairing shared-route geometry; waiting for one runtime reload';
+      return;
+    }
     if (convoy.phase === "failed") {
       hunt.message =
         "Daisy return held" +
@@ -158,6 +165,12 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     }
   }
   function eventPauseMessage(): string {
+    const convoy=state.activeConvoy;
+    if (convoy?.geometryRepair?.phase === 'waiting') return 'Repairing shared-route geometry; waiting for one runtime reload';
+    if (convoy?.phase === 'failed') return 'Travel held: ' + convoy.failure;
+    return eventReturnMessage();
+  }
+  function eventReturnMessage(): string {
     const recovery = state.eventReturn as { event?: string; pending?: string[] } | null;
     if (!recovery)
       return "Waiting for " + (state.activeConvoy?.purpose || "anniversary") + " travel to finish";
@@ -176,7 +189,10 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
       hunt.convoyId = null;
       return true;
     }
-    if (state.farmAreaState?.paused || state.farmAreaState?.pending) return true;
+    if (state.farmAreaState?.paused || state.farmAreaState?.pending) {
+      hunt.message=state.farmAreaState.message || 'Hunt waiting for farming travel recovery';
+      return true;
+    }
     if (!cancelled(hunt)) return false;
     ports.cancelHuntConvoy();
     delete hunt.arrivalHandoff;

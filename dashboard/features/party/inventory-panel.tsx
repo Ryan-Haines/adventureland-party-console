@@ -53,6 +53,8 @@ import { BankMark } from "./bank-mark";
 import { Char } from "./char";
 import { compactInventory } from "./compact-inventory";
 import { LuckySlotOutline, physicalInventory, validLuckySlot } from "./lucky-upgrade-slot";
+import { LuckySlotMenu, type LuckySlotMenuSelection } from "./lucky-slot-menu";
+import { luckySlotSearch, type LuckySlotTracking } from "../../../runtime/lucky-slot-tracking";
 import { CompoundGroup } from "./compound-group";
 import { Equipment } from "./equipment";
 import { InventoryEntry } from "./inventory-entry";
@@ -88,6 +90,8 @@ export function InventoryPanel({
   merchant,
   merchantWeapon,
   luckyUpgradeSlot,
+  luckySlotTracking,
+  onLuckySlot,
   marked,
   merchantMarked,
   autoItemMarks,
@@ -133,6 +137,8 @@ export function InventoryPanel({
   merchant?: string | null;
   merchantWeapon?: { item: Item } | null;
   luckyUpgradeSlot?: number | null;
+  luckySlotTracking?: LuckySlotTracking;
+  onLuckySlot?: () => void;
   marked: BankMark[];
   merchantMarked: BankMark[];
   autoItemMarks: Record<string, "bank" | "merchant">;
@@ -207,6 +213,10 @@ export function InventoryPanel({
     leader !== character.name &&
     characters.some((member) => member.name === leader && member.seenAt > 0);
   const [inventoryOpen, setInventoryOpen] = useState(true);
+  const [luckySlotMenu, setLuckySlotMenu] = useState<LuckySlotMenuSelection | null>(null);
+  const nextUpgradeSlot = validLuckySlot(luckyUpgradeSlot) ? luckyUpgradeSlot :
+    luckySlotSearch(luckySlotTracking || {version: 1, slots: {}}).nextSlot;
+  const luckySlotLabel = validLuckySlot(luckyUpgradeSlot) ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
   type AutomaticSection = "npc" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction";
   const [openAutomaticSections, setOpenAutomaticSections] = useState<
     Partial<Record<AutomaticSection, boolean>>
@@ -554,19 +564,20 @@ export function InventoryPanel({
       </button>
       {inventoryOpen ? (
         <>
+          <LuckySlotMenu selection={luckySlotMenu} onClose={() => setLuckySlotMenu(null)} onData={() => onLuckySlot?.()} onItem={onSelect} />
           <p className="mb-3 text-right text-xs text-emerald-100/40">
             Left-click: details · Right-click: actions
           </p>
           <div className="grid grid-cols-5 gap-2">
             {(character.name === merchant ? physicalInventory(character.items) : compactInventory(character.items)).map((entry, i) => {
-              const lucky = character.name === merchant && validLuckySlot(luckyUpgradeSlot) && i === luckyUpgradeSlot;
+              const lucky = character.name === merchant && i === nextUpgradeSlot;
               if (!entry)
                 return (
                   lucky ? <Tooltip key={`empty-${i}`}>
-                    <TooltipTrigger render={<div tabIndex={0} aria-label="lucky upgrade slot" className="relative aspect-square rounded border border-amber-800 bg-zinc-950 focus-visible:outline-2 focus-visible:outline-amber-200" />}>
+                    <TooltipTrigger render={<button type="button" onClick={event => setLuckySlotMenu({anchor: event.currentTarget, slot: i, entry: null})} aria-haspopup="menu" aria-expanded={luckySlotMenu?.slot === i} aria-label={`${luckySlotLabel}, slot ${i}. Open lucky slot options`} className="relative aspect-square rounded border border-amber-500 bg-zinc-950 text-amber-200 hover:border-amber-300 hover:bg-amber-950 hover:text-amber-100 focus-visible:outline-2 focus-visible:outline-amber-200" />}>
                       <LuckySlotOutline />
                     </TooltipTrigger>
-                    <TooltipContent className="border border-amber-700 bg-zinc-950 text-amber-100">lucky upgrade slot</TooltipContent>
+                    <TooltipContent className="border border-amber-600 bg-zinc-950 text-amber-100">{luckySlotLabel} · slot {i}. Click for options.</TooltipContent>
                   </Tooltip> :
                   <div
                     key={`empty-${i}`}
@@ -693,7 +704,9 @@ export function InventoryPanel({
                     <TooltipTrigger
                       render={
                         <ContextMenuTrigger
-                          onClick={() => onSelect(entry)}
+                          onClick={event => lucky ? setLuckySlotMenu({anchor: event.currentTarget, slot: i, entry}) : onSelect(entry)}
+                          aria-haspopup={lucky ? "menu" : undefined}
+                          aria-expanded={lucky ? luckySlotMenu?.slot === i : undefined}
                           className={`relative aspect-square ${lucky ? "overflow-visible" : "overflow-hidden"} rounded border bg-black/40 p-1 text-left hover:border-emerald-400 ${banner?.border || "border-emerald-900"}`}
                           aria-label={String(entry.meta?.definition.name || entry.item.name)}
                         />
@@ -734,7 +747,7 @@ export function InventoryPanel({
                         align="center"
                         className="block max-h-[70vh] w-96 overflow-y-auto border border-amber-700 bg-black p-3 text-left font-mono text-[11px] leading-relaxed text-emerald-50 shadow-2xl"
                       >
-                        {lucky ? <p className="mb-2 text-amber-300">lucky upgrade slot</p> : null}
+                        {lucky ? <p className="mb-2 text-amber-300">{luckySlotLabel} · slot {i}. Click for options.</p> : null}
                         <SuggestedPriceDetails
                           entry={entry}
                           buyable={buyable}

@@ -5,7 +5,7 @@ interface Loot { id: string; after: number; realm: string; map: string; in: stri
 interface Progress { id: string; observedAt: number; realm: string; map: string; in: string; complete: boolean; error?: string }
 interface Status { seenAt: number; rip?: boolean; hp: number; map: string; in?: string; region?: string; server: string; x: number; y: number; convoyLoot?: Progress; activeEvent?: unknown; joinedEvent?: unknown; mapEvent?: unknown }
 interface Convoy {
-  continuousReturn?: number; returnTown?: ReturnTownPolicy; townRetry?: boolean;
+  continuousReturn?: number; huntTarget?: string; returnTown?: ReturnTownPolicy; townRetry?: boolean;
   returnTownRally?: {map:string;x:number;y:number};
   farmingEngagement?: {target: {id:string;map:string;in?:string|number;server?:string};at:number;finished?:boolean};
   id: string; epoch: number; phase: string; purpose?: string | null; force?: boolean; navigationExempt?: boolean;
@@ -93,7 +93,7 @@ function defend(c: Convoy, now: number, message: string): boolean {
 }
 function ownedConvoy(p: Party): Convoy | null {
   const c = p.activeConvoy;
-  return c && !c.continuousReturn && !returnWalking(c) && eligible(p, c) && !cancelled(p, c) && !superseded(p, c) && !casualty(p, c) ? c : null;
+  return c && !(c.purpose === 'monster-hunt' && c.huntTarget) && !c.continuousReturn && !returnWalking(c) && eligible(p, c) && !cancelled(p, c) && !superseded(p, c) && !casualty(p, c) ? c : null;
 }
 function superseded(p: Party, c: Convoy): boolean {
   return c.participants.some(name => {

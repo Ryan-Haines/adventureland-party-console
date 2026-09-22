@@ -1,5 +1,7 @@
 import { recordConvoyHistory } from "./convoy-history.ts";
-import { departureIssue, readinessIssue, readinessExpired, recoveryPlanner } from './shared-departure.ts';
+import { beginGeometryRepair, geometryMismatch, geometryRepairReady, geometryReloadSignal } from './geometry-repair.ts';
+import { reconcileReturnArrival } from './return-arrival.ts';
+import { departureIssue, readinessIssue, readinessExpired, readinessFailure, recoveryPlanner } from './shared-departure.ts';
 import { prepareContinuousReturn, checkpointContinuousReturn } from './continuous-return.ts';
 import { stepMerchantInterruption } from "./merchant-interruption.ts";
 import { observeReturnTown, returnWalking, townOutcomesReady } from './return-town.ts';
@@ -63,6 +65,7 @@ function begin(state: SharedState, c: SharedConvoy, now: number): boolean {
   const leader = state.statuses[c.leader];
   if (!compatible(state, c, now) || !leader || leader.moving) return false;
   c.phase = "shared-prepare";
+  delete c.arrivalReadySince;
   c.routeVersion = (c.routeVersion || 0) + 1;
   c.rally = point(leader); c.departAt = null; c.sharedReadySince = 0;
   delete c.returnTownRally;
@@ -153,13 +156,16 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     if (c?.routeProtocol !== 4) return legacy.hold(state, reason, code);
     if (c.phase === "failed") return false;
     clearSharedRoute(c); c.phase = "failed"; c.failure = reason; c.failureCode = code; c.failedAt = Date.now(); c.departAt = null;
+    if (code === 'geometry-mismatch') { c.retryExhausted=true; if(c.geometryRepair)c.geometryRepair.phase='failed'; }
     recordConvoyHistory(state, c, "failed", c.failedAt, { reason, code, commands: Object.fromEntries(members(c).map(name => [name, state.commands[name]?.type])) });
     for (const name of members(c)) if (authorizedHold(state, c, name)) state.commands[name] = terminalCommand(state, c, name);
     return true;
   }
   function recover(state: SharedState, reason: string, now: number): boolean {
     const c = state.activeConvoy!;
+    if (/game geometry mismatch/i.test(reason)) return repairGeometry(state, c, reason, now);
     if (c.phase === "shared-hold" || c.phase === "failed") return false;
+    if (readinessFailure(c, reason)) return prepareAgain(state, c, reason, now);
     if ((c.recoveryAttempts || 0) >= 2) {
       c.retryExhausted = true;
       return terminal(state, "Regroup retries exhausted: " + reason, "route-failed");
@@ -177,6 +183,30 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     issue(state, c, "shared-hold");
     recordConvoyHistory(state, c, "regrouping", now, { reason, recoveryAttempts: c.recoveryAttempts });
     return true;
+  }
+  function repairGeometry(state: SharedState, c: SharedConvoy, reason: string, now: number): boolean {
+    if (c.geometryRepair?.phase === 'waiting') return false;
+    if (!beginGeometryRepair(state,c,now))
+      return terminal(state, 'Geometry recovery failed: ' + reason, 'geometry-mismatch');
+    c.epoch++; c.phase='shared-hold'; c.departAt=null; c.failure=reason;
+    c.sharedStoppedAt=now; clearSharedRoute(c); issue(state,c,'shared-hold');
+    recordConvoyHistory(state,c,'geometry repair',now,{reason,repair:c.geometryRepair});
+    return true;
+  }
+  function stepGeometryRepair(state: SharedState, c: SharedConvoy, now: number): boolean {
+    if (!members(c).every(n=>authorizedHold(state,c,n))) {
+      c.geometryRepair!.phase='failed';
+      return terminal(state,'Geometry recovery superseded by newer navigation','owner-lost');
+    }
+    // A restart preserves the repair budget but recreates only still-owned holds.
+    if (members(c).some(n=>!state.commands[n])) { issue(state,c,'shared-hold'); return true; }
+    if (geometryRepairReady(state,c,now)) {
+      c.geometryRepair!.phase='complete'; c.failure=undefined;
+      return begin(state,c,now);
+    }
+    if (now-c.geometryRepair!.startedAt<60000) return false;
+    c.geometryRepair!.phase='failed';
+    return terminal(state,'Geometry recovery failed after one reload: fresh compatible game geometry not received within 60 seconds','geometry-mismatch');
   }
   function recoverUnprepared(state: SharedState, c: SharedConvoy, reason: string, now: number): boolean {
     if (!returnRuntimeReady(state,c,now))
@@ -233,6 +263,7 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
       return false;
     }
     if (c.phase === "scheduled") { c.phase = "travel"; delete c.readinessStartedAt; return true; }
+    if (reconcileReturnArrival(state, c, now)) return true;
     const missing = missingTravelRoute(state, c, now);
     if (missing) return recover(state, "Travel route disappeared: " + missing, now);
     // Native legacy completion/leg barriers still own workflow advancement.
@@ -251,9 +282,17 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     return true;
   }
   function activeStep(state: SharedState, c: SharedConvoy, now: number): boolean {
+    if (c.geometryRepair?.phase === 'waiting') return stepGeometryRepair(state,c,now);
     const problem = health(state, c, now);
     if (problem) return terminal(state, problem === "owner-lost" ? ownerLostReason(state, c) : "Convoy " + problem, problem);
+    const mismatched = geometryMismatch(state,c);
+    if (mismatched.length) return repairGeometry(state,c,'Shared route game geometry mismatch: ' + JSON.stringify({
+      expected:sharedRoute(c)?.geometry || state.statuses[c.leader]?.movementGeometry,
+      actual:Object.fromEntries(mismatched.map(n=>[n,state.statuses[n]?.movementGeometry]))}),now);
     if (c.phase === "shared-hold") return resume(state, c, now);
+    return advanceHealthyRoute(state,c,now);
+  }
+  function advanceHealthyRoute(state: SharedState, c: SharedConvoy, now: number): boolean {
     const failed = members(c).find(n => reportMatches(state, n) && state.statuses[n]!.convoyNavigation?.phase === 'failed');
     if (failed) return recover(state, failed + ': ' + (state.statuses[failed]!.convoyNavigation?.failure || 'Character requested route recovery'), now);
     if (c.phase === "shared-prepare") return prepare(state, c, now);
@@ -305,6 +344,7 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     return advanceRoute(state,c,now);
   }
   function advanceRoute(state:SharedState,c:SharedConvoy,now:number):boolean {
+    if (c.geometryRepair?.phase === 'waiting') return stepGeometryRepair(state,c,now);
     if (c.phase === "failed") return failedStep(state, c, now);
     if (!c.force && defense(state, now, sharedCommand)) { clearSharedRoute(c); return true; }
     if(c.townRetry)return retryTown(state,c,now);
@@ -360,7 +400,7 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     const state = input as SharedState, c = state.activeConvoy;
     const result = legacy.signal(state, name, now) as Record<string, unknown> | null;
     if (!result || c?.routeProtocol !== 4) return result;
-    return { ...result, returnWalking: returnWalking(c), immediateDeparture: immediateTownDeparture(c), farmingEngagement: c.farmingEngagement || null, routeProtocol: 4, routeVersion: c.routeVersion || 0, routeAvailable: !!sharedRoute(c) };
+    return { ...result, geometryReload: geometryReloadSignal(state,c,name), returnWalking: returnWalking(c), immediateDeparture: immediateTownDeparture(c), farmingEngagement: c.farmingEngagement || null, routeProtocol: 4, routeVersion: c.routeVersion || 0, routeAvailable: !!sharedRoute(c) };
   }
   const engage: ConvoyNavigationPlatform["engage"] = (state, body, options) =>
     ["", "party-travel", "farm-relocation"].includes((state as SharedState).activeConvoy?.purpose || "")

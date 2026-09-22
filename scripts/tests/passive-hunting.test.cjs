@@ -27,7 +27,7 @@ function fixture(){
   escapeOwns:()=>false,combatRecoveryActive:()=>false,activeCombatEvent:()=>false,rareActive:()=>false,unfinishedFight:()=>false,
   reunionRealm:()=> 'USII',get_entity:id=>Object.values(c.parent.entities).find(e=>e.id===id),is_in_range:e=>Math.hypot(e.x,e.y)<=100,
   isExternallyClaimedMonster:e=>!!e.claimed,currentPartyList:()=>['W'],sameEventTeamMember:()=>true,equip:()=>{throw Error('unexpected deployment');},rareFields:()=>[]});
- const names=['returnDepartureDefense','passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
+ const names=['returnDepartureDefense','committedHuntEncounter','passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
  vm.runInContext(names.map(n=>namedFunction(source,n)).join('\n'),c);
  return {c,bee};
 }
@@ -45,6 +45,31 @@ test('retaliation stays movement-neutral for the attacked identity, not other mo
  const report=c.passingEncounterReport();assert.equal(report.length,1);
  c.character.in='another';assert.equal(c.isPassingEncounter({...bee,in:'another'}),false);
  c.character.map='cave';c.character.in='cave';assert.equal(c.passingEncounterReport().length,0);
+});
+
+test('verified Hunt farming releases local and peer passing ownership without changing outbound travel',()=>{
+ const {c,bee}=fixture();c.beginPassingAttack(bee);
+ c.peerPassingEncounters=[...c.passingEncounterReport()];
+ c.groupedCombat={passingEncounters:[...c.peerPassingEncounters]};
+ assert.equal(c.isPassingEncounter(bee),true);
+ c.huntCombatTarget='bee';c.partyConvoyActive=true;
+ assert.equal(c.isPassingEncounter(bee),true);
+ assert.equal(c.passingEncounterReport().length,1);
+ c.partyConvoyActive=false;
+ assert.equal(c.isPassingEncounter(bee),false);
+ assert.equal(c.passingEncounterReport().length,0);
+ assert.equal(c.passingTarget(),null,'Hunt farming must use normal combat even with keep-moving enabled');
+ const unrelated={...bee,id:'other',mtype:'goo'};c.beginPassingAttack(unrelated);
+ assert.equal(c.isPassingEncounter(unrelated),true);
+});
+
+test('farming Hunt queue accepts a target with cached and freshly reported travel passing marks',()=>{
+ const {target,status,members}=reports();
+ const travelling=reconcileQueue(null,members,'W',1000,'k');
+ assert.equal(travelling.target,null);
+ const farming=reconcileQueue(travelling,members,'W',1000,'k',0,false,'bee');
+ assert.equal(farming.passingEncounters.length,0);
+ assert.equal(farming.target.id,target.id);
 });
 
 test('passing attacks yield to Town from reservation through settled transition',()=>{
@@ -158,4 +183,20 @@ test('a pending passing attack burst cannot send again after the return starts p
   controller.tick();assert.equal(hits,1);passing=false;
   for(const timer of timers.slice())timer();assert.equal(hits,1);controller.stop();
  } finally {for(const key of keys)if(saved[key]===undefined)delete global[key];else global[key]=saved[key];}
+});
+
+test('outbound Hunt attacks its in-range target without passive settings and never during route preparation',()=>{
+ const {c,bee}=fixture();c.passiveHunting.rules={};c.convoyRuntimeId='runtime';c.navigationIntent.revision=3;
+ c.convoyTraveling={id:'hunt',epoch:2,commandId:4,navigationRevision:3,purpose:'monster-hunt',huntTarget:'bee',phase:'travelling'};
+ c.convoySignal={id:'hunt',epoch:2,commandId:4,runtimeId:'runtime',phase:'travel',validUntil:Date.now()+10000};
+ c.unfinishedFight=()=>true;c.groupedCombat={target:bee};
+ assert.equal(c.passingTarget(),bee);
+ bee.x=200;assert.equal(c.passingTarget(),null);bee.x=20;
+ bee.mtype='goo';assert.equal(c.passingTarget(),null);bee.mtype='bee';
+ bee.claimed=true;assert.equal(c.passingTarget(),null);bee.claimed=false;
+ for(const phase of ['assembling','route-ready','waiting-for-departure','arrived','failed']){
+  c.convoyTraveling.phase=phase;assert.equal(c.passingTarget(),null,phase);
+ }
+ c.convoyTraveling.phase='travelling';c.movement={transition:()=> 'transport'};assert.equal(c.passingTarget(),null);
+ c.movement.transition=()=>null;c.convoySignal.epoch++;assert.equal(c.passingTarget(),null);
 });

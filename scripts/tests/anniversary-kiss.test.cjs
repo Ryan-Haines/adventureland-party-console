@@ -13,7 +13,7 @@ function fixture(options={}) {
   const character={name:'F',ctype:options.merchant?'merchant':'warrior',map:'main',x:0,y:0,stand:!!options.stand,
     s:{anniversary_visit:{round:'round'},...(options.oldBuff?{anniversary_kiss:{ms:100000}}:{})}};
   const r=vm.createContext({
-    eventSelected: () => true, escapeOwns: () => false, huntTurnInPriority: false,
+    merchantEventWorkReserved: () => false, eventSelected: () => true, escapeOwns: () => false, huntTurnInPriority: false,
     eventTravelAllowed: async () => !r.huntTurnInPriority,
     root:{}, character, Date:{now:()=>now},
     setTimeout:fn=>{now+=200;queueMicrotask(fn);},

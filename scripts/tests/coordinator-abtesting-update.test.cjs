@@ -6,7 +6,7 @@ test('active names preserve status order and include the exact ten-second bounda
     C: { name: 'C', seenAt: 20001 } }, 20000), ['B', 'C']);
 });
 
-test('AB strategy excludes merchant and disabled members, persisting only serialized changes', () => {
+test('AB strategy evaluates merchants and excludes disabled members, persisting only serialized changes', () => {
   const state = { merchantCharacter: 'M', abtestingStrategy: null, statuses: {
     W: { name: 'W', activeEvent: 'abtesting', activeEventId: 'event', eventTeam: 'a' },
     P: { name: 'P', activeEvent: 'abtesting', activeEventId: 'event', eventTeam: 'b' },
@@ -15,7 +15,7 @@ test('AB strategy excludes merchant and disabled members, persisting only serial
   const ports = { activeNames: () => ['W', 'P', 'M'], enabled: (name, event) => { checked.push([name, event]); return name === 'W'; },
     now: () => 1000, persist: () => writes++ };
   const result = updateCoordinatorABStrategy(state, ports);
-  assert.deepEqual(checked, [['W', 'abtesting'], ['P', 'abtesting']]);
+  assert.deepEqual(checked, [['W', 'abtesting'], ['P', 'abtesting'], ['M', 'abtesting']]);
   assert.deepEqual(result.expectedNames, ['W']); assert.equal(writes, 1);
   updateCoordinatorABStrategy(state, ports); assert.equal(writes, 1);
   state.statuses = {}; updateCoordinatorABStrategy(state, ports);

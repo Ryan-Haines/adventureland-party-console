@@ -2,7 +2,6 @@ import * as policy from "../../hunt/policy.ts";
 import type { HuntCycle, HuntStatus, HuntTickPorts, HuntTickState } from "./contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
 import { createHuntEncounter, reconcileHuntDestination } from "./encounter.ts";
-import { nearbyHuntTarget } from "./nearby-target.ts";
 
 export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
   const encounter = createHuntEncounter(state, ports);
@@ -37,12 +36,11 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
     const destination = hunt.target ? ports.destination(hunt) : null;
     if (
       destination &&
-      hunt.participants.every(
-        (name) => atTarget(destination, state.statuses[name]) && !state.statuses[name]?.rip,
-      )
+      originReached(hunt)
     ) {
       hunt.convoyId = null;
       hunt.stage = "farming";
+      hunt.originArrivedAt = ports.now();
       delete hunt.travelCause;
       hunt.message = "Monster Hunt: " + hunt.target;
       ports.persist();
@@ -88,25 +86,26 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
   function mission(hunt: HuntCycle): boolean {
     if (hunt.stage !== "mission-travel") return false;
     if (state.activeConvoy) {
-      enableAcquisition(hunt);
+      retainMissionRoute(hunt);
       return false;
     }
-    if (!hunt.convoyId) {
+    if (!hunt.originArrivedAt && !originReached(hunt)) {
       const destination = ports.destination(hunt);
       if (destination)
         ports.start(hunt, destination, "Monster Hunt: " + hunt.target, "mission-travel");
       return true;
     }
     hunt.convoyId = null;
+    hunt.originArrivedAt = ports.now();
     hunt.stage = "farming";
     delete hunt.travelCause;
     return false;
   }
 
-  function enableAcquisition(hunt: HuntCycle): void {
+  function retainMissionRoute(hunt: HuntCycle): void {
     const c = state.activeConvoy;
     if (!c || c.id !== hunt.convoyId || c.purpose !== "monster-hunt" || !hunt.target) return;
-    c.combatHandoffAllowed = !c.cause && !hunt.travelCause;
+    c.combatHandoffAllowed = false;
     c.huntTarget = hunt.target;
     for (const name of hunt.participants) {
       const command = state.commands[name];
@@ -210,14 +209,15 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
 
   function farm(hunt: HuntCycle): void {
     if (hunt.stage !== "farming" || !ports.fresh(hunt)) return;
+    if (repairPrematureFarming(hunt)) return;
     hunt.message = "Monster Hunt: " + hunt.target;
     const destination = ports.destination(hunt),
       leader = state.statuses[String(state.leader)]!;
     const arrived = atTarget(destination, leader);
-    const handoff = currentHandoff(hunt);
+    const handoff = state.commands[String(state.leader)]?.convoyHandoff;
     const protectedArrival = ports.arrivalProtected(hunt, leader, destination);
     confirmArrival(hunt, leader, protectedArrival, arrived);
-    if (recoveryPending(hunt, destination) || returnIfDue(hunt) || ports.partyFighting(hunt))
+    if (farmPending(hunt, destination))
       return;
     if (destination && !arrived && !handoff && !protectedArrival) {
       recoverArrival(hunt, destination, leader);
@@ -226,8 +226,27 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
     advanceIfFinished(hunt);
   }
 
-  function currentHandoff(hunt: HuntCycle): unknown {
-    return state.commands[String(state.leader)]?.convoyHandoff || nearbyHuntTarget(hunt, state, ports);
+  function repairPrematureFarming(hunt: HuntCycle): boolean {
+    if (hunt.originArrivedAt) return false;
+    if (originReached(hunt)) { hunt.originArrivedAt = ports.now(); return false; }
+    const destination = ports.destination(hunt);
+    if (destination) ports.start(hunt, destination, "Monster Hunt: " + hunt.target, "mission-travel");
+    return true;
+  }
+
+  function farmPending(hunt: HuntCycle, destination: ReturnLocation | null | undefined): boolean {
+    return recoveryPending(hunt, destination) || returnIfDue(hunt) || ports.partyFighting(hunt);
+  }
+
+  function originReached(hunt: HuntCycle): boolean {
+    const destination = ports.destination(hunt);
+    return !!destination && hunt.participants.every(name => {
+      const s = state.statuses[name];
+      return !!s && !s.rip && s.hp !== 0 && ports.now() - s.seenAt <= 3000 &&
+        s.seenAt <= ports.now() + 500 && s.map === destination.map &&
+        String(s.in ?? s.map) === String(destination.in ?? destination.map) &&
+        Math.hypot(s.x - destination.x, s.y - destination.y) <= 50;
+    });
   }
 
   function step(hunt: HuntCycle): void {

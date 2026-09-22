@@ -1,4 +1,5 @@
 "use client";
+import type { LuckySlotHistory } from '../../../runtime/lucky-slot-tracking';
 import type { DeconstructionMark, DeconstructionCatalog } from "./deconstruction";
 import { ActiveSlot } from "./active-slot";
 import { ALDataState } from "./aldata-state";
@@ -153,6 +154,7 @@ export type PartyState = {
   merchantForceStand?: boolean;
   merchantWeapon?: { item: Item } | null;
   luckyUpgradeSlots?: Record<string, number | null>;
+  luckySlotTracking?: LuckySlotHistory;
   merchantQueue?: MerchantJob[];
   merchantCurrent?: MerchantJob | null;
   merchantActivity?: MerchantActivity[];

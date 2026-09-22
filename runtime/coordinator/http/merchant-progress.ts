@@ -1,4 +1,5 @@
 import { offeringStock } from '../inventory/offering-stock.ts';
+import { merchantEventReserved, type MerchantEventState } from '../merchant/event-control.ts';
 import type { OfferingRulesState } from '../inventory/upgrade-offerings.ts';
 import { requestObject, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import type { MerchantWork } from "../merchant/work.ts";
@@ -8,14 +9,14 @@ import { itemRuleConflicts } from "../inventory/shared-rules.ts";
 import { operationStage } from '../merchant/activity.ts';
 import { collectionPickups, type PickupState } from '../merchant/collection-pickups.ts';
 
-interface ProgressState extends CraftReservationState, PickupState, OfferingRulesState {
+interface ProgressState extends CraftReservationState, PickupState, OfferingRulesState, MerchantEventState {
   autoCompounds?: BankImprovementState['autoCompounds'];
   merchantRules?: BankImprovementState['merchantRules'];
   merchantAutomations?: Record<string, boolean | undefined>;
   merchantCharacter: string | null;
   merchantCurrent: MerchantWork | null;
   merchantQueue: MerchantWork[];
-  statuses: NonNullable<PickupState['statuses']>;
+  statuses: NonNullable<PickupState['statuses']> & MerchantEventState['statuses'];
   gatheringModes: string[];
   gatheringCooldowns: Record<string, number | undefined>;
   commands: Record<string, unknown>;
@@ -110,12 +111,18 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
       if (current.itemMarksCleared) return res.status(409).json({ error: "Item marks cleared; refresh merchant work" });
       return res.json(protectionReply(state));
     }
-    current.resumeState = body.state && typeof body.state === "object" ? body.state : {};
+    return checkpointWork(current, body, res);
+  }
+  function checkpointWork(current: MerchantWork, body: Record<string, unknown>, res: HttpResponse): unknown {
+    const eventReserved = merchantEventReserved(state, ports.now());
+    if (body.eventOnly === true && !eventReserved) return res.json({ yield: false });
+    if (body.eventOnly !== true)
+      current.resumeState = body.state && typeof body.state === "object" ? body.state : {};
     current.phase = "checkpointed";
     current.checkpointAt = ports.now();
     current.progressAt = ports.now();
     const { currentPriority, waitingPriority, waitingType } = priorities(current);
-    if (waitingPriority <= currentPriority) {
+    if (!eventReserved && waitingPriority <= currentPriority) {
       current.phase = "processing";
       delete current.checkpointAt;
       ports.persist();

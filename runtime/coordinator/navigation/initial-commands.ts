@@ -2,6 +2,7 @@ import type { PartyConvoy } from "./convoy.ts";
 import type { MerchantCommand } from "../merchant/work.ts";
 
 interface SavedConvoy extends Omit<PartyConvoy, "epoch"> {
+  geometryRepair?: import('./shared-route-types.ts').SharedConvoy['geometryRepair'];
   [key: string]: unknown;
   epoch?: unknown;
 }
@@ -21,7 +22,7 @@ function restartRevisions(convoy: SavedConvoy): Record<string, number> {
 
 function retainedEventFailure(saved: SavedCommands): boolean {
   const c = saved.activeConvoy;
-  return c?.phase === "failed" && c.purpose === "shared-walk" && c.label === "event walking leg";
+  return c?.failureCode === 'geometry-mismatch' || (c?.phase === "failed" && c.purpose === "shared-walk" && c.label === "event walking leg");
 }
 function restoredConvoy(saved: SavedCommands, now: () => number): PartyConvoy | null {
   return saved.activeConvoy
@@ -32,12 +33,12 @@ function restoredConvoy(saved: SavedCommands, now: () => number): PartyConvoy | 
         } } : {}),
         routeProtocol: 4,
         epoch: Number(saved.activeConvoy.epoch) || now(),
-        phase: "failed",
+        phase: saved.activeConvoy.geometryRepair?.phase === 'waiting' ? 'shared-hold' : 'failed',
         departAt: null,
         failure: retainedEventFailure(saved) ? saved.activeConvoy.failure : "Coordinator restarted; waiting to recover interrupted travel",
         failureCode: retainedEventFailure(saved) ? saved.activeConvoy.failureCode : "runtime-lost",
         failedAt: retainedEventFailure(saved) ? saved.activeConvoy.failedAt : now(),
-        restartRecovery: true,
+        restartRecovery: saved.activeConvoy.failureCode !== 'geometry-mismatch',
         restartRevisions: restartRevisions(saved.activeConvoy),
       }
     : null;

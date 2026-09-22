@@ -1,7 +1,7 @@
 // Generated from TypeScript; run npm run build:runtime -- --publish. Do not edit.
 "use strict";
 (() => {
-  // ../runtime/characters/classes/mage.ts
+  // runtime/characters/classes/mage.ts
   var role = {
     name: "mage",
     combat: true,
@@ -13,7 +13,7 @@
     }
   };
 
-  // ../runtime/characters/classes/priest.ts
+  // runtime/characters/classes/priest.ts
   function curseReady(target) {
     if (target.mtype === "tinyp") return false;
     if (target.s?.cursed) return false;
@@ -45,7 +45,7 @@
     }
   };
 
-  // ../runtime/characters/classes/warrior-combat.ts
+  // runtime/characters/classes/warrior-combat.ts
   function basherEquipped() {
     const weapon = character.slots?.mainhand;
     return !!weapon && G.items[weapon.name]?.wtype === "basher";
@@ -87,7 +87,7 @@
     return character.mp >= (G.skills.taunt.mp ?? 0) && !is_on_cooldown("taunt") && is_in_range(target, "taunt");
   }
 
-  // ../runtime/characters/classes/warrior.ts
+  // runtime/characters/classes/warrior.ts
   async function taunt(target) {
     if (sharedRoutine.castCombatSkill) return sharedRoutine.castCombatSkill("taunt", target, "survival");
     const id = sharedRoutine.queueEvidence?.(target, "pending") || void 0;
@@ -136,14 +136,14 @@
     }
   };
 
-  // ../runtime/characters/classes/ranger.ts
+  // runtime/characters/classes/ranger.ts
   var role4 = {
     name: "ranger",
     combat: true,
     beforeAttack: (target) => sharedRoutine.skillOffense?.(target) ?? Promise.resolve(false)
   };
 
-  // ../runtime/characters/classes/rogue.ts
+  // runtime/characters/classes/rogue.ts
   var role5 = {
     name: "rogue",
     combat: true,
@@ -151,7 +151,7 @@
     beforeAttack: (target) => sharedRoutine.skillOffense?.(target) ?? Promise.resolve(false)
   };
 
-  // ../runtime/characters/classes/paladin.ts
+  // runtime/characters/classes/paladin.ts
   var role6 = {
     name: "paladin",
     combat: true,
@@ -159,15 +159,15 @@
     beforeAttack: (target) => sharedRoutine.skillOffense?.(target) ?? Promise.resolve(false)
   };
 
-  // ../runtime/characters/classes/merchant.ts
+  // runtime/characters/classes/merchant.ts
   var role7 = {
     name: "merchant",
-    combat: false
-    // The server rejects attack() for this class with reason "merchant".
-    // Merchants can equip weapons but cannot farm through basic combat.
+    combat: true,
+    // Use current equipment for events; never acquire ordinary farming targets.
+    chooseTarget: () => sharedRoutine.getEventTarget()
   };
 
-  // ../runtime/combat/trace.ts
+  // runtime/combat/trace.ts
   function installCombatTrace(root, shared) {
     const entries = root.__partyCombatTrace || [];
     root.__partyCombatTrace = entries;
@@ -184,7 +184,7 @@
     return { stop: () => clearInterval(timer) };
   }
 
-  // ../runtime/combat/entity-refresh.ts
+  // runtime/combat/entity-refresh.ts
   function createEntityRefresh(ports) {
     let context = "", accepted = 0, stalledAt = null;
     let requestedAt = -Infinity, requests = 0;
@@ -212,7 +212,7 @@
     return { tick };
   }
 
-  // ../runtime/characters/roles/monster-attack-policy.ts
+  // runtime/characters/roles/monster-attack-policy.ts
   var reflectors = /* @__PURE__ */ new Set(["slenderman", "tiger", "goblin"]);
   function monsterAttackBlock(monster, damageType, range) {
     if (monster === "porcupine" && damageType !== "magical" && damageType !== "pure" && !(Number.isFinite(range) && range >= 75))
@@ -222,7 +222,7 @@
     return null;
   }
 
-  // ../runtime/characters/roles/porcupine-equipment.ts
+  // runtime/characters/roles/porcupine-equipment.ts
   function createPorcupineEquipment(ports, memory = {}) {
     let active = true;
     const copyHands = () => ({
@@ -330,7 +330,7 @@
     };
   }
 
-  // ../runtime/characters/roles/porcupine-equipment-runtime.ts
+  // runtime/characters/roles/porcupine-equipment-runtime.ts
   function installPorcupineEquipment(root) {
     const host = parent;
     const memory = host.__partyPorcupineEquipment ??= {};
@@ -369,7 +369,7 @@
     }, memory);
   }
 
-  // ../runtime/coordinator/merchant/anniversary-control.ts
+  // runtime/coordinator/merchant/anniversary-control.ts
   function stagingWindow(event, now) {
     if (!event || event.active === false || event.live !== false) return false;
     const next = Number(event.next) || 0;
@@ -422,7 +422,7 @@
     };
   }
 
-  // ../runtime/characters/roles/types.ts
+  // runtime/characters/roles/types.ts
   function errorReason(error) {
     if (error && typeof error === "object") {
       if ("reason" in error && typeof error.reason === "string") return error.reason;
@@ -431,7 +431,7 @@
     return String(error);
   }
 
-  // ../runtime/characters/roles/crab-range.ts
+  // runtime/characters/roles/crab-range.ts
   function mismatch(s) {
     return s.mtype === "crab" && [
       s.target.width,
@@ -485,7 +485,7 @@
     };
   }
 
-  // ../runtime/characters/roles/attack-controller.ts
+  // runtime/characters/roles/attack-controller.ts
   function createAttackController(ports) {
     let flight = null;
     let lastSuccessfulTarget = null;
@@ -758,7 +758,7 @@
     };
   }
 
-  // ../runtime/characters/skills/budget.ts
+  // runtime/characters/skills/budget.ts
   function createManaBudget() {
     let last = null;
     let credit = 0;
@@ -788,11 +788,11 @@
     };
   }
 
-  // ../runtime/characters/skills/types.ts
+  // runtime/characters/skills/types.ts
   var health = (actor) => actor.hp / Math.max(1, actor.max_hp);
   var decision = (skill, targets = [], category = "damage", reason = skill) => ({ skill, targets, category, reason });
 
-  // ../runtime/characters/skills/damage.ts
+  // runtime/characters/skills/damage.ts
   function rawDamage(w, id, target) {
     const s = w.skills[id];
     if (id === "shield_slam") return shieldDamage(w);
@@ -854,7 +854,7 @@
     return dps > 0 && (health(ally) < 0.6 || ally.hp - 2 * dps < ally.max_hp * 0.3);
   }
 
-  // ../runtime/characters/skills/eligibility.ts
+  // runtime/characters/skills/eligibility.ts
   function cost(w, id) {
     const mp = id === "heal" ? w.actor.mp_cost : w.skills[id]?.mp;
     return Math.ceil(Math.max(0, Number(mp) || 0) * (1 - Math.min(100, Math.max(0, w.actor.mp_reduction || 0)) / 100));
@@ -931,7 +931,7 @@
     return null;
   }
 
-  // ../runtime/characters/skills/offense.ts
+  // runtime/characters/skills/offense.ts
   function attackChoices(w, primary) {
     const ids = w.actor.ctype === "ranger" ? ["piercingshot", "3shot", "5shot"] : w.actor.ctype === "rogue" ? ["fanofknives"] : [];
     return ids.map((id) => {
@@ -981,7 +981,7 @@
     return choices.sort((a, b) => score(b) - score(a));
   }
 
-  // ../runtime/characters/skills/protection.ts
+  // runtime/characters/skills/protection.ts
   function absorbDecision(w) {
     if (w.actor.ctype !== "priest" || w.context.leader !== w.actor.name) return null;
     if (w.actor.mp - cost(w, "absorb") < cost(w, "heal")) return null;
@@ -1065,7 +1065,7 @@
     return decision("invis", [], "maintenance", "unengaged opener");
   }
 
-  // ../runtime/characters/skills/engine.ts
+  // runtime/characters/skills/engine.ts
   function createSkillEngine(ports) {
     const budget = createManaBudget(), pending = /* @__PURE__ */ new Map();
     let epoch = 0, stopped = false, auraAt = -Infinity, auraState = "", openerPending = false;
@@ -1206,7 +1206,7 @@
     };
   }
 
-  // ../runtime/characters/skills/projectiles.ts
+  // runtime/characters/skills/projectiles.ts
   function usable(data) {
     return !!data.pid && !!data.target && Number(data.damage) > 0 && Number(data.eta) > 0;
   }
@@ -1241,7 +1241,7 @@
     };
   }
 
-  // ../runtime/characters/skills/runtime.ts
+  // runtime/characters/skills/runtime.ts
   function mitigation2(defense) {
     const rates = [1e-3, 1e-3, 95e-5, 9e-4, 82e-5, 7e-4, 6e-4, 5e-4];
     const reduction = rates.reduce((sum, rate, i) => sum + Math.max(0, Math.min(100, defense - i * 100)) * rate, 0) + Math.max(0, defense - 800) * 4e-4;
@@ -1271,7 +1271,7 @@
         now: Date.now(),
         item: (name) => G.items[name],
         condition: (name) => G.conditions[name],
-        cooldown: (id) => Number(host.next_skill?.[id]) > Date.now(),
+        cooldown: (id) => id === "invis" && !!shared.merchantVisibilityActive?.() || Number(host.next_skill?.[id]) > Date.now(),
         damageMultiplier: host.damage_multiplier || mitigation2,
         incoming: (t) => projectiles.incoming(t.id, Date.now()),
         range: (t, id) => skillRange(actor, t, skills[id]),
@@ -1331,7 +1331,7 @@
     return distanceTo <= range;
   }
 
-  // ../runtime/combat/recovery-route.ts
+  // runtime/combat/recovery-route.ts
   function recoveryRoute(origin, destination, clear) {
     const start = { x: origin.x, y: origin.y }, goal = { x: destination.x, y: destination.y };
     const open = [{ ...start, cost: 0, rank: 0 }], costs = /* @__PURE__ */ new Map();
@@ -1385,7 +1385,7 @@
     } };
   }
 
-  // ../runtime/combat/formation-recovery-client.ts
+  // runtime/combat/formation-recovery-client.ts
   function routeKey(c) {
     return JSON.stringify([c?.id, c?.phase, c?.attempt]);
   }
@@ -1636,7 +1636,7 @@
     };
   }
 
-  // ../runtime/combat/sight-recovery.ts
+  // runtime/combat/sight-recovery.ts
   function createSightRecovery(p) {
     let key = "", historyKey = "", history = [], trail = [], side = 1, progressAt = 0, distance2 = Infinity;
     let waypoint = null, fan = 0, retryAt = 0, startedAt = 0, steps = 0;
@@ -1746,7 +1746,7 @@
     return { tick, reset, observe };
   }
 
-  // ../runtime/combat/evidence.ts
+  // runtime/combat/evidence.ts
   function sameEvidenceTarget(a, b) {
     return String(a.id) === String(b.id) && a.map === b.map && a.in === b.in && a.server === b.server;
   }
@@ -1758,7 +1758,7 @@
     }
   }
 
-  // ../runtime/combat/client.ts
+  // runtime/combat/client.ts
   function installQueueClient(root, shared) {
     root.partyQueueClient?.stop();
     let active = true, busy2 = false, waiting = false, signature = "", sentAt = 0, retryAt = 0, revision = "", serial = 0;
@@ -1905,13 +1905,13 @@
     return api;
   }
 
-  // ../runtime/combat/marker-style.ts
+  // runtime/combat/marker-style.ts
   function markerStyle(marker, index = 0) {
     const role8 = marker.role || (marker.state === "scatter" ? "current" : ["current", "next", "third"][index]);
     return { color: role8 === "current" ? 15680580 : 16436245, css: role8 === "current" ? "#ef4444" : "#facc15", double: role8 === "third" };
   }
 
-  // ../runtime/combat/markers.ts
+  // runtime/combat/markers.ts
   function installQueueMarkers(root, shared) {
     const host = parent;
     host.__partyQueueMarkers?.stop();
@@ -1954,13 +1954,13 @@
     return api;
   }
 
-  // ../runtime/hunt/loot-identity.ts
+  // runtime/hunt/loot-identity.ts
   function huntLootId(hunt) {
     const mission = hunt.missions?.[hunt.currentIndex];
     return JSON.stringify([hunt.cycleId, hunt.missionRevision || 0, hunt.currentIndex, mission?.target, mission?.owners]);
   }
 
-  // ../runtime/combat/departure-loot.ts
+  // runtime/combat/departure-loot.ts
   function createDepartureLoot(ports) {
     let control = null, progress = null, pending = false, retired = /* @__PURE__ */ new Set(), latest = 0;
     const engagements = /* @__PURE__ */ new Map();
@@ -2095,7 +2095,7 @@
     return api;
   }
 
-  // ../runtime/characters/roles/death-recovery.ts
+  // runtime/characters/roles/death-recovery.ts
   function createDeathRecovery(ports) {
     let recovering = false, pendingReturn = false, revived = false, attempt = 0, retryAt = 0;
     let phase = "respawn", lastError = null, errorAt = null;
@@ -2180,7 +2180,7 @@
     };
   }
 
-  // ../runtime/characters/roles/default.ts
+  // runtime/characters/roles/default.ts
   var defaultRole = {
     name: "adventurer",
     combat: true,
@@ -2207,7 +2207,7 @@
     }
   };
 
-  // ../runtime/characters/roles/target-state.ts
+  // runtime/characters/roles/target-state.ts
   function targetRejection(target) {
     if (!target || !target.visible) return "selected monster not visible";
     if (target.dead || target.rip) return "selected monster died";
@@ -2220,7 +2220,7 @@
     return target && target.visible && !target.dead && sharedRoutine.allowsTarget(target) ? target : null;
   }
 
-  // ../runtime/characters/roles/runner.ts
+  // runtime/characters/roles/runner.ts
   function installRoleRunner(classRole, root = globalThis) {
     root.partyMerchantAnniversaryControl = merchantAnniversaryControl;
     root.partyRoleRunner?.stop();
@@ -2284,10 +2284,10 @@
       clearTimeout: (timer2) => globalThis.clearTimeout(timer2)
     });
     function combatAllowed() {
-      return active && !character.rip && resolvedRole().combat && !sharedRoutine.isOccupied() && ["pending", "feed"].indexOf(sharedRoutine.getAbtestingMode()) < 0;
+      return active && !character.rip && resolvedRole().combat && (character.ctype !== "merchant" || !!sharedRoutine.merchantEventCombatActive?.()) && !sharedRoutine.isOccupied() && ["pending", "feed"].indexOf(sharedRoutine.getAbtestingMode()) < 0;
     }
     function passingTarget() {
-      if (!active || character.rip || !resolvedRole().combat || ["pending", "feed"].includes(sharedRoutine.getAbtestingMode())) return null;
+      if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending", "feed"].includes(sharedRoutine.getAbtestingMode())) return null;
       return sharedRoutine.getPassingTarget?.() || null;
     }
     function attackTarget() {
@@ -2323,6 +2323,7 @@
       return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
     }
     function chooseTarget() {
+      if (character.ctype === "merchant") return resolvedRole().chooseTarget();
       if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget();
       const rare = sharedRoutine.getRareTarget?.();
       if (rare) return rare;
@@ -2546,7 +2547,7 @@
     };
   }
 
-  // ../runtime/characters/roles/compat.ts
+  // runtime/characters/roles/compat.ts
   var roles = { mage: role, priest: role2, warrior: role3, ranger: role4, rogue: role5, paladin: role6, merchant: role7 };
   globalThis.partyRoles = roles;
   installRoleRunner(roles[character.ctype]);

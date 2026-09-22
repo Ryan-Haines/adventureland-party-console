@@ -25,6 +25,7 @@ interface ExitReturn {
   checkpoint: ReturnLocation | null;
 }
 interface ConvoyAcknowledgementState {
+  monsterHunt?: { stage: string; convoyId?: string | null; originArrivedAt?: number } | null;
   statuses?: Record<string, { seenAt?: number; convoyNavigation?: { phase?: string } } | undefined>;
   lastConvoyEngagement?: {
     convoyId: string;
@@ -83,10 +84,16 @@ export function createConvoyAcknowledgementRoutes(
     }
     active.completed = [...new Set((active.completed || []).concat(name))];
     if (active.participants.every((member) => active.completed!.includes(member))) {
+      recordHuntArrival(active);
       recordConvoyHistory(state, active, "completed", ports.now());
       state.activeConvoy = null;
     }
     ports.persist();
+  }
+  function recordHuntArrival(active: RouteConvoy): void {
+    if (active.routeProtocol === 4 && active.purpose === 'monster-hunt' &&
+        state.monsterHunt?.stage === 'mission-travel' && state.monsterHunt.convoyId === active.id)
+      state.monsterHunt.originArrivedAt = ports.now();
   }
   function complete(req: HttpRequest, res: HttpResponse): unknown {
     const body = requestObject(req.body),

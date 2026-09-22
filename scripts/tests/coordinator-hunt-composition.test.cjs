@@ -131,10 +131,10 @@ test('Hunt composition begins through quest selection and configures the departi
   assert.equal(state.monsterHunt.stage, 'mission-travel');
   assert.equal(state.monsterHunt.convoyId, 'travel');
   assert.equal(state.activeConvoy.townFirst, false);
-  assert.equal(state.activeConvoy.combatHandoffAllowed, true);
+  assert.equal(state.activeConvoy.combatHandoffAllowed, false);
   assert.equal(state.activeConvoy.huntTarget, 'rat');
   assert.equal(state.commands.W.id, 41); assert.equal(state.commands.P.id, 42);
-  assert.equal(state.commands.P.combatHandoffAllowed, true);
+  assert.equal(state.commands.P.combatHandoffAllowed, false);
   assert.equal(state.commands.P.huntTarget, 'rat');
   assert.deepEqual(calls.filter(Array.isArray), [
     ['authorize', ['W', 'P'], farm, true], ['start', farm, 'Monster Hunt: rat', ['W', 'P'], 'monster-hunt',undefined],
@@ -147,12 +147,12 @@ test('idle Hunt composition accepts startup without a selected leader', () => {
   assert.equal(state.monsterHunt, null); assert.equal(state.leader, null); assert.deepEqual(calls, []);
 });
 
-test('Hunt composition waits for defense, then resumes the same mission through its quest service', () => {
+test('Hunt composition starts its route despite nearby attackers and retains the mission', () => {
   const {state, service, calls, conditions} = fixture();
   state.statuses.P.groupedCombat.currentAttackers=[{id:'bee',mtype:'bee',map:'main',target:'P',x:0,y:0}]; service.lifecycle.begin();
   const hunt = state.monsterHunt, mission = hunt.missions[0];
-  assert.match(hunt.message, /Defending P/); assert.equal(state.activeConvoy, null);
-  assert.equal(calls.some(Array.isArray), false);
+  assert.equal(hunt.stage, 'mission-travel'); assert.ok(state.activeConvoy);
+  assert.equal(state.activeConvoy.combatHandoffAllowed, false);
   state.statuses.P.groupedCombat.currentAttackers=[]; service.quests.prepare(hunt);
   assert.equal(state.monsterHunt, hunt); assert.equal(hunt.missions[0], mission);
   assert.equal(hunt.stage, 'mission-travel'); assert.equal(hunt.convoyId, 'travel');

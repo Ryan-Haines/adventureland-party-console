@@ -20,5 +20,5 @@ test('specific event selections inherit and restore independent choices',()=>{
 });
 test('migration retains anniversary even when combat was disabled; merchants cannot inherit combat',()=>{
  const p=party();assert.deepEqual(selectedEvents(p,'Merchant'),['anniversary']);
- p.eventSelectionsByCharacter={Merchant:['anniversary','franky']};assert.deepEqual(selectedEvents(p,'Merchant'),['anniversary']);
+ p.eventSelectionsByCharacter={Merchant:['anniversary','franky']};assert.deepEqual(selectedEvents(p,'Merchant'),['anniversary','franky']);
 });

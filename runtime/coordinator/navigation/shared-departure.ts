@@ -24,6 +24,11 @@ export function readinessExpired(c: SharedConvoy, now: number): boolean {
   return c.readinessStartedAt !== undefined && now - c.readinessStartedAt >= 60000;
 }
 
+export function readinessFailure(c: SharedConvoy, reason: string): boolean {
+  return ['shared-prepare', 'scheduled'].includes(c.phase) && !reason.startsWith('Departure readiness timed out:') &&
+    /Route origin changed before departure|Cruise speed changed|Prepared shared route changed|Departure signal arrived too late|Missed convoy departure window|Departure changed/.test(reason);
+}
+
 export function recoveryPlanner(c: SharedConvoy, reason: string): void {
   delete c.readinessStartedAt;
   if (/Stalled walking movement/i.test(reason)) c.walkingFailures = (c.walkingFailures || 0) + 1;

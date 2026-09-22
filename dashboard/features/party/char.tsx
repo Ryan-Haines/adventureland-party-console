@@ -1,4 +1,5 @@
 "use client";
+import type { LuckySlotTracking } from "../../../runtime/lucky-slot-tracking";
 import { BestiaryMonster } from "./bestiary-monster";
 import { Condition } from "./condition";
 import { EquippedEntry } from "./equipped-entry";
@@ -12,6 +13,7 @@ import { SkillClass } from "./skill-class";
 import { Sprite } from "./sprite";
 
 export type Char = {
+  luckySlotTracking?: LuckySlotTracking;
   tracktrix?: { active: boolean; bonuses: Record<string, number> | null; sprite?: Sprite | null };
   lootStatus?: {at:number;map:string;eligible:number;pending:boolean;error?:string|null};
   combat?: {positioning?: {at?:number;mode?:string;reason?:string}};

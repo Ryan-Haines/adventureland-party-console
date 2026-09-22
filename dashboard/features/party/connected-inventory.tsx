@@ -4,6 +4,8 @@ import { SharedRuleConflicts } from './shared-rule-conflicts';
 import { MerchantPendingImprovements } from './merchant-pending-improvements';
 import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
 import { InventoryPanel } from './inventory-panel';
+import { aggregateSlotTracking } from '../../../runtime/lucky-slot-tracking';
+import { LuckySlotDialog } from './lucky-slot-tracker';
 import { same } from './same';
 import type { PartyConsoleModel } from './use-party-console';
 
@@ -42,6 +44,8 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   const ruleName = state.merchantRules ? String(state.merchantCharacter) : name;
   const marked = state.marked[name] || [];
   const [deconstructionSelection, setDeconstructionSelection] = useState<DeconstructionSelection | null>(null);
+  const [luckySlotOpen, setLuckySlotOpen] = useState(false);
+  const luckyTracking = aggregateSlotTracking(state.luckySlotTracking?.[name], char?.luckySlotTracking);
   // Presence and inventory arrive independently, including after reconnects.
   // Missing inventory is still loading, not an empty bag.
   if (!char || !Array.isArray(char.items) || !char.slots) {
@@ -57,6 +61,8 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       merchant={state.merchantCharacter}
       merchantWeapon={state.merchantWeapon}
       luckyUpgradeSlot={state.luckyUpgradeSlots?.[name]}
+      luckySlotTracking={luckyTracking}
+      onLuckySlot={() => setLuckySlotOpen(true)}
       marked={marked}
       merchantMarked={state.merchantMarked?.[char.name] || []}
       autoItemMarks={state.autoItemMarks?.[ruleName] || {}}
@@ -163,6 +169,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       onCommand={command}
       onTravel={() => sendCharacter(char.name)}
     />
+    <LuckySlotDialog character={name} tracking={luckyTracking} verified={state.luckyUpgradeSlots?.[name]} open={luckySlotOpen} onOpenChange={setLuckySlotOpen} />
     {char.name === state.merchantCharacter && <><MerchantPendingImprovements state={state} /><SharedRuleConflicts state={state} onResolve={(id, owner) => model.post("/merchant/rule-conflict", {id,owner})} /></>}
     <DeconstructionConfirmation selection={deconstructionSelection} catalog={state.deconstructionCatalog || {}}
       items={state.merchantCatalog?.allItems || []} onClose={() => setDeconstructionSelection(null)}

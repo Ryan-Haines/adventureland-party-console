@@ -86,8 +86,8 @@ export function createLuckyUpgrade(ports: Ports) {
   }
   function runInput(from: number, scroll: number, lucky: unknown, offering?: number) {
     if (active) throw failure('another upgrade owns the inventory');
-    if (!validSlot(lucky)) throw failure('no verified slot configured');
-    const to = Number(lucky), item = copy(ports.item(from)), scrollItem = copy(ports.item(scroll));
+    const to = validSlot(lucky) ? Number(lucky) : from;
+    const item = copy(ports.item(from)), scrollItem = copy(ports.item(scroll));
     if (!item || !scrollItem || from === scroll) throw failure('item or scroll unavailable');
     return {to, item, scrollItem, offeringItem: offeringInput(from, scroll, offering)};
   }
@@ -102,7 +102,7 @@ export function createLuckyUpgrade(ports: Ports) {
     const {to, item, scrollItem, offeringItem} = runInput(from, scroll, lucky, offering);
     active = true;
     try {
-      if (from === to) { ports.log(to); return await action(from, scroll, offering); }
+      if (from === to) { if (validSlot(lucky)) ports.log(to); return await action(from, scroll, offering); }
       const journal: Journal = {from, to, item, displaced: copy(ports.item(to)), scrollDisplaced: scroll === to, offeringDisplaced: offering === to, phase: 'preparing'};
       ports.write(journal);
       await swapConfirmed(from, to, () => same(ports.item(to), item) && same(ports.item(from), journal.displaced));

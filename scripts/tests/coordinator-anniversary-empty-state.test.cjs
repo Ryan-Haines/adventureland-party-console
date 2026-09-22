@@ -26,7 +26,7 @@ test('lost anniversary handoff without captured participants retains active-part
  const cycle={id:'r',endsAt:50,combatHandoffAt:10,combatEvent:'crabxx'};
  const state={current:null,last:null,deferred:{}};
  const towns=[];
- const ports={now:()=>100,nextCommandId:()=>1,activeNames:()=>['P','M'],merchant:()=> 'M',enabled:()=>true,
+ const ports={now:()=>100,nextCommandId:()=>1,activeNames:()=>['P','M'],merchant:()=> 'M',enabled:name=>name!=='M',
   statuses:()=>({}),commands:()=>Object.fromEntries(towns.map(name=>[name,{type:'event-return-town'}])),
   anniversary:()=>cycle,anniversaryParticipants:()=>['P'],convoy:()=>null,sessions:()=>[],
   checkpoint:()=>null,capture:()=>({}),town:name=>towns.push(name),persist:()=>{},townBusy:()=>false};

@@ -24,6 +24,8 @@ import { MerchantJob } from "./merchant-job";
 import { merchantJobLabel } from "./merchant-job-label";
 import { PartyState } from "./party-state";
 import { SendToPartyControl } from "./send-to-party-control";
+import { MerchantCancelJobControl } from "./merchant-cancel-job-control";
+import { LuckySlotTracker } from "./lucky-slot-tracker";
 
 export function MerchantCardControls({
   state: baseState,
@@ -118,15 +120,7 @@ export function MerchantCardControls({
               className="flex min-w-0 items-center gap-3 text-left"
             >
               {status === "queued" && job.reason !== "fishing" && job.reason !== "mining" ? (
-                <button
-                  type="button"
-                  aria-label={`Cancel ${jobLabel(job)}`}
-                  title="Cancel and undo pending intent"
-                  onClick={() => void onCancelJob(job.id)}
-                  className="grid h-4 w-4 shrink-0 place-items-center rounded border border-rose-700 bg-zinc-950 text-rose-300 hover:border-rose-400 hover:bg-rose-950 hover:text-rose-100"
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
+                <MerchantCancelJobControl id={job.id} reason={job.reason} label={jobLabel(job)} onCancel={onCancelJob} />
               ) : null}
               <span title={`${jobLabel(job)}${job.target && job.reason !== "join giveaway" ? ` · ${job.target}` : ""}`}
                 className={
@@ -240,6 +234,7 @@ export function MerchantCardControls({
           Join giveaway
         </Button>
         <SendToPartyControl state={state} onSend={onBank} />
+        {state.merchantCharacter && <LuckySlotTracker character={state.merchantCharacter} tracking={merchant?.luckySlotTracking} streams={state.luckySlotTracking?.[state.merchantCharacter]} verified={state.luckyUpgradeSlots?.[state.merchantCharacter]} />}
         <Button
           variant="outline"
           aria-pressed={state.merchantForceStand === true}

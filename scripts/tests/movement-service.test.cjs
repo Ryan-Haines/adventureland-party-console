@@ -5,6 +5,15 @@ const {geometryFingerprint}=require('../../runtime/navigation/contracts.ts');
 const {createPlannerService}=require('../../runtime/coordinator/navigation/planner-service.ts');
 const {createNative}=require('../../tools/game/pathfinder-benchmark/native.cjs');
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('route import refreshes and normalizes the game version, retaining strict fingerprint validation',()=>{
+ const r=fixture();r.host.parent.__partyClientVersion='17139';
+ assert.throws(()=>r.service.install([],{version:17139,fingerprint:'incorrect'}),/expected.*incorrect.*actual.*17139/);
+ assert.equal(r.service.identity.version,17139);
+ r.host.parent.__partyClientVersion='17140';
+ assert.throws(()=>r.service.install([],{version:17139,fingerprint:r.service.identity.fingerprint}),/game geometry mismatch/);
+ assert.equal(r.service.identity.version,17140);r.dispose();
+});
 test('diagnostics snapshot coordinates and deduplicate independently of mutable movement state',()=>{
  const {movementDiagnostics}=require('../../runtime/characters/movement-diagnostics.ts');
  let now=1000;const logs=[];

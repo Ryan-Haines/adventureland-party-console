@@ -33,6 +33,9 @@ function resumeCurrentParty(hunt: HuntCycle, ownerLeft: boolean): void {
 export function reconcileCurrentHuntParty(
   hunt: HuntCycle, state: HuntTickState, now: number, cancelConvoy: () => void,
 ): boolean {
+  // A requested reload temporarily removes heartbeats. Do not turn that gap into
+  // a smaller party and discard the repair convoy (or its terminal failure).
+  if (geometryOwnsRoster(state)) return false;
   const current = currentHuntParty(state, now);
   // A missing leader report is not evidence that the whole party departed.
   if (!current.includes(state.leader!)) return false;
@@ -47,4 +50,8 @@ export function reconcileCurrentHuntParty(
   for (const mission of hunt.missions || []) mission.owners = mission.owners.filter(name => current.includes(name));
   resumeCurrentParty(hunt, ownerLeft);
   return true;
+}
+function geometryOwnsRoster(state: HuntTickState): boolean {
+  const convoy=state.activeConvoy;
+  return convoy?.geometryRepair?.phase === 'waiting' || convoy?.failureCode === 'geometry-mismatch';
 }

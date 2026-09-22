@@ -51,7 +51,8 @@ export function createAnniversarySnapshot(
       abortedRounds: state.abortedRounds,
       activity: state.activity.slice(-100),
       crafted: state.crafted,
-      craftReady: balance.completeSets > 0,
+      // Older character runtimes must also leave cake crafting to the exchange menu.
+      craftReady: false,
       handoffTargets: anniversaryHandoffs(state, ports),
       merchant: ports.merchant(),
     };

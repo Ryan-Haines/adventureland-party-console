@@ -32,7 +32,7 @@ export function updateCoordinatorABStrategy(
   const previousSerialized = JSON.stringify(state.abtestingStrategy);
   const participants = ports
     .activeNames()
-    .filter((name) => name !== state.merchantCharacter && ports.enabled(name, "abtesting"));
+    .filter((name) => ports.enabled(name, "abtesting"));
   state.abtestingStrategy = resolveABStrategy(
     state.abtestingStrategy,
     participants,

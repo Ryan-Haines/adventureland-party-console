@@ -69,7 +69,7 @@ export function createFarmAreaRecovery(ports: FarmNavigationPorts) {
     const area = ports.resolve(ids, convoy.location)!;
     const key = area.id || ports.areaId(area);
     const transient =
-      /restarted|interrupted|runtime|owner|unavailable|dead|formation|cruise|command lost|prepared route lost|movement lock/i.test(
+      /geometry|restarted|interrupted|runtime|owner|unavailable|dead|formation|cruise|command lost|prepared route lost|movement lock/i.test(
         String(convoy.failure || ""),
       );
     if (!transient) failures[key] = (failures[key] || 0) + 1;
@@ -94,6 +94,9 @@ export function createFarmAreaRecovery(ports: FarmNavigationPorts) {
   ): void {
     if (staleFallback(convoy, names)) { ports.cancelConvoy(); ports.persist(); return; }
     const { area, key, transient, failures } = recordFailure(state, convoy, ids, now);
+    if (convoy.failureCode === 'geometry-mismatch') {
+      state.pending=null; state.paused=true; ports.persist(); return;
+    }
     ports.cancelConvoy();
     if (hunt) hunt.convoyId = null;
     const destination =

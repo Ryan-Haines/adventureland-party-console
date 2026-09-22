@@ -25,7 +25,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   const native = host.__partyNativeMovement ||= { move: host.smart_move, stop: host.stop, start: host.start_pathfinding, next: host.continue_pathfinding, tick: host.smart_move_logic };
   const planner = createNativePlanner(host, native);
   const state: MoveState = { map: host.character.map, x: 0, y: 0, moving: false, searching: false, found: false, plot: [], use_town: true, try_exact_spot: false, edge: 20, on_done() {} };
-  let version = host.parent.__partyClientVersion || Number(host.G.version), fingerprint = geometryFingerprint(host.G);
+  let version = Number(host.parent.__partyClientVersion || host.G.version), fingerprint = geometryFingerprint(host.G);
   let report = movementDiagnostics(ports, host.character.name, version, fingerprint);
   const validation: ValidationPorts = {
     get game() { return host.G; },
@@ -181,7 +181,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     return new Promise((resolve, reject) => { state.on_done = (done, reason) => { callback?.(done); if (done) resolve({ success: true }); else reject(Error(reason || 'Movement cancelled')); }; });
   }
   function refreshGeometry() {
-    const nextVersion = host.parent.__partyClientVersion || Number(host.G.version), nextFingerprint = geometryFingerprint(host.G);
+    const nextVersion = Number(host.parent.__partyClientVersion || host.G.version), nextFingerprint = geometryFingerprint(host.G);
     if (nextVersion === version && nextFingerprint === fingerprint) return;
     version = nextVersion; fingerprint = nextFingerprint;
     report = movementDiagnostics(ports, host.character.name, version, fingerprint);
@@ -193,7 +193,9 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   function scheduler() { if (!disposed) { if (gate.owner) gate.owner.tick(); else tick(); } }
   host.smart_move = move; host.stop = stop; host.smart_move_logic = scheduler;
   function importRoute(plot: Step[], identity?: {version: number; fingerprint: string}, plannerEngine = 'shared') {
-    if (!identity || identity.version !== version || identity.fingerprint !== fingerprint) throw Error('Shared route game geometry mismatch');
+    refreshGeometry();
+    if (!identity || identity.version !== version || identity.fingerprint !== fingerprint)
+      throw Error('Shared route game geometry mismatch: expected ' + JSON.stringify(identity) + '; actual ' + JSON.stringify({version, fingerprint}));
     const issue = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
     if (issue) {
       report(journey!.id, state, 'Shared route rejected', issue, 'falling back to native smart_move after party regroup');

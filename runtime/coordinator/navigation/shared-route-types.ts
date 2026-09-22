@@ -20,6 +20,7 @@ export interface SharedReport {
   failure?: string; waypointCount?: number; departedAt?: number;
 }
 export interface SharedStatus extends RoutePoint {
+  movementGeometry?: { version: number; fingerprint: string };
   huntReturnProtocol?: number;
   movement?: {progress?:unknown};
   seenAt: number; server?: string; region?: string; rip?: boolean; hp?: number;
@@ -44,6 +45,8 @@ export interface SharedCommand {
   deferRendezvous?: boolean;
 }
 export interface SharedConvoy extends PartyConvoy {
+  geometryRepair?: { id: string; startedAt: number; expected: {version: number; fingerprint: string}; runtimes: Record<string,string>; phase: 'waiting' | 'complete' | 'failed' };
+  arrivalReadySince?: number;
   preparationBlocker?: string;
   continuousReturn?: number;
   disableTown?: boolean;

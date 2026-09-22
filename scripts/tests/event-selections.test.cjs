@@ -41,4 +41,6 @@ test('dropdown disables inherited and unsupported selections and permits indepen
   const render=()=>nodes(c.EventSelectionControl({state,name:'F',merchant:false,onChange:ids=>saved=ids})).filter(n=>n.type==='input');
   let inputs=render();assert.equal(inputs[0].props.checked,true);assert.equal(inputs[0].props.disabled,true);assert.equal(inputs[1].props.disabled,true);
   state.followers.F=false;inputs=render();assert.equal(inputs[0].props.disabled,false);inputs[0].props.onChange({target:{checked:true}});assert.deepEqual(Array.from(saved),['snowman','anniversary']);
+  state.merchantCharacter='F';state.eventSchedules=policy.supportedEvents.map(id=>({id,name:id}));
+  inputs=render();assert.equal(inputs.length,policy.supportedEvents.length);assert.ok(inputs.every(input=>!input.props.disabled));
 });
