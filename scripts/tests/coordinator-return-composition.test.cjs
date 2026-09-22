@@ -6,7 +6,7 @@ function fixture() {
     abtestingStrategy: { mode: 'uniform' }, activeConvoy: null, townCycle: null,
     anniversary: { eventCycle: null }, eventSessions: {} };
   const checkpoint = { map: 'main', x: 5, y: 6 }, calls = [];
-  const ports = { now: () => 100, activeNames: () => ['A','B','M'], enabled: () => true,
+  const ports = { now: () => 100, activeNames: () => ['A','B','M'], enabled: name => name !== 'M',
     checkpoint: () => checkpoint, cancelConvoy: () => { state.activeConvoy = null; },
     startConvoy: (...args) => { calls.push(['convoy', ...args]); state.activeConvoy = { id: 'exit', phase: 'assemble', participants: args[2] }; return true; },
     anniversaryParticipants: () => [], persist: () => calls.push('persist'),

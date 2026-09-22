@@ -1,4 +1,5 @@
 import {collectPassing} from '../../combat/passing.ts';
+import { merchantEventRecoveryReserved } from '../merchant/event-control.ts';
 import type {Member} from '../../combat/grouped.ts';
 import { monsterFocus, needsCatalog, partyResponse } from "./response-party.ts";
 import {
@@ -182,6 +183,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
       convoySignal: ports.convoySignal(name),
       ...travelResponse(name),
       ...merchantResponse(name),
+      ...(name === state.merchantCharacter ? { merchantEventRecoveryReserved: merchantEventRecoveryReserved(state) } : {}),
       ...partyResponse(state, names, leader),
       groupedCombat: ports.groupedCombat(),
         passingEncounters: passingReports(),

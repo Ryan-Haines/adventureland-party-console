@@ -1,4 +1,5 @@
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
+import { merchantEventReserved, type MerchantEventState } from './event-control.ts';
 import { ruleOwner } from "../inventory/shared-rules.ts";
 import { routineEnabled } from './routines.ts';
 import { craftProtection } from './craft-reservations.ts';
@@ -16,7 +17,7 @@ import type {
   ServiceStatus,
 } from "./work.ts";
 
-interface DispatchCoordinatorState extends BankImprovementState {
+interface DispatchCoordinatorState extends BankImprovementState, MerchantEventState {
   merchantAutomations?: Record<string, boolean | undefined>;
   merchantQueue: MerchantWork[];
   merchantCurrent: MerchantWork | null;
@@ -129,6 +130,7 @@ export function createCoordinatorMerchantDispatcher(
     },
     {
       ...ports,
+      eventReserved: () => merchantEventReserved(state, ports.now()),
       enabled: job => routineEnabled(job, state.merchantAutomations || {}),
       nextCommand: () => state.nextCommandId++,
       merchant: () => state.merchantCharacter,

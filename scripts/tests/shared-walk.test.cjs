@@ -1,8 +1,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createSharedWalks,completeSharedWalkMember}=require('../../runtime/coordinator/navigation/shared-walk.ts');
 const {createPartyConvoys}=require('../../runtime/coordinator/navigation/convoy.ts');
-function fixture(){
- let now=1000,starts=0;const names=['L','F','P'];
+function fixture(merchant=false){
+ let now=1000,starts=0;const names=merchant?['L','F','P','M']:['L','F','P'];
  const state={leader:'L',merchantCharacter:'M',followers:{F:true,P:true},navigationEpoch:0,nextCommandId:1,activeConvoy:null,commands:{},
  navigationIntents:Object.fromEntries(names.map(n=>[n,{revision:1}])),
  statuses:Object.fromEntries(names.map(n=>[n,{map:'main',x:0,y:0,seenAt:now,server:'USII',speed:57,convoyProtocol:4}]))};
@@ -286,4 +286,17 @@ for(const protectedKind of ['new-revision','protected','other-purpose'])test('ev
  t.service.reconcile();
  assert.equal(t.state.activeConvoy,t.old);
  assert.equal(t.state.eventReturn,recovery);
+});
+
+
+test('independent merchant owns event walking and return convoys but cannot request farm walking',()=>{
+ const f=fixture(true);
+ const result=f.walks.submit(f.body('M'));
+ assert.equal(result.error,undefined);assert.deepEqual(f.state.activeConvoy.participants,['M']);
+ assert.equal(f.state.activeConvoy.leader,'M');
+ f.convoys.cancel();
+ assert.match(f.walks.submit(f.body('M',{token:'farm',activity:'farm-recovery'})).error,/unauthorized/);
+ const returned=f.walks.submit(f.body('M',{token:'return',activity:'event-return',key:'cycle'}));
+ assert.equal(returned.error,undefined);assert.deepEqual(f.state.activeConvoy.participants,['M']);
+ assert.equal(f.state.activeConvoy.purpose,'shared-walk-return');
 });

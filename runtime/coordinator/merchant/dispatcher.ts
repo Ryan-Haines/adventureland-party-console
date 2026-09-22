@@ -24,6 +24,7 @@ interface AnniversaryControl {
   busy: boolean;
 }
 export interface DispatchPorts {
+  eventReserved?(): boolean;
   enabled?(job: MerchantWork): boolean;
   travel?(realm: string): Promise<unknown>;
   headless?(): boolean;
@@ -225,6 +226,7 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   }
 
   function dispatch(): void {
+    if (ports.eventReserved?.()) return;
     if (gatheringCastActive(ports.status(ports.merchant()), ports.now())) return;
     if (realmCheck.advance()) return;
     state.queue.forEach(realmCheck.eligibility);

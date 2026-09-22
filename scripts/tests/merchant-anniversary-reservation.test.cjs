@@ -59,7 +59,7 @@ test('client and coordinator release the same featured round after reload and re
  const start=source.indexOf('  function merchantAnniversaryCompletedRound()');
  const end=source.indexOf('  async function exitGoobrawlForRecovery',start);
  const event={active:true,live:true,round:'r',target:'Party',expires:Date.now()+200000};
- const context={root:{partyMerchantAnniversaryControl:merchantAnniversaryControl,__merchantAnniversaryReleasedRound:'r'},
+ const context={joinedEvent:null,eventTraveling:false,eventReturnPending:false,eventsEnabled:false,root:{partyMerchantAnniversaryControl:merchantAnniversaryControl,__merchantAnniversaryReleasedRound:'r'},
  character:{name:'M',ctype:'merchant',s:{}},eventStatus:()=>({anniversary:event}),eventSelected:()=>true,
  anniversaryRoundId:e=>e.round,anniversaryEpoch:x=>x,anniversaryCompletedRounds:{},anniversaryBusy:false,
  anniversaryMerchantMode:'complete',anniversaryMerchantRetryAt:0,anniversaryPlan:{abortedRounds:{}}};
@@ -74,7 +74,7 @@ test('restarted client restores its recorded claim and does not release a later 
  const start=source.indexOf('  function merchantAnniversaryCompletedRound()');
  const end=source.indexOf('  async function exitGoobrawlForRecovery',start);
  const event={active:true,live:true,round:123,target:'Other',expires:Date.now()+200000};
- const context={root:{partyMerchantAnniversaryControl:merchantAnniversaryControl},
+ const context={joinedEvent:null,eventTraveling:false,eventReturnPending:false,eventsEnabled:false,root:{partyMerchantAnniversaryControl:merchantAnniversaryControl},
  character:{name:'M',ctype:'merchant',s:{}},eventStatus:()=>({anniversary:event}),eventSelected:()=>true,
  anniversaryRoundId:e=>String(e.round),anniversaryEpoch:x=>x,anniversaryCompletedRounds:{},anniversaryBusy:false,
  anniversaryMerchantMode:'idle',anniversaryMerchantRetryAt:0,

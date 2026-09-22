@@ -457,3 +457,14 @@ to work with every future server change. Native/Steam sessions remain browser-ow
 
 The dashboard core publishes `gameVersion` and `clientUpdate`. The header displays
 that coordinator-selected version without changing header layout height.
+
+
+Merchants can independently select all supported events. Combat attendance uses
+current equipment and the normal attack controller, without enabling farming.
+New merchant jobs, gathering, and stand work pause while event ownership is
+active. Production yields before its next admission and crafting uses durable
+checkpoints; other in-flight work finishes before travel. Event sessions and
+return ownership retain this reservation through coordinator restart. Publish
+character and coordinator assets together with the ordinary full restart.
+Validate with `merchant-events`, `shared-walk`, event selection/return, and
+merchant checkpoint/recovery tests.

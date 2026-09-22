@@ -1,7 +1,8 @@
 import { createBankboiService, type StorageTransaction } from "./bankboi-service.ts";
+import { merchantEventReserved, type MerchantEventState } from '../merchant/event-control.ts';
 
 type ServicePorts<Retrieval> = Parameters<typeof createBankboiService<Retrieval>>[1];
-interface BankboiCoordinatorState<Retrieval> {
+interface BankboiCoordinatorState<Retrieval> extends MerchantEventState {
   bankboiTransaction: StorageTransaction<Retrieval> | null;
   merchantCharacter: string | null;
   statuses: Record<string, (NonNullable<ReturnType<ServicePorts<Retrieval>["merchantStatus"]>> & { banking?: boolean }) | undefined>;
@@ -61,7 +62,7 @@ export function createCoordinatorBankboiService<Retrieval, Block extends { enabl
         const worker = state.bankbois?.[name];
         if (worker) { worker.state = "error"; worker.error = "interrupted"; worker.retryAt = ports.now() + 10_000; }
       },
-      merchantBusy: () => !!state.merchantCurrent,
+      merchantBusy: () => !!state.merchantCurrent || merchantEventReserved(state, ports.now()),
       slots: () => state.headlessSlots,
       clearSlot: (index) => {
         state.headlessSlots[index] = null;

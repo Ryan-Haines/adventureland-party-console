@@ -53,7 +53,7 @@ interface EventObservationPorts {
   merchant(): string | null;
   enabled(name: string, event?: string): boolean;
   checkpoint(): ReturnLocation | null;
-  capture(): Waypoints;
+  capture(names?: string[]): Waypoints;
   persist(): void;
   log(message: string, level: string): void;
   statuses(): Readonly<Record<string, ReturnStatus | undefined>>;
@@ -109,6 +109,7 @@ export function createEventObservations(
             participants: [],
           };
     const changed = !session.participants.includes(name);
+    if (!session.waypoints[name]) Object.assign(session.waypoints, ports.capture([name]));
     session.participationRecorded = true;
     if (changed) session.participants.push(name);
     state.sessions[name] = session;
@@ -330,7 +331,7 @@ export function createEventObservations(
       : [];
     if (ports.enabled(body.name)) for (const report of reports) reportLive(body.name, report);
     const participating = body.joinedEvent || body.mapEvent;
-    if (participating && body.name !== ports.merchant() && ports.enabled(body.name, participating))
+    if (participating && ports.enabled(body.name, participating))
       participate(body.name, participating);
     reportAnniversaryHandoff(body);
     beginEndedReturn();

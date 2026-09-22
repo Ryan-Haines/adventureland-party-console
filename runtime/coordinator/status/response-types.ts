@@ -50,6 +50,9 @@ export const heartbeatStateFields = [
 ] as const;
 
 export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[number], unknown> {
+  eventSessions?: import('../merchant/event-control.ts').MerchantEventState['eventSessions'];
+  eventReturn?: import('../merchant/event-control.ts').MerchantEventState['eventReturn'];
+  deferredEventReturns?: import('../merchant/event-control.ts').MerchantEventState['deferredEventReturns'];
   merchantQueue?: import("../merchant/work.ts").MerchantWork[];
   huntEventTrips?: import("../events/hunt-trip.ts").HuntEventTrips["huntEventTrips"];
   leader: string | null;

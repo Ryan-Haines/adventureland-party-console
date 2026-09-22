@@ -2196,6 +2196,7 @@
       clientVersion: parent.__partyClientVersion || Number(G.version),
       clientInstance: parent.__partyClientInstance || null,
       upgradePreviewSession: upgradePreviewSession,
+      merchantEventReserved: merchantEventWorkReserved(),
       upgradeInventoryBusy: !!(root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending() ||
         root.localStorage.getItem("party-lucky-upgrade:" + character.name)),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
@@ -3744,6 +3745,7 @@
   async function trackedProduction(kind, slots, automatic, operation, offeringAttempt) {
     if (character.ctype !== "merchant") return operation();
     await recoverProductionJournal();
+    await yieldMerchantForEvent();
     if (automatic) await verifyProductionProtection(slots);
     var item=fingerprint(character.items[slots[0]]), id=character.name+":"+Date.now()+":"+Math.random().toString(36).slice(2);
     if (offeringAttempt && offeringAttempt.requestId) id="manual-offering:"+offeringAttempt.requestId;
@@ -8371,9 +8373,12 @@
     // The coordinator normally stops dispatching these commands two minutes
     // before the round. This local gate closes the heartbeat-sized race where
     // an already-delivered command could otherwise begin during that window.
+    if (character.ctype === "merchant" && /^merchant-/.test(command.type) && merchantEventWorkReserved()) {
+      reportMerchantCommand(command, "deferred", "event"); return;
+    }
     if (character.ctype === "merchant" && command.type !== "merchant-idle" && command.type !== "merchant-stand-sync" &&
         /^merchant-/.test(command.type) && merchantAnniversaryWorkReserved()) {
-      reportMerchantCommand(command, "deferred", "anniversary"); return;
+      reportMerchantCommand(command, "deferred", merchantEventWorkReserved() ? "event" : "anniversary"); return;
     }
     if (character.ctype === "merchant" && !await gatheringCommandHandoff(command)) return;
     if (command.id <= lastCommand) return;
@@ -9074,7 +9079,8 @@
       var previousSelections = enabledEventSelections;
       statusPhase = "apply event selections";
       enabledEventSelections = Array.isArray(state.eventSelections) ? state.eventSelections : null;
-      eventsEnabled = !!state.eventsEnabled && character.ctype !== "merchant";
+      eventsEnabled = !!state.eventsEnabled;
+      root.__merchantCoordinatorEventRecovery = !!state.merchantEventRecoveryReserved;
       if (previousSelections && enabledEventSelections && previousSelections.join(",") !== enabledEventSelections.join(",")) {
         eventSelectionRevision++;
         pendingEventDisables = root.__partyPendingEventDisables = Array.from(new Set(pendingEventDisables.concat(previousSelections.filter(function(id) { return !eventSelected(id); }))));
@@ -9209,6 +9215,7 @@
         game_log("Party command failed: " + (error.reason || error.message || error), "red");
       });
       if (character.ctype === "merchant" && !state.command && !root.__merchantActiveJob && !root.__merchantInventoryTidy &&
+          !merchantEventWorkReserved() &&
           !banking && !upgrading && !stocking && !gatheringActive && !merchantIdleActive && !anniversaryBusy && !character.rip) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot).catch(function (error) {
           game_log(String(error.message || error), "red");
@@ -9294,7 +9301,24 @@
     return round && (anniversaryCompletedRounds[round] || root.__merchantAnniversaryReleasedRound === round) ? round : null;
   }
 
+  function merchantEventWorkReserved() {
+    return character.ctype === "merchant" && (!!joinedEvent || eventTraveling || eventReturnPending ||
+      !!root.__merchantCoordinatorEventRecovery || eventsEnabled && !navigationIntent.cancelled && !!activeCombatEvent());
+  }
+
+  async function yieldMerchantForEvent() {
+    var active = root.__merchantActiveJob;
+    if (!active || !merchantEventWorkReserved()) return;
+    // Settle journals before this boundary; do not admit another production
+    // operation once event ownership has reserved the merchant.
+    var result = await request("/merchant/checkpoint", { method: "POST", body: {
+      jobId: active.jobId, eventOnly: true,
+    } });
+    if (result.yield) throw new Error("merchant_yield");
+  }
+
   function merchantAnniversaryWorkReserved() {
+    if (merchantEventWorkReserved()) return true;
     if (character.ctype !== "merchant" || !root.partyMerchantAnniversaryControl) return false;
     var event = eventStatus().anniversary, ticket = character.s && character.s.anniversary_visit;
     var round = event && anniversaryRoundId(event, ticket);
@@ -9619,6 +9643,7 @@
   }
 
   async function runAnniversaryKiss() {
+    if (merchantEventWorkReserved()) return;
     if (!eventSelected("anniversary")) return;
     if (await applyAnniversaryAbort()) return;
     var staleKiss = root.__partyAnniversaryKissOperation;
@@ -10715,10 +10740,24 @@
   async function pollEvents() {
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
-    if (eventPollBusy || character.ctype === "merchant") return;
+    if (eventPollBusy) return;
     if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return;
     eventPollBusy = true;
     try {
+      if (character.ctype === "merchant" && merchantEventWorkReserved()) {
+        // Never take movement from an unsettled inventory operation or worker.
+        if (root.__merchantActiveJob || root.__merchantInventoryTidy || merchantIdleActive ||
+            banking || stocking || upgrading || root.__partyUpgradePreviewInFlight ||
+            luckyUpgradeService && luckyUpgradeService.pending()) return;
+        var gatheringAttempt = root.__merchantGatheringAttempt;
+        if (gatheringAttempt) {
+          gatheringAttempt.cancelled = "event attendance";
+          if (gatheringAttempt.phase !== "casting" && typeof stop === "function") await stop("smart");
+          return;
+        }
+        if (gatheringActive) return;
+        await closeMerchantStandForTravel();
+      }
       if (!eventsEnabled) {
         eventTargetTypes = [];
         joinedEvent = null;
@@ -10798,7 +10837,11 @@
       }
       if (eventTraveling || banking || stocking || upgrading || departurePending || bankQueued) return;
       if (!await eventTravelAllowed(event.name)) return;
-      if (nearestEventTarget()) return;
+      if (nearestEventTarget()) {
+        joinedEvent = event.name;
+        root.__partyJoinedEvent = event.name;
+        return;
+      }
       eventTraveling = true;
       travellingEventName = event.name;
       var travelSelectionRevision = eventSelectionRevision;
@@ -11102,7 +11145,7 @@
 
   async function rejoinActiveEventAfterRespawn() {
     if (escapeOwns() || navigationIntent.cancelled) return { status: "cancelled" };
-    if (!eventsEnabled || character.ctype === "merchant") return { status: "not-applicable" };
+    if (!eventsEnabled) return { status: "not-applicable" };
     var requiredEventName = root.__partyEventRejoinRequired;
     var event = activeCombatEvent();
     if (!event && requiredEventName) return { status: "cancelled" };
@@ -13969,6 +14012,10 @@
       if (root.on_party_request === acceptConfiguredPartyRequest) root.on_party_request = previousPartyRequestHandler;
     },
     isBanking: function () { return banking || bankQueued; },
+    merchantEventCombatActive: function () {
+      return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
+        !eventReturnPending && !root.__merchantActiveJob;
+    },
     isOccupied: function () {
       if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;

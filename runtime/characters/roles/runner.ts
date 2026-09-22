@@ -82,12 +82,13 @@ export function installRoleRunner(
       active &&
       !character.rip &&
       resolvedRole().combat &&
+      (character.ctype !== "merchant" || !!sharedRoutine.merchantEventCombatActive?.()) &&
       !sharedRoutine.isOccupied() &&
       ["pending", "feed"].indexOf(sharedRoutine.getAbtestingMode()) < 0
     );
   }
   function passingTarget(): Target | null {
-    if (!active || character.rip || !resolvedRole().combat || ["pending","feed"].includes(sharedRoutine.getAbtestingMode())) return null;
+    if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending","feed"].includes(sharedRoutine.getAbtestingMode())) return null;
     return (sharedRoutine as any).getPassingTarget?.() || null;
   }
   function attackTarget(): Target | null {
@@ -121,6 +122,7 @@ export function installRoleRunner(
     return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
   }
   function chooseTarget() {
+    if (character.ctype === "merchant") return resolvedRole().chooseTarget();
     if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget();
     const rare = sharedRoutine.getRareTarget?.();
     if (rare) return rare;
