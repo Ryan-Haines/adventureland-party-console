@@ -4,6 +4,8 @@ For editable Windows packages, Docker images, release publishing, and dashboard-
 
 Run Adventure Land characters in Steam or headless, and manage them from a browser.
 
+![Party Console dashboard showing character status, farming settings, equipment, and merchant controls](docs/images/main-dashboard.png)
+
 ## Windows installation
 
 ### Release package (recommended; supports automatic updates)
