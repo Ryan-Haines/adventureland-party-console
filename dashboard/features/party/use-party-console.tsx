@@ -906,6 +906,8 @@ export function usePartyConsole() {
     );
   return {
     connectionNotice,
+    coordinatorLoading: !coreQuery.data && !coreQuery.isError,
+    coordinatorUnavailable: coreQuery.isError,
     setAnniversaryOpen,
     state,
     setMailOpen,

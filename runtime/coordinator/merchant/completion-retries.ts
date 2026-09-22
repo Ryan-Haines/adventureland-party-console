@@ -25,7 +25,7 @@ function classify(job: CompletionJob, body: CompletionReport): RetryDecision {
     error = requestText(body.error || "");
   const storageYield = failed && body.error === "bankboi_pending",
     anniversaryYield = failed && body.error === "merchant_anniversary_reserved";
-  const interrupted = failed && error.toLowerCase() === "interrupted";
+  const interrupted = failed && interruptedProduction(error);
   const rendezvous = failed && retryRendezvous(job, error);
   const realm = realmFailure(body);
   return {
@@ -39,6 +39,12 @@ function classify(job: CompletionJob, body: CompletionReport): RetryDecision {
 }
 function realmFailure(body: CompletionReport): boolean {
   return !body.success && requestText(body.error || "").startsWith("merchant job failed: wrong realm");
+}
+function transientUpgradeInput(error: string): boolean {
+  return error === "Couldn't use lucky slot: item or scroll unavailable";
+}
+function interruptedProduction(error: string): boolean {
+  return error.toLowerCase() === "interrupted" || transientUpgradeInput(error);
 }
 function retryAllowed(job: CompletionJob, yielded: boolean, interrupted: boolean): boolean {
   return (
@@ -79,7 +85,7 @@ function retryIncrement(decision: RetryDecision): number {
 export function createCompletionRetries(state: CompletionState, ports: CompletionPorts) {
   function resourceBlock(job: CompletionJob, body: CompletionReport): void {
     const error = requestText(body.error || ""),
-      capacity = /^(bank_full|inventory_full|no_space)$|^Couldn't use lucky slot:/i.test(error);
+      capacity = !transientUpgradeInput(error) && /^(bank_full|inventory_full|no_space)$|^Couldn't use lucky slot:/i.test(error);
     if (!resourceLimited(job, body, capacity, error)) return;
     state.merchantJobBlocks[job.target + "\n" + job.reason] = {
       error: requestText(body.error),

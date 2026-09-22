@@ -51,6 +51,7 @@ export function createHuntQuests(state: HuntTickState, ports: HuntQuestPorts) {
   }
 
   function build(hunt: HuntCycle): void {
+    delete hunt.encounter;
     hunt.missionRevision = (hunt.missionRevision || 0) + 1;
     delete hunt.loot;
     hunt.owner = policy.owner(hunt, state.leader!);
@@ -65,6 +66,7 @@ export function createHuntQuests(state: HuntTickState, ports: HuntQuestPorts) {
     if (["returning", "at-daisy"].includes(hunt.stage)) return;
     policy.beginTurnIn(hunt, state.leader!);
     hunt.target = null;
+    delete hunt.encounter;
     delete hunt.arrivalHandoff;
     ports.persist();
     ports.cancelConvoy();
@@ -83,6 +85,7 @@ export function createHuntQuests(state: HuntTickState, ports: HuntQuestPorts) {
     if (mission.skipped || state.huntBlacklist?.[mission.target] || !unfinished(mission))
       return false;
     const destination = (mission.destination ||= ports.monsterDestination(mission.target));
+    if (destination) mission.destinationVersion = 1;
     hunt.currentIndex = index;
     hunt.target = mission.target;
     if (destination)
@@ -131,7 +134,7 @@ export function createHuntQuests(state: HuntTickState, ports: HuntQuestPorts) {
         "Picking up Monster Hunt for " + selected.owner,
         "daisy-sync-travel",
       );
-    } else if (selected.action === "claim" || selected.quest!.remainingMs <= policy.TURN_IN_MS) {
+    } else if (selected.action === "claim") {
       hunt.waitForExpiry = selected.action !== "claim";
       returnToDaisy(hunt);
     } else if (

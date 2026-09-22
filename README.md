@@ -24,7 +24,7 @@ Install Git and Node **22.18+**. Run these commands in PowerShell.
 3. Start the console and leave it running:
 
    ```powershell
-   .\scripts\start-caracal.ps1
+   .\scripts\start-console.ps1
    ```
 
    You only need to connect your account once. In the **Adventure Land Steam client**, log in to a character, open **CODE**, paste the following line, and click **Engage**. Copy the displayed session into the PowerShell prompt:
@@ -33,11 +33,11 @@ Install Git and Node **22.18+**. Run these commands in PowerShell.
    show_json(parent.user_id + "-" + parent.user_auth)
    ```
 
-4. Open [http://localhost:3010](http://localhost:3010). Open **Interface settings > Load setup**, click **Generate Steam loader**, then copy the generated line into Steam **CODE** and click **Engage**. The server address is detected automatically.
+4. Open [http://localhost:3010](http://localhost:3010), then **Interface settings > Load setup**. Your account is already connected through the launcher. Setup asks where and how you play Adventure Land, then shows you the right steps to link it. Some setups include a one-time security certificate installation on the computer running the game. For headless play, you can skip linking and continue to the dashboard.
 5. Select your characters in the dashboard and play!
 6. Optional: [set up ALData](#optional-aldata-setup) to publish market classifieds.
 
-From another computer, use `http://<host-LAN-IP>:3010`, including when generating its Steam loader. Allow Node through Windows Firewall on Private networks.
+From another computer, use `http://<host-LAN-IP>:3010`. Setup generates the appropriate loader address. Allow Party Console's HTTP (3010) and HTTPS (3443) ports through the host's firewall on your private network.
 
 ## Docker installation
 
@@ -56,24 +56,47 @@ Install Git and Docker with Compose. Raspberry Pi requires a **64-bit OS**.
    ./scripts/start-docker.sh
    ```
 
-   This builds from your checked-out source, starts the container in the background, and waits up to five minutes for it to become ready. When ready, it prints **Party Console ready! Open at** followed by your server address. Your saved account and character data are preserved when you run it again.
+   The helper script builds and starts the container with hot reload enabled. Dashboard and character-code edits update automatically. It waits up to five minutes for startup, then prints **Party Console ready! Open at** followed by your server address. Your saved account, character data, and HTTPS certificates are preserved when you run it again.
 
-3. If you prefer to build and start separately, use these commands instead:
+3. If you prefer a production container without hot reload, use these commands instead:
 
    ```sh
    docker compose build
    docker compose up -d
    ```
 
-4. Open the address printed by the helper. With the manual commands, open [http://localhost:3010](http://localhost:3010), or `http://<host-LAN-IP>:3010` from another computer. You only need to connect your account once. In the **Adventure Land Steam client**, log in to a character, open **CODE**, paste the following line, and click **Engage**. Copy the displayed session into **Game session** in the console, select a realm, and click **Connect account**.
+   These commands also switch an existing development container to production. To switch back, run `./scripts/start-docker.sh`. Both modes use the same saved data. View logs with `docker compose logs -f`; stop the container with `docker compose down`. Do not add `-v` unless you intend to delete your saved data.
 
-   ```javascript
-   show_json(parent.user_id + "-" + parent.user_auth)
-   ```
-
-   To connect Steam, open **Interface settings > Load setup**, click **Generate Steam loader**, and paste the generated line into Steam **CODE**. Click **Engage**, then **Return to dashboard** in the console. No server address needs to be entered.
+4. Open the address printed by the helper. With the manual commands, open [http://localhost:3010](http://localhost:3010), or `http://<host-LAN-IP>:3010` from another computer. Setup first walks you through getting your game session and connecting your account. It then asks where and how you play Adventure Land and shows you the right steps to link it. Some setups include a one-time security certificate installation on the computer running the game. For headless play, you can skip linking and continue to the dashboard. You can revisit these steps through **Interface settings > Load setup**.
 5. Select offline characters in the dashboard to run headless, and play!
 6. Optional: [set up ALData](#optional-aldata-setup).
+
+## Linux installation
+
+### Linux terminal
+
+Use a **64-bit Linux system (x64 or arm64)**, including a Raspberry Pi with a 64-bit OS. Install Node **22.18+**, npm, Git, tar, and util-linux (which provides `flock`). Run the launcher as your normal user, without `sudo`.
+
+1. Clone the repository:
+
+   ```sh
+   git clone https://github.com/Ryan-Haines/adventureland-party-console.git
+   cd adventureland-party-console
+   ```
+
+2. Start the console and leave the terminal open:
+
+   ```sh
+   ./scripts/start-console.sh
+   ```
+
+   The first launch installs dependencies, caracAL, and the HTTPS service, then builds the console. Later launches reuse them and reinstall dependencies when their package files change. Dashboard and character-code hot reload are enabled by default.
+
+3. Open a **Dashboard** address printed in the terminal. Setup walks you through getting your game session, connecting your account, and linking your game client. Any certificate installation is part of that guided setup. For headless play, skip linking and select your characters in the dashboard. You can return through **Interface settings > Load setup**.
+
+4. Press **Ctrl+C** in the terminal to stop. Run `./scripts/start-console.sh` again to restart; your account, settings, and certificates are kept. To run without hot reload, use `./scripts/start-console.sh --production` instead.
+
+From another computer, use the printed LAN address. Allow HTTP (3010) and HTTPS (3443) through the host's firewall on your private network. Keep the old console stopped when moving between machines.
 
 ## Optional ALData setup
 
@@ -87,13 +110,24 @@ ALData provides public market and Ponty listings without a key. Authentication l
 
 - **Dashboard:** `dashboard/`.
 - **Character logic:** `runtime/characters/`; legacy shared routines are in `characters/shared.js`.
+- **Generated role compatibility bundle:** `characters/roles.js` is built from `runtime/characters/roles/compat.ts`; edit the TypeScript source. `characters/shared.js` is still maintained source used by current character builds.
 - **Coordinator:** `runtime/coordinator/`. Read its [README](runtime/coordinator/README.md) before changing behavior.
 
-For Windows development, start with `.\scripts\start-caracal.ps1 -DevDashboard`. Dashboard edits reload automatically; character edits rebuild and publish automatically. Edit source files, not generated bundles.
+For Windows development, start with `.\scripts\start-console.ps1 -DevDashboard`. Dashboard edits reload automatically; character edits rebuild and publish automatically. Edit source files, not generated bundles.
 
-For a full Windows rebuild and publication, stop the launcher and rerun `.\scripts\start-caracal.ps1`. For coordinator-only changes, use `.\scripts\start-caracal.ps1 -CoordinatorOnly`; this rebuilds and restarts services while preserving installed character assets.
+For a full Windows rebuild and publication, stop the launcher and rerun `.\scripts\start-console.ps1`. For coordinator-only changes, use `.\scripts\start-console.ps1 -CoordinatorOnly`; this rebuilds and restarts services while preserving installed character assets.
 
-For Docker changes, rebuild and restart:
+For native Linux development, use `./scripts/start-console.sh`. Dashboard and character edits reload automatically. After coordinator, hosting, or dependency changes (including a `git pull` containing them), press Ctrl+C and run it again to rebuild and restart. The launcher does not automatically restart the coordinator during gameplay.
+
+For Docker, `./scripts/start-docker.sh` enables hot reload using `compose.dev.yaml`. Edit files in the checkout on the Docker host, directly or through VS Code Remote SSH. Changes in a separate Windows checkout do not automatically reach your Pi.
+
+- **Dashboard or character logic:** save your edits (or pull those changes) and let the watchers update them. No container rebuild is needed. A character build that fails validation leaves the previous version running.
+- **Coordinator or hosting code:** rerun the helper to build and restart the services. Coordinator changes do not restart gameplay automatically.
+- **Dependencies, Dockerfile, or Compose configuration:** rerun the helper to rebuild the image and refresh its development dependencies.
+
+The helper keeps dependencies and build caches in Docker volumes, separate from your checkout and saved game data. Its restart briefly interrupts console services. If file changes are not detected on a Docker Desktop bind mount, start with `AL_WATCH_POLL=1 ./scripts/start-docker.sh`.
+
+For the production container, rebuild and restart after changes:
 
 ```sh
 docker compose up -d --build
@@ -106,6 +140,7 @@ State is local data; cloning or pushing Git does not transfer it.
 | Installation | State file |
 | --- | --- |
 | Windows/local | `.caracal/localStorage/caraGarage.jsonl` inside the checkout |
+| Native Linux | `.build/hosting-data/localStorage/caraGarage.jsonl` by default; an existing `.caracal/localStorage` directory is preserved and used if present |
 | Docker | `/data/localStorage/caraGarage.jsonl` inside the container |
 
 1. Stop the old installation and copy its state file. Keep the original as a backup.

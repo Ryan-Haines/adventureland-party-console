@@ -43,6 +43,33 @@ test('unrelated bank errors still propagate', async () => {
   ] }, []), /interrupted/);
 });
 
+test('bank errands retain paused craft ingredients, surplus stacks and marks until the order completes',async()=>{
+ const {craftProtection}=require('../../runtime/coordinator/merchant/craft-reservations.ts');
+ const {availableCraftStock}=require('../../runtime/craft-reservations.ts');
+ const materials=[{id:'strring',quantity:1},{id:'intring',quantity:1},{id:'dexring',quantity:1},{id:'vitscroll',quantity:10}];
+ const paused={id:'craft',order:{crafts:[{id:'ctristone',quantity:6}],craftMaterials:[materials]},resumeState:{phase:'crafting',craftIndex:0,crafted:4}};
+ const state={merchantCharacter:'M',merchantQueue:[paused]},deposited=[];
+ const r=runtime(async slot=>{deposited.push(slot);r.character.items[slot]=null;});
+ r.character.name='M';r.character.items=[...materials.slice(0,3).flatMap(m=>Array.from({length:2},()=>({name:m.id,level:0}))),{name:'vitscroll',q:305},{name:'junk'}];
+ r.partyAvailableCraftStock=availableCraftStock;
+ let checks=0;r.request=async(_path,{body})=>{assert.equal(body.protectionOnly,true);checks++;return {craftProtection:craftProtection(state)};};
+ const marks=r.character.items.map((item,slot)=>({slot,item}));
+ const command={jobId:'compound',merchantBankMarked:marks,craftProtection:{requirements:[]}};
+ await r.merchantBankErrands(command,[]);
+ assert.deepEqual(deposited,[7]);assert.equal(checks,8);
+ assert.deepEqual(Array.from(command._merchantBankedCompleted),[marks[7]]);
+ assert.equal(r.character.items[6].q,305,'partially reserved stack stays intact');
+ state.merchantQueue=[];
+ await r.merchantBankErrands({jobId:'bank',merchantBankMarked:marks.slice(0,7)},[]);
+ assert.deepEqual(deposited,[7,0,1,2,3,4,5,6]);
+});
+
+test('unavailable live reservation protection prevents deposits',async()=>{
+ let stored=false;const r=runtime(async()=>{stored=true;});r.request=async()=>({});
+ await assert.rejects(r.merchantBankErrands({jobId:'bank',merchantBankMarked:[{slot:0,item:{name:'vitscroll'}}]},[]),/reservations unavailable/);
+ assert.equal(stored,false);
+});
+
 test('capacity blocks ignore gold and movement but unblock after contents change', () => {
   const {coordinatorMerchantCapacitySignature} = require('../../runtime/coordinator/merchant/job-policy.ts');
   const party = { merchantCharacter: 'GoldMajesty', statuses: { GoldMajesty: { items: [] } },

@@ -93,13 +93,14 @@ test('return planning waits for compatible runtimes without consuming retries',(
  assert.equal(t.party.activeConvoy.returnRouting,true);
 });
 
-for (const remainingMs of [180001,180000,179999]) test('leader cutoff before fighting deferrals: '+remainingMs,()=>{
+for (const remainingMs of [180001,180000,179999,60000,1,0]) test('unfinished leader farms until expiry despite optional fighting: '+remainingMs,()=>{
  const t=fixture(); t.party.statuses.W.monsterHunt.remainingMs=remainingMs;
  t.party.statuses.P.monsterHunt.remainingMs=1;
  t.party.statuses.W.target={hp:100,mtype:'mole'};
  t.r.monsterHuntTick();
- assert.equal(t.hunt.stage,remainingMs<=180000?'returning':'farming');
- assert.equal(t.r.huntTurnInOwnsTravel(t.hunt),remainingMs<=180000);
+ assert.equal(t.hunt.stage,remainingMs<=0?'daisy-sync-travel':'farming');
+ if(remainingMs<=0)assert.deepEqual(t.convoys.at(-1).location,t.party.monsterHunterLocation);
+ else assert.equal(t.r.huntTurnInOwnsTravel(t.hunt),false);
 });
 
 test('completed leader returns immediately and protects incidental follower claims until confirmed',()=>{
@@ -119,12 +120,14 @@ test('completed leader returns immediately and protects incidental follower clai
  assert.equal(t.party.commands.W.action,'assign');
 });
 
-test('unfinished leader releases event priority at Daisy without waiting for expiry',()=>{
+test('unfinished leader already at Daisy under the old policy resumes farming instead of waiting for expiry',()=>{
  const t=fixture(); t.party.statuses.W.monsterHunt.remainingMs=180000;
- t.r.monsterHuntTick();t.party.activeConvoy=null;t.hunt.stage='at-daisy';
+ // A return saved under the previous policy can already be at Daisy.
+ t.hunt.turnIn={owner:'W',phase:'returning'};t.party.activeConvoy=null;t.hunt.stage='at-daisy';
  for(const s of Object.values(t.party.statuses))Object.assign(s,t.party.monsterHunterLocation);
  t.r.processHuntsAtDaisy(t.hunt);assert.equal(t.r.huntTurnInOwnsTravel(t.hunt),false);
- t.advance(3000);t.r.processHuntsAtDaisy(t.hunt);assert.equal(t.hunt.stage,'waiting-expiry');
+ t.advance(3000);t.r.processHuntsAtDaisy(t.hunt);assert.equal(t.hunt.stage,'mission-travel');
+ assert.equal(t.convoys.at(-1).location.map,'tunnel');
 });
 
 test('restart resumes a failed protected turn-in without releasing events or reselecting hunts',()=>{
@@ -255,10 +258,11 @@ test('blacklisted leader quest selects a follower and keeps its owner through co
  assert.equal(t.hunt.turnIn.owner,'P');assert.equal(t.hunt.stage,'returning');
 });
 
-test('blacklisted followers are skipped while a nearly expired eligible quest retains turn-in priority',()=>{
+test('blacklisted followers are skipped while a nearly expired eligible quest is still farmed',()=>{
  const t=fixture({blacklist:{mole:{},rat:{}}});assert.equal(t.hunt.target,'ghost');assert.equal(t.hunt.owner,'M');
  const h=fixture({blacklist:{mole:{}},quests:{W:{id:'mole',count:10,remainingMs:1000000},P:{id:'rat',count:10,remainingMs:1000},M:{id:'ghost',count:10,remainingMs:900000}}});
- assert.equal(h.hunt.owner,'P');assert.equal(h.convoys.at(-1).location.map,'main');
+ assert.equal(h.hunt.owner,'P');assert.equal(h.convoys.at(-1).location.map,'tunnel');
+ assert.equal(h.r.huntTurnInOwnsTravel(h.hunt),false);
 });
 
 test('all active quests blacklisted retains Hunt and travels to backup instead of Daisy',()=>{

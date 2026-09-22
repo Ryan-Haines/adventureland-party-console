@@ -39,6 +39,26 @@ test('resumed crafting retrieves only the remaining materials banked during inte
  await r.execute({jobId:'j',order,resumeState:{phase:'crafting',craftIndex:0,crafted:2}});
  assert.equal(r.crafts(),2);assert.equal(r.calls.at(-1)[1].success,true);
 });
+
+test('six Tri-Stones resume after four crafts with real level-less bank scrolls and exact-level rings',async()=>{
+ const r=runtime(),{namedFunction}=require('./helpers/named-function.cjs');
+ r.character.items=Array(12).fill(null);
+ const materials=[[1,'strring',0],[1,'intring',0],[1,'dexring',0],[10,'vitscroll',0]];
+ r.context.G.craft.ctristone={items:materials};
+ r.character.bank.items1=[{name:'strring',level:1},...materials.slice(0,3).flatMap(m=>Array.from({length:2},()=>({name:m[1],level:0}))),{name:'vitscroll',q:305}];
+ liveBank(r);
+ const c=vm.createContext(r.context);
+ vm.runInContext(['sameItem','findBankItem'].map(n=>namedFunction(shared,n)).join('\n'),c);
+ Object.assign(r.context,{freeInventorySlots:()=>r.character.items.filter(i=>!i).length,setTimeout:fn=>fn(),
+  split:async(slot,quantity)=>{const item=r.character.items[slot];item.q-=quantity;r.character.items[r.character.items.indexOf(null)]={...item,q:quantity};},
+  bankStoreFully:async slot=>{r.character.bank.items1.push(r.character.items[slot]);r.character.items[slot]=null;},
+  auto_craft:async()=>{for(const [quantity,id,level] of materials){const slot=r.character.items.findIndex(i=>i&&i.name===id&&(i.level||0)===level);assert.ok(slot>=0);const item=r.character.items[slot];if((item.q||1)===quantity)r.character.items[slot]=null;else item.q-=quantity;}r.calls.push(['craft']);}
+ });
+ await r.execute({jobId:'j',order:{crafts:[{id:'ctristone',quantity:6}],requirements:materials.map(([quantity,id,level])=>({id,level,quantity:quantity*6}))},resumeState:{phase:'crafting',craftIndex:0,crafted:4}});
+ assert.equal(r.crafts(),2);assert.equal(r.character.bank.items1[0].level,1);
+ assert.equal(r.character.bank.items1.find(i=>i?.name==='vitscroll').q,285);
+ assert.equal(r.calls.at(-1)[1].success,true);
+});
 test('craft checkpoint resumes remaining operations without repeating completed crafts',async()=>{
  const r=runtime();r.yieldAt(2);await r.execute({jobId:'j',order,resumeState:{phase:'crafting',craftIndex:0,crafted:0}});
  assert.equal(r.crafts(),2);assert.equal(r.saved().crafted,2);

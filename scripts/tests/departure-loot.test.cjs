@@ -3,6 +3,21 @@ const {createDepartureLoot,installLootClient}=require('../../runtime/combat/depa
 const {huntLootPending}=require('../../runtime/coordinator/hunt/loot.ts');
 const {createHuntTick}=require('../../runtime/coordinator/hunt/tick.ts');
 const {huntLootId}=require('../../runtime/hunt/loot-identity.ts');
+test('temporary Hunt loot ignores passing attacks while ordinary departure defense stays unchanged',async()=>{
+ const saved=global.setInterval;global.setInterval=()=>0;let api,calls=0,now=100;
+ const position={realm:':USII',map:'main',in:'main',x:0,y:0};
+ try {
+  api=installLootClient({},{departureLootPorts:()=>({name:()=> 'W',quest:()=>({id:'poisio',count:9}),
+   now:()=>++now,cancelled:()=>false,position:()=>position,defending:()=>true,huntEncounterDefending:()=>false,
+   loot:async()=>{calls++;return true;},chests:()=>[],socket:()=>({once(_event,fn){queueMicrotask(fn);},off(){}}),afterDraw:fn=>fn()})});
+  const mission={cycleId:'h',currentIndex:0,stage:'farming',target:'poisio',participants:['W'],encounter:{convoyId:'c'},
+   missions:[{target:'poisio',owners:['W']}],loot:{...position,id:'encounter',after:99,complete:false}};
+  api.accept({serverNow:100,farmingPolicy:'hunt',monsterHunt:mission});await api.hunt.tick();
+  assert.equal(calls,1);assert.equal(api.hunt.report().complete,true);
+  delete mission.encounter;mission.loot={...mission.loot,id:'ordinary'};
+  api.accept({serverNow:200,farmingPolicy:'hunt',monsterHunt:mission});await api.hunt.tick();assert.equal(calls,1);
+ } finally {api?.stop();global.setInterval=saved;}
+});
 test('historical completed loot releases farming and cannot return through a delayed report',()=>{
  const saved=global.setInterval;global.setInterval=()=>0;let api;
  try {

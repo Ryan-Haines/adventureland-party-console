@@ -25,7 +25,7 @@ test('hunt handoff adopts the earlier bee spawn and keeps followers and recovery
  routes.engage({body},{status(code){throw new Error('HTTP '+code)},json(value){response=value;}});
  assert.equal(response.ok,true);assert.equal(state.activeConvoy,null);assert.equal(state.monsterHunt.stage,'farming');
  assert.equal(state.monsterHunt.missions[0].destination.x,110);assert.equal(response.location.x,110);
- assert.equal(state.commands.A,undefined);assert.equal(state.commands.B.location.x,110);
+ assert.equal(state.commands.A,undefined);assert.equal(state.commands.B,undefined);
  assert.equal(state.location.x,110);assert.equal(state.characterLocations.B.x,110);assert.equal(original.x,1000);
  now=15000;for(const s of Object.values(state.statuses)){s.seenAt=now;s.x=110;}
  delete state.commands.B;
@@ -39,15 +39,17 @@ test('hunt acquisition fails closed on stale identities, positions, wrong type a
  for(const change of [r=>r.body.epoch++,r=>r.body.commandId++,r=>r.body.runtimeId='old',r=>r.body.navigationRevision++,
   r=>r.body.target.mtype='goo',r=>r.body.target.in='other',r=>r.body.target.map='cave',r=>r.body.target.x=121,
   r=>r.body.target.x=NaN,r=>r.state.statuses.A.seenAt=-2000,r=>r.state.statuses.A.rip=true,
-  r=>r.state.activeConvoy.phase='shared-prepare',r=>r.state.activeConvoy.combatHandoffAllowed=false,
+  r=>r.state.activeConvoy.phase='failed',r=>r.state.activeConvoy.combatHandoffAllowed=false,
   r=>r.state.monsterHunt.stage='returning',r=>r.state.monsterHunt.convoyId='new',r=>r.state.navigationIntents.B.cancelled=true]){
   const r=fixture();change(r);assert.equal(engageHunt(r.state,r.body,r.options,legacy,2000),false);assert.ok(r.state.activeConvoy);assert.equal(r.state.location,r.original);
  }
 });
-test('uncatalogued encounter uses its position; duplicate cannot cancel a later route',()=>{
+test('uncatalogued encounter retains the mission destination; duplicate cannot cancel a later route',()=>{
  const r=fixture();r.state.monsterChoices=[];const previous=r.state.activeConvoy;
  assert.equal(engageHunt(r.state,r.body,r.options,legacy,2000),true);
  assert.equal(r.state.location.x,110);
+ assert.deepEqual(r.state.monsterHunt.missions[0].destination,r.original);
+ assert.equal(r.state.monsterHunt.encounter.target.id,r.body.target.id);
  r.state.activeConvoy={...previous,id:'new'};
  assert.equal(engageHunt(r.state,r.body,r.options,legacy,2000),false);assert.equal(r.state.activeConvoy.id,'new');
 });
@@ -105,6 +107,16 @@ function groupedClient(){
  return {c,logs};
 }
 
+for(const phase of ['assemble','shared-prepare','travel'])test('follower can hand off a hunt target during '+phase+' without grouped arrival',()=>{
+ const r=fixture();r.state.activeConvoy.phase=phase;r.body={...r.body,character:'B',commandId:4,runtimeId:'b',navigationRevision:8};
+ let result;
+ const routes=createConvoyEngagementRoutes(r.state,{now:()=>2000,owned:()=>true,intent:n=>r.state.navigationIntents[n],
+  group:()=>({ready:false,anchor:{map:'main'},blockers:['waiting for stable formation']}),
+  engage:(b,o)=>engageHunt(r.state,b,o,legacy,2000),acceptArrival:(c,b,t)=>safety.acceptArrival(r.state.monsterHunt,c,b,t),persist(){}});
+ routes.engage({body:r.body},{status(code){throw Error('HTTP '+code)},json(value){result=value;}});
+ assert.equal(result.ok,true);assert.equal(r.state.activeConvoy,null);assert.equal(r.state.monsterHunt.stage,'farming');
+});
+
 test('real grouped lock permits travel nomination and handoff but still gates attacks',async()=>{
  const {c,logs}=groupedClient(),r=fixture();
  r.state.monsterHunt.target='cgoo';r.state.monsterHunt.missions[0].target='cgoo';r.state.activeConvoy.huntTarget='cgoo';
@@ -156,6 +168,17 @@ test('grouped hunt scan retains safety, chooses a new nearest candidate, and rat
  for(let i=0;i<50;i++)c.farmingTravelTarget(command);
  assert.equal(logs.length,count);assert.equal(logs.at(-1)[1],'Hunt acquisition: attack position unreachable');
  now+=10000;c.farmingTravelTarget(command);assert.equal(logs.length,count+1);
+});
+
+test('a delayed handoff response cannot stop a newer client journey',async()=>{
+ const {c}=groupedClient();let respond,stops=0;
+ const command={purpose:'monster-hunt',huntTarget:'cgoo',combatHandoffAllowed:true,location:{map:'main',x:1000,y:1000}};
+ c.parent.entities={target:{id:'c1',type:'monster',mtype:'cgoo',map:'main',in:'main',visible:true,hp:100,x:100,y:0}};
+ const convoy={detachRoute(){throw Error('must retain newer route');}};
+ let owns=true;Object.assign(c,{sharedConvoyIdentity:()=>({}),releaseConvoyCruise(){},stop(){stops++;},request:()=>new Promise(resolve=>respond=resolve)});
+ c.sharedConvoyEngagement(convoy,command,()=>owns,()=>{});owns=false;
+ respond({ok:true,handoff:'temporary',location:{map:'main',x:100,y:0},serverNow:2000});
+ await new Promise(setImmediate);assert.equal(stops,0);assert.equal(convoy.engaged,undefined);
 });
 
  test('handoff success is logged even immediately after a rejected attempt',()=>{

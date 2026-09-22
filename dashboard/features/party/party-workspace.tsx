@@ -18,21 +18,23 @@ import { PartyMerchantCommerceDialog } from "./party-merchant-commerce-dialog";
 import { PartySendMailDialog } from "./party-send-mail-dialog";
 
 import { ConnectedCharacterCard } from "./connected-character-card";
+import { PendingCharacterCards, pendingCharacters } from './pending-character-cards';
 
 export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
   const { state, chars, formation, setPickerSlot, monsters, post, setNotice, townParty, setMonsterNavigateTarget, huntSetup, huntSetupCharacter, monsterNavigateBusy, setHuntSetup, setMonsterNavigateBusy, monsterNavigateTarget, farmAreaRequest, setFarmAreaRequest, startFarmingArea, wtbItem } = model;
+  const pending = pendingCharacters(model);
   return (
     <>
       <section className="px-5 py-7 md:px-10">
         <div className="mx-auto max-w-[1500px]">
-        <RosterControls
+        {!chars.length && !pending.length && <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><RosterControls
           slots={state.activeSlots || []}
           operation={state.steamSwitch}
           onChoose={setPickerSlot}
-        />
-        {!chars.length ? (
-          <div className="grid min-h-64 place-items-center border border-dashed border-emerald-900 text-emerald-100/45">
-            Start caracAL and the character scripts to populate the console.
+        /></div>}
+        {!chars.length && !pending.length ? (
+          <div className="grid min-h-64 place-items-center border border-dashed border-emerald-900 bg-[#071315] text-emerald-100">
+            {model.coordinatorLoading ? 'Party Console is loading…' : model.coordinatorUnavailable ? 'Reconnecting to Party Console…' : <p>No characters connected yet. Load a character or <button type="button" className="rounded border border-cyan-700 bg-[#071315] px-2 text-cyan-200 hover:bg-cyan-950 hover:text-cyan-100" onClick={() => window.location.assign('/setup')}>open setup</button> to link Steam.</p>}
           </div>
         ) : (
           <RadioGroup
@@ -40,7 +42,9 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
             onValueChange={(value) => formation({ leader: value })}
             className="grid items-start gap-4 @3xl:grid-cols-2 @7xl:grid-cols-4"
           >
-            {chars.map(char => <ConnectedCharacterCard key={char.name} name={char.name} model={model} />)}
+            {chars.filter(char => !pending.some(entry => entry.name === char.name)).map(char => <ConnectedCharacterCard key={char.name} name={char.name} model={model} />)}
+            <PendingCharacterCards model={model} />
+            <RosterControls slots={state.activeSlots || []} operation={state.steamSwitch} onChoose={setPickerSlot} />
             {state.bankboiTransaction ? (
               <article className="grid min-h-[34rem] place-items-center self-stretch border-2 border-dashed border-cyan-500/80 bg-[#071315] px-8 text-center shadow-[inset_0_0_40px_rgba(34,211,238,0.06)]">
                 <div>

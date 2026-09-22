@@ -173,7 +173,9 @@
       if (transition && !current.acknowledged) return false;
       if (transition) alignArrival(current, p);
       if (distance(p, current.step) > 1) return false;
+      notifyTown(current, options, "complete");
       if (!transitionReady(current, options, !!transition)) return false;
+      notifyTransition(current, options);
       state.plot.shift();
       if (transition) index++;
       issued = void 0;
@@ -197,7 +199,10 @@
       return true;
     }
     function observe(current, options) {
-      if (current.error) throw Error(isTransition(current.step) ? transitionLabel(current.step) + ": " + current.error : current.error);
+      if (current.error) {
+        notifyTownRejection(current, options);
+        throw Error(isTransition(current.step) ? transitionLabel(current.step) + ": " + current.error : current.error);
+      }
       if (complete(current, options)) return;
       const p = position();
       if (arrivedTransition(current, p)) return;
@@ -206,7 +211,10 @@
         current.progressAt = now();
       }
       const transition = isTransition(current.step);
-      if (transition && now() - current.at > 12e3) throw Error(`Failed ${transitionLabel(current.step)}`);
+      if (transition && now() - current.at > 12e3) {
+        notifyTown(current, options, "interrupted");
+        throw Error(`Failed ${transitionLabel(current.step)}`);
+      }
       if (!transition && now() - current.progressAt > 5e3) throw Error("Stalled walking movement (5 seconds without progress)");
     }
     function arrivedTransition(current, p) {
@@ -230,22 +238,28 @@
     function dispatch(current, options) {
       if (current.error) throw Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : current.error);
       if (!lootReady(current.step)) return;
+      if (!readyTown(current, options)) return;
       if (isTransition(current.step) && !barrier(options, current.step, false)) return;
-      if (current.step.town && !townReady()) throw Error("Town warp unavailable during combat or pending loot");
       current.finished = false;
       current.at = now();
       current.progressAt = now();
       const captured = current;
+      notifyTown(current, options, "casting");
       try {
         void Promise.resolve(send(captured)).then((result) => {
-          if (result && typeof result === "object" && "failed" in result && result.failed) throw Error("Movement command rejected by game");
+          if (result && typeof result === "object" && "failed" in result && result.failed) throw result;
           if (issued === captured) captured.acknowledged = true;
         }).catch((error) => {
-          if (issued === captured) captured.error = String(error);
+          if (issued === captured) rejected(captured, error);
         });
       } catch (error) {
-        captured.error = String(error);
+        rejected(captured, error);
       }
+    }
+    function rejected(current, error) {
+      const reason = error && typeof error === "object" && "reason" in error ? String(error.reason) : String(error);
+      current.error = reason;
+      current.townUnavailable = /cooldown|unavailable|not.ready|no.mp|disabled/i.test(reason);
     }
     function tick(options) {
       sample();
@@ -262,7 +276,6 @@
       if (!canStart()) return false;
       const step = state.plot[0], p = position(), reason = stepIssue(validation, p, step, state.use_town);
       if (reason) throw Error(`${reason} between ${p.map} (${p.x}, ${p.y}) and ${step.map} (${step.x}, ${step.y})`);
-      checkTownAvailability(step);
       issued = { step, from: point(p), at: now(), progressAt: now(), position: p, finished: true };
       dispatch(issued, options);
       return false;
@@ -275,6 +288,22 @@
       lootWaitAt ??= now();
       if (now() - lootWaitAt >= 3e4) throw Error("Pending nearby loot prevented map transition for 30 seconds");
       return false;
+    }
+    function notifyTownRejection(current, options) {
+      notifyTown(current, options, current.townUnavailable ? "unavailable" : "interrupted");
+    }
+    function notifyTown(current, options, outcome) {
+      if (current.step.town) options.townAttempt?.(outcome, index, current.from, current.step);
+    }
+    function notifyTransition(current, options) {
+      if (isTransition(current.step)) options.transitionComplete?.(current.step);
+    }
+    function readyTown(current, options) {
+      if (!current.step.town || townReady() && host.can_use("use_town")) return true;
+      if (!options.townAttempt) throw Error("Town warp currently unavailable");
+      if (now() - current.at < 5e3) return false;
+      notifyTown(current, options, "unavailable");
+      throw Error("Town unavailable for 5 seconds; use walking route");
     }
     function sample() {
       const at = now();
@@ -290,9 +319,6 @@
     }
     function canStart() {
       return !host.character.moving && host.can_walk(host.character) && !host.is_transporting(host.character);
-    }
-    function checkTownAvailability(step) {
-      if (step.town && !host.can_use("use_town")) throw Error("Town warp currently unavailable");
     }
     return {
       tick,
@@ -531,6 +557,7 @@
     }
     function outcome(done, reason) {
       if (done) return "Native fallback succeeded";
+      if (reason === "Combat handoff") return "Travel paused for combat";
       return /cancelled|replaced|superseded/i.test(reason || "") ? "Movement cancelled" : "Movement failed";
     }
     function fallback(j, issue) {
@@ -766,6 +793,9 @@
       },
       install: importRoute,
       last: () => last,
+      combatHandoff() {
+        finish(false, "Combat handoff");
+      },
       report: () => journey ? {
         id: journey.id,
         engine: engine(journey),
@@ -1015,6 +1045,57 @@
     };
   }
   Object.assign(globalThis, { partyCreateBankStacks: createBankStacks });
+
+  // runtime/upgrade-preview.ts
+  var previewOptions = ["none", "offeringp", "offering", "offeringx"];
+  function unavailablePreview(executor, item, reason) {
+    return { executor, item, options: Object.fromEntries(previewOptions.map((option) => [option, { reason }])) };
+  }
+
+  // runtime/characters/upgrade-preview.ts
+  var same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  function matchesPreviewItem(live, wanted) {
+    return !!live && Object.entries(wanted).every(([key, value]) => same(live[key], value));
+  }
+  async function previewUpgrade(request, ports) {
+    const live = ports.items()[request.slot];
+    if (!matchesPreviewItem(live, request.item)) return unavailablePreview(request.executor, request.item, "Item changed; reopen the menu");
+    const original = JSON.stringify(live);
+    const result = unavailablePreview(request.executor, request.item, "Preview expired; refresh");
+    for (const option of previewOptions) {
+      if (!ports.current() || ports.now() >= request.expiresAt) break;
+      if (JSON.stringify(ports.items()[request.slot]) !== original)
+        return unavailablePreview(request.executor, request.item, "Item changed; reopen the menu");
+      result.options[option] = await previewOption(request, ports, live, option);
+      if (!ports.current() || JSON.stringify(ports.items()[request.slot]) !== original)
+        return unavailablePreview(request.executor, request.item, "Item or session changed; reopen the menu");
+    }
+    return result;
+  }
+  async function previewOption(request, ports, live, option) {
+    const scrollName = "scroll" + ports.grade(live);
+    const scroll = ports.items().findIndex((item) => item?.name === scrollName);
+    const offering = option === "none" ? null : ports.items().findIndex((item) => item?.name === option && !item.l);
+    if (scroll < 0) return { reason: "Missing " + scrollName + " in merchant inventory" };
+    if (offering === -1) return { reason: "Offering not in merchant inventory" };
+    try {
+      const preview = await ports.preview(request.slot, scroll, offering, true);
+      if (!validPreview(preview, request.item, scrollName, option)) throw Error("Mismatched server preview");
+      return { preview, observedAt: ports.now() };
+    } catch (error) {
+      return { reason: previewError(error) };
+    }
+  }
+  function validPreview(preview, item, scroll, option) {
+    return preview.calculate === true && Number.isFinite(preview.chance) && preview.chance >= 0 && preview.scroll === scroll && (preview.offering || void 0) === (option === "none" ? void 0 : option) && matchesPreviewItem(preview.item, item);
+  }
+  function previewError(error) {
+    if (error instanceof Error) return error.message;
+    const data = error;
+    const reason = data?.reason || data?.response || "Server preview unavailable";
+    return { cant_in_bank: "Merchant is in the bank", distance: "Merchant must be near the upgrader or have a computer", upgrade_in_progress: "Merchant busy", item_locked: "Item is locked" }[reason] || reason;
+  }
+  globalThis.previewPartyUpgrade = previewUpgrade;
 
   // runtime/characters/legacy-entry.ts
   var root = globalThis;

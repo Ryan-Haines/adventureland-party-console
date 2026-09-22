@@ -1,0 +1,24 @@
+services:
+  party-console:
+    build:
+      context: .
+      target: development
+    environment:
+      NODE_ENV: development
+      AL_DOCKER_DEV: "1"
+      AL_DEV_UID: ${AL_DEV_UID:-1000}
+      AL_DEV_GID: ${AL_DEV_GID:-1000}
+      AL_WATCH_POLL: ${AL_WATCH_POLL:-0}
+    volumes:
+      - .:/app
+      - dev-dependencies:/app/node_modules
+      - dev-dashboard-dependencies:/app/dashboard/node_modules
+      - dev-caracal:/app/.caracal
+      - dev-build:/app/.build
+      - dev-dashboard-build:/app/dashboard/.build
+volumes:
+  dev-dependencies:
+  dev-dashboard-dependencies:
+  dev-caracal:
+  dev-build:
+  dev-dashboard-build:

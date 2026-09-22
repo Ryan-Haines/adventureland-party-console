@@ -359,6 +359,14 @@ test('featured party member holds for one minute even if everyone appears ready'
   assert.ok(t.logs.includes('One-minute anniversary featured hold complete; returning to saved farming waypoints'));
 });
 
+test('completed anniversary visits retry after temporary movement clears, before the five-minute deadline',()=>{
+ const t=fixture();t.party.anniversary.returnReady={L:{},F:{},P:{}};
+ t.party.activeConvoy={id:'busy',purpose:'manual'};
+ t.context.anniversaryReturns.tick();assert.equal(t.starts(),0);
+ t.party.activeConvoy=null;t.advance(1000);t.context.anniversaryReturns.tick();
+ assert.equal(t.starts(),1);assert.equal(t.party.anniversary.eventCycle.returnReason,'party completed anniversary visits');
+});
+
 test('first failed approach does not release the party',()=>{
  const t=fixture();assert.equal(failRound(t,{attempt:1}).aborted,false);
  assert.equal(t.party.anniversary.eventCycle.abortedAt,undefined);

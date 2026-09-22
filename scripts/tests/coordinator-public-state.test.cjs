@@ -12,8 +12,16 @@ test('pending command projection preserves empty entries and excludes absent val
 });
 function read(r,query){let result;r.route({query},{json:value=>{result=value;}});return JSON.parse(JSON.stringify(result));}
 
+test('dashboard core exposes observed characters before a heartbeat',()=>{
+ const r=publicStateRuntime();
+ require('../../runtime/roster/connection-status.ts').recordConnections(r.party,[{name:'P',primary:true,state:'loading'}],r.ports.now());
+ const result=read(r,{section:'core',dashboard:'1'});
+ assert.equal(result.characterConnections[0].name,'P');
+ assert.equal(result.characterConnections[0].state,'loading');
+});
+
 test('all dashboard state sections preserve their pre-extraction response contracts',()=>{
- for(const fixture of contracts){const actual=read(publicStateRuntime(),fixture.query);delete actual.upgradeOfferingRules;delete actual.upgradeOfferingStock;delete actual.bankSortMode;delete actual.bankSortRequest;delete actual.gameVersion;delete actual.clientUpdate;delete actual.bankboiPrefix;delete actual.anniversaryAutoChat;delete actual.gameLogs;delete actual.autoBlacklistMerchants;delete actual.nativeStand;delete actual.autoStandBuys;delete actual.combatRecovery;delete actual.huntSettings;delete actual.huntFailures;delete actual.deconstructionMarks;delete actual.autoDeconstruction;delete actual.deconstructionCatalog;delete actual.luckyUpgradeSlots;assert.deepEqual(actual,fixture.payload,JSON.stringify(fixture.query));}
+ for(const fixture of contracts){const actual=read(publicStateRuntime(),fixture.query);if (actual.characterConnections) { assert.deepEqual(actual.characterConnections, []); delete actual.characterConnections; } delete actual.upgradeOfferingRules;delete actual.upgradeOfferingStock;delete actual.bankSortMode;delete actual.bankSortRequest;delete actual.gameVersion;delete actual.clientUpdate;delete actual.bankboiPrefix;delete actual.anniversaryAutoChat;delete actual.gameLogs;delete actual.autoBlacklistMerchants;delete actual.nativeStand;delete actual.autoStandBuys;delete actual.combatRecovery;delete actual.huntSettings;delete actual.huntFailures;delete actual.deconstructionMarks;delete actual.autoDeconstruction;delete actual.deconstructionCatalog;delete actual.luckyUpgradeSlots;assert.deepEqual(actual,fixture.payload,JSON.stringify(fixture.query));}
 });
 
 test('dashboard receives the party death recovery explanation',()=>{

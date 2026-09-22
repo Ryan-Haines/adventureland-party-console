@@ -34,6 +34,12 @@ interface HostOptions {
 }
 type ReloadMessage = { id: string; generation: string; script?: string };
 
+function configureApiAddress(runner: Runner) {
+  if (process.env.AL_INTERNAL_API_PORT) {
+    runner.__partyServer = `http://127.0.0.1:${Number(process.env.AL_INTERNAL_API_PORT) || 924}`;
+  }
+}
+
 /** Owns CODE contexts only. The game context and its socket outlive every generation. */
 export function createRunnerHost(options: HostOptions) {
   const queue = new ReloadQueue();
@@ -56,6 +62,7 @@ export function createRunnerHost(options: HostOptions) {
       dependencies.set(file, new vm.Script(await readFile(file, "utf8"), { filename: file }));
     const scope = new RunnerScope();
     const runner = options.createContext(scope.facade(options.upper));
+    configureApiAddress(runner);
     scope.guardAjax(runner.$);
     if (typeof runner.fetch === "function") runner.fetch = scope.guardFetch(runner.fetch);
     try {

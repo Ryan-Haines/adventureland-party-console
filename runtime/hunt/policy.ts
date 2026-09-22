@@ -1,4 +1,3 @@
-export const TURN_IN_MS = 3 * 60 * 1000;
 interface Quest { id: string; count: number; remainingMs: number }
 interface Status { monsterHunt?: Quest | null; huntEventPending?: boolean }
 type Statuses = Record<string, Status | undefined>;
@@ -14,6 +13,7 @@ export interface Hunt {
   returnRetryAt?: number;
   returnRetries?: number;
   returnDisableTown?: boolean;
+  returnTown?: import('../coordinator/navigation/return-town.ts').ReturnTownPolicy;
 }
 export function priority(hunt: Hunt | null | undefined): boolean {
   if (!hunt || ["ended", "failed-return"].includes(hunt.stage)) return false;
@@ -30,7 +30,7 @@ export function quest(hunt: Hunt, leader: string, statuses: Statuses): Quest | n
 }
 export function shouldReturn(hunt: Hunt, leader: string, statuses: Statuses): boolean {
   const current = quest(hunt, leader, statuses);
-  return !current || current.count === 0 || current.remainingMs <= TURN_IN_MS;
+  return !current || current.count === 0;
 }
 export function selection(hunt: Hunt, leader: string, statuses: Statuses, blacklist: Record<string, unknown>) {
   const names = [...new Set([leader, ...hunt.participants])];
@@ -58,6 +58,7 @@ export function beginTurnIn(hunt: Hunt, leader: string): void {
     hunt.returnRetries = 0;
     hunt.returnRetryAt = 0;
     hunt.returnDisableTown = false;
+    delete hunt.returnTown;
   }
 }
 export function completeTurnIn(hunt: Hunt, now: number): void {

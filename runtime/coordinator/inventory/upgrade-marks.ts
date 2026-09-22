@@ -2,6 +2,7 @@ import type { InventoryEntry, Item } from "../contracts/item.ts";
 import { autoItemRuleKey, sameMarkedItem } from "./item-identity.ts";
 
 export interface UpgradeMark {
+  passId?: string;
   slot?: number | string;
   item: Item;
   tiers: number;
@@ -103,8 +104,9 @@ export function reconcileUpgradeMarks(
   items: Inventory,
   equipped: Equipment = {},
 ): Reconciliation {
-  const retained = marks.filter((mark) => validUpgrade(mark, items, rules, equipped));
-  const state = { marks: retained, changed: retained.length !== marks.length };
+  const relocated = relocateUpgradeMarks(marks, items, rules, equipped);
+  const retained = relocated.filter((mark) => validUpgrade(mark, items, rules, equipped));
+  const state = { marks: retained, changed: JSON.stringify(retained) !== JSON.stringify(marks) };
   for (const entry of items) considerUpgrade(entry, rules, items, state);
   return state;
 }
@@ -113,8 +115,24 @@ export function clearResolvedUpgradeMarks(
   marks: UpgradeMark[],
   resolved: readonly UpgradeMark[],
 ): UpgradeMark[] {
-  const completed = new Set(resolved.map((mark) => JSON.stringify(mark)));
-  return marks.filter((mark) => !completed.has(JSON.stringify(mark)));
+  const completed = new Set(resolved.map((mark) => mark.passId || JSON.stringify(mark)));
+  const legacy = new Set(resolved.map(({passId: _id, ...mark}) => JSON.stringify(mark)));
+  return marks.filter((mark) => !completed.has(mark.passId || JSON.stringify(mark)) &&
+    (mark.passId || !legacy.has(JSON.stringify(mark))));
+}
+
+/** Keep matches already in place before assigning any displaced pass to a slot. */
+function relocateUpgradeMarks(marks: UpgradeMark[], items: Inventory, rules: Rules, equipped: Equipment): UpgradeMark[] {
+  const claimed = new Set(marks.filter(mark => !mark.equipped && validUpgrade(mark, items, rules, equipped)).map(mark => mark.slot));
+  return marks.map(mark => {
+    if (!mark.auto || mark.equipped || validUpgrade(mark, items, rules, equipped)) return mark;
+    const candidates = items.filter(entry => entry && !claimed.has(entry.slot) &&
+      validUpgrade({...mark, slot:entry.slot}, items, rules, equipped));
+    if (candidates.length !== 1) return mark;
+    const slot = candidates[0]!.slot;
+    claimed.add(slot);
+    return {...mark, slot};
+  });
 }
 
 function activeRule(rule: UpgradeRule | undefined, tiers: number) { return ruleQuantity(rule) !== 0 && ruleTiers(rule) === Number(tiers); }

@@ -39,7 +39,7 @@ is `alclient`. `PARTY_MOVEMENT_MODE=native` selects native planning globally.
 These modes use the same validated executor and ownership protections.
 
 Changes affect both coordinator and character assets. Activate with
-`scripts/start-caracal.ps1 -ProductionDashboard`, not `-CoordinatorOnly`.
+`scripts/start-console.ps1 -ProductionDashboard`, not `-CoordinatorOnly`.
 See `runtime/coordinator/README.md` for restart and health verification. Building
 alone does not prove that production loaded a change.
 

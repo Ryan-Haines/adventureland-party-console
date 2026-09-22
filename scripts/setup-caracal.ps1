@@ -4,6 +4,8 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 try {
+    node tools/hosting/install-caddy.mts
+    if ($LASTEXITCODE -ne 0) { throw 'HTTPS service installation failed.' }
     npm ci
     if ($LASTEXITCODE -ne 0) { throw 'Root dependency installation failed.' }
     npm --prefix dashboard ci
@@ -18,5 +20,5 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Runtime build failed.' }
     node tools/game/build.mts --publish
     if ($LASTEXITCODE -ne 0) { throw 'Character build failed.' }
-    Write-Host 'Setup complete. Run .\scripts\start-caracal.ps1.'
+    Write-Host 'Setup complete. Run .\scripts\start-console.ps1.'
 } finally { Pop-Location }

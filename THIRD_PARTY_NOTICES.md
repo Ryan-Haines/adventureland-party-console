@@ -2,6 +2,10 @@
 
 Our original code is distributed under [MIT](LICENSE). Dependencies retain their own licenses.
 
+- **Caddy 2.11.4**, Apache-2.0. [Source](https://github.com/caddyserver/caddy).
+  Official binaries are bundled without modification for local HTTPS. The upstream
+  LICENSE is included alongside the executable in `.build/caddy/2.11.4/`.
+
 - **caracAL**, copyright 2021 numbereself, MIT. Base revision: `234af745d59807be4da49f13430b91980d3e98c9`.
   [Source](https://github.com/numbereself/caracAL). Modified through our compatibility patch and runtime adapters.
   Full notice: [licenses/caracal.txt](licenses/caracal.txt).

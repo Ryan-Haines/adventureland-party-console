@@ -6,6 +6,10 @@ test('selected follower owns cutoff and reward return without changing party lea
  assert.equal(policy.needsReconcile(h,'W'),false);
  assert.equal(policy.shouldReturn(h,'W',statuses),false);
  statuses.P.monsterHunt.remainingMs=180000;
+ assert.equal(policy.shouldReturn(h,'W',statuses),false);
+ statuses.P.monsterHunt.remainingMs=1;
+ assert.equal(policy.shouldReturn(h,'W',statuses),false);
+ statuses.P.monsterHunt.remainingMs=0;
  assert.equal(policy.shouldReturn(h,'W',statuses),true);
  policy.beginTurnIn(h,'W');assert.equal(h.turnIn.owner,'P');
  assert.equal(policy.owner(h,'W'),'P');

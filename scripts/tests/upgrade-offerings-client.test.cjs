@@ -27,6 +27,15 @@ function runtime({rules=[],stock=0,bank=0,manual=false,required=true,survive=fal
  return {r,character,calls,waits,visits,command:{jobId:'job',target:'M',upgrades:[mark]},rules};
 }
 const required={id:'p',name:'sword',floor:8,ceiling:9,offering:'offeringp',required:true};
+test('interrupted automatic pass follows a relocated survivor and stops at the original target',async()=>{
+ const f=runtime();const original=f.r.upgradeConfirmed;let attempts=0;
+ f.r.upgradeConfirmed=async(...args)=>{if(++attempts===2)throw Error('interrupted');return original(...args);};
+ await assert.rejects(f.r.merchantImprove(f.command,[]),/interrupted/);
+ assert.equal(f.character.items[0].level,8);assert.ok(f.command.upgrades[0].passId);
+ f.character.items[4]=f.character.items[0];f.character.items[0]=null;
+ f.r.upgradeConfirmed=original;await f.r.merchantImprove(f.command,[]);
+ assert.equal(f.character.items[4].level,9);assert.equal(f.calls.length,2);
+});
 test('auto +9 stops at +8 without required primling and preserves unfinished work',async()=>{
  const f=runtime({rules:[required]});await f.r.merchantImprove(f.command,[]);
  assert.equal(f.character.items[0].level,8);assert.equal(f.calls.length,1);assert.equal(f.waits.length,1);assert.equal(f.visits.length,0);

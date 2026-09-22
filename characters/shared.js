@@ -511,6 +511,9 @@
   var partyTargets = [];
   var lastSeparationAt = 0;
   var catalogKnown = false;
+  var catalogPrepared = false;
+  var catalogPreparing = false;
+  var catalogGeneration = 0;
   var forceTraveling = false;
   var mapTelemetryEnabled = false;
   var mapTelemetryBusy = false;
@@ -589,6 +592,9 @@
   var gatheringStandListings = [];
   var merchantWeapon = null;
   var luckyUpgradeSlot = null;
+  var upgradePreviewSession = Date.now() + ":" + Math.random();
+  var upgradePreviewActive = false;
+  var lastUpgradePreview = null;
   var luckyUpgradeService = null;
   var merchantIdleActive = false;
   var merchantIdlePending = null;
@@ -686,6 +692,8 @@
       itemValuationCache = {};
       lootOutcomeCache = {};
       catalogKnown = false;
+      catalogPrepared = false;
+      catalogGeneration++;
     }
   };
   var playerDirectoryListener = function (data) {
@@ -822,9 +830,11 @@
     }, "skill:" + skill);
   };
   function defendPartyHit(data) {
+    // Continuous Hunt returns keep navigation ownership, including under fire.
+    if (convoyTraveling && convoyTraveling.continuousReturn === 1) return;
     if(data && currentPartyList().indexOf(String(data.id))>=0) {
       var aggressor=get_entity(data.hid || data.actor);
-      if(aggressor && aggressor.type==='monster' && !isPassingEncounter(aggressor) && !joinedEvent && !eventTargetTypes.length) {
+      if(aggressor && aggressor.type==='monster' && (!isPassingEncounter(aggressor) || returnDepartureDefense()) && !joinedEvent && !eventTargetTypes.length) {
         root.__partyDefensiveHit={target:groupedEntityReport(aggressor),at:Date.now()};
         interruptConvoyForDefense();
         if(root.partyQueueClient)root.partyQueueClient.evidence(aggressor,'engaged');
@@ -1509,7 +1519,9 @@
       scaling: safeFields(definition.upgrade || definition.compound || {}),
       maxLevel: maximumItemLevel(definition),
       usage: itemUsage(definition),
-      world: itemWorldInfo(item.name),
+      // Live inventory/bank reports must never construct the entire drop graph.
+      // Until background preparation finishes, the dashboard uses its catalog.
+      world: itemWorldCache[item.name],
       sprite: pack && position ? {
         url: "https://adventure.land" + pack.file,
         tileSize: pack.size,
@@ -1896,6 +1908,27 @@
     }, {});
   }
 
+  // Catalog discovery must not starve the game socket before the first status.
+  // Warm the expensive per-item caches cooperatively after a successful report.
+  async function prepareCatalog() {
+    if (catalogPreparing || catalogPrepared) return;
+    catalogPreparing = true;
+    var generation = catalogGeneration;
+    try {
+      var items = Object.keys(G.items || {});
+      for (var index = 0; index < items.length; index++) {
+        await new Promise(function (resolve) { setTimeout(resolve, 0); });
+        if (!runtimeCurrent() || generation !== catalogGeneration) return;
+        itemWorldInfo(items[index]);
+      }
+      catalogPrepared = true;
+    } catch (error) {
+      game_log("Catalog preparation failed: " + String(error && error.message || error), "red");
+    } finally {
+      catalogPreparing = false;
+    }
+  }
+
   function merchantCatalog() {
     var upgradeChanceTable = {
       0: [1, 0.9999999, 0.98, 0.95, 0.7, 0.6, 0.4, 0.25, 0.15, 0.07, 0.024, 0.14, 0.11],
@@ -2071,10 +2104,48 @@
   }
 
   function consoleMaintenanceBusy() {
-    return !!(banking || stocking || upgrading || gatheringActive || anniversaryBusy ||
+    return !!(root.__partyUpgradePreviewInFlight || banking || stocking || upgrading || gatheringActive || anniversaryBusy ||
       root.__merchantActiveJob || merchantIdleActive || root.__merchantInventoryTidy ||
       luckyUpgradeService && luckyUpgradeService.pending() ||
       character.q && Object.keys(character.q).length || currentTravelAttackers().length);
+  }
+  async function handleUpgradePreview(previewRequest) {
+    if (previewRequest.id === lastUpgradePreview || previewRequest.session !== upgradePreviewSession ||
+        previewRequest.executor !== character.name || upgradePreviewActive) return;
+    lastUpgradePreview = previewRequest.id;
+    var reason = consoleMaintenanceBusy() || character.rip || character.moving ||
+      root.localStorage.getItem(productionJournalKey()) ||
+      root.localStorage.getItem("party-lucky-upgrade:" + character.name) ||
+      parent.deferreds && parent.deferreds.upgrade && parent.deferreds.upgrade.length
+      ? "Merchant busy" : null;
+    var result;
+    if (reason) {
+      result = {executor:character.name,item:previewRequest.item,options:{}};
+      ["none","offeringp","offering","offeringx"].forEach(function (option) { result.options[option]={reason:reason}; });
+    } else {
+      upgradePreviewActive = true;
+      upgrading = true;
+      // Retain the guard until the official deferred settles, including after an
+      // HTTP timeout: a late upgrade_chance must never resolve an actual upgrade.
+      var work = root.previewPartyUpgrade(previewRequest, {
+        items:function () { return character.items; }, grade:item_grade,
+        current:function () { return runtimeCurrent() && previewRequest.session === upgradePreviewSession; },
+        now:function () { return Date.now() + coordinatorClockOffset; }, preview:upgrade,
+      }).finally(function () {
+        upgradePreviewActive=false; upgrading=false;
+        if (root.__partyUpgradePreviewInFlight === work) root.__partyUpgradePreviewInFlight=null;
+      });
+      root.__partyUpgradePreviewInFlight=work;
+      var timeout;
+      try {
+        result = await Promise.race([work, new Promise(function (resolve) {
+          timeout=setTimeout(function () { resolve(null); }, 9000);
+        })]);
+      } finally { clearTimeout(timeout); }
+    }
+    if (result && runtimeCurrent()) await request("/upgrade-preview/result", {method:"POST",body:{
+      character:character.name,id:previewRequest.id,session:upgradePreviewSession,result:result,
+    }}).catch(function () {});
   }
   function consoleMaintenanceReport() {
     var pause = root.__partyConsoleMaintenance;
@@ -2124,6 +2195,9 @@
       runtime: parent.caracAL ? "headless" : "native",
       clientVersion: parent.__partyClientVersion || Number(G.version),
       clientInstance: parent.__partyClientInstance || null,
+      upgradePreviewSession: upgradePreviewSession,
+      upgradeInventoryBusy: !!(root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending() ||
+        root.localStorage.getItem("party-lucky-upgrade:" + character.name)),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
       escape: escapeLocal,
       platform: parent.caracAL ? "caracal" : (parent.game && parent.game.platform || "browser"),
@@ -2137,14 +2211,16 @@
       combatSelection: { id: combatSelection.id, revision: combatSelection.revision,
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
-      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
-      huntReturnProtocol: 1,
+      huntReturnProtocol: 2,
       movement: movement.report() || movement.last(),
       convoyNavigation: convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
         navigationRevision: convoyTraveling.navigationRevision,
         returnPlan: convoyTraveling.returnPlan || null,
         commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
+        townAttempt: convoyTraveling.townAttempt || null,
+        transitionMap: convoyTraveling.transitionMap || null,
         runtimeId: convoyRuntimeId, routeReady: !!convoyTraveling.routeReady,
         routeVersion: convoyTraveling.routeVersion || 0, routeSource: convoyTraveling.routeSource || null,
         destinationSearches: convoyTraveling.destinationSearches || 0, rendezvousSearches: convoyTraveling.rendezvousSearches || 0,
@@ -2323,7 +2399,7 @@
       bank: bankSnapshot(),
       bankVaults: bankVaultCatalog(),
     };
-    if (!catalogKnown) {
+    if (!catalogKnown && catalogPrepared) {
       status.merchantCatalogVersion = merchantCatalogVersion;
       status.travelPlaces = travelPlaces();
       status.monsterChoices = monsterChoices();
@@ -2448,14 +2524,16 @@
   }
   function passingTarget() {
     if (!passingTravelAllowed()) return null;
+    var returning = typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.continuousReturn === 1;
     if (character.rip || Number(character.max_hp)>0 && character.hp/character.max_hp<0.35 || character.ctype === 'merchant' || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive() ||
         partyTownActive || banking || stocking || upgrading || gatheringActive || forceTraveling || townTraveling || eventTraveling || joinedEvent || activeCombatEvent() ||
-        (rareActive() && rareControlState.kind !== "patrol") || unfinishedFight()) return null;
+        (rareActive() && rareControlState.kind !== "patrol") || !returning && unfinishedFight()) return null;
     var candidates = Object.values(parent.entities || {}).filter(function(e) {
       var rule = e && passiveHunting.rules[e.mtype];
-      return rule && rule.enabled && rule.keepMoving && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
+      var defending = returning && e && (e.target === character.name || currentPartyList().indexOf(e.target) >= 0);
+      return (defending || rule && rule.enabled && rule.keepMoving) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
         (!e.map || e.map === character.map) && e.mtype !== 'fieldgen0' && is_in_range(e) &&
-        !isExternallyClaimedMonster(e) && (!groupedCombat || !groupedCombat.target || groupedCombat.target.id !== e.id) &&
+        !isExternallyClaimedMonster(e) && (returning || !groupedCombat || !groupedCombat.target || groupedCombat.target.id !== e.id) &&
         !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id));
     });
     candidates.sort(function(a,b) {return monsterPriority(b)-monsterPriority(a) || Math.hypot(character.x-a.x,character.y-a.y)-Math.hypot(character.x-b.x,character.y-b.y) || String(a.id).localeCompare(String(b.id));});
@@ -2870,16 +2948,19 @@
     }
   }
 
-  function findBankItem(wanted, preferredPack, preferredSlot) {
+  function findBankItem(wanted, preferredPack, preferredSlot, normalizeLevel) {
+    function matches(item) {
+      return sameItem(normalizeLevel && item ? Object.assign({}, item, {level:Number(item.level)||0}) : item, wanted);
+    }
     if (character.bank && character.bank[preferredPack] &&
-        sameItem(character.bank[preferredPack][preferredSlot], wanted)) {
+        matches(character.bank[preferredPack][preferredSlot])) {
       return { pack: preferredPack, slot: preferredSlot };
     }
     var packs = Object.keys(character.bank || {});
     for (var p = 0; p < packs.length; p += 1) {
       if (!Array.isArray(character.bank[packs[p]])) continue;
       for (var slot = 0; slot < character.bank[packs[p]].length; slot += 1) {
-        if (sameItem(character.bank[packs[p]][slot], wanted))
+        if (matches(character.bank[packs[p]][slot]))
           return { pack: packs[p], slot: slot };
       }
     }
@@ -3729,6 +3810,7 @@
   }
 
   async function observedUpgradeConfirmed(itemSlot, scrollSlot, expectedName, expectedLevel, offeringAttempt) {
+    var intendedScroll = character.items[scrollSlot] && character.items[scrollSlot].name;
     await verifyMerchantItemMarks();
     if (character.ctype !== "merchant") return upgradeAtSlotConfirmed(itemSlot, scrollSlot, expectedName, expectedLevel);
     var offeringSlot;
@@ -3738,6 +3820,9 @@
       offeringSlot = carriedOffering(await upgradeOfferingCheckpoint(job), offeringAttempt.offering);
     }
     if (offeringSlot !== undefined && offeringSlot < 0) throw Error("Required upgrade offering missing");
+    // Checkpoints yield to inventory updates. Do not use a scroll index that
+    // has since moved or was consumed by the preceding step.
+    if (intendedScroll) scrollSlot = findInventoryItemByName(intendedScroll);
     var outcome = await merchantLuckyUpgrade().run(itemSlot, scrollSlot, luckyUpgradeSlot, function (slot, scroll, offering) {
       return upgradeAtSlotConfirmed(slot, scroll, expectedName, expectedLevel, offering);
     }, offeringSlot);
@@ -4424,6 +4509,21 @@
     command._merchantWithdrawalsCompleted = [];
     command._merchantBankedCompleted = [];
     command._npcSalesRetrieved = [];
+    async function reservedForCrafting(slot) {
+      var protection = command.craftProtection;
+      if (command.jobId) {
+        var result = await request('/merchant/checkpoint', {method:'POST',body:{jobId:command.jobId,protectionOnly:true}});
+        protection = result && result.craftProtection;
+        if (!protection) throw Error('Craft reservations unavailable; bank deposit deferred');
+      }
+      if (!protection) return false;
+      if (protection.error) return true;
+      var entries=character.items.map(function(item,index){return item ? {item:item,slot:index,craftLocation:'inventory:'+character.name} : null;});
+      var available=globalThis.partyAvailableCraftStock(entries,protection);
+      // Keep a partially reserved stack intact; its surplus can be banked once
+      // the craft completes. A deferred mark must not be acknowledged as banked.
+      return !available[slot] || (Number(available[slot].item.q)||1) < (Number(character.items[slot].q)||1);
+    }
     var goldTarget = Number.isInteger(command.merchantGoldTarget)
       ? Math.max(0, command.merchantGoldTarget)
       : Number.isInteger(command.goldTarget) ? Math.max(0, command.goldTarget) : 0;
@@ -4480,6 +4580,10 @@
         continue;
       }
       try {
+        if (await reservedForCrafting(slot)) {
+          activity.push({level:'info',message:'Kept ' + bankingItem.name + ' reserved for crafting or delivery'});
+          continue;
+        }
         await bankStoreFully(slot);
       } catch (error) {
         if (String(error && (error.reason || error.message) || error) !== "bank_full") throw error;
@@ -4544,14 +4648,24 @@
   function findUpgradeMarkSlot(mark, used) {
     if (!mark || !mark.item) return -1;
     // The requested level is anchored to the original mark, not the level
-    // reached before an interruption. Only the original slot may resume a
-    // changed level; fallback searches must still match the original item.
+    // reached before an interruption. Durable automatic passes may follow a
+    // unique survivor to another slot after inventory recovery.
     var start = Number(mark.item.level) || 0;
     var target = Math.min(maximumItemLevel(G.items[mark.item.name]), start + (Number(mark.tiers) || 1));
     var slot = mark.slot, item = Number.isInteger(slot) && character.items[slot];
     if (item && !used[slot] && (Number(item.level) || 0) >= start &&
         (Number(item.level) || 0) <= target &&
         sameItem(Object.assign({}, item, { level: mark.item.level }), mark.item)) return slot;
+    if (mark.auto && mark.passId) {
+      var survivors = [];
+      character.items.forEach(function (candidate, index) {
+        if (!used[index] && candidate && (Number(candidate.level) || 0) >= start &&
+            (Number(candidate.level) || 0) <= target &&
+            sameItem(Object.assign({},candidate,{level:mark.item.level}),mark.item)) survivors.push(index);
+      });
+      if (survivors.length > 1) throw Error("Automatic upgrade survivor is ambiguous; waiting for inventory recovery");
+      if (survivors.length === 1) return survivors[0];
+    }
     return character.items.findIndex(function (candidate, index) {
       return !used[index] && sameItem(candidate, mark.item);
     });
@@ -4655,6 +4769,7 @@
       used[slot] = true;
       var targetLevel = Math.min(maximumItemLevel(G.items[mark.item.name]),
         (Number(mark.item.level) || 0) + (Number(mark.tiers) || 1));
+      if (mark.auto && !mark.passId) mark.passId = character.name + ":upgrade:" + Date.now() + ":" + Math.random().toString(36).slice(2);
       while (character.items[slot] && (Number(character.items[slot].level) || 0) < targetLevel) {
         var liveBeforeOffering = fingerprint(character.items[slot]);
         var offeringAttempt = await prepareUpgradeOffering(command, mark, slot, activity);
@@ -4679,7 +4794,7 @@
         await productionBuff();
         try {
           var before = character.items[slot].level || 0;
-          var outcome = await upgradeConfirmed(slot, scrollSlot, undefined, undefined, mark.auto ? {family:"upgrade",key:mark.item.name+"@+"+(mark.item.level||0)} : undefined, offeringAttempt);
+          var outcome = await upgradeConfirmed(slot, scrollSlot, undefined, undefined, mark.auto ? {family:"upgrade",key:mark.item.name+"@+"+(mark.item.level||0),mark:Object.assign({},mark,{slot:slot,equipped:false})} : undefined, offeringAttempt);
           if (mark.offering) {
             activity.push({level:outcome && outcome.success === false ? "info" : "success", message:"Completed one upgrade attempt with " + mark.offering});
             break;
@@ -5842,7 +5957,8 @@
         for (var need of requirements) {
           var remaining = Math.max(0, need.quantity - exactInventoryQuantity(need.id, need.level));
           while (remaining > 0) {
-            var found = findBankItem({ name: need.id, level: need.level || 0 });
+            // Scroll stacks omit level; recipes describe them as level zero.
+            var found = findBankItem({ name: need.id, level: need.level || 0 }, undefined, undefined, true);
             if (!found) break;
             var liveItem = character.bank[found.pack][found.slot];
             var before = exactInventoryQuantity(need.id, need.level);
@@ -7329,6 +7445,7 @@
   }
 
   async function merchantIdle(command) {
+    if (root.__partyUpgradePreviewInFlight) return {state:"deferred"};
     if (root.__merchantActiveJob && !(command.inPlace && command.jobId === root.__merchantActiveJob.jobId)) return { state: "skipped" };
     // The gathering cooldown loop and coordinator can both request an idle
     // refresh. Never discard the newer request: wait for the in-flight stand
@@ -8209,6 +8326,7 @@
   }
 
   async function handleCommand(command) {
+    if (root.__partyUpgradePreviewInFlight) return;
     if (root.__partyConsoleMaintenance) return;
     if (!command || command.id <= lastCommand) return;
     if (command.type === "party-monster-travel" && command.phase === "event-walk-release") {
@@ -8229,7 +8347,11 @@
       return;
     }
     if(command.type==='party-monster-travel' && command.phase==='defending') {
-      lastCommand=command.id;root.__partyLastCommand=lastCommand;interruptConvoyForDefense(command.convoyId);return;
+      lastCommand=command.id;root.__partyLastCommand=lastCommand;interruptConvoyForDefense(command.convoyId,command.epoch);
+      if(convoyTraveling && convoyTraveling.defensePaused && convoyTraveling.id===command.convoyId) {
+        convoyTraveling.commandId=command.id;convoyTraveling.epoch=Number(command.epoch);
+      }
+      return;
     }
     if(command.type==='party-monster-travel')root.__partyConvoyDefense=null;
     // Stand return can travel safely before checking inventory recovery. Its
@@ -8869,6 +8991,7 @@
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');
         return;
       }
+      if (state.upgradePreview) await handleUpgradePreview(state.upgradePreview);
       if (character.ctype === "merchant") await flushNativePurchaseReceipts();
       if (character.ctype === "merchant" && character.stand && !merchantIdleActive && !root.__merchantActiveJob &&
           !root.__merchantInventoryTidy && !merchantLuckyUpgrade().pending())
@@ -9073,6 +9196,7 @@
       partyFarmingMonsterType = typeof state.partyFarmingMonsterType === "string" ? state.partyFarmingMonsterType : null;
       scatterBreakTarget = state.scatterBreakTarget && state.scatterBreakTarget.id ? state.scatterBreakTarget : null;
       catalogKnown = !state.needsCatalog;
+      void prepareCatalog();
       flushStatusDiagnostics();
       statusPhase = "dispatch command";
       handle(state.command).catch(function (error) {
@@ -11240,7 +11364,8 @@
   }
 
   function isAttackingPartyMember(target) {
-    if (!target || target.type !== "monster" || isPassingEncounter(target)) return false;
+    if (!target || target.type !== "monster" || isPassingEncounter(target) && !returnDepartureDefense() &&
+        !(typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.continuousReturn === 1)) return false;
     target = get_entity(target.id) || target;
     if (target.target === character.name) return true;
     if (!target.target || currentPartyList().indexOf(target.target) < 0)
@@ -11292,12 +11417,30 @@
     return currentPartyList().indexOf(target.target) < 0;
   }
 
+  function returnDepartureDefense() {
+    var c=typeof convoyTraveling !== 'undefined' && convoyTraveling;
+    return !!(c && c.purpose==='monster-hunt' && c.nonPreemptible && !c.returnWalking &&
+      (c.phase!=='travelling' || typeof movement!=='undefined' && movement.transition && movement.transition()==='town'));
+  }
   function interruptConvoyForDefense(id, epoch) {
     var c=convoyTraveling;
     if(c && id && (c.id!==id || Number(epoch)<c.epoch))return;
     if(c && ((c.navigationExempt && c.purpose!=='anniversary-return') || ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol'].indexOf(c.purpose)>=0))return;
     if(!c && !id)return;
+    if(c && (c.returnWalking || c.continuousReturn === 1))return;
     root.__partyConvoyDefense=id || c.id;
+    if(c && (c.routeProtocol===4 || c.purpose==='monster-hunt' && c.nonPreemptible)) {
+      if(c.defensePaused)return;
+      if(c.freezeRoute)c.freezeRoute();
+      if(c.detachRoute)c.detachRoute();
+      if(c.townAttempt && c.townAttempt.state==='casting')c.townAttempt.state='interrupted';
+      c.defensePaused=true;c.phase='defending';c.routeReady=false;
+      try {Promise.resolve(stop()).catch(function(){});}catch(_){}
+      root.__partyNavigationDetail='Defending party; convoy will resume after combat';
+      if(root.partyQueueClient && root.partyQueueClient.flush)root.partyQueueClient.flush();
+      if(root.partyRoleRunner)root.partyRoleRunner.wake();
+      return;
+    }
     if(c) {
       c.cancelled=true;releaseConvoyCruise(c);if(c.release)c.release();convoyTraveling=null;
       try {Promise.resolve(stop()).catch(function(){});}catch(_){}
@@ -11422,7 +11565,7 @@
     if(blocked){diagnostic.blocked=blocked;return [];}
     var eligible=Object.values(parent.entities||{}).filter(function(e){return e && e.type==='monster' && e.visible && !e.dead &&
       !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id)) && e.mtype!=='fieldgen0' &&
-      !isExternallyClaimedMonster(e) && !isPassingEncounter(e) && (passiveRareCandidate(e) || character.name===leader && e.mtype!=='tinyp' &&
+      !isExternallyClaimedMonster(e) && !isPassingEncounter(e) && (passiveRareCandidate(e) || (character.name===leader || typeof huntCombatTarget!=='undefined' && e.mtype===huntCombatTarget) && e.mtype!=='tinyp' &&
       (monsterFocus.indexOf('all')>=0 || monsterFocus.indexOf(e.mtype)>=0) &&
       !(farmApproach.failed[e.id]>Date.now()));
     });
@@ -11430,7 +11573,7 @@
     Object.values(parent.entities||{}).filter(function(e){return e && e.type==='monster' && e.visible && !e.dead;}).forEach(function(e){
       var reason=isExternallyClaimedMonster(e)?'external claim':farmApproach.failed[e.id]>Date.now()?'failed approach':
         !passiveRareCandidate(e)&&monsterFocus.indexOf('all')<0&&monsterFocus.indexOf(e.mtype)<0?'focus':
-        !passiveRareCandidate(e)&&character.name!==leader?'follower':
+        !passiveRareCandidate(e)&&character.name!==leader&&!(typeof huntCombatTarget!=='undefined'&&e.mtype===huntCombatTarget)?'follower':
         !passiveRareCandidate(e)&&normal.indexOf(e)<0?'zone or target eligibility':null;
       if(reason)diagnostic.rejected[e.id]=reason;else diagnostic.eligible.push(e.id);
     });
@@ -11450,7 +11593,8 @@
       else if(isExternallyClaimedMonster(e))reason='external claim';
       else if(farmApproach.failed[t.id]>Date.now())reason='failed approach';
       else if(!passiveRareCandidate(e)&&monsterFocus.indexOf('all')<0&&monsterFocus.indexOf(e.mtype)<0)reason='focus changed';
-      else if(!(root.__partyFarmingEngagement && root.__partyFarmingEngagement.target.id===t.id) && !passiveRareCandidate(e)&&!inFarmArea(e,partyLocation,150)&&
+      else if(!(typeof huntCombatTarget!=='undefined' && e.mtype===huntCombatTarget && Math.hypot(e.x-character.x,e.y-character.y)<=monsterSearchRadius) &&
+        !(root.__partyFarmingEngagement && root.__partyFarmingEngagement.target.id===t.id) && !passiveRareCandidate(e)&&!inFarmArea(e,partyLocation,150)&&
         !((!e.map||e.map===partyLocation.map)&&Math.hypot(e.x-partyLocation.x,e.y-partyLocation.y)<=monsterSearchRadius+150))reason='retention boundary';
       return Object.assign({},t,e&&e.visible?groupedEntityReport(e):{},{at:at,eligible:!reason,reason:reason});
     });
@@ -11458,7 +11602,7 @@
   function queueReport() {
     return {name:character.name,rareObservation:rareObservationReport(),map:character.map,in:character.in,server:reunionRealm(),x:character.x,y:character.y,hp:character.hp,max_hp:character.max_hp,lastDeath:lastDeathInfo,rip:!!character.rip,
       combatSelection:Object.assign({},combatSelection,{runtimeId:convoyRuntimeId,target:groupedNomination()}),
-      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
+      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
         threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision,
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
@@ -11620,6 +11764,7 @@
     return root.partyQueueClient.sight.tick(fight.id,fight,remembered,allies);
   }
   function groupedMovement() {
+    if(convoyTraveling && !convoyTraveling.defensePaused)return true;
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
     if (groupedDefensiveTarget() && !navigationIntent.cancelled && !character.rip && !root.sharedRoutine.isOccupied()) {
       cancelGroupRoute(); cancelFightRoute(); cancelFarmApproach("defending visible party attackers");
@@ -11772,7 +11917,9 @@
         groupedCombat.target && groupedCombat.target.id === target.id &&
         groupedCombat.target.map === character.map && groupedCombat.target.in === character.in &&
         groupedCombat.target.server === reunionRealm()) return true;
-    if (!huntTravel && character.map !== "goobrawl" && !activeCombatEvent() && !joinedEvent && !isPartyThreat(target) &&
+    var nearbyHunt = typeof huntCombatTarget !== "undefined" && target.mtype === huntCombatTarget &&
+      Math.hypot(target.x-character.x,target.y-character.y)<=monsterSearchRadius;
+    if (!huntTravel && !nearbyHunt && character.map !== "goobrawl" && !activeCombatEvent() && !joinedEvent && !isPartyThreat(target) &&
         (!(inFarmArea(target, partyLocation, target.id === combatTargetId && target.id === lastAttackTarget && Date.now()-lastAttackAt<5000 ? 150 : 0) || inFarmRadius(target) || typeof queueRetentions==='function' && queueRetentions().some(function(t){return t.id===target.id && t.eligible;})) || farmApproach.failed[target.id]>Date.now())) return false;
     var convoyThreat = convoyTraveling && partyThreats.some(function (threat) {
       return threat && threat.id === target.id;
@@ -11897,6 +12044,10 @@
       Math.hypot(target.x-partyLocation.x,target.y-partyLocation.y)<=monsterSearchRadius;
   }
   function selectFarmCandidates(targets) {
+    if (typeof huntCombatTarget !== "undefined" && huntCombatTarget) return targets.filter(function(t) {
+      return t.mtype===huntCombatTarget && (!t.map || t.map===character.map) &&
+        (t.in===undefined || t.in===character.in) && Math.hypot(t.x-character.x,t.y-character.y)<=monsterSearchRadius;
+    });
     if(root.partyFarmingZones && root.partyFarmingZones.candidates)return root.partyFarmingZones.candidates(partyLocation,targets,monsterSearchRadius);
     var bounded=targets.filter(function(t){return inFarmArea(t,partyLocation);});
     return bounded.length ? bounded : targets.filter(inFarmRadius);
@@ -12105,11 +12256,19 @@
   }
   function sharedMovementOptions(command) {
     return { shared: true, avoidLeave: !!command.avoidLeave, native: !!command.nativeFallback, speed: command.slowestSpeed,
+      transitionComplete:function(destination) {
+        if(convoyTraveling && convoyTraveling.commandId===command.id)convoyTraveling.transitionMap=destination.map;
+      },
       compareTown: command.continuousReturn === 1 && !command.disableTown,
       town: command.purpose !== 'monster-hunt' || command.continuousReturn === 1 && !command.disableTown || command.phase === 'plan-return' && !!command.allowTown,
+      townAttempt: command.continuousReturn !== 1 ? undefined : function(state, index, from, destination) {
+        var c=convoyTraveling;
+        if(!c || c.id!==command.convoyId || c.commandId!==command.id)return;
+        c.townAttempt={round:[command.epoch,command.routeVersion,index].join(':'),map:from.map,state:state,destination:destination};
+      },
       barrier: command.phase === 'plan-return' || command.routeVersion == null ? undefined : function(step, index, completed) {
         return request('/movement-barrier', {method:'POST',timeout:2000,body:Object.assign(sharedConvoyIdentity(command),{
-          step:index, destination:step, completed:completed, ready:completed || !departureCombatPending() && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
+          step:index, destination:step, completed:completed, ready:completed || (command.continuousReturn === 1 && !step.town || !departureCombatPending()) && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
         })}).then(function(result){return !!result.ready;});
       }
     };
@@ -12130,6 +12289,11 @@
   }
   async function sharedConvoyRendezvous(convoy,command,ownsConvoy,phase) {
     phase("rendezvous");
+    if(command.huntTarget) {
+      sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
+      while(ownsConvoy() && convoy.handoffPending)await new Promise(function(resolve){setTimeout(resolve,80);});
+      if(!ownsConvoy())return;
+    }
     var rally=command.rally,deadline=Date.now()+120000;
     if(character.name===command.leader) {
       if(sharedConvoyDistance(sharedConvoyPoint(),rally)>1)throw new Error("Leader moved from planning origin");
@@ -12170,7 +12334,7 @@
   }
   function sharedConvoyEngagement(convoy,command,ownsConvoy,phase) {
     if(command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
-    if(typeof farmingTravelTarget!=="function" || typeof groupedFollower==="function" && groupedFollower())return;
+    if(typeof farmingTravelTarget!=="function" || !command.huntTarget && typeof groupedFollower==="function" && groupedFollower())return;
     var target=farmingTravelTarget(command);
     var approach=target && typeof combatApproachPoint==="function"?combatApproachPoint(target):target;
     if(!target || !(typeof is_in_range==="function" && is_in_range(target) || approach && can_move_to(approach.x,approach.y)))return;
@@ -12183,8 +12347,10 @@
       if(command.huntTarget && result.location) {
         partyLocation=result.location; huntCombatTarget=command.huntTarget; partyConvoyActive=false;
         root.__partyTravelCombat=null; root.__partyTravelCombatAt=result.serverNow;
+        root.__partyNavigationDetail=result.handoff==='temporary' ? 'Fighting encountered '+command.huntTarget+'; continuing to hunt area afterward' : 'Farming encountered hunt spawn';
       }
-      convoy.engaged=true;phase("engaging-target");releaseConvoyCruise(convoy);convoy.detachRoute();
+      convoy.engaged=true;phase("engaging-target");releaseConvoyCruise(convoy);if(convoy.detachRoute)convoy.detachRoute();
+      if(typeof movement!=="undefined" && movement.combatHandoff)movement.combatHandoff();
       Promise.resolve(stop("smart")).catch(function(){});
       convoy.cancelled=true;convoyTraveling=null;combatTargetId=target.id;
       if(typeof publishCombatSelection==="function")publishCombatSelection(target,false);
@@ -12293,7 +12459,7 @@
           throw new Error("Shared route coordinator signal expired");
         }
         if(["failed","shared-hold","defending"].indexOf(signal.phase)>=0)throw new Error("Party requested hold");
-        if(!released && !command.huntTarget)sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
+        if(!released)sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
         if(smart.on_done!==onDone || smart.plot!==plot || !smart.moving)throw new Error("Shared route ownership lost");
         if(released)return walk();
         if(character.rip || character.moving || sharedConvoyDistance(sharedConvoyPoint(),origin)>1)throw new Error("Route origin changed before departure");
@@ -12303,13 +12469,13 @@
         if(leaderRoute)plan();else if(!installed)fetchRoute(signal);
         if(!convoy.routeReady || !signal.departAt || ["scheduled","travel"].indexOf(signal.phase)<0)return;
         if(!convoy.scheduledAt) {
-          if(now>=Number(signal.departAt))throw new Error("Departure signal arrived too late");
+          if(!signal.immediateDeparture && now>=Number(signal.departAt))throw new Error("Departure signal arrived too late");
           convoy.scheduledAt=Number(signal.departAt);
         }
         if(convoy.scheduledAt!==Number(signal.departAt))throw new Error("Departure changed");
         phase("waiting-for-departure");
         if(now<convoy.scheduledAt)return;
-        if(now-convoy.scheduledAt>500)throw new Error("Missed convoy departure window");
+        if(!signal.immediateDeparture && now-convoy.scheduledAt>500)throw new Error("Missed convoy departure window");
         released=true;convoy.departedAt=now;phase("travelling");
         if (root.partyPorcupineEquipment) root.partyPorcupineEquipment.depart(command.purpose);
         return walk();
@@ -12382,13 +12548,14 @@
                   phase("engaging-target");
                   releaseConvoyCruise(convoy);
                   convoy.detachRoute();
+                  if(movement.combatHandoff)movement.combatHandoff();
                   // Cancel native routing before giving combat direct movement.
                   Promise.resolve(stop("smart")).catch(function () {});
                   convoy.cancelled = true;
                   convoyTraveling = null;
                   combatTargetId = target.id;
                   if (typeof publishCombatSelection === "function") publishCombatSelection(target, false);
-                  root.__partyNavigationDetail = "Engaging " + target.mtype + " along the route";
+                  root.__partyNavigationDetail = result.handoff==='temporary' ? 'Fighting encountered '+command.huntTarget+'; continuing to hunt area afterward' : "Engaging " + target.mtype + " along the route";
                 }).catch(function (error) {
                   convoy.handoffRetryAt = Date.now() + 1000;
                   if (command.huntTarget) huntAcquisitionLog(command,target,"handoff rejected",{error:String(error && error.message || error).slice(0,240)},"response");
@@ -12529,16 +12696,17 @@
 
   async function coordinatedMonsterTravel(command) {
     var convoy = { id: command.convoyId, epoch: Number(command.epoch), commandId: command.id,
+      routeProtocol: command.routeProtocol,
       navigationRevision: Number(command.navigationRevision) || 0,
       generation: runtimeGeneration, destination: command.location, cancelled: false,
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
-      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible };
+      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
     convoyTraveling = convoy;
     if(command.purpose === "party-force-travel")forceTraveling=true;
     if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose||""))
       partyLocation = command.purpose === "franky-exit" ? null : command.location;
     function ownsConvoy() {
-      return runtimeCurrent() && !convoy.cancelled && convoyTraveling === convoy &&
+      return runtimeCurrent() && !convoy.cancelled && !convoy.defensePaused && convoyTraveling === convoy &&
         (!navigationIntent.cancelled || command.navigationExempt) && Number(command.navigationRevision || 0) === Number(navigationIntent.revision);
     }
     function phase(value) {
@@ -12575,7 +12743,7 @@
     }
     function navigate(destination) {
       convoy.routeStarts += 1;
-      var result = smart_move(destination);
+      var result = smart_move(destination,undefined,command.continuousReturn===1 ? Object.assign({},sharedMovementOptions(command),{barrier:undefined}) : undefined);
       var onDone = smart.on_done;
       smart.on_done = function (done, reason) {
         if (!done && ownsConvoy()) convoy.interruption = {
@@ -12593,6 +12761,11 @@
       // packet. Wait for that physical stop before declaring assembly ready.
       await stopForConvoy();
       if (!ownsConvoy()) return;
+      if(command.huntTarget && command.combatHandoffAllowed) {
+        sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
+        while(ownsConvoy() && convoy.handoffPending)await new Promise(function(resolve){setTimeout(resolve,80);});
+        if(!ownsConvoy())return;
+      }
       if (command.phase === "hold") {
         convoy.failure = command.reason || "Convoy held; request a fresh convoy to retry";
         phase("failed");
@@ -12700,13 +12873,17 @@
       await request("/convoy-failed", { method: "POST", body: {
         character: character.name, convoyId: command.convoyId,
         epoch: Number(command.epoch), commandId: command.id, runtimeId: convoyRuntimeId, reason: reason,
-        failureCode: command.phase === "town" ? "town-unavailable" : "route-failed",
+        failureCode: convoy.townAttempt && ['interrupted','unavailable'].indexOf(convoy.townAttempt.state)>=0 ? 'town-interrupted' : command.phase === "town" ? "town-unavailable" : "route-failed",
+        townAttempt: convoy.townAttempt || null,
+        routeVersion: command.routeVersion,
         details: { phase: convoy.phase, routeStarts: convoy.routeStarts,
           map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null },
       }}).catch(function () {});
       game_log("Convoy movement failed: " + reason, "red");
       if (ownsConvoy()) await new Promise(function (resolve) { convoy.release = resolve; });
     } finally {
+      if(convoy.defensePaused && !convoy.cancelled && convoyTraveling===convoy)
+        await new Promise(function(resolve){convoy.release=resolve;});
       if (convoy.detachRoute) convoy.detachRoute();
       // A cancelled assembly coroutine can finish after travel has started.
       // It must never reset the new route's speed, label, or smart state.
@@ -13710,6 +13887,7 @@
       }
     },
     stop: function () {
+      catalogGeneration++;
       retirePartyCombatSockets(partyCombatSocketOwner);
       cancelGroupRoute();
       cancelFightRoute();
@@ -13792,7 +13970,12 @@
     },
     isBanking: function () { return banking || bankQueued; },
     isOccupied: function () {
+      if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
+      if (convoyTraveling && convoyTraveling.continuousReturn === 1) {
+        root.__partyCombatOwner = "convoy:" + convoyTraveling.phase;
+        return true;
+      }
       if (character.ctype === "merchant" && (root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending())) return true;
       if (travelCombatActive() && !departureCombatPending()) return true;
       if(root.partyLootClient && root.partyLootClient.huntPending() && !departureCombatPending())return true;
@@ -13807,7 +13990,7 @@
       // passing threat lets kiting/follow movement replace smart_move, which
       // caused QwenTina's one-step search/restart loop. Late joiners still use
       // the coordinator flag below and are not blocked without a local route.
-      var convoyBlocksCombat = !!convoyTraveling;
+      var convoyBlocksCombat = !!convoyTraveling && !convoyTraveling.defensePaused;
       root.__partyCombatOwner = convoyTraveling ? "convoy:" + convoyTraveling.phase : eventTraveling ? "event-travel" : followingLeader ? "follow" : null;
       if (reunion && !reunionBlocked() || banking || stocking || upgrading || forceTraveling || townTraveling || partyTownActive || convoyBlocksCombat || gatheringActive || followingLeader || eventTraveling || (anniversaryBusy || anniversaryStaging) && !root.__partyConvoyDefense) return true;
       if (departurePending || bankQueued) return !engagedMonster();
@@ -14215,6 +14398,9 @@
       position:function(){return {realm:':'+String(parent.server_region||'')+String(parent.server_identifier||''),map:character.map,in:String(character.in||character.map),x:character.x,y:character.y};},
       cancelled:function(){return navigationIntent.cancelled || character.rip || escapeOwns() || !!joinedEvent;},
       defending:departureCombatPending,
+      huntEncounterDefending:function(){return Object.values(parent.entities||{}).some(function(e){
+        return e && e.type==='monster' && !isPassingEncounter(e) && departureTargetEngaged(e);
+      });},
       loot:function(){return smartLoot(eligibleDepartureChests());},chests:eligibleDepartureChests,
       socket:function(){return parent.socket;},afterDraw:function(done){parent.draw_trigger(done);}
     };},

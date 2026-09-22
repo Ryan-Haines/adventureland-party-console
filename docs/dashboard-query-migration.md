@@ -101,7 +101,7 @@ failures are in concurrently edited event/navigation behavior:
 - `franky-exit`: each member queues Town before the rest arrive.
 
 No live activation was performed by this migration. Use the supported
-`scripts/start-caracal.ps1` workflow in `runtime/coordinator/README.md` to publish
+`scripts/start-console.ps1` workflow in `runtime/coordinator/README.md` to publish
 matching coordinator, character and dashboard assets after resolving combined
 validation failures. A build alone does not reload the live process.
 

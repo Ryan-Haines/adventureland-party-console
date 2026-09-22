@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: npm --prefix dashboard ci
       - run: node tools/caracal/setup.mts
+      - run: node tools/hosting/install-caddy.mts
       - run: npm --prefix .caracal ci
       - run: node scripts/ci/restore-game-fixtures.cjs
       - name: Full regression suite
@@ -112,6 +113,7 @@ jobs:
         run: |
           for arch in amd64 arm64; do
             docker run --rm --platform linux/$arch --entrypoint node ghcr.io/ryan-haines/adventureland-party-console@${{ steps.build.outputs.digest }} --check .build/runtime/coordinator-application.cjs
+            bash scripts/ci/smoke-docker.sh ghcr.io/ryan-haines/adventureland-party-console@${{ steps.build.outputs.digest }} "$arch"
             # The runner's classic image store cannot retain two architectures
             # under one manifest digest. Remove only this completed local test image.
             docker image rm ghcr.io/ryan-haines/adventureland-party-console@${{ steps.build.outputs.digest }}

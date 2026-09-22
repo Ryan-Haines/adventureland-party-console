@@ -50,7 +50,7 @@ remain external dependencies with explicit consumer contracts.
 ## Build and validate
 
 `npm run build:runtime` stages the application and policy bundles under
-`.build/runtime/`, with source maps. Windows start-caracal and Docker build
+`.build/runtime/`, with source maps. Windows start-console and Docker build
 these artifacts before starting the game. The launcher template lives at
 `tools/caracal/CharacterCoordinator.cjs`; the installer copies it into caracAL.
 
@@ -64,6 +64,13 @@ TypeScript, never the installed host. Full-host tests cover both source and bund
 launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
+
+Protocol 4 defensive stops retain their local convoy identity until the coordinator
+acknowledges the stop, even when a short-lived attacker dies or is classified as a
+passing encounter before the next heartbeat. The shared travel watchdog regroups
+after three seconds of fresh missing local route reports, preserving the destination
+and checking navigation ownership first. Validate with `shared-convoy.test.cjs`,
+`convoy-defense.test.cjs`, and `passive-hunting.test.cjs`.
 
 Managed public distributions use the host's authenticated update controller. Its
 expiring `AL_DATA_DIR/updates/pause.json` lease suppresses new merchant/bank
@@ -134,6 +141,17 @@ pre-start deferrals release queue ownership without extending the worker watchdo
 Validate with `merchant-delivery-recovery.test.cjs` and merchant recovery/completion
 tests; publish character and coordinator assets together using the ordinary restart.
 
+Manual upgrade menus request server previews through `/party-api/upgrade-preview`.
+The auxiliary heartbeat request and `/upgrade-preview/result` response are ephemeral
+and expire after ten seconds; they never create merchant jobs. Only the executing
+merchant's exact inventory item and currently carried scroll/offerings are queried.
+The runtime always uses `upgrade(item, scroll, offering, true)` and serializes it
+against inventory/production work. A timed-out official deferred retains its guard
+until it settles, so a late preview cannot resolve a real upgrade. The menu shows
+unavailable reasons instead of estimates, and labels the server percentage without
+the separate lucky-slot roll adjustment. Validate with `upgrade-preview.test.cjs`
+and `upgrade-offerings-ui.test.cjs`; publish character and coordinator assets together.
+
 Fresh inventory reports relocate delivery marks to the item's current slot before
 scheduling work. Existing matching slots retain ownership before displaced marks
 claim other copies; merged stacks reserve each request's original quantity across
@@ -185,6 +203,16 @@ request. Validate with `upgrade-offerings*.test.cjs`,
 `upgrade-offering-recovery.test.cjs`, and `lucky-upgrade.test.cjs`. Publish character
 and coordinator assets together through the supported restart below.
 
+Automatic upgrade passes persist their original item, target and `passId` before
+the first production attempt, including bank withdrawals. Reconciliation pauses
+during lucky-slot swaps/recovery and inventory tidying, and follows a uniquely
+matching relocated survivor. Intermediate levels remain reserved for processing;
+completion clears the pass by ID. Missing scroll/item inputs retry instead of
+creating a capacity block. Validate with `merchant-upgrade-recovery.test.cjs`,
+`coordinator-mark-reconciliation.test.cjs`, `coordinator-merchant-completion.test.cjs`
+and `upgrade-offerings-client.test.cjs`. Publish character and coordinator assets
+together through the supported full restart.
+
 Finite upgrade/compound quantities mean remaining successful target-level outputs,
 not desired stock. `inventory/production.ts` persists admission and completion
 receipts before acknowledging them. Character code journals each operation locally
@@ -203,6 +231,12 @@ withdrawing from the bank, and selecting each live triplet. It refreshes protect
 through a read-only `protectionOnly` merchant checkpoint before consuming stock.
 Allocated source locations are preferred; missing allocations relocate against
 current inventory. Completed/cancelled orders release reservations automatically.
+Merchant bank errands refresh these reservations before each marked deposit,
+including when another job interrupts crafting. Reserved ingredients and partially
+reserved stacks stay in inventory, with their bank marks pending. Resumed crafts
+normalize absent material levels to zero when locating bank stock; other marked
+item lookups retain strict fingerprints. Validate with `merchant-bank-full.test.cjs`
+and `merchant-crafting.test.cjs`, including a six-ring order resumed after four crafts.
 Legacy orders use their saved requirements and the current recipe catalog; an
 unrecoverable recipe produces a diagnostic and blocks automatic compounding.
 
@@ -224,7 +258,7 @@ From the repository root, after editing TypeScript:
 npm run typecheck
 npm test
 npm run build:runtime
-.\scripts\start-caracal.ps1
+.\scripts\start-console.ps1
 ```
 
 Building the coordinator bundles alone does **not** reload the running process.
@@ -236,13 +270,27 @@ the updated bridge automatically. Validate with `steam-recovery.test.cjs` and
 `loader-connection.test.cjs`; publish character assets through the full restart.
 Retained combat nominations wait safely when the leader has no heartbeat during
 startup (`nomination-retention.test.cjs`).
-Hunt returns require `huntReturnProtocol: 1` from every participant and use one
+Hunt returns require `huntReturnProtocol: 2` from every participant and use one
 shared itinerary through walking, Town and transport, with one initial departure
 window. The leader compares validated walking-only and Town-enabled candidates.
-Failed Town casts disable Town for regrouping and replanning. Passing attacks are
+Continuous Hunt returns retain movement ownership under attack. Nearby attackers
+use the passing-attack path without chasing, kiting, or cancelling the route.
+Fresh attackers select walking instead of waiting to clear combat. Town-first returns release
+after route readiness and the 500 ms formation check, without the four-second
+walking departure countdown. Cast outcomes identify a party round, so duplicate
+or simultaneous interruption reports count once. The first interrupted round on a map
+select walking until every participant completes the next map transition. Town
+then becomes eligible again; a same-map Daisy return simply walks to Daisy.
+Unavailable Town also selects walking, without counting an interrupted cast.
+The map policy persists through recovery; legacy disabled-Town state is scoped to
+the current map. Partial Town arrivals stay at the destination while others catch
+up. Validate with `hunt-return-town.test.cjs` and the continuous return tests.
+Passing attacks are
 suppressed during return assembly, route preparation, all map transitions and Daisy
-claims; they resume only on an owned travelling return route. Passing retaliation
-does not cancel the client convoy or publish defensive combat ownership. All map
+claims; they resume only on an owned travelling return route, including walking
+fallback. Retaliation against nearby attackers does not require a passive hunting
+rule. Town interrupted by incoming damage falls back to walking.
+Ordinary passing retaliation does not cancel the client convoy. All map
 transitions wait for nearby loot, with a reported failure after 30 seconds rather
 than silently abandoning it. Transient loot cooldown/opening responses retry at
 the ordinary 250 ms cadence. Validate with `passive-hunting.test.cjs`,
@@ -274,7 +322,7 @@ These changes include `characters/shared.js`, so they
 require the full restart. An already exhausted return uses the existing
 `/party-api/monster-hunt/retry-return` action after fresh runtimes connect.
 
-For coordinator/dashboard-only changes, use `scripts/start-caracal.ps1 -CoordinatorOnly`.
+For coordinator/dashboard-only changes, use `scripts/start-console.ps1 -CoordinatorOnly`.
 This verifies the installed launcher, builds the coordinator, and restarts services
 without installing or publishing character assets or starting their build watcher.
 Use the ordinary restart when character changes must also be published.
@@ -295,12 +343,54 @@ fresh compatible reports arrive. Hunt and event returns keep their own recovery;
 completed event returns release leftover convoys instead of starting another trip.
 Manual cancellation and newer navigation are never authorization to retry old travel.
 
+Hunts return to Daisy when the selected quest is complete or expired, never merely
+because it has less than three minutes remaining. The selected owner may keep
+farming through the final second. Hunt's own `farm-recovery` shared walk yields on completion or expiry,
+before event-pause handling. Failed farming walks also release on fresh reports,
+with matching parent revisions and command ownership. Actual event travel, Escape,
+death recovery and manual navigation keep priority. Test `hunt-farm-walk.test.cjs`.
+Rare acquisition uses the same turn-in priority during travel and claims, so a new
+Tiny P sighting cannot repeatedly cancel the Daisy convoy. Cover the real wiring
+with `coordinator-recovery-hooks.test.cjs`.
+An unseen engaged queue head may yield to a visible eligible alternative after
+eight seconds of fresh party absence observations even when local search cannot
+reach its last position. This releases an obligation, not a death: old attack
+evidence stays retired and a new living sighting can nominate the monster again.
+Sightings, attackers and fresh attack evidence preserve the current fight; stale
+reports and activity pauses do not advance the timer. Validate with
+`unseen-primary.test.cjs` and `bee-recovery.test.cjs`; coordinator-only restart suffices.
+
+Hunt candidates use each observing party member's local search radius. Followers
+can nominate the current Hunt species, including outside the original spawn area.
+A completed temporary encounter continues with a fresh eligible nearby candidate
+before installing a departure loot barrier or resuming the saved spawn route.
+The original destination remains the fallback when no valid candidates remain.
+Hunt convoy acquisition also runs during assembly and shared route preparation;
+it does not require returning to the route origin first. Normal target revision
+acknowledgements still govern attacks. Validate with `hunt-temporary-encounter`,
+`hunt-route-acquisition`, `combat-queue`, and `fringe-targeting` tests. Publish
+character and coordinator assets together with the full restart workflow.
+
+Anniversary return readiness is retried on every coordinator tick, not only at
+the event deadline. Once party visits complete, a matching saved farming or
+staging walk yields to the return, including a failed walk. Saved/current
+navigation revisions must match; newer manual movement and protected convoys
+remain authoritative. The featured-party-member one-minute hold is unchanged.
+Validate with `farming-navigation` and `coordinator-anniversary-return-composition`.
+
 Event recovery retires an overlapping `farm-recovery` shared walk or failed event
 entry walk when its saved navigation revisions still match, including after
 restart. It preserves event-return commands and captured waypoints, and rejects
 late farming/event-entry walking requests and event departure permission until
 the event return releases ownership. This lets Goobrawl's transporter approach
 and Ice Golem's exit from Winterland run before returning to the saved checkpoint.
+A combat event ending during a protected Daisy return preserves the Hunt's owned
+travel command. Once fresh participants have exited to Mainland, matching event
+recovery yields directly to Daisy instead of dispatching a checkpoint convoy.
+Legacy returns failed by an `event-return-town` replacement are retired only after
+matching navigation revisions and completed Town reports; unrelated failures,
+manual cancellation, newer commands, Escape, and death recovery stay protected.
+Validate with `hunt-ab-return.test.cjs`; coordinator-only activation suffices.
 If deferred participants reach Main after checkpoint travel was dispatched, their
 matching saved navigation is included in a rebuilt return plan. A newer manual
 navigation revision cannot rejoin the old return.

@@ -5,6 +5,17 @@ import type { ReturnLocation } from "../events/return-types.ts";
 import type { StoredCombatLogEntry } from "../telemetry/combat-log.ts";
 import { completeSharedWalkMember } from "../navigation/shared-walk.ts";
 import { sharedArrivalReady } from "../navigation/shared-route-store.ts";
+import { readRoutePoint } from '../navigation/shared-route-store.ts';
+import { recordTownAttempt } from '../navigation/return-town.ts';
+
+function townFailure(active: RouteConvoy, body: Record<string,unknown>, now: number): boolean {
+  const attempt=requestObject(body.townAttempt), destination=readRoutePoint(attempt.destination);
+  const prefix=String(body.epoch)+':'+String(body.routeVersion)+':';
+  if (!active.continuousReturn || !['interrupted','unavailable'].includes(String(attempt.state)) || typeof attempt.map!=='string' ||
+      typeof attempt.round!=='string' || !attempt.round.startsWith(prefix) || !destination) return false;
+  recordTownAttempt(active,{round:attempt.round,map:attempt.map,state:attempt.state==='unavailable'?'unavailable':'interrupted',destination},now);
+  return true;
+}
 
 interface ExitReturn {
   exitConvoyId?: string;
@@ -109,9 +120,10 @@ export function createConvoyAcknowledgementRoutes(
       details: body.details || {},
     });
     active!.failureDetails = body.details || null;
+    const interrupted=townFailure(active!,body,ports.now());
     ports.hold(
       name + ": " + reason,
-      ["town-unavailable", "runtime-lost", "owner-lost"].includes(requestText(body.failureCode))
+      interrupted ? 'town-interrupted' : ["town-unavailable", "runtime-lost", "owner-lost"].includes(requestText(body.failureCode))
         ? requestText(body.failureCode)
         : "route-failed",
     );

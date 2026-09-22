@@ -13,6 +13,8 @@ export interface SharedRoute {
   source: "search" | "remainder" | "itinerary";
 }
 export interface SharedReport {
+  transitionMap?: string;
+  townAttempt?: import('./return-town.ts').ReturnTownAttempt;
   id: string; epoch: number; commandId: number; navigationRevision: number;
   runtimeId: string; phase: string; routeReady?: boolean; routeVersion?: number;
   failure?: string; waypointCount?: number;
@@ -25,6 +27,7 @@ export interface SharedStatus extends RoutePoint {
   moving?: boolean; speed?: number; convoyProtocol?: number; convoyNavigation?: SharedReport;
 }
 export interface SharedCommand {
+  returnWalking?: boolean;
   continuousReturn?: number;
   disableTown?: boolean;
   avoidLeave?: boolean;
@@ -54,6 +57,7 @@ export interface SharedConvoy extends PartyConvoy {
   sharedStartedAt?: number; sharedProgressAt?: number; sharedDistances?: Record<string, number>;
   sharedReadySince?: number; routePublishedAt?: number; sharedStoppedAt?: number;
   sharedWaitingAt?: number;
+  missingRoutes?: Record<string, { since: number; observedAt: number }>;
   walkingActivity?: string;
   routeServer?: string;
   retryExhausted?: boolean;

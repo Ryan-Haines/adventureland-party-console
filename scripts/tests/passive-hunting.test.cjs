@@ -27,7 +27,7 @@ function fixture(){
   escapeOwns:()=>false,combatRecoveryActive:()=>false,activeCombatEvent:()=>false,rareActive:()=>false,unfinishedFight:()=>false,
   reunionRealm:()=> 'USII',get_entity:id=>Object.values(c.parent.entities).find(e=>e.id===id),is_in_range:e=>Math.hypot(e.x,e.y)<=100,
   isExternallyClaimedMonster:e=>!!e.claimed,currentPartyList:()=>['W'],sameEventTeamMember:()=>true,equip:()=>{throw Error('unexpected deployment');},rareFields:()=>[]});
- const names=['passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
+ const names=['returnDepartureDefense','passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
  vm.runInContext(names.map(n=>namedFunction(source,n)).join('\n'),c);
  return {c,bee};
 }
@@ -108,12 +108,12 @@ test('passing retaliation cannot cancel a return convoy; unrelated attackers sti
  const {c,bee}=fixture();c.beginPassingAttack(bee);bee.target='W';
  let stops=0,evidence=0;c.stop=async()=>{stops++;};c.releaseConvoyCruise=()=>{};c.eventTargetTypes=[];
  c.root.partyQueueClient={evidence(){evidence++;}};
- c.convoyTraveling={id:'return',epoch:1,purpose:'monster-hunt',nonPreemptible:true};
- vm.runInContext(['defendPartyHit','interruptConvoyForDefense'].map(n=>namedFunction(source,n)).join('\n'),c);
+ c.convoyTraveling={id:'return',epoch:1,phase:'travelling',purpose:'monster-hunt',nonPreemptible:true};
+ vm.runInContext(['returnDepartureDefense','defendPartyHit','interruptConvoyForDefense'].map(n=>namedFunction(source,n)).join('\n'),c);
  const convoy=c.convoyTraveling;c.defendPartyHit({id:'W',hid:bee.id});
  assert.equal(c.convoyTraveling,convoy);assert.equal(convoy.cancelled,undefined);assert.equal(stops,0);assert.equal(evidence,0);
  c.parent.entities.other={...bee,id:'other'};c.defendPartyHit({id:'W',hid:'other'});
- assert.equal(c.convoyTraveling,null);assert.equal(convoy.cancelled,true);assert.equal(stops,1);assert.equal(evidence,1);
+ assert.equal(c.convoyTraveling,convoy);assert.equal(convoy.defensePaused,true);assert.equal(convoy.phase,'defending');assert.equal(stops,1);assert.equal(evidence,1);
 });
 
 test('Hunt return passing attacks wait for an owned travelling route and yield to every transition',()=>{
@@ -131,6 +131,19 @@ test('Hunt return passing attacks wait for an owned travelling route and yield t
  c.convoySignal.epoch=2;c.navigationIntent.revision=4;assert.equal(c.passingTarget(),null);
  c.navigationIntent.revision=3;c.convoySignal.validUntil=0;assert.equal(c.passingTarget(),null);
  c.convoyTraveling=null;assert.equal(c.passingTarget(),null,'Daisy claims have no travelling route');
+});
+
+test('Hunt return attacks nearby aggressors while walking without requiring a passive hunting rule',()=>{
+ const {c,bee}=fixture();c.passiveHunting.rules={};bee.target='W';
+ c.convoyRuntimeId='runtime';c.navigationIntent.revision=3;
+ c.convoyTraveling={id:'return',epoch:2,commandId:4,navigationRevision:3,purpose:'monster-hunt',nonPreemptible:true,continuousReturn:1,returnWalking:true,phase:'travelling'};
+ c.convoySignal={id:'return',epoch:2,commandId:4,runtimeId:'runtime',phase:'travel',validUntil:Date.now()+10000};
+ c.unfinishedFight=()=>true;c.groupedCombat={target:bee};
+ assert.equal(c.passingTarget(),bee);
+ bee.x=200;assert.equal(c.passingTarget(),null,'never chases an attacker');bee.x=20;
+ bee.target='outsider';assert.equal(c.passingTarget(),null);bee.target='W';
+ c.movement={transition:()=> 'town'};assert.equal(c.passingTarget(),null,'never interrupts Town');
+ c.movement.transition=()=>null;c.navigationIntent.cancelled=true;assert.equal(c.passingTarget(),null);
 });
 
 test('a pending passing attack burst cannot send again after the return starts preparing',async()=>{

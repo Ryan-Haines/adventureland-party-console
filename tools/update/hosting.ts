@@ -5,6 +5,7 @@ import { Updates } from './service.ts';
 import { exists, readJson } from './files.ts';
 import type { Release } from './contracts.ts';
 import { body, json } from '../hosting/http.ts';
+import { versionLabel } from './version-label.ts';
 
 export interface UpdateRoutes {
   route(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void>;
@@ -18,7 +19,7 @@ export async function updateHosting(root: string, data: string): Promise<UpdateR
       if (req.headers.authorization !== `Bearer ${token}` || req.method !== 'GET' || pathname !== '/console-control/maintenance') {
         json(res, 403, { error: 'Updater authentication required' }); return;
       }
-      const response = await fetch('http://127.0.0.1:924/party-api/console-maintenance', { signal: AbortSignal.timeout(3000) });
+      const response = await fetch(`http://127.0.0.1:${Number(process.env.AL_INTERNAL_API_PORT) || 924}/party-api/console-maintenance`, { signal: AbortSignal.timeout(3000) });
       json(res, response.status, await response.json());
     },
     async route(req, res, pathname) {
@@ -30,9 +31,10 @@ export async function updateHosting(root: string, data: string): Promise<UpdateR
       json(res, response.status, await response.json());
     },
   };
-  const release = await exists(path.join(root, 'release.json')) ? await readJson<Release>(path.join(root, 'release.json')) : undefined;
+  const release = process.env.AL_DOCKER_DEV !== '1' && await exists(path.join(root, 'release.json')) ? await readJson<Release>(path.join(root, 'release.json')) : undefined;
   const config = await readJson<{ repository: string }>(path.join(root, 'distribution.json'));
   const updates = new Updates(release, path.join(data, 'updates/preferences.json'), undefined, config.repository);
+  updates.state.displayVersion = await versionLabel(root, release);
   await updates.load(); void updates.poll();
   setInterval(() => void updates.poll(), 6 * 3600000).unref();
   return { route: (req, res, pathname) => updateRoute(updates, req, res, pathname.replace('/console-update', '') || '/') };

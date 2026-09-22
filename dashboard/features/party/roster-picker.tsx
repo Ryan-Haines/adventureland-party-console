@@ -50,10 +50,16 @@ export function RosterPicker({
               : "Choose an offline character, or create a new character."}
           </DialogDescription>
         </DialogHeader>
-        {slot !== 0 && <div className="flex gap-2" aria-label="Login hosting">
+        {slot !== 0 && <><div className="flex gap-2" aria-label="Login hosting">
           {(["headless", "steam"] as const).map(value => <button key={value} type="button" aria-pressed={hosting === value}
             onClick={() => setHosting(value)} className={`rounded border px-3 py-2 ${hosting === value ? "border-cyan-300 bg-[#164e63] text-white hover:bg-[#155e75]" : "border-slate-600 bg-[#111c19] text-slate-100 hover:bg-[#263c34]"}`}>{value === "steam" ? "Steam" : "Headless"}</button>)}
-        </div>}
+        </div>
+        <p className="text-sm text-emerald-100/80">
+          {hosting === "headless"
+            ? "Runs on the computer hosting Party Console, without a game window."
+            : "Runs in your connected Adventure Land Steam client."}
+          {" Characters already online elsewhere are hidden; stop them there before loading them here."}
+        </p></>}
         <div className="grid max-h-80 gap-2 overflow-y-auto">
           {choices.map((member) => (
             <button

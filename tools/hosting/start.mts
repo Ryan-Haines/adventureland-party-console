@@ -9,21 +9,27 @@ import { Services } from "./services.ts";
 import { servicesHealthy } from "./health.ts";
 import { updateHosting } from '../update/hosting.ts';
 import { notifyBoot, waitForRelease } from '../update/boot.ts';
+import { LocalTLS } from './tls.ts';
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const data = path.resolve(process.env.AL_DATA_DIR || path.join(root, ".build/hosting-data"));
 const caracal = path.join(root, ".caracal");
 const dashboardPort = Number(process.env.AL_INTERNAL_DASHBOARD_PORT) || 3030;
+const apiPort = Number(process.env.AL_INTERNAL_API_PORT) || 924;
 await mkdir(data, { recursive: true });
 const access = new Access(path.join(data, "access.json"));
 await access.load();
 let configured = false,
   configuring = false;
 const services = new Services();
+const development = process.env.AL_DOCKER_DEV === '1' || process.argv.includes('--development');
+const tls = new LocalTLS(root, data);
+// A failed native startup must not leave detached dashboard/game services behind.
+process.once('exit', () => { services.stop(); tls.stop(); });
 async function configure(raw: string, realm: string) {
   if (configuring || configured)
     throw new Error(
-      "Account is already configured; stop the container before replacing its session file",
+      "Account is already configured; stop Party Console before replacing its session file",
     );
   const session = sessionValue(raw);
   configuring = true;
@@ -45,7 +51,7 @@ async function startGame() {
   await readFile(path.join(data, "config.json"));
   await writeFile(
     path.join(caracal, "config.js"),
-    `module.exports = require(${JSON.stringify(path.join(data, "config.json"))});\n`,
+    `const config = require(${JSON.stringify(path.join(data, "config.json"))});\nmodule.exports = { ...config, web_app: { ...config.web_app, port: ${apiPort} } };\n`,
   );
   configured = true;
   services.launch(path.join(caracal, "main.js"), caracal, { ...process.env, AL_SESSION: session });
@@ -66,23 +72,29 @@ for (const name of ["localStorage", "game_files", "logs"]) {
 services.launch(path.join(root, "tools/dashboard/supervisor.mts"), path.join(root, "dashboard"), {
   ...process.env,
   AL_DASHBOARD_PUBLIC_PORT: String(dashboardPort),
-  AL_DASHBOARD_PREBUILT: ".build/container",
-});
+  AL_DASHBOARD_PREBUILT: development ? undefined : ".build/container",
+  NODE_ENV: development ? 'development' : 'production',
+}, development ? ['--development'] : []);
+if (development) services.launch(path.join(root, 'tools/game/watch.mts'), root, process.env);
 await notifyBoot(data);
 const server = gateway({
+  tls,
   access,
   updates: await updateHosting(root, data),
   configure,
   configured: () => configured,
-  healthy: () => servicesHealthy(configured, dashboardPort),
+  healthy: () => servicesHealthy(configured, dashboardPort, apiPort),
+  apiPort,
   dashboardPort,
   publicUrl: process.env.AL_PUBLIC_URL || undefined,
 });
 await listen(server, access);
+await tls.start();
 void startGame().catch(error => {
   if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Game startup failed:', error.message);
 });
 function shutdown() {
+  tls.stop();
   server.close();
   services.stop();
   setTimeout(() => process.exit(0), 15000).unref();

@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "start": "wrangler dev --port 3010 --config dist/server/wrangler.json",
+    "start": "node ../tools/dashboard/node-server.mts 3010 dist",
     "lint": "oxlint",
     "format": "oxfmt"
   },

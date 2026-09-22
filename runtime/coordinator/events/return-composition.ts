@@ -1,4 +1,5 @@
 import { createEventReturns } from "./returns.ts";
+import { createHuntReturnHandoff, type HuntReturnState } from "./hunt-return.ts";
 import type {
   EventReturnPorts,
   EventReturnState,
@@ -12,7 +13,7 @@ interface ReturnCommand extends CommandView {
   event?: string;
   checkpoint?: ReturnLocation | null;
 }
-interface CoordinatorReturnState {
+interface CoordinatorReturnState extends Omit<HuntReturnState, "activeConvoy"> {
   eventReturn: EventReturnState["current"];
   eventReturnLast: EventReturnState["last"];
   deferredEventReturns: EventReturnState["deferred"];
@@ -21,7 +22,7 @@ interface CoordinatorReturnState {
   statuses: ReturnType<EventReturnPorts["statuses"]>;
   commands: Record<string, ReturnCommand | undefined>;
   abtestingStrategy: unknown;
-  activeConvoy: ReturnType<EventReturnPorts["convoy"]>;
+  activeConvoy: (NonNullable<ReturnType<EventReturnPorts["convoy"]>> & NonNullable<HuntReturnState["activeConvoy"]>) | null;
   townCycle: unknown;
   anniversary: { eventCycle?: ReturnType<EventReturnPorts["anniversary"]> };
   eventSessions: Record<string, { event: string }>;
@@ -53,6 +54,9 @@ export function createCoordinatorEventReturns(
   state: CoordinatorReturnState,
   ports: ReturnCompositionPorts,
 ) {
+  const huntReturn = createHuntReturnHandoff(state, {
+    now: ports.now, capture: ports.navigation.capture, cancelConvoy: ports.cancelConvoy,
+  });
   return createEventReturns(
     {
       get current() {
@@ -83,6 +87,7 @@ export function createCoordinatorEventReturns(
         delete state.commands[name];
       },
       town: (name, recovery) => {
+        if (huntReturn.preservesTravel(name)) return;
         state.commands[name] = {
           id: state.nextCommandId++,
           type: "event-return-town",
@@ -91,6 +96,7 @@ export function createCoordinatorEventReturns(
           checkpoint: recovery.checkpoint,
         };
       },
+      handoffToHunt: huntReturn.complete,
       checkpoint: () => ports.checkpoint(),
       capture: (names) => ports.navigation.capture(names),
       clearABStrategy: () => {

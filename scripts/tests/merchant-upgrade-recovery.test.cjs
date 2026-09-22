@@ -6,6 +6,52 @@ const vm = require('node:vm');
 const shared = fs.readFileSync(path.join(__dirname, '../../characters/shared.js'), 'utf8');
 const coordinator = require('./helpers/coordinator-source.cjs').coordinatorSource();
 
+test('upgrade reselects a scroll moved during its asynchronous protection checkpoint', async () => {
+  const {namedFunction} = require('./helpers/named-function.cjs');
+  const items = [{name:'wcap',level:1},{name:'scroll0',q:4},null];
+  let selected;
+  const context = vm.createContext({character:{ctype:'merchant',items}, luckyUpgradeSlot:7,
+    verifyMerchantItemMarks:async()=>{items[2]=items[1];items[1]=null;},
+    findInventoryItemByName:name=>items.findIndex(item=>item?.name===name),
+    merchantLuckyUpgrade:()=>({run:async(item,scroll)=>{selected=scroll;return {success:true};}}),
+  });
+  vm.runInContext(namedFunction(shared,'observedUpgradeConfirmed'),context);
+  await context.observedUpgradeConfirmed(0,1,'wcap',1);
+  assert.equal(selected,2);
+});
+
+test('bank-sourced pass persists before production and resumes at its original target after relocation', () => {
+  const {beginProduction, finishProduction} = require('../../runtime/coordinator/inventory/production.ts');
+  const {reconcileCoordinatorUpgradeMarks} = require('../../runtime/coordinator/inventory/mark-reconciliation.ts');
+  const {processingPending} = require('../../runtime/coordinator/inventory/shared-rules.ts');
+  const {party, r, status} = marksRuntime();
+  Object.assign(party, {merchantCharacter:'M', production:{attempts:{}}, autoCompounds:{}});
+  const mark = {passId:'pass',slot:19,item:{name:'wcap',level:0},tiers:8,auto:true};
+  beginProduction(party,{id:'first',kind:'upgrade',item:mark.item,automatic:{family:'upgrade',key:'wcap@+0',mark}});
+  assert.deepEqual(party.upgrades.M,[mark]);
+  finishProduction(party,'first',true);
+  const busy = {items:[],upgradeInventoryBusy:true};
+  assert.equal(reconcileCoordinatorUpgradeMarks(party,'M',busy),false);
+  assert.deepEqual(party.upgrades.M,[mark]);
+  party.upgrades=JSON.parse(JSON.stringify(party.upgrades));
+  const snapshot=status(4);snapshot.items[0].slot=7;
+  r.reconcileAutoUpgradeMarks('M',snapshot);
+  assert.deepEqual(party.upgrades.M,[{...mark,slot:7}]);
+  assert.equal(processingPending(party,{name:'wcap',level:4}),true);
+  assert.equal(processingPending(party,{name:'wcap',level:8}),false);
+  r.clearResolvedUpgradeMarks('M',[mark]);
+  assert.deepEqual(party.upgrades.M,[]);
+});
+
+test('relocating a pass does not steal a survivor already owned by another pass', () => {
+  const {party,r,status}=marksRuntime();r.reconcileAutoUpgradeMarks('M',status(0));
+  const existing={...party.upgrades.M[0],slot:7,passId:'other'};
+  party.upgrades.M.push(existing);
+  const snapshot=status(4);snapshot.items[0].slot=7;
+  r.reconcileAutoUpgradeMarks('M',snapshot);
+  assert.deepEqual(party.upgrades.M,[existing]);
+});
+
 function marksRuntime() {
   const party = { autoUpgradeMarks: { M: { 'wcap@+0': { tiers: 8, quantity: -1 } } }, upgrades: { M: [] } };
   const policies = require('../../runtime/coordinator/inventory/upgrade-marks.ts');

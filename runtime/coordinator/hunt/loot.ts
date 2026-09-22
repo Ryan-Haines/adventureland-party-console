@@ -6,6 +6,7 @@ import type {
   LootProgress,
 } from "./contracts.ts";
 import { huntLootId } from "../../hunt/loot-identity.ts";
+import { encounterNavigationBlocked } from "./encounter-ownership.ts";
 
 function eventOwnsLoot(hunt: HuntCycle, state: HuntTickState): boolean {
   return (
@@ -92,6 +93,12 @@ function unfinishedBarrier(hunt: HuntCycle, id: string): boolean {
 function freshLeader(lead: HuntStatus | undefined, ports: HuntTickPorts): lead is HuntStatus {
   return !!lead && !(ports.now() - lead.seenAt > 3000) && !lead.rip;
 }
+
+export function encounterLootPending(hunt: HuntCycle, state: HuntTickState, ports: HuntTickPorts): boolean {
+  const lead = state.statuses[String(state.leader)];
+  if (!freshLeader(lead, ports)) return true;
+  return observeBarrier(hunt, lead, huntLootId(hunt) + ":encounter:" + hunt.encounter!.convoyId, ports);
+}
 function collectorAtLoot(lead: HuntStatus, loot: NonNullable<HuntCycle["loot"]>): boolean {
   return `${lead.region || ""}:${lead.server || ""}` === loot.realm &&
     lead.map === loot.map && String(lead.in ?? lead.map) === loot.in &&
@@ -117,6 +124,11 @@ export function huntLootPending(
   state: HuntTickState,
   ports: HuntTickPorts,
 ): boolean {
+  if (hunt.encounter && encounterNavigationBlocked(hunt, state, ports, hunt.encounter.revisions)) return false;
+  return missionLootPending(hunt, state, ports);
+}
+
+function missionLootPending(hunt: HuntCycle, state: HuntTickState, ports: HuntTickPorts): boolean {
   const existing = existingBarrier(hunt, state, ports);
   if (existing !== null) return existing;
   if (eventOwnsLoot(hunt, state)) return false;

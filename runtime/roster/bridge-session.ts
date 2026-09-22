@@ -1,6 +1,8 @@
 import { RosterConflict, type SteamHandoff, type RosterOwnership } from "./handoff.ts";
 import type { SteamGroup } from "./steam-group.ts";
+import { parseObservations, type SteamObservation } from './connection-status.ts';
 interface BridgePorts {
+  observationsChanged?(entries: SteamObservation[]): void;
   now(): number;
   owned(name: string): boolean;
   bridgeChanged(character: string | null): void;
@@ -9,6 +11,8 @@ interface BridgePorts {
 }
 /** A bridge lease identifies a window; it never proves a game session is offline. */
 export class BridgeSession {
+  private character: string | null = null;
+  private realm: string | null = null;
   private lease: { id: string; at: number; version: number } | null = null;
   private readonly state: RosterOwnership;
   private readonly service: SteamHandoff;
@@ -19,6 +23,13 @@ export class BridgeSession {
     this.state = state; this.service = service; this.ports = ports;
   }
   ready(version = 1): boolean { return !!this.lease && this.lease.version >= version && this.ports.now() - this.lease.at < 8000; }
+  currentRealm(): string | null {
+    return this.ready(2) && this.character === this.state.native ? this.realm : null;
+  }
+  connected(): boolean {
+    return this.ready() && !!this.character && this.character === this.state.native
+      && !!this.ports.codeRunning?.(this.character);
+  }
   private renew(body: Record<string, unknown>): string | null {
     if (typeof body.clientId !== "string" || !body.clientId || body.clientId.length > 100 || ![1,2].includes(Number(body.version)))
       throw new RosterConflict("Unsupported Steam bridge");
@@ -38,6 +49,10 @@ export class BridgeSession {
   }
   async receive(body: Record<string, unknown>): Promise<void> {
     const character = this.renew(body);
+    this.ports.observationsChanged?.(parseObservations(body, name => this.ports.owned(name)));
+    this.character = character;
+    this.realm = character && typeof body.realm === "string" && /^SR_(US|EU|ASIA)(I|II|III|IV|V|PVP)$/.test(body.realm)
+      ? body.realm : null;
     if (body.version === 2 && this.group && (!this.state.handoff || this.state.handoff.multi || this.state.handoff.phase === "complete")) {
       const op = this.state.handoff;
       if (op?.multi && body.operationId === op.id) {
@@ -51,6 +66,7 @@ export class BridgeSession {
         if (!this.state.steam?.includes(character)) this.state.steam = [...(this.state.steam || []), character];
         this.state.native = character; this.ports.save();
       }
+      await this.group.refreshRealmChoice();
       this.group.expire();
       return;
     }

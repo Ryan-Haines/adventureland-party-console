@@ -15,13 +15,16 @@ if ! docker info >/dev/null 2>&1; then
   echo 'Cannot access Docker. Make sure Docker is running and your user has permission to use it.' >&2
   exit 1
 fi
-compose=(docker compose --project-directory "$repo" -f "$repo/compose.yaml")
+export AL_DEV_UID=${AL_DEV_UID:-$(id -u)}
+export AL_DEV_GID=${AL_DEV_GID:-$(id -g)}
+compose=(docker compose --project-directory "$repo" -f "$repo/compose.yaml" -f "$repo/compose.dev.yaml")
 if ! "${compose[@]}" build; then
   echo 'Party Console build failed. Fix the error above and run this command again.' >&2
   exit 1
 fi
-echo 'Party Console built! Starting…'
-if ! "${compose[@]}" up -d --wait --wait-timeout 300; then
+echo 'Party Console built! Starting with hot reload…'
+echo 'Waiting for Party Console to become ready (up to five minutes)…'
+if ! "${compose[@]}" up -d --force-recreate --wait --wait-timeout 300; then
   echo 'Party Console did not become ready within five minutes, or startup failed.' >&2
   "${compose[@]}" ps >&2 || true
   "${compose[@]}" logs --no-color --tail 50 party-console >&2 || true
@@ -51,3 +54,4 @@ else
   url="http://$host:$port"
 fi
 printf '\nParty Console ready! Open at %s\n' "$url"
+printf 'Steam/browser linking: open %s/setup for localhost or HTTPS instructions.\n' "$url"

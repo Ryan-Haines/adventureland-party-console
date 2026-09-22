@@ -1,4 +1,4 @@
-import { automaticCommerceRuleKey } from './item-identity.ts';
+import { automaticCommerceRuleKey, sameMarkedItem } from './item-identity.ts';
 import type { Item } from '../contracts/item.ts';
 import { requestObject, type HttpRouter } from '../http/contracts.ts';
 
@@ -159,6 +159,11 @@ function normalizeUpgrade(value: unknown) {
 function offeringUpgradePending(state: ConflictState, item: Item): boolean {
   return Object.values(state.upgrades || {}).flatMap(marks => marks || []).some(raw => {
     const mark = requestObject(raw), waiting = requestObject(mark.waitingOffering), original = requestObject(mark.item);
-    return !!mark.auto && original.name === item.name && waiting.level === Number(item.level || 0);
+    return !!mark.auto && original.name === item.name && (waiting.level === Number(item.level || 0) || unfinishedUpgrade(mark, original, item));
   });
+}
+function unfinishedUpgrade(mark: Record<string, unknown>, original: Record<string, unknown>, item: Item): boolean {
+  const start = Number(original.level) || 0, level = Number(item.level) || 0;
+  return !!mark.passId && level >= start && level < start + Number(mark.tiers) &&
+    sameMarkedItem({...item, level: start}, {...original, level: start});
 }

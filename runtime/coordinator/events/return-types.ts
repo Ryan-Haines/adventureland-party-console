@@ -66,6 +66,7 @@ export interface CommandView {
   cycleId?: string;
 }
 export interface EventReturnPorts {
+  handoffToHunt?(recovery: EventRecovery): boolean;
   now(): number;
   nextCommandId(): number;
   activeNames(): string[];

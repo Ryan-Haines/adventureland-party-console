@@ -5,9 +5,9 @@ export interface CurrentAttacker extends Target { target: string; server?: strin
 interface Observation {
   activeEvent?: string | null; joinedEvent?: string | null;
   seenAt?: number; map?: string; in?: string | number; server?: string; hp?: number; rip?: boolean;
-  groupedCombat?: { passingEncounters?: PassingEncounter[]; currentAttackersAt?: number; currentAttackers?: CurrentAttacker[]; travelCommand?: { id: number; revision: number } | null };
+  groupedCombat?: { returnDefense?: boolean; passingEncounters?: PassingEncounter[]; currentAttackersAt?: number; currentAttackers?: CurrentAttacker[]; travelCommand?: { id: number; revision: number } | null };
 }
-export interface DefenseState { statuses: Record<string, unknown>; groupedCombat?: unknown }
+export interface DefenseState { statuses: Record<string, unknown>; groupedCombat?: unknown; activeConvoy?: { purpose?: string | null; continuousReturn?: number; returnTown?: { walking: boolean } } | null }
 export interface DefenseResult {
   state: "clear" | "defending" | "waiting-for-observations";
   attackers: CurrentAttacker[];
@@ -36,6 +36,10 @@ function passingForDefense(party: DefenseState, names: string[], now: number) {
   return new Set(collectPassing(names.map(name=>({name,ctype:"",revision:0,status:party.statuses[name] as Member["status"]})),
     (party.groupedCombat as Group | undefined)?.passingEncounters || [], now).map(passingIdentity));
 }
+function includeAttacker(party:DefenseState,passing:Set<string>,attacker:CurrentAttacker,departure?:boolean):boolean {
+  const c=party.activeConvoy;
+  return !!departure || !!(c?.continuousReturn && !c.returnTown?.walking) || !passing.has(passingIdentity(attacker));
+}
 /** Travel consults live targeting, never retained engagements or recent outgoing hits. */
 export function classifyTravelDefense(party: DefenseState, names: string[], now = Date.now()): DefenseResult {
   const waiting: string[] = [], found = new Map<string, CurrentAttacker>();
@@ -47,7 +51,7 @@ export function classifyTravelDefense(party: DefenseState, names: string[], now 
     for (const t of status.groupedCombat!.currentAttackers!) {
       if (current(t, status, names)) {
         const attacker = { ...t, server: status.server };
-        if (!passing.has(passingIdentity(attacker)) && !dead.has(identity(attacker))) found.set(identity(attacker), attacker);
+        if (includeAttacker(party,passing,attacker,status.groupedCombat!.returnDefense) && !dead.has(identity(attacker))) found.set(identity(attacker), attacker);
       }
     }
   }

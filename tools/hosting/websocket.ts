@@ -9,7 +9,7 @@ export function websocket(server: Server, options: Options) {
     }
     const target = connect(options.dashboardPort, "127.0.0.1", () => {
       target.write(`${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`);
-      const headers = { ...req.headers, cookie: "", host: `127.0.0.1:${options.dashboardPort}`, origin: `http://127.0.0.1:${options.dashboardPort}` };
+      const headers = { ...req.headers, 'x-party-tls': '', cookie: "", host: `127.0.0.1:${options.dashboardPort}`, origin: `http://127.0.0.1:${options.dashboardPort}` };
       for (const [name, value] of Object.entries(headers)) if (value !== undefined) target.write(`${name}: ${Array.isArray(value) ? value.join(", ") : value}\r\n`);
       target.write("\r\n"); target.write(head); socket.pipe(target).pipe(socket);
     });

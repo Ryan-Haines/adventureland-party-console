@@ -157,6 +157,17 @@ test('Switch releases the existing Steam group and rejects wrong-realm arrivals'
  await f.release();f.service.observe('P',['P','Q','M']);assert.equal(op.phase,'navigate');
  realm='SR_USII';f.service.observe('P',['P','Q','M']);assert.equal(op.phase,'complete');
 });
+test('realm refresh updates mismatches and continues a persisted waiting operation only once',async()=>{
+ const f=fixture(['P'],['M',null,null,null]);let realm=null;
+ f.ports.realmContext=()=>({current:realm,home:'SR_USII'});
+ const op=await f.service.begin('primary','M');
+ f.state.handoff=JSON.parse(JSON.stringify(op));
+ realm='SR_USIV';await f.service.refreshRealmChoice();
+ assert.equal(f.state.handoff.realmChoice.current,'SR_USIV');assert.deepEqual(f.stopped,[]);
+ realm='SR_USII';await Promise.all([f.service.refreshRealmChoice(),f.service.refreshRealmChoice()]);
+ assert.equal(f.state.handoff.phase,'release');assert.deepEqual(f.stopped,['M']);
+});
+
 test('cancel and changed realm observations cannot perform the stale choice',async()=>{
  const f=fixture(['P'],['M',null,null,null]);let realm='SR_USIV';
  f.ports.realmContext=()=>({current:realm,home:'SR_USII'});

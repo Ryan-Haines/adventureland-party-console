@@ -1,5 +1,6 @@
 import type { HuntCycle } from "../hunt/contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
+import { priority as huntTurnInPriority } from "../../hunt/policy.ts";
 
 interface RecoveryState {
   monsterHunt: HuntCycle | null;
@@ -26,8 +27,7 @@ export function createCoordinatorRecoveryHooks(state: RecoveryState, ports: Reco
     rare: {
       members: ports.huntParticipants,
       intent: ports.intent,
-      turnIn: () =>
-        state.monsterHunt?.stage === "at-daisy" || state.monsterHunt?.turnIn?.phase === "claiming",
+      turnIn: () => huntTurnInPriority(state.monsterHunt),
       cancelConvoy: ports.cancelConvoy,
       convoy: ports.convoy,
       persist: ports.persist,

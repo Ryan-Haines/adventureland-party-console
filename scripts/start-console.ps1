@@ -14,6 +14,8 @@ $configPath = Join-Path $caracalRoot "config.js"
 $configTemplate = Join-Path $PSScriptRoot "caracal.config.js"
 $sessionPath = Join-Path $caracalRoot "session.clixml"
 $dashboardRoot = Join-Path $repoRoot "dashboard"
+& node (Join-Path $repoRoot 'tools/hosting/install-caddy.mts')
+if ($LASTEXITCODE -ne 0) { throw 'HTTPS service installation failed.' }
 
 function Stop-ProcessTree {
     param([Parameter(Mandatory)][int]$RootProcessId)
@@ -83,7 +85,7 @@ function Stop-ExistingCaracalSupervisor {
         $stopRoot = [int]$parentInfo.ProcessId
         $starter = Get-CimInstance Win32_Process -Filter "ProcessId=$($parentInfo.ParentProcessId)"
         if ($starter.Name -in @('pwsh.exe', 'powershell.exe') -and
-            $starter.CommandLine -match 'start-caracal\.ps1' -and $starter.ProcessId -ne $PID) {
+            $starter.CommandLine -match 'start-console\.ps1' -and $starter.ProcessId -ne $PID) {
             $stopRoot = [int]$starter.ProcessId
         }
     }

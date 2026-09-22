@@ -26,7 +26,7 @@ export async function releasePath(root: string, id: string): Promise<string> {
   const directory = path.join(root, '.build/releases', id);
   const completed = await readJson<{generation: string}>(path.join(directory, 'complete.json'));
   if (completed?.generation !== id) throw new Error('Dashboard build is incomplete: ' + id);
-  await access(path.join(directory, 'server/wrangler.json'));
+  await access(path.join(directory, 'server/index.js'));
   await inspectRemoval(path.join(root, '.build'), 'releases/' + id);
   return directory;
 }

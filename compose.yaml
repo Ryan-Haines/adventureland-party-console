@@ -3,8 +3,11 @@ services:
     build: .
     ports:
       - "${AL_HOST:-0.0.0.0}:${AL_PORT:-3010}:3010"
+      - "${AL_HOST:-0.0.0.0}:${AL_HTTPS_PORT:-3443}:3443"
     environment:
       AL_PUBLIC_URL: ${AL_PUBLIC_URL:-}
+      AL_HTTP_PUBLIC_PORT: ${AL_PORT:-3010}
+      AL_HTTPS_PUBLIC_PORT: ${AL_HTTPS_PORT:-3443}
       AL_DATA_URL: ${AL_DATA_URL:-https://aldata.earthiverse.ca}
     volumes:
       - party-data:/data

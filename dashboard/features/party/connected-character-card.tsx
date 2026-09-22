@@ -345,17 +345,14 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             ] || 400}
           </p>
           <div className="flex items-center gap-2">
-            <MonsterRouteButton
-              formation={state}
-              character={char.name}
-              onRoute={() =>
-                findMonsterFor(
-                  char.name,
-                  state.monsterFocusByCharacter?.[char.name] || selectedFocus,
-                )
-              }
-            />
             <MonsterFocusPicker
+              renderRouteButton={(focus) => (
+                <MonsterRouteButton
+                  formation={state}
+                  character={char.name}
+                  onRoute={() => findMonsterFor(char.name, focus)}
+                />
+              )}
               monsters={monsters}
               selected={
                 state.monsterFocusByCharacter?.[char.name] || selectedFocus

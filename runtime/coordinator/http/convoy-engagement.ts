@@ -30,12 +30,17 @@ export function createConvoyEngagementRoutes(
       details: {
         ...requestObject(body.target),
         convoyId: active.id,
-        huntArrivalAccepted: accepted,
+        ...arrivalDetails(active, accepted),
         positionAgeMs: status ? ports.now() - status.seenAt : null,
         reportedMap: status?.map,
       },
     });
     ports.persist();
+  }
+  function arrivalDetails(active: RouteConvoy, accepted: boolean) {
+    const hunt = state.monsterHunt, temporary = hunt?.encounter?.convoyId === active.id;
+    return { huntArrivalAccepted: accepted && !temporary, combatHandoffAccepted: accepted,
+      handoff: temporary ? "temporary" : "spawn", retainedDestination: hunt?.missions?.[hunt.currentIndex]?.destination };
   }
   function accept(
     name: string,
@@ -47,14 +52,14 @@ export function createConvoyEngagementRoutes(
       active.participants.map((name) => [name, ports.intent(name).revision]),
     );
     const group = ports.group();
-    if (group && (!group.ready || group.anchor?.map !== requestObject(body.target).map))
+    if (!active.huntTarget && group && (!group.ready || group.anchor?.map !== requestObject(body.target).map))
       return res
         .status(409)
         .json({ error: "Waiting for grouped arrival: " + group.blockers.join("; ") });
     if (
       !ports.engage(body, {
         revisions,
-        radius: Number(state.monsterSearchRadiusByCharacter[state.leader || name]) || 400,
+        radius: Number(state.monsterSearchRadiusByCharacter[active.huntTarget ? name : state.leader || name]) || 400,
         focus: focus(),
       })
     )
@@ -62,7 +67,13 @@ export function createConvoyEngagementRoutes(
         .status(409)
         .json({ error: "stale convoy or target outside destination hunt area" });
     recordEngagement(name, active, body);
-    return res.json({ ok: true, ...(active.huntTarget ? { location: active.location, serverNow: ports.now() } : {}) });
+    return res.json({ ok: true, ...handoffResponse(active) });
+  }
+  function handoffResponse(active: RouteConvoy) {
+    if (!active.huntTarget) return {};
+    const hunt = state.monsterHunt;
+    return { location: active.location, handoff: hunt?.encounter?.convoyId === active.id ? "temporary" : "spawn",
+      destination: hunt?.missions[hunt.currentIndex]?.destination, serverNow: ports.now() };
   }
   function engage(req: HttpRequest, res: HttpResponse): unknown {
     const body = requestObject(req.body),
@@ -72,7 +83,7 @@ export function createConvoyEngagementRoutes(
       intent = ports.intent(name);
     if (!active || intent.cancelled)
       return res.status(409).json({ error: "inactive farming convoy" });
-    if (state.partyFarmingMode !== "scatter" && name !== state.leader)
+    if (!active.huntTarget && state.partyFarmingMode !== "scatter" && name !== state.leader)
       return res
         .status(409)
         .json({ error: "only the leader may nominate a grouped farming target" });

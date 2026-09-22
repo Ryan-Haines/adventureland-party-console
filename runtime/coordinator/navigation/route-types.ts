@@ -2,6 +2,11 @@ import type { ReturnLocation } from "../events/return-types.ts";
 import type { StoredCombatLogEntry } from "../telemetry/combat-log.ts";
 import type { HuntCycle } from "../hunt/contracts.ts";
 export interface RouteConvoy {
+  continuousReturn?: number;
+  returnTown?: import('./return-town.ts').ReturnTownPolicy;
+  disableTown?: boolean;
+  townRetry?: boolean;
+  townRetryAt?: number;
   huntTarget?: string;
   location?: ReturnLocation;
   routeProtocol?: number;

@@ -3,6 +3,13 @@ const {createMerchantCompletionRoute}=require('../../runtime/coordinator/http/me
 const {fixture,scenarios}=require('./helpers/coordinator-completion.cjs');
 const contracts=require('./fixtures/merchant-completion-contracts.json');
 const json=value=>JSON.parse(JSON.stringify(value));
+test('transient lucky-slot input loss retries automatic upgrades without a capacity block',()=>{
+ const f=fixture({job:{reason:'auto upgrade'}});
+ createMerchantCompletionRoute(f.state,f.ports)({body:{jobId:'job',success:false,error:"Couldn't use lucky slot: item or scroll unavailable"}},f.response);
+ assert.deepEqual(f.state.merchantJobBlocks,{});
+ assert.equal(f.state.merchantQueue.length,1);
+ assert.equal(f.state.merchantQueue[0].reason,'auto upgrade');
+});
 for(const scenario of scenarios)test('merchant completion: '+scenario.name,()=>{
  const f=fixture(scenario);
  createMerchantCompletionRoute(f.state,f.ports)({body:{jobId:'job',...scenario.body}},f.response);

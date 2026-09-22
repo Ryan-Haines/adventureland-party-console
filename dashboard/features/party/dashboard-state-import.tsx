@@ -7,7 +7,7 @@ import { API } from "./api";
 import { StateExportButton } from "./state-export-button";
 
 interface SourceInfo { filename: string; canonicalPath: string; localPath: string; dockerPath: string; maxBytes: number }
-interface Preview { fields: string[]; characters: string[]; digest: string }
+interface Preview { fields: string[]; characters: string[]; digest: string; skippedCharacters?: Record<string, string[]> }
 const label = (field: string) => ({ marked: "Bank collection marks", merchantMarked: "Merchant collection marks",
   compounds: "Compound groups", autoCompounds: "Automatic compound rules", upgrades: "Upgrade marks",
   upgradeOfferingRules: "Upgrade offering rules", autoUpgradeMarks: "Automatic upgrade rules", autoItemMarks: "Automatic collection rules" }[field] || field.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()));
@@ -19,11 +19,13 @@ export function DashboardStateImport() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [backup, setBackup] = useState("");
+  const [skipped, setSkipped] = useState<string[]>([]);
   const content = useRef("");
   const picker = useRef<HTMLInputElement>(null);
   const selection = useRef(0);
   useEffect(() => {
     const controller = new AbortController();
+    const currentSelection = selection;
     fetch(`${API}/dashboard-state`, { signal: controller.signal }).then(async response => {
       if (!response.ok) {
         const body = await response.text();
@@ -32,7 +34,7 @@ export function DashboardStateImport() {
       }
       setInfo(await response.json());
     }).catch(error => { if (!controller.signal.aborted) setError(String(error.message)); });
-    return () => { controller.abort(); selection.current++; };
+    return () => { controller.abort(); currentSelection.current++; };
   }, []);
 
   async function request(action: string, source: string, digest?: string) {
@@ -64,6 +66,7 @@ export function DashboardStateImport() {
     setBusy(true); setError("");
     try {
       const result = await request("import", content.current, preview.digest);
+      setSkipped(Object.keys(result.skippedCharacters || {}));
       setBackup(result.backupPath || "Saved beside caraGarage.jsonl"); setPreview(null); content.current = "";
       if (picker.current) picker.current.value = "";
     } catch (error) { setError(error instanceof Error ? error.message : "Import failed"); }
@@ -92,14 +95,15 @@ export function DashboardStateImport() {
       <p className="break-all font-semibold">Review {filename}</p>
       <p className="mt-1">These saved settings will replace the corresponding settings here, including empty lists. Missing settings are kept.</p>
       <p className="mt-2">Characters: {preview.characters.join(", ") || "Shared settings only"}</p>
+      {Object.entries(preview.skippedCharacters || {}).map(([name, fields]) => <p key={name} className="mt-2">Skipping {name} (not in this account): {fields.map(label).join(', ')}.</p>)}
       <ul className="mt-2 max-h-40 list-inside list-disc overflow-y-auto">{preview.fields.map(field => <li key={field}>{label(field)}</li>)}</ul>
-      <p className="mt-2">A backup is saved on this server before importing. Imported automation rules take effect immediately.</p>
+      <p className="mt-2">{preview.fields.length ? 'A backup is saved on this server before importing. Imported automation rules take effect immediately.' : 'Nothing to import: all saved characters were skipped.'}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button disabled={busy} onClick={() => void apply()} className="border border-emerald-500 bg-[#10392b] text-emerald-50 hover:bg-[#18513c] hover:text-white">Import dashboard state</Button>
+        <Button disabled={busy || !preview.fields.length} onClick={() => void apply()} className="border border-emerald-500 bg-[#10392b] text-emerald-50 hover:bg-[#18513c] hover:text-white">Import dashboard state</Button>
         <Button disabled={busy} onClick={() => { setPreview(null); content.current = ""; }} className="border border-slate-500 bg-[#101c1a] text-slate-100 hover:bg-slate-700 hover:text-white">Cancel</Button>
       </div>
     </div>}
     {error && <p role="alert" className="mt-3 break-words text-sm text-rose-200">Error importing state file: {error}</p>}
-    {backup && <p role="status" className="mt-3 break-all text-sm text-emerald-200">Dashboard state imported. Backup: <span className="font-mono">{backup}</span></p>}
+    {backup && <output className="mt-3 block break-all text-sm text-emerald-200">Dashboard state imported. {skipped.length > 0 && `Skipped: ${skipped.join(', ')}. `}Backup: <span className="font-mono">{backup}</span></output>}
   </section>;
 }

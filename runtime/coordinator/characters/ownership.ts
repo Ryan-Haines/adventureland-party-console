@@ -1,5 +1,6 @@
 import type { RosterOwnership } from "../../roster/handoff.ts";
 import type { RosterRoutesPorts } from "../../roster/routes.ts";
+import { recordConnections } from '../../roster/connection-status.ts';
 
 interface Status {
   server?: string;
@@ -171,6 +172,7 @@ export function createCoordinatorOwnershipPorts<Block extends { enabled?: boolea
       return { current: observedRealm(primary), home: home ? "SR_" + home.replace(/^SR_/, "") : null };
     },
     bridgeChanged: () => {},
+    observationsChanged: entries => recordConnections(state, entries, ports.now()),
     validateParticipants: (names) => {
       if (new Set(names).size !== names.length || names.length > 4)
         throw new Error("maximum characters logged in");

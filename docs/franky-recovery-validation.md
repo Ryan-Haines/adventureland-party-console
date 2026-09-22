@@ -19,7 +19,7 @@
 
 ## Activation
 
-The first supported restart attempt stopped during preflight typecheck and retained the old process. After repairing the type declarations, `scripts/start-caracal.ps1 -ProductionDashboard` successfully built, published, and restarted the services. The supervisor and production dashboard have new instance identities, and all four party slots reported online.
+The first supported restart attempt stopped during preflight typecheck and retained the old process. After repairing the type declarations, `scripts/start-console.ps1 -ProductionDashboard` successfully built, published, and restarted the services. The supervisor and production dashboard have new instance identities, and all four party slots reported online.
 
 Steam reloads are deferred while occupied. All three combat characters subsequently reported fresh runtime identities. A real QwenTina runtime replacement during a farm-recovery walk correctly triggered a safety hold; the existing saved farming-area command was reissued once through the normal command endpoint, preserving its full location and monster selection.
 

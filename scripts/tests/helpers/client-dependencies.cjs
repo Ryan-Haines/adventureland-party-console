@@ -19,7 +19,7 @@ exports.passingContext = values => {
     activeCombatEvent: () => false, rareActive: () => false, unfinishedFight: () => false,
     reunionRealm: () => 'USII', ...values,
   });
-  functions(context, ['passingKey', 'isPassingEncounter', 'passingTravelAllowed', 'passingTarget']);
+  functions(context, ['returnDepartureDefense', 'passingKey', 'isPassingEncounter', 'passingTravelAllowed', 'passingTarget']);
   return context;
 };
 

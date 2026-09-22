@@ -37,6 +37,14 @@ function fixture(options={}) {
  return {service,host,c,calls,logs,ports,get request(){return request;},get searches(){return searches;},setNow:t=>now=t,supersede:()=>revision++,reload:()=>runtime='new',
   async ticks(count=8){for(let i=0;i<count;i++){host.smart_move_logic();await settle();}},dispose:()=>service.dispose()};
 }
+
+test('combat handoff records an intentional travel pause without reporting a navigation failure',async()=>{
+ const r=fixture({pending:true}),journey=r.service.move({map:'main',x:100,y:0});
+ const rejected=assert.rejects(journey,/Combat handoff/);r.service.combatHandoff();await rejected;
+ assert.equal(r.service.last().reason,'Combat handoff');
+ assert.ok(r.logs.some(log=>log.phase==='Travel paused for combat'));
+ assert.ok(!r.logs.some(log=>log.phase==='Movement failed'));r.dispose();
+});
 test('ALClient planning executes validated segments, uses actual speed and permits town',async()=>{
  const r=fixture();const p=r.service.move({map:'main',x:100,y:0});await r.ticks();await p;
  assert.equal(r.request.town,true);assert.equal(r.request.speed,60);assert.equal(r.searches,0);assert.equal(r.c.x,100);r.dispose();
@@ -52,6 +60,39 @@ test('Town arrival waits past the cast deadline for a follower without recasting
  follower=true;r.setNow(15500);await r.ticks(12);await p;
  assert.equal(r.calls.filter(c=>c[0]==='town').length,1);
  assert.equal(r.c.real_x,100);r.dispose();
+});
+
+test('Hunt Town reports actual casts and settled arrivals before the follower arrival barrier',async()=>{
+ const r=fixture({plot:[{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}]}),outcomes=[];
+ let follower=false;
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{townAttempt:s=>outcomes.push(s),barrier:async(_s,_i,done)=>!done||follower});
+ await r.ticks(3);r.setNow(1400);await r.ticks(6);
+ assert.equal(outcomes[0],'casting');assert.ok(outcomes.includes('complete'));
+ assert.equal(outcomes.includes('interrupted'),false);assert.equal(r.service.state.moving,true);
+ follower=true;r.setNow(1800);await r.ticks(12);await p;r.dispose();
+});
+
+test('Town cooldown waits do not count as interrupted casts and become map-local walking fallback',()=>{
+ const r=fixture(),outcomes=[],{createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
+ let now=1000;r.host.can_use=()=>false;
+ const e=createMovementExecutor(r.host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},
+  {game:r.host.G,walk:()=>true,door:()=>true},()=>now);
+ const options={townAttempt:s=>outcomes.push(s),barrier:async()=>false};
+ e.tick(options);assert.deepEqual(outcomes,[]);now+=5000;
+ assert.throws(()=>e.tick(options),/Town unavailable/);assert.deepEqual(outcomes,['unavailable']);
+ assert.equal(r.calls.length,0);r.dispose();
+});
+
+test('Town cast rejection reports interruption but cooldown rejection does not',async()=>{
+ for(const reason of ['interrupted','cooldown']) {
+  const r=fixture(),outcomes=[],{createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
+  r.host.use=async()=>{throw {reason};};
+  const e=createMovementExecutor(r.host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},
+   {game:r.host.G,walk:()=>true,door:()=>true},()=>1000);
+  const options={townAttempt:s=>outcomes.push(s)};
+  e.tick(options);await settle();assert.throws(()=>e.tick(options));
+  assert.deepEqual(outcomes,['casting',reason==='cooldown'?'unavailable':'interrupted']);r.dispose();
+ }
 });
 test('planner transport errors do not silently switch to native pathfinding',async()=>{
  const r=fixture({offline:true}),p=r.service.move({map:'main',x:100,y:0}),failed=assert.rejects(p,/offline/);
@@ -124,16 +165,16 @@ test('town prohibition rejects a town edge even if planner returns one',async()=
  assert.equal(r.request.town,false);assert.equal(r.calls.some(c=>c[0]==='town'),false);assert.match(r.logs[0].message,/town warp prohibited/);r.dispose();
 });
 test('real pinned planner worker uses native collision validation and geometry identity',async()=>{
- const n=createNative(path.resolve('.caracal/game_files/16846'),'native-visible');
+ const {version,directory}=require('./helpers/installed-game.cjs');const n=createNative(directory,'native-visible');
  const service=createPlannerService(path.resolve('.build/runtime/movement-planner.cjs'));
  try {
-  const prepared=service.prepare(n.game,16846);await prepared.ready;
+  const prepared=service.prepare(n.game,version);await prepared.ready;
   const from={map:'main',x:0,y:0},to={map:'halloween',x:0,y:0};
-  const result=await service.plan({id:'probe',from,to,speed:60,town:true,version:16846,fingerprint:prepared.fingerprint});
+  const result=await service.plan({id:'probe',from,to,speed:60,town:true,version,fingerprint:prepared.fingerprint});
   assert.ok(result.plot.some(p=>p.town));assert.ok(result.ms<2000);
   const ports={game:n.game,walk:(a,b)=>n.canWalk(a,b),door:(p,d)=>n.context.is_door_close(p.map,d,p.x,p.y)&&n.context.can_use_door(p.map,d,p.x,p.y),hasKey:()=>false};
   assert.equal(validateRoute(ports,from,to,result.plot,true),null);
-  await assert.rejects(service.plan({id:'wrong',from,to,speed:60,town:true,version:16847,fingerprint:prepared.fingerprint}),/compatible/);
+  await assert.rejects(service.plan({id:'wrong',from,to,speed:60,town:true,version:version+1,fingerprint:prepared.fingerprint}),/compatible/);
   assert.equal(geometryFingerprint(n.game),prepared.fingerprint);
  } finally{service.dispose();}
 });

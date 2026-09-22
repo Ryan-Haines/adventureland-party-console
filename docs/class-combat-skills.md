@@ -89,5 +89,5 @@ spending category, result and skip reason through the existing heartbeat.
 Use `class-skills.test.cjs`, `priest-absorb-sins.test.cjs`, the attack/movement tests,
 and the full regression suite. Build with `npm run build:runtime` and
 `npm run build:characters`; activate character and coordinator changes with the
-ordinary `scripts/start-caracal.ps1` workflow. A coordinator-only restart cannot
+ordinary `scripts/start-console.ps1` workflow. A coordinator-only restart cannot
 activate these character policies.

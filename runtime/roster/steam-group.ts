@@ -78,6 +78,20 @@ export class SteamGroup {
     this.phase("preparing");
     return this.startPrepared(op);
   }
+  async refreshRealmChoice(): Promise<void> {
+    const op = this.state.handoff;
+    if (op?.phase !== "awaiting-realm-choice") return;
+    const context = this.ports.realmContext?.();
+    if (JSON.stringify(context) !== JSON.stringify(op.realmChoice)) {
+      op.realmChoice = context; this.ports.save();
+    }
+    if (context?.current && context.current === context.home) {
+      op.destinationRealm = context.current;
+      op.startedAt = this.ports.now();
+      this.phase("preparing");
+      await this.startPrepared(op);
+    }
+  }
   private async startPrepared(op: Handoff): Promise<Handoff> {
     const { action, subject: name } = op.multi!;
     const entering = action === "primary" || action === "login";
@@ -143,9 +157,6 @@ export class SteamGroup {
   }
   expire() {
     const op = this.state.handoff;
-    if (op?.phase === "awaiting-realm-choice" && (!op.realmChoice?.current || !op.realmChoice.home)) {
-      op.realmChoice = this.ports.realmContext?.(); this.ports.save(); return;
-    }
     if (op?.phase === "headless-starting" && op.multi && (!this.ports.headlessReady || this.ports.headlessReady(op.multi.subject)))
       this.phase(op.multi.primary ? "navigate" : "complete");
     if (op?.phase === "complete" && op.bulkRemaining?.length && !this.advancing) {

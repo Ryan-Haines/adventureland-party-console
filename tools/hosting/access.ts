@@ -50,6 +50,10 @@ export class Access {
     if (!value || hash(value) !== this.state.pairing)
       throw new Error("Pairing link is invalid or already used");
     this.state.pairing = null;
+    return this.browserCredential();
+  }
+  /** Issue only after an invitation or an authenticated setup transfer was verified. */
+  async browserCredential() {
     const credential = token();
     this.state.browsers.push(hash(credential));
     await this.save();

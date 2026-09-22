@@ -1,6 +1,7 @@
 import { recordConvoyHistory } from "./convoy-history.ts";
 import { prepareContinuousReturn, checkpointContinuousReturn } from './continuous-return.ts';
 import { stepMerchantInterruption } from "./merchant-interruption.ts";
+import { observeReturnTown, returnWalking, townOutcomesReady } from './return-town.ts';
 import type { ConvoyNavigationPlatform } from "../infrastructure/convoy-platform.ts";
 import { engageHunt, propagateHuntTarget } from "../hunt/engagement.ts";
 import { engageFarming } from "./farming-engagement.ts";
@@ -13,7 +14,7 @@ export function sharedCommand(state: SharedState, c: SharedConvoy, phase: string
     routeProtocol: 4, routeVersion: c.routeVersion || 0, nativeFallback: c.nativeFallback, avoidLeave: c.avoidLeave, location: c.location, rally: c.rally,
     leader: c.leader, participants: c.participants, slowestSpeed: c.slowestSpeed, purpose: c.purpose,
     navigationExempt: c.navigationExempt, combatHandoffAllowed: c.combatHandoffAllowed, cause: c.cause, huntTarget: c.huntTarget,
-    continuousReturn: c.continuousReturn, disableTown: c.disableTown,
+    continuousReturn: c.continuousReturn, disableTown: c.disableTown, returnWalking: returnWalking(c),
     returnLeg: !c.continuousReturn && !!c.returnLegs, nonPreemptible: !!c.nonPreemptible, force: c.force };
   (c.expected ||= {})[name] = { commandId: command.id, revision: command.navigationRevision,
     phase, runtimeId: characterRuntime(state.statuses[name]) || null };
@@ -29,12 +30,13 @@ function unpreparedHuntReturn(c: SharedConvoy): boolean {
   return c.purpose === "monster-hunt" && !!c.returnRouting && !c.routeServer && !c.routeVersion;
 }
 function disableFailedTown(c: SharedConvoy, reason: string): void {
-  if (c.continuousReturn && /town/i.test(reason)) c.disableTown = true;
+  // Interrupted casts use the map-local round counter, never a text match.
+  if (!c.continuousReturn && /town/i.test(reason)) c.disableTown = true;
 }
 function reassembleReturn(state: SharedState, c: SharedConvoy): void {
   c.phase = "assemble"; c.departAt = null; c.observedPhase = null;
   delete c.returnLegs; c.townFirst = false; c.completed = [];
-  c.rally = point(state.statuses[c.leader]!);
+  c.rally = c.returnTownRally || point(state.statuses[c.leader]!);
   c.failure = undefined; c.failureCode = undefined;
   clearSharedRoute(c);
   issue(state, c, "assemble");
@@ -56,11 +58,13 @@ function compatible(state: SharedState, c: SharedConvoy, now: number): boolean {
   });
 }
 function begin(state: SharedState, c: SharedConvoy, now: number): boolean {
+  delete c.missingRoutes;
   const leader = state.statuses[c.leader];
   if (!compatible(state, c, now) || !leader || leader.moving) return false;
   c.phase = "shared-prepare";
   c.routeVersion = (c.routeVersion || 0) + 1;
   c.rally = point(leader); c.departAt = null; c.sharedReadySince = 0;
+  delete c.returnTownRally;
   c.routeServer = leader.server;
   c.sharedStartedAt = now; c.sharedProgressAt = now; c.sharedDistances = {};
   delete c.sharedWaitingAt;
@@ -101,11 +105,18 @@ function readyMember(state: SharedState, c: SharedConvoy, name: string): boolean
 }
 function preparationBlocker(state: SharedState, c: SharedConvoy): string | undefined {
   const missing = members(c).filter(name => !reportMatches(state, name));
-  if (missing.length) return 'Waiting for current route acknowledgement: ' + missing.join(', ');
+  if (missing.length) return 'Waiting for current route acknowledgement: ' + missing.map(n=>n+' ('+acknowledgementReason(state,c,n)+')').join(', ');
   if (!sharedRoute(c)) return 'Waiting for ' + c.leader + ' to publish the return route';
   const waiting = members(c).filter(name => !readyMember(state, c, name));
   if (waiting.length) return 'Waiting for stopped formation and installed route: ' + waiting.join(', ');
   return undefined;
+}
+function acknowledgementReason(state:SharedState,c:SharedConvoy,name:string):string {
+  const n=state.statuses[name]?.convoyNavigation,cmd=state.commands[name];
+  if(!n || !n.id)return 'no local return handle';
+  if(!cmd || n.commandId!==cmd.id)return 'waiting for command '+cmd?.id+'; reported '+n.commandId;
+  if(n.runtimeId!==c.runtimes?.[name])return 'runtime changed';
+  return 'return generation or navigation changed';
 }
 function observeProgress(state: SharedState, c: SharedConvoy, now: number): void {
   const distances = c.sharedDistances ||= {};
@@ -186,6 +197,7 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
   }
   function hold(input: Parameters<ConvoyNavigationPlatform["hold"]>[0], reason: string, code = "route-failed"): boolean {
     const state = input as SharedState, c = state.activeConvoy;
+    if (c?.continuousReturn && code === 'town-interrupted')return true;
     if (c?.routeProtocol === 4 && code === "route-failed") return recover(state, reason, Date.now());
     return terminal(state, reason, code);
   }
@@ -220,7 +232,7 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     if (!c.sharedReadySince) { c.sharedReadySince = now; return true; }
     if (now - c.sharedReadySince < 500) return false;
     c.origins = Object.fromEntries(members(c).map(n => [n, point(state.statuses[n]!)]));
-    c.phase = "scheduled"; c.departAt = now + 4000;
+    c.phase = "scheduled"; c.departAt = now + departureDelay(c);
     return true;
   }
   function travel(state: SharedState, c: SharedConvoy, now: number): boolean {
@@ -230,6 +242,8 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
       return false;
     }
     if (c.phase === "scheduled") { c.phase = "travel"; return true; }
+    const missing = missingTravelRoute(state, c, now);
+    if (missing) return recover(state, "Travel route disappeared: " + missing, now);
     // Native legacy completion/leg barriers still own workflow advancement.
     return c.returnRouting && !c.continuousReturn ? legacy.step(state, now) : false;
   }
@@ -257,13 +271,21 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     return changed;
   }
   function bootstrapWalking(state: SharedState, c: SharedConvoy, now: number): boolean {
-    c.sharedWaitingAt ??= now;
+    if(c.sharedWaitingAt===undefined){c.sharedWaitingAt=now;c.sharedStartedAt=now;c.sharedProgressAt=now;c.sharedDistances={};}
+    if(c.returnTownRally && compatible(state,c,now))return awaitTownRally(state,c,now);
     if (now-c.sharedWaitingAt>30000)return terminal(state,"Waiting for protocol 4 party runtimes","runtime-lost");
     return scanAssemblyReady(state,c) && begin(state,c,now);
+  }
+  function awaitTownRally(state:SharedState,c:SharedConvoy,now:number):boolean {
+    observeProgress(state,c,now);
+    if(members(c).every(n=>distance(state.statuses[n]!,c.rally)<=55))return begin(state,c,now);
+    if(assemblyTimeout(c,now))return recover(state,'Town rendezvous made no progress',now);
+    return false;
   }
   function step(input: Parameters<ConvoyNavigationPlatform["step"]>[0], now = Date.now()): boolean {
     const state = input as SharedState, c = state.activeConvoy;
     if (c?.routeProtocol !== 4) return legacy.step(state, now);
+    if (refreshReturnTown(state,c,now))return true;
     const interruption = stepMerchantInterruption(state, now, {
       hold: name => sharedCommand(state, c, "shared-hold", name),
       resume: phase => {
@@ -277,10 +299,19 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
       fail: reason => terminal(state, reason, "owner-lost"),
     });
     if (interruption !== null) return interruption;
+    return advanceRoute(state,c,now);
+  }
+  function advanceRoute(state:SharedState,c:SharedConvoy,now:number):boolean {
     if (c.phase === "failed") return failedStep(state, c, now);
     if (!c.force && defense(state, now, sharedCommand)) { clearSharedRoute(c); return true; }
+    if(c.townRetry)return retryTown(state,c,now);
     if (["shared-prepare", "shared-hold", "scheduled", "travel"].includes(c.phase)) return activeStep(state, c, now);
     return bootstrap(state, c, now);
+  }
+  function retryTown(state:SharedState,c:SharedConvoy,now:number):boolean {
+    if(townOutcomesReady(state,c,now))return resumeTownRetry(state,c);
+    if(now-(c.townRetryAt || now)>15000)return recover(state,'Town cast outcomes not received',now);
+    return false;
   }
   function releaseFailedEntry(state: SharedState, c: SharedConvoy): boolean {
     let changed = false;
@@ -326,7 +357,7 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     const state = input as SharedState, c = state.activeConvoy;
     const result = legacy.signal(state, name, now) as Record<string, unknown> | null;
     if (!result || c?.routeProtocol !== 4) return result;
-    return { ...result, farmingEngagement: c.farmingEngagement || null, routeProtocol: 4, routeVersion: c.routeVersion || 0, routeAvailable: !!sharedRoute(c) };
+    return { ...result, returnWalking: returnWalking(c), immediateDeparture: immediateTownDeparture(c), farmingEngagement: c.farmingEngagement || null, routeProtocol: 4, routeVersion: c.routeVersion || 0, routeAvailable: !!sharedRoute(c) };
   }
   const engage: ConvoyNavigationPlatform["engage"] = (state, body, options) =>
     ["", "party-travel", "farm-relocation"].includes((state as SharedState).activeConvoy?.purpose || "")
@@ -338,4 +369,41 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     propagateHuntTarget(state);
     return changed || checkpoint;
   }, signal, hold, engage };
+}
+
+// Health/ownership checks run first. Only fresh, continuously missing handles
+// authorize regrouping; completed members and superseding navigation never do.
+function missingTravelRoute(state: SharedState, c: SharedConvoy, now: number): string | undefined {
+  const missing = c.missingRoutes ||= {};
+  for (const name of members(c)) {
+    const status = state.statuses[name]!;
+    if (status.convoyNavigation) { delete missing[name]; continue; }
+    const previous = missing[name];
+    if (!previous || status.seenAt - previous.observedAt > 3000)
+      missing[name] = { since: now, observedAt: status.seenAt };
+    else previous.observedAt = status.seenAt;
+    if (now - missing[name]!.since >= 3000) return name;
+  }
+  return undefined;
+}
+
+function departureDelay(c:SharedConvoy):number {
+  return immediateTownDeparture(c) ? 0 : 4000;
+}
+function refreshReturnTown(state:SharedState,c:SharedConvoy,now:number):boolean {
+  if(c.participants.some(n=>lostOwner(state,c,n)))return false;
+  if(!observeReturnTown(state,c,now))return false;
+  c.epoch++;reassembleReturn(state,c);return true;
+}
+function resumeTownRetry(state:SharedState,c:SharedConvoy):boolean {
+  if(!c.townRetry)return false;
+  c.townRetry=false;c.epoch++;reassembleReturn(state,c);return true;
+}
+
+function immediateTownDeparture(c:SharedConvoy):boolean {
+  if(!c.continuousReturn)return false;
+  const route=sharedRoute(c);
+  if(!route)return false;
+  const first=route.plot.find(p=>p.town || p.transport || p.method==='leave' || distance(p,route.origin)>1);
+  return first?.town===true;
 }

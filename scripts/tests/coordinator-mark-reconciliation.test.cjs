@@ -58,7 +58,7 @@ test('upgrade reconciliation retains the original pass while resolution preserve
   assert.deepEqual(state.upgrades.M, [newer]); assert.equal(state.upgrades.M[0], newer);
 });
 
-test('missing or invalid inventory keeps the legacy empty-inventory fallback', () => {
+test('missing or invalid inventory cannot erase unfinished upgrades', () => {
   for (const status of [undefined, null, {items: {}}, {items: 'invalid'}]) {
     const automatic = {slot: 1, item: {name: 'helmet'}, tiers: 8, auto: true};
     const manual = {slot: 2, item: {name: 'ring'}, tiers: 2};
@@ -66,7 +66,7 @@ test('missing or invalid inventory keeps the legacy empty-inventory fallback', (
       upgrades: {M: [automatic, manual]}, autoUpgradeMarks: {}};
     assert.equal(collect(state, 'M', status), false);
     assert.deepEqual(state.marked.M, []); assert.deepEqual(state.merchantMarked.M, []);
-    assert.equal(upgrade(state, 'M', status), true); assert.deepEqual(state.upgrades.M, [manual]);
+    assert.equal(upgrade(state, 'M', status), false); assert.deepEqual(state.upgrades.M, [automatic, manual]);
     clear(state, 'New', []); assert.deepEqual(state.upgrades.New, []);
   }
 });

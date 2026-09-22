@@ -156,6 +156,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
 
   function finishIfReady(): boolean {
     const recovery = state.current;
+    if (finishHuntReturn()) return true;
     if (!recovery || recovery.pending.length || recovery.returnDispatchedAt) return false;
     if (anniversaryHolding(ports.anniversary(), ports) || ports.convoy() || ports.townBusy())
       return false;
@@ -164,6 +165,14 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
     );
     if (!ports.dispatch(recovery, names)) return false;
     if (recovery.returnCompletedAt) complete(recovery);
+    ports.persist();
+    return true;
+  }
+
+  function finishHuntReturn(): boolean {
+    const recovery = state.current;
+    if (!recovery || !ports.handoffToHunt?.(recovery)) return false;
+    complete(recovery);
     ports.persist();
     return true;
   }
@@ -222,6 +231,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
       begin(cycle.combatEvent, { waypoints: cycle.waypoints, participants: cycle.participants });
     const recovery = state.current;
     if (!recovery) return;
+    if (finishHuntReturn()) return;
     repairReturnWalk(recovery, ports);
     if (!recovery.participants.length) { complete(recovery); ports.persist(); return; }
     releaseObsoleteWalk(recovery);
@@ -230,6 +240,10 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
     refreshReturnParticipants(recovery);
     startFrankyExitConvoy(recovery);
     restoreCommands(recovery);
+    advanceReturn(recovery);
+  }
+
+  function advanceReturn(recovery: EventRecovery): void {
     if (recovery.returnDispatchedAt) {
       if (ports.reconcile(recovery)) complete(recovery);
       ports.persist();

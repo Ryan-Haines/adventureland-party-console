@@ -13,6 +13,29 @@ test('JSONL import replays latest entries, tombstones, and selections precedence
  assert.deepEqual(deleted.values.marked,{W:[{name:'coat'}]});
 });
 
+test('deleted characters are skipped, including empty maps, while owned and shared settings import',()=>{
+ const parsed=policy.parseDashboardImport(source({threshold:30,marked:{W:[],Deleted:[]},upgrades:{Deleted:[]},
+  deconstructionMarks:[{id:'old',owner:'Deleted',origin:'character',item:{name:'coat'},quantity:1}]}),name=>name==='W');
+ assert.deepEqual(parsed.values,{marked:{W:[]},threshold:30});
+ assert.deepEqual(parsed.skippedCharacters,{Deleted:['marked','upgrades','deconstructionMarks']});
+ const state={upgrades:{W:[{item:{name:'coat'},tiers:1}]}};
+ policy.applyDashboardImport(state,parsed);
+ assert.equal(state.upgrades.W.length,1);
+ assert.deepEqual(policy.parseDashboardImport(source({marked:{}}),()=>true).values.marked,{});
+ assert.throws(()=>policy.parseDashboardImport(source({threshold:30,marked:{Deleted:123}}),()=>false),/Invalid saved marked/);
+});
+
+test('character-specific sale rules are skipped without dropping shared item rules',()=>{
+ const parsed=policy.parseDashboardImport(source({autoNpcSales:{shared:{item:{name:'coat'}},old:{character:'Deleted',item:{name:'coat'}}},
+  npcSaleMarks:[{id:'old',character:'Deleted',item:{name:'coat'}}]}),()=>false);
+ assert.deepEqual(parsed.values,{autoNpcSales:{shared:{item:{name:'coat'}}}});
+ assert.deepEqual(parsed.skippedCharacters,{Deleted:['npcSaleMarks','autoNpcSales']});
+ const f=routes(),data=source({marked:{Deleted:[]}}),preview=f.call('/party-api/dashboard-state/preview',data);
+ assert.deepEqual(preview.body.fields,[]);assert.deepEqual(preview.body.skippedCharacters,{Deleted:['marked']});
+ assert.equal(f.call('/party-api/dashboard-state/import',data,preview.body.digest).status,400);
+ assert.equal(f.writes.length,0);
+});
+
 test('imports marks and preferences while preserving credentials, roster, queues and event progress',()=>{
  const state={marked:{Old:[]},threshold:20,merchantQueue:[{id:'live'}],activeConvoy:{id:'travel'},
   leader:'Current',anniversary:{blacklist:['old'],round:123},secret:'keep'};
@@ -24,9 +47,9 @@ test('imports marks and preferences while preserving credentials, roster, queues
  assert.deepEqual(state.anniversary,{blacklist:['old'],round:123});
 });
 
-test('invalid JSON, malformed marks, unsafe keys and unknown characters reject the entire upload',()=>{
+test('invalid JSON, malformed marks and unsafe keys reject the entire upload',()=>{
  for(const data of ['{bad',source({marked:{W:123}}),source({compounds:{W:[{id:'x',items:123}]}}),
-  source({marked:{Unknown:[]}}),'{"party_dashboard_settings_state_v1":"{\\"__proto__\\":{},\\"threshold\\":1}"}'])
+  '{"party_dashboard_settings_state_v1":"{\\"__proto__\\":{},\\"threshold\\":1}"}'])
   assert.throws(()=>policy.parseDashboardImport(data,n=>n==='W'));
  assert.throws(()=>policy.parseDashboardImport(record(stateKeys.roster,{headlessSlots:['W']}),()=>true),/No supported/);
 });
@@ -41,7 +64,7 @@ function routes() {
   fs_regular:{realpathSync:()=>'/data/localStorage/caraGarage.jsonl',constants:{COPYFILE_EXCL:1},copyFileSync:(...args)=>writes.push(args)},
   persistSettings:()=>saved.push(party.threshold)};
  const routes=require('../../runtime/coordinator/http/dashboard-import-composition.ts').createCoordinatorDashboardImport(party,c.LOCALSTORAGE_PATH,{
-  owned:c.ownedCharacter,crypto:{...c.crypto,randomBytes:size=>{assert.equal(size,4);return Buffer.from('01020304','hex');}},
+  owned:name=>c.ownedCharacter(name),rosterReady:()=>c.ready !== false,crypto:{...c.crypto,randomBytes:size=>{assert.equal(size,4);return Buffer.from('01020304','hex');}},
   files:c.fs_regular,header:(req,name)=>req.get(name),now:()=>1234,persist:()=>c.persistSettings(),
  });
  handlers['/party-api/dashboard-state']=routes.metadata;
@@ -53,7 +76,7 @@ function routes() {
 test('preview is read-only; import requires matching preview and backs up before persistence',()=>{
  const f=routes(),data=source({threshold:25});
  const preview=f.call('/party-api/dashboard-state/preview',data);
- assert.equal(preview.body.digest,require('node:crypto').createHash('sha256').update(data).digest('hex'));
+ assert.match(preview.body.digest,/^[a-f0-9]{64}$/);
  assert.equal(f.party.threshold,10);assert.equal(f.writes.length,0);assert.equal(f.saved.length,0);
  assert.equal(f.call('/party-api/dashboard-state/import',data,'wrong').status,409);
  assert.equal(f.writes.length,0);
@@ -62,6 +85,18 @@ test('preview is read-only; import requires matching preview and backs up before
  assert.match(applied.body.backupPath,/caraGarage.before-import-.*\.jsonl$/);
  assert.deepEqual(f.writes[0],['state.jsonl','/data/localStorage/caraGarage.before-import-1234-01020304.jsonl',1]);
  assert.deepEqual(f.party.merchantQueue,[{id:'keep'}]);
+});
+
+test('roster changes invalidate preview and unavailable roster blocks import without a backup',()=>{
+ const f=routes(),data=source({threshold:30,marked:{W:[],Deleted:[]}});
+ const preview=f.call('/party-api/dashboard-state/preview',data);
+ assert.deepEqual(preview.body.skippedCharacters,{Deleted:['marked']});
+ f.c.ownedCharacter=()=>true;
+ assert.equal(f.call('/party-api/dashboard-state/import',data,preview.body.digest).status,409);
+ f.c.ready=false;
+ assert.match(f.call('/party-api/dashboard-state/preview',data).body.error,/roster is still loading/);
+ assert.equal(f.call('/party-api/dashboard-state/import',data,preview.body.digest).status,400);
+ assert.equal(f.writes.length,0);assert.equal(f.party.threshold,10);
 });
 test('import metadata resolves the current installation path at request time',()=>{
  const f=routes();
@@ -117,6 +152,6 @@ test('Settings import previews a file before confirmation and shows its canonica
  const confirm=nodes(tree).find(n=>n.type==='Button'&&n.children.includes('Import dashboard state'));assert.ok(confirm);
  confirm.props.onClick();await flush();tree=render();
  assert.equal(requests.at(-1).options.headers['X-State-Preview'],'hash');
- assert.ok(nodes(tree).some(n=>n.props.role==='status'));
+ assert.ok(nodes(tree).some(n=>n.type==='output'));
  for(const button of nodes(tree).filter(n=>n.type==='Button'))assert.match(button.props.className,/bg-.*text-.*hover:bg-/);
 });

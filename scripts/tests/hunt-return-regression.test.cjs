@@ -50,18 +50,18 @@ function party(){
  slowestSpeed:57,rally:{map:'mansion',x:0,y:0},location:{map:'main',x:126,y:-413},purpose:'monster-hunt',returnRouting:true}};
 }
 
-test('partial Town failure holds the same Daisy obligation and replans walking-only from current positions',()=>{
+test('generic route recovery does not disable Town from error text alone',()=>{
  const p=party(),e=createSharedConvoyNavigation(legacy),c=p.activeConvoy;
  p.monsterHunt={stage:'returning'};
- c.phase='assemble';for(const s of Object.values(p.statuses))s.huntReturnProtocol=1;
+ c.phase='assemble';for(const s of Object.values(p.statuses))s.huntReturnProtocol=2;
  e.step(p,Date.now());const firstVersion=c.routeVersion;
  p.statuses.L.x=100;p.statuses.F.x=0;
  e.hold(p,'Town transition did not complete','route-failed');
- assert.equal(c.phase,'shared-hold');assert.equal(c.disableTown,true);
+ assert.equal(c.phase,'shared-hold');assert.equal(!!c.disableTown,false);
  assert.equal(c.location.map,'main');assert.equal(c.location.x,126);
  for(const n of c.participants){const cmd=p.commands[n];p.statuses[n].convoyNavigation={id:c.id,epoch:c.epoch,commandId:cmd.id,navigationRevision:1,runtimeId:n,phase:'held'};}
  e.step(p,Date.now());assert.equal(c.phase,'shared-prepare');assert.equal(c.routeVersion,firstVersion+1);
- assert.equal(c.rally.x,100);assert.equal(p.commands.F.disableTown,true);
+ assert.equal(c.rally.x,100);assert.equal(!!p.commands.F.disableTown,false);
  const checkpoint=JSON.parse(JSON.stringify(p.monsterHunt.travelCheckpoint));
  assert.equal(checkpoint.stage,'returning');assert.equal(checkpoint.destination.map,'main');
  assert.equal(checkpoint.positions.L.x,0); // Last persisted observation before the interruption.
@@ -73,8 +73,8 @@ test('failed Hunt itinerary reassembles before shared identity exists, retaining
  assert.equal(c.phase,'assemble');assert.equal(c.epoch,2);assert.equal(c.recoveryAttempts,1);
  e.step(p,Date.now());assert.notEqual(c.phase,'failed');assert.equal(c.location,destination);
  // Mixed-version clients must wait rather than entering the old multi-leg path.
- assert.match(c.failure,/protocol 1/);
- for(const name of c.participants)p.statuses[name].huntReturnProtocol=1;
+ assert.match(c.failure,/protocol 2/);
+ for(const name of c.participants)p.statuses[name].huntReturnProtocol=2;
  e.step(p,Date.now());assert.equal(c.phase,'shared-prepare');
  assert.equal(p.commands.L.continuousReturn,1);
  // Exercise another pre-initialization failure independently of the installed route.

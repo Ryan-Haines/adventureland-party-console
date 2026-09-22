@@ -42,7 +42,7 @@ test('game 17083 fixture collisions match the live fingerprint and the reported 
 });
 test('installed Halloween shortcut and ordinary Cyberland recovery validate',()=>{
  const {prepare,getPath}=require('../../runtime/coordinator/navigation/alclient-adapter.ts');
- const native=createNative(directory);prepare(native.game);
+ const native=createNative(require('./helpers/installed-game.cjs').directory);prepare(native.game);
  const ports={game:native.game,walk:(a,b)=>native.canWalk(a,b),door:(p,d)=>native.context.is_door_close(p.map,d,p.x,p.y)&&native.context.can_use_door(p.map,d,p.x,p.y),hasKey:()=>false};
  const to={map:'main',x:0,y:0};
  for(const [from,avoidLeave] of [[{map:'halloween',x:8,y:631},false],[{map:'halloween',x:8,y:631},true],[{map:'cyberland',x:0,y:0},true]]) {
@@ -55,7 +55,7 @@ test('installed Halloween shortcut and ordinary Cyberland recovery validate',()=
 test('reported Winterland return includes a reachable transporter approach in both route candidates',()=>{
  const {prepare,getPath}=require('../../runtime/coordinator/navigation/alclient-adapter.ts');
  const {repairDoorApproaches}=require('../../runtime/navigation/door-approach.ts');
- const native=createNative(directory);prepare(native.game);
+ const native=createNative(require('./helpers/installed-game.cjs').directory);prepare(native.game);
  const ports={game:native.game,walk:(a,b)=>native.canWalk(a,b),door:(p,d)=>native.context.is_door_close(p.map,d,p.x,p.y)&&native.context.can_use_door(p.map,d,p.x,p.y),hasKey:()=>false};
  const from={map:'winterland',x:797,y:-874},to={map:'main',x:126,y:-413};
  for(const town of [false,true]){

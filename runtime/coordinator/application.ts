@@ -1,5 +1,6 @@
 import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
 import { consoleMaintenance } from './lifecycle/console-maintenance.ts';
+import { createUpgradePreviews } from './merchant/upgrade-preview.ts';
 import { loadCoordinatorDependencies } from "./infrastructure/dependencies.ts";
 import * as coordinatorPolicies from "./index.ts";
 import type { CatalogDefinitions } from './status/catalog-validation.ts';
@@ -353,6 +354,7 @@ export function startCoordinatorApplication(
       persist: persistSettings,
     });
     const anniversaryReturns = coordinatorPolicies.createCoordinatorAnniversaryReturns(party, {
+      cancelConvoy: cancelActiveConvoy,
       now: () => Date.now(),
       participants: anniversaryCombatParticipants,
       activeNames,
@@ -457,6 +459,7 @@ export function startCoordinatorApplication(
       persist: persistSettings,
       now: () => Date.now(),
     });
+    const upgradePreviews = createUpgradePreviews(party);
     const heartbeatResponse = coordinatorPolicies.createCoordinatorHeartbeatResponse(party, {
       now: () => Date.now(),
       activeNames: () => activeNames().filter(n => n === party.merchantCharacter || farmingScopes.owner(n) === party.leader),
@@ -837,6 +840,7 @@ export function startCoordinatorApplication(
       character_manage,
       {
         navigation: manualNavigationCommands.handle,
+        farmingState: name => farmingScopes.effective(name),
         farmingLocation: validFarmingLocation,
         key: autoItemRuleKey,
         mode: autoItemRuleMode,
@@ -860,6 +864,7 @@ export function startCoordinatorApplication(
       party,
       LOCALSTORAGE_PATH,
       {
+        rosterReady: () => rosterPayload().length > 0,
         owned: ownedCharacter,
         crypto,
         files: fs_regular,
@@ -969,6 +974,7 @@ export function startCoordinatorApplication(
           if (maintenance) return { serverNow: Date.now(), consoleMaintenance: maintenance };
           const lease = mode ? undefined : dashboardStream.lease(name);
           return { ...(soloFor(name)?.heartbeatResponse || heartbeatResponse).response(name, mode),
+            upgradePreview: upgradePreviews.next(name),
             ...(party.statuses[name]?.dashboardRuntime ? { dashboardLease: lease } : {}) };
         },
       },
@@ -2106,6 +2112,7 @@ export function startCoordinatorApplication(
               json: (options) => express.json(options),
               text: (options) => express.text(options),
               maps: (router) => {
+                upgradePreviews.install(router);
                 router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
                   [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete')));
                 coordinatorPolicies.installMovementRoutes(router, movementPlanner, ownedCharacter);

@@ -147,6 +147,7 @@ function evaluateParticipants(
   );
   state.groupedCombat = group;
   if (changed(previous, group)) logFormation(state, leader, group, ports.now);
+  logUnseenRelease(state, leader, previous, group);
   return group;
 }
 function travelPrevious(state: GroupedState, members: Member[], leader: string, travelling: boolean, now: number): Group | null {
@@ -155,6 +156,16 @@ function travelPrevious(state: GroupedState, members: Member[], leader: string, 
   const previous = retireTravelTargets(restored, members, now);
   if (previous !== restored && previous) logTravelRetirement(state, leader, restored, previous, now);
   return previous;
+}
+
+function logUnseenRelease(state: GroupedState, leader: string, previous: Group | null, group: Group): void {
+  const released = (group.lostTargets || []).filter(t =>
+    t.reason === "unseen primary released after bounded search; visible alternative available" &&
+    !(previous?.lostTargets || []).some(old => old.id === t.id && old.retiredAt === t.retiredAt));
+  for (const target of released) (state.combatLogs[leader] ||= []).push({
+    at:group.seenAt, type:"formation", message:"Unseen primary released; advancing combat queue",
+    details:{target:target.id, mtype:target.mtype, next:group.target?.id, reason:target.reason},
+  });
 }
 function patrolMembers(state: GroupedState, ports: GroupedPorts, members: Member[]): Member[] {
   return state.phoenixPatrolActive && ports.patrolAcquisitionAllowed?.()

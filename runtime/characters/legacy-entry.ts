@@ -1,6 +1,7 @@
 import type { RoleRunner } from "./roles/types.ts";
 import './movement.ts';
 import './bank-stacks.ts';
+import './upgrade-preview.ts';
 
 const root = globalThis as unknown as {
   parent: { caracAL: { load_scripts(files: string[]): Promise<void> } };

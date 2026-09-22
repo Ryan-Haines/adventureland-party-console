@@ -29,7 +29,7 @@ async function run(args: string[]): Promise<void> {
 // The coordinator is replaced wholesale by the maintained launcher. Only the
 // separate character runner still needs an upstream compatibility transform.
 await run([path.join(root, "tools/caracal/upgrade-runner.mts"), stage]);
-// Setup builds the runtime after installation; start-caracal builds it before
+// Setup builds the runtime after installation; start-console builds it before
 // starting the supervisor. Installation itself never executes the application.
 const launcher = await readFile(path.join(root, "tools/caracal/CharacterCoordinator.cjs"), "utf8");
 if (!isCoordinatorApplicationLauncher(launcher)) throw new Error("Invalid coordinator launcher template");

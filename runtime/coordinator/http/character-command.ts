@@ -14,18 +14,24 @@ interface CommandState {
   withdrawals: Record<string, unknown>;
 }
 interface CommandPorts {
+  farmingFocus?(name: string, ids: string[]): void;
   managed(name: unknown): boolean;
   farmingLocation(choices: Catalog, monsters: unknown[], location: unknown): unknown;
   handlers: ((body: Record<string, unknown>) => CommandOutcome)[];
 }
 /** Keeps shared request validation and acknowledgements separate from domain commands. */
 export function createCharacterCommandRoute(state: CommandState, ports: CommandPorts) {
+  function applyFarmingFocus(body: Record<string, unknown>, outcome: CommandOutcome): void {
+    if ((!outcome || outcome.status < 400) && body.farmingMonsterIds)
+      ports.farmingFocus?.(requestText(body.character), body.farmingMonsterIds as string[]);
+  }
   function validFarming(body: Record<string, unknown>): boolean {
     const ids = body.farmingMonsterIds;
     if (ids === undefined) return true;
     return (
       Array.isArray(ids) &&
       !!ids.length &&
+      ids.every(id => typeof id === 'string' && /^[a-z0-9_]+$/i.test(id)) &&
       !ids.includes("tinyp") &&
       !ids.includes("phoenix") &&
       !!ports.farmingLocation(state.monsterChoices || [], ids, body.location)
@@ -59,6 +65,7 @@ export function createCharacterCommandRoute(state: CommandState, ports: CommandP
     for (const handler of ports.handlers) {
       const outcome = handler(body);
       if (outcome === undefined) continue;
+      applyFarmingFocus(body, outcome);
       if (outcome) return res.status(outcome.status).json(outcome.body);
       return res.json(result(requestText(body.character)));
     }

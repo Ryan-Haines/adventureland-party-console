@@ -69,7 +69,7 @@ test('dashboard retains 20 releases plus live older versions, removes validation
  for(let i=0;i<23;i++) {
   const id=i.toString(16).padStart(20,'0');ids.push(id);
   const release=path.join(root,'.build/releases',id);await fs.mkdir(path.join(release,'server'),{recursive:true});
-  await atomicJson(path.join(release,'server/wrangler.json'),{});await atomicJson(path.join(release,'complete.json'),{generation:id});
+  await atomicJson(path.join(release,'server/index.js'),{});await atomicJson(path.join(release,'complete.json'),{generation:id});
   await rememberDashboard(root,id);
  }
  await pinDashboard(root,3020,[ids[0]]);

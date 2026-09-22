@@ -12,7 +12,6 @@ import { dashboardHistory, rememberDashboard, releasePath, cleanDashboard, pinDa
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dashboard");
 const vinext = path.join(root, "node_modules/vinext/dist/cli.js");
-const wrangler = path.join(root, "node_modules/wrangler/bin/wrangler.js");
 const publicPort =
   Number(
     process.argv.find((argument) => argument.startsWith("--port="))?.split("=")[1] ||
@@ -44,7 +43,7 @@ async function cleanup(apply: boolean) {
 async function productionBuild(): Promise<string> {
   if (process.env.AL_DASHBOARD_PREBUILT) {
     const output = path.resolve(root, process.env.AL_DASHBOARD_PREBUILT);
-    await readFile(path.join(output, "server/wrangler.json"));
+    await readFile(path.join(output, "server/index.js"));
     return output;
   }
   const generation = await fingerprint(root);
@@ -62,7 +61,7 @@ async function productionBuild(): Promise<string> {
   });
   await completed(pending);
   pending = undefined;
-  await readFile(path.join(output, "server/wrangler.json"));
+  await readFile(path.join(output, "server/index.js"));
   await writeFile(path.join(output, "complete.json"), JSON.stringify({ generation }));
   return output;
 }
@@ -87,7 +86,7 @@ async function createCandidate(mode: Mode, selected?: string): Promise<Running |
   const output = mode === "production" ? selected ? await releasePath(root, selected) : await productionBuild() : undefined;
   if (output && active?.mode === mode && active.generation === path.basename(output)) return;
   const child = output
-    ? launch(wrangler, ["dev", "--ip", "127.0.0.1", "--port", String(port), "--config", path.join(output, "server/wrangler.json")], root, process.env)
+    ? launch(fileURLToPath(new URL('./node-server.mts', import.meta.url)), [String(port), output], root, { ...process.env, NODE_ENV: "production" })
     : launch(vinext, ["dev", "--hostname", "127.0.0.1", "--port", String(port)], root, { ...process.env, AL_DASHBOARD_PORT: String(port) });
   pending = child;
   return { mode, port, process: child, generation: output && path.basename(output), id: randomUUID() };
@@ -269,7 +268,7 @@ function supervisorState() {
 const server = createServer(async (req, res) => {
   if (req.url === '/__dashboard/builds') { await handleBuilds(req, res); return; }
   if (req.url?.startsWith("/party-api/")) {
-    proxy(req, res, { port: 924 } as Running);
+    proxy(req, res, { port: Number(process.env.AL_INTERNAL_API_PORT) || 924 } as Running);
     return;
   }
   if (req.url === "/__dashboard/state" && req.method === "GET") {

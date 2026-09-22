@@ -5,10 +5,13 @@ import type {Member, Target, Fight, Group, Death} from './grouped.ts';
 import {reconcileClaims} from './claims.ts';
 import {releaseResetFights} from './reset-fight.ts';
 import {retainNominations} from './nomination-retention.ts';
+import {releaseUnseenPrimary} from './unseen-primary.ts';
 export interface Candidate extends Target {priority?: number; passiveRare?: boolean}
 export interface Evidence extends Target {server: string|undefined; at: number; startedAt?: number; action: string; state: 'pending' | 'engaged' | 'rejected'}
 export function reconcileQueue(old: Group | undefined | null, members: Member[], leader: string, now: number, key: string, resetAt=0, pullsPaused=false, huntTarget: string | null = null) {
-  const passingEncounters=collectPassing(members,old?.passingEncounters||[],now);
+  const defending = new Set(members.flatMap(m => m.status && now-m.status.seenAt<=3000 && m.status.groupedCombat?.returnDefense
+    ? (m.status.groupedCombat.currentAttackers || []).map(t => passingIdentity({...t,server:m.status!.server})) : []));
+  const passingEncounters=collectPassing(members,old?.passingEncounters||[],now).filter(t=>!defending.has(passingIdentity(t)));
   const passing=new Set(passingEncounters.map(passingIdentity));
   const failedRecovery=old?.formationRecovery;
   if(old && failedRecovery?.phase==='failed' && members.every(m=>m.status && now-m.status.seenAt<=3000 && m.status.groupedCombat?.formationRecovery?.ack===failedRecovery.id))
@@ -63,7 +66,7 @@ export function reconcileQueue(old: Group | undefined | null, members: Member[],
   const s=selector?.status;
   const score=(t:Target)=>s ? Math.hypot(s.x-t.x,s.y-t.y) : Infinity;
   const reported = reports.flatMap(m => (m.status!.groupedCombat?.candidates || [])
-    .filter(t => m.name === leader || t.passiveRare === true)
+    .filter(t => m.name === leader || t.passiveRare === true || t.mtype === huntTarget)
     .filter(t => m.status!.server === s?.server && t.map === m.status!.map && t.in === m.status!.in));
   const retained=retainNominations((old?.queue||[]).filter(t=>t.startedAt>=resetAt),members,now);
   const unique:Candidate[] = s ? [...new Map<string,Candidate>([...reported,...retained].map(t => [identity({...t,server:s.server}),t])).values()] : [];
@@ -71,6 +74,12 @@ export function reconcileQueue(old: Group | undefined | null, members: Member[],
     .filter(t=>t.map===s?.map&&t.in===s?.in&&!excluded({...t,server:s!.server},now)&&!rejected({...t,server:s!.server})&&!(old?.pursuitExclusions||[]).some(e=>e.until>now&&e.identity===targetIdentity({...t,server:s!.server}))&&!fights.some(f=>identity(f)===identity({...t,server:s!.server})))
     .map(t=>({...t,server:s!.server,fighter:leader,startedAt:old?.queue?.find(c=>c.id===t.id&&c.map===t.map&&c.in===t.in)?.startedAt??now,state:'planned' as const,score:score(t)}))
     .sort((a,b)=>(b.priority??50)-(a.priority??50)||a.score-b.score||a.id.localeCompare(b.id));
+  const released = releaseUnseenPrimary(old?.target, fights, candidates, members, recovery.searches, now, pullsPaused);
+  if (released) {
+    lostTargets.push(released);
+    fights.splice(fights.findIndex(f => targetIdentity(f) === targetIdentity(released)), 1);
+    delete recovery.searches[targetIdentity(released)];
+  }
   const visibleThreat=(f:Fight)=>reports.some(m=>m.status!.server===f.server&&(m.status!.groupedCombat?.threats||[]).some(t=>t.id===f.id&&t.map===f.map&&t.in===f.in));
   const missingHead=old?.target && recovery.searches[targetIdentity(old.target as Fight)];
   const defense=missingHead&&fights.find(visibleThreat);

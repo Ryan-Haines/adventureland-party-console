@@ -29,6 +29,7 @@ root.__partyLoaderGeneration = generation;
 const abort = new AbortController();
 let lastSource: string | null = null;
 let loading = false;
+let bridgeLoading = false;
 let timer: ReturnType<typeof setInterval> | undefined;
 
 async function source(file: string): Promise<string> {
@@ -89,14 +90,21 @@ root.__partyCodeLoader = {
     clearInterval(timer);
   },
 };
+async function refreshBridge(): Promise<void> {
+  if (bridgeLoading || !current() || !needsSteamBridge(root.parent.__partySteamBridge, server)) return;
+  bridgeLoading = true;
+  try {
+    const text = await source("steam-bridge.js");
+    // Evaluate in the game window: the bridge survives a CODE iframe replacement.
+    if (current() && needsSteamBridge(root.parent.__partySteamBridge, server)) root.parent.eval(text);
+  } catch (error) {
+    if (current()) root.game_log("Steam bridge unavailable; retrying: " + String(error), "red");
+  } finally { bridgeLoading = false; }
+}
 if (!root.parent.caracAL) {
-  // Evaluate in the game window: the bridge survives a CODE iframe replacement.
-  void source("steam-bridge.js")
-    .then((text) => {
-      if (current() && needsSteamBridge(root.parent.__partySteamBridge, server)) root.parent.eval(text);
-    })
-    .catch((error) => root.game_log("Steam bridge unavailable: " + String(error), "red"));
+  void refreshBridge();
   timer = setInterval(() => {
+    void refreshBridge();
     if (!deliberatelyStopped()) void refresh();
   }, 2000);
 }

@@ -6,7 +6,7 @@ const React = require('../../dashboard/node_modules/react');
 const { renderToStaticMarkup } = require('../../dashboard/node_modules/react-dom/server');
 const { ItemExchangeDetails } = load('item-exchange-details.tsx');
 const game = vm.createContext({});
-vm.runInContext(fs.readFileSync('.caracal/game_files/16846/data.js', 'utf8'), game);
+vm.runInContext(fs.readFileSync(require('node:path').join(require('./helpers/installed-game.cjs').directory,'data.js'), 'utf8'), game);
 
 test('nested tables multiply probabilities and combine identical rewards without opening awarded boxes', () => {
   const data = { items: {}, drops: { box: [[2,'open','nested'],[2,'gold',100],[1,'armorbox']], nested: [[1,'gold',100],[3,'sword']] } };

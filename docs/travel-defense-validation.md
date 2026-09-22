@@ -38,7 +38,7 @@ commands, and arrival validation retain their respective ownership rules.
 
 ## Live activation
 
-Use `scripts/start-caracal.ps1`, then confirm current character code revisions,
+Use `scripts/start-console.ps1`, then confirm current character code revisions,
 fresh attacker observations and live route progress. A build alone does not prove
 activation. The original bee encounter had already ended before activation;
 the deterministic regression preserves that exact failure scenario.

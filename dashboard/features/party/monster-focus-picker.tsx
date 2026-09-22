@@ -4,7 +4,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MonsterChoice } from "./monster-choice";
 import { Sprite } from "./sprite";
 import { SpriteCrop } from "./sprite-crop";
@@ -15,12 +15,14 @@ export function MonsterFocusPicker({
   onChange,
   priorities,
   onPriorityChange,
+  renderRouteButton,
 }: {
   monsters: MonsterChoice[];
   selected: string[];
   onChange: (selected: string[]) => void | Promise<void>;
   priorities: Record<string, number>;
   onPriorityChange: (priorities: Record<string, number>) => void;
+  renderRouteButton?: (selected: string[]) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -125,6 +127,7 @@ export function MonsterFocusPicker({
   );
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
+      {renderRouteButton?.(selectionDraft)}
       <Popover
         open={open}
         onOpenChange={(nextOpen) => {

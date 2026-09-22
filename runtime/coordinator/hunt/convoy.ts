@@ -77,7 +77,8 @@ export function createHuntConvoy(state: HuntTickState, ports: HuntConvoyPorts) {
     convoy.huntTarget = stage === "mission-travel" ? hunt.target || undefined : undefined;
     convoy.nonPreemptible = stage === "returning";
     convoy.returnRouting = stage === "returning";
-    convoy.disableTown = !!hunt.returnDisableTown;
+    convoy.returnTown = hunt.returnTown;
+    convoy.disableTown = disabledTown(hunt);
     if (convoy.returnRouting) convoy.townFirst = false;
     for (const name of hunt.participants) {
       const command = state.commands[name];
@@ -133,4 +134,8 @@ export function createHuntConvoy(state: HuntTickState, ports: HuntConvoyPorts) {
     return depart(hunt, location!, label, stage);
   }
   return { start };
+}
+
+function disabledTown(hunt: HuntCycle): boolean {
+  return hunt.returnTown ? hunt.returnTown.walking : !!hunt.returnDisableTown;
 }
