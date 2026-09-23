@@ -72,7 +72,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   }
   function install(plot: Step[], nativeRoute: boolean) {
     if (!nativeRoute) plot = repairDoorApproaches(validation, position(), plot);
-    plot = finalApproach(plot, position(), state, journey?.options);
+    plot = trimUncheckedFinal(finalApproach(plot, position(), state, journey?.options));
     const issue = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
     if (issue) {
       if (nativeRoute) throw Error(`Native route rejected: ${issue.reason} between ${JSON.stringify(issue.from)} and ${JSON.stringify(issue.to)}`);
@@ -83,16 +83,19 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     if (journey) { journey.distance = walking; journey.transitions = transitions; }
     state.plot.splice(0, state.plot.length, ...plot); state.searching = false; state.found = true; executor.reset(); return true;
   }
+  function trimUncheckedFinal(plot: Step[]): Step[] {
+    // Both planners may append an exact endpoint across a thin obstacle.
+    // Shared routes retain their exact, coordinator-owned endpoints.
+    if (journey?.options.shared) return plot;
+    const last = plot.at(-1), previous = plot.at(-2);
+    return last && previous && !isTransition(last) && last.map === previous.map &&
+      !validation.walk(previous, last) && distance(previous, state) <= state.edge
+      ? plot.slice(0, -1) : plot;
+  }
   function nativeTick(j: Journey) {
     if (!state.searching) { planner.begin(point(state), state.use_town, ports.now()); state.searching = true; j.searches++; }
     const plot = planner.tick(ports.now());
-    if (plot) {
-      // Native BFS sometimes appends an unchecked exact endpoint. Keep its reachable
-      // predecessor only when it satisfies the caller's explicit arrival tolerance.
-      const last = plot.at(-1), previous = plot.at(-2);
-      if (last && previous && !isTransition(last) && !validation.walk(previous, last) && distance(previous, state) <= state.edge) plot.pop();
-      install(plot, true);
-    }
+    if (plot) install(plot, true);
   }
   function requestPlan(j: Journey) {
     if (j.pending) return;

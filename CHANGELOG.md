@@ -7,6 +7,18 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Enabled passive targets with “keep moving” off now interrupt outbound travel
+  for coordinated combat, including neutral Phoenix sightings and targets already
+  admitted as passing attacks. Explicit stop rules override Hunt travel exceptions.
+
+- Outbound Hunts share one attack target while moving. Additional aggro pauses the
+  party for coordinated defense and kiting, then resumes travel to the original
+  Hunt destination after the encounter and loot are resolved.
+- Hunt automatically restarts its cycle when a participant exhausts retreat routes,
+  preserving blacklists and logging the failed character, location, and reason.
+- ALClient routes now accept a reachable final waypoint within the requested arrival
+  tolerance when the exact endpoint is blocked, matching native routing behavior.
+  ([#16](https://github.com/Ryan-Haines/adventureland-party-console/issues/16))
 - Monster Hunt convoys pause safely during communication outages and resume after
   stable party reports without consuming movement retries. Arrival acknowledgements
   retry transient failures, and saved completion receipts tolerate lost responses
