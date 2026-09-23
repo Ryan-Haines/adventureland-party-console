@@ -36,7 +36,7 @@ test('patrol and rare encounters own displacement recovery even between client c
 function client(){
  const source=fs.readFileSync('characters/shared.js','utf8');let now=10000,requests=0;
  const c=vm.createContext({character:{name:'L',map:'main',x:200,y:0},leader:'L',partyLocation:{map:'main',x:0,y:0},
-  groupedFarming:()=>false,farmingMode:'default',navigationIntent:{},activeCombatEvent:()=>false,joinedEvent:null,G:{maps:{}},
+  groupedFarming:()=>false,farmingMode:'default',navigationIntent:{},activeCombatEvent:()=>false,joinedEvent:null,G:{maps:{}},recoverResources(){},
   banking:false,bankQueued:false,stocking:false,upgrading:false,forceTraveling:false,townTraveling:false,partyTownActive:false,
   convoyTraveling:false,partyConvoyActive:false,gatheringActive:false,eventTraveling:false,anniversaryBusy:false,anniversaryStaging:false,
   departurePending:false,reunion:null,engagedMonster:()=>false,partyTargets:[],visibleFocusedMonsterWithinRadius:()=>false,

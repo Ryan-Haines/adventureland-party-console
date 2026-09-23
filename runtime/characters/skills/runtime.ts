@@ -64,6 +64,7 @@ export function installSkillRuntime(root: CombatRoot) {
     diagnostic: d => { if (root.partyCombatState) root.partyCombatState.skill = d; },
   });
   shared.skillSupport = () => engine.support();
+  shared.reserveCombatMana = (skill, survival, amount) => engine.reserveSupport(skill, survival, amount);
   shared.skillOffense = t => engine.offense(t);
   shared.absorbLeaderAggro = () => engine.absorb();
   if (shared.combatContext) {

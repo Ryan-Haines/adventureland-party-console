@@ -51,7 +51,7 @@ test('diagnostic strings redact credentials and URL queries',()=>{
 function statusFixture() {
  const f=fixture(),r=f.r;
  Object.assign(r,{
-  busy:false,snapshot:()=>({}),runtimeCurrent:()=>true,dashboardSampler:null,
+  busy:false,snapshot:()=>({}),runtimeCurrent:()=>true,dashboardSampler:null,receiveRecipientService(){},
   prepareCatalog:async()=>{},
   wakeGatheringAfterStatus:()=>{r.gatheringWakes=(r.gatheringWakes||0)+1;},
   applyEscape:async()=>{},applyNavigationIntent:async()=>{},acceptCombatControl(){},

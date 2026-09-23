@@ -11,6 +11,7 @@ export interface Role {
   usePotion(): Promise<boolean>;
 }
 export interface SharedCombat {
+  reserveCombatMana?(skill: import('../skills/types.ts').SkillId, survival: boolean, amount?: number): ((accepted: boolean | 'uncertain') => void) | null;
   combatContext?(): import('../skills/types.ts').CombatContext;
   skillTargetAllowed?(target: Target): boolean;
   skillSupport?(): Promise<boolean>;
@@ -82,6 +83,7 @@ export interface SharedCombat {
   approachCombatTarget(target: Target): Promise<unknown>;
   runAbtestingSabotage(): Promise<unknown>;
   regenerateHpOrMp(): Promise<unknown>;
+  recoverResources?(potion?: () => Promise<boolean>): Promise<unknown>;
   smartLoot(): Promise<unknown>;
 }
 export interface CombatState {

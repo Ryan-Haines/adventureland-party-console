@@ -17,6 +17,7 @@ interface Flight {
   slotsDone: boolean;
 }
 interface AttackPorts {
+  reserveMana?(): ((accepted: boolean | 'uncertain') => void) | null;
   skillAttack?(target: Target): Promise<boolean> | null;
   skillBusy?(): boolean;
   passing?(target: Target): boolean;
@@ -135,6 +136,13 @@ export function createAttackController(ports: AttackPorts) {
           sharedRoutine.basicAttackReserved?.() || !is_in_range(target) || !permitted(target)) {
         cancelSlots(); return;
       }
+      const settleMana = ports.reserveMana?.();
+      if (ports.reserveMana && !settleMana) {
+        ports.state().skippedAttack = "survival MP reserved";
+        cancelSlots(); return;
+      }
+      const manaTimeout = settleMana && setTimeout(() => settleMana('uncertain'), Math.max(1, attempt.expires - Date.now()));
+      const settle = (accepted: boolean) => { clearTimeout(manaTimeout || undefined); settleMana?.(accepted); };
       attempt.pending++;
       stats.attempts++;
       stats.lastOffsets.push(Date.now() - deadline);
@@ -142,6 +150,7 @@ export function createAttackController(ports: AttackPorts) {
       const action=attempt.passing ? null : (sharedRoutine as any).queueEvidence?.(target,'pending');
       try {
         Promise.resolve(attack(target)).then(() => {
+          settle(true);
           if (flight !== attempt || attempt.epoch !== ports.epoch() || !ports.active() || attempt.success) return;
           attempt.success = true;
           cancelSlots();
@@ -158,6 +167,7 @@ export function createAttackController(ports: AttackPorts) {
             if ((ports.state().errorAt ?? 0) <= attempt.sentAt) ports.state().error = null;
           }
         }, error => {
+          settle(false);
           if(action)(sharedRoutine as any).queueEvidence?.(target,'rejected',action);
           if (flight !== attempt) return;
           if (errorReason(error) === "cooldown") stats.cooldownRejections++;
@@ -167,6 +177,7 @@ export function createAttackController(ports: AttackPorts) {
           if (flight === attempt && attempt.slotsDone && !attempt.pending) finish();
         });
       } catch (error) {
+        settle(false);
         if(action)(sharedRoutine as any).queueEvidence?.(target,'rejected',action);
         attempt.pending--; cancelSlots(); rejected(attempt, error);
       }

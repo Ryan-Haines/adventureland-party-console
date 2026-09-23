@@ -22,21 +22,33 @@ function fixture(){
  const c=vm.createContext({Date,Math,Object,String,Number,Promise,passingEncounters:{},peerPassingEncounters:[],passiveGeneratorAttempt:null,
   character:{name:'W',ctype:'warrior',map:'main',in:'main',x:0,y:0,items:[]},parent:{entities:{bee}},root:{},groupedCombat:null,
   passiveHunting:{rules:{bee:{enabled:true,keepMoving:true,priority:100}},useFieldGenerators:false},monsterPriorities:{},passiveRareHunts:{},
-  navigationIntent:{},coordinatorClockOffset:0,partyTownActive:false,banking:false,stocking:false,upgrading:false,gatheringActive:false,
+  navigationIntent:{},convoyTraveling:null,farmingTravelToken:null,movement:{report:()=>null,transition:()=>null},coordinatorClockOffset:0,partyTownActive:false,banking:false,stocking:false,upgrading:false,gatheringActive:false,
   forceTraveling:false,townTraveling:false,eventTraveling:false,joinedEvent:false,partyThreats:[],partyPositions:[],
   escapeOwns:()=>false,combatRecoveryActive:()=>false,activeCombatEvent:()=>false,rareActive:()=>false,unfinishedFight:()=>false,
   reunionRealm:()=> 'USII',get_entity:id=>Object.values(c.parent.entities).find(e=>e.id===id),is_in_range:e=>Math.hypot(e.x,e.y)<=100,
   isExternallyClaimedMonster:e=>!!e.claimed,currentPartyList:()=>['W'],sameEventTeamMember:()=>true,equip:()=>{throw Error('unexpected deployment');},rareFields:()=>[]});
- const names=['returnDepartureDefense','passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
+ const names=['returnDepartureDefense','passingKey','passingEncounterReport','isPassingEncounter','passiveTravelProgress','passingMovementAllowed','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
  vm.runInContext(names.map(n=>namedFunction(source,n)).join('\n'),c);
  return {c,bee};
 }
-test('passing chooses priority only in range, without any movement dependency, including stationary attacks',()=>{
+test('passing chooses priority in range and permits stationary attacks without pending travel',()=>{
  const {c,bee}=fixture();assert.equal(c.passingTarget().id,bee.id);
  c.parent.entities.phoenix={...bee,id:'phoenix1',mtype:'phoenix',x:30};c.passiveHunting.rules.phoenix={enabled:true,keepMoving:true,priority:101};
  assert.equal(c.passingTarget().id,'phoenix1');c.parent.entities.phoenix.x=200;assert.equal(c.passingTarget().id,bee.id);
  bee.claimed=true;assert.equal(c.passingTarget(),null);bee.claimed=false;bee.x=101;assert.equal(c.passingTarget(),null);
  bee.x=20;c.escapeOwns=()=>true;assert.equal(c.passingTarget(),null);c.escapeOwns=()=>false;c.combatRecoveryActive=()=>true;assert.equal(c.passingTarget(),null);
+});
+
+test('bees cannot keep an unexplained stationary traveller attacking before arrival',()=>{
+ const {c,bee}=fixture();
+ c.convoyTraveling={phase:'travelling',destination:{map:'main',x:500,y:0}};
+ assert.equal(c.passingTarget(),null);assert.match(c.root.__partyNavigationDetail,/destination pending/);
+ c.character.moving=true;assert.equal(c.passingTarget(),bee);
+ c.character.moving=false;c.character.x=500;bee.x=500;
+ c.is_in_range=()=>true;assert.equal(c.passingTarget(),bee,'normal attacks resume at destination');
+ c.character.x=0;c.convoyTraveling=null;c.farmingTravelToken={destination:{map:'main',x:500,y:0}};
+ assert.equal(c.passingTarget(),null,'individual travel has the same guard');
+ c.passiveHunting.rules.bee.keepMoving=false;assert.equal(c.passingTarget(),null);
 });
 test('retaliation stays movement-neutral for the attacked identity, not other monsters of that type',()=>{
  const {c,bee}=fixture();c.beginPassingAttack(bee);bee.target='W';

@@ -7,4 +7,5 @@ import "./craft-reservations.ts";
 import "./compound-storage.ts";
 import "./bank-stacks.ts";
 import "./movement.ts";
+import "./recipient-service.ts";
 import "../../characters/shared.js";

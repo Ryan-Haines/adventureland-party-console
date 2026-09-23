@@ -7,7 +7,7 @@ import { receivePlayerSales } from "../merchant/player-npc-sales.ts";
 import type { NpcSale } from "../merchant/npc-sales.ts";
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import type { MerchantWork } from "../merchant/work.ts";
-import { admitMerchantInterruption, attachMerchantInterruption, finishMerchantInterruption } from "../navigation/merchant-interruption.ts";
+import { admitMerchantInterruption } from "../navigation/merchant-interruption.ts";
 
 interface HandoffJob extends MerchantWork {
   order?: { sources: Record<string, unknown> };
@@ -15,6 +15,7 @@ interface HandoffJob extends MerchantWork {
   orderHandoff?: unknown;
 }
 interface HandoffState extends PickupState {
+  statuses?: Record<string, (NonNullable<PickupState["statuses"]>[string] & { seenAt?: number; merchantServiceProtocol?: number }) | undefined>;
   npcSaleMarks?: NpcSale[];
   deconstructionMarks?: DeconstructionMark[];
   merchantCharacter: string | null;
@@ -49,28 +50,46 @@ export function createMerchantHandoffRoutes(state: HandoffState, ports: HandoffP
     const job = state.merchantCurrent;
     return job && body.jobId === job.id && name === job.target ? job : null;
   }
-  function protectedRecipient(name: string): boolean {
-    return !!state.activeConvoy?.nonPreemptible && state.activeConvoy.participants.includes(name);
+  function concurrent(name: string): boolean {
+    const status = state.statuses?.[name];
+    return status?.merchantServiceProtocol === 1 && (ports.now?.() ?? Date.now()) - (status.seenAt || 0) <= 3000;
+  }
+  function issue(name: string, job: HandoffJob, command: NonNullable<HandoffState["commands"][string]>): void {
+    if (concurrent(name)) {
+      command.concurrentService = true;
+      (job.recipientServices ||= {})[name] = { ...command, jobId: job.id };
+    } else state.commands[name] = command;
+  }
+  function issued(name: string) {
+    return state.merchantCurrent?.recipientServices?.[name] || state.commands[name];
   }
   function waiting(name: string, jobId: unknown, res: HttpResponse): unknown {
+    if (concurrent(name)) return null;
     if (admitMerchantInterruption(state, name, jobId, ports.now?.() ?? Date.now())) return null;
     ports.persist();
-    return res.json({ ok: true, waiting: true, retryAfterMs: 3000, reason: "Waiting for convoy to pause for merchant collection" });
+    return res.json({ ok: true, waiting: true, retryAfterMs: 3000, reason: "Recipient is travelling; waiting for concurrent-service runtime or arrival" });
   }
   function alreadyIssued(name: string, jobId: unknown, type: string): boolean {
-    const command = state.commands[name];
+    const command = issued(name);
     return command?.type === type && command.jobId === jobId;
   }
-  function clearCommand(name: string, body: Record<string, unknown>, type: string): void {
+  function currentServiceReceipt(name: string, body: Record<string, unknown>): boolean {
+    const service = state.merchantCurrent?.recipientServices?.[name];
+    if (service) return service.id === body.commandId && service.jobId === body.jobId;
     const command = state.commands[name];
+    return !command || command.jobId !== body.jobId || !body.commandId || command.id === body.commandId;
+  }
+  function clearCommand(name: string, body: Record<string, unknown>, type: string): void {
+    const command = issued(name);
     if (
       command?.type === type &&
       command.jobId === body.jobId &&
       (!body.commandId || command.id === body.commandId)
     )
       {
-        finishMerchantInterruption(state, name, command.id);
-        delete state.commands[name];
+        if (state.merchantCurrent?.recipientServices?.[name]?.id === command.id)
+          delete state.merchantCurrent.recipientServices[name];
+        else delete state.commands[name];
       }
   }
   function scopeHandoff(name: string, job: HandoffJob, command: NonNullable<HandoffState["commands"][string]>) {
@@ -119,15 +138,12 @@ export function createMerchantHandoffRoutes(state: HandoffState, ports: HandoffP
       job = current(body, body.target),
       name = requestText(body.target);
     if (!job) return res.status(409).json({ error: "merchant job is no longer current" });
-    if (protectedRecipient(name))
-      return res.status(409).json({ error: "Hunt turn-in owns the recipient's movement" });
-    if (alreadyIssued(name, body.jobId, "merchant-handoff")) return res.json({ ok: true });
+    if (job.handoff || alreadyIssued(name, body.jobId, "merchant-handoff")) return res.json({ ok: true });
     const deferred = waiting(name, body.jobId, res);
     if (deferred) return deferred;
     job.phase = "handoff";
     job.handoff = null;
-    state.commands[name] = handoffCommand(name, body, job);
-    attachMerchantInterruption(state, name, state.commands[name]!);
+    issue(name, job, handoffCommand(name, body, job));
     ports.persist();
     return res.json({ ok: true });
   }
@@ -136,6 +152,8 @@ export function createMerchantHandoffRoutes(state: HandoffState, ports: HandoffP
       job = current(body, body.character),
       name = requestText(body.character);
     if (!job) return res.status(409).json({ error: "merchant job is no longer current" });
+    if (!currentServiceReceipt(name, body)) return res.status(409).json({ error: "merchant service is no longer current" });
+    if (job.handoff) return res.json({ ok: true });
     receiveDeconstruction({ deconstructionMarks: state.deconstructionMarks || [], merchantCharacter: state.merchantCharacter, merchantMarked: state.merchantMarked as import("../merchant/deconstruction.ts").DeconstructionState["merchantMarked"] }, name, body.kept, ports.now?.() ?? Date.now());
     receivePlayerSales({ npcSaleMarks: state.npcSaleMarks || [], merchantMarked: state.merchantMarked as import("../merchant/player-npc-sales.ts").PlayerSaleState["merchantMarked"] }, name, body.kept, ports.now?.() ?? Date.now());
     job.handoff = body;
@@ -166,19 +184,16 @@ export function createMerchantHandoffRoutes(state: HandoffState, ports: HandoffP
       !job.order?.sources[name]
     )
       return res.status(409).json({ error: "merchant commerce job is no longer current" });
-    if (protectedRecipient(name))
-      return res.status(409).json({ error: "Hunt turn-in owns the recipient's movement" });
     if (alreadyIssued(name, body.jobId, "merchant-order-handoff")) return res.json({ ok: true });
     const deferred = waiting(name, body.jobId, res);
     if (deferred) return deferred;
-    state.commands[name] = {
+    issue(name, job, {
       id: ports.nextCommand(),
       type: "merchant-order-handoff",
       jobId: body.jobId,
       merchant: state.merchantCharacter,
       items: job.order.sources[name],
-    };
-    attachMerchantInterruption(state, name, state.commands[name]!);
+    });
     job.orderHandoff = null;
     job.phase = "collecting materials from " + name;
     ports.persist();
@@ -189,6 +204,7 @@ export function createMerchantHandoffRoutes(state: HandoffState, ports: HandoffP
       job = state.merchantCurrent;
     if (!job || job.id !== body.jobId)
       return res.status(409).json({ error: "merchant commerce job is no longer current" });
+    if (!currentServiceReceipt(requestText(body.character), body)) return res.status(409).json({ error: "merchant service is no longer current" });
     job.orderHandoff = { character: body.character, sent: body.sent || [] };
     clearCommand(requestText(body.character), body, "merchant-order-handoff");
     ports.persist();

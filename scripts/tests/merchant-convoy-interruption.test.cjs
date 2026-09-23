@@ -21,54 +21,59 @@ function fixture(purpose='monster-hunt') {
   tick();return {state,send,ack,tick};
 }
 for(const purpose of ['monster-hunt','shared-walk-return','event-return','empty-spawn-recovery']) {
-  test(purpose+' pauses all members, collects once, and resumes its destination',()=>{
-    const f=fixture(purpose),s=f.state,c=s.activeConvoy;
-    c.walkingParents={F:{revision:1,parentId:9,command:{id:9,type:'event-return-town',cycleId:'return'}}};
-    const parents=structuredClone(c.walkingParents),destination=structuredClone(c.location),prior=s.commands.F;
-    assert.equal(f.send('handoff').body.waiting,true);assert.equal(s.commands.F,prior);
-    f.tick();assert.equal(s.commands.F.phase,'shared-hold');
-    assert.equal(f.send('handoff').body.waiting,true);
-    f.ack();f.tick();assert.equal(f.send('handoff').body.ok,true);
-    const handoff=s.commands.F;assert.equal(handoff.type,'merchant-handoff');assert.equal(handoff.convoyContinuation.convoyId,c.id);
-    f.send('handoff');assert.equal(s.commands.F,handoff,'duplicate requests do not reissue collection');
-    f.tick();assert.notEqual(c.phase,'failed');
-    f.send('complete',{jobId:'job',character:'F',commandId:handoff.id});
-    f.tick();f.ack();f.tick();assert.equal(c.phase,'shared-prepare');
-    assert.equal(c.merchantInterruption,undefined);assert.deepEqual(c.location,destination);assert.deepEqual(c.walkingParents,parents);
-    assert.ok(c.epoch>7);assert.equal(s.commands.F.type,'party-monster-travel');
-  });
+ test(purpose+' continues unchanged while the merchant collects alongside travel',()=>{
+  const f=fixture(purpose),s=f.state,c=s.activeConvoy;
+  s.statuses.F.merchantServiceProtocol=1;
+  const route=structuredClone(c),commands=structuredClone(s.commands);
+  assert.equal(f.send('handoff').body.ok,true);
+  const service=s.merchantCurrent.recipientServices.F;
+  assert.equal(service.concurrentService,true);assert.equal(service.type,'merchant-handoff');
+  f.send('handoff');assert.equal(s.merchantCurrent.recipientServices.F,service);
+  assert.deepEqual(s.commands,commands);assert.deepEqual(c,route);
+  f.send('complete',{jobId:'job',character:'F',commandId:service.id});
+  assert.equal(s.merchantCurrent.recipientServices.F,undefined);
+  assert.deepEqual(s.commands,commands);assert.deepEqual(c,route);
+ });
 }
-test('commerce pauses, timeout waits for stopped acknowledgement, and stale completion cannot clear travel',()=>{
-  const f=fixture(),s=f.state;s.merchantCurrent.reason='merchant commerce';s.merchantCurrent.order={sources:{F:[]}};
-  f.send('order');f.tick();f.ack();f.tick();f.send('order');const old=s.commands.F;
-  f.tick(62000);assert.equal(s.commands.F.phase,'shared-hold');assert.ok(s.activeConvoy.merchantInterruption);
-  f.ack();f.tick();assert.equal(s.activeConvoy.phase,'shared-prepare');const current=s.commands.F;
-  f.send('orderComplete',{jobId:'job',character:'F',commandId:old.id,sent:[]});assert.equal(s.commands.F,current);
+test('legacy and stale clients defer merchant service without pausing navigation',()=>{
+ const f=fixture(),s=f.state,route=structuredClone(s.activeConvoy),commands=structuredClone(s.commands);
+ assert.equal(f.send('handoff').body.waiting,true);
+ s.statuses.F.merchantServiceProtocol=1;s.statuses.F.seenAt=-10000;
+ assert.equal(f.send('handoff').body.waiting,true);
+ assert.deepEqual(s.commands,commands);assert.deepEqual(s.activeConvoy,route);
 });
-test('manual navigation supersedes the saved merchant continuation',()=>{
-  const f=fixture(),s=f.state;f.send('handoff');f.tick();
-  s.navigationIntents.F.revision++;s.commands.F={id:999,type:'character-travel'};
-  f.tick();assert.equal(s.commands.F.id,999);assert.equal(s.activeConvoy.merchantInterruption,undefined);assert.equal(s.activeConvoy.phase,'failed');
+test('stale service receipts cannot complete a newer service and completed collection is not reissued',()=>{
+ const f=fixture(),s=f.state;s.statuses.F.merchantServiceProtocol=1;
+ f.send('handoff');const service=s.merchantCurrent.recipientServices.F;
+ assert.equal(f.send('complete',{jobId:'job',character:'F',commandId:service.id-1}).code,409);
+ assert.equal(s.merchantCurrent.recipientServices.F,service);
+ assert.equal(f.send('complete',{jobId:'job',character:'F',commandId:service.id}).body.ok,true);
+ f.send('handoff');assert.equal(s.merchantCurrent.recipientServices.F,undefined);
 });
-test('merchant collection cannot replace the event-return parent between walking legs',()=>{
-  const f=fixture(),s=f.state;s.activeConvoy=null;s.commands.F={id:42,type:'event-return-town',cycleId:'return'};
-  assert.equal(f.send('handoff').body.waiting,true);assert.equal(s.commands.F.id,42);
+test('commerce completion never deletes a newer navigation command',()=>{
+ const f=fixture(),s=f.state;s.statuses.F.merchantServiceProtocol=1;
+ s.merchantCurrent.reason='merchant commerce';s.merchantCurrent.order={sources:{F:[]}};
+ f.send('order');const service=s.merchantCurrent.recipientServices.F;
+ s.commands.F={id:999,type:'character-travel'};
+ f.send('orderComplete',{jobId:'job',character:'F',commandId:service.id,sent:[]});
+ assert.equal(s.commands.F.id,999);assert.equal(s.merchantCurrent.recipientServices.F,undefined);
 });
-test('another recipient must wait for the first collection to release the convoy',()=>{
-  const f=fixture(),s=f.state;f.send('handoff');f.tick();f.ack();f.tick();f.send('handoff');
-  s.merchantCurrent.reason='merchant commerce';s.merchantCurrent.order={sources:{P:[]}};
-  assert.equal(f.send('order',{jobId:'job',target:'P'}).body.waiting,true);assert.equal(s.commands.P.type,'party-monster-travel');
+test('legacy collection cannot replace the event-return parent between walking legs',()=>{
+ const f=fixture(),s=f.state;s.activeConvoy=null;s.commands.F={id:42,type:'event-return-town',cycleId:'return'};
+ assert.equal(f.send('handoff').body.waiting,true);assert.equal(s.commands.F.id,42);
 });
-test('a persisted interrupted convoy resumes with fresh commands after restart',()=>{
-  const f=fixture(),s=f.state;f.send('handoff');f.tick();f.ack();f.tick();f.send('handoff');
-  Object.assign(s,initialCommandState({activeConvoy:structuredClone(s.activeConvoy)},()=>2000));
-  f.tick(2000);f.ack();f.tick();assert.equal(s.activeConvoy.phase,'shared-prepare');assert.equal(s.activeConvoy.merchantInterruption,undefined);
+for(const phase of ['stopping','ready','collecting','resuming'])test('persisted merchant '+phase+' releases without waiting for the merchant',()=>{
+ const f=fixture(),s=f.state,c=s.activeConvoy;
+ c.merchantInterruption={jobId:'job',recipient:'F',phase,deadline:61000,resumePhase:'assemble',revisions:{L:1,F:1,P:1}};
+ const destination=structuredClone(c.location);f.tick();
+ assert.equal(c.merchantInterruption,undefined);assert.equal(c.phase,'assemble');assert.deepEqual(c.location,destination);
+ assert.equal(s.commands.F.type,'party-monster-travel');
 });
-test('collection during assembly initializes stop acknowledgements before the first shared route',()=>{
-  const f=fixture(),s=f.state;s.activeConvoy.phase='assemble';s.activeConvoy.runtimes=null;
-  f.send('handoff');f.tick();f.ack();f.tick();f.send('handoff');assert.equal(s.commands.F.type,'merchant-handoff');
-  f.send('complete',{jobId:'job',character:'F',commandId:s.commands.F.id});f.tick();f.ack();f.tick();
-  assert.equal(s.activeConvoy.phase,'assemble');assert.equal(s.activeConvoy.merchantInterruption,undefined);
+test('superseded persisted merchant holds cannot resume cancelled navigation',()=>{
+ const f=fixture(),s=f.state,c=s.activeConvoy;
+ c.merchantInterruption={jobId:'job',recipient:'F',phase:'ready',resumePhase:'travel',revisions:{L:1,F:1,P:1}};
+ s.navigationIntents.F={revision:2,cancelled:true};s.commands.F={id:999,type:'character-travel'};
+ f.tick();assert.equal(s.commands.F.id,999);assert.equal(c.phase,'failed');assert.equal(c.merchantInterruption,undefined);
 });
 for (const map of ['main','winterland']) test('orphaned Snowman exit in '+map+' releases recovery without losing the checkpoint',()=>{
   const names=['L','F','P'],cycleId='snowman-return',checkpoint={map:'halloween',x:-509,y:-626};

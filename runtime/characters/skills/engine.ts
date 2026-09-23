@@ -1,4 +1,5 @@
 import { createManaBudget } from './budget.ts';
+import { createManaSpending } from './spending.ts';
 import { errorReason } from '../roles/types.ts';
 import { blocked, cost, reserve, unlocked } from './eligibility.ts';
 import { bestAttack, damageChoices } from './offense.ts';
@@ -14,6 +15,7 @@ export interface SkillPorts {
 interface Pending { cost: number; until: number; epoch: number }
 export function createSkillEngine(ports: SkillPorts) {
   const budget = createManaBudget(), pending = new Map<SkillId, Pending>();
+  const spending = createManaSpending();
   let epoch = 0, stopped = false, auraAt = -Infinity, auraState = '', openerPending = false;
   const failures = new Map<SkillId, number>();
   function world() {
@@ -27,7 +29,7 @@ export function createSkillEngine(ports: SkillPorts) {
       category: d.category, reserve: reserve(w), reason, status });
   }
   function affordable(w: SkillWorld, d: SkillDecision): boolean {
-    const inFlight = [...pending.values()].reduce((n, p) => n + p.cost, 0);
+    const inFlight = spending.observe(w.actor.mp, w.now);
     const reason = blocked(w, d, inFlight);
     if (reason) { report(w, d, 'skipped', reason); return false; }
     if (pending.has(family(w, d.skill)) || (failures.get(d.skill) || 0) > w.now) return false;
@@ -55,28 +57,39 @@ export function createSkillEngine(ports: SkillPorts) {
   function recordAura(w: SkillWorld, d: SkillDecision) {
     if (d.skill === 'paladin_aura') { auraAt = w.now; auraState = d.argument || ''; }
   }
+  function reserveDecision(w: SkillWorld, d: SkillDecision) {
+    return spending.acquire(w.actor.mp, w.now, cost(w, d.skill), d.category === 'survival' ? 0 : reserve(w));
+  }
+  function actionsFor(w: SkillWorld, d: SkillDecision) {
+    return d.targets.map(t => w.skills[d.skill]?.hostile ? ports.evidence(t, 'pending') : null);
+  }
+  function stale(token: Pending): boolean { return epoch !== token.epoch || stopped; }
   async function execute(d: SkillDecision): Promise<boolean> {
     const w = world();
     if (stopped || !affordable(w, d)) return false;
     const id = family(w, d.skill), amount = cost(w, d.skill);
+    const settleSpend = reserveDecision(w, d);
+    if (!settleSpend) return false;
     const token = { epoch, cost: amount, until: w.now + 2500 };
     pending.set(id, token);
     if (d.category === 'damage') budget.debit(amount);
-    const actions = d.targets.map(t => w.skills[d.skill]?.hostile ? ports.evidence(t, 'pending') : null);
+    const actions = actionsFor(w, d);
     report(w, d, 'selected');
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       const result = await Promise.race([ports.cast(d), new Promise<never>((_, reject) => {
         timeout = setTimeout(() => reject(new Error('skill acknowledgement timeout')), 2500);
       })]);
-      if (epoch !== token.epoch || stopped) return false;
+      settleSpend(true);
+      if (stale(token)) return false;
       settle(d, actions, result);
       recordAura(w, d);
       report(w, d, 'accepted');
       return true;
     } catch (error) {
+      settleSpend(errorReason(error) === 'skill acknowledgement timeout' ? 'uncertain' : false);
       rejectActions(d, actions);
-      if (epoch !== token.epoch || stopped) return false;
+      if (stale(token)) return false;
       failures.set(d.skill, ports.world().now + 1000);
       report(w, d, 'rejected', errorReason(error));
       return false;
@@ -91,6 +104,16 @@ export function createSkillEngine(ports: SkillPorts) {
     return d ? execute(d) : false;
   }
   return {
+    reserveSupport(skill: SkillId, survival: boolean, amount?: number) {
+      const w = world();
+      if (stopped || w.actor.rip) return null;
+      return spending.acquire(w.actor.mp, w.now, amount ?? cost(w, skill), survival ? 0 : reserve(w));
+    },
+    reserveBasicAttack(): ((accepted: boolean | 'uncertain') => void) | null {
+      const w = world();
+      if (stopped || w.actor.rip) return null;
+      return spending.acquire(w.actor.mp, w.now, cost(w, 'attack'), reserve(w));
+    },
     ready(d: SkillDecision) { return affordable(world(), d); },
     cast: execute,
     async absorb() { const d = absorbDecision(world()); return d ? execute(d) : false; },

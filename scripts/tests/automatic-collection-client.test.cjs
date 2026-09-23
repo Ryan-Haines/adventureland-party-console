@@ -10,7 +10,7 @@ function fixture(){
  findItem:()=>0,freeInventorySlots:()=>10,itemQuantity:i=>i.q||1,game_log(){},encodeURIComponent,
  send_item:async(to,slot,q)=>{sent.push({to,slot,q});context.character.items[slot].q-=q;if(!context.character.items[slot].q)context.character.items[slot]=null;},
  request:async(url,options)=>{requests.push({url,body:options?.body});return{collectionPickups:{keep:current},craftProtection:protection};},partyAvailableCraftStock:availableCraftStock};
- vm.createContext(context);vm.runInContext(['merchantHandoff','compoundAvailableStock','merchantOperationStage'].map(declaration).join('\n'),context);
+ vm.createContext(context);vm.runInContext(['recipientTransferRange','recipientSend','recipientServiceComplete','merchantHandoff','compoundAvailableStock','merchantOperationStage'].map(declaration).join('\n'),context);
  return{context,pickup,sent,requests,command:{jobId:'j',merchant:'M',capacity:3,merchantMarked:[pickup]},disable(){current=[]},protect(){protection={requirements:[{id:'gem',level:0,quantity:5}]}}};
 }
 test('automatic pickup sends only the currently authorized unreserved quantity as kept cargo',async()=>{
@@ -25,4 +25,21 @@ test('activity reports only processing commands and suppresses duplicate stage r
  const f=fixture(),command={jobId:'j',processingRoutine:'auto compound'};
  await f.context.merchantOperationStage(command,'retrieving');await f.context.merchantOperationStage(command,'retrieving');await f.context.merchantOperationStage(command,'processing');await f.context.merchantOperationStage(command,'storing');await f.context.merchantOperationStage({jobId:'pickup'},'processing');
  assert.deepEqual(f.requests.map(r=>r.body.operationStage),['retrieving','processing','storing']);
+});
+test('concurrent recipient waits for the merchant and retries range rejection without moving',async()=>{
+ const f=fixture(),c=f.context;let sleeps=0,attempts=0;
+ Object.assign(c,{banking:false,stocking:false,upgrading:false,
+  get_player:()=>({map:'main',x:sleeps?10:500,y:0}),sleep:async()=>{sleeps++;}});
+ Object.assign(c.character,{map:'main',x:0,y:0});
+ const command={...f.command,concurrentService:true};
+ await c.recipientSend(command,async()=>{if(++attempts===1)throw {reason:'too_far'};});
+ assert.equal(attempts,2);assert.equal(sleeps,2);
+});
+test('concurrent recipient postpones transfers during inventory routines',async()=>{
+ const f=fixture(),c=f.context;let waited=0;
+ Object.assign(c,{banking:true,stocking:false,upgrading:false,
+  get_player:()=>({map:'main',x:0,y:0}),sleep:async()=>{waited++;c.banking=false;}});
+ Object.assign(c.character,{map:'main',x:0,y:0});
+ await c.recipientSend({...f.command,concurrentService:true},async()=>assert.equal(c.banking,false));
+ assert.equal(waited,1);
 });

@@ -11,7 +11,7 @@ function fixture(){
  return {state,calls,send};
 }
 test('handoff respects protected Hunt travel and preserves newer commands on old acknowledgements',()=>{
- const t=fixture();t.state.activeConvoy={nonPreemptible:true,participants:['F']};assert.equal(t.send('handoff',{jobId:'job',target:'F'}).code,409);assert.equal(t.state.commands.F,undefined);
+ const t=fixture();t.state.activeConvoy={nonPreemptible:true,participants:['F']};assert.equal(t.send('handoff',{jobId:'job',target:'F'}).body.waiting,true);assert.equal(t.state.commands.F,undefined);
  t.state.activeConvoy=null;t.send('handoff',{jobId:'job',target:'F',capacity:2});assert.equal(t.state.commands.F.capacity,2);assert.equal(t.state.commands.F.goldTarget,1000);
  t.send('complete',{jobId:'job',character:'F',commandId:6});assert.equal(t.state.commands.F.id,7);
  t.send('complete',{jobId:'job',character:'F',commandId:7});assert.equal(t.state.commands.F,undefined);assert.equal(t.state.merchantCurrent.phase,'processing');

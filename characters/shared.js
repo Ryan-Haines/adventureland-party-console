@@ -330,6 +330,8 @@
   var timer = null;
   var busy = false;
   var regenerationBusy = false;
+  var recipientService = null;
+  var resourceRecoveryBusy = false;
   var healingBusy = false;
   if (root.__partyPassiveRegenTimer) clearInterval(root.__partyPassiveRegenTimer);
   root.__partyPassiveRegenTimer = null;
@@ -2213,6 +2215,9 @@
       queueTiming: root.__partyQueueTiming || null,
       groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
+      merchantServiceProtocol: 1,
+      merchantServiceError: root.__partyRecipientServiceError || null,
+      passiveTravel: passiveTravelProgress(),
       huntReturnProtocol: 2,
       movement: movement.report() || movement.last(),
       convoyNavigation: convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
@@ -2511,6 +2516,7 @@
       !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
   }
   function passingTravelAllowed() {
+    if (typeof passingMovementAllowed === 'function' && !passingMovementAllowed()) return false;
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
     var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
     var pending = root.partyLootClient && root.partyLootClient.huntPending();
@@ -2521,6 +2527,24 @@
       signal.id === convoy.id && Number(signal.epoch) === convoy.epoch && Number(signal.commandId) === convoy.commandId &&
       signal.runtimeId === convoyRuntimeId && Number(signal.validUntil) > Date.now() + coordinatorClockOffset &&
       convoy.navigationRevision === Number(navigationIntent.revision || 0));
+  }
+  function passiveTravelProgress() {
+    var convoy = convoyTraveling, token = farmingTravelToken;
+    var destination = convoy && convoy.destination || token && token.destination;
+    var pending = !!destination && !navigationIntent.cancelled &&
+      (destination.map !== character.map || destination.in != null && String(destination.in) !== String(character.in) ||
+       Math.hypot(character.x - destination.x, character.y - destination.y) > 20);
+    var report = movement.report && movement.report(), phase = report && report.progress && report.progress.phase;
+    var hold = movement.transition() || (phase === 'pending loot' || phase === 'barrier' ? phase : null);
+    if (convoy && convoy.phase !== 'travelling') hold = convoy.phase;
+    if (character.rip || escapeOwns() || combatRecoveryActive()) hold = 'recovery';
+    return { pending: pending, hold: hold || null };
+  }
+  function passingMovementAllowed() {
+    var progress = passiveTravelProgress();
+    if (!progress.pending || character.moving || progress.hold) return true;
+    root.__partyNavigationDetail = 'Passive attacks paused: destination pending without movement';
+    return false;
   }
   function passingTarget() {
     if (!passingTravelAllowed()) return null;
@@ -4310,7 +4334,52 @@
     });
   }
 
+  function receiveRecipientService(command) {
+    if (!recipientService) {
+      if (!root.createRecipientService) return;
+      var key = "party-recipient-service:" + character.name;
+      recipientService = root.createRecipientService({
+        read: function () { return JSON.parse(root.localStorage.getItem(key) || "null"); },
+        write: function (journal) { root.localStorage.setItem(key, JSON.stringify(journal)); },
+        available: function () { return runtimeCurrent() && !character.rip && !banking && !stocking && !upgrading &&
+          !root.__partyUpgradePreviewInFlight && !root.__partyConsoleMaintenance; },
+        execute: function (service) { return service.type === "merchant-order-handoff" ?
+          merchantOrderHandoff(service) : merchantHandoff(service); },
+        post: function (path, body) { return request(path, { method: "POST", body: body }); },
+        report: function (reason) { root.__partyRecipientServiceError = reason; },
+      });
+    }
+    recipientService.receive(command || null);
+  }
+  async function recipientServiceComplete(command, path, body) {
+    if (command.concurrentService) return recipientService.complete(command, path, body);
+    return request(path, { method: "POST", body: body });
+  }
+  async function recipientTransferRange(command) {
+    if (!command.concurrentService) return waitForPlayer(command.merchant, 45000);
+    var deadline = Date.now() + 90000;
+    while (Date.now() < deadline) {
+      assertMerchantContinuation(command);
+      var player = get_player(command.merchant);
+      if (!banking && !stocking && !upgrading && !character.rip && player && !player.rip && (!player.map || player.map === character.map) &&
+          (player.in == null || String(player.in) === String(character.in)) &&
+          Math.hypot(player.x - character.x, player.y - character.y) <= 350) return player;
+      await sleep(250);
+    }
+    throw new Error("Merchant did not catch up to the moving recipient");
+  }
+  async function recipientSend(command, action) {
+    while (true) {
+      await recipientTransferRange(command);
+      try { return await action(); }
+      catch (error) {
+        if (!command.concurrentService || ["too_far", "not_found"].indexOf(String(error.reason || error.message || error)) < 0) throw error;
+        await sleep(250);
+      }
+    }
+  }
   async function withMerchantHandoffRecovery(command, action) {
+    if (command.concurrentService) return action();
     var revision = navigationIntent.revision;
     try { return await afterCombat(action, "merchant handoff"); }
     finally {
@@ -4323,6 +4392,8 @@
   }
 
   function assertMerchantContinuation(command) {
+    if (command.concurrentService && (!runtimeCurrent() || !recipientService || !recipientService.owns(command)))
+      throw new Error("Merchant service superseded");
     var continuation = command.convoyContinuation;
     if (continuation && (!runtimeCurrent() || lastCommand !== command.id ||
         navigationIntent.revision !== continuation.navigationRevision || Date.now() >= continuation.deadline))
@@ -4334,13 +4405,14 @@
     while (true) {
       var result = await request(url, options);
       if (!result.waiting) return result;
-      if (Date.now() >= deadline) throw new Error("Timed out waiting for convoy merchant pause");
+      if (Date.now() >= deadline) throw new Error("Timed out waiting for recipient service");
+      if (options.body && options.body.target) await rendezvous(options.body.jobId, options.body.target);
       await sleep(3000);
     }
   }
 
   async function merchantHandoff(command) {
-    var merchant = await waitForPlayer(command.merchant, 45000);
+    var merchant = await recipientTransferRange(command);
     assertMerchantContinuation(command);
     var sent = [], banked = [], kept = [], cleaned = [], reserved = [];
     for (var equippedIndex = 0; equippedIndex < (command.upgrades || []).length; equippedIndex += 1) {
@@ -4453,7 +4525,11 @@
         itemQuantity(character.items[slot]));
       if (requests[i].mark && (requests[i].mark.deconstructionId || requests[i].mark.npcSaleId) && (character.items[slot].l || character.items[slot].b)) continue;
       var clearsSlot = sendQuantity >= itemQuantity(character.items[slot]);
-      await send_item(command.merchant, slot, sendQuantity);
+      await recipientSend(command, function () {
+        if (!sameItem(character.items[slot], requests[i].item) || itemQuantity(character.items[slot]) < sendQuantity)
+          throw new Error("Collection item changed before transfer");
+        return send_item(command.merchant, slot, sendQuantity);
+      });
       if (clearsSlot) cleanoutFreeSlots += 1;
       sent.push(requests[i]);
       capacity -= 1;
@@ -4466,16 +4542,16 @@
     // carried gold. Any requested walking balance is delivered after pickup.
     var excess = Math.max(0, character.gold);
     assertMerchantContinuation(command);
-    if (excess) await send_gold(command.merchant, excess);
-    await request("/merchant/handoff-complete", { method: "POST", body: {
+    if (excess) await recipientSend(command, function () { return send_gold(command.merchant, excess); });
+    await recipientServiceComplete(command, "/merchant/handoff-complete", {
       jobId: command.jobId, commandId: command.id, character: character.name, sent: sent, banked: banked, kept: kept, cleaned: cleaned,
       cleanoutRemaining: !!command.cleanout && cleanoutFreeSlots <= 3 && sent.length < requests.length, gold: excess,
-    }});
+    });
     game_log("Merchant handoff complete", "#51D2E1");
   }
 
   async function merchantOrderHandoff(command) {
-    await waitForPlayer(command.merchant, 45000);
+    await recipientTransferRange(command);
     assertMerchantContinuation(command);
     var sent = [];
     for (var i = 0; i < (command.items || []).length; i += 1) {
@@ -4485,12 +4561,16 @@
         ? requestItem.slot : findItem(wanted);
       if (slot < 0) throw new Error("Missing crafting material " + wanted.name);
       var quantity = Math.min(Number(requestItem.quantity) || 1, character.items[slot].q || 1);
-      await send_item(command.merchant, slot, quantity);
+      await recipientSend(command, function () {
+        if (!sameItem(character.items[slot], wanted) || itemQuantity(character.items[slot]) < quantity)
+          throw new Error("Crafting material changed before transfer");
+        return send_item(command.merchant, slot, quantity);
+      });
       sent.push({ item: wanted, quantity: quantity });
     }
-    await request("/merchant/order-handoff-complete", { method: "POST", body: {
+    await recipientServiceComplete(command, "/merchant/order-handoff-complete", {
       jobId: command.jobId, commandId: command.id, character: character.name, sent: sent,
-    }});
+    });
   }
 
   async function withdrawMerchantCash(shortfall, command) {
@@ -5897,6 +5977,8 @@
         do {
           await new Promise(function (resolve) { setTimeout(resolve, 750); });
           handoffJob = await request("/merchant/job/" + command.jobId + "?target=" + encodeURIComponent(source));
+          if (!handoffJob.orderHandoff || handoffJob.orderHandoff.character !== source)
+            await rendezvous(command.jobId, source);
         } while ((!handoffJob.orderHandoff || handoffJob.orderHandoff.character !== source) && Date.now() < handoffDeadline);
         if (!handoffJob.orderHandoff || handoffJob.orderHandoff.character !== source)
           throw new Error("Material handoff timed out for " + source);
@@ -8318,7 +8400,7 @@
     if (!farming) return handleCommand(command);
     if (Number(command.navigationRevision || 0) !== Number(navigationIntent.revision) ||
         navigationIntent.cancelled && !command.navigationExempt) return;
-    var token = { id: command.id, revision: navigationIntent.revision, cancelled: false,
+    var token = { id: command.id, revision: navigationIntent.revision, destination: command.location, cancelled: false,
       defensiveTravel: ["travel", "character-travel", "return-leader"].indexOf(command.type) >= 0 };
     farmingTravelToken = token;
     try { return await handleCommand(command); }
@@ -9199,6 +9281,7 @@
       void prepareCatalog();
       flushStatusDiagnostics();
       statusPhase = "dispatch command";
+      receiveRecipientService(state.merchantService);
       handle(state.command).catch(function (error) {
         if (state.command && lastCommand === Number(state.command.id) &&
             (state.command.type === "town-party" || state.command.type === "event-return-town" ||
@@ -11178,6 +11261,18 @@
     }
   }
 
+  async function recoverResources(potion) {
+    if (resourceRecoveryBusy || character.rip ||
+        escapeOwns() && ["complete", "failed-hold"].indexOf(escapeState.stage) < 0) return false;
+    resourceRecoveryBusy = true;
+    try {
+      var role = root.partyRoleRunner && root.partyRoleRunner.role();
+      var used = potion ? await potion() : role ? await role.usePotion() :
+        ["priest", "mage"].indexOf(character.ctype) >= 0 &&
+        await useRecoveryPotion({ hpBelow: 0.5, mpBelow: 0.2, priority: "hp" });
+      return used || await regenerateHpOrMp();
+    } finally { resourceRecoveryBusy = false; }
+  }
   function passiveRegenerationEligible() {
     if (character.rip) return false;
     if (character.ctype === "merchant") return true;
@@ -11197,7 +11292,7 @@
     // Regular heals do not own movement. Top off nearby party members so
     // their recovery pulse can move on to MP instead of repeatedly healing HP.
     if (character.ctype === "priest") healPartyBelow(1, { regularOnly: true }).catch(function () {});
-    regenerateHpOrMp().catch(function () {});
+    recoverResources().catch(function () {});
   }
 
   async function useRecoveryPotion(options) {
@@ -11230,6 +11325,18 @@
       await root.sharedRoutine.absorbLeaderAggro());
   }
 
+  function reserveSupportMana(skill, survival, amount) {
+    var shared = root.sharedRoutine;
+    return shared && shared.reserveCombatMana ? shared.reserveCombatMana(skill, survival, amount) : function () {};
+  }
+  async function accountedSupport(skill, survival, amount, action) {
+    var settle = reserveSupportMana(skill, survival, amount);
+    if (!settle) return false;
+    var timeout = setTimeout(function () { settle('uncertain'); }, 2500);
+    try { await action(); settle(true); return true; }
+    catch (error) { settle(false); throw error; }
+    finally { clearTimeout(timeout); }
+  }
   async function healPartyBelow(ratio, options) {
     if (character.ctype !== "priest" || character.rip || healingBusy) return false;
     options = options || {};
@@ -11249,8 +11356,7 @@
     if (!options.regularOnly && criticallyInjured.length >= 2 && (!isLiveAbtesting() || abtestingStrategy && abtestingStrategy.mode === "uniform") &&
         character.mp >= G.skills.partyheal.mp &&
         !is_on_cooldown("partyheal") && can_use("partyheal")) {
-      await use_skill("partyheal");
-      return true;
+      return await accountedSupport("partyheal", true, undefined, function () { return use_skill("partyheal"); });
     }
     // Heal whichever living party member is hurt most, including the priest.
     // Excluding the caster left priests sitting injured indefinitely while
@@ -11266,7 +11372,7 @@
     if (!target) return false;
     var healTimeout, healStartedAt = Date.now();
     try {
-      var healed = await Promise.race([Promise.resolve(heal(target)).then(function () { return true; }), new Promise(function (resolve) {
+      var healed = await Promise.race([accountedSupport("heal", true, undefined, function () { return heal(target); }), new Promise(function (resolve) {
         healTimeout = setTimeout(function () { resolve(false); }, 2000);
       })]);
       if (healed && runtimeCurrent() && root.partyCombatState) {
@@ -11312,8 +11418,7 @@
       var requested = allComfortable ? 1 : Math.max(1, Math.ceil(missing * 0.2));
       var amount = Math.min(available, requested);
       if (amount <= 0) continue;
-      await use_skill("energize", target, amount);
-      return true;
+      return await accountedSupport("energize", false, amount, function () { return use_skill("energize", target, amount); });
     }
     return false;
   }
@@ -14132,6 +14237,7 @@
       }).catch(function () { farmingSpawnRecoveryRetryAt = Date.now() + 3000; })
         .finally(function () { farmingSpawnRecoveryPending = false; });
     },
+    recoverResources: recoverResources,
     basicAttackReserved: function () {
       if (character.ctype !== "priest") return false;
       if (healingBusy) return true;

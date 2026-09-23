@@ -116,6 +116,38 @@ function travellingParty() {
  for(const name of p.activeConvoy.participants){report(p,name,'travelling',1000);p.statuses[name].combatSelection={runtimeId:name};}
  p.activeConvoy.phase='travel';return {p,e};
 }
+test('fresh stationary routes recover after three seconds despite endless bee attacks',()=>{
+ const {p,e}=travellingParty(),c=p.activeConvoy,destination=c.location;
+ for(const s of Object.values(p.statuses))s.passiveTravel={pending:true,hold:null};
+ e.step(p,1000);
+ for(const at of [2000,3000,4000]){
+  for(const name of c.participants){report(p,name,'travelling',at);p.statuses[name].target={id:'bee-'+at};}
+  e.step(p,at);
+ }
+ assert.equal(c.phase,'shared-hold');assert.match(c.failure,/Destination pending without movement/);
+ assert.equal(c.location,destination);assert.equal(c.recoveryAttempts,1);
+ for(const name of c.participants)report(p,name,'held',4001);
+ e.step(p,4001);assert.equal(c.phase,'shared-prepare');assert.equal(c.location,destination);
+});
+for(const hold of ['town','transport','pending loot','barrier','recovery'])test(hold+' does not trigger stationary travel recovery',()=>{
+ const {p,e}=travellingParty();
+ for(const at of [1000,2000,3000,4000,5000]){
+  for(const name of p.activeConvoy.participants){report(p,name,'travelling',at);p.statuses[name].passiveTravel={pending:true,hold};}
+  e.step(p,at);
+ }
+ assert.equal(p.activeConvoy.phase,'travel');assert.equal(p.activeConvoy.recoveryAttempts,undefined);
+});
+test('position progress, arrival and observation gaps reset the stationary timer',()=>{
+ const {p,e}=travellingParty();
+ for(const s of Object.values(p.statuses))s.passiveTravel={pending:true,hold:null};
+ e.step(p,1000);
+ for(const s of Object.values(p.statuses)){s.seenAt=3000;s.x=3;}
+ e.step(p,3000);
+ for(const s of Object.values(p.statuses))s.seenAt=9000;
+ e.step(p,9000);assert.equal(p.activeConvoy.phase,'travel');
+ for(const s of Object.values(p.statuses)){s.seenAt=11000;s.passiveTravel.pending=false;}
+ e.step(p,11000);assert.equal(p.activeConvoy.phase,'travel');
+});
 test('missing local routes regroup the Bee stop without replacing the Stoneworm destination',()=>{
  const {p,e}=travellingParty(),c=p.activeConvoy;
  c.purpose='monster-hunt';c.huntTarget='stoneworm';c.location={map:'spookytown',x:677,y:129};

@@ -19,6 +19,7 @@ function fixture() {
     forceTraveling: false, convoyTraveling: false, partyConvoyActive: false, followingLeader: false,
     departurePending: false, partyTownActive: false, banking: false, stocking: false, upgrading: false, gatheringActive: false,
   });
+  r.resourceRecoveryBusy = false;
   r.root = r;
   r.partyCombatState = {};
   vm.runInContext(code, r);
@@ -39,6 +40,16 @@ test('movement allows regular heals and priest regeneration in the same pulse', 
   const t = fixture(); t.r.character.moving = true; t.r.character.mp = 70; t.add('Warrior');
   t.r.passiveRegenerationTick(); await settle();
   assert.deepEqual(t.calls, [['heal', 'Warrior'], ['skill', 'regen_mp']]);
+});
+
+test('travel and role pulses share recovery ownership and preserve MP recovery priority',async()=>{
+ const t=fixture();t.r.character.hp=90;t.r.character.mp=30;
+ let release;t.r.use_skill=skill=>{t.calls.push(['skill',skill]);return new Promise(resolve=>release=resolve);};
+ const pulse=t.r.recoverResources(async()=>false);await settle();
+ assert.equal(await t.r.recoverResources(async()=>{throw Error('duplicate potion');}),false);
+ assert.deepEqual(t.calls,[['skill','regen_mp']]);release();await pulse;
+ t.calls.length=0;t.r.character.hp=40;t.r.use_skill=async skill=>t.calls.push(['skill',skill]);
+ await t.r.recoverResources(async()=>false);assert.deepEqual(t.calls,[['skill','regen_hp']]);
 });
 
 test('only an acknowledged heal publishes success telemetry', async () => {

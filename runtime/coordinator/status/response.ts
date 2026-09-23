@@ -51,6 +51,9 @@ const navigationCommands = new Set([
 
 /** Long-running commands remain deliverable until their completion endpoint acknowledges them. */
 export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatResponsePorts) {
+  function merchantServiceFor(name: string) {
+    return state.merchantCurrent?.recipientServices?.[name] || null;
+  }
   function restoreTownCommand(name: string): void {
     const town = state.townCycle;
     if (town?.pending.includes(name) && !state.commands[name] && town.revisions?.[name] === ports.navigationRevision(name))
@@ -176,6 +179,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
       travelCombat,
       ...realmErrors(name),
       command,
+      merchantService: merchantServiceFor(name),
       rareControl: ports.rareControl(name),
       escape: ports.escapeOwns(name) ? state.escape : null,
       eventTrip: state.huntEventTrips?.[name]?.at(-1) || null,

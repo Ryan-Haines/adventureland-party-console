@@ -20,6 +20,7 @@ export interface SharedReport {
   failure?: string; waypointCount?: number;
 }
 export interface SharedStatus extends RoutePoint {
+  passiveTravel?: { pending: boolean; hold: string | null };
   huntReturnProtocol?: number;
   movement?: {progress?:unknown};
   seenAt: number; server?: string; region?: string; rip?: boolean; hp?: number;
@@ -58,6 +59,7 @@ export interface SharedConvoy extends PartyConvoy {
   sharedReadySince?: number; routePublishedAt?: number; sharedStoppedAt?: number;
   sharedWaitingAt?: number;
   missingRoutes?: Record<string, { since: number; observedAt: number }>;
+  travelProgress?: Record<string, RoutePoint & { commandId: number; since: number; observedAt: number }>;
   walkingActivity?: string;
   routeServer?: string;
   retryExhausted?: boolean;
