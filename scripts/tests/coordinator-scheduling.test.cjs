@@ -61,3 +61,31 @@ test('merchant observations persist relocated delivery marks before scheduling f
  assert.equal(mark.slot,7);assert.equal(mark.id,'delivery');assert.equal(mark.equipOnDelivery,true);
  assert.equal(f.effects[0],'persist');assert.ok(f.effects.indexOf('persist')<f.effects.indexOf('idle'));
 });
+
+test('ready deliveries alone schedule a visit by default and after re-enabling',()=>{
+ const f=fixture();f.state.merchantAutomations={restock:false,'inventory cleanout':false,'party collection':false};
+ f.state.merchantDeliveries={P:[{id:'d',slot:1,item:{name:'sword'}}]};
+ const report={name:'P',items:Array(10).fill(null)};
+ f.observe(report,false);
+ assert.deepEqual(f.effects.filter(x=>Array.isArray(x)&&x[0]==='queue'),[['queue',['P'],'deliveries']]);
+ f.effects.length=0;f.state.merchantAutomations.deliveries=false;f.observe(report,true);
+ assert.equal(f.effects.some(x=>Array.isArray(x)&&x[2]==='deliveries'),false);
+ assert.equal(f.state.merchantDeliveries.P.length,1);
+ f.state.merchantAutomations.deliveries=true;f.observe(report,true);
+ assert.ok(f.effects.some(x=>Array.isArray(x)&&x[2]==='deliveries'));
+});
+
+test('blocked, missing-item and awaiting-equip deliveries do not schedule visits',()=>{
+ for(const mark of [{},{item:{name:'sword'},blocked:'Transfer outcome uncertain'},{item:{name:'sword'},awaitingEquip:true}]) {
+  const f=fixture();f.state.merchantDeliveries={P:[mark]};f.observe({name:'P'},false);
+  assert.equal(f.effects.some(x=>Array.isArray(x)&&x[2]==='deliveries'),false);
+ }
+});
+
+test('stock reconciliation makes a formerly missing delivery schedulable',()=>{
+ const f=fixture(),mark={id:'d',slot:1,item:{name:'sword'},blocked:'Reserved delivery item missing'};
+ f.state.merchantDeliveries={P:[mark]};f.state.statuses.M={name:'M',seenAt:200000,items:[{slot:7,item:{name:'sword'}}]};
+ f.observe({name:'P'},false);
+ assert.equal(mark.slot,7);assert.equal(mark.blocked,undefined);
+ assert.ok(f.effects.some(x=>Array.isArray(x)&&x[2]==='deliveries'));
+});

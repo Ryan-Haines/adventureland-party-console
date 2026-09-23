@@ -216,6 +216,16 @@ pre-start deferrals release queue ownership without extending the worker watchdo
 Validate with `merchant-delivery-recovery.test.cjs` and merchant recovery/completion
 tests; publish character and coordinator assets together using the ordinary restart.
 
+Marked deliveries create their own merchant jobs by default, at priority 90.
+Merchant settings can disable these delivery-only trips: waiting delivery jobs
+are removed, active trips finish, and marks remain available for other visits or
+explicit party/character sends. The Marked deliveries routine remains visible but
+disabled until enabled in Merchant settings. Only ready marks schedule visits;
+blocked transfers and pending equipment confirmation keep their existing recovery
+flow. Empty delivery jobs are discarded before dispatch. Validate delivery-trip
+settings/UI, scheduling, queue, dispatch, and delivery-recovery tests. This change
+needs a coordinator-only restart and refreshed dashboard assets.
+
 Manual upgrade menus request server previews through `/party-api/upgrade-preview`.
 The auxiliary heartbeat request and `/upgrade-preview/result` response are ephemeral
 and expire after ten seconds; they never create merchant jobs. Only the executing

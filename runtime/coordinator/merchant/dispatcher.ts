@@ -212,6 +212,7 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   }
 
   function hasQueuedWork(job: MerchantWork): boolean {
+    if (job.reason === "deliveries") return ports.inputs().work(job.target).deliveries.length > 0;
     if (job.reason !== "manual compounds") return true;
     if (ports.inputs().work(job.target).compounds.length) return true;
     ports.log("Discarded empty manual compound job", "info", {jobId: job.id, target: job.target});

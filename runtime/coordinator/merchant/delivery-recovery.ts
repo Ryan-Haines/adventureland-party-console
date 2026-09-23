@@ -10,6 +10,10 @@ export interface DeliveryRequest {
   blocked?: string;
   legacy?: boolean;
 }
+
+export function deliveryReady(mark: DeliveryRequest): boolean {
+  return !!mark.item && !mark.awaitingEquip && !mark.blocked;
+}
 interface InventoryStatus {
   seenAt?: number;
   items?: (InventoryEntry | null)[];

@@ -7,6 +7,9 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Marked merchant deliveries now schedule their own visits by default. Merchant
+  settings can disable delivery-only trips while retaining deliveries for other
+  visits and explicit sends. ([#15](https://github.com/Ryan-Haines/adventureland-party-console/issues/15))
 - Removed unused dashboard notices; previously silent validation and action failures
   now use contextual error feedback. ([#14](https://github.com/Ryan-Haines/adventureland-party-console/issues/14))
 
