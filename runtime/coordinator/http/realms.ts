@@ -2,6 +2,7 @@ import { requestObject, requestText, type HttpRequest, type HttpResponse } from 
 import type { RealmOperation } from "../characters/realm-switch.ts";
 
 interface RealmRouteState {
+  steamMembers: string[];
   realmSwitch: RealmOperation | null;
   bankboiTransaction: unknown;
   statuses: Record<string, { seenAt: number; server?: string } | undefined>;
@@ -77,7 +78,7 @@ export function createRealmRoutes(state: RealmRouteState, ports: RealmRoutePorts
           error: "every active character must be connected before switching",
           characters: stale,
         });
-    if (!ports.native())
+    if (participants.some((name) => state.steamMembers.includes(name)) && !ports.native())
       return res
         .status(409)
         .json({ error: "the Steam character must be connected before switching" });
