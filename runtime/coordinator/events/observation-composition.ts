@@ -65,7 +65,7 @@ export function createCoordinatorEventObservations(
       },
       merchant: () => state.merchantCharacter,
       statuses: () => state.statuses,
-      capture: () => ports.navigation.capture(),
+      capture: (names) => ports.navigation.capture(names || ports.activeNames()),
       location: (recovery, name) => ports.navigation.location(recovery, name),
       intent: (name) => ports.navigation.intent(name),
       hasCommand: (name) => !!state.commands[name],

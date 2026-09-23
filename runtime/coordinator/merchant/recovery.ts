@@ -130,7 +130,7 @@ export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPort
       job.commandReport = report;
       if (report.state === "deferred" && !job.heartbeatAt) {
         job.firstDeferredAt ??= ports.now();
-        if (report.reason === 'anniversary') {
+        if (eventDeferral(report.reason)) {
           releaseAnniversary(job, nameForMerchant);
           return true;
         }
@@ -165,4 +165,8 @@ export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPort
       );
   }
   return { observe };
+}
+
+function eventDeferral(reason: string | null | undefined): boolean {
+  return reason === 'anniversary' || reason === 'event';
 }

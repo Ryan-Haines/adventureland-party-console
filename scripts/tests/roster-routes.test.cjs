@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { installRosterRoutes } = require('../../runtime/roster/routes.ts');
 
-function fixture() {
+function fixture(overrides = {}) {
   const state = { native: 'Priest', slots: ['Mage', 'Warrior', 'Merchant', null], handoff: null };
   const online = new Set(['Priest', 'Mage', 'Warrior', 'Merchant']), routes = new Map();
   let now = 100;
@@ -14,6 +14,7 @@ function fixture() {
     startHeadless(name) { assert.ok(!online.has(name)); online.add(name); },
     async confirmOffline(name) { return !online.has(name); },
     nativeBusy: () => false, bridgeChanged() {}, realm: () => 'SR_USII', members: () => [],
+    ...overrides,
   };
   const installed = installRosterRoutes({ get: (route, handler) => routes.set(route, handler), post: (route, handler) => routes.set(route, handler) }, state, ports);
   const request = async (path, body = {}, slot = '') => {
@@ -167,5 +168,129 @@ test('arrival without navigation storage recovers a timed-out legacy handoff', a
     assert.equal(f.state.handoff.phase, 'complete');
     assert.equal(f.state.native, 'Mage');
     assert.deepEqual(f.state.slots, ['Priest', 'Warrior', 'Merchant', null]);
+  } finally { f.installed.dispose(); }
+});
+
+test('a fresh Steam Engage supersedes a pending logout without replaying release or navigation', async () => {
+  for (const phase of ['release', 'confirm-release', 'navigate', 'failed']) {
+    for (const character of ['Priest', 'Ranger']) {
+      const f = fixture();
+      try {
+        await f.bridge({ version: 2, sessionId: 'old-game', running: ['Priest'] });
+        await f.request('/steam/action', { action: 'logout', character: 'Priest' });
+        const op = f.state.handoff;
+        assert.equal(op.steamSessionId, 'old-game');
+        op.phase = phase;
+        const result = await f.bridge({ version: 2, sessionId: 'new-game', character, running: [character] });
+        assert.equal(result.code, 200);
+        assert.equal(result.body.operation, null);
+        assert.equal(f.state.native, character);
+        assert.deepEqual(f.state.steam, [character]);
+        assert.deepEqual(f.state.slots, ['Mage', 'Warrior', 'Merchant', null]);
+        assert.equal(op.phase, 'complete', 'in-flight release checks must be retired');
+      } finally { f.installed.dispose(); }
+    }
+  }
+});
+
+test('ordinary polls and bridge reloads still execute a newly requested logout', async () => {
+  const f = fixture();
+  try {
+    await f.bridge({ version: 2, sessionId: 'game', running: ['Priest'] });
+    await f.request('/steam/action', { action: 'logout', character: 'Priest' });
+    await f.bridge({ version: 2, sessionId: 'game', running: ['Priest'] });
+    assert.equal(f.state.handoff.phase, 'release');
+    await f.bridge({ version: 2, sessionId: 'new-game', running: [] });
+    assert.equal(f.state.handoff.phase, 'release', 'no CODE is not a new Engage');
+    f.online.delete('Priest');
+    await f.bridge({ version: 2, sessionId: 'game', character: null, running: [], operationId: 'op', released: true });
+    assert.equal(f.state.handoff.phase, 'complete');
+    assert.equal(f.state.native, null);
+    assert.deepEqual(f.state.steam, []);
+    await f.bridge({ version: 2, sessionId: 'new-game', running: ['Priest'] });
+    assert.equal(f.state.native, 'Priest');
+  } finally { f.installed.dispose(); }
+});
+
+test('legacy release receipts and failed logouts can recover a connected Engage', async () => {
+  for (const version of [1, 2]) {
+    for (const failed of [false, true]) {
+      const f = fixture();
+      try {
+        await f.bridge({ version });
+        if (version === 1) await f.request('/slots/:slot/logout', {}, '0');
+        else await f.request('/steam/action', { action: 'logout', character: 'Priest' });
+        if (failed) f.state.handoff.phase = 'failed';
+        await f.bridge({ version, running: ['Priest'], ...(failed ? {} : { operationId: 'op', released: true, from: 'Priest' }) });
+        assert.equal(f.state.handoff, null);
+        assert.equal(f.state.native, 'Priest');
+        assert.deepEqual(f.state.steam, ['Priest']);
+      } finally { f.installed.dispose(); }
+    }
+  }
+});
+
+test('new Steam sessions cannot cancel transfers or take a headless assignment', async () => {
+  for (const action of ['primary', 'headless', 'logout']) {
+    const f = fixture();
+    try {
+      await f.bridge({ version: 2, sessionId: 'old-game', running: ['Priest'] });
+      await f.request('/steam/action', { action, character: action === 'primary' ? 'Mage' : 'Priest' });
+      const op = f.state.handoff;
+      await f.bridge({ version: 2, sessionId: 'new-game', character: action === 'logout' ? 'Warrior' : 'Priest', running: ['Priest', 'Warrior'] });
+      assert.equal(f.state.handoff, op);
+      assert.equal(op.phase, 'release');
+      assert.deepEqual(f.state.slots, ['Mage', 'Warrior', 'Merchant', null]);
+    } finally { f.installed.dispose(); }
+  }
+});
+
+test('a disconnected bridge yields to a new connected CODE window and rejects its old poll', async () => {
+  const f = fixture();
+  try {
+    await f.bridge({ version: 2, sessionId: 'old-game' });
+    await f.request('/steam/action', { action: 'logout', character: 'Priest' });
+    await f.bridge({ version: 2, character: null });
+    const result = await f.bridge({ version: 2, clientId: 'new-window', sessionId: 'new-game', running: ['Priest'] });
+    assert.equal(result.code, 200);
+    assert.equal(f.state.handoff, null);
+    assert.equal((await f.bridge({ version: 2, character: null })).code, 409);
+    assert.equal(f.state.native, 'Priest');
+  } finally { f.installed.dispose(); }
+});
+
+test('logout recovery retires an account lookup already in flight', async () => {
+  let finish;
+  const f = fixture({ confirmOffline: () => new Promise(resolve => { finish = resolve; }) });
+  try {
+    await f.bridge({ version: 2, sessionId: 'old-game' });
+    await f.request('/steam/action', { action: 'logout', character: 'Priest' });
+    const releasing = f.bridge({ version: 2, character: null, operationId: 'op', released: true });
+    assert.equal(f.state.handoff.phase, 'confirm-release');
+    await f.bridge({ version: 2, sessionId: 'new-game', running: ['Priest'] });
+    finish(true);
+    await releasing;
+    assert.equal(f.state.handoff, null);
+    assert.equal(f.state.native, 'Priest');
+    assert.deepEqual(f.state.steam, ['Priest']);
+  } finally { f.installed.dispose(); }
+});
+
+test('re-engaging the logged-out primary cancels stale navigation and retains its Steam companions', async () => {
+  const f = fixture();
+  try {
+    f.state.slots[0] = null;
+    f.state.steam = ['Priest', 'Mage'];
+    await f.bridge({ version: 2, sessionId: 'old-game', running: ['Priest', 'Mage'] });
+    await f.request('/steam/action', { action: 'logout', character: 'Priest' });
+    f.online.delete('Priest'); f.online.delete('Mage');
+    await f.bridge({ version: 2, character: null, operationId: 'op', released: true });
+    assert.equal(f.state.handoff.phase, 'navigate');
+    assert.equal(f.state.handoff.multi.primary, 'Mage');
+    const result = await f.bridge({ version: 2, sessionId: 'new-game', running: ['Priest'] });
+    assert.equal(result.body.operation, null);
+    assert.equal(f.state.native, 'Priest');
+    assert.deepEqual(f.state.steam, ['Mage', 'Priest']);
+    assert.deepEqual(f.state.slots, [null, 'Warrior', 'Merchant', null]);
   } finally { f.installed.dispose(); }
 });

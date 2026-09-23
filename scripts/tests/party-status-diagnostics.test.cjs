@@ -24,6 +24,22 @@ for (const status of [400,409,500]) test('HTTP '+status+' retains endpoint and s
     assert.match(e.message,/stale convoy/);assert.doesNotMatch(JSON.stringify(e),/secret|private/);return true;
   });
 });
+test('status timing records actual response receipt and failure without extra requests',async()=>{
+ const f=fixture();let now=100;f.r.performance={now:()=>now};
+ f.r.$.ajax=()=>({done(fn){now=450;fn({ok:true});return this;},fail(){return this;}});
+ assert.equal((await f.r.request('/status')).ok,true);assert.equal(f.r.root.__partyConvoyHttp.responseAt,450);
+ f.r.$.ajax=()=>({done(){return this;},fail(fn){now=900;fn({status:0},'error','');return this;}});
+ await assert.rejects(f.r.request('/status'),/network/);
+ assert.equal(f.r.root.__partyConvoyHttp.failure.durationMs,450);assert.equal(f.r.root.__partyConvoyHttp.failure.kind,'network');
+ assert.equal(f.r.root.__partyConvoyHttp.responseAt,450);
+ await assert.rejects(f.r.request('/merchant/native-stand'),/network/);
+ assert.equal(f.r.root.__partyConvoyHttp.failure.durationMs,450,'other endpoints cannot replace status evidence');
+ assert.equal(f.requests.length,0,'instrumentation never sends a request');
+});
+test('broken diagnostic state cannot reject an otherwise successful status response',async()=>{
+ const f=fixture();Object.defineProperty(f.r.root,'__partyConvoyHttp',{get(){throw Error('diagnostic state unavailable');}});
+ f.response({ok:true});assert.equal((await f.r.request('/status')).ok,true);
+});
 for(const [status,http,kind]of [['error',0,'network'],['timeout',0,'timeout'],['parsererror',200,'invalid-json'],['abort',0,'aborted']])
   test('classifies '+kind,async()=>{
     const f=fixture();f.fail([{status:http,responseText:'full response must not leak'},status,'']);
@@ -51,8 +67,9 @@ test('diagnostic strings redact credentials and URL queries',()=>{
 function statusFixture() {
  const f=fixture(),r=f.r;
  Object.assign(r,{
-  busy:false,snapshot:()=>({}),runtimeCurrent:()=>true,dashboardSampler:null,
-  prepareCatalog:async()=>{},
+  busy:false,snapshot:()=>({}),runtimeCurrent:()=>true,dashboardSampler:null,reloadConvoyGeometry(){},
+  prepareCatalog:async()=>{},applyMerchantVisibility:async()=>{},
+  luckySlotTracking:()=>({sync:()=>{}}),
   wakeGatheringAfterStatus:()=>{r.gatheringWakes=(r.gatheringWakes||0)+1;},
   applyEscape:async()=>{},applyNavigationIntent:async()=>{},acceptCombatControl(){},
   rareControlState:null,cancelRarePath(){},followLeader:false,followingLeader:false,

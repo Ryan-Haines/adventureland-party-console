@@ -40,3 +40,29 @@ test('party collection carries the recipient delivery and equip instruction acro
   assert.deepEqual(f.state.commands.M.merchantDeliveries,[delivery]);
   assert.equal(f.state.commands.M.merchantDeliveries[0].equipOnDelivery,true);
 });
+
+test('delivery-only visit dispatches without any other work and retains only ready marks',()=>{
+ const f=fixture(),delivery={id:'d',slot:2,item:{name:'sword'},equipOnDelivery:true};
+ f.state.merchantDeliveries.P=[delivery,{item:{name:'ring'},blocked:'uncertain'},{item:{name:'coat'},awaitingEquip:true},{}];
+ f.state.statuses.P={seenAt:100,server:'USII',map:'main',x:500,y:500,items:[]};
+ f.state.merchantQueue=[{id:'d',target:'P',reason:'deliveries'}];f.service.dispatch();
+ assert.equal(f.state.commands.M.type,'merchant-service');assert.equal(f.state.commands.M.target,'P');
+ assert.deepEqual(f.state.commands.M.merchantDeliveries,[delivery]);
+ assert.deepEqual(f.state.commands.M.upgrades,[]);assert.deepEqual(f.state.commands.M.purchases,[]);
+});
+
+test('completed or blocked deliveries leave no empty trip, while disabled scheduling preserves other visits',()=>{
+ for(const marks of [[],[{item:{name:'ring'},blocked:'uncertain'}],[{item:{name:'coat'},awaitingEquip:true}]]) {
+  const f=fixture();f.state.merchantDeliveries.P=marks;
+  f.state.merchantQueue=[{id:'d',target:'P',reason:'deliveries'}];f.service.dispatch();
+  assert.equal(f.state.merchantCurrent,null);assert.deepEqual(f.state.merchantQueue,[]);
+ }
+ for(const reason of ['manual visit','party collection','restock']) {
+  const f=fixture(),delivery={id:'d',item:{name:'sword'}};
+  f.state.merchantAutomations={deliveries:false,'party collection':false};
+  f.state.merchantDeliveries.P=[delivery];f.state.statuses.P={seenAt:100,server:'USII',items:[]};
+  f.state.merchantQueue=[{id:'d',target:'P',reason:'deliveries'},{id:'visit',target:'P',reason,manual:true}];
+  f.service.dispatch();assert.equal(f.state.merchantCurrent.id,'visit');
+  assert.deepEqual(f.state.commands.M.merchantDeliveries,[delivery]);
+ }
+});

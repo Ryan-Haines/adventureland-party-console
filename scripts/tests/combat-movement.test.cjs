@@ -6,7 +6,7 @@ const roles = fs.readFileSync(process.env.AL_ROLES_SOURCE || '.build/runtime/rol
 const shared = fs.readFileSync(process.env.AL_SHARED_SOURCE || 'characters/shared.js', 'utf8');
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 
-function runner(ctype = 'ranger', native = false) {
+function runner(ctype = 'ranger', native = false, configure = () => {}) {
   let now = 1000, attacks = 0, moves = 0, heals = 0, ready = true, occupied = false;
   const intervals = [], timeouts = [];
   const target = { id: 'm', type: 'monster', mtype: 'goo', visible: true, x: 20, y: 0, map: 'main' };
@@ -21,6 +21,7 @@ function runner(ctype = 'ranger', native = false) {
     basicAttackReserved: () => false, healPartyBelow: async () => { heals++; }, resetCombatMovement() {},
     useRecoveryPotion: async () => false, absorbSinsBelow: async () => false,
   };
+  configure(routine);
   const c = vm.createContext({ character, parent: native ? {} : { caracAL: {} }, sharedRoutine: routine, get_entity: () => target,
     G: {items:{},classes:{}},
     can_attack: () => ready, is_in_range: () => true, game_log() {},
@@ -402,7 +403,8 @@ test('nearby loot continues during travel and blocked support without overlappin
 
 test('eligible passing and active attacks share priority without passing movement', async () => {
   for (const passivePriority of [40,100]) {
-    const r=runner();await flush();
+    const r=runner('ranger',false,routine=>{routine.queueReport=()=>({groupedCombat:{}});});await flush();
+    r.c.partyQueueClient.preparePassing=()=>true; // Admission is covered by passing-admission tests.
     const passing={...r.target,id:'passing',mtype:'bee'};const hit=[];
     r.routine.getPassingTarget=()=>passing;
     r.routine.monsterPriority=target=>target.id==='passing'?passivePriority:50;

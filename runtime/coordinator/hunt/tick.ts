@@ -7,6 +7,7 @@ import { createHuntTravel } from "./travel.ts";
 import { huntLootPending } from "./loot.ts";
 import { stepHuntBackup } from "./backup.ts";
 import { recoverHuntFarmWalk } from "./farm-walk.ts";
+import { reconcileCurrentHuntParty } from "./current-party.ts";
 
 /** Keeps turn-in ownership ahead of optional event, farming, and participant changes. */
 export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
@@ -66,18 +67,29 @@ export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
   }
   function tick(): void {
     if (ports.rareEncounter()) return;
-    if (state.farmingPolicy !== "hunt" && !state.monsterHunt?.exitMode) return;
+    if (!enabled()) return;
     const hunt = state.monsterHunt;
     if (!hunt) {
       if (!state.activeConvoy) ports.begin();
       return;
     }
+    if (reconcileCurrentHuntParty(hunt, state, ports.now(), () => ports.cancelHuntConvoy())) ports.persist();
+    if (communicationPaused(hunt)) return;
     if (hunt.stage === "failed-return") {
       recovery.failedReturn(hunt);
       return;
     }
     if (observeHuntExpiry(state, hunt, ports.now())) ports.persist();
     advance(hunt);
+  }
+  function communicationPaused(hunt: HuntCycle): boolean {
+    if (!state.activeConvoy?.communicationHold || state.activeConvoy.id !== hunt.convoyId) return false;
+    recovery.deaths(hunt);
+    hunt.message = state.activeConvoy?.failure || 'Waiting for coordinator communication';
+    return true;
+  }
+  function enabled(): boolean {
+    return state.farmingPolicy === 'hunt' || !!state.monsterHunt?.exitMode;
   }
   return { tick };
 }

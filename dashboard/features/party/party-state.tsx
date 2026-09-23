@@ -1,4 +1,5 @@
 "use client";
+import type { LuckySlotHistory } from '../../../runtime/lucky-slot-tracking';
 import type { DeconstructionMark, DeconstructionCatalog } from "./deconstruction";
 import { ActiveSlot } from "./active-slot";
 import { ALDataState } from "./aldata-state";
@@ -93,7 +94,7 @@ export type PartyState = {
   standBids?: Record<string, StandBid>;
   autoStandBuys?: boolean;
   autoBlacklistMerchants?: boolean;
-  nativeStand?: { offers: Record<string, { itemId: string; auto: boolean; phase: string; slot: string; level?: number; price?: number; quantity?: number; problem?: string }>; problems: Record<string, string> };
+  nativeStand?: { offers: Record<string, { itemId: string; auto: boolean; phase: string; slot: string; level?: number; price?: number; quantity?: number; acknowledged?: number; problem?: string }>; problems: Record<string, string> };
   standPriceHistory?: Record<string, StandPriceHistory>;
   standSearch?: StandSearchState;
   upgrades?: Record<string, UpgradeMark[]>;
@@ -153,6 +154,7 @@ export type PartyState = {
   merchantForceStand?: boolean;
   merchantWeapon?: { item: Item } | null;
   luckyUpgradeSlots?: Record<string, number | null>;
+  luckySlotTracking?: LuckySlotHistory;
   merchantQueue?: MerchantJob[];
   merchantCurrent?: MerchantJob | null;
   merchantActivity?: MerchantActivity[];

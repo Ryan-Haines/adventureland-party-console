@@ -37,6 +37,7 @@ export const heartbeatStateFields = [
   "merchantForceStand",
   "merchantWeapon",
   "luckyUpgradeSlots",
+  "luckySlotTracking",
   "gatheringNoTool",
   "gatheringCooldowns",
   "standListings",
@@ -50,6 +51,10 @@ export const heartbeatStateFields = [
 ] as const;
 
 export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[number], unknown> {
+  passiveHunting: import('../navigation/passive-settings.ts').PassiveSettings;
+  eventSessions?: import('../merchant/event-control.ts').MerchantEventState['eventSessions'];
+  eventReturn?: import('../merchant/event-control.ts').MerchantEventState['eventReturn'];
+  deferredEventReturns?: import('../merchant/event-control.ts').MerchantEventState['deferredEventReturns'];
   merchantQueue?: import("../merchant/work.ts").MerchantWork[];
   huntEventTrips?: import("../events/hunt-trip.ts").HuntEventTrips["huntEventTrips"];
   leader: string | null;
@@ -68,7 +73,7 @@ export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[num
   rareHuntState?: { patrol?: { paused?: boolean } } | null;
   townCycle: { id: string; pending: string[]; revisions?: Record<string, number> } | null;
   returnProgress?: Record<string, import("../http/return-progress.ts").ReturnProgress>;
-  activeConvoy: { participants: string[] } | null;
+  activeConvoy: (import('../../combat/hunt-travel.ts').HuntTravelConvoy & { participants: string[] }) | null;
   bankCurrent: { name: string } | null;
   bankQueue: { name: string }[];
   bankbois: Record<string, import("../inventory/bankboi-completion.ts").BankboiInventory>;

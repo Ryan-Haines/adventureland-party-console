@@ -33,6 +33,7 @@ export interface FarmAreaState {
   activity?: Record<string, { until: number; actor: string }>;
 }
 export interface FarmConvoy {
+  failureCode?: string;
   participants?: string[];
   expected?: Record<string, { revision: number }>;
   cause?: "farming-conflict";

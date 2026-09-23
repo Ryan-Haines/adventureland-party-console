@@ -31,6 +31,7 @@ export function CreateCharacter({
   appearances,
   classes,
   busy,
+  error,
   onCreate,
 }: {
   open: boolean;
@@ -44,6 +45,7 @@ export function CreateCharacter({
   appearances: AppearanceChoice[];
   classes: string[];
   busy: boolean;
+  error?: string | null;
   onCreate: () => void;
 }) {
   return (
@@ -111,6 +113,7 @@ export function CreateCharacter({
             ) : null}
           </fieldset>
         </div>
+        {error && <p role="alert" className="text-sm text-rose-200">{error}</p>}
         <DialogFooter className="border-t border-cyan-900 bg-[#0b1916]">
           <Button
             variant="outline"

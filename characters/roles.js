@@ -162,10 +162,16 @@
   // runtime/characters/classes/merchant.ts
   var role7 = {
     name: "merchant",
-    combat: false
-    // The server rejects attack() for this class with reason "merchant".
-    // Merchants can equip weapons but cannot farm through basic combat.
+    combat: true,
+    // Use current equipment for events; never acquire ordinary farming targets.
+    chooseTarget: () => sharedRoutine.getEventTarget()
   };
+
+  // runtime/combat/passive-travel.ts
+  function passiveStopRequired(settings, mtype) {
+    const rule = settings?.rules[mtype];
+    return !!rule?.enabled && rule.keepMoving === false;
+  }
 
   // runtime/combat/trace.ts
   function installCombatTrace(root, shared) {
@@ -574,6 +580,10 @@
     }
     function send(target) {
       if (!permitted(target)) return;
+      if (ports.passing?.(target) && ports.preparePassing?.(target) === false) {
+        ports.state().skippedAttack = "waiting for passing encounter acknowledgement";
+        return;
+      }
       const attempt = {
         passing: !!ports.passing?.(target),
         pending: 0,
@@ -602,7 +612,11 @@
         attempt.pending++;
         stats.attempts++;
         stats.lastOffsets.push(Date.now() - deadline);
-        if (attempt.passing) ports.preparePassing?.(target);
+        if (attempt.passing && ports.preparePassing?.(target) === false) {
+          attempt.pending--;
+          cancelSlots();
+          return;
+        }
         const action = attempt.passing ? null : sharedRoutine.queueEvidence?.(target, "pending");
         try {
           Promise.resolve(attack(target)).then(() => {
@@ -1758,12 +1772,47 @@
     }
   }
 
+  // runtime/combat/passing.ts
+  var passingIdentity = (t) => JSON.stringify([t.server, t.map, String(t.in ?? t.map), String(t.id)]);
+
+  // runtime/combat/passing-admission.ts
+  function createPassingAdmission(ports) {
+    let control = null, receivedAt = 0, serial = 0, serverAt = -Infinity;
+    let acknowledgement;
+    const proposals = /* @__PURE__ */ new Map();
+    const freshControl = () => !!control?.ready && ports.now() - receivedAt < 1e3;
+    function apply(next, encounters, at) {
+      if (!next || at < serverAt) return;
+      serverAt = at;
+      receivedAt = ports.now();
+      control = next;
+      acknowledgement = { scope: next.scope, at, tokens: encounters.filter((e) => e.admission?.scope === next.scope && at - e.at < 6e4).map((e) => e.admission.token) };
+    }
+    function prepare(target, present) {
+      if (!control || !freshControl()) return false;
+      const key = passingIdentity(target);
+      if (control.hunt && (control.hunt.defending || control.hunt.reason || control.hunt.primary && passingIdentity(control.hunt.primary) !== key)) return false;
+      let proposal = proposals.get(key);
+      const token = proposal?.token;
+      if (!proposal || proposal.scope !== control.scope || present && !present.some((e) => e.admission?.token === token)) {
+        proposal = { scope: control.scope, token: JSON.stringify([control.scope, key, ports.now(), ++serial]) };
+        proposals.set(key, proposal);
+        if (proposals.size > 128) proposals.delete(proposals.keys().next().value);
+        ports.reserve(target, proposal);
+        return false;
+      }
+      return control.ready && control.admitted.includes(proposal.token);
+    }
+    return { apply, prepare, report: () => ports.now() - receivedAt < 1e3 ? acknowledgement : void 0 };
+  }
+
   // runtime/combat/client.ts
   function installQueueClient(root, shared) {
     root.partyQueueClient?.stop();
     let active = true, busy2 = false, waiting = false, signature = "", sentAt = 0, retryAt = 0, revision = "", serial = 0;
     const formation = shared.terrainRecoveryPorts ? createFormationRecoveryClient(shared.terrainRecoveryPorts()) : null;
     const host = parent;
+    const passing = createPassingAdmission({ now: () => Date.now(), reserve: (target, admission) => shared.beginPassingAttack(target, admission, true) });
     const events = host.__partyQueueEvidence || [];
     let claims = [];
     const sight = createSightRecovery({
@@ -1857,6 +1906,7 @@
     function apply(data) {
       if (!active) return;
       shared.acceptCombatControl?.(data);
+      passing.apply(data.passingControl, (data.passingEncounters || []).filter((e) => shared.isPassingEncounter?.(e)), data.serverNow || 0);
       const group = data.groupedCombat;
       claims = group?.claims || claims;
       for (let i = events.length - 1; i >= 0; i--) if (group?.lostTargets?.some((d) => d.id === events[i].id && d.map === events[i].map && d.in === events[i].in && d.server === events[i].server && (events[i].startedAt ?? events[i].at) <= d.retiredAt) || group?.rareRejections?.some((d) => events[i].state === "pending" && d.id === events[i].id && d.map === events[i].map && d.in === events[i].in && d.server === events[i].server) || group?.deaths?.some((d) => d.id === events[i].id && d.map === events[i].map && d.in === events[i].in && d.server === events[i].server) || group?.claims?.some((c) => c.id === events[i].id && c.map === events[i].map && c.in === events[i].in && c.server === events[i].server && (c.external || c.releasedAt >= (events[i].startedAt ?? events[i].at)))) events.splice(i, 1);
@@ -1867,7 +1917,7 @@
     }
     function tick() {
       if (!active || Date.now() < retryAt) return;
-      if (!shared.usesGroupedCombat?.() && !shared.passingEncounterReport?.().length && !shared.getPassingTarget?.()) return;
+      if (!shared.usesGroupedCombat?.() && !shared.passingEncounterReport?.().length && !shared.getPassingTarget?.() && !shared.queueMembers?.().length) return;
       formation?.tick();
       const id = shared.sharedTargetId(), entity = id && get_entity(id);
       if (id) sight.observe(id, character, !!(entity && entity.visible && !entity.dead));
@@ -1880,7 +1930,7 @@
       if (busy2) return;
       const report = shared.queueReport();
       report.groupedCombat.evidence = reportEvidence(report.groupedCombat.deaths).filter((e) => e.server === report.server && e.map === character.map && e.in === character.in);
-      const next = JSON.stringify([report.x, report.y, report.hp, report.rip, report.lastDeath, report.groupedCombat.epoch, report.groupedCombat.passingEncounters, report.groupedCombat.formationRecovery, report.groupedCombat.pursuitAck, report.groupedCombat.lootPending, report.groupedCombat.claims?.map((c) => [c.id, c.map, c.in, c.server, c.external]), report.groupedCombat.candidates, report.groupedCombat.threats, report.groupedCombat.sightings, report.groupedCombat.evidence, report.groupedCombat.deaths, report.groupedCombat.queueAck, report.groupedCombat.ack]);
+      const next = JSON.stringify([report.x, report.y, report.hp, report.rip, report.lastDeath, report.groupedCombat.epoch, report.groupedCombat.currentAttackers, report.groupedCombat.travelCandidates, report.groupedCombat.huntDefense, report.groupedCombat.passingAcknowledgement, report.groupedCombat.passingEncounters, report.groupedCombat.formationRecovery, report.groupedCombat.pursuitAck, report.groupedCombat.lootPending, report.groupedCombat.claims?.map((c) => [c.id, c.map, c.in, c.server, c.external]), report.groupedCombat.candidates, report.groupedCombat.threats, report.groupedCombat.sightings, report.groupedCombat.evidence, report.groupedCombat.deaths, report.groupedCombat.queueAck, report.groupedCombat.ack]);
       if (next === signature && Date.now() - sentAt < 1e3) return;
       signature = next;
       sentAt = Date.now();
@@ -1891,7 +1941,15 @@
       }).finally(() => busy2 = false);
     }
     const timer = setInterval(tick, 100);
-    const api = { tick, flush, hit, evidence, events, reportEvidence, sight, formation, reset() {
+    function preparePassing(target) {
+      if (target.type !== "monster") return false;
+      const report = shared.queueReport();
+      const identity = { ...target, map: report.map, in: report.in, server: report.server, at: Date.now() + shared.queueClockOffset() };
+      if (!passing.prepare(identity, report.groupedCombat.passingEncounters)) return false;
+      shared.beginPassingAttack(target);
+      return true;
+    }
+    const api = { tick, flush, hit, evidence, events, reportEvidence, sight, formation, preparePassing, passingAcknowledgement: passing.report, reset() {
       events.length = 0;
       sight.reset();
       signature = "";
@@ -2222,6 +2280,7 @@
 
   // runtime/characters/roles/runner.ts
   function installRoleRunner(classRole, root = globalThis) {
+    root.partyPassiveStopRequired = passiveStopRequired;
     root.partyMerchantAnniversaryControl = merchantAnniversaryControl;
     root.partyRoleRunner?.stop();
     let equipment2 = null;
@@ -2259,9 +2318,7 @@
       active: () => active,
       allowed: () => combatAllowed() || !!passingTarget(),
       passing: (target) => target.id !== currentTarget()?.id && target.id === passingTarget()?.id,
-      preparePassing: (target) => {
-        if (target.id !== currentTarget()?.id) sharedRoutine.beginPassingAttack?.(target);
-      },
+      preparePassing: (target) => queueClient?.preparePassing(target) ?? false,
       state: () => root.partyCombatState,
       equipmentBusy: () => !!equipment2?.busy(),
       skillAttack: (target) => skills?.attack(target) ?? null,
@@ -2284,10 +2341,10 @@
       clearTimeout: (timer2) => globalThis.clearTimeout(timer2)
     });
     function combatAllowed() {
-      return active && !character.rip && resolvedRole().combat && !sharedRoutine.isOccupied() && ["pending", "feed"].indexOf(sharedRoutine.getAbtestingMode()) < 0;
+      return active && !character.rip && resolvedRole().combat && (character.ctype !== "merchant" || !!sharedRoutine.merchantEventCombatActive?.()) && !sharedRoutine.isOccupied() && ["pending", "feed"].indexOf(sharedRoutine.getAbtestingMode()) < 0;
     }
     function passingTarget() {
-      if (!active || character.rip || !resolvedRole().combat || ["pending", "feed"].includes(sharedRoutine.getAbtestingMode())) return null;
+      if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending", "feed"].includes(sharedRoutine.getAbtestingMode())) return null;
       return sharedRoutine.getPassingTarget?.() || null;
     }
     function attackTarget() {
@@ -2323,6 +2380,7 @@
       return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
     }
     function chooseTarget() {
+      if (character.ctype === "merchant") return resolvedRole().chooseTarget();
       if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget();
       const rare = sharedRoutine.getRareTarget?.();
       if (rare) return rare;

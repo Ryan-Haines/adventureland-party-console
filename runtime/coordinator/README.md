@@ -65,9 +65,144 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
-Protocol 4 defensive stops retain their local convoy identity until the coordinator
-acknowledges the stop, even when a short-lived attacker dies or is classified as a
-passing encounter before the next heartbeat. The shared travel watchdog regroups
+Terminal Hunt retreat failures restart the Hunt cycle once per failed Escape ID.
+Only a fresh matching `recoveryFailed` report under the captured navigation ownership
+can trigger this reset; newer commands, manual cancellation, and events take priority.
+The reset releases Escape/death recovery and selects current-party quests while
+preserving blacklist history, settings, backup destination, and pending loot.
+The leader's combat log records `restarting hunting routine due to failure` with
+the character, position, error, and old/new cycle identities. The handled Escape ID
+is retained in persisted combat recovery to prevent replay after restart.
+Validate `hunt-retreat-restart`, `combat-disengagement`, Hunt composition, and Escape
+tests. ALClient/native endpoint trimming also requires `movement-service` and shared
+convoy checks: only a blocked final walking point within arrival tolerance is omitted;
+precision and shared endpoints remain protected. Publish character and coordinator
+assets with the full restart below, then verify fresh runtimes and Hunt progression.
+
+Protocol-4 Hunt travel keeps communication outages separate from movement failure.
+Missing heartbeats or an expired matching signal stop the party in a persisted
+communication hold without spending movement or Hunt retry budgets. All members
+must acknowledge the current hold and provide five seconds of fresh, living,
+stopped reports before a new route generation is prepared; repeated resumptions
+are spaced at least thirty seconds apart. Restart discards stability observations,
+and runtime replacement requires new acknowledgements. Manual navigation wins.
+
+Arrival remains `arrived` while transient completion HTTP failures retry (one
+request at a time, five-second timeout, jittered 1/2/5/10-second backoff). The
+existing verified-arrival fallback still applies, and persisted latest completion
+receipts make response-loss replays harmless. Only captured legacy completion
+network failures at their destination enter the one-time migration path; real
+movement failure counters remain intact. Existing convoy history records outage
+and recovery transitions rather than every retry. Validate `convoy-communication`,
+shared convoy, Hunt return, restart, and acknowledgement tests. Publish character
+and coordinator assets together with the ordinary full restart below, then verify
+fresh runtimes and actual Hunt advancement through Daisy processing.
+
+Convoy failure messages include a snapshot taken before cancellation: phase,
+position, destination, route identifiers, signal expiry or mismatched identity
+fields, and recent status-response/failure timing. Two context lines accompany
+the existing reason and the same snapshot travels in existing failure details.
+Timing is held in memory only; no requests, timers, or storage are added.
+Validate convoy failure context, shared convoy, and status diagnostics tests;
+publish character assets using the supported full restart.
+
+Shared-route geometry mismatches have a separate one-reload repair budget. Heartbeats
+carry numeric game versions and geometry fingerprints; import failures include both
+expected and actual identities. The coordinator holds every participant, asks only
+affected runtimes to reload, and waits up to 60 seconds for fresh compatible reports
+before creating new route commands. An older browser game version requires a game-page
+reload; CODE alone cannot replace its game data. Repair targets the newest reported
+game build, including when the leader is older. Repair identity and deadline survive restart.
+Hunt roster reconciliation retains reloading participants through the repair wait
+and its terminal geometry hold, rather than treating a heartbeat gap as departure.
+A repeated mismatch stays held with a geometry-specific error and does not blacklist
+the farming zone. New navigation supersedes repair. Hunt clears an orphaned failed
+farming relocation only when its destination and every navigation revision still
+match the current mission, then resumes origin travel or a due Daisy return. This
+also releases an expired anniversary checkpoint whose dispatched farming return
+failed; live event returns and newer commands remain protected.
+Validate geometry reload, shared convoy/walk, movement service, and Hunt farm-walk
+tests; publish character and coordinator assets together with the full restart.
+
+Anniversary participation never automatically crafts Sixfold Cakes. Complete slice
+sets remain available for the normal exchange menu. Publish character and coordinator
+assets together when retiring the legacy cake routine; snapshot `craftReady` stays
+false for older clients. Validate anniversary snapshots and merchant exchange tests.
+
+Enabled passive targets with `keepMoving: false` take precedence over outbound
+Hunt moving attacks, including when the passive type matches the Hunt species.
+Fresh eligible sightings can nominate a committed travel encounter before aggro;
+passing reservations cannot suppress that encounter. The shared convoy retains its
+original destination while normal combat, rare support, and kiting run. Rare support
+must not cancel that convoy or create a competing farming return. Turning keep-moving
+back on does not abandon an already committed fight. Protected returns and Escape
+remain separate. Validate passive admission, Hunt travel defense, and rare support.
+
+Local development starts `tools/game/watch.mts`: source edits can publish and reload
+character assets automatically even without an explicit build. Make coordinated
+character/coordinator changes in an isolated checkout; stop the supervised local host
+before transferring validated sources. Killing the watcher alone is insufficient
+because the service host respawns it. Publish both components with the full restart
+below, and verify fresh character generations plus the coordinator process.
+
+Outbound Monster Hunt convoys share one coordinator-authorized encounter while
+walking. Basic attacks remain in range and cannot switch to another monster merely
+because the primary falls out of range. Raw target observations remain visible even
+for passing encounters. A second attacker pauses the whole convoy for normal
+defensive combat and kiting; the original encounter and additional attackers retain
+combat ownership until death or bounded lost-target recovery, followed by the
+existing loot barrier. Regrouping resumes travel to the original destination under
+a new route epoch. Return and emergency escape policies remain separate.
+Sightings cannot adopt an earlier spawn. Preparation and map transitions suppress
+passing attacks. Completion records verified origin arrival before free
+combat resumes. Premature persisted farming states return to their saved origin.
+On entering farming, the Hunt target sheds passing-attack ownership from travel,
+including cached peer reports, so it can enter the normal combat queue. Unrelated
+passing encounters retain their movement restrictions.
+Validate Hunt travel defense, passing admission, travel defense, Hunt route acquisition,
+passive hunting, shared convoy endpoint arrival,
+and Hunt composition tests. Publish both character and coordinator assets with
+the full restart, then verify every member reaches the destination before farming.
+
+Shared convoy departure tolerates matching travel reports within 500 ms of the
+scheduled departure. Transient readiness changes stop and reprepare under the
+original 60-second readiness deadline without spending a movement retry.
+Walking execution may reissue one stopped, collision-checked owned segment;
+only observed displacement resets its five-second progress deadline. A repeated
+walking stall switches the shared planner to native within the two-regroup limit.
+Hunt return retries preserve that fallback and pending Daisy rewards. Stale arrival
+responses wait for replacement commands instead of reporting another failure.
+If a final Hunt-return completion request never settles, three seconds of verified
+arrival reports let the coordinator finish the convoy and proceed to Daisy claims.
+Fresh route, runtime, command, and navigation ownership checks still apply.
+Validate `shared-convoy`, `movement-service`, `convoy`, and Hunt return tests;
+publish character and coordinator assets together through the full restart.
+
+Explicit Send to party requests survive a disabled automatic-collection toggle.
+Automatic pickups still obey the toggle. Validate `manual-party-collection`.
+
+Steam logout recovery uses a game-window session ID that survives CODE reloads
+but changes on a fresh game page. A connected Engage can retire a pending logout;
+headless and primary-transfer operations retain their ownership safeguards. Old
+release receipts are replayed as acknowledgements, never as another disconnect.
+Validate with `roster-routes.test.cjs` and `steam-bridge.test.cjs`. Publish both the
+coordinator and character assets, then test console logout followed by Steam login
+and Engage for the same and a different character, including a primary with Steam
+companions. Confirm the new primary stays connected and headless slots stay assigned.
+
+Passing attacks first publish an exact encounter reservation over the combat
+channel and wait for every active fighter/convoy participant to acknowledge it.
+Missing approval skips the optional attack while travel continues. Admission is
+scoped to runtime, membership, navigation and convoy ownership. Protocol 4 optional
+attacks require an owned travelling signal; transitions still suppress them.
+Protocol 4 defensive stops retain their local convoy identity and first interruption
+cause until the coordinator acknowledges the stop. If every recorded cause becomes
+a passing encounter, fresh observations let the coordinator rebuild the current
+owned route without a defensive loot hold. Genuine defensive kills retain loot
+handling. See the [keep-moving audit](../../docs/keep-moving-combat-audit.md).
+Validate passing-admission, passive-hunting, convoy-defense and shared-convoy tests;
+publish character and coordinator assets together using the full restart.
+The shared travel watchdog regroups
 after three seconds of fresh missing local route reports, preserving the destination
 and checking navigation ownership first. Validate with `shared-convoy.test.cjs`,
 `convoy-defense.test.cjs`, and `passive-hunting.test.cjs`.
@@ -155,6 +290,16 @@ pre-start deferrals release queue ownership without extending the worker watchdo
 Validate with `merchant-delivery-recovery.test.cjs` and merchant recovery/completion
 tests; publish character and coordinator assets together using the ordinary restart.
 
+Marked deliveries create their own merchant jobs by default, at priority 90.
+Merchant settings can disable these delivery-only trips: waiting delivery jobs
+are removed, active trips finish, and marks remain available for other visits or
+explicit party/character sends. The Marked deliveries routine remains visible but
+disabled until enabled in Merchant settings. Only ready marks schedule visits;
+blocked transfers and pending equipment confirmation keep their existing recovery
+flow. Empty delivery jobs are discarded before dispatch. Validate delivery-trip
+settings/UI, scheduling, queue, dispatch, and delivery-recovery tests. This change
+needs a coordinator-only restart and refreshed dashboard assets.
+
 Manual upgrade menus request server previews through `/party-api/upgrade-preview`.
 The auxiliary heartbeat request and `/upgrade-preview/result` response are ephemeral
 and expire after ten seconds; they never create merchant jobs. Only the executing
@@ -165,6 +310,25 @@ until it settles, so a late preview cannot resolve a real upgrade. The menu show
 unavailable reasons instead of estimates, and labels the server percentage without
 the separate lucky-slot roll adjustment. Validate with `upgrade-preview.test.cjs`
 and `upgrade-offerings-ui.test.cjs`; publish character and coordinator assets together.
+
+Lucky-slot discovery records only ordinary upgrade-scroll `q_data` rolls, excluding
+compound, stat-scroll and offering-only operations. Unknown slots no longer block
+upgrades. Normal jobs rotate through the least-sampled slots until a slot meets
+the statistical inference threshold, then continue testing that slot.
+Inventory swaps use the existing durable upgrade recovery journal. No extra
+upgrade jobs are created. Explicitly verified saved slots remain authoritative;
+the legacy hardcoded GoldMajesty slot-7 default is retired. Statistical candidates never populate
+`luckyUpgradeSlots` or trigger inventory tidying as if verified.
+
+`luckySlotTracking` persists per-character client streams in coordinator settings.
+Clients retain their stream and last roll receipt locally, replay cumulative counts
+on heartbeats, and receive other clients' history before selecting a slot. Replayed
+or older counters cannot double-count or replace newer evidence. The merchant's
+Lucky slots dialog shows combined evidence and search confidence. A slot is labeled
+inferred at 99.9% model confidence after at least 100 observations there; continued
+observations may change that conclusion. See [the source audit](../../docs/lucky-slot-discovery.md).
+Validate lucky-slot tracking/UI, lucky-upgrade recovery, heartbeat and persistence
+tests. Publish character and coordinator assets together with the full restart.
 
 Fresh inventory reports relocate delivery marks to the item's current slot before
 scheduling work. Existing matching slots retain ownership before displaced marks
@@ -181,6 +345,11 @@ documents in `merchantRules.backup`; merchant rules take precedence and unresolv
 fighter conflicts remain inactive until selected. Manual requests retain their
 character and equipment-slot ownership. Automatic processing pickups use the
 normal collection threshold and nearby exception.
+Deconstruction reservations match item identity as well as slot, so stale records
+cannot block NPC-sale pickups for replacement items. Automatic missing-item marks
+recover when fresh inventory contains an available copy; uncertain attempts and
+other blocked operations still require review. Validate player NPC sales,
+deconstruction, and automatic collection; activate with a coordinator-only restart.
 Manual bank/merchant collection marks override an opposing automatic collection
 rule for the marked stack, including after slot relocation. Other stacks still
 follow the rule; removing the manual mark restores automatic handling. Validate
@@ -357,6 +526,13 @@ fresh compatible reports arrive. Hunt and event returns keep their own recovery;
 completed event returns release leftover convoys instead of starting another trip.
 Manual cancellation and newer navigation are never authorization to retry old travel.
 
+Hunt rosters include only fresh combat members following the current leader on
+the same server. Saved Follow preferences do not enroll offline characters.
+Existing cycles prune departed members before quest, backup and return handling;
+departed quest owners release their selection so the current party can continue.
+A stale leader report defers reconciliation rather than emptying the roster.
+Validate with `coordinator-hunt-composition.test.cjs`; coordinator-only restart suffices.
+
 Hunts return to Daisy when the selected quest is complete or expired, never merely
 because it has less than three minutes remaining. The selected owner may keep
 farming through the final second. Hunt's own `farm-recovery` shared walk yields on completion or expiry,
@@ -471,3 +647,14 @@ to work with every future server change. Native/Steam sessions remain browser-ow
 
 The dashboard core publishes `gameVersion` and `clientUpdate`. The header displays
 that coordinator-selected version without changing header layout height.
+
+
+Merchants can independently select all supported events. Combat attendance uses
+current equipment and the normal attack controller, without enabling farming.
+New merchant jobs, gathering, and stand work pause while event ownership is
+active. Production yields before its next admission and crafting uses durable
+checkpoints; other in-flight work finishes before travel. Event sessions and
+return ownership retain this reservation through coordinator restart. Publish
+character and coordinator assets together with the ordinary full restart.
+Validate with `merchant-events`, `shared-walk`, event selection/return, and
+merchant checkpoint/recovery tests.

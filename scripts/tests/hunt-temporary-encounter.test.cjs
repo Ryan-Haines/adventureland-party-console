@@ -36,7 +36,14 @@ function fixture(){
  const routes=createConvoyEngagementRoutes(state,{now:ports.now,intent:ports.intent,owned:()=>true,
   group:()=>({ready:true,anchor:{map:'main'},blockers:[]}),engage:(b,o)=>engageHunt(state,b,o,legacy,now),
   acceptArrival:(c,b,t)=>safety.acceptArrival(state.monsterHunt,c,b,t),persist:ports.persist});
- function handoff(){let result;routes.engage({body},{status(code){return {json(v){result={code,...v};}}},json(v){result=v;}});return result;}
+ // Seed a persisted pre-update encounter; new routes no longer create these stops.
+ function handoff(){
+  state.monsterHunt.encounter={target:{...target},cycleId:'h',missionIndex:0,missionRevision:0,
+   convoyId:'c',revisions:{A:7,B:8},startedAt:now};
+  state.monsterHunt.stage='farming';state.monsterHunt.convoyId=null;state.activeConvoy=null;state.commands={};
+  return {handoff:'temporary',destination:original};
+ }
+
  function tick(){travel.step(state.monsterHunt);}
  function time(t){now=t;for(const s of Object.values(state.statuses)){s.seenAt=now;s.groupedCombat.currentAttackersAt=now;}}
  function absent(){for(const s of Object.values(state.statuses)){s.groupedCombat.candidates=[];s.groupedCombat.sightings=[];}}
@@ -55,14 +62,7 @@ test('Poisio (-48,704) is a temporary stop on the way to (-121,1360); death and 
  r.loot();r.tick();assert.equal(r.starts.length,1);assert.deepEqual(r.starts[0].location,r.original);
  assert.equal(r.hunt.encounter,undefined);assert.equal(r.hunt.missions[0].owners[0],'A');
  assert.match(r.state.combatLogs.A.at(-1).message,/encountered monster died/);
- assert.equal(r.handoff().code,409);assert.equal(r.state.activeConvoy.id,'new');
-});
-
-test('another catalogued Poisio area is adopted with boundaries without doubling back',()=>{
- const r=fixture();r.state.monsterChoices[0].locations.push({...r.target,boundary:[-90,660,0,750]});
- assert.equal(r.handoff().handoff,'spawn');assert.equal(r.hunt.encounter,undefined);
- assert.deepEqual(r.hunt.missions[0].destination.boundary,[-90,660,0,750]);
- r.time(15000);delete r.state.commands.B;r.absent();r.tick();assert.equal(r.starts.length,0);
+ assert.equal(r.state.activeConvoy.id,'new');
 });
 
 test('continuous Goo passing attacks do not retain the completed encounter or block real convoy departure',()=>{
@@ -172,11 +172,10 @@ test('a follower sees the next hunt monster: continue the encounter without a lo
  r.restart();r.tick();assert.equal(r.starts.length,0);assert.equal(r.hunt.encounter.target.id,'p2');
 });
 
-test('farming outside the origin area waits for a follower nomination instead of dispatching recovery',()=>{
+test('farming outside the origin recovers even with a follower nomination',()=>{
  const r=fixture();r.state.activeConvoy=null;r.state.commands={};r.hunt.stage='farming';r.hunt.convoyId=null;
  r.state.statuses.A.groupedCombat.candidates=[];
- r.tick();assert.equal(r.starts.length,0);
- r.absent();r.tick();assert.equal(r.starts.length,1);
+ r.tick();assert.equal(r.starts.length,1);
 });
 
 for(const invalid of ['dead','claimed','wrong-type','different-instance','far','stale'])test('next encounter rejects '+invalid+' candidates',()=>{

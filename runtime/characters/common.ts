@@ -1,6 +1,7 @@
 import "./geometry.ts";
 import "./dashboard-bridge.ts";
 import "./lucky-upgrade.ts";
+import "./lucky-slot-tracker.ts";
 import "./upgrade-preview.ts";
 import "./exchange-rewards.ts";
 import "./craft-reservations.ts";

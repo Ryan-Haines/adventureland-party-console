@@ -9,6 +9,12 @@ function fixture(){
   enabled:()=>true,owned:name=>['P','W','M'].includes(name),realm:()=>undefined,log:(...args)=>effects.push(args),persist:()=>effects.push('persist')};
  return {state,statuses,effects,ports,snapshot:createAnniversarySnapshot(state,ports).snapshot};
 }
+
+test('complete slice sets never authorize automatic cake crafting',()=>{
+ const f=fixture();const {anniversarySlices}=require('../../runtime/coordinator/anniversary/contracts.ts');
+ f.ports.counts=()=>Object.fromEntries(anniversarySlices.map(name=>[name,3]));
+ const snapshot=f.snapshot();assert.equal(snapshot.completeSets,3);assert.equal(snapshot.craftReady,false);
+});
 test('anniversary live feed updates and logs a featured round once, preferring the leader realm',()=>{
  const f=fixture();f.statuses.P.anniversaryServer={active:true,live:true,target:'P',round:1,expires:5000};
  f.statuses.X={seenAt:100,server:'EUI',eventFeedAt:200,anniversaryServer:{active:true,live:true,target:'X',round:2,expires:9000}};

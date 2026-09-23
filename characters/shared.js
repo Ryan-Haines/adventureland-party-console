@@ -401,7 +401,7 @@
   var monsterPriorities = {};
   var passiveHunting = {rules:{},useFieldGenerators:true};
   var passingEncounters = parent.__partyPassingEncounters || (parent.__partyPassingEncounters = {});
-  var passiveGeneratorAttempt = null, peerPassingEncounters = [];
+  var passiveGeneratorAttempt = null, peerPassingEncounters = parent.__partyPeerPassingEncounters || [];
   var passiveRareHunts = { tinyp: false, phoenix: false, goldenbat: false, cutebee: false, hen: false, rooster: false };
   var rareControlState = null, rareControlAt = 0, rarePath = null;
   var rareLoot = null, rareLootPending = false;
@@ -484,7 +484,6 @@
   var merchantCashTarget = 0;
   var anniversaryPlan = null;
   var anniversaryPendingHandoff = root.__anniversaryPendingHandoff || null;
-  var anniversaryLastCraftAttempt = Number(root.__anniversaryLastCraftAttempt) || 0;
   var anniversaryStaging = false;
   var anniversaryReturnReported = null;
   var anniversaryStagingReported = null;
@@ -596,6 +595,22 @@
   var upgradePreviewActive = false;
   var lastUpgradePreview = null;
   var luckyUpgradeService = null;
+  var luckySlotTracker = null;
+  function luckySlotTracking() {
+    if (!luckySlotTracker) {
+      var key = "party-lucky-slot-tracking:" + character.owner + ":" + character.name;
+      luckySlotTracker = root.createPartyLuckySlotTracker({
+        read: function () { return JSON.parse(root.localStorage.getItem(key) || "null"); },
+        write: function (value) { root.localStorage.setItem(key, JSON.stringify(value)); },
+        now: Date.now,
+        isUpgradeScroll: function (name) { return !!(G.items[name] && G.items[name].type === "uscroll"); }
+      });
+    }
+    return luckySlotTracker;
+  }
+  function luckySlotRollListener(event) {
+    if (runtimeCurrent()) luckySlotTracking().observe(event);
+  }
   var merchantIdleActive = false;
   var merchantIdlePending = null;
   var followingLeader = false;
@@ -762,6 +777,7 @@
 
   if (parent.socket && typeof parent.socket.on === "function") {
     parent.socket.on("game_response", donationRateListener);
+    parent.socket.on("q_data", luckySlotRollListener);
     parent.socket.on("tracker", trackerCatalogListener);
     parent.socket.on("player", trackerInventoryListener);
     parent.socket.on("players", playerDirectoryListener);
@@ -836,7 +852,7 @@
       var aggressor=get_entity(data.hid || data.actor);
       if(aggressor && aggressor.type==='monster' && (!isPassingEncounter(aggressor) || returnDepartureDefense()) && !joinedEvent && !eventTargetTypes.length) {
         root.__partyDefensiveHit={target:groupedEntityReport(aggressor),at:Date.now()};
-        interruptConvoyForDefense();
+        interruptConvoyForDefense(null, null, aggressor);
         if(root.partyQueueClient)root.partyQueueClient.evidence(aggressor,'engaged');
       }
     }
@@ -2196,6 +2212,8 @@
       clientVersion: parent.__partyClientVersion || Number(G.version),
       clientInstance: parent.__partyClientInstance || null,
       upgradePreviewSession: upgradePreviewSession,
+      luckySlotTracking: luckySlotTracking().report(),
+      merchantEventReserved: merchantEventWorkReserved(),
       upgradeInventoryBusy: !!(root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending() ||
         root.localStorage.getItem("party-lucky-upgrade:" + character.name)),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
@@ -2211,14 +2229,18 @@
       combatSelection: { id: combatSelection.id, revision: combatSelection.revision,
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
-      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
+      movementGeometry: movement.identity,
       huntReturnProtocol: 2,
       movement: movement.report() || movement.last(),
       convoyNavigation: convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
+        communication: convoyTraveling.communication || null,
         navigationRevision: convoyTraveling.navigationRevision,
         returnPlan: convoyTraveling.returnPlan || null,
         commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
+        defenseTargets: convoyTraveling.defenseTargets || [],
+        defenseInterruption: convoyTraveling.defenseInterruption || null,
         townAttempt: convoyTraveling.townAttempt || null,
         transitionMap: convoyTraveling.transitionMap || null,
         runtimeId: convoyRuntimeId, routeReady: !!convoyTraveling.routeReady,
@@ -2458,6 +2480,7 @@
 
   function request(path, options) {
     options = options || {};
+    var convoyStatusStarted = path === '/status' ? convoyDiagnosticClock() : null;
     return new Promise(function (resolve, reject) {
       $.ajax({
         url: api + path,
@@ -2470,10 +2493,14 @@
         // half-open localhost request must not leave its one-at-a-time status
         // loop permanently busy after CaracAL or Windows restarts overnight.
         timeout: Number(options.timeout) > 0 ? Number(options.timeout) : 10000,
-      }).done(resolve).fail(function (xhr, status, error) {
+      }).done(function(value) {
+        rememberConvoyStatusRequest(convoyStatusStarted, 'success');
+        resolve(value);
+      }).fail(function (xhr, status, error) {
         var httpStatus = Number(xhr && xhr.status) || 0;
         var kind = status === "timeout" ? "timeout" : status === "parsererror" ? "invalid-json" :
           status === "abort" ? "aborted" : httpStatus ? "http" : "network";
+        rememberConvoyStatusRequest(convoyStatusStarted, kind);
         var serverError = xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message);
         var reason = typeof serverError === "string" ? serverError :
           error && error !== "error" ? (error.message || error) : status;
@@ -2489,6 +2516,29 @@
   }
 
   // Passing encounters own attacks only, never navigation, kiting, or loot waits.
+  function committedHuntEncounter(target) {
+    // The coordinator supplies huntCombatTarget only after verified origin arrival.
+    return !!(target && typeof huntCombatTarget !== 'undefined' && huntCombatTarget && target.mtype === huntCombatTarget &&
+      !(typeof partyConvoyActive !== 'undefined' && partyConvoyActive) &&
+      !(typeof convoyTraveling !== 'undefined' && convoyTraveling) &&
+      !(typeof travelCombatActive === 'function' && travelCombatActive()));
+  }
+
+  // Observational only: failures here must never change request settlement.
+  function convoyDiagnosticClock() {
+    try { return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(); }
+    catch (_) { return null; }
+  }
+  function rememberConvoyStatusRequest(started, outcome) {
+    if (started === null) return;
+    try {
+      var now = convoyDiagnosticClock();
+      if (now === null) return;
+      var history = root.__partyConvoyHttp || (root.__partyConvoyHttp = {});
+      if (outcome === 'success') history.responseAt = now;
+      else history.failure = { at: now, kind: outcome, durationMs: Math.max(0, Math.round(now - started)) };
+    } catch (_) {}
+  }
   function passingKey(target) {
     return JSON.stringify([target.server || reunionRealm(), target.map || character.map,
       String(target.in == null ? character.in || character.map : target.in), String(target.id)]);
@@ -2498,14 +2548,19 @@
     Object.keys(passingEncounters).forEach(function(key) {
       var entry = passingEncounters[key], e = get_entity(entry.id);
       if (entry.server !== reunionRealm() || entry.map !== character.map || String(entry.in || entry.map) !== String(character.in || character.map) ||
-          e && (e.dead || e.hp === 0) || now - entry.at > 60000) delete passingEncounters[key];
-      else if (e && e.visible) entry.at = now;
+          e && (e.dead || e.hp === 0) || typeof fightDeaths !== 'undefined' && fightDeaths.some(function(d){return passingKey(d)===key && d.at>=(entry.startedAt || entry.at);}) || committedHuntEncounter(entry) || now - entry.at > 60000) delete passingEncounters[key];
+      else if (e && e.visible && !entry.reserved) entry.at = now;
     });
     return Object.values(passingEncounters).slice(-128);
   }
   function isPassingEncounter(target) {
     if (!target) return false;
+    if (typeof passiveTravelInterruptible==='function' && passiveTravelInterruptible() && passiveStopRequired(target))return false;
+    if (committedHuntEncounter(target) || typeof huntTravelDefense === "function" && huntTravelDefense()) return false;
     var key = passingKey(target), now = Date.now() + coordinatorClockOffset;
+    if (target.dead || target.hp === 0) return false;
+    var passingDeaths = (typeof fightDeaths !== 'undefined' ? fightDeaths : []).concat(groupedCombat && groupedCombat.deaths || []);
+    if (passingDeaths.some(function(d){return passingKey(d)===key && now-d.at<60000;})) return false;
     if (peerPassingEncounters.some(function(e){return passingKey(e)===key && now-e.at<60000;})) return true;
     return !!(passingEncounters[key] && now - passingEncounters[key].at < 60000) ||
       !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
@@ -2514,35 +2569,83 @@
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
     var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
     var pending = root.partyLootClient && root.partyLootClient.huntPending();
-    if (!pending && !(convoy && convoy.purpose === 'monster-hunt' && convoy.nonPreemptible)) return true;
+    if (!pending && !(convoy && (convoy.routeProtocol === 4 || convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget)))) return true;
     var signal = typeof convoySignal !== 'undefined' && convoySignal;
-    return !!(convoy && !convoy.cancelled && convoy.purpose === 'monster-hunt' && convoy.nonPreemptible &&
+    return !!(convoy && !convoy.cancelled && (convoy.routeProtocol === 4 || convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget)) &&
       convoy.phase === 'travelling' && signal && signal.phase === 'travel' &&
       signal.id === convoy.id && Number(signal.epoch) === convoy.epoch && Number(signal.commandId) === convoy.commandId &&
       signal.runtimeId === convoyRuntimeId && Number(signal.validUntil) > Date.now() + coordinatorClockOffset &&
       convoy.navigationRevision === Number(navigationIntent.revision || 0));
   }
+  function passiveStopRequired(target) {
+    return !!(target && root.partyPassiveStopRequired && root.partyPassiveStopRequired(passiveHunting,target.mtype));
+  }
+  function passiveTravelInterruptible() {
+    var c=typeof convoyTraveling!=='undefined' && convoyTraveling;
+    return !!(c && !c.force && !c.navigationExempt && !c.nonPreemptible && !c.continuousReturn &&
+      ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol','shared-walk-return'].indexOf(c.purpose)<0 &&
+      !(c.purpose==='monster-hunt' && !c.huntTarget));
+  }
+  function travelStopCandidates() {
+    if(!passiveTravelInterruptible() || convoyTraveling.defensePaused || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive() || joinedEvent)return [];
+    return Object.values(parent.entities||{}).filter(function(e){return e && e.type==='monster' && e.visible && !e.dead && e.hp>0 &&
+      passiveStopRequired(e) && !isExternallyClaimedMonster(e) && (!e.target || currentPartyList().indexOf(e.target)>=0) &&
+      !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id));}).map(function(e){return Object.assign(groupedEntityReport(e),{target:e.target||null});});
+  }
+  function outboundHuntTravel() {
+    var c=typeof convoyTraveling !== 'undefined' && convoyTraveling;
+    return !!(c && c.purpose==='monster-hunt' && c.huntTarget && !c.continuousReturn);
+  }
+  function huntTravelDefense() {
+    var c=typeof convoyTraveling!=='undefined' && convoyTraveling;
+    return !!(c && c.defensePaused && (outboundHuntTravel() || root.__partyHuntTravel && root.__partyHuntTravel.reason==='passive-setting'));
+  }
+  function huntTravelControl() {
+    var control=root.__partyHuntTravel;
+    return typeof convoyTraveling!=='undefined' && convoyTraveling && control && control.id===convoyTraveling.id && control.epoch===convoyTraveling.epoch ? control : null;
+  }
+  function huntTravelExtraAggro() {
+    if(!outboundHuntTravel() || huntTravelDefense())return false;
+    if(typeof navigationIntent!=='undefined' && navigationIntent.cancelled || typeof escapeOwns==='function' && escapeOwns() || typeof combatRecoveryActive==='function' && combatRecoveryActive())return false;
+    var control=huntTravelControl(), targets=currentTravelAttackers(), keys={};
+    if(targets.some(passiveStopRequired))return true;
+    targets.forEach(function(t){keys[passingKey(t)]=true;});
+    if(control && control.primary && !fightDeaths.some(function(d){return passingKey(d)===passingKey(control.primary);}))keys[passingKey(control.primary)]=true;
+    return Object.keys(keys).length>1;
+  }
   function passingTarget() {
     if (!passingTravelAllowed()) return null;
-    var returning = typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.continuousReturn === 1;
+    if(outboundHuntTravel()) {
+      if(huntTravelExtraAggro()){interruptConvoyForDefense();return null;}
+      var control=huntTravelControl();
+      if(!control || control.reason || control.defending || Date.now()+coordinatorClockOffset-(root.__partyHuntTravelAt||0)>1000)return null;
+    }
+    var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
+    var hunting = convoy && convoy.purpose === 'monster-hunt' && convoy.huntTarget;
+    var returning = convoy && (convoy.continuousReturn === 1 || hunting);
     if (character.rip || Number(character.max_hp)>0 && character.hp/character.max_hp<0.35 || character.ctype === 'merchant' || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive() ||
         partyTownActive || banking || stocking || upgrading || gatheringActive || forceTraveling || townTraveling || eventTraveling || joinedEvent || activeCombatEvent() ||
         (rareActive() && rareControlState.kind !== "patrol") || !returning && unfinishedFight()) return null;
     var candidates = Object.values(parent.entities || {}).filter(function(e) {
+      if(passiveTravelInterruptible() && passiveStopRequired(e))return false;
+      if(control && control.primary && passingKey(e)!==passingKey(control.primary))return false;
       var rule = e && passiveHunting.rules[e.mtype];
       var defending = returning && e && (e.target === character.name || currentPartyList().indexOf(e.target) >= 0);
-      return (defending || rule && rule.enabled && rule.keepMoving) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
+      return (control && control.primary || defending || hunting && e && e.mtype === hunting || rule && rule.enabled && rule.keepMoving) && !committedHuntEncounter(e) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
         (!e.map || e.map === character.map) && e.mtype !== 'fieldgen0' && is_in_range(e) &&
+        (returning || isPassingEncounter(e) || !(e.target === character.name || currentPartyList().indexOf(e.target) >= 0)) &&
         !isExternallyClaimedMonster(e) && (returning || !groupedCombat || !groupedCombat.target || groupedCombat.target.id !== e.id) &&
         !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id));
     });
-    candidates.sort(function(a,b) {return monsterPriority(b)-monsterPriority(a) || Math.hypot(character.x-a.x,character.y-a.y)-Math.hypot(character.x-b.x,character.y-b.y) || String(a.id).localeCompare(String(b.id));});
+    candidates.sort(function(a,b) {return Number(currentPartyList().indexOf(b.target)>=0)-Number(currentPartyList().indexOf(a.target)>=0) || monsterPriority(b)-monsterPriority(a) || Math.hypot(character.x-a.x,character.y-a.y)-Math.hypot(character.x-b.x,character.y-b.y) || String(a.id).localeCompare(String(b.id));});
     return candidates[0] || null;
   }
-  function beginPassingAttack(target) {
-    var entry = Object.assign(groupedEntityReport(target), {server:reunionRealm(),at:Date.now()+coordinatorClockOffset});
+  function beginPassingAttack(target, admission, reserveOnly) {
+    var previous = passingEncounters[passingKey(target)];
+    var entry = Object.assign(groupedEntityReport(target), {server:reunionRealm(),at:Date.now()+coordinatorClockOffset,startedAt:previous && previous.startedAt || Date.now()+coordinatorClockOffset,admission:admission || previous && previous.admission,reserved:!!reserveOnly});
     passingEncounters[passingKey(entry)] = entry;
     if (root.partyQueueClient) root.partyQueueClient.flush();
+    if (reserveOnly) return;
     if (target.mtype !== 'tinyp' || !passiveHunting.useFieldGenerators || rareFields().length || Math.hypot(character.x-target.x,character.y-target.y)>=200) return;
     var key = passingKey(entry);
     if (!passiveGeneratorAttempt || passiveGeneratorAttempt.key !== key) passiveGeneratorAttempt={key:key,at:Date.now(),sent:false};
@@ -3744,6 +3847,7 @@
   async function trackedProduction(kind, slots, automatic, operation, offeringAttempt) {
     if (character.ctype !== "merchant") return operation();
     await recoverProductionJournal();
+    await yieldMerchantForEvent();
     if (automatic) await verifyProductionProtection(slots);
     var item=fingerprint(character.items[slots[0]]), id=character.name+":"+Date.now()+":"+Math.random().toString(36).slice(2);
     if (offeringAttempt && offeringAttempt.requestId) id="manual-offering:"+offeringAttempt.requestId;
@@ -3823,7 +3927,10 @@
     // Checkpoints yield to inventory updates. Do not use a scroll index that
     // has since moved or was consumed by the preceding step.
     if (intendedScroll) scrollSlot = findInventoryItemByName(intendedScroll);
-    var outcome = await merchantLuckyUpgrade().run(itemSlot, scrollSlot, luckyUpgradeSlot, function (slot, scroll, offering) {
+    var selectedUpgradeSlot = Number.isInteger(luckyUpgradeSlot) && luckyUpgradeSlot >= 0 && luckyUpgradeSlot < 42
+      ? luckyUpgradeSlot : luckySlotTracking().select();
+    var outcome = await merchantLuckyUpgrade().run(itemSlot, scrollSlot, selectedUpgradeSlot, function (slot, scroll, offering) {
+      luckySlotTracking().begin();
       return upgradeAtSlotConfirmed(slot, scroll, expectedName, expectedLevel, offering);
     }, offeringSlot);
     return outcome && Object.assign({}, outcome, {slot: itemSlot});
@@ -3840,7 +3947,7 @@
       write: function (value) { if (value) root.localStorage.setItem(key, JSON.stringify(value)); else root.localStorage.removeItem(key); },
       sleep: sleep, now: Date.now, current: runtimeCurrent,
       log: function (slot) {
-        var message = "Using lucky upgrade slot " + slot + " (inventory position " + (slot + 1) + ")";
+        var message = "Using upgrade slot " + slot + " (" + (slot === luckyUpgradeSlot ? "verified" : "lucky-slot search") + ", inventory position " + (slot + 1) + ")";
         game_log(message, "#facc15");
         var job = root.__merchantActiveJob;
         if (job) request("/merchant/activity", {method:"POST",body:{character:character.name,jobId:job.jobId,
@@ -8371,9 +8478,12 @@
     // The coordinator normally stops dispatching these commands two minutes
     // before the round. This local gate closes the heartbeat-sized race where
     // an already-delivered command could otherwise begin during that window.
+    if (character.ctype === "merchant" && /^merchant-/.test(command.type) && merchantEventWorkReserved()) {
+      reportMerchantCommand(command, "deferred", "event"); return;
+    }
     if (character.ctype === "merchant" && command.type !== "merchant-idle" && command.type !== "merchant-stand-sync" &&
         /^merchant-/.test(command.type) && merchantAnniversaryWorkReserved()) {
-      reportMerchantCommand(command, "deferred", "anniversary"); return;
+      reportMerchantCommand(command, "deferred", merchantEventWorkReserved() ? "event" : "anniversary"); return;
     }
     if (character.ctype === "merchant" && !await gatheringCommandHandoff(command)) return;
     if (command.id <= lastCommand) return;
@@ -9064,6 +9174,7 @@
       huntTurnInPriority = !!state.huntTurnInPriority;
       if (releasedHuntTurnIn) setTimeout(function () { pollEvents(); runAnniversaryKiss(); }, 0);
       convoySignal = state.convoySignal || null;
+      reloadConvoyGeometry(convoySignal);
       if (convoyTraveling && convoySignal && convoySignal.id === convoyTraveling.id &&
           Number(convoySignal.epoch) === convoyTraveling.epoch && convoySignal.phase === "failed" &&
           convoyTraveling.fail) convoyTraveling.fail(convoySignal.reason || "Convoy held by coordinator");
@@ -9085,7 +9196,8 @@
       var previousSelections = enabledEventSelections;
       statusPhase = "apply event selections";
       enabledEventSelections = Array.isArray(state.eventSelections) ? state.eventSelections : null;
-      eventsEnabled = !!state.eventsEnabled && character.ctype !== "merchant";
+      eventsEnabled = !!state.eventsEnabled;
+      root.__merchantCoordinatorEventRecovery = !!state.merchantEventRecoveryReserved;
       if (previousSelections && enabledEventSelections && previousSelections.join(",") !== enabledEventSelections.join(",")) {
         eventSelectionRevision++;
         pendingEventDisables = root.__partyPendingEventDisables = Array.from(new Set(pendingEventDisables.concat(previousSelections.filter(function(id) { return !eventSelected(id); }))));
@@ -9141,6 +9253,7 @@
       gatheringStandListings = nextStandListings;
       merchantWeapon = state.merchantWeapon || null;
       luckyUpgradeSlot = state.luckyUpgradeSlots && state.luckyUpgradeSlots[character.name];
+      luckySlotTracking().sync(state.luckySlotTracking && state.luckySlotTracking[character.name]);
       merchantForceStand = !!state.merchantForceStand;
       merchantCashTarget = Math.max(0, Number(state.merchantGoldTarget) || 0);
       if (character.ctype === "merchant" && !root.__merchantActiveJob && !gatheringActive &&
@@ -9220,6 +9333,7 @@
         game_log("Party command failed: " + (error.reason || error.message || error), "red");
       });
       if (character.ctype === "merchant" && !state.command && !root.__merchantActiveJob && !root.__merchantInventoryTidy &&
+          !merchantEventWorkReserved() &&
           !banking && !upgrading && !stocking && !gatheringActive && !merchantIdleActive && !anniversaryBusy && !character.rip) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot).catch(function (error) {
           game_log(String(error.message || error), "red");
@@ -9305,7 +9419,24 @@
     return round && (anniversaryCompletedRounds[round] || root.__merchantAnniversaryReleasedRound === round) ? round : null;
   }
 
+  function merchantEventWorkReserved() {
+    return character.ctype === "merchant" && (!!joinedEvent || eventTraveling || eventReturnPending ||
+      !!root.__merchantCoordinatorEventRecovery || eventsEnabled && !navigationIntent.cancelled && !!activeCombatEvent());
+  }
+
+  async function yieldMerchantForEvent() {
+    var active = root.__merchantActiveJob;
+    if (!active || !merchantEventWorkReserved()) return;
+    // Settle journals before this boundary; do not admit another production
+    // operation once event ownership has reserved the merchant.
+    var result = await request("/merchant/checkpoint", { method: "POST", body: {
+      jobId: active.jobId, eventOnly: true,
+    } });
+    if (result.yield) throw new Error("merchant_yield");
+  }
+
   function merchantAnniversaryWorkReserved() {
+    if (merchantEventWorkReserved()) return true;
     if (character.ctype !== "merchant" || !root.partyMerchantAnniversaryControl) return false;
     var event = eventStatus().anniversary, ticket = character.s && character.s.anniversary_visit;
     var round = event && anniversaryRoundId(event, ticket);
@@ -9630,6 +9761,7 @@
   }
 
   async function runAnniversaryKiss() {
+    if (merchantEventWorkReserved()) return;
     if (!eventSelected("anniversary")) return;
     if (await applyAnniversaryAbort()) return;
     var staleKiss = root.__partyAnniversaryKissOperation;
@@ -10239,64 +10371,6 @@
     finally { anniversaryBusy = false; }
   }
 
-  async function runAnniversaryCake() {
-    if (character.ctype !== "merchant" || anniversaryBusy || merchantForceStand || root.__merchantActiveJob ||
-        gatheringActive || merchantIdleActive || banking ||
-        !anniversaryPlan || !anniversaryPlan.craftReady || anniversaryPlan.live ||
-        Date.now() - anniversaryLastCraftAttempt < 60000) return;
-    anniversaryLastCraftAttempt = root.__anniversaryLastCraftAttempt = Date.now();
-    anniversaryBusy = true;
-    anniversaryStage = "assembling Sixfold Cake";
-    if (gatheringSession) gatheringSession.atStandForCooldown = false;
-    try {
-      if (character.stand) await close_stand();
-      await smart_move("bank");
-      var missingSlices = [];
-      for (var i = 0; i < anniversarySliceNames.length; i += 1) {
-        var supply = await retrieveFromBankUntil(anniversarySliceNames[i], 1);
-        if (supply.onPlayer < 1) missingSlices.push(anniversarySliceNames[i]);
-      }
-      if (missingSlices.length) {
-        var supplies = await request("/anniversary/cake-supplies", { method: "POST", body: {
-          character: character.name, missing: missingSlices,
-        }});
-        if (supplies && supplies.pending && supplies.pending.length)
-          throw new Error("waiting for bankboi ingredients: " + supplies.pending.join(", ") +
-            (supplies.missing.length ? "; unavailable locally: " + supplies.missing.join(", ") : ""));
-        throw new Error("missing " + missingSlices.join(", "));
-      }
-      if (character.gold < 100000) {
-        var bankGold = Number(character.bank && character.bank.gold) || 0;
-        var shortage = 100000 - character.gold;
-        if (bankGold < shortage) throw new Error("need 100,000 gold for Mira");
-        await withdrawMerchantCash(shortage);
-      }
-      var beforeCakes = inventoryQuantity("sixcake");
-      await smart_move({ map: "main", x: 64, y: -88 });
-      await auto_craft("sixcake");
-      if (inventoryQuantity("sixcake") <= beforeCakes) throw new Error("Mira did not return a Sixfold Cake");
-      await smart_move("bank");
-      var cakeSlot = findInventoryItemByName("sixcake");
-      if (cakeSlot < 0) throw new Error("crafted cake could not be found");
-      await bankStoreFully(cakeSlot);
-      await request("/anniversary/cake-complete", { method: "POST", body: { character: character.name } });
-      anniversaryStage = "Sixfold Cake banked";
-      root.__anniversaryCraftResult = { at: anniversaryLastCraftAttempt, success: true };
-      game_log("Sixfold Cake crafted and banked intact", "#ff69b4");
-    } catch (error) {
-      anniversaryStage = "cake deferred";
-      root.__anniversaryCraftResult = { at: anniversaryLastCraftAttempt, success: false,
-        error: String(error.reason || error.message || error) };
-      game_log("Anniversary cake deferred: " + (error.reason || error.message || error), "#f0b429");
-    } finally {
-      anniversaryBusy = false;
-      if (gatheringSession) gatheringSession.atStandForCooldown = false;
-      // Publish released ownership so normal scheduling can recover the stand.
-      try { await request("/status", { method: "POST", body: snapshot() }); }
-      catch (_cakeStatusError) { /* The normal status poll retries reporting. */ }
-    }
-  }
-
   async function runAnniversaryChatAdvertisement() {
     if (character.ctype !== "merchant" || anniversaryChatSending || anniversaryBusy ||
         !anniversaryPlan || !anniversaryPlan.chatAdvertisement) return;
@@ -10318,7 +10392,6 @@
     await runAnniversaryChatAdvertisement();
     await runAnniversaryReturns();
     await runAnniversaryHandoff();
-    await runAnniversaryCake();
   }
 
   function currentPartyList() {
@@ -10726,10 +10799,24 @@
   async function pollEvents() {
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
-    if (eventPollBusy || character.ctype === "merchant") return;
+    if (eventPollBusy) return;
     if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return;
     eventPollBusy = true;
     try {
+      if (character.ctype === "merchant" && merchantEventWorkReserved()) {
+        // Never take movement from an unsettled inventory operation or worker.
+        if (root.__merchantActiveJob || root.__merchantInventoryTidy || merchantIdleActive ||
+            banking || stocking || upgrading || root.__partyUpgradePreviewInFlight ||
+            luckyUpgradeService && luckyUpgradeService.pending()) return;
+        var gatheringAttempt = root.__merchantGatheringAttempt;
+        if (gatheringAttempt) {
+          gatheringAttempt.cancelled = "event attendance";
+          if (gatheringAttempt.phase !== "casting" && typeof stop === "function") await stop("smart");
+          return;
+        }
+        if (gatheringActive) return;
+        await closeMerchantStandForTravel();
+      }
       if (!eventsEnabled) {
         eventTargetTypes = [];
         joinedEvent = null;
@@ -10809,7 +10896,11 @@
       }
       if (eventTraveling || banking || stocking || upgrading || departurePending || bankQueued) return;
       if (!await eventTravelAllowed(event.name)) return;
-      if (nearestEventTarget()) return;
+      if (nearestEventTarget()) {
+        joinedEvent = event.name;
+        root.__partyJoinedEvent = event.name;
+        return;
+      }
       eventTraveling = true;
       travellingEventName = event.name;
       var travelSelectionRevision = eventSelectionRevision;
@@ -11113,7 +11204,7 @@
 
   async function rejoinActiveEventAfterRespawn() {
     if (escapeOwns() || navigationIntent.cancelled) return { status: "cancelled" };
-    if (!eventsEnabled || character.ctype === "merchant") return { status: "not-applicable" };
+    if (!eventsEnabled) return { status: "not-applicable" };
     var requiredEventName = root.__partyEventRejoinRequired;
     var event = activeCombatEvent();
     if (!event && requiredEventName) return { status: "cancelled" };
@@ -11433,21 +11524,30 @@
     return !!(c && c.purpose==='monster-hunt' && c.nonPreemptible && !c.returnWalking &&
       (c.phase!=='travelling' || typeof movement!=='undefined' && movement.transition && movement.transition()==='town'));
   }
-  function interruptConvoyForDefense(id, epoch) {
+  function interruptConvoyForDefense(id, epoch, aggressor) {
     var c=convoyTraveling;
     if(c && id && (c.id!==id || Number(epoch)<c.epoch))return;
     if(c && ((c.navigationExempt && c.purpose!=='anniversary-return') || ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol'].indexOf(c.purpose)>=0))return;
     if(!c && !id)return;
     if(c && (c.returnWalking || c.continuousReturn === 1))return;
+    if(typeof outboundHuntTravel === 'function' && outboundHuntTravel() && !id && !huntTravelExtraAggro())return;
     root.__partyConvoyDefense=id || c.id;
     if(c && (c.routeProtocol===4 || c.purpose==='monster-hunt' && c.nonPreemptible)) {
       if(c.defensePaused)return;
+      var huntPrimary=typeof huntTravelControl === 'function' && huntTravelControl();
+      c.defenseTargets = aggressor ? [Object.assign(groupedEntityReport(aggressor), {server:reunionRealm()})] :
+        typeof currentTravelAttackers === 'function' ? currentTravelAttackers() : [];
+      if(huntPrimary)c.defenseTargets=c.defenseTargets.concat(huntPrimary.committed||[],huntPrimary.primary?[huntPrimary.primary]:[]);
+      c.defenseInterruption = {at:Date.now(),source:id ? 'coordinator' : 'local-attacker',
+        convoyId:c.id,epoch:c.epoch,commandId:c.commandId,navigationRevision:c.navigationRevision,
+        phase:c.phase,targets:c.defenseTargets};
       if(c.freezeRoute)c.freezeRoute();
       if(c.detachRoute)c.detachRoute();
       if(c.townAttempt && c.townAttempt.state==='casting')c.townAttempt.state='interrupted';
       c.defensePaused=true;c.phase='defending';c.routeReady=false;
       try {Promise.resolve(stop()).catch(function(){});}catch(_){}
       root.__partyNavigationDetail='Defending party; convoy will resume after combat';
+      if(huntPrimary && typeof game_log==='function')game_log('Travel: '+(huntPrimary.reason==='passive-setting'?'passive stop setting':'extra aggro')+'; defending '+c.defenseTargets.map(function(t){return t.mtype+' '+t.id;}).join(', '),'#F5B041');
       if(root.partyQueueClient && root.partyQueueClient.flush)root.partyQueueClient.flush();
       if(root.partyRoleRunner)root.partyRoleRunner.wake();
       return;
@@ -11484,6 +11584,8 @@
   function groupedEntityReport(e) { return {id:e.id,mtype:e.mtype,map:character.map,in:character.in,x:e.x,y:e.y,hp:e.hp,max_hp:e.max_hp}; }
   function currentTravelAttackers() {
     return Object.values(parent.entities || {}).filter(function(e) {
+      if(typeof outboundHuntTravel === 'function' && outboundHuntTravel())return e && e.type==='monster' && e.visible && !e.dead && e.hp>0 &&
+        currentPartyList().indexOf(e.target)>=0 && !fightDeaths.some(function(d){return passingKey(d)===passingKey(e);});
       return e && e.type === "monster" && departureTargetEngaged(e);
     }).map(function(e) { return Object.assign({}, groupedEntityReport(e), { target: e.target, server: reunionRealm() }); });
   }
@@ -11504,6 +11606,10 @@
     var threats=Object.values(parent.entities || {}).filter(function(e) {
       return e && e.type==='monster' && e.visible && !e.dead && isAttackingPartyMember(e);
     }).map(groupedEntityReport);
+    if(typeof huntTravelDefense === 'function' && huntTravelDefense())(convoyTraveling.defenseTargets||[]).forEach(function(t){
+      var e=get_entity(t.id);
+      if(e && e.visible && !e.dead && e.hp>0 && !fightDeaths.some(function(d){return passingKey(d)===passingKey(t);}))threats.push(groupedEntityReport(e));
+    });
     var hit=root.__partyDefensiveHit;
     if(hit && !isPassingEncounter(hit.target) && Date.now()-hit.at<3000 && !fightDeaths.some(function(d){return d.id===hit.target.id;}))threats.push(hit.target);
     return threats;
@@ -11511,8 +11617,10 @@
   function groupedSightings() {
     var current=groupedCombat && groupedCombat.target && get_entity(groupedCombat.target.id);
     if(current && current.visible && !current.dead)root.__partyTargetLastVisible={id:current.id,map:character.map,in:character.in,x:character.x,y:character.y,at:Date.now()};
-    return groupedCombat && groupedCombat.queue ? groupedCombat.queue.map(function(f) {return get_entity(f.id);})
-      .filter(function(e) {return e && e.visible && !e.dead;}).map(function(e){return Object.assign(groupedEntityReport(e),{target:e.target || null});}) : [];
+    var observed=(groupedCombat && groupedCombat.queue || []).slice(), travel=typeof huntTravelControl === 'function' && huntTravelControl();
+    if(travel)observed=observed.concat(travel.committed||[],travel.primary?[travel.primary]:[],travelStopCandidates());
+    return observed.map(function(f) {return get_entity(f.id);})
+      .filter(function(e) {return e && e.visible && !e.dead;}).map(function(e){return Object.assign(groupedEntityReport(e),{target:e.target || null});});
   }
   function unfinishedFight() { return groupedFarming() && groupedCombat && groupedCombat.fights && groupedCombat.fights.length>0; }
   function groupedDefensiveTarget() {
@@ -11543,7 +11651,9 @@
       var seen={};return targets.filter(function(t){if(!t||seen[t.id]||t.server!==reunionRealm()||t.map!==character.map||t.in!==character.in)return false;seen[t.id]=true;return true;})
         .map(function(t){var e=get_entity(t.id);return Object.assign({},t,{role:'current',state:'scatter',visible:!!(e&&e.visible&&!e.dead)});});
     }
-    return groupedFarming() && groupedCombat && !navigationIntent.cancelled ? (groupedCombat.queue||[]).slice(0,3).map(function(t,index){
+    var travel=typeof huntTravelControl==='function' && huntTravelControl();
+    var markers=travel && !travel.defending && travel.primary ? [travel.primary].concat(currentTravelAttackers().filter(function(t){return passingKey(t)!==passingKey(travel.primary);})) : groupedCombat && groupedCombat.queue || [];
+    return groupedFarming() && !navigationIntent.cancelled ? markers.slice(0,3).map(function(t,index){
       var e=get_entity(t.id);return {id:t.id,map:t.map,in:t.in,server:t.server,role:['current','next','third'][index],state:t.state,radius:Math.max(18,(Number(e && e.awidth)||24)/2+4),visible:!!(e && e.visible && !e.dead && t.server===reunionRealm() && t.map===character.map && t.in===character.in)};
     }) : [];
   }
@@ -11613,12 +11723,31 @@
   function queueReport() {
     return {name:character.name,rareObservation:rareObservationReport(),map:character.map,in:character.in,server:reunionRealm(),x:character.x,y:character.y,hp:character.hp,max_hp:character.max_hp,lastDeath:lastDeathInfo,rip:!!character.rip,
       combatSelection:Object.assign({},combatSelection,{runtimeId:convoyRuntimeId,target:groupedNomination()}),
-      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
+      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
         threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision,
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
   function acceptCombatControl(state) {
-    if (Array.isArray(state.passingEncounters)) peerPassingEncounters = state.passingEncounters;
+    if(state.passingControl && (!state.serverNow || state.serverNow>=(root.__partyHuntTravelAt||0))) {
+      var beforeHunt=root.__partyHuntTravel, nextHunt=state.passingControl.hunt || null;
+      if(nextHunt && nextHunt.primary && (!beforeHunt || !beforeHunt.primary || passingKey(beforeHunt.primary)!==passingKey(nextHunt.primary)) && typeof game_log==='function')
+        game_log('Hunt travel target: '+nextHunt.primary.mtype+' '+nextHunt.primary.id,'#51D2E1');
+      if(beforeHunt && beforeHunt.defending && nextHunt && !nextHunt.defending && nextHunt.id===beforeHunt.id && nextHunt.epoch>beforeHunt.epoch && typeof game_log==='function')
+        game_log('Hunt travel: defense cleared; resuming original destination','#51D2E1');
+      root.__partyHuntTravel=nextHunt;
+      root.__partyHuntTravelAt=state.serverNow||0;
+      if(nextHunt && nextHunt.reason==='passive-setting' && passiveTravelInterruptible())interruptConvoyForDefense(nextHunt.id,nextHunt.epoch);
+    }
+    if (Array.isArray(state.passingEncounters) && (!state.serverNow || state.serverNow >= (root.__partyPassingControlAt || 0))) {
+      root.__partyPassingControlAt = state.serverNow || 0;
+      var passingNow = Date.now() + coordinatorClockOffset;
+      var retainedPassing = {};
+      peerPassingEncounters.concat(state.passingEncounters).forEach(function(e) {
+        var key = passingKey(e), old = retainedPassing[key];
+        if (passingNow-e.at<60000 && (!old || old.at<=e.at)) retainedPassing[key]=e;
+      });
+      peerPassingEncounters = parent.__partyPeerPassingEncounters = Object.values(retainedPassing).slice(-128);
+    }
     if (typeof acceptRareCombatControl === 'function') acceptRareCombatControl(state);
     if(!state.serverNow || state.serverNow >= (root.__partyTravelCombatAt || 0))
       root.__partyFarmingEngagement=state.convoySignal && state.convoySignal.farmingEngagement || null;
@@ -11783,7 +11912,7 @@
     }
     // The coordinator announces ownership before the local command arrives.
     // Never stop or reverse that route while waiting for our command.
-    if ((partyConvoyActive || convoyTraveling) && !root.__partyFarmingEngagement) { cancelGroupRoute(); cancelFightRoute(); return true; }
+    if ((partyConvoyActive || convoyTraveling) && !(typeof huntTravelDefense==='function' && huntTravelDefense()) && !root.__partyFarmingEngagement) { cancelGroupRoute(); cancelFightRoute(); return true; }
     if (!groupedFarming() || navigationIntent.cancelled || character.rip || root.sharedRoutine.isOccupied() ||
         typeof rareActive === "function" && rareActive() && rareControlState.kind !== "encounter") { cancelGroupRoute(); cancelFightRoute(); return false; }
     if (!groupedCombat) {cancelFightRoute();return false;}
@@ -12044,6 +12173,7 @@
     var deaths = typeof groupedCombat !== 'undefined' && groupedCombat && groupedCombat.deaths || [];
     if(deaths.some(function(d){return String(d.id)===String(target.id) && d.map===character.map &&
       String(d.in==null?d.map:d.in)===String(character.in==null?character.map:character.in) && d.server===reunionRealm();}))return false;
+    if(typeof huntTravelDefense==='function' && huntTravelDefense() && (convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return true;
     if(isAttackingPartyMember(target))return true;
     return false;
   }
@@ -12257,6 +12387,108 @@
   function sharedConvoyPoint() {
     return {map:character.map,in:character.in,x:character.real_x,y:character.real_y};
   }
+  function convoyRetryableRequest(error) {
+    var request = error && error.partyRequest;
+    return !!request && (request.kind === 'network' || request.kind === 'timeout' ||
+      request.status === 408 || request.status === 429 || request.status >= 500);
+  }
+  function convoyCommunication(convoy, operation, kind) {
+    if (!convoy.communication) {
+      convoy.communication = { operation: operation, kind: kind, since: Date.now() + coordinatorClockOffset };
+      game_log('Convoy waiting for coordinator communication: ' + operation + ' (' + kind + ')', '#94a3b8');
+    }
+    root.__partyNavigationDetail = operation === '/convoy-complete' ? 'Arrived; waiting for completion acknowledgement' : 'Waiting for coordinator communication';
+  }
+  async function convoyRetryDelay(ms, ownsConvoy) {
+    var remaining = ms;
+    while (ownsConvoy() && remaining > 0) {
+      var slice = Math.min(100, remaining);
+      await new Promise(function(resolve) { setTimeout(resolve, slice); });
+      remaining -= slice;
+    }
+  }
+  async function acknowledgeConvoyArrival(convoy, command, ownsConvoy) {
+    var attempts = 0;
+    while (ownsConvoy()) {
+      try {
+        var completion = await request('/convoy-complete', { method: 'POST', timeout: 5000, body: {
+          character: character.name, convoyId: command.convoyId, epoch: Number(command.epoch), commandId: command.id,
+          runtimeId: convoyRuntimeId, navigationRevision: Number(command.navigationRevision) || 0, routeVersion: command.routeVersion,
+        }});
+        if (convoy.communication) game_log('Convoy completion communication restored', '#94a3b8');
+        delete convoy.communication; attempts = 0;
+        if (!completion || !completion.waiting) return completion;
+        await convoyRetryDelay(250, ownsConvoy);
+      } catch (error) {
+        if (/stale convoy completion/.test(String(error && (error.message || error)))) {
+          if (ownsConvoy()) await new Promise(function(resolve) { convoy.release = resolve; });
+          return { superseded: true };
+        }
+        if (!convoyRetryableRequest(error)) { delete convoy.communication; throw error; }
+        convoyCommunication(convoy, '/convoy-complete', error.partyRequest.kind);
+        var delay = [1000,2000,5000,10000][Math.min(attempts++,3)];
+        await convoyRetryDelay(Math.min(10000, delay * (0.8 + Math.random() * 0.4)), ownsConvoy);
+      }
+    }
+    return { superseded: true };
+  }
+  function captureConvoyFailureContext(convoy, command) {
+    try {
+      if (convoy.failureContext) return;
+      var signal = convoySignal, now = Date.now() + coordinatorClockOffset;
+      var mono = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+      var http = root.__partyConvoyHttp || {}, mismatches = [];
+      var expected = {id:convoy.id,epoch:convoy.epoch,commandId:convoy.commandId,runtimeId:convoyRuntimeId};
+      if (command.routeProtocol === 4) expected.routeVersion = command.routeVersion;
+      if (signal) Object.keys(expected).forEach(function(field) {
+        var actual = field === 'epoch' || field === 'commandId' ? Number(signal[field]) : signal[field];
+        if (actual !== expected[field]) mismatches.push({field:field,expected:expected[field],received:signal[field]});
+      });
+      var expiry = signal && Number.isFinite(Number(signal.validUntil)) ? Math.max(0, Math.round(now - Number(signal.validUntil))) : null;
+      var state = !signal ? 'missing' : mismatches.length ? 'identity mismatch' : expiry === null ? 'unknown' : Number(signal.validUntil) <= now ? 'expired' : 'matching';
+      var age = function(at) { return typeof at === 'number' && Number.isFinite(at) && mono >= at ? Math.round(mono-at) : null; };
+      var p = function(value) { return value ? {map:value.map,x:value.x,y:value.y} : null; };
+      convoy.failureContext = {phase:convoy.phase,position:p(character),destination:p(command.location),
+        convoyId:convoy.id,epoch:convoy.epoch,commandId:convoy.commandId,runtimeId:convoyRuntimeId,routeVersion:command.routeVersion,
+        signal:{state:state,expiredByMs:expiry,mismatches:mismatches},lastStatusResponseAgeMs:age(http.responseAt),
+        lastStatusFailure:http.failure ? {kind:http.failure.kind,durationMs:http.failure.durationMs,ageMs:age(http.failure.at)} : null};
+    } catch (_) {}
+  }
+  function logConvoyFailureContext(context) {
+    try {
+      if (!context) { game_log('Convoy context: unknown', '#94a3b8'); return; }
+      var text = function(value) { return value == null ? 'unknown' : String(value).replace(/[\r\n\t]/g,' ').slice(0,100); };
+      var ms = function(value) { return value == null ? 'unknown' : text(value)+'ms'; };
+      var point = function(value) { return value ? text(value.map)+' ('+text(Number.isFinite(value.x)?Math.round(value.x):null)+','+text(Number.isFinite(value.y)?Math.round(value.y):null)+')' : 'unknown'; };
+      game_log('Convoy context: phase='+text(context.phase)+'; position='+point(context.position)+'; destination='+point(context.destination)+
+        '; convoy='+text(context.convoyId)+'; epoch='+text(context.epoch)+'; command='+text(context.commandId)+'; runtime='+text(context.runtimeId)+'; route='+text(context.routeVersion), '#94a3b8');
+      var signal = context.signal, failure = context.lastStatusFailure;
+      var detail = signal.mismatches.map(function(m) { return m.field+' expected='+text(m.expected)+' received='+text(m.received); }).join(', ');
+      game_log('Convoy signal: '+signal.state+(detail?' ['+detail+']':'')+'; expiry overrun='+ms(signal.expiredByMs)+
+        '; last status response='+ms(context.lastStatusResponseAgeMs)+' ago; latest status failure='+
+        (failure ? text(failure.kind)+' after '+ms(failure.durationMs)+' ('+ms(failure.ageMs)+' ago)' : 'unknown'), '#94a3b8');
+    } catch (_) {}
+  }
+  function reloadConvoyGeometry(signal) {
+    var repair=signal && signal.geometryReload, convoy=convoyTraveling;
+    if (!repair || repair.runtimeId!==convoyRuntimeId || repair.deadline<Date.now()+coordinatorClockOffset || !convoy ||
+        convoy.phase!=='held' || signal.id!==convoy.id || signal.epoch!==convoy.epoch || signal.commandId!==convoy.commandId ||
+        navigationIntent.cancelled || convoy.navigationRevision!==navigationIntent.revision) return;
+    if (parent.__partyGeometryReloaded===repair.id) return;
+    parent.__partyGeometryReloaded=repair.id;
+    var url=(parent.__partyServer || 'http://127.0.0.1:924')+'/CODE/adventure_land/universal-loader.js?t=';
+    var bootstrap="$.ajax({url:"+JSON.stringify(url)+"+Date.now(),dataType:'text',cache:false}).then(function(source){(0,eval)(source);});";
+    game_log('Reloading runtime once to repair shared-route geometry', '#f0b429');
+    parent.setTimeout(function(){
+      if(!runtimeCurrent())return;
+      if(!parent.caracAL && repair.expected && Number(movement.identity.version)!==repair.expected.version && parent.location) {
+        parent.location.reload();
+        return;
+      }
+      if(!parent.caracAL && typeof parent.start_runner==='function')parent.start_runner('maincode',bootstrap);
+      else (0,eval)(bootstrap);
+    },0);
+  }
   function sharedConvoyDistance(a,b) {
     if(a.map!==b.map || String(a.in==null?a.map:a.in)!==String(b.in==null?b.map:b.in))return Infinity;
     return Math.hypot(a.x-b.x,a.y-b.y);
@@ -12279,7 +12511,7 @@
       },
       barrier: command.phase === 'plan-return' || command.routeVersion == null ? undefined : function(step, index, completed) {
         return request('/movement-barrier', {method:'POST',timeout:2000,body:Object.assign(sharedConvoyIdentity(command),{
-          step:index, destination:step, completed:completed, ready:completed || (command.continuousReturn === 1 && !step.town || !departureCombatPending()) && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
+          step:index, destination:step, completed:completed, ready:completed || ((command.continuousReturn === 1 || command.huntTarget) && !step.town || !departureCombatPending()) && (command.huntTarget || eligibleDepartureChests().length === 0) && (!step.town || can_use('use_town'))
         })}).then(function(result){return !!result.ready;});
       }
     };
@@ -12344,7 +12576,7 @@
     return {destination:segment.location,plot:segment.plot,source:"itinerary"};
   }
   function sharedConvoyEngagement(convoy,command,ownsConvoy,phase) {
-    if(command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
+    if(command.purpose === "monster-hunt" || command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
     if(typeof farmingTravelTarget!=="function" || !command.huntTarget && typeof groupedFollower==="function" && groupedFollower())return;
     var target=farmingTravelTarget(command);
     var approach=target && typeof combatApproachPoint==="function"?combatApproachPoint(target):target;
@@ -12467,6 +12699,8 @@
           Number(signal.commandId)===convoy.commandId && signal.runtimeId===convoyRuntimeId && signal.routeVersion===command.routeVersion;
         if(!matches || Number(signal.validUntil)<=now) {
           if(Date.now()-started<3000 && !released)return;
+          if(command.purpose==='monster-hunt' && (!signal || matches))
+            convoyCommunication(convoy, '/status', !signal ? 'missing-signal' : 'expired-signal');
           throw new Error("Shared route coordinator signal expired");
         }
         if(["failed","shared-hold","defending"].indexOf(signal.phase)>=0)throw new Error("Party requested hold");
@@ -12711,7 +12945,7 @@
       navigationRevision: Number(command.navigationRevision) || 0,
       generation: runtimeGeneration, destination: command.location, cancelled: false,
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
-      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
+      purpose:command.purpose,huntTarget:command.huntTarget,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
     convoyTraveling = convoy;
     if(command.purpose === "party-force-travel")forceTraveling=true;
     if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose||""))
@@ -12729,9 +12963,10 @@
     }
     convoy.fail = function (reason) {
       if (!ownsConvoy() || convoy.failure) return;
+      captureConvoyFailureContext(convoy,command);
       if(convoy.freezeRoute)convoy.freezeRoute();
       convoy.failure = String(reason); convoy.routeReady = false;
-      phase("failed");
+      phase(convoy.communication ? "communication-hold" : "failed");
       Promise.resolve(stop()).catch(function () {});
     };
     async function stopForConvoy() {
@@ -12861,21 +13096,23 @@
         return;
       }
       phase("arrived");
-      var completion;
-      do {
-        completion = await request("/convoy-complete", { method: "POST", body: {
-          character: character.name, convoyId: command.convoyId,
-          epoch: Number(command.epoch), commandId: command.id, runtimeId: convoyRuntimeId,
-          navigationRevision:Number(command.navigationRevision)||0,routeVersion:command.routeVersion,
-        }});
-        if(completion && completion.waiting)await new Promise(function(resolve){setTimeout(resolve,250);});
-      } while(ownsConvoy() && completion && completion.waiting);
+      var completion = await acknowledgeConvoyArrival(convoy, command, ownsConvoy);
       if(!ownsConvoy())return;
       if (completion && completion.superseded) return;
       if (command.purpose === "event-return") eventRecoveryState.phase = "complete";
       game_log("Arrived with party at " + (command.label || "selected monster"), "#51D2E1");
     } catch (error) {
       if (!ownsConvoy()) return;
+      if (command.purpose === 'monster-hunt' && command.routeProtocol === 4 && convoyRetryableRequest(error))
+        convoyCommunication(convoy, error.partyRequest.path, error.partyRequest.kind);
+      if (convoy.communication) {
+        if (convoy.freezeRoute) convoy.freezeRoute();
+        phase('communication-hold'); convoy.routeReady = false;
+        await Promise.resolve(stop()).catch(function() {});
+        if (ownsConvoy()) await new Promise(function(resolve) { convoy.release = resolve; });
+        return;
+      }
+      captureConvoyFailureContext(convoy,command);
       phase("failed");
       var reason = convoy.failure || String(error && (error.reason || error.message || error));
       convoy.failure = reason; convoy.routeReady = false;
@@ -12887,10 +13124,12 @@
         failureCode: convoy.townAttempt && ['interrupted','unavailable'].indexOf(convoy.townAttempt.state)>=0 ? 'town-interrupted' : command.phase === "town" ? "town-unavailable" : "route-failed",
         townAttempt: convoy.townAttempt || null,
         routeVersion: command.routeVersion,
-        details: { phase: convoy.phase, routeStarts: convoy.routeStarts,
-          map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null },
+        details: { phase: convoy.phase, failureContext: convoy.failureContext || null, routeStarts: convoy.routeStarts,
+          map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null,
+          movement: movement.report() || movement.last() },
       }}).catch(function () {});
       game_log("Convoy movement failed: " + reason, "red");
+      logConvoyFailureContext(convoy.failureContext);
       if (ownsConvoy()) await new Promise(function (resolve) { convoy.release = resolve; });
     } finally {
       if(convoy.defensePaused && !convoy.cancelled && convoyTraveling===convoy)
@@ -12920,6 +13159,9 @@
   async function emergencyWarriorStomp() {
     if (typeof rareTarget === "function" && rareTarget() && rareTarget().mtype === "tinyp") return false;
     if (character.ctype !== "warrior" || farmingMode === "scatter") return false;
+    var weapon = character.slots && character.slots.mainhand;
+    // can_use checks class and cooldown, not weapon compatibility.
+    if (!weapon || !G.items || !G.items[weapon.name] || G.items[weapon.name].wtype !== "basher") return false;
     var skill = G.skills && G.skills.stomp;
     if (unfinishedFight() && Object.values(parent.entities || {}).some(function(e) {
       return e && e.type==='monster' && e.visible && !e.dead && !leaderLockAllows(e) &&
@@ -13949,6 +14191,7 @@
         parent.socket.off("test", receiveEventClock);
         parent.socket.off("connect", syncEventClock);
         parent.socket.off("game_response", donationRateListener);
+        parent.socket.off("q_data", luckySlotRollListener);
         parent.socket.off("tracker", trackerCatalogListener);
         parent.socket.off("player", trackerInventoryListener);
         parent.socket.off("players", playerDirectoryListener);
@@ -13981,15 +14224,20 @@
       if (root.on_party_request === acceptConfiguredPartyRequest) root.on_party_request = previousPartyRequestHandler;
     },
     isBanking: function () { return banking || bankQueued; },
+    merchantEventCombatActive: function () {
+      return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
+        !eventReturnPending && !root.__merchantActiveJob;
+    },
     isOccupied: function () {
       if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
-      if (convoyTraveling && convoyTraveling.continuousReturn === 1) {
+      if(outboundHuntTravel() && huntTravelExtraAggro())interruptConvoyForDefense();
+      if (convoyTraveling && !convoyTraveling.defensePaused && (convoyTraveling.continuousReturn === 1 || convoyTraveling.purpose === 'monster-hunt' && convoyTraveling.huntTarget)) {
         root.__partyCombatOwner = "convoy:" + convoyTraveling.phase;
         return true;
       }
       if (character.ctype === "merchant" && (root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending())) return true;
-      if (travelCombatActive() && !departureCombatPending()) return true;
+      if (travelCombatActive() && !huntTravelDefense() && !departureCombatPending()) return true;
       if(root.partyLootClient && root.partyLootClient.huntPending() && !departureCombatPending())return true;
       if(convoyTraveling && !joinedEvent && !eventTargetTypes.length && Object.values(parent.entities||{}).some(function(e){
         return e && e.type==='monster' && e.visible && !e.dead && isAttackingPartyMember(e);
@@ -14188,10 +14436,11 @@
     },
     skillTargetAllowed: function(target) {
       if (!target || target.type !== "monster" || !isAllowedTarget(target) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
+      if(huntTravelDefense() && !isAttackingPartyMember(target) && !(convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return false;
       if (target.target && !isAttackingPartyMember(target)) return false;
       if (groupedAttackAllowed(target)) return true;
       return groupedFarming() && groupedFresh() && groupedCombat.committed &&
-        isAttackingPartyMember(target) && !travelCombatActive();
+        isAttackingPartyMember(target) && (!travelCombatActive() || huntTravelDefense());
     },
     followLeaderIfFar: async function (maximumDistance) {
       if (farmApproach.route || farmingMode === "scatter") return false;

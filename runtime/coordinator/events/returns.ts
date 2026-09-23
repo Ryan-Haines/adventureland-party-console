@@ -101,7 +101,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
   ): string[] {
     const names = Array.isArray(captured) && captured.length ? captured : ports.activeNames();
     return names.filter(
-      (name) => name !== ports.merchant() && (forced || ports.enabled(name, event)),
+      (name) => forced || ports.enabled(name, event),
     );
   }
 

@@ -8,7 +8,7 @@ interface HuntControlState extends HuntEventTrips {
   eventReturn?: { participants: string[] } | null;
   anniversary?: { eventCycle?: { returnCompletedAt?: number; supersededAt?: number } | null };
   monsterHunt: HuntCycle | null;
-  activeConvoy: { id: string; purpose?: string | null; phase: string } | null;
+  activeConvoy: { id: string; purpose?: string | null; phase: string; nativeFallback?: boolean } | null;
   statuses: Record<string, HuntStatus | undefined>;
   commands: Record<string, HuntCommand | undefined>;
   escape?: { stage: string } | null;
@@ -112,6 +112,7 @@ export function createHuntControlRoutes(state: HuntControlState, ports: HuntCont
       return res
         .status(409)
         .json({ error: "Waiting for the current party runtimes and navigation ownership" });
+    hunt.returnNativeFallback ||= !!state.activeConvoy?.nativeFallback;
     ports.cancelConvoy();
     hunt.convoyId = null;
     hunt.returnRetries = 0;

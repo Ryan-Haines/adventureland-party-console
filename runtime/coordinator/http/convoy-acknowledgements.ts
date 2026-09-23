@@ -7,6 +7,7 @@ import { completeSharedWalkMember } from "../navigation/shared-walk.ts";
 import { sharedArrivalReady } from "../navigation/shared-route-store.ts";
 import { readRoutePoint } from '../navigation/shared-route-store.ts';
 import { recordTownAttempt } from '../navigation/return-town.ts';
+import { completionKey, rememberCompletion, type CompletionReceipts } from '../navigation/completion-receipts.ts';
 
 function townFailure(active: RouteConvoy, body: Record<string,unknown>, now: number): boolean {
   const attempt=requestObject(body.townAttempt), destination=readRoutePoint(attempt.destination);
@@ -24,7 +25,8 @@ interface ExitReturn {
   event: string;
   checkpoint: ReturnLocation | null;
 }
-interface ConvoyAcknowledgementState {
+interface ConvoyAcknowledgementState extends CompletionReceipts {
+  monsterHunt?: { stage: string; convoyId?: string | null; originArrivedAt?: number } | null;
   statuses?: Record<string, { seenAt?: number; convoyNavigation?: { phase?: string } } | undefined>;
   lastConvoyEngagement?: {
     convoyId: string;
@@ -83,15 +85,22 @@ export function createConvoyAcknowledgementRoutes(
     }
     active.completed = [...new Set((active.completed || []).concat(name))];
     if (active.participants.every((member) => active.completed!.includes(member))) {
+      recordHuntArrival(active);
       recordConvoyHistory(state, active, "completed", ports.now());
       state.activeConvoy = null;
     }
     ports.persist();
   }
+  function recordHuntArrival(active: RouteConvoy): void {
+    if (active.routeProtocol === 4 && active.purpose === 'monster-hunt' &&
+        state.monsterHunt?.stage === 'mission-travel' && state.monsterHunt.convoyId === active.id)
+      state.monsterHunt.originArrivedAt = ports.now();
+  }
   function complete(req: HttpRequest, res: HttpResponse): unknown {
     const body = requestObject(req.body),
       name = requestText(body.character);
     if (!ports.owned(name)) return res.status(400).json({ error: "unknown character" });
+    if (state.convoyCompletionReceipts?.[name] === completionKey(body)) return res.json({ ok: true });
     // A racing completion for the former convoy must not delete its combat replacement command.
     if (superseded(name, body)) return res.json({ ok: true, superseded: true });
     if (
@@ -102,6 +111,7 @@ export function createConvoyAcknowledgementRoutes(
       return res.status(409).json({ error: "stale convoy completion" });
     const c = state.activeConvoy!;
     if (c.routeProtocol === 4 && !sharedArrivalReady(state, ports.now())) return res.json({ ok: false, waiting: true });
+    rememberCompletion(state, name, body);
     arrived(name, c);
     return res.json({ ok: true });
   }

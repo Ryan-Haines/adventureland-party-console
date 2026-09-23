@@ -50,7 +50,7 @@ export class SteamGroup {
     const returnSlot = action === "headless" ? this.state.slots.indexOf(null) : -1;
     if (action === "headless" && returnSlot < 0) throw new RosterConflict("No headless slot is available");
     const release = primary !== from ? before : action === "primary" && name === from ? before.filter(n => n !== from) : before.includes(name) && !entering ? [name] : [];
-    const op: Handoff = { bulkRemaining, id: this.ports.id(), from, target: primary, returnToHeadless: action === "headless",
+    const op: Handoff = { bulkRemaining, id: this.ports.id(), steamSessionId: this.ports.steamSessionId?.(), from, target: primary, returnToHeadless: action === "headless",
       returnSlot: returnSlot < 0 ? null : returnSlot, targetSlot: targetSlot < 0 ? null : targetSlot,
       startedAt: this.ports.now(), phase: "preparing", error: null,
       multi: { action, subject: name, before, desired, primary, release, arrived: [] } };
