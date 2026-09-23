@@ -2235,6 +2235,7 @@
       huntReturnProtocol: 2,
       movement: movement.report() || movement.last(),
       convoyNavigation: convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
+        communication: convoyTraveling.communication || null,
         navigationRevision: convoyTraveling.navigationRevision,
         returnPlan: convoyTraveling.returnPlan || null,
         commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
@@ -12317,6 +12318,51 @@
   function sharedConvoyPoint() {
     return {map:character.map,in:character.in,x:character.real_x,y:character.real_y};
   }
+  function convoyRetryableRequest(error) {
+    var request = error && error.partyRequest;
+    return !!request && (request.kind === 'network' || request.kind === 'timeout' ||
+      request.status === 408 || request.status === 429 || request.status >= 500);
+  }
+  function convoyCommunication(convoy, operation, kind) {
+    if (!convoy.communication) {
+      convoy.communication = { operation: operation, kind: kind, since: Date.now() + coordinatorClockOffset };
+      game_log('Convoy waiting for coordinator communication: ' + operation + ' (' + kind + ')', '#94a3b8');
+    }
+    root.__partyNavigationDetail = operation === '/convoy-complete' ? 'Arrived; waiting for completion acknowledgement' : 'Waiting for coordinator communication';
+  }
+  async function convoyRetryDelay(ms, ownsConvoy) {
+    var remaining = ms;
+    while (ownsConvoy() && remaining > 0) {
+      var slice = Math.min(100, remaining);
+      await new Promise(function(resolve) { setTimeout(resolve, slice); });
+      remaining -= slice;
+    }
+  }
+  async function acknowledgeConvoyArrival(convoy, command, ownsConvoy) {
+    var attempts = 0;
+    while (ownsConvoy()) {
+      try {
+        var completion = await request('/convoy-complete', { method: 'POST', timeout: 5000, body: {
+          character: character.name, convoyId: command.convoyId, epoch: Number(command.epoch), commandId: command.id,
+          runtimeId: convoyRuntimeId, navigationRevision: Number(command.navigationRevision) || 0, routeVersion: command.routeVersion,
+        }});
+        if (convoy.communication) game_log('Convoy completion communication restored', '#94a3b8');
+        delete convoy.communication; attempts = 0;
+        if (!completion || !completion.waiting) return completion;
+        await convoyRetryDelay(250, ownsConvoy);
+      } catch (error) {
+        if (/stale convoy completion/.test(String(error && (error.message || error)))) {
+          if (ownsConvoy()) await new Promise(function(resolve) { convoy.release = resolve; });
+          return { superseded: true };
+        }
+        if (!convoyRetryableRequest(error)) { delete convoy.communication; throw error; }
+        convoyCommunication(convoy, '/convoy-complete', error.partyRequest.kind);
+        var delay = [1000,2000,5000,10000][Math.min(attempts++,3)];
+        await convoyRetryDelay(Math.min(10000, delay * (0.8 + Math.random() * 0.4)), ownsConvoy);
+      }
+    }
+    return { superseded: true };
+  }
   function captureConvoyFailureContext(convoy, command) {
     try {
       if (convoy.failureContext) return;
@@ -12584,6 +12630,8 @@
           Number(signal.commandId)===convoy.commandId && signal.runtimeId===convoyRuntimeId && signal.routeVersion===command.routeVersion;
         if(!matches || Number(signal.validUntil)<=now) {
           if(Date.now()-started<3000 && !released)return;
+          if(command.purpose==='monster-hunt' && (!signal || matches))
+            convoyCommunication(convoy, '/status', !signal ? 'missing-signal' : 'expired-signal');
           throw new Error("Shared route coordinator signal expired");
         }
         if(["failed","shared-hold","defending"].indexOf(signal.phase)>=0)throw new Error("Party requested hold");
@@ -12849,7 +12897,7 @@
       captureConvoyFailureContext(convoy,command);
       if(convoy.freezeRoute)convoy.freezeRoute();
       convoy.failure = String(reason); convoy.routeReady = false;
-      phase("failed");
+      phase(convoy.communication ? "communication-hold" : "failed");
       Promise.resolve(stop()).catch(function () {});
     };
     async function stopForConvoy() {
@@ -12979,28 +13027,22 @@
         return;
       }
       phase("arrived");
-      var completion;
-      do {
-        try { completion = await request("/convoy-complete", { method: "POST", body: {
-          character: character.name, convoyId: command.convoyId,
-          epoch: Number(command.epoch), commandId: command.id, runtimeId: convoyRuntimeId,
-          navigationRevision:Number(command.navigationRevision)||0,routeVersion:command.routeVersion,
-        }}); } catch(error) {
-          if (!/stale convoy completion/.test(String(error && (error.message || error)))) throw error;
-          // Another member can fail while our arrival request is in flight.
-          // Keep arrival observational; wait for the replacement command instead
-          // of reporting a second failure against the retired generation.
-          if (ownsConvoy()) await new Promise(function(resolve){convoy.release=resolve;});
-          return;
-        }
-        if(completion && completion.waiting)await new Promise(function(resolve){setTimeout(resolve,250);});
-      } while(ownsConvoy() && completion && completion.waiting);
+      var completion = await acknowledgeConvoyArrival(convoy, command, ownsConvoy);
       if(!ownsConvoy())return;
       if (completion && completion.superseded) return;
       if (command.purpose === "event-return") eventRecoveryState.phase = "complete";
       game_log("Arrived with party at " + (command.label || "selected monster"), "#51D2E1");
     } catch (error) {
       if (!ownsConvoy()) return;
+      if (command.purpose === 'monster-hunt' && command.routeProtocol === 4 && convoyRetryableRequest(error))
+        convoyCommunication(convoy, error.partyRequest.path, error.partyRequest.kind);
+      if (convoy.communication) {
+        if (convoy.freezeRoute) convoy.freezeRoute();
+        phase('communication-hold'); convoy.routeReady = false;
+        await Promise.resolve(stop()).catch(function() {});
+        if (ownsConvoy()) await new Promise(function(resolve) { convoy.release = resolve; });
+        return;
+      }
       captureConvoyFailureContext(convoy,command);
       phase("failed");
       var reason = convoy.failure || String(error && (error.reason || error.message || error));
@@ -13048,6 +13090,9 @@
   async function emergencyWarriorStomp() {
     if (typeof rareTarget === "function" && rareTarget() && rareTarget().mtype === "tinyp") return false;
     if (character.ctype !== "warrior" || farmingMode === "scatter") return false;
+    var weapon = character.slots && character.slots.mainhand;
+    // can_use checks class and cooldown, not weapon compatibility.
+    if (!weapon || !G.items || !G.items[weapon.name] || G.items[weapon.name].wtype !== "basher") return false;
     var skill = G.skills && G.skills.stomp;
     if (unfinishedFight() && Object.values(parent.entities || {}).some(function(e) {
       return e && e.type==='monster' && e.visible && !e.dead && !leaderLockAllows(e) &&

@@ -7,6 +7,12 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Monster Hunt convoys pause safely during communication outages and resume after
+  stable party reports without consuming movement retries. Arrival acknowledgements
+  retry transient failures, and saved completion receipts tolerate lost responses
+  and coordinator restarts.
+- Warriors skip emergency Stomp when no compatible basher is equipped, preventing
+  repeated wrong-weapon errors while allowing their normal routine to continue.
 - Keep-moving combat shares encounter ownership before attacking, preventing
   retaliation from repeatedly stopping convoys and releasing obsolete defensive holds.
 - Marked merchant deliveries now schedule their own visits by default. Merchant

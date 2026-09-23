@@ -65,6 +65,25 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
+Protocol-4 Hunt travel keeps communication outages separate from movement failure.
+Missing heartbeats or an expired matching signal stop the party in a persisted
+communication hold without spending movement or Hunt retry budgets. All members
+must acknowledge the current hold and provide five seconds of fresh, living,
+stopped reports before a new route generation is prepared; repeated resumptions
+are spaced at least thirty seconds apart. Restart discards stability observations,
+and runtime replacement requires new acknowledgements. Manual navigation wins.
+
+Arrival remains `arrived` while transient completion HTTP failures retry (one
+request at a time, five-second timeout, jittered 1/2/5/10-second backoff). The
+existing verified-arrival fallback still applies, and persisted latest completion
+receipts make response-loss replays harmless. Only captured legacy completion
+network failures at their destination enter the one-time migration path; real
+movement failure counters remain intact. Existing convoy history records outage
+and recovery transitions rather than every retry. Validate `convoy-communication`,
+shared convoy, Hunt return, restart, and acknowledgement tests. Publish character
+and coordinator assets together with the ordinary full restart below, then verify
+fresh runtimes and actual Hunt advancement through Daisy processing.
+
 Convoy failure messages include a snapshot taken before cancellation: phase,
 position, destination, route identifiers, signal expiry or mismatched identity
 fields, and recent status-response/failure timing. Two context lines accompany
