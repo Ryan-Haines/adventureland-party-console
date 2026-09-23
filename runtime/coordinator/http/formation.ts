@@ -25,8 +25,6 @@ export function createFormationRoute(state: FormationState, ports: FormationPort
   function selections(name: string, value: unknown): FormationError | null {
     if (!Array.isArray(value) || value.some((id) => !ports.supported.includes(id)))
       return { code: 400, error: "invalid event selections" };
-    if (name === state.merchantCharacter && value.some((id) => id !== "anniversary"))
-      return { code: 400, error: "merchants only attend anniversary" };
     if (ports.inherited(name)) return { code: 409, error: "using leader events" };
     state.eventSelectionsByCharacter[name] = [...new Set(value as string[])];
     return null;

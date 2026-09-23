@@ -17,6 +17,30 @@ function fixture() {
       name: 'A', runtime: 'runtime1', ...stream.lease('A'), sample, sampledAt: now, data, ...extra }).response };
 }
 const messages = response => response.chunks.map(chunk => JSON.parse(chunk.slice(6)));
+
+test('display countdown rounding includes nested timers without mutating samples or hiding other changes', () => {
+  const f = fixture();
+  const condition = ms => ({ id: 'buff', remainingMs: ms, live: { ms, s: 1 }, definition: { duration: 10000 }, source: 'A' });
+  f.statuses.A.conditions = [condition(9950)];
+  const client = f.connect();
+  assert.equal(messages(client.response)[0].characters.A.vitals.conditions[0].live.ms, 10000);
+  assert.equal(f.statuses.A.conditions[0].remainingMs, 9950);
+  const data = { vitals: { conditions: [condition(9850)] } };
+  const before = JSON.stringify(data), count = client.response.chunks.length;
+  f.send(1, data);
+  assert.equal(JSON.stringify(data), before);
+  assert.equal(client.response.chunks.length, count);
+  f.send(2, { vitals: { conditions: [condition(8950)] } });
+  assert.equal(messages(client.response).at(-1).characters.A.vitals.conditions[0].remainingMs, 9000);
+  for (const patch of [{ source: 'B' }, { stacks: 2 }, { definition: { duration: 20000 } }, { remainingMs: 12000 }, { remainingMs: null }, { remainingMs: -1 }]) {
+    const n = client.response.chunks.length;
+    f.send(3 + n, { vitals: { conditions: [{ ...condition(8950), ...patch }] } });
+    assert.equal(client.response.chunks.length, n + 1);
+  }
+  f.send(100, { vitals: { conditions: [] } });
+  assert.deepEqual(messages(client.response).at(-1).characters.A.vitals.conditions, []);
+  client.request.close();
+});
 test('snapshot, shared viewer lease, explicit slot removals and reuse preserve display-only ownership', () => {
   const f = fixture(); assert.equal(f.stream.lease('A').duration, 0);
   const first = f.connect(), second = f.connect();

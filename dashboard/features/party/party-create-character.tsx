@@ -18,6 +18,7 @@ export function PartyCreateCharacter({ model }: { model: PartyConsoleModel }) {
   } = model;
   return (
     <CreateCharacter
+      error={model.createError}
       open={createOpen}
       onOpenChange={setCreateOpen}
       name={newName}

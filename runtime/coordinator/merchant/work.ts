@@ -76,7 +76,7 @@ export interface CharacterWork {
   autoCompounds: CompoundRule[];
   withdrawals: unknown[];
   statScrolls: NonNullable<Parameters<typeof createStatScrollCommands>[0]["statScrolls"][string]>;
-  deliveries: unknown[];
+  deliveries: import('./delivery-recovery.ts').DeliveryRequest[];
   goldTarget?: number;
 }
 

@@ -8,8 +8,13 @@ import { MapCanvas } from "./map-canvas";
 import { useMapDefinition, useVisible } from "./query-cache";
 import { MapFrame } from "./map-frame";
 import { receiveMapFrame, type MapRenderBuffer } from "./map-render-buffer";
+import { useCharacterData } from './dashboard-live';
+import { committedLiveRecord } from './live-metrics';
 
-export function CharacterMapSection({ char }: { char: Char }) {
+export function CharacterMapSection({ char: base }: { char: Char }) {
+  const position = useCharacterData(base.name, 'position');
+  useEffect(() => { committedLiveRecord(base.name, 'position'); }, [base.name, position]);
+  const char = { ...base, ...position };
   const [open, setOpen] = useState(false),
     [large, setLarge] = useState(false);
   const definitionQuery = useMapDefinition(char.map, open);

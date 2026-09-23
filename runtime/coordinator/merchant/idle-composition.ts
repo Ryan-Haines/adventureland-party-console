@@ -1,9 +1,10 @@
 import { activeStandSales } from "./stand-reconciliation.ts";
+import { merchantEventReserved, type MerchantEventState } from './event-control.ts';
 import { createMerchantIdle } from "./idle.ts";
 import type { MerchantWork } from "./work.ts";
 
 type IdlePorts = Parameters<typeof createMerchantIdle>[0];
-interface IdleState {
+interface IdleState extends MerchantEventState {
   bankboiTransaction: unknown;
   merchantCharacter: string | null;
   statuses: Record<string, ReturnType<IdlePorts["status"]>>;
@@ -27,6 +28,7 @@ type CompositionPorts = Pick<IdlePorts, "now" | "anniversary" | "ensureHome" | "
 /** Keep idle decisions attached to current queues and commands, sharing dispatch's readiness rules. */
 export function createCoordinatorMerchantIdle(state: IdleState, ports: CompositionPorts) {
   return createMerchantIdle({
+    eventReserved: () => merchantEventReserved(state, ports.now()),
     storagePending: () =>
       !!(ports.storageBusy() || state.bankboiTransaction || ports.storagePlan()),
     merchant: () => state.merchantCharacter,

@@ -67,6 +67,7 @@ export const publicStateFields = [
   "merchantForceStand",
   "merchantWeapon",
   "luckyUpgradeSlots",
+  "luckySlotTracking",
   "merchantCargo",
   "merchantActivity",
   "combatLogs",

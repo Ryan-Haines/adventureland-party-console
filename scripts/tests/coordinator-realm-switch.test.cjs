@@ -33,6 +33,25 @@ test('stale destination reports do not satisfy the sixty-second arrival deadline
   assert.match(operation.error,/within 60 seconds/);assert.equal(effects.includes('dispatch'),false);
 });
 
+test('all-headless participants reconnect to the destination without a native command',async()=>{
+ for(const setHome of [false,true]) {
+  const {operation,service,ports,statuses,effects,blocks}=fixture();
+  operation.setHome=setHome;ports.native=()=>null;ports.steamMembers=()=>[];
+  for(const name of operation.participants) statuses[name]={seenAt:999,server:'USII',ctype:name==='M'?'merchant':'priest'};
+  ports.sleep=async()=>{
+   for(const name of operation.participants) statuses[name]={...statuses[name],seenAt:1001,server:'EUI'};
+  };
+  await service.run(operation);
+  assert.equal(operation.phase,setHome?'setting-home':'complete');
+  for(const name of operation.participants) assert.equal(blocks[name].realm,'SR_EUI');
+  assert.equal(effects.filter(e=>Array.isArray(e)&&e[0]==='stop').length,3);
+  assert.ok(operation.characters.every(entry=>entry.arrived));
+  const commands=effects.filter(e=>Array.isArray(e)&&e[0]==='command');
+  assert.deepEqual(commands.map(e=>[e[1],e[2].type]),setHome?[['P','realm-set-home']]:[]);
+  assert.equal(effects.includes('dispatch'),!setHome);
+ }
+});
+
 test('home assignment prefers the non-merchant leader after everyone has arrived',async()=>{
   const {operation,service,statuses,effects}=fixture();operation.setHome=true;
   for(const name of operation.participants) statuses[name]={seenAt:1000,server:'EUI',ctype:name==='M'?'merchant':'priest'};

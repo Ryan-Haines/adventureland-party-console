@@ -13,6 +13,17 @@ test('gold outline extends outside the cell and cannot intercept pointer events'
  const markup=renderToStaticMarkup(React.createElement(LuckySlotOutline));
  assert.match(markup,/pointer-events-none/);assert.match(markup,/-inset-\[5px\]/);assert.match(markup,/overflow-visible/);assert.match(markup,/aria-hidden="true"/);
 });
+test('slot search UI distinguishes missing evidence, inference, and verified slot zero',()=>{
+ const {LuckySlotStatistics}=load('lucky-slot-tracker.tsx');
+ const render=props=>renderToStaticMarkup(React.createElement(LuckySlotStatistics,props));
+ assert.match(render({}),/Testing starts at slot 0/);
+ assert.match(render({verified:0}),/Verified slot: 0/);
+ const markup=render({tracking:{version:1,slots:{7:{totalRolls:1,sumRolls:0,rollsAbove96_3:0,perfectRolls:1}}}});
+ assert.match(markup,/Leading candidate: slot 7/);assert.doesNotMatch(markup,/Statistically inferred:/);
+ assert.match(markup,/No extra upgrades are queued/);assert.match(markup,/bg-zinc-950/);
+ assert.equal((markup.match(/data-slot=/g)||[]).length,42);
+ assert.match(markup,/Next upgrade will test for lucky upgrade/);
+});
 test('shared Tracktrix info renders a single account-wide bonus list',()=>{
  const req=require('node:module').createRequire(require('node:path').resolve('dashboard/package.json'));
  const {QueryClient,QueryClientProvider}=req('@tanstack/react-query');

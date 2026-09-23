@@ -22,15 +22,15 @@ export interface PlayerSaleState extends ConflictState {
   upgrades?: Record<string, { slot?: string | number; npcSaleId?: unknown }[] | undefined>;
   statScrolls?: Record<string, { slot?: string | number; npcSaleId?: unknown }[] | undefined>;
   compounds?: Record<string, { items: { slot?: number }[] }[] | undefined>;
-  deconstructionMarks?: { owner: string; slot: number; state: string }[];
+  deconstructionMarks?: { owner: string; slot: number; state: string; item: Item }[];
 }
-export function playerSaleReserved(state: PlayerSaleState, name: string, slot: number) {
+export function playerSaleReserved(state: PlayerSaleState, name: string, slot: number, item: Item) {
   return (
     [state.marked?.[name], state.upgrades?.[name], state.statScrolls?.[name], state.merchantMarked?.[name]].some((marks) =>
       marks?.some((mark) => mark.slot === slot && !mark.npcSaleId),
     ) ||
     compoundReserved(state, name, slot) || !!state.deconstructionMarks?.some(
-      (mark) => mark.owner === name && mark.slot === slot && mark.state !== "complete",
+      (mark) => mark.owner === name && mark.slot === slot && mark.state !== "complete" && sameMarkedItem(mark.item, item),
     )
   );
 }
@@ -140,7 +140,7 @@ function reconcileMark(
     (mark.auto && itemRuleConflicts(state, mark.item).length > 0) ||
     entry.item.l ||
     entry.item.b ||
-    playerSaleReserved(state, status.name, entry.slot)
+    playerSaleReserved(state, status.name, entry.slot, entry.item)
   ) {
     mark.state = "blocked";
     mark.error = "Item is missing, protected, or reserved for other work";
@@ -178,6 +178,6 @@ export function reconcilePlayerSales(
 function automaticRule(state: PlayerSaleState, key: string, item: Item) { return !!state.autoNpcSales[key] && !itemRuleConflicts(state,item).length; }
 
 function protectedEntry(state: PlayerSaleState, name: string, entry: {slot:number;item:Item}) {
-  return !!entry.item.l || !!entry.item.b || playerSaleReserved(state,name,entry.slot);
+  return !!entry.item.l || !!entry.item.b || playerSaleReserved(state,name,entry.slot,entry.item);
 }
 

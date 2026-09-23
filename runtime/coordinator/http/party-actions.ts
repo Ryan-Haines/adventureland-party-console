@@ -81,11 +81,12 @@ export function createPartyActionRoutes(state: PartyActionState, ports: PartyAct
     if (!group) return res.status(409).json({ error: groups.length ? "Select a party group to visit" : "No party members are online", groups });
     let added = false;
     for (const name of group.members) {
-      if ([state.merchantCurrent, ...state.merchantQueue].some(job => job?.target === name && job.reason === "party collection")) continue;
+      const existing = [state.merchantCurrent, ...state.merchantQueue].find(job => job?.target === name && job.reason === 'party collection');
+      if (existing) { added = existing.manual !== true || added; existing.manual = true; continue; }
       // Queue each member explicitly: positions and arrival-time radius never select recipients.
       state.merchantQueue.push({
         id: "merchant-" + ports.now() + "-" + ports.nextCommand(),
-        target: name, reason: "party collection", queuedAt: ports.now(),
+        target: name, reason: "party collection", manual: true, queuedAt: ports.now(),
       });
       added = true;
     }

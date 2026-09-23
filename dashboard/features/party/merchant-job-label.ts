@@ -4,6 +4,7 @@ import { routineFor } from '../../../runtime/coordinator/merchant/routines.ts';
 const labels: Record<string, string> = {
   'party collection': 'Item collection',
   'manual visit': 'Manual visit',
+  deliveries: 'Marked deliveries',
   'inventory cleanout': 'Emergency cleanout',
   'gold threshold': 'Auto gold collection',
   'npc sales': 'NPC sales',

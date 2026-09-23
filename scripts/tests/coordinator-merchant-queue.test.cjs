@@ -58,6 +58,16 @@ test('active work is not duplicated; in-place stand sync retains its special pri
   assert.equal(state.queue[0].inPlaceStandSync, true);
 });
 
+test('delivery jobs deduplicate independently of other visits and active delivery work',()=>{
+ const {state,service}=fixture();
+ service.queue(['P'],'deliveries');service.queue(['P'],'deliveries');service.queue(['P'],'manual visit');
+ assert.deepEqual(state.queue.map(j=>j.reason),['deliveries','manual visit']);
+ state.current=state.queue.shift();service.queue(['P'],'deliveries');
+ assert.deepEqual(state.queue.map(j=>j.reason),['manual visit']);
+ const other=fixture();other.service.queue(['P'],'marked items');other.service.queue(['P'],'deliveries');
+ assert.deepEqual(other.state.queue.map(j=>j.reason),['marked items','deliveries']);
+});
+
 test('compound targets count new production and require three unlocked ingredients at one level', () => {
   const item = (name, level, locked) => ({item: {name, level, l: locked}});
   const result = evaluateAutoCompounds([{name:'ring', targetTier:2, quantity:1}, {name:'amulet', targetTier:2}],

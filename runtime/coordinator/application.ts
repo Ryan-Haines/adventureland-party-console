@@ -1,6 +1,7 @@
 import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
 import { consoleMaintenance } from './lifecycle/console-maintenance.ts';
 import { createUpgradePreviews } from './merchant/upgrade-preview.ts';
+import { merchantVisibility } from './merchant/visibility.ts';
 import { loadCoordinatorDependencies } from "./infrastructure/dependencies.ts";
 import * as coordinatorPolicies from "./index.ts";
 import type { CatalogDefinitions } from './status/catalog-validation.ts';
@@ -975,6 +976,7 @@ export function startCoordinatorApplication(
           const lease = mode ? undefined : dashboardStream.lease(name);
           return { ...(soloFor(name)?.heartbeatResponse || heartbeatResponse).response(name, mode),
             upgradePreview: upgradePreviews.next(name),
+            merchantVisibility: merchantVisibility(party, name, Date.now()),
             ...(party.statuses[name]?.dashboardRuntime ? { dashboardLease: lease } : {}) };
         },
       },
@@ -1568,6 +1570,14 @@ export function startCoordinatorApplication(
     });
     travelClock.startTravel();
 
+    const restartFailedHunt = coordinatorPolicies.createHuntRetreatRestart(party, {
+      now: Date.now,
+      intent: name => farmingNavigation.intent(name),
+      participants: huntParticipants,
+      releaseEscape: () => escapeControl.release(),
+      begin: beginMonsterHuntCycle,
+      persist: persistSettings,
+    });
     const recoveryHooks = coordinatorPolicies.createCoordinatorRecoveryHooks(party, {
       huntParticipants,
       members: () => farmingNavigation.members(),
@@ -1580,6 +1590,7 @@ export function startCoordinatorApplication(
       releaseEscape: () => escapeControl.release(),
       abandonRare: () => rareControl.abandon(),
       resumeHunt: () => monsterHuntTick(),
+      restartFailedHunt,
     });
     const rareControl = rareHunting.createRareHunting(party, {...recoveryHooks.rare,
       routeDistance: createRareRouteDistance(request=>movementPlanner.plan(request),

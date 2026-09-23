@@ -11,6 +11,20 @@ function fixture(){
  const send=(route,body)=>{let code=200,result;service[route]({body},{status(n){code=n;return this},json(v){result=v;return v}});return {code,...result};};
  return {state,ports,service,send,item,calls,advance(ms){now+=ms;Object.values(state.statuses).forEach(s=>s.seenAt=now)}};
 }
+
+test('automatic missing-item blocks recover one available copy without replaying uncertain work',()=>{
+ const f=fixture();
+ const {automaticCommerceRuleKey}=require('../../runtime/coordinator/inventory/item-identity.ts');
+ f.state.autoDeconstruction.P={[automaticCommerceRuleKey(f.item)]:{item:f.item}};
+ f.state.deconstructionMarks=[1,2].map(id=>({id:String(id),owner:'P',origin:'P',slot:1,item:f.item,quantity:2,auto:true,updatedAt:0,state:'blocked',error:'Marked item is missing; refresh inventory before retrying'}));
+ f.service.reconcile('P');
+ assert.equal(f.state.deconstructionMarks.filter(m=>m.state==='collecting').length,1);
+ assert.equal(f.state.merchantMarked.P.length,1);
+ assert.equal(f.calls[0].reason,'marked items');
+ const blocked=f.state.deconstructionMarks[1];blocked.attempt='uncertain';
+ f.state.statuses.P.items.push({slot:2,item:f.item});f.advance(11000);f.service.reconcile('P');
+ assert.equal(blocked.state,'blocked');
+});
 test('UI and server hide/reject unsupported, locked, blocked, base compounds and boosters',()=>{
  const catalog=buildDeconstructionCatalog({dismantle:{salvage:{cost:100}},items:{ring:{compound:{}},xpbooster:{compound:{},type:'booster'}}});
  for(const item of [{name:'sword'},{name:'ring',level:0},{name:'xpbooster',level:1},{name:'salvage',l:true},{name:'salvage',b:true}]){

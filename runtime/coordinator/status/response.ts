@@ -1,4 +1,7 @@
 import {collectPassing} from '../../combat/passing.ts';
+import {passingControl} from '../../combat/passing-admission.ts';
+import {outboundHunt} from '../../combat/hunt-travel.ts';
+import { merchantEventRecoveryReserved } from '../merchant/event-control.ts';
 import type {Member} from '../../combat/grouped.ts';
 import { monsterFocus, needsCatalog, partyResponse } from "./response-party.ts";
 import {
@@ -153,6 +156,12 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
   function passingReports() {
     return collectPassing(ports.activeNames().map(name=>({name,ctype:'',revision:0,status:state.statuses[name]})) as Member[],[],ports.now());
   }
+  function passingAdmission() {
+    const convoy=state.activeConvoy;
+    const names=outboundHunt(convoy) ? convoy!.participants : [...new Set([...ports.activeNames().filter(name=>name!==state.merchantCharacter),...(convoy?.participants||[])])];
+    const members=names.map(name=>({name,ctype:'',revision:ports.navigationRevision(name),status:state.statuses[name]})) as Member[];
+    return passingControl(members,convoy ? [convoy.id,convoy.epoch] : null,ports.now(),convoy,state.passiveHunting);
+  }
   function response(name: string, mode?: "combat"): Record<string, unknown> {
     // Combat polls never deliver commands: do not consume or decorate them here.
     if (mode === "combat")
@@ -161,6 +170,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
         rareControl: ports.rareControl(name),
         groupedCombat: ports.groupedCombat(),
         passingEncounters: passingReports(),
+        passingControl: passingAdmission(),
         convoySignal: ports.convoySignal(name),
         combatRecovery: state.combatRecovery,
         combatResetByCharacter: state.combatResetByCharacter,
@@ -182,9 +192,11 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
       convoySignal: ports.convoySignal(name),
       ...travelResponse(name),
       ...merchantResponse(name),
+      ...(name === state.merchantCharacter ? { merchantEventRecoveryReserved: merchantEventRecoveryReserved(state) } : {}),
       ...partyResponse(state, names, leader),
       groupedCombat: ports.groupedCombat(),
         passingEncounters: passingReports(),
+      passingControl: passingAdmission(),
       followLeader: !!state.followers[name],
       eventsEnabled: !!ports.enabled(name),
       eventSelections: ports.selectedEvents(name),

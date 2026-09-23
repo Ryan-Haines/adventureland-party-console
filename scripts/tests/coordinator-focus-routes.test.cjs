@@ -30,9 +30,9 @@ test('clearing independent focus invalidates only its checkpoint while a global 
  const t=fixture();t.send('focus',{character:'F',monsterFocus:[]});assert.deepEqual(t.calls[0],[['F'],'monster focus cleared',false]);
  t.send('focus',{monsterFocus:[]});assert.deepEqual(t.calls[2],[['L','F'],'monster focus cleared',true]);
 });
-test('formation preserves inherited event restrictions and merchant anniversary-only selection',()=>{
+test('formation preserves inherited event restrictions and independent merchant selection',()=>{
  const t=fixture();assert.equal(t.send('formation',{character:'F',eventSelections:['franky']}).code,409);
- assert.equal(t.send('formation',{character:'M',eventSelections:['franky']}).code,400);
+ assert.equal(t.send('formation',{character:'M',eventSelections:['franky']}).code,200);
  assert.equal(t.send('formation',{character:'M',eventSelections:['anniversary','anniversary']}).code,200);
  assert.deepEqual(t.state.eventSelectionsByCharacter.M,['anniversary']);
  t.send('formation',{character:'L',events:true});assert.deepEqual(t.state.eventSelectionsByCharacter.L,['anniversary','franky']);

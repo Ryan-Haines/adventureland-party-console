@@ -1,5 +1,5 @@
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
-import { reconcileDeliveries, type DeliveryRequest } from '../merchant/delivery-recovery.ts';
+import { deliveryReady, reconcileDeliveries, type DeliveryRequest } from '../merchant/delivery-recovery.ts';
 import type { MerchantCommandReport } from "../merchant/recovery.ts";
 import type { InventoryEntry, Item, ItemMark } from "../contracts/item.ts";
 import type { createGiveawayScheduler } from "../merchant/giveaway-scheduler.ts";
@@ -147,6 +147,9 @@ export function createMerchantScheduling(state: SchedulingState, ports: Scheduli
     upgradeWork(report);
     if (state.compounds[report.name]?.length) ports.queue([report.name], "manual compounds");
     if (state.purchases?.[report.name]?.length) ports.queue([report.name], "manual buying");
+    if (state.merchantAutomations.deliveries !== false &&
+        (state.merchantDeliveries?.[report.name] || []).some(deliveryReady))
+      ports.queue([report.name], "deliveries");
   }
   function collectionSignature(report: SchedulingReport): string {
     const marks = [

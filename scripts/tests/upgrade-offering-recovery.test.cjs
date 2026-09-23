@@ -5,7 +5,7 @@ const source=fs.readFileSync('characters/shared.js','utf8');
 function fixture(){
  const storage=new Map(),item={name:'sword',level:8},mark={slot:0,item,tiers:1,offering:'offeringp',requestId:'one'};
  const state={merchantCharacter:'M',upgrades:{M:[mark]},production:{attempts:{}},autoUpgradeMarks:{M:{}},autoCompounds:{}};
- let lost=false;const c=vm.createContext({character:{name:'M',ctype:'merchant',items:[{...item},{name:'offeringp',q:2}]},fingerprint:i=>i&&({...i}),luckyUpgradeService:null,
+ let lost=false;const c=vm.createContext({yieldMerchantForEvent:async()=>{},character:{name:'M',ctype:'merchant',items:[{...item},{name:'offeringp',q:2}]},fingerprint:i=>i&&({...i}),luckyUpgradeService:null,
  root:{localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}},
  request:async(path,{body})=>{
   if(body.action==='complete'){finishProduction(state,body.id,body.success);if(lost){lost=false;throw Error('response lost');}}

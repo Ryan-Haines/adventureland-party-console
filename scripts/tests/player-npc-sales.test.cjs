@@ -8,6 +8,16 @@ const {readyNpcSales} = require('../../runtime/coordinator/merchant/npc-sales.ts
 const {reconcileNpcSales} = require('../../runtime/coordinator/merchant/npc-sales.ts');
 const {automaticCommerceRuleKey} = require('../../runtime/coordinator/inventory/item-identity.ts');
 const item = {name:'ring',level:2,stat_type:'int',q:5};
+test('stale deconstruction slots cannot suppress NPC pickups for replacement items',()=>{
+ const {reconcilePlayerSales,playerSaleReserved}=require('../../runtime/coordinator/merchant/player-npc-sales.ts');
+ const f=fixture(),s=f.state;
+ s.autoNpcSales[npcSaleRuleKey(item,'P')]={item,createdAt:1};
+ s.deconstructionMarks=[{owner:'P',slot:1,item:{name:'firebow',level:0},state:'blocked'}];
+ reconcilePlayerSales(s,s.statuses.P,{now:()=>20000,nextCommand:()=>1,queue(){}});
+ assert.equal(s.npcSaleMarks.length,1);assert.equal(s.npcSaleMarks[0].state,'collecting');
+ assert.equal(s.merchantMarked.P.length,1);
+ assert.equal(playerSaleReserved(s,'P',1,{name:'firebow',level:0}),true,'matching deconstruction still protects its item');
+});
 function fixture() {
   let id=0, now=20000;
   const state={merchantCharacter:'M',statuses:{P:{name:'P',items:[{slot:1,item:{...item}}]},M:{name:'M',items:[]}},
@@ -59,7 +69,7 @@ test('missing, locked and competing items never become sale pickup work',()=>{
     if(kind==='missing') f.state.statuses.P.items=[];
     if(kind==='locked') {f.state.statuses.P.items[0].item.l=true;}
     if(kind==='bank') f.state.marked.P=[{slot:1,item}];
-    if(kind==='deconstruction') f.state.deconstructionMarks=[{owner:'P',slot:1,state:'ready'}];
+    if(kind==='deconstruction') f.state.deconstructionMarks=[{owner:'P',slot:1,item,state:'ready'}];
     assert.notEqual(f.mark().code,200,kind);
     assert.equal(f.state.npcSaleMarks.length,0,kind);
   }

@@ -64,7 +64,7 @@ function reportChanged(
 export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPorts) {
   function completeRestock(name: string, items: (InventoryEntry | null)[] | undefined): void {
     const job = state.current;
-    if (!job || job.reason !== "restock" || !ports.restockSatisfied(name, items)) return;
+    if (!job || job.reason !== "restock" || job.target !== name || !ports.restockSatisfied(name, items)) return;
     ports.clearCommand(name, job.id);
     state.current = null;
     ports.log("Merchant potion restock completed", "success", { character: name, jobId: job.id });
@@ -130,7 +130,7 @@ export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPort
       job.commandReport = report;
       if (report.state === "deferred" && !job.heartbeatAt) {
         job.firstDeferredAt ??= ports.now();
-        if (report.reason === 'anniversary') {
+        if (eventDeferral(report.reason)) {
           releaseAnniversary(job, nameForMerchant);
           return true;
         }
@@ -165,4 +165,8 @@ export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPort
       );
   }
   return { observe };
+}
+
+function eventDeferral(reason: string | null | undefined): boolean {
+  return reason === 'anniversary' || reason === 'event';
 }

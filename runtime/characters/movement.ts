@@ -25,7 +25,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   const native = host.__partyNativeMovement ||= { move: host.smart_move, stop: host.stop, start: host.start_pathfinding, next: host.continue_pathfinding, tick: host.smart_move_logic };
   const planner = createNativePlanner(host, native);
   const state: MoveState = { map: host.character.map, x: 0, y: 0, moving: false, searching: false, found: false, plot: [], use_town: true, try_exact_spot: false, edge: 20, on_done() {} };
-  let version = host.parent.__partyClientVersion || Number(host.G.version), fingerprint = geometryFingerprint(host.G);
+  let version = Number(host.parent.__partyClientVersion || host.G.version), fingerprint = geometryFingerprint(host.G);
   let report = movementDiagnostics(ports, host.character.name, version, fingerprint);
   const validation: ValidationPorts = {
     get game() { return host.G; },
@@ -72,7 +72,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   }
   function install(plot: Step[], nativeRoute: boolean) {
     if (!nativeRoute) plot = repairDoorApproaches(validation, position(), plot);
-    plot = finalApproach(plot, position(), state, journey?.options);
+    plot = trimUncheckedFinal(finalApproach(plot, position(), state, journey?.options));
     const issue = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
     if (issue) {
       if (nativeRoute) throw Error(`Native route rejected: ${issue.reason} between ${JSON.stringify(issue.from)} and ${JSON.stringify(issue.to)}`);
@@ -83,16 +83,19 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     if (journey) { journey.distance = walking; journey.transitions = transitions; }
     state.plot.splice(0, state.plot.length, ...plot); state.searching = false; state.found = true; executor.reset(); return true;
   }
+  function trimUncheckedFinal(plot: Step[]): Step[] {
+    // Both planners may append an exact endpoint across a thin obstacle.
+    // Shared routes retain their exact, coordinator-owned endpoints.
+    if (journey?.options.shared) return plot;
+    const last = plot.at(-1), previous = plot.at(-2);
+    return last && previous && !isTransition(last) && last.map === previous.map &&
+      !validation.walk(previous, last) && distance(previous, state) <= state.edge
+      ? plot.slice(0, -1) : plot;
+  }
   function nativeTick(j: Journey) {
     if (!state.searching) { planner.begin(point(state), state.use_town, ports.now()); state.searching = true; j.searches++; }
     const plot = planner.tick(ports.now());
-    if (plot) {
-      // Native BFS sometimes appends an unchecked exact endpoint. Keep its reachable
-      // predecessor only when it satisfies the caller's explicit arrival tolerance.
-      const last = plot.at(-1), previous = plot.at(-2);
-      if (last && previous && !isTransition(last) && !validation.walk(previous, last) && distance(previous, state) <= state.edge) plot.pop();
-      install(plot, true);
-    }
+    if (plot) install(plot, true);
   }
   function requestPlan(j: Journey) {
     if (j.pending) return;
@@ -181,7 +184,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     return new Promise((resolve, reject) => { state.on_done = (done, reason) => { callback?.(done); if (done) resolve({ success: true }); else reject(Error(reason || 'Movement cancelled')); }; });
   }
   function refreshGeometry() {
-    const nextVersion = host.parent.__partyClientVersion || Number(host.G.version), nextFingerprint = geometryFingerprint(host.G);
+    const nextVersion = Number(host.parent.__partyClientVersion || host.G.version), nextFingerprint = geometryFingerprint(host.G);
     if (nextVersion === version && nextFingerprint === fingerprint) return;
     version = nextVersion; fingerprint = nextFingerprint;
     report = movementDiagnostics(ports, host.character.name, version, fingerprint);
@@ -193,7 +196,9 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   function scheduler() { if (!disposed) { if (gate.owner) gate.owner.tick(); else tick(); } }
   host.smart_move = move; host.stop = stop; host.smart_move_logic = scheduler;
   function importRoute(plot: Step[], identity?: {version: number; fingerprint: string}, plannerEngine = 'shared') {
-    if (!identity || identity.version !== version || identity.fingerprint !== fingerprint) throw Error('Shared route game geometry mismatch');
+    refreshGeometry();
+    if (!identity || identity.version !== version || identity.fingerprint !== fingerprint)
+      throw Error('Shared route game geometry mismatch: expected ' + JSON.stringify(identity) + '; actual ' + JSON.stringify({version, fingerprint}));
     const issue = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
     if (issue) {
       report(journey!.id, state, 'Shared route rejected', issue, 'falling back to native smart_move after party regroup');

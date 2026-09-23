@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Copy, Settings } from "lucide-react";
 import { eventTimeLabel } from "./event-selection-control";
 import { useState } from "react";
 import { Char } from "./char";
@@ -34,7 +33,6 @@ export function AnniversaryDialog({
   onAutoChatChange: (enabled: boolean) => Promise<void>;
 }) {
   const now = useClock();
-  const [copied, setCopied] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
   const live = anniversary?.live;
@@ -76,7 +74,7 @@ export function AnniversaryDialog({
         </DialogHeader>
         <label className="flex items-center gap-3 rounded border border-slate-600 bg-slate-950 p-3 text-sm text-slate-100">
           <input type="checkbox" checked={autoChat} onChange={e => { setSettingsError(""); void onAutoChatChange(e.target.checked).catch(error => setSettingsError(String(error.message))); }} />
-          Send anniversary chat message when receiving cake from a kiss
+          Send chat advertisement when receiving cake from a kiss
         </label>
         {settingsError && <p role="alert" className="text-rose-300">{settingsError}</p>}
         <div className="grid gap-3 md:grid-cols-2">
@@ -138,28 +136,6 @@ export function AnniversaryDialog({
             </p>
           </section>
         </div>
-        <section className="rounded border border-violet-900 bg-black/35 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="font-semibold text-violet-200">Trade advertisement</p>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!anniversary?.message}
-              onClick={async () => {
-                try { await navigator.clipboard.writeText(anniversary?.message || ""); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-                catch { setSettingsError("Could not copy the message"); }
-              }}
-              className="min-w-28 border-violet-600 bg-black text-violet-100 hover:bg-violet-950 hover:text-white"
-            >
-              <Copy className="mr-2 h-3.5 w-3.5" />
-              {copied ? "Copied!" : "Copy"}
-            </Button>
-          </div>
-          <p className="mt-2 text-xs text-emerald-100/70">
-            {anniversary?.message ||
-              "No safe trade offer yet. Complete cake sets are reserved before native slices are advertised."}
-          </p>
-        </section>
         <section className="rounded border border-cyan-800 bg-black/45 p-3 text-cyan-50">
           <div className="flex items-center justify-between gap-3">
             <p className="font-semibold text-cyan-200">Chat advertisement</p>

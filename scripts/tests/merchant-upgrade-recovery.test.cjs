@@ -19,6 +19,20 @@ test('upgrade reselects a scroll moved during its asynchronous protection checkp
   await context.observedUpgradeConfirmed(0,1,'wcap',1);
   assert.equal(selected,2);
 });
+for(const [verified,candidate,expected] of [[null,0,0],[null,null,2],[7,0,7]])test('upgrade executes selected slot and restores inventory: '+JSON.stringify({verified,candidate}),async()=>{
+ const {createLuckyUpgrade}=require('../../runtime/characters/lucky-upgrade.ts');
+ const {namedFunction}=require('./helpers/named-function.cjs');
+ const items=Array(42).fill(null);items[2]={name:'wcap',level:0};items[4]={name:'scroll0',q:2};items[0]={name:'tracker'};
+ let journal=null,clock=0,begins=0;const calls=[];
+ const service=createLuckyUpgrade({item:slot=>items[slot],busy:()=>false,swap:async(a,b)=>{[items[a],items[b]]=[items[b],items[a]];},
+  read:()=>journal,write:value=>journal=value,now:()=>clock,sleep:async ms=>clock+=ms,current:()=>true,log:()=>{}});
+ const context=vm.createContext({character:{ctype:'merchant',items},luckyUpgradeSlot:verified,
+  luckySlotTracking:()=>({select:()=>candidate,begin:()=>begins++}),verifyMerchantItemMarks:async()=>{},
+  findInventoryItemByName:name=>items.findIndex(item=>item?.name===name),merchantLuckyUpgrade:()=>service,
+  upgradeAtSlotConfirmed:async(slot,scroll)=>{calls.push([slot,scroll]);items[slot].level++;items[scroll].q--;return {success:true};}});
+ vm.runInContext(namedFunction(shared,'observedUpgradeConfirmed'),context);await context.observedUpgradeConfirmed(2,4,'wcap',1);
+ assert.deepEqual(calls,[[expected,4]]);assert.equal(begins,1);assert.equal(items[2].level,1);assert.equal(items[0].name,'tracker');assert.equal(journal,null);
+});
 
 test('bank-sourced pass persists before production and resumes at its original target after relocation', () => {
   const {beginProduction, finishProduction} = require('../../runtime/coordinator/inventory/production.ts');

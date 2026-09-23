@@ -55,7 +55,21 @@ function difference(before: RecordValue, after: RecordValue): RecordValue {
   return result;
 }
 function pickVitals(status: RecordValue): RecordValue {
-  return Object.fromEntries(liveFields.map((field) => [field, status[field] ?? null]));
+  return displayVitals(Object.fromEntries(liveFields.map((field) => [field, status[field] ?? null])));
+}
+/** Display precision only. Never modify the authoritative status or incoming sample. */
+function displayVitals(vitals: RecordValue): RecordValue {
+  if (!Array.isArray(vitals.conditions)) return vitals;
+  const rounded = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.ceil(value / 1000) * 1000 : value;
+  return { ...vitals, conditions: vitals.conditions.map(value => {
+    const condition = requestObject(value);
+    const live = requestObject(condition.live);
+    return { ...condition,
+      ...('remainingMs' in condition ? { remainingMs: rounded(condition.remainingMs) } : {}),
+      ...('ms' in live ? { live: { ...live, ms: rounded(live.ms) } } : {}),
+    };
+  }) };
 }
 function bag(status: PresentationStatus): RecordValue {
   return Object.fromEntries(
@@ -243,7 +257,7 @@ export function createDashboardStream<Timer>(ports: Ports<Timer>) {
       generation: session.generation,
       sample: session.sample,
       sampledAt: Number(body.sampledAt) || ports.now(),
-      vitals: { ...current.vitals, ...entries(data.vitals) },
+      vitals: { ...current.vitals, ...displayVitals(entries(data.vitals)) },
       items: { ...current.items, ...itemChanges },
       slots: { ...current.slots, ...slotChanges },
     });

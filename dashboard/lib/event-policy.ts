@@ -12,7 +12,7 @@ export function selectedEvents(party: EventFormation, name: string): string[] {
   const source = eventPolicy(party, name).source;
   const saved = party.eventSelectionsByCharacter?.[source];
   const selections = saved ?? ["anniversary", ...(party.eventsByCharacter?.[source] ? supportedEvents.filter(id => id !== "anniversary") : [])];
-  return selections.filter(id => supportedEvents.includes(id) && (name !== party.merchantCharacter || id === "anniversary"));
+  return selections.filter(id => supportedEvents.includes(id));
 }
 
 export function eventEnabled(party: EventFormation, name: string, event: string) {

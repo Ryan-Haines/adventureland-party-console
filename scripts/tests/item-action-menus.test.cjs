@@ -1,10 +1,42 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),Module=require('node:module');
 const {buildSync}=require('esbuild'),React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
-function load(name){const filename=path.resolve('dashboard/features/party/'+name+'.tsx'),m=new Module(filename,module);m.filename=filename;m.paths=Module._nodeModulePaths(path.dirname(filename));m.require=function(id){if(id==='./query-actions')return {usePartyAction:()=>({})};if(id.startsWith('@/components/ui/'))return new Proxy({},{get:(_,key)=>String(key)});return Module.prototype.require.call(this,id)};m._compile(buildSync({entryPoints:[filename],bundle:true,packages:'external',external:['@/components/ui/*','./query-actions'],platform:'node',format:'cjs',write:false}).outputFiles[0].text,filename);return m.exports;}
+function load(name){const filename=path.resolve('dashboard/features/party/'+name+'.tsx'),m=new Module(filename,module);m.filename=filename;m.paths=Module._nodeModulePaths(path.dirname(filename));m.require=function(id){if(id==='@base-ui/react/menu')return {Menu:new Proxy({},{get:(_,key)=>'LuckyMenu'+String(key)})};if(id==='./query-actions')return {usePartyAction:()=>({})};if(id.startsWith('@/components/ui/'))return new Proxy({},{get:(_,key)=>String(key)});return Module.prototype.require.call(this,id)};m._compile(buildSync({entryPoints:[filename],bundle:true,packages:'external',external:['@/components/ui/*','./query-actions'],platform:'node',format:'cjs',write:false}).outputFiles[0].text,filename);return m.exports;}
 const text=n=>typeof n==='string'?n:(n.children||[]).map(text).join('');
 const {InventoryPanel}=load('inventory-panel'),{EquipSlot}=load('equip-slot');
+test('occupied lucky slot chooses data or item details without the large inventory banner',async()=>{
+ const p=props('weapon');let data=0,selected=[],view;p.onLuckySlot=()=>data++;p.onSelect=entry=>selected.push(entry);
+ try{
+  await act(async()=>view=create(React.createElement(InventoryPanel,p)));
+  const trigger=()=>view.root.findAllByType('TooltipTrigger').find(n=>n.props.render?.props['aria-label']==='Test').props.render;
+  await act(async()=>trigger().props.onClick({currentTarget:{}}));assert.equal(data,0);assert.equal(selected.length,0);
+  const details=()=>view.root.findAllByType('LuckyMenuItem').find(n=>text(n)==='Show item details');
+  assert.equal(details().props.disabled,false);await act(async()=>details().props.onClick());assert.deepEqual(selected,[p.character.items[0]]);
+  assert.equal(view.root.findByType('LuckyMenuRoot').props.open,false);
+  await act(async()=>trigger().props.onClick({currentTarget:{}}));
+  await act(async()=>view.root.findAllByType('LuckyMenuItem').find(n=>text(n)==='Show lucky slot data').props.onClick());assert.equal(data,1);
+  assert.ok(!view.root.findAllByType('button').some(n=>text(n).includes('View testing statistics')));
+  assert.ok(!view.root.findAllByType('ContextMenuItem').some(n=>text(n)==='Item details'));
+ }finally{await act(async()=>view?.unmount());}
+});
 function props(type){const entry={slot:0,item:{name:'test'},meta:{definition:{name:'Test',type,stat:type==='weapon'?1:0},sprite:null}};return {character:{name:'M',ctype:'merchant',items:[entry],slots:{},seenAt:1},characters:[{name:'M',seenAt:1},{name:'F',seenAt:1}],merchant:'M',marked:[],merchantMarked:[],autoItemMarks:{},autoUpgradeMarks:{},allAutoUpgradeMarks:{},merchantDeliveries:{},standListings:[],autoNpcSales:{},autoStandMarks:{},buyable:[],catalog:[],priceHistory:{},upgradeMarks:[],statScrollMarks:[],statScrollInventory:{},compoundGroups:[],autoCompoundMarks:[],allAutoCompoundMarks:{},autoExchanges:{}};}
+test('gold marker follows the next test slot and clicking the empty slot opens a choice menu',async()=>{
+ const p=props('weapon');p.character.items=[];let opened=0,view;p.onLuckySlot=()=>opened++;
+ const marker=()=>view.root.findAllByType('TooltipTrigger').find(n=>n.props.render?.props['aria-label']?.includes('Open lucky slot options'));
+ try{
+  await act(async()=>view=create(React.createElement(InventoryPanel,p)));
+  assert.match(marker().props.render.props['aria-label'],/Next upgrade will test for lucky upgrade, slot 0/);
+  await act(async()=>marker().props.render.props.onClick({currentTarget:{}}));assert.equal(opened,0);
+  assert.equal(view.root.findByType('LuckyMenuRoot').props.open,true);
+  assert.equal(view.root.findAllByType('LuckyMenuItem').find(n=>text(n)==='Show item details').props.disabled,true);
+  await act(async()=>view.root.findAllByType('LuckyMenuItem').find(n=>text(n)==='Show lucky slot data').props.onClick());assert.equal(opened,1);
+  p.luckySlotTracking={version:1,slots:{0:{totalRolls:1,sumRolls:0.4,rollsAbove96_3:0,perfectRolls:0}}};
+  await act(async()=>view.update(React.createElement(InventoryPanel,{...p})));
+  assert.match(marker().props.render.props['aria-label'],/slot 1/);
+  await act(async()=>marker().props.render.props.onClick({currentTarget:{}}));assert.equal(opened,1);
+  await act(async()=>view.root.findAllByType('LuckyMenuItem').find(n=>text(n)==='Show lucky slot data').props.onClick());assert.equal(opened,2);
+ }finally{await act(async()=>view?.unmount());}
+});
 for(const type of ['tracker','stone','spawner','elixir','weapon'])test(type+' gets only its valid inventory actions',async()=>{let view;try{await act(async()=>view=create(React.createElement(InventoryPanel,props(type))));const labels=view.root.findAllByType('ContextMenuItem').map(text);assert.equal(labels.includes('Equip'),type==='weapon');assert.equal(labels.includes('Use elixir'),type==='elixir');assert.equal(labels.includes('Use'),type==='spawner');assert.ok(labels.indexOf('Mark for bank')<labels.indexOf('Mark for stand'));assert.ok(labels.indexOf('Auto mark for bank')<labels.indexOf('Mark for stand'));if(type==='weapon'){const trigger=view.root.findAllByType('ContextMenuSubTrigger').find(n=>text(n)==='Add stat scroll');assert.ok(trigger.findAllByType('svg').length);}}finally{await act(async()=>view?.unmount());}});
 test('equipped gear omits primary-stat action, active elixir has no Unequip or Use',async()=>{for(const type of ['weapon','elixir']){let view;try{await act(async()=>view=create(React.createElement(EquipSlot,{slot:type==='elixir'?'elixir':'mainhand',equipped:props(type).character.items[0],isMerchant:true,autoUpgradeMarks:{},statScrollInventory:{}})));const labels=view.root.findAllByType('ContextMenuItem').map(text);assert.equal(labels.includes('Unequip'),type==='weapon');assert.ok(!labels.some(label=>label.includes('primary-stat')||label.startsWith('Use')));}finally{await act(async()=>view?.unmount());}}});
 
