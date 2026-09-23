@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { MapPin } from "lucide-react";
 import { EscapeControl } from "./escape-control";
-import { FarmingAreaPicker } from "./farming-area-picker";
+import { ConnectedFarmingAreaPicker as FarmingAreaPicker } from "./connected-farming-area-picker";
 import { MonsterFocusPicker } from "./monster-focus-picker";
 import type { PartyConsoleModel } from "./use-party-console";
 import { PartyItemDetails } from "./party-item-details";
@@ -18,9 +18,11 @@ import { PartyMerchantCommerceDialog } from "./party-merchant-commerce-dialog";
 import { PartySendMailDialog } from "./party-send-mail-dialog";
 
 import { ConnectedCharacterCard } from "./connected-character-card";
+import { useCharacterCardModels } from './character-card-model';
 import { PendingCharacterCards, pendingCharacters } from './pending-character-cards';
 
 export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
+  const cardModels = useCharacterCardModels(model);
   const { state, chars, formation, setPickerSlot, monsters, post, townParty, setMonsterNavigateTarget, huntSetup, huntSetupCharacter, monsterNavigateBusy, setHuntSetup, setMonsterNavigateBusy, monsterNavigateTarget, farmAreaRequest, setFarmAreaRequest, startFarmingArea, wtbItem } = model;
   const pending = pendingCharacters(model);
   return (
@@ -42,7 +44,7 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
             onValueChange={(value) => formation({ leader: value })}
             className="grid items-start gap-4 @3xl:grid-cols-2 @7xl:grid-cols-4"
           >
-            {chars.filter(char => !pending.some(entry => entry.name === char.name)).map(char => <ConnectedCharacterCard key={char.name} name={char.name} model={model} />)}
+            {chars.filter(char => !pending.some(entry => entry.name === char.name)).map(char => <ConnectedCharacterCard key={char.name} name={char.name} model={cardModels.card} inventoryModel={cardModels.inventory} />)}
             <PendingCharacterCards model={model} />
             <RosterControls slots={state.activeSlots || []} operation={state.steamSwitch} onChoose={setPickerSlot} />
             {state.bankboiTransaction ? (

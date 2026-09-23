@@ -29,6 +29,8 @@ from the commits merged into `main`.
 
 ### Changed
 
+- Reduced dashboard status traffic and isolated position updates from character
+  cards while preserving live controls and inventory updates. ([#17](https://github.com/Ryan-Haines/adventureland-party-console/issues/17))
 - Reworked the lucky slot mechanism.
 - Anniversary participation no longer automatically crafts Sixfold Cakes; complete
   slice sets remain available through the normal exchange menu.

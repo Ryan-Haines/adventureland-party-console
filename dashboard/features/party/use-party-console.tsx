@@ -794,18 +794,18 @@ export function usePartyConsole() {
   );
   const places = state.travelPlaces || chars[0]?.travelPlaces || [];
   const monsters = state.monsterChoices || chars[0]?.monsterChoices || [];
-  const selectedFocus = Array.isArray(state.monsterFocus)
+  const selectedFocus = useMemo(() => Array.isArray(state.monsterFocus)
     ? state.monsterFocus
-    : [state.monsterFocus || "goo"];
+    : [state.monsterFocus || "goo"], [state.monsterFocus]);
   const occupiedStandSlots = Object.entries(
     state.merchantCharacter ? state.characters[state.merchantCharacter]?.slots || {} : {},
   ).filter(([slot, entry]) => slot.startsWith("trade") && !!entry).length;
-  const detailMeta = (item: Item, live?: ItemMeta | null): ItemMeta | null | undefined => {
+  const detailMeta = useCallback((item: Item, live?: ItemMeta | null): ItemMeta | null | undefined => {
     const known = state.merchantCatalog?.allItems?.find((entry) => entry.id === item.name)?.meta;
     if (!known) return live;
     if (!live) return known;
     return { ...known, ...live, world: live.world || known.world };
-  };
+  }, [state.merchantCatalog]);
   const statScrollInventory = useMemo(() => {
     const quantities: Record<string, number> = {};
     const add = (item?: Item | null) => {

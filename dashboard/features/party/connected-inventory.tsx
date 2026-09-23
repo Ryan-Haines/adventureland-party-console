@@ -7,7 +7,7 @@ import { InventoryPanel } from './inventory-panel';
 import { aggregateSlotTracking } from '../../../runtime/lucky-slot-tracking';
 import { LuckySlotDialog } from './lucky-slot-tracker';
 import { same } from './same';
-import type { PartyConsoleModel } from './use-party-console';
+import type { InventoryModel } from './character-card-model';
 
 import { memo, useEffect, useState } from 'react';
 import { DeconstructionConfirmation, type DeconstructionSelection } from './deconstruction-confirmation';
@@ -18,7 +18,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   model: base,
 }: {
   name: string;
-  model: PartyConsoleModel;
+  model: InventoryModel;
 }) {
   const model = usePanelModel(base, { inventory: true });
   const {
@@ -39,7 +39,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   } = model;
   const char = state.characters[name];
   useEffect(() => {
-    committedLiveRecord(name);
+    committedLiveRecord(name, 'inventory');
   }, [name, char?.items, char?.slots]);
   const ruleName = state.merchantRules ? String(state.merchantCharacter) : name;
   const marked = state.marked[name] || [];
@@ -49,7 +49,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   // Presence and inventory arrive independently, including after reconnects.
   // Missing inventory is still loading, not an empty bag.
   if (!char || !Array.isArray(char.items) || !char.slots) {
-    return <p role="status" className="border-t border-emerald-900/70 bg-[#0b1916] p-5 text-emerald-100">Loading inventory…</p>;
+    return <output className="block border-t border-emerald-900/70 bg-[#0b1916] p-5 text-emerald-100">Loading inventory…</output>;
   }
   return (
     <UpgradeOfferingProvider character={char.name} executor={state.merchantCharacter} stock={state.upgradeOfferingStock || {}} rules={state.upgradeOfferingRules || []} catalog={state.merchantCatalog?.allItems || []} post={model.post}>

@@ -5,17 +5,15 @@ import { API } from './api';
 import { createLiveReceiver, type LiveMessage } from './live-protocol';
 import { domainOptions, key, useVisible } from './query-cache';
 import type { Char } from './char';
+import { characterKey, writeCharacter, writeVitals, type CharacterDomain } from './character-cache';
+export { characterKey } from './character-cache';
 import {
   dashboardLiveMetrics,
-  receivedLiveRecord,
+  receivedLiveMessage,
   clearLiveMetrics,
 } from './live-metrics';
 
 export const liveConnectionKey = ['party', 'connection'] as const;
-export const characterKey = (
-  name: string,
-  kind: 'vitals' | 'inventory' | 'diagnostics' | 'presence',
-) => ['party', 'character', name, kind] as const;
 export interface LiveConnection {
   healthy: boolean;
   version: number;
@@ -32,7 +30,7 @@ export function useLiveHealthy() {
 }
 export function useCharacterData(
   name: string,
-  kind: 'vitals' | 'inventory' | 'diagnostics' | 'presence',
+  kind: CharacterDomain,
 ) {
   return useQuery({
     queryKey: characterKey(name, kind),
@@ -64,24 +62,28 @@ export function DashboardLive() {
         1;
       client.setQueryData(liveConnectionKey, { healthy, version });
     };
+    const inventories = new Map<string, { items: unknown; slots: unknown; size: number }>();
     const receiver = createLiveReceiver((name, record) => {
       if (!record) {
-        client.setQueryData(characterKey(name, 'vitals'), null);
-        client.setQueryData(characterKey(name, 'inventory'), null);
+        for (const kind of ['vitals', 'position', 'inventory'] as const) writeCharacter(client, name, kind, null);
+        inventories.delete(name);
         return;
       }
-      if (record.sample > 0) receivedLiveRecord(name, record.sampledAt);
-      client.setQueryData(characterKey(name, 'vitals'), record.vitals);
+      const sampledAt = record.sample > 0 ? record.sampledAt : undefined;
+      writeVitals(client, name, record.vitals, sampledAt);
       const size =
         Number(record.vitals.inventorySize) || Object.keys(record.items).length;
-      client.setQueryData(characterKey(name, 'inventory'), {
+      const previous = inventories.get(name);
+      if (previous?.items === record.items && previous.slots === record.slots && previous.size === size) return;
+      inventories.set(name, { items: record.items, slots: record.slots, size });
+      writeCharacter(client, name, 'inventory', {
         items: Array.from(
           { length: size },
           (_, index) => record.items[String(index)] || null,
         ),
         inventorySize: size,
         slots: record.slots,
-      });
+      }, sampledAt);
     });
     function fail() {
       if (stopped) return;
@@ -104,10 +106,7 @@ export function DashboardLive() {
       source.onmessage = (event) => {
         if (stopped || stream !== source) return;
         try {
-          dashboardLiveMetrics.messages++;
-          dashboardLiveMetrics.bytes += new TextEncoder().encode(
-            event.data,
-          ).length;
+          receivedLiveMessage(event.data);
           const message = JSON.parse(event.data) as LiveMessage;
           if (!receiver.accept(message)) return;
           if (message.type === 'heartbeat' || message.type === 'snapshot')

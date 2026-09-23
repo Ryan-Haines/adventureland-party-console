@@ -2,7 +2,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useClock } from "@/hooks/use-clock";
-import { observeStatus, statusRemaining, type StatusDuration } from "./status-duration";
+import { durationSignature, reconcileDurations, statusRemaining, type StatusDuration } from "./status-duration";
 import { Condition } from "./condition";
 import { durationLabel } from "./duration-label";
 import { SpriteCrop } from "./sprite-crop";
@@ -17,10 +17,13 @@ export function ActiveStatuses({
   const [open, setOpen] = useState(false);
   const now = useClock();
   const [durations, setDurations] = useState<Record<string, StatusDuration | undefined>>({});
+  const signature = durationSignature(conditions);
   useEffect(() => {
-    setDurations(previous => Object.fromEntries(conditions.map(condition =>
-      [condition.id, observeStatus(condition, previous[condition.id], Date.now())])));
-  }, [conditions]);
+    // Anchor newly observed telemetry at commit time; equal timer inputs do not
+    // enter this effect. Using the shared clock here would backdate the sample.
+    // eslint-disable-next-line react/react-compiler
+    setDurations(previous => reconcileDurations(signature, previous, Date.now()));
+  }, [signature]);
   return (
     <section className="mt-5 border-t border-emerald-900/70 pt-4">
       <button

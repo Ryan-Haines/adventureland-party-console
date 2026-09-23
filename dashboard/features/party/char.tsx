@@ -1,4 +1,5 @@
 "use client";
+import type { Entity } from 'typed-adventureland';
 import type { LuckySlotTracking } from "../../../runtime/lucky-slot-tracking";
 import { BestiaryMonster } from "./bestiary-monster";
 import { Condition } from "./condition";
@@ -71,6 +72,8 @@ export type Char = {
   max_mp: number;
   gold: number;
   map: string;
+  // Display telemetry includes nullable instance IDs when no instance is reported.
+  in?: Entity['in'] | null;
   x: number;
   y: number;
   rip: boolean;
