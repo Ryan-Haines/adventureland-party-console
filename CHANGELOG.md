@@ -7,6 +7,8 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Keep-moving combat shares encounter ownership before attacking, preventing
+  retaliation from repeatedly stopping convoys and releasing obsolete defensive holds.
 - Marked merchant deliveries now schedule their own visits by default. Merchant
   settings can disable delivery-only trips while retaining deliveries for other
   visits and explicit sends. ([#15](https://github.com/Ryan-Haines/adventureland-party-console/issues/15))

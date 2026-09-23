@@ -401,7 +401,7 @@
   var monsterPriorities = {};
   var passiveHunting = {rules:{},useFieldGenerators:true};
   var passingEncounters = parent.__partyPassingEncounters || (parent.__partyPassingEncounters = {});
-  var passiveGeneratorAttempt = null, peerPassingEncounters = [];
+  var passiveGeneratorAttempt = null, peerPassingEncounters = parent.__partyPeerPassingEncounters || [];
   var passiveRareHunts = { tinyp: false, phoenix: false, goldenbat: false, cutebee: false, hen: false, rooster: false };
   var rareControlState = null, rareControlAt = 0, rarePath = null;
   var rareLoot = null, rareLootPending = false;
@@ -852,7 +852,7 @@
       var aggressor=get_entity(data.hid || data.actor);
       if(aggressor && aggressor.type==='monster' && (!isPassingEncounter(aggressor) || returnDepartureDefense()) && !joinedEvent && !eventTargetTypes.length) {
         root.__partyDefensiveHit={target:groupedEntityReport(aggressor),at:Date.now()};
-        interruptConvoyForDefense();
+        interruptConvoyForDefense(null, null, aggressor);
         if(root.partyQueueClient)root.partyQueueClient.evidence(aggressor,'engaged');
       }
     }
@@ -2229,7 +2229,7 @@
       combatSelection: { id: combatSelection.id, revision: combatSelection.revision,
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
-      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
       movementGeometry: movement.identity,
       huntReturnProtocol: 2,
@@ -2238,6 +2238,8 @@
         navigationRevision: convoyTraveling.navigationRevision,
         returnPlan: convoyTraveling.returnPlan || null,
         commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
+        defenseTargets: convoyTraveling.defenseTargets || [],
+        defenseInterruption: convoyTraveling.defenseInterruption || null,
         townAttempt: convoyTraveling.townAttempt || null,
         transitionMap: convoyTraveling.transitionMap || null,
         runtimeId: convoyRuntimeId, routeReady: !!convoyTraveling.routeReady,
@@ -2524,8 +2526,8 @@
     Object.keys(passingEncounters).forEach(function(key) {
       var entry = passingEncounters[key], e = get_entity(entry.id);
       if (entry.server !== reunionRealm() || entry.map !== character.map || String(entry.in || entry.map) !== String(character.in || character.map) ||
-          e && (e.dead || e.hp === 0) || committedHuntEncounter(entry) || now - entry.at > 60000) delete passingEncounters[key];
-      else if (e && e.visible) entry.at = now;
+          e && (e.dead || e.hp === 0) || typeof fightDeaths !== 'undefined' && fightDeaths.some(function(d){return passingKey(d)===key && d.at>=(entry.startedAt || entry.at);}) || committedHuntEncounter(entry) || now - entry.at > 60000) delete passingEncounters[key];
+      else if (e && e.visible && !entry.reserved) entry.at = now;
     });
     return Object.values(passingEncounters).slice(-128);
   }
@@ -2533,6 +2535,9 @@
     if (!target) return false;
     if (committedHuntEncounter(target)) return false;
     var key = passingKey(target), now = Date.now() + coordinatorClockOffset;
+    if (target.dead || target.hp === 0) return false;
+    var passingDeaths = (typeof fightDeaths !== 'undefined' ? fightDeaths : []).concat(groupedCombat && groupedCombat.deaths || []);
+    if (passingDeaths.some(function(d){return passingKey(d)===key && now-d.at<60000;})) return false;
     if (peerPassingEncounters.some(function(e){return passingKey(e)===key && now-e.at<60000;})) return true;
     return !!(passingEncounters[key] && now - passingEncounters[key].at < 60000) ||
       !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
@@ -2541,9 +2546,9 @@
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
     var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
     var pending = root.partyLootClient && root.partyLootClient.huntPending();
-    if (!pending && !(convoy && convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget))) return true;
+    if (!pending && !(convoy && (convoy.routeProtocol === 4 || convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget)))) return true;
     var signal = typeof convoySignal !== 'undefined' && convoySignal;
-    return !!(convoy && !convoy.cancelled && convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget) &&
+    return !!(convoy && !convoy.cancelled && (convoy.routeProtocol === 4 || convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget)) &&
       convoy.phase === 'travelling' && signal && signal.phase === 'travel' &&
       signal.id === convoy.id && Number(signal.epoch) === convoy.epoch && Number(signal.commandId) === convoy.commandId &&
       signal.runtimeId === convoyRuntimeId && Number(signal.validUntil) > Date.now() + coordinatorClockOffset &&
@@ -2562,16 +2567,19 @@
       var defending = returning && e && (e.target === character.name || currentPartyList().indexOf(e.target) >= 0);
       return (defending || hunting && e && e.mtype === hunting || rule && rule.enabled && rule.keepMoving) && !committedHuntEncounter(e) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
         (!e.map || e.map === character.map) && e.mtype !== 'fieldgen0' && is_in_range(e) &&
+        (returning || isPassingEncounter(e) || !(e.target === character.name || currentPartyList().indexOf(e.target) >= 0)) &&
         !isExternallyClaimedMonster(e) && (returning || !groupedCombat || !groupedCombat.target || groupedCombat.target.id !== e.id) &&
         !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id));
     });
     candidates.sort(function(a,b) {return monsterPriority(b)-monsterPriority(a) || Math.hypot(character.x-a.x,character.y-a.y)-Math.hypot(character.x-b.x,character.y-b.y) || String(a.id).localeCompare(String(b.id));});
     return candidates[0] || null;
   }
-  function beginPassingAttack(target) {
-    var entry = Object.assign(groupedEntityReport(target), {server:reunionRealm(),at:Date.now()+coordinatorClockOffset});
+  function beginPassingAttack(target, admission, reserveOnly) {
+    var previous = passingEncounters[passingKey(target)];
+    var entry = Object.assign(groupedEntityReport(target), {server:reunionRealm(),at:Date.now()+coordinatorClockOffset,startedAt:previous && previous.startedAt || Date.now()+coordinatorClockOffset,admission:admission || previous && previous.admission,reserved:!!reserveOnly});
     passingEncounters[passingKey(entry)] = entry;
     if (root.partyQueueClient) root.partyQueueClient.flush();
+    if (reserveOnly) return;
     if (target.mtype !== 'tinyp' || !passiveHunting.useFieldGenerators || rareFields().length || Math.hypot(character.x-target.x,character.y-target.y)>=200) return;
     var key = passingKey(entry);
     if (!passiveGeneratorAttempt || passiveGeneratorAttempt.key !== key) passiveGeneratorAttempt={key:key,at:Date.now(),sent:false};
@@ -11450,7 +11458,7 @@
     return !!(c && c.purpose==='monster-hunt' && c.nonPreemptible && !c.returnWalking &&
       (c.phase!=='travelling' || typeof movement!=='undefined' && movement.transition && movement.transition()==='town'));
   }
-  function interruptConvoyForDefense(id, epoch) {
+  function interruptConvoyForDefense(id, epoch, aggressor) {
     var c=convoyTraveling;
     if(c && id && (c.id!==id || Number(epoch)<c.epoch))return;
     if(c && ((c.navigationExempt && c.purpose!=='anniversary-return') || ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol'].indexOf(c.purpose)>=0))return;
@@ -11459,6 +11467,11 @@
     root.__partyConvoyDefense=id || c.id;
     if(c && (c.routeProtocol===4 || c.purpose==='monster-hunt' && c.nonPreemptible)) {
       if(c.defensePaused)return;
+      c.defenseTargets = aggressor ? [Object.assign(groupedEntityReport(aggressor), {server:reunionRealm()})] :
+        typeof currentTravelAttackers === 'function' ? currentTravelAttackers() : [];
+      c.defenseInterruption = {at:Date.now(),source:id ? 'coordinator' : 'local-attacker',
+        convoyId:c.id,epoch:c.epoch,commandId:c.commandId,navigationRevision:c.navigationRevision,
+        phase:c.phase,targets:c.defenseTargets};
       if(c.freezeRoute)c.freezeRoute();
       if(c.detachRoute)c.detachRoute();
       if(c.townAttempt && c.townAttempt.state==='casting')c.townAttempt.state='interrupted';
@@ -11630,12 +11643,21 @@
   function queueReport() {
     return {name:character.name,rareObservation:rareObservationReport(),map:character.map,in:character.in,server:reunionRealm(),x:character.x,y:character.y,hp:character.hp,max_hp:character.max_hp,lastDeath:lastDeathInfo,rip:!!character.rip,
       combatSelection:Object.assign({},combatSelection,{runtimeId:convoyRuntimeId,target:groupedNomination()}),
-      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
+      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
         threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision,
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
   function acceptCombatControl(state) {
-    if (Array.isArray(state.passingEncounters)) peerPassingEncounters = state.passingEncounters;
+    if (Array.isArray(state.passingEncounters) && (!state.serverNow || state.serverNow >= (root.__partyPassingControlAt || 0))) {
+      root.__partyPassingControlAt = state.serverNow || 0;
+      var passingNow = Date.now() + coordinatorClockOffset;
+      var retainedPassing = {};
+      peerPassingEncounters.concat(state.passingEncounters).forEach(function(e) {
+        var key = passingKey(e), old = retainedPassing[key];
+        if (passingNow-e.at<60000 && (!old || old.at<=e.at)) retainedPassing[key]=e;
+      });
+      peerPassingEncounters = parent.__partyPeerPassingEncounters = Object.values(retainedPassing).slice(-128);
+    }
     if (typeof acceptRareCombatControl === 'function') acceptRareCombatControl(state);
     if(!state.serverNow || state.serverNow >= (root.__partyTravelCombatAt || 0))
       root.__partyFarmingEngagement=state.convoySignal && state.convoySignal.farmingEngagement || null;

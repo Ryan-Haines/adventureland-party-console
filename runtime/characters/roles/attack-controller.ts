@@ -20,7 +20,7 @@ interface AttackPorts {
   skillAttack?(target: Target): Promise<boolean> | null;
   skillBusy?(): boolean;
   passing?(target: Target): boolean;
-  preparePassing?(target: Target): void;
+  preparePassing?(target: Target): boolean | void;
   equipmentBusy?(): boolean;
   target(): Target | null;
   selected(): string | null;
@@ -113,6 +113,10 @@ export function createAttackController(ports: AttackPorts) {
   }
   function send(target: Target): void {
     if (!permitted(target)) return;
+    if (ports.passing?.(target) && ports.preparePassing?.(target) === false) {
+      ports.state().skippedAttack = 'waiting for passing encounter acknowledgement';
+      return;
+    }
     const attempt: Flight = {
       passing: !!ports.passing?.(target), pending: 0, success: false, slotsDone: false,
       epoch: ports.epoch(), targetId: target.id,
@@ -138,7 +142,9 @@ export function createAttackController(ports: AttackPorts) {
       attempt.pending++;
       stats.attempts++;
       stats.lastOffsets.push(Date.now() - deadline);
-      if (attempt.passing) ports.preparePassing?.(target);
+      if (attempt.passing && ports.preparePassing?.(target) === false) {
+        attempt.pending--; cancelSlots(); return;
+      }
       const action=attempt.passing ? null : (sharedRoutine as any).queueEvidence?.(target,'pending');
       try {
         Promise.resolve(attack(target)).then(() => {

@@ -126,9 +126,19 @@ coordinator and character assets, then test console logout followed by Steam log
 and Engage for the same and a different character, including a primary with Steam
 companions. Confirm the new primary stays connected and headless slots stay assigned.
 
-Protocol 4 defensive stops retain their local convoy identity until the coordinator
-acknowledges the stop, even when a short-lived attacker dies or is classified as a
-passing encounter before the next heartbeat. The shared travel watchdog regroups
+Passing attacks first publish an exact encounter reservation over the combat
+channel and wait for every active fighter/convoy participant to acknowledge it.
+Missing approval skips the optional attack while travel continues. Admission is
+scoped to runtime, membership, navigation and convoy ownership. Protocol 4 optional
+attacks require an owned travelling signal; transitions still suppress them.
+Protocol 4 defensive stops retain their local convoy identity and first interruption
+cause until the coordinator acknowledges the stop. If every recorded cause becomes
+a passing encounter, fresh observations let the coordinator rebuild the current
+owned route without a defensive loot hold. Genuine defensive kills retain loot
+handling. See the [keep-moving audit](../../docs/keep-moving-combat-audit.md).
+Validate passing-admission, passive-hunting, convoy-defense and shared-convoy tests;
+publish character and coordinator assets together using the full restart.
+The shared travel watchdog regroups
 after three seconds of fresh missing local route reports, preserving the destination
 and checking navigation ownership first. Validate with `shared-convoy.test.cjs`,
 `convoy-defense.test.cjs`, and `passive-hunting.test.cjs`.

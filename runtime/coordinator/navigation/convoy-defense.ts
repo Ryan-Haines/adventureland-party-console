@@ -1,10 +1,13 @@
 import { classifyTravelDefense, normalTravel, type DefenseState } from "./travel-defense.ts";
 import { returnWalking, type ReturnTownPolicy } from './return-town.ts';
+import { collectPassing, passingIdentity, type PassingEncounter } from '../../combat/passing.ts';
+import type { Member } from '../../combat/grouped.ts';
 export { classifyTravelDefense } from "./travel-defense.ts";
 interface Loot { id: string; after: number; realm: string; map: string; in: string; x: number; y: number; complete: boolean; progress?: Progress }
 interface Progress { id: string; observedAt: number; realm: string; map: string; in: string; complete: boolean; error?: string }
 interface Status { seenAt: number; rip?: boolean; hp: number; map: string; in?: string; region?: string; server: string; x: number; y: number; convoyLoot?: Progress; activeEvent?: unknown; joinedEvent?: unknown; mapEvent?: unknown }
 interface Convoy {
+  defenseTargets?: PassingEncounter[];
   continuousReturn?: number; huntTarget?: string; returnTown?: ReturnTownPolicy; townRetry?: boolean;
   returnTownRally?: {map:string;x:number;y:number};
   farmingEngagement?: {target: {id:string;map:string;in?:string|number;server?:string};at:number;finished?:boolean};
@@ -53,6 +56,7 @@ function lootComplete(p: Party, c: Convoy, now: number): boolean {
   return false;
 }
 function resume(c: Convoy): void {
+  delete c.defenseTargets;
   c.townRetry = false;
   delete c.farmingEngagement;
   delete c.loot;
@@ -114,6 +118,51 @@ function localDefense(p: Party, c: Convoy): boolean {
       n.navigationRevision===command.navigationRevision,n.runtimeId===s?.combatSelection?.runtimeId].every(Boolean);
   });
 }
+interface DefenseReport {
+  seenAt?: number;
+  convoyNavigation?: {id:string;epoch:number;commandId:number;runtimeId:string;navigationRevision:number;phase:string;
+    defenseTargets?:PassingEncounter[];defenseInterruption?:{source:string}};
+  combatSelection?: {runtimeId:string};
+}
+function stoppedReports(p: Party, c: Convoy): (DefenseReport & {name:string})[] {
+  return c.participants.map(name=>({...p.statuses[name] as DefenseReport,name})).filter(s=>
+    s?.convoyNavigation?.phase==='defending' && s.convoyNavigation.id===c.id && s.convoyNavigation.epoch===c.epoch);
+}
+function reportOwned(p: Party, c: Convoy, s: DefenseReport & {name:string}, now: number): boolean {
+  const n=s.convoyNavigation!;
+  const command=p.commands[s.name] as {id?:number;convoyId?:string;navigationRevision?:number} | undefined;
+  return !!s.seenAt && now-s.seenAt<=3000 && n.runtimeId===s.combatSelection?.runtimeId &&
+    command?.convoyId===c.id && n.commandId===command.id && n.navigationRevision===command.navigationRevision;
+}
+function stoppedCauses(c: Convoy, reports: DefenseReport[]): PassingEncounter[] | null {
+  const causes=[...(c.defenseTargets||[])];
+  for(const s of reports) {
+    const n=s.convoyNavigation!, targets=n.defenseTargets||[];
+    if(!targets.length && !(causes.length && n.defenseInterruption?.source==='coordinator'))return null;
+    causes.push(...targets);
+  }
+  return causes.length ? causes : null;
+}
+function obsoleteDefense(p: Party, c: Convoy, now: number): boolean {
+  const members=c.participants.map(name=>({name,ctype:'',revision:0,status:p.statuses[name] as Member['status']}));
+  const passing=new Set(collectPassing(members,[],now).map(passingIdentity));
+  const reports=stoppedReports(p,c);
+  if(!reports.every(s=>reportOwned(p,c,s,now)))return false;
+  const causes=stoppedCauses(c,reports);
+  return !!causes && causes.every(t=>passing.has(passingIdentity(t)));
+}
+function resumePassingDefense<S,C>(input:S,p:Party,c:Convoy,state:string,now:number,
+  commandFor:(state:S,convoy:C,phase:string,name:string)=>unknown):boolean {
+  if(state!=='clear' || !obsoleteDefense(p,c,now))return false;
+  // Detached routes rebuild under a new epoch; passing-only stops own no loot.
+  resume(c);
+  for(const name of c.participants)p.commands[name]=commandFor(input,c as C,'assemble',name);
+  return true;
+}
+function rememberDefenseTargets(p:Party,c:Convoy,attackers:PassingEncounter[]):void {
+  if(attackers.length)c.defenseTargets=[...new Map([...(c.defenseTargets||[]),...attackers].map(t=>[passingIdentity(t),t])).values()];
+  else c.defenseTargets=stoppedCauses(c,stoppedReports(p,c))||undefined;
+}
 /** All route implementations share this barrier and keep their own command identities. */
 export function step<S, C>(input: S, now: number, commandFor: (state: S, convoy: C, phase: string, name: string) => unknown): boolean {
   const p = input as Party, c = ownedConvoy(p);
@@ -121,15 +170,17 @@ export function step<S, C>(input: S, now: number, commandFor: (state: S, convoy:
   const decision = classifyTravelDefense(p, c.participants.filter(name => !c.completed.includes(name)), now);
   if (farmingEngagementPending(p,c,now)) return true;
   if (decision.state === "waiting-for-observations") return observeHold(input, p, c, decision.message, commandFor);
+  if(resumePassingDefense(input,p,c,decision.state,now,commandFor))return true;
   const observationResumed=resumeObservation(input, p, c, commandFor);
   if ([observationResumed,decision.state === "clear"].every(Boolean)) return true;
   if (needsDefense(p,c,decision.state)) {
+    rememberDefenseTargets(p,c,decision.attackers.map(t=>({...t,at:now})));
     if (!defend(c, now, decision.message)) return true;
   } else {
     if (c.phase !== "defending") { c.defenseReason = null; return false; }
     if (!finishDefense(p, c, now)) return true;
   }
-  for (const name of c.participants) p.commands[name] = commandFor(input, c as C, c.phase, name);
+  c.participants.forEach(name=>{p.commands[name] = commandFor(input, c as C, c.phase, name);});
   return true;
 }
 

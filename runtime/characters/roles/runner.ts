@@ -54,7 +54,7 @@ export function installRoleRunner(
     target: attackTarget, selected: () => attackTarget()?.id || null, epoch: () => generation,
     active: () => active, allowed: () => combatAllowed() || !!passingTarget(),
     passing: target => target.id !== currentTarget()?.id && target.id === passingTarget()?.id,
-    preparePassing: target => { if(target.id !== currentTarget()?.id)(sharedRoutine as any).beginPassingAttack?.(target); }, state: () => root.partyCombatState,
+    preparePassing: target => queueClient?.preparePassing(target) ?? false, state: () => root.partyCombatState,
     equipmentBusy: () => !!equipment?.busy(),
     skillAttack: target => skills?.attack(target) ?? null,
     skillBusy: () => skills?.busy() ?? false,

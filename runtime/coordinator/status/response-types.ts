@@ -72,7 +72,7 @@ export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[num
   rareHuntState?: { patrol?: { paused?: boolean } } | null;
   townCycle: { id: string; pending: string[]; revisions?: Record<string, number> } | null;
   returnProgress?: Record<string, import("../http/return-progress.ts").ReturnProgress>;
-  activeConvoy: { participants: string[] } | null;
+  activeConvoy: { id?: string; epoch?: number; participants: string[] } | null;
   bankCurrent: { name: string } | null;
   bankQueue: { name: string }[];
   bankbois: Record<string, import("../inventory/bankboi-completion.ts").BankboiInventory>;

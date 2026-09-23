@@ -79,6 +79,23 @@ test('passing attacks yield to Town from reservation through settled transition'
  c.movement.transition=()=>null;assert.equal(c.passingTarget(),bee);
 });
 
+test('ordinary protocol 4 passing attacks require the current travelling signal',()=>{
+ const {c,bee}=fixture();c.convoyRuntimeId='r';c.navigationIntent.revision=3;
+ c.convoyTraveling={id:'C',epoch:1,commandId:8,navigationRevision:3,routeProtocol:4,purpose:'anniversary-return',phase:'travelling'};
+ c.convoySignal={id:'C',epoch:1,commandId:8,runtimeId:'r',phase:'travel',validUntil:Date.now()+10000};
+ assert.equal(c.passingTarget(),bee);
+ for(const phase of ['assemble','preparing','scheduled','defending','arrived']) {
+  c.convoyTraveling.phase=phase;assert.equal(c.passingTarget(),null,phase);
+ }
+ c.convoyTraveling.phase='travelling';c.convoySignal.epoch=0;assert.equal(c.passingTarget(),null);
+ c.convoySignal.epoch=1;c.convoySignal.validUntil=0;assert.equal(c.passingTarget(),null);
+});
+
+test('an unreserved monster attacking first stays a genuine defensive target',()=>{
+ const {c,bee}=fixture();bee.target='W';
+ assert.equal(c.passingTarget(),null);assert.equal(c.isAttackingPartyMember(bee),true);
+});
+
 test('Phoenix patrol permits in-range passing attacks but encounters and recovery still take precedence',()=>{
  const {c,bee}=fixture();
  c.rareControlState={kind:'patrol',revision:1};c.rareControlAt=Date.now();c.navigationIntent.revision=1;
@@ -116,15 +133,16 @@ test('actual attack controller sends passing attacks without queue evidence or n
  const {createAttackController}=require('../../runtime/characters/roles/attack-controller.ts');
  const keys=['parent','character','sharedRoutine','attack','can_attack','is_in_range','get_entity','setTimeout','clearTimeout'];
  const saved=Object.fromEntries(keys.map(k=>[k,global[k]]));
- let passing=true,hits=0;const target={id:'bee1',mtype:'bee'},state={};
+ let passing=true,admitted=false,hits=0;const target={id:'bee1',mtype:'bee'},state={};
  try {
   global.parent={};global.character={range:100,frequency:1};global.setTimeout=()=>0;global.clearTimeout=()=>{};
   global.sharedRoutine={groupedAttackAllowed:()=>false,rareAttackAllowed:()=>true,
    queueEvidence:()=>assert.fail('passing hit acquired queue ownership'),noteAttack:()=>assert.fail('passing hit acquired normal combat ownership')};
   global.attack=async()=>{hits++;};global.can_attack=()=>true;global.is_in_range=()=>true;
   const controller=createAttackController({target:()=>target,selected:()=>target.id,epoch:()=>1,active:()=>true,allowed:()=>true,state:()=>state,
-   passing:()=>passing,preparePassing:()=>{passing=true;},report:error=>assert.fail(String(error))});
-  controller.tick();await Promise.resolve();await Promise.resolve();assert.equal(hits,1);assert.equal(state.attackTiming.accepted,1);
+   passing:()=>passing,preparePassing:()=>admitted,report:error=>assert.fail(String(error))});
+  controller.tick();await Promise.resolve();assert.equal(hits,0);assert.match(state.skippedAttack,/acknowledgement/);
+  admitted=true;controller.tick();await Promise.resolve();await Promise.resolve();assert.equal(hits,1);assert.equal(state.attackTiming.accepted,1);
   global.is_in_range=()=>false;controller.reset();controller.tick();assert.equal(hits,1);controller.stop();
  } finally {for(const key of keys)if(saved[key]===undefined)delete global[key];else global[key]=saved[key];}
 });

@@ -1,4 +1,5 @@
 import type {PassingEncounter} from './passing.ts';
+import type {PassingAcknowledgement} from './passing-admission.ts';
 import { healingAnchor } from './composition.ts';
 import {formationRecovery, type FormationRecovery, type FormationRecoveryReport} from './formation-recovery.ts';
 import type {ApproachReport, Pursuit, PursuitExclusion} from './pursuit.ts';
@@ -14,7 +15,7 @@ export interface Member {
     seenAt: number; lastDeath?: {at: number}; hp: number; rip?: boolean; map: string; in?: string | number; server?: string;
     x: number; y: number; range?: number; max_hp?: number; joinedEvent?: unknown; activeEvent?: unknown; mapEvent?: unknown;
     combatSelection?: { id: string | null; map: string | null; revision: number; runtimeId: string; target?: Target | null };
-    groupedCombat?: { returnDefense?: boolean; passingEncounters?: PassingEncounter[]; formationRecovery?: FormationRecoveryReport; approach?: ApproachReport; pursuitAck?: string | null; currentAttackers?: CurrentAttacker[];
+    groupedCombat?: { passingAcknowledgement?: PassingAcknowledgement; returnDefense?: boolean; passingEncounters?: PassingEncounter[]; formationRecovery?: FormationRecoveryReport; approach?: ApproachReport; pursuitAck?: string | null; currentAttackers?: CurrentAttacker[];
       currentAttackersAt?: number; travelCommand?: {id:number;revision:number} | null; retentions?:Retention[];retentionPaused?:boolean; observationAt?:number; lootPending?: boolean; epoch?: number; claims?: ClaimObservation[]; candidates?: Candidate[]; evidence?: Evidence[]; queueAck?: string | null; protocol?: number; ack?: string | null; anchorVisible?: boolean; deaths?: Death[]; threats?: Target[]; sightings?: Target[]; state?: Group | null };
   };
 }
