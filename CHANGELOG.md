@@ -7,6 +7,9 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Invisible rogue recipients reveal themselves for merchant servicing, then resume
+  their normal invisibility behavior. ([#10](https://github.com/Ryan-Haines/adventureland-party-console/pull/10))
+
 - Enabled passive targets with “keep moving” off now interrupt outbound travel
   for coordinated combat, including neutral Phoenix sightings and targets already
   admitted as passing attacks. Explicit stop rules override Hunt travel exceptions.
@@ -48,6 +51,11 @@ from the commits merged into `main`.
 - Merchant collection reservations and routine cancellation recover correctly.
 
 ### Changed
+
+- Merchants can independently select supported events, fight with their equipped
+  weapon, and resume merchant work after returning. Ordinary merchant jobs,
+  gathering, and stand work yield while event participation owns the merchant.
+  ([#12](https://github.com/Ryan-Haines/adventureland-party-console/pull/12))
 
 - Reduced dashboard status traffic and isolated position updates from character
   cards while preserving live controls and inventory updates. ([#17](https://github.com/Ryan-Haines/adventureland-party-console/issues/17))
