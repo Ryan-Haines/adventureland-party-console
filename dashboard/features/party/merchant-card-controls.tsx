@@ -25,7 +25,6 @@ import { merchantJobLabel } from "./merchant-job-label";
 import { PartyState } from "./party-state";
 import { SendToPartyControl } from "./send-to-party-control";
 import { MerchantCancelJobControl } from "./merchant-cancel-job-control";
-import { LuckySlotTracker } from "./lucky-slot-tracker";
 
 export function MerchantCardControls({
   state: baseState,
@@ -234,7 +233,6 @@ export function MerchantCardControls({
           Join giveaway
         </Button>
         <SendToPartyControl state={state} onSend={onBank} />
-        {state.merchantCharacter && <LuckySlotTracker character={state.merchantCharacter} tracking={merchant?.luckySlotTracking} streams={state.luckySlotTracking?.[state.merchantCharacter]} verified={state.luckyUpgradeSlots?.[state.merchantCharacter]} />}
         <Button
           variant="outline"
           aria-pressed={state.merchantForceStand === true}

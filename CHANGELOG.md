@@ -25,10 +25,10 @@ from the commits merged into `main`.
   Hunt membership; stale farming and anniversary checkpoints can recover.
 - Monster Hunt preserves travel to its origin and recovers missed Daisy arrival
   acknowledgements.
-- Lucky upgrade-slot discovery persists and is available from the inventory menu.
 - Merchant collection reservations and routine cancellation recover correctly.
 
 ### Changed
 
+- Reworked the lucky slot mechanism.
 - Anniversary participation no longer automatically crafts Sixfold Cakes; complete
   slice sets remain available through the normal exchange menu.

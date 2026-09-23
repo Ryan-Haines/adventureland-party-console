@@ -1,8 +1,7 @@
 "use client";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { aggregateSlotTracking, emptyRolls, luckySlotSearch, type LuckySlotStreams, type LuckySlotTracking } from "../../../runtime/lucky-slot-tracking";
+import { emptyRolls, luckySlotSearch, type LuckySlotTracking } from "../../../runtime/lucky-slot-tracking";
 import { validLuckySlot } from "./lucky-upgrade-slot";
 
 export function LuckySlotStatistics({ tracking, verified }: { tracking?: LuckySlotTracking; verified?: number | null }) {
@@ -25,13 +24,6 @@ export function LuckySlotStatistics({ tracking, verified }: { tracking?: LuckySl
       </table>
     </div>
   </div>;
-}
-export function LuckySlotTracker({ character, tracking, streams, verified }: { character: string; tracking?: LuckySlotTracking; streams?: LuckySlotStreams; verified?: number | null }) {
-  const [open, setOpen] = useState(false);
-  return <>
-    <Button variant="outline" onClick={() => setOpen(true)} className="h-9 border-amber-700 bg-zinc-950 text-xs text-amber-200 hover:border-amber-400 hover:bg-amber-950 hover:text-amber-100">Lucky slots</Button>
-    <LuckySlotDialog character={character} tracking={aggregateSlotTracking(streams, tracking)} verified={verified} open={open} onOpenChange={setOpen} />
-  </>;
 }
 export function LuckySlotDialog({character, tracking, verified, open, onOpenChange}: {
   character: string; tracking?: LuckySlotTracking; verified?: number | null; open: boolean; onOpenChange(open: boolean): void;
