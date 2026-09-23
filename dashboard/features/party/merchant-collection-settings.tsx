@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 export interface MerchantCollectionSettingsProps {
   bankSortState?: BankSortState;
+  thresholdError?: string | null;
+  itemCollectionThresholdError?: string | null;
+  onClearErrors: () => void;
   threshold: string;
   onThresholdChange(value: string): void;
   onThresholdSave(): Promise<void>;
@@ -14,11 +17,11 @@ export interface MerchantCollectionSettingsProps {
   onItemCollectionThresholdChange(value: string): void;
   onItemCollectionThresholdSave(): Promise<void>;
 }
-export function MerchantCollectionSettings({bankSortState = {},threshold,onThresholdChange,onThresholdSave,itemCollectionThreshold,onItemCollectionThresholdChange,onItemCollectionThresholdSave}: MerchantCollectionSettingsProps) {
+export function MerchantCollectionSettings({thresholdError, itemCollectionThresholdError, onClearErrors, bankSortState = {},threshold,onThresholdChange,onThresholdSave,itemCollectionThreshold,onItemCollectionThresholdChange,onItemCollectionThresholdSave}: MerchantCollectionSettingsProps) {
  const [open,setOpen]=useState(false);
  return <>
   <Button variant="outline" onClick={()=>setOpen(true)} className="h-9 border-slate-600 bg-[#07100f] text-xs text-slate-100 hover:bg-slate-800 hover:text-white"><Settings className="mr-1.5 size-3.5" />Settings</Button>
-  <Dialog open={open} onOpenChange={setOpen}>
+  <Dialog open={open} onOpenChange={open => { onClearErrors(); setOpen(open); }}>
    <DialogContent aria-describedby={undefined} className="max-h-[90vh] overflow-y-auto border-slate-600 bg-slate-950 text-slate-100 sm:max-w-2xl">
     <DialogHeader><DialogTitle>Merchant settings</DialogTitle></DialogHeader>
           <BankSortControl state={bankSortState} settings />
@@ -52,6 +55,7 @@ export function MerchantCollectionSettings({bankSortState = {},threshold,onThres
                 Apply
               </Button>
             </div>
+            {thresholdError && <p role="alert" className="text-sm text-rose-200">{thresholdError}</p>}
           </section>
           <section className="rounded-lg border border-violet-900/80 bg-slate-900 p-4">
             <p className="font-mono text-xs uppercase tracking-wider text-violet-300">
@@ -87,6 +91,7 @@ export function MerchantCollectionSettings({bankSortState = {},threshold,onThres
                 Apply
               </Button>
             </div>
+            {itemCollectionThresholdError && <p role="alert" className="text-sm text-rose-200">{itemCollectionThresholdError}</p>}
           </section>
           </div>
 </DialogContent></Dialog></>;

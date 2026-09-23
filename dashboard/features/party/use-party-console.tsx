@@ -33,9 +33,8 @@ import { STAT_SCROLLS } from "./stat-scrolls";
 export function usePartyConsole() {
   const npcSaleInFlight = useRef(false);
   const [npcSaleBusy, setNpcSaleBusy] = useState(false);
-  const [threshold, setThreshold] = useState("100000"),
-    [itemCollectionThreshold, setItemCollectionThreshold] = useState("1"),
-    [_notice, setNotice] = useState(""),
+  const [threshold, setThresholdState] = useState("100000"),
+    [itemCollectionThreshold, setItemCollectionThresholdState] = useState("1"),
     [selected, setSelected] = useState<SelectedItem | null>(null),
     [selectedCondition, setSelectedCondition] = useState<{
       character: string;
@@ -50,9 +49,9 @@ export function usePartyConsole() {
     [standOpen, setStandOpen] = useState(false),
     [marketOpen, setMarketOpen] = useState(false),
     [settingsOpen, setSettingsOpen] = useState(false),
-    [realmDestination, setRealmDestination] = useState(""),
-    [realmConfirmOpen, setRealmConfirmOpen] = useState(false),
-    [realmSetHome, setRealmSetHome] = useState(false),
+    [realmDestination, setRealmDestinationState] = useState(""),
+    [realmConfirmOpen, setRealmConfirmOpenState] = useState(false),
+    [realmSetHome, setRealmSetHomeState] = useState(false),
     [realmBusy, setRealmBusy] = useState(false),
     [aldataKey, setALDataKey] = useState(""),
     [aldataKeyVisible, setALDataKeyVisible] = useState(false),
@@ -79,7 +78,7 @@ export function usePartyConsole() {
       item: Item;
       meta?: ItemMeta | null;
     } | null>(null),
-    [standItem, setStandItem] = useState<{
+    [standItem, setStandItemState] = useState<{
       id?: string;
       entry: InventoryEntry;
       price: string;
@@ -89,7 +88,7 @@ export function usePartyConsole() {
       markAll: boolean;
       auto?: boolean;
     } | null>(null),
-    [npcSaleItem, setNpcSaleItem] = useState<{
+    [npcSaleItem, setNpcSaleItemState] = useState<{
       targets?: { pack: string; entry: InventoryEntry }[];
       pack?: string;
       source: "bank" | "merchant" | "character";
@@ -98,23 +97,52 @@ export function usePartyConsole() {
       quantity: string;
       acknowledged: boolean;
     } | null>(null),
-    [autoNpcSaleItem, setAutoNpcSaleItem] = useState<(InventoryEntry & { character?: string }) | null>(null),
+    [autoNpcSaleItem, setAutoNpcSaleItemState] = useState<(InventoryEntry & { character?: string }) | null>(null),
     [routinesOpen, setRoutinesOpen] = useState(false),
     [commerceMode, setCommerceMode] = useState<"buy" | "craft" | "exchange" | null>(null),
-    [donationOpen, setDonationOpen] = useState(false),
-    [donationAmount, setDonationAmount] = useState(""),
-    [giveawayOpen, setGiveawayOpen] = useState(false),
-    [giveawayRealm, setGiveawayRealm] = useState(""),
-    [giveawayMerchant, setGiveawayMerchant] = useState(""),
+    [donationOpen, setDonationOpenState] = useState(false),
+    [donationAmount, setDonationAmountState] = useState(""),
+    [giveawayOpen, setGiveawayOpenState] = useState(false),
+    [giveawayRealm, setGiveawayRealmState] = useState(""),
+    [giveawayMerchant, setGiveawayMerchantState] = useState(""),
     [giveawayMerchantOpen, setGiveawayMerchantOpen] = useState(false),
-    [travelCharacter, setTravelCharacter] = useState<string | null>(null),
-    [createOpen, setCreateOpen] = useState(false),
+    [travelCharacter, setTravelCharacterState] = useState<string | null>(null),
+    [createOpen, setCreateOpenState] = useState(false),
     [pickerSlot, setPickerSlot] = useState<number | null>(null),
-    [newName, setNewName] = useState(""),
-    [newClass, setNewClass] = useState("ranger"),
-    [newLook, setNewLook] = useState(0),
+    [newName, setNewNameState] = useState(""),
+    [newClass, setNewClassState] = useState("ranger"),
+    [newLook, setNewLookState] = useState(0),
     [creating, setCreating] = useState(false),
     [actionError, setActionError] = useState<string | null>(null);
+  const [realmError, setRealmError] = useState<string | null>(null);
+  const setRealmDestination: typeof setRealmDestinationState = (value) => { setRealmError(null); setRealmDestinationState(value); };
+  const setRealmSetHome: typeof setRealmSetHomeState = (value) => { setRealmError(null); setRealmSetHomeState(value); };
+  const setRealmConfirmOpen: typeof setRealmConfirmOpenState = (value) => { setRealmError(null); setRealmConfirmOpenState(value); };
+  const [createError, setCreateError] = useState<string | null>(null);
+  const setNewName: typeof setNewNameState = (value) => { setCreateError(null); setNewNameState(value); };
+  const setNewClass: typeof setNewClassState = (value) => { setCreateError(null); setNewClassState(value); };
+  const setNewLook: typeof setNewLookState = (value) => { setCreateError(null); setNewLookState(value); };
+  const setCreateOpen: typeof setCreateOpenState = (value) => { setCreateError(null); setCreateOpenState(value); };
+  const [thresholdError, setThresholdError] = useState<string | null>(null);
+  const setThreshold: typeof setThresholdState = (value) => { setThresholdError(null); setThresholdState(value); };
+  const [itemCollectionThresholdError, setItemCollectionThresholdError] = useState<string | null>(null);
+  const setItemCollectionThreshold: typeof setItemCollectionThresholdState = (value) => { setItemCollectionThresholdError(null); setItemCollectionThresholdState(value); };
+  const [donationError, setDonationError] = useState<string | null>(null);
+  const setDonationAmount: typeof setDonationAmountState = (value) => { setDonationError(null); setDonationAmountState(value); };
+  const setDonationOpen: typeof setDonationOpenState = (value) => { setDonationError(null); setDonationOpenState(value); };
+  const [giveawayError, setGiveawayError] = useState<string | null>(null);
+  const setGiveawayRealm: typeof setGiveawayRealmState = (value) => { setGiveawayError(null); setGiveawayRealmState(value); };
+  const setGiveawayMerchant: typeof setGiveawayMerchantState = (value) => { setGiveawayError(null); setGiveawayMerchantState(value); };
+  const setGiveawayOpen: typeof setGiveawayOpenState = (value) => { setGiveawayError(null); setGiveawayOpenState(value); };
+  const [standError, setStandError] = useState<string | null>(null);
+  const setStandItem: typeof setStandItemState = (value) => { setStandError(null); setStandItemState(value); };
+  const [npcSaleError, setNpcSaleError] = useState<string | null>(null);
+  const setNpcSaleItem: typeof setNpcSaleItemState = (value) => { setNpcSaleError(null); setNpcSaleItemState(value); };
+  const [autoNpcSaleError, setAutoNpcSaleError] = useState<string | null>(null);
+  const setAutoNpcSaleItem: typeof setAutoNpcSaleItemState = (value) => { setAutoNpcSaleError(null); setAutoNpcSaleItemState(value); };
+  const [travelError, setTravelError] = useState<string | null>(null);
+  const setTravelCharacter: typeof setTravelCharacterState = (value) => { setTravelError(null); setTravelCharacterState(value); };
+  const [aldataAuthStatus, setALDataAuthStatus] = useState<string | null>(null);
   const thresholdDirty = useRef(false);
   const itemCollectionThresholdDirty = useRef(false);
   const client = useQueryClient();
@@ -148,7 +176,8 @@ export function usePartyConsole() {
   useQueries({ queries: [{
     queryKey: ['party', 'aldata-auth'], queryFn: async ({ signal }: { signal: AbortSignal }) => {
       const result = await read<{ auth?: string }>(client, '/aldata/auth', signal);
-      if (result.auth === 'CORRECT') { setALDataAuthPending(false); setNotice('ALData authentication confirmed'); }
+      setALDataAuthStatus(result.auth || 'unknown');
+      if (result.auth === 'CORRECT') setALDataAuthPending(false);
       return result;
     },
     enabled: visible, refetchInterval: 15000, staleTime: 0, gcTime: 60000,
@@ -181,10 +210,11 @@ export function usePartyConsole() {
         throw new Error(typeof body.error === "string" ? body.error : "ALData request failed");
       if (typeof body.key === "string") setALDataKey(body.key);
       if (action === "generate") setALDataKeyVisible(true);
-      if (action === "check")
-        setNotice(`ALData auth: ${typeof body.auth === "string" ? body.auth : "unknown"}`);
+      if (action === "check") {
+        setALDataAuthStatus(typeof body.auth === "string" ? body.auth : "unknown");
+        if (body.auth === "CORRECT") setALDataAuthPending(false);
+      }
       if (action === "refresh") {
-        setNotice("ALData marketplace refreshed");
         await refreshMarket();
       }
       await refresh(false);
@@ -248,6 +278,7 @@ export function usePartyConsole() {
     return () => lifecycle.abort();
   }, [state.characters, post]);
   async function switchRealm() {
+    setRealmError(null);
     if (!realmDestination) return;
     setRealmBusy(true);
     try {
@@ -256,11 +287,8 @@ export function usePartyConsole() {
         setHome: realmSetHome,
       });
       setRealmConfirmOpen(false);
-      setNotice(
-        `Switching the party to ${state.realmControl?.realms.find((realm) => realm.key === realmDestination)?.label || realmDestination}`,
-      );
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Realm switch failed");
+      setRealmError(error instanceof Error ? error.message : "Realm switch failed");
     } finally {
       setRealmBusy(false);
     }
@@ -270,7 +298,6 @@ export function usePartyConsole() {
       if (hosting === "steam") await post("/steam/action", { character, action: "login" });
       else await post(`/slots/${slot}/spawn`, { character });
       setPickerSlot(null);
-      setNotice(`${character} is starting`);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Spawn failed");
     }
@@ -280,7 +307,6 @@ export function usePartyConsole() {
       const entry = state.activeSlots?.find(s => s.index === slot);
       if (entry?.kind === "native") await post("/steam/action", { character: entry.character, action: "logout" });
       else await post(`/slots/${slot}/logout`, {});
-      setNotice("Character logged out");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Logout failed");
     }
@@ -289,7 +315,6 @@ export function usePartyConsole() {
     try {
       await post("/steam/action", { character, action: "primary" });
       setPickerSlot(null);
-      setNotice(`Steam switch to ${character} requested`);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Steam switch failed");
     }
@@ -297,7 +322,6 @@ export function usePartyConsole() {
   async function joinOrPromoteSteam(character: string, action: "login" | "primary") {
     try {
       await post("/steam/action", { character, action });
-      setNotice(`Steam ${action === "login" ? "login" : "primary switch"} for ${character} requested`);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Steam handoff failed");
       throw error;
@@ -318,52 +342,47 @@ export function usePartyConsole() {
     }
   }
   async function createCharacter() {
+    setCreateError(null);
     if (!/^[A-Za-z0-9_]{4,12}$/.test(newName))
-      return setNotice("Name must be 4-12 letters, numbers, or underscores");
+      return setCreateError("Name must be 4-12 letters, numbers, or underscores");
     setCreating(true);
     try {
-      const result = await post("/roster/create", {
+      await post("/roster/create", {
         name: newName,
         class: newClass,
         look: newLook,
       });
-      const assignedSlot = typeof result.slot === "number" ? result.slot : null;
       setCreateOpen(false);
       setNewName("");
-      setNotice(
-        assignedSlot
-          ? `${newName} created in slot ${assignedSlot}`
-          : `${newName} created in the roster`,
-      );
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Creation failed");
+      setCreateError(error instanceof Error ? error.message : "Creation failed");
     } finally {
       setCreating(false);
     }
   }
   async function save() {
+    setThresholdError(null);
     const n = Number(threshold);
-    if (!Number.isSafeInteger(n) || n < 0) return setNotice("Use a positive whole number");
+    if (!Number.isSafeInteger(n) || n < 0) return setThresholdError("Enter a non-negative whole number");
     try {
       await post("/config", { threshold: n });
       thresholdDirty.current = false;
       setThreshold(String(n));
-      setNotice("Threshold saved");
-    } catch {
-      setNotice("Save failed");
+    } catch (error) {
+      setThresholdError(error instanceof Error ? error.message : "Save failed");
     }
   }
   async function saveItemCollectionThreshold() {
+    setItemCollectionThresholdError(null);
     const value = Number(itemCollectionThreshold);
     if (!Number.isSafeInteger(value) || value < 1 || value > 42)
-      return setNotice("Use an item-slot threshold from 1 to 42");
+      return setItemCollectionThresholdError("Use an item-slot threshold from 1 to 42");
     try {
       await post("/config", { itemCollectionThreshold: value });
       itemCollectionThresholdDirty.current = false;
       setItemCollectionThreshold(String(value));
-      setNotice("Automatic item collection saved");
-    } catch {
-      setNotice("Save failed");
+    } catch (error) {
+      setItemCollectionThresholdError(error instanceof Error ? error.message : "Save failed");
     }
   }
   async function command(
@@ -401,78 +420,30 @@ export function usePartyConsole() {
   ) {
     try {
       await post("/command", { character, type, item, ...extra });
-      setNotice(
-        type === "mark"
-          ? "Bank mark updated"
-          : type === "merchant-mark"
-            ? "Merchant mark updated"
-            : type === "auto-item-mark"
-              ? "Automatic item mark updated"
-              : type === "auto-upgrade-mark"
-                ? "Automatic upgrade mark updated"
-                : type === "clear-auto-item-marks"
-                  ? `Automatic ${String(extra.mode)} marks cleared`
-                  : type === "remove-auto-item-mark"
-                    ? "Automatic item mark removed"
-                    : type === "clear-auto-compounds"
-                      ? "Automatic compound rules cleared"
-                      : type === "clear-auto-upgrades"
-                        ? "Automatic upgrade rules cleared"
-                        : type === "update-auto-upgrade-rule"
-                          ? "Automatic upgrade target updated"
-                          : type === "go-home"
-                            ? "Merchant is returning home to Main"
-                            : type === "withdraw"
-                              ? "Withdrawal mark updated"
-                              : type === "upgrade-mark"
-                                ? "Upgrade mark updated"
-                                : type === "stat-scroll-mark"
-                                  ? "Stat scroll request updated"
-                                  : type === "merchant-weapon"
-                                    ? "Merchant weapon updated"
-                                    : type === "auto-exchange"
-                                      ? "Automatic exchange updated"
-                                      : type === "buy-copy"
-                                        ? "Level 0 copy queued"
-                                        : type === "compound-mark" || type === "auto-compound-mark"
-                                          ? "Compounding marks updated"
-                                          : type === "gold-target"
-                                            ? "Gold target saved"
-                                            : "Command queued",
-      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Command failed";
-      setNotice(message);
-      if (type === "compound-mark") setActionError(message);
+      setActionError(message);
     }
   }
   async function bankParty(group?: string) {
     try {
-      const result = (await post("/bank-party", {group})) as {
-        leader?: string;
-        queued?: string[];
-      };
-      setNotice(
-        `Merchant queued for ${(result.queued || []).join(", ")}`,
-      );
+      await post("/bank-party", {group});
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Leader-group merchant request failed");
+      setActionError(error instanceof Error ? error.message : "Leader-group merchant request failed");
     }
   }
   async function townParty() {
     try {
       await post("/town-party", {});
-      setNotice("Whole party queued for town");
-    } catch {
-      setNotice("Party town request failed");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Party town request failed");
     }
   }
   async function formation(body: unknown) {
     try {
       await post("/formation", body);
-      setNotice("Party formation updated");
-    } catch {
-      setNotice("Formation update failed");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Formation update failed");
     }
   }
   async function setFarmingPolicy(mode: FarmingPolicy, character = state.leader || "") {
@@ -492,11 +463,10 @@ export function usePartyConsole() {
     }
     try {
       await post("/farming-mode", { mode, character });
-      setNotice(state.followers?.[character] && character !== state.leader ? `Saved ${mode} for when Follow is off` : `Farming mode set to ${mode}`);
     } catch (error) {
       if (mode === "hunt" && error instanceof Error && /backup farming/i.test(error.message))
         setHuntSetup(focus);
-      else setNotice(error instanceof Error ? error.message : "Farming mode update failed");
+      else setActionError(error instanceof Error ? error.message : "Farming mode update failed");
     }
   }
   async function setFocus(
@@ -512,72 +482,63 @@ export function usePartyConsole() {
         ...(monsterPriorities ? { monsterPriorities } : {}),
         ...(monsterSearchRadius !== undefined ? { monsterSearchRadius } : {}),
       });
-      setNotice(`${character} focus updated`);
-    } catch {
-      setNotice("Focus update failed");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Focus update failed");
     }
   }
   async function saveRestock(character: string, policy: RestockPolicy) {
     try {
       await post("/restock", { character, hp: policy.hp, mp: policy.mp });
-      setNotice(`${character} restock policy saved`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Restock update failed");
+      setActionError(error instanceof Error ? error.message : "Restock update failed");
     }
   }
   async function gather(mode: string, enabled: boolean) {
     try {
       await post("/merchant/gather", { mode, enabled });
-      setNotice(`Merchant ${mode} ${enabled ? "enabled" : "disabled"}`);
-    } catch {
-      setNotice("Gathering command failed");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Gathering command failed");
     }
   }
   async function clearMerchantWork() {
     try {
       await post("/merchant/clear", {});
-      setNotice("Merchant work cleared");
-    } catch {
-      setNotice("Could not clear merchant work");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not clear merchant work");
     }
   }
   async function setForceStand(enabled: boolean) {
     try {
       await post("/merchant/force-stand", { enabled });
-      setNotice(
-        enabled
-          ? "Force stand enabled; merchant work paused"
-          : "Force stand disabled; merchant work resumed",
-      );
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not change force-stand mode");
+      setActionError(error instanceof Error ? error.message : "Could not change force-stand mode");
     }
   }
   async function donateGold() {
+    setDonationError(null);
     const amount = Number(donationAmount);
     if (!Number.isSafeInteger(amount) || amount < 1)
-      return setNotice("Enter a positive whole-number donation");
+      return setDonationError("Enter a positive whole-number donation");
     try {
       await post("/merchant/donate", { amount });
       setDonationOpen(false);
       setDonationAmount("");
-      setNotice("Merchant donation queued");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Donation failed");
+      setDonationError(error instanceof Error ? error.message : "Donation failed");
     }
   }
   async function joinGiveaway() {
+    setGiveawayError(null);
     const realm = giveawayRealm.trim(),
       seller = giveawayMerchant.trim();
-    if (!realm || !seller) return setNotice("Enter both a server realm and merchant name");
+    if (!realm || !seller) return setGiveawayError("Enter both a server realm and merchant name");
     try {
       await post("/merchant/join-giveaway", { realm, seller });
       setGiveawayOpen(false);
       setGiveawayRealm("");
       setGiveawayMerchant("");
-      setNotice("Giveaway entry queued");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not queue giveaway entry");
+      setGiveawayError(error instanceof Error ? error.message : "Could not queue giveaway entry");
     }
   }
   async function submitMerchantOrder(
@@ -592,34 +553,25 @@ export function usePartyConsole() {
     exchanges: { id: string; quantity: number; level?: number; reward?: string }[] = [],
     removeAutoBankMark = false,
   ) {
-    try {
-      if (exchanges.length) await post("/merchant/exchange-order", { exchanges });
-      else await post("/merchant/order", { buys, crafts, removeAutoBankMark });
-      setCommerceMode(null);
-      setNotice("Merchant order queued");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Merchant order failed");
-      throw error;
-    }
+    if (exchanges.length) await post("/merchant/exchange-order", { exchanges });
+    else await post("/merchant/order", { buys, crafts, removeAutoBankMark });
+    setCommerceMode(null);
   }
   async function buyALDataListing(listing: ALDataListing, buyQuantity: number) {
     await post("/merchant/aldata-order", { listing, buyQuantity });
-    setNotice("ALData marketplace purchase queued");
   }
   async function buyPontyListing(listing: PontyListing) {
-    const result = await post("/merchant/ponty-order", {
+    await post("/merchant/ponty-order", {
       keys: listing.keys || [listing.key],
       quantity: listing.quantity,
       unitPrice: listing.unitPrice,
     });
-    const count = Array.isArray(result.jobIds) ? result.jobIds.length : 1;
-    setNotice(`${count} Ponty purchase job${count === 1 ? "" : "s"} queued`);
   }
   async function sellALDataOrder(order: ALDataBuyOrder, sellQuantity: number) {
     await post("/merchant/aldata-sale", { order, sellQuantity });
-    setNotice("ALData marketplace sale queued");
   }
   async function saveStandListing(remove = false) {
+    setStandError(null);
     if (!standItem) return;
     try {
       if (standItem.auto)
@@ -640,31 +592,25 @@ export function usePartyConsole() {
           remove,
         });
       setStandItem(null);
-      setNotice(
-        remove
-          ? "Stand listing removed"
-          : standItem.auto
-            ? "Automatic stand mark saved"
-            : "Stand listing saved",
-      );
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Stand update failed");
+      setStandError(error instanceof Error ? error.message : "Stand update failed");
     }
   }
   async function confirmNpcSale() {
+    setNpcSaleError(null);
     if (!npcSaleItem || npcSaleInFlight.current) return;
     const quantity = Number(npcSaleItem.quantity),
       available = npcSaleItem.targets
         ? npcSaleItem.targets.reduce((sum, target) => sum + Number(target.entry.item.q || 1), 0)
         : Number(npcSaleItem.entry.item.q || 1);
     if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > available)
-      return setNotice(`Enter a quantity from 1 to ${available}`);
+      return setNpcSaleError(`Enter a quantity from 1 to ${available}`);
     const modified =
       Number(npcSaleItem.entry.item.level || 0) > 0 ||
       !!npcSaleItem.entry.item.stat_type ||
       !!npcSaleItem.entry.item.p;
     if (modified && !npcSaleItem.acknowledged)
-      return setNotice("Confirm the modified-item warning");
+      return setNpcSaleError("Confirm the modified-item warning");
     npcSaleInFlight.current = true;
     setNpcSaleBusy(true);
     try {
@@ -689,15 +635,15 @@ export function usePartyConsole() {
         acknowledged: npcSaleItem.acknowledged,
       });
       setNpcSaleItem(null);
-      setNotice("NPC sale queued");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "NPC sale failed");
+      setNpcSaleError(error instanceof Error ? error.message : "NPC sale failed");
     } finally {
       npcSaleInFlight.current = false;
       setNpcSaleBusy(false);
     }
   }
   async function confirmAutoNpcSale() {
+    setAutoNpcSaleError(null);
     if (!autoNpcSaleItem) return;
     try {
       await post("/merchant/auto-npc-sale", {
@@ -706,9 +652,8 @@ export function usePartyConsole() {
         action: "set",
       });
       setAutoNpcSaleItem(null);
-      setNotice("Automatic NPC sale saved");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Automatic NPC sale failed");
+      setAutoNpcSaleError(error instanceof Error ? error.message : "Automatic NPC sale failed");
     }
   }
   async function clearAutomaticSales(kind: "npc" | "stand") {
@@ -716,9 +661,8 @@ export function usePartyConsole() {
       await post(kind === "npc" ? "/merchant/auto-npc-sale" : "/merchant/auto-stand", {
         action: "clear-all",
       });
-      setNotice(kind === "npc" ? "Automatic NPC sales cleared" : "Automatic stand marks cleared");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not clear automatic sales");
+      setActionError(error instanceof Error ? error.message : "Could not clear automatic sales");
     }
   }
   async function removeAutomaticSale(kind: "npc" | "stand", item: Item) {
@@ -727,9 +671,8 @@ export function usePartyConsole() {
         action: "remove",
         item,
       });
-      setNotice(kind === "npc" ? "Automatic NPC sale removed" : "Automatic stand mark removed");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not remove automatic sale rule");
+      setActionError(error instanceof Error ? error.message : "Could not remove automatic sale rule");
     }
   }
   async function saveRoutinePriorities(
@@ -738,20 +681,17 @@ export function usePartyConsole() {
   ) {
     await post("/merchant/routine-priorities", { priorities, enabled });
     setRoutinesOpen(false);
-    setNotice("Merchant routine priorities saved");
   }
   async function cancelMerchantJob(id?: string) {
     if (!id) return;
     try {
       await post("/merchant/job/cancel", { id });
-      setNotice("Queued merchant job cancelled and its pending intent removed");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not cancel merchant job");
+      setActionError(error instanceof Error ? error.message : "Could not cancel merchant job");
     }
   }
   async function removeStandListing(listing: StandListing) {
     await post("/merchant/stand", { ...listing, remove: true });
-    setNotice("Stand listing removed");
   }
   async function saveStandBid(
     itemId: string,
@@ -771,12 +711,12 @@ export function usePartyConsole() {
       priorityOverride,
       ...options,
     });
-    setNotice(clear ? `Bid for ${itemId} cleared` : `Bid for ${itemId} saved`);
   }
   async function sendCharacter(character: string) {
     setTravelCharacter(character);
   }
   async function submitCharacterTravel(character: string, location: Location, label: string) {
+    setTravelError(null);
     try {
       await post("/command", {
         character,
@@ -785,14 +725,13 @@ export function usePartyConsole() {
         label,
       });
       setTravelCharacter(null);
-      setNotice(`${character} travel queued`);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Travel command failed");
+      setTravelError(error instanceof Error ? error.message : "Travel command failed");
     }
   }
   function findMonsterFor(character: string, focus: string[]) {
     if (!canRouteToMonster(state, character)) {
-      setNotice(FOLLOWER_ROUTE_MESSAGE);
+      setActionError(FOLLOWER_ROUTE_MESSAGE);
       return;
     }
     setFarmAreaRequest({
@@ -831,7 +770,6 @@ export function usePartyConsole() {
         });
         setFarmAreaRequest(null);
       }
-      setNotice(`Farming route set to ${area.mapName || area.map} (${area.x}, ${area.y})`);
     } finally {
       setMonsterNavigateBusy(false);
     }
@@ -905,6 +843,19 @@ export function usePartyConsole() {
         },
     );
   return {
+    realmError,
+    createError,
+    thresholdError,
+    itemCollectionThresholdError,
+    donationError,
+    giveawayError,
+    standError,
+    npcSaleError,
+    autoNpcSaleError,
+    travelError,
+    aldataAuthStatus,
+    setTravelError,
+    clearCollectionErrors: () => { setThresholdError(null); setItemCollectionThresholdError(null); },
     connectionNotice,
     coordinatorLoading: !coreQuery.data && !coreQuery.isError,
     coordinatorUnavailable: coreQuery.isError,
@@ -950,7 +901,6 @@ export function usePartyConsole() {
     selectedFocus,
     setFocus,
     saveRestock,
-    setNotice,
     setStandItem,
     setNpcSaleItem,
     setAutoNpcSaleItem,

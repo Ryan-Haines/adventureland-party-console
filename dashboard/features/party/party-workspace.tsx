@@ -21,7 +21,7 @@ import { ConnectedCharacterCard } from "./connected-character-card";
 import { PendingCharacterCards, pendingCharacters } from './pending-character-cards';
 
 export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
-  const { state, chars, formation, setPickerSlot, monsters, post, setNotice, townParty, setMonsterNavigateTarget, huntSetup, huntSetupCharacter, monsterNavigateBusy, setHuntSetup, setMonsterNavigateBusy, monsterNavigateTarget, farmAreaRequest, setFarmAreaRequest, startFarmingArea, wtbItem } = model;
+  const { state, chars, formation, setPickerSlot, monsters, post, townParty, setMonsterNavigateTarget, huntSetup, huntSetupCharacter, monsterNavigateBusy, setHuntSetup, setMonsterNavigateBusy, monsterNavigateTarget, farmAreaRequest, setFarmAreaRequest, startFarmingArea, wtbItem } = model;
   const pending = pendingCharacters(model);
   return (
     <>
@@ -103,7 +103,6 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
                   },
                 });
                 setHuntSetup(null);
-                setNotice("Backup saved; Hunt started");
               } finally {
                 setMonsterNavigateBusy(false);
               }

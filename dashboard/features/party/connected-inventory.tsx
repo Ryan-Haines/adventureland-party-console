@@ -25,7 +25,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
     state,
     chars,
     command,
-    setNotice,
+    setActionError,
     setStandItem,
     setNpcSaleItem,
     setAutoNpcSaleItem,
@@ -93,7 +93,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
           (mark) => mark.slot === entry.slot && same(mark.item, entry.item),
         );
         if (!existing && (state.standListings || []).length >= 16)
-          return setNotice('Merchant stand is full (16/16)');
+          return setActionError('Merchant stand is full (16/16)');
         const value = { defaultPrice: Math.max(1, Number(entry.meta?.definition.g) || 1) };
         setStandItem({
           entry,

@@ -7,6 +7,9 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Removed unused dashboard notices; previously silent validation and action failures
+  now use contextual error feedback. ([#14](https://github.com/Ryan-Haines/adventureland-party-console/issues/14))
+
 - Entirely headless rosters can switch realms without a connected Steam character,
   including switches that set a new home realm. Steam connectivity is still required
   when a Steam-hosted character participates; existing readiness checks remain in

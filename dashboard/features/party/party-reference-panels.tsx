@@ -44,7 +44,6 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
     anniversaryOpen,
     setAnniversaryOpen,
     post,
-    setNotice,
     setActionError,
     gearComparison,
     setGearComparison,
@@ -110,11 +109,10 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
         onSendChatAdvertisement={async () => {
           try {
             await post("/anniversary/chat-advertise", {});
-            setNotice(`Chat advertisement queued for ${state.merchantCharacter || "merchant"}`);
 
           } catch (error) {
             setActionError(String((error as Error).message || error));
-            throw error;
+
           }
         }}
       />
@@ -133,15 +131,15 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
           if (!open) setActionError(null);
         }}
       >
-        <DialogContent className="border-rose-800 bg-[#0b1916] text-emerald-50">
+        <DialogContent showCloseButton={false} className="border-rose-800 bg-[#0b1916] text-emerald-50">
           <DialogHeader>
-            <DialogTitle>Couldn&apos;t make compounding group</DialogTitle>
-            <DialogDescription className="text-emerald-100/60">{actionError}</DialogDescription>
+            <DialogTitle>Couldn&apos;t complete action</DialogTitle>
+            <DialogDescription className="text-rose-100">{actionError}</DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="border-rose-800 bg-[#0b1916]">
             <Button
               onClick={() => setActionError(null)}
-              className="bg-emerald-500 text-emerald-950"
+              className="border border-emerald-500 bg-[#10392b] text-emerald-50 hover:bg-[#18513c] hover:text-white"
             >
               OK
             </Button>
@@ -182,8 +180,9 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
               XP/gold)
             </span>
           </div>
+          {model.donationError && <p role="alert" className="text-sm text-rose-200">{model.donationError}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDonationOpen(false)}>
+            <Button variant="outline" onClick={() => setDonationOpen(false)} className="border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white">
               Cancel
             </Button>
             <Button onClick={() => void donateGold()} className="bg-amber-400 text-amber-950">

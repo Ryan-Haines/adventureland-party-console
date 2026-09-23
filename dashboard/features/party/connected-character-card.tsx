@@ -304,7 +304,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
       </div>
       {char.name === state.merchantCharacter ? (
         <MerchantCardControls
-          collectionSettings={{threshold: model.threshold, onThresholdChange: model.editThreshold, onThresholdSave: model.save, itemCollectionThreshold: model.itemCollectionThreshold, onItemCollectionThresholdChange: model.editItemCollectionThreshold, onItemCollectionThresholdSave: model.saveItemCollectionThreshold}}
+          collectionSettings={{thresholdError: model.thresholdError, itemCollectionThresholdError: model.itemCollectionThresholdError, onClearErrors: model.clearCollectionErrors, threshold: model.threshold, onThresholdChange: model.editThreshold, onThresholdSave: model.save, itemCollectionThreshold: model.itemCollectionThreshold, onItemCollectionThresholdChange: model.editItemCollectionThreshold, onItemCollectionThresholdSave: model.saveItemCollectionThreshold}}
           state={state}
           onBank={bankParty}
           onClear={clearMerchantWork}

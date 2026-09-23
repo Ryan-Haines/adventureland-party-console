@@ -6,6 +6,7 @@ export function PartyCharacterTravelDialog({ model }: { model: PartyConsoleModel
   const { travelCharacter, places, setTravelCharacter, submitCharacterTravel } = model;
   return (
     <CharacterTravelDialog
+      error={model.travelError} setError={model.setTravelError}
       character={travelCharacter}
       places={places}
       onClose={() => setTravelCharacter(null)}
