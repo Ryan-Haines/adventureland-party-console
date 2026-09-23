@@ -15,6 +15,8 @@ export interface LiveMessage {
 export function createLiveReceiver(
   write: (name: string, record: LiveRecord | null) => void,
 ) {
+  const merge = (previous: Record<string, unknown> | undefined, changes: Record<string, unknown>) =>
+    previous && !Object.keys(changes).length ? previous : { ...previous, ...changes };
   let epoch = '',
     sequence = -1;
   const records = new Map<string, LiveRecord>();
@@ -54,9 +56,9 @@ export function createLiveReceiver(
       const same = previous?.generation === incoming.generation;
       const next = {
         ...incoming,
-        vitals: { ...(same ? previous.vitals : {}), ...incoming.vitals },
-        items: { ...(same ? previous.items : {}), ...incoming.items },
-        slots: { ...(same ? previous.slots : {}), ...incoming.slots },
+        vitals: merge(same ? previous.vitals : undefined, incoming.vitals),
+        items: merge(same ? previous.items : undefined, incoming.items),
+        slots: merge(same ? previous.slots : undefined, incoming.slots),
       };
       records.set(name, next);
       write(name, next);

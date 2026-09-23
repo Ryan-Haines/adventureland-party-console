@@ -204,7 +204,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
   function cancel(r: WalkRequest): Record<string, unknown> {
     const prior = requests.get(r.name), c = state.activeConvoy, session = c && sessions.get(c);
     if (prior?.token === r.token && session?.requests.includes(prior)) {
-      if (returnRetryPending(c!)) return {ok:true,phase:"waiting"};
+      if (returnRetryPending(c!) || c!.geometryRepair?.phase === 'waiting') return {ok:true,phase:"waiting"};
       session.requests.forEach(entry => { entry.failed = "Walking workflow cancelled"; });
       if (c!.phase !== "failed") ports.cancel();
       ports.persist();

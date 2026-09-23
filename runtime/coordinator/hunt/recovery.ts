@@ -1,4 +1,5 @@
 import {recordHuntFailure} from "./settings.ts";
+import { legacyCompletionFailure } from '../navigation/communication-recovery.ts';
 import * as policy from "../../hunt/policy.ts";
 import type { HuntConvoy, HuntCycle, HuntTickPorts, HuntTickState } from "./contracts.ts";
 
@@ -64,6 +65,7 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
   }
 
   function retry(hunt: HuntCycle): boolean {
+    if (communicationBlocksRetry()) return false;
     if (
       !policy.retryReturn(hunt, state.activeConvoy, ports.now()) ||
       !ports.fresh(hunt) ||
@@ -72,6 +74,7 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
       return false;
     if (retryBlocked(hunt)) return true;
     if(state.activeConvoy!.returnTown)hunt.returnTown=state.activeConvoy!.returnTown;
+    hunt.returnNativeFallback ||= !!state.activeConvoy!.nativeFallback;
     hunt.returnRetries = (hunt.returnRetries || 0) + 1;
     hunt.returnRetryAt = ports.now();
     ports.cancelHuntConvoy();
@@ -84,6 +87,21 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
   function returnMessage(hunt: HuntCycle): void {
     const convoy = state.activeConvoy;
     if (hunt.stage !== "returning" || !convoy) return;
+    if (convoy.communicationHold) {
+      hunt.message = convoy.failure || convoy.communicationHold.reason;
+      return;
+    }
+    describeReturn(hunt,convoy);
+  }
+  function communicationBlocksRetry(): boolean {
+    const c = state.activeConvoy;
+    return !!c && (!!c.communicationHold || legacyCompletionFailure(c));
+  }
+  function describeReturn(hunt: HuntCycle, convoy: HuntConvoy): void {
+    if (convoy.geometryRepair?.phase === 'waiting') {
+      hunt.message='Returning to Daisy: repairing shared-route geometry; waiting for one runtime reload';
+      return;
+    }
     if (convoy.phase === "failed") {
       hunt.message =
         "Daisy return held" +
@@ -157,6 +175,12 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     }
   }
   function eventPauseMessage(): string {
+    const convoy=state.activeConvoy;
+    if (convoy?.geometryRepair?.phase === 'waiting') return 'Repairing shared-route geometry; waiting for one runtime reload';
+    if (convoy?.phase === 'failed') return 'Travel held: ' + convoy.failure;
+    return eventReturnMessage();
+  }
+  function eventReturnMessage(): string {
     const recovery = state.eventReturn as { event?: string; pending?: string[] } | null;
     if (!recovery)
       return "Waiting for " + (state.activeConvoy?.purpose || "anniversary") + " travel to finish";
@@ -175,7 +199,10 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
       hunt.convoyId = null;
       return true;
     }
-    if (state.farmAreaState?.paused || state.farmAreaState?.pending) return true;
+    if (state.farmAreaState?.paused || state.farmAreaState?.pending) {
+      hunt.message=state.farmAreaState.message || 'Hunt waiting for farming travel recovery';
+      return true;
+    }
     if (!cancelled(hunt)) return false;
     ports.cancelHuntConvoy();
     delete hunt.arrivalHandoff;

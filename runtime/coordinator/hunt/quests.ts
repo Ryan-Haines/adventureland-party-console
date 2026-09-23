@@ -2,6 +2,7 @@ import {recordHuntFailure} from "./settings.ts";
 import * as policy from "../../hunt/policy.ts";
 import type { HuntCommand, HuntCycle, HuntStatus, HuntTickState } from "./contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
+import { reconcileCurrentHuntParty } from "./current-party.ts";
 
 export interface HuntQuestPorts {
   now(): number;
@@ -154,9 +155,7 @@ export function createHuntQuests(state: HuntTickState, ports: HuntQuestPorts) {
   }
 
   function prepare(hunt: HuntCycle): void {
-    hunt.participants = hunt.participants.filter(
-      (name) => name === state.leader || state.followers[name],
-    );
+    if (reconcileCurrentHuntParty(hunt, state, ports.now(), () => ports.cancelConvoy())) ports.persist();
     if (hunt.backup) {
       hunt.stage = "backup-travel";
       return;

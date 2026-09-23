@@ -22,12 +22,12 @@ function fixture(){
  const c=vm.createContext({Date,Math,Object,String,Number,Promise,passingEncounters:{},peerPassingEncounters:[],passiveGeneratorAttempt:null,
   character:{name:'W',ctype:'warrior',map:'main',in:'main',x:0,y:0,items:[]},parent:{entities:{bee}},root:{},groupedCombat:null,
   passiveHunting:{rules:{bee:{enabled:true,keepMoving:true,priority:100}},useFieldGenerators:false},monsterPriorities:{},passiveRareHunts:{},
-  navigationIntent:{},coordinatorClockOffset:0,partyTownActive:false,banking:false,stocking:false,upgrading:false,gatheringActive:false,
+  fightDeaths:[],currentTravelAttackers:()=>[],navigationIntent:{},coordinatorClockOffset:0,partyTownActive:false,banking:false,stocking:false,upgrading:false,gatheringActive:false,
   forceTraveling:false,townTraveling:false,eventTraveling:false,joinedEvent:false,partyThreats:[],partyPositions:[],
   escapeOwns:()=>false,combatRecoveryActive:()=>false,activeCombatEvent:()=>false,rareActive:()=>false,unfinishedFight:()=>false,
   reunionRealm:()=> 'USII',get_entity:id=>Object.values(c.parent.entities).find(e=>e.id===id),is_in_range:e=>Math.hypot(e.x,e.y)<=100,
   isExternallyClaimedMonster:e=>!!e.claimed,currentPartyList:()=>['W'],sameEventTeamMember:()=>true,equip:()=>{throw Error('unexpected deployment');},rareFields:()=>[]});
- const names=['returnDepartureDefense','passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
+ const names=['passiveStopRequired','passiveTravelInterruptible','travelStopCandidates','outboundHuntTravel','huntTravelDefense','huntTravelControl','huntTravelExtraAggro','returnDepartureDefense','committedHuntEncounter','passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
  vm.runInContext(names.map(n=>namedFunction(source,n)).join('\n'),c);
  return {c,bee};
 }
@@ -47,11 +47,53 @@ test('retaliation stays movement-neutral for the attacked identity, not other mo
  c.character.map='cave';c.character.in='cave';assert.equal(c.passingEncounterReport().length,0);
 });
 
+test('verified Hunt farming releases local and peer passing ownership without changing outbound travel',()=>{
+ const {c,bee}=fixture();c.beginPassingAttack(bee);
+ c.peerPassingEncounters=[...c.passingEncounterReport()];
+ c.groupedCombat={passingEncounters:[...c.peerPassingEncounters]};
+ assert.equal(c.isPassingEncounter(bee),true);
+ c.huntCombatTarget='bee';c.partyConvoyActive=true;
+ assert.equal(c.isPassingEncounter(bee),true);
+ assert.equal(c.passingEncounterReport().length,1);
+ c.partyConvoyActive=false;
+ assert.equal(c.isPassingEncounter(bee),false);
+ assert.equal(c.passingEncounterReport().length,0);
+ assert.equal(c.passingTarget(),null,'Hunt farming must use normal combat even with keep-moving enabled');
+ const unrelated={...bee,id:'other',mtype:'goo'};c.beginPassingAttack(unrelated);
+ assert.equal(c.isPassingEncounter(unrelated),true);
+});
+
+test('farming Hunt queue accepts a target with cached and freshly reported travel passing marks',()=>{
+ const {target,status,members}=reports();
+ const travelling=reconcileQueue(null,members,'W',1000,'k');
+ assert.equal(travelling.target,null);
+ const farming=reconcileQueue(travelling,members,'W',1000,'k',0,false,'bee');
+ assert.equal(farming.passingEncounters.length,0);
+ assert.equal(farming.target.id,target.id);
+});
+
 test('passing attacks yield to Town from reservation through settled transition',()=>{
  const {c,bee}=fixture();assert.equal(c.passingTarget(),bee);
  c.character.c={town:{}};assert.equal(c.passingTarget(),null);
  c.character.c={};c.movement={transition:()=> 'town'};assert.equal(c.passingTarget(),null);
  c.movement.transition=()=>null;assert.equal(c.passingTarget(),bee);
+});
+
+test('ordinary protocol 4 passing attacks require the current travelling signal',()=>{
+ const {c,bee}=fixture();c.convoyRuntimeId='r';c.navigationIntent.revision=3;
+ c.convoyTraveling={id:'C',epoch:1,commandId:8,navigationRevision:3,routeProtocol:4,purpose:'anniversary-return',phase:'travelling'};
+ c.convoySignal={id:'C',epoch:1,commandId:8,runtimeId:'r',phase:'travel',validUntil:Date.now()+10000};
+ assert.equal(c.passingTarget(),bee);
+ for(const phase of ['assemble','preparing','scheduled','defending','arrived']) {
+  c.convoyTraveling.phase=phase;assert.equal(c.passingTarget(),null,phase);
+ }
+ c.convoyTraveling.phase='travelling';c.convoySignal.epoch=0;assert.equal(c.passingTarget(),null);
+ c.convoySignal.epoch=1;c.convoySignal.validUntil=0;assert.equal(c.passingTarget(),null);
+});
+
+test('an unreserved monster attacking first stays a genuine defensive target',()=>{
+ const {c,bee}=fixture();bee.target='W';
+ assert.equal(c.passingTarget(),null);assert.equal(c.isAttackingPartyMember(bee),true);
 });
 
 test('Phoenix patrol permits in-range passing attacks but encounters and recovery still take precedence',()=>{
@@ -91,15 +133,16 @@ test('actual attack controller sends passing attacks without queue evidence or n
  const {createAttackController}=require('../../runtime/characters/roles/attack-controller.ts');
  const keys=['parent','character','sharedRoutine','attack','can_attack','is_in_range','get_entity','setTimeout','clearTimeout'];
  const saved=Object.fromEntries(keys.map(k=>[k,global[k]]));
- let passing=true,hits=0;const target={id:'bee1',mtype:'bee'},state={};
+ let passing=true,admitted=false,hits=0;const target={id:'bee1',mtype:'bee'},state={};
  try {
   global.parent={};global.character={range:100,frequency:1};global.setTimeout=()=>0;global.clearTimeout=()=>{};
   global.sharedRoutine={groupedAttackAllowed:()=>false,rareAttackAllowed:()=>true,
    queueEvidence:()=>assert.fail('passing hit acquired queue ownership'),noteAttack:()=>assert.fail('passing hit acquired normal combat ownership')};
   global.attack=async()=>{hits++;};global.can_attack=()=>true;global.is_in_range=()=>true;
   const controller=createAttackController({target:()=>target,selected:()=>target.id,epoch:()=>1,active:()=>true,allowed:()=>true,state:()=>state,
-   passing:()=>passing,preparePassing:()=>{passing=true;},report:error=>assert.fail(String(error))});
-  controller.tick();await Promise.resolve();await Promise.resolve();assert.equal(hits,1);assert.equal(state.attackTiming.accepted,1);
+   passing:()=>passing,preparePassing:()=>admitted,report:error=>assert.fail(String(error))});
+  controller.tick();await Promise.resolve();assert.equal(hits,0);assert.match(state.skippedAttack,/acknowledgement/);
+  admitted=true;controller.tick();await Promise.resolve();await Promise.resolve();assert.equal(hits,1);assert.equal(state.attackTiming.accepted,1);
   global.is_in_range=()=>false;controller.reset();controller.tick();assert.equal(hits,1);controller.stop();
  } finally {for(const key of keys)if(saved[key]===undefined)delete global[key];else global[key]=saved[key];}
 });
@@ -158,4 +201,34 @@ test('a pending passing attack burst cannot send again after the return starts p
   controller.tick();assert.equal(hits,1);passing=false;
   for(const timer of timers.slice())timer();assert.equal(hits,1);controller.stop();
  } finally {for(const key of keys)if(saved[key]===undefined)delete global[key];else global[key]=saved[key];}
+});
+
+test('outbound Hunt attacks its in-range target without passive settings and never during route preparation',()=>{
+ const {c,bee}=fixture();c.passiveHunting.rules={};c.convoyRuntimeId='runtime';c.navigationIntent.revision=3;
+ c.convoyTraveling={id:'hunt',epoch:2,commandId:4,navigationRevision:3,purpose:'monster-hunt',huntTarget:'bee',phase:'travelling'};
+ c.root.__partyHuntTravel={id:'hunt',epoch:2,primary:null,defending:false};c.root.__partyHuntTravelAt=Date.now();
+ c.convoySignal={id:'hunt',epoch:2,commandId:4,runtimeId:'runtime',phase:'travel',validUntil:Date.now()+10000};
+ c.unfinishedFight=()=>true;c.groupedCombat={target:bee};
+ assert.equal(c.passingTarget(),bee);
+ bee.x=200;assert.equal(c.passingTarget(),null);bee.x=20;
+ bee.mtype='goo';assert.equal(c.passingTarget(),null);bee.mtype='bee';
+ bee.claimed=true;assert.equal(c.passingTarget(),null);bee.claimed=false;
+ for(const phase of ['assembling','route-ready','waiting-for-departure','arrived','failed']){
+  c.convoyTraveling.phase=phase;assert.equal(c.passingTarget(),null,phase);
+ }
+ c.convoyTraveling.phase='travelling';c.movement={transition:()=> 'transport'};assert.equal(c.passingTarget(),null);
+ c.movement.transition=()=>null;c.convoySignal.epoch++;assert.equal(c.passingTarget(),null);
+});
+
+test('outbound Phoenix stop setting excludes passing attacks and reports eligible neutral sightings',()=>{
+ const {c,bee}=fixture();bee.mtype='phoenix';c.root.partyPassiveStopRequired=require('../../runtime/combat/passive-travel.ts').passiveStopRequired;
+ c.passiveHunting.rules={phoenix:{enabled:true,keepMoving:false,priority:100}};
+ c.convoyRuntimeId='runtime';c.navigationIntent.revision=3;
+ c.convoyTraveling={id:'hunt',epoch:2,commandId:4,navigationRevision:3,purpose:'monster-hunt',huntTarget:'phoenix',phase:'travelling'};
+ c.convoySignal={id:'hunt',epoch:2,commandId:4,runtimeId:'runtime',phase:'travel',validUntil:Date.now()+10000};
+ c.root.__partyHuntTravel={id:'hunt',epoch:2,primary:null};c.root.__partyHuntTravelAt=Date.now();
+ assert.equal(c.passingTarget(),null);assert.equal(c.travelStopCandidates()[0].id,bee.id);
+ c.beginPassingAttack(bee);assert.equal(c.isPassingEncounter(bee),false);
+ bee.target='W';c.currentTravelAttackers=()=>[bee];assert.equal(c.huntTravelExtraAggro(),true);
+ bee.target='outsider';assert.equal(c.travelStopCandidates().length,0);
 });

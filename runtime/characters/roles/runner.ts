@@ -1,3 +1,4 @@
+import {passiveStopRequired} from '../../combat/passive-travel.ts';
 import {installCombatTrace} from "../../combat/trace.ts";
 import {createEntityRefresh} from "../../combat/entity-refresh.ts";
 import { installPorcupineEquipment } from "./porcupine-equipment-runtime.ts";
@@ -16,6 +17,7 @@ export function installRoleRunner(
   classRole: Partial<Role>,
   root = globalThis as unknown as CombatRoot,
 ) {
+  (root as any).partyPassiveStopRequired = passiveStopRequired;
   (root as any).partyMerchantAnniversaryControl = merchantAnniversaryControl;
   root.partyRoleRunner?.stop();
   let equipment: ReturnType<typeof installPorcupineEquipment> | null = null;
@@ -54,7 +56,7 @@ export function installRoleRunner(
     target: attackTarget, selected: () => attackTarget()?.id || null, epoch: () => generation,
     active: () => active, allowed: () => combatAllowed() || !!passingTarget(),
     passing: target => target.id !== currentTarget()?.id && target.id === passingTarget()?.id,
-    preparePassing: target => { if(target.id !== currentTarget()?.id)(sharedRoutine as any).beginPassingAttack?.(target); }, state: () => root.partyCombatState,
+    preparePassing: target => queueClient?.preparePassing(target) ?? false, state: () => root.partyCombatState,
     equipmentBusy: () => !!equipment?.busy(),
     skillAttack: target => skills?.attack(target) ?? null,
     skillBusy: () => skills?.busy() ?? false,

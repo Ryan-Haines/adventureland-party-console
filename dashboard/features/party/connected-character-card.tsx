@@ -17,7 +17,7 @@ import { Meter } from './meter';
 import { MonsterFocusPicker } from './monster-focus-picker';
 import { RestockControls } from './restock-controls';
 import { CharacterStatsTrigger } from './character-stats-trigger';
-import type { PartyConsoleModel } from './use-party-console';
+import type { CharacterCardModel, InventoryModel } from './character-card-model';
 import { XpMeter } from './xp-meter';
 import { MonsterRouteButton } from './monster-route-button';
 
@@ -31,9 +31,11 @@ import type { Char } from './char';
 export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
   name,
   model,
+  inventoryModel,
 }: {
   name: string;
-  model: PartyConsoleModel;
+  model: CharacterCardModel;
+  inventoryModel: InventoryModel;
 }) {
   const diagnostics = useCharacterData(name, 'diagnostics');
   const vitals = useCharacterData(name, 'vitals');
@@ -304,7 +306,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
       </div>
       {char.name === state.merchantCharacter ? (
         <MerchantCardControls
-          collectionSettings={{threshold: model.threshold, onThresholdChange: model.editThreshold, onThresholdSave: model.save, itemCollectionThreshold: model.itemCollectionThreshold, onItemCollectionThresholdChange: model.editItemCollectionThreshold, onItemCollectionThresholdSave: model.saveItemCollectionThreshold}}
+          collectionSettings={{thresholdError: model.thresholdError, itemCollectionThresholdError: model.itemCollectionThresholdError, onClearErrors: model.clearCollectionErrors, threshold: model.threshold, onThresholdChange: model.editThreshold, onThresholdSave: model.save, itemCollectionThreshold: model.itemCollectionThreshold, onItemCollectionThresholdChange: model.editItemCollectionThreshold, onItemCollectionThresholdSave: model.saveItemCollectionThreshold}}
           state={state}
           onBank={bankParty}
           onClear={clearMerchantWork}
@@ -375,7 +377,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
         value={state.restockPolicies?.[char.name]}
         onSave={saveRestock}
       />
-      <ConnectedInventory name={char.name} model={model} />
+      <ConnectedInventory name={char.name} model={inventoryModel} />
     </article>
   );
 });

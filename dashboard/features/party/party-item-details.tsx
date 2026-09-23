@@ -17,7 +17,7 @@ function PartyItemDetailsConnected({ base }: { base: PartyConsoleModel }) {
   const {
     state,
     chars,
-    setNotice,
+    setActionError,
     setStandItem,
     setSelected,
     setGearComparison,
@@ -49,7 +49,7 @@ function PartyItemDetailsConnected({ base }: { base: PartyConsoleModel }) {
               : !mark.bankPack && mark.slot === entry.slot && same(mark.item, entry.item),
           );
           if (!existing && (state.standListings || []).length >= 16)
-            return setNotice("Merchant stand is full (16/16)");
+            return setActionError("Merchant stand is full (16/16)");
           setStandItem({
             id: existing?.id,
             entry,

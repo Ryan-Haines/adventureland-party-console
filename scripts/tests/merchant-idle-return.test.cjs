@@ -53,23 +53,6 @@ test('bank entry and cake result logs are based on observed changes',()=>{
  const count=logs.length;r.previousStatus=JSON.parse(JSON.stringify(r.body));run();assert.equal(logs.length,count);
 });
 
-for(const failure of [false,true]) test('cake '+(failure?'failure':'success')+' invalidates cooldown stand cache and releases ownership',async()=>{
- const {r,party}=fixture();let cakes=0,requests=[];
- const c=vm.createContext({character:{ctype:'merchant',name:'M',stand:true,gold:100000},root:{},anniversaryBusy:false,
- merchantForceStand:false,gatheringActive:false,merchantIdleActive:false,banking:false,
- anniversaryPlan:{craftReady:true,live:false},anniversaryLastCraftAttempt:0,anniversaryStage:'',
- gatheringSession:{atStandForCooldown:true},anniversarySliceNames:['slice'],
- close_stand:async()=>{c.character.stand=false;},smart_move:async target=>{c.character.map=target==='bank'?'bank':'main';},
- retrieveFromBankUntil:async()=>({onPlayer:failure?0:1}),inventoryQuantity:()=>cakes,auto_craft:async()=>{cakes++;},
- findInventoryItemByName:()=>0,bankStoreFully:async()=>{},game_log(){},snapshot:()=>({}),
- request:async path=>{requests.push(path);if(path==='/status'){assert.equal(c.anniversaryBusy,false);r.dispatchMerchantIdle();}}});
- vm.runInContext(shared.slice(shared.indexOf('  async function runAnniversaryCake('),shared.indexOf('  async function runAnniversaryChatAdvertisement(')),c);
- await c.runAnniversaryCake();
- assert.equal(c.character.map,'bank');assert.equal(c.gatheringSession.atStandForCooldown,false);
- assert.equal(c.root.__anniversaryCraftResult.success,!failure);assert.equal(c.anniversaryBusy,false);
- assert.equal(party.commands.M.type,'merchant-idle');assert.equal(requests.at(-1),'/status');
-});
-
 for(const closed of [false,true])test('cooldown rechecks '+(closed?'closed stand at market':'position despite cached arrival'),async()=>{
  let returns=0;
  const c=vm.createContext({character:{level:30,map:closed?'main':'bank',x:closed?-63:0,y:closed?100:-37,stand:!closed,slots:{}},

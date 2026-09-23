@@ -12,7 +12,8 @@ test('typed state factory preserves the complete legacy initialization and clock
  expected.activeConvoy.routeProtocol=4;
  // Hunt trip persistence was added after the frozen legacy initializer. Verify
  // its defaults explicitly, then retain the complete legacy parity assertion.
- const {upgradeOfferingRules,merchantRules,production,passiveHunting,bankSortMode,bankSortRequest,gameVersion,clientUpdate,bankboiPrefix,anniversaryAutoChat,autoBlacklistMerchants,nativeStand,autoStandBuys,farmingProfiles,huntSettings,huntFailures,huntEventTrips,combatEventHandoff,returnProgress,merchantHomeReturnAt,luckyUpgradeSlots,...legacyActual}=actual;
+ const {convoyCompletionReceipts,upgradeOfferingRules,merchantRules,production,passiveHunting,bankSortMode,bankSortRequest,gameVersion,clientUpdate,bankboiPrefix,anniversaryAutoChat,autoBlacklistMerchants,nativeStand,autoStandBuys,farmingProfiles,huntSettings,huntFailures,huntEventTrips,combatEventHandoff,returnProgress,merchantHomeReturnAt,luckyUpgradeSlots,luckySlotTracking,...legacyActual}=actual;
+ assert.deepEqual(convoyCompletionReceipts,{});
  assert.deepEqual(upgradeOfferingRules,[]);assert.equal(merchantRules,null);assert.deepEqual(production,{attempts:{}});assert.deepEqual(passiveHunting,{version:1,rules:{},useFieldGenerators:true});
  assert.equal(bankSortMode,"automatic");assert.equal(bankSortRequest,null);
  assert.equal(gameVersion,0);assert.equal(clientUpdate,null);
@@ -20,7 +21,7 @@ test('typed state factory preserves the complete legacy initialization and clock
  assert.deepEqual(nativeStand,{sequence:0,offers:{},problems:{}});assert.equal(autoStandBuys,false);assert.equal(autoBlacklistMerchants,true);
  assert.deepEqual(farmingProfiles,{});
  assert.deepEqual(huntSettings,require("../../runtime/coordinator/hunt/settings.ts").defaultHuntSettings);assert.deepEqual(huntFailures,{});
- assert.equal(merchantHomeReturnAt,0);assert.deepEqual(luckyUpgradeSlots,{GoldMajesty:7});
+ assert.equal(merchantHomeReturnAt,0);assert.deepEqual(luckyUpgradeSlots,{});assert.deepEqual(luckySlotTracking,{});
  assert.deepEqual(returnProgress,{});
  assert.deepEqual(huntEventTrips,{});assert.equal(combatEventHandoff,null);
  assert.deepEqual(JSON.parse(JSON.stringify(legacyActual)),JSON.parse(JSON.stringify(expected)));assert.equal(newTime,oldTime);assert.deepEqual(Object.keys(legacyActual),Object.keys(expected));
@@ -31,4 +32,19 @@ test('state initialization retains persisted Hunt trip and combat handoff record
  const state=createInitialCoordinatorState({persistedSettings:{huntEventTrips,combatEventHandoff},persistedSelections:{},persistedHistory:{},persistedBankState:{},persistedRoster:{},persistedALData:{},initialHeadless:[],configuredRealm:'SR_USII'},
   {now:()=>100,loadBankVaultDefinitions:()=>[]});
  assert.equal(state.huntEventTrips,huntEventTrips);assert.equal(state.combatEventHandoff,combatEventHandoff);
+});
+
+for(const merchant of ['FonzeMerch','GoldMajesty'])test('new merchant '+merchant+' has no invented lucky slot',()=>{
+ const {initialMerchantRuntime}=require('../../runtime/coordinator/merchant/initial-runtime.ts');
+ assert.deepEqual(initialMerchantRuntime({},merchant).luckyUpgradeSlots,{});
+});
+test('persisted character-specific lucky slots retain zero and other verified values',()=>{
+ const {initialMerchantRuntime}=require('../../runtime/coordinator/merchant/initial-runtime.ts');
+ assert.deepEqual(initialMerchantRuntime({luckyUpgradeSlots:{FonzeMerch:0,Other:41}},'FonzeMerch').luckyUpgradeSlots,{FonzeMerch:0,Other:41});
+});
+test('retire the old hardcoded slot 7 without mutating saved settings or other slots',()=>{
+ const {initialMerchantRuntime}=require('../../runtime/coordinator/merchant/initial-runtime.ts');
+ const saved={luckyUpgradeSlots:{GoldMajesty:7,FonzeMerch:0}};
+ assert.deepEqual(initialMerchantRuntime(saved,'GoldMajesty').luckyUpgradeSlots,{FonzeMerch:0});
+ assert.equal(saved.luckyUpgradeSlots.GoldMajesty,7);
 });

@@ -51,6 +51,9 @@ Stale data remains visible with connection/error status during outages.
 
 ## Measurement
 
+The follow-up [issue #17 optimization measurements](dashboard-optimizations.md)
+cover countdown normalization, position subscriptions and connected-card renders.
+
 `node scripts/benchmark-dashboard-query.cjs` performs read-only GETs against the
 local coordinator and replays the same four-character snapshot through the old
 HEAD projection and current maintained projection. It includes a synthetic ten

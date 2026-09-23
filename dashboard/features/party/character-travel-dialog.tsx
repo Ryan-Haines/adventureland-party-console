@@ -25,11 +25,15 @@ export function CharacterTravelDialog({
   character,
   places,
   onClose,
+  error,
+  setError,
   onTravel,
 }: {
   character: string | null;
   places: Place[];
   onClose: () => void;
+  error?: string | null;
+  setError: (error: string | null) => void;
   onTravel: (character: string, location: Location, label: string) => Promise<void>;
 }) {
   const [destination, setDestination] = useState(""),
@@ -53,6 +57,7 @@ export function CharacterTravelDialog({
     })();
   }
   const selectPlace = (id: string | null) => {
+    setError(null);
     if (!id) return;
     const place = places.find((entry) => entry.id === id);
     setDestination(id);
@@ -63,13 +68,14 @@ export function CharacterTravelDialog({
     }
   };
   const submit = () => {
+    setError(null);
     const location = {
       map: travelMap.trim(),
       x: Number(travelX),
       y: Number(travelY),
     };
     if (!character || !location.map || !Number.isFinite(location.x) || !Number.isFinite(location.y))
-      return;
+      return setError("Enter a map and finite coordinates");
     const label =
       places.find((entry) => entry.id === destination)?.name ||
       `${location.map} [${location.x}, ${location.y}]`;
@@ -111,6 +117,7 @@ export function CharacterTravelDialog({
               <Input
                 value={travelMap}
                 onChange={(event) => {
+                  setError(null);
                   setDestination("");
                   setTravelMap(event.target.value);
                 }}
@@ -123,6 +130,7 @@ export function CharacterTravelDialog({
                 inputMode="numeric"
                 value={travelX}
                 onChange={(event) => {
+                  setError(null);
                   setDestination("");
                   setTravelX(event.target.value);
                 }}
@@ -135,6 +143,7 @@ export function CharacterTravelDialog({
                 inputMode="numeric"
                 value={travelY}
                 onChange={(event) => {
+                  setError(null);
                   setDestination("");
                   setTravelY(event.target.value);
                 }}
@@ -143,6 +152,7 @@ export function CharacterTravelDialog({
             </label>
           </div>
         </div>
+        {error && <p role="alert" className="text-sm text-rose-200">{error}</p>}
         <DialogFooter>
           <Button
             variant="outline"
@@ -153,11 +163,6 @@ export function CharacterTravelDialog({
           </Button>
           <Button
             onClick={submit}
-            disabled={
-              !travelMap.trim() ||
-              !Number.isFinite(Number(travelX)) ||
-              !Number.isFinite(Number(travelY))
-            }
             className="bg-cyan-400 text-cyan-950 hover:bg-cyan-300"
           >
             <MapPin className="mr-2 h-4 w-4" />

@@ -1,7 +1,7 @@
 // Generated from TypeScript; run npm run build:runtime -- --publish. Do not edit.
 "use strict";
 (() => {
-  // ../runtime/characters/loader-artifact.ts
+  // runtime/characters/loader-artifact.ts
   async function classArtifact(read, name) {
     const manifest = JSON.parse(await read("manifest.json"));
     const entry = manifest.classes?.[name];
@@ -19,8 +19,8 @@
     };
   }
 
-  // ../runtime/steam/connection.ts
-  var steamBridgeVersion = 8;
+  // runtime/steam/connection.ts
+  var steamBridgeVersion = 9;
   function needsSteamBridge(bridge, server2) {
     return !bridge || bridge.version !== steamBridgeVersion || bridge.server !== server2;
   }
@@ -49,7 +49,7 @@
     return `$.getScript(${JSON.stringify(base.replace(/\/$/, "") + "/CODE/adventure_land/universal-loader.js")});`;
   }
 
-  // ../runtime/characters/universal-loader.ts
+  // runtime/characters/universal-loader.ts
   var server = initializeConnection();
   var baseUrl = server + "/CODE/adventure_land/";
   var root = globalThis;

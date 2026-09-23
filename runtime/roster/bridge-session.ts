@@ -1,19 +1,32 @@
 import { RosterConflict, type SteamHandoff, type RosterOwnership } from "./handoff.ts";
 import type { SteamGroup } from "./steam-group.ts";
 import { parseObservations, type SteamObservation } from './connection-status.ts';
+import { isSteamLogout, recoverSteamLogout } from './logout-recovery.ts';
 interface BridgePorts {
   observationsChanged?(entries: SteamObservation[]): void;
   now(): number;
   owned(name: string): boolean;
   bridgeChanged(character: string | null): void;
   save(): void;
+  validateParticipants(names: string[]): void;
   codeRunning?(name: string): boolean;
+}
+function gameSessionId(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !value || value.length > 100)
+    throw new RosterConflict('Invalid Steam game session');
+  return value;
+}
+function validateBridge(body: Record<string, unknown>): string {
+  if (typeof body.clientId !== 'string' || !body.clientId || body.clientId.length > 100 || ![1,2].includes(Number(body.version)))
+    throw new RosterConflict('Unsupported Steam bridge');
+  return body.clientId;
 }
 /** A bridge lease identifies a window; it never proves a game session is offline. */
 export class BridgeSession {
   private character: string | null = null;
   private realm: string | null = null;
-  private lease: { id: string; at: number; version: number } | null = null;
+  private lease: { id: string; at: number; version: number; sessionId?: string } | null = null;
   private readonly state: RosterOwnership;
   private readonly service: SteamHandoff;
   private readonly ports: BridgePorts;
@@ -23,6 +36,7 @@ export class BridgeSession {
     this.state = state; this.service = service; this.ports = ports;
   }
   ready(version = 1): boolean { return !!this.lease && this.lease.version >= version && this.ports.now() - this.lease.at < 8000; }
+  sessionId(): string | undefined { return this.ready() ? this.lease?.sessionId : undefined; }
   currentRealm(): string | null {
     return this.ready(2) && this.character === this.state.native ? this.realm : null;
   }
@@ -31,12 +45,17 @@ export class BridgeSession {
       && !!this.ports.codeRunning?.(this.character);
   }
   private renew(body: Record<string, unknown>): string | null {
-    if (typeof body.clientId !== "string" || !body.clientId || body.clientId.length > 100 || ![1,2].includes(Number(body.version)))
-      throw new RosterConflict("Unsupported Steam bridge");
-    if (this.lease && this.lease.id !== body.clientId && this.ready())
+    const clientId = validateBridge(body), sessionId = gameSessionId(body.sessionId);
+    if (this.lease && this.lease.id !== body.clientId && this.ready() && !this.canReconnect(body))
       throw new RosterConflict("Another Steam window currently owns the bridge");
-    this.lease = { id: body.clientId, at: this.ports.now(), version: Number(body.version) };
+    this.lease = { id: clientId, at: this.ports.now(), version: Number(body.version), sessionId };
     return typeof body.character === "string" && this.ports.owned(body.character) ? body.character : null;
+  }
+  private canReconnect(body: Record<string, unknown>): boolean {
+    if (this.character || typeof body.character !== 'string' || !this.ports.owned(body.character)) return false;
+    if (!Array.isArray(body.running) || !body.running.includes(body.character)) return false;
+    const op = this.state.handoff;
+    return !op || op.phase === 'complete' || isSteamLogout(op);
   }
   private async acknowledge(body: Record<string, unknown>, character: string | null): Promise<void> {
     const operation = this.state.handoff;
@@ -53,6 +72,7 @@ export class BridgeSession {
     this.character = character;
     this.realm = character && typeof body.realm === "string" && /^SR_(US|EU|ASIA)(I|II|III|IV|V|PVP)$/.test(body.realm)
       ? body.realm : null;
+    recoverSteamLogout(this.state, character, body, this.ports);
     if (body.version === 2 && this.group && (!this.state.handoff || this.state.handoff.multi || this.state.handoff.phase === "complete")) {
       const op = this.state.handoff;
       if (op?.multi && body.operationId === op.id) {

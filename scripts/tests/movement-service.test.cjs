@@ -5,6 +5,15 @@ const {geometryFingerprint}=require('../../runtime/navigation/contracts.ts');
 const {createPlannerService}=require('../../runtime/coordinator/navigation/planner-service.ts');
 const {createNative}=require('../../tools/game/pathfinder-benchmark/native.cjs');
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('route import refreshes and normalizes the game version, retaining strict fingerprint validation',()=>{
+ const r=fixture();r.host.parent.__partyClientVersion='17139';
+ assert.throws(()=>r.service.install([],{version:17139,fingerprint:'incorrect'}),/expected.*incorrect.*actual.*17139/);
+ assert.equal(r.service.identity.version,17139);
+ r.host.parent.__partyClientVersion='17140';
+ assert.throws(()=>r.service.install([],{version:17139,fingerprint:r.service.identity.fingerprint}),/game geometry mismatch/);
+ assert.equal(r.service.identity.version,17140);r.dispose();
+});
 test('diagnostics snapshot coordinates and deduplicate independently of mutable movement state',()=>{
  const {movementDiagnostics}=require('../../runtime/characters/movement-diagnostics.ts');
  let now=1000;const logs=[];
@@ -37,6 +46,32 @@ function fixture(options={}) {
  return {service,host,c,calls,logs,ports,get request(){return request;},get searches(){return searches;},setNow:t=>now=t,supersede:()=>revision++,reload:()=>runtime='new',
   async ticks(count=8){for(let i=0;i<count;i++){host.smart_move_logic();await settle();}},dispose:()=>service.dispose()};
 }
+
+test('interrupted walking reissues its owned segment once and finishes',async()=>{
+ const opts={stall:true},r=fixture(opts),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});
+ await r.ticks();assert.equal(r.calls.filter(c=>c[0]==='move').length,1);
+ opts.stall=false;r.setNow(1300);await r.ticks();await p;
+ assert.equal(r.calls.filter(c=>c[0]==='move').length,2);assert.equal(r.c.real_x,100);r.dispose();
+});
+test('a reissued walk retains its original no-progress deadline and reports the failed segment',async()=>{
+ const r=fixture({stall:true}),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});
+ const rejected=assert.rejects(p,/Stalled walking movement/);await r.ticks();
+ r.setNow(1400);await r.ticks();r.setNow(4500);await r.ticks();
+ assert.equal(r.calls.filter(c=>c[0]==='move').length,2);
+ r.setNow(6100);await r.ticks();await rejected;
+ assert.equal(r.service.last().progress.noProgressMs,5100);assert.equal(r.service.last().progress.reissued,true);
+ assert.equal(r.service.last().progress.destination.x,100);r.dispose();
+});
+for(const mode of ['collision','locked','superseded'])test('stopped segment retry respects '+mode,async()=>{
+ const r=fixture({stall:true}),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});
+ const rejected=assert.rejects(p);await r.ticks();
+ if(mode==='collision')r.host.can_move=()=>false;
+ if(mode==='locked')r.host.can_walk=()=>false;
+ if(mode==='superseded')r.supersede();
+ r.setNow(1400);await r.ticks();
+ assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===100).length,1);
+ r.dispose();await rejected;
+});
 
 test('combat handoff records an intentional travel pause without reporting a navigation failure',async()=>{
  const r=fixture({pending:true}),journey=r.service.move({map:'main',x:100,y:0});
@@ -122,6 +157,34 @@ test('precision arrival rejects a blocked connector in both planners',async()=>{
  const p=r.service.move({map:'main',x:50,y:0},undefined,{arrivalTolerance:1});
  const failed=assert.rejects(p,/Native route rejected: collisions/);
  await r.ticks(14);await failed;assert.equal(r.calls.length,0);r.dispose();
+});
+
+for(const native of [false,true])test('blocked final waypoint within tolerance is trimmed for '+(native?'native':'ALClient'),async()=>{
+ const plot=[{map:'main',x:40,y:0},{map:'main',x:50,y:0}];
+ const r=fixture({collision:true,plot,nativePlot:plot});
+ const p=r.service.move({map:'main',x:50,y:0},undefined,{native});
+ await r.ticks(14);await p;
+ assert.equal(r.c.x,40);assert.equal(r.calls.some(c=>c[0]==='move'&&c[1]===50),false);
+ assert.equal(r.searches,native?1:0);assert.equal(r.logs.some(l=>l.phase==='ALClient route rejected'),false);
+ assert.equal(plot.length,2,'planner result is not mutated');r.dispose();
+});
+
+for(const options of [{arrivalTolerance:1},{shared:true},{}])test('blocked endpoint cannot bypass precision, shared, or distance requirements '+JSON.stringify(options),async()=>{
+ const previous=Object.keys(options).length?40:20;
+ const plot=[{map:'main',x:previous,y:0},{map:'main',x:50,y:0}],r=fixture({collision:true,plot,nativePlot:plot});
+ const p=r.service.move({map:'main',x:50,y:0},undefined,options),failed=assert.rejects(p,/collisions/);
+ await r.ticks(14);await failed;assert.equal(r.calls.length,0);r.dispose();
+});
+
+test('endpoint trim never removes a final transition or conceals an earlier collision',async()=>{
+ for(const plot of [
+  [{map:'main',x:40,y:0},{map:'main',x:50,y:0,town:true}],
+  [{map:'main',x:50,y:0},{map:'main',x:40,y:0},{map:'main',x:50,y:0}],
+ ]) {
+  const r=fixture({collision:true,plot,nativePlot:plot});
+  const p=r.service.move({map:'main',x:50,y:0}),failed=assert.rejects(p,/Native route rejected/);
+  await r.ticks(14);await failed;assert.equal(r.calls.length,0);r.dispose();
+ }
 });
 
 test('cancellation prevents dispatching the precision final approach',async()=>{

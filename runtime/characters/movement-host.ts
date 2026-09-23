@@ -29,7 +29,8 @@ export interface MovementHost {
   can_use_door(map: string, door: unknown[], x: number, y: number): boolean;
   find_npc(name: string): Point | null;
   game_log(message: string, color: string): void;
-  parent: { __partyClientVersion?: number; socket: { emit(event: string, data: unknown): void }; push_deferred(key: string): Promise<unknown> };
+  // caracAL supplies its selected game-file version through process arguments.
+  parent: { __partyClientVersion?: number | string; socket: { emit(event: string, data: unknown): void }; push_deferred(key: string): Promise<unknown> };
   __partyMovement?: { dispose(): void };
   __partyNativeMovement?: NativeFunctions;
 }

@@ -191,6 +191,7 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
               </div>
             </div>
           </div>
+          {model.giveawayError && <p role="alert" className="text-sm text-rose-200">{model.giveawayError}</p>}
           <DialogFooter>
             <Button
               variant="outline"
@@ -409,6 +410,7 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
               </label>
             ) : null}
           </div>
+          {model.standError && <p role="alert" className="text-sm text-rose-200">{model.standError}</p>}
           <DialogFooter className="shrink-0 border-t border-slate-700 bg-black">
             <Button
               variant="outline"
@@ -474,6 +476,7 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
               </div>
             ) : null}
           </div>
+          {model.autoNpcSaleError && <p role="alert" className="text-sm text-rose-200">{model.autoNpcSaleError}</p>}
           <DialogFooter>
             <Button
               variant="outline"
@@ -584,6 +587,7 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
               </label>
             ) : null}
           </div>
+          {model.npcSaleError && <p role="alert" className="text-sm text-rose-200">{model.npcSaleError}</p>}
           <DialogFooter>
             <Button
               variant="outline"

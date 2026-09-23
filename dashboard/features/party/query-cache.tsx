@@ -12,6 +12,7 @@ import type { PartyState } from './party-state';
 import type { ALDataState } from './aldata-state';
 import type { MapDefinition } from './map-definition';
 import { synchronizeDashboardClock } from './live-metrics';
+import { writeVitals } from './character-cache';
 
 export type Domain =
   | 'core'
@@ -221,16 +222,18 @@ export function domainOptions(client: QueryClient, domain: Domain) {
         }>(['party', 'connection']);
         if (connection?.healthy || connection?.version !== version)
           return client.getQueryData(key(domain)) || {};
-        for (const [name, data] of Object.entries(result.characters || {}))
-          client.setQueryData(
+        for (const [name, data] of Object.entries(result.characters || {})) {
+          if (domain === 'fast') writeVitals(client, name, data);
+          else client.setQueryData(
             [
               'party',
               'character',
               name,
-              domain === 'fast' ? 'vitals' : 'inventory',
+              'inventory',
             ],
             data,
           );
+        }
         if (
           domain === 'fast' &&
           !client.getQueryData<Partial<PartyState>>(key('core'))

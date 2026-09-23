@@ -1,5 +1,6 @@
 import type { HuntCycle, HuntStatus, HuntTickState } from "./contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
+import { currentHuntParty } from "./current-party.ts";
 
 interface HuntLifecycleState extends HuntTickState {
   monsterFocus?: string[];
@@ -175,13 +176,9 @@ export function createHuntLifecycle(state: HuntLifecycleState, ports: HuntLifecy
     const recoverBatch =
       state.monsterHunt?.stage === "ended" &&
       state.monsterHunt.endReason === "no eligible quests remain (Hunt blacklist)";
-    const names = [
-      ...new Set([
-        state.leader,
-        ...ports.participants(),
-        ...Object.keys(state.followers || {}).filter((name) => state.followers[name]),
-      ]),
-    ].filter((name): name is string => !!name && state.statuses[name]?.ctype !== "merchant");
+    const current = currentHuntParty(state, ports.now());
+    const names = [...new Set([state.leader, ...ports.participants(), ...current])]
+      .filter((name): name is string => !!name && current.includes(name));
     if (!names.length) return false;
     const pendingLoot = unfinishedLoot(state.monsterHunt);
     ports.clear();

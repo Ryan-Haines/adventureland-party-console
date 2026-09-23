@@ -10,6 +10,7 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
       convoySignal?: { id: string; epoch: number; phase: string; farmingEngagement?: unknown } | null;
       groupedCombat?: unknown;
       passingEncounters?: unknown;
+      passingControl?: unknown;
       combatRecovery?: unknown;
       travelCombat?: unknown;
       rareControl?: unknown;
@@ -18,6 +19,7 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
     };
     const control = {
       passingEncounters:full.passingEncounters,
+      passingControl:full.passingControl,
       rareControl: full.rareControl,
       convoySignal: full.convoySignal || null,
       combatRecovery: full.combatRecovery,

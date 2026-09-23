@@ -14,6 +14,11 @@ function fixture(merchant=false){
  destination:{map:'winterland',x:100,y:100},...extra});
  return {state,walks,convoys,body,starts:()=>starts,advance:ms=>{now+=ms;for(const s of Object.values(state.statuses))s.seenAt=now;}};
 }
+test('runtime reload cancellation preserves the geometry repair convoy',()=>{
+ const t=fixture();for(const n of ['L','F','P'])t.walks.submit(t.body(n));
+ const c=t.state.activeConvoy;c.geometryRepair={phase:'waiting'};
+ assert.equal(t.walks.submit(t.body('F',{cancel:true})).phase,'waiting');assert.equal(t.state.activeConvoy,c);
+});
 test('three event callers coalesce into one convoy and repeated requests retain its identity',()=>{
  const t=fixture();for(const n of ['F','L'])t.walks.submit(t.body(n));assert.equal(t.starts(),0);
  t.walks.submit(t.body('P'));const id=t.state.activeConvoy.id;

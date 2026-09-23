@@ -1,4 +1,5 @@
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
+import { deliveryReady } from './delivery-recovery.ts';
 import { merchantEventReserved, type MerchantEventState } from './event-control.ts';
 import { ruleOwner } from "../inventory/shared-rules.ts";
 import { routineEnabled } from './routines.ts';
@@ -82,7 +83,7 @@ function characterWork(state: DispatchCoordinatorState, name: string | null): Ch
     autoCompounds: state.autoCompounds[ruleOwner(state, String(name))] || [],
     withdrawals: state.withdrawals[String(name)] || [],
     statScrolls: state.statScrolls[String(name)] || [],
-    deliveries: (state.merchantDeliveries[String(name)] || []).filter(mark => !(mark as {awaitingEquip?: boolean}).awaitingEquip && !(mark as {blocked?: string}).blocked),
+    deliveries: (state.merchantDeliveries[String(name)] || []).filter(deliveryReady),
     goldTarget: state.goldTargets[String(name)],
   };
 }

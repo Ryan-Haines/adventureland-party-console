@@ -54,8 +54,9 @@ export function installRosterRoutes(
   const service: SteamHandoff = new SteamHandoff(state, {
     ...ports,
     bridgeReady: () => bridge.ready(),
+    steamSessionId: () => bridge.sessionId(),
   });
-  const group: SteamGroup = new SteamGroup(state, { ...ports, realmContext, bridgeReady: (): boolean => bridge.ready(2), prepareSteam: name => ports.prepareSteam?.(name) || Promise.resolve() });
+  const group: SteamGroup = new SteamGroup(state, { ...ports, realmContext, steamSessionId: () => bridge.sessionId(), bridgeReady: (): boolean => bridge.ready(2), prepareSteam: name => ports.prepareSteam?.(name) || Promise.resolve() });
   const bridge: BridgeSession = new BridgeSession(state, service, ports, group);
   router.get("/party-api/steam/connection", (_request, response) => {
     response.json({ connected: bridge.connected() });

@@ -12,6 +12,7 @@ export function routineFor(job: RoutineJob): string {
   return aliases[job.reason] || job.reason;
 }
 export function routineEnabled(job: RoutineJob, enabled: Record<string, boolean | undefined>): boolean {
+  if (job.reason === 'party collection' && job.manual === true) return true;
   return enabled[routineFor(job)] !== false;
 }
 export function autoUpgradePriority(saved: Record<string, number>): number {
