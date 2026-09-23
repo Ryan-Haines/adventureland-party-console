@@ -65,6 +65,14 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
+Convoy failure messages include a snapshot taken before cancellation: phase,
+position, destination, route identifiers, signal expiry or mismatched identity
+fields, and recent status-response/failure timing. Two context lines accompany
+the existing reason and the same snapshot travels in existing failure details.
+Timing is held in memory only; no requests, timers, or storage are added.
+Validate convoy failure context, shared convoy, and status diagnostics tests;
+publish character assets using the supported full restart.
+
 Shared-route geometry mismatches have a separate one-reload repair budget. Heartbeats
 carry numeric game versions and geometry fingerprints; import failures include both
 expected and actual identities. The coordinator holds every participant, asks only

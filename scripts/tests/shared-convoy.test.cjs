@@ -373,6 +373,25 @@ test('new manual navigation is not overwritten by regroup recovery',()=>{
  const p=party(),e=engine();e.step(p,1000);p.commands.F={id:99,type:'character-travel'};
  e.step(p,1001);assert.equal(p.activeConvoy.failureCode,'owner-lost');assert.equal(p.commands.F.id,99);
 });
+test('failure context changes only diagnostics, retaining the original failure and request sequence',async()=>{
+ const runs=[];
+ for(const enabled of [false,true]){
+  const p=party(),e=engine();e.step(p,1000);const r=client('L',p),logs=[];
+  r.context.game_log=m=>logs.push(m);
+  if(!enabled){r.context.captureConvoyFailureContext=()=>{};r.context.logConvoyFailureContext=()=>{};}
+  const started=await r.start(p.commands.L);await r.ready();
+  const phase=r.context.convoyTraveling.phase;
+  r.context.convoySignal.validUntil=999;r.setNow(5000);r.tick();await settle();await settle();
+  const failure=r.calls.find(c=>c[0]==='request'&&c[1]==='/convoy-failed');assert.ok(failure);
+  assert.equal(failure[2].body.reason,'Shared route coordinator signal expired');
+  assert.equal(failure[2].body.failureCode,'route-failed');
+  if(enabled){assert.equal(failure[2].body.details.failureContext.phase,phase);assert.equal(failure[2].body.details.failureContext.signal.state,'expired');assert.equal(logs.filter(m=>/^Convoy (context|signal):/.test(m)).length,2);}
+  await r.cancel();await started.promise;
+  const body=copy(failure[2].body);delete body.details.failureContext;
+  runs.push({body,requests:r.calls.filter(c=>c[0]==='request').map(c=>c[1]),moves:r.moves(),searches:r.searches});
+ }
+ assert.deepEqual(runs[1],runs[0]);
+});
 test('paused leader retains the issued waypoint and regroups using native fallback after a route failure',async()=>{
  const p=party(),e=engine();e.step(p,1000);const r=client('L',p,{nativeMovingFlag:true});
  const first=await r.start(p.commands.L);await r.ready();

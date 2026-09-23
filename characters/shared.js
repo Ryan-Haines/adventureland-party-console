@@ -2479,6 +2479,7 @@
 
   function request(path, options) {
     options = options || {};
+    var convoyStatusStarted = path === '/status' ? convoyDiagnosticClock() : null;
     return new Promise(function (resolve, reject) {
       $.ajax({
         url: api + path,
@@ -2491,10 +2492,14 @@
         // half-open localhost request must not leave its one-at-a-time status
         // loop permanently busy after CaracAL or Windows restarts overnight.
         timeout: Number(options.timeout) > 0 ? Number(options.timeout) : 10000,
-      }).done(resolve).fail(function (xhr, status, error) {
+      }).done(function(value) {
+        rememberConvoyStatusRequest(convoyStatusStarted, 'success');
+        resolve(value);
+      }).fail(function (xhr, status, error) {
         var httpStatus = Number(xhr && xhr.status) || 0;
         var kind = status === "timeout" ? "timeout" : status === "parsererror" ? "invalid-json" :
           status === "abort" ? "aborted" : httpStatus ? "http" : "network";
+        rememberConvoyStatusRequest(convoyStatusStarted, kind);
         var serverError = xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message);
         var reason = typeof serverError === "string" ? serverError :
           error && error !== "error" ? (error.message || error) : status;
@@ -2516,6 +2521,22 @@
       !(typeof partyConvoyActive !== 'undefined' && partyConvoyActive) &&
       !(typeof convoyTraveling !== 'undefined' && convoyTraveling) &&
       !(typeof travelCombatActive === 'function' && travelCombatActive()));
+  }
+
+  // Observational only: failures here must never change request settlement.
+  function convoyDiagnosticClock() {
+    try { return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(); }
+    catch (_) { return null; }
+  }
+  function rememberConvoyStatusRequest(started, outcome) {
+    if (started === null) return;
+    try {
+      var now = convoyDiagnosticClock();
+      if (now === null) return;
+      var history = root.__partyConvoyHttp || (root.__partyConvoyHttp = {});
+      if (outcome === 'success') history.responseAt = now;
+      else history.failure = { at: now, kind: outcome, durationMs: Math.max(0, Math.round(now - started)) };
+    } catch (_) {}
   }
   function passingKey(target) {
     return JSON.stringify([target.server || reunionRealm(), target.map || character.map,
@@ -12296,6 +12317,43 @@
   function sharedConvoyPoint() {
     return {map:character.map,in:character.in,x:character.real_x,y:character.real_y};
   }
+  function captureConvoyFailureContext(convoy, command) {
+    try {
+      if (convoy.failureContext) return;
+      var signal = convoySignal, now = Date.now() + coordinatorClockOffset;
+      var mono = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+      var http = root.__partyConvoyHttp || {}, mismatches = [];
+      var expected = {id:convoy.id,epoch:convoy.epoch,commandId:convoy.commandId,runtimeId:convoyRuntimeId};
+      if (command.routeProtocol === 4) expected.routeVersion = command.routeVersion;
+      if (signal) Object.keys(expected).forEach(function(field) {
+        var actual = field === 'epoch' || field === 'commandId' ? Number(signal[field]) : signal[field];
+        if (actual !== expected[field]) mismatches.push({field:field,expected:expected[field],received:signal[field]});
+      });
+      var expiry = signal && Number.isFinite(Number(signal.validUntil)) ? Math.max(0, Math.round(now - Number(signal.validUntil))) : null;
+      var state = !signal ? 'missing' : mismatches.length ? 'identity mismatch' : expiry === null ? 'unknown' : Number(signal.validUntil) <= now ? 'expired' : 'matching';
+      var age = function(at) { return typeof at === 'number' && Number.isFinite(at) && mono >= at ? Math.round(mono-at) : null; };
+      var p = function(value) { return value ? {map:value.map,x:value.x,y:value.y} : null; };
+      convoy.failureContext = {phase:convoy.phase,position:p(character),destination:p(command.location),
+        convoyId:convoy.id,epoch:convoy.epoch,commandId:convoy.commandId,runtimeId:convoyRuntimeId,routeVersion:command.routeVersion,
+        signal:{state:state,expiredByMs:expiry,mismatches:mismatches},lastStatusResponseAgeMs:age(http.responseAt),
+        lastStatusFailure:http.failure ? {kind:http.failure.kind,durationMs:http.failure.durationMs,ageMs:age(http.failure.at)} : null};
+    } catch (_) {}
+  }
+  function logConvoyFailureContext(context) {
+    try {
+      if (!context) { game_log('Convoy context: unknown', '#94a3b8'); return; }
+      var text = function(value) { return value == null ? 'unknown' : String(value).replace(/[\r\n\t]/g,' ').slice(0,100); };
+      var ms = function(value) { return value == null ? 'unknown' : text(value)+'ms'; };
+      var point = function(value) { return value ? text(value.map)+' ('+text(Number.isFinite(value.x)?Math.round(value.x):null)+','+text(Number.isFinite(value.y)?Math.round(value.y):null)+')' : 'unknown'; };
+      game_log('Convoy context: phase='+text(context.phase)+'; position='+point(context.position)+'; destination='+point(context.destination)+
+        '; convoy='+text(context.convoyId)+'; epoch='+text(context.epoch)+'; command='+text(context.commandId)+'; runtime='+text(context.runtimeId)+'; route='+text(context.routeVersion), '#94a3b8');
+      var signal = context.signal, failure = context.lastStatusFailure;
+      var detail = signal.mismatches.map(function(m) { return m.field+' expected='+text(m.expected)+' received='+text(m.received); }).join(', ');
+      game_log('Convoy signal: '+signal.state+(detail?' ['+detail+']':'')+'; expiry overrun='+ms(signal.expiredByMs)+
+        '; last status response='+ms(context.lastStatusResponseAgeMs)+' ago; latest status failure='+
+        (failure ? text(failure.kind)+' after '+ms(failure.durationMs)+' ('+ms(failure.ageMs)+' ago)' : 'unknown'), '#94a3b8');
+    } catch (_) {}
+  }
   function reloadConvoyGeometry(signal) {
     var repair=signal && signal.geometryReload, convoy=convoyTraveling;
     if (!repair || repair.runtimeId!==convoyRuntimeId || repair.deadline<Date.now()+coordinatorClockOffset || !convoy ||
@@ -12788,6 +12846,7 @@
     }
     convoy.fail = function (reason) {
       if (!ownsConvoy() || convoy.failure) return;
+      captureConvoyFailureContext(convoy,command);
       if(convoy.freezeRoute)convoy.freezeRoute();
       convoy.failure = String(reason); convoy.routeReady = false;
       phase("failed");
@@ -12942,6 +13001,7 @@
       game_log("Arrived with party at " + (command.label || "selected monster"), "#51D2E1");
     } catch (error) {
       if (!ownsConvoy()) return;
+      captureConvoyFailureContext(convoy,command);
       phase("failed");
       var reason = convoy.failure || String(error && (error.reason || error.message || error));
       convoy.failure = reason; convoy.routeReady = false;
@@ -12953,11 +13013,12 @@
         failureCode: convoy.townAttempt && ['interrupted','unavailable'].indexOf(convoy.townAttempt.state)>=0 ? 'town-interrupted' : command.phase === "town" ? "town-unavailable" : "route-failed",
         townAttempt: convoy.townAttempt || null,
         routeVersion: command.routeVersion,
-        details: { phase: convoy.phase, routeStarts: convoy.routeStarts,
+        details: { phase: convoy.phase, failureContext: convoy.failureContext || null, routeStarts: convoy.routeStarts,
           map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null,
           movement: movement.report() || movement.last() },
       }}).catch(function () {});
       game_log("Convoy movement failed: " + reason, "red");
+      logConvoyFailureContext(convoy.failureContext);
       if (ownsConvoy()) await new Promise(function (resolve) { convoy.release = resolve; });
     } finally {
       if(convoy.defensePaused && !convoy.cancelled && convoyTraveling===convoy)
