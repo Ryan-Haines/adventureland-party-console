@@ -10901,6 +10901,24 @@
     return true;
   }
 
+  async function joinCombatEvent(event, destination, current) {
+    if (!current()) return false;
+    if (root.__partyEventRejoinRequired === event.name || joinedEvent !== event.name || character.map !== destination.map) {
+      await join(event.name);
+      // A join reply can precede the map update. Do not clear death recovery or
+      // fall back to a convoy while the teleport is still arriving.
+      var deadline = Date.now() + 5000;
+      while (current() && character.map !== destination.map && Date.now() < deadline) await sleep(100);
+      if (!current()) return false;
+      if (character.map !== destination.map) throw new Error("Event join has no observed arrival: " + event.name);
+      game_log("Joined " + event.name, "#c084fc");
+    }
+    joinedEvent = event.name;
+    root.__partyJoinedEvent = event.name;
+    root.__partyEventRejoinRequired = null;
+    return true;
+  }
+
   async function pollEvents() {
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
@@ -11009,23 +11027,21 @@
       eventTraveling = true;
       travellingEventName = event.name;
       var travelSelectionRevision = eventSelectionRevision;
+      var travelNavigationRevision = navigationIntent.revision;
+      function currentEventTravel() {
+        var live = activeCombatEvent();
+        return runtimeCurrent() && !character.rip && !escapeOwns() && !navigationIntent.cancelled &&
+          travelNavigationRevision === navigationIntent.revision && eventSelected(event.name) &&
+          travelSelectionRevision === eventSelectionRevision && live && live.name === event.name;
+      }
       try {
         var destination = eventDestination(event.name, event.state);
-        var destinationIsEventMap = G.maps && G.maps[destination.map] &&
-          G.maps[destination.map].event === event.name;
-        // Death returns an event participant to a normal map while the old
-        // in-memory joined marker survives. Physical map presence is the
-        // authority: re-join rather than trying to walk back into an instance.
-        var rejoinRequired = root.__partyEventRejoinRequired === event.name;
-        if (eventRequiresJoin(event.name) &&
-            (rejoinRequired || joinedEvent !== event.name || (destinationIsEventMap && character.map !== destination.map))) {
+        if (eventRequiresJoin(event.name)) {
           if (!await eventTravelAllowed(event.name)) return;
-          await join(event.name);
-          if (!eventSelected(event.name) || travelSelectionRevision !== eventSelectionRevision) return;
-          joinedEvent = event.name;
-          root.__partyJoinedEvent = event.name;
-          root.__partyEventRejoinRequired = null;
-          game_log("Joined " + ((G.events[event.name] && G.events[event.name].name) || event.name), "#c084fc");
+          if (!await joinCombatEvent(event, destination, currentEventTravel)) return;
+          // Joinable events hand directly to combat, even before the boss is
+          // visible. Local combat movement owns approach after teleportation.
+          return;
         }
         if (!eventRequiresJoin(event.name) && joinedEvent !== event.name) {
           joinedEvent = event.name;
@@ -11033,8 +11049,8 @@
           root.__partyEventRejoinRequired = null;
           game_log("Traveling to " + ((G.events[event.name] && G.events[event.name].name) || event.name), "#c084fc");
         }
-        if (!escapeOwns() && event.kind !== "pvp" && !nearestEventTarget() && await eventTravelAllowed(event.name) && eventSelected(event.name) && travelSelectionRevision === eventSelectionRevision)
-          await sharedPartyWalk(destination,"event",event.name,null,function(){return !escapeOwns() && eventSelected(event.name) && travelSelectionRevision===eventSelectionRevision;});
+        if (event.kind !== "pvp" && !nearestEventTarget() && await eventTravelAllowed(event.name) && currentEventTravel())
+          await sharedPartyWalk(destination,"event",event.name,null,currentEventTravel);
       } catch (error) {
         var reason = error && (error.reason || error.message || error);
         if (reason !== "interrupted" && reason !== "event_not_live")
@@ -11327,8 +11343,9 @@
     if (!event && requiredEventName) return { status: "cancelled" };
     if (!event) return { status: "not-applicable" };
     var revision = Number(navigationIntent.revision), selection = eventSelectionRevision;
-    function current() { return runtimeCurrent() && !escapeOwns() && !navigationIntent.cancelled &&
-      Number(navigationIntent.revision) === revision && eventSelectionRevision === selection && eventSelected(event.name); }
+    function current() { var live = activeCombatEvent(); return runtimeCurrent() && !character.rip && !escapeOwns() && !navigationIntent.cancelled &&
+      Number(navigationIntent.revision) === revision && eventSelectionRevision === selection && eventSelected(event.name) &&
+      live && live.name === event.name; }
     if (!await eventTravelAllowed(event.name)) return { status: "cancelled" };
     if (eventTraveling) return { status: "retryable", reason: "Event travel already in progress" };
     eventTargetTypes = event.types; eventMissingSince = 0;
@@ -11338,12 +11355,13 @@
       if (typeof stop === "function") try { await stop("smart"); } catch (_) {}
       if (!current()) return { status: "cancelled" };
       var destination = eventDestination(event.name, event.state);
-      if (eventRequiresJoin(event.name) && (root.__partyEventRejoinRequired || joinedEvent !== event.name)) await join(event.name);
+      if (eventRequiresJoin(event.name) && !await joinCombatEvent(event, destination, current)) return { status: "cancelled" };
       if (!current() || !await eventTravelAllowed(event.name)) return { status: "cancelled" };
       joinedEvent = event.name; root.__partyJoinedEvent = event.name; root.__partyEventRejoinRequired = null;
-      phase = "event-travel";
-      if (event.name !== "abtesting" && !nearestEventTarget())
+      if (!eventRequiresJoin(event.name) && !nearestEventTarget()) {
+        phase = "event-travel";
         await sharedPartyWalk(destination, "event", event.name, null, current);
+      }
       if (!current()) return { status: "cancelled" };
       game_log("Recovered " + event.name + " participation after respawning", "#c084fc");
       return { status: "recovered", phase: phase };
@@ -14236,8 +14254,11 @@
     var outward = { x: character.x + Math.cos(angle) * step, y: character.y + Math.sin(angle) * step };
     if (safeCombatPoint(outward, attacker)) return sendCombatMove(attacker, outward, "escaping");
     root.partyCombatPosition = { at: Date.now(), target: attacker.id, distance: combatDistance(attacker),
-      desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat" };
-    return true;
+      desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat",
+      blockingAttacker: attacker.id, reason: "No safe kite step; trying combat approach" };
+    // No move was issued. Let the selected target's approach try its own
+    // collision-checked steps, retaining all secondary-attacker safeguards.
+    return false;
   }
   async function approachCombatTarget(target) {
     if (!target || target.dead) return false;
@@ -14253,8 +14274,11 @@
         y: character.y + Math.sin(angle + offsets[i]) * step };
       if (safeCombatPoint(point, target)) return sendCombatMove(target, point, delta > 0 ? "approaching" : "retreating");
     }
+    var blockedKite = root.partyCombatPosition;
     root.partyCombatPosition = { at: Date.now(), target: target.id, distance: combatDistance(target),
-      desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat" };
+      desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat",
+      blockingAttacker: blockedKite && blockedKite.mode === "blocked" ? blockedKite.blockingAttacker : null,
+      reason: "No collision-safe combat approach satisfying attacker clearance" };
     return false;
   }
 

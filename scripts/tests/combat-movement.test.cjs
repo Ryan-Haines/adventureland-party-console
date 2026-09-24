@@ -318,6 +318,31 @@ test('blocked paths never fall back to unvalidated movement, and alternate kite 
   assert.equal(moves.length, count);
 });
 
+test('blocked kiting around an add yields to a safe approach toward the selected event boss', async () => {
+  const { c, target, moves } = geometry(207);
+  target.target = 'Ally'; target.x = -400; target.mtype = 'franky';
+  c.character.x = 0; c.is_in_range = () => false;
+  const add = { id: 'add', type: 'monster', visible: true, x: 0, y: 0, target: 'Us', range: 30 };
+  c.parent.entities.add = add;
+  // At this corner only westward travel is possible; kite arcs go east.
+  c.can_move_to = x => x < 0;
+  assert.equal(await c.kiteIfNeeded(target), false);
+  assert.equal(c.partyCombatPosition.blockingAttacker, 'add');
+  assert.equal(await c.approachCombatTarget(target), true);
+  assert.ok(moves.at(-1).x < 0); assert.equal(c.partyCombatPosition.target, target.id);
+});
+
+test('blocked kite fallback cannot approach through another attacker or a wall', async () => {
+  const { c, target, moves } = geometry(207);
+  target.target = 'Ally'; target.x = -400; c.character.x = 0; c.is_in_range = () => false;
+  c.parent.entities.add = { id: 'add', type: 'monster', visible: true, x: -25, y: 0, target: 'Us', range: 30 };
+  c.can_move_to = (x, y) => x < 0 && Math.abs(y) < 1;
+  assert.equal(await c.kiteIfNeeded(target), false);
+  assert.equal(await c.approachCombatTarget(target), false);
+  assert.equal(moves.length, 0); assert.equal(c.partyCombatPosition.blockingAttacker, 'add');
+  assert.match(c.partyCombatPosition.reason, /attacker clearance/);
+});
+
 test('Dash cannot overshoot the weapon range boundary', async () => {
   const { c, target } = geometry(25); let casts = 0;
   Object.assign(c, { G: { skills: { dash: { mp: 10 } } }, is_on_cooldown: () => false,

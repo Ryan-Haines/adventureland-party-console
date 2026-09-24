@@ -22,10 +22,10 @@ function client(event='snowman') {
   eventSelected:()=>true,escapeOwns:()=>false,runtimeCurrent:()=>true,
   eventTravelAllowed:async()=>true,closeMerchantStandForTravel:async()=>calls.push('close'),
   nearestEventTarget:()=>null,eventDestination:()=>({map:'winterland',x:1,y:2}),
-  eventRequiresJoin:()=>event!=='snowman',join:async name=>calls.push(['join',name]),
+  eventRequiresJoin:()=>event!=='snowman',join:async name=>{calls.push(['join',name]);c.character.map='winterland';},
   sharedPartyWalk:async(...args)=>calls.push(['walk',...args]),game_log(){},Date,
   request:async(...args)=>{calls.push(['request',...args]);return {yield:true};}};
- vm.createContext(c);vm.runInContext(functions(shared,['merchantEventWorkReserved','yieldMerchantForEvent','pollEvents','rejoinActiveEventAfterRespawn']),c);
+ vm.createContext(c);vm.runInContext(functions(shared,['merchantEventWorkReserved','yieldMerchantForEvent','joinCombatEvent','pollEvents','rejoinActiveEventAfterRespawn']),c);
  return {c,calls};
 }
 test('merchant reservations survive restart, deselection and deferred return, then release',()=>{
@@ -45,7 +45,7 @@ for(const event of ['abtesting','goobrawl','crabxx','franky','icegolem','snowman
  const {c,calls}=client(event),weapon=c.character.slots.mainhand;
  await c.pollEvents();assert.equal(c.joinedEvent,event);assert.equal(c.character.slots.mainhand,weapon);
  assert.equal(calls[0],'close');assert.equal(calls.some(call=>call[0]==='join'),event!=='snowman');
- assert.equal(calls.some(call=>call[0]==='walk'),event!=='abtesting');
+ assert.equal(calls.some(call=>call[0]==='walk'),event==='snowman');
 });
 test('merchant waits for inventory work and gathering to settle before event movement',async()=>{
  const {c,calls}=client();c.root.__merchantActiveJob={jobId:'work'};await c.pollEvents();assert.deepEqual(calls,[]);

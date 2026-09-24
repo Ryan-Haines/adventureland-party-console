@@ -23,28 +23,80 @@ test('event release clears exactly its held movement and wakes acquisition', asy
 
 function reentry(overrides = {}) {
   const c = vm.createContext({ escapeOwns: () => false, navigationIntent: { revision: 2, cancelled: false },
-    eventsEnabled: true, character: { ctype: 'priest' }, activeCombatEvent: () => ({ name: 'franky', types: ['franky'], state: {} }),
+    eventsEnabled: true, character: { ctype: 'priest', map: 'main' }, activeCombatEvent: () => ({ name: 'franky', types: ['franky'], state: {} }),
     eventSelectionRevision: 1, runtimeCurrent: () => true, eventSelected: () => true, eventTravelAllowed: async () => true,
     eventTraveling: false, eventTargetTypes: [], eventMissingSince: 0, travellingEventName: null, joinedEvent: 'franky',
     __partyEventRejoinRequired: 'franky', stop: async () => {}, eventDestination: () => ({ map: 'level2w', x: 0, y: 0 }),
-    eventRequiresJoin: () => true, join: async () => {}, nearestEventTarget: () => ({ id: 'boss' }),
+    eventRequiresJoin: () => true, join: async () => { c.character.map = 'level2w'; }, nearestEventTarget: () => ({ id: 'boss' }),
     sharedPartyWalk: async () => {}, game_log() {}, ...overrides });
   c.root = c;
+  vm.runInContext(source.slice(source.indexOf('  async function joinCombatEvent('), source.indexOf('  async function pollEvents(')), c);
   const start = source.indexOf('  async function rejoinActiveEventAfterRespawn()');
   vm.runInContext(source.slice(start, source.indexOf('  async function regenerateHpOrMp()', start)), c);
   return c;
 }
-test('event recovery distinguishes join and walk failure and never repeats a successful join', async () => {
+test('join failure retries, while successful teleport needs neither boss visibility nor convoy', async () => {
   const joinFailure = reentry({ join: async () => { throw { reason: 'openning' }; } });
   const failed = await joinFailure.rejoinActiveEventAfterRespawn();
   assert.equal(failed.status, 'retryable'); assert.equal(failed.phase, 'event-reentry'); assert.equal(failed.reason, 'openning');
   assert.equal(joinFailure.eventTraveling, false);
-  let joins = 0;
-  const walking = reentry({ join: async () => joins++, nearestEventTarget: () => null, sharedPartyWalk: async () => { throw Error('route blocked'); } });
-  assert.equal((await walking.rejoinActiveEventAfterRespawn()).phase, 'event-travel');
-  walking.nearestEventTarget = () => ({ id: 'boss' });
-  assert.equal((await walking.rejoinActiveEventAfterRespawn()).status, 'recovered'); assert.equal(joins, 1);
+  const c = reentry({ nearestEventTarget: () => null, sharedPartyWalk: async () => assert.fail('no event convoy') });
+  let joins = 0; c.join = async () => { joins++; c.character.map = 'level2w'; };
+  assert.equal((await c.rejoinActiveEventAfterRespawn()).status, 'recovered');
+  assert.equal(c.__partyEventRejoinRequired, null);
+  assert.equal((await c.rejoinActiveEventAfterRespawn()).status, 'recovered'); assert.equal(joins, 1);
 });
+
+test('stale joined marker without a death flag still rejoins from Main', async () => {
+  const c = reentry({ __partyEventRejoinRequired: null, nearestEventTarget: () => null,
+    sharedPartyWalk: async () => assert.fail('Convoy unavailable') });
+  assert.equal((await c.rejoinActiveEventAfterRespawn()).status, 'recovered');
+  assert.equal(c.character.map, 'level2w');
+});
+
+test('delayed map arrival holds reentry and excludes concurrent joins', async () => {
+  const c = reentry(); let release, joins = 0;
+  c.join = async () => { joins++; };
+  c.sleep = () => new Promise(resolve => { release = resolve; });
+  const pending = c.rejoinActiveEventAfterRespawn();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(c.__partyEventRejoinRequired, 'franky');
+  assert.equal((await c.rejoinActiveEventAfterRespawn()).status, 'retryable');
+  c.character.map = 'level2w'; release();
+  assert.equal((await pending).status, 'recovered'); assert.equal(joins, 1);
+});
+
+test('unchanged map cannot complete reentry and retries teleport without convoy', async () => {
+  const c = reentry(); let now = 0, joins = 0;
+  c.Date = { now: () => now }; c.sleep = async ms => { now += ms; };
+  c.join = async () => { joins++; };
+  const failed = await c.rejoinActiveEventAfterRespawn();
+  assert.equal(failed.status, 'retryable'); assert.match(failed.reason, /no observed arrival/);
+  assert.equal(c.__partyEventRejoinRequired, 'franky');
+  c.join = async () => { joins++; c.character.map = 'level2w'; };
+  assert.equal((await c.rejoinActiveEventAfterRespawn()).status, 'recovered'); assert.equal(joins, 2);
+});
+
+for (const change of ['ended', 'deselected', 'dead', 'revision']) test('pending join cancels on ' + change, async () => {
+  const c = reentry();
+  c.join = async () => {};
+  c.sleep = async () => {
+    if (change === 'ended') c.activeCombatEvent = () => null;
+    if (change === 'deselected') c.eventSelected = () => false;
+    if (change === 'dead') c.character.rip = true;
+    if (change === 'revision') c.navigationIntent.revision++;
+  };
+  assert.equal((await c.rejoinActiveEventAfterRespawn()).status, 'cancelled');
+  assert.equal(c.__partyEventRejoinRequired, 'franky'); assert.equal(c.eventTraveling, false);
+});
+
+test('non-joinable event recovery still walks', async () => {
+  let walks = 0;
+  const c = reentry({ eventRequiresJoin: () => false, nearestEventTarget: () => null,
+    join: async () => assert.fail('no join'), sharedPartyWalk: async () => { walks++; } });
+  assert.equal((await c.rejoinActiveEventAfterRespawn()).status, 'recovered'); assert.equal(walks, 1);
+});
+
 test('cancellation during join releases event ownership without continuing its walk', async () => {
   const c = reentry({ sharedPartyWalk: async () => assert.fail('cancelled walk') });
   c.join = async () => { c.navigationIntent.revision++; };
