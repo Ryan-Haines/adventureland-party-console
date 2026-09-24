@@ -24,7 +24,7 @@ export function DungeonPanel() {
   return (
     <section
       aria-label="Cave of Many Dreams controls"
-      className="rounded border border-slate-500 bg-[#101c1a] p-3 text-emerald-50 lg:col-span-2 xl:col-span-4"
+      className="mb-5 rounded border border-slate-500 bg-[#101c1a] p-3 text-emerald-50"
     >
       {view.state.error && (
         <button

@@ -15,8 +15,8 @@ Don’t leave the Cave of Many Dreams for other events setting, enabled by defau
 Entry is manual and excluded from automatic event selection counts. Use leader
 and combat followers, never merchant; reject too many participants.
 
-Show run time, objectives, currency, choices, votes and manual purchases above
-Escape in two columns. Use real objective/door names, not invented left/right.
+Show the dungeon controls below the header and above the party cards. Present
+run time, objectives, currency, choices, votes and manual purchases in two columns. Use real objective/door names, not invented left/right.
 Escape and Town exit all participants. Explicit exit holds outside.
 
 ## Ownership

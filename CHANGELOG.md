@@ -9,7 +9,8 @@ from the commits merged into `main`.
 
 - Cave of Many Dreams appears first in Events with manual entry, server eligibility
   countdown, and a saved setting that protects the visit from other events by default.
-- Dungeon controls show objectives, stairs, remaining run time, shared currency,
+- Dungeon controls sit below the header and above the party cards, showing
+  objectives, stairs, remaining run time, shared currency,
   votes, purchases, and revival choices. Paid choices require confirmation. Town
   and Escape exit the party together; leaving holds ordinary activity until resumed.
 - Dungeon ownership pauses ordinary travel, Hunt, combat, and merchant visits.
