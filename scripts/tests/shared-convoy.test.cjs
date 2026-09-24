@@ -519,3 +519,21 @@ test('shared hold acknowledges held despite passive defense arriving while the r
  c.interruptConvoyForDefense(command.convoyId,command.epoch);assert.equal(c.convoyTraveling.phase,'held');
  await r.cancel();await running;
 });
+
+test('Daisy pickup recovers a missing follower completion with matching arrived reports',()=>{
+ const {p,e,c}=arrivedReturn();delete c.continuousReturn;c.returnRouting=false;
+ p.monsterHunt.stage='daisy-sync-travel';c.completed=['L','F'];
+ for(const name of c.completed){delete p.commands[name];p.statuses[name].convoyNavigation=null;}
+ e.step(p,1000);assert.equal(p.activeConvoy,c);
+ for(const status of Object.values(p.statuses))status.seenAt=4000;
+ report(p,'P','arrived',4000);e.step(p,4000);
+ assert.equal(p.activeConvoy,null);assert.equal(p.commands.P,undefined);
+ assert.equal(p.monsterHunt.stage,'daisy-sync-travel','Hunt tick owns pickup processing');
+});
+test('legacy per-leg Hunt return is not completed by final arrival recovery',()=>{
+ const {p,c}=arrivedReturn();delete c.continuousReturn;
+ const {reconcileReturnArrival}=require('../../runtime/coordinator/navigation/return-arrival.ts');
+ assert.equal(reconcileReturnArrival(p,c,1000),false);
+ for(const status of Object.values(p.statuses))status.seenAt=5000;
+ assert.equal(reconcileReturnArrival(p,c,5000),false);assert.equal(p.activeConvoy,c);
+});

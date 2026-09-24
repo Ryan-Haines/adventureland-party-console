@@ -7,6 +7,9 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Hunt pickup travel recovers a missing completion acknowledgement after verified
+  party arrival, preventing an idle party at Daisy from remaining in sync travel.
+
 - Joinable events such as Franky use direct teleportation for entry and respawn
   recovery, without waiting for a convoy. Arrival is verified before clearing
   recovery, and failed event walks no longer leave characters unable to attack.

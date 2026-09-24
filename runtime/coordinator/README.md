@@ -709,3 +709,9 @@ return ownership retain this reservation through coordinator restart. Publish
 character and coordinator assets together with the ordinary full restart.
 Validate with `merchant-events`, `shared-walk`, event selection/return, and
 merchant checkpoint/recovery tests.
+
+Hunt pickup and outbound shared convoys recover missing completion acknowledgements
+using the same three-second verified-arrival hold as continuous Daisy returns.
+Fresh stopped reports must match the route, command, runtime, server and navigation
+ownership; legacy per-leg returns retain their transition barriers. Validate
+shared-convoy and continuous-hunt-return tests. Coordinator-only restart suffices.
