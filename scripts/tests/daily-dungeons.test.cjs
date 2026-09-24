@@ -85,7 +85,7 @@ test('lost entry reply is never retried after reload, but exit is dispatched', a
   const ports = { name: 'W', members: () => ['W'], leader: () => 'W', ready: () => true, now: () => 100000, alive: () => true, current: () => true, cave: () => raw,
     supported: () => true, info: async () => ({ available: true, resets: 200000, server_time: 100000, home: 'II' }),
     request: async action => { calls.push(action); throw { reason: 'timeout' }; }, keeper: () => undefined,
-    text: String, move: async () => {}, stop: async () => {}, combat: async () => {},
+    text: String, move: async () => {}, stop: async () => {},
     read: () => saved, write: value => { saved = structuredClone(value); } };
   const first = installDungeonRuntime(ports);
   first.receive({ owned: true, command: { id: 'enter', action: 'enter' } });
@@ -100,7 +100,7 @@ test('storage failure prevents irreversible dispatch', async () => {
   const calls = [];
   const runtime = installDungeonRuntime({ name: 'W', members: () => ['W'], leader: () => 'W', ready: () => true, now: () => 1, alive: () => true, current: () => true,
     cave: () => null, supported: () => true, info: async () => ({}), request: async () => calls.push('request'),
-    keeper: () => undefined, text: String, move: async () => {}, stop: async () => {}, combat: async () => {},
+    keeper: () => undefined, text: String, move: async () => {}, stop: async () => {},
     read: () => null, write: () => { throw Error('storage unavailable'); } });
   runtime.receive({ owned: true, command: { id: 'entry', action: 'enter' } });
   await new Promise(setImmediate); assert.deepEqual(calls, []);
@@ -164,7 +164,7 @@ test('entering invalidates cached availability until fresh server eligibility ar
     now: () => 100000, alive: () => true, current: () => true, cave: () => raw, supported: () => true,
     info: async () => ({ available: !raw, resets: 200000, server_time: 100000, home: 'II' }),
     request: async () => {}, keeper: () => undefined, text: String, move: async () => {}, stop: async () => {},
-    combat: async () => {}, read: () => null, write() {} });
+    read: () => null, write() {} });
   runtime.report(); await new Promise(setImmediate);
   assert.equal(runtime.report().visit.available, true);
   raw = cave(); assert.equal(runtime.report().visit, undefined);
@@ -177,7 +177,7 @@ test('observed Nera choice releases a pending respawn so fallen participants can
   const runtime = installDungeonRuntime({ name: 'W', members: () => ['W'], leader: () => 'W', ready: () => false,
     now: () => 100000, alive: () => false, current: () => true, cave: () => raw, supported: () => true,
     info: async () => ({}), request(action) { calls.push(action); return action === 'revival' ? new Promise((_, reject) => { rejectRevival = reject; }) : Promise.resolve(); },
-    keeper: () => undefined, text: String, move: async () => {}, stop: async () => {}, combat: async () => {},
+    keeper: () => undefined, text: String, move: async () => {}, stop: async () => {},
     read: () => null, write() {} });
   runtime.receive({ owned: true, command: { id: 'revival', action: 'revival', run: 'run-1' } });
   await new Promise(setImmediate);
@@ -186,4 +186,18 @@ test('observed Nera choice releases a pending respawn so fallen participants can
   await new Promise(setImmediate); assert.deepEqual(calls, ['revival', 'vote']);
   rejectRevival({ reason: 'timeout' }); await new Promise(setImmediate);
   assert.equal(runtime.report().action.status, 'complete');
+});
+
+test('cave route pauses immediately for local combat and resumes only with fresh party readiness',()=>{
+  let now=100000, ready=true;const raw=cave();
+  const runtime=installDungeonRuntime({name:'W',members:()=>['W'],leader:()=> 'W',ready:()=>ready,
+    now:()=>now,alive:()=>true,current:()=>true,cave:()=>raw,supported:()=>true,
+    info:async()=>({}),request:async()=>{},keeper:()=>undefined,text:String,
+    move:async()=>{},stop:async()=>{},read:()=>null,write:()=>{}});
+  runtime.receive({owned:true,movementReady:true});assert.equal(runtime.canMove(),true);
+  ready=false;assert.equal(runtime.canMove(),false,'local aggro blocks travel before next heartbeat');
+  ready=true;assert.equal(runtime.canMove(),true);
+  raw.paused=true;assert.equal(runtime.canMove(),false);
+  raw.paused=false;now+=3001;assert.equal(runtime.canMove(),false,'stale control must hold route');
+  runtime.receive({owned:true,movementReady:true});assert.equal(runtime.canMove(),true);
 });

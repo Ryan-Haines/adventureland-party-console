@@ -12,6 +12,7 @@ export interface Role {
 }
 export interface SharedCombat {
   dungeonOwned?(): boolean;
+  getDungeonTarget?: TargetGetter;
   merchantEventCombatActive?(): boolean;
   combatContext?(): import('../skills/types.ts').CombatContext;
   merchantVisibilityActive?(): boolean;

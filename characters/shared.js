@@ -2169,19 +2169,51 @@
       !(typeof smart !== 'undefined' && smart.moving) } : null;
   }
   var dungeonClient;
+  // Dungeon ownership replaces farm/event targeting, not the class combat runner.
+  function dungeonOwned() {
+    return !!character.cave || !!(root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns());
+  }
+  function cavePartyMembers() {
+    return [character].concat(currentPartyList().filter(function (name) { return name !== character.name; }).map(function (name) { return get_player(name); }))
+      .filter(function (member) { return member && member.map === character.map && member.in === character.in; });
+  }
+  function dungeonTargetAllowed(target) {
+    return !!target && target.type === 'monster' && target.visible !== false && !target.dead && target.hp > 0 &&
+      (!target.map || target.map === character.map) && (target.in == null || target.in === character.in) &&
+      !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(target.id)) &&
+      (target.target === character.name || currentPartyList().includes(target.target));
+  }
+  function getDungeonTarget() {
+    var captainName = currentPartyList()[0] || character.name;
+    var captain = captainName === character.name ? character : get_player(captainName);
+    var nominated = captain && captain.map === character.map && captain.in === character.in && get_entity(captain.target);
+    if (dungeonTargetAllowed(nominated)) return nominated;
+    // Identical ordering on each client keeps the party focused without a stale farm queue.
+    return Object.values(parent.entities || {}).filter(dungeonTargetAllowed).sort(function (a, b) {
+      return monsterPriority(b) - monsterPriority(a) || String(a.id).localeCompare(String(b.id));
+    })[0] || null;
+  }
+  async function lootDungeonChests() {
+    if (!runtimeCurrent() || character.rip || !character.cave || character.cave.paused) return;
+    for (var id of Object.keys(parent.chests || {})) {
+      if (!runtimeCurrent() || character.rip || !character.cave || character.cave.paused) return;
+      var chest = parent.chests[id];
+      if (chest.map === character.map && (chest.in == null || chest.in === character.in) && distance(character, chest) <= 400)
+        await anniversaryWithTimeout(loot(id), 2500, 'Dungeon loot');
+    }
+  }
   function dungeonRuntime() {
     if (dungeonClient) return dungeonClient;
     if (!root.installDungeonRuntime) return { report: function () { return undefined; }, receive: function () {}, owns: function () { return false; } };
     var journalKey = 'party-dungeon-actions:' + character.name;
     dungeonClient = root.__partyDungeonRuntime = root.installDungeonRuntime({
-      every: function (callback) { var timer = setInterval(function () { if (!runtimeCurrent()) clearInterval(timer); else callback(); }, 250); },
       name: character.name, now: Date.now, current: runtimeCurrent,
       members: currentPartyList,
       leader: function () { return currentPartyList()[0]; },
       ready: function () {
         if (!character.cave) return !character.rip && !departureCombatPending() && eligibleDepartureChests().length === 0;
-        var threatened = Object.values(parent.entities || {}).some(function (e) { return e && e.type === 'monster' && !e.dead && e.hp > 0 && currentPartyList().includes(e.target); });
-        var unlooted = Object.values(parent.chests || {}).some(function (chest) { return chest.map === character.map && distance(character, chest) <= 400; });
+        var threatened = Object.values(parent.entities || {}).some(dungeonTargetAllowed);
+        var unlooted = Object.values(parent.chests || {}).some(function (chest) { return chest.map === character.map && (chest.in == null || chest.in === character.in) && distance(character, chest) <= 400; });
         return !character.rip && !character.cave.paused && !threatened && !unlooted;
       },
       alive: function () { return !character.rip; },
@@ -2207,25 +2239,6 @@
           await smartLoot(); return !departureCombatPending() && eligibleDepartureChests().length === 0;
         } }); },
       stop: function () { return movement.stop('smart'); },
-      combat: async function () {
-        await anniversaryWithTimeout(useRecoveryPotion({ hpBelow: 0.5, mpBelow: 0.2, priority: 'hp' }), 2000, 'Dungeon recovery');
-        if (!runtimeCurrent() || character.cave && character.cave.paused) return;
-        if (character.ctype === 'priest') await anniversaryWithTimeout(healPartyBelow(0.9), 2000, 'Dungeon healing');
-        if (!runtimeCurrent() || character.cave && character.cave.paused) return;
-        if (character.cave) {
-          for (var chestId of Object.keys(parent.chests || {})) {
-            if (!runtimeCurrent() || !character.cave || character.cave.paused) return;
-            var chest = parent.chests[chestId];
-            if (chest.map === character.map && distance(character, chest) <= 400 && !character.cave.paused)
-              await anniversaryWithTimeout(loot(chestId), 2500, 'Dungeon loot');
-          }
-        } else await smartLoot();
-        var targets = Object.values(parent.entities || {}).filter(function (e) {
-          return e && e.type === 'monster' && !e.dead && e.hp > 0 && e.target && currentPartyList().includes(e.target) && is_in_range(e);
-        });
-        if (targets.length && can_attack(targets[0])) await anniversaryWithTimeout(attack(targets[0]), 2500, 'Dungeon attack');
-        else await anniversaryWithTimeout(regenerateHpOrMp(), 2000, 'Dungeon regeneration');
-      },
       read: function () { return JSON.parse(root.localStorage.getItem(journalKey) || 'null'); },
       write: function (journal) { root.localStorage.setItem(journalKey, JSON.stringify(journal)); },
     });
@@ -4275,6 +4288,7 @@
     });
   }
   async function smartLoot(eligible) {
+    if (character.cave) return lootDungeonChests();
     var local=eligibleDepartureChests();
     var chests = Array.isArray(eligible) ? eligible.filter(function(id){return local.indexOf(id)>=0;}) : local;
     if (!chests.length) {
@@ -9179,6 +9193,9 @@
       }
       dungeonRuntime().receive(state.dailyDungeon);
       if (dungeonRuntime().owns()) {
+        partyPositions = state.partyPositions || [];
+        partyThreats = state.partyThreats || [];
+        partyTargets = state.partyTargets || [];
         root.__partyStatusSuccessAt = Date.now();
         if (dashboardSampler) dashboardSampler.renew(state.dashboardLease);
         return;
@@ -11414,13 +11431,13 @@
     ratio = ratio || 0.9;
     healingBusy = true;
     try {
-    var injured = partyPositions.filter(function (member) {
+    var injured = (character.cave ? cavePartyMembers() : partyPositions).filter(function (member) {
       return member && member.ctype !== "merchant" && sameEventTeamMember(member) && !member.rip && member.map === character.map && member.max_hp > 0 &&
         member.hp / member.max_hp < ratio;
     }).sort(function (a, b) {
       return a.hp / a.max_hp - b.hp / b.max_hp;
     });
-    var criticallyInjured = partyPositions.filter(function (member) {
+    var criticallyInjured = (character.cave ? cavePartyMembers() : partyPositions).filter(function (member) {
       return member && member.ctype !== "merchant" && sameEventTeamMember(member) && !member.rip && member.map === character.map && member.max_hp > 0 &&
         member.hp / member.max_hp <= 0.5;
     });
@@ -11471,7 +11488,7 @@
     var available = Math.floor(character.mp - reserve);
     if (available <= 0 || is_on_cooldown("energize") || !can_use("energize")) return false;
     var partyNames = currentPartyList();
-    var candidates = partyPositions.filter(function (member) {
+    var candidates = (character.cave ? cavePartyMembers() : partyPositions).filter(function (member) {
       return member && sameEventTeamMember(member) && member.name !== character.name && partyNames.indexOf(member.name) >= 0 &&
         !member.rip && member.map === character.map && member.max_mp > 0 && member.mp < member.max_mp;
     }).sort(function (a, b) {
@@ -11520,7 +11537,7 @@
 
   function isPartyHealthy(ratio) {
     ratio = ratio || 0.9;
-    return partyPositions.filter(function (member) {
+    return (character.cave ? cavePartyMembers() : partyPositions).filter(function (member) {
       // Match the healing routine's scope: living party members the priest can
       // presently support on this map, including the priest itself.
       return member && sameEventTeamMember(member) && !member.rip && member.map === character.map && member.max_hp > 0;
@@ -11530,6 +11547,7 @@
   }
 
   function isCurrentPartyTarget(target) {
+    if (character.cave) return dungeonTargetAllowed(target);
     if (!target || !target.id) return false;
     if (leaderTarget && leaderTarget.id === target.id) return true;
     return partyTargets.some(function (partyTarget) {
@@ -11548,7 +11566,7 @@
     if (target.target === character.name) return true;
     if (!target.target || currentPartyList().indexOf(target.target) < 0)
       return false;
-    return partyPositions.some(function (member) {
+    return (character.cave ? cavePartyMembers() : partyPositions).some(function (member) {
       return member && sameEventTeamMember(member) && member.name === target.target && member.map === character.map;
     });
   }
@@ -11636,6 +11654,7 @@
     if(root.partyRoleRunner)root.partyRoleRunner.wake();
   }
   function groupedFarming() {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     return character.ctype !== "merchant" && (farmingMode !== "scatter" || !!root.__partyConvoyDefense) && !!leader &&
       (leader === character.name || followLeader) && !eventTraveling && !joinedEvent &&
       !eventTargetTypes.length && !(G.maps && G.maps[character.map] && G.maps[character.map].event);
@@ -11909,6 +11928,7 @@
       Math.hypot(character.x-anchor.x,character.y-anchor.y) <= groupedCombat.range;
   }
   function groupedAttackAllowed(target) {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return !character.cave?.paused && dungeonTargetAllowed(target);
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.blocks())return false;
     if (travelCombatActive() && !departureTargetEngaged(target)) return false;
     if(root.partyLootClient && root.partyLootClient.huntPending() && !departureTargetEngaged(target))return false;
@@ -12100,6 +12120,7 @@
   }
 
   function isAllowedTarget(target, huntTravelCommand, diagnostic) {
+    if (character.cave || typeof root !== "undefined" && root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return dungeonTargetAllowed(target);
     function reject(reason) { if (diagnostic) diagnostic.reason = reason; return false; }
     var huntTravel = huntTravelCommand && huntTravelCommand.purpose === "monster-hunt" &&
       huntTravelCommand.combatHandoffAllowed === true && huntTravelCommand.huntTarget === (target && target.mtype);
@@ -13411,7 +13432,8 @@
   }
   function formationMembers() {
     var roster = currentPartyList(), now = Date.now() + coordinatorClockOffset;
-    return partyPositions.filter(function (member) {
+    var positions = character.cave ? roster.map(function (name) { return name === character.name ? character : get_player(name); }).filter(Boolean) : partyPositions;
+    return positions.filter(function (member) {
       return member && roster.indexOf(member.name) >= 0 && member.ctype !== "merchant";
     }).map(function (member) {
       var live = member.name === character.name ? character : get_player(member.name);
@@ -13722,7 +13744,7 @@
 
   var formationPerformance = { ticks: 0, totalMs: 0, maxMs: 0, candidates: 0, collisionChecks: 0 };
   function formationMove(target) {
-    if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
+    if(!character.cave && root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
     var context = [character.map, character.in, character.rip, joinedEvent, eventTraveling].join(":");
     if (formationState.mapContext !== context) {
       formationState.mapContext = context; formationState.approachProgress = null; formationState.recovery = null;
@@ -13746,9 +13768,9 @@
   }
   function solveFormationMove(target) {
     var mageEscort = farmingMode !== "scatter" && character.ctype === "mage" && !!leader && (leader === character.name || followLeader) && !eventTraveling;
-    if (!groupedFarming() && !mageEscort) return false;
+    if (!character.cave && !groupedFarming() && !mageEscort) return false;
     var members = formationMembers().filter(function (member) {
-      if (typeof groupedCombat !== "undefined" && groupedCombat && groupedCombat.protocol === 4 &&
+      if (!character.cave && typeof groupedCombat !== "undefined" && groupedCombat && groupedCombat.protocol === 4 &&
           groupedCombat.recovering.indexOf(member.name) >= 0) return false;
       return typeof sameEventTeamMember !== "function" || sameEventTeamMember(member);
     });
@@ -14304,9 +14326,11 @@
       return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
         !eventReturnPending && !root.__merchantActiveJob;
     },
-    dungeonOwned: function () { return !!(root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()); },
+    dungeonOwned: dungeonOwned,
+    getDungeonTarget: getDungeonTarget,
     isOccupied: function () {
-      if (root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return true;
+      if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns())
+        return !runtimeCurrent() || !!root.__partyConsoleMaintenance || !!character.cave?.paused;
       if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
       if(outboundHuntTravel() && huntTravelExtraAggro())interruptConvoyForDefense();
@@ -14474,7 +14498,7 @@
       if (character.ctype !== "priest") return false;
       if (healingBusy) return true;
       if (character.mp < Number(G.skills.heal && G.skills.heal.mp || 0)) return false;
-      return partyPositions.some(function (member) {
+      return (character.cave ? cavePartyMembers() : partyPositions).some(function (member) {
         if (!member || !sameEventTeamMember(member) || member.rip || member.map !== character.map) return false;
         var live = member.name === character.name ? character : get_player(member.name);
         return live && !live.rip && live.max_hp > 0 && live.hp / live.max_hp < 0.9 && can_heal(live);
@@ -14490,7 +14514,7 @@
     },
     isLeader: function () { return (leader || character.name) === character.name; },
     combatContext: function () {
-      var event = activeCombatEvent();
+      var event = character.cave ? { name: "cave", types: [] } : activeCombatEvent();
       var roster = currentPartyList();
       var allies = [character].concat(roster.filter(function(name){return name !== character.name;})
         .map(function(name){return get_player(name);})).filter(function(member){
@@ -14504,16 +14528,17 @@
         var def = G.monsters[m.mtype] || {};
         return Object.assign({}, def, m);
       });
-      var eventCombat = event && (joinedEvent === event.name ||
+      var eventCombat = !!character.cave || event && (joinedEvent === event.name ||
         G.maps[character.map] && G.maps[character.map].event === event.name ||
         monsters.some(function(m){return event.types.indexOf(m.mtype) >= 0;}));
       return { leader: leader || character.name, allies: allies, monsters: monsters,
         event: eventCombat ? event.name : null,
-        mode: root.sharedRoutine.isOccupied() || isLiveAbtesting() ? "blocked" : eventCombat ? "event" : farmingMode === "scatter" ? "scatter" : "grouped",
+        mode: root.sharedRoutine.isOccupied() || isLiveAbtesting() ? "blocked" : eventCombat ? "event" : !character.cave && farmingMode === "scatter" ? "scatter" : "grouped",
         observedAt: parent.socket && parent.socket.connected ? Date.now() : 0 };
     },
     skillTargetAllowed: function(target) {
       if (!target || target.type !== "monster" || !isAllowedTarget(target) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
+      if(dungeonOwned()) return dungeonTargetAllowed(target);
       if(huntTravelDefense() && !isAttackingPartyMember(target) && !(convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return false;
       if (target.target && !isAttackingPartyMember(target)) return false;
       if (groupedAttackAllowed(target)) return true;
@@ -14705,6 +14730,7 @@
     isAggressiveEventCombat: isAggressiveEventCombat,
     getMonsterFocus: function () { return monsterFocus.slice(); },
     getFarmingMode: function () {
+      if (character.cave) return "default";
       return typeof rareActive === "function" && rareActive() ? "default" : farmingMode;
     },
     getEngagedTarget: engagedMonster,
@@ -14755,6 +14781,7 @@
       return groupedDefensiveTarget() || (target && target.visible && !target.dead && isAllowedTarget(target) ? target : null);
     },
     combatTargetRevision: function () {
+      if (dungeonOwned()) return "dungeon:" + (character.cave && character.cave.run || character.in) + ":" + combatTargetId;
       if (groupedCombat && groupedCombat.protocol === 4) return groupedCombat.selection;
       var lock = groupedFollower() ? leaderCombatSelection : combatSelection;
       return lock ? String(lock.runtimeId || convoyRuntimeId) + ":" + lock.revision : null;

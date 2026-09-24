@@ -74,8 +74,6 @@ interface Ports {
   text(value: unknown): string;
   move(point: CavePoint): Promise<unknown>;
   stop(): Promise<unknown>;
-  combat(): Promise<unknown>;
-  every?(callback: () => void): void;
   read(): DungeonJournal | DungeonReceipt | null;
   write(journal: DungeonJournal): void;
 }
@@ -83,8 +81,7 @@ export function installDungeonRuntime(ports: Ports) {
   let visit: CaveObservation["visit"],
     checking = false,
     nextCheck = 0,
-    owned = false,
-    combatBusy = false;
+    owned = false;
   let command: CaveCommand | undefined;
   let activeId: string | undefined;
   let observedRun = ports.cave()?.run,
@@ -286,22 +283,9 @@ export function installDungeonRuntime(ports: Ports) {
       void execute(command).catch(() => {
         /* Storage failure must never dispatch an action. */
       });
-    pulse();
   }
-  function pulse() {
-    if (ports.current() && owned && !ports.cave()?.paused && !combatBusy && ports.alive()) {
-      combatBusy = true;
-      void ports
-        .combat()
-        .catch(() => {})
-        .finally(() => {
-          combatBusy = false;
-        });
-    }
-  }
-  ports.every?.(pulse);
   const canMove = () =>
-    !owned || (movementReady && ports.now() - controlAt < 3000 && !ports.cave()?.paused);
+    !owned || (movementReady && ports.now() - controlAt < 3000 && ports.ready() && !ports.cave()?.paused);
   return {
     report,
     receive,

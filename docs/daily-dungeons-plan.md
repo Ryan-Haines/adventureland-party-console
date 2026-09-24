@@ -34,8 +34,13 @@ Verify current official cave APIs and generated geometry. Add authenticated
 status/actions, protocol capability, account eligibility/reset and live run
 observations. Scope operations to run/choice/destination and durable operation IDs.
 Gather at Dorr; validate party/eligibility; leader enters; reconcile partial entry.
-Use native generated-map navigation, combat/loot barriers and automatic fighting
-and healing, without selecting neutral encounters automatically. Votes fan out to
+Use native generated-map navigation and combat/loot barriers. Run the existing
+class combat runner, skill engine, equipment handling, formation, approach and
+kiting routines against live cave attackers; never select neutral encounters
+automatically. Follow the live leader target, falling back to a shared deterministic
+priority order. Use live cave allies for healing and formation. Pause room travel
+during combat, but permit combat positioning; forced votes pause both. Keep farm
+travel, rare hunting and ordinary respawn outside dungeon ownership. Votes fan out to
 eligible unvoted characters. Purchases and paid revival require manual confirmation.
 Persist dispatch state: safely retry pre-dispatch failures, never blindly repeat
 uncertain entries or spending. Reconcile restart, expiry and partial exit.

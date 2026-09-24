@@ -13,10 +13,13 @@ from the commits merged into `main`.
   objectives, stairs, remaining run time, shared currency,
   votes, purchases, and revival choices. Paid choices require confirmation. Town
   and Escape exit the party together; leaving holds ordinary activity until resumed.
-- Dungeon ownership pauses ordinary travel, Hunt, combat, and merchant visits.
+- Dungeon ownership pauses ordinary travel, Hunt, and merchant visits.
   Persisted action receipts prevent blind retries after lost entry or spending replies.
 
 ### Fixed
+
+- Cave combat uses the normal class skills, healing, equipment, formation and kiting routines.
+  Live party observations guide healing; cave navigation waits for combat and loot.
 
 - Event estimates now say "Next chance" without the "event not guaranteed" text.
 
