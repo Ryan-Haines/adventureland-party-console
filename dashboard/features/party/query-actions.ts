@@ -10,6 +10,7 @@ const core = ['core'] as const;
 const inventory = ['core', 'inventory', 'fast'] as const;
 const commerce = ['core', 'inventory', 'fast', 'bank', 'market'] as const;
 export const actionDomains = {
+  '/daily-dungeons': core,
   '/merchant/bank-sort': core,
   '/config': core,
   '/formation': core,

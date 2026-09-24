@@ -66,7 +66,11 @@ export function createAttackController(ports: AttackPorts) {
     ports.report(error);
   }
   function reserveHealing(): boolean {
-    if (!sharedRoutine.basicAttackReserved?.()) return false;
+    if (!sharedRoutine.basicAttackReserved?.()) {
+      if (!sharedRoutine.caveRecoveryReserved?.()) return false;
+      ports.state().skippedAttack = "cave priest recovery";
+      return true;
+    }
     ports.state().skippedAttack = "priest healing priority";
     Promise.resolve(sharedRoutine.healPartyBelow(0.9)).catch(ports.report);
     return true;
@@ -136,7 +140,7 @@ export function createAttackController(ports: AttackPorts) {
     const end = clock() === null ? Date.now() + 4 : deadline + 2;
     const attemptOnce = () => {
       if (flight !== attempt || !confirmed(attempt) || !ports.allowed() ||
-          sharedRoutine.basicAttackReserved?.() || !is_in_range(target) || !permitted(target)) {
+          (sharedRoutine.basicAttackReserved?.() || sharedRoutine.caveRecoveryReserved?.()) || !is_in_range(target) || !permitted(target)) {
         cancelSlots(); return;
       }
       attempt.pending++;
@@ -240,7 +244,7 @@ export function createAttackController(ports: AttackPorts) {
         if (stats) stats.timeouts++;
       }
       releaseExpired(target);
-      if (flight && (!confirmed(flight) || !ports.allowed() || sharedRoutine.basicAttackReserved?.())) cancelSlots();
+      if (flight && (!confirmed(flight) || !ports.allowed() || sharedRoutine.basicAttackReserved?.() || sharedRoutine.caveRecoveryReserved?.())) cancelSlots();
       if (ports.allowed() && !flight && reserveHealing()) return;
       if (!target || !ports.allowed()) { ports.state().skippedAttack = "no eligible target or combat blocked"; return; }
       if (Date.now() < retryAt || remaining() > 2) return;
@@ -251,6 +255,7 @@ export function createAttackController(ports: AttackPorts) {
     }
   }
   return {
+    pending() { return !!flight; },
     hasStarted(targetId: string) { return flight?.targetId === targetId || lastSuccessfulTarget === targetId; },
     reset() { cancelSlots(); flight = null; lastSuccessfulTarget = null; retryAt = 0; recovery.reset("runtime reset"); },
     start() { running = true; schedule(Math.max(1, remaining() - 2)); },

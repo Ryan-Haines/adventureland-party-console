@@ -67,6 +67,7 @@ test('diagnostic strings redact credentials and URL queries',()=>{
 function statusFixture() {
  const f=fixture(),r=f.r;
  Object.assign(r,{
+  dungeonRuntime:()=>({receive(){},owns:()=>false}),
   busy:false,snapshot:()=>({}),runtimeCurrent:()=>true,dashboardSampler:null,reloadConvoyGeometry(){},
   prepareCatalog:async()=>{},applyMerchantVisibility:async()=>{},
   luckySlotTracking:()=>({sync:()=>{}}),

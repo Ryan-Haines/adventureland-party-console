@@ -658,3 +658,82 @@ return ownership retain this reservation through coordinator restart. Publish
 character and coordinator assets together with the ordinary full restart.
 Validate with `merchant-events`, `shared-walk`, event selection/return, and
 merchant checkpoint/recovery tests.
+
+## Cave of Many Dreams
+
+`dungeons/service.ts` owns the selected leader and online enabled followers from manual
+entry through confirmed exit. Initial selection uses the roster's ten-second
+presence window; entry still requires fresh three-second heartbeats. Captured
+participants remain owned through disconnects and coordinator restarts. The merchant is excluded and more than three combat
+participants are rejected. `runtime/dungeons/contracts.ts` defines the partial
+cave wire protocol; `runtime/characters/dungeons.ts` adapts official game APIs.
+`runtime/characters/dungeon-journal.ts` persists receipts before dispatch. Review
+these compatibility contracts when upgrading typed-adventureland.
+
+Cave socket requests capture correlated interaction replies before native UI handlers
+using Socket.IO's prependAny hook, with listener cleanup on response, disconnect,
+or timeout. This avoids Steam replies being lost before ordinary event listeners.
+Eligibility reads expire after twelve seconds, retry after five, and ignore late
+superseded replies. Irreversible actions retain journal reconciliation and are not
+retried automatically. The settings panel shows eligibility transport errors.
+Validate with `cave-request` and `daily-dungeons`; publish character assets with
+the full restart workflow.
+
+Entry is never an automatic event selection. The Events gear exposes eligibility,
+manual entry/return, and protection from other events (default on). Turning that
+protection off permits an enabled live event to request exit; event travel waits
+for fresh outside observations from every participant. Reenabling protection can
+cancel only an exit that has not been delivered to any character.
+
+Town and Escape call cave_exit for all captured participants, including fallen
+characters. Natural completion and explicit exit hold ordinary activity outside;
+Resume ordinary activity or a new manual travel command releases that hold.
+A disconnected member keeps ownership. Return missing participants requires a
+server-confirmed resumable visit on the same server. Failed preparation can be
+retried explicitly; uncertain irreversible requests require observed reconciliation.
+
+Automatic cave progress visits unfinished required rooms, then gathers everyone at
+unlocked stairs down and transports them together. It pauses for visible hostile
+monsters, loot, forced choices, death, and stale reports. The panel can pause or
+continue this route; a manual destination pauses automatic progress. Final-floor
+completion never chooses the Mainland exit. Stairs receipts reconcile from an
+observed destination floor rather than replaying an uncertain transport.
+
+Cave combat uses the ordinary shared three-target queue and its red/yellow/double
+yellow markers. Enemy/predator cave actors are nominated before they attack;
+neutral/ally NPCs are excluded. Any fresh participant can contribute a nomination.
+The queue is scoped to the run and floor, ignoring pre-entry farming navigation.
+Validate `cave-progress`, `cave-combat-queue`, `daily-dungeons-combat`, normal queue
+and movement tests. These changes require a full coordinated restart.
+
+Native movement refreshes generated geometry and pauses for party combat, loot,
+stale reports, and forced votes. Dungeon combat uses the ordinary class skill,
+healing, formation and kiting routines with cave-specific targeting and ownership.
+`dungeons/priest-recovery.ts` assigns one priest per death and persists permission
+before an Essence can be consumed. `runtime/characters/cave-recovery.ts` prepares
+the gravestone and uses the existing priest action slots, preserving living-party
+healing and combat MP reserves. Outside combat, it can approach and wait for MP.
+The local recovery ledger survives reloads; uncertain or interrupted casts are
+never automatically repeated. The panel reports recovery progress. Nera is blocked
+while a priest cast is unresolved, and remains the manual fallback otherwise.
+Nera's revival choices use the same manual vote path as encounters;
+shared-gold and Amber costs require confirmation and are rechecked before dispatch.
+The official guide is loaded by POST /api/load_article with the JSON body
+{"name":"cave-of-many-dreams","guide":true}; the public guide URL serves the game
+shell. API compatibility was checked against game client version 17175.
+
+Run `node --test scripts/tests/daily-dungeons.test.cjs` along with the full checks
+above. Before production use, validate entry/partial return, generated stairs,
+combat and loot, priest grave healing/Essence consumption/channel completion,
+free/paid Nera revival, forced votes, expiry, and whole-party exit on
+an unlimited-visit development server. Mock tests do not prove live game behavior.
+Use the supported full restart workflow above for activation, then verify fresh
+coordinator and character code. A build by itself does not activate this feature.
+
+Cave combat responses override saved solo farming scopes for captured participants.
+Clients accept the run/floor queue independently of mainland reset epochs and saved
+leader initialization; native cave party lists can be empty, so healing uses the
+captured queue roster. A movement pause stops an issued walking segment once and
+retains its route, allowing combat movement without repeatedly cancelling kiting.
+Validate daily-dungeons-combat and movement-service regressions; deploy coordinator
+and character changes together through the full restart workflow.

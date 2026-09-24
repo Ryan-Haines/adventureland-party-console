@@ -64,7 +64,8 @@ export function installRoleRunner(
   });
   const recoverFromDeath = createDeathRecovery({
     isDead: () => !!character.rip,
-    respawn: () => Promise.resolve(respawn()),
+    blocked: () => !!sharedRoutine.dungeonOwned?.(),
+    respawn: () => sharedRoutine.dungeonOwned?.() ? Promise.reject(Error('Dungeon owns revival')) : Promise.resolve(respawn()),
     releaseCombat: () => {
       working = false;
     },
@@ -90,6 +91,7 @@ export function installRoleRunner(
     );
   }
   function passingTarget(): Target | null {
+    if (sharedRoutine.dungeonOwned?.()) return null;
     if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending","feed"].includes(sharedRoutine.getAbtestingMode())) return null;
     return (sharedRoutine as any).getPassingTarget?.() || null;
   }
@@ -124,6 +126,7 @@ export function installRoleRunner(
     return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
   }
   function chooseTarget() {
+    if (sharedRoutine.dungeonOwned?.()) return sharedRoutine.getDungeonTarget?.() || null;
     if (character.ctype === "merchant") return resolvedRole().chooseTarget();
     if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget();
     const rare = sharedRoutine.getRareTarget?.();
@@ -134,7 +137,7 @@ export function installRoleRunner(
   async function publishSelection(target: Target | null): Promise<void> {
     selectedTarget = target?.id || (sharedRoutine as any).sharedTargetId?.() || null;
     sharedRoutine.setCombatTarget(target);
-    if (!target && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
+    if (!target && !sharedRoutine.dungeonOwned?.() && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
       await sharedRoutine.followLeaderIfFar(150);
   }
   async function selectTarget() {
@@ -146,7 +149,7 @@ export function installRoleRunner(
       return;
     }
     const current = currentTarget();
-    const closer = current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
+    const closer = !sharedRoutine.dungeonOwned?.() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
     if (closer) {
       root.sharedRoutine?.resetCombatMovement?.();
       await publishSelection(closer);
@@ -154,9 +157,9 @@ export function installRoleRunner(
       return;
     }
     if (!invalidated && current) {
-      const rare = sharedRoutine.getRareTarget?.();
-      const nominated = sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
-      if ((!rare || rare.id === selectedTarget) && (!sharedRoutine.usesLeaderTarget?.() || nominated?.id === selectedTarget)) return;
+      const rare = sharedRoutine.dungeonOwned?.() ? null : sharedRoutine.getRareTarget?.();
+      const nominated = sharedRoutine.dungeonOwned?.() ? sharedRoutine.getDungeonTarget?.() : sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
+      if ((!rare || rare.id === selectedTarget) && (!(sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
     }
     invalidated = false;
     selecting = true;
@@ -183,11 +186,15 @@ export function installRoleRunner(
     equipment?.tick(target, actor.damage_type, Number(character.range), combatAllowed());
   }
   function movementTick() {
+    const dungeon = !!sharedRoutine.dungeonOwned?.();
+    if (dungeon && !combatAllowed()) { root.sharedRoutine?.resetCombatMovement?.(); return; }
     try {
       equipmentTick();
-      if (sharedRoutine.pollRareHunting?.()) return;
-      if (sharedRoutine.pollFarmingCombatHandoff) sharedRoutine.pollFarmingCombatHandoff();
-      if (sharedRoutine.pollFarmingSpawnRecovery) sharedRoutine.pollFarmingSpawnRecovery();
+      if (!dungeon) {
+        if (sharedRoutine.pollRareHunting?.()) return;
+        sharedRoutine.pollFarmingCombatHandoff?.();
+        sharedRoutine.pollFarmingSpawnRecovery?.();
+      }
       if (selectedTarget && !currentTarget()) { invalidated = true; void selectTarget(); }
       const target = currentTarget();
       entityRefresh.tick({ enabled: combatAllowed(), context: JSON.stringify([character.map, character.in]),
@@ -195,10 +202,12 @@ export function installRoleRunner(
       if (target) missingSince = 0;
       else if (!missingSince) missingSince = Date.now();
       attacks.wake();
-      if (sharedRoutine.groupedMovement?.()) return;
-      if ((target || Date.now() - missingSince >= 750) && sharedRoutine.recoverFarmApproach && sharedRoutine.recoverFarmApproach(target)) return;
+      if (!dungeon && sharedRoutine.groupedMovement?.()) return;
+      if (!dungeon && (target || Date.now() - missingSince >= 750) && sharedRoutine.recoverFarmApproach && sharedRoutine.recoverFarmApproach(target)) return;
+      if (dungeon && sharedRoutine.caveRecoveryMove?.()) return;
       if (!target) {
-        idleMovement();
+        if (dungeon) root.sharedRoutine?.resetCombatMovement?.();
+        else idleMovement();
         return;
       }
       if (sharedRoutine.formationMove && sharedRoutine.formationMove(target)) return;
@@ -215,10 +224,15 @@ export function installRoleRunner(
     }
   }
   async function supportTick(role: Role, epoch: number): Promise<void> {
+    if (!supportAllowed(epoch)) return;
     if (!(await role.usePotion())) await sharedRoutine.regenerateHpOrMp();
     if (!supportAllowed(epoch)) return;
     if (await role.beforeTarget()) return;
-    if (!currentEpoch(epoch)) return;
+    if (!supportAllowed(epoch)) return;
+    if (sharedRoutine.caveRecoveryReserved?.() && attacks.pending()) return;
+    if (await sharedRoutine.caveRecoveryTick?.()) return;
+    if (sharedRoutine.caveRecoveryReserved?.()) return;
+    if (!supportAllowed(epoch)) return;
     const target = currentTarget();
     if (target && (!sharedRoutine.groupedAttackAllowed || sharedRoutine.groupedAttackAllowed(target)) &&
         (target.mtype !== "tinyp" || sharedRoutine.rareAttackAllowed?.(target, "support")))

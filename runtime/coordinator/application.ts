@@ -1,3 +1,5 @@
+import { createDungeons } from './dungeons/service.ts';
+import { dungeonOwns } from '../dungeons/contracts.ts';
 import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
 import { consoleMaintenance } from './lifecycle/console-maintenance.ts';
 import { createUpgradePreviews } from './merchant/upgrade-preview.ts';
@@ -135,6 +137,16 @@ export function startCoordinatorApplication(
         warn: (details, message) => log.warn(details, message),
       },
     );
+    const dungeons = createDungeons(party, {
+      canStart: names => {
+        if (party.merchantCurrent?.target && names.includes(party.merchantCurrent.target)) throw Error('Wait for the active merchant visit to finish');
+      },
+      now: Date.now, persist: persistSettings,
+      cancel: names => {
+        cancelActiveConvoy();
+        for (const name of names) delete party.commands[name];
+      },
+    });
     migrateSharedRules(party, Object.keys(character_manage).filter(name => !party.bankbois[name]));
     const farmingScopes = coordinatorPolicies.createFarmingScopes(party);
     const soloServices = new Map<string, ReturnType<typeof createSoloServices>>();
@@ -608,6 +620,7 @@ export function startCoordinatorApplication(
       formation: formationRoute,
       actions: partyActionRoutes,
     } = coordinatorPolicies.createCoordinatorPartyConfiguration(party, character_manage, {
+      dungeon: dungeons,
       changed: previous => coordinatorPolicies.reconcileFarmingMembership(party, farmingScopes, previous),
       now: () => Date.now(),
       owned: ownedCharacter,
@@ -958,7 +971,7 @@ export function startCoordinatorApplication(
         merchant: merchantObservation.observe,
         groupedCombat: groupedCombatSnapshot,
         rareReport: (name, report) => rareControl.report(name, report),
-        rareTick: () => rareControl.tick(),
+        rareTick: () => { if (!dungeonOwns(party)) rareControl.tick(); },
         bankboi: bankboiObservation.observe,
         anniversary: reconcileAnniversaryReturnFromStatus,
         huntTick: monsterHuntTick,
@@ -971,10 +984,13 @@ export function startCoordinatorApplication(
         convoyStep: stepAllConvoys,
         merchantScheduling: merchantScheduling.observe,
         response: (name, mode) => {
+          dungeons.reconcile();
           const maintenance = consoleUpdate.current();
           if (maintenance) return { serverNow: Date.now(), consoleMaintenance: maintenance };
           const lease = mode ? undefined : dashboardStream.lease(name);
           return { ...(soloFor(name)?.heartbeatResponse || heartbeatResponse).response(name, mode),
+            ...(dungeonOwns(party, name) ? { groupedCombat: groupedCombatSnapshot() } : {}),
+            ...(party.dailyDungeons ? { dailyDungeon: dungeons.control(name) } : {}),
             upgradePreview: upgradePreviews.next(name),
             merchantVisibility: merchantVisibility(party, name, Date.now()),
             ...(party.statuses[name]?.dashboardRuntime ? { dashboardLease: lease } : {}) };
@@ -1099,7 +1115,14 @@ export function startCoordinatorApplication(
     }
 
     function eventsEnabledFor(name: string, event?: string) {
-      return event ? eventEnabled(party, name, event) : eventPolicy(party, name).enabled;
+      const enabled = event ? eventEnabled(party, name, event) : eventPolicy(party, name).enabled;
+      if (!enabled) return false;
+      const report = party.statuses[name];
+      const live = !!report && Date.now() - report.seenAt < 3000 && (event === 'anniversary'
+        ? !!report.anniversaryServer?.live
+        : !!report.serverLiveEvents?.some(entry => entry.name === event));
+      return dungeons.eventAllowed(name, event, live);
+
     }
 
     function rosterPayload() {
@@ -1557,11 +1580,11 @@ export function startCoordinatorApplication(
         return stepAllConvoys();
       },
       persist: persistSettings,
-      escapeStep: () => escapeControl.step(),
-      disengagementTick: () => combatDisengagement.tick(),
-      rareTick: () => rareControl.tick(),
-      eventReturn: reconcileCombatEventReturn,
-      anniversaryTick: () => anniversaryReturns.tick(),
+      escapeStep: () => { if (!dungeonOwns(party)) escapeControl.step(); },
+      disengagementTick: () => { if (!dungeonOwns(party)) combatDisengagement.tick(); },
+      rareTick: () => { if (!dungeonOwns(party)) rareControl.tick(); },
+      eventReturn: () => { if (!dungeonOwns(party)) reconcileCombatEventReturn(); },
+      anniversaryTick: () => { if (!dungeonOwns(party)) anniversaryReturns.tick(); },
       dispatchAnniversary: dispatchAnniversaryReturn,
       every: (callback, milliseconds) => setInterval(callback, milliseconds),
       // Node accepts null as a no-op; retain that call despite the narrower declaration.
@@ -1884,7 +1907,7 @@ export function startCoordinatorApplication(
     }
 
     function farmAreaTick() {
-      farmAreaNavigation.tick();
+      if (!dungeonOwns(party)) farmAreaNavigation.tick();
       for (const service of independentServices()) service.farmAreaNavigation.tick();
     }
 
@@ -1934,7 +1957,8 @@ export function startCoordinatorApplication(
     }
 
     function monsterHuntTick(_previousStatus?: unknown, _changedName?: string) {
-      if (party.leader) huntTick.tick();
+      dungeons.reconcile();
+      if (party.leader && !dungeonOwns(party)) huntTick.tick();
       for (const service of independentServices()) {
         const before = JSON.stringify(service.state.monsterHunt);
         service.huntTick.tick();
@@ -2123,6 +2147,7 @@ export function startCoordinatorApplication(
               json: (options) => express.json(options),
               text: (options) => express.text(options),
               maps: (router) => {
+                dungeons.install(router);
                 upgradePreviews.install(router);
                 router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
                   [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete')));

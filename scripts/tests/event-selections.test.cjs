@@ -33,10 +33,12 @@ test('browser timezone formats the event instant without changing its countdown'
 test('dropdown disables inherited and unsupported selections and permits independent choices',()=>{
   const source=fs.readFileSync('dashboard/features/party/event-selection-control.tsx','utf8');
   const body=source.slice(source.indexOf('export function EventSelectionControl(')).replace('export function','function');
-  const c={Settings:'Settings',Popover:"Popover",PopoverTrigger:"PopoverTrigger",PopoverContent:"PopoverContent",...policy,useClock:()=>0,eventTimeLabel:()=> 'Time not announced',React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})}};
+  const c={CaveEventRow:'CaveEventRow',Settings:'Settings',Popover:"Popover",PopoverTrigger:"PopoverTrigger",PopoverContent:"PopoverContent",...policy,useClock:()=>0,eventTimeLabel:()=> 'Time not announced',React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})}};
   vm.runInNewContext(ts.transpileModule(body,{compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText,c);
   const nodes=t=>t&&typeof t==='object'?[t,...t.children.flatMap(nodes)]:[];
   const state={leader:'L',followers:{F:true},eventSelectionsByCharacter:{L:['anniversary'],F:['snowman']},eventSchedules:[{id:'anniversary',name:'Anniversary'},{id:'egghunt',name:'Egg Hunt'}]};
+  const tree=nodes(c.EventSelectionControl({state,name:'F',merchant:false,onChange(){}}));
+  assert.ok(tree.findIndex(n=>n.type==='CaveEventRow') < tree.findIndex(n=>n.type==='input'));
   let saved;
   const render=()=>nodes(c.EventSelectionControl({state,name:'F',merchant:false,onChange:ids=>saved=ids})).filter(n=>n.type==='input');
   let inputs=render();assert.equal(inputs[0].props.checked,true);assert.equal(inputs[0].props.disabled,true);assert.equal(inputs[1].props.disabled,true);

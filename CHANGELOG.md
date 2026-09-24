@@ -1,11 +1,49 @@
 # Changelog
 
+- Fix cave combat queue delivery and acknowledgement after farming resets or runtime reloads; preserve cave healing participants and stop issued travel segments when combat pauses movement.
+
 ## Unreleased
 
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+### Added
+
+- Cave progress clears required rooms and travels through stairs automatically,
+  pausing for combat, loot, revival and manual choices. Pause/continue controls
+  preserve manual routing; leaving the final floor remains a manual decision.
+- Visible cave hostiles use the normal shared combat queue, skills, formation,
+  kiting and three target rings, with one coordinated primary target.
+
+- Cave priests automatically prepare and revive fallen teammates with carried Essences
+  of Life, prioritizing living-party healing. Recovery status and safe Nera fallback
+  appear in the dungeon panel; persisted attempts prevent duplicate consumption.
+
+- Cave of Many Dreams appears first in Events with manual entry, server eligibility
+  countdown, and a saved setting that protects the visit from other events by default.
+- Dungeon controls sit below the header and above the party cards, showing
+  objectives, stairs, remaining run time, shared currency,
+  votes, purchases, and revival choices. Paid choices require confirmation. Town
+  and Escape exit the party together; leaving holds ordinary activity until resumed.
+- Dungeon ownership pauses ordinary travel, Hunt, and merchant visits.
+  Persisted action receipts prevent blind retries after lost entry or spending replies.
+
 ### Fixed
+
+- Cave choices, descriptions and objectives keep their server-provided text when
+  a headless client cannot translate localization objects.
+
+- Steam cave requests capture server replies before native UI handlers, fixing
+  missing eligibility reports and protecting entry, vote, purchase and exit receipts.
+  Eligibility reads recover from timeouts; the settings panel shows request errors.
+
+- Cave entry excludes offline saved followers from the initial roster while retaining
+  captured participants if they disconnect during a run.
+
+- Cave combat uses the normal class skills, healing, equipment, formation and kiting routines.
+  Live party observations guide healing; cave navigation waits for combat and loot.
+
+- Event estimates now say "Next chance" without the "event not guaranteed" text.
 
 - Invisible rogue recipients reveal themselves for merchant servicing, then resume
   their normal invisibility behavior. ([#10](https://github.com/Ryan-Haines/adventureland-party-console/pull/10))

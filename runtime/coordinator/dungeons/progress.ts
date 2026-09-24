@@ -1,0 +1,103 @@
+import type { CaveCommand, CaveObservation, CavePoint, DungeonParty, DungeonState } from "../../dungeons/contracts.ts";
+type Cave = NonNullable<CaveObservation["cave"]>;
+interface Ports {
+  fresh(name: string): boolean;
+  issue(names: string[], action: CaveCommand["action"], id: string, extra: Partial<CaveCommand>): void;
+  persist(): void;
+}
+export function createCaveProgress(party: DungeonParty, ports: Ports) {
+  const observation = (name: string) => party.statuses[name]?.dungeon;
+  function settled(d: DungeonState) {
+    return Object.entries(d.commands).every(([name, command]) => {
+      if (command.action === "move") return true;
+      const receipt = observation(name)?.action;
+      return receipt?.id === command.id && receipt.status === "complete";
+    });
+  }
+  function available(d: DungeonState) {
+    return d.participants.every(name => ports.fresh(name) && observation(name)?.alive &&
+      observation(name)?.cave?.run === d.run && !observation(name)?.cave?.paused);
+  }
+  function choose(cave: Cave, previous?: string) {
+    const down = cave.points.find(p => p.down && !p.exit);
+    if (down && !down.locked) return down;
+    const rooms = cave.points.filter(p => p.required && !p.done && !p.exit);
+    const current = rooms.find(p => p.id === previous);
+    if (current) return current;
+    const leader = party.statuses[party.dailyDungeons!.participants[0]];
+    return rooms.sort((a,b) => distance(a, leader) - distance(b, leader))[0];
+  }
+  function distance(p: CavePoint, status: DungeonParty["statuses"][string]) {
+    return Math.hypot(p.x - (status?.x || 0), p.y - (status?.y || 0));
+  }
+  function arrived(d: DungeonState, target: CavePoint) {
+    return d.participants.every(name => {
+      const s = party.statuses[name], command = d.commands[name], receipt = observation(name)?.action;
+      return s?.map === target.map && distance(target, s) <= 50 && command?.target?.id === target.id &&
+        receipt?.id === command.id && receipt.status === "complete";
+    });
+  }
+  function dispatch(d: DungeonState, target: CavePoint, action: "move" | "stairs") {
+    const p = d.progress!;
+    p.serial++;
+    ports.issue(d.participants, action, "cave-progress:" + d.run + ":" + p.serial, {run:d.run, target});
+    ports.persist();
+  }
+  function failed(d: DungeonState) {
+    return d.participants.some(n => {
+      const receipt = observation(n)?.action;
+      return receipt?.id === d.commands[n]?.id && receipt?.status === "failed";
+    });
+  }
+  function sameFloor(d: DungeonState, cave: Cave) {
+    return d.participants.every(n => observation(n)?.cave?.floor === cave.floor);
+  }
+  function commandsNeedTravel(d: DungeonState) {
+    const commands = Object.values(d.commands);
+    return !commands.length || commands.some(c => c.action !== "move" && c.action !== "stairs");
+  }
+  function finishMessage(cave: Cave) {
+    return cave.points.some(p => p.down) ? "Waiting for stairs to unlock" : "Floor complete; no further stairs. Exit remains manual.";
+  }
+  function route(d: DungeonState, cave: Cave, target: CavePoint) {
+    const p = d.progress!;
+    p.message = target.down ? "Moving to stairs down" : "Unlocking stairs: " + target.label;
+    if (p.target !== target.id || p.floor !== cave.floor) {
+      p.target = target.id; p.floor = cave.floor;
+      dispatch(d, target, "move"); return;
+    }
+    const commands = Object.values(d.commands);
+    if (commands.some(c => c.action === "stairs")) { p.message = "Waiting for the party to reach the next floor"; return; }
+    if (failed(d)) { p.message = "Travel failed; use Retry failed preparation"; return; }
+    if (commandsNeedTravel(d)) {
+      dispatch(d, target, "move"); return;
+    }
+    if (!arrived(d, target)) return;
+    if (target.down && d.participants.every(n => observation(n)?.ready)) dispatch(d, target, "stairs");
+    else p.message = "Waiting for " + target.label + " to finish";
+  }
+  function tick(d: DungeonState) {
+    if (d.phase !== "active") return;
+    d.progress ||= {enabled:true, serial:0};
+    if (!d.progress.enabled) return;
+    if (!available(d)) { d.progress.message = "Waiting for party, revival, or a cave choice"; return; }
+    if (!settled(d)) { d.progress.message = "Waiting for dungeon action confirmation"; return; }
+    const cave = observation(d.participants[0])?.cave;
+    if (!cave || !sameFloor(d, cave)) return;
+    const target = choose(cave, d.progress.target);
+    if (!target) {
+      d.progress.message = finishMessage(cave);
+      return;
+    }
+    route(d, cave, target);
+  }
+  function set(enabled: boolean) {
+    const d = party.dailyDungeons!;
+    d.progress = {...d.progress, serial: d.progress?.serial || 0, enabled, target:undefined,
+      message: enabled ? "Preparing cave route" : "Cave route paused"};
+    if (!enabled) for (const [name, command] of Object.entries(d.commands))
+      if (command.action === "move") delete d.commands[name];
+    ports.persist();
+  }
+  return {tick, set};
+}

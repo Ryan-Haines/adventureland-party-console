@@ -1,9 +1,11 @@
+import { dungeonOwns } from '../../dungeons/contracts.ts';
 import { merchantPartyGroups } from "../../party-groups.ts";
 import { requestObject, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
 import type { MerchantWork } from "../merchant/work.ts";
 
 interface PartyActionState {
+  dailyDungeons?: import('../../dungeons/contracts.ts').DungeonState;
   navigationIntents?: Record<string, { revision: number } | undefined>;
   leader: string | null;
   merchantCharacter: string | null;
@@ -25,6 +27,7 @@ interface PartyActionPorts {
   now(): number;
   nextCommand(): number;
   release(): void;
+  dungeon?: { exit(id: string): void; release(): void };
   members(): string[];
   active(): string[];
   authorize(names: string[], location: ReturnLocation, shared: boolean): void;
@@ -50,10 +53,11 @@ function travelLocation(body: Record<string, unknown>): ReturnLocation | null {
 
 export function createPartyActionRoutes(state: PartyActionState, ports: PartyActionPorts) {
   function travel(req: HttpRequest, res: HttpResponse): unknown {
-    ports.release();
     const body = requestObject(req.body),
       location = travelLocation(body);
     if (!location) return res.status(400).json({ error: "invalid location" });
+    if (!releaseDungeon(res)) return;
+    ports.release();
     ports.authorize(ports.members(), location, true);
     const names = ports.members().filter(name => ports.active().includes(name));
     if (!ports.convoy(location, "party location", names, body.force === true ? "party-force-travel" : "party-travel"))
@@ -94,6 +98,7 @@ export function createPartyActionRoutes(state: PartyActionState, ports: PartyAct
     return res.json({ ok: true, group: group.id, queued: group.members });
   }
   function town(_req: HttpRequest, res: HttpResponse): unknown {
+    if (exitDungeon(res)) return;
     ports.release();
     const names = ports.members().filter((name) => ports.active().includes(name));
     ports.invalidate(ports.members(), "manual Town", true);
@@ -124,11 +129,22 @@ export function createPartyActionRoutes(state: PartyActionState, ports: PartyAct
     return res.json({ escape: state.escape });
   }
   function escape(_req: HttpRequest, res: HttpResponse): unknown {
+    if (exitDungeon(res)) return;
     return res.json({ escape: ports.escape(ports.members()) });
   }
   function resume(_req: HttpRequest, res: HttpResponse): unknown {
+    if (!releaseDungeon(res)) return;
     ports.release();
     return res.json({ escape: state.escape });
+  }
+  function exitDungeon(res: HttpResponse) {
+    if (!dungeonOwns(state) || !ports.dungeon) return false;
+    ports.dungeon.exit('manual-exit:' + ports.now() + ':' + ports.nextCommand());
+    res.json({ ok: true, dailyDungeon: state.dailyDungeons }); return true;
+  }
+  function releaseDungeon(res: HttpResponse) {
+    try { ports.dungeon?.release(); return true; }
+    catch (error) { res.status(409).json({ error: String(error) }); return false; }
   }
   return { travel, checkpoint, bank, town, upgrades, escapeState, escape, resume };
 }

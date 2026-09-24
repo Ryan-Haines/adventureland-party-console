@@ -6,6 +6,7 @@ import { API } from "./api";
 import { Char } from "./char";
 import { MapCanvas } from "./map-canvas";
 import { useMapDefinition, useVisible } from "./query-cache";
+import type { MapDefinition } from "./map-definition";
 import { MapFrame } from "./map-frame";
 import { receiveMapFrame, type MapRenderBuffer } from "./map-render-buffer";
 import { useCharacterData } from './dashboard-live';
@@ -15,10 +16,13 @@ export function CharacterMapSection({ char: base }: { char: Char }) {
   const position = useCharacterData(base.name, 'position');
   useEffect(() => { committedLiveRecord(base.name, 'position'); }, [base.name, position]);
   const char = { ...base, ...position };
+  const caveMap = /^zone_[a-f0-9]+_\d+$/.test(char.map);
+  const mapLabel = caveMap ? 'Cave of Many Dreams' : char.map;
   const [open, setOpen] = useState(false),
     [large, setLarge] = useState(false);
-  const definitionQuery = useMapDefinition(char.map, open);
-  const definition = definitionQuery.data || null;
+  const [streamDefinition, setStreamDefinition] = useState<MapDefinition | null>(null);
+  const definitionQuery = useMapDefinition(char.map, open && !caveMap);
+  const definition = caveMap ? (streamDefinition?.name === char.map ? streamDefinition : null) : definitionQuery.data || null;
   const visible = useVisible();
   const buffer = useRef<MapRenderBuffer>({ frame: null, previous: null, receivedAt: 0 });
   const [streamState, setStreamState] = useState("loading");
@@ -33,6 +37,10 @@ export function CharacterMapSection({ char: base }: { char: Char }) {
         const next: MapFrame = JSON.parse(message.data),
           now = Date.now();
         if (next.map !== char.map) return;
+        if (next.definition?.name === next.map) {
+          const supplied = next.definition;
+          setStreamDefinition(previous => previous?.name === supplied.name ? previous : supplied);
+        }
         receiveMapFrame(buffer.current, next, performance.now(), now);
       } catch {
         /* retry on next frame */
@@ -56,7 +64,7 @@ export function CharacterMapSection({ char: base }: { char: Char }) {
           )}
         </button>
         <span>
-          {char.map} [{Math.round(char.x)}, {Math.round(char.y)}]
+          {mapLabel} [{Math.round(char.x)}, {Math.round(char.y)}]
         </span>
       </div>
       {open ? (
@@ -91,7 +99,7 @@ export function CharacterMapSection({ char: base }: { char: Char }) {
         <DialogContent className="w-[min(804px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-2 border-emerald-700 bg-[#081713] p-0 text-emerald-50 sm:max-w-none [&_[data-slot=dialog-close]]:right-3 [&_[data-slot=dialog-close]]:top-3 [&_[data-slot=dialog-close]]:text-emerald-100 [&_[data-slot=dialog-close]]:hover:bg-emerald-900">
           <DialogHeader className="border-b border-emerald-800 px-5 py-3">
             <DialogTitle className="text-emerald-50">
-              {char.name} — {char.map}
+              {char.name} — {mapLabel}
             </DialogTitle>
           </DialogHeader>
           <div className="h-[min(600px,calc(100vh-8rem))] w-full overflow-hidden bg-[#07110f]">

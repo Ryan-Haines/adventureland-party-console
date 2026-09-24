@@ -16,7 +16,7 @@
   var movement = root.installPartyMovement(root, {
     now: Date.now,
     context: function() { return { runtime: convoyRuntimeId || String(runtimeGeneration), revision: Number(navigationIntent && navigationIntent.revision) || 0,
-      current: runtimeCurrent() && (!parent.socket || parent.socket.connected !== false), paused: !!root.__partyMovementPaused }; },
+      current: runtimeCurrent() && (!parent.socket || parent.socket.connected !== false), paused: !!root.__partyMovementPaused || !!(dungeonClient && !dungeonClient.canMove()) }; },
     request: request,
     townReady: function() { return !departureCombatPending() && eligibleDepartureChests().length === 0; },
     transitionReady: function() { return eligibleDepartureChests().length === 0; },
@@ -2168,6 +2168,129 @@
     return pause ? { id: pause.id, ready: !consoleMaintenanceBusy() && !character.moving &&
       !(typeof smart !== 'undefined' && smart.moving) } : null;
   }
+  var dungeonClient;
+  // Dungeon ownership replaces farm/event targeting, not the class combat runner.
+  function dungeonOwned() {
+    return !!character.cave || !!(root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns());
+  }
+  function cavePartyNames() {
+    return character.cave && typeof groupedCombat !== 'undefined' && groupedCombat?.caveScope === character.cave.run + ':' + character.cave.floor
+      ? groupedCombat.members : currentPartyList();
+  }
+  function cavePartyMembers() {
+    return [character].concat(cavePartyNames().filter(function (name) { return name !== character.name; }).map(function (name) { return get_player(name); }))
+      .filter(function (member) { return member && member.map === character.map && member.in === character.in; });
+  }
+  function dungeonTargetAllowed(target) {
+    return !!target && target.type === 'monster' && target.visible !== false && !target.dead && target.hp > 0 &&
+      (!target.map || target.map === character.map) && (target.in == null || target.in === character.in) &&
+      !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(target.id)) &&
+      (target.cave && ['enemy', 'predator'].includes(target.cave.side) ||
+       target.target === character.name || cavePartyNames().includes(target.target));
+  }
+  function getDungeonTarget() {
+    if (!character.cave || character.cave.paused || !groupedFresh() || !groupedCombat.target) return null;
+    var target = get_entity(groupedCombat.target.id);
+    return dungeonTargetAllowed(target) ? target : null;
+  }
+  async function lootDungeonChests() {
+    if (!runtimeCurrent() || character.rip || !character.cave || character.cave.paused) return;
+    for (var id of Object.keys(parent.chests || {})) {
+      if (!runtimeCurrent() || character.rip || !character.cave || character.cave.paused) return;
+      var chest = parent.chests[id];
+      if (chest.map === character.map && (chest.in == null || chest.in === character.in) && distance(character, chest) <= 400)
+        await anniversaryWithTimeout(loot(id), 2500, 'Dungeon loot');
+    }
+  }
+  var caveRecoveryClient;
+  function caveRecovery() {
+    if (caveRecoveryClient) return caveRecoveryClient;
+    var key = 'party-cave-revival:' + character.name;
+    caveRecoveryClient = root.installCaveRecovery({
+      now: Date.now, current: runtimeCurrent, actor: function () { return character; },
+      cave: function () { return character.cave || null; },
+      target: function (name) { var p = name === character.name ? character : get_player(name); return p && p.visible !== false ? p : null; },
+      essence: function () { return character.items.some(function (item) { return item && item.name === 'essenceoflife'; }); },
+      fighting: function () { return Object.values(parent.entities || {}).some(dungeonTargetAllowed); },
+      livingNeedsHealing: function () {
+        return cavePartyMembers().some(function (p) { return !p.rip && p.hp < p.max_hp * 0.9 && is_in_range(p, 'heal'); });
+      },
+      healingBusy: function () { return healingBusy; },
+      cost: function (skill) { return escapeCost(skill); },
+      reserve: function () { return Math.max(character.max_mp * 0.35, 2 * escapeCost('heal') + escapeCost('partyheal')); },
+      inRange: function (target, skill) { return is_in_range(target, skill); },
+      ready: function (skill, target) { return skill === 'heal' ? can_heal(target) : !is_on_cooldown('revive') && can_use('revive'); },
+      heal: async function (target) {
+        healingBusy = true;
+        try { return await anniversaryWithTimeout(heal(target), 2000, 'Gravestone healing'); }
+        finally { healingBusy = false; }
+      },
+      revive: function (target) { return use_skill('revive', target.name); },
+      approach: function (target) {
+        var range = Math.min(Number(character.range), Number(G.skills.revive.range) || 240) - 10;
+        var goal = combatApproachPoint(target, Math.max(1, range));
+        var length = Math.hypot(goal.x - character.x, goal.y - character.y);
+        if (!length) return;
+        var fraction = Math.min(1, Math.max(1, Number(character.speed) * 0.25) / length);
+        var point = { x: character.x + (goal.x - character.x) * fraction, y: character.y + (goal.y - character.y) * fraction };
+        if (safeCombatPoint(point, target)) sendCombatMove(target, point, 'cave-recovery');
+      },
+      read: function () { return JSON.parse(root.localStorage.getItem(key) || '{}'); },
+      write: function (value) { root.localStorage.setItem(key, JSON.stringify(value)); },
+    });
+    return caveRecoveryClient;
+  }
+  function requestDungeon(action, fields) {
+    var id = 'cave:' + character.name + ':' + Date.now() + ':' + Math.random();
+    return root.requestCave(parent.socket, id, action, fields);
+  }
+  function dungeonRuntime() {
+    if (dungeonClient) return dungeonClient;
+    if (!root.installDungeonRuntime) return { report: function () { return undefined; }, receive: function () {}, owns: function () { return false; } };
+    var journalKey = 'party-dungeon-actions:' + character.name;
+    dungeonClient = root.__partyDungeonRuntime = root.installDungeonRuntime({
+      name: character.name, now: Date.now, current: runtimeCurrent,
+      members: currentPartyList,
+      leader: function () { return currentPartyList()[0]; },
+      ready: function () {
+        if (!character.cave) return !character.rip && !departureCombatPending() && eligibleDepartureChests().length === 0;
+        var threatened = Object.values(parent.entities || {}).some(dungeonTargetAllowed);
+        var unlooted = Object.values(parent.chests || {}).some(function (chest) { return chest.map === character.map && (chest.in == null || chest.in === character.in) && distance(character, chest) <= 400; });
+        return !character.rip && !character.cave.paused && !threatened && !unlooted;
+      },
+      alive: function () { return !character.rip; },
+      cave: function () { return character.cave || null; },
+      supported: function () { return typeof cave_info === 'function' && typeof cave_enter === 'function' && typeof cave_exit === 'function'; },
+      info: function () { return requestDungeon('info').then(function (data) { return data.visit; }); },
+      request: function (action, fields) {
+        if (action === 'enter' || action === 'exit') return requestDungeon(action);
+        if (action === 'stairs') {
+          var door = G.maps[character.map]?.doors?.find(function(d) { return d[4] === fields.to; });
+          if (!door || !character.cave || fields.to === 'main') throw Error('Cave stairs unavailable');
+          return anniversaryWithTimeout(transport(fields.to, door[5]), 10000, 'Cave stairs');
+        }
+        if (action === 'revival') return respawn();
+        if (action === 'vote') return requestDungeon(action, { choice: fields.choice, option: fields.option });
+        if (action === 'buy') return requestDungeon(action, { room: fields.room });
+        throw new Error('Unsupported cave action');
+      },
+      keeper: function () {
+        var npc = G.maps.main && G.maps.main.npcs.find(function (n) { return n.id === 'dreamkeeper'; });
+        return npc && { map: 'main', x: npc.position[0], y: npc.position[1] };
+      },
+      text: function (value) { return parent.phrase && parent.phrase.message ? parent.phrase.message(value) : String(value || ''); },
+      move: function (point) { return movement.move(point, undefined, { native: true, town: false,
+        barrier: async function () {
+          if (character.cave) return dungeonClient.canMove();
+          await smartLoot(); return !departureCombatPending() && eligibleDepartureChests().length === 0;
+        } }); },
+      stop: function () { return movement.stop('smart'); },
+      read: function () { return JSON.parse(root.localStorage.getItem(journalKey) || 'null'); },
+      write: function (journal) { root.localStorage.setItem(journalKey, JSON.stringify(journal)); },
+    });
+    return root.__partyDungeonRuntime;
+  }
+
   function snapshot() {
     calculateFarmingMode();
     if (character.rip && !combatWasDead) {
@@ -2230,6 +2353,7 @@
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
       groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      dungeon: character.cave && root.installCaveRecovery ? Object.assign(dungeonRuntime().report(), { recovery: caveRecovery().report() }) : dungeonRuntime().report(),
       convoyProtocol: 4,
       movementGeometry: movement.identity,
       huntReturnProtocol: 2,
@@ -2820,6 +2944,21 @@
     };
   }
 
+  var mapGeometrySent = {map: null, at: 0};
+  function liveCaveMapDefinition() {
+    if (!character.cave || !G.geometry || !G.geometry[character.map]) return undefined;
+    var now = Date.now();
+    if (mapGeometrySent.map === character.map && now - mapGeometrySent.at < 5000) return undefined;
+    var geometry = G.geometry[character.map], tilesets = {};
+    (geometry.tiles || []).forEach(function(tile) {
+      var id = tile && tile[0], file = G.tilesets && G.tilesets[id] && G.tilesets[id].file;
+      if (file) tilesets[id] = {file: /^https?:/.test(file) ? file : 'https://adventure.land' + file};
+    });
+    mapGeometrySent = {map: character.map, at: now};
+    return {name: character.map, min_x: geometry.min_x, min_y: geometry.min_y,
+      max_x: geometry.max_x, max_y: geometry.max_y, default: geometry.default,
+      tiles: geometry.tiles || [], placements: geometry.placements || [], groups: geometry.groups || [], tilesets: tilesets};
+  }
   function publishMapFrame() {
     if (!mapTelemetryEnabled || mapTelemetryBusy) return;
     mapTelemetryBusy = true;
@@ -2832,7 +2971,7 @@
     var events = mapTelemetryEvents.splice(0, mapTelemetryEvents.length);
     $.ajax({
       url: api + "/map-frame", method: "POST", contentType: "application/json",
-      data: JSON.stringify({ name: character.name, map: character.map, at: Date.now(),
+      data: JSON.stringify({ name: character.name, map: character.map, definition: liveCaveMapDefinition(), at: Date.now(),
         x: Number(character.real_x !== undefined ? character.real_x : character.x) || 0,
         y: Number(character.real_y !== undefined ? character.real_y : character.y) || 0,
         target: character.target || combatTargetId || null, eventCombat: eventTargetTypes.length>0, queue: queueMarkers(), queueRevision: groupedCombat && groupedCombat.queueRevision, grouped: groupedFarming(), entities: entities, events: events }),
@@ -4210,6 +4349,7 @@
     });
   }
   async function smartLoot(eligible) {
+    if (character.cave) return lootDungeonChests();
     var local=eligibleDepartureChests();
     var chests = Array.isArray(eligible) ? eligible.filter(function(id){return local.indexOf(id)>=0;}) : local;
     if (!chests.length) {
@@ -8413,6 +8553,7 @@
   }
 
   async function handle(command) {
+    if (root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return;
     if (escapeOwns() && !(escapeState.stage === "recovery-convoy" && command && command.purpose === "escape-recovery")) {
       reportMerchantCommand(command, "deferred", "escape"); return;
     }
@@ -9111,6 +9252,18 @@
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');
         return;
       }
+      mapTelemetryEnabled = !!state.mapTelemetry;
+      dungeonRuntime().receive(state.dailyDungeon);
+      if (root.installCaveRecovery) caveRecovery().receive(state.dailyDungeon && state.dailyDungeon.recovery);
+      if (dungeonRuntime().owns()) {
+        acceptQueue(state.groupedCombat || null);
+        partyPositions = state.partyPositions || [];
+        partyThreats = state.partyThreats || [];
+        partyTargets = state.partyTargets || [];
+        root.__partyStatusSuccessAt = Date.now();
+        if (dashboardSampler) dashboardSampler.renew(state.dashboardLease);
+        return;
+      }
       if (state.upgradePreview) await handleUpgradePreview(state.upgradePreview);
       await applyMerchantVisibility(state.merchantVisibility);
       if (character.ctype === "merchant") await flushNativePurchaseReceipts();
@@ -9682,6 +9835,7 @@
   }
 
   async function eventTravelAllowed(eventName) {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (character.ctype === "merchant") return runtimeCurrent();
     if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return false;
     try {
@@ -9761,6 +9915,7 @@
   }
 
   async function runAnniversaryKiss() {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (merchantEventWorkReserved()) return;
     if (!eventSelected("anniversary")) return;
     if (await applyAnniversaryAbort()) return;
@@ -10543,6 +10698,7 @@
   }
 
   async function joinEventDestination(destination) {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (escapeOwns()) return;
     if (!destination || character.map === destination.map) return false;
     var map = G.maps && G.maps[destination.map], eventName = map && map.event;
@@ -10797,6 +10953,7 @@
   }
 
   async function pollEvents() {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
     if (eventPollBusy) return;
@@ -11338,13 +11495,13 @@
     ratio = ratio || 0.9;
     healingBusy = true;
     try {
-    var injured = partyPositions.filter(function (member) {
+    var injured = (character.cave ? cavePartyMembers() : partyPositions).filter(function (member) {
       return member && member.ctype !== "merchant" && sameEventTeamMember(member) && !member.rip && member.map === character.map && member.max_hp > 0 &&
         member.hp / member.max_hp < ratio;
     }).sort(function (a, b) {
       return a.hp / a.max_hp - b.hp / b.max_hp;
     });
-    var criticallyInjured = partyPositions.filter(function (member) {
+    var criticallyInjured = (character.cave ? cavePartyMembers() : partyPositions).filter(function (member) {
       return member && member.ctype !== "merchant" && sameEventTeamMember(member) && !member.rip && member.map === character.map && member.max_hp > 0 &&
         member.hp / member.max_hp <= 0.5;
     });
@@ -11395,7 +11552,7 @@
     var available = Math.floor(character.mp - reserve);
     if (available <= 0 || is_on_cooldown("energize") || !can_use("energize")) return false;
     var partyNames = currentPartyList();
-    var candidates = partyPositions.filter(function (member) {
+    var candidates = (character.cave ? cavePartyMembers() : partyPositions).filter(function (member) {
       return member && sameEventTeamMember(member) && member.name !== character.name && partyNames.indexOf(member.name) >= 0 &&
         !member.rip && member.map === character.map && member.max_mp > 0 && member.mp < member.max_mp;
     }).sort(function (a, b) {
@@ -11444,7 +11601,7 @@
 
   function isPartyHealthy(ratio) {
     ratio = ratio || 0.9;
-    return partyPositions.filter(function (member) {
+    return (character.cave ? cavePartyMembers() : partyPositions).filter(function (member) {
       // Match the healing routine's scope: living party members the priest can
       // presently support on this map, including the priest itself.
       return member && sameEventTeamMember(member) && !member.rip && member.map === character.map && member.max_hp > 0;
@@ -11454,6 +11611,7 @@
   }
 
   function isCurrentPartyTarget(target) {
+    if (character.cave) return dungeonTargetAllowed(target);
     if (!target || !target.id) return false;
     if (leaderTarget && leaderTarget.id === target.id) return true;
     return partyTargets.some(function (partyTarget) {
@@ -11472,7 +11630,7 @@
     if (target.target === character.name) return true;
     if (!target.target || currentPartyList().indexOf(target.target) < 0)
       return false;
-    return partyPositions.some(function (member) {
+    return (character.cave ? cavePartyMembers() : partyPositions).some(function (member) {
       return member && sameEventTeamMember(member) && member.name === target.target && member.map === character.map;
     });
   }
@@ -11560,6 +11718,8 @@
     if(root.partyRoleRunner)root.partyRoleRunner.wake();
   }
   function groupedFarming() {
+    if (character.cave) return character.ctype !== "merchant";
+    if (dungeonOwned()) return false;
     return character.ctype !== "merchant" && (farmingMode !== "scatter" || !!root.__partyConvoyDefense) && !!leader &&
       (leader === character.name || followLeader) && !eventTraveling && !joinedEvent &&
       !eventTargetTypes.length && !(G.maps && G.maps[character.map] && G.maps[character.map].event);
@@ -11568,7 +11728,8 @@
     return groupedFarming() && (typeof groupedCombat !== "undefined" && groupedCombat && groupedCombat.protocol === 4 ? groupedCombat.targetLeader : leader) !== character.name;
   }
   function groupedFresh() {
-    return groupedCombat && groupedCombat.leader === leader && groupedCombat.members.indexOf(character.name) >= 0 &&
+    if (character.cave && groupedCombat?.caveScope !== character.cave.run + ':' + character.cave.floor) return false;
+    return groupedCombat && (character.cave || groupedCombat.leader === leader) && groupedCombat.members.indexOf(character.name) >= 0 &&
       Date.now() + coordinatorClockOffset - groupedCombat.seenAt <= 3000 &&
       Date.now() + coordinatorClockOffset >= groupedCombat.seenAt - 500 &&
       groupedCombat.key.indexOf(JSON.stringify(convoyRuntimeId)) >= 0;
@@ -11639,7 +11800,7 @@
       {id:String(e.id),map:character.map,in:character.in,server:reunionRealm(),at:Date.now()+coordinatorClockOffset} : null;
   }
   function queueMarkers() {
-    if (typeof eventTargetTypes !== 'undefined' && eventTargetTypes.length && !character.rip) {
+    if (!character.cave && typeof eventTargetTypes !== 'undefined' && eventTargetTypes.length && !character.rip) {
       var selected=combatTargetId && get_entity(combatTargetId);
       if (!selected || !selected.visible || selected.dead || selected.hp<=0 ||
           eventTargetTypes.indexOf(selected.mtype)<0 || !isAllowedTarget(selected)) return [];
@@ -11651,14 +11812,14 @@
       var seen={};return targets.filter(function(t){if(!t||seen[t.id]||t.server!==reunionRealm()||t.map!==character.map||t.in!==character.in)return false;seen[t.id]=true;return true;})
         .map(function(t){var e=get_entity(t.id);return Object.assign({},t,{role:'current',state:'scatter',visible:!!(e&&e.visible&&!e.dead)});});
     }
-    var travel=typeof huntTravelControl==='function' && huntTravelControl();
+    var travel=!character.cave && typeof huntTravelControl==='function' && huntTravelControl();
     var markers=travel && !travel.defending && travel.primary ? [travel.primary].concat(currentTravelAttackers().filter(function(t){return passingKey(t)!==passingKey(travel.primary);})) : groupedCombat && groupedCombat.queue || [];
-    return groupedFarming() && !navigationIntent.cancelled ? markers.slice(0,3).map(function(t,index){
+    return groupedFarming() && (character.cave || !navigationIntent.cancelled) ? markers.slice(0,3).map(function(t,index){
       var e=get_entity(t.id);return {id:t.id,map:t.map,in:t.in,server:t.server,role:['current','next','third'][index],state:t.state,radius:Math.max(18,(Number(e && e.awidth)||24)/2+4),visible:!!(e && e.visible && !e.dead && t.server===reunionRealm() && t.map===character.map && t.in===character.in)};
     }) : [];
   }
   function acceptQueue(next) {
-    if(next && Number(next.resetAt||0)<Number(root.__partyCombatResetAt||0))return;
+    if(next && !next.caveScope && Number(next.resetAt||0)<Number(root.__partyCombatResetAt||0))return;
     if(next && groupedCombat && Number(next.seenAt)<Number(groupedCombat.seenAt))return;
     var before=groupedCombat && groupedCombat.target, after=next && next.target;
     if (before && after && before.id!==after.id && groupedCombat.pursuit && groupedCombat.pursuit.replacementKind==='closer-hunt') {
@@ -11673,6 +11834,8 @@
     if(root.partyQueueClient && root.partyQueueClient.formation)root.partyQueueClient.formation.accept(next && next.formationRecovery);
   }
   function queueCandidates() {
+    if (character.cave) return character.cave.paused ? [] : Object.values(parent.entities || {}).filter(dungeonTargetAllowed)
+      .map(function(e) { return Object.assign(groupedEntityReport(e), {priority: monsterPriority(e)}); });
     var diagnostic=root.__partyNomination={focus:monsterFocus.slice(),area:typeof partyLocation!=='undefined'&&partyLocation&&partyLocation.id,revision:navigationIntent.revision,rejected:{},eligible:[]};
     var encounter=root.__partyFarmingEngagement;
     if(encounter && !encounter.finished && !navigationIntent.cancelled) {
@@ -11705,6 +11868,10 @@
     return !!(target && (passiveRareHunts[target.mtype] || target.mtype === 'phoenix' && monsterFocus.indexOf('phoenix')>=0));
   }
   function queueRetentions() {
+    if (character.cave) return (groupedCombat?.queue || []).map(function(t) {
+      var e = get_entity(t.id);
+      return Object.assign({}, t, {at: root.__partyEntitiesObservedAt || 0, eligible: dungeonTargetAllowed(e), reason: dungeonTargetAllowed(e) ? null : 'no visible hostile'});
+    });
     var at=root.__partyEntitiesObservedAt||0;
     return (groupedCombat&&groupedCombat.queue||[]).filter(function(t){return t.state==='planned'&&t.map===character.map&&t.in===character.in&&t.server===reunionRealm();}).map(function(t){
       var e=get_entity(t.id),reason=null;
@@ -11833,6 +12000,8 @@
       Math.hypot(character.x-anchor.x,character.y-anchor.y) <= groupedCombat.range;
   }
   function groupedAttackAllowed(target) {
+    if (dungeonOwned()) return !!(character.cave && !character.cave.paused && dungeonTargetAllowed(target) && groupedFresh() &&
+      groupedCombat.target?.id === target.id && groupedCombat.committed);
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.blocks())return false;
     if (travelCombatActive() && !departureTargetEngaged(target)) return false;
     if(root.partyLootClient && root.partyLootClient.huntPending() && !departureTargetEngaged(target))return false;
@@ -12024,6 +12193,7 @@
   }
 
   function isAllowedTarget(target, huntTravelCommand, diagnostic) {
+    if (character.cave || typeof root !== "undefined" && root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return dungeonTargetAllowed(target);
     function reject(reason) { if (diagnostic) diagnostic.reason = reason; return false; }
     var huntTravel = huntTravelCommand && huntTravelCommand.purpose === "monster-hunt" &&
       huntTravelCommand.combatHandoffAllowed === true && huntTravelCommand.huntTarget === (target && target.mtype);
@@ -13335,7 +13505,8 @@
   }
   function formationMembers() {
     var roster = currentPartyList(), now = Date.now() + coordinatorClockOffset;
-    return partyPositions.filter(function (member) {
+    var positions = character.cave ? roster.map(function (name) { return name === character.name ? character : get_player(name); }).filter(Boolean) : partyPositions;
+    return positions.filter(function (member) {
       return member && roster.indexOf(member.name) >= 0 && member.ctype !== "merchant";
     }).map(function (member) {
       var live = member.name === character.name ? character : get_player(member.name);
@@ -13646,7 +13817,7 @@
 
   var formationPerformance = { ticks: 0, totalMs: 0, maxMs: 0, candidates: 0, collisionChecks: 0 };
   function formationMove(target) {
-    if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
+    if(!character.cave && root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
     var context = [character.map, character.in, character.rip, joinedEvent, eventTraveling].join(":");
     if (formationState.mapContext !== context) {
       formationState.mapContext = context; formationState.approachProgress = null; formationState.recovery = null;
@@ -13670,9 +13841,9 @@
   }
   function solveFormationMove(target) {
     var mageEscort = farmingMode !== "scatter" && character.ctype === "mage" && !!leader && (leader === character.name || followLeader) && !eventTraveling;
-    if (!groupedFarming() && !mageEscort) return false;
+    if (!character.cave && !groupedFarming() && !mageEscort) return false;
     var members = formationMembers().filter(function (member) {
-      if (typeof groupedCombat !== "undefined" && groupedCombat && groupedCombat.protocol === 4 &&
+      if (!character.cave && typeof groupedCombat !== "undefined" && groupedCombat && groupedCombat.protocol === 4 &&
           groupedCombat.recovering.indexOf(member.name) >= 0) return false;
       return typeof sameEventTeamMember !== "function" || sameEventTeamMember(member);
     });
@@ -14228,7 +14399,14 @@
       return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
         !eventReturnPending && !root.__merchantActiveJob;
     },
+    dungeonOwned: dungeonOwned,
+    getDungeonTarget: getDungeonTarget,
+    caveRecoveryReserved: function () { return !!character.cave && character.ctype === 'priest' && caveRecovery().reserved(); },
+    caveRecoveryTick: function () { return character.cave && character.ctype === 'priest' ? caveRecovery().tick() : Promise.resolve(false); },
+    caveRecoveryMove: function () { return !!character.cave && character.ctype === 'priest' && caveRecovery().move(); },
     isOccupied: function () {
+      if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns())
+        return !runtimeCurrent() || !!root.__partyConsoleMaintenance || !!character.cave?.paused;
       if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
       if(outboundHuntTravel() && huntTravelExtraAggro())interruptConvoyForDefense();
@@ -14396,7 +14574,7 @@
       if (character.ctype !== "priest") return false;
       if (healingBusy) return true;
       if (character.mp < Number(G.skills.heal && G.skills.heal.mp || 0)) return false;
-      return partyPositions.some(function (member) {
+      return (character.cave ? cavePartyMembers() : partyPositions).some(function (member) {
         if (!member || !sameEventTeamMember(member) || member.rip || member.map !== character.map) return false;
         var live = member.name === character.name ? character : get_player(member.name);
         return live && !live.rip && live.max_hp > 0 && live.hp / live.max_hp < 0.9 && can_heal(live);
@@ -14412,7 +14590,7 @@
     },
     isLeader: function () { return (leader || character.name) === character.name; },
     combatContext: function () {
-      var event = activeCombatEvent();
+      var event = character.cave ? { name: "cave", types: [] } : activeCombatEvent();
       var roster = currentPartyList();
       var allies = [character].concat(roster.filter(function(name){return name !== character.name;})
         .map(function(name){return get_player(name);})).filter(function(member){
@@ -14426,16 +14604,17 @@
         var def = G.monsters[m.mtype] || {};
         return Object.assign({}, def, m);
       });
-      var eventCombat = event && (joinedEvent === event.name ||
+      var eventCombat = !!character.cave || event && (joinedEvent === event.name ||
         G.maps[character.map] && G.maps[character.map].event === event.name ||
         monsters.some(function(m){return event.types.indexOf(m.mtype) >= 0;}));
       return { leader: leader || character.name, allies: allies, monsters: monsters,
         event: eventCombat ? event.name : null,
-        mode: root.sharedRoutine.isOccupied() || isLiveAbtesting() ? "blocked" : eventCombat ? "event" : farmingMode === "scatter" ? "scatter" : "grouped",
+        mode: root.sharedRoutine.isOccupied() || isLiveAbtesting() ? "blocked" : eventCombat ? "event" : !character.cave && farmingMode === "scatter" ? "scatter" : "grouped",
         observedAt: parent.socket && parent.socket.connected ? Date.now() : 0 };
     },
     skillTargetAllowed: function(target) {
       if (!target || target.type !== "monster" || !isAllowedTarget(target) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
+      if(dungeonOwned()) return dungeonTargetAllowed(target);
       if(huntTravelDefense() && !isAttackingPartyMember(target) && !(convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return false;
       if (target.target && !isAttackingPartyMember(target)) return false;
       if (groupedAttackAllowed(target)) return true;
@@ -14627,6 +14806,7 @@
     isAggressiveEventCombat: isAggressiveEventCombat,
     getMonsterFocus: function () { return monsterFocus.slice(); },
     getFarmingMode: function () {
+      if (character.cave) return "default";
       return typeof rareActive === "function" && rareActive() ? "default" : farmingMode;
     },
     getEngagedTarget: engagedMonster,
@@ -14677,6 +14857,7 @@
       return groupedDefensiveTarget() || (target && target.visible && !target.dead && isAllowedTarget(target) ? target : null);
     },
     combatTargetRevision: function () {
+      if (dungeonOwned()) return "dungeon:" + (character.cave && character.cave.run || character.in) + ":" + combatTargetId;
       if (groupedCombat && groupedCombat.protocol === 4) return groupedCombat.selection;
       var lock = groupedFollower() ? leaderCombatSelection : combatSelection;
       return lock ? String(lock.runtimeId || convoyRuntimeId) + ":" + lock.revision : null;

@@ -531,7 +531,11 @@
       ports.report(error);
     }
     function reserveHealing() {
-      if (!sharedRoutine.basicAttackReserved?.()) return false;
+      if (!sharedRoutine.basicAttackReserved?.()) {
+        if (!sharedRoutine.caveRecoveryReserved?.()) return false;
+        ports.state().skippedAttack = "cave priest recovery";
+        return true;
+      }
       ports.state().skippedAttack = "priest healing priority";
       Promise.resolve(sharedRoutine.healPartyBelow(0.9)).catch(ports.report);
       return true;
@@ -605,7 +609,7 @@
       const deadline = clock() ?? Date.now();
       const end = clock() === null ? Date.now() + 4 : deadline + 2;
       const attemptOnce = () => {
-        if (flight !== attempt || !confirmed(attempt) || !ports.allowed() || sharedRoutine.basicAttackReserved?.() || !is_in_range(target) || !permitted(target)) {
+        if (flight !== attempt || !confirmed(attempt) || !ports.allowed() || (sharedRoutine.basicAttackReserved?.() || sharedRoutine.caveRecoveryReserved?.()) || !is_in_range(target) || !permitted(target)) {
           cancelSlots();
           return;
         }
@@ -726,7 +730,7 @@
           if (stats) stats.timeouts++;
         }
         releaseExpired(target);
-        if (flight && (!confirmed(flight) || !ports.allowed() || sharedRoutine.basicAttackReserved?.())) cancelSlots();
+        if (flight && (!confirmed(flight) || !ports.allowed() || sharedRoutine.basicAttackReserved?.() || sharedRoutine.caveRecoveryReserved?.())) cancelSlots();
         if (ports.allowed() && !flight && reserveHealing()) return;
         if (!target || !ports.allowed()) {
           ports.state().skippedAttack = "no eligible target or combat blocked";
@@ -743,6 +747,9 @@
       }
     }
     return {
+      pending() {
+        return !!flight;
+      },
       hasStarted(targetId) {
         return flight?.targetId === targetId || lastSuccessfulTarget === targetId;
       },
@@ -2220,12 +2227,13 @@
       }
     }
     return async () => {
+      if (ports.blocked?.()) return;
       observeDeath();
       if (!pendingReturn || recovering || Date.now() < retryAt) return;
       recovering = true;
       try {
         if (ports.isDead()) await spawn();
-        if (!ports.isDead()) await returnToActivity();
+        if (!ports.isDead() && !ports.blocked?.()) await returnToActivity();
       } catch (error) {
         const reason = errorReason(error);
         publish("recovery-retry", reason);
@@ -2327,7 +2335,8 @@
     });
     const recoverFromDeath = createDeathRecovery({
       isDead: () => !!character.rip,
-      respawn: () => Promise.resolve(respawn()),
+      blocked: () => !!sharedRoutine.dungeonOwned?.(),
+      respawn: () => sharedRoutine.dungeonOwned?.() ? Promise.reject(Error("Dungeon owns revival")) : Promise.resolve(respawn()),
       releaseCombat: () => {
         working = false;
       },
@@ -2344,6 +2353,7 @@
       return active && !character.rip && resolvedRole().combat && (character.ctype !== "merchant" || !!sharedRoutine.merchantEventCombatActive?.()) && !sharedRoutine.isOccupied() && ["pending", "feed"].indexOf(sharedRoutine.getAbtestingMode()) < 0;
     }
     function passingTarget() {
+      if (sharedRoutine.dungeonOwned?.()) return null;
       if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending", "feed"].includes(sharedRoutine.getAbtestingMode())) return null;
       return sharedRoutine.getPassingTarget?.() || null;
     }
@@ -2380,6 +2390,7 @@
       return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
     }
     function chooseTarget() {
+      if (sharedRoutine.dungeonOwned?.()) return sharedRoutine.getDungeonTarget?.() || null;
       if (character.ctype === "merchant") return resolvedRole().chooseTarget();
       if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget();
       const rare = sharedRoutine.getRareTarget?.();
@@ -2389,7 +2400,7 @@
     async function publishSelection(target) {
       selectedTarget = target?.id || sharedRoutine.sharedTargetId?.() || null;
       sharedRoutine.setCombatTarget(target);
-      if (!target && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
+      if (!target && !sharedRoutine.dungeonOwned?.() && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
         await sharedRoutine.followLeaderIfFar(150);
     }
     async function selectTarget() {
@@ -2401,7 +2412,7 @@
         return;
       }
       const current = currentTarget();
-      const closer = current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
+      const closer = !sharedRoutine.dungeonOwned?.() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
       if (closer) {
         root.sharedRoutine?.resetCombatMovement?.();
         await publishSelection(closer);
@@ -2409,9 +2420,9 @@
         return;
       }
       if (!invalidated && current) {
-        const rare = sharedRoutine.getRareTarget?.();
-        const nominated = sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
-        if ((!rare || rare.id === selectedTarget) && (!sharedRoutine.usesLeaderTarget?.() || nominated?.id === selectedTarget)) return;
+        const rare = sharedRoutine.dungeonOwned?.() ? null : sharedRoutine.getRareTarget?.();
+        const nominated = sharedRoutine.dungeonOwned?.() ? sharedRoutine.getDungeonTarget?.() : sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
+        if ((!rare || rare.id === selectedTarget) && (!(sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
       }
       invalidated = false;
       selecting = true;
@@ -2441,11 +2452,18 @@
       equipment2?.tick(target, actor.damage_type, Number(character.range), combatAllowed());
     }
     function movementTick() {
+      const dungeon = !!sharedRoutine.dungeonOwned?.();
+      if (dungeon && !combatAllowed()) {
+        root.sharedRoutine?.resetCombatMovement?.();
+        return;
+      }
       try {
         equipmentTick();
-        if (sharedRoutine.pollRareHunting?.()) return;
-        if (sharedRoutine.pollFarmingCombatHandoff) sharedRoutine.pollFarmingCombatHandoff();
-        if (sharedRoutine.pollFarmingSpawnRecovery) sharedRoutine.pollFarmingSpawnRecovery();
+        if (!dungeon) {
+          if (sharedRoutine.pollRareHunting?.()) return;
+          sharedRoutine.pollFarmingCombatHandoff?.();
+          sharedRoutine.pollFarmingSpawnRecovery?.();
+        }
         if (selectedTarget && !currentTarget()) {
           invalidated = true;
           void selectTarget();
@@ -2460,10 +2478,12 @@
         if (target) missingSince = 0;
         else if (!missingSince) missingSince = Date.now();
         attacks.wake();
-        if (sharedRoutine.groupedMovement?.()) return;
-        if ((target || Date.now() - missingSince >= 750) && sharedRoutine.recoverFarmApproach && sharedRoutine.recoverFarmApproach(target)) return;
+        if (!dungeon && sharedRoutine.groupedMovement?.()) return;
+        if (!dungeon && (target || Date.now() - missingSince >= 750) && sharedRoutine.recoverFarmApproach && sharedRoutine.recoverFarmApproach(target)) return;
+        if (dungeon && sharedRoutine.caveRecoveryMove?.()) return;
         if (!target) {
-          idleMovement();
+          if (dungeon) root.sharedRoutine?.resetCombatMovement?.();
+          else idleMovement();
           return;
         }
         if (sharedRoutine.formationMove && sharedRoutine.formationMove(target)) return;
@@ -2476,10 +2496,15 @@
       }
     }
     async function supportTick(role8, epoch) {
+      if (!supportAllowed(epoch)) return;
       if (!await role8.usePotion()) await sharedRoutine.regenerateHpOrMp();
       if (!supportAllowed(epoch)) return;
       if (await role8.beforeTarget()) return;
-      if (!currentEpoch(epoch)) return;
+      if (!supportAllowed(epoch)) return;
+      if (sharedRoutine.caveRecoveryReserved?.() && attacks.pending()) return;
+      if (await sharedRoutine.caveRecoveryTick?.()) return;
+      if (sharedRoutine.caveRecoveryReserved?.()) return;
+      if (!supportAllowed(epoch)) return;
       const target = currentTarget();
       if (target && (!sharedRoutine.groupedAttackAllowed || sharedRoutine.groupedAttackAllowed(target)) && (target.mtype !== "tinyp" || sharedRoutine.rareAttackAllowed?.(target, "support")))
         await role8.beforeAttack(target);

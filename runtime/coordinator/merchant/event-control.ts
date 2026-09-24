@@ -2,6 +2,7 @@ import { selectedEvents } from '../../../dashboard/lib/event-policy.ts';
 
 /** Optional fields preserve compatibility with saved state and older heartbeats. */
 export interface MerchantEventState {
+  dailyDungeons?: import("../../dungeons/contracts.ts").DungeonState;
   merchantCharacter: string | null;
   eventSelectionsByCharacter?: Record<string, string[]>;
   eventsByCharacter?: Record<string, boolean>;

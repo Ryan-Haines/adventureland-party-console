@@ -141,10 +141,14 @@
       reset();
     }
     function pause() {
-      if (issued) {
-        issued.progressAt = now();
-        issued.at = now();
-      }
+      if (!issued) return;
+      issued.progressAt = now();
+      issued.at = now();
+      if (isTransition(issued.step)) return;
+      issued = void 0;
+      barrierReady = false;
+      void Promise.resolve(host.move(host.character.real_x, host.character.real_y)).catch(() => {
+      });
     }
     function barrier(options, step, completed) {
       if (!options.barrier) return true;
