@@ -661,8 +661,10 @@ merchant checkpoint/recovery tests.
 
 ## Cave of Many Dreams
 
-`dungeons/service.ts` owns the selected leader and enabled followers from manual
-entry through confirmed exit. The merchant is excluded and more than three combat
+`dungeons/service.ts` owns the selected leader and online enabled followers from manual
+entry through confirmed exit. Initial selection uses the roster's ten-second
+presence window; entry still requires fresh three-second heartbeats. Captured
+participants remain owned through disconnects and coordinator restarts. The merchant is excluded and more than three combat
 participants are rejected. `runtime/dungeons/contracts.ts` defines the partial
 cave wire protocol; `runtime/characters/dungeons.ts` adapts official game APIs.
 `runtime/characters/dungeon-journal.ts` persists receipts before dispatch. Review

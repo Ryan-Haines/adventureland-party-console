@@ -22,6 +22,9 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Cave entry excludes offline saved followers from the initial roster while retaining
+  captured participants if they disconnect during a run.
+
 - Cave combat uses the normal class skills, healing, equipment, formation and kiting routines.
   Live party observations guide healing; cave navigation waits for combat and loot.
 

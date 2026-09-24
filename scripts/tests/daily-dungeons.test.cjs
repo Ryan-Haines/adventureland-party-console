@@ -115,6 +115,7 @@ test('normal death recovery remains paused under dungeon ownership', async () =>
 
 test('stale or excessive participants cannot spend the daily entry', () => {
   const f = fixture(); f.party.followers.Extra = true;
+  f.party.statuses.Extra = { seenAt: 100000 };
   assert.throws(() => f.action({ action: 'enter' }), /at most two/);
   delete f.party.followers.Extra; f.advance(4000);
   assert.throws(() => f.action({ action: 'enter' }), /fresh/);
@@ -200,4 +201,39 @@ test('cave route pauses immediately for local combat and resumes only with fresh
   raw.paused=true;assert.equal(runtime.canMove(),false);
   raw.paused=false;now+=3001;assert.equal(runtime.canMove(),false,'stale control must hold route');
   runtime.receive({owned:true,movementReady:true});assert.equal(runtime.canMove(),true);
+});
+
+
+test('entry ignores missing and offline saved followers but includes online followers', () => {
+  const f = fixture();
+  f.party.followers.Missing = true;
+  f.party.followers.Offline = true;
+  f.party.statuses.Offline = { seenAt: 90000 };
+  assert.deepEqual(f.service.snapshot().members.map(m => m.name), ['W', 'P', 'M']);
+  f.action({ action: 'enter' });
+  assert.deepEqual(f.party.dailyDungeons.participants, ['W', 'P', 'M']);
+  assert.deepEqual(Object.keys(f.party.dailyDungeons.commands), ['W', 'P', 'M']);
+});
+
+test('an online follower with a delayed heartbeat blocks entry instead of being omitted', () => {
+  const f = fixture();
+  f.party.statuses.P.seenAt = 96000;
+  assert.deepEqual(f.service.snapshot().members.map(m => m.name), ['W', 'P', 'M']);
+  assert.throws(() => f.action({ action: 'enter' }), /P: fresh/);
+});
+
+test('offline leader is retained and blocks entry', () => {
+  const f = fixture();
+  f.party.statuses.W.seenAt = 0;
+  assert.deepEqual(f.service.snapshot().members.map(m => m.name), ['W', 'P', 'M']);
+  assert.throws(() => f.action({ action: 'enter' }), /fresh/);
+});
+
+test('captured dungeon participants survive disconnect and coordinator restart', () => {
+  const f = fixture(); f.active();
+  f.party.statuses.P.seenAt = 0;
+  f.party.followers.P = false;
+  const next = createDungeons(structuredClone(f.party), { now: () => 100000, persist() {}, cancel() {} });
+  assert.deepEqual(next.snapshot().members.map(m => m.name), ['W', 'P', 'M']);
+  assert.equal(next.control('P').owned, true);
 });

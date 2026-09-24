@@ -37,7 +37,11 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     };
   }
   function candidates() {
-    return [party.leader, ...Object.keys(party.followers || {}).filter((n) => party.followers?.[n])]
+    // Match roster presence; shorter heartbeat gaps still fail entry freshness validation.
+    const followers = Object.keys(party.followers || {}).filter(
+      (n) => party.followers?.[n] && (party.statuses[n]?.seenAt ?? NaN) > ports.now() - 10000,
+    );
+    return [party.leader, ...followers]
       .filter((n): n is string => !!n && n !== party.merchantCharacter)
       .filter((n, i, all) => all.indexOf(n) === i);
   }
