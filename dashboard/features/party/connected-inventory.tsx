@@ -1,7 +1,6 @@
 'use client';
 import { UpgradeOfferingProvider } from './upgrade-offering-controls';
 import { SharedRuleConflicts } from './shared-rule-conflicts';
-import { MerchantPendingImprovements } from './merchant-pending-improvements';
 import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
 import { InventoryPanel } from './inventory-panel';
 import { aggregateSlotTracking } from '../../../runtime/lucky-slot-tracking';
@@ -170,7 +169,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       onTravel={() => sendCharacter(char.name)}
     />
     <LuckySlotDialog character={name} tracking={luckyTracking} verified={state.luckyUpgradeSlots?.[name]} open={luckySlotOpen} onOpenChange={setLuckySlotOpen} />
-    {char.name === state.merchantCharacter && <><MerchantPendingImprovements state={state} /><SharedRuleConflicts state={state} onResolve={(id, owner) => model.post("/merchant/rule-conflict", {id,owner})} /></>}
+    {char.name === state.merchantCharacter && <SharedRuleConflicts state={state} onResolve={(id, owner) => model.post("/merchant/rule-conflict", {id,owner})} />}
     <DeconstructionConfirmation selection={deconstructionSelection} catalog={state.deconstructionCatalog || {}}
       items={state.merchantCatalog?.allItems || []} onClose={() => setDeconstructionSelection(null)}
       onConfirm={async ({ entry, auto }) => {

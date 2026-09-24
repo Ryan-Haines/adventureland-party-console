@@ -8,7 +8,7 @@ const {create,act}=require('../../../dashboard/node_modules/react-test-renderer'
 const leaves=['character-session-controls','event-selection-control','monster-details-dialog','farming-mode-control',
  'gold-target-control','merchant-card-controls','meter','monster-focus-picker','restock-controls','character-stats-trigger',
  'xp-meter','monster-route-button','connected-combat-log','upgrade-offering-controls','shared-rule-conflicts',
- 'merchant-pending-improvements','inventory-panel','lucky-slot-tracker','deconstruction-confirmation','map-canvas','sprite-crop'];
+ 'inventory-panel','lucky-slot-tracker','deconstruction-confirmation','map-canvas','sprite-crop'];
 async function replay({ref,steps=20}={}){
  const root=path.resolve('dashboard/features/party'),filename=path.join(root,'replay.cjs');
  const counts={card:0,inventory:0,map:0,status:0},props={},sources=new Map();
