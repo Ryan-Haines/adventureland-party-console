@@ -112,3 +112,16 @@ test('restart preserves the original failed event-walk diagnosis',()=>{
  assert.equal(state.activeConvoy.failure,'Convoy runtime-lost');assert.equal(state.activeConvoy.failedAt,123);
  assert.equal(state.activeConvoy.restartRevisions.A,2);
 });
+
+test('released failed event convoy no longer owns combat, including after restart', () => {
+ const {travelCombatFor}=require('../../runtime/coordinator/navigation/travel-defense.ts');
+ const state={activeConvoy:{id:'failed',phase:'failed',purpose:'shared-walk',participants:['QwenTina']},
+  commands:{QwenTina:{type:'party-monster-travel',phase:'event-walk-release',convoyId:'failed',navigationRevision:7}},
+  navigationIntents:{QwenTina:{revision:7}},statuses:{QwenTina:{joinedEvent:'franky'}}};
+ assert.equal(travelCombatFor(state,'QwenTina'),null);
+ assert.equal(travelCombatFor(JSON.parse(JSON.stringify(state)),'QwenTina'),null);
+ for(const change of [{phase:'hold'},{convoyId:'other'},{navigationRevision:6}]) {
+  const newer=JSON.parse(JSON.stringify(state));Object.assign(newer.commands.QwenTina,change);
+  assert.equal(travelCombatFor(newer,'QwenTina').id,'failed');
+ }
+});

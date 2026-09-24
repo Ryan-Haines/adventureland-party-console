@@ -343,6 +343,30 @@ test('blocked kite fallback cannot approach through another attacker or a wall',
   assert.match(c.partyCombatPosition.reason, /attacker clearance/);
 });
 
+test('event add avoidance closes boss range first and cannot kite away from the boss', async () => {
+  const {c,target,moves}=geometry(207);
+  c.eventTargetTypes=['franky'];target.mtype='franky';target.target='Ally';
+  c.character.x=350;c.is_in_range=()=>Math.hypot(c.character.x-target.x,c.character.y-target.y)<=207;
+  c.parent.entities.add={id:'add',type:'monster',visible:true,x:350,y:0,target:'Us'};
+  assert.equal(await c.kiteIfNeeded(target),true);
+  assert.ok(moves.at(-1).x<350);assert.equal(c.partyCombatPosition.target,target.id);
+  c.character.x=190;c.parent.entities.add.x=180;
+  assert.equal(await c.kiteIfNeeded(target),true);
+  assert.ok(Math.hypot(moves.at(-1).x,moves.at(-1).y)<=c.desiredCombatRange());
+});
+
+test('event corner search finds another safe direction while remaining in boss range', async () => {
+  const {c,target,moves}=geometry(207);
+  c.eventTargetTypes=['franky'];target.mtype='franky';target.target='Ally';
+  c.character.x=190;
+  c.parent.entities.add={id:'add',type:'monster',visible:true,x:180,y:0,target:'Us'};
+  c.can_move_to=(x,y)=>x<190 && y>10;
+  assert.equal(await c.kiteIfNeeded(target),true);
+  assert.ok(moves.at(-1).y>10);assert.ok(Math.hypot(moves.at(-1).x,moves.at(-1).y)<=c.desiredCombatRange());
+  c.can_move_to=()=>false;const count=moves.length;
+  assert.equal(await c.kiteIfNeeded(target),false);assert.equal(moves.length,count);
+});
+
 test('Dash cannot overshoot the weapon range boundary', async () => {
   const { c, target } = geometry(25); let casts = 0;
   Object.assign(c, { G: { skills: { dash: { mp: 10 } } }, is_on_cooldown: () => false,

@@ -8475,6 +8475,9 @@
         if (typeof stop === "function") try { await stop("smart"); } catch (_) {}
       }
       root.__partyEventWalkFailure = { at: Date.now(), reason: command.reason, convoyId: command.convoyId };
+      var travelControl = root.__partyTravelCombat;
+      if (travelControl && travelControl.id === command.convoyId && travelControl.revision === Number(command.navigationRevision))
+        root.__partyTravelCombat = null;
       if (root.partyRoleRunner) root.partyRoleRunner.wake();
       return;
     }
@@ -14229,12 +14232,40 @@
       return after >= Math.min(before, Number(enemy.range) || 30) - 1;
     });
   }
+  function eventBossMovement(target) {
+    return !!(target && typeof eventTargetTypes !== "undefined" && eventTargetTypes.indexOf(target.mtype) >= 0);
+  }
+  function eventKitePoint(point, target) {
+    if (!eventBossMovement(target)) return true;
+    var radius = Math.hypot(character.x - target.x, character.y - target.y);
+    var limit = radius + Math.max(0, desiredCombatRange() - combatDistance(target));
+    return Math.hypot(point.x - target.x, point.y - target.y) <= limit;
+  }
+  function eventCornerStep(target, attacker, step) {
+    if (!eventBossMovement(target)) return false;
+    var best = null, clearance = -Infinity;
+    var attackers = Object.values(parent.entities || {}).filter(function (e) {
+      return e && e.type === "monster" && e.visible && !e.dead && e.target === character.name &&
+        (!e.map || e.map === character.map) && (e.in == null || e.in === character.in);
+    });
+    // The two ordinary kite arcs can both point into a corner. Search every
+    // direction, but retain collision, attacker-clearance and boss-range checks.
+    for (var i = 0; i < 16; i++) {
+      var angle = i * Math.PI / 8;
+      var point = { x: character.x + Math.cos(angle) * step, y: character.y + Math.sin(angle) * step };
+      if (!eventKitePoint(point, target) || !safeCombatPoint(point, attacker)) continue;
+      var gap = Math.min.apply(Math, attackers.map(function (e) { return Math.hypot(point.x - e.x, point.y - e.y); }));
+      if (gap > clearance) { best = point; clearance = gap; }
+    }
+    return best ? sendCombatMove(target, best, "event-kiting") : false;
+  }
   async function kiteIfNeeded(target) {
     var attacker = target && target.target === character.name ? target : Object.keys(parent.entities || {})
       .map(function (id) { return parent.entities[id]; }).filter(function (enemy) {
         return enemy && enemy.type === "monster" && enemy.visible && !enemy.dead && enemy.target === character.name;
       }).sort(function (a, b) { return combatDistance(a) - combatDistance(b); })[0];
     if (!attacker || attacker.dead) { kiteState.targetId = null; return false; }
+    if (eventBossMovement(target) && !is_in_range(target) && await approachCombatTarget(target)) return true;
     if (kiteState.targetId !== attacker.id) { kiteState.targetId = attacker.id; kiteState.direction = 1; }
     var dx = character.x - attacker.x, dy = character.y - attacker.y;
     var radius = Math.hypot(dx, dy), angle = Math.atan2(dy, dx);
@@ -14247,12 +14278,13 @@
     for (var i = 0; i < signs.length; i++) {
       var nextAngle = angle + turn * signs[i];
       var point = { x: attacker.x + nextRadius * Math.cos(nextAngle), y: attacker.y + nextRadius * Math.sin(nextAngle) };
-      if (safeCombatPoint(point, attacker)) {
+      if (eventKitePoint(point, target) && safeCombatPoint(point, attacker)) {
         kiteState.direction = signs[i]; return sendCombatMove(attacker, point, "kiting");
       }
     }
     var outward = { x: character.x + Math.cos(angle) * step, y: character.y + Math.sin(angle) * step };
-    if (safeCombatPoint(outward, attacker)) return sendCombatMove(attacker, outward, "escaping");
+    if (eventKitePoint(outward, target) && safeCombatPoint(outward, attacker)) return sendCombatMove(attacker, outward, "escaping");
+    if (eventCornerStep(target, attacker, step)) return true;
     root.partyCombatPosition = { at: Date.now(), target: attacker.id, distance: combatDistance(attacker),
       desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat",
       blockingAttacker: attacker.id, reason: "No safe kite step; trying combat approach" };

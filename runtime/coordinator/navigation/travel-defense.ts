@@ -89,7 +89,7 @@ function huntNeedsDefense(party: DefenseState, names: string[], attackers: Curre
 export interface TravelState {
   statuses?: Record<string, Observation | undefined>;
   activeConvoy?: { id?: string; epoch?: number; participants: string[]; purpose?: string | null; force?: boolean; phase?: string; farmingEngagement?: unknown } | null;
-  commands?: Record<string, { id?: number; type?: string; navigationRevision?: number } | undefined>;
+  commands?: Record<string, { id?: number; type?: string; phase?: string; convoyId?: string; navigationRevision?: number } | undefined>;
   navigationIntents?: Record<string, { revision?: number; cancelled?: boolean } | undefined>;
   monsterHunt?: { cycleId?: string; stage?: string; currentIndex?: number; startedAt?: number; participants: string[]; exitMode?: string | null } | null;
   farmingPolicy?: string;
@@ -132,8 +132,17 @@ function commandOperation(state: TravelState, name: string): { id: string; at: n
   if (!command || !["travel", "character-travel", "event-resume-travel", "return-leader"].includes(command.type || "")) return null;
   return { id: "command:" + command.id, at: command.id || 0 };
 }
+function releasedEventWalk(state: TravelState, name: string): boolean {
+  const c = state.activeConvoy;
+  const command = state.commands?.[name];
+  // A terminal event-entry walk explicitly returns movement to event combat.
+  // Retaining its diagnostic convoy must not keep the character combat-paused.
+  return c?.phase === "failed" && command?.phase === "event-walk-release" && command.convoyId === c.id &&
+      command.navigationRevision === (state.navigationIntents?.[name]?.revision || 0);
+}
 function operation(state: TravelState, name: string): { id: string; at: number } | null {
   const c = state.activeConvoy;
+  if (releasedEventWalk(state, name)) return null;
   if (c?.participants?.includes(name)) return !c.force && normalTravel(c.purpose)
     ? convoyOperation(c) : null;
   return nonConvoyOperation(state, name);
