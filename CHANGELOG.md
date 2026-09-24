@@ -7,6 +7,14 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Joinable events such as Franky use direct teleportation for entry and respawn
+  recovery, without waiting for a convoy. Arrival is verified before clearing
+  recovery, and failed event walks no longer leave characters unable to attack.
+- Event combat closes into boss range before kiting. Avoiding adds no longer
+  pulls characters away from the boss; blocked kiting tries safe approach and
+  escape directions instead of leaving characters stuck in corners.
+  ([#21](https://github.com/Ryan-Haines/adventureland-party-console/pull/21))
+
 - Hunt event exits resume the current quest instead of an obsolete farming
   checkpoint. Dedicated event-map evacuation survives restarts, delayed clients,
   and Hunt toggles; completed anniversary visits hand back to current Hunt policy.
