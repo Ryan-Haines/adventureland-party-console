@@ -65,6 +65,25 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
+Rare support retains the current interruptible convoy and commits its encounter
+before acquisition returns. Fairy basic attacks accept the fresh owned travel
+selection even if support control has been released. Unproductive optional
+pursuits expire after thirty seconds without approach/combat progress or five
+minutes overall; their progress and rejection evidence survive restart. Mere
+monster/leader displacement cannot reopen a rejection. Fresh usable attack range
+or combat evidence can. Actual current attackers retain defensive priority.
+
+A travel encounter can route a separated member onto the encounter map under the
+same convoy, epoch, command, and navigation revision. Catch-up uses the managed
+planner and cancels on hold, supersession, target retirement, or observed arrival;
+unsupported instance entry and failed routes report explicit blockers. Protected
+anniversary return does not acquire optional stops, and finished visits hand back
+to current Hunt policy after combat/loot and fresh ownership checks.
+
+Validate `encounter-recovery`, rare hunting/client/retry tests, Hunt travel,
+communication, shared convoy, event returns, combat queues, and markers. Publish
+character and coordinator assets together using the full restart below.
+
 Event evacuation hands directly to current Hunt policy after fresh Main town
 observations, without requiring the historical farming checkpoint. Normal farming
 still resumes its authorized checkpoint. Hunt off/on during evacuation changes the

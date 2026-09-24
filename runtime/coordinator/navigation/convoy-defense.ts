@@ -124,7 +124,7 @@ function localDefense(p: Party, c: Convoy): boolean {
 interface DefenseReport {
   seenAt?: number;
   convoyNavigation?: {id:string;epoch:number;commandId:number;runtimeId:string;navigationRevision:number;phase:string;
-    defenseTargets?:PassingEncounter[];defenseInterruption?:{source:string}};
+    encounterCatchup?:{from:string;map:string;failed?:string|null};defenseTargets?:PassingEncounter[];defenseInterruption?:{source:string}};
   combatSelection?: {runtimeId:string};
 }
 function stoppedReports(p: Party, c: Convoy): (DefenseReport & {name:string})[] {
@@ -168,6 +168,16 @@ function rememberDefenseTargets(p:Party,c:Convoy,attackers:PassingEncounter[]):v
   if(attackers.length)c.defenseTargets=[...new Map([...(c.defenseTargets||[]),...attackers].map(t=>[passingIdentity(t),t])).values()];
   else c.defenseTargets=stoppedCauses(c,stoppedReports(p,c))||undefined;
 }
+function defenseDetail(p:Party,c:Convoy,now:number,message:string):string {
+  const catchup=catchupMessage(p,c,now);
+  return message+(catchup ? '; '+catchup : '');
+}
+function catchupMessage(p: Party, c: Convoy, now: number): string {
+  return stoppedReports(p,c).filter(s=>reportOwned(p,c,s,now)).flatMap(s=> {
+    const r=s.convoyNavigation?.encounterCatchup;
+    return r ? [s.name+': '+(r.failed || 'joining encounter from '+r.from+' to '+r.map)] : [];
+  }).join('; ');
+}
 function defenseParticipants(c: Convoy): string[] {
   return outboundHunt(c) ? c.participants : c.participants.filter(name=>!c.completed.includes(name));
 }
@@ -183,7 +193,7 @@ function advanceDefense<S, C>(input: S, now: number, commandFor: (state: S, conv
   if ([observationResumed,decision.state === "clear"].every(Boolean)) return true;
   if (needsDefense(p,c,decision.state)) {
     rememberDefenseTargets(p,c,decision.attackers.map(t=>({...t,at:now})));
-    if (!defend(c, now, decision.message)) return true;
+    if (!defend(c, now, defenseDetail(p,c,now,decision.message))) return true;
   } else {
     if (c.phase !== "defending") { c.defenseReason = null; return false; }
     if (!finishDefense(p, c, now)) return true;

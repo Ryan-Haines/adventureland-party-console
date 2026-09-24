@@ -19,6 +19,7 @@ export interface Sight extends Point {
   reporter: string;
   visible?: boolean;
   partyEngaged?: boolean;
+  reachable?: boolean;
 }
 export interface Encounter extends Owner {
   convoyId?: string;
@@ -28,6 +29,7 @@ export interface Encounter extends Owner {
   lastSeen: number;
   lowHp: number;
   progress: number;
+  approachSamples?: Record<string, {x:number;y:number;deficit:number;waypoint?:{key:string;remaining:number}}>;
   stage: string;
   generator: string;
   message: string;
@@ -84,6 +86,8 @@ export interface Status extends Point {
   items?: ({ name: string } | null)[];
   target?: { mtype: string } | null;
   rareSightings?: Sight[];
+  groupedCombat?: {approach?: import('../../combat/pursuit.ts').ApproachReport;currentAttackersAt?:number;currentAttackers?:import('./travel-defense.ts').CurrentAttacker[]};
+  range?: number;
   combatSelection?: {runtimeId?: string};
   rareObservation?: {at: number; runtimeId: string; map: string; in: string; server: string; x: number; y: number; sightings: Sight[]};
   rareKills?: (Point & { id: string; mtype: string; at: number; partyEngaged?: boolean })[];
@@ -114,7 +118,9 @@ export interface Party {
   monsterPrioritiesByCharacter?: Record<string, Record<string, number>>;
   farmingPolicy: string;
   commands: Record<string, { type?: string; purpose?: string }>;
-  activeConvoy?: { id?: string; huntTravel?: {reason?: string}; purpose?: string; phase: string; failureCode?: string } | null;
+  activeConvoy?: import('../../combat/hunt-travel.ts').HuntTravelConvoy & {phase:string;purpose?:string;failureCode?:string;communicationHold?:unknown} | null;
+  rarePursuitProgress?: Record<string, {start:number;progress:number;lowHp:number}>;
+  rareRetryEvidence?: Record<string, import('./rare-retry-evidence.ts').Failed>;
   combatRecovery?: { phase: string };
   eventReturn?: unknown;
   anniversary?: {eventCycle?: {returnCompletedAt?: number; supersededAt?: number; combatHandoffAt?: number} | null};
@@ -133,6 +139,7 @@ export interface Hooks {
   members(): string[];
   intent(name: string): { revision: number; cancelled?: boolean };
   turnIn(): boolean;
+  reconcileHuntArrival?(): void;
   persist(): void;
   cancelConvoy(): void;
   convoy(location: Point, label: string, names: string[], purpose: string): unknown;
@@ -147,6 +154,8 @@ export interface Combat {
   killed(s: Sight): boolean;
   claimed(s: Sight): boolean;
   release(s: Sight, until: number, rejectedAt?: number): void;
+  allow(s: Sight): void;
+  rejected(s: Sight): boolean;
   current(): Sight | null;
 }
 export interface FarmingReturn {

@@ -1593,6 +1593,7 @@ export function startCoordinatorApplication(
       restartFailedHunt,
     });
     const rareControl = rareHunting.createRareHunting(party, {...recoveryHooks.rare,
+      reconcileHuntArrival: () => huntTick.reconcileArrival(),
       routeDistance: createRareRouteDistance(request=>movementPlanner.plan(request),
         ()=>({version, fingerprint:movementFingerprints.get(version) || ''})),
     });

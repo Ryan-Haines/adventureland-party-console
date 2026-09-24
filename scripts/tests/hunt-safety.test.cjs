@@ -214,7 +214,7 @@ test('resume preserves cycle and deaths without filling followers after leader r
  t.r.beginMonsterHuntCycle('auto',t.farm,true);
  assert.equal(t.party.monsterHunt.cycleId,cycle);assert.equal(t.hunt.deathCount,1);
  assert.equal(t.hunt.stage,'mission-travel');assert.ok(!t.hunt.participants.includes('P'));
- t.advance(100);t.r.monsterHuntTick();assert.equal(t.hunt.stage,'mission-travel');
+ t.advance(100);t.r.monsterHuntTick();assert.equal(t.hunt.stage,'farming','fresh verified arrival advances before another optional interruption');
  assert.equal(t.hunt.pickupPending,false);assert.equal(t.hunt.owner,'W');
 });
 

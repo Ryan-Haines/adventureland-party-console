@@ -7,6 +7,20 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Hunt event exits resume the current quest instead of an obsolete farming
+  checkpoint. Dedicated event-map evacuation survives restarts, delayed clients,
+  and Hunt toggles; completed anniversary visits hand back to current Hunt policy.
+- Hunt communication holds retain matching runtime and command acknowledgements
+  through defensive combat. Recovery reconciles dead and released encounters,
+  checks loot, and regroups toward the original destination.
+- Rare travel interruptions share convoy ownership. Fairy targeting no longer
+  depends on a detached support controller, and unsuccessful pursuits retain
+  their progress/retry evidence across restarts instead of reopening on wandering.
+- Members separated by a map transition can join a travel encounter under its
+  existing owner. Hunt reconciles verified arrival before optional acquisition,
+  and reports the encounter or specific catch-up blocker instead of stale status.
+  ([#21](https://github.com/Ryan-Haines/adventureland-party-console/pull/21))
+
 - Invisible rogue recipients reveal themselves for merchant servicing, then resume
   their normal invisibility behavior. ([#10](https://github.com/Ryan-Haines/adventureland-party-console/pull/10))
 

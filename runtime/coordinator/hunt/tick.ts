@@ -66,7 +66,6 @@ export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
     travel.step(hunt);
   }
   function tick(): void {
-    if (ports.rareEncounter()) return;
     if (!enabled()) return;
     const hunt = state.monsterHunt;
     if (!hunt) {
@@ -79,8 +78,15 @@ export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
       recovery.failedReturn(hunt);
       return;
     }
+    travel.reconcileArrival(hunt);
+    if (rarePaused(hunt)) return;
     if (observeHuntExpiry(state, hunt, ports.now())) ports.persist();
     advance(hunt);
+  }
+  function rarePaused(hunt:HuntCycle):boolean {
+    if(!ports.rareEncounter())return false;
+    hunt.message=state.activeConvoy?.defenseReason || state.rareHuntState?.encounter?.message || 'Travel encounter in progress';
+    return true;
   }
   function communicationPaused(hunt: HuntCycle): boolean {
     if (!state.activeConvoy?.communicationHold || state.activeConvoy.id !== hunt.convoyId) return false;
@@ -91,5 +97,8 @@ export function createHuntTick(state: HuntTickState, ports: HuntTickPorts) {
   function enabled(): boolean {
     return state.farmingPolicy === 'hunt' || !!state.monsterHunt?.exitMode;
   }
-  return { tick };
+  function reconcileArrival():void {
+    if(enabled() && state.monsterHunt && !state.activeConvoy?.communicationHold)travel.reconcileArrival(state.monsterHunt);
+  }
+  return { tick, reconcileArrival };
 }

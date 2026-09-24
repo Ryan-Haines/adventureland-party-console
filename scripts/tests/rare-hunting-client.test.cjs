@@ -112,3 +112,14 @@ test('grouped Fairy deployer recovers locally when out of range and consumes gen
  assert.equal(r.c.pollRareHunting(),false);assert.equal(r.moves(),0);
  r.entity.x=100;r.c.pollRareHunting();assert.equal(r.equips(),1);
 });
+
+test('owned committed Fairy permits basic attacks without a separate rare controller',()=>{
+ const r=fixture(),c=r.c,t={...r.entity,in:'main',server:'USII'};
+ c.rareControlState=null;c.convoyTraveling={phase:'defending',navigationRevision:1};c.groupedFresh=()=>true;c.groupedCombat={target:t};c.reunionRealm=()=> 'USII';
+ c.passingKey=e=>JSON.stringify([e.server,e.map,e.in,e.id]);
+ const control={defending:true,committed:[t]};c.huntTravelControl=()=>control;
+ assert.equal(c.rareTarget(),r.entity);assert.equal(c.rareAttackAllowed(r.entity,'attack'),true);
+ assert.equal(c.rareAttackAllowed(r.entity,'burst'),false);
+ control.committed=[];assert.equal(c.rareTarget(),null);
+ control.committed=[t];c.groupedFresh=()=>false;assert.equal(c.rareTarget(),null);
+});

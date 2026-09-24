@@ -178,6 +178,7 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     const convoy=state.activeConvoy;
     if (convoy?.geometryRepair?.phase === 'waiting') return 'Repairing shared-route geometry; waiting for one runtime reload';
     if (convoy?.phase === 'failed') return 'Travel held: ' + convoy.failure;
+    if (convoy?.defenseReason) return convoy.defenseReason;
     return eventReturnMessage();
   }
   function eventReturnMessage(): string {

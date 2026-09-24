@@ -68,7 +68,7 @@ export function classifyTravelDefense(party: DefenseState, names: string[], now 
 }
 
 function defenseMessage(party: DefenseState, attackers: CurrentAttacker[]): string {
-  if(!attackers.length)return 'Finishing committed travel encounter: '+(party.activeConvoy?.huntTravel?.committed||[]).map(t=>t.mtype+' '+t.id).join(', ');
+  if(!attackers.length)return 'Travel encounter: pursuing '+(party.activeConvoy?.huntTravel?.committed||[]).map(t=>(t.mtype==='tinyp'?'Fairy':t.mtype)+' '+t.id).join(', ');
   return 'Defending '+[...new Set(attackers.map(t=>t.target))].join(', ')+' from '+attackers.map(t=>(t.mtype||'monster')+' '+t.id).join(', ');
 }
 

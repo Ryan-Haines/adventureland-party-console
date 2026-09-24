@@ -6,7 +6,7 @@ import {recoverLostTargets, type SearchState} from './lost-target.ts';
 export interface HuntTravelConvoy {
   id?: string; epoch?: number; purpose?: string | null; huntTarget?: string;
   force?: boolean; navigationExempt?: boolean; nonPreemptible?: boolean; continuousReturn?: number; phase?: string; observationPhase?: string;
-  huntTravel?: {primary: Fight | null; searches: Record<string, SearchState>; retired?: string[]; released?: Record<string, number>; committed?: Fight[]; reason?: "passive-setting" | "extra-aggro"};
+  huntTravel?: {primary: Fight | null; searches: Record<string, SearchState>; retired?: string[]; rejected?: string[]; released?: Record<string, number>; committed?: Fight[]; reason?: "passive-setting" | "extra-aggro"};
 }
 export interface HuntTravelControl {
   id?: string; epoch?: number; primary: Fight | null; defending: boolean; committed?: Fight[]; reason?: "passive-setting" | "extra-aggro";
@@ -60,9 +60,9 @@ export function freshAttackerObservations(members: Member[], now: number): boole
   return members.length > 0 && observations(members,now).length === members.length &&
     members.every(m=>sampled(m,now) && Array.isArray(m.status?.groupedCombat?.currentAttackers));
 }
-function liveAfterRelease(t: Pick<Fight,'id'|'server'|'map'|'in'>, state: TravelState, members: Member[]): boolean {
+function liveAfterRelease(t: Pick<Fight,'id'|'server'|'map'|'in'>, state: TravelState, members: Member[], attacker = false): boolean {
   const key=passingIdentity(t), after=state.released?.[key];
-  if(state.retired?.includes(key))return false;
+  if(state.retired?.includes(key) || !attacker && state.rejected?.includes(key))return false;
   if(after===undefined)return true;
   return members.some(m=> {
     const g=m.status?.groupedCombat;
@@ -113,7 +113,7 @@ function passingProposal(state: TravelState, members: Member[], now: number, sco
   return first ? {...first,server:first.server,fighter:members[0]?.name||'',startedAt:first.startedAt||now,state:'engaged'} : null;
 }
 function selectPrimary(c: HuntTravelConvoy, state: TravelState, members: Member[], now: number, scope?: string): void {
-  const attacker=huntAttackers(members,now).find(t=>liveAfterRelease(t,state,members));
+  const attacker=huntAttackers(members,now).find(t=>liveAfterRelease(t,state,members,true));
   if(huntDefense(c) && attacker){state.primary=attacker;return;}
   state.primary ||= attacker || state.committed?.[0] || null;
   if(!state.primary && !huntDefense(c))state.primary=passingProposal(state,members,now,scope);
@@ -124,9 +124,17 @@ export function updateHuntTravel(c: HuntTravelConvoy, members: Member[], now: nu
   const state=c.huntTravel ||= {primary:null,searches:{}};
   reconcileEncounters(state,members,now,huntDefense(c) || c.phase==='communication-hold');
   const fresh=observations(members,now);
-  const stops=stopCandidates(members,settings,now).filter(t=>liveAfterRelease(t,state,fresh));
-  commitStop(state,stops,settings);
+  reconcileStops(c,state,members,fresh,settings,now);
   if(!outboundHunt(c) && !state.primary && !state.committed?.length)return undefined;
   selectPrimary(c,state,fresh,now,scope);
   return {id:c.id,epoch:c.epoch,primary:state.primary,defending:huntDefense(c),committed:state.committed,reason:state.reason};
+}
+
+function reconcileStops(c:HuntTravelConvoy,state:TravelState,members:Member[],fresh:Member[],settings:PassiveTravelSettings|undefined,now:number):void {
+  if(c.purpose==='anniversary-return') {
+    state.committed=[];state.primary=huntAttackers(members,now)[0]||null;delete state.reason;
+    return;
+  }
+  const stops=stopCandidates(members,settings,now).filter(t=>liveAfterRelease(t,state,fresh));
+  commitStop(state,stops,settings);
 }

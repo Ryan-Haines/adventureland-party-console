@@ -113,6 +113,7 @@ export interface LootProgress {
   error?: string;
 }
 interface HuntConvoyState {
+  defenseReason?: string | null;
   communicationHold?: import('../navigation/convoy.ts').PartyConvoy['communicationHold'];
   failureDetails?: unknown;
   communicationLegacyRecovered?: boolean;
@@ -166,6 +167,7 @@ export interface HuntCommand {
   returnRouting?: unknown;
 }
 export interface HuntTickState extends HuntFailureState {
+  rareHuntState?: {encounter?: {message?:string} | null} | null;
   monsterChoices?: import("../../../dashboard/lib/farming-zones.ts").Catalog | null;
   groupedCombat?: { deaths?: Death[] } | null;
   huntEventTrips?: import("../events/hunt-trip.ts").HuntEventTrips["huntEventTrips"];

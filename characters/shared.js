@@ -2239,6 +2239,7 @@
         navigationRevision: convoyTraveling.navigationRevision,
         returnPlan: convoyTraveling.returnPlan || null,
         commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
+        encounterCatchup: convoyTraveling.encounterCatchup ? {target:convoyTraveling.encounterCatchup.target,from:convoyTraveling.encounterCatchup.from,map:convoyTraveling.encounterCatchup.map,failed:convoyTraveling.encounterCatchup.failed||null} : null,
         defenseTargets: convoyTraveling.defenseTargets || [],
         defenseInterruption: convoyTraveling.defenseInterruption || null,
         townAttempt: convoyTraveling.townAttempt || null,
@@ -2678,6 +2679,7 @@
       rareKnown[String(e.id)] = e.mtype;
       result.push({ id: String(e.id), mtype: e.mtype, x: e.real_x !== undefined ? e.real_x : e.x,
         y: e.real_y !== undefined ? e.real_y : e.y, hp: e.hp, target: e.target || null, visible: true,
+        reachable: typeof can_attack==='function' && can_attack(e),
         partyEngaged: typeof root !== 'undefined' && !!(root.partyLootClient && root.partyLootClient.rare.engaged({id:String(e.id),realm:':'+String(parent.server_region||'')+String(parent.server_identifier||''),map:character.map,in:String(character.in||character.map)})) });
     });
     return result.sort(function(a,b){return monsterPriority(b)-monsterPriority(a);}).slice(0,64);
@@ -2722,8 +2724,18 @@
           groupedCombat.target.id === rareControlState.target.id)) return false;
     return rareControlCurrent();
   }
+  function ownedRareTarget() {
+    if(typeof groupedFresh!=="function" || !groupedFresh() || navigationIntent.cancelled || character.rip || joinedEvent || eventTraveling || escapeOwns())return null;
+    var t=groupedCombat && groupedCombat.target, control=typeof huntTravelControl==='function' && huntTravelControl();
+    var c=typeof convoyTraveling!=='undefined' && convoyTraveling;
+    if(!c || c.phase!=='defending' || c.holdRequested || c.communication || Number(c.navigationRevision)!==Number(navigationIntent.revision))return null;
+    if(!t || !control || !control.defending || !(control.committed||[]).some(function(e){return passingKey(e)===passingKey(t);}))return null;
+    if(t.map!==character.map || String(t.in)!==String(character.in||character.map) || t.server!==reunionRealm())return null;
+    var e=get_entity(t.id);
+    return e && e.visible && !e.dead && e.hp>0 && !isExternallyClaimedMonster(e) ? e : null;
+  }
   function rareTarget() {
-    if (!rareActive() || rareControlState.kind !== "encounter") return null;
+    if (!rareActive() || rareControlState.kind !== "encounter") return ownedRareTarget();
     var wanted = rareControlState.target;
     if (wanted.map !== character.map || String(wanted.in) !== String(character.in || character.map)) return null;
     var e = get_entity(wanted.id);
@@ -2734,8 +2746,8 @@
     if (target.mtype === "fieldgen0") return false;
     if (target.mtype !== "tinyp") return true;
     if (isPassingEncounter(target) || skill === "attack" && passingTarget() === target) return skill === "attack";
-    if (!rareActive() || !rareTarget() || rareTarget().id !== target.id || skill !== "attack") return false;
-    return !rareControlState.deployer;
+    if (!rareTarget() || rareTarget().id !== target.id || skill !== "attack") return false;
+    return !rareActive() || !rareControlState.deployer;
   }
   function cancelRarePath() {
     if (!rarePath) return;
@@ -11667,7 +11679,7 @@
       c.defensePaused=true;c.phase='defending';c.routeReady=false;
       try {Promise.resolve(stop()).catch(function(){});}catch(_){}
       root.__partyNavigationDetail='Defending party; convoy will resume after combat';
-      if(huntPrimary && typeof game_log==='function')game_log('Travel: '+(huntPrimary.reason==='passive-setting'?'passive stop setting':'extra aggro')+'; defending '+c.defenseTargets.map(function(t){return t.mtype+' '+t.id;}).join(', '),'#F5B041');
+      if(huntPrimary && typeof game_log==='function')game_log('Travel encounter: '+(huntPrimary.reason==='passive-setting'?'pursuing ':'defending against ')+c.defenseTargets.map(function(t){return t.mtype+' '+t.id;}).join(', '),'#F5B041');
       if(root.partyQueueClient && root.partyQueueClient.flush)root.partyQueueClient.flush();
       if(root.partyRoleRunner)root.partyRoleRunner.wake();
       return;
@@ -11931,7 +11943,7 @@
     var prior=approachObservation, displacement=prior && prior.identity===identity ? Math.hypot(character.x-prior.x,character.y-prior.y) : 0;
     approachObservation={identity:identity,x:character.x,y:character.y};
     var entity=get_entity(t.id), recovery=formationState.recovery, point=recovery && recovery.point;
-    var active=groupedFresh() && !navigationIntent.cancelled && !partyConvoyActive && !convoyTraveling &&
+    var active=groupedFresh() && !navigationIntent.cancelled && (!(partyConvoyActive || convoyTraveling) || huntTravelDefense()) &&
       !character.rip && !eventTraveling && !joinedEvent && !root.sharedRoutine.isOccupied() &&
       !(groupedCombat.recovering || []).length && p.target===t.id;
     return {target:identity,at:now,active:!!active,visible:!!(entity && entity.visible && !entity.dead),
@@ -12034,7 +12046,39 @@
     if(groupedFresh() && allies.length && formationMove(fight))return true;
     return root.partyQueueClient.sight.tick(fight.id,fight,remembered,allies);
   }
+  function cancelEncounterCatchup(c) {
+    var route=c && c.encounterCatchup;
+    if(!route)return;
+    route.cancelled=true;delete c.encounterCatchup;
+    if(route.onDone && typeof smart!=='undefined' && smart.on_done===route.onDone)Promise.resolve(stop('smart')).catch(function(){});
+  }
+  function encounterCatchup() {
+    var c=convoyTraveling, control=typeof huntTravelControl==='function' && huntTravelControl();
+    var t=control && control.primary;
+    var allowed=c && control && control.defending && c.phase==='defending' && !c.holdRequested && !c.communication &&
+      !navigationIntent.cancelled && Number(c.navigationRevision)===Number(navigationIntent.revision) &&
+      !character.rip && !joinedEvent && !eventTraveling && !escapeOwns() && groupedFresh();
+    if(!allowed || !t || t.server!==reunionRealm()){cancelEncounterCatchup(c);return false;}
+    if(t.map===character.map && String(t.in??t.map)===String(character.in||character.map)){cancelEncounterCatchup(c);return false;}
+    var key=JSON.stringify([c.id,c.epoch,c.commandId,c.navigationRevision,passingKey(t)]);
+    if(c.encounterCatchup && c.encounterCatchup.key!==key)cancelEncounterCatchup(c);
+    var route=c.encounterCatchup;
+    if(route){
+      if(!route.failed && Date.now()-route.startedAt>30000){route.failed='Encounter catch-up timed out';if(smart.on_done===route.onDone)Promise.resolve(stop('smart')).catch(function(){});}
+      root.__partyNavigationDetail=route.failed || 'Joining '+t.mtype+' encounter; leaving '+character.map;
+      return true;
+    }
+    route=c.encounterCatchup={key:key,target:passingKey(t),from:character.map,map:t.map,startedAt:Date.now()};
+    if(String(t.in??t.map)!==t.map){route.failed='Encounter catch-up requires instance '+t.in;return true;}
+    var moving;
+    try{moving=smart_move({map:t.map,x:t.x,y:t.y});route.onDone=smart.on_done;}
+    catch(error){route.failed='Encounter catch-up failed: '+String(error);return true;}
+    Promise.resolve(moving).then(function(){if(!route.cancelled)route.arrived=true;},function(error){if(!route.cancelled)route.failed='Encounter catch-up failed: '+String(error);});
+    root.__partyNavigationDetail='Joining '+t.mtype+' encounter; leaving '+character.map;
+    return true;
+  }
   function groupedMovement() {
+    if(encounterCatchup())return true;
     if(convoyTraveling && !convoyTraveling.defensePaused)return true;
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
     if (groupedDefensiveTarget() && !navigationIntent.cancelled && !character.rip && !root.sharedRoutine.isOccupied()) {
