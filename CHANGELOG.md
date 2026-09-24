@@ -1,11 +1,19 @@
 # Changelog
 
+- Fix cave combat queue delivery and acknowledgement after farming resets or runtime reloads; preserve cave healing participants and stop issued travel segments when combat pauses movement.
+
 ## Unreleased
 
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
 ### Added
+
+- Cave progress clears required rooms and travels through stairs automatically,
+  pausing for combat, loot, revival and manual choices. Pause/continue controls
+  preserve manual routing; leaving the final floor remains a manual decision.
+- Visible cave hostiles use the normal shared combat queue, skills, formation,
+  kiting and three target rings, with one coordinated primary target.
 
 - Cave priests automatically prepare and revive fallen teammates with carried Essences
   of Life, prioritizing living-party healing. Recovery status and safe Nera fallback

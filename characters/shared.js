@@ -2173,25 +2173,25 @@
   function dungeonOwned() {
     return !!character.cave || !!(root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns());
   }
+  function cavePartyNames() {
+    return character.cave && typeof groupedCombat !== 'undefined' && groupedCombat?.caveScope === character.cave.run + ':' + character.cave.floor
+      ? groupedCombat.members : currentPartyList();
+  }
   function cavePartyMembers() {
-    return [character].concat(currentPartyList().filter(function (name) { return name !== character.name; }).map(function (name) { return get_player(name); }))
+    return [character].concat(cavePartyNames().filter(function (name) { return name !== character.name; }).map(function (name) { return get_player(name); }))
       .filter(function (member) { return member && member.map === character.map && member.in === character.in; });
   }
   function dungeonTargetAllowed(target) {
     return !!target && target.type === 'monster' && target.visible !== false && !target.dead && target.hp > 0 &&
       (!target.map || target.map === character.map) && (target.in == null || target.in === character.in) &&
       !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(target.id)) &&
-      (target.target === character.name || currentPartyList().includes(target.target));
+      (target.cave && ['enemy', 'predator'].includes(target.cave.side) ||
+       target.target === character.name || cavePartyNames().includes(target.target));
   }
   function getDungeonTarget() {
-    var captainName = currentPartyList()[0] || character.name;
-    var captain = captainName === character.name ? character : get_player(captainName);
-    var nominated = captain && captain.map === character.map && captain.in === character.in && get_entity(captain.target);
-    if (dungeonTargetAllowed(nominated)) return nominated;
-    // Identical ordering on each client keeps the party focused without a stale farm queue.
-    return Object.values(parent.entities || {}).filter(dungeonTargetAllowed).sort(function (a, b) {
-      return monsterPriority(b) - monsterPriority(a) || String(a.id).localeCompare(String(b.id));
-    })[0] || null;
+    if (!character.cave || character.cave.paused || !groupedFresh() || !groupedCombat.target) return null;
+    var target = get_entity(groupedCombat.target.id);
+    return dungeonTargetAllowed(target) ? target : null;
   }
   async function lootDungeonChests() {
     if (!runtimeCurrent() || character.rip || !character.cave || character.cave.paused) return;
@@ -2264,6 +2264,11 @@
       info: function () { return requestDungeon('info').then(function (data) { return data.visit; }); },
       request: function (action, fields) {
         if (action === 'enter' || action === 'exit') return requestDungeon(action);
+        if (action === 'stairs') {
+          var door = G.maps[character.map]?.doors?.find(function(d) { return d[4] === fields.to; });
+          if (!door || !character.cave || fields.to === 'main') throw Error('Cave stairs unavailable');
+          return anniversaryWithTimeout(transport(fields.to, door[5]), 10000, 'Cave stairs');
+        }
         if (action === 'revival') return respawn();
         if (action === 'vote') return requestDungeon(action, { choice: fields.choice, option: fields.option });
         if (action === 'buy') return requestDungeon(action, { room: fields.room });
@@ -2939,6 +2944,21 @@
     };
   }
 
+  var mapGeometrySent = {map: null, at: 0};
+  function liveCaveMapDefinition() {
+    if (!character.cave || !G.geometry || !G.geometry[character.map]) return undefined;
+    var now = Date.now();
+    if (mapGeometrySent.map === character.map && now - mapGeometrySent.at < 5000) return undefined;
+    var geometry = G.geometry[character.map], tilesets = {};
+    (geometry.tiles || []).forEach(function(tile) {
+      var id = tile && tile[0], file = G.tilesets && G.tilesets[id] && G.tilesets[id].file;
+      if (file) tilesets[id] = {file: /^https?:/.test(file) ? file : 'https://adventure.land' + file};
+    });
+    mapGeometrySent = {map: character.map, at: now};
+    return {name: character.map, min_x: geometry.min_x, min_y: geometry.min_y,
+      max_x: geometry.max_x, max_y: geometry.max_y, default: geometry.default,
+      tiles: geometry.tiles || [], placements: geometry.placements || [], groups: geometry.groups || [], tilesets: tilesets};
+  }
   function publishMapFrame() {
     if (!mapTelemetryEnabled || mapTelemetryBusy) return;
     mapTelemetryBusy = true;
@@ -2951,7 +2971,7 @@
     var events = mapTelemetryEvents.splice(0, mapTelemetryEvents.length);
     $.ajax({
       url: api + "/map-frame", method: "POST", contentType: "application/json",
-      data: JSON.stringify({ name: character.name, map: character.map, at: Date.now(),
+      data: JSON.stringify({ name: character.name, map: character.map, definition: liveCaveMapDefinition(), at: Date.now(),
         x: Number(character.real_x !== undefined ? character.real_x : character.x) || 0,
         y: Number(character.real_y !== undefined ? character.real_y : character.y) || 0,
         target: character.target || combatTargetId || null, eventCombat: eventTargetTypes.length>0, queue: queueMarkers(), queueRevision: groupedCombat && groupedCombat.queueRevision, grouped: groupedFarming(), entities: entities, events: events }),
@@ -9232,9 +9252,11 @@
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');
         return;
       }
+      mapTelemetryEnabled = !!state.mapTelemetry;
       dungeonRuntime().receive(state.dailyDungeon);
       if (root.installCaveRecovery) caveRecovery().receive(state.dailyDungeon && state.dailyDungeon.recovery);
       if (dungeonRuntime().owns()) {
+        acceptQueue(state.groupedCombat || null);
         partyPositions = state.partyPositions || [];
         partyThreats = state.partyThreats || [];
         partyTargets = state.partyTargets || [];
@@ -11696,7 +11718,8 @@
     if(root.partyRoleRunner)root.partyRoleRunner.wake();
   }
   function groupedFarming() {
-    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
+    if (character.cave) return character.ctype !== "merchant";
+    if (dungeonOwned()) return false;
     return character.ctype !== "merchant" && (farmingMode !== "scatter" || !!root.__partyConvoyDefense) && !!leader &&
       (leader === character.name || followLeader) && !eventTraveling && !joinedEvent &&
       !eventTargetTypes.length && !(G.maps && G.maps[character.map] && G.maps[character.map].event);
@@ -11705,7 +11728,8 @@
     return groupedFarming() && (typeof groupedCombat !== "undefined" && groupedCombat && groupedCombat.protocol === 4 ? groupedCombat.targetLeader : leader) !== character.name;
   }
   function groupedFresh() {
-    return groupedCombat && groupedCombat.leader === leader && groupedCombat.members.indexOf(character.name) >= 0 &&
+    if (character.cave && groupedCombat?.caveScope !== character.cave.run + ':' + character.cave.floor) return false;
+    return groupedCombat && (character.cave || groupedCombat.leader === leader) && groupedCombat.members.indexOf(character.name) >= 0 &&
       Date.now() + coordinatorClockOffset - groupedCombat.seenAt <= 3000 &&
       Date.now() + coordinatorClockOffset >= groupedCombat.seenAt - 500 &&
       groupedCombat.key.indexOf(JSON.stringify(convoyRuntimeId)) >= 0;
@@ -11776,7 +11800,7 @@
       {id:String(e.id),map:character.map,in:character.in,server:reunionRealm(),at:Date.now()+coordinatorClockOffset} : null;
   }
   function queueMarkers() {
-    if (typeof eventTargetTypes !== 'undefined' && eventTargetTypes.length && !character.rip) {
+    if (!character.cave && typeof eventTargetTypes !== 'undefined' && eventTargetTypes.length && !character.rip) {
       var selected=combatTargetId && get_entity(combatTargetId);
       if (!selected || !selected.visible || selected.dead || selected.hp<=0 ||
           eventTargetTypes.indexOf(selected.mtype)<0 || !isAllowedTarget(selected)) return [];
@@ -11788,14 +11812,14 @@
       var seen={};return targets.filter(function(t){if(!t||seen[t.id]||t.server!==reunionRealm()||t.map!==character.map||t.in!==character.in)return false;seen[t.id]=true;return true;})
         .map(function(t){var e=get_entity(t.id);return Object.assign({},t,{role:'current',state:'scatter',visible:!!(e&&e.visible&&!e.dead)});});
     }
-    var travel=typeof huntTravelControl==='function' && huntTravelControl();
+    var travel=!character.cave && typeof huntTravelControl==='function' && huntTravelControl();
     var markers=travel && !travel.defending && travel.primary ? [travel.primary].concat(currentTravelAttackers().filter(function(t){return passingKey(t)!==passingKey(travel.primary);})) : groupedCombat && groupedCombat.queue || [];
-    return groupedFarming() && !navigationIntent.cancelled ? markers.slice(0,3).map(function(t,index){
+    return groupedFarming() && (character.cave || !navigationIntent.cancelled) ? markers.slice(0,3).map(function(t,index){
       var e=get_entity(t.id);return {id:t.id,map:t.map,in:t.in,server:t.server,role:['current','next','third'][index],state:t.state,radius:Math.max(18,(Number(e && e.awidth)||24)/2+4),visible:!!(e && e.visible && !e.dead && t.server===reunionRealm() && t.map===character.map && t.in===character.in)};
     }) : [];
   }
   function acceptQueue(next) {
-    if(next && Number(next.resetAt||0)<Number(root.__partyCombatResetAt||0))return;
+    if(next && !next.caveScope && Number(next.resetAt||0)<Number(root.__partyCombatResetAt||0))return;
     if(next && groupedCombat && Number(next.seenAt)<Number(groupedCombat.seenAt))return;
     var before=groupedCombat && groupedCombat.target, after=next && next.target;
     if (before && after && before.id!==after.id && groupedCombat.pursuit && groupedCombat.pursuit.replacementKind==='closer-hunt') {
@@ -11810,6 +11834,8 @@
     if(root.partyQueueClient && root.partyQueueClient.formation)root.partyQueueClient.formation.accept(next && next.formationRecovery);
   }
   function queueCandidates() {
+    if (character.cave) return character.cave.paused ? [] : Object.values(parent.entities || {}).filter(dungeonTargetAllowed)
+      .map(function(e) { return Object.assign(groupedEntityReport(e), {priority: monsterPriority(e)}); });
     var diagnostic=root.__partyNomination={focus:monsterFocus.slice(),area:typeof partyLocation!=='undefined'&&partyLocation&&partyLocation.id,revision:navigationIntent.revision,rejected:{},eligible:[]};
     var encounter=root.__partyFarmingEngagement;
     if(encounter && !encounter.finished && !navigationIntent.cancelled) {
@@ -11842,6 +11868,10 @@
     return !!(target && (passiveRareHunts[target.mtype] || target.mtype === 'phoenix' && monsterFocus.indexOf('phoenix')>=0));
   }
   function queueRetentions() {
+    if (character.cave) return (groupedCombat?.queue || []).map(function(t) {
+      var e = get_entity(t.id);
+      return Object.assign({}, t, {at: root.__partyEntitiesObservedAt || 0, eligible: dungeonTargetAllowed(e), reason: dungeonTargetAllowed(e) ? null : 'no visible hostile'});
+    });
     var at=root.__partyEntitiesObservedAt||0;
     return (groupedCombat&&groupedCombat.queue||[]).filter(function(t){return t.state==='planned'&&t.map===character.map&&t.in===character.in&&t.server===reunionRealm();}).map(function(t){
       var e=get_entity(t.id),reason=null;
@@ -11970,7 +12000,8 @@
       Math.hypot(character.x-anchor.x,character.y-anchor.y) <= groupedCombat.range;
   }
   function groupedAttackAllowed(target) {
-    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return !character.cave?.paused && dungeonTargetAllowed(target);
+    if (dungeonOwned()) return !!(character.cave && !character.cave.paused && dungeonTargetAllowed(target) && groupedFresh() &&
+      groupedCombat.target?.id === target.id && groupedCombat.committed);
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.blocks())return false;
     if (travelCombatActive() && !departureTargetEngaged(target)) return false;
     if(root.partyLootClient && root.partyLootClient.huntPending() && !departureTargetEngaged(target))return false;

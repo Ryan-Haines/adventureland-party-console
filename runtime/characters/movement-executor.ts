@@ -19,7 +19,15 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     }
     reset();
   }
-  function pause() { if (issued) { issued.progressAt = now(); issued.at = now(); } }
+  function pause() {
+    if (!issued) return;
+    issued.progressAt = now(); issued.at = now();
+    if (isTransition(issued.step)) return;
+    // Stop the travel segment once; combat owns movement until travel resumes.
+    issued = undefined;
+    barrierReady = false;
+    void Promise.resolve(host.move(host.character.real_x, host.character.real_y)).catch(() => {});
+  }
   function barrier(options: MovementOptions, step: Step, completed: boolean): boolean {
     if (!options.barrier) return true;
     if (barrierReady) { barrierReady = false; waitingBarrier=false; return true; }

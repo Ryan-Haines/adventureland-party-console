@@ -10,21 +10,27 @@ function fixture() {
     b:{id:'b',type:'monster',visible:true,hp:100,map:'cave',in:'run',target:'W'}};
   const c = vm.createContext({character:actor,root:{},parent:{entities:enemies,chests:{}},
     currentPartyList:()=>['W','P'],get_player:name=>name==='W'?actor:priest,get_entity:id=>enemies[id],
-    monsterPriority:()=>50,runtimeCurrent:()=>true,distance:()=>50,
+    groupedFresh:()=>true,groupedCombat:{target:{id:'a'}},monsterPriority:()=>50,runtimeCurrent:()=>true,distance:()=>50,
     anniversaryWithTimeout:p=>p,loot:async()=>{}});
   vm.runInContext(source.slice(source.indexOf('  function dungeonOwned()'),source.indexOf('  function dungeonRuntime()')),c);
   return {c,actor,priest,enemies};
 }
-test('cave focus follows live leader target, otherwise agrees by priority and ID, never neutral or other instance',()=>{
+test('cave focus follows the shared queue and proactively admits visible enemy sides',()=>{
   const {c,actor,enemies}=fixture();
-  enemies.neutral={...enemies.a,id:'neutral',target:null};
+  enemies.neutral={...enemies.a,id:'neutral',target:null,cave:{side:'neutral'}};
   enemies.other={...enemies.a,id:'other',in:'other'};
   enemies.stranger={...enemies.a,id:'stranger',target:'Stranger'};
+  enemies.spider={...enemies.a,id:'spider',target:null,cave:{side:'enemy'}};
+  enemies.rat={...enemies.a,id:'rat',target:null,cave:{side:'predator'}};
   assert.equal(c.getDungeonTarget().id,'a');
-  actor.target='b'; assert.equal(c.getDungeonTarget().id,'b');
+  actor.target='b'; assert.equal(c.getDungeonTarget().id,'a');
+  c.groupedCombat.target.id='b';assert.equal(c.getDungeonTarget().id,'b');
   for (const id of ['neutral','other','stranger']) assert.equal(c.dungeonTargetAllowed(enemies[id]),false);
-  enemies.b.dead=true;assert.equal(c.getDungeonTarget().id,'a');
+  for (const id of ['spider','rat']) assert.equal(c.dungeonTargetAllowed(enemies[id]),true);
+  enemies.b.dead=true;assert.equal(c.getDungeonTarget(),null);
+  c.groupedFresh=()=>false;assert.equal(c.getDungeonTarget(),null);
 });
+
 test('cave looting opens only this instance, stops during votes and death',async()=>{
   const {c,actor}=fixture(); const opened=[]; c.loot=async id=>opened.push(id);
   c.parent.chests={yes:{map:'cave',in:'run'},wrong:{map:'cave',in:'other'}};
@@ -45,9 +51,25 @@ test('normal priest healing in cave uses live injured allies instead of pre-entr
 });
 
 test('solo cave defense includes self and confirmed kills cannot keep the old focus',()=>{
-  const {c,enemies}=fixture();c.currentPartyList=()=>[];
+  const {c,enemies}=fixture();c.currentPartyList=()=>[];c.groupedCombat.target.id='b';
   assert.equal(c.getDungeonTarget().id,'b');
   assert.equal(c.cavePartyMembers().length,1);
   c.root.partyRoleRunner={isKnownDead:id=>id==='b'};
   assert.equal(c.getDungeonTarget(),null);
+});
+
+test('cave queue survives farming reset and acknowledges before saved leader initialization',()=>{
+  const now=Date.now();
+  const next={caveScope:'run:0',leader:'W',members:['W','P'],seenAt:now,key:JSON.stringify(['runtime']),resetAt:0,target:null};
+  const c=vm.createContext({character:{name:'P',cave:{run:'run',floor:0}},leader:null,
+    root:{__partyCombatResetAt:now},groupedCombat:null,convoyRuntimeId:'runtime',coordinatorClockOffset:0,Date});
+  vm.runInContext(source.slice(source.indexOf('  function acceptQueue('),source.indexOf('  function queueCandidates(')),c);
+  vm.runInContext(source.slice(source.indexOf('  function groupedFresh('),source.indexOf('  function reportFightDeath(')),c);
+  c.acceptQueue(next);assert.equal(c.groupedCombat,next);assert.equal(c.groupedFresh(),true);
+  c.character.cave.floor=1;assert.equal(c.groupedFresh(),false);
+});
+test('cave healing roster uses captured participants when native party list is empty',()=>{
+  const {c,actor}=fixture();actor.cave.floor=0;
+  c.groupedCombat={caveScope:'run:0',members:['W','P']};c.currentPartyList=()=>[];
+  assert.equal(c.cavePartyMembers().length,2);
 });

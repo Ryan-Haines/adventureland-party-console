@@ -34,6 +34,8 @@ export function createDungeonJournal(
       if (!command) continue;
       const sameRun = cave?.run === command.run;
       const entered = command.action === "enter" && (!!cave || !!resume?.run);
+      const climbed = command.action === "stairs" && sameRun && !!command.target?.to &&
+        command.target.to === "zone_" + cave?.run + "_" + cave?.floor;
       const exited = command.action === "exit" && !cave;
       const voted =
         command.action === "vote" &&
@@ -51,7 +53,7 @@ export function createDungeonJournal(
         sameRun &&
         !!cave?.choice &&
         cave.choice.id !== command.choice;
-      if (entered || exited || voted || bought || revival) save(command, "complete");
+      if (entered || climbed || exited || voted || bought || revival) save(command, "complete");
     }
   }
   return {

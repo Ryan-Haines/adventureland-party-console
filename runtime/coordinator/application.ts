@@ -989,6 +989,7 @@ export function startCoordinatorApplication(
           if (maintenance) return { serverNow: Date.now(), consoleMaintenance: maintenance };
           const lease = mode ? undefined : dashboardStream.lease(name);
           return { ...(soloFor(name)?.heartbeatResponse || heartbeatResponse).response(name, mode),
+            ...(dungeonOwns(party, name) ? { groupedCombat: groupedCombatSnapshot() } : {}),
             ...(party.dailyDungeons ? { dailyDungeon: dungeons.control(name) } : {}),
             upgradePreview: upgradePreviews.next(name),
             merchantVisibility: merchantVisibility(party, name, Date.now()),

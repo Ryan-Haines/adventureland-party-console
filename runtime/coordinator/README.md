@@ -692,6 +692,20 @@ A disconnected member keeps ownership. Return missing participants requires a
 server-confirmed resumable visit on the same server. Failed preparation can be
 retried explicitly; uncertain irreversible requests require observed reconciliation.
 
+Automatic cave progress visits unfinished required rooms, then gathers everyone at
+unlocked stairs down and transports them together. It pauses for visible hostile
+monsters, loot, forced choices, death, and stale reports. The panel can pause or
+continue this route; a manual destination pauses automatic progress. Final-floor
+completion never chooses the Mainland exit. Stairs receipts reconcile from an
+observed destination floor rather than replaying an uncertain transport.
+
+Cave combat uses the ordinary shared three-target queue and its red/yellow/double
+yellow markers. Enemy/predator cave actors are nominated before they attack;
+neutral/ally NPCs are excluded. Any fresh participant can contribute a nomination.
+The queue is scoped to the run and floor, ignoring pre-entry farming navigation.
+Validate `cave-progress`, `cave-combat-queue`, `daily-dungeons-combat`, normal queue
+and movement tests. These changes require a full coordinated restart.
+
 Native movement refreshes generated geometry and pauses for party combat, loot,
 stale reports, and forced votes. Dungeon combat uses the ordinary class skill,
 healing, formation and kiting routines with cave-specific targeting and ownership.
@@ -715,3 +729,11 @@ free/paid Nera revival, forced votes, expiry, and whole-party exit on
 an unlimited-visit development server. Mock tests do not prove live game behavior.
 Use the supported full restart workflow above for activation, then verify fresh
 coordinator and character code. A build by itself does not activate this feature.
+
+Cave combat responses override saved solo farming scopes for captured participants.
+Clients accept the run/floor queue independently of mainland reset epochs and saved
+leader initialization; native cave party lists can be empty, so healing uses the
+captured queue roster. A movement pause stops an issued walking segment once and
+retains its route, allowing combat movement without repeatedly cancelling kiting.
+Validate daily-dungeons-combat and movement-service regressions; deploy coordinator
+and character changes together through the full restart workflow.

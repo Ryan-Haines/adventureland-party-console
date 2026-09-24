@@ -18,6 +18,7 @@ interface RawPoint {
   done?: boolean;
   to?: string;
   down?: boolean;
+  required?: boolean;
 }
 interface RawCave {
   run: string;
@@ -127,6 +128,9 @@ export function installDungeonRuntime(ports: Ports) {
         locked: p.locked,
         done: p.done,
         exit: p.to === "main",
+        down: p.down,
+        to: p.to,
+        required: p.required,
       }));
     return {
       run: String(c.run),
@@ -231,6 +235,11 @@ export function installDungeonRuntime(ports: Ports) {
     if (!ports.current() || command?.id !== c.id) throw Error("Dungeon command superseded");
     const cave = normalized();
     if (c.action === "enter" && (!ports.ready() || cave)) throw Error("Entry readiness changed");
+    if (c.action === "stairs") {
+      const door = cave?.points.find(p => p.id === c.target?.id);
+      if (!door?.down || door.locked || door.to !== c.target?.to || !canMove())
+        throw Error("Stairs are not ready for the party");
+    }
     if (c.action === "revival" && (!cave || ports.alive()))
       throw Error("No fallen dungeon participant");
     if (c.run && cave?.run !== c.run && (c.action !== "exit" || cave))
@@ -284,7 +293,7 @@ export function installDungeonRuntime(ports: Ports) {
       }
       journal.save(c, "dispatched");
       dispatched = true;
-      await ports.request(c.action, { choice: c.choice, option: c.option, room: c.room });
+      await ports.request(c.action, { choice: c.choice, option: c.option, room: c.room, to: c.target?.to });
       journal.save(c, "complete");
     } catch (error) {
       if (journal.get(c.id)?.status === "complete") return;
@@ -314,7 +323,8 @@ export function installDungeonRuntime(ports: Ports) {
       });
   }
   const canMove = () =>
-    !owned || (movementReady && ports.now() - controlAt < 3000 && ports.ready() && !ports.cave()?.paused);
+    !owned || ((movementReady || command?.action === "gather" && command.resume && !ports.cave()) &&
+      ports.now() - controlAt < 3000 && ports.ready() && !ports.cave()?.paused);
   return {
     report,
     receive,

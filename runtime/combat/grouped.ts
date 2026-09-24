@@ -23,6 +23,7 @@ export interface Death { id: string; map: string; in?: string | number; server: 
 export interface Fight extends Target { state?: 'planned' | 'pending' | 'engaged'; score?: number; server: string | undefined; fighter: string; startedAt: number }
 export interface Target { target?: string | null; id: string; mtype: string; map: string; in?: string | number; x: number; y: number; hp?:number; max_hp?:number }
 export interface Group {
+  caveScope?: string;
   passingEncounters?: PassingEncounter[];
   formationRecovery?:FormationRecovery;
   pursuit?: Pursuit; pursuitExclusions?: PursuitExclusion[];

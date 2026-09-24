@@ -83,6 +83,17 @@ export function DungeonPanel() {
           .map((m) => m.name + (m.fresh ? '' : ' — awaiting connection'))
           .join(' · ')}
       </p>
+      {view.state.phase === 'active' && (
+        <div className="mt-3">
+          <p className="text-sm text-slate-200">
+            {view.state.progress?.message || 'Continue through the cave toward the next floor.'}
+          </p>
+          <button className={dungeonButton} disabled={query.busy}
+            onClick={() => void action({action: 'progress', enabled: !view.state.progress?.enabled})}>
+            {view.state.progress?.enabled ? 'Pause cave route' : 'Continue through cave'}
+          </button>
+        </div>
+      )}
       {recovery && (
         <p role="status" className="mt-2 text-sm text-emerald-100">
           {recovery.priest} reviving {recovery.target}: {recoveryLabel}

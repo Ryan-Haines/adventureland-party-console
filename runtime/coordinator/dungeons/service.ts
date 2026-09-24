@@ -1,3 +1,4 @@
+import { createCaveProgress } from "./progress.ts";
 import { createPriestRecovery } from "./priest-recovery.ts";
 import type {
   CaveCommand,
@@ -27,6 +28,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
   const fresh = (name: string) =>
     !!party.statuses[name] && ports.now() - party.statuses[name]!.seenAt < 3000;
   const observation = (name: string) => party.statuses[name]?.dungeon;
+  const progress = createCaveProgress(party, {fresh, issue, persist: () => ports.persist()});
   function snapshot(): DungeonView {
     reconcile();
     const d = state(),
@@ -77,6 +79,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
       priestRecovery: undefined,
       recoveryDeaths: undefined,
       manualRecovery: false,
+      progress: {enabled:true, serial:0},
       resuming: names.every((n) => !!observation(n)?.visit?.resume),
     });
     ports.cancel(names);
@@ -117,6 +120,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     reconcileReturns(d);
     reconcileCaves(d);
     priestRecovery.reconcile(d);
+    progress.tick(d);
   }
   function adopt() {
     const d = state();
@@ -272,6 +276,10 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     if (d.operations.includes(id)) return;
     const handlers: Record<string, () => void> = {
       settings: () => settings(body),
+      progress: () => {
+        if (d.phase !== "active" || typeof body.enabled !== "boolean") throw Error("Active dungeon and enabled flag required");
+        progress.set(body.enabled);
+      },
       enter: () => begin(id),
       resume: () => begin(id),
       exit: () => exit(id),
@@ -372,6 +380,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     if (!target || target.locked || target.done || cave.paused)
       throw Error("Destination unavailable");
     if (target.exit) return exit(id);
+    progress.set(false);
     issue(d.participants, "move", id, { run: d.run, target });
   }
   function choose(

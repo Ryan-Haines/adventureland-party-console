@@ -27,6 +27,9 @@ export interface CavePoint {
   locked?: boolean;
   done?: boolean;
   exit?: boolean;
+  down?: boolean;
+  to?: string;
+  required?: boolean;
 }
 export interface CaveChoice {
   id: string;
@@ -75,7 +78,7 @@ export interface CaveObservation {
 }
 export interface CaveCommand {
   id: string;
-  action: "gather" | "enter" | "move" | "vote" | "buy" | "exit" | "revival";
+  action: "gather" | "enter" | "move" | "vote" | "buy" | "exit" | "revival" | "stairs";
   run?: string;
   resume?: boolean;
   target?: CavePoint;
@@ -86,6 +89,7 @@ export interface CaveCommand {
   amber?: number;
 }
 export interface DungeonState {
+  progress?: { enabled: boolean; target?: string; floor?: number; serial: number; message?: string };
   protectFromEvents: boolean;
   participants: string[];
   phase: "idle" | "gathering" | "entering" | "active" | "exiting" | "held";

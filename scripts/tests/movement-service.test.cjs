@@ -326,3 +326,14 @@ test('uncollectable transition loot reports a bounded failure and cancellation c
  executor.tick({});now+=30000;assert.throws(()=>executor.tick({}),/Pending nearby loot/);
  executor.cancel();assert.equal(executor.progress().phase,'idle');f.dispose();
 });
+
+test('combat pause stops issued travel once and resumes the retained route',async()=>{
+ const r=fixture({stall:true});const pending=r.service.move({map:'main',x:100,y:0});
+ const rejected=assert.rejects(pending);await r.ticks();
+ const context=r.ports.context;r.ports.context=()=>({...context(),paused:true});
+ await r.ticks();assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===0).length,1);
+ await r.ticks();assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===0).length,1);
+ r.ports.context=context;await r.ticks();
+ assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===100).length,2);
+ r.dispose();await rejected;
+});

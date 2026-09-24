@@ -1,10 +1,12 @@
 "use client";
+import type { MapDefinition } from "./map-definition";
 import { MapEntity } from "./map-entity";
 import { MapEvent } from "./map-event";
 
 export type MapFrame = {
   name: string;
   map: string;
+  definition?: MapDefinition;
   at: number;
   x: number;
   y: number;
