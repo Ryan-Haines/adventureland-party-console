@@ -46,6 +46,7 @@ export interface CaveObservation {
   ready: boolean;
   members: string[];
   leader?: string;
+  visitError?: string;
   visit?: {
     available: boolean;
     resets: number;

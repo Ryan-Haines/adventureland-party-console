@@ -22,6 +22,10 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Steam cave requests capture server replies before native UI handlers, fixing
+  missing eligibility reports and protecting entry, vote, purchase and exit receipts.
+  Eligibility reads recover from timeouts; the settings panel shows request errors.
+
 - Cave entry excludes offline saved followers from the initial roster while retaining
   captured participants if they disconnect during a run.
 

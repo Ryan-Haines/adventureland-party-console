@@ -1,3 +1,4 @@
+import "./cave-request.ts";
 import {
   createDungeonJournal,
   type DungeonJournal,
@@ -79,7 +80,9 @@ interface Ports {
 }
 export function installDungeonRuntime(ports: Ports) {
   let visit: CaveObservation["visit"],
-    checking = false,
+    checking = 0,
+    checkId = 0,
+    visitError: string | undefined,
     nextCheck = 0,
     owned = false;
   let command: CaveCommand | undefined;
@@ -143,17 +146,33 @@ export function installDungeonRuntime(ports: Ports) {
       },
     };
   }
+  function canRefresh() {
+    if (checking && ports.now() >= checking) {
+      checking = 0;
+      checkId++;
+      visitError = "Daily eligibility request timed out; retrying";
+      nextCheck = ports.now() + 5000;
+    }
+    return !checking && ports.supported() && ports.now() >= nextCheck;
+  }
+  function eligibilityError(error: unknown) {
+    if (error instanceof Error) return error.message;
+    return String((error as { reason?: unknown })?.reason || error);
+  }
   async function refresh() {
-    if (checking || !ports.supported() || ports.now() < nextCheck) return;
-    checking = true;
+    if (!canRefresh()) return;
+    checking = ports.now() + 12000;
+    const id = ++checkId;
     const revision = visitRevision;
     nextCheck = ports.now() + 30000;
     try {
       const v = await ports.info();
+      if (id !== checkId || !ports.current()) return;
       if (revision !== visitRevision) {
         nextCheck = 0;
         return;
       }
+      visitError = undefined;
       visit = {
         available: !!(v.available || v.unlimited),
         resets: v.resets - (v.server_time - ports.now()),
@@ -161,10 +180,12 @@ export function installDungeonRuntime(ports: Ports) {
         resume: v.resume,
         checkedAt: ports.now(),
       };
-    } catch {
+    } catch (error) {
+      if (id !== checkId) return;
+      visitError = eligibilityError(error);
       nextCheck = ports.now() + 5000;
     } finally {
-      checking = false;
+      if (id === checkId) checking = 0;
     }
   }
   function report(): CaveObservation {
@@ -193,6 +214,7 @@ export function installDungeonRuntime(ports: Ports) {
       members: ports.members(),
       leader: ports.leader(),
       visit,
+      visitError,
       cave: normalized(),
       keeper: ports.keeper(),
       action: journal.get(command?.id) || journal.latest(),

@@ -2240,6 +2240,10 @@
     });
     return caveRecoveryClient;
   }
+  function requestDungeon(action, fields) {
+    var id = 'cave:' + character.name + ':' + Date.now() + ':' + Math.random();
+    return root.requestCave(parent.socket, id, action, fields);
+  }
   function dungeonRuntime() {
     if (dungeonClient) return dungeonClient;
     if (!root.installDungeonRuntime) return { report: function () { return undefined; }, receive: function () {}, owns: function () { return false; } };
@@ -2257,13 +2261,12 @@
       alive: function () { return !character.rip; },
       cave: function () { return character.cave || null; },
       supported: function () { return typeof cave_info === 'function' && typeof cave_enter === 'function' && typeof cave_exit === 'function'; },
-      info: function () { return cave_info(); },
+      info: function () { return requestDungeon('info').then(function (data) { return data.visit; }); },
       request: function (action, fields) {
-        if (action === 'enter') return cave_enter();
-        if (action === 'exit') return cave_exit();
+        if (action === 'enter' || action === 'exit') return requestDungeon(action);
         if (action === 'revival') return respawn();
-        if (action === 'vote') return cave_reply(fields.choice, fields.option);
-        if (action === 'buy') return cave_buy(fields.room);
+        if (action === 'vote') return requestDungeon(action, { choice: fields.choice, option: fields.option });
+        if (action === 'buy') return requestDungeon(action, { room: fields.room });
         throw new Error('Unsupported cave action');
       },
       keeper: function () {

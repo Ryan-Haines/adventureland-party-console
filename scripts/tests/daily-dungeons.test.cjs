@@ -237,3 +237,39 @@ test('captured dungeon participants survive disconnect and coordinator restart',
   assert.deepEqual(next.snapshot().members.map(m => m.name), ['W', 'P', 'M']);
   assert.equal(next.control('P').owned, true);
 });
+
+function eligibilityRuntime(info) {
+  let now = 100000;
+  const runtime = installDungeonRuntime({ name: 'W', members: () => ['W'], leader: () => 'W', ready: () => true,
+    now: () => now, alive: () => true, current: () => true, cave: () => null, supported: () => true,
+    info, request: async () => {}, keeper: () => undefined, text: String, move: async () => {}, stop: async () => {},
+    read: () => null, write() {} });
+  return { runtime, advance: ms => now += ms };
+}
+test('eligibility retries a hung read and ignores its late response', async () => {
+  let firstResolve, calls = 0;
+  const f = eligibilityRuntime(() => ++calls === 1 ? new Promise(resolve => firstResolve = resolve) : Promise.resolve({available: true, resets: 300000, server_time: 117000, home: 'II'}));
+  f.runtime.report();
+  f.advance(12000);
+  assert.match(f.runtime.report().visitError, /timed out/);
+  f.advance(5000); f.runtime.report(); await new Promise(setImmediate);
+  assert.equal(f.runtime.report().visit.available, true);
+  firstResolve({available: false, resets: 300000, server_time: 100000, home: 'II'});
+  await new Promise(setImmediate);
+  assert.equal(f.runtime.report().visit.available, true);
+  assert.equal(f.runtime.report().visitError, undefined);
+  assert.equal(calls, 2);
+});
+test('eligibility exposes Steam request failures and clears them after recovery', async () => {
+  let calls = 0;
+  const f = eligibilityRuntime(async () => {
+    if (++calls === 1) throw { reason: 'timeout' };
+    return { available: true, resets: 300000, server_time: 105000, home: 'II' };
+  });
+  f.runtime.report(); await new Promise(setImmediate);
+  assert.equal(f.runtime.report().visitError, 'timeout');
+  assert.equal(f.runtime.report().visit, undefined);
+  f.advance(5000); f.runtime.report(); await new Promise(setImmediate);
+  assert.equal(f.runtime.report().visitError, undefined);
+  assert.equal(f.runtime.report().visit.available, true);
+});

@@ -670,6 +670,15 @@ cave wire protocol; `runtime/characters/dungeons.ts` adapts official game APIs.
 `runtime/characters/dungeon-journal.ts` persists receipts before dispatch. Review
 these compatibility contracts when upgrading typed-adventureland.
 
+Cave socket requests capture correlated interaction replies before native UI handlers
+using Socket.IO's prependAny hook, with listener cleanup on response, disconnect,
+or timeout. This avoids Steam replies being lost before ordinary event listeners.
+Eligibility reads expire after twelve seconds, retry after five, and ignore late
+superseded replies. Irreversible actions retain journal reconciliation and are not
+retried automatically. The settings panel shows eligibility transport errors.
+Validate with `cave-request` and `daily-dungeons`; publish character assets with
+the full restart workflow.
+
 Entry is never an automatic event selection. The Events gear exposes eligibility,
 manual entry/return, and protection from other events (default on). Turning that
 protection off permits an enabled live event to request exit; event travel waits

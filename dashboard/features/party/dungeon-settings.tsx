@@ -61,6 +61,11 @@ export function CaveEventRow() {
               .join(', ') || 'Select a leader and combat followers'}
             .
           </p>
+          {view?.members.filter((m) => m.observation?.visitError).map((m) => (
+            <p key={m.name} className="text-amber-200">
+              {m.name}: eligibility check failed ({m.observation?.visitError}); retrying.
+            </p>
+          ))}
           <label className="flex items-start gap-3">
             <input
               type="checkbox"
