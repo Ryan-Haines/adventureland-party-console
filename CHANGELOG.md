@@ -7,6 +7,10 @@ from the commits merged into `main`.
 
 ### Added
 
+- Cave priests automatically prepare and revive fallen teammates with carried Essences
+  of Life, prioritizing living-party healing. Recovery status and safe Nera fallback
+  appear in the dungeon panel; persisted attempts prevent duplicate consumption.
+
 - Cave of Many Dreams appears first in Events with manual entry, server eligibility
   countdown, and a saved setting that protects the visit from other events by default.
 - Dungeon controls sit below the header and above the party cards, showing

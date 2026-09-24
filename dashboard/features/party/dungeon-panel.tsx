@@ -19,6 +19,32 @@ export function DungeonPanel() {
   const cave = view.members.find((m) => m.fresh && m.observation?.cave)
       ?.observation?.cave,
     choice = cave?.choice;
+  const recovery = view.state.priestRecovery;
+  const priest = view.members.find((m) => m.name === recovery?.priest);
+  const report =
+    priest?.fresh && priest.observation?.recovery?.id === recovery?.id
+      ? priest.observation?.recovery
+      : undefined;
+  const channel = view.members.some(
+    (m) => !!m.observation?.recovery?.actor.c?.revival,
+  );
+  const recoveryBusy =
+    (!!recovery?.authorized &&
+      (!report || !['failed', 'complete'].includes(report.phase))) ||
+    channel;
+  const recoveryLabel =
+    report?.reason ||
+    {
+      idle: 'Preparing priest recovery',
+      healing: 'Healing gravestone',
+      waiting: 'Waiting for priest recovery',
+      ready: 'Preparing Revive',
+      dispatched: 'Revive sent - awaiting confirmation',
+      reviving: 'Reviving',
+      uncertain: 'Revive outcome unknown - awaiting confirmation',
+      failed: 'Priest revival failed - use Nera',
+      complete: 'Revival complete',
+    }[report?.phase || 'idle'];
   const action = (body: Record<string, unknown>) =>
     query.action({ run: cave?.run, ...body });
   return (
@@ -57,12 +83,26 @@ export function DungeonPanel() {
           .map((m) => m.name + (m.fresh ? '' : ' — awaiting connection'))
           .join(' · ')}
       </p>
+      {recovery && (
+        <p role="status" className="mt-2 text-sm text-emerald-100">
+          {recovery.priest} reviving {recovery.target}: {recoveryLabel}
+        </p>
+      )}
+      {!recovery &&
+        view.members.some((m) => m.observation?.alive === false) && (
+          <p role="status" className="mt-2 text-sm text-slate-200">
+            {view.state.manualRecovery
+              ? 'Nera recovery requested'
+              : 'Waiting for an available priest with an Essence of Life. Call Nera if needed.'}
+          </p>
+        )}
       {view.members.some((m) => m.observation?.alive === false) && (
         <button
           className={dungeonButton}
           disabled={
             query.busy ||
             view.state.phase !== 'active' ||
+            recoveryBusy ||
             (!!choice && !choice.resolved)
           }
           onClick={() => void action({ action: 'revival' })}

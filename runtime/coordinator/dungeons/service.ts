@@ -1,3 +1,4 @@
+import { createPriestRecovery } from "./priest-recovery.ts";
 import type {
   CaveCommand,
   DungeonParty,
@@ -22,6 +23,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
       commands: {},
       operations: [],
     });
+  const priestRecovery = createPriestRecovery(party, () => ports.persist());
   const fresh = (name: string) =>
     !!party.statuses[name] && ports.now() - party.statuses[name]!.seenAt < 3000;
   const observation = (name: string) => party.statuses[name]?.dungeon;
@@ -68,6 +70,9 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
       run: undefined,
       pendingEvent: undefined,
       exitDispatched: false,
+      priestRecovery: undefined,
+      recoveryDeaths: undefined,
+      manualRecovery: false,
       resuming: names.every((n) => !!observation(n)?.visit?.resume),
     });
     ports.cancel(names);
@@ -107,6 +112,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     reconcileGather(d);
     reconcileReturns(d);
     reconcileCaves(d);
+    priestRecovery.reconcile(d);
   }
   function adopt() {
     const d = state();
@@ -341,6 +347,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     if (!fallen) throw Error("No fallen participant");
     const choice = observation(fallen)?.cave?.choice;
     if (choice && !choice.resolved) throw Error("Resolve the current vote before calling Nera");
+    priestRecovery.manual(d);
     issue([fallen], "revival", id, { run: d.run, choice: choice?.id });
   }
   function ensureSettled(d: DungeonState) {
@@ -442,6 +449,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     return {
       owned: dungeonOwns(party, name),
       command,
+      ...(priestRecovery.control(d, name) ? { recovery: priestRecovery.control(d, name) } : {}),
       movementReady: d.participants.every(readyToMove),
     };
   }

@@ -35,5 +35,13 @@ test('dungeon panel exposes actual objectives, paid costs and explicit revival c
     assert.match(html, /Revive at doorway/);
     assert.match(html, /Call Nera/);
     assert.match(html, /grid-cols-2/);
+    const view = client.getQueryData(['party', 'daily-dungeons']);
+    view.state.priestRecovery = {id:'r:revive:W:1',run:'r',priest:'P',target:'W',authorized:true};
+    view.members.push({name:'P',fresh:true,observation:{alive:true,recovery:{actor:{c:{}},id:'r:revive:W:1',phase:'uncertain',reason:'Revive outcome unknown'}}});
+    view.members[0].observation.cave.choice.resolved=true;
+    const render=()=>renderToStaticMarkup(React.createElement(QueryClientProvider,{client},React.createElement(DungeonPanel)));
+    const waiting=render();assert.match(waiting,/Revive outcome unknown/);assert.match(waiting,/disabled=""[^>]*>Call Nera/);
+    view.members[1].observation.recovery.phase='failed';
+    assert.doesNotMatch(render(),/disabled=""[^>]*>Call Nera/);
   } finally { client.clear(); }
 });

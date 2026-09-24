@@ -204,6 +204,7 @@ export function installRoleRunner(
       attacks.wake();
       if (!dungeon && sharedRoutine.groupedMovement?.()) return;
       if (!dungeon && (target || Date.now() - missingSince >= 750) && sharedRoutine.recoverFarmApproach && sharedRoutine.recoverFarmApproach(target)) return;
+      if (dungeon && sharedRoutine.caveRecoveryMove?.()) return;
       if (!target) {
         if (dungeon) root.sharedRoutine?.resetCombatMovement?.();
         else idleMovement();
@@ -227,7 +228,11 @@ export function installRoleRunner(
     if (!(await role.usePotion())) await sharedRoutine.regenerateHpOrMp();
     if (!supportAllowed(epoch)) return;
     if (await role.beforeTarget()) return;
-    if (!currentEpoch(epoch)) return;
+    if (!supportAllowed(epoch)) return;
+    if (sharedRoutine.caveRecoveryReserved?.() && attacks.pending()) return;
+    if (await sharedRoutine.caveRecoveryTick?.()) return;
+    if (sharedRoutine.caveRecoveryReserved?.()) return;
+    if (!supportAllowed(epoch)) return;
     const target = currentTarget();
     if (target && (!sharedRoutine.groupedAttackAllowed || sharedRoutine.groupedAttackAllowed(target)) &&
         (target.mtype !== "tinyp" || sharedRoutine.rareAttackAllowed?.(target, "support")))

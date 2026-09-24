@@ -682,8 +682,16 @@ server-confirmed resumable visit on the same server. Failed preparation can be
 retried explicitly; uncertain irreversible requests require observed reconciliation.
 
 Native movement refreshes generated geometry and pauses for party combat, loot,
-stale reports, and forced votes. Dungeon survival runs independently of ordinary
-role loops. Nera's revival choices use the same manual vote path as encounters;
+stale reports, and forced votes. Dungeon combat uses the ordinary class skill,
+healing, formation and kiting routines with cave-specific targeting and ownership.
+`dungeons/priest-recovery.ts` assigns one priest per death and persists permission
+before an Essence can be consumed. `runtime/characters/cave-recovery.ts` prepares
+the gravestone and uses the existing priest action slots, preserving living-party
+healing and combat MP reserves. Outside combat, it can approach and wait for MP.
+The local recovery ledger survives reloads; uncertain or interrupted casts are
+never automatically repeated. The panel reports recovery progress. Nera is blocked
+while a priest cast is unresolved, and remains the manual fallback otherwise.
+Nera's revival choices use the same manual vote path as encounters;
 shared-gold and Amber costs require confirmation and are rechecked before dispatch.
 The official guide is loaded by POST /api/load_article with the JSON body
 {"name":"cave-of-many-dreams","guide":true}; the public guide URL serves the game
@@ -691,7 +699,8 @@ shell. API compatibility was checked against game client version 17175.
 
 Run `node --test scripts/tests/daily-dungeons.test.cjs` along with the full checks
 above. Before production use, validate entry/partial return, generated stairs,
-combat and loot, free/paid revival, forced votes, expiry, and whole-party exit on
+combat and loot, priest grave healing/Essence consumption/channel completion,
+free/paid Nera revival, forced votes, expiry, and whole-party exit on
 an unlimited-visit development server. Mock tests do not prove live game behavior.
 Use the supported full restart workflow above for activation, then verify fresh
 coordinator and character code. A build by itself does not activate this feature.

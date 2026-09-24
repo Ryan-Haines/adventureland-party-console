@@ -2202,6 +2202,44 @@
         await anniversaryWithTimeout(loot(id), 2500, 'Dungeon loot');
     }
   }
+  var caveRecoveryClient;
+  function caveRecovery() {
+    if (caveRecoveryClient) return caveRecoveryClient;
+    var key = 'party-cave-revival:' + character.name;
+    caveRecoveryClient = root.installCaveRecovery({
+      now: Date.now, current: runtimeCurrent, actor: function () { return character; },
+      cave: function () { return character.cave || null; },
+      target: function (name) { var p = name === character.name ? character : get_player(name); return p && p.visible !== false ? p : null; },
+      essence: function () { return character.items.some(function (item) { return item && item.name === 'essenceoflife'; }); },
+      fighting: function () { return Object.values(parent.entities || {}).some(dungeonTargetAllowed); },
+      livingNeedsHealing: function () {
+        return cavePartyMembers().some(function (p) { return !p.rip && p.hp < p.max_hp * 0.9 && is_in_range(p, 'heal'); });
+      },
+      healingBusy: function () { return healingBusy; },
+      cost: function (skill) { return escapeCost(skill); },
+      reserve: function () { return Math.max(character.max_mp * 0.35, 2 * escapeCost('heal') + escapeCost('partyheal')); },
+      inRange: function (target, skill) { return is_in_range(target, skill); },
+      ready: function (skill, target) { return skill === 'heal' ? can_heal(target) : !is_on_cooldown('revive') && can_use('revive'); },
+      heal: async function (target) {
+        healingBusy = true;
+        try { return await anniversaryWithTimeout(heal(target), 2000, 'Gravestone healing'); }
+        finally { healingBusy = false; }
+      },
+      revive: function (target) { return use_skill('revive', target.name); },
+      approach: function (target) {
+        var range = Math.min(Number(character.range), Number(G.skills.revive.range) || 240) - 10;
+        var goal = combatApproachPoint(target, Math.max(1, range));
+        var length = Math.hypot(goal.x - character.x, goal.y - character.y);
+        if (!length) return;
+        var fraction = Math.min(1, Math.max(1, Number(character.speed) * 0.25) / length);
+        var point = { x: character.x + (goal.x - character.x) * fraction, y: character.y + (goal.y - character.y) * fraction };
+        if (safeCombatPoint(point, target)) sendCombatMove(target, point, 'cave-recovery');
+      },
+      read: function () { return JSON.parse(root.localStorage.getItem(key) || '{}'); },
+      write: function (value) { root.localStorage.setItem(key, JSON.stringify(value)); },
+    });
+    return caveRecoveryClient;
+  }
   function dungeonRuntime() {
     if (dungeonClient) return dungeonClient;
     if (!root.installDungeonRuntime) return { report: function () { return undefined; }, receive: function () {}, owns: function () { return false; } };
@@ -2307,7 +2345,7 @@
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
       groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
-      dungeon: dungeonRuntime().report(),
+      dungeon: character.cave && root.installCaveRecovery ? Object.assign(dungeonRuntime().report(), { recovery: caveRecovery().report() }) : dungeonRuntime().report(),
       convoyProtocol: 4,
       movementGeometry: movement.identity,
       huntReturnProtocol: 2,
@@ -9192,6 +9230,7 @@
         return;
       }
       dungeonRuntime().receive(state.dailyDungeon);
+      if (root.installCaveRecovery) caveRecovery().receive(state.dailyDungeon && state.dailyDungeon.recovery);
       if (dungeonRuntime().owns()) {
         partyPositions = state.partyPositions || [];
         partyThreats = state.partyThreats || [];
@@ -14328,6 +14367,9 @@
     },
     dungeonOwned: dungeonOwned,
     getDungeonTarget: getDungeonTarget,
+    caveRecoveryReserved: function () { return !!character.cave && character.ctype === 'priest' && caveRecovery().reserved(); },
+    caveRecoveryTick: function () { return character.cave && character.ctype === 'priest' ? caveRecovery().tick() : Promise.resolve(false); },
+    caveRecoveryMove: function () { return !!character.cave && character.ctype === 'priest' && caveRecovery().move(); },
     isOccupied: function () {
       if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns())
         return !runtimeCurrent() || !!root.__partyConsoleMaintenance || !!character.cave?.paused;

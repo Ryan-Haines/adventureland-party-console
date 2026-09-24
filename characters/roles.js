@@ -531,7 +531,11 @@
       ports.report(error);
     }
     function reserveHealing() {
-      if (!sharedRoutine.basicAttackReserved?.()) return false;
+      if (!sharedRoutine.basicAttackReserved?.()) {
+        if (!sharedRoutine.caveRecoveryReserved?.()) return false;
+        ports.state().skippedAttack = "cave priest recovery";
+        return true;
+      }
       ports.state().skippedAttack = "priest healing priority";
       Promise.resolve(sharedRoutine.healPartyBelow(0.9)).catch(ports.report);
       return true;
@@ -605,7 +609,7 @@
       const deadline = clock() ?? Date.now();
       const end = clock() === null ? Date.now() + 4 : deadline + 2;
       const attemptOnce = () => {
-        if (flight !== attempt || !confirmed(attempt) || !ports.allowed() || sharedRoutine.basicAttackReserved?.() || !is_in_range(target) || !permitted(target)) {
+        if (flight !== attempt || !confirmed(attempt) || !ports.allowed() || (sharedRoutine.basicAttackReserved?.() || sharedRoutine.caveRecoveryReserved?.()) || !is_in_range(target) || !permitted(target)) {
           cancelSlots();
           return;
         }
@@ -726,7 +730,7 @@
           if (stats) stats.timeouts++;
         }
         releaseExpired(target);
-        if (flight && (!confirmed(flight) || !ports.allowed() || sharedRoutine.basicAttackReserved?.())) cancelSlots();
+        if (flight && (!confirmed(flight) || !ports.allowed() || sharedRoutine.basicAttackReserved?.() || sharedRoutine.caveRecoveryReserved?.())) cancelSlots();
         if (ports.allowed() && !flight && reserveHealing()) return;
         if (!target || !ports.allowed()) {
           ports.state().skippedAttack = "no eligible target or combat blocked";
@@ -743,6 +747,9 @@
       }
     }
     return {
+      pending() {
+        return !!flight;
+      },
       hasStarted(targetId) {
         return flight?.targetId === targetId || lastSuccessfulTarget === targetId;
       },
@@ -2473,6 +2480,7 @@
         attacks.wake();
         if (!dungeon && sharedRoutine.groupedMovement?.()) return;
         if (!dungeon && (target || Date.now() - missingSince >= 750) && sharedRoutine.recoverFarmApproach && sharedRoutine.recoverFarmApproach(target)) return;
+        if (dungeon && sharedRoutine.caveRecoveryMove?.()) return;
         if (!target) {
           if (dungeon) root.sharedRoutine?.resetCombatMovement?.();
           else idleMovement();
@@ -2492,7 +2500,11 @@
       if (!await role8.usePotion()) await sharedRoutine.regenerateHpOrMp();
       if (!supportAllowed(epoch)) return;
       if (await role8.beforeTarget()) return;
-      if (!currentEpoch(epoch)) return;
+      if (!supportAllowed(epoch)) return;
+      if (sharedRoutine.caveRecoveryReserved?.() && attacks.pending()) return;
+      if (await sharedRoutine.caveRecoveryTick?.()) return;
+      if (sharedRoutine.caveRecoveryReserved?.()) return;
+      if (!supportAllowed(epoch)) return;
       const target = currentTarget();
       if (target && (!sharedRoutine.groupedAttackAllowed || sharedRoutine.groupedAttackAllowed(target)) && (target.mtype !== "tinyp" || sharedRoutine.rareAttackAllowed?.(target, "support")))
         await role8.beforeAttack(target);

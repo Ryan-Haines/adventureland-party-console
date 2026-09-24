@@ -41,7 +41,19 @@ automatically. Follow the live leader target, falling back to a shared determini
 priority order. Use live cave allies for healing and formation. Pause room travel
 during combat, but permit combat positioning; forced votes pause both. Keep farm
 travel, rare hunting and ordinary respawn outside dungeon ownership. Votes fan out to
-eligible unvoted characters. Purchases and paid revival require manual confirmation.
+eligible unvoted characters. Purchases and Nera's paid revival require manual confirmation.
+
+Priests automatically heal fallen participants' gravestones and revive them with
+carried Essences of Life. Living teammates' healing takes priority. During combat,
+recovery uses an offensive action opportunity and retains normal healing MP reserves;
+out of combat, it waits for MP regeneration and can approach on the same floor.
+The coordinator assigns one priest per death and persists authorization before
+consumption. A local receipt prevents a second cast after reload or uncertain replies.
+Nera remains manual and waits for any dispatched priest revival to resolve. Failed
+or interrupted casts do not automatically consume another Essence. Recovery phases
+and blocking reasons appear above the party cards. Validate full grave healing,
+consumption and the eight-second channel on a repeat-entry development server before
+live activation; automated tests do not establish live game behavior.
 Persist dispatch state: safely retry pre-dispatch failures, never blindly repeat
 uncertain entries or spending. Reconcile restart, expiry and partial exit.
 

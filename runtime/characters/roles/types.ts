@@ -12,6 +12,9 @@ export interface Role {
 }
 export interface SharedCombat {
   dungeonOwned?(): boolean;
+  caveRecoveryReserved?(): boolean;
+  caveRecoveryTick?(): Promise<boolean>;
+  caveRecoveryMove?(): boolean;
   getDungeonTarget?: TargetGetter;
   merchantEventCombatActive?(): boolean;
   combatContext?(): import('../skills/types.ts').CombatContext;

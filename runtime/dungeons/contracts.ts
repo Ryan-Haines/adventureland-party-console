@@ -1,3 +1,20 @@
+import type { CharacterEntity } from "typed-adventureland";
+
+export interface PriestRecoveryAssignment {
+  id: string;
+  run: string;
+  priest: string;
+  target: string;
+  authorized: boolean;
+}
+export interface PriestRecoveryObservation {
+  actor: Pick<CharacterEntity, "ctype" | "hp" | "max_hp" | "mp" | "max_mp" | "c">;
+  essence: boolean;
+  id?: string;
+  target?: string;
+  phase: "idle" | "healing" | "waiting" | "ready" | "dispatched" | "reviving" | "uncertain" | "failed" | "complete";
+  reason?: string;
+}
 /** Local wire observations. typed-adventureland 0.0.57 has no Cave of Many Dreams
  * contracts. Verified against official generated_zones.js / runner_functions.js
  * version 17175; review when upgrading the upstream package. */
@@ -47,6 +64,7 @@ export interface CaveObservation {
     points: CavePoint[];
     choice?: CaveChoice;
   } | null;
+  recovery?: PriestRecoveryObservation;
   keeper?: { map: string; x: number; y: number };
   action?: {
     id: string;
@@ -80,6 +98,9 @@ export interface DungeonState {
   operations: string[];
   error?: string;
   exitDispatched?: boolean;
+  priestRecovery?: PriestRecoveryAssignment;
+  recoveryDeaths?: Record<string, { dead: boolean; generation: number; attempted?: boolean }>;
+  manualRecovery?: boolean;
 }
 export interface DungeonParty {
   dailyDungeons?: DungeonState;

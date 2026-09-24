@@ -448,3 +448,29 @@ for (const ctype of ['warrior', 'priest', 'mage']) test('cave uses normal ' + ct
     assert.equal(r.moves(), before[3], 'no target must leave room navigation alone');
   } finally { r.c.partyRoleRunner.stop(); }
 });
+
+test('priest recovery reserves offensive slots, yields to living healing, and releases attacks afterward',async()=>{
+  const r=runner('priest');let recovering=true,living=false,revives=0;
+  r.routine.regenerateHpOrMp=async()=>{};
+  r.routine.caveRecoveryReserved=()=>recovering;
+  r.routine.caveRecoveryTick=async()=>{if(recovering)revives++;return recovering;};
+  r.routine.healPartyBelow=async()=>living;
+  r.routine.basicAttackReserved=()=>living;
+  try {
+    await r.run(250);await r.run(50);assert.equal(revives,1);assert.equal(r.attacks(),0);
+    living=true;await r.run(250);await r.run(50);assert.equal(revives,1);assert.equal(r.attacks(),0);
+    living=false;recovering=false;await r.run(250);await r.run(50);assert.equal(r.attacks(),1);
+  } finally { r.c.partyRoleRunner.stop(); }
+});
+
+test('priest waits for an outstanding attack before starting grave recovery',async()=>{
+  const r=runner('priest');let recovering=false,attempts=0;
+  r.routine.regenerateHpOrMp=async()=>{};r.routine.healPartyBelow=async()=>false;
+  r.routine.caveRecoveryReserved=()=>recovering;
+  r.routine.caveRecoveryTick=async()=>{if(recovering)attempts++;return recovering;};
+  try {
+    await r.run(250);await r.run(50);assert.equal(r.attacks(),1);
+    recovering=true;await r.run(250);assert.equal(attempts,0);
+    r.now(4000);await r.run(50);await r.run(250);assert.equal(attempts,1);assert.equal(r.attacks(),1);
+  } finally {r.c.partyRoleRunner.stop();}
+});
