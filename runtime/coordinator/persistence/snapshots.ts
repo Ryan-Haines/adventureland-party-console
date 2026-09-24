@@ -35,6 +35,7 @@ export const selectionFields = [
 ] as const;
 
 export const settingsFields = [
+  "dailyDungeons",
   "merchantRules", "production", "upgradeOfferingRules",
   "bankboiPrefix", "anniversaryAutoChat",
   "farmingProfiles",

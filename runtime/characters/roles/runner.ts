@@ -64,7 +64,8 @@ export function installRoleRunner(
   });
   const recoverFromDeath = createDeathRecovery({
     isDead: () => !!character.rip,
-    respawn: () => Promise.resolve(respawn()),
+    blocked: () => !!sharedRoutine.dungeonOwned?.(),
+    respawn: () => sharedRoutine.dungeonOwned?.() ? Promise.reject(Error('Dungeon owns revival')) : Promise.resolve(respawn()),
     releaseCombat: () => {
       working = false;
     },
@@ -90,6 +91,7 @@ export function installRoleRunner(
     );
   }
   function passingTarget(): Target | null {
+    if (sharedRoutine.dungeonOwned?.()) return null;
     if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending","feed"].includes(sharedRoutine.getAbtestingMode())) return null;
     return (sharedRoutine as any).getPassingTarget?.() || null;
   }
@@ -183,6 +185,7 @@ export function installRoleRunner(
     equipment?.tick(target, actor.damage_type, Number(character.range), combatAllowed());
   }
   function movementTick() {
+    if (sharedRoutine.dungeonOwned?.()) return;
     try {
       equipmentTick();
       if (sharedRoutine.pollRareHunting?.()) return;
@@ -215,6 +218,7 @@ export function installRoleRunner(
     }
   }
   async function supportTick(role: Role, epoch: number): Promise<void> {
+    if (sharedRoutine.dungeonOwned?.()) return;
     if (!(await role.usePotion())) await sharedRoutine.regenerateHpOrMp();
     if (!supportAllowed(epoch)) return;
     if (await role.beforeTarget()) return;

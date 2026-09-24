@@ -1,4 +1,5 @@
 "use client";
+import { CaveEventRow } from './dungeon-settings';
 import { Settings } from "lucide-react";
 
 import { useClock } from "@/hooks/use-clock";
@@ -22,12 +23,13 @@ export function EventSelectionControl({ state, name, onChange, onAnniversary }: 
     <PopoverTrigger className="cursor-pointer rounded border border-slate-500 bg-[#101c1a] px-2 py-1 text-xs text-emerald-100 hover:bg-[#20332e]">Events ({selected.length}) ▾</PopoverTrigger>
     <PopoverContent align="start" className="max-h-[min(20rem,var(--available-height))] w-96 max-w-[calc(100vw-1rem)] overflow-auto rounded border border-slate-500 bg-[#101c1a] p-3 text-xs text-emerald-50 shadow-xl">
       {policy.inherited && <p className="mb-2 text-amber-200">Using {policy.source}’s events</p>}
-      {catalog.map(event => {
+      <CaveEventRow />
+      {[...catalog].sort((a, b) => a.name.localeCompare(b.name)).map(event => {
         const supported = supportedEvents.includes(event.id), allowed = supported;
         return <div key={event.id} className="flex items-center gap-2 py-2">
           <input type="checkbox" checked={allowed && selected.includes(event.id)} disabled={!allowed || policy.inherited}
             className="accent-emerald-500" onChange={e => onChange(e.target.checked ? [...selected, event.id] : selected.filter(id => id !== event.id))} />
-          <span>{event.name} — {!supported ? "Unsupported" : event.live ? "LIVE" : event.next ? eventTimeLabel(event.next, now) : event.slotAt ? `Next ${event.slotKind} slot: ${eventTimeLabel(event.slotAt, now)} · event not guaranteed` : "Time not announced"}{event.stale ? " · timing stale" : ""}</span>
+          <span>{event.name} — {!supported ? "Unsupported" : event.live ? "LIVE" : event.next ? eventTimeLabel(event.next, now) : event.slotAt ? `Next chance: ${eventTimeLabel(event.slotAt, now)}` : "Time not announced"}{event.stale ? " · timing stale" : ""}</span>
           {event.id === "anniversary" && <button type="button" aria-label="Anniversary settings" onClick={onAnniversary} className="ml-auto rounded border border-slate-500 bg-slate-950 p-2 text-pink-200 hover:bg-slate-800"><Settings className="size-4" /></button>}
         </div>;
       })}

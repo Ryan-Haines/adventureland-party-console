@@ -3,6 +3,7 @@ import { errorReason, type CombatState } from "./types.ts";
 export type EventRejoinOutcome = { status: "not-applicable" | "recovered" | "retryable" | "cancelled"; phase?: "event-reentry" | "event-travel"; reason?: string };
 interface RecoveryPorts {
   isDead(): boolean;
+  blocked?(): boolean;
   respawn(): Promise<unknown>;
   releaseCombat(): void;
   publish(state: CombatState): void;
@@ -55,12 +56,13 @@ export function createDeathRecovery(ports: RecoveryPorts): () => Promise<void> {
     }
   }
   return async () => {
+    if (ports.blocked?.()) return;
     observeDeath();
     if (!pendingReturn || recovering || Date.now() < retryAt) return;
     recovering = true;
     try {
       if (ports.isDead()) await spawn();
-      if (!ports.isDead()) await returnToActivity();
+      if (!ports.isDead() && !ports.blocked?.()) await returnToActivity();
     } catch (error) {
       const reason = errorReason(error);
       publish("recovery-retry", reason);

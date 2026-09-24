@@ -4,9 +4,12 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { read, useVisible } from "./query-cache";
 import { usePartyAction } from "./query-actions";
+import { useDungeons } from './dungeon-query';
 import { EscapeStatus } from "./escape-status";
 
 export function EscapeControl() {
+  const dungeon = useDungeons();
+  const inDungeon = !!dungeon.data && !['idle', 'held'].includes(dungeon.data.state.phase);
   const client = useQueryClient(), visible = useVisible();
   const mutation = usePartyAction();
   const query = useQuery({ queryKey: ['party', 'escape'],
@@ -17,6 +20,7 @@ export function EscapeControl() {
   const [actionError, setError] = useState<string | null>(null);
   const error = actionError || (query.isError ? query.error.message : null);
   async function action() {
+    if (inDungeon) { await dungeon.action({ action: 'exit' }); return; }
     setBusy(true);
     setError(null);
     try {
@@ -42,18 +46,19 @@ export function EscapeControl() {
   return (
     <div className="lg:col-span-2 xl:col-span-4">
       <Button
-        disabled={busy || running}
+        disabled={inDungeon ? dungeon.busy : busy || running}
         onClick={() => void action()}
         className="h-14 w-full border-2 border-rose-400 bg-[#481c27] text-base font-semibold text-rose-50 hover:bg-[#682336] disabled:opacity-80"
       >
-        {(busy || running) && (
+        {(inDungeon ? dungeon.busy : busy || running) && (
           <span
             aria-label="Escape in progress"
             className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-rose-100 border-t-transparent"
           />
         )}
-        {label}
+        {inDungeon ? 'Escape â€” exit dungeon' : label}
       </Button>
+      {inDungeon && dungeon.actionError && <p role="alert" className="text-rose-200">{dungeon.actionError}</p>}
     </div>
   );
 }

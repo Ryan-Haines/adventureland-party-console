@@ -73,6 +73,7 @@ export function createInitialCoordinatorState<Merchant extends string | null = s
   } = input;
   return {
     gameVersion: 0,
+    dailyDungeons: persistedSettings.dailyDungeons as import("../dungeons/contracts.ts").DungeonState | undefined,
     ...sharedSettings(persistedSettings),
     clientUpdate: null as import("./characters/client-updates.ts").ClientUpdateStatus | null,
     ...dashboardPreferences(persistedSettings),

@@ -1,3 +1,4 @@
+import { dungeonOwns } from '../../dungeons/contracts.ts';
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
 import { deliveryReady } from './delivery-recovery.ts';
 import { merchantEventReserved, type MerchantEventState } from './event-control.ts';
@@ -132,7 +133,7 @@ export function createCoordinatorMerchantDispatcher(
     {
       ...ports,
       eventReserved: () => merchantEventReserved(state, ports.now()),
-      enabled: job => routineEnabled(job, state.merchantAutomations || {}),
+      enabled: job => !(job.target && dungeonOwns(state, job.target)) && routineEnabled(job, state.merchantAutomations || {}),
       nextCommand: () => state.nextCommandId++,
       merchant: () => state.merchantCharacter,
       returningHome: () => !!state.merchantHomeReturnAt,

@@ -21,7 +21,7 @@ async function run(now, overrides = {}, bundled = false, launcherDirectory) {
     if(Object.hasOwn(overrides,name))return overrides[name];
     if(name==='../../.build/runtime/coordinator-application.cjs')return applicationExports;
     if(name==='./infrastructure/dependencies.ts')return require('../../../runtime/coordinator/infrastructure/dependencies.ts');
-    if(name.startsWith('./') && name.endsWith('.ts'))return require(path.resolve(__dirname,'../../../runtime/coordinator',name));
+    if((name.startsWith('./') || name.startsWith('../')) && name.endsWith('.ts'))return require(path.resolve(__dirname,'../../../runtime/coordinator',name));
     if(name==='../../.build/runtime/coordinator-policies.cjs')return require('../../../runtime/coordinator/index.ts');
     if(name==='../config')return config;
     if(name==='../account_info')return async()=>account;

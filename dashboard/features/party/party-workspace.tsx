@@ -3,6 +3,7 @@ import { RosterControls } from "./roster-controls";
 import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
 import { MapPin } from "lucide-react";
+import { DungeonPanel } from './dungeon-panel';
 import { EscapeControl } from "./escape-control";
 import { ConnectedFarmingAreaPicker as FarmingAreaPicker } from "./connected-farming-area-picker";
 import { MonsterFocusPicker } from "./monster-focus-picker";
@@ -71,6 +72,7 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
               <MapPin className="mr-2 h-5 w-5" />
               Send party to town
             </Button>
+            <DungeonPanel />
             <EscapeControl />
           </RadioGroup>
         )}

@@ -1,0 +1,110 @@
+/** Local wire observations. typed-adventureland 0.0.57 has no Cave of Many Dreams
+ * contracts. Verified against official generated_zones.js / runner_functions.js
+ * version 17175; review when upgrading the upstream package. */
+export interface CavePoint {
+  id: string;
+  label: string;
+  map: string;
+  x: number;
+  y: number;
+  locked?: boolean;
+  done?: boolean;
+  exit?: boolean;
+}
+export interface CaveChoice {
+  id: string;
+  title: string;
+  text: string;
+  deadline: number;
+  resolved: boolean;
+  votes: Record<string, string>;
+  options: { id: string; label: string; unavailable?: string; cost?: number; amber?: number }[];
+  shop?: { room: string; name: string; price: number; sold: boolean; nearby: boolean };
+}
+export interface CaveObservation {
+  protocol: 1;
+  at: number;
+  supported: boolean;
+  alive: boolean;
+  ready: boolean;
+  members: string[];
+  leader?: string;
+  visit?: {
+    available: boolean;
+    resets: number;
+    home: string;
+    resume?: { server: string; run?: string };
+    checkedAt: number;
+  };
+  cave: {
+    run: string;
+    floor: number;
+    expires: number;
+    remainingMs: number;
+    paused: boolean;
+    gold: number;
+    amber: number;
+    points: CavePoint[];
+    choice?: CaveChoice;
+  } | null;
+  keeper?: { map: string; x: number; y: number };
+  action?: {
+    id: string;
+    status: "dispatched" | "complete" | "uncertain" | "failed";
+    error?: string;
+  };
+}
+export interface CaveCommand {
+  id: string;
+  action: "gather" | "enter" | "move" | "vote" | "buy" | "exit" | "revival";
+  run?: string;
+  resume?: boolean;
+  target?: CavePoint;
+  choice?: string;
+  option?: string;
+  room?: string;
+  cost?: number;
+  amber?: number;
+}
+export interface DungeonState {
+  protectFromEvents: boolean;
+  participants: string[];
+  phase: "idle" | "gathering" | "entering" | "active" | "exiting" | "held";
+  run?: string;
+  server?: string;
+  pendingEvent?: string;
+  commands: Record<string, CaveCommand>;
+  resuming?: boolean;
+  interruptedPhase?: DungeonState["phase"];
+  interruptedCommands?: Record<string, CaveCommand>;
+  operations: string[];
+  error?: string;
+  exitDispatched?: boolean;
+}
+export interface DungeonParty {
+  dailyDungeons?: DungeonState;
+  leader: string | null;
+  followers?: Record<string, boolean>;
+  merchantCharacter: string | null;
+  statuses: Record<
+    string,
+    | {
+        seenAt: number;
+        map?: string;
+        x?: number;
+        y?: number;
+        server?: string;
+        rip?: boolean;
+        dungeon?: CaveObservation;
+      }
+    | undefined
+  >;
+}
+export function dungeonOwns(party: Pick<DungeonParty, "dailyDungeons">, name?: string): boolean {
+  const d = party.dailyDungeons;
+  return !!d && d.phase !== "idle" && (name === undefined || d.participants.includes(name));
+}
+export interface DungeonView {
+  state: DungeonState;
+  members: { name: string; fresh: boolean; observation?: CaveObservation }[];
+}

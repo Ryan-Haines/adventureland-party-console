@@ -1,4 +1,5 @@
 import "./geometry.ts";
+import "./dungeons.ts";
 import "./dashboard-bridge.ts";
 import "./lucky-upgrade.ts";
 import "./lucky-slot-tracker.ts";

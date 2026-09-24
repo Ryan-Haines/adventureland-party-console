@@ -658,3 +658,40 @@ return ownership retain this reservation through coordinator restart. Publish
 character and coordinator assets together with the ordinary full restart.
 Validate with `merchant-events`, `shared-walk`, event selection/return, and
 merchant checkpoint/recovery tests.
+
+## Cave of Many Dreams
+
+`dungeons/service.ts` owns the selected leader and enabled followers from manual
+entry through confirmed exit. The merchant is excluded and more than three combat
+participants are rejected. `runtime/dungeons/contracts.ts` defines the partial
+cave wire protocol; `runtime/characters/dungeons.ts` adapts official game APIs.
+`runtime/characters/dungeon-journal.ts` persists receipts before dispatch. Review
+these compatibility contracts when upgrading typed-adventureland.
+
+Entry is never an automatic event selection. The Events gear exposes eligibility,
+manual entry/return, and protection from other events (default on). Turning that
+protection off permits an enabled live event to request exit; event travel waits
+for fresh outside observations from every participant. Reenabling protection can
+cancel only an exit that has not been delivered to any character.
+
+Town and Escape call cave_exit for all captured participants, including fallen
+characters. Natural completion and explicit exit hold ordinary activity outside;
+Resume ordinary activity or a new manual travel command releases that hold.
+A disconnected member keeps ownership. Return missing participants requires a
+server-confirmed resumable visit on the same server. Failed preparation can be
+retried explicitly; uncertain irreversible requests require observed reconciliation.
+
+Native movement refreshes generated geometry and pauses for party combat, loot,
+stale reports, and forced votes. Dungeon survival runs independently of ordinary
+role loops. Nera's revival choices use the same manual vote path as encounters;
+shared-gold and Amber costs require confirmation and are rechecked before dispatch.
+The official guide is loaded by POST /api/load_article with the JSON body
+{"name":"cave-of-many-dreams","guide":true}; the public guide URL serves the game
+shell. API compatibility was checked against game client version 17175.
+
+Run `node --test scripts/tests/daily-dungeons.test.cjs` along with the full checks
+above. Before production use, validate entry/partial return, generated stairs,
+combat and loot, free/paid revival, forced votes, expiry, and whole-party exit on
+an unlimited-visit development server. Mock tests do not prove live game behavior.
+Use the supported full restart workflow above for activation, then verify fresh
+coordinator and character code. A build by itself does not activate this feature.

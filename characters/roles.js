@@ -2220,12 +2220,13 @@
       }
     }
     return async () => {
+      if (ports.blocked?.()) return;
       observeDeath();
       if (!pendingReturn || recovering || Date.now() < retryAt) return;
       recovering = true;
       try {
         if (ports.isDead()) await spawn();
-        if (!ports.isDead()) await returnToActivity();
+        if (!ports.isDead() && !ports.blocked?.()) await returnToActivity();
       } catch (error) {
         const reason = errorReason(error);
         publish("recovery-retry", reason);
@@ -2327,7 +2328,8 @@
     });
     const recoverFromDeath = createDeathRecovery({
       isDead: () => !!character.rip,
-      respawn: () => Promise.resolve(respawn()),
+      blocked: () => !!sharedRoutine.dungeonOwned?.(),
+      respawn: () => sharedRoutine.dungeonOwned?.() ? Promise.reject(Error("Dungeon owns revival")) : Promise.resolve(respawn()),
       releaseCombat: () => {
         working = false;
       },
@@ -2344,6 +2346,7 @@
       return active && !character.rip && resolvedRole().combat && (character.ctype !== "merchant" || !!sharedRoutine.merchantEventCombatActive?.()) && !sharedRoutine.isOccupied() && ["pending", "feed"].indexOf(sharedRoutine.getAbtestingMode()) < 0;
     }
     function passingTarget() {
+      if (sharedRoutine.dungeonOwned?.()) return null;
       if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending", "feed"].includes(sharedRoutine.getAbtestingMode())) return null;
       return sharedRoutine.getPassingTarget?.() || null;
     }
@@ -2441,6 +2444,7 @@
       equipment2?.tick(target, actor.damage_type, Number(character.range), combatAllowed());
     }
     function movementTick() {
+      if (sharedRoutine.dungeonOwned?.()) return;
       try {
         equipmentTick();
         if (sharedRoutine.pollRareHunting?.()) return;
@@ -2476,6 +2480,7 @@
       }
     }
     async function supportTick(role8, epoch) {
+      if (sharedRoutine.dungeonOwned?.()) return;
       if (!await role8.usePotion()) await sharedRoutine.regenerateHpOrMp();
       if (!supportAllowed(epoch)) return;
       if (await role8.beforeTarget()) return;

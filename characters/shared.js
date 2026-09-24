@@ -16,7 +16,7 @@
   var movement = root.installPartyMovement(root, {
     now: Date.now,
     context: function() { return { runtime: convoyRuntimeId || String(runtimeGeneration), revision: Number(navigationIntent && navigationIntent.revision) || 0,
-      current: runtimeCurrent() && (!parent.socket || parent.socket.connected !== false), paused: !!root.__partyMovementPaused }; },
+      current: runtimeCurrent() && (!parent.socket || parent.socket.connected !== false), paused: !!root.__partyMovementPaused || !!(dungeonClient && !dungeonClient.canMove()) }; },
     request: request,
     townReady: function() { return !departureCombatPending() && eligibleDepartureChests().length === 0; },
     transitionReady: function() { return eligibleDepartureChests().length === 0; },
@@ -2168,6 +2168,70 @@
     return pause ? { id: pause.id, ready: !consoleMaintenanceBusy() && !character.moving &&
       !(typeof smart !== 'undefined' && smart.moving) } : null;
   }
+  var dungeonClient;
+  function dungeonRuntime() {
+    if (dungeonClient) return dungeonClient;
+    if (!root.installDungeonRuntime) return { report: function () { return undefined; }, receive: function () {}, owns: function () { return false; } };
+    var journalKey = 'party-dungeon-actions:' + character.name;
+    dungeonClient = root.__partyDungeonRuntime = root.installDungeonRuntime({
+      every: function (callback) { var timer = setInterval(function () { if (!runtimeCurrent()) clearInterval(timer); else callback(); }, 250); },
+      name: character.name, now: Date.now, current: runtimeCurrent,
+      members: currentPartyList,
+      leader: function () { return currentPartyList()[0]; },
+      ready: function () {
+        if (!character.cave) return !character.rip && !departureCombatPending() && eligibleDepartureChests().length === 0;
+        var threatened = Object.values(parent.entities || {}).some(function (e) { return e && e.type === 'monster' && !e.dead && e.hp > 0 && currentPartyList().includes(e.target); });
+        var unlooted = Object.values(parent.chests || {}).some(function (chest) { return chest.map === character.map && distance(character, chest) <= 400; });
+        return !character.rip && !character.cave.paused && !threatened && !unlooted;
+      },
+      alive: function () { return !character.rip; },
+      cave: function () { return character.cave || null; },
+      supported: function () { return typeof cave_info === 'function' && typeof cave_enter === 'function' && typeof cave_exit === 'function'; },
+      info: function () { return cave_info(); },
+      request: function (action, fields) {
+        if (action === 'enter') return cave_enter();
+        if (action === 'exit') return cave_exit();
+        if (action === 'revival') return respawn();
+        if (action === 'vote') return cave_reply(fields.choice, fields.option);
+        if (action === 'buy') return cave_buy(fields.room);
+        throw new Error('Unsupported cave action');
+      },
+      keeper: function () {
+        var npc = G.maps.main && G.maps.main.npcs.find(function (n) { return n.id === 'dreamkeeper'; });
+        return npc && { map: 'main', x: npc.position[0], y: npc.position[1] };
+      },
+      text: function (value) { return parent.phrase && parent.phrase.message ? parent.phrase.message(value) : String(value || ''); },
+      move: function (point) { return movement.move(point, undefined, { native: true, town: false,
+        barrier: async function () {
+          if (character.cave) return dungeonClient.canMove();
+          await smartLoot(); return !departureCombatPending() && eligibleDepartureChests().length === 0;
+        } }); },
+      stop: function () { return movement.stop('smart'); },
+      combat: async function () {
+        await anniversaryWithTimeout(useRecoveryPotion({ hpBelow: 0.5, mpBelow: 0.2, priority: 'hp' }), 2000, 'Dungeon recovery');
+        if (!runtimeCurrent() || character.cave && character.cave.paused) return;
+        if (character.ctype === 'priest') await anniversaryWithTimeout(healPartyBelow(0.9), 2000, 'Dungeon healing');
+        if (!runtimeCurrent() || character.cave && character.cave.paused) return;
+        if (character.cave) {
+          for (var chestId of Object.keys(parent.chests || {})) {
+            if (!runtimeCurrent() || !character.cave || character.cave.paused) return;
+            var chest = parent.chests[chestId];
+            if (chest.map === character.map && distance(character, chest) <= 400 && !character.cave.paused)
+              await anniversaryWithTimeout(loot(chestId), 2500, 'Dungeon loot');
+          }
+        } else await smartLoot();
+        var targets = Object.values(parent.entities || {}).filter(function (e) {
+          return e && e.type === 'monster' && !e.dead && e.hp > 0 && e.target && currentPartyList().includes(e.target) && is_in_range(e);
+        });
+        if (targets.length && can_attack(targets[0])) await anniversaryWithTimeout(attack(targets[0]), 2500, 'Dungeon attack');
+        else await anniversaryWithTimeout(regenerateHpOrMp(), 2000, 'Dungeon regeneration');
+      },
+      read: function () { return JSON.parse(root.localStorage.getItem(journalKey) || 'null'); },
+      write: function (journal) { root.localStorage.setItem(journalKey, JSON.stringify(journal)); },
+    });
+    return root.__partyDungeonRuntime;
+  }
+
   function snapshot() {
     calculateFarmingMode();
     if (character.rip && !combatWasDead) {
@@ -2230,6 +2294,7 @@
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
       groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      dungeon: dungeonRuntime().report(),
       convoyProtocol: 4,
       movementGeometry: movement.identity,
       huntReturnProtocol: 2,
@@ -8413,6 +8478,7 @@
   }
 
   async function handle(command) {
+    if (root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return;
     if (escapeOwns() && !(escapeState.stage === "recovery-convoy" && command && command.purpose === "escape-recovery")) {
       reportMerchantCommand(command, "deferred", "escape"); return;
     }
@@ -9111,6 +9177,12 @@
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');
         return;
       }
+      dungeonRuntime().receive(state.dailyDungeon);
+      if (dungeonRuntime().owns()) {
+        root.__partyStatusSuccessAt = Date.now();
+        if (dashboardSampler) dashboardSampler.renew(state.dashboardLease);
+        return;
+      }
       if (state.upgradePreview) await handleUpgradePreview(state.upgradePreview);
       await applyMerchantVisibility(state.merchantVisibility);
       if (character.ctype === "merchant") await flushNativePurchaseReceipts();
@@ -9682,6 +9754,7 @@
   }
 
   async function eventTravelAllowed(eventName) {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (character.ctype === "merchant") return runtimeCurrent();
     if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return false;
     try {
@@ -9761,6 +9834,7 @@
   }
 
   async function runAnniversaryKiss() {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (merchantEventWorkReserved()) return;
     if (!eventSelected("anniversary")) return;
     if (await applyAnniversaryAbort()) return;
@@ -10543,6 +10617,7 @@
   }
 
   async function joinEventDestination(destination) {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (escapeOwns()) return;
     if (!destination || character.map === destination.map) return false;
     var map = G.maps && G.maps[destination.map], eventName = map && map.event;
@@ -10797,6 +10872,7 @@
   }
 
   async function pollEvents() {
+    if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
     if (eventPollBusy) return;
@@ -14228,7 +14304,9 @@
       return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
         !eventReturnPending && !root.__merchantActiveJob;
     },
+    dungeonOwned: function () { return !!(root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()); },
     isOccupied: function () {
+      if (root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return true;
       if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
       if(outboundHuntTravel() && huntTravelExtraAggro())interruptConvoyForDefense();

@@ -5,7 +5,19 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+### Added
+
+- Cave of Many Dreams appears first in Events with manual entry, server eligibility
+  countdown, and a saved setting that protects the visit from other events by default.
+- Dungeon controls show objectives, stairs, remaining run time, shared currency,
+  votes, purchases, and revival choices. Paid choices require confirmation. Town
+  and Escape exit the party together; leaving holds ordinary activity until resumed.
+- Dungeon ownership pauses ordinary travel, Hunt, combat, and merchant visits.
+  Persisted action receipts prevent blind retries after lost entry or spending replies.
+
 ### Fixed
+
+- Event estimates now say "Next chance" without the "event not guaranteed" text.
 
 - Invisible rogue recipients reveal themselves for merchant servicing, then resume
   their normal invisibility behavior. ([#10](https://github.com/Ryan-Haines/adventureland-party-console/pull/10))

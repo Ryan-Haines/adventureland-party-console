@@ -1,0 +1,39 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const load = require('./helpers/dashboard-query-module.cjs');
+const { dungeonEntryLabel } = load('dungeon-query.ts');
+test('entry countdown requires fresh server eligibility and never guesses availability at reset', () => {
+  const now = 100000;
+  const view = { members: [{ fresh: true, observation: { visit: { checkedAt: now, available: false, resets: now + 65000 } } }] };
+  assert.equal(dungeonEntryLabel(view, now), 'Next entry: 0h 1m 5s');
+  view.members[0].observation.visit.resets = now;
+  assert.equal(dungeonEntryLabel(view, now), 'Checking availability…');
+  view.members[0].observation.visit.available = true;
+  assert.equal(dungeonEntryLabel(view, now), 'Available now');
+  view.members[0].fresh = false;
+  assert.equal(dungeonEntryLabel(view, now), 'Availability unknown');
+  view.members[0].fresh = true;
+  assert.equal(dungeonEntryLabel(view, now + 46000), 'Availability unknown');
+});
+test('dungeon panel exposes actual objectives, paid costs and explicit revival choices', () => {
+  const React = require('../../dashboard/node_modules/react');
+  const { renderToStaticMarkup } = require('../../dashboard/node_modules/react-dom/server');
+  const dashboardRequire = require('node:module').createRequire(require('node:path').resolve('dashboard/package.json'));
+  const { QueryClientProvider } = dashboardRequire('@tanstack/react-query');
+  const { createDashboardClient } = load('query-cache.tsx');
+  const { DungeonPanel } = load('dungeon-panel.tsx');
+  const client = createDashboardClient(), now = Date.now();
+  client.setQueryData(['party', 'daily-dungeons'], { state: { phase: 'active', participants: ['W'] }, members: [{ name: 'W', fresh: true,
+    observation: { alive: false, cave: { run: 'r', floor: 1, expires: now + 50000, remainingMs: 50000, paused: true, gold: 20, amber: 3,
+      points: [{ id: 'stairs', label: 'Stairs down', locked: true }],
+      choice: { id: 'nera', title: 'Nera', text: 'Choose where to revive', deadline: now + 30000, resolved: false, votes: {},
+        options: [{ id: 'here', label: 'Revive here', amber: 1 }, { id: 'door', label: 'Revive at doorway', amber: 0 }] } } } }] });
+  try {
+    const html = renderToStaticMarkup(React.createElement(QueryClientProvider, { client }, React.createElement(DungeonPanel)));
+    assert.match(html, /Stairs down.*locked/);
+    assert.match(html, /Revive here.*1 Amber/);
+    assert.match(html, /Revive at doorway/);
+    assert.match(html, /Call Nera/);
+    assert.match(html, /grid-cols-2/);
+  } finally { client.clear(); }
+});
