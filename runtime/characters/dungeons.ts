@@ -95,6 +95,13 @@ export function installDungeonRuntime(ports: Ports) {
   let stopping: Promise<unknown> = Promise.resolve();
   let serverTime = 0,
     serverOffset = 0;
+  function caveText(message: unknown, fallback: string | undefined): string {
+    const translated = ports.text(message || fallback);
+    // Headless clients may lack phrase.message and stringify localization payloads.
+    return typeof translated === "string" && translated !== "[object Object]"
+      ? translated
+      : fallback || "";
+  }
   function normalized(): CaveObservation["cave"] {
     const c = ports.cave();
     if (!c) return null;
@@ -113,7 +120,7 @@ export function installDungeonRuntime(ports: Ports) {
               : p.down
                 ? "Stairs down"
                 : "Stairs up"
-            : ports.text(p.name_message || p.name),
+            : caveText(p.name_message, p.name),
         map: p.map || "zone_" + c.run + "_" + p.floor,
         x: p.x,
         y: p.y,
@@ -134,12 +141,12 @@ export function installDungeonRuntime(ports: Ports) {
         ...c.choice,
         id: String(c.choice.id),
         deadline: c.choice.deadline - offset,
-        title: ports.text(c.choice.title_message || c.choice.title),
-        text: ports.text(c.choice.text_message || c.choice.text),
+        title: caveText(c.choice.title_message, c.choice.title),
+        text: caveText(c.choice.text_message, c.choice.text),
         options: c.choice.options.map((o) => ({
           id: String(o.id),
-          label: ports.text(o.label_message || o.label),
-          unavailable: o.unavailable && ports.text(o.unavailable_message || o.unavailable),
+          label: caveText(o.label_message, o.label),
+          unavailable: o.unavailable && caveText(o.unavailable_message, o.unavailable),
           cost: o.cost,
           amber: o.amber,
         })),

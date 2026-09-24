@@ -22,6 +22,9 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Cave choices, descriptions and objectives keep their server-provided text when
+  a headless client cannot translate localization objects.
+
 - Steam cave requests capture server replies before native UI handlers, fixing
   missing eligibility reports and protecting entry, vote, purchase and exit receipts.
   Eligibility reads recover from timeouts; the settings panel shows request errors.

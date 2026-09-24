@@ -273,3 +273,24 @@ test('eligibility exposes Steam request failures and clears them after recovery'
   assert.equal(f.runtime.report().visitError, undefined);
   assert.equal(f.runtime.report().visit.available, true);
 });
+
+for (const native of [false, true]) test('cave choice text remains readable with ' + (native ? 'native translations' : 'headless translation fallback'), () => {
+  const raw = cave();
+  raw.choice.title = 'The Shop with One Item'; raw.choice.title_message = {phrase: 'shop.title'};
+  raw.choice.text = 'Have a look.'; raw.choice.text_message = {phrase: 'shop.text'};
+  raw.choice.options = [
+    {id: 'open', label: 'Open the shop', label_message: {phrase: 'shop.open'}},
+    {id: 'leave', label: "We don't need it", label_message: {phrase: 'shop.leave'}, unavailable: 'Not nearby', unavailable_message: {phrase: 'shop.far'}}
+  ];
+  raw.objectives = [{floor: 0, x: 1, y: 2, name: 'Meda', name_message: {phrase: 'shop.npc'}}];
+  const translate = value => native && value?.phrase ? 'Translated ' + value.phrase : String(value || '');
+  const runtime = installDungeonRuntime({name:'W', members:()=>['W'], leader:()=> 'W', ready:()=>true, now:()=>100000,
+    alive:()=>true, current:()=>true, cave:()=>raw, supported:()=>false, info:async()=>({}), request:async()=>{},
+    keeper:()=>undefined, text:translate, move:async()=>{}, stop:async()=>{}, read:()=>null, write(){} });
+  const observed = runtime.report().cave;
+  assert.equal(observed.choice.title, native ? 'Translated shop.title' : 'The Shop with One Item');
+  assert.equal(observed.choice.text, native ? 'Translated shop.text' : 'Have a look.');
+  assert.deepEqual(observed.choice.options.map(o=>o.label), native ? ['Translated shop.open','Translated shop.leave'] : ['Open the shop', "We don't need it"]);
+  assert.equal(observed.choice.options[1].unavailable, native ? 'Translated shop.far' : 'Not nearby');
+  assert.equal(observed.points[0].label, native ? 'Translated shop.npc' : 'Meda');
+});
