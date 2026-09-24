@@ -2,9 +2,10 @@ import type { Group, Member } from "../../combat/grouped.ts";
 import type { StoredCombatLogEntry } from "../telemetry/combat-log.ts";
 import { retireTravelTargets, travelCombatFor, type TravelState } from "./travel-defense.ts";
 import { phoenixCandidates } from './phoenix-candidates.ts';
-import {huntDefense, outboundHunt, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
+import {updateHuntTravel, interruptibleTravel, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
 import {passingIdentity} from '../../combat/passing.ts';
 interface GroupedState {
+  passiveHunting?: import('../../combat/passive-travel.ts').PassiveTravelSettings;
   phoenixPatrolActive?: boolean;
   farmingPolicy?: string;
   monsterHunt?: { stage: string; target: string | null } | null;
@@ -135,7 +136,7 @@ function evaluateParticipants(
     status: state.statuses[name],
   }));
   members = patrolMembers(state,ports,members) as typeof members;
-  members = huntDefenseMembers(state,members) as typeof members;
+  members = huntDefenseMembers(state,members,ports.now()) as typeof members;
   retireEventTargets(state, members, ports.now());
   const travelling = names.some(name => travelCombatFor(state as TravelState, name));
   // Apply travel restrictions here, before death-recovery preparation. A saved
@@ -157,15 +158,16 @@ function evaluateParticipants(
   logUnseenRelease(state, leader, previous, group);
   return group;
 }
-function huntDefenseMembers(state: GroupedState, members: Member[]): Member[] {
+function huntDefenseMembers(state: GroupedState, members: Member[], now: number): Member[] {
   const c=state.activeConvoy;
-  if(!c || !(outboundHunt(c) || c.huntTravel?.reason) || !huntDefense(c))return members;
-  const targets=[...(c.huntTravel?.committed||[]),...(c.huntTravel?.primary?[c.huntTravel.primary]:[])];
+  if(!c || !interruptibleTravel(c) || members.some(m=>m.cancelled))return members;
+  const control=updateHuntTravel(c,members,now,undefined,state.passiveHunting);
+  const targets=control?.committed||[];
   return members.map(m=> {
     const s=m.status,g=s?.groupedCombat;
     if(!s || !g)return m;
     const seen=(g.sightings||[]).filter(t=>targets.some(primary=>passingIdentity({...t,server:s.server})===passingIdentity(primary)));
-    return {...m,status:{...s,groupedCombat:{...g,huntDefense:true,threats:[...(g.threats||[]),...seen]}}};
+    return {...m,status:{...s,groupedCombat:{...g,huntDefense:!!control?.defending,travelCommitted:targets,threats:seen}}};
   });
 }
 function travelPrevious(state: GroupedState, members: Member[], leader: string, travelling: boolean, now: number): Group | null {
@@ -190,11 +192,14 @@ function patrolMembers(state: GroupedState, ports: GroupedPorts, members: Member
     ? phoenixCandidates(members,ports.now()) : members;
 }
 
+function defensiveThreats(group: NonNullable<NonNullable<Member['status']>['groupedCombat']>) {
+  return group.travelCommitted?.length || group.huntDefense ? [...(group.currentAttackers || []), ...(group.threats || [])] : group.currentAttackers || [];
+}
 function defensiveMembers(members: Member[], now: number): Member[] {
   return members.map(m => {
     const group = m.status?.groupedCombat;
     if (!m.status || !group) return m;
-    const attackers = group.huntDefense ? [...(group.currentAttackers || []), ...(group.threats || [])] : group.currentAttackers || [];
+    const attackers = defensiveThreats(group);
     const active = new Set(attackers.map(t => t.id));
     return { ...m, status: { ...m.status, groupedCombat: { ...group, candidates: [], retentionPaused: true,
       threats: attackers, evidence: group.evidence?.filter(e => active.has(e.id)),

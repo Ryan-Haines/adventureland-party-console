@@ -1,7 +1,7 @@
 import {passiveStopRequired, type PassiveTravelSettings} from '../../combat/passive-travel.ts';
 import {collectPassing, passingIdentity, type PassingEncounter} from '../../combat/passing.ts';
 import type { Fight, Group, Member, Target } from "../../combat/grouped.ts";
-import {outboundHunt, huntDefense, updateHuntTravel, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
+import {outboundHunt, huntDefense, huntAttackers, updateHuntTravel, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
 
 export interface CurrentAttacker extends Target { target: string; server?: string }
 interface Observation {
@@ -60,11 +60,16 @@ export function classifyTravelDefense(party: DefenseState, names: string[], now 
   const attackers = [...found.values()];
   const defend = huntNeedsDefense(party,names,attackers,now);
   if (defend) return { state: "defending", attackers, waiting,
-    message: "Defending " + [...new Set(attackers.map(t => t.target))].join(", ") +
-      " from " + attackers.map(t => (t.mtype || "monster") + " " + t.id).join(", ") };
+    message: defenseMessage(party,attackers) };
+
   if (waiting.length) return { state: "waiting-for-observations", attackers, waiting,
     message: "Waiting for fresh travel observations from " + waiting.join(", ") };
   return { state: "clear", attackers, waiting, message: "" };
+}
+
+function defenseMessage(party: DefenseState, attackers: CurrentAttacker[]): string {
+  if(!attackers.length)return 'Finishing committed travel encounter: '+(party.activeConvoy?.huntTravel?.committed||[]).map(t=>t.mtype+' '+t.id).join(', ');
+  return 'Defending '+[...new Set(attackers.map(t=>t.target))].join(', ')+' from '+attackers.map(t=>(t.mtype||'monster')+' '+t.id).join(', ');
 }
 
 function huntNeedsDefense(party: DefenseState, names: string[], attackers: CurrentAttacker[], now: number): boolean {
@@ -74,8 +79,7 @@ function huntNeedsDefense(party: DefenseState, names: string[], attackers: Curre
   if(!control)return attackers.length>0;
   if(control.reason==='passive-setting' && !huntDefense(c))return true;
   if(huntDefense(c)) {
-    const group=party.groupedCombat as Group | undefined;
-    return [attackers.length,control.primary,group?.fights?.length].some(Boolean);
+    return attackers.length>0 || !!control.committed?.length;
   }
   const encounters=new Set(attackers.map(identity));
   if(control.primary)encounters.add(identity(control.primary));
@@ -165,10 +169,10 @@ export function travelCombatFor(state: TravelState, name: string): TravelCombat 
 /** Tombstones stop delayed attack evidence and restored snapshots from reviving abandoned targets. */
 export function retireTravelTargets(previous: Group | null, members: Member[], now: number): Group | null {
   if (!previous) return null;
-  if(members.some(m=>m.status && now-m.status.seenAt<=3000 && m.status.groupedCombat?.huntDefense))return previous;
+  const commitments=members.flatMap(m=>m.status?.groupedCombat?.travelCommitted||[]);
   const decision = classifyTravelDefense({ groupedCombat: previous, statuses: Object.fromEntries(members.map(m => [m.name, m.status])) }, members.map(m => m.name), now);
   if (decision.waiting.length) return previous;
-  const active = new Set(decision.attackers.map(identity));
+  const active = new Set([...decision.attackers,...huntAttackers(members,now),...commitments].map(identity));
   const retired = new Map<string, Fight>();
   for (const target of [...previous.fights, ...previous.queue]) if (!active.has(identity(target))) retired.set(identity(target), target);
   if (!retired.size) return previous;

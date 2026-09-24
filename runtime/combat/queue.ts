@@ -86,7 +86,9 @@ export function reconcileQueue(old: Group | undefined | null, members: Member[],
   }
   const visibleThreat=(f:Fight)=>reports.some(m=>m.status!.server===f.server&&(m.status!.groupedCombat?.threats||[]).some(t=>t.id===f.id&&t.map===f.map&&t.in===f.in));
   const missingHead=old?.target && recovery.searches[targetIdentity(old.target as Fight)];
-  const defense=missingHead&&fights.find(visibleThreat);
+  const attacking=new Set(reports.filter(m=>now-(m.status!.groupedCombat?.currentAttackersAt||0)<=3000)
+    .flatMap(m=>(m.status!.groupedCombat?.currentAttackers||[]).map(t=>passingIdentity({...t,server:m.status!.server}))));
+  const defense=huntDefense ? fights.find(f=>attacking.has(passingIdentity(f))) : missingHead&&fights.find(visibleThreat);
   const priorFight=defense||fights.find(f=>old?.target && identity(f)===identity(old.target as Fight));
   const ordered=[...(priorFight?[priorFight]:[]),...fights.filter(f=>f!==priorFight).sort((a,b)=>a.startedAt-b.startedAt||a.id.localeCompare(b.id))];
   const planned=old?.target && !ordered.length ? candidates.find(c=>identity(c)===identity(old.target as Fight)) : null;

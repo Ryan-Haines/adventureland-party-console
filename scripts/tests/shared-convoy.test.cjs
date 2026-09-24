@@ -505,3 +505,17 @@ test('Hunt arrival requires the installed route endpoint, not just membership in
  Object.assign(p.statuses.F,destination);p.statuses.F.rip=true;assert.equal(sharedArrivalReady(p,2000),false);
  p.statuses.F.rip=false;p.statuses.F.seenAt=-2000;assert.equal(sharedArrivalReady(p,2000),false);
 });
+const fs=require('node:fs'),vm=require('node:vm');
+const {namedFunction}=require('./helpers/named-function.cjs');
+test('shared hold acknowledges held despite passive defense arriving while the route stops',async()=>{
+ const r=runtime(),c=r.context,source=fs.readFileSync('characters/shared.js','utf8');
+ vm.runInContext(namedFunction(source,'interruptConvoyForDefense'),c);
+ let releaseStop;const stop=c.stop;c.stop=()=>new Promise(resolve=>{releaseStop=resolve;});
+ const running=c.coordinatedMonsterTravel({...command,phase:'shared-hold',routeProtocol:4,purpose:'monster-hunt',huntTarget:'minimush',navigationRevision:c.navigationIntent.revision});
+ await settle();c.interruptConvoyForDefense(command.convoyId,command.epoch);
+ assert.equal(c.convoyTraveling.defensePaused,undefined);
+ c.stop=stop;releaseStop();await settle();await settle();
+ assert.equal(c.convoyTraveling.phase,'held');
+ c.interruptConvoyForDefense(command.convoyId,command.epoch);assert.equal(c.convoyTraveling.phase,'held');
+ await r.cancel();await running;
+});

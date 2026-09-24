@@ -2613,7 +2613,20 @@
     if(control && control.primary && !fightDeaths.some(function(d){return passingKey(d)===passingKey(control.primary);}))keys[passingKey(control.primary)]=true;
     return Object.keys(keys).length>1;
   }
+  function convoyHoldDefenseTarget() {
+    var c=typeof convoyTraveling!=='undefined' && convoyTraveling;
+    if(!c || !(c.holdRequested || c.communication || c.phase==='held' || c.phase==='communication-hold') ||
+      character.rip || navigationIntent.cancelled || Number(c.navigationRevision)!==Number(navigationIntent.revision) || escapeOwns() || combatRecoveryActive())return null;
+    return Object.values(parent.entities||{}).filter(function(e){
+      return e && e.type==='monster' && e.visible && !e.dead && e.hp>0 &&
+        (!e.map || e.map===character.map) && currentPartyList().indexOf(e.target)>=0 && is_in_range(e) && !isExternallyClaimedMonster(e);
+    }).sort(function(a,b){return Number(b.target===character.name)-Number(a.target===character.name) || String(a.id).localeCompare(String(b.id));})[0] || null;
+  }
   function passingTarget() {
+    if(typeof convoyHoldDefenseTarget==='function') {
+      var heldTarget=convoyHoldDefenseTarget();
+      if(heldTarget)return heldTarget;
+    }
     if (!passingTravelAllowed()) return null;
     if(outboundHuntTravel()) {
       if(huntTravelExtraAggro()){interruptConvoyForDefense();return null;}
@@ -8454,10 +8467,8 @@
       return;
     }
     if(command.type==='party-monster-travel' && command.phase==='defending') {
-      lastCommand=command.id;root.__partyLastCommand=lastCommand;interruptConvoyForDefense(command.convoyId,command.epoch);
-      if(convoyTraveling && convoyTraveling.defensePaused && convoyTraveling.id===command.convoyId) {
-        convoyTraveling.commandId=command.id;convoyTraveling.epoch=Number(command.epoch);
-      }
+      if(!acceptConvoyDefenseCommand(command))return;
+      lastCommand=command.id;root.__partyLastCommand=lastCommand;
       return;
     }
     if(command.type==='party-monster-travel')root.__partyConvoyDefense=null;
@@ -8489,6 +8500,16 @@
     if (command.id <= lastCommand) return;
     reportMerchantCommand(command, "accepted");
     if (command.type !== "town-party" && command.purpose !== "shared-walk-return") root.__partyTownGeneration += 1;
+    var exitOwner = root.__partyEventExitOwner;
+    var exitWalk = root.__partySharedWalking;
+    var exitChild = command.purpose === "shared-walk-return" && exitWalk &&
+      exitWalk.activity === "event-return" && exitOwner && exitWalk.parentCommandId === exitOwner.commandId;
+    if (exitOwner && command.id !== exitOwner.commandId && !exitChild) {
+      exitOwner.cancelled = true;
+      eventReturnPending = false;
+    }
+    if (command.purpose === "monster-hunt")
+      eventRecoveryState = { phase: "idle", cycleId: null, event: null, checkpoint: null, attemptAt: 0, lastError: null };
     lastCommand = command.id;
     root.__partyLastCommand = lastCommand;
     if (convoyTraveling && (command.type !== "party-monster-travel" ||
@@ -8739,6 +8760,16 @@
       // Event recovery is coordinated as a barrier: every opted-in character
       // returns first, then the coordinator routes the leader back to the
       // selected farming target.
+      var eventExitOwner = root.__partyEventExitOwner = { commandId: command.id, cancelled: false };
+      var eventExitRevision = Number(navigationIntent.revision) || 0;
+      var eventExitCurrent = function () {
+        return runtimeCurrent() && !escapeOwns() &&
+          (Number(navigationIntent.revision) || 0) === eventExitRevision &&
+          root.__partyEventExitOwner === eventExitOwner && !eventExitOwner.cancelled;
+      };
+      function requireEventExitOwner() {
+        if (!eventExitCurrent()) throw new Error("Event exit superseded by newer navigation");
+      }
       partyLocation = null;
       followingLeader = false;
       forceTraveling = false;
@@ -8755,29 +8786,16 @@
         attemptAt: Date.now(), lastError: null };
       try {
         if (eventRecoveryRetryAt > Date.now()) await sleep(eventRecoveryRetryAt - Date.now());
+        requireEventExitOwner();
         await afterCombat(async function () {
+          requireEventExitOwner();
           if (typeof stop === "function") {
             try { await stop("smart"); } catch (_eventReturnStopSmart) {}
             try { await stop("move"); } catch (_eventReturnStopMove) {}
           }
           eventRecoveryState.phase = "leaving-event";
-          var eventMap = G.maps && G.maps[character.map] && G.maps[character.map].event;
-          if (character.map === "goobrawl") {
-            await exitGoobrawlForRecovery(returnTravel,undefined,command);
-          } else if (eventMap) {
-            try {
-              await anniversaryWithTimeout(leave(), 6000, "Event exit");
-            } catch (leaveError) {
-              // Some completed instances stop accepting `leave` before they
-              // eject their occupants. Instance maps retain direct transport
-              // as their recovery path; normal maps continue below.
-              if (G.maps && G.maps[character.map] && G.maps[character.map].event)
-                await anniversaryWithTimeout(transport("main", 0), 6000, "Event transport");
-            }
-            await sleep(500);
-            if (G.maps && G.maps[character.map] && G.maps[character.map].event)
-              throw new Error("could not leave ended event " + eventMap);
-          }
+          await exitEventMapForRecovery(returnTravel, eventExitCurrent, command);
+          requireEventExitOwner();
           var townPoint = { map: "main", x: 0, y: 0 };
           // Damage can cancel Town, so do not release the coordinator barrier
           // until the character is verifiably in Main's town area.
@@ -8787,18 +8805,19 @@
           while ((character.map !== townPoint.map ||
               Math.hypot(Number(character.x) - townPoint.x, Number(character.y) - townPoint.y) > 90) &&
               Date.now() < recoveryDeadline) {
-            if (escapeOwns()) return;
+            requireEventExitOwner();
             if (character.rip) {
               await respawn();
-              while (character.rip) await sleep(100);
+              while (character.rip && eventExitCurrent()) await sleep(100);
+              requireEventExitOwner();
             }
             if (character.map !== "main") {
               // Town is still useful on remote maps because it shortens the
               // fallback route to that map's spawn. `leave()` above remains
               // the preferred cross-map event exit.
-              await prepareReturnExit(command,"event",function(){return runtimeCurrent() && !escapeOwns();});
+              await prepareReturnExit(command,"event",eventExitCurrent);
               if (character.map !== "main") {
-                try { await sharedPartyWalk(townPoint,"event-return",command.cycleId,command,function(){return !escapeOwns();}); }
+                try { await sharedPartyWalk(townPoint,"event-return",command.cycleId,command,eventExitCurrent); }
                 catch (eventTownRouteError) {
                   lastEventWalkError = String(eventTownRouteError && (eventTownRouteError.reason || eventTownRouteError.message) || eventTownRouteError);
                   eventRecoveryState.lastError = lastEventWalkError;
@@ -8815,27 +8834,32 @@
               Math.hypot(Number(character.x) - townPoint.x, Number(character.y) - townPoint.y) > 90)
             throw new Error("event recovery could not reach Main town before its deadline" +
               (lastEventWalkError ? ": " + lastEventWalkError : ""));
+          requireEventExitOwner();
           eventRecoveryState.phase = "town-ready";
           await saveReturnPhase(command,"event","complete");
           game_log("Event ended; returned to Town", "#c084fc");
         }, "returning from the event");
+        requireEventExitOwner();
         await request("/event-return-complete", {
           method: "POST",
-          body: { character: character.name, cycleId: command.cycleId,
-            navigationRevision: navigationIntent.revision,
+          body: { character: character.name, cycleId: command.cycleId, commandId: command.id,
+            runtimeId: typeof convoyRuntimeId === "undefined" ? undefined : convoyRuntimeId,
+            navigationRevision: eventExitRevision,
             map: character.map,
             mapEvent: G.maps && G.maps[character.map] && G.maps[character.map].event || null,
             x: Number(character.x), y: Number(character.y) },
         });
+        if (!eventExitCurrent()) return;
         eventRecoveryRetryAt = 0;
         eventRecoveryState.phase = command.deferred ? "deferred-town-ready" : "town-ready";
       } catch (eventRecoveryError) {
+        if (!eventExitCurrent()) return;
         eventRecoveryRetryAt = Date.now() + 2500;
         eventRecoveryState.phase = "retry-wait";
         eventRecoveryState.lastError = String(eventRecoveryError.reason || eventRecoveryError.message || eventRecoveryError);
         throw eventRecoveryError;
       } finally {
-        eventReturnPending = false;
+        if (root.__partyEventExitOwner === eventExitOwner) { eventReturnPending = false; root.__partyEventExitOwner = null; }
       }
       return;
     }
@@ -9451,8 +9475,54 @@
     return control.featured || control.reserved || control.kissDue || control.busy;
   }
 
+  async function exitEventMapForRecovery(travel, current, command) {
+    if (!current()) return;
+    var map = character.map, definition = G.maps && G.maps[map];
+    if (!definition || !definition.event) return;
+    if (map === "goobrawl") return exitGoobrawlForRecovery(travel, current, command);
+    if (["abtesting", "ship0"].indexOf(map) < 0)
+      throw new Error("No verified event exit mechanism for " + map);
+    var savedExit = returnPhaseRecord(command, "event");
+    travel.instanceAttempts = Math.max(travel.instanceAttempts || 0, savedExit.exitAttempts || 0);
+    if (travel.instanceAttempts >= 3) throw new Error("Event exit blocked on " + map + " after three attempts");
+    travel.instanceAttempts++;
+    await persistEventExitAttempt(command, current, { exitMap: map, exitAttempts: travel.instanceAttempts });
+    if (!current()) return;
+    eventRecoveryState.phase = "leaving-" + map;
+    var failure = null;
+    try { await anniversaryWithTimeout(leave(), 6000, "Leave " + map); }
+    catch (error) { failure = error; }
+    var deadline = Date.now() + 2000;
+    while (current() && character.map === map && Date.now() < deadline) await sleep(100);
+    if (!current() || character.map !== map) return;
+    // Preserve the supported instance fallback, but only observed new_map can
+    // complete it. A successful transport response alone is insufficient.
+    try { await anniversaryWithTimeout(transport("main", 0), 6000, "Exit " + map); }
+    catch (error) { failure = error; }
+    deadline = Date.now() + 20000;
+    while (current() && character.map === map && Date.now() < deadline) await sleep(100);
+    if (current() && character.map === map)
+      throw new Error("Event exit blocked on " + map + ": " + String(failure && (failure.reason || failure.message) || "no observed map change"));
+  }
+
+  async function persistEventExitAttempt(command, current, detail) {
+    if (!command || !current()) return;
+    var progress = returnPhaseRecord(command, "event");
+    var next = Object.assign({}, progress, detail);
+    var response = await request("/return-progress", { method: "POST", body: Object.assign({
+      character: character.name, kind: "event", cycleId: command.cycleId,
+      navigationRevision: progress.revision, phase: progress.phase
+    }, detail) });
+    if (current()) parent.__partyReturnProgress = root.__partyReturnProgress = response.progress || next;
+  }
+
   async function exitGoobrawlForRecovery(returnTravel, stillCurrent, parentCommand) {
-    stillCurrent = stillCurrent || function () { return !escapeOwns(); };
+    var exitRevision = Number(navigationIntent.revision) || 0;
+    stillCurrent = stillCurrent || function () {
+      return runtimeCurrent() && !escapeOwns() && !navigationIntent.cancelled &&
+        (Number(navigationIntent.revision) || 0) === exitRevision &&
+        (!parentCommand || typeof lastCommand === "undefined" || lastCommand <= parentCommand.id);
+    };
     if (!stillCurrent()) return;
     var npc = (G.maps.goobrawl.npcs || []).find(function (entry) { return entry.id === "transporter"; });
     if (!npc || !Array.isArray(npc.position)) throw new Error("Goobrawl Transporter location is missing");
@@ -9467,8 +9537,31 @@
     if (!nearTransporter()) {
       eventRecoveryState.phase = "approaching-goobrawl-transporter";
       try {
-        if(parentCommand)await sharedPartyWalk(destination,"event-return",parentCommand.cycleId,parentCommand,stillCurrent);
-        else await anniversaryWithTimeout(smart_move(destination), 40000, "Goobrawl Transporter approach");
+        // Each character approaches this map-local NPC independently. Requiring
+        // a convoy origin here can deadlock on a blocked rally beside the NPC.
+        // The coordinator still waits for every verified arrival in Main.
+        try {
+          await anniversaryWithTimeout(smart_move(destination,undefined,{town:false}), 40000, "Goobrawl Transporter approach");
+        } catch (approachError) {
+          var reason=String(approachError && (approachError.reason || approachError.message) || approachError);
+          var savedTownAttempt = parentCommand && returnPhaseRecord(parentCommand, "event").blockedTownAttempted;
+          if(!stillCurrent() || returnTravel.goobrawlTownAttempted || savedTownAttempt || !/no route|path.*not found/i.test(reason))throw approachError;
+          returnTravel.goobrawlTownAttempted=true;
+          await persistEventExitAttempt(parentCommand, stillCurrent, { exitMap: "goobrawl", blockedTownAttempted: true });
+          if (!stillCurrent()) return;
+          eventRecoveryState.phase="recovering-goobrawl-position";
+          eventRecoveryState.lastError=reason;
+          var from={map:character.map,x:character.x,y:character.y};
+          await anniversaryWithTimeout(town(),12000,"Goobrawl blocked-position Town");
+          var townDeadline=Date.now()+12000;
+          while(stillCurrent() && character.map===from.map && Math.hypot(character.x-from.x,character.y-from.y)<10 && Date.now()<townDeadline)await sleep(100);
+          if(!stillCurrent())return;
+          if(character.map===from.map && Math.hypot(character.x-from.x,character.y-from.y)<10)throw new Error("Goobrawl position recovery did not move to spawn");
+          if(character.map!=="goobrawl")return;
+          eventRecoveryState.phase="approaching-goobrawl-transporter";
+          await anniversaryWithTimeout(smart_move(destination,undefined,{town:false}),40000,"Goobrawl Transporter approach after Town");
+          eventRecoveryState.lastError=null;
+        }
       } finally {
         if (stillCurrent()) { try { await stop("smart"); } catch (_goobrawlStop) {} }
       }
@@ -10963,7 +11056,12 @@
       return Math.hypot(a.x - character.x, a.y - character.y) - Math.hypot(b.x - character.x, b.y - character.y);
     })[0];
   }
+  function eventExitOwnsMovement() {
+    return typeof eventReturnPending !== "undefined" && eventReturnPending ||
+      !!(root.__partySharedWalking && root.__partySharedWalking.activity === "event-return");
+  }
   function reunionBlocked() {
+    if (eventExitOwnsMovement()) return true;
     if (escapeOwns()) return true;
     // Pause the return, not defensive combat, when the travel party is attacked.
     // Otherwise isOccupied suppresses healing and attacks while mobs kill us.
@@ -10998,6 +11096,7 @@
       !is_on_cooldown(skill) && can_use(skill);
   }
   function beginFarmReunion(command) {
+    if (eventExitOwnsMovement()) return;
     if (character.ctype === "merchant") return;
     if (typeof lastDeathInfo !== "undefined" && lastDeathInfo) root.__partyRecoveredDeathAt = parent.__partyRecoveredDeathAt = lastDeathInfo.at;
     if (combatRecoveryActive()) return;
@@ -11082,6 +11181,12 @@
   };
   var reunionMagiportHandler = root.on_magiport;
   async function farmReunionTick() {
+    if (eventExitOwnsMovement()) {
+      // Retire the obsolete routine without stopping the event's newer route.
+      if (reunion) { reunion.cancelled = true; reunion.moving = false; reunion.lastError = "Event exit owns movement"; }
+      reunion = root.__partyReunion = null;
+      return;
+    }
     // Respawn can finish after its promise times out, or before a reloaded
     // runner observes rip. Recover authorized displacement independently.
     if (runtimeCurrent() && !reunion && partyLocation && !reunionBlocked() &&
@@ -11524,9 +11629,23 @@
     return !!(c && c.purpose==='monster-hunt' && c.nonPreemptible && !c.returnWalking &&
       (c.phase!=='travelling' || typeof movement!=='undefined' && movement.transition && movement.transition()==='town'));
   }
+  function acceptConvoyDefenseCommand(command) {
+    if(navigationIntent.cancelled || Number(command.navigationRevision||0)!==Number(navigationIntent.revision||0))return false;
+    var c=convoyTraveling;
+    if(c && (c.id!==command.convoyId || c.epoch>Number(command.epoch) || c.commandId>=command.id))return false;
+    if(c) {
+      c.commandId=command.id;c.epoch=Number(command.epoch);c.holdRequested=false;
+      delete c.communication;delete c.failure;
+      if(c.phase==='held' || c.phase==='communication-hold')c.phase='stopped';
+    }
+    interruptConvoyForDefense(command.convoyId,command.epoch);
+    return true;
+  }
   function interruptConvoyForDefense(id, epoch, aggressor) {
     var c=convoyTraveling;
-    if(c && id && (c.id!==id || Number(epoch)<c.epoch))return;
+    if(c && id && (c.id!==id || Number(epoch)!==c.epoch))return;
+    if(c && (c.holdRequested || c.communication || c.phase==='held' || c.phase==='communication-hold'))return;
+    if(c && typeof navigationIntent!=='undefined' && (navigationIntent.cancelled || Number(navigationIntent.revision||0)!==Number(c.navigationRevision||0)))return;
     if(c && ((c.navigationExempt && c.purpose!=='anniversary-return') || ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol'].indexOf(c.purpose)>=0))return;
     if(!c && !id)return;
     if(c && (c.returnWalking || c.continuousReturn === 1))return;
@@ -11538,6 +11657,7 @@
       c.defenseTargets = aggressor ? [Object.assign(groupedEntityReport(aggressor), {server:reunionRealm()})] :
         typeof currentTravelAttackers === 'function' ? currentTravelAttackers() : [];
       if(huntPrimary)c.defenseTargets=c.defenseTargets.concat(huntPrimary.committed||[],huntPrimary.primary?[huntPrimary.primary]:[]);
+      c.defenseTargets=Array.from(new Map(c.defenseTargets.map(function(t){return [passingKey(t),t];})).values());
       c.defenseInterruption = {at:Date.now(),source:id ? 'coordinator' : 'local-attacker',
         convoyId:c.id,epoch:c.epoch,commandId:c.commandId,navigationRevision:c.navigationRevision,
         phase:c.phase,targets:c.defenseTargets};
@@ -11606,10 +11726,6 @@
     var threats=Object.values(parent.entities || {}).filter(function(e) {
       return e && e.type==='monster' && e.visible && !e.dead && isAttackingPartyMember(e);
     }).map(groupedEntityReport);
-    if(typeof huntTravelDefense === 'function' && huntTravelDefense())(convoyTraveling.defenseTargets||[]).forEach(function(t){
-      var e=get_entity(t.id);
-      if(e && e.visible && !e.dead && e.hp>0 && !fightDeaths.some(function(d){return passingKey(d)===passingKey(t);}))threats.push(groupedEntityReport(e));
-    });
     var hit=root.__partyDefensiveHit;
     if(hit && !isPassingEncounter(hit.target) && Date.now()-hit.at<3000 && !fightDeaths.some(function(d){return d.id===hit.target.id;}))threats.push(hit.target);
     return threats;
@@ -11652,7 +11768,14 @@
         .map(function(t){var e=get_entity(t.id);return Object.assign({},t,{role:'current',state:'scatter',visible:!!(e&&e.visible&&!e.dead)});});
     }
     var travel=typeof huntTravelControl==='function' && huntTravelControl();
-    var markers=travel && !travel.defending && travel.primary ? [travel.primary].concat(currentTravelAttackers().filter(function(t){return passingKey(t)!==passingKey(travel.primary);})) : groupedCombat && groupedCombat.queue || [];
+    var markers=groupedCombat && groupedCombat.queue || [];
+    if(travel && !travel.defending && travel.primary)markers=[travel.primary];
+    var held=typeof convoyTraveling!=='undefined' && convoyTraveling && (convoyTraveling.holdRequested || convoyTraveling.communication || convoyTraveling.phase==='held');
+    if(held) {
+      var defense=typeof convoyHoldDefenseTarget==='function' && convoyHoldDefenseTarget();
+      markers=defense ? [Object.assign(groupedEntityReport(defense),{server:reunionRealm()})] : [];
+    }
+    markers=markers.filter(function(t){var e=get_entity(t.id);return e && e.visible && !e.dead && e.hp!==0 && t.server===reunionRealm() && t.map===character.map && t.in===character.in;});
     return groupedFarming() && !navigationIntent.cancelled ? markers.slice(0,3).map(function(t,index){
       var e=get_entity(t.id);return {id:t.id,map:t.map,in:t.in,server:t.server,role:['current','next','third'][index],state:t.state,radius:Math.max(18,(Number(e && e.awidth)||24)/2+4),visible:!!(e && e.visible && !e.dead && t.server===reunionRealm() && t.map===character.map && t.in===character.in)};
     }) : [];
@@ -11663,6 +11786,11 @@
     var before=groupedCombat && groupedCombat.target, after=next && next.target;
     if (before && after && before.id!==after.id && groupedCombat.pursuit && groupedCombat.pursuit.replacementKind==='closer-hunt') {
       cancelFarmApproach('Closer hunt monster'); cancelFightRoute(); cancelGroupRoute(); resetCombatMovement();
+    }
+    if(before && (!after || passingKey(before)!==passingKey(after))) {
+      cancelFarmApproach('Travel encounter retired');cancelFightRoute();cancelGroupRoute();resetCombatMovement();
+      combatTargetId=null;
+      if(root.partyRoleRunner)root.partyRoleRunner.resetTargeting();
     }
     if(after && (!before || before.id!==after.id)) {
       cancelFightRoute(); cancelGroupRoute(); resetCombatMovement();
@@ -11731,12 +11859,14 @@
     if(state.passingControl && (!state.serverNow || state.serverNow>=(root.__partyHuntTravelAt||0))) {
       var beforeHunt=root.__partyHuntTravel, nextHunt=state.passingControl.hunt || null;
       if(nextHunt && nextHunt.primary && (!beforeHunt || !beforeHunt.primary || passingKey(beforeHunt.primary)!==passingKey(nextHunt.primary)) && typeof game_log==='function')
-        game_log('Hunt travel target: '+nextHunt.primary.mtype+' '+nextHunt.primary.id,'#51D2E1');
+        game_log('Travel encounter: '+nextHunt.primary.mtype+' '+nextHunt.primary.id,'#51D2E1');
       if(beforeHunt && beforeHunt.defending && nextHunt && !nextHunt.defending && nextHunt.id===beforeHunt.id && nextHunt.epoch>beforeHunt.epoch && typeof game_log==='function')
         game_log('Hunt travel: defense cleared; resuming original destination','#51D2E1');
       root.__partyHuntTravel=nextHunt;
       root.__partyHuntTravelAt=state.serverNow||0;
-      if(nextHunt && nextHunt.reason==='passive-setting' && passiveTravelInterruptible())interruptConvoyForDefense(nextHunt.id,nextHunt.epoch);
+      if(nextHunt && nextHunt.reason==='passive-setting' && passiveTravelInterruptible() &&
+        state.convoySignal && convoyTraveling && state.convoySignal.commandId===convoyTraveling.commandId &&
+        state.convoySignal.navigationRevision===convoyTraveling.navigationRevision)interruptConvoyForDefense(nextHunt.id,nextHunt.epoch);
     }
     if (Array.isArray(state.passingEncounters) && (!state.serverNow || state.serverNow >= (root.__partyPassingControlAt || 0))) {
       root.__partyPassingControlAt = state.serverNow || 0;
@@ -11762,7 +11892,8 @@
         cancelFarmApproach("Travel owns destination"); cancelFightRoute(); cancelGroupRoute();
       }
     }
-    if(state.convoySignal && state.convoySignal.phase==='defending')interruptConvoyForDefense(state.convoySignal.id,state.convoySignal.epoch);
+    if(state.convoySignal && state.convoySignal.phase==='defending' && convoyTraveling &&
+      state.convoySignal.commandId===convoyTraveling.commandId && state.convoySignal.navigationRevision===convoyTraveling.navigationRevision)interruptConvoyForDefense(state.convoySignal.id,state.convoySignal.epoch);
     var at=Math.max(Number(state.combatResetAt || state.combatResetByCharacter && state.combatResetByCharacter[character.name] || 0),
       Number(state.groupedCombat && state.groupedCombat.resetAt || 0));
     if(at<Number(root.__partyCombatResetAt||0))return;
@@ -12941,7 +13072,7 @@
 
   async function coordinatedMonsterTravel(command) {
     var convoy = { id: command.convoyId, epoch: Number(command.epoch), commandId: command.id,
-      routeProtocol: command.routeProtocol,
+      routeProtocol: command.routeProtocol, holdRequested: command.phase === 'shared-hold',
       navigationRevision: Number(command.navigationRevision) || 0,
       generation: runtimeGeneration, destination: command.location, cancelled: false,
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
@@ -13007,7 +13138,7 @@
       // packet. Wait for that physical stop before declaring assembly ready.
       await stopForConvoy();
       if (!ownsConvoy()) return;
-      if(command.huntTarget && command.combatHandoffAllowed) {
+      if(command.huntTarget && command.combatHandoffAllowed && !convoy.holdRequested) {
         sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
         while(ownsConvoy() && convoy.handoffPending)await new Promise(function(resolve){setTimeout(resolve,80);});
         if(!ownsConvoy())return;
@@ -14645,6 +14776,7 @@
     },
     getRareTarget: rareTarget,
     getPassingTarget: passingTarget,
+    convoyHoldDefenseTarget: convoyHoldDefenseTarget,
     monsterPriority: monsterPriority,
     passingEncounterReport: passingEncounterReport,
     isPassingEncounter: isPassingEncounter,

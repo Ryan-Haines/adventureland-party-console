@@ -214,3 +214,38 @@ test('early Hunt handoff rejoins the current leader without returning to the obs
  r.reunion.moving=true;r.reunionWorking=true;
  await r.farmReunionTick();assert.equal(r.reunion,null);assert.equal(acknowledged,1);assert.equal(calls.some(c=>c.destination),false);
 });
+
+
+test('ended Goobrawl exit owns movement despite a restored remote farming waypoint',async()=>{
+ const {r,calls}=runtime();r.character.map='goobrawl';r.eventReturnPending=true;
+ r.beginFarmReunion();await r.farmReunionTick();
+ assert.equal(r.reunion,null);assert.equal(r.reunionBlocked(),true);assert.equal(calls.length,0);
+ // A stale in-flight farming continuation cannot stop the transporter approach.
+ const old={revision:1,moving:true,phase:'walking'};r.reunion=old;
+ r.root.__partySharedWalking={activity:'event-return',key:'return-cycle'};
+ await r.farmReunionTick();assert.equal(old.cancelled,true);assert.equal(r.reunion,null);assert.equal(calls.length,0);
+ assert.equal(r.root.__partySharedWalking.activity,'event-return');
+ // The shared exit retains ownership even between command retries.
+ r.eventReturnPending=false;r.beginFarmReunion();await r.farmReunionTick();assert.equal(calls.length,0);
+ // Verified exit and released event walk permit the existing checkpoint recovery.
+ r.root.__partySharedWalking=null;r.character.map='main';
+ r.beginFarmReunion();assert.ok(r.reunion);assert.equal(r.reunionBlocked(),false);
+});
+
+test('Goobrawl transporter walk survives farming timer ticks and reaches Main',async()=>{
+ const {r,calls}=runtime(),{namedFunction}=require('./helpers/named-function.cjs');
+ r.character.map='goobrawl';r.character.x=0;r.character.y=0;r.eventReturnPending=true;
+ r.G.maps.goobrawl={event:'goobrawl',npcs:[{id:'transporter',position:[255,-91]}]};
+ r.G.npcs={transporter:{places:{main:0}}};
+ r.transport=async()=>{calls.push('transport');r.character.map='main';r.character.x=0;r.character.y=0;};
+ r.sharedPartyWalk=()=>assert.fail('map-local exit must not assemble a convoy');
+ r.smart_move=async(destination,_callback,options)=>{
+  assert.equal(options.town,false);
+  await r.farmReunionTick();r.beginFarmReunion();await r.farmReunionTick();
+  assert.equal(r.reunion,null);assert.equal(calls.length,0,'farm recovery must not stop the exit route');
+  r.character.x=destination.x;r.character.y=destination.y;r.root.__partySharedWalking=null;
+ };
+ vm.runInContext(namedFunction(source,'exitGoobrawlForRecovery'),r);
+ await r.exitGoobrawlForRecovery({},()=>true,{id:9,cycleId:'return'});
+ assert.equal(r.character.map,'main');assert.ok(calls.includes('transport'));assert.equal(r.reunion,null);
+});

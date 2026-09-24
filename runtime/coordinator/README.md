@@ -65,6 +65,22 @@ launcher tests execute the bundle with Windows and Linux directory inputs.
 
 ## Manual edit, build and restart
 
+Event evacuation hands directly to current Hunt policy after fresh Main town
+observations, without requiring the historical farming checkpoint. Normal farming
+still resumes its authorized checkpoint. Hunt off/on during evacuation changes the
+post-exit policy without dispatching backup movement; completed turn-ins and loot
+remain owned. Deferred members retain evacuation but drop obsolete Hunt checkpoints.
+Restored failed farm-recovery children are recognized by parent command and revision.
+
+Dedicated-map exit handling covers Goobrawl's transporter and the A/B Testing and
+Pirate Ship leave/transport mechanisms. Responses never substitute for observed map
+changes. Exit attempt budgets and the Goobrawl Town shortcut survive reload through
+return progress; unsupported maps report an explicit blocker. Completion checks
+command, runtime, cycle and navigation identity. New Hunt commands clear old exit labels.
+Validate Hunt event resume, event return, mode, acknowledgement, return progress,
+farming navigation and convoy regressions. Publish characters and coordinator together
+using the full restart, then verify fresh runtimes and actual Hunt progression.
+
 Terminal Hunt retreat failures restart the Hunt cycle once per failed Escape ID.
 Only a fresh matching `recoveryFailed` report under the captured navigation ownership
 can trigger this reset; newer commands, manual cancellation, and events take priority.
@@ -78,6 +94,22 @@ tests. ALClient/native endpoint trimming also requires `movement-service` and sh
 convoy checks: only a blocked final walking point within arrival tolerance is omitted;
 precision and shared endpoints remain protected. Publish character and coordinator
 assets with the full restart below, then verify fresh runtimes and Hunt progression.
+
+Hunt travel reconciles encounter death and absence before acquisition. Permanent
+retirements use server/map/instance/monster identity; absence releases require a
+newer living sample. Current attackers outrank committed passive encounters, and
+fresh unanimous attacker observations release incidental targets. Historical
+interruption targets are diagnostics only. Defense completion waits for loot,
+then regroups toward the saved Hunt destination without replacing its mission.
+
+A shared hold owns the client phase even while local in-range attacks continue.
+Only a newer owned defense command can release that acknowledgement into combat.
+Recovery preserves the five-second stability and thirty-second cooldown barriers,
+then reconciles combat and loot before preparing movement. Hold diagnostics name
+missing participants and acknowledgements; defense logs record changed blockers.
+Validate `convoy-communication`, `hunt-travel-defense`, `travel-defense`,
+`shared-convoy`, `passive-hunting`, `combat-queue`, and `queue-markers`. Publish
+character and coordinator assets together with the full restart below.
 
 Protocol-4 Hunt travel keeps communication outages separate from movement failure.
 Missing heartbeats or an expired matching signal stop the party in a persisted

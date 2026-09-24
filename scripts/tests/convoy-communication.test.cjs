@@ -6,20 +6,20 @@ const {initialCommandState}=require('../../runtime/coordinator/navigation/initia
 const {createConvoyAcknowledgementRoutes}=require('../../runtime/coordinator/http/convoy-acknowledgements.ts');
 const {reconcileCurrentHuntParty}=require('../../runtime/coordinator/hunt/current-party.ts');
 const legacy=require('../convoy-navigation.cjs');
-function fixture(){
+function fixture(defense){
  const p={leader:'L',followers:{F:true},combatLogs:{},commands:{},nextCommandId:10,navigationIntents:{L:{revision:2},F:{revision:2}},
   monsterHunt:{convoyId:'c',stage:'returning',participants:['L','F'],missions:[],returnRetries:3},
   activeConvoy:{id:'c',epoch:1,routeProtocol:4,phase:'assemble',purpose:'monster-hunt',leader:'L',participants:['L','F'],completed:[],
    location:{map:'main',x:120,y:0},rally:{map:'main',x:0,y:0},slowestSpeed:57,continuousReturn:1,returnRouting:true,recoveryAttempts:2,walkingFailures:2},
   statuses:Object.fromEntries(['L','F'].map(n=>[n,{map:'main',x:0,y:0,server:'USII',seenAt:1000,hp:100,convoyProtocol:4,huntReturnProtocol:2,
     speed:57,combatSelection:{runtimeId:n},convoyNavigation:{runtimeId:n}}]))};
- let engine=createSharedConvoyNavigation(legacy);engine.step(p,1000);p.activeConvoy.phase='travel';
+ let engine=createSharedConvoyNavigation(legacy,defense);engine.step(p,1000);p.activeConvoy.phase='travel';
  function report(now,phase='held') {for(const n of ['L','F']){const s=p.statuses[n],cmd=p.commands[n];s.seenAt=now;
   s.convoyNavigation={id:'c',epoch:p.activeConvoy.epoch,commandId:cmd.id,navigationRevision:cmd.navigationRevision,
    routeVersion:p.activeConvoy.routeVersion,runtimeId:s.combatSelection.runtimeId,phase};}}
  report(1000,'travelling');
  return {p,get e(){return engine;},report,step:now=>engine.step(p,now),stable(from){for(let t=from;t<=from+5000;t+=1000){report(t);engine.step(p,t);}},
-  restart(now){Object.assign(p,initialCommandState(JSON.parse(JSON.stringify({activeConvoy:p.activeConvoy,convoyCompletionReceipts:p.convoyCompletionReceipts})),()=>now));engine=createSharedConvoyNavigation(legacy);}};
+  restart(now){Object.assign(p,initialCommandState(JSON.parse(JSON.stringify({activeConvoy:p.activeConvoy,convoyCompletionReceipts:p.convoyCompletionReceipts})),()=>now));engine=createSharedConvoyNavigation(legacy,defense);}};
 }
 test('hours without reports do not consume movement budgets; fresh acknowledged holds resume after five seconds',()=>{
  const f=fixture(),c=f.p.activeConvoy;f.step(5000);assert.equal(c.phase,'communication-hold');
@@ -130,4 +130,53 @@ test('completion receipt survives restart and cannot delete replacement commands
  Object.assign(p,initialCommandState(JSON.parse(JSON.stringify(p)),()=>200));p.commands.L={id:999,type:'character-travel'};valid=false;
  assert.equal(routes.complete({body},res()).body.ok,true);assert.equal(p.commands.L.id,999);assert.equal(persists,1);
  assert.equal(routes.complete({body:{...body,routeVersion:5}},res()).code,409);
+});
+
+test('minimush travel recovers a restarted phoenix interruption through defense, loot and regroup',()=>{
+ const defense=require('../../runtime/coordinator/navigation/convoy-defense.ts');
+ const {updateHuntTravel}=require('../../runtime/combat/hunt-travel.ts');
+ const f=fixture(defense.step),p=f.p;
+ Object.assign(p.activeConvoy,{continuousReturn:undefined,returnRouting:false,huntTarget:'minimush',label:'minimush'});
+ p.passiveHunting={rules:{phoenix:{enabled:true,keepMoving:false,priority:100}}};
+ p.monsterHunt.stage='mission-travel';p.monsterHunt.target='minimush';
+ const destination=JSON.stringify(p.activeConvoy.location);
+ const phoenix={id:'old-phoenix',mtype:'phoenix',map:'main',in:'main',server:'USII',x:20,y:0,hp:100};
+ function observations(at){for(const s of Object.values(p.statuses)){
+  s.in='main';s.groupedCombat||={currentAttackers:[],sightings:[],travelCandidates:[],deaths:[]};
+  s.groupedCombat.currentAttackersAt=at;s.groupedCombat.observationAt=at;
+ }}
+ observations(1000);p.statuses.L.groupedCombat.travelCandidates=[phoenix];
+ f.step(1000);assert.equal(p.activeConvoy.phase,'defending');
+ f.restart(2000);f.step(2000);
+ // Fresh combat reports cannot substitute for the command's held acknowledgement.
+ for(let t=3000;t<=9000;t+=1000){f.report(t,'defending');observations(t);f.step(t);}
+ assert.equal(p.activeConvoy.phase,'communication-hold');assert.match(p.activeConvoy.failure,/L:.*held.*defending/);
+ for(let t=10000;t<=15000;t+=1000){f.report(t);observations(t);f.step(t);}
+ assert.equal(p.activeConvoy.communicationHold,undefined);assert.equal(p.activeConvoy.phase,'defending');
+ assert.equal(p.commands.L.phase,'defending');
+ p.statuses.L.groupedCombat.deaths=[{...phoenix,at:15001}];
+ // Keep the dead sighting and passive-stop reason, as seen in the restored snapshot.
+ p.activeConvoy.defenseTargets=[{...phoenix,at:1000},{...phoenix,id:'inactive-hawk',mtype:'hawk',at:1000}];
+ f.report(16000);observations(16000);f.step(16000);
+ assert.equal(p.activeConvoy.huntTravel.reason,undefined);assert.deepEqual(p.activeConvoy.huntTravel.committed,[]);
+ assert.ok(p.activeConvoy.loot);assert.equal(p.activeConvoy.phase,'defending');
+ const members=Object.entries(p.statuses).map(([name,status])=>({name,status,ctype:'warrior',revision:2}));
+ updateHuntTravel(p.activeConvoy,members,16000,undefined,p.passiveHunting);
+ assert.equal(p.activeConvoy.huntTravel.primary,null,'stale phoenix cannot reacquire');
+ p.statuses.L.convoyLoot={...p.activeConvoy.loot,complete:true,observedAt:16001};
+ f.report(16001);observations(16001);f.step(16001);assert.equal(p.activeConvoy.phase,'assemble');
+ f.report(17000,'assembled');observations(17000);f.step(17000);
+ assert.equal(p.activeConvoy.phase,'shared-prepare');assert.equal(JSON.stringify(p.activeConvoy.location),destination);
+ assert.equal(p.monsterHunt.target,'minimush');assert.equal(p.monsterHunt.stage,'mission-travel');
+});
+
+test('repeated restarts and replacement runtimes require a new uninterrupted acknowledgement window',()=>{
+ const f=fixture();f.step(5000);f.report(6000);f.step(6000);f.restart(6500);f.step(6500);
+ f.stable(7000);assert.equal(f.p.activeConvoy.communicationHold,undefined);
+ f.restart(13000);f.step(13000);f.report(14000);f.step(14000);
+ f.p.statuses.F.combatSelection.runtimeId='replacement';f.step(14500);
+ f.report(15000);f.p.statuses.F.convoyNavigation.commandId--;f.step(15000);
+ assert.match(f.p.activeConvoy.failure,/F:.*matching hold/);
+ f.stable(16000);assert.equal(f.p.activeConvoy.phase,'communication-hold');
+ f.stable(42000);assert.equal(f.p.activeConvoy.phase,'shared-prepare');
 });

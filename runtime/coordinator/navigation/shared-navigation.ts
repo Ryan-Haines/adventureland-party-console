@@ -152,13 +152,24 @@ function terminalCommand(state: SharedState, c: SharedConvoy, name: string): Sha
 /** Existing Town/itinerary/defense barriers delegate here for every walking leg. */
 export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
   defense: (state: SharedState, now: number, command: typeof sharedCommand) => boolean = () => false): ConvoyNavigationPlatform {
-  const communication = createCommunicationRecovery({ owned: authorizedHold, fail: terminal, resume: begin,
+  const communication = createCommunicationRecovery({ owned: authorizedHold, fail: terminal, resume: resumeCommunication,
     hold: (state, c) => {
       c.completed = [];
       clearSharedRoute(c); delete c.readinessStartedAt; delete c.arrivalReadySince;
       c.runtimes = Object.fromEntries(c.participants.map(n => [n, characterRuntime(state.statuses[n]) || '']));
       issue(state, c, 'shared-hold');
     } });
+  function resumeCommunication(state: SharedState, c: SharedConvoy, now: number): boolean {
+    // Reconcile defense and its loot barrier before granting another movement command.
+    if (!c.continuousReturn) {
+      c.phase='defending';
+      if (defense(state,now,sharedCommand)) {
+        if(c.phase==='defending')issue(state,c,'defending');
+        return true;
+      }
+    }
+    return begin(state,c,now);
+  }
   function terminal(state: SharedState, reason: string, code: string): boolean {
     const c = state.activeConvoy;
     if (c?.routeProtocol !== 4) return legacy.hold(state, reason, code);

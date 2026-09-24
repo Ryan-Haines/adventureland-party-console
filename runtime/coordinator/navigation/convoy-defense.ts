@@ -2,7 +2,7 @@ import { classifyTravelDefense, normalTravel, type DefenseState } from "./travel
 import { returnWalking, type ReturnTownPolicy } from './return-town.ts';
 import { collectPassing, passingIdentity, type PassingEncounter } from '../../combat/passing.ts';
 import type { Member } from '../../combat/grouped.ts';
-import {outboundHunt, huntDefense, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
+import {outboundHunt, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
 export { classifyTravelDefense } from "./travel-defense.ts";
 interface Loot { id: string; after: number; realm: string; map: string; in: string; x: number; y: number; complete: boolean; progress?: Progress }
 interface Progress { id: string; observedAt: number; realm: string; map: string; in: string; complete: boolean; error?: string }
@@ -21,6 +21,7 @@ interface Convoy extends HuntTravelConvoy {
   observationPhase?: string;
 }
 interface Party extends DefenseState {
+  combatLogs?: Record<string, import("../telemetry/combat-log.ts").StoredCombatLogEntry[]>;
   activeConvoy?: Convoy | null; commands: Record<string, unknown>;
   navigationIntents?: Record<string, { cancelled?: boolean } | undefined>;
   escape?: { stage: string } | null;
@@ -57,7 +58,7 @@ function lootComplete(p: Party, c: Convoy, now: number): boolean {
   return false;
 }
 function resume(c: Convoy): void {
-  if(huntDefense(c))delete c.huntTravel;
+  if(c.huntTravel){c.huntTravel.primary=null;c.huntTravel.committed=[];delete c.huntTravel.reason;}
   delete c.defenseTargets;
   c.townRetry = false;
   delete c.farmingEngagement;
@@ -143,7 +144,7 @@ function stoppedCauses(c: Convoy, reports: DefenseReport[]): PassingEncounter[] 
     if(!targets.length && !(causes.length && n.defenseInterruption?.source==='coordinator'))return null;
     causes.push(...targets);
   }
-  return causes.length ? causes : null;
+  return causes.length ? [...new Map(causes.map(t=>[passingIdentity(t),t])).values()] : null;
 }
 function obsoleteDefense(p: Party, c: Convoy, now: number): boolean {
   if(outboundHunt(c) || c.huntTravel?.reason)return false;
@@ -171,7 +172,7 @@ function defenseParticipants(c: Convoy): string[] {
   return outboundHunt(c) ? c.participants : c.participants.filter(name=>!c.completed.includes(name));
 }
 /** All route implementations share this barrier and keep their own command identities. */
-export function step<S, C>(input: S, now: number, commandFor: (state: S, convoy: C, phase: string, name: string) => unknown): boolean {
+function advanceDefense<S, C>(input: S, now: number, commandFor: (state: S, convoy: C, phase: string, name: string) => unknown): boolean {
   const p = input as Party, c = ownedConvoy(p);
   if (!c) return false;
   const decision = classifyTravelDefense(p, defenseParticipants(c), now);
@@ -205,4 +206,25 @@ function farmingEngagementPending(p: Party, c: Convoy, now: number): boolean {
 
 function needsDefense(p:Party,c:Convoy,state:string):boolean {
   return state==='defending' || c.phase!=='defending' && localDefense(p,c);
+}
+
+const defenseMessages = new WeakMap<object, string>();
+export function step<S,C>(input:S,now:number,commandFor:(state:S,convoy:C,phase:string,name:string)=>unknown):boolean {
+  const p=input as Party, c=p.activeConvoy;
+  const before=c?.phase;
+  const changed=advanceDefense(input,now,commandFor);
+  if(!c || !changed)return changed;
+  const message=c.phase==='assemble' && before!=='assemble' ? 'Travel encounter complete; regrouping toward '+(c.huntTarget||c.label||'destination') : c.defenseReason;
+  if(message && message!==defenseMessages.get(c)) {
+    defenseMessages.set(c,message);
+    logDefense(p,c,now,message);
+  }
+  return changed;
+}
+
+function logDefense(p:Party,c:Convoy,now:number,message:string):void {
+  if(!p.combatLogs)return;
+  const logs=p.combatLogs[c.leader]||=[];
+  logs.push({at:now,type:'navigation',message,details:{convoyId:c.id,epoch:c.epoch,destination:c.location}});
+  if(logs.length>500)logs.splice(0,logs.length-500);
 }

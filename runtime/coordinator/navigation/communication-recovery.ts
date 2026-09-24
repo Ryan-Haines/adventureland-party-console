@@ -65,7 +65,7 @@ export function createCommunicationRecovery(ports: Ports) {
   }
   function resume(state: SharedState, c: SharedConvoy, now: number): boolean {
     const hold = c.communicationHold!;
-    if (!ready(state, c, now)) { stable.delete(c); c.failure = hold.reason; return false; }
+    if (!ready(state, c, now)) { stable.delete(c); c.failure = hold.reason + ': ' + holdBlockers(state,c,now).join('; '); return false; }
     const runtimes = JSON.stringify(c.participants.map(n => characterRuntime(state.statuses[n])));
     let window = stable.get(c);
     if (!window || window.runtimes !== runtimes || now - window.observedAt > 3000) {
@@ -95,6 +95,20 @@ export function createCommunicationRecovery(ports: Ports) {
   };
 }
 
+function holdRuntimeIssue(s: NonNullable<SharedState['statuses'][string]>, server: string | undefined): string | null {
+  if(s.server!==server)return 'server mismatch';
+  return s.convoyProtocol!==4 || !characterRuntime(s) ? 'waiting for protocol 4 runtime' : null;
+}
+function holdBlockers(state: SharedState, c: SharedConvoy, now: number): string[] {
+  return c.participants.flatMap(name=> {
+    const s=state.statuses[name];
+    if(!readyStatus(s,now))return [name+': waiting for fresh living stopped report'];
+    const reason=!reportMatches(state,name) ? 'waiting for matching hold command, epoch, navigation and runtime acknowledgement' :
+      s.convoyNavigation?.phase!=='held' ? 'waiting for held acknowledgement (reported '+s.convoyNavigation?.phase+')' :
+      holdRuntimeIssue(s,c.routeServer||state.statuses[c.leader]?.server);
+    return reason ? [name+': '+reason] : [];
+  });
+}
 function eligible(state: SharedState, c: SharedConvoy): boolean {
   return c.purpose === 'monster-hunt' && c.geometryRepair?.phase !== 'waiting' &&
     c.failureCode !== 'geometry-mismatch' && state.monsterHunt?.convoyId === c.id;

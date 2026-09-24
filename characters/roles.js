@@ -1943,6 +1943,7 @@
     const timer = setInterval(tick, 100);
     function preparePassing(target) {
       if (target.type !== "monster") return false;
+      if (shared.convoyHoldDefenseTarget?.()?.id === target.id) return true;
       const report = shared.queueReport();
       const identity = { ...target, map: report.map, in: report.in, server: report.server, at: Date.now() + shared.queueClockOffset() };
       if (!passing.prepare(identity, report.groupedCombat.passingEncounters)) return false;

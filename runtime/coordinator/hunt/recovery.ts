@@ -181,9 +181,10 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     return eventReturnMessage();
   }
   function eventReturnMessage(): string {
-    const recovery = state.eventReturn as { event?: string; pending?: string[] } | null;
+    const recovery = state.eventReturn as { event?: string; pending?: string[]; blocker?: string } | null;
     if (!recovery)
       return "Waiting for " + (state.activeConvoy?.purpose || "anniversary") + " travel to finish";
+    if (recovery.blocker) return recovery.blocker;
     const pending = recovery.pending?.length
       ? recovery.pending.join(", ") + " leaving event"
       : "waiting for farming-area arrival";
