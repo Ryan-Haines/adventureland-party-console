@@ -129,10 +129,17 @@ function affected(state: SharedState, c: SharedConvoy, name: string, now: number
   if (s?.rip || s?.hp === 0) return false;
   if (!s || now - s.seenAt > 3000) return true;
   if (observationLost(s, now)) return true;
-  return reportMatches(state, name) && communicationReport(s.convoyNavigation);
+  return reportMatches(state, name) && communicationReport(s.convoyNavigation, c.routeVersion);
 }
-function communicationReport(report: SharedReport | undefined): boolean {
-  return report?.phase === 'communication-hold' && !!report.communication;
+function communicationReport(report: SharedReport | undefined, routeVersion: number | undefined): boolean {
+  if (!report?.communication || report.communication.operation === '/convoy-complete') return false;
+  if (report.phase === 'communication-hold') return true;
+  // Older clients can publish readiness from a late response after signal expiry.
+  // Repair only this captured failure under the current route generation.
+  return report.phase === 'route-ready' && report.routeVersion === routeVersion &&
+    report.communication.operation === '/status' &&
+    ['expired-signal', 'missing-signal'].includes(report.communication.kind) &&
+    report.failure === 'Shared route coordinator signal expired';
 }
 
 function observationLost(s: NonNullable<SharedState["statuses"][string]>, now: number): boolean {

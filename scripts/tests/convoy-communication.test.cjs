@@ -21,6 +21,53 @@ function fixture(defense){
  return {p,get e(){return engine;},report,step:now=>engine.step(p,now),stable(from){for(let t=from;t<=from+5000;t+=1000){report(t);engine.step(p,t);}},
   restart(now){Object.assign(p,initialCommandState(JSON.parse(JSON.stringify({activeConvoy:p.activeConvoy,convoyCompletionReceipts:p.convoyCompletionReceipts})),()=>now));engine=createSharedConvoyNavigation(legacy,defense);}};
 }
+
+test('late route-ready after signal failure recovers a split Daisy return without spending retries',()=>{
+ const f=fixture(),c=f.p.activeConvoy;
+ f.report(1000,'arrived');f.p.statuses.L.x=120;
+ Object.assign(f.p.statuses.F.convoyNavigation,{phase:'route-ready',routeReady:true,
+  failure:'Shared route coordinator signal expired',communication:{operation:'/status',kind:'expired-signal',since:900}});
+ f.step(1000);assert.equal(c.phase,'communication-hold');assert.equal(f.p.commands.L.phase,'shared-hold');
+ f.stable(2000);assert.equal(c.phase,'shared-prepare');assert.equal(c.communicationHold,undefined);
+ assert.equal(c.location.x,120);assert.equal(c.recoveryAttempts,2);assert.equal(f.p.monsterHunt.returnRetries,3);
+ const {publishSharedRoute}=require('../../runtime/coordinator/navigation/shared-route-store.ts');
+ const cmd=f.p.commands.L;
+ assert.equal(publishSharedRoute(f.p,{character:'L',convoyId:c.id,epoch:c.epoch,commandId:cmd.id,
+  navigationRevision:cmd.navigationRevision,runtimeId:'L',routeVersion:c.routeVersion,
+  route:{version:c.routeVersion,geometry:{version:1,fingerprint:'test'},origin:c.rally,destination:c.location,
+   plot:[c.location],source:'remainder'}},7000),null);
+ for(const s of Object.values(f.p.statuses))s.x=120;
+ let observedAt=7000;
+ for(;observedAt<=20000 && f.p.activeConvoy;observedAt+=500){
+  const departed=c.departAt && observedAt>=c.departAt;
+  f.report(observedAt,departed?'arrived':'route-ready');
+  for(const s of Object.values(f.p.statuses))Object.assign(s.convoyNavigation,{routeReady:true,departedAt:departed?c.departAt:null});
+  f.step(observedAt);
+ }
+ assert.equal(f.p.activeConvoy,null,'all participants must reach Daisy before completion');
+ let processed=0;
+ require('../../runtime/coordinator/hunt/travel.ts').createHuntTravel({...f.p,monsterHunterLocation:c.location},
+  {now:()=>observedAt,start:()=>assert.fail('must not recreate a completed return'),processDaisy:()=>processed++}).step(f.p.monsterHunt);
+ assert.equal(processed,1);
+});
+
+for(const mismatch of ['id','epoch','commandId','navigationRevision','runtimeId','routeVersion','manual','cancel'])
+test('contradictory communication report cannot recover stale '+mismatch,()=>{
+ const f=fixture(),c=f.p.activeConvoy,report=f.p.statuses.F.convoyNavigation;
+ Object.assign(report,{phase:'route-ready',failure:'Shared route coordinator signal expired',
+  communication:{operation:'/status',kind:'expired-signal',since:900}});
+ if(mismatch==='manual')f.p.commands.F={id:999,type:'character-travel'};
+ else if(mismatch==='cancel')f.p.navigationIntents.F.cancelled=true;
+ else report[mismatch]='old';
+ f.step(1000);assert.equal(c.communicationHold,undefined);
+ if(mismatch==='manual')assert.equal(f.p.commands.F.id,999);
+});
+
+test('arrived completion retry does not become a shared communication hold',()=>{
+ const f=fixture(),c=f.p.activeConvoy;f.report(1000,'arrived');
+ f.p.statuses.F.convoyNavigation.communication={operation:'/convoy-complete',kind:'timeout',since:900};
+ f.step(1000);assert.equal(c.communicationHold,undefined);
+});
 test('hours without reports do not consume movement budgets; fresh acknowledged holds resume after five seconds',()=>{
  const f=fixture(),c=f.p.activeConvoy;f.step(5000);assert.equal(c.phase,'communication-hold');
  f.step(36000000);assert.equal(c.phase,'communication-hold');assert.equal(c.recoveryAttempts,2);assert.equal(f.p.monsterHunt.returnRetries,3);

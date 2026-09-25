@@ -20,6 +20,28 @@ function fixture(purpose='monster-hunt') {
   function tick(time=now){now=time;return engine.step(state,now);}
   tick();return {state,send,ack,tick};
 }
+
+test('merchant collection waits for communication recovery without capturing its internal phase',()=>{
+ const f=fixture(),s=f.state;f.tick(5000);
+ assert.equal(s.activeConvoy.phase,'communication-hold');
+ assert.equal(f.send('handoff').body.waiting,true);
+ assert.equal(s.activeConvoy.merchantInterruption,undefined);
+ for(let time=6000;time<=12000;time+=1000){f.ack();f.tick(time);}
+ f.ack();f.tick();assert.equal(s.activeConvoy.communicationHold,undefined);
+ assert.equal(f.send('handoff').body.waiting,true);
+ assert.equal(s.activeConvoy.merchantInterruption.resumePhase,'shared-prepare');
+});
+
+test('legacy merchant continuation captured during communication recovery prepares a new route',()=>{
+ const f=fixture(),s=f.state,c=s.activeConvoy,destination=c.location;
+ f.send('handoff');c.merchantInterruption.resumePhase='communication-hold';
+ f.tick();f.ack();f.tick();f.send('handoff');
+ f.send('complete',{jobId:'job',character:'F',commandId:s.commands.F.id});
+ f.tick();f.ack();f.tick();
+ assert.equal(c.phase,'shared-prepare');assert.equal(c.location,destination);
+ for(const command of Object.values(s.commands))assert.equal(command.phase,'shared-prepare');
+ assert.equal(c.merchantInterruption,undefined);
+});
 for(const purpose of ['monster-hunt','shared-walk-return','event-return','empty-spawn-recovery']) {
   test(purpose+' pauses all members, collects once, and resumes its destination',()=>{
     const f=fixture(purpose),s=f.state,c=s.activeConvoy;

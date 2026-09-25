@@ -8,6 +8,7 @@ export class CoordinatorJsonlStore implements CoordinatorFileStore {
   private lock: number | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private bytes = 0;
+  private compactRetryAt = 0;
   private closed = false;
   private lockPath: string;
   private mainPath:string;
@@ -66,7 +67,7 @@ export class CoordinatorJsonlStore implements CoordinatorFileStore {
     if(value===null)this.values.delete(key);else this.values.set(key,value);
   }
   refactor():void {
-    if(this.closed)return;
+    if(this.closed || Date.now()<this.compactRetryAt)return;
     const replacement=fs.openSync(this.replacementPath,'w');
     let bytes=0;
     try {
@@ -77,8 +78,17 @@ export class CoordinatorJsonlStore implements CoordinatorFileStore {
       fs.fsyncSync(replacement);
     } finally {fs.closeSync(replacement);}
     fs.closeSync(this.handle!);this.handle=undefined;
-    try {fs.renameSync(this.replacementPath,this.mainPath);this.bytes=bytes;}
+    try {fs.renameSync(this.replacementPath,this.mainPath);this.bytes=bytes;this.compactRetryAt=0;}
+    catch(error) {this.deferCompaction(error);}
     finally {this.handle=fs.openSync(this.mainPath,'a+');}
+  }
+  private deferCompaction(error:unknown):void {
+    const code=(error as NodeJS.ErrnoException).code;
+    if(!['EPERM','EACCES','EBUSY'].includes(code || ''))throw error;
+    // The append journal remains authoritative. Do not turn a Windows sharing
+    // conflict during optional compaction into a failed, already-written request.
+    this.compactRetryAt=Date.now()+30000;
+    console.warn('Coordinator journal compaction deferred for 30 seconds: '+code);
   }
   private append(key:string,value:unknown):void {
     if(this.closed)throw new Error('Storage is closed');

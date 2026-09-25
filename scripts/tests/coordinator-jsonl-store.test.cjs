@@ -1,5 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {CoordinatorJsonlStore:Store}=require('../../runtime/coordinator/persistence/jsonl-store.ts');
+const {syncBuiltinESMExports}=require('node:module');
 function fixture(t){fs.mkdirSync('.build/store-tests',{recursive:true});const dir=fs.mkdtempSync(path.resolve('.build/store-tests/run-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return [path.join(dir,'state.jsonl'),path.join(dir,'state.new.jsonl')];}
 test('loads a journal beyond the V8 string limit without reading it into one string',t=>{
  const [main,rotation]=fixture(t),fd=fs.openSync(main,'w');
@@ -31,4 +32,25 @@ test('malformed input preserves the source and releases the startup lock',t=>{
 });
 test('recovers a completed replacement only if the main file is absent',t=>{
  const [main,rotation]=fixture(t);fs.writeFileSync(rotation,'{"keep":7}\n');const s=new Store(main,rotation);assert.equal(s.get('keep'),7);s.close();
+});
+
+for(const code of ['EPERM','EACCES','EBUSY'])test('temporary '+code+' during rotation retains writes and defers compaction',t=>{
+ const [main,rotation]=fixture(t),s=new Store(main,rotation);t.after(()=>s.close());
+ s.set('keep',1);s.set('remove',2);let now=1000,calls=0;
+ const rename=fs.renameSync;t.mock.method(Date,'now',()=>now);
+ t.mock.method(fs,'renameSync',(...args)=>{calls++;if(calls===1)throw Object.assign(Error('file in use'),{code});return rename(...args);});
+ syncBuiltinESMExports();t.after(()=>{t.mock.restoreAll();syncBuiltinESMExports();});
+ assert.doesNotThrow(()=>s.refactor());
+ s.set('keep',3);s.delete('remove');s.refactor();assert.equal(calls,1,'no tight compaction retry loop');
+ const replay=()=>Object.assign({},...fs.readFileSync(main,'utf8').trim().split('\n').map(JSON.parse));
+ assert.deepEqual(replay(),{keep:3,remove:null},'original journal contains writes after failed rename');
+ now+=30000;s.refactor();assert.equal(calls,2);assert.deepEqual(replay(),{keep:3});
+ s.close();const restored=new Store(main,rotation);try{assert.equal(restored.get('keep'),3);assert.equal(restored.get('remove'),undefined);}finally{restored.close();}
+});
+
+test('non-sharing rotation failures remain visible and leave the append journal usable',t=>{
+ const [main,rotation]=fixture(t),s=new Store(main,rotation);t.after(()=>s.close());s.set('keep',1);
+ t.mock.method(fs,'renameSync',()=>{throw Object.assign(Error('I/O failure'),{code:'EIO'});});
+ syncBuiltinESMExports();t.after(()=>{t.mock.restoreAll();syncBuiltinESMExports();});
+ assert.throws(()=>s.refactor(),/I\/O failure/);s.set('keep',2);assert.equal(s.get('keep'),2);s.close();
 });

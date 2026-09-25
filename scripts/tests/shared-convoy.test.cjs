@@ -315,6 +315,55 @@ function client(name,p,options={}){
  };
  return r;
 }
+
+test('an authorized Town return completes under its cancelled intent and restores parent commands',()=>{
+ const {p,c}=arrivedReturn();c.purpose='shared-walk-return';c.navigationExempt=true;
+ p.navigationIntents={};c.walkingParents={};
+ for(const name of c.participants){
+  const revision=p.commands[name].navigationRevision;
+  p.navigationIntents[name]={revision,cancelled:true};
+  c.walkingParents[name]={revision,parentId:100,command:{id:100,type:'town-party',cycleId:'town'}};
+ }
+ const {sharedArrivalReady}=require('../../runtime/coordinator/navigation/shared-route-store.ts');
+ assert.equal(sharedArrivalReady(p,1000),true);
+ p.navigationIntents.L.revision++;assert.equal(sharedArrivalReady(p,1000),false,'new navigation still wins');
+ p.navigationIntents.L.revision--;c.navigationExempt=false;assert.equal(sharedArrivalReady(p,1000),false);
+ c.navigationExempt=true;
+ const routes=require('../../runtime/coordinator/http/convoy-acknowledgements.ts').createConvoyAcknowledgementRoutes(p,
+  {now:()=>1000,owned:()=>true,valid:b=>legacy.validReport(p,b),persist(){}});
+ for(const name of c.participants){const cmd=p.commands[name];let response;
+  routes.complete({body:{character:name,convoyId:c.id,epoch:c.epoch,commandId:cmd.id,runtimeId:name,
+   navigationRevision:cmd.navigationRevision,routeVersion:c.routeVersion}},
+   {status(code){assert.equal(code,200);return this;},json(body){response=body;}});
+  assert.equal(response.ok,true);assert.equal(p.commands[name].type,'town-party');
+ }
+ assert.equal(p.activeConvoy,null);
+});
+
+for(const role of ['F','L'])for(const outcome of ['success','rejection','replacement'])
+test(role+' late route '+outcome+' cannot revive a communication hold',async()=>{
+ const p=party(),e=engine();e.step(p,1000);publishSharedRoute(p,publication(p),1000);
+ const r=client(role,p),original=r.context.request;let resolve,reject;
+ r.context.request=(url,options)=>
+  (role==='F'?url.startsWith('/convoy-route?'):url==='/convoy-route')
+   ?new Promise((yes,no)=>{resolve=yes;reject=no;}):original(url,options);
+ const running=await r.start(p.commands[role]);
+ for(let i=0;i<100&&!resolve;i++){r.tick();await settle();}
+ assert.ok(resolve,'route request must be in flight');
+ r.context.convoySignal.validUntil=999;r.setNow(5000);r.tick();await settle();await settle();
+ const held=r.context.convoyTraveling,plot=JSON.stringify(r.context.movement.state.plot);
+ assert.equal(held.phase,'communication-hold');assert.equal(held.routeReady,false);
+ if(outcome==='replacement')r.context.convoyTraveling={id:'replacement',phase:'held'};
+ if(outcome==='rejection')reject(Error('GET /convoy-route · HTTP 409 · http: stale route reader'));
+ else resolve({ok:true,route:copy(sharedRoute(p.activeConvoy))});
+ await settle();await settle();
+ assert.equal(held.phase,'communication-hold');assert.equal(held.routeReady,false);
+ assert.equal(held.failure,'Shared route coordinator signal expired');
+ assert.equal(JSON.stringify(r.context.movement.state.plot),plot);
+ assert.equal(r.calls.some(c=>c[0]==='request'&&c[1]==='/convoy-failed'),false);
+ if(outcome==='replacement')assert.equal(r.context.convoyTraveling.id,'replacement');
+ r.context.convoyTraveling=held;await r.cancel();await running.promise;
+});
 test('leader plans while follower is away; installation acknowledgements gate departure',()=>{
  const p=party(),e=engine();p.statuses.F.x=100;
  assert.equal(e.step(p,1000),true);assert.equal(p.activeConvoy.phase,'shared-prepare');

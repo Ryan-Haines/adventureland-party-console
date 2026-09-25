@@ -17,7 +17,8 @@ interface MerchantState extends SharedState { merchantCurrent?: { id: unknown } 
 export function admitMerchantInterruption(input: unknown, name: string, jobId: unknown, now: number, kind?: "equipment"): boolean {
   const state = input as SharedState, c = state.activeConvoy;
   if (!c?.participants.includes(name)) return !navigationCommand(state.commands[name]);
-  if (c.nonPreemptible || ["failed", "defending", "observing"].includes(c.phase) || c.routeProtocol !== 4) return false;
+  if (c.communicationHold) return false;
+  if (c.nonPreemptible || ["failed", "defending", "observing", "communication-hold"].includes(c.phase) || c.routeProtocol !== 4) return false;
   const pause = c.merchantInterruption;
   if (pause) return pause.jobId === jobId && pause.recipient === name && pause.phase === "ready";
   c.merchantInterruption = { kind, jobId, recipient: name, phase: "stopping", deadline: now + 60000,

@@ -12926,7 +12926,7 @@
   }
   async function prepareSharedConvoyRoute(convoy,command,ownsConvoy,phase) {
     await sharedConvoyRendezvous(convoy,command,ownsConvoy,phase);
-    if(!ownsConvoy())return;
+    if(!ownsConvoy() || convoy.failure || convoy.communication)return;
     var leaderRoute=character.name===command.leader,origin=sharedConvoyPoint(),gate=sharedConvoyGate();
     var destination=leaderRoute?farmingEntryPoint(command.location):command.location,started=Date.now(),identity=sharedConvoyIdentity(command);
     var released=false,onDone,plot,installed=false,published=false,pending=false,retryAt=0,payload=null,fingerprint=null;
@@ -12945,7 +12945,13 @@
         transporting:!!is_transporting(character),plot:remaining};
     }
     convoy.freezeRoute=freeze;
+    // Failure retains command ownership while waiting for the coordinator's hold.
+    // An in-flight response must not reinstall a route after movement has stopped.
+    function routeActive() {
+      return ownsConvoy() && !convoy.failure && !convoy.communication;
+    }
     function install(route) {
+      if(!routeActive())return;
       if(route.version!==command.routeVersion || sharedConvoyDistance(route.origin,command.rally)>1 ||
           route.destination.map!==command.location.map || !Array.isArray(route.plot))throw new Error("Shared route identity changed");
       if(sharedConvoyDistance(sharedConvoyPoint(),route.origin)>55 || !can_move_to(route.origin.x,route.origin.y))
@@ -12966,7 +12972,7 @@
       if(pending || published || Date.now()<retryAt)return;
       pending=true;
       request("/convoy-route",{method:"POST",timeout:3000,body:Object.assign({},identity,{route:payload})}).then(function(result){
-        if(!ownsConvoy())return;
+        if(!routeActive())return;
         if(!result || !result.ok)throw new Error("Leader route publication rejected");
         published=true;convoy.routeReady=true;phase("route-ready");
       }).catch(function(){retryAt=Date.now()+500;}).finally(function(){pending=false;});
@@ -12976,11 +12982,11 @@
       pending=true;
       var query=Object.keys(identity).map(function(k){return encodeURIComponent(k)+"="+encodeURIComponent(identity[k]);}).join("&");
       request("/convoy-route?"+query,{timeout:3000}).then(function(result){
-        if(!ownsConvoy())return;
+        if(!routeActive())return;
         if(!result || !result.ok)throw new Error("Route unavailable");
         install(result.route);
       }).catch(function(error){
-        if(ownsConvoy()) {
+        if(routeActive()) {
           if(command.routeProtocol===4 && convoyRetryableRequest(error))convoyCommunication(convoy,error.partyRequest.path,error.partyRequest.kind);
           convoy.fail(error.message || String(error));
         }
@@ -13434,6 +13440,7 @@
       if(command.phase === "shared-prepare") await prepareSharedConvoyRoute(convoy, command, ownsConvoy, phase);
       else await prepareConvoyRoute(convoy, command, ownsConvoy, phase);
       if (!ownsConvoy()) return;
+      if (convoy.failure || convoy.communication) throw new Error(convoy.failure || 'Waiting for coordinator communication');
       if(command.phase === "shared-prepare" && convoy.detachRoute)convoy.detachRoute();
       if (command.returnLeg) {
         phase("leg-arrived");

@@ -93,6 +93,17 @@ test('featured player still holds just before one minute',async()=>{
   assert.equal(t.calls.some(x=>x[0]==='return'),false);
 });
 
+test('a completed featured hold does not suppress a later merchant kiss round',async()=>{
+ const t=fixture({merchant:true,partyFeatured:true,elapsed:60000,newSlice:true});
+ await t.run();assert.equal(t.calls.some(x=>x[0]==='kiss'),false);
+ t.r.anniversaryPlan.partyFeatured=false;
+ Object.assign(t.r.anniversaryPlan.eventCycle,{returnCompletedAt:1000000});
+ Object.assign(t.event,{round:'next-round',target:'Other',expires:1400000});
+ t.r.character.s.anniversary_visit={round:'next-round'};
+ await t.run();assert.equal(t.calls.filter(x=>x[0]==='kiss').length,1);
+ assert.ok(t.calls.some(x=>x[0]==='/anniversary/claim' && x[1].round==='next-round'));
+});
+
 test('merchant closes an open stand before travelling or kissing',async()=>{
   const t=fixture({merchant:true,stand:true,newBuff:true,resolves:true});
   await t.run();

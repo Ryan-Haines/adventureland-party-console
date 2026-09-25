@@ -1,5 +1,27 @@
 # Character coordinator
 
+## Late route responses and independent merchant visits
+
+Shared route download/publication responses cannot reinstall movement or readiness
+after a local failure or communication hold. Matching legacy `route-ready` reports
+with captured signal-expiry failures enter the existing communication recovery;
+completion acknowledgement retries remain arrived. Recovery retains destination,
+quest rewards, retry budgets and manual navigation ownership. Hunt turn-in heartbeat
+priority applies only to participating fighters, so the merchant can attend kisses
+independently while recipient handoffs remain protected.
+New merchant interruptions wait for communication recovery. Saved interruptions
+that captured its internal hold phase resume through fresh shared preparation,
+never by issuing `communication-hold` as a movement command.
+Arrival uses the same navigation exemption as route authorization: a Town return
+may finish under its own cancelled intent, but a newer revision still rejects it.
+
+Windows sharing conflicts during journal replacement defer compaction for thirty
+seconds while preserving the authoritative append journal and accepting subsequent
+writes. Other storage errors still propagate. Validate late GET/POST responses,
+split-party Daisy recovery, heartbeat scope, subsequent anniversary rounds and
+JSONL rotation/restart. Publish characters and coordinator together with the full
+restart below, verify fresh generations, Daisy processing and resumed Hunt progress.
+
 ## Locked-pair fast handoff
 
 Capable grouped farmers lock the current and next target while optimizing the third.
