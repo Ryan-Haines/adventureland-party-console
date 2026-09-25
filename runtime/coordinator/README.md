@@ -1,5 +1,27 @@
 # Character coordinator
 
+## Locked-pair fast handoff
+
+Capable grouped farmers lock the current and next target while optimizing the third.
+Pair acknowledgements are independent of display queue revisions. The coordinator
+issues a process-local, three-second successor grant only after all participants
+acknowledge the pair. Confirmed predecessor death can consume it once locally;
+ordinary cooldown, range, healing, claim and activity checks still apply. Revocation
+waits for acknowledgements or lease expiry before an incompatible grant. Legacy
+clients retain coordinator-confirmed promotion; restart does not restore grants.
+
+Anniversary/event travel, returns, convoy ownership, recovery and departure holds
+block grants. Hunt uses the selected quest owner's fresh count, reserving the current
+and pending fights and accounting for deaths whose quest decrement has not arrived.
+One remaining kill never preauthorizes a successor. Fast reports carry the quest
+with the same runtime-scoped sample as combat observations.
+
+Validate successor-handoff, combat queue/channel/handoff/movement, queue markers,
+healing, Hunt and anniversary return tests. Use an isolated checkout because the
+watcher publishes source changes; activate both components with the full restart.
+Inspect bounded combat.handoffs for grant receipt, local promotion, reconciliation,
+attack attempt timer lateness and cooldown readiness. Measure clock-local durations.
+
 ## Combat target handoff timing
 
 Confirmed death and changed queue acknowledgements flush combat reports immediately.

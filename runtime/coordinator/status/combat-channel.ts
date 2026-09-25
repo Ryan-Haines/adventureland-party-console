@@ -1,3 +1,4 @@
+const semanticGrant=(grant:{expiresAt:number}|undefined)=>grant ? {...grant,expiresAt:undefined} : undefined;
 import type { HttpResponse } from "../http/contracts.ts";
 /** Long polling is separate from full inventory/status ingestion. One waiter per character. */
 export function createCombatChannel(response: (name: string, mode?: "combat") => unknown) {
@@ -30,12 +31,13 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
     const revisionControl = {...control, convoySignal: control.convoySignal && {...control.convoySignal, validUntil: undefined}};
     const group = full?.groupedCombat as {
       queueRevision?: string;
+      pairRevision?:string; successorGrant?:{expiresAt:number};
       selection?: string;
       committed?: boolean;
       pursuit?: {revoking?: string};
       formationRecovery?: {id:string;phase:string;attempt:number};
       seenAt?: number;
-      observers?: unknown;
+      observers?: {seenAt?:number;[key:string]:unknown}[];
       target?: { x: number; y: number; state?: string };
     } | null;
     if (!group)
@@ -47,13 +49,13 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
       serverNow: full.serverNow,
       groupedCombat: group,
       combatRevision: JSON.stringify([
-        group.queueRevision,
+        group.queueRevision, group.pairRevision, semanticGrant(group.successorGrant),
         group.selection,
         group.committed,
         group.pursuit?.revoking,
         group.formationRecovery,
         position,
-        group.observers,
+        group.observers?.map(({seenAt: _seenAt,...observer})=>observer),
         revisionControl,
       ]),
     };

@@ -63,5 +63,5 @@ test('handoff timing preserves local times, ignores old-target results, and stay
  t.attack('accepted','A',{});t.attack('accepted','B',{});t.attack('attempt','B',{});
  assert.deepEqual(entries.map(e=>e.stage),['death','selection','committed','blocked','attempt','accepted']);
  assert.equal(entries[4].at-entries[0].at,80);
- for(let i=0;i<300;i++)t.report({sequence:i});assert.equal(entries.length,256);
+ for(let i=0;i<300;i++)t.event('timer',{sequence:i});assert.equal(entries.length,256);
 });

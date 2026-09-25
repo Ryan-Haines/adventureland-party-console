@@ -5,6 +5,7 @@ export function createHandoffTiming(entries: Record<string, unknown>[], now = Da
   let selection: string | null = null, target: string | null = null, accepted = false;
   let lastBlock = '', attempted = false, committed = false;
   const deaths = new Set<string>();
+  let reportAt=-Infinity,responseAt=-Infinity;
   function record(stage: string, details: Record<string, unknown>) {
     entries.push({at: now(), stage, ...details});
     if (entries.length > 256) entries.splice(0, entries.length - 256);
@@ -15,14 +16,15 @@ export function createHandoffTiming(entries: Record<string, unknown>[], now = Da
     record('selection', {target, selection, committed: !!group?.committed, coordinator: group?.handoffTiming});
   }
   return {
+    event: record,
     death(id: string) {
       if (deaths.has(id)) return;
       deaths.add(id);
       if (deaths.size > 128) deaths.delete(deaths.values().next().value!);
       record('death', {target: id});
     },
-    report(details: Record<string, unknown>) { record('report', details); },
-    response(details: Record<string, unknown>) { record('response', details); },
+    report(details: Record<string, unknown>) { if(now()-reportAt>=1000){reportAt=now();record('report', details);} },
+    response(details: Record<string, unknown>) { if(now()-responseAt>=1000){responseAt=now();record('response', details);} },
     selection(group: Selection | null) {
       const next = group?.selection ?? null;
       if (next !== selection) {

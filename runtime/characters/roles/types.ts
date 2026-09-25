@@ -108,6 +108,7 @@ export interface CombatState {
   skippedAttack?: string | null;
 }
 export interface RoleRunner {
+  advanceTarget(): void;
   resetTargeting():void;
   isKnownDead(id: string): boolean;
   invalidateTarget(id?: string): void;

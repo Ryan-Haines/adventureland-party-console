@@ -132,3 +132,15 @@ test('reconciled queue markers omit dead and absent targets; a hold displays onl
  assert.deepEqual(Array.from(c.queueMarkers(),t=>t.id),['active']);
  c.convoyHoldDefenseTarget=()=>null;assert.equal(c.queueMarkers().length,0);
 });
+
+
+test('locked pair marker roles do not shift when current entity is absent',()=>{
+ const {namedFunction}=require('./helpers/named-function.cjs');const source=fs.readFileSync('characters/shared.js','utf8');
+ const t=id=>({id,map:'main',in:'main',server:'USII',visible:true});
+ const entities={B:t('B'),C:t('C')};
+ const c=vm.createContext({Math,Number,Object,character:{map:'main',in:'main'},navigationIntent:{},root:{},
+  groupedFarming:()=>true,get_entity:id=>entities[id],reunionRealm:()=> 'USII',eventTargetTypes:[],
+  groupedCombat:{pairRevision:'pair',queue:['A','B','C'].map(t)}});
+ vm.runInContext(namedFunction(source,'queueMarkers'),c);
+ const markers=Array.from(c.queueMarkers());assert.deepEqual(markers.map(t=>[t.id,t.role,t.visible]),[['A','current',false],['B','next',true],['C','third',true]]);
+});

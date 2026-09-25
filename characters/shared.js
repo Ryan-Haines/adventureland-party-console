@@ -2250,7 +2250,7 @@
       combatSelection: { id: combatSelection.id, revision: combatSelection.revision,
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
-      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:typeof returnCombatActive==='function' && returnCombatActive() || returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:typeof returnCombatActive==='function' && returnCombatActive() || returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], handoff:root.partyQueueClient && root.partyQueueClient.handoff && root.partyQueueClient.handoff.report(), queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
       movementGeometry: movement.identity,
       huntReturnProtocol: 2,
@@ -11822,7 +11822,7 @@
     fightDeaths = root.__partyFightDeaths = fightDeaths.filter(function (d) { return Date.now()-d.at<60000; });
     if (!fightDeaths.some(function (d) { return d.id===id && d.map===character.map && d.in===character.in && d.server===reunionRealm(); }))
       fightDeaths.push({id:id,map:character.map,in:character.in,server:reunionRealm(),at:Date.now()+coordinatorClockOffset});
-    if(root.partyQueueClient) { root.partyQueueClient.reportEvidence(fightDeaths); root.partyQueueClient.flush(); }
+    if(root.partyQueueClient) { root.partyQueueClient.reportEvidence(fightDeaths); if(root.partyQueueClient.death)root.partyQueueClient.death(id);else root.partyQueueClient.flush(); }
   }
   function groupedEntityReport(e) { return {id:e.id,mtype:e.mtype,map:character.map,in:character.in,x:e.x,y:e.y,hp:e.hp,max_hp:e.max_hp}; }
   function currentTravelAttackers() {
@@ -11902,12 +11902,13 @@
       var defense=typeof convoyHoldDefenseTarget==='function' && convoyHoldDefenseTarget();
       markers=defense ? [Object.assign(groupedEntityReport(defense),{server:reunionRealm()})] : [];
     }
-    markers=markers.filter(function(t){var e=get_entity(t.id);return e && e.visible && !e.dead && e.hp!==0 && t.server===reunionRealm() && t.map===character.map && t.in===character.in;});
+    markers=markers.filter(function(t){var e=get_entity(t.id);return (groupedCombat && groupedCombat.pairRevision || e && e.visible && !e.dead && e.hp!==0) && t.server===reunionRealm() && t.map===character.map && t.in===character.in;});
     return groupedFarming() && !navigationIntent.cancelled ? markers.slice(0,3).map(function(t,index){
       var e=get_entity(t.id);return {id:t.id,map:t.map,in:t.in,server:t.server,role:['current','next','third'][index],state:t.state,radius:Math.max(18,(Number(e && e.awidth)||24)/2+4),visible:!!(e && e.visible && !e.dead && t.server===reunionRealm() && t.map===character.map && t.in===character.in)};
     }) : [];
   }
   function acceptQueue(next) {
+    if(root.partyQueueClient && root.partyQueueClient.handoff)next=root.partyQueueClient.handoff.accept(next);
     if(next && Number(next.resetAt||0)<Number(root.__partyCombatResetAt||0))return;
     if(next && groupedCombat && Number(next.seenAt)<Number(groupedCombat.seenAt))return;
     var before=groupedCombat && groupedCombat.target, after=next && next.target;
@@ -11917,7 +11918,7 @@
     if(before && (!after || passingKey(before)!==passingKey(after))) {
       cancelFarmApproach('Travel encounter retired');cancelFightRoute();cancelGroupRoute();resetCombatMovement();
       combatTargetId=null;
-      if(root.partyRoleRunner)root.partyRoleRunner.resetTargeting();
+      if(root.partyRoleRunner){if(root.partyRoleRunner.advanceTarget)root.partyRoleRunner.advanceTarget();else root.partyRoleRunner.resetTargeting();}
     }
     if(after && (!before || before.id!==after.id)) {
       cancelFightRoute(); cancelGroupRoute(); resetCombatMovement();
@@ -11976,10 +11977,10 @@
     });
   }
   function queueReport() {
-    return {name:character.name,rareObservation:rareObservationReport(),map:character.map,in:character.in,server:reunionRealm(),x:character.x,y:character.y,hp:character.hp,max_hp:character.max_hp,lastDeath:lastDeathInfo,rip:!!character.rip,
+    return {name:character.name,monsterHunt:monsterHuntStatus(),rareObservation:rareObservationReport(),map:character.map,in:character.in,server:reunionRealm(),x:character.x,y:character.y,hp:character.hp,max_hp:character.max_hp,lastDeath:lastDeathInfo,rip:!!character.rip,
       combatSelection:Object.assign({},combatSelection,{runtimeId:convoyRuntimeId,target:groupedNomination()}),
       groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:typeof returnCombatActive==='function' && returnCombatActive() || returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueClaims(),candidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueCandidates(),retentions:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
-        threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision,
+        threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),handoff:root.partyQueueClient && root.partyQueueClient.handoff && root.partyQueueClient.handoff.report(),queueAck:groupedCombat && groupedCombat.queueRevision,
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
   function acceptCombatControl(state) {
@@ -14706,6 +14707,20 @@
       if(root.partyQueueClient && root.partyQueueClient.timing)root.partyQueueClient.timing.attack(stage,id,details);
     },
     terrainRecoveryPorts: terrainRecoveryPorts,
+    successorAllowed: function(grant) {
+      if(!groupedFarming() || !groupedFresh() || navigationIntent.cancelled || character.rip || partyConvoyActive || convoyTraveling ||
+          eventTraveling || joinedEvent || eventTargetTypes.length || combatRecoveryActive() || travelCombatActive() ||
+          root.partyLootClient && root.partyLootClient.huntPending())return false;
+      if(!groupedCombat || groupedCombat.key!==grant.key || (root.__partyCombatResetAt||0)!==grant.resetAt)return false;
+      if(grant.hunt && grant.hunt.owner===character.name) {
+        var quest=monsterHuntStatus();if(!quest || quest.id!==grant.hunt.quest || quest.count<=0 || quest.remainingMs<=0)return false;
+      }
+      return true;
+    },
+    successorVisible: function(grant) {
+      var t=grant.successor,e=get_entity(t.id);
+      return !!(e && e.visible && !e.dead && e.hp>0 && t.map===character.map && t.in===character.in && t.server===reunionRealm() && !isExternallyClaimedMonster(e));
+    },
     queueReport: queueReport,
     convoyActive: function(){return !!convoyTraveling || partyConvoyActive;},
     queueSafePoint: formationRecoverySafePoint,
@@ -14725,10 +14740,10 @@
     acceptCombatControl: acceptCombatControl,
     queueClockOffset: function(){return coordinatorClockOffset;},
     queueMembers: function(){return currentPartyList();},
-    queueRequest: function(body){return request('/status',{method:'POST',body:Object.assign({name:character.name},body)});},
+    queueRequest: function(body){body.name=character.name;return request('/status',{method:'POST',body:body});},
     acceptQueue: acceptQueue,
     queueAcknowledgement: function() {
-      return {groupedCombat:{ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision}};
+      return {groupedCombat:{ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision,handoff:root.partyQueueClient && root.partyQueueClient.handoff && root.partyQueueClient.handoff.report()}};
     },
     sharedTargetId: function(){return groupedFarming() && groupedCombat && groupedCombat.target && groupedCombat.target.id || null;},
     queueEvidence: function(target,state,action){return root.partyQueueClient && root.partyQueueClient.evidence(target,state,action);},

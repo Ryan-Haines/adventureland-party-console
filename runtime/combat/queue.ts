@@ -1,3 +1,4 @@
+import {lockedQueue} from './locked-pair.ts';
 import {collectPassing, passingIdentity} from './passing.ts';
 import {trackPursuit} from './pursuit.ts';
 import {recoverLostTargets, targetIdentity} from "./lost-target.ts";
@@ -92,11 +93,12 @@ export function reconcileQueue(old: Group | undefined | null, members: Member[],
   const priorFight=defense||fights.find(f=>old?.target && identity(f)===identity(old.target as Fight));
   const ordered=[...(priorFight?[priorFight]:[]),...fights.filter(f=>f!==priorFight).sort((a,b)=>a.startedAt-b.startedAt||a.id.localeCompare(b.id))];
   const planned=old?.target && !ordered.length ? candidates.find(c=>identity(c)===identity(old.target as Fight)) : null;
+  const promoted=!planned && !ordered.length && old?.pairRevision && old.key===key ? old.queue.slice(1,3).map(t=>candidates.find(c=>identity(c)===identity(t))).find(Boolean) : null;
   const higherRare = planned && candidates.find(c=>c.passiveRare && (c.priority??50)>(planned.priority??50));
-  let target=ordered[0]||higherRare||planned||candidates[0]||null;
+  let target=ordered[0]||higherRare||planned||promoted||candidates[0]||null;
   const pursuitResult=trackPursuit(old,target,candidates,members,now,key,pullsPaused,huntTarget);
   if(pursuitResult.replacement)target=candidates.find(c=>targetIdentity(c)===targetIdentity(pursuitResult.replacement!))||target;
-  const queue=target?[target,...ordered.filter(f=>f!==target),...candidates.filter(c=>c!==target&&!pursuitResult.pursuitExclusions.some(e=>e.identity===targetIdentity(c)))].slice(0,Math.max(3,ordered.length)):[];
+  const queue=lockedQueue(old,target,ordered,candidates.filter(c=>!pursuitResult.pursuitExclusions.some(e=>e.identity===targetIdentity(c))),key);
   const revision=JSON.stringify([key,queue.map(t=>identity(t))]);
   return {passingEncounters,pursuit:pursuitResult.pursuit,pursuitExclusions:pursuitResult.pursuitExclusions,claims,rareRejections,lostTargets,searches:recovery.searches,fights:ordered,queue,target,queueRevision:revision,deaths:tombstones,evidence:evidence.filter(e=>!retired(e,e.startedAt??e.at)&&(e.state==='pending'||now-e.at<60000)).slice(-256),
     threats:ordered.filter(f=>reports.some(m=>(m.status!.groupedCombat?.threats||[]).some(t=>identity({...t,server:m.status!.server})===identity(f))))};

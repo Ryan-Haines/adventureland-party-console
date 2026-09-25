@@ -1,3 +1,5 @@
+import {authorizeSuccessor, type HandoffPolicy} from '../../combat/successor-grant.ts';
+import {owner as huntOwner} from '../../hunt/policy.ts';
 import type { Group, Member } from "../../combat/grouped.ts";
 import type { StoredCombatLogEntry } from "../telemetry/combat-log.ts";
 import { retireTravelTargets, travelCombatFor, type TravelState } from "./travel-defense.ts";
@@ -8,7 +10,8 @@ interface GroupedState {
   passiveHunting?: import('../../combat/passive-travel.ts').PassiveTravelSettings;
   phoenixPatrolActive?: boolean;
   farmingPolicy?: string;
-  monsterHunt?: { stage: string; target: string | null } | null;
+  monsterHunt?: import("../../hunt/policy.ts").Hunt & {target:string|null} | null;
+  anniversary?: {eventCycle?: {returnCompletedAt?:number;supersededAt?:number;combatHandoffAt?:number} | null};
   combatEventHandoff?: { startedAt: number; endedAt?: number } | null;
   eventReturn?: unknown;
   leader: string | null;
@@ -153,10 +156,31 @@ function evaluateParticipants(
       travelling ? null : farmingHuntTarget(state),
     ),
   );
+  authorizeSuccessor(state,group,members,successorPolicy(state,ports,leader,travelling),ports.now());
   state.groupedCombat = group;
   if (changed(previous, group)) logFormation(state, leader, group, ports.now);
   logUnseenRelease(state, leader, previous, group);
   return group;
+}
+function successorPolicy(state:GroupedState,ports:GroupedPorts,leader:string,travelling:boolean):HandoffPolicy {
+  const activeHunt=state.farmingPolicy==='hunt' ? state.monsterHunt : null;
+  const allowed=successorActivityClear(state,travelling) && !ports.blocksPulls() && !ports.disengagementActive() &&
+    (state.farmingPolicy!=='hunt' || activeHunt?.stage==='farming');
+  if(!activeHunt)return {allowed};
+  const owner=huntOwner(activeHunt,leader);
+  return {allowed,hunt:successorQuest(owner,state.statuses[owner],ports.now())};
+}
+function successorQuest(owner:string,status:Member['status'],now:number):NonNullable<HandoffPolicy['hunt']> {
+  const quest=status?.monsterHunt;
+  return {owner,quest:quest?.id||'',count:quest?.count||0,fresh:successorQuestFresh(status,now)};
+}
+function successorQuestFresh(status:Member['status'],now:number):boolean {
+  return !!status?.monsterHunt && status.monsterHunt.remainingMs>0 && now-status.seenAt<=3000 && status.seenAt<=now+500;
+}
+function successorActivityClear(state:GroupedState,travelling:boolean):boolean {
+  const cycle=state.anniversary?.eventCycle;
+  return !travelling && !state.activeConvoy && !state.eventReturn &&
+    !(cycle && !cycle.returnCompletedAt && !cycle.supersededAt && !cycle.combatHandoffAt);
 }
 function huntDefenseMembers(state: GroupedState, members: Member[], now: number): Member[] {
   const c=state.activeConvoy;

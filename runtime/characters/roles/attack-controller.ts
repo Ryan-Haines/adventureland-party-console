@@ -36,6 +36,8 @@ export function createAttackController(ports: AttackPorts) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let burstTimer: ReturnType<typeof setTimeout> | null = null;
   let running = false, retryAt = 0, dueAt = 0;
+  let lastTimerLatenessMs=0;
+  const monotonic=()=>typeof performance==='undefined'?Date.now():performance.now();
   const clock = () => {
     const client = parent as unknown as { next_skill?: { attack?: Date }; pings?: number[] };
     const value = Number(client.next_skill?.attack);
@@ -51,7 +53,8 @@ export function createAttackController(ports: AttackPorts) {
     if (!running) return;
     if (timer !== null) clearTimeout(timer);
     dueAt = Date.now() + Math.max(1, delay);
-    timer = setTimeout(() => { timer = null; tick(); }, Math.max(1, delay));
+    const scheduled=monotonic(),wait=Math.max(1,delay);
+    timer = setTimeout(() => { lastTimerLatenessMs=Math.max(0,monotonic()-scheduled-wait);timer = null; tick(); }, Math.max(1, delay));
   }
   const recovery = createCrabRangeRecovery();
   const sample = (target: Target) => sharedRoutine.describeAttackRange?.(target) ?? null;
@@ -147,7 +150,7 @@ export function createAttackController(ports: AttackPorts) {
       }
       const action=attempt.passing ? null : (sharedRoutine as any).queueEvidence?.(target,'pending');
       try {
-        sharedRoutine.noteCombatHandoff?.('attempt', target.id, {cooldownReadyAt:clock(), frequency:Number(character.frequency)});
+        sharedRoutine.noteCombatHandoff?.('attempt', target.id, {cooldownReadyAt:clock(), frequency:Number(character.frequency),timerLatenessMs:lastTimerLatenessMs});
         Promise.resolve(attack(target)).then(() => {
           if (flight !== attempt || attempt.epoch !== ports.epoch() || !ports.active() || attempt.success) return;
           attempt.success = true;
@@ -232,6 +235,7 @@ export function createAttackController(ports: AttackPorts) {
     send(target);
   }
   function tick() {
+    ports.state().skippedAttack=undefined;
     try {
       sharedRoutine.correctedCombatDistance = correctedDistance;
       const target = ports.target();

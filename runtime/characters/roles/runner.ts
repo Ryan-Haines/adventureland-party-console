@@ -275,6 +275,7 @@ export function installRoleRunner(
       attacks.wake();
     },
     wake() { void selectTarget(); attacks.wake(); },
+    advanceTarget() {generation++;selectedTarget=null;invalidated=true;selecting=false;working=false;},
     resetTargeting() {generation++;selectedTarget=null;invalidated=true;selecting=false;working=false;attacks.reset();skills?.reset();queueClient?.reset();},
     role: function () {
       return resolvedRole();
