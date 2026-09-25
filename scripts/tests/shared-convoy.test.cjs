@@ -415,9 +415,12 @@ test('paused leader retains the issued waypoint and regroups using native fallba
  const p=party(),e=engine();e.step(p,1000);const r=client('L',p,{nativeMovingFlag:true});
  const first=await r.start(p.commands.L);await r.ready();
  r.context.convoySignal={...r.context.convoySignal,phase:'scheduled',departAt:4000,validUntil:9000};r.tick();r.setNow(3950);
- r.tick();r.context.character.moving=false;
- r.context.move=async(x,y)=>{r.context.character.moving=true;r.context.character.going_x=x;r.context.character.going_y=y;};
- for(let i=0;i<6 && r.context.character.going_x!==120;i++){r.tick();await settle();}r.context.character.x=45;r.context.convoyTraveling.freezeRoute();
+ // Install the in-flight movement mock before departure can issue the real leg.
+ r.context.character.moving=false;
+ r.context.move=async(x,y)=>{r.context.character.moving=x===120;r.context.character.going_x=x;r.context.character.going_y=y;};
+ for(let i=0;i<20 && r.context.character.going_x!==120;i++){r.tick();await settle();}
+ assert.equal(r.context.character.going_x,120,'fixture must start the real walking leg before freezing');
+ r.context.character.x=45;r.context.convoyTraveling.freezeRoute();
  assert.equal(r.context.__partySharedRouteRemainder.plot[0].x,120);
  await r.cancel();await first.promise;r.context.character.moving=false;
  e.hold(p,'Shared route rejected: unwalkable segment');const now=Date.now();for(const n of ['L','F','P'])report(p,n,'held',now);

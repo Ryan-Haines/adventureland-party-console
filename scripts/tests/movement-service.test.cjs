@@ -364,3 +364,46 @@ test('barrier timeout retains request metadata through executor and movement pro
  r.service.install([{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}],r.service.identity);
  await r.ticks();await r.ticks();await rejected;assert.equal(r.service.last().failureContext.partyRequest.path,'/movement-barrier');r.dispose();
 });
+
+function reachedWalkFixture(plot) {
+ const {createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
+ let now=1000,transporting=false;const calls=[];
+ const character={map:'main',in:'main',real_x:177,real_y:460,moving:false};
+ const host={character,move:(x,y)=>{calls.push([x,y]);character.moving=true;return Promise.resolve();},
+  can_walk:()=>true,is_transporting:()=>transporting,can_use:()=>true,
+  town:()=>{calls.push('town');return new Promise(()=>{});}};
+ const state={plot,use_town:true};
+ const executor=createMovementExecutor(host,state,{game:{maps:{main:{spawns:[[177,460]]},bank:{}}},walk:()=>true},()=>now);
+ return {executor,host,state,calls,character,setNow:value=>now=value,setTransporting:value=>transporting=value};
+}
+for(const duplicates of [1,3])test('reached walking points never issue a zero-distance game move: '+duplicates,()=>{
+ const r=reachedWalkFixture([...Array.from({length:duplicates},()=>({map:'main',x:177,y:460})),{map:'main',x:222,y:430}]);
+ r.executor.tick({});assert.deepEqual(r.calls,[[222,430]]);assert.equal(r.state.plot.length,1);
+ Object.assign(r.character,{real_x:222,real_y:430,moving:false});r.setNow(6100);r.executor.tick({});
+ assert.equal(r.executor.tick({}),true);
+});
+test('entire reached route finishes without a move including the one-unit boundary',()=>{
+ const r=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:178,y:460}]);
+ assert.equal(r.executor.tick({}),true);assert.deepEqual(r.calls,[]);
+});
+test('outside arrival tolerance still issues a walk',()=>{
+ const r=reachedWalkFixture([{map:'main',x:178.01,y:460}]);r.executor.tick({});assert.equal(r.calls.length,1);
+});
+for(const blocked of ['moving','transporting','unable'])test('reached walk cannot advance while '+blocked,()=>{
+ const r=reachedWalkFixture([{map:'main',x:177,y:460}]);
+ if(blocked==='moving')r.character.moving=true;
+ if(blocked==='transporting')r.setTransporting(true);
+ if(blocked==='unable')r.host.can_walk=()=>false;
+ assert.equal(r.executor.tick({}),false);assert.equal(r.state.plot.length,1);assert.deepEqual(r.calls,[]);
+});
+for(const point of [{map:'bank',x:177,y:460},{map:'main',in:'other',x:177,y:460}])test('other map or instance is not consumed: '+JSON.stringify(point),()=>{
+ const r=reachedWalkFixture([point]);try{r.executor.tick({});}catch(error){assert.match(error.message,/collisions/);}
+ assert.equal(r.state.plot.length,1);
+});
+test('skipped walk preserves transition barrier index and pending acknowledgement',async()=>{
+ const r=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:177,y:460,town:true}]),barriers=[];
+ const options={barrier:async(step,index,completed)=>{barriers.push({index,completed});return true;}};
+ r.executor.tick(options);await settle();r.executor.tick(options);await settle();r.executor.tick(options);
+ assert.deepEqual(r.calls,['town']);assert.deepEqual(barriers,[{index:0,completed:false}]);
+ assert.equal(r.state.plot.length,1);assert.equal(r.state.plot[0].town,true);
+});

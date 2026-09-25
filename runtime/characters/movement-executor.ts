@@ -134,11 +134,23 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     if (issued) { observe(issued, options); return false; }
     if (!state.plot.length) return true;
     if (!canStart()) return false;
-    const step = state.plot[0], p = position(), reason = stepIssue(validation, p, step, state.use_town);
-    if (reason) throw Error(`${reason} between ${p.map} (${p.x}, ${p.y}) and ${step.map} (${step.x}, ${step.y})`);
+    const p = position();
+    consumeReachedWalks(p);
+    if (!state.plot.length) return true;
+    const step = state.plot[0];
     issued = { step, from: point(p), at: now(), progressAt: now(), position: p, finished: true };
     dispatch(issued, options);
     return false;
+  }
+  function consumeReachedWalks(p: Point): void {
+    while (state.plot.length) {
+      const next = state.plot[0], reason = stepIssue(validation, p, next, state.use_town);
+      if (reason) throw Error(`${reason} between ${p.map} (${p.x}, ${p.y}) and ${next.map} (${next.x}, ${next.y})`);
+      // Even a zero-distance game move sets moving=true. Consume reached walking
+      // points before issuing it; transitions still require dispatch and acknowledgement.
+      if (isTransition(next) || distance(p, next) > 1) break;
+      state.plot.shift();
+    }
   }
   function lootReady(step: Step): boolean {
     if (!isTransition(step) || lootCollected()) { lootWaitAt = undefined; return true; }

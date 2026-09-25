@@ -12928,7 +12928,7 @@
     if(!ownsConvoy())return;
     var leaderRoute=character.name===command.leader,origin=sharedConvoyPoint(),gate=sharedConvoyGate();
     var destination=leaderRoute?farmingEntryPoint(command.location):command.location,started=Date.now(),identity=sharedConvoyIdentity(command);
-    var released=false,onDone,plot,issued=null,installed=false,published=false,pending=false,retryAt=0,payload=null,fingerprint=null;
+    var released=false,onDone,plot,installed=false,published=false,pending=false,retryAt=0,payload=null,fingerprint=null;
     var saved=leaderRoute && !command.nativeFallback && !command.avoidLeave && !command.disableTown?(sharedConvoyReusable(command,origin)||sharedConvoyItinerary(command,origin)):null;
     if(saved)destination=saved.destination;
     convoy.routeVersion=command.routeVersion;
@@ -12937,8 +12937,8 @@
     function freeze() {
       if(!leaderRoute || !installed || smart.on_done!==onDone)return;
       var remaining=clone(smart.plot);
-      if(issued && JSON.stringify(remaining[0])!==JSON.stringify(issued) &&
-          (issued.town || issued.transport || issued.method === "leave" || sharedConvoyDistance(sharedConvoyPoint(),issued)>1))remaining.unshift(Object.assign({},issued));
+      // Managed execution retains its issued step until observed completion.
+      // Prepending a pre-tick snapshot would resurrect already-consumed waypoints.
       root.__partySharedRouteRemainder={id:command.convoyId,revision:Number(command.navigationRevision)||0,
         runtimeId:convoyRuntimeId,destinationKey:JSON.stringify(command.location),destination:destination,
         transporting:!!is_transporting(character),plot:remaining};
@@ -13008,7 +13008,6 @@
         var next=smart.plot[0];
         if(!next.town && !next.transport && next.method !== "leave" && (character.map!==next.map || !can_move_to(next.x,next.y)))
           throw new Error("Shared waypoint blocked; regroup required");
-        issued=Object.assign({},next);
       }
       freeze();
       return gate.original();
