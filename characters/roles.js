@@ -498,6 +498,8 @@
     let timer = null;
     let burstTimer = null;
     let running = false, retryAt = 0, dueAt = 0;
+    let lastTimerLatenessMs = 0;
+    const monotonic = () => typeof performance === "undefined" ? Date.now() : performance.now();
     const clock = () => {
       const client = parent;
       const value = Number(client.next_skill?.attack);
@@ -513,7 +515,9 @@
       if (!running) return;
       if (timer !== null) clearTimeout(timer);
       dueAt = Date.now() + Math.max(1, delay);
+      const scheduled = monotonic(), wait = Math.max(1, delay);
       timer = setTimeout(() => {
+        lastTimerLatenessMs = Math.max(0, monotonic() - scheduled - wait);
         timer = null;
         tick();
       }, Math.max(1, delay));
@@ -619,7 +623,7 @@
         }
         const action = attempt.passing ? null : sharedRoutine.queueEvidence?.(target, "pending");
         try {
-          sharedRoutine.noteCombatHandoff?.("attempt", target.id, { cooldownReadyAt: clock(), frequency: Number(character.frequency) });
+          sharedRoutine.noteCombatHandoff?.("attempt", target.id, { cooldownReadyAt: clock(), frequency: Number(character.frequency), timerLatenessMs: lastTimerLatenessMs });
           Promise.resolve(attack(target)).then(() => {
             if (flight !== attempt || attempt.epoch !== ports.epoch() || !ports.active() || attempt.success) return;
             attempt.success = true;
@@ -715,6 +719,7 @@
       send(target);
     }
     function tick() {
+      ports.state().skippedAttack = void 0;
       try {
         sharedRoutine.correctedCombatDistance = correctedDistance;
         const target = ports.target();
@@ -1367,6 +1372,96 @@
     return distanceTo <= range;
   }
 
+  // runtime/combat/lost-target.ts
+  var targetIdentity = (t) => JSON.stringify([t.server, t.map, t.in, String(t.id)]);
+
+  // runtime/combat/successor-client.ts
+  function createSuccessorClient(ports) {
+    let snapshot = null, grant, deadline = 0, receipt = 0;
+    let consumed = null, revokedAck = null, promoted = null;
+    const valid = () => !!grant && !grant.revoking && ports.monotonic() < deadline && ports.allowed(grant);
+    function accept(next) {
+      if (next && snapshot && next.seenAt < snapshot.seenAt) return effective();
+      if (next === promoted) return promoted;
+      snapshot = next;
+      if (!sameScope(next)) promoted = null;
+      const incoming = next?.successorGrant;
+      if (incoming?.revoking) {
+        revokedAck = incoming.id;
+        promoted = null;
+        grant = void 0;
+        ports.trace("grant-revoked", { grant: incoming.id });
+        return next;
+      }
+      receive(next);
+      reconcilePromotion(next, incoming);
+      return effective();
+    }
+    function sameScope(next) {
+      return !!next && next.key === grant?.key && (next.resetAt || 0) === grant?.resetAt;
+    }
+    function receive(next) {
+      const incoming = next?.successorGrant;
+      if (!incoming || !next) return;
+      if (incoming.id !== consumed && next.seenAt > receipt) {
+        const changed = grant?.id !== incoming.id;
+        receipt = next.seenAt;
+        grant = incoming;
+        deadline = ports.monotonic() + Math.max(0, Math.min(3e3, incoming.expiresAt - ports.serverNow()));
+        if (changed) ports.trace("grant-received", { grant: incoming.id, target: incoming.successor.id, expiresAt: incoming.expiresAt });
+      }
+    }
+    function reconcilePromotion(next, incoming) {
+      if (promoted && next?.selection === promoted.selection) {
+        promoted = null;
+        grant = void 0;
+        ports.trace("promotion-reconciled", { grant: consumed, target: next.target?.id });
+      } else if (!incoming || incoming.id !== grant?.id) {
+        promoted = null;
+        grant = void 0;
+      }
+    }
+    function effective() {
+      if (!promoted) return snapshot;
+      return valid() ? promoted : { ...promoted, committed: false };
+    }
+    function death(id) {
+      if (!snapshot || !grant || grant.id === consumed || id !== grant.predecessor.id) return null;
+      if (!valid() || !ports.live(grant)) {
+        ports.trace("promotion-blocked", { grant: grant.id, target: grant.successor.id, reason: !valid() ? "expired or activity blocked" : "successor unavailable" });
+        return null;
+      }
+      if (!snapshot.target || targetIdentity(snapshot.target) !== targetIdentity(grant.predecessor)) return null;
+      consumed = grant.id;
+      const successor = { ...grant.successor };
+      promoted = {
+        ...snapshot,
+        target: successor,
+        selection: grant.selection,
+        committed: true,
+        pursuit: void 0,
+        formationRecovery: void 0,
+        queue: [successor, ...snapshot.queue.filter((t) => t.id !== id && t.id !== successor.id)],
+        handoffTiming: void 0,
+        successorGrant: void 0
+      };
+      ports.trace("local-promotion", { grant: grant.id, target: successor.id, predecessor: id });
+      return promoted;
+    }
+    function report() {
+      return { capability: 1, pairAck: snapshot?.pairRevision || null, revokedAck, consumed };
+    }
+    return { accept, death, report, effective, valid, reset() {
+      snapshot = null;
+      grant = void 0;
+      promoted = null;
+      deadline = 0;
+      receipt = 0;
+      consumed = null;
+      revokedAck = null;
+    } };
+  }
+
   // runtime/combat/recovery-route.ts
   function recoveryRoute(origin, destination, clear) {
     const start = { x: origin.x, y: origin.y }, goal = { x: destination.x, y: destination.y };
@@ -1833,6 +1928,7 @@
     let selection = null, target = null, accepted = false;
     let lastBlock = "", attempted = false, committed = false;
     const deaths = /* @__PURE__ */ new Set();
+    let reportAt = -Infinity, responseAt = -Infinity;
     function record(stage, details) {
       entries.push({ at: now(), stage, ...details });
       if (entries.length > 256) entries.splice(0, entries.length - 256);
@@ -1847,6 +1943,7 @@
       record("selection", { target, selection, committed: !!group?.committed, coordinator: group?.handoffTiming });
     }
     return {
+      event: record,
       death(id) {
         if (deaths.has(id)) return;
         deaths.add(id);
@@ -1854,10 +1951,16 @@
         record("death", { target: id });
       },
       report(details) {
-        record("report", details);
+        if (now() - reportAt >= 1e3) {
+          reportAt = now();
+          record("report", details);
+        }
       },
       response(details) {
-        record("response", details);
+        if (now() - responseAt >= 1e3) {
+          responseAt = now();
+          record("response", details);
+        }
       },
       selection(group) {
         const next = group?.selection ?? null;
@@ -1889,8 +1992,16 @@
     root.partyQueueClient?.stop();
     let active = true, busy2 = false, waiting = false, dirty = false, signature = "", sentAt = 0, retryAt = 0, revision = "", serial = 0;
     let sentAcknowledgement = "";
-    const acknowledgement = (report) => JSON.stringify([report.groupedCombat?.ack, report.groupedCombat?.queueAck]);
+    const acknowledgement = (report) => JSON.stringify([report.groupedCombat?.ack, report.groupedCombat?.queueAck, report.groupedCombat?.handoff]);
     const timing = createHandoffTiming(root.__partyHandoffTrace ||= []);
+    const handoff = createSuccessorClient({
+      now: () => Date.now(),
+      monotonic: () => performance.now(),
+      serverNow: () => Date.now() + shared.queueClockOffset(),
+      allowed: (g) => !!shared.successorAllowed?.(g),
+      live: (g) => !!shared.successorVisible?.(g),
+      trace: (stage, details) => timing.event(stage, details)
+    });
     const enabled = () => !!(shared.convoyActive?.() || shared.usesGroupedCombat?.() || shared.passingEncounterReport?.().length || shared.getPassingTarget?.() || shared.queueMembers?.().length);
     const formation = shared.terrainRecoveryPorts ? createFormationRecoveryClient(shared.terrainRecoveryPorts()) : null;
     const host = parent;
@@ -1996,8 +2107,8 @@
       if (shared.sharedTargetId() !== group?.target?.id) sight.reset();
       revision = data.combatRevision || revision;
       shared.acceptQueue(group);
-      root.partyRoleRunner?.wake();
       timing.selection(root.__partyGroupedCombat ?? group);
+      root.partyRoleRunner?.wake();
       if (acknowledgement(shared.queueAcknowledgement ? shared.queueAcknowledgement() : shared.queueReport()) !== sentAcknowledgement) flush();
     }
     function wait() {
@@ -2017,26 +2128,23 @@
       const id = shared.sharedTargetId(), entity = id && get_entity(id);
       if (id) sight.observe(id, character, !!(entity && entity.visible && !entity.dead));
       wait();
-      if (busy2) {
-        dirty = true;
-        return;
-      }
+      if (busy2) return;
       dirty = false;
       const report = shared.queueReport();
       report.groupedCombat.evidence = reportEvidence(report.groupedCombat.deaths).filter((e) => e.server === report.server && e.map === character.map && e.in === character.in);
-      const next = JSON.stringify([report.x, report.y, report.hp, report.rip, report.lastDeath, report.groupedCombat.epoch, report.groupedCombat.currentAttackers, report.groupedCombat.travelCandidates, report.groupedCombat.huntDefense, report.groupedCombat.passingAcknowledgement, report.groupedCombat.passingEncounters, report.groupedCombat.formationRecovery, report.groupedCombat.pursuitAck, report.groupedCombat.lootPending, report.groupedCombat.claims?.map((c) => [c.id, c.map, c.in, c.server, c.external]), report.groupedCombat.candidates, report.groupedCombat.threats, report.groupedCombat.sightings, report.groupedCombat.evidence, report.groupedCombat.deaths, report.groupedCombat.queueAck, report.groupedCombat.ack]);
+      const next = JSON.stringify([report.x, report.y, report.hp, report.rip, report.lastDeath, report.groupedCombat.epoch, report.groupedCombat.currentAttackers, report.groupedCombat.travelCandidates, report.groupedCombat.huntDefense, report.groupedCombat.passingAcknowledgement, report.groupedCombat.passingEncounters, report.groupedCombat.formationRecovery, report.groupedCombat.pursuitAck, report.groupedCombat.lootPending, report.groupedCombat.claims?.map((c) => [c.id, c.map, c.in, c.server, c.external]), report.groupedCombat.candidates, report.groupedCombat.threats, report.groupedCombat.sightings, report.groupedCombat.evidence, report.groupedCombat.deaths, report.groupedCombat.queueAck, report.groupedCombat.ack, report.groupedCombat.handoff, report.monsterHunt]);
       if (next === signature && Date.now() - sentAt < 1e3) return;
       signature = next;
       sentAt = Date.now();
       busy2 = true;
       sentAcknowledgement = acknowledgement(report);
-      const started = Date.now(), body = { ...report, combatOnly: true };
+      const started = performance.now(), body = { ...report, combatOnly: true };
       const pending = shared.queueRequest(body);
       const sequence = body.travelSample?.sequence;
       timing.report({ sequence, deaths: (report.groupedCombat.deaths || []).map((d) => d.id), ack: report.groupedCombat.ack });
       pending.then((data) => {
         if (!active) return;
-        timing.response({ sequence, roundTripMs: Date.now() - started, coordinator: data.combatReportReceipt });
+        timing.response({ sequence, roundTripMs: Math.max(0, performance.now() - started), coordinator: data.combatReportReceipt });
         apply(data);
       }).catch(() => {
         signature = "";
@@ -2056,16 +2164,41 @@
       shared.beginPassingAttack(target);
       return true;
     }
-    const api = { tick, flush, hit, evidence, events, reportEvidence, sight, formation, timing, preparePassing, passingAcknowledgement: passing.report, reset() {
-      events.length = 0;
-      sight.reset();
-      signature = "";
-      sentAt = 0;
-    }, stop() {
-      formation?.stop();
-      active = false;
-      clearInterval(timer);
-    } };
+    const api = {
+      tick,
+      flush,
+      hit,
+      evidence,
+      events,
+      reportEvidence,
+      sight,
+      formation,
+      timing,
+      handoff,
+      death(id) {
+        const next = handoff.death(id);
+        if (next) {
+          shared.acceptQueue(next);
+          timing.selection(next);
+          root.partyRoleRunner?.wake();
+        }
+        flush();
+      },
+      preparePassing,
+      passingAcknowledgement: passing.report,
+      reset() {
+        handoff.reset();
+        events.length = 0;
+        sight.reset();
+        signature = "";
+        sentAt = 0;
+      },
+      stop() {
+        formation?.stop();
+        active = false;
+        clearInterval(timer);
+      }
+    };
     root.partyQueueClient = api;
     return api;
   }
@@ -2644,6 +2777,13 @@
       wake() {
         void selectTarget();
         attacks.wake();
+      },
+      advanceTarget() {
+        generation++;
+        selectedTarget = null;
+        invalidated = true;
+        selecting = false;
+        working = false;
       },
       resetTargeting() {
         generation++;
