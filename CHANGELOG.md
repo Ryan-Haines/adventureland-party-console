@@ -1,11 +1,24 @@
 # Changelog
 
+- Fixed coordinator startup on oversized saved-state journals: stream records and compact by size without constructing one giant string. Preserve existing state and writer locks.
+
+- Unified Hunt turn-in and anniversary staging returns: attack aggressors while planning and walking, cancel interrupted party Town casts together, resume Town after aggro clears, and retain bounded route retries. Removed independent anniversary casting and return combat/loot stops.
+
 ## Unreleased
 
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
 ### Fixed
+
+- Hunt route failures now use bounded segment repair, native fallback and origin
+  relocation before trying another spawn. Recovery budgets survive replacement
+  convoys and restarts, with explicit causes when movement remains held.
+- Convoy phase changes no longer send duplicate cruise caps. Movement diagnostics
+  identify command takeovers and retain the original planner failure.
+
+- Delivered equipment pauses and resumes convoy travel without replacing its
+  ownership; combat during merchant recovery no longer deadlocks the regroup hold.
 
 - Hunt pickup travel recovers a missing completion acknowledgement after verified
   party arrival, preventing an idle party at Daisy from remaining in sync travel.

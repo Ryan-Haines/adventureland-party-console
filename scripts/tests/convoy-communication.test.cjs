@@ -180,3 +180,10 @@ test('repeated restarts and replacement runtimes require a new uninterrupted ack
  f.stable(16000);assert.equal(f.p.activeConvoy.phase,'communication-hold');
  f.stable(42000);assert.equal(f.p.activeConvoy.phase,'shared-prepare');
 });
+for(const purpose of ['shared-walk','event-return','party-travel'])test(purpose+' communication holds preserve route budgets and current destination',()=>{
+ const f=fixture(),c=f.p.activeConvoy;c.purpose=purpose;delete c.continuousReturn;
+ f.p.monsterHunt.convoyId=null;
+ f.p.statuses.L.convoyNavigation.phase='communication-hold';f.p.statuses.L.convoyNavigation.communication={operation:'/movement-barrier',kind:'timeout',since:1000};
+ f.step(1000);assert.equal(c.phase,'communication-hold');assert.equal(c.recoveryAttempts,2);
+ f.stable(2000);assert.equal(c.phase,'shared-prepare');assert.equal(c.recoveryAttempts,2);assert.equal(c.location.x,120);
+});

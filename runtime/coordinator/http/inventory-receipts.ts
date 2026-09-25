@@ -1,3 +1,4 @@
+import { finishMerchantInterruption } from '../navigation/merchant-interruption.ts';
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import { receiveBankDeconstruction } from "../merchant/bank-deconstruction.ts";
 
@@ -86,6 +87,7 @@ export function createInventoryReceiptRoutes(state: ReceiptState, ports: Receipt
     if (!command || command.type !== "equip-deliveries" || command.id !== body.commandId)
       return res.status(409).json({ error: "equip-delivery command is no longer current" });
     for (const result of list(body.results)) { equipmentLog(result, name); confirmDeliveryEquip(name,result); }
+    finishMerchantInterruption(state, name, command.id);
     delete state.commands[name];
     ports.persist();
     return res.json({ ok: true });

@@ -45,7 +45,7 @@ function party(){
  const now=Date.now(),names=['L','F'];
  return {nextCommandId:10,navigationIntents:Object.fromEntries(names.map(n=>[n,{revision:1}])),
  commands:Object.fromEntries(names.map(n=>[n,{id:1,type:'party-monster-travel',convoyId:'return',navigationRevision:1}])),
- statuses:Object.fromEntries(names.map(n=>[n,{name:n,seenAt:now,hp:100,map:'mansion',x:0,y:0,server:'USII',speed:57,convoyProtocol:4,combatSelection:{runtimeId:n},groupedCombat:{currentAttackersAt:now,currentAttackers:[]}}])),
+ statuses:Object.fromEntries(names.map(n=>[n,{name:n,seenAt:now,hp:100,map:'mansion',x:0,y:0,server:'USII',speed:57,convoyProtocol:4,returnTownReady:true,combatSelection:{runtimeId:n},groupedCombat:{currentAttackersAt:now,currentAttackers:[]}}])),
  activeConvoy:{id:'return',epoch:1,routeProtocol:4,phase:'plan-return',leader:'L',participants:names,completed:[],
  slowestSpeed:57,rally:{map:'mansion',x:0,y:0},location:{map:'main',x:126,y:-413},purpose:'monster-hunt',returnRouting:true}};
 }

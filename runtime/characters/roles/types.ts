@@ -11,6 +11,7 @@ export interface Role {
   usePotion(): Promise<boolean>;
 }
 export interface SharedCombat {
+  noteCombatHandoff?(stage: string, target: string, details: Record<string, unknown>): void;
   merchantEventCombatActive?(): boolean;
   combatContext?(): import('../skills/types.ts').CombatContext;
   merchantVisibilityActive?(): boolean;
@@ -68,6 +69,10 @@ export interface SharedCombat {
   usesLeaderTarget(): boolean;
   usesGroupedCombat?(): boolean;
   getCloserHuntTarget?(current: Target): Target | null;
+  returnCombatActive?(): boolean;
+  returnDefenseTarget?(): Target | null;
+  returnAttacker?(target: Target): boolean;
+  returnMovementTick?(): void;
   groupedMovement?(): boolean;
   groupedAttackAllowed?(target: Target): boolean;
   followLeaderIfFar(distance: number): Promise<unknown>;

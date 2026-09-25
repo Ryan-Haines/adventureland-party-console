@@ -47,3 +47,11 @@ test('stale command acknowledgements cannot retain a replacement job',()=>{
  f.observe('M',[],{jobId:'new',commandId:9,state:'deferred',reason:'escape',at:100000});
  assert.equal(f.state.current,null);assert.equal(f.state.queue[0].retryAt,400000);
 });
+
+test('production deferral keeps its actual reason through watchdog requeue',()=>{
+ const f=fixture({id:'p',commandId:9,target:'M',reason:'merchant luck',phase:'assigned',startedAt:70000});
+ f.observe('M',[],{jobId:'p',commandId:9,state:'deferred',reason:'Production recovery needs review: orphan',at:100000});
+ assert.equal(f.state.queue[0].lastDeferredReason,'Production recovery needs review: orphan');
+ assert.ok(f.effects.some(message=>typeof message==='string' && message.includes('Command deferred (Production recovery needs review: orphan); retry scheduled')));
+ assert.ok(!f.effects.some(message=>typeof message==='string' && message.includes('not acknowledged')));
+});

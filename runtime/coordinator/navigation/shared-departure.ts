@@ -26,7 +26,7 @@ export function readinessExpired(c: SharedConvoy, now: number): boolean {
 
 export function readinessFailure(c: SharedConvoy, reason: string): boolean {
   return ['shared-prepare', 'scheduled'].includes(c.phase) && !reason.startsWith('Departure readiness timed out:') &&
-    /Route origin changed before departure|Cruise speed changed|Prepared shared route changed|Departure signal arrived too late|Missed convoy departure window|Departure changed/.test(reason);
+    preparationChanged(reason);
 }
 
 export function recoveryPlanner(c: SharedConvoy, reason: string): void {
@@ -47,4 +47,10 @@ export function departureIssue(state: SharedState, c: SharedConvoy, now: number)
     if (!origin || distance(state.statuses[name]!, origin) > 1) return name + ': route origin changed';
   }
   return undefined;
+}
+
+/** Preparation drift is not evidence that the destination is unreachable. */
+export function preparationChanged(reason: string): boolean {
+  return !reason.includes('Departure readiness timed out:') &&
+    /Leader moved from planning origin|Route origin changed before departure|Cruise speed changed|Prepared shared route changed|Departure signal arrived too late|Missed convoy departure window|Departure changed/.test(reason);
 }

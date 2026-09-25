@@ -145,7 +145,7 @@ function evaluateParticipants(
   const group = ports.finalize(
     ports.evaluate(
       previous,
-      ports.prepare(travelling ? defensiveMembers(members, ports.now()) : members),
+      ports.prepare(travelling ? defensiveMembers(members, ports.now(), !!state.activeConvoy?.huntArrival) : members),
       leader,
       ports.now(),
       state.groupedCombatResetAt || 0,
@@ -171,7 +171,7 @@ function huntDefenseMembers(state: GroupedState, members: Member[], now: number)
   });
 }
 function travelPrevious(state: GroupedState, members: Member[], leader: string, travelling: boolean, now: number): Group | null {
-  if (!travelling) return state.groupedCombat || null;
+  if (!travelling || state.activeConvoy?.huntArrival) return state.groupedCombat || null;
   const restored = state.groupedCombat || members.map(m => m.status?.groupedCombat?.state).find(g => g?.leader === leader) || null;
   const previous = retireTravelTargets(restored, members, now);
   if (previous !== restored && previous) logTravelRetirement(state, leader, restored, previous, now);
@@ -195,15 +195,15 @@ function patrolMembers(state: GroupedState, ports: GroupedPorts, members: Member
 function defensiveThreats(group: NonNullable<NonNullable<Member['status']>['groupedCombat']>) {
   return group.travelCommitted?.length || group.huntDefense ? [...(group.currentAttackers || []), ...(group.threats || [])] : group.currentAttackers || [];
 }
-function defensiveMembers(members: Member[], now: number): Member[] {
+function defensiveMembers(members: Member[], now: number, preserve = false): Member[] {
   return members.map(m => {
     const group = m.status?.groupedCombat;
     if (!m.status || !group) return m;
     const attackers = defensiveThreats(group);
     const active = new Set(attackers.map(t => t.id));
     return { ...m, status: { ...m.status, groupedCombat: { ...group, candidates: [], retentionPaused: true,
-      threats: attackers, evidence: group.evidence?.filter(e => active.has(e.id)),
-      state: group.state ? retireTravelTargets(group.state, members, now) : null } } };
+      threats: attackers, evidence: preserve ? group.evidence : group.evidence?.filter(e => active.has(e.id)),
+      state: preserve ? group.state : group.state ? retireTravelTargets(group.state, members, now) : null } } };
   });
 }
 function logTravelRetirement(state: GroupedState, leader: string, before: Group | null, after: Group, at: number): void {

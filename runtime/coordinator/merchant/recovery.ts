@@ -20,6 +20,7 @@ export interface RecoverableWork extends MerchantWork {
   commandReport?: MerchantCommandReport;
   recoveryAttempts?: number;
   firstDeferredAt?: number;
+  lastDeferredReason?: string;
 }
 
 interface RecoveryState {
@@ -129,6 +130,7 @@ export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPort
         );
       job.commandReport = report;
       if (report.state === "deferred" && !job.heartbeatAt) {
+        job.lastDeferredReason = deferralReason(report);
         job.firstDeferredAt ??= ports.now();
         if (eventDeferral(report.reason)) {
           releaseAnniversary(job, nameForMerchant);
@@ -159,12 +161,20 @@ export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPort
       requeue(
         name,
         ["phase", "startedAt", "heartbeatAt", "progressAt", "handoff"],
-        state.current.heartbeatAt
-          ? "Worker stalled; retry scheduled for "
-          : "Command not acknowledged; retry scheduled for ",
+        recoveryMessage(state.current),
       );
   }
   return { observe };
+}
+
+function recoveryMessage(job: RecoverableWork): string {
+  if (job.commandReport?.state === 'deferred')
+    return 'Command deferred (' + (job.commandReport.reason || 'unspecified') + '); retry scheduled for ';
+  return job.heartbeatAt ? 'Worker stalled; retry scheduled for ' : 'Command not acknowledged; retry scheduled for ';
+}
+
+function deferralReason(report: MerchantCommandReport): string {
+  return report.reason || 'unspecified';
 }
 
 function eventDeferral(reason: string | null | undefined): boolean {

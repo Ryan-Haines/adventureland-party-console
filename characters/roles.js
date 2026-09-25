@@ -619,11 +619,13 @@
         }
         const action = attempt.passing ? null : sharedRoutine.queueEvidence?.(target, "pending");
         try {
+          sharedRoutine.noteCombatHandoff?.("attempt", target.id, { cooldownReadyAt: clock(), frequency: Number(character.frequency) });
           Promise.resolve(attack(target)).then(() => {
             if (flight !== attempt || attempt.epoch !== ports.epoch() || !ports.active() || attempt.success) return;
             attempt.success = true;
             cancelSlots();
             stats.accepted++;
+            sharedRoutine.noteCombatHandoff?.("accepted", target.id, { sentAt: attempt.sentAt });
             const client = parent;
             const samples = (client.pings || []).filter((p) => Number.isFinite(p) && p >= 0);
             if (samples.length && typeof reduce_cooldown === "function" && (ports.state().lastHealAt ?? 0) < attempt.sentAt)
@@ -732,13 +734,18 @@
           ports.state().skippedAttack = "no eligible target or combat blocked";
           return;
         }
-        if (Date.now() < retryAt || remaining() > 2) return;
+        if (Date.now() < retryAt || remaining() > 2) {
+          ports.state().skippedAttack = remaining() > 2 ? "cooldown" : "attack retry backoff";
+          return;
+        }
         attackTarget(target);
       } catch (error) {
         cancelSlots();
         flight = null;
         ports.report(error);
       } finally {
+        const id = ports.selected(), reason = ports.state().skippedAttack;
+        if (id && reason) sharedRoutine.noteCombatHandoff?.("blocked", id, { reason, cooldownReadyAt: clock() });
         schedule(flight ? Math.max(1, flight.expires - Date.now()) : Math.max(remaining() > 2 ? remaining() - 2 : 100, retryAt - Date.now()));
       }
     }
@@ -1294,6 +1301,7 @@
       return result;
     }
     function authorized(w, t, id) {
+      if (returnTargetBlocked(t, id)) return false;
       const type = w.skills[id]?.damage_type || "physical";
       if (id !== "taunt" && monsterAttackBlock(t.mtype, type, w.actor.range)) return false;
       if (!targetAuthorized(t, id)) return false;
@@ -1304,9 +1312,23 @@
     function targetAuthorized(t, id) {
       return !!shared.skillTargetAllowed?.(t) && shared.rareAttackAllowed?.(t, id) !== false;
     }
+    const returnExcluded = /* @__PURE__ */ new Set(["taunt", "agitate", "charge", "dash", "blink", "scare", "stomp", "cleave", "fanofknives"]);
+    function returnTargetBlocked(t, id) {
+      return !!shared.returnCombatActive?.() && (returnExcluded.has(id) || !shared.returnAttacker?.(t));
+    }
+    function returnCastBlocked(d) {
+      if (!shared.returnCombatActive?.()) return false;
+      if (returnExcluded.has(d.skill)) return true;
+      return !!world().skills[d.skill]?.hostile && d.targets.some((t) => !shared.returnAttacker?.(t));
+    }
+    function castSkill(d) {
+      if (returnCastBlocked(d)) return Promise.reject(new Error("Skill conflicts with return movement or attacker-only policy"));
+      const argument = d.argument ?? (d.targets.length > 1 || world().skills[d.skill]?.multi ? d.targets.map((t) => t.id) : d.targets[0]?.id || d.targets[0]?.name);
+      return host.use_skill(d.skill, argument);
+    }
     const engine = createSkillEngine({
       world,
-      cast: (d) => host.use_skill(d.skill, d.argument ?? (d.targets.length > 1 || world().skills[d.skill]?.multi ? d.targets.map((t) => t.id) : d.targets[0]?.id || d.targets[0]?.name)),
+      cast: castSkill,
       evidence: (t, state, action2) => shared.queueEvidence?.(t, state, action2) || null,
       diagnostic: (d) => {
         if (root.partyCombatState) root.partyCombatState.skill = d;
@@ -1806,10 +1828,70 @@
     return { apply, prepare, report: () => ports.now() - receivedAt < 1e3 ? acknowledgement : void 0 };
   }
 
+  // runtime/combat/handoff-timing.ts
+  function createHandoffTiming(entries, now = Date.now) {
+    let selection = null, target = null, accepted = false;
+    let lastBlock = "", attempted = false, committed = false;
+    const deaths = /* @__PURE__ */ new Set();
+    function record(stage, details) {
+      entries.push({ at: now(), stage, ...details });
+      if (entries.length > 256) entries.splice(0, entries.length - 256);
+    }
+    function select(group) {
+      selection = group?.selection ?? null;
+      target = group?.target?.id ?? null;
+      accepted = false;
+      attempted = false;
+      committed = false;
+      lastBlock = "";
+      record("selection", { target, selection, committed: !!group?.committed, coordinator: group?.handoffTiming });
+    }
+    return {
+      death(id) {
+        if (deaths.has(id)) return;
+        deaths.add(id);
+        if (deaths.size > 128) deaths.delete(deaths.values().next().value);
+        record("death", { target: id });
+      },
+      report(details) {
+        record("report", details);
+      },
+      response(details) {
+        record("response", details);
+      },
+      selection(group) {
+        const next = group?.selection ?? null;
+        if (next !== selection) {
+          select(group);
+        }
+        if (!accepted && group?.committed && !committed) {
+          committed = true;
+          record("committed", { target, selection, coordinator: group.handoffTiming });
+        }
+      },
+      attack(stage, id, details) {
+        if (accepted || id !== target) return;
+        if (stage === "attempt" && attempted) return;
+        if (stage === "attempt") attempted = true;
+        if (stage === "blocked") {
+          const reason = String(details.reason);
+          if (reason === lastBlock) return;
+          lastBlock = reason;
+        }
+        record(stage, { target, selection, ...details });
+        if (stage === "accepted") accepted = true;
+      }
+    };
+  }
+
   // runtime/combat/client.ts
   function installQueueClient(root, shared) {
     root.partyQueueClient?.stop();
-    let active = true, busy2 = false, waiting = false, signature = "", sentAt = 0, retryAt = 0, revision = "", serial = 0;
+    let active = true, busy2 = false, waiting = false, dirty = false, signature = "", sentAt = 0, retryAt = 0, revision = "", serial = 0;
+    let sentAcknowledgement = "";
+    const acknowledgement = (report) => JSON.stringify([report.groupedCombat?.ack, report.groupedCombat?.queueAck]);
+    const timing = createHandoffTiming(root.__partyHandoffTrace ||= []);
+    const enabled = () => !!(shared.convoyActive?.() || shared.usesGroupedCombat?.() || shared.passingEncounterReport?.().length || shared.getPassingTarget?.() || shared.queueMembers?.().length);
     const formation = shared.terrainRecoveryPorts ? createFormationRecoveryClient(shared.terrainRecoveryPorts()) : null;
     const host = parent;
     const passing = createPassingAdmission({ now: () => Date.now(), reserve: (target, admission) => shared.beginPassingAttack(target, admission, true) });
@@ -1848,6 +1930,7 @@
     }
     reportEvidence();
     function flush() {
+      dirty = true;
       signature = "";
       sentAt = 0;
       tick();
@@ -1914,20 +1997,31 @@
       revision = data.combatRevision || revision;
       shared.acceptQueue(group);
       root.partyRoleRunner?.wake();
+      timing.selection(root.__partyGroupedCombat ?? group);
+      if (acknowledgement(shared.queueAcknowledgement ? shared.queueAcknowledgement() : shared.queueReport()) !== sentAcknowledgement) flush();
+    }
+    function wait() {
+      if (!active || !enabled() || waiting || Date.now() < retryAt) return;
+      waiting = true;
+      shared.queueRequest({ combatWait: true, combatRevision: revision }).then(apply).catch(() => {
+        retryAt = Date.now() + 1e3;
+      }).finally(() => {
+        waiting = false;
+        wait();
+      });
     }
     function tick() {
       if (!active || Date.now() < retryAt) return;
-      if (!shared.usesGroupedCombat?.() && !shared.passingEncounterReport?.().length && !shared.getPassingTarget?.() && !shared.queueMembers?.().length) return;
+      if (!enabled()) return;
       formation?.tick();
       const id = shared.sharedTargetId(), entity = id && get_entity(id);
       if (id) sight.observe(id, character, !!(entity && entity.visible && !entity.dead));
-      if (!waiting) {
-        waiting = true;
-        shared.queueRequest({ combatWait: true, combatRevision: revision }).then(apply).catch(() => {
-          retryAt = Date.now() + 1e3;
-        }).finally(() => waiting = false);
+      wait();
+      if (busy2) {
+        dirty = true;
+        return;
       }
-      if (busy2) return;
+      dirty = false;
       const report = shared.queueReport();
       report.groupedCombat.evidence = reportEvidence(report.groupedCombat.deaths).filter((e) => e.server === report.server && e.map === character.map && e.in === character.in);
       const next = JSON.stringify([report.x, report.y, report.hp, report.rip, report.lastDeath, report.groupedCombat.epoch, report.groupedCombat.currentAttackers, report.groupedCombat.travelCandidates, report.groupedCombat.huntDefense, report.groupedCombat.passingAcknowledgement, report.groupedCombat.passingEncounters, report.groupedCombat.formationRecovery, report.groupedCombat.pursuitAck, report.groupedCombat.lootPending, report.groupedCombat.claims?.map((c) => [c.id, c.map, c.in, c.server, c.external]), report.groupedCombat.candidates, report.groupedCombat.threats, report.groupedCombat.sightings, report.groupedCombat.evidence, report.groupedCombat.deaths, report.groupedCombat.queueAck, report.groupedCombat.ack]);
@@ -1935,10 +2029,22 @@
       signature = next;
       sentAt = Date.now();
       busy2 = true;
-      shared.queueRequest({ ...report, combatOnly: true }).then(apply).catch(() => {
+      sentAcknowledgement = acknowledgement(report);
+      const started = Date.now(), body = { ...report, combatOnly: true };
+      const pending = shared.queueRequest(body);
+      const sequence = body.travelSample?.sequence;
+      timing.report({ sequence, deaths: (report.groupedCombat.deaths || []).map((d) => d.id), ack: report.groupedCombat.ack });
+      pending.then((data) => {
+        if (!active) return;
+        timing.response({ sequence, roundTripMs: Date.now() - started, coordinator: data.combatReportReceipt });
+        apply(data);
+      }).catch(() => {
         signature = "";
         retryAt = Date.now() + 1e3;
-      }).finally(() => busy2 = false);
+      }).finally(() => {
+        busy2 = false;
+        if (dirty) tick();
+      });
     }
     const timer = setInterval(tick, 100);
     function preparePassing(target) {
@@ -1950,7 +2056,7 @@
       shared.beginPassingAttack(target);
       return true;
     }
-    const api = { tick, flush, hit, evidence, events, reportEvidence, sight, formation, preparePassing, passingAcknowledgement: passing.report, reset() {
+    const api = { tick, flush, hit, evidence, events, reportEvidence, sight, formation, timing, preparePassing, passingAcknowledgement: passing.report, reset() {
       events.length = 0;
       sight.reset();
       signature = "";
@@ -2356,6 +2462,7 @@
       return priority && priority(passing) > priority(current) ? passing : current;
     }
     function currentTarget() {
+      if (sharedRoutine.returnCombatActive?.()) return combatAllowed() ? sharedRoutine.returnDefenseTarget?.() || null : null;
       let reason = null;
       const target = selectedTarget ? get_entity(selectedTarget) : null;
       if (!combatAllowed()) reason = "combat paused by movement or activity owner";
@@ -2381,6 +2488,7 @@
       return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
     }
     function chooseTarget() {
+      if (sharedRoutine.returnCombatActive?.()) return sharedRoutine.returnDefenseTarget?.() || null;
       if (character.ctype === "merchant") return resolvedRole().chooseTarget();
       if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget();
       const rare = sharedRoutine.getRareTarget?.();
@@ -2388,9 +2496,9 @@
       return sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : resolvedRole().chooseTarget();
     }
     async function publishSelection(target) {
-      selectedTarget = target?.id || sharedRoutine.sharedTargetId?.() || null;
+      selectedTarget = target?.id || !sharedRoutine.returnCombatActive?.() && sharedRoutine.sharedTargetId?.() || null;
       sharedRoutine.setCombatTarget(target);
-      if (!target && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
+      if (!target && !sharedRoutine.returnCombatActive?.() && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
         await sharedRoutine.followLeaderIfFar(150);
     }
     async function selectTarget() {
@@ -2402,14 +2510,14 @@
         return;
       }
       const current = currentTarget();
-      const closer = current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
+      const closer = !sharedRoutine.returnCombatActive?.() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
       if (closer) {
         root.sharedRoutine?.resetCombatMovement?.();
         await publishSelection(closer);
         attacks.wake();
         return;
       }
-      if (!invalidated && current) {
+      if (!sharedRoutine.returnCombatActive?.() && !invalidated && current) {
         const rare = sharedRoutine.getRareTarget?.();
         const nominated = sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
         if ((!rare || rare.id === selectedTarget) && (!sharedRoutine.usesLeaderTarget?.() || nominated?.id === selectedTarget)) return;
@@ -2444,6 +2552,11 @@
     function movementTick() {
       try {
         equipmentTick();
+        if (sharedRoutine.returnCombatActive?.()) {
+          sharedRoutine.returnMovementTick?.();
+          attacks.wake();
+          return;
+        }
         if (sharedRoutine.pollRareHunting?.()) return;
         if (sharedRoutine.pollFarmingCombatHandoff) sharedRoutine.pollFarmingCombatHandoff();
         if (sharedRoutine.pollFarmingSpawnRecovery) sharedRoutine.pollFarmingSpawnRecovery();

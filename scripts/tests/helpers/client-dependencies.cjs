@@ -19,7 +19,7 @@ exports.passingContext = values => {
     activeCombatEvent: () => false, rareActive: () => false, unfinishedFight: () => false,
     reunionRealm: () => 'USII', ...values,
   });
-  functions(context, ['passiveStopRequired','passiveTravelInterruptible','travelStopCandidates','outboundHuntTravel', 'huntTravelDefense', 'huntTravelControl', 'huntTravelExtraAggro', 'returnDepartureDefense', 'committedHuntEncounter', 'passingKey', 'isPassingEncounter', 'passingTravelAllowed', 'passingTarget']);
+  functions(context, ['passiveStopRequired','passiveTravelInterruptible','travelStopCandidates','outboundHuntTravel', 'huntTravelDefense', 'huntTravelControl', 'huntTravelExtraAggro', 'returnDepartureDefense', 'committedHuntEncounter', 'passingKey', 'isPassingEncounter', 'convoyDiagnosticClock','convoySignalExpired','passingTravelAllowed', 'passingTarget']);
   return context;
 };
 
@@ -38,8 +38,8 @@ exports.merchantGuards = (context, {stock = false, journal = false} = {}) => {
       removeItem: key => storage.delete(key),
     };
     context.luckyUpgradeService ??= null;
-    functions(context, ['productionJournalKey', 'finishProductionJournal', 'recoverProductionJournal',
-      'verifyProductionProtection', 'trackedProduction']);
+    functions(context, ['productionJournalKey', 'finishProductionJournal', 'recoverProductionJournal', 'recoverProductionJournalWork',
+      'verifyProductionProtection', 'trackedProduction', 'trackedProductionWork']);
   }
   return context;
 };

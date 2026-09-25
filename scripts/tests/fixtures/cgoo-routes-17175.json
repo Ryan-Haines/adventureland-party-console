@@ -1,0 +1,11 @@
+{
+  "version": 17175,
+  "fingerprint": "65911a4d-e2f70215-218667",
+  "base": {"h": 8, "v": 7, "vn": 2},
+  "blocked": [{"map":"arena","x":-59,"y":-255},{"map":"arena","x":-77,"y":-200}],
+  "routes": [
+    {"name":"tower to arena spawn","from":{"map":"arena","x":-4.95,"y":-549.39},"to":{"map":"arena","x":151.6,"y":40.82}},
+    {"name":"tower through ordinary exit","from":{"map":"arena","x":-4.95,"y":-549.39},"to":{"map":"main","x":232,"y":397}},
+    {"name":"reported approach to level4","from":{"map":"arena","x":4,"y":-266},"to":{"map":"level4","x":-238,"y":-274}}
+  ]
+}

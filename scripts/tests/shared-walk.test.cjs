@@ -37,7 +37,7 @@ test('anniversary staging leaves farming combat behind on its shared route to Ma
  assert.deepEqual(c.location,{map:'main',x:0,y:0});
  assert.equal(require('../convoy-defense.cjs').step(t.state,1000,()=>{throw Error('must not defend');}),false);
  assert.notEqual(c.phase,'defending');
- for(const n of c.participants)assert.equal(t.state.commands[n].navigationExempt,true);
+ for(const n of c.participants)assert.equal(t.state.commands[n].navigationExempt,false);
  t.walks.submit(t.body('F',{activity:'anniversary-staging',key:'round',destination:{map:'main',x:0,y:0},cancel:true}));
  assert.equal(t.state.activeConvoy,null);
 });

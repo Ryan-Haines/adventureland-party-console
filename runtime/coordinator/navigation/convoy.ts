@@ -16,7 +16,8 @@ interface ConvoyStatus {
   convoyNavigation?: { runtimeId?: string };
 }
 export interface PartyConvoy {
-  communicationHold?: { since: number; reason: string; participants: string[]; legacy?: boolean };
+  routeRecovery?: import('../hunt/route-recovery.ts').RouteRecoveryCommand;
+  communicationHold?: { resumeDefense?: boolean; since: number; reason: string; participants: string[]; legacy?: boolean };
   communicationResumedAt?: number;
   communicationLegacyRecovered?: boolean;
   returnTown?: import('./return-town.ts').ReturnTownPolicy;

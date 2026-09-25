@@ -18,7 +18,7 @@ interface Convoy extends HuntTravelConvoy {
   observedPhase?: string | null; assembledSince?: number; runtimes?: unknown; location: unknown; finalLocation?: unknown;
   returnLegs?: unknown; returnRouting?: boolean; townFirst?: boolean; townCompleted?: boolean;
   failure?: string | null; failureCode?: string | null; failedAt?: number | null;
-  observationPhase?: string;
+  observationPhase?: string; routeProtocol?: number; sharedStoppedAt?: number; observationReadyAt?: number;
 }
 interface Party extends DefenseState {
   combatLogs?: Record<string, import("../telemetry/combat-log.ts").StoredCombatLogEntry[]>;
@@ -71,20 +71,37 @@ function resume(c: Convoy): void {
 function observeHold<S, C>(input: S, p: Party, c: Convoy, message: string,
   commandFor: (state: S, convoy: C, phase: string, name: string) => unknown): boolean {
   c.defenseReason = message;
-  if (c.phase === "observing") return true;
+  if (c.phase === "observing") { delete c.observationReadyAt; return true; }
   c.observationPhase = c.phase; c.phase = "observing"; c.departAt = null;
-  for (const name of c.participants) p.commands[name] = commandFor(input, c as C, "hold", name);
+  for (const name of c.participants) p.commands[name] = commandFor(input, c as C, c.routeProtocol === 4 ? "shared-hold" : "hold", name);
   return true;
 }
-function resumeObservation<S, C>(input: S, p: Party, c: Convoy,
+function resumeObservation<S, C>(input: S, p: Party, c: Convoy, now: number,
   commandFor: (state: S, convoy: C, phase: string, name: string) => unknown): boolean {
   if (c.phase !== "observing") return false;
+  if (!observationStable(p, c, now)) return true;
+  delete c.observationReadyAt;
   const defended = c.observationPhase === "defending";
   delete c.observationPhase;
   if (defended) { c.phase = "defending"; return false; }
   resume(c);
-  for (const name of c.participants) p.commands[name] = commandFor(input, c as C, "assemble", name);
+  const lead = p.statuses[c.leader] as Status;
+  c.rally = c.returnTownRally || {map:lead.map, x:lead.x, y:lead.y};
+  if (c.routeProtocol === 4) { c.phase = 'shared-hold'; c.sharedStoppedAt = now; }
+  for (const name of c.participants) p.commands[name] = commandFor(input, c as C, c.phase, name);
   return true;
+}
+function observationStable(p: Party, c: Convoy, now: number): boolean {
+  if (c.routeProtocol !== 4) return true;
+  if (!observationStopped(p,c,now)) { delete c.observationReadyAt; return false; }
+  c.observationReadyAt ??= now;
+  return now - c.observationReadyAt >= 5000;
+}
+function observationStopped(p: Party, c: Convoy, now: number): boolean {
+  return c.participants.every(name => {
+    const s = p.statuses[name] as DefenseReport & {moving?:boolean;transporting?:boolean};
+    return s?.convoyNavigation?.phase === "held" && !s.moving && !s.transporting && reportOwned(p,c,{...s,name},now);
+  });
 }
 function finishDefense(p: Party, c: Convoy, now: number): boolean {
   if (!lootComplete(p, c, now)) return false;
@@ -189,7 +206,7 @@ function advanceDefense<S, C>(input: S, now: number, commandFor: (state: S, conv
   if (farmingEngagementPending(p,c,now)) return true;
   if (decision.state === "waiting-for-observations") return observeHold(input, p, c, decision.message, commandFor);
   if(resumePassingDefense(input,p,c,decision.state,now,commandFor))return true;
-  const observationResumed=resumeObservation(input, p, c, commandFor);
+  const observationResumed=resumeObservation(input, p, c, now, commandFor);
   if ([observationResumed,decision.state === "clear"].every(Boolean)) return true;
   if (needsDefense(p,c,decision.state)) {
     rememberDefenseTargets(p,c,decision.attackers.map(t=>({...t,at:now})));

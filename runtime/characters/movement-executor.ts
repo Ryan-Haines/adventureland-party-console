@@ -1,10 +1,11 @@
+import { movementError } from './movement-error.ts';
 import { isTransition, distance, point, type Point, type Step } from '../navigation/contracts.ts';
 import { stepIssue, type ValidationPorts } from '../navigation/validation.ts';
 import type { MovementHost, MovementOptions, MoveState } from './movement-host.ts';
 function transitionLabel(step: Step): string {
   return step.method === 'leave' ? 'leave transition' : step.town ? 'town warp' : 'map transition';
 }
-interface Issued { step: Step; from: Point; at: number; progressAt: number; position: Point; error?: string; townUnavailable?: boolean; acknowledged?: boolean; finished?: boolean; aligned?: boolean; reissued?: boolean; sendVersion?: number }
+interface Issued { step: Step; from: Point; at: number; progressAt: number; position: Point; error?: Error | string; townUnavailable?: boolean; acknowledged?: boolean; finished?: boolean; aligned?: boolean; reissued?: boolean; sendVersion?: number }
 export function createMovementExecutor(host: MovementHost, state: MoveState, validation: ValidationPorts, now: () => number, townReady = () => true, lootCollected = () => true) {
   let issued: Issued | undefined, index = 0, barrierPending = false, barrierReady = false, lastBarrier = 0, waitingBarrier = false;
   let sampledAt = now(), sampledPhase = 'idle';
@@ -28,7 +29,7 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     barrierPending = true; lastBarrier = now();
     const captured = issued;
     options.barrier(step, index, completed).then(ready => { if (issued === captured) barrierReady = ready; }, error => {
-      if (issued === captured && issued) issued.error = String(error);
+      if (issued === captured && issued) issued.error = movementError(error);
     }).finally(() => { if (issued === captured) barrierPending = false; });
     return false;
   }
@@ -59,7 +60,7 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
   function observe(current: Issued, options: MovementOptions) {
     if (current.error) {
       notifyTownRejection(current,options);
-      throw Error(isTransition(current.step) ? transitionLabel(current.step) + ': ' + current.error : current.error);
+      throw current.error instanceof Error ? current.error : Error(isTransition(current.step) ? transitionLabel(current.step) + ': ' + current.error : String(current.error));
     }
     if (complete(current, options)) return;
     const p = position();
@@ -103,8 +104,8 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     return host.move(step.x, step.y);
   }
   function dispatch(current: Issued, options: MovementOptions) {
-      if (current.error) throw Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : current.error);
-      if (!lootReady(current.step)) return;
+      if (current.error) throw current.error instanceof Error ? current.error : Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : String(current.error));
+      if (!options.skipLootWait && !lootReady(current.step)) return;
       if(!readyTown(current,options))return;
       if ((isTransition(current.step)) && !barrier(options, current.step, false)) return;
       current.finished = false; current.at = now(); current.progressAt = now();

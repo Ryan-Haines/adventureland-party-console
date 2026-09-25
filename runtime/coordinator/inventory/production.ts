@@ -6,7 +6,7 @@ import { requestObject, requestText, type HttpRouter } from '../http/contracts.t
 interface UpgradeRule { tiers: number; quantity?: number }
 interface CompoundRule { name: string; targetTier?: number; quantity?: number }
 interface ReceiptRule { family: 'upgrade' | 'compound'; key: string; signature: string }
-export interface ProductionAttempt { name: string; level: number; kind: 'upgrade' | 'compound'; rules: ReceiptRule[]; automaticCompoundTarget?: number; completed?: boolean; success?: boolean; requestId?: string; offering?: string }
+export interface ProductionAttempt { name: string; level: number; kind: 'upgrade' | 'compound'; rules: ReceiptRule[]; automaticCompoundTarget?: number; completed?: boolean; success?: boolean; requestId?: string; offering?: string; resolution?: { outcome: 'unknown'; reason: string; at: number } }
 export interface ProductionState { attempts: Record<string, ProductionAttempt> }
 interface State extends ConflictState {
   upgrades?: Record<string, {requestId?: string}[] | undefined>;
@@ -88,6 +88,12 @@ export function installProductionRoutes(router: HttpRouter, state: State, persis
     const body = requestObject(req.body);
     if (body.character !== state.merchantCharacter) return res.status(400).json({error:'Only the merchant performs production'});
     try {
+      if (body.action === 'inspect') return res.json({ok:true,...inspectProduction(state, body)});
+      if (body.action === 'resolve-unknown') {
+        resolveUnknownProduction(state, body);
+        persist();
+        return res.json({ok:true,attempt:state.production.attempts[String(body.id)]});
+      }
       if (body.action === 'wait-offering') { recordOfferingWait(state, body); persist(); return res.json({ok:true}); }
       if (body.action === 'abort-manual') { abortManualProduction(state, requestText(body.id)); persist(); return res.json({ok:true}); }
       if (body.action === 'complete') finishProduction(state,String(body.id),body.success === true,log);
@@ -96,6 +102,30 @@ export function installProductionRoutes(router: HttpRouter, state: State, persis
       return res.json({ok:true,attempt:state.production.attempts[String(body.id)]});
     } catch(error) { return res.status(409).json({error:String(error)}); }
   });
+}
+
+/** Read-only reconciliation must never admit a prepared journal during recovery. */
+export function inspectProduction(state: State, body: Record<string, unknown>) {
+  const input = attemptInput(body), attempt = state.production.attempts[input.id];
+  if (attempt) validateReceipt(attempt, input);
+  const pending = Object.entries(state.production.attempts)
+    .filter(([, value]) => !value.completed).map(([id, value]) => ({id, name:value.name, level:value.level, kind:value.kind}));
+  return {attempt:attempt || null, pending};
+}
+
+/** Explicit operator resolution only; automatic recovery never guesses an orphan's outcome. */
+export function resolveUnknownProduction(state: State, body: Record<string, unknown>, now = Date.now()): void {
+  const input = attemptInput(body), attempt = state.production.attempts[input.id];
+  if (!attempt) throw Error('Unknown production attempt');
+  validateReceipt(attempt, input);
+  if (attempt.completed) return;
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  if (!reason || reason.length > 1000) throw Error('Production resolution requires a review reason');
+  attempt.resolution = {outcome:'unknown', reason, at:now};
+  attempt.completed = true;
+  delete attempt.success;
+  // Retire one-shot manual ownership without inventing a success or spending quotas.
+  finishManualOffering(state, attempt);
 }
 
 function validateReceipt(previous: ProductionAttempt, input: ReturnType<typeof attemptInput>): void {

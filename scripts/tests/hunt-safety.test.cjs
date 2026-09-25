@@ -214,7 +214,8 @@ test('resume preserves cycle and deaths without filling followers after leader r
  t.r.beginMonsterHuntCycle('auto',t.farm,true);
  assert.equal(t.party.monsterHunt.cycleId,cycle);assert.equal(t.hunt.deathCount,1);
  assert.equal(t.hunt.stage,'mission-travel');assert.ok(!t.hunt.participants.includes('P'));
- t.advance(100);t.r.monsterHuntTick();assert.equal(t.hunt.stage,'farming','fresh verified arrival advances before another optional interruption');
+ t.advance(100);t.r.monsterHuntTick();assert.equal(t.hunt.stage,'mission-travel','spawn arrival waits for convoy stopping acknowledgements');
+ t.party.activeConvoy=null;t.r.monsterHuntTick();assert.equal(t.hunt.stage,'farming','released convoy permits farming without changing the cycle');
  assert.equal(t.hunt.pickupPending,false);assert.equal(t.hunt.owner,'W');
 });
 

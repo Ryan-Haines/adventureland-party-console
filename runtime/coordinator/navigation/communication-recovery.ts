@@ -1,3 +1,5 @@
+import { capturedCommunicationFailure } from './communication-failure.ts';
+import { travelObservationIssue } from './travel-defense.ts';
 import { requestObject } from '../http/contracts.ts';
 import { recordConvoyHistory } from './convoy-history.ts';
 import { characterRuntime, reportMatches, type SharedConvoy, type SharedState, type SharedReport } from './shared-route-types.ts';
@@ -28,20 +30,24 @@ interface Stability { since: number; observedAt: number; runtimes: string }
 export function createCommunicationRecovery(ports: Ports) {
   const stable = new WeakMap<SharedConvoy, Stability>();
   function enter(state: SharedState, c: SharedConvoy, now: number, names: string[], legacy: boolean): boolean {
-    c.communicationHold = { since: now, participants: names, reason: legacy ? 'Recovering failed completion acknowledgement' : 'Waiting for coordinator communication', legacy };
+    const resumeDefense = c.phase === 'defending' || c.observationPhase === 'defending' || !!c.loot;
+    const details = names.map(name => name + ': ' + (travelObservationIssue(state.statuses[name], now) || 'walking signal expired')).join('; ');
+    c.communicationHold = { since: now, participants: names, reason: legacy ? 'Recovering captured coordinator communication failure' : 'Waiting for coordinator communication: ' + details, legacy, resumeDefense };
     if (legacy) c.communicationLegacyRecovered = true;
     c.phase = 'communication-hold'; c.departAt = null; c.epoch++;
     c.completed = []; c.failureCode = undefined; c.failure = c.communicationHold.reason;
     ports.hold(state, c);
-    recordConvoyHistory(state, c, 'communication lost', now, { ...c.communicationHold });
+    recordConvoyHistory(state, c, 'communication lost', now, { ...c.communicationHold, reports: Object.fromEntries(names.map(name => [name, {seenAt: state.statuses[name]?.seenAt, sample: requestObject(state.statuses[name]).travelSample}])) });
     return true;
   }
   function detect(state: SharedState, c: SharedConvoy, now: number): boolean {
-    const legacy = legacyCompletionFailure(c);
+    const transport = capturedCommunicationFailure(c);
+    const legacy = legacyCompletionFailure(c) || transport;
     if (c.phase === 'failed' && !legacy) return false;
     const names = c.participants.filter(n => affected(state, c, n, now));
     if (!legacy && !names.length) return false;
     if (!c.participants.every(n => ports.owned(state, c, n))) return false;
+    if (transport) { c.recoveryAttempts = 0; delete c.returnFirstFailure; }
     return enter(state, c, now, legacy ? c.participants : names, legacy);
   }
   function rebind(state: SharedState, c: SharedConvoy, now: number): boolean {
@@ -110,11 +116,11 @@ function holdBlockers(state: SharedState, c: SharedConvoy, now: number): string[
   });
 }
 function eligible(state: SharedState, c: SharedConvoy): boolean {
-  return c.purpose === 'monster-hunt' && c.geometryRepair?.phase !== 'waiting' &&
-    c.failureCode !== 'geometry-mismatch' && state.monsterHunt?.convoyId === c.id;
+  return c.routeProtocol === 4 &&
+    c.geometryRepair?.phase !== 'waiting' && c.failureCode !== 'geometry-mismatch';
 }
 function readyStatus(s: SharedState['statuses'][string], now: number): s is NonNullable<SharedState['statuses'][string]> {
-  return !!s && !s.rip && s.hp !== 0 && !s.moving && now - s.seenAt <= 3000 && s.seenAt <= now + 500;
+  return !!s && !s.rip && s.hp !== 0 && !s.moving && !s.transporting && now - s.seenAt <= 3000 && s.seenAt <= now + 500;
 }
 
 function affected(state: SharedState, c: SharedConvoy, name: string, now: number): boolean {
@@ -122,8 +128,13 @@ function affected(state: SharedState, c: SharedConvoy, name: string, now: number
   const s = state.statuses[name];
   if (s?.rip || s?.hp === 0) return false;
   if (!s || now - s.seenAt > 3000) return true;
+  if (observationLost(s, now)) return true;
   return reportMatches(state, name) && communicationReport(s.convoyNavigation);
 }
 function communicationReport(report: SharedReport | undefined): boolean {
   return report?.phase === 'communication-hold' && !!report.communication;
+}
+
+function observationLost(s: NonNullable<SharedState["statuses"][string]>, now: number): boolean {
+  return !!s.groupedCombat && !!travelObservationIssue(s, now);
 }

@@ -1,3 +1,4 @@
+import {classifyTravelDefense} from './travel-defense.ts';
 import { requestObject } from '../http/contracts.ts';
 import { routeOwner, routeIdentityOwned, sharedRoute } from './shared-route-store.ts';
 import { isPoint, type Point } from '../../navigation/contracts.ts';
@@ -27,6 +28,7 @@ export function movementBarrier(state: SharedState, input: unknown, now: number)
   const key = `${c.epoch}:${c.routeVersion}:${Number(body.step)}:${p.map}:${p.x}:${p.y}`;
   const barrier = getBarrier(c, key);
   const name = String(body.character), members = c.participants.filter(n => !c.completed.includes(n));
+  if(townBlocked(state,c,barrier,body,now))return {ready:false,waiting:'fresh party observations without attackers'};
   acknowledge(barrier,body,name,now);
   if (body.completed === true) return { ready: members.every(n => barrier!.completed.has(n)) };
   if (!barrier.releasedAt && members.every(n => barrier.ready.has(n) && barrier.ready.get(n)! >= now - 1000)) barrier.releasedAt = now;
@@ -50,4 +52,9 @@ function publishedStep(c: SharedConvoy, body: Record<string,unknown>): boolean {
   const p=body.destination as Point & {town?:boolean;transport?:boolean;s?:number;method?:string};
   return !!step && step.map===p.map && step.x===p.x && step.y===p.y &&
     !!step.town===!!p.town && !!step.transport===!!p.transport && step.s===p.s && step.method===p.method;
+}
+
+function townBlocked(state:SharedState,c:SharedConvoy,barrier:Barrier,body:Record<string,unknown>,now:number):boolean {
+  return !barrier.releasedAt && !!c.continuousReturn && !!(body.destination as {town?:boolean}).town &&
+    classifyTravelDefense(state,c.participants,now).state!=='clear';
 }

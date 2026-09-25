@@ -14,6 +14,7 @@ export interface SharedRoute {
   source: "search" | "remainder" | "itinerary";
 }
 export interface SharedReport {
+  failureDetails?: unknown;
   communication?: { operation: string; kind: string; since: number } | null;
   transitionMap?: string;
   townAttempt?: import('./return-town.ts').ReturnTownAttempt;
@@ -22,14 +23,18 @@ export interface SharedReport {
   failure?: string; waypointCount?: number; departedAt?: number;
 }
 export interface SharedStatus extends RoutePoint {
+  activeEvent?: string | null; joinedEvent?: string | null;
   movementGeometry?: { version: number; fingerprint: string };
   huntReturnProtocol?: number;
+  returnTownReady?: boolean;
   movement?: {progress?:unknown};
+  groupedCombat?: { currentAttackersAt?: number; currentAttackers?: import("./travel-defense.ts").CurrentAttacker[] };
   seenAt: number; server?: string; region?: string; rip?: boolean; hp?: number;
   combatSelection?: { runtimeId?: string };
-  moving?: boolean; speed?: number; convoyProtocol?: number; convoyNavigation?: SharedReport;
+  moving?: boolean; transporting?: boolean; speed?: number; convoyProtocol?: number; convoyNavigation?: SharedReport;
 }
 export interface SharedCommand {
+  routeRecovery?: import('../hunt/route-recovery.ts').RouteRecoveryCommand;
   returnWalking?: boolean;
   continuousReturn?: number;
   disableTown?: boolean;
@@ -43,10 +48,14 @@ export interface SharedCommand {
   slowestSpeed: number; purpose: string | null; navigationExempt: boolean;
   combatHandoffAllowed: boolean; returnLeg: boolean; nonPreemptible: boolean;
   reason?: string;
+  failureCode?: string;
+  failureContext?: unknown;
   force?: boolean;
   deferRendezvous?: boolean;
 }
 export interface SharedConvoy extends PartyConvoy {
+  huntArrival?: {cycleId: string; missionIndex: number; missionRevision: number; epoch: number};
+  observationPhase?: string; defenseReason?: string; loot?: unknown;
   failureDetails?: unknown;
   geometryRepair?: { id: string; startedAt: number; expected: {version: number; fingerprint: string}; runtimes: Record<string,string>; phase: 'waiting' | 'complete' | 'failed' };
   arrivalReadySince?: number;
@@ -65,6 +74,7 @@ export interface SharedConvoy extends PartyConvoy {
   sharedWaitingAt?: number;
   readinessStartedAt?: number;
   walkingFailures?: number;
+  returnFirstFailure?: string;
   missingRoutes?: Record<string, { since: number; observedAt: number }>;
   walkingActivity?: string;
   routeServer?: string;
@@ -76,6 +86,9 @@ export interface SharedConvoy extends PartyConvoy {
   observedPhase?: string | null; assembledSince?: number;
 }
 export interface SharedState extends ConvoyHistoryState, CompletionReceipts {
+  eventReturn?: unknown; escape?: {stage: string} | null;
+  monsterSearchRadiusByCharacter?: Record<string, number>;
+  monsterHunt?: import('../hunt/contracts.ts').HuntCycle | null;
   activeConvoy: SharedConvoy | null;
   commands: Record<string, SharedCommand | undefined>;
   statuses: Record<string, SharedStatus | undefined>;

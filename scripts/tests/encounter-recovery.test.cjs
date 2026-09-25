@@ -67,13 +67,14 @@ test('Fairy wandering does not count as party approach progress',()=>{
  refreshRareApproach(e,[s],2000);assert.equal(e.progress,1000);
  s.x=20;refreshRareApproach(e,[s],2000);assert.equal(e.progress,2000);
 });
-test('verified mission arrival is reconciled before optional rare movement',()=>{
- const h={stage:'mission-travel',convoyId:'C',target:'osnake',participants:['W']},s={activeConvoy:{id:'C',purpose:'monster-hunt'},statuses:{W:{seenAt:10000,hp:100,map:'main',in:'main',x:0,y:0}}};
- const ports={now:()=>10000,destination:()=>({map:'main',x:0,y:0}),intent:()=>({revision:1}),persist(){}};
- const travel=createHuntTravel(s,ports);travel.reconcileArrival(h);
- assert.equal(h.stage,'farming');assert.equal(h.originArrivedAt,10000);
- h.stage='mission-travel';s.statuses.W.x=51;travel.reconcileArrival(h);assert.equal(h.stage,'mission-travel');
+test('spawn arrival waits for convoy release and then uses the area instead of its center',()=>{
+ const h={stage:'mission-travel',convoyId:'C',target:'osnake',participants:['W']},s={leader:'W',monsterSearchRadiusByCharacter:{},activeConvoy:{id:'C',purpose:'monster-hunt'},statuses:{W:{seenAt:10000,hp:100,map:'main',in:'main',x:90,y:0}}};
+ const ports={now:()=>10000,destination:()=>({map:'main',x:0,y:0,boundary:[-100,-10,100,10]}),contains:require('../../dashboard/lib/farming-zones.ts').contains,intent:()=>({revision:1}),persist(){}};
+ const travel=createHuntTravel(s,ports);travel.reconcileArrival(h);assert.equal(h.stage,'mission-travel');
+ s.activeConvoy=null;travel.reconcileArrival(h);assert.equal(h.stage,'farming');assert.equal(h.originArrivedAt,10000);
+ h.stage='mission-travel';s.statuses.W.x=101;travel.reconcileArrival(h);assert.equal(h.stage,'mission-travel');
 });
+
 test('restored anniversary Fairy stop retires optional commitment and does not reacquire it',()=>{
  const t={id:'225',mtype:'tinyp',map:'main',in:'main',server:'USII',x:0,y:0,hp:5600};
  const c={id:'C',phase:'defending',purpose:'anniversary-return',huntTravel:{primary:t,committed:[t],searches:{},reason:'passive-setting'}};

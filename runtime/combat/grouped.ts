@@ -23,6 +23,7 @@ export interface Death { id: string; map: string; in?: string | number; server: 
 export interface Fight extends Target { state?: 'planned' | 'pending' | 'engaged'; score?: number; server: string | undefined; fighter: string; startedAt: number }
 export interface Target { target?: string | null; id: string; mtype: string; map: string; in?: string | number; x: number; y: number; hp?:number; max_hp?:number }
 export interface Group {
+  handoffTiming?: {selectedAt: number; committedAt: number | null};
   passingEncounters?: PassingEncounter[];
   formationRecovery?:FormationRecovery;
   pursuit?: Pursuit; pursuitExclusions?: PursuitExclusion[];
@@ -102,6 +103,8 @@ export function evaluateGroup(previous: Group | null, members: Member[], leader:
   const committed = !terrainRecovery && !pursuit?.revoking && !!selection && (target?.state!=='planned' || !pullsPaused) && (target?.state==='engaged' || ready && recovering.length===0 &&
     (same && previous.selection===selection && previous.committed || acknowledged || preack));
   if (!blockers.length && !ready) blockers.push('waiting for stable formation');
+  const priorTiming=previous?.selection===selection ? previous.handoffTiming : undefined;
+  const handoffTiming=selection ? {selectedAt:priorTiming?.selectedAt??now,committedAt:committed ? priorTiming?.committedAt??now : null} : undefined;
   if (selection && !acknowledged && !committed) for (const m of members.filter(m=>participating.includes(m.name)))
     if (m.status?.groupedCombat?.ack!==selection) blockers.push(m.name+': awaiting target revision');
   if (pursuit?.reason) blockers.push(pursuit.reason);
@@ -113,7 +116,7 @@ export function evaluateGroup(previous: Group | null, members: Member[], leader:
   if(restored?.target?.id!==target?.id||lostTargets.length!==(restored?.lostTargets||[]).length)
     transitionTrace.push({at:now,target:target?.id||null,reason:lostTargets.length>(restored?.lostTargets||[]).length?'target retired as lost':'queue target changed'});
   return {passingEncounters,protocol:4, formationRecovery:terrainRecovery, pursuit, pursuitExclusions, lostTargets, searches, transitionTrace, resetAt, claims, rareRejections, observers, queue, queueRevision, deaths, evidence, fights, threats, fighter, targetLeader, participating, recovering, recoverySince, key,phase:!ready?'regrouping':!target?'ready':target.state==='engaged'?'engaged':target.state==='pending'?'attack-pending':committed?'approaching':'selecting',leader,
-    members:members.map(m=>m.name),priest:priest?.name || null,
+    handoffTiming,members:members.map(m=>m.name),priest:priest?.name || null,
     anchor:anchor && anchorMember && fresh(anchor) && !anchor.rip && anchor.hp>0 ?
       {name:anchorMember.name,map:anchor.map,in:anchor.in,server:anchor.server,x:anchor.x,y:anchor.y}:null,
     range,ready,readySince,seenAt:now,target,selection,committed,blockers};

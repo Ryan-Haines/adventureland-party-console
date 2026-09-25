@@ -62,6 +62,17 @@ test('lost job ownership prevents a sale',async()=>{
  await assert.rejects(r.merchantNpcSale({jobId:'job',npcSales:[mark()]}),/interrupted/);
  assert.equal(calls.length,1);assert.equal(calls[0].error,'interrupted');
 });
+
+test('NPC sales request the named vendor interaction point instead of its blocked sprite coordinates',async()=>{
+ const {r,calls}=saleRuntime();let destination;
+ r.find_npc=()=>({map:'main',x:-35,y:-162});
+ r.smart_move=async value=>{destination=value;};
+ await r.merchantNpcSale({jobId:'job',npcSales:[mark()]});
+ assert.equal(destination,'fancypots');assert.deepEqual(calls[0],[0,1]);
+ const {resolveDestination}=require('../../runtime/characters/movement-destination.ts');
+ assert.deepEqual(resolveDestination({character:{map:'bank'},G:{maps:{}},find_npc:r.find_npc},destination),
+   {map:'main',x:-35,y:-147});
+});
 test('stale town return cannot stop a new sale route',async()=>{
  const r=vm.createContext({});
  const start=shared.indexOf('  async function merchantTownReturn('),end=shared.indexOf('\n  }',start)+4;

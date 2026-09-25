@@ -115,8 +115,6 @@ export function createHuntControlRoutes(state: HuntControlState, ports: HuntCont
     hunt.returnNativeFallback ||= !!state.activeConvoy?.nativeFallback;
     ports.cancelConvoy();
     hunt.convoyId = null;
-    hunt.returnRetries = 0;
-    hunt.returnRetryAt = 0;
     ports.start(hunt, state.monsterHunterLocation, "Resuming Monster Hunt turn-in", "returning");
     ports.persist();
     return res.json({ ok: true, convoyId: hunt.convoyId });

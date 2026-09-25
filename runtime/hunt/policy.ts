@@ -10,8 +10,6 @@ export interface Hunt {
   participants: string[];
   turnIn?: TurnIn;
   eventReleaseAt?: number;
-  returnRetryAt?: number;
-  returnRetries?: number;
   returnDisableTown?: boolean;
   returnNativeFallback?: boolean;
   returnTown?: import('../coordinator/navigation/return-town.ts').ReturnTownPolicy;
@@ -56,8 +54,6 @@ export function missions(hunt: Hunt, leader: string, statuses: Statuses, blackli
 export function beginTurnIn(hunt: Hunt, leader: string): void {
   if (!priority(hunt) || !hunt.turnIn) {
     hunt.turnIn = { owner: hunt.owner || leader, phase: "returning" };
-    hunt.returnRetries = 0;
-    hunt.returnRetryAt = 0;
     hunt.returnDisableTown = false;
     delete hunt.returnNativeFallback;
     delete hunt.returnTown;
@@ -76,13 +72,6 @@ export function eventsPending(hunt: Hunt, statuses: Statuses, now: number): bool
 }
 export function needsReconcile(hunt: Hunt, leader: string): boolean {
   return !priority(hunt) && (hunt.policyVersion !== 3 || (hunt.selectionLeader || hunt.owner) !== leader);
-}
-export function retryReturn(hunt: Hunt, convoy: { phase: string; failure?: string; failureCode?: string; failedAt?: number } | null, now: number): boolean {
-  const attempts = hunt.returnRetries || 0;
-  return priority(hunt) && hunt.stage === "returning" && convoy?.phase === "failed" &&
-    attempts < 3 && ["runtime-lost", "owner-lost", "command-lost", "unavailable", "assembly-timeout",
-      "planning-timeout", "town-unavailable", "route-failed"].includes(convoy.failureCode || "") &&
-    now - (convoy.failedAt || hunt.returnRetryAt || 0) >= [5000,15000,30000][attempts]!;
 }
 
 interface EventCycle {

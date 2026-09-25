@@ -5,10 +5,15 @@ import {retireDeadEvidence, sameEvidenceTarget} from './evidence.ts';
 import type {Death} from './grouped.ts';
 import type {Target} from '../characters/roles/types.ts';
 import {createPassingAdmission} from './passing-admission.ts';
+import {createHandoffTiming} from './handoff-timing.ts';
 /** Small adapter around the game globals; lifecycle belongs to the role runner. */
 export function installQueueClient(root:any, shared:any) {
   root.partyQueueClient?.stop();
-  let active=true,busy=false,waiting=false,signature='',sentAt=0,retryAt=0,revision='',serial=0;
+  let active=true,busy=false,waiting=false,dirty=false,signature='',sentAt=0,retryAt=0,revision='',serial=0;
+  let sentAcknowledgement='';
+  const acknowledgement=(report:{groupedCombat?:{ack?:string|null;queueAck?:string|null}})=>JSON.stringify([report.groupedCombat?.ack,report.groupedCombat?.queueAck]);
+  const timing=createHandoffTiming(root.__partyHandoffTrace ||= []);
+  const enabled=()=>!!(shared.convoyActive?.() || shared.usesGroupedCombat?.() || shared.passingEncounterReport?.().length || shared.getPassingTarget?.() || shared.queueMembers?.().length);
   const formation=shared.terrainRecoveryPorts ? createFormationRecoveryClient(shared.terrainRecoveryPorts()) : null;
   const host=parent as any;
   const passing=createPassingAdmission({now:()=>Date.now(),reserve:(target,admission)=>shared.beginPassingAttack(target,admission,true)});
@@ -29,7 +34,7 @@ export function installQueueClient(root:any, shared:any) {
     return events;
   }
   reportEvidence();
-  function flush(){signature='';sentAt=0;tick();}
+  function flush(){dirty=true;signature='';sentAt=0;tick();}
   function evidence(target:any,state:Evidence['state'],action?:string){
     if(!active||!target||shared.isPassingEncounter?.(target))return null;
     reportEvidence();
@@ -75,20 +80,40 @@ export function installQueueClient(root:any, shared:any) {
         (c.external||c.releasedAt>=(events[i].startedAt??events[i].at))))events.splice(i,1);
     if(shared.sharedTargetId()!==group?.target?.id)sight.reset();
     revision=data.combatRevision||revision;shared.acceptQueue(group);root.partyRoleRunner?.wake();
+    timing.selection(root.__partyGroupedCombat ?? group);
+    // A received selection/queue must not wait for the next reporting interval.
+    if(acknowledgement(shared.queueAcknowledgement ? shared.queueAcknowledgement() : shared.queueReport())!==sentAcknowledgement)flush();
+  }
+  function wait(){
+    if(!active||!enabled()||waiting||Date.now()<retryAt)return;
+    waiting=true;
+    shared.queueRequest({combatWait:true,combatRevision:revision}).then(apply)
+      .catch(()=>{retryAt=Date.now()+1000;})
+      .finally(()=>{waiting=false;wait();});
   }
   function tick(){
     if(!active||Date.now()<retryAt)return;
-    if(!shared.usesGroupedCombat?.() && !shared.passingEncounterReport?.().length && !shared.getPassingTarget?.() && !shared.queueMembers?.().length)return;
+    if(!enabled())return;
     formation?.tick();
     const id=shared.sharedTargetId(),entity=id&&get_entity(id);
     if(id)sight.observe(id,character,!!(entity&&entity.visible&&!entity.dead));
-    if(!waiting){waiting=true;shared.queueRequest({combatWait:true,combatRevision:revision}).then(apply).catch(()=>{retryAt=Date.now()+1000;}).finally(()=>waiting=false);}
-    if(busy)return;
+    wait();
+    if(busy){dirty=true;return;}
+    dirty=false;
     const report=shared.queueReport();report.groupedCombat.evidence=reportEvidence(report.groupedCombat.deaths).filter(e=>e.server===report.server&&e.map===character.map&&e.in===character.in);
     const next=JSON.stringify([report.x,report.y,report.hp,report.rip,report.lastDeath,report.groupedCombat.epoch,report.groupedCombat.currentAttackers,report.groupedCombat.travelCandidates,report.groupedCombat.huntDefense,report.groupedCombat.passingAcknowledgement,report.groupedCombat.passingEncounters,report.groupedCombat.formationRecovery,report.groupedCombat.pursuitAck,report.groupedCombat.lootPending,report.groupedCombat.claims?.map((c:any)=>[c.id,c.map,c.in,c.server,c.external]),report.groupedCombat.candidates,report.groupedCombat.threats,report.groupedCombat.sightings,report.groupedCombat.evidence,report.groupedCombat.deaths,report.groupedCombat.queueAck,report.groupedCombat.ack]);
     if(next===signature&&Date.now()-sentAt<1000)return;
-    signature=next;sentAt=Date.now();busy=true;
-    shared.queueRequest({...report,combatOnly:true}).then(apply).catch(()=>{signature='';retryAt=Date.now()+1000;}).finally(()=>busy=false);
+    signature=next;sentAt=Date.now();busy=true;sentAcknowledgement=acknowledgement(report);
+    const started=Date.now(),body={...report,combatOnly:true};
+    // The shared transport stamps the atomic sample synchronously at send time.
+    const pending:Promise<{combatReportReceipt?:unknown}>=shared.queueRequest(body);
+    const sequence=body.travelSample?.sequence;
+    timing.report({sequence,deaths:(report.groupedCombat.deaths||[]).map((d:Death)=>d.id),ack:report.groupedCombat.ack});
+    pending.then(data=>{
+      if(!active)return;
+      timing.response({sequence,roundTripMs:Date.now()-started,coordinator:data.combatReportReceipt});apply(data);
+    }).catch(()=>{signature='';retryAt=Date.now()+1000;})
+      .finally(()=>{busy=false;if(dirty)tick();});
   }
   const timer=setInterval(tick,100);
   function preparePassing(target:Target) {
@@ -100,6 +125,6 @@ export function installQueueClient(root:any, shared:any) {
     shared.beginPassingAttack(target);
     return true;
   }
-  const api={tick,flush,hit,evidence,events,reportEvidence,sight,formation,preparePassing,passingAcknowledgement:passing.report,reset(){events.length=0;sight.reset();signature='';sentAt=0;},stop(){formation?.stop();active=false;clearInterval(timer);}};
+  const api={tick,flush,hit,evidence,events,reportEvidence,sight,formation,timing,preparePassing,passingAcknowledgement:passing.report,reset(){events.length=0;sight.reset();signature='';sentAt=0;},stop(){formation?.stop();active=false;clearInterval(timer);}};
   root.partyQueueClient=api;return api;
 }

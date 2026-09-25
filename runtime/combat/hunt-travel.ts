@@ -4,6 +4,7 @@ import {collectPassing, passingIdentity} from './passing.ts';
 import {recoverLostTargets, type SearchState} from './lost-target.ts';
 
 export interface HuntTravelConvoy {
+  huntArrival?: unknown;
   id?: string; epoch?: number; purpose?: string | null; huntTarget?: string;
   force?: boolean; navigationExempt?: boolean; nonPreemptible?: boolean; continuousReturn?: number; phase?: string; observationPhase?: string;
   huntTravel?: {primary: Fight | null; searches: Record<string, SearchState>; retired?: string[]; rejected?: string[]; released?: Record<string, number>; committed?: Fight[]; reason?: "passive-setting" | "extra-aggro"};
@@ -120,7 +121,7 @@ function selectPrimary(c: HuntTravelConvoy, state: TravelState, members: Member[
 }
 /** Reconcile identities before acquisition: death is permanent, absence requires newer live evidence. */
 export function updateHuntTravel(c: HuntTravelConvoy, members: Member[], now: number, scope?: string, settings?: PassiveTravelSettings): HuntTravelControl | undefined {
-  if(!interruptibleTravel(c))return undefined;
+  if(!interruptibleTravel(c) || c.huntArrival)return undefined;
   const state=c.huntTravel ||= {primary:null,searches:{}};
   reconcileEncounters(state,members,now,huntDefense(c) || c.phase==='communication-hold');
   const fresh=observations(members,now);

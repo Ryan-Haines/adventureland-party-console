@@ -384,7 +384,7 @@
         max_mp: character.max_mp, x: character.real_x === undefined ? character.x : character.real_x,
         y: character.real_y === undefined ? character.y : character.real_y, map: character.map,
         in: character.in, xp: character.xp || 0, max_xp: character.max_xp || 0, gold: character.gold,
-        rip: !!character.rip, target: character.target || null, conditions: activeConditions(),
+        rip: !!character.rip, target: character.target || null, standOpen: !!character.stand, conditions: activeConditions(),
         inventorySize: Number(character.isize) || character.items.length },
         items: Object.assign({}, character.items), slots: Object.assign({}, character.slots) };
     },
@@ -2168,6 +2168,27 @@
     return pause ? { id: pause.id, ready: !consoleMaintenanceBusy() && !character.moving &&
       !(typeof smart !== 'undefined' && smart.moving) } : null;
   }
+  function convoyNavigationReport() {
+    return convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
+        communication: convoyTraveling.communication || null,
+        navigationRevision: convoyTraveling.navigationRevision,
+        returnPlan: convoyTraveling.returnPlan || null,
+        commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
+        encounterCatchup: convoyTraveling.encounterCatchup ? {target:convoyTraveling.encounterCatchup.target,from:convoyTraveling.encounterCatchup.from,map:convoyTraveling.encounterCatchup.map,failed:convoyTraveling.encounterCatchup.failed||null} : null,
+        defenseTargets: convoyTraveling.defenseTargets || [],
+        defenseInterruption: convoyTraveling.defenseInterruption || null,
+        townAttempt: convoyTraveling.townAttempt || null,
+        transitionMap: convoyTraveling.transitionMap || null,
+        runtimeId: convoyRuntimeId, routeReady: !!convoyTraveling.routeReady,
+        routeVersion: convoyTraveling.routeVersion || 0, routeSource: convoyTraveling.routeSource || null,
+        destinationSearches: convoyTraveling.destinationSearches || 0, rendezvousSearches: convoyTraveling.rendezvousSearches || 0,
+        routeImports: convoyTraveling.routeImports || 0, reusedRoutes: convoyTraveling.reusedRoutes || 0,
+        preparationMs: convoyTraveling.preparationMs || null, waypointCount: convoyTraveling.waypointCount || 0,
+        failure: convoyTraveling.failure || null,
+        failureDetails: convoyTraveling.failure ? {movement: convoyMovementEvidence(convoyTraveling), failureContext:convoyTraveling.failureContext || null} : undefined, replanStarts: convoyTraveling.replanStarts || 0,
+        routeStarts: convoyTraveling.routeStarts, departedAt: convoyTraveling.departedAt || null } : null;
+  }
+
   function snapshot() {
     calculateFarmingMode();
     if (character.rip && !combatWasDead) {
@@ -2229,28 +2250,13 @@
       combatSelection: { id: combatSelection.id, revision: combatSelection.revision,
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
-      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:typeof returnCombatActive==='function' && returnCombatActive() || returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
       movementGeometry: movement.identity,
       huntReturnProtocol: 2,
+      returnTownReady: can_use("use_town") && !is_on_cooldown("use_town"),
       movement: movement.report() || movement.last(),
-      convoyNavigation: convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
-        communication: convoyTraveling.communication || null,
-        navigationRevision: convoyTraveling.navigationRevision,
-        returnPlan: convoyTraveling.returnPlan || null,
-        commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
-        encounterCatchup: convoyTraveling.encounterCatchup ? {target:convoyTraveling.encounterCatchup.target,from:convoyTraveling.encounterCatchup.from,map:convoyTraveling.encounterCatchup.map,failed:convoyTraveling.encounterCatchup.failed||null} : null,
-        defenseTargets: convoyTraveling.defenseTargets || [],
-        defenseInterruption: convoyTraveling.defenseInterruption || null,
-        townAttempt: convoyTraveling.townAttempt || null,
-        transitionMap: convoyTraveling.transitionMap || null,
-        runtimeId: convoyRuntimeId, routeReady: !!convoyTraveling.routeReady,
-        routeVersion: convoyTraveling.routeVersion || 0, routeSource: convoyTraveling.routeSource || null,
-        destinationSearches: convoyTraveling.destinationSearches || 0, rendezvousSearches: convoyTraveling.rendezvousSearches || 0,
-        routeImports: convoyTraveling.routeImports || 0, reusedRoutes: convoyTraveling.reusedRoutes || 0,
-        preparationMs: convoyTraveling.preparationMs || null, waypointCount: convoyTraveling.waypointCount || 0,
-        failure: convoyTraveling.failure || null, replanStarts: convoyTraveling.replanStarts || 0,
-        routeStarts: convoyTraveling.routeStarts, departedAt: convoyTraveling.departedAt || null } : null,
+      convoyNavigation: convoyNavigationReport(),
       activeCombatTarget: activeCombatTarget(),
       combatTrace: root.__partyCombatTrace || [],
       recovery: root.partyCombatState && root.partyCombatState.recovery || null,
@@ -2400,6 +2406,7 @@
         inRange: combatTarget && !combatTarget.dead ? !!is_in_range(combatTarget) : false,
         canAttack: combatTarget && !combatTarget.dead ? !!can_attack(combatTarget) : false,
         runner: root.partyCombatState || null,
+        handoffs: root.__partyHandoffTrace || [],
         positioning: root.partyCombatPosition || null,
         performance: root.partyCombatPerformance || null,
       },
@@ -2479,8 +2486,48 @@
     } finally { root.__partyStatusDiagnosticsSending = false; }
   }
 
+  function sampleTravelReport(body) {
+    var group = body.groupedCombat;
+    body.travelSample = {runtimeId: convoyRuntimeId, sequence: (root.__partyTravelSampleSequence = (root.__partyTravelSampleSequence || 0) + 1),
+      connected: !!(parent.socket && parent.socket.connected), transport:root.__partyTravelTransport || null};
+    Object.assign(body, {map:character.map, in:character.in, x:character.x, y:character.y,
+      moving:!!character.moving, transporting:!!parent.transporting, speed:character.speed,
+      hp:character.hp, max_hp:character.max_hp, rip:!!character.rip,
+      convoyProtocol:4, convoyNavigation:convoyNavigationReport(), movementGeometry:movement.identity,
+      movement:movement.report() || movement.last()});
+    group.currentAttackers = currentTravelAttackers();
+    group.currentAttackersAt = travelObservationAt();
+  }
+  function acceptTravelResponse(state, started, fast) {
+    var received = convoyDiagnosticClock(), wall = Date.now(), timing = state.transportTiming;
+    var sentAt = timing && Number(timing.sentAt) || Number(state.serverNow);
+    if (!Number.isFinite(sentAt)) return;
+    var elapsed = Math.max(0, received - started.mono);
+    var processing = timing ? Math.max(0, sentAt - Number(timing.receivedAt)) : 0;
+    var network = Math.max(0, elapsed - processing);
+    var history = root.__partyTravelTransport || (root.__partyTravelTransport = {});
+    history[fast ? 'fast' : 'full'] = {at:wall, durationMs:elapsed, processingMs:processing, networkMs:network, eventLoopMaxMs:timing && timing.eventLoopMaxMs,statusStages:timing && timing.statusStages};
+    if (timing && (!history.clock || wall-history.clock.at>60000 || network<history.clock.networkMs)) {
+      coordinatorClockOffset = (Number(timing.receivedAt) + sentAt - started.wall - wall) / 2;
+      history.clock = {at:wall, networkMs:network, offset:coordinatorClockOffset};
+    }
+    var signal = state.convoySignal;
+    if (!signal || !Number.isFinite(Number(signal.validUntil))) return;
+    if (sentAt < (root.__partyTravelSignalAt || 0)) return;
+    if (fast && (!convoyTraveling || signal.id!==convoyTraveling.id || signal.epoch!==convoyTraveling.epoch ||
+        signal.commandId!==convoyTraveling.commandId || signal.runtimeId!==convoyRuntimeId ||
+        signal.routeVersion!==(convoyTraveling.routeVersion || 0) ||
+        signal.navigationRevision !== undefined && signal.navigationRevision!==convoyTraveling.navigationRevision)) return;
+    root.__partyTravelSignalAt = sentAt;
+    // Charge all unaccounted transport time against the lease; delayed replies
+    // never gain another three seconds merely because they arrived late.
+    convoySignal = Object.assign({}, signal, {localDeadline:received + Math.max(0, Number(signal.validUntil)-sentAt-network)});
+  }
+
   function request(path, options) {
     options = options || {};
+    if (path === '/status' && options.body && options.body.groupedCombat) sampleTravelReport(options.body);
+    var transportStart = {wall: Date.now(), mono: convoyDiagnosticClock()};
     var convoyStatusStarted = path === '/status' ? convoyDiagnosticClock() : null;
     return new Promise(function (resolve, reject) {
       $.ajax({
@@ -2495,6 +2542,11 @@
         // loop permanently busy after CaracAL or Windows restarts overnight.
         timeout: Number(options.timeout) > 0 ? Number(options.timeout) : 10000,
       }).done(function(value) {
+        if (path === '/movement-barrier') {
+          var t=value.transportTiming || {}, duration=convoyDiagnosticClock()-transportStart.mono;
+          (root.__partyTravelTransport || (root.__partyTravelTransport={})).barrier={at:Date.now(),durationMs:duration,processingMs:Math.max(0,(t.sentAt||0)-(t.receivedAt||0)),eventLoopMaxMs:t.eventLoopMaxMs,outcome:'success'};
+        }
+        if (path === '/status') acceptTravelResponse(value, transportStart, !!(options.body && (options.body.combatOnly || options.body.combatWait)));
         rememberConvoyStatusRequest(convoyStatusStarted, 'success');
         resolve(value);
       }).fail(function (xhr, status, error) {
@@ -2511,6 +2563,7 @@
           (httpStatus ? "HTTP " + httpStatus + " · " : "") + kind +
           (context.reason && context.reason !== kind && context.reason !== "error" ? ": " + context.reason : ""));
         failure.partyRequest = context;
+        if(path==='/movement-barrier')(root.__partyTravelTransport || (root.__partyTravelTransport={})).barrier={at:Date.now(),durationMs:convoyDiagnosticClock()-transportStart.mono,outcome:kind};
         reject(failure);
       });
     });
@@ -2575,7 +2628,7 @@
     return !!(convoy && !convoy.cancelled && (convoy.routeProtocol === 4 || convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget)) &&
       convoy.phase === 'travelling' && signal && signal.phase === 'travel' &&
       signal.id === convoy.id && Number(signal.epoch) === convoy.epoch && Number(signal.commandId) === convoy.commandId &&
-      signal.runtimeId === convoyRuntimeId && Number(signal.validUntil) > Date.now() + coordinatorClockOffset &&
+      signal.runtimeId === convoyRuntimeId && !convoySignalExpired(signal) &&
       convoy.navigationRevision === Number(navigationIntent.revision || 0));
   }
   function passiveStopRequired(target) {
@@ -2623,7 +2676,27 @@
         (!e.map || e.map===character.map) && currentPartyList().indexOf(e.target)>=0 && is_in_range(e) && !isExternallyClaimedMonster(e);
     }).sort(function(a,b){return Number(b.target===character.name)-Number(a.target===character.name) || String(a.id).localeCompare(String(b.id));})[0] || null;
   }
+  function returnCombatActive() {
+    if(character.rip || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive())return false;
+    return !!(convoyTraveling && convoyTraveling.continuousReturn === 1 || root.__partyAnniversaryStagingOperation && !root.__partyAnniversaryStagingOperation.cancelled);
+  }
+  function returnAttacker(target) {
+    return !!(target && target.type==='monster' && target.visible!==false && !target.dead && target.hp>0 &&
+      (!target.map || target.map===character.map) && (target.in==null || target.in===character.in) && isAttackingPartyMember(target));
+  }
+  function returnDefenseTarget() {
+    var targets=Object.values(parent.entities||{}).filter(returnAttacker);
+    targets.sort(function(a,b){return Number(is_in_range(b))-Number(is_in_range(a)) || String(a.id).localeCompare(String(b.id));});
+    return targets[0] || null;
+  }
+  function cancelReturnTownUnderAttack() {
+    var c=convoyTraveling;
+    if(!c || c.continuousReturn!==1 || !c.townAttempt || c.townAttempt.state!=='casting' || !returnDefenseTarget())return;
+    c.townAttempt.state='interrupted';
+    c.fail('Town interrupted by party attacker; continuing home on foot');
+  }
   function passingTarget() {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return null;
     if(typeof convoyHoldDefenseTarget==='function') {
       var heldTarget=convoyHoldDefenseTarget();
       if(heldTarget)return heldTarget;
@@ -3841,12 +3914,29 @@
     root.localStorage.removeItem(productionJournalKey());
   }
   async function recoverProductionJournal() {
+    if (root.__partyProductionWorking) throw Error("Production recovery waiting for game operation");
+    if (!root.__partyProductionRecovery) {
+      root.__partyProductionRecovery = recoverProductionJournalWork().finally(function () { root.__partyProductionRecovery = null; });
+    }
+    return root.__partyProductionRecovery;
+  }
+  async function recoverProductionJournalWork() {
     var journal = JSON.parse(root.localStorage.getItem(productionJournalKey()) || "null");
     if (!journal) return;
     if (journal.phase === "complete") return finishProductionJournal(journal);
+    if (character.q && (character.q.upgrade || character.q.compound)) throw Error("Production recovery waiting for game operation");
+    var inspection = await request("/merchant/production", {method:"POST",body:Object.assign({},journal.request,{character:character.name,action:"inspect"})});
+    if (!inspection || !Array.isArray(inspection.pending)) throw Error("Production recovery inspection unavailable");
+    var orphan = inspection.pending.find(function (attempt) { return attempt.id !== journal.id; });
+    if (orphan) throw Error("Production recovery needs review: " + orphan.id + " (" + orphan.name + " +" + orphan.level + "); local journal " + journal.id);
+    if (inspection.attempt && inspection.attempt.completed) { root.localStorage.removeItem(productionJournalKey()); return; }
+    if (!inspection.attempt) {
+      if (journal.phase !== "prepared") throw Error("Production recovery missing admitted attempt: " + journal.id);
+      root.localStorage.removeItem(productionJournalKey());
+      return;
+    }
     if (journal.request && journal.request.requestId && !journal.issued) return finishProductionJournal(journal);
     if (journal.phase === "prepared") {
-      await request("/merchant/production", {method:"POST",body:journal.request});
       journal.success=false;
     } else {
       if (character.q && (character.q.upgrade || character.q.compound)) throw Error("Production recovery waiting for game operation");
@@ -3871,7 +3961,13 @@
   }
   async function trackedProduction(kind, slots, automatic, operation, offeringAttempt) {
     if (character.ctype !== "merchant") return operation();
-    await recoverProductionJournal();
+    if (root.__partyProductionWorking || root.__partyProductionRecovery) throw Error("Production recovery waiting for game operation");
+    root.__partyProductionWorking = true;
+    try { return await trackedProductionWork(kind, slots, automatic, operation, offeringAttempt); }
+    finally { root.__partyProductionWorking = false; }
+  }
+  async function trackedProductionWork(kind, slots, automatic, operation, offeringAttempt) {
+    await recoverProductionJournalWork();
     await yieldMerchantForEvent();
     if (automatic) await verifyProductionProtection(slots);
     var item=fingerprint(character.items[slots[0]]), id=character.name+":"+Date.now()+":"+Math.random().toString(36).slice(2);
@@ -3885,7 +3981,17 @@
         root.localStorage.removeItem(productionJournalKey()); return {success:false,alreadyAttempted:true};
       }
     }
-    catch(error) { if ((error.partyRequest && error.partyRequest.status === 409) || /quota completed|rule removed|Required upgrade offering|Manual upgrade request|Upgrade offering rule changed/i.test(String(error))) root.localStorage.removeItem(productionJournalKey()); throw error; }
+    catch(error) {
+      // A 409 can follow admission when persistence fails. Inspect first: only
+      // a confirmed absent admission permits discarding this unstarted journal.
+      if (error.partyRequest && error.partyRequest.status === 409) {
+        try {
+          var rejected = await request("/merchant/production", {method:"POST",body:Object.assign({},body,{action:"inspect"})});
+          if (rejected && rejected.attempt === null && Array.isArray(rejected.pending)) root.localStorage.removeItem(productionJournalKey());
+        } catch (_inspectionError) { /* Preserve evidence until admission can be confirmed. */ }
+      }
+      throw error;
+    }
     journal.phase="running";root.localStorage.setItem(productionJournalKey(),JSON.stringify(journal));
     var result, failure;
     try { result=await operation(); } catch(error) { failure=error; }
@@ -7374,7 +7480,8 @@
         }
         if (character.items[inventorySlot].l) { blocked.push({id:mark.id,error:"Item is locked"}); continue; }
         var quantity = Math.min(Number(mark.quantity) || 1, Number(character.items[inventorySlot].q) || 1);
-        await smart_move(find_npc("fancypots"));
+        // Named NPC destinations include the walkable interaction offset.
+        await smart_move("fancypots");
         inventorySlot = findItem(mark.item);
         if (inventorySlot < 0 || !sameItem(character.items[inventorySlot], mark.item))
           throw new Error("NPC-sale item moved before confirmation: " + mark.item.name);
@@ -8531,14 +8638,16 @@
         command.convoyId !== convoyTraveling.id || command.id !== convoyTraveling.commandId)) {
       // Assembly -> preparation keeps the same convoy's cap. Every other
       // command takeover restores normal speed before awaiting movement stop.
-      if (command.type !== "party-monster-travel" || command.convoyId !== convoyTraveling.id ||
-          Number(command.epoch) !== convoyTraveling.epoch) releaseConvoyCruise(convoyTraveling);
+      if (command.type !== "party-monster-travel" || command.convoyId !== convoyTraveling.id) releaseConvoyCruise(convoyTraveling);
       else convoyTraveling.cruiseHandoff = true;
       if (convoyTraveling.freezeRoute) convoyTraveling.freezeRoute();
       convoyTraveling.cancelled = true;
       if (convoyTraveling.release) convoyTraveling.release();
       if (typeof stop === "function") {
-        try { await stop("smart"); } catch (_stopError) { /* Already stopped. */ }
+        try { await movement.cancel("Command takeover: " + command.type + " / " + (command.phase || "start"), {
+          code:command.convoyId === convoyTraveling.id ? 'convoy-phase-change' : 'command-takeover',
+          convoyId:convoyTraveling.id,epoch:convoyTraveling.epoch,commandId:convoyTraveling.commandId,
+          replacementCommandId:command.id,replacementConvoyId:command.convoyId}); } catch (_stopError) { /* Already stopped. */ }
       }
     }
     if (character.ctype === "merchant" && command.type !== "merchant-idle" && command.type !== "merchant-stand-sync") {
@@ -9165,8 +9274,7 @@
         root.__merchantRealmErrors[error.id] = error.message;
         game_log(error.message, "red");
       });
-      if (Number.isFinite(state.serverNow))
-        coordinatorClockOffset = state.serverNow - (statusSentAt + Date.now()) / 2;
+      // Transport receipt already installed clock timing and the walking lease.
       // Install the new convoy barrier before releasing Escape. stop() yields,
       // so role timers can otherwise begin an independent route in this gap.
       partyConvoyActive = !!state.partyConvoyActive;
@@ -9212,7 +9320,7 @@
       var releasedHuntTurnIn = huntTurnInPriority && !state.huntTurnInPriority;
       huntTurnInPriority = !!state.huntTurnInPriority;
       if (releasedHuntTurnIn) setTimeout(function () { pollEvents(); runAnniversaryKiss(); }, 0);
-      convoySignal = state.convoySignal || null;
+      // Do not overwrite a newer fast-channel signal after awaited status work.
       reloadConvoyGeometry(convoySignal);
       if (convoyTraveling && convoySignal && convoySignal.id === convoyTraveling.id &&
           Number(convoySignal.epoch) === convoyTraveling.epoch && convoySignal.phase === "failed" &&
@@ -9710,27 +9818,8 @@
         await new Promise(function (resolve) { setTimeout(resolve, 300); });
         if (!stagingCurrent()) return;
       }
-      if (!is_on_cooldown("use_town") && can_use("use_town")) {
-        var beforeTown = { map: character.map, x: Number(character.x), y: Number(character.y) };
-        game_log("Anniversary departure: casting Town on " + character.map, "#51D2E1");
-        try {
-          if (!await eventTravelAllowed("anniversary")) return;
-          await use_skill("use_town");
-          if (!stagingCurrent()) return;
-          var townDeadline = Date.now() + 12000;
-          while (Date.now() < townDeadline) {
-            var relocated = character.map !== beforeTown.map ||
-              Math.hypot(Number(character.x) - beforeTown.x, Number(character.y) - beforeTown.y) > 90;
-            if (relocated && !is_transporting(character)) break;
-            await new Promise(function (resolve) { setTimeout(resolve, 200); });
-            if (!stagingCurrent()) return;
-          }
-        } catch (_anniversaryTownCast) {
-          game_log("Anniversary Town interrupted or unavailable; continuing by route", "#f0b429");
-        }
-      }
       if (stagingCurrent() && (character.map !== "main" || Math.hypot(Number(character.x), Number(character.y)) > 100)) {
-        game_log("Anniversary departure: navigating from " + character.map + " to Main after Town attempt", "#51D2E1");
+        game_log("Anniversary departure: returning from " + character.map + " to Main", "#51D2E1");
         if (!await eventTravelAllowed("anniversary")) return;
         await sharedPartyWalk(townPoint,"anniversary-staging",String(event && (event.id||event.event_id)||"anniversary"),null,stagingCurrent);
       }
@@ -11728,6 +11817,7 @@
   }
   function reportFightDeath(id) {
     if (!id) return;
+    if(root.partyQueueClient && root.partyQueueClient.timing)root.partyQueueClient.timing.death(id);
     if(groupedCombat && groupedCombat.target && groupedCombat.target.id===id)root.__partyQueueLastDeath={id:id,at:Date.now()};
     fightDeaths = root.__partyFightDeaths = fightDeaths.filter(function (d) { return Date.now()-d.at<60000; });
     if (!fightDeaths.some(function (d) { return d.id===id && d.map===character.map && d.in===character.in && d.server===reunionRealm(); }))
@@ -11788,6 +11878,10 @@
       {id:String(e.id),map:character.map,in:character.in,server:reunionRealm(),at:Date.now()+coordinatorClockOffset} : null;
   }
   function queueMarkers() {
+    if(typeof returnCombatActive==='function' && returnCombatActive()) {
+      var attacker=returnDefenseTarget();
+      return attacker ? [{id:String(attacker.id),map:character.map,in:character.in,server:reunionRealm(),role:'current',state:'engaged',radius:Math.max(18,(Number(attacker.awidth)||24)/2+4),visible:true}] : [];
+    }
     if (typeof eventTargetTypes !== 'undefined' && eventTargetTypes.length && !character.rip) {
       var selected=combatTargetId && get_entity(combatTargetId);
       if (!selected || !selected.visible || selected.dead || selected.hp<=0 ||
@@ -11884,7 +11978,7 @@
   function queueReport() {
     return {name:character.name,rareObservation:rareObservationReport(),map:character.map,in:character.in,server:reunionRealm(),x:character.x,y:character.y,hp:character.hp,max_hp:character.max_hp,lastDeath:lastDeathInfo,rip:!!character.rip,
       combatSelection:Object.assign({},combatSelection,{runtimeId:convoyRuntimeId,target:groupedNomination()}),
-      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
+      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:typeof returnCombatActive==='function' && returnCombatActive() || returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueClaims(),candidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueCandidates(),retentions:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
         threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision,
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
@@ -11997,6 +12091,7 @@
       Math.hypot(character.x-anchor.x,character.y-anchor.y) <= groupedCombat.range;
   }
   function groupedAttackAllowed(target) {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.blocks())return false;
     if (travelCombatActive() && !departureTargetEngaged(target)) return false;
     if(root.partyLootClient && root.partyLootClient.huntPending() && !departureTargetEngaged(target))return false;
@@ -12220,6 +12315,7 @@
   }
 
   function isAllowedTarget(target, huntTravelCommand, diagnostic) {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
     function reject(reason) { if (diagnostic) diagnostic.reason = reason; return false; }
     var huntTravel = huntTravelCommand && huntTravelCommand.purpose === "monster-hunt" &&
       huntTravelCommand.combatHandoffAllowed === true && huntTravelCommand.huntTarget === (target && target.mtype);
@@ -12580,6 +12676,11 @@
       if(!completed)request("/shared-travel",{method:"POST",timeout:3000,body:Object.assign({},body,{cancel:true})}).catch(function(){});
     }
   }
+  function convoySignalExpired(signal) {
+    if (!signal) return true;
+    if (Number.isFinite(signal.localDeadline)) return convoyDiagnosticClock() >= signal.localDeadline;
+    return Number(signal.validUntil) <= Date.now() + coordinatorClockOffset;
+  }
   function sharedConvoyPoint() {
     return {map:character.map,in:character.in,x:character.real_x,y:character.real_y};
   }
@@ -12640,13 +12741,13 @@
         var actual = field === 'epoch' || field === 'commandId' ? Number(signal[field]) : signal[field];
         if (actual !== expected[field]) mismatches.push({field:field,expected:expected[field],received:signal[field]});
       });
-      var expiry = signal && Number.isFinite(Number(signal.validUntil)) ? Math.max(0, Math.round(now - Number(signal.validUntil))) : null;
-      var state = !signal ? 'missing' : mismatches.length ? 'identity mismatch' : expiry === null ? 'unknown' : Number(signal.validUntil) <= now ? 'expired' : 'matching';
+      var expiry = signal && Number.isFinite(Number(signal.validUntil)) ? Math.max(0, Math.round(Number.isFinite(signal.localDeadline) ? mono - signal.localDeadline : now - Number(signal.validUntil))) : null;
+      var state = !signal ? 'missing' : mismatches.length ? 'identity mismatch' : expiry === null ? 'unknown' : convoySignalExpired(signal) ? 'expired' : 'matching';
       var age = function(at) { return typeof at === 'number' && Number.isFinite(at) && mono >= at ? Math.round(mono-at) : null; };
       var p = function(value) { return value ? {map:value.map,x:value.x,y:value.y} : null; };
       convoy.failureContext = {phase:convoy.phase,position:p(character),destination:p(command.location),
         convoyId:convoy.id,epoch:convoy.epoch,commandId:convoy.commandId,runtimeId:convoyRuntimeId,routeVersion:command.routeVersion,
-        signal:{state:state,expiredByMs:expiry,mismatches:mismatches},lastStatusResponseAgeMs:age(http.responseAt),
+        signal:{state:state,expiredByMs:expiry,mismatches:mismatches},lastStatusResponseAgeMs:age(http.responseAt), transport:JSON.parse(JSON.stringify(root.__partyTravelTransport || null)),
         lastStatusFailure:http.failure ? {kind:http.failure.kind,durationMs:http.failure.durationMs,ageMs:age(http.failure.at)} : null};
     } catch (_) {}
   }
@@ -12694,21 +12795,45 @@
       navigationRevision:Number(command.navigationRevision)||0,runtimeId:convoyRuntimeId,routeVersion:command.routeVersion};
   }
   function sharedMovementOptions(command) {
-    return { shared: true, avoidLeave: !!command.avoidLeave, native: !!command.nativeFallback, speed: command.slowestSpeed,
+    return { owner: {convoyId:command.convoyId,epoch:command.epoch,commandId:command.id,navigationRevision:command.navigationRevision,recoveryStage:command.routeRecovery && command.routeRecovery.stage},
+      relocation:command.routeRecovery && command.routeRecovery.relocation, shared: true, avoidLeave: !!command.avoidLeave, native: !!command.nativeFallback, speed: command.slowestSpeed,
       transitionComplete:function(destination) {
         if(convoyTraveling && convoyTraveling.commandId===command.id)convoyTraveling.transitionMap=destination.map;
       },
+      skipLootWait: command.continuousReturn === 1,
       compareTown: command.continuousReturn === 1 && !command.disableTown,
-      town: command.purpose !== 'monster-hunt' || command.continuousReturn === 1 && !command.disableTown || command.phase === 'plan-return' && !!command.allowTown,
+      town: command.continuousReturn === 1 ? !command.disableTown : command.routeRecovery && command.routeRecovery.relocation === 'town' || command.purpose !== 'monster-hunt' || command.phase === 'plan-return' && !!command.allowTown,
       townAttempt: command.continuousReturn !== 1 ? undefined : function(state, index, from, destination) {
         var c=convoyTraveling;
         if(!c || c.id!==command.convoyId || c.commandId!==command.id)return;
         c.townAttempt={round:[command.epoch,command.routeVersion,index].join(':'),map:from.map,state:state,destination:destination};
       },
       barrier: command.phase === 'plan-return' || command.routeVersion == null ? undefined : function(step, index, completed) {
-        return request('/movement-barrier', {method:'POST',timeout:2000,body:Object.assign(sharedConvoyIdentity(command),{
-          step:index, destination:step, completed:completed, ready:completed || ((command.continuousReturn === 1 || command.huntTarget) && !step.town || !departureCombatPending()) && (command.huntTarget || eligibleDepartureChests().length === 0) && (!step.town || can_use('use_town'))
-        })}).then(function(result){return !!result.ready;});
+        var began=convoyDiagnosticClock(), attempts=0, lastFailure;
+        function owned() {
+          var c=convoyTraveling, signal=convoySignal;
+          return c && c.id===command.convoyId && c.commandId===command.id && signal &&
+            signal.id===command.convoyId && Number(signal.epoch)===Number(command.epoch) &&
+            Number(signal.commandId)===command.id && signal.runtimeId===convoyRuntimeId &&
+            signal.routeVersion===command.routeVersion && !convoySignalExpired(signal);
+        }
+        function attempt() {
+          if(lastFailure && convoyDiagnosticClock()-began>=10000)return Promise.reject(lastFailure);
+          if(!owned())return Promise.reject(Object.assign(new Error('Barrier waiting for current coordinator signal'),
+            {partyRequest:{path:'/movement-barrier',method:'POST',kind:'network',status:0}}));
+        return request('/movement-barrier', {method:'POST',timeout:Math.max(1,Math.min(2000,10000-(convoyDiagnosticClock()-began))),body:Object.assign(sharedConvoyIdentity(command),{
+          step:index, destination:step, completed:completed, ready:completed || ((command.continuousReturn === 1 || command.huntTarget) && !step.town || !departureCombatPending()) && (command.continuousReturn === 1 || command.huntTarget || eligibleDepartureChests().length === 0) && (!step.town || can_use('use_town'))
+        })}).then(function(result){
+            if(!owned())throw Object.assign(new Error('Barrier owner superseded'),{partyRequest:{path:'/movement-barrier',kind:'aborted'}});
+            return !!result.ready;
+          }).catch(function(error){
+            lastFailure=error;
+            if(!convoyRetryableRequest(error) || !owned() || convoyDiagnosticClock()-began>=10000)throw error;
+            var delay=Math.min(1000,250*Math.pow(2,attempts++));
+            return new Promise(function(resolve){setTimeout(resolve,delay);}).then(attempt);
+          });
+        }
+        return attempt();
       }
     };
   }
@@ -12723,7 +12848,7 @@
       return gate.original();
     }};
     gate.owner=owner;
-    try {await anniversaryWithTimeout(smart_move(rally,undefined,{town:!command || !command.disableTown}),120000,"Convoy rendezvous");}
+    try {await anniversaryWithTimeout(smart_move(rally,undefined,{town:command ? sharedMovementOptions(command).town : true,owner:command ? sharedMovementOptions(command).owner : undefined}),120000,"Convoy rendezvous");}
     finally {if(gate.owner===owner)gate.owner=null;}
   }
   async function sharedConvoyRendezvous(convoy,command,ownsConvoy,phase) {
@@ -12854,7 +12979,10 @@
         if(!result || !result.ok)throw new Error("Route unavailable");
         install(result.route);
       }).catch(function(error){
-        if(ownsConvoy())convoy.fail(error.message || String(error));
+        if(ownsConvoy()) {
+          if(command.routeProtocol===4 && convoyRetryableRequest(error))convoyCommunication(convoy,error.partyRequest.path,error.partyRequest.kind);
+          convoy.fail(error.message || String(error));
+        }
         retryAt=Date.now()+500;
       }).finally(function(){pending=false;});
     }
@@ -12893,9 +13021,9 @@
         var signal=convoySignal,now=Date.now()+coordinatorClockOffset;
         var matches=signal && signal.id===convoy.id && Number(signal.epoch)===convoy.epoch &&
           Number(signal.commandId)===convoy.commandId && signal.runtimeId===convoyRuntimeId && signal.routeVersion===command.routeVersion;
-        if(!matches || Number(signal.validUntil)<=now) {
+        if(!matches || convoySignalExpired(signal)) {
           if(Date.now()-started<3000 && !released)return;
-          if(command.purpose==='monster-hunt' && (!signal || matches))
+          if(command.routeProtocol===4 && (!signal || matches))
             convoyCommunication(convoy, '/status', !signal ? 'missing-signal' : 'expired-signal');
           throw new Error("Shared route coordinator signal expired");
         }
@@ -13018,7 +13146,7 @@
           var matches = signal && signal.id === convoy.id && Number(signal.epoch) === convoy.epoch &&
             Number(signal.commandId) === convoy.commandId && signal.runtimeId === convoyRuntimeId;
           var now = Date.now() + coordinatorClockOffset;
-          if (!matches || Number(signal.validUntil) <= now)
+          if (!matches || convoySignalExpired(signal))
             throw new Error("Convoy coordinator signal expired or belongs to another runtime");
           if (signal.phase === "failed") throw new Error(signal.reason || "Convoy held by coordinator");
           if (!smart.found) {
@@ -13075,8 +13203,23 @@
     return route;
   }
 
+  function convoyMovementEvidence(convoy) {
+    var current=movement.report(), last=movement.last();
+    if (current && current.owner && current.owner.commandId === convoy.commandId) return current;
+    if (last && last.failureContext && last.failureContext.commandId === convoy.commandId) return last;
+    return null;
+  }
+  var convoyCruiseCap = null;
+  function setConvoyCruise(convoy, speed) {
+    if (convoyTraveling !== convoy) return;
+    var unchanged = convoyCruiseCap && convoyCruiseCap.id === convoy.id && convoyCruiseCap.speed === speed;
+    convoyCruiseCap = {id:convoy.id,owner:convoy,speed:speed};
+    convoy.cruiseReleased = false;
+    if (!unchanged) try { Promise.resolve(cruise(speed)).catch(function () {}); } catch (_) {}
+  }
   function releaseConvoyCruise(convoy) {
-    if (!convoy || convoyTraveling !== convoy || convoy.cruiseReleased) return;
+    if (!convoy || convoyTraveling !== convoy || convoy.cruiseReleased || !convoyCruiseCap || convoyCruiseCap.owner !== convoy) return;
+    convoyCruiseCap = null;
     convoy.cruiseReleased = true;
     // cruise's deferred need not settle; emit the reset before relinquishing
     // ownership, never from a delayed callback that might affect a new route.
@@ -13143,6 +13286,7 @@
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
       purpose:command.purpose,huntTarget:command.huntTarget,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
     convoyTraveling = convoy;
+    if (convoyCruiseCap && convoyCruiseCap.id === convoy.id) convoyCruiseCap.owner = convoy;
     if(command.purpose === "party-force-travel")forceTraveling=true;
     if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose||""))
       partyLocation = command.purpose === "franky-exit" ? null : command.location;
@@ -13162,6 +13306,7 @@
       captureConvoyFailureContext(convoy,command);
       if(convoy.freezeRoute)convoy.freezeRoute();
       convoy.failure = String(reason); convoy.routeReady = false;
+      movement.cancel('Convoy stopped: '+reason, {code:convoy.communication ? 'convoy-communication-hold' : 'convoy-failure',convoyId:convoy.id,epoch:convoy.epoch,commandId:command.id}).catch(function(){});
       phase(convoy.communication ? "communication-hold" : "failed");
       Promise.resolve(stop()).catch(function () {});
     };
@@ -13197,7 +13342,7 @@
     }
     try {
       followingLeader = false;
-      await stop("smart");
+      await movement.cancel('Convoy taking movement ownership', {code:'convoy-takeover',convoyId:convoy.id,epoch:convoy.epoch,commandId:command.id});
       if (!ownsConvoy()) return;
       // stop("smart") cancels only path ownership; stop() also sends a move
       // packet. Wait for that physical stop before declaring assembly ready.
@@ -13209,7 +13354,11 @@
         if(!ownsConvoy())return;
       }
       if (command.phase === "hold") {
-        convoy.failure = command.reason || "Convoy held; request a fresh convoy to retry";
+        convoy.failure = command.reason || "Navigation halted (" + (command.failureCode || "missing-failure-context") +
+          "); convoy " + command.convoyId + ", epoch " + command.epoch + ", destination " + command.location.map +
+          " (" + command.location.x + ", " + command.location.y + ")";
+        convoy.failureContext = command.failureContext || null;
+        releaseConvoyCruise(convoy);
         phase("failed");
         root.__partyNavigationDetail = "Convoy held: " + convoy.failure;
         game_log("Convoy held: " + convoy.failure, "red");
@@ -13243,7 +13392,7 @@
         // cruise is a server speed cap; the source does not settle its
         // deferred on the game_response acknowledgement. Observe the resulting
         // character speed instead of awaiting that deferred.
-        Promise.resolve(cruise(Number(command.slowestSpeed) || character.speed)).catch(function () {});
+        setConvoyCruise(convoy, Number(command.slowestSpeed) || character.speed);
         phase("assembled");
         // Keep ownership until the coordinator sends the scheduled travel
         // command. The role loop must not walk away from the rally.
@@ -13281,7 +13430,7 @@
       if (command.phase !== "prepare" && command.phase !== "shared-prepare") throw new Error("A fresh prepared convoy is required");
       // A hot reload releases the old runtime's throttle. Re-establish it
       // when resuming preparation even if assembly was already completed.
-      Promise.resolve(cruise(Number(command.slowestSpeed) || character.speed)).catch(function () {});
+      setConvoyCruise(convoy, Number(command.slowestSpeed) || character.speed);
       if(command.phase === "shared-prepare") await prepareSharedConvoyRoute(convoy, command, ownsConvoy, phase);
       else await prepareConvoyRoute(convoy, command, ownsConvoy, phase);
       if (!ownsConvoy()) return;
@@ -13299,7 +13448,7 @@
       game_log("Arrived with party at " + (command.label || "selected monster"), "#51D2E1");
     } catch (error) {
       if (!ownsConvoy()) return;
-      if (command.purpose === 'monster-hunt' && command.routeProtocol === 4 && convoyRetryableRequest(error))
+      if (command.routeProtocol === 4 && convoyRetryableRequest(error))
         convoyCommunication(convoy, error.partyRequest.path, error.partyRequest.kind);
       if (convoy.communication) {
         if (convoy.freezeRoute) convoy.freezeRoute();
@@ -13312,6 +13461,7 @@
       phase("failed");
       var reason = convoy.failure || String(error && (error.reason || error.message || error));
       convoy.failure = reason; convoy.routeReady = false;
+      await Promise.resolve(movement.cancel('Convoy stopped: '+reason, {code:'convoy-failure',convoyId:convoy.id,epoch:convoy.epoch,commandId:command.id})).catch(function(){});
       await Promise.resolve(stop()).catch(function () {});
       if (!ownsConvoy()) return;
       await request("/convoy-failed", { method: "POST", body: {
@@ -13322,7 +13472,7 @@
         routeVersion: command.routeVersion,
         details: { phase: convoy.phase, failureContext: convoy.failureContext || null, routeStarts: convoy.routeStarts,
           map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null,
-          movement: movement.report() || movement.last() },
+          movement: convoyMovementEvidence(convoy) },
       }}).catch(function () {});
       game_log("Convoy movement failed: " + reason, "red");
       logConvoyFailureContext(convoy.failureContext);
@@ -14201,6 +14351,7 @@
     kiteState.targetId = null; kiteState.destination = null; kiteState.mode = "idle";
   }
   function sendCombatMove(target, destination, mode) {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return false;
     var now = Date.now(), old = kiteState.destination;
     var timing=root.__partyQueueTiming;
     if(timing && timing.target===target.id && !timing.firstMovementAt)timing.firstMovementAt=now;
@@ -14260,6 +14411,7 @@
     return best ? sendCombatMove(target, best, "event-kiting") : false;
   }
   async function kiteIfNeeded(target) {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return false;
     var attacker = target && target.target === character.name ? target : Object.keys(parent.entities || {})
       .map(function (id) { return parent.entities[id]; }).filter(function (enemy) {
         return enemy && enemy.type === "monster" && enemy.visible && !enemy.dead && enemy.target === character.name;
@@ -14396,7 +14548,7 @@
           (Number(convoyTraveling.commandId) || 1) - 1);
       }
       if (convoyTraveling && typeof stop === "function") {
-        try { stop("smart"); } catch (_navigationStopError) { /* Already stopped. */ }
+        try { movement.cancel('Runtime retired; releasing convoy movement', {code:'runtime-retired',convoyId:convoyTraveling.id,commandId:convoyTraveling.commandId}).catch(function(){}); } catch (_navigationStopError) { /* Already stopped. */ }
       }
       if (timer) clearInterval(timer);
       if (gatheringTimer) clearInterval(gatheringTimer);
@@ -14459,9 +14611,17 @@
       return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
         !eventReturnPending && !root.__merchantActiveJob;
     },
+    returnCombatActive: returnCombatActive,
+    returnDefenseTarget: returnDefenseTarget,
+    returnAttacker: returnAttacker,
+    returnMovementTick: cancelReturnTownUnderAttack,
     isOccupied: function () {
       if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
+      if(typeof returnCombatActive==='function' && returnCombatActive()) {
+        cancelReturnTownUnderAttack();
+        return !!(character.c && character.c.town);
+      }
       if(outboundHuntTravel() && huntTravelExtraAggro())interruptConvoyForDefense();
       if (convoyTraveling && !convoyTraveling.defensePaused && (convoyTraveling.continuousReturn === 1 || convoyTraveling.purpose === 'monster-hunt' && convoyTraveling.huntTarget)) {
         root.__partyCombatOwner = "convoy:" + convoyTraveling.phase;
@@ -14543,8 +14703,12 @@
     formationMove: formationMove,
     groupedMovement: groupedMovement,
     groupedAttackAllowed: groupedAttackAllowed,
+    noteCombatHandoff: function(stage,id,details) {
+      if(root.partyQueueClient && root.partyQueueClient.timing)root.partyQueueClient.timing.attack(stage,id,details);
+    },
     terrainRecoveryPorts: terrainRecoveryPorts,
     queueReport: queueReport,
+    convoyActive: function(){return !!convoyTraveling || partyConvoyActive;},
     queueSafePoint: formationRecoverySafePoint,
     queueRecoveryMove: function(p){var t=groupedCombat && groupedCombat.target;
       if(t && formationRecoverySafePoint(p))sendCombatMove(t,p,"fight-recovery");},
@@ -14564,6 +14728,9 @@
     queueMembers: function(){return currentPartyList();},
     queueRequest: function(body){return request('/status',{method:'POST',body:Object.assign({name:character.name},body)});},
     acceptQueue: acceptQueue,
+    queueAcknowledgement: function() {
+      return {groupedCombat:{ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision}};
+    },
     sharedTargetId: function(){return groupedFarming() && groupedCombat && groupedCombat.target && groupedCombat.target.id || null;},
     queueEvidence: function(target,state,action){return root.partyQueueClient && root.partyQueueClient.evidence(target,state,action);},
     usesGroupedCombat: groupedFarming,
@@ -14666,6 +14833,7 @@
         observedAt: parent.socket && parent.socket.connected ? Date.now() : 0 };
     },
     skillTargetAllowed: function(target) {
+      if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
       if (!target || target.type !== "monster" || !isAllowedTarget(target) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
       if(huntTravelDefense() && !isAttackingPartyMember(target) && !(convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return false;
       if (target.target && !isAttackingPartyMember(target)) return false;

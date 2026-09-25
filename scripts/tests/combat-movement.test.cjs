@@ -427,6 +427,27 @@ test('selection retains a valid target and immediately changes on confirmed deat
   await r.run(50);assert.equal(r.attacks(),1);r.c.partyRoleRunner.stop();
 });
 
+test('successor wake uses the existing attack deadline and ignores the previous target promise', async () => {
+ for(const deadline of [1000,1600]) {
+  const r=runner(),sent=[],pending=[];
+  r.c.parent.next_skill={attack:1000};
+  r.c.attack=t=>{sent.push({id:t.id,at:r.c.Date.now()});return new Promise(resolve=>pending.push(resolve));};
+  await r.advance(1001);assert.equal(sent[0].id,'m');
+  const next={...r.target,id:'next'};
+  r.c.parent.next_skill.attack=deadline;
+  r.c.get_entity=id=>id==='next'?next:r.target;
+  r.routine.getPreferredTarget=()=>next;
+  r.c.partyRoleRunner.invalidateTarget('m');await flush();
+  await r.advance(deadline===1000?1002:1597);
+  assert.equal(sent.filter(t=>t.id==='next').length,deadline===1000?1:0);
+  if(deadline===1600)await r.advance(1598);
+  assert.equal(sent.find(t=>t.id==='next').at,deadline===1000?1002:1598);
+  pending[0]();await flush();
+  assert.equal(r.c.partyCombatState.attackTiming.accepted,0,'old success cannot settle the new flight');
+  r.c.partyRoleRunner.stop();
+ }
+});
+
 test('a revoked fight authorization cancels the remaining four attack attempts',async()=>{
  const r=runner();r.c.parent.next_skill={attack:1100};let allowed=true;
  r.routine.groupedAttackAllowed=()=>allowed;

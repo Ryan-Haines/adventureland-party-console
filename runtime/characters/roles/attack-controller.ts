@@ -147,11 +147,13 @@ export function createAttackController(ports: AttackPorts) {
       }
       const action=attempt.passing ? null : (sharedRoutine as any).queueEvidence?.(target,'pending');
       try {
+        sharedRoutine.noteCombatHandoff?.('attempt', target.id, {cooldownReadyAt:clock(), frequency:Number(character.frequency)});
         Promise.resolve(attack(target)).then(() => {
           if (flight !== attempt || attempt.epoch !== ports.epoch() || !ports.active() || attempt.success) return;
           attempt.success = true;
           cancelSlots();
           stats.accepted++;
+          sharedRoutine.noteCombatHandoff?.('accepted', target.id, {sentAt:attempt.sentAt});
           const client = parent as unknown as { pings?: number[] };
           const samples = (client.pings || []).filter(p => Number.isFinite(p) && p >= 0);
           if (samples.length && typeof reduce_cooldown === "function" &&
@@ -243,10 +245,15 @@ export function createAttackController(ports: AttackPorts) {
       if (flight && (!confirmed(flight) || !ports.allowed() || sharedRoutine.basicAttackReserved?.())) cancelSlots();
       if (ports.allowed() && !flight && reserveHealing()) return;
       if (!target || !ports.allowed()) { ports.state().skippedAttack = "no eligible target or combat blocked"; return; }
-      if (Date.now() < retryAt || remaining() > 2) return;
+      if (Date.now() < retryAt || remaining() > 2) {
+        ports.state().skippedAttack = remaining() > 2 ? 'cooldown' : 'attack retry backoff';
+        return;
+      }
       attackTarget(target);
     } catch (error) { cancelSlots(); flight = null; ports.report(error); }
     finally {
+      const id=ports.selected(), reason=ports.state().skippedAttack;
+      if(id && reason)sharedRoutine.noteCombatHandoff?.('blocked',id,{reason,cooldownReadyAt:clock()});
       schedule(flight ? Math.max(1, flight.expires - Date.now()) : Math.max(remaining() > 2 ? remaining() - 2 : 100, retryAt - Date.now()));
     }
   }

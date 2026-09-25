@@ -41,3 +41,11 @@ test('confirmed transfer moves reservation to recipient; failed equip and restar
  r.equipment({body:{character:'F',commandId:999,results:[{item,success:true}]}},res);
  assert.equal(saved.merchantDeliveries.F.length,0);
 });
+
+test('delivery receipt preserves active travel and durably queues equipment',()=>{
+ const f=fixture({state:{commands:{F:{id:42,type:'party-monster-travel',convoyId:'trip'}},
+   merchantDeliveries:{F:[{id:'delivery',slot:1,item,equipOnDelivery:true}]}},job:{reason:'manual visit'}});
+ const travel=f.state.commands.F,mark={...f.state.merchantDeliveries.F[0]};
+ createMerchantCompletionRoute(f.state,f.ports)({body:{jobId:'job',success:true,merchantDeliveriesDelivered:[mark]}},f.response);
+ assert.equal(f.state.commands.F,travel);assert.equal(f.state.merchantDeliveries.F[0].awaitingEquip,true);
+});

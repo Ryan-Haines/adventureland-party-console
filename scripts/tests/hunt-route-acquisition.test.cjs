@@ -5,7 +5,7 @@ const {createConvoyEngagementRoutes}=require('../../runtime/coordinator/http/con
 const safety=require('../hunt-safety.cjs');
 const {createHuntTravel}=require('../../runtime/coordinator/hunt/travel.ts');
 function fixture(){
- const original={map:'main',x:1000,y:1000}, encounter={map:'main',x:110,y:0,boundary:[80,-30,140,30]};
+ const original={map:'main',x:1000,y:1000,boundary:[900,900,1100,1100]}, encounter={map:'main',x:110,y:0,boundary:[80,-30,140,30]};
  const state={nextCommandId:10,leader:'A',partyFarmingMode:'default',farmingPolicy:'hunt',
   activeConvoy:{id:'c',epoch:2,phase:'travel',departAt:1000,purpose:'monster-hunt',huntTarget:'bee',combatHandoffAllowed:true,
    participants:['A','B'],completed:[],location:original,runtimes:{A:'r',B:'b'}},
@@ -38,24 +38,24 @@ function travelFixture() {
  const r=fixture(), starts=[];
  r.state.activeConvoy=null;r.state.monsterHunt.missions[0].destinationVersion=1;
  const ports={now:()=>2000,fresh:()=>true,ownsTravel:()=>false,destination:()=>r.original,
-  contains:()=>true,arrivalProtected:()=>false,partyFighting:()=>true,persist(){},
+  contains:require('../../dashboard/lib/farming-zones.ts').contains,arrivalProtected:()=>false,partyFighting:()=>true,persist(){},
   start(h,d,l,stage){starts.push(d);h.stage=stage;},advance(){throw Error('unexpected advance')}};
  r.tick=()=>createHuntTravel(r.state,ports).step(r.state.monsterHunt);r.starts=starts;return r;
 }
 test('missing convoy is not proof of arrival; nearby bees and active combat cannot release the route',()=>{
  const r=travelFixture();r.tick();assert.equal(r.starts.length,1);assert.equal(r.state.monsterHunt.stage,'mission-travel');
 });
-test('all members must reach the origin, with fresh living same-instance positions',()=>{
+test('all members must enter the spawn area, with fresh living same-instance positions',()=>{
  for(const invalid of ['outside','stale','dead','instance']) {
   const r=travelFixture();for(const s of Object.values(r.state.statuses))Object.assign(s,r.original);
   const b=r.state.statuses.B;
-  if(invalid==='outside')b.x-=100;if(invalid==='stale')b.seenAt=-2000;
+  if(invalid==='outside')b.x-=101;if(invalid==='stale')b.seenAt=-2000;
   if(invalid==='dead')b.hp=0;if(invalid==='instance')b.in='other';
   r.tick();assert.equal(r.state.monsterHunt.stage,'mission-travel',invalid);
   assert.equal(r.state.monsterHunt.originArrivedAt,undefined);
  }
 });
-test('only full origin arrival enables free farming, which may then spread beyond the arrival radius',()=>{
+test('whole-party spawn arrival enables free farming, which may then spread beyond the area',()=>{
  const r=travelFixture();for(const s of Object.values(r.state.statuses))Object.assign(s,r.original);
  r.tick();assert.equal(r.state.monsterHunt.stage,'farming');assert.equal(r.state.monsterHunt.originArrivedAt,2000);
  r.state.statuses.B.x-=200;r.tick();assert.equal(r.starts.length,0);

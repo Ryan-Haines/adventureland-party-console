@@ -77,6 +77,7 @@ export function createHuntConvoy(state: HuntTickState, ports: HuntConvoyPorts) {
     convoy.huntTarget = stage === "mission-travel" ? hunt.target || undefined : undefined;
     convoy.nonPreemptible = stage === "returning";
     convoy.returnRouting = stage === "returning";
+    if (convoy.returnRouting) convoy.continuousReturn = 1;
     convoy.nativeFallback = stage === 'returning' ? hunt.returnNativeFallback : undefined;
     convoy.returnTown = hunt.returnTown;
     convoy.disableTown = disabledTown(hunt);
@@ -92,6 +93,7 @@ export function createHuntConvoy(state: HuntTickState, ports: HuntConvoyPorts) {
       command.huntTarget = convoy.huntTarget;
       command.nonPreemptible = convoy.nonPreemptible;
       command.returnRouting = convoy.returnRouting;
+      command.continuousReturn = convoy.continuousReturn;
       command.nativeFallback = convoy.nativeFallback;
     }
   }
