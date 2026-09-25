@@ -342,11 +342,21 @@
       }
       if (!state.plot.length) return true;
       if (!canStart()) return false;
-      const step = state.plot[0], p = position(), reason = stepIssue(validation, p, step, state.use_town);
-      if (reason) throw Error(`${reason} between ${p.map} (${p.x}, ${p.y}) and ${step.map} (${step.x}, ${step.y})`);
+      const p = position();
+      consumeReachedWalks(p);
+      if (!state.plot.length) return true;
+      const step = state.plot[0];
       issued = { step, from: point(p), at: now(), progressAt: now(), position: p, finished: true };
       dispatch(issued, options);
       return false;
+    }
+    function consumeReachedWalks(p) {
+      while (state.plot.length) {
+        const next = state.plot[0], reason = stepIssue(validation, p, next, state.use_town);
+        if (reason) throw Error(`${reason} between ${p.map} (${p.x}, ${p.y}) and ${next.map} (${next.x}, ${next.y})`);
+        if (isTransition(next) || distance(p, next) > 1) break;
+        state.plot.shift();
+      }
     }
     function lootReady(step) {
       if (!isTransition(step) || lootCollected()) {
