@@ -154,7 +154,7 @@ export function createNpcSaleRoute(state: SaleState, ports: SalePorts) {
   }
   function validatePlayer(request: SaleRequest, live: SaleEntry, res: HttpResponse) {
     if (request.source !== "character") return true;
-    if (live.item?.b || playerSaleReserved(state, request.character!, request.slot)) {
+    if (live.item?.b || playerSaleReserved(state, request.character!, request.slot, live.item!)) {
       res.status(409).json({ error: "Remove the item's other work marks first" }); return false;
     }
     return true;

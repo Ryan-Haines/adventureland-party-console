@@ -56,7 +56,7 @@ test('Hunt still waits for a genuine event return even when already standing in 
  t.party.anniversary.eventCycle.returnCompletedAt=99999;t.r.monsterHuntTick();assert.equal(t.party.activeConvoy.id,'manual');
 });
 test('mission destination stays pinned as nearest spawn changes; combat outside radius cannot start regroup convoy',()=>{
- const t=fixture(),count=t.convoys.length;t.destination.y=-300;t.party.statuses.W.y=-1450;t.party.statuses.W.target={hp:100,mtype:'mole'};t.r.monsterHuntTick();
+ const t=fixture(),count=t.convoys.length;t.hunt.originArrivedAt=99900;t.destination.y=-300;t.party.statuses.W.y=-1450;t.party.statuses.W.target={hp:100,mtype:'mole'};t.r.monsterHuntTick();
  assert.equal(t.convoys.length,count);assert.equal(t.hunt.missions[0].destination.y,-1000);
  t.party.statuses.W.target=null;t.party.statuses.P.threats=[{hp:100}];t.r.monsterHuntTick();assert.equal(t.convoys.length,count);
 });
@@ -143,13 +143,13 @@ test('restart resumes a failed protected turn-in without releasing events or res
  assert.equal(t.convoys.length,before+1,'manual cancellation cannot revive a route');
 });
 
-test('leadership switches targets but waits for an active turn-in to finish',()=>{
+test('leadership switches targets and releases a turn-in owner who leaves the party',()=>{
  const t=fixture(); t.party.leader='P';t.party.followers.W=true;t.r.monsterHuntTick();
  assert.equal(t.hunt.owner,'P');assert.equal(t.hunt.target,'rat');
  t.party.activeConvoy=null;t.hunt.stage='farming';t.party.statuses.P.monsterHunt.count=0;collectFinalLoot(t);
- t.party.leader='M';t.party.followers.P=false;t.r.monsterHuntTick();assert.equal(t.hunt.turnIn.owner,'P');
- assert.ok(t.hunt.participants.includes('P'),'retain the old owner until the claim finishes');
- assert.equal(t.hunt.owner,'P');assert.equal(t.r.huntTurnInOwnsTravel(t.hunt),true);
+ t.party.leader='M';t.party.followers.P=false;t.r.monsterHuntTick();assert.equal(t.hunt.turnIn,undefined);
+ assert.ok(!t.hunt.participants.includes('P'));
+ assert.equal(t.hunt.owner,'M');assert.equal(t.hunt.target,'ghost');
 });
 
 for (const reason of ['kiss-timeout']) test('Hunt preserves anniversary return and resumes after '+reason,()=>{
@@ -213,8 +213,9 @@ test('resume preserves cycle and deaths without filling followers after leader r
  t.party.statuses.P.seenAt=0;
  t.r.beginMonsterHuntCycle('auto',t.farm,true);
  assert.equal(t.party.monsterHunt.cycleId,cycle);assert.equal(t.hunt.deathCount,1);
- assert.equal(t.hunt.stage,'checking-quests');assert.match(t.hunt.message,/P/);
- t.advance(100);t.r.monsterHuntTick();assert.equal(t.hunt.stage,'mission-travel');
+ assert.equal(t.hunt.stage,'mission-travel');assert.ok(!t.hunt.participants.includes('P'));
+ t.advance(100);t.r.monsterHuntTick();assert.equal(t.hunt.stage,'mission-travel','spawn arrival waits for convoy stopping acknowledgements');
+ t.party.activeConvoy=null;t.r.monsterHuntTick();assert.equal(t.hunt.stage,'farming','released convoy permits farming without changing the cycle');
  assert.equal(t.hunt.pickupPending,false);assert.equal(t.hunt.owner,'W');
 });
 
@@ -311,11 +312,11 @@ test('backup waits for all three expiries then assigns the whole batch before se
  for(const name of ['P','M'])t.party.statuses[name].monsterHunt={id:'bee',count:50,remainingMs:1800000};
  t.advance(1);t.r.processHuntsAtDaisy(t.hunt);assert.equal(t.hunt.batchPickup,false);assert.equal(t.hunt.target,'bee');assert.equal(t.convoys.length,2);
 });
-test('one stale member blocks batch readiness; restart and event return preserve backup wait',()=>{
+test('offline members do not block batch readiness; restart and event return preserve the current batch',()=>{
  const t=backupFixture();for(const s of Object.values(t.party.statuses))s.monsterHunt=null;
- t.party.statuses.M.seenAt=0;t.r.monsterHuntTick();assert.equal(t.convoys.length,0);assert.match(t.hunt.message,/fresh status.*M/);
+ t.party.statuses.M.seenAt=0;t.r.monsterHuntTick();assert.equal(t.convoys.length,0);assert.deepEqual(t.hunt.participants,['W','P']);
  t.party.monsterHunt=JSON.parse(JSON.stringify(t.hunt));t.advance(1);
- t.party.eventReturn={};t.r.monsterHuntTick();assert.equal(t.convoys.length,0);assert.equal(t.party.monsterHunt.stage,'paused-event');
+ t.party.eventReturn={};t.r.monsterHuntTick();assert.equal(t.convoys.length,0);assert.equal(t.party.monsterHunt.stage,'batch-loot');
  t.party.eventReturn=null;t.r.monsterHuntTick();collectBatch(t);assert.equal(t.convoys.length,1);assert.equal(t.party.monsterHunt.batchPickup,true);
 });
 test('backup preserves explicit cancellation and resumes a newly unblacklisted quest',()=>{
@@ -388,16 +389,11 @@ function arrivalFixture() {
  assert.equal(accepted,true);assert.equal(t.hunt.stage,'farming');
  return {...t,follower};
 }
-test('accepted arrival survives delayed and out-of-order outside heartbeats without rebuilding',()=>{
- const t=arrivalFixture(),before=t.convoys.length;
- t.r.monsterHuntTick();t.advance(1000);t.r.monsterHuntTick();
- Object.assign(t.party.statuses.W,t.destination);t.advance(1000);t.r.monsterHuntTick();
- assert.ok(t.hunt.arrivalHandoff.confirmedAt);
- t.party.statuses.W.map='main';t.advance(1000);t.r.monsterHuntTick();
- assert.equal(t.convoys.length,before);assert.equal(t.party.commands.P,t.follower);
- Object.assign(t.party.statuses.W,t.destination);t.advance(8000);t.r.monsterHuntTick();
- assert.equal(t.convoys.length,before);assert.equal(t.hunt.stage,'farming');
+test('old early handoff receipt does not bypass full-party origin arrival',()=>{
+ const t=arrivalFixture(),before=t.convoys.length;t.r.monsterHuntTick();
+ assert.equal(t.convoys.length,before+1);assert.equal(t.hunt.stage,'mission-travel');
 });
+
 test('arrival grace expires and permits recovery from a genuine outside position',()=>{
  const t=arrivalFixture(),before=t.convoys.length;t.advance(10000);t.r.monsterHuntTick();
  assert.equal(t.convoys.length,before+1);assert.equal(t.hunt.stage,'mission-travel');

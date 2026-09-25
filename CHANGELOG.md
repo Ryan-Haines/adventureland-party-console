@@ -1,5 +1,9 @@
 # Changelog
 
+- Fixed coordinator startup on oversized saved-state journals: stream records and compact by size without constructing one giant string. Preserve existing state and writer locks.
+
+- Unified Hunt turn-in and anniversary staging returns: attack aggressors while planning and walking, cancel interrupted party Town casts together, resume Town after aggro clears, and retain bounded route retries. Removed independent anniversary casting and return combat/loot stops.
+
 ## Unreleased
 
 Changes queued for the next release. The release workflow determines its version
@@ -13,3 +17,92 @@ from the commits merged into `main`.
   travel. Persisted service receipts prevent completed transfers from being repeated.
 - Moving attacks respect class MP reserves and pending spending, while resource
   recovery continues during travel.
+- Hunt route failures now use bounded segment repair, native fallback and origin
+  relocation before trying another spawn. Recovery budgets survive replacement
+  convoys and restarts, with explicit causes when movement remains held.
+- Convoy phase changes no longer send duplicate cruise caps. Movement diagnostics
+  identify command takeovers and retain the original planner failure.
+
+- Delivered equipment pauses and resumes convoy travel without replacing its
+  ownership; combat during merchant recovery no longer deadlocks the regroup hold.
+
+- Hunt pickup travel recovers a missing completion acknowledgement after verified
+  party arrival, preventing an idle party at Daisy from remaining in sync travel.
+
+- Joinable events such as Franky use direct teleportation for entry and respawn
+  recovery, without waiting for a convoy. Arrival is verified before clearing
+  recovery, and failed event walks no longer leave characters unable to attack.
+- Event combat closes into boss range before kiting. Avoiding adds no longer
+  pulls characters away from the boss; blocked kiting tries safe approach and
+  escape directions instead of leaving characters stuck in corners.
+  ([#21](https://github.com/Ryan-Haines/adventureland-party-console/pull/21))
+
+- Hunt event exits resume the current quest instead of an obsolete farming
+  checkpoint. Dedicated event-map evacuation survives restarts, delayed clients,
+  and Hunt toggles; completed anniversary visits hand back to current Hunt policy.
+- Hunt communication holds retain matching runtime and command acknowledgements
+  through defensive combat. Recovery reconciles dead and released encounters,
+  checks loot, and regroups toward the original destination.
+- Rare travel interruptions share convoy ownership. Fairy targeting no longer
+  depends on a detached support controller, and unsuccessful pursuits retain
+  their progress/retry evidence across restarts instead of reopening on wandering.
+- Members separated by a map transition can join a travel encounter under its
+  existing owner. Hunt reconciles verified arrival before optional acquisition,
+  and reports the encounter or specific catch-up blocker instead of stale status.
+  ([#21](https://github.com/Ryan-Haines/adventureland-party-console/pull/21))
+
+- Invisible rogue recipients reveal themselves for merchant servicing, then resume
+  their normal invisibility behavior. ([#10](https://github.com/Ryan-Haines/adventureland-party-console/pull/10))
+
+- Enabled passive targets with �keep moving� off now interrupt outbound travel
+  for coordinated combat, including neutral Phoenix sightings and targets already
+  admitted as passing attacks. Explicit stop rules override Hunt travel exceptions.
+
+- Outbound Hunts share one attack target while moving. Additional aggro pauses the
+  party for coordinated defense and kiting, then resumes travel to the original
+  Hunt destination after the encounter and loot are resolved.
+- Hunt automatically restarts its cycle when a participant exhausts retreat routes,
+  preserving blacklists and logging the failed character, location, and reason.
+- ALClient routes now accept a reachable final waypoint within the requested arrival
+  tolerance when the exact endpoint is blocked, matching native routing behavior.
+  ([#16](https://github.com/Ryan-Haines/adventureland-party-console/issues/16))
+- Monster Hunt convoys pause safely during communication outages and resume after
+  stable party reports without consuming movement retries. Arrival acknowledgements
+  retry transient failures, and saved completion receipts tolerate lost responses
+  and coordinator restarts.
+- Warriors skip emergency Stomp when no compatible basher is equipped, preventing
+  repeated wrong-weapon errors while allowing their normal routine to continue.
+- Keep-moving combat shares encounter ownership before attacking, preventing
+  retaliation from repeatedly stopping convoys and releasing obsolete defensive holds.
+- Marked merchant deliveries now schedule their own visits by default. Merchant
+  settings can disable delivery-only trips while retaining deliveries for other
+  visits and explicit sends. ([#15](https://github.com/Ryan-Haines/adventureland-party-console/issues/15))
+- Removed unused dashboard notices; previously silent validation and action failures
+  now use contextual error feedback. ([#14](https://github.com/Ryan-Haines/adventureland-party-console/issues/14))
+
+- Entirely headless rosters can switch realms without a connected Steam character,
+  including switches that set a new home realm. Steam connectivity is still required
+  when a Steam-hosted character participates; existing readiness checks remain in
+  place. ([#13](https://github.com/Ryan-Haines/adventureland-party-console/issues/13))
+- Re-engaging CODE after a console logout recovers the Steam session instead of
+  replaying the previous logout or character navigation.
+- Monster Hunt lifecycle follows current party membership.
+- Convoys recover from departure and walking stalls without repeating retry loops.
+- Shared-route geometry mismatches get one bounded reload attempt while preserving
+  Hunt membership; stale farming and anniversary checkpoints can recover.
+- Monster Hunt preserves travel to its origin and recovers missed Daisy arrival
+  acknowledgements.
+- Merchant collection reservations and routine cancellation recover correctly.
+
+### Changed
+
+- Merchants can independently select supported events, fight with their equipped
+  weapon, and resume merchant work after returning. Ordinary merchant jobs,
+  gathering, and stand work yield while event participation owns the merchant.
+  ([#12](https://github.com/Ryan-Haines/adventureland-party-console/pull/12))
+
+- Reduced dashboard status traffic and isolated position updates from character
+  cards while preserving live controls and inventory updates. ([#17](https://github.com/Ryan-Haines/adventureland-party-console/issues/17))
+- Reworked the lucky slot mechanism.
+- Anniversary participation no longer automatically crafts Sixfold Cakes; complete
+  slice sets remain available through the normal exchange menu.

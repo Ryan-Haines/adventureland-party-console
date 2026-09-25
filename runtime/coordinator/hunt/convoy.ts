@@ -72,14 +72,20 @@ export function createHuntConvoy(state: HuntTickState, ports: HuntConvoyPorts) {
   function configure(hunt: HuntCycle, stage: string): void {
     const convoy = state.activeConvoy!;
     if (departingDaisy(hunt, stage)) convoy.townFirst = false;
-    convoy.combatHandoffAllowed = stage === "mission-travel" && !hunt.travelCause;
+    convoy.combatHandoffAllowed = false;
     convoy.cause = stage === "mission-travel" ? hunt.travelCause : undefined;
     convoy.huntTarget = stage === "mission-travel" ? hunt.target || undefined : undefined;
     convoy.nonPreemptible = stage === "returning";
     convoy.returnRouting = stage === "returning";
+    if (convoy.returnRouting) convoy.continuousReturn = 1;
+    convoy.nativeFallback = stage === 'returning' ? hunt.returnNativeFallback : undefined;
     convoy.returnTown = hunt.returnTown;
     convoy.disableTown = disabledTown(hunt);
     if (convoy.returnRouting) convoy.townFirst = false;
+    configureCommands(hunt);
+  }
+  function configureCommands(hunt: HuntCycle): void {
+    const convoy = state.activeConvoy!;
     for (const name of hunt.participants) {
       const command = state.commands[name];
       if (command?.convoyId !== convoy.id) continue;
@@ -87,6 +93,8 @@ export function createHuntConvoy(state: HuntTickState, ports: HuntConvoyPorts) {
       command.huntTarget = convoy.huntTarget;
       command.nonPreemptible = convoy.nonPreemptible;
       command.returnRouting = convoy.returnRouting;
+      command.continuousReturn = convoy.continuousReturn;
+      command.nativeFallback = convoy.nativeFallback;
     }
   }
 
@@ -105,6 +113,7 @@ export function createHuntConvoy(state: HuntTickState, ports: HuntConvoyPorts) {
     configure(hunt, stage);
     hunt.convoyId = state.activeConvoy && state.activeConvoy.id;
     hunt.stage = stage;
+    if (stage === "mission-travel") delete hunt.originArrivedAt;
     hunt.message = label;
     return true;
   }
@@ -119,8 +128,9 @@ export function createHuntConvoy(state: HuntTickState, ports: HuntConvoyPorts) {
     if (reason) { hunt.message = reason; return false; }
     if (state.activeConvoy || paused(hunt)) return false;
     const defense = classifyTravelDefense(state, hunt.participants, ports.now());
-    if (defense.state !== "clear") {
+    if (defense.state !== "clear" && !(stage === "mission-travel" && defense.state === "defending")) {
       hunt.stage = stage;
+      if (stage === "mission-travel") delete hunt.originArrivedAt;
       hunt.convoyId = null;
       hunt.message = defense.message;
       return false;

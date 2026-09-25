@@ -615,3 +615,31 @@ for (const meleeClass of ['paladin','rogue']) test(meleeClass+' reaches melee wh
   r.c.formationMove(r.monster);
   assert.equal(r.c.partyCombatPosition.warriorPhase,'melee-kiting');
 });
+
+test('return runner attacks and supports while planning or held without issuing combat movement',async()=>{
+ const r=setup(),{c,warrior,monster}=r;
+ const bundle=require('esbuild').buildSync({entryPoints:['runtime/characters/roles/runner.ts'],bundle:true,write:false,format:'iife',globalName:'RunnerTest',platform:'browser'}).outputFiles[0].text;
+ let now=10000,attacks=0,support=0,intervals=[],timers=[];
+ Object.assign(warrior,{x:0,y:0,frequency:2,slots:{},items:[],damage_type:'physical'});Object.assign(monster,{x:28,hp:100,target:'W'});
+ c.is_in_range=()=>true;c.can_attack=()=>true;c.attack=async()=>{attacks++;};c.game_log=()=>{};
+ c.setTimeout=(fn,ms)=>{const t={fn,at:now+ms};timers.push(t);return t;};c.clearTimeout=t=>{if(t)t.off=true;};
+ c.setInterval=(fn,ms)=>{const t={fn,ms};intervals.push(t);return t;};c.clearInterval=t=>{if(t)t.off=true;};
+ const forbidden=()=>{throw Error('combat attempted movement during return');};
+ c.sharedRoutine={returnCombatActive:()=>true,returnDefenseTarget:()=>monster,returnAttacker:t=>t.target==='W',
+  allowsTarget:()=>true,isOccupied:()=>false,getAbtestingMode:()=>null,getFarmingMode:()=> 'default',
+  setCombatTarget:()=>{},followLeaderIfFar:forbidden,resetCombatMovement:forbidden,formationMove:forbidden,
+  groupedMovement:forbidden,kiteIfNeeded:forbidden,approachCombatTarget:forbidden,pollRareHunting:forbidden,
+  groupedAttackAllowed:()=>true,noteAttack:()=>{},regenerateHpOrMp:async()=>{},basicAttackReserved:()=>false,
+  smartLoot:async()=>{},returnMovementTick:()=>{}};
+ vm.runInContext(bundle,c);c.RunnerTest.installRoleRunner({chooseTarget:()=>{throw Error('ordinary target acquisition during return');},combat:true,usePotion:async()=>false,beforeTarget:async()=>{support++;return false;}});c.partyRoleRunner.start();
+ try {
+  for(let n=0;n<30;n++){
+   now+=100;r.now(now);
+   for(const t of intervals.filter(t=>!t.off && [100,250].includes(t.ms)))t.fn();
+   for(const t of timers.filter(t=>!t.off&&t.at<=now)){t.off=true;t.fn();}
+   for(let k=0;k<12;k++)await Promise.resolve();
+  }
+  assert.ok(attacks>=2,'attacks must run while the planner or hold owns movement');assert.ok(support>0);
+  assert.equal(r.moves.length,0);assert.equal(c.partyCombatState.error,null);
+ } finally {c.sharedRoutine.resetCombatMovement=()=>{};c.partyRoleRunner.stop();}
+});

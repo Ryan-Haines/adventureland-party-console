@@ -7,9 +7,10 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
   >();
   const snapshot = (name: string) => {
     const full = response(name, "combat") as {
-      convoySignal?: { id: string; epoch: number; phase: string; farmingEngagement?: unknown } | null;
+      convoySignal?: { id: string; epoch: number; phase: string; farmingEngagement?: unknown; validUntil?: number } | null;
       groupedCombat?: unknown;
       passingEncounters?: unknown;
+      passingControl?: unknown;
       combatRecovery?: unknown;
       travelCombat?: unknown;
       rareControl?: unknown;
@@ -18,22 +19,15 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
     };
     const control = {
       passingEncounters:full.passingEncounters,
+      passingControl:full.passingControl,
       rareControl: full.rareControl,
       convoySignal: full.convoySignal || null,
       combatRecovery: full.combatRecovery,
       travelCombat: full.travelCombat,
       combatResetAt: full.combatResetByCharacter?.[name] || 0,
-      ...(full.convoySignal
-        ? {
-            convoySignal: {
-              id: full.convoySignal.id,
-              epoch: full.convoySignal.epoch,
-              phase: full.convoySignal.phase,
-              farmingEngagement: full.convoySignal.farmingEngagement || null,
-            },
-          }
-        : {}),
+
     };
+    const revisionControl = {...control, convoySignal: control.convoySignal && {...control.convoySignal, validUntil: undefined}};
     const group = full?.groupedCombat as {
       queueRevision?: string;
       selection?: string;
@@ -45,7 +39,7 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
       target?: { x: number; y: number; state?: string };
     } | null;
     if (!group)
-      return { ...control, serverNow: full.serverNow, groupedCombat: null, combatRevision: JSON.stringify(["null", control]) };
+      return { ...control, serverNow: full.serverNow, groupedCombat: null, combatRevision: JSON.stringify(["null", revisionControl]) };
     const target = group.target;
     const position = target ? [target.state, target.x, target.y] : null;
     return {
@@ -60,7 +54,7 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
         group.formationRecovery,
         position,
         group.observers,
-        control,
+        revisionControl,
       ]),
     };
   };

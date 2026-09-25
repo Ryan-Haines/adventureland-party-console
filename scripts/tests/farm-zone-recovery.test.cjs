@@ -100,6 +100,13 @@ test('repeated convoy ownership failures retry without declaring the zone unreac
  }
  assert.equal(t.party.farmAreaState.lastFailure.transient,true);
 });
+test('exhausted geometry repair holds farming without retrying or blacklisting its zone',()=>{
+ const t=controlFixture(),convoy={phase:'failed',location:t.areas[0],failureCode:'geometry-mismatch',failure:'Geometry recovery failed after one reload'};
+ t.party.activeConvoy=convoy;t.advance();t.c.farmAreaTick();
+ assert.equal(t.party.activeConvoy,convoy);assert.equal(t.party.farmAreaState.paused,true);
+ assert.equal(t.party.farmAreaState.pending,null);assert.equal(t.party.farmAreaState.failures[t.areas[0].id],undefined);
+ t.advance(70000);t.c.farmAreaTick();assert.equal(t.starts.length,0);
+});
 test('obsolete recovery pause is cleared once, preserving future deliberate holds',()=>{
  const t=controlFixture();t.party.farmAreaState={paused:true,failures:{old:2}};t.c.farmAreaTick();
  assert.equal(t.party.farmAreaState.paused,false);assert.equal(t.party.farmAreaState.recoveryVersion,2);

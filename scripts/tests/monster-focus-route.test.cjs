@@ -38,7 +38,7 @@ function setup() {
     },
     state: { leader: 'Leader', followers: {} }, char: { name: 'Leader' },
     canRouteToMonster, FOLLOWER_ROUTE_MESSAGE,
-    setNotice(message) { throw Error(message); },
+    setActionError(message) { throw Error(message); },
     setFarmAreaRequest(request) { routes.push(request); },
     MonsterRouteButton: 'RouteButton',
   };

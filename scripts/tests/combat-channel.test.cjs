@@ -1,6 +1,15 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createCombatChannel}=require('../../runtime/coordinator/status/combat-channel.ts');
 const {preserveNewerCombat}=require('../../runtime/coordinator/status/combat-ingestion.ts');
+
+test('fast report returns receipt timing without changing the combat revision',()=>{
+ const {createCombatIngestion}=require('../../runtime/coordinator/status/combat-ingestion.ts');
+ let now=100,result;const statuses={W:{name:'W'}};
+ const ingestion=createCombatIngestion(statuses,{now:()=>now,groupedCombat:()=>now+=7,response:()=>({groupedCombat:null})});
+ ingestion.handle('W',{combatOnly:true,travelSample:{sequence:3}},{json:value=>result=value});
+ assert.deepEqual(result.combatReportReceipt,{receivedAt:100,evaluatedAt:107,sequence:3});
+ assert.equal(typeof result.combatRevision,'string');
+});
 test('delayed full reports cannot overwrite a newer runtime-bound rare observation',()=>{
  const previous={name:'W',combatSelection:{runtimeId:'r'},rareObservation:{runtimeId:'r',at:200,sightings:['p']}};
  const old={name:'W',combatSelection:{runtimeId:'r'},rareObservation:{runtimeId:'r',at:100,sightings:[]}};

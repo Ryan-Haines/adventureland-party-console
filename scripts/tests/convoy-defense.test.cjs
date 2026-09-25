@@ -49,7 +49,7 @@ test('Hunt mode does not authorize a new destination while fighting, and convoy 
 test('late merchant recovery cannot delete a replacement convoy and command transitions identify their caller',()=>{
  const {createMerchantRecovery}=require('../../runtime/coordinator/merchant/recovery.ts');
  const party={commands:{W:{id:2,type:'party-monster-travel',convoyId:'return'}},combatLogs:{}};
- const ownership=require('../command-ownership.cjs')(party),state={current:{id:'old',reason:'restock'},queue:[]};
+ const ownership=require('../command-ownership.cjs')(party),state={current:{id:'old',target:'W',reason:'restock'},queue:[]};
  const recovery=createMerchantRecovery(state,{recoverSale(){},restockSatisfied:()=>true,
   clearCommand:(name,id)=>ownership.clear(name,c=>c.jobId===id),log(){},persist(){},dispatch(){}});
  recovery.observe('W',[]);assert.equal(party.commands.W.id,2);

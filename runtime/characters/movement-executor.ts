@@ -1,10 +1,11 @@
+import { movementError } from './movement-error.ts';
 import { isTransition, distance, point, type Point, type Step } from '../navigation/contracts.ts';
 import { stepIssue, type ValidationPorts } from '../navigation/validation.ts';
 import type { MovementHost, MovementOptions, MoveState } from './movement-host.ts';
 function transitionLabel(step: Step): string {
   return step.method === 'leave' ? 'leave transition' : step.town ? 'town warp' : 'map transition';
 }
-interface Issued { step: Step; from: Point; at: number; progressAt: number; position: Point; error?: string; townUnavailable?: boolean; acknowledged?: boolean; finished?: boolean; aligned?: boolean }
+interface Issued { step: Step; from: Point; at: number; progressAt: number; position: Point; error?: Error | string; townUnavailable?: boolean; acknowledged?: boolean; finished?: boolean; aligned?: boolean; reissued?: boolean; sendVersion?: number }
 export function createMovementExecutor(host: MovementHost, state: MoveState, validation: ValidationPorts, now: () => number, townReady = () => true, lootCollected = () => true) {
   let issued: Issued | undefined, index = 0, barrierPending = false, barrierReady = false, lastBarrier = 0, waitingBarrier = false;
   let sampledAt = now(), sampledPhase = 'idle';
@@ -28,7 +29,7 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     barrierPending = true; lastBarrier = now();
     const captured = issued;
     options.barrier(step, index, completed).then(ready => { if (issued === captured) barrierReady = ready; }, error => {
-      if (issued === captured && issued) issued.error = String(error);
+      if (issued === captured && issued) issued.error = movementError(error);
     }).finally(() => { if (issued === captured) barrierPending = false; });
     return false;
   }
@@ -59,7 +60,7 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
   function observe(current: Issued, options: MovementOptions) {
     if (current.error) {
       notifyTownRejection(current,options);
-      throw Error(isTransition(current.step) ? transitionLabel(current.step) + ': ' + current.error : current.error);
+      throw current.error instanceof Error ? current.error : Error(isTransition(current.step) ? transitionLabel(current.step) + ': ' + current.error : String(current.error));
     }
     if (complete(current, options)) return;
     const p = position();
@@ -71,7 +72,20 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
       notifyTown(current,options,'interrupted');
       throw Error(`Failed ${transitionLabel(current.step)}`);
     }
-    if (!transition && now() - current.progressAt > 5000) throw Error('Stalled walking movement (5 seconds without progress)');
+    observeWalk(current, p);
+  }
+  function observeWalk(current: Issued, p: Point): void {
+    if (isTransition(current.step)) return;
+    if (now() - current.progressAt > 5000) throw Error('Stalled walking movement (5 seconds without progress)');
+    retryStoppedWalk(current, p);
+  }
+  function retryStoppedWalk(current: Issued, p: Point): void {
+    if (current.reissued || now() - current.progressAt < 250 || !canStart()) return;
+    if (stepIssue(validation, p, current.step, state.use_town)) return;
+    current.reissued = true;
+    // Reissue only this owned segment. A command is not observed progress and
+    // cannot extend the five-second deadline. Ignore its superseded deferred.
+    sendObserved(current);
   }
   function arrivedTransition(current: Issued, p: Point): boolean {
     return isTransition(current.step) && !!current.acknowledged && distance(p,current.step)<=1;
@@ -90,18 +104,23 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     return host.move(step.x, step.y);
   }
   function dispatch(current: Issued, options: MovementOptions) {
-      if (current.error) throw Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : current.error);
-      if (!lootReady(current.step)) return;
+      if (current.error) throw current.error instanceof Error ? current.error : Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : String(current.error));
+      if (!options.skipLootWait && !lootReady(current.step)) return;
       if(!readyTown(current,options))return;
       if ((isTransition(current.step)) && !barrier(options, current.step, false)) return;
       current.finished = false; current.at = now(); current.progressAt = now();
       const captured = current;
       notifyTown(current,options,'casting');
+      sendObserved(captured);
+  }
+  function sendObserved(captured: Issued): void {
+      const version = captured.sendVersion = (captured.sendVersion || 0) + 1;
       try { void Promise.resolve(send(captured)).then(result => {
+        if (issued !== captured || captured.sendVersion !== version) return;
         if (result && typeof result === 'object' && 'failed' in result && result.failed) throw result;
-        if (issued === captured) captured.acknowledged = true;
-      }).catch(error => { if (issued === captured) rejected(captured,error); }); }
-      catch (error) { rejected(captured,error); }
+        captured.acknowledged = true;
+      }).catch(error => { if (issued === captured && captured.sendVersion === version) rejected(captured,error); }); }
+      catch (error) { if (issued === captured) rejected(captured,error); }
   }
   function rejected(current:Issued,error:unknown):void {
     const reason=error && typeof error==='object' && 'reason' in error ? String(error.reason) : String(error);
@@ -154,7 +173,8 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     return isTransition(issued.step)?transitionLabel(issued.step):'walking';
   }
   function canStart(): boolean { return !host.character.moving && host.can_walk(host.character) && !host.is_transporting(host.character); }
-  return { tick, reset, cancel, pause, progress: () => ({step:index,phase:phase(),destination:issued?.step,durations:{...durations}}),
+  return { tick, reset, cancel, pause, progress: () => ({step:index,phase:phase(),destination:issued?.step,durations:{...durations},
+    position:position(),noProgressMs:issued ? now()-issued.progressAt : 0,reissued:!!issued?.reissued}),
     transition: () => issued && isTransition(issued.step) ? (issued.step.town ? 'town' : 'transport') : null,
     remaining: () => state.plot.map(p => ({ ...p })) };
 }

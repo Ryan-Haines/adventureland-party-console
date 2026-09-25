@@ -7,6 +7,7 @@ import {
   returnedFromDeferred,
 } from "./return-guards.ts";
 import { ownsWorkflowWalk } from "./walk-ownership.ts";
+import { applyReturnPolicy } from "./return-policy.ts";
 import { repairReturnWalk } from "./repair-return-walk.ts";
 import type {
   AnniversaryReturnCycle,
@@ -101,7 +102,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
   ): string[] {
     const names = Array.isArray(captured) && captured.length ? captured : ports.activeNames();
     return names.filter(
-      (name) => name !== ports.merchant() && (forced || ports.enabled(name, event)),
+      (name) => forced || ports.enabled(name, event),
     );
   }
 
@@ -111,6 +112,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
     waypoints: Waypoints | undefined,
   ): EventRecovery {
     return {
+      phase: "evacuating",
       cycleId: "event-return-" + ports.now() + "-" + ports.nextCommandId(),
       event,
       participants: participants.slice(),
@@ -154,15 +156,20 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
     if (state.current === recovery) state.current = null;
   }
 
+  function returnWaiting(recovery: EventRecovery): boolean {
+    return !!ports.huntHandoffPending?.() || !!recovery.pending.length || !!recovery.returnDispatchedAt;
+  }
   function finishIfReady(): boolean {
     const recovery = state.current;
+    if (recovery) applyReturnPolicy(recovery, ports);
     if (finishHuntReturn()) return true;
-    if (!recovery || recovery.pending.length || recovery.returnDispatchedAt) return false;
+    if (!recovery || returnWaiting(recovery)) return false;
     if (anniversaryHolding(ports.anniversary(), ports) || ports.convoy() || ports.townBusy())
       return false;
     const names = recovery.participants.filter(
       (name) => !state.deferred[name] && ports.activeNames().includes(name),
     );
+    recovery.phase = "checkpoint";
     if (!ports.dispatch(recovery, names)) return false;
     if (recovery.returnCompletedAt) complete(recovery);
     ports.persist();
@@ -231,6 +238,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
       begin(cycle.combatEvent, { waypoints: cycle.waypoints, participants: cycle.participants });
     const recovery = state.current;
     if (!recovery) return;
+    applyReturnPolicy(recovery, ports);
     if (finishHuntReturn()) return;
     repairReturnWalk(recovery, ports);
     if (!recovery.participants.length) { complete(recovery); ports.persist(); return; }
@@ -244,6 +252,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
   }
 
   function advanceReturn(recovery: EventRecovery): void {
+    if (ports.huntHandoffPending?.()) return;
     if (recovery.returnDispatchedAt) {
       if (ports.reconcile(recovery)) complete(recovery);
       ports.persist();

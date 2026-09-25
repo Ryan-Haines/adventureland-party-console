@@ -40,6 +40,54 @@ test('resuming Hunt retains the newly selected backup area and focus', () => {
   assert.equal(hunt.returnFocus, JSON.stringify(['bat']));
 });
 
+test('new Hunt excludes saved offline followers and characters outside the current party', () => {
+  const {state, service} = fixture();
+  Object.assign(state.followers, {Offline: true, Stale: true, OtherRealm: true, Merchant: true});
+  state.statuses.Stale = {...state.statuses.P, seenAt: 80000};
+  state.statuses.OtherRealm = {...state.statuses.P, server: 'III'};
+  state.statuses.Merchant = {...state.statuses.P, ctype: 'merchant'};
+  state.statuses.Independent = {...state.statuses.P};
+  service.lifecycle.begin();
+  assert.deepEqual(state.monsterHunt.participants, ['W', 'P']);
+  assert.equal(state.monsterHunt.stage, 'mission-travel');
+});
+
+for (const stage of ['checking-quests', 'mission-travel', 'returning', 'backup-farming']) {
+  test(`persisted ${stage} Hunt releases an offline quest owner and resumes current party quests`, () => {
+    const {state, service} = fixture();
+    service.lifecycle.begin();
+    const hunt = state.monsterHunt;
+    state.followers.Offline = true;
+    hunt.participants.push('Offline');
+    hunt.owner = 'Offline';
+    hunt.missions = [{target: 'bee', owners: ['Offline']}];
+    hunt.target = 'bee';
+    hunt.stage = stage;
+    if (stage === 'returning') hunt.turnIn = {owner: 'Offline', phase: 'returning'};
+    if (stage === 'backup-farming') hunt.backup = {startedAt: 90000, members: {}};
+    state.commands.Offline = {type: 'monster-hunt-interact', purpose: 'monster-hunt', cycleId: hunt.cycleId};
+    service.tick.tick();
+    assert.deepEqual(hunt.participants, ['W', 'P']);
+    assert.equal(hunt.owner, 'W');
+    assert.equal(hunt.turnIn, undefined);
+    assert.equal(state.commands.Offline, undefined);
+    assert.equal(hunt.target, 'rat');
+    assert.equal(hunt.stage, 'mission-travel');
+  });
+}
+
+test('checking quests keeps fresh dead members and waits when the leader is stale', () => {
+  const {state, service} = fixture();
+  state.statuses.P.rip = true;
+  service.lifecycle.begin();
+  assert.deepEqual(state.monsterHunt.participants, ['W', 'P']);
+  assert.match(state.monsterHunt.message, /Waiting for fresh Hunt status from P/);
+  state.statuses.W.seenAt = 1;
+  state.monsterHunt.participants.push('Offline');
+  service.quests.prepare(state.monsterHunt);
+  assert.deepEqual(state.monsterHunt.participants, ['W', 'P', 'Offline']);
+});
+
 test('backup repairs a persisted area that does not contain the selected monster and departs', () => {
   const {state, service, calls, farm} = fixture();
   service.lifecycle.begin('auto', {map:'main',x:0,y:0,monsterIds:['goo']});
@@ -83,10 +131,10 @@ test('Hunt composition begins through quest selection and configures the departi
   assert.equal(state.monsterHunt.stage, 'mission-travel');
   assert.equal(state.monsterHunt.convoyId, 'travel');
   assert.equal(state.activeConvoy.townFirst, false);
-  assert.equal(state.activeConvoy.combatHandoffAllowed, true);
+  assert.equal(state.activeConvoy.combatHandoffAllowed, false);
   assert.equal(state.activeConvoy.huntTarget, 'rat');
   assert.equal(state.commands.W.id, 41); assert.equal(state.commands.P.id, 42);
-  assert.equal(state.commands.P.combatHandoffAllowed, true);
+  assert.equal(state.commands.P.combatHandoffAllowed, false);
   assert.equal(state.commands.P.huntTarget, 'rat');
   assert.deepEqual(calls.filter(Array.isArray), [
     ['authorize', ['W', 'P'], farm, true], ['start', farm, 'Monster Hunt: rat', ['W', 'P'], 'monster-hunt',undefined],
@@ -99,12 +147,12 @@ test('idle Hunt composition accepts startup without a selected leader', () => {
   assert.equal(state.monsterHunt, null); assert.equal(state.leader, null); assert.deepEqual(calls, []);
 });
 
-test('Hunt composition waits for defense, then resumes the same mission through its quest service', () => {
+test('Hunt composition starts its route despite nearby attackers and retains the mission', () => {
   const {state, service, calls, conditions} = fixture();
   state.statuses.P.groupedCombat.currentAttackers=[{id:'bee',mtype:'bee',map:'main',target:'P',x:0,y:0}]; service.lifecycle.begin();
   const hunt = state.monsterHunt, mission = hunt.missions[0];
-  assert.match(hunt.message, /Defending P/); assert.equal(state.activeConvoy, null);
-  assert.equal(calls.some(Array.isArray), false);
+  assert.equal(hunt.stage, 'mission-travel'); assert.ok(state.activeConvoy);
+  assert.equal(state.activeConvoy.combatHandoffAllowed, false);
   state.statuses.P.groupedCombat.currentAttackers=[]; service.quests.prepare(hunt);
   assert.equal(state.monsterHunt, hunt); assert.equal(hunt.missions[0], mission);
   assert.equal(hunt.stage, 'mission-travel'); assert.equal(hunt.convoyId, 'travel');
@@ -122,4 +170,13 @@ test('Hunt composition claims at Daisy without travel and uses the current comma
   assert.equal(state.commands.P.action, 'claim'); assert.equal(state.commands.P.id, 92);
   assert.equal(state.commands.P.cycleId, state.monsterHunt.cycleId);
   assert.equal(calls.some(Array.isArray), false);
+});
+
+test('resumed mission travel clears the previous rare interruption message',()=>{
+ const r=fixture();r.service.lifecycle.begin();
+ const h=r.state.monsterHunt;
+ Object.assign(h,{stage:'mission-travel',target:'rat',convoyId:'travel',message:'Travel encounter: pursuing Fairy 225',owner:'W',policyVersion:3});
+ r.state.activeConvoy={id:'travel',phase:'travel',purpose:'monster-hunt',huntTarget:'rat'};
+ r.service.tick.tick();
+ assert.equal(h.message,'Monster Hunt: rat');
 });

@@ -117,3 +117,18 @@ test('scatter publishes every fresh visible party target as red and drops stale 
  const markers=Array.from(c.queueMarkers());assert.deepEqual(markers.map(t=>t.id),['A','B']);
  assert.ok(markers.every((t,i)=>markerStyle(t,i).css==='#ef4444'));
 });
+
+
+test('reconciled queue markers omit dead and absent targets; a hold displays only local defense',()=>{
+ const {namedFunction}=require('./helpers/named-function.cjs');const source=fs.readFileSync('characters/shared.js','utf8');
+ const target=id=>({id,map:'main',in:'main',server:'USII',hp:100,visible:true});
+ const entities={active:target('active'),next:target('next'),dead:{...target('dead'),dead:true}};
+ const c=vm.createContext({Math,Number,Object,character:{map:'main',in:'main'},navigationIntent:{},root:{},
+  groupedFarming:()=>true,groupedCombat:{queue:['active','dead','absent','next'].map(target)},get_entity:id=>entities[id],reunionRealm:()=> 'USII',
+  convoyTraveling:null,convoyHoldDefenseTarget:()=>entities.active,groupedEntityReport:e=>e});
+ vm.runInContext(namedFunction(source,'queueMarkers'),c);
+ assert.deepEqual(Array.from(c.queueMarkers(),t=>[t.id,t.role]),[['active','current'],['next','next']]);
+ c.convoyTraveling={phase:'held',holdRequested:true};
+ assert.deepEqual(Array.from(c.queueMarkers(),t=>t.id),['active']);
+ c.convoyHoldDefenseTarget=()=>null;assert.equal(c.queueMarkers().length,0);
+});

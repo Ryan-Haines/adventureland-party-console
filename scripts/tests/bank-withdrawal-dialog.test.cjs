@@ -31,6 +31,24 @@ test('withdrawal confirmation cancels without a second request, confirms origina
  assert.equal(requests[2].item.name,'vitring');assert.equal(requests[2].markAll,false);
  assert.ok(buttons(view.confirmation).every(button=>button.props.disabled));
  await act(async()=>{finish({ok:true});});
- assert.equal(view.confirmation.props.open,false);assert.match(notices.at(-1),/removed/);
+ assert.equal(view.confirmation.props.open,false);assert.deepEqual(notices,[]);
+ await act(async()=>tree.unmount());
+});
+
+test('withdrawal errors have one owner and confirmed retries retain their selection',async()=>{
+ const errors=[],requests=[];let view,fail=true;
+ const post=async(_path,body)=>{requests.push(body);if(!body.removeAutoBankMark)throw new PartyActionError();if(fail)throw Error('Merchant unavailable');};
+ function Harness(){view=useBankWithdrawal(post,message=>errors.push(message));return null;}
+ let tree;await act(async()=>{tree=create(React.createElement(Harness));});
+ await act(async()=>view.withdraw(null,'items0',{slot:1,item:{name:'ring'}}));
+ assert.deepEqual(errors,['No merchant is configured']);errors.length=0;
+ await act(async()=>view.withdraw('M','items0',{slot:1,item:{name:'ring'}}));
+ await act(async()=>buttons(view.confirmation)[1].props.onClick());
+ assert.equal(view.confirmation.props.open,true);assert.deepEqual(errors,[]);
+ function alerts(element){return !React.isValidElement(element)?[]:[...(element.props.role==='alert'?[element.props.children]:[]),...React.Children.toArray(element.props.children).flatMap(alerts)];}
+ assert.deepEqual(alerts(view.confirmation),['Merchant unavailable']);
+ fail=false;await act(async()=>buttons(view.confirmation)[1].props.onClick());
+ assert.equal(view.confirmation.props.open,false);assert.deepEqual(alerts(view.confirmation),[]);
+ assert.deepEqual(requests[1],requests[2]);assert.deepEqual(errors,[]);
  await act(async()=>tree.unmount());
 });

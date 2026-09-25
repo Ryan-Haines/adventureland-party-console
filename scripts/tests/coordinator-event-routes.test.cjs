@@ -13,6 +13,16 @@ function fixture(){
  function send(route,body){const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;return this;}};routes[route]({body},res);return res;}
  return {state,calls,intents,enabled,send};
 }
+test('exit acknowledgement must match both command and replacement runtime',()=>{
+ const t=fixture();t.state.eventReturn={cycleId:'return',event:'abtesting',pending:['L']};
+ t.state.commands.L={id:10,type:'event-return-town',cycleId:'return'};
+ t.state.statuses.L.combatSelection={runtimeId:'new'};
+ const body={character:'L',cycleId:'return',navigationRevision:1,map:'main',x:0,y:0,commandId:10,runtimeId:'new'};
+ assert.equal(t.send('returnComplete',{...body,commandId:9}).body.stale,true);
+ assert.equal(t.send('returnComplete',{...body,runtimeId:'old'}).body.stale,true);
+ assert.deepEqual(t.state.eventReturn.pending,['L']);
+ assert.equal(t.send('returnComplete',body).body.routedLeader,true);
+});
 test('event absence must be sustained and absent from every opted-in live report',()=>{
  const t=fixture(),body={character:'L',event:'franky',missingFor:9999};assert.equal(t.send('ended',body).code,409);
  body.missingFor=10000;t.state.statuses.L.serverLiveEvents=[{name:'franky'}];assert.equal(t.send('ended',body).code,409);assert.equal(t.calls.length,0);
@@ -29,11 +39,11 @@ test('Town event acknowledgement updates coordinates before destination selectio
  assert.equal(t.send('returnComplete',{...body,mapEvent:'franky'}).code,409);
  const r=t.send('returnComplete',body);assert.equal(r.body.routedLeader,true);assert.deepEqual(t.calls,[['position','main'],['finish']]);
 });
-test('cancelled deferred returns discard their checkpoint but preserve unrelated newer commands',()=>{
+test('late deferred acknowledgement preserves unrelated newer commands and leaves cleanup to reconciliation',()=>{
  const t=fixture();t.state.statuses.F={seenAt:100,map:'main',x:0,y:0};t.intents.F.cancelled=true;t.state.deferredEventReturns.F={cycleId:'old',navigationRevision:1,checkpoint:{map:'cave',x:1,y:1}};
  t.state.commands.F={id:9,cycleId:'new',type:'character-travel'};
- assert.equal(t.send('returnComplete',{character:'F',cycleId:'old',navigationRevision:1}).body.deferred,true);
- assert.equal(t.state.deferredEventReturns.F,undefined);assert.equal(t.state.commands.F.id,9);
+ assert.equal(t.send('returnComplete',{character:'F',cycleId:'old',navigationRevision:1}).body.stale,true);
+ assert.ok(t.state.deferredEventReturns.F);assert.equal(t.state.commands.F.id,9);
 });
 test('authorized deferred returns resume the captured waypoint and reject stale revisions',()=>{
  const t=fixture();t.state.statuses.F={seenAt:100,map:'main',x:0,y:0};t.state.deferredEventReturns.F={cycleId:'old',navigationRevision:1,event:'franky',checkpoint:{map:'cave',x:1,y:1}};

@@ -1,8 +1,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createSharedWalks,completeSharedWalkMember}=require('../../runtime/coordinator/navigation/shared-walk.ts');
 const {createPartyConvoys}=require('../../runtime/coordinator/navigation/convoy.ts');
-function fixture(){
- let now=1000,starts=0;const names=['L','F','P'];
+function fixture(merchant=false){
+ let now=1000,starts=0;const names=merchant?['L','F','P','M']:['L','F','P'];
  const state={leader:'L',merchantCharacter:'M',followers:{F:true,P:true},navigationEpoch:0,nextCommandId:1,activeConvoy:null,commands:{},
  navigationIntents:Object.fromEntries(names.map(n=>[n,{revision:1}])),
  statuses:Object.fromEntries(names.map(n=>[n,{map:'main',x:0,y:0,seenAt:now,server:'USII',speed:57,convoyProtocol:4}]))};
@@ -14,6 +14,11 @@ function fixture(){
  destination:{map:'winterland',x:100,y:100},...extra});
  return {state,walks,convoys,body,starts:()=>starts,advance:ms=>{now+=ms;for(const s of Object.values(state.statuses))s.seenAt=now;}};
 }
+test('runtime reload cancellation preserves the geometry repair convoy',()=>{
+ const t=fixture();for(const n of ['L','F','P'])t.walks.submit(t.body(n));
+ const c=t.state.activeConvoy;c.geometryRepair={phase:'waiting'};
+ assert.equal(t.walks.submit(t.body('F',{cancel:true})).phase,'waiting');assert.equal(t.state.activeConvoy,c);
+});
 test('three event callers coalesce into one convoy and repeated requests retain its identity',()=>{
  const t=fixture();for(const n of ['F','L'])t.walks.submit(t.body(n));assert.equal(t.starts(),0);
  t.walks.submit(t.body('P'));const id=t.state.activeConvoy.id;
@@ -32,7 +37,7 @@ test('anniversary staging leaves farming combat behind on its shared route to Ma
  assert.deepEqual(c.location,{map:'main',x:0,y:0});
  assert.equal(require('../convoy-defense.cjs').step(t.state,1000,()=>{throw Error('must not defend');}),false);
  assert.notEqual(c.phase,'defending');
- for(const n of c.participants)assert.equal(t.state.commands[n].navigationExempt,true);
+ for(const n of c.participants)assert.equal(t.state.commands[n].navigationExempt,false);
  t.walks.submit(t.body('F',{activity:'anniversary-staging',key:'round',destination:{map:'main',x:0,y:0},cancel:true}));
  assert.equal(t.state.activeConvoy,null);
 });
@@ -286,4 +291,17 @@ for(const protectedKind of ['new-revision','protected','other-purpose'])test('ev
  t.service.reconcile();
  assert.equal(t.state.activeConvoy,t.old);
  assert.equal(t.state.eventReturn,recovery);
+});
+
+
+test('independent merchant owns event walking and return convoys but cannot request farm walking',()=>{
+ const f=fixture(true);
+ const result=f.walks.submit(f.body('M'));
+ assert.equal(result.error,undefined);assert.deepEqual(f.state.activeConvoy.participants,['M']);
+ assert.equal(f.state.activeConvoy.leader,'M');
+ f.convoys.cancel();
+ assert.match(f.walks.submit(f.body('M',{token:'farm',activity:'farm-recovery'})).error,/unauthorized/);
+ const returned=f.walks.submit(f.body('M',{token:'return',activity:'event-return',key:'cycle'}));
+ assert.equal(returned.error,undefined);assert.deepEqual(f.state.activeConvoy.participants,['M']);
+ assert.equal(f.state.activeConvoy.purpose,'shared-walk-return');
 });

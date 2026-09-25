@@ -11,22 +11,23 @@ import type { PartyConsoleModel } from './use-party-console';
 import type { Item } from './item';
 import type { PartyState } from './party-state';
 
-export function usePanelModel(
-  model: PartyConsoleModel,
+export function usePanelModel<T extends Pick<PartyConsoleModel, 'state' | 'chars'> & Partial<Pick<PartyConsoleModel, 'standItem'>>>(
+  model: T,
   needs: {
     inventory?: boolean;
     vitals?: boolean;
+    position?: boolean;
     diagnostics?: boolean;
     bank?: boolean;
     market?: boolean;
     logs?: boolean;
   },
-): PartyConsoleModel {
+) {
   const client = useQueryClient(),
     visible = useVisible();
   const names = Object.keys(model.state.characters);
-  const kinds = (['inventory', 'vitals', 'diagnostics'] as const).filter(
-    (kind) => needs[kind],
+  const kinds = (['inventory', 'vitals', 'position', 'diagnostics'] as const).filter(
+    (kind) => kind === 'position' ? needs.position ?? needs.vitals : needs[kind],
   );
   const subscriptions: ((typeof kinds)[number] | 'presence')[] = needs.inventory
     ? [...kinds, 'presence']

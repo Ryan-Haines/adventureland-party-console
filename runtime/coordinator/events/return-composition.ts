@@ -1,3 +1,4 @@
+import { createHuntResume } from "./hunt-resume.ts";
 import { createEventReturns } from "./returns.ts";
 import { createHuntReturnHandoff, type HuntReturnState } from "./hunt-return.ts";
 import type {
@@ -57,6 +58,9 @@ export function createCoordinatorEventReturns(
   const huntReturn = createHuntReturnHandoff(state, {
     now: ports.now, capture: ports.navigation.capture, cancelConvoy: ports.cancelConvoy,
   });
+  const huntResume = createHuntResume(state, {
+    now: ports.now, capture: ports.navigation.capture, cancelConvoy: ports.cancelConvoy,
+  });
   return createEventReturns(
     {
       get current() {
@@ -96,7 +100,8 @@ export function createCoordinatorEventReturns(
           checkpoint: recovery.checkpoint,
         };
       },
-      handoffToHunt: huntReturn.complete,
+      huntHandoffPending: huntResume.pending,
+      handoffToHunt: recovery => huntReturn.complete(recovery) || huntResume.complete(recovery),
       checkpoint: () => ports.checkpoint(),
       capture: (names) => ports.navigation.capture(names),
       clearABStrategy: () => {

@@ -9,9 +9,13 @@ import {releaseUnseenPrimary} from './unseen-primary.ts';
 export interface Candidate extends Target {priority?: number; passiveRare?: boolean}
 export interface Evidence extends Target {server: string|undefined; at: number; startedAt?: number; action: string; state: 'pending' | 'engaged' | 'rejected'}
 export function reconcileQueue(old: Group | undefined | null, members: Member[], leader: string, now: number, key: string, resetAt=0, pullsPaused=false, huntTarget: string | null = null) {
+  const huntDefense=members.some(m=>m.status && now-m.status.seenAt<=3000 && m.status.groupedCombat?.huntDefense);
   const defending = new Set(members.flatMap(m => m.status && now-m.status.seenAt<=3000 && m.status.groupedCombat?.returnDefense
     ? (m.status.groupedCombat.currentAttackers || []).map(t => passingIdentity({...t,server:m.status!.server})) : []));
-  const passingEncounters=collectPassing(members,old?.passingEncounters||[],now).filter(t=>!defending.has(passingIdentity(t)));
+  // A farming Hunt takes ownership of its target, including attacks made en route.
+  // Drop cached peer reports too: their normal expiry can otherwise block the pull.
+  const passingEncounters=collectPassing(members,old?.passingEncounters||[],now)
+    .filter(t=>!huntDefense && t.mtype!==huntTarget && !defending.has(passingIdentity(t)));
   const passing=new Set(passingEncounters.map(passingIdentity));
   const failedRecovery=old?.formationRecovery;
   if(old && failedRecovery?.phase==='failed' && members.every(m=>m.status && now-m.status.seenAt<=3000 && m.status.groupedCombat?.formationRecovery?.ack===failedRecovery.id))
@@ -82,7 +86,9 @@ export function reconcileQueue(old: Group | undefined | null, members: Member[],
   }
   const visibleThreat=(f:Fight)=>reports.some(m=>m.status!.server===f.server&&(m.status!.groupedCombat?.threats||[]).some(t=>t.id===f.id&&t.map===f.map&&t.in===f.in));
   const missingHead=old?.target && recovery.searches[targetIdentity(old.target as Fight)];
-  const defense=missingHead&&fights.find(visibleThreat);
+  const attacking=new Set(reports.filter(m=>now-(m.status!.groupedCombat?.currentAttackersAt||0)<=3000)
+    .flatMap(m=>(m.status!.groupedCombat?.currentAttackers||[]).map(t=>passingIdentity({...t,server:m.status!.server}))));
+  const defense=huntDefense ? fights.find(f=>attacking.has(passingIdentity(f))) : missingHead&&fights.find(visibleThreat);
   const priorFight=defense||fights.find(f=>old?.target && identity(f)===identity(old.target as Fight));
   const ordered=[...(priorFight?[priorFight]:[]),...fights.filter(f=>f!==priorFight).sort((a,b)=>a.startedAt-b.startedAt||a.id.localeCompare(b.id))];
   const planned=old?.target && !ordered.length ? candidates.find(c=>identity(c)===identity(old.target as Fight)) : null;

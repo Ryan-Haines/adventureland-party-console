@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {installPartyMovement}=require('../../../runtime/characters/movement.ts');
 const source = fs.readFileSync(path.join(__dirname, '../../../characters/shared.js'), 'utf8');
-const convoyCode = source.slice(source.indexOf('  function sharedConvoyPoint('), source.indexOf('  var kiteState ='));
+const convoyCode = source.slice(source.indexOf('  function convoySignalExpired('), source.indexOf('  var kiteState ='));
 const cache = path.join(__dirname, '../../../.caracal/game_files');
 const versions = fs.readdirSync(cache).filter(x => /^\d+$/.test(x)).sort((a, b) => Number(a) - Number(b));
 const runner = fs.readFileSync(path.join(cache, versions.at(-1), 'runner_functions.js'), 'utf8');
@@ -68,6 +68,7 @@ function runtime(options = {}) {
     }return context.request(url,request);},
     diagnostic:(e,m)=>calls.push(['diagnostic',e,m]),
   });
+  vm.runInContext(require('./named-function.cjs').namedFunction(source,'convoyDiagnosticClock'), context);
   vm.runInContext(convoyCode.replace(/\bsmart\./g,'movement.state.'), context);
   return { context, calls, timers, setNow: x => { now = x; }, get searches() { return searchStarts; },
     tick: () => {ticks++;timers[0]();}, moves: () => calls.filter(x => x[0] === 'move'),

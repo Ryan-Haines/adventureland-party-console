@@ -7,8 +7,32 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../../characters/shared.js'), 'utf8');
 const handler = source.slice(source.indexOf('    if (command.type === "event-return-town")'),
   source.indexOf('    if (command.type === "character-travel"'));
-const routeHelper = source.slice(source.indexOf('  async function exitGoobrawlForRecovery('),
+const routeHelper = source.slice(source.indexOf('  async function exitEventMapForRecovery('),
   source.indexOf('  function anniversaryWithTimeout('));
+
+test('dedicated instance exit rejects unchanged-map success and persists a bounded retry budget', async () => {
+  const t=runtime('ship0',{leave:async()=>{},transport:async()=>{}});
+  for(let i=0;i<3;i++) await assert.rejects(t.run('pirateship'),/no observed map change/);
+  const attempts=t.calls.filter(c=>c[0]==='leave').length;
+  t.r.root.__partyEventReturnTravel=null; // replacement runtime retains coordinator progress
+  await assert.rejects(t.run('pirateship'),/after three attempts/);
+  assert.equal(t.calls.filter(c=>c[0]==='leave').length,attempts);
+  assert.equal(t.calls.filter(c=>c[0]==='request' && c[1]==='/event-return-complete').length,0);
+});
+
+test('superseded instance exit cannot transport or acknowledge the old command', async()=>{
+  const t=runtime('abtesting',{leave:async r=>{r.navigationIntent.revision++;}});
+  await t.run('abtesting');
+  assert.equal(t.calls.filter(c=>c[0]==='transport').length,0);
+  assert.equal(t.calls.filter(c=>c[0]==='request' && c[1]==='/event-return-complete').length,0);
+  assert.equal(t.r.eventReturnPending,false);
+});
+
+test('unknown dedicated event maps report a blocker without speculative transport',async()=>{
+  const t=runtime('future');t.r.G.maps.future={event:'future'};
+  await assert.rejects(t.run('future'),/No verified event exit mechanism/);
+  assert.equal(t.calls.filter(c=>['leave','transport'].includes(c[0])).length,0);
+});
 
 function runtime(map, options = {}) {
   let now = 0, pendingRoute = null;
@@ -19,7 +43,7 @@ function runtime(map, options = {}) {
     character, root: {}, Date: { now: () => now },
     navigationIntent: { revision: 0, cancelled: false },
     G: { npcs: { transporter: { places: { main: 9 } } }, maps: { main: {}, level2w: {}, level2: {}, winterland: {},
-      goobrawl: { event: 'goobrawl', npcs: [{ id: 'transporter', position: [-347,-483] }] }, abtesting: { event: 'abtesting' } } },
+      goobrawl: { event: 'goobrawl', npcs: [{ id: 'transporter', position: [-347,-483] }] }, abtesting: { event: 'abtesting' }, ship0: { event: 'pirateship' } } },
     eventRecoveryRetryAt: 0,
     afterCombat: async action => { calls.push(['afterCombat']); await action(); },
     sleep: async ms => { now += ms; options.onSleep?.(r, ms, calls); },
@@ -96,7 +120,7 @@ for (const [event, map] of [['franky', 'level2w'], ['icegolem', 'winterland']]) 
   });
 }
 
-for (const event of ['abtesting']) {
+for (const event of ['abtesting', 'ship0']) {
   test(`${event} leaves its instance without unnecessary Town or walking`, async () => {
     const t = runtime(event);
     await t.run(event);
@@ -214,4 +238,25 @@ test('death during the route stops movement and respawns before continuing', asy
   await t.run();
   assert.equal(t.calls.filter(c => c[0] === 'respawn').length, 1);
   assert.equal(t.pending(), null);
+});
+
+
+test('Goobrawl NPC approach does not depend on a collision-blocked convoy rally',async()=>{
+ const t=runtime('goobrawl');t.r.sharedPartyWalk=()=>assert.fail('exit must not request shared rendezvous');
+ await t.run('goobrawl');assert.equal(t.r.character.map,'main');
+});
+
+
+test('unreachable Goobrawl position uses Town once then walks to the transporter',async()=>{
+ const t=runtime('goobrawl');let walks=0,towns=0;
+ t.r.smart_move=async destination=>{if(++walks===1)throw Error('Native planner found no route');Object.assign(t.r.character,destination);};
+ t.r.town=async()=>{towns++;t.r.character.x=0;t.r.character.y=0;};
+ await t.run('goobrawl');assert.equal(t.r.character.map,'main');assert.equal(walks,2);assert.equal(towns,1);
+ assert.equal(t.r.root.__partyEventReturnTravel.goobrawlTownAttempted,true);
+});
+
+test('Goobrawl cancellation never casts recovery Town',async()=>{
+ const t=runtime('goobrawl');let towns=0;t.r.town=async()=>{towns++;};
+ t.r.smart_move=async()=>{throw Error('Movement cancelled');};
+ await assert.rejects(t.run('goobrawl'),/Movement cancelled/);assert.equal(towns,0);
 });

@@ -1,5 +1,6 @@
 import type { ConvoyHistoryState } from "./convoy-history.ts";
 import type { PartyConvoy } from "./convoy.ts";
+import type { CompletionReceipts } from './completion-receipts.ts';
 
 export interface RoutePoint { map: string; x: number; y: number; in?: string | number }
 export interface RouteWaypoint extends RoutePoint { town?: boolean; transport?: boolean; s?: number; method?: string; key?: string }
@@ -13,21 +14,28 @@ export interface SharedRoute {
   source: "search" | "remainder" | "itinerary";
 }
 export interface SharedReport {
+  failureDetails?: unknown;
+  communication?: { operation: string; kind: string; since: number } | null;
   transitionMap?: string;
   townAttempt?: import('./return-town.ts').ReturnTownAttempt;
   id: string; epoch: number; commandId: number; navigationRevision: number;
   runtimeId: string; phase: string; routeReady?: boolean; routeVersion?: number;
-  failure?: string; waypointCount?: number;
+  failure?: string; waypointCount?: number; departedAt?: number;
 }
 export interface SharedStatus extends RoutePoint {
   passiveTravel?: { pending: boolean; hold: string | null };
+  activeEvent?: string | null; joinedEvent?: string | null;
+  movementGeometry?: { version: number; fingerprint: string };
   huntReturnProtocol?: number;
+  returnTownReady?: boolean;
   movement?: {progress?:unknown};
+  groupedCombat?: { currentAttackersAt?: number; currentAttackers?: import("./travel-defense.ts").CurrentAttacker[] };
   seenAt: number; server?: string; region?: string; rip?: boolean; hp?: number;
   combatSelection?: { runtimeId?: string };
-  moving?: boolean; speed?: number; convoyProtocol?: number; convoyNavigation?: SharedReport;
+  moving?: boolean; transporting?: boolean; speed?: number; convoyProtocol?: number; convoyNavigation?: SharedReport;
 }
 export interface SharedCommand {
+  routeRecovery?: import('../hunt/route-recovery.ts').RouteRecoveryCommand;
   returnWalking?: boolean;
   continuousReturn?: number;
   disableTown?: boolean;
@@ -41,10 +49,17 @@ export interface SharedCommand {
   slowestSpeed: number; purpose: string | null; navigationExempt: boolean;
   combatHandoffAllowed: boolean; returnLeg: boolean; nonPreemptible: boolean;
   reason?: string;
+  failureCode?: string;
+  failureContext?: unknown;
   force?: boolean;
   deferRendezvous?: boolean;
 }
 export interface SharedConvoy extends PartyConvoy {
+  huntArrival?: {cycleId: string; missionIndex: number; missionRevision: number; epoch: number};
+  observationPhase?: string; defenseReason?: string; loot?: unknown;
+  failureDetails?: unknown;
+  geometryRepair?: { id: string; startedAt: number; expected: {version: number; fingerprint: string}; runtimes: Record<string,string>; phase: 'waiting' | 'complete' | 'failed' };
+  arrivalReadySince?: number;
   preparationBlocker?: string;
   continuousReturn?: number;
   disableTown?: boolean;
@@ -58,6 +73,9 @@ export interface SharedConvoy extends PartyConvoy {
   sharedStartedAt?: number; sharedProgressAt?: number; sharedDistances?: Record<string, number>;
   sharedReadySince?: number; routePublishedAt?: number; sharedStoppedAt?: number;
   sharedWaitingAt?: number;
+  readinessStartedAt?: number;
+  walkingFailures?: number;
+  returnFirstFailure?: string;
   missingRoutes?: Record<string, { since: number; observedAt: number }>;
   travelProgress?: Record<string, RoutePoint & { commandId: number; since: number; observedAt: number }>;
   walkingActivity?: string;
@@ -69,7 +87,10 @@ export interface SharedConvoy extends PartyConvoy {
   runtimes?: Record<string, string> | null; origins?: Record<string, RoutePoint>;
   observedPhase?: string | null; assembledSince?: number;
 }
-export interface SharedState extends ConvoyHistoryState {
+export interface SharedState extends ConvoyHistoryState, CompletionReceipts {
+  eventReturn?: unknown; escape?: {stage: string} | null;
+  monsterSearchRadiusByCharacter?: Record<string, number>;
+  monsterHunt?: import('../hunt/contracts.ts').HuntCycle | null;
   activeConvoy: SharedConvoy | null;
   commands: Record<string, SharedCommand | undefined>;
   statuses: Record<string, SharedStatus | undefined>;

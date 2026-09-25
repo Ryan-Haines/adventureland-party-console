@@ -1,4 +1,5 @@
 import type { MerchantWork } from "./work.ts";
+import type { LuckySlotHistory } from '../../lucky-slot-tracking.ts';
 import type { recoverMerchantQueue } from "./restart-queue.ts";
 import type { createMerchantItemCommands } from "../inventory/merchant-item-commands.ts";
 
@@ -6,6 +7,7 @@ import { initialBankSort, type BankSortState } from "./bank-sort.ts";
 
 interface SavedMerchant extends Partial<BankSortState> {
   luckyUpgradeSlots?: Record<string, number | null>;
+  luckySlotTracking?: LuckySlotHistory;
   merchantCharacter?: string | null;
   merchantForceStand?: unknown;
   merchantWeapon?: Parameters<typeof createMerchantItemCommands>[0]["merchantWeapon"];
@@ -21,10 +23,15 @@ export function initialMerchantRuntime<DefaultMerchant extends string | null = s
 ) {
   const merchantCharacter: string | DefaultMerchant =
     saved.merchantCharacter || (defaultMerchant === undefined ? "GoldMajesty" : defaultMerchant);
+  const luckyUpgradeSlots = {...saved.luckyUpgradeSlots};
+  // Older builds persisted this hardcoded default without verification.
+  // Retire it so that installing discovery actually enables the slot search.
+  if (luckyUpgradeSlots.GoldMajesty === 7) delete luckyUpgradeSlots.GoldMajesty;
   return {
     ...initialBankSort(saved),
     merchantCharacter,
-    luckyUpgradeSlots: saved.luckyUpgradeSlots || { GoldMajesty: 7 },
+    luckyUpgradeSlots,
+    luckySlotTracking: saved.luckySlotTracking || {},
     merchantForceStand: saved.merchantForceStand === true,
     merchantWeapon: saved.merchantWeapon || null,
     merchantQueue: Array.isArray(saved.merchantQueue) ? saved.merchantQueue : [],

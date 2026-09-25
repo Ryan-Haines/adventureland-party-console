@@ -386,7 +386,7 @@
         max_mp: character.max_mp, x: character.real_x === undefined ? character.x : character.real_x,
         y: character.real_y === undefined ? character.y : character.real_y, map: character.map,
         in: character.in, xp: character.xp || 0, max_xp: character.max_xp || 0, gold: character.gold,
-        rip: !!character.rip, target: character.target || null, conditions: activeConditions(),
+        rip: !!character.rip, target: character.target || null, standOpen: !!character.stand, conditions: activeConditions(),
         inventorySize: Number(character.isize) || character.items.length },
         items: Object.assign({}, character.items), slots: Object.assign({}, character.slots) };
     },
@@ -403,7 +403,7 @@
   var monsterPriorities = {};
   var passiveHunting = {rules:{},useFieldGenerators:true};
   var passingEncounters = parent.__partyPassingEncounters || (parent.__partyPassingEncounters = {});
-  var passiveGeneratorAttempt = null, peerPassingEncounters = [];
+  var passiveGeneratorAttempt = null, peerPassingEncounters = parent.__partyPeerPassingEncounters || [];
   var passiveRareHunts = { tinyp: false, phoenix: false, goldenbat: false, cutebee: false, hen: false, rooster: false };
   var rareControlState = null, rareControlAt = 0, rarePath = null;
   var rareLoot = null, rareLootPending = false;
@@ -486,7 +486,6 @@
   var merchantCashTarget = 0;
   var anniversaryPlan = null;
   var anniversaryPendingHandoff = root.__anniversaryPendingHandoff || null;
-  var anniversaryLastCraftAttempt = Number(root.__anniversaryLastCraftAttempt) || 0;
   var anniversaryStaging = false;
   var anniversaryReturnReported = null;
   var anniversaryStagingReported = null;
@@ -598,6 +597,22 @@
   var upgradePreviewActive = false;
   var lastUpgradePreview = null;
   var luckyUpgradeService = null;
+  var luckySlotTracker = null;
+  function luckySlotTracking() {
+    if (!luckySlotTracker) {
+      var key = "party-lucky-slot-tracking:" + character.owner + ":" + character.name;
+      luckySlotTracker = root.createPartyLuckySlotTracker({
+        read: function () { return JSON.parse(root.localStorage.getItem(key) || "null"); },
+        write: function (value) { root.localStorage.setItem(key, JSON.stringify(value)); },
+        now: Date.now,
+        isUpgradeScroll: function (name) { return !!(G.items[name] && G.items[name].type === "uscroll"); }
+      });
+    }
+    return luckySlotTracker;
+  }
+  function luckySlotRollListener(event) {
+    if (runtimeCurrent()) luckySlotTracking().observe(event);
+  }
   var merchantIdleActive = false;
   var merchantIdlePending = null;
   var followingLeader = false;
@@ -764,6 +779,7 @@
 
   if (parent.socket && typeof parent.socket.on === "function") {
     parent.socket.on("game_response", donationRateListener);
+    parent.socket.on("q_data", luckySlotRollListener);
     parent.socket.on("tracker", trackerCatalogListener);
     parent.socket.on("player", trackerInventoryListener);
     parent.socket.on("players", playerDirectoryListener);
@@ -838,7 +854,7 @@
       var aggressor=get_entity(data.hid || data.actor);
       if(aggressor && aggressor.type==='monster' && (!isPassingEncounter(aggressor) || returnDepartureDefense()) && !joinedEvent && !eventTargetTypes.length) {
         root.__partyDefensiveHit={target:groupedEntityReport(aggressor),at:Date.now()};
-        interruptConvoyForDefense();
+        interruptConvoyForDefense(null, null, aggressor);
         if(root.partyQueueClient)root.partyQueueClient.evidence(aggressor,'engaged');
       }
     }
@@ -2154,6 +2170,27 @@
     return pause ? { id: pause.id, ready: !consoleMaintenanceBusy() && !character.moving &&
       !(typeof smart !== 'undefined' && smart.moving) } : null;
   }
+  function convoyNavigationReport() {
+    return convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
+        communication: convoyTraveling.communication || null,
+        navigationRevision: convoyTraveling.navigationRevision,
+        returnPlan: convoyTraveling.returnPlan || null,
+        commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
+        encounterCatchup: convoyTraveling.encounterCatchup ? {target:convoyTraveling.encounterCatchup.target,from:convoyTraveling.encounterCatchup.from,map:convoyTraveling.encounterCatchup.map,failed:convoyTraveling.encounterCatchup.failed||null} : null,
+        defenseTargets: convoyTraveling.defenseTargets || [],
+        defenseInterruption: convoyTraveling.defenseInterruption || null,
+        townAttempt: convoyTraveling.townAttempt || null,
+        transitionMap: convoyTraveling.transitionMap || null,
+        runtimeId: convoyRuntimeId, routeReady: !!convoyTraveling.routeReady,
+        routeVersion: convoyTraveling.routeVersion || 0, routeSource: convoyTraveling.routeSource || null,
+        destinationSearches: convoyTraveling.destinationSearches || 0, rendezvousSearches: convoyTraveling.rendezvousSearches || 0,
+        routeImports: convoyTraveling.routeImports || 0, reusedRoutes: convoyTraveling.reusedRoutes || 0,
+        preparationMs: convoyTraveling.preparationMs || null, waypointCount: convoyTraveling.waypointCount || 0,
+        failure: convoyTraveling.failure || null,
+        failureDetails: convoyTraveling.failure ? {movement: convoyMovementEvidence(convoyTraveling), failureContext:convoyTraveling.failureContext || null} : undefined, replanStarts: convoyTraveling.replanStarts || 0,
+        routeStarts: convoyTraveling.routeStarts, departedAt: convoyTraveling.departedAt || null } : null;
+  }
+
   function snapshot() {
     calculateFarmingMode();
     if (character.rip && !combatWasDead) {
@@ -2198,6 +2235,8 @@
       clientVersion: parent.__partyClientVersion || Number(G.version),
       clientInstance: parent.__partyClientInstance || null,
       upgradePreviewSession: upgradePreviewSession,
+      luckySlotTracking: luckySlotTracking().report(),
+      merchantEventReserved: merchantEventWorkReserved(),
       upgradeInventoryBusy: !!(root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending() ||
         root.localStorage.getItem("party-lucky-upgrade:" + character.name)),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
@@ -2213,26 +2252,16 @@
       combatSelection: { id: combatSelection.id, revision: combatSelection.revision,
         map: combatSelection.map, runtimeId: convoyRuntimeId, target: groupedNomination() },
       queueTiming: root.__partyQueueTiming || null,
-      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
+      groupedCombat: { approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null, lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()), reportedAt: Date.now()+coordinatorClockOffset, protocol: 4, observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:typeof returnCombatActive==='function' && returnCombatActive() || returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(), epoch: root.__partyCombatResetAt||0, claims: queueClaims(), candidates: queueCandidates(), retentions:queueRetentions(), evidence: root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [], queueAck: groupedCombat && groupedCombat.queueRevision, deaths: fightDeaths, packets: fightPackets, threats: groupedThreatReports(), sightings: groupedSightings(), ack: groupedAcknowledgement(), anchorVisible: groupedAnchorVisible(), state: groupedCombat },
       convoyProtocol: 4,
       merchantServiceProtocol: 1,
       merchantServiceError: root.__partyRecipientServiceError || null,
       passiveTravel: passiveTravelProgress(),
+      movementGeometry: movement.identity,
       huntReturnProtocol: 2,
+      returnTownReady: can_use("use_town") && !is_on_cooldown("use_town"),
       movement: movement.report() || movement.last(),
-      convoyNavigation: convoyTraveling ? { id: convoyTraveling.id, epoch: convoyTraveling.epoch,
-        navigationRevision: convoyTraveling.navigationRevision,
-        returnPlan: convoyTraveling.returnPlan || null,
-        commandId: convoyTraveling.commandId, phase: convoyTraveling.phase,
-        townAttempt: convoyTraveling.townAttempt || null,
-        transitionMap: convoyTraveling.transitionMap || null,
-        runtimeId: convoyRuntimeId, routeReady: !!convoyTraveling.routeReady,
-        routeVersion: convoyTraveling.routeVersion || 0, routeSource: convoyTraveling.routeSource || null,
-        destinationSearches: convoyTraveling.destinationSearches || 0, rendezvousSearches: convoyTraveling.rendezvousSearches || 0,
-        routeImports: convoyTraveling.routeImports || 0, reusedRoutes: convoyTraveling.reusedRoutes || 0,
-        preparationMs: convoyTraveling.preparationMs || null, waypointCount: convoyTraveling.waypointCount || 0,
-        failure: convoyTraveling.failure || null, replanStarts: convoyTraveling.replanStarts || 0,
-        routeStarts: convoyTraveling.routeStarts, departedAt: convoyTraveling.departedAt || null } : null,
+      convoyNavigation: convoyNavigationReport(),
       activeCombatTarget: activeCombatTarget(),
       combatTrace: root.__partyCombatTrace || [],
       recovery: root.partyCombatState && root.partyCombatState.recovery || null,
@@ -2382,6 +2411,7 @@
         inRange: combatTarget && !combatTarget.dead ? !!is_in_range(combatTarget) : false,
         canAttack: combatTarget && !combatTarget.dead ? !!can_attack(combatTarget) : false,
         runner: root.partyCombatState || null,
+        handoffs: root.__partyHandoffTrace || [],
         positioning: root.partyCombatPosition || null,
         performance: root.partyCombatPerformance || null,
       },
@@ -2461,8 +2491,49 @@
     } finally { root.__partyStatusDiagnosticsSending = false; }
   }
 
+  function sampleTravelReport(body) {
+    var group = body.groupedCombat;
+    body.travelSample = {runtimeId: convoyRuntimeId, sequence: (root.__partyTravelSampleSequence = (root.__partyTravelSampleSequence || 0) + 1),
+      connected: !!(parent.socket && parent.socket.connected), transport:root.__partyTravelTransport || null};
+    Object.assign(body, {map:character.map, in:character.in, x:character.x, y:character.y,
+      moving:!!character.moving, transporting:!!parent.transporting, speed:character.speed,
+      hp:character.hp, max_hp:character.max_hp, rip:!!character.rip,
+      convoyProtocol:4, convoyNavigation:convoyNavigationReport(), movementGeometry:movement.identity,
+      movement:movement.report() || movement.last()});
+    group.currentAttackers = currentTravelAttackers();
+    group.currentAttackersAt = travelObservationAt();
+  }
+  function acceptTravelResponse(state, started, fast) {
+    var received = convoyDiagnosticClock(), wall = Date.now(), timing = state.transportTiming;
+    var sentAt = timing && Number(timing.sentAt) || Number(state.serverNow);
+    if (!Number.isFinite(sentAt)) return;
+    var elapsed = Math.max(0, received - started.mono);
+    var processing = timing ? Math.max(0, sentAt - Number(timing.receivedAt)) : 0;
+    var network = Math.max(0, elapsed - processing);
+    var history = root.__partyTravelTransport || (root.__partyTravelTransport = {});
+    history[fast ? 'fast' : 'full'] = {at:wall, durationMs:elapsed, processingMs:processing, networkMs:network, eventLoopMaxMs:timing && timing.eventLoopMaxMs,statusStages:timing && timing.statusStages};
+    if (timing && (!history.clock || wall-history.clock.at>60000 || network<history.clock.networkMs)) {
+      coordinatorClockOffset = (Number(timing.receivedAt) + sentAt - started.wall - wall) / 2;
+      history.clock = {at:wall, networkMs:network, offset:coordinatorClockOffset};
+    }
+    var signal = state.convoySignal;
+    if (!signal || !Number.isFinite(Number(signal.validUntil))) return;
+    if (sentAt < (root.__partyTravelSignalAt || 0)) return;
+    if (fast && (!convoyTraveling || signal.id!==convoyTraveling.id || signal.epoch!==convoyTraveling.epoch ||
+        signal.commandId!==convoyTraveling.commandId || signal.runtimeId!==convoyRuntimeId ||
+        signal.routeVersion!==(convoyTraveling.routeVersion || 0) ||
+        signal.navigationRevision !== undefined && signal.navigationRevision!==convoyTraveling.navigationRevision)) return;
+    root.__partyTravelSignalAt = sentAt;
+    // Charge all unaccounted transport time against the lease; delayed replies
+    // never gain another three seconds merely because they arrived late.
+    convoySignal = Object.assign({}, signal, {localDeadline:received + Math.max(0, Number(signal.validUntil)-sentAt-network)});
+  }
+
   function request(path, options) {
     options = options || {};
+    if (path === '/status' && options.body && options.body.groupedCombat) sampleTravelReport(options.body);
+    var transportStart = {wall: Date.now(), mono: convoyDiagnosticClock()};
+    var convoyStatusStarted = path === '/status' ? convoyDiagnosticClock() : null;
     return new Promise(function (resolve, reject) {
       $.ajax({
         url: api + path,
@@ -2475,10 +2546,19 @@
         // half-open localhost request must not leave its one-at-a-time status
         // loop permanently busy after CaracAL or Windows restarts overnight.
         timeout: Number(options.timeout) > 0 ? Number(options.timeout) : 10000,
-      }).done(resolve).fail(function (xhr, status, error) {
+      }).done(function(value) {
+        if (path === '/movement-barrier') {
+          var t=value.transportTiming || {}, duration=convoyDiagnosticClock()-transportStart.mono;
+          (root.__partyTravelTransport || (root.__partyTravelTransport={})).barrier={at:Date.now(),durationMs:duration,processingMs:Math.max(0,(t.sentAt||0)-(t.receivedAt||0)),eventLoopMaxMs:t.eventLoopMaxMs,outcome:'success'};
+        }
+        if (path === '/status') acceptTravelResponse(value, transportStart, !!(options.body && (options.body.combatOnly || options.body.combatWait)));
+        rememberConvoyStatusRequest(convoyStatusStarted, 'success');
+        resolve(value);
+      }).fail(function (xhr, status, error) {
         var httpStatus = Number(xhr && xhr.status) || 0;
         var kind = status === "timeout" ? "timeout" : status === "parsererror" ? "invalid-json" :
           status === "abort" ? "aborted" : httpStatus ? "http" : "network";
+        rememberConvoyStatusRequest(convoyStatusStarted, kind);
         var serverError = xhr && xhr.responseJSON && (xhr.responseJSON.error || xhr.responseJSON.message);
         var reason = typeof serverError === "string" ? serverError :
           error && error !== "error" ? (error.message || error) : status;
@@ -2488,12 +2568,36 @@
           (httpStatus ? "HTTP " + httpStatus + " · " : "") + kind +
           (context.reason && context.reason !== kind && context.reason !== "error" ? ": " + context.reason : ""));
         failure.partyRequest = context;
+        if(path==='/movement-barrier')(root.__partyTravelTransport || (root.__partyTravelTransport={})).barrier={at:Date.now(),durationMs:convoyDiagnosticClock()-transportStart.mono,outcome:kind};
         reject(failure);
       });
     });
   }
 
   // Passing encounters own attacks only, never navigation, kiting, or loot waits.
+  function committedHuntEncounter(target) {
+    // The coordinator supplies huntCombatTarget only after verified origin arrival.
+    return !!(target && typeof huntCombatTarget !== 'undefined' && huntCombatTarget && target.mtype === huntCombatTarget &&
+      !(typeof partyConvoyActive !== 'undefined' && partyConvoyActive) &&
+      !(typeof convoyTraveling !== 'undefined' && convoyTraveling) &&
+      !(typeof travelCombatActive === 'function' && travelCombatActive()));
+  }
+
+  // Observational only: failures here must never change request settlement.
+  function convoyDiagnosticClock() {
+    try { return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(); }
+    catch (_) { return null; }
+  }
+  function rememberConvoyStatusRequest(started, outcome) {
+    if (started === null) return;
+    try {
+      var now = convoyDiagnosticClock();
+      if (now === null) return;
+      var history = root.__partyConvoyHttp || (root.__partyConvoyHttp = {});
+      if (outcome === 'success') history.responseAt = now;
+      else history.failure = { at: now, kind: outcome, durationMs: Math.max(0, Math.round(now - started)) };
+    } catch (_) {}
+  }
   function passingKey(target) {
     return JSON.stringify([target.server || reunionRealm(), target.map || character.map,
       String(target.in == null ? character.in || character.map : target.in), String(target.id)]);
@@ -2503,14 +2607,19 @@
     Object.keys(passingEncounters).forEach(function(key) {
       var entry = passingEncounters[key], e = get_entity(entry.id);
       if (entry.server !== reunionRealm() || entry.map !== character.map || String(entry.in || entry.map) !== String(character.in || character.map) ||
-          e && (e.dead || e.hp === 0) || now - entry.at > 60000) delete passingEncounters[key];
-      else if (e && e.visible) entry.at = now;
+          e && (e.dead || e.hp === 0) || typeof fightDeaths !== 'undefined' && fightDeaths.some(function(d){return passingKey(d)===key && d.at>=(entry.startedAt || entry.at);}) || committedHuntEncounter(entry) || now - entry.at > 60000) delete passingEncounters[key];
+      else if (e && e.visible && !entry.reserved) entry.at = now;
     });
     return Object.values(passingEncounters).slice(-128);
   }
   function isPassingEncounter(target) {
     if (!target) return false;
+    if (typeof passiveTravelInterruptible==='function' && passiveTravelInterruptible() && passiveStopRequired(target))return false;
+    if (committedHuntEncounter(target) || typeof huntTravelDefense === "function" && huntTravelDefense()) return false;
     var key = passingKey(target), now = Date.now() + coordinatorClockOffset;
+    if (target.dead || target.hp === 0) return false;
+    var passingDeaths = (typeof fightDeaths !== 'undefined' ? fightDeaths : []).concat(groupedCombat && groupedCombat.deaths || []);
+    if (passingDeaths.some(function(d){return passingKey(d)===key && now-d.at<60000;})) return false;
     if (peerPassingEncounters.some(function(e){return passingKey(e)===key && now-e.at<60000;})) return true;
     return !!(passingEncounters[key] && now - passingEncounters[key].at < 60000) ||
       !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
@@ -2520,12 +2629,12 @@
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
     var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
     var pending = root.partyLootClient && root.partyLootClient.huntPending();
-    if (!pending && !(convoy && convoy.purpose === 'monster-hunt' && convoy.nonPreemptible)) return true;
+    if (!pending && !(convoy && (convoy.routeProtocol === 4 || convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget)))) return true;
     var signal = typeof convoySignal !== 'undefined' && convoySignal;
-    return !!(convoy && !convoy.cancelled && convoy.purpose === 'monster-hunt' && convoy.nonPreemptible &&
+    return !!(convoy && !convoy.cancelled && (convoy.routeProtocol === 4 || convoy.purpose === 'monster-hunt' && (convoy.nonPreemptible || convoy.huntTarget)) &&
       convoy.phase === 'travelling' && signal && signal.phase === 'travel' &&
       signal.id === convoy.id && Number(signal.epoch) === convoy.epoch && Number(signal.commandId) === convoy.commandId &&
-      signal.runtimeId === convoyRuntimeId && Number(signal.validUntil) > Date.now() + coordinatorClockOffset &&
+      signal.runtimeId === convoyRuntimeId && !convoySignalExpired(signal) &&
       convoy.navigationRevision === Number(navigationIntent.revision || 0));
   }
   function passiveTravelProgress() {
@@ -2546,27 +2655,108 @@
     root.__partyNavigationDetail = 'Passive attacks paused: destination pending without movement';
     return false;
   }
+  function passiveStopRequired(target) {
+    return !!(target && root.partyPassiveStopRequired && root.partyPassiveStopRequired(passiveHunting,target.mtype));
+  }
+  function passiveTravelInterruptible() {
+    var c=typeof convoyTraveling!=='undefined' && convoyTraveling;
+    return !!(c && !c.force && !c.navigationExempt && !c.nonPreemptible && !c.continuousReturn &&
+      ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol','shared-walk-return'].indexOf(c.purpose)<0 &&
+      !(c.purpose==='monster-hunt' && !c.huntTarget));
+  }
+  function travelStopCandidates() {
+    if(!passiveTravelInterruptible() || convoyTraveling.defensePaused || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive() || joinedEvent)return [];
+    return Object.values(parent.entities||{}).filter(function(e){return e && e.type==='monster' && e.visible && !e.dead && e.hp>0 &&
+      passiveStopRequired(e) && !isExternallyClaimedMonster(e) && (!e.target || currentPartyList().indexOf(e.target)>=0) &&
+      !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id));}).map(function(e){return Object.assign(groupedEntityReport(e),{target:e.target||null});});
+  }
+  function outboundHuntTravel() {
+    var c=typeof convoyTraveling !== 'undefined' && convoyTraveling;
+    return !!(c && c.purpose==='monster-hunt' && c.huntTarget && !c.continuousReturn);
+  }
+  function huntTravelDefense() {
+    var c=typeof convoyTraveling!=='undefined' && convoyTraveling;
+    return !!(c && c.defensePaused && (outboundHuntTravel() || root.__partyHuntTravel && root.__partyHuntTravel.reason==='passive-setting'));
+  }
+  function huntTravelControl() {
+    var control=root.__partyHuntTravel;
+    return typeof convoyTraveling!=='undefined' && convoyTraveling && control && control.id===convoyTraveling.id && control.epoch===convoyTraveling.epoch ? control : null;
+  }
+  function huntTravelExtraAggro() {
+    if(!outboundHuntTravel() || huntTravelDefense())return false;
+    if(typeof navigationIntent!=='undefined' && navigationIntent.cancelled || typeof escapeOwns==='function' && escapeOwns() || typeof combatRecoveryActive==='function' && combatRecoveryActive())return false;
+    var control=huntTravelControl(), targets=currentTravelAttackers(), keys={};
+    if(targets.some(passiveStopRequired))return true;
+    targets.forEach(function(t){keys[passingKey(t)]=true;});
+    if(control && control.primary && !fightDeaths.some(function(d){return passingKey(d)===passingKey(control.primary);}))keys[passingKey(control.primary)]=true;
+    return Object.keys(keys).length>1;
+  }
+  function convoyHoldDefenseTarget() {
+    var c=typeof convoyTraveling!=='undefined' && convoyTraveling;
+    if(!c || !(c.holdRequested || c.communication || c.phase==='held' || c.phase==='communication-hold') ||
+      character.rip || navigationIntent.cancelled || Number(c.navigationRevision)!==Number(navigationIntent.revision) || escapeOwns() || combatRecoveryActive())return null;
+    return Object.values(parent.entities||{}).filter(function(e){
+      return e && e.type==='monster' && e.visible && !e.dead && e.hp>0 &&
+        (!e.map || e.map===character.map) && currentPartyList().indexOf(e.target)>=0 && is_in_range(e) && !isExternallyClaimedMonster(e);
+    }).sort(function(a,b){return Number(b.target===character.name)-Number(a.target===character.name) || String(a.id).localeCompare(String(b.id));})[0] || null;
+  }
+  function returnCombatActive() {
+    if(character.rip || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive())return false;
+    return !!(convoyTraveling && convoyTraveling.continuousReturn === 1 || root.__partyAnniversaryStagingOperation && !root.__partyAnniversaryStagingOperation.cancelled);
+  }
+  function returnAttacker(target) {
+    return !!(target && target.type==='monster' && target.visible!==false && !target.dead && target.hp>0 &&
+      (!target.map || target.map===character.map) && (target.in==null || target.in===character.in) && isAttackingPartyMember(target));
+  }
+  function returnDefenseTarget() {
+    var targets=Object.values(parent.entities||{}).filter(returnAttacker);
+    targets.sort(function(a,b){return Number(is_in_range(b))-Number(is_in_range(a)) || String(a.id).localeCompare(String(b.id));});
+    return targets[0] || null;
+  }
+  function cancelReturnTownUnderAttack() {
+    var c=convoyTraveling;
+    if(!c || c.continuousReturn!==1 || !c.townAttempt || c.townAttempt.state!=='casting' || !returnDefenseTarget())return;
+    c.townAttempt.state='interrupted';
+    c.fail('Town interrupted by party attacker; continuing home on foot');
+  }
   function passingTarget() {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return null;
+    if(typeof convoyHoldDefenseTarget==='function') {
+      var heldTarget=convoyHoldDefenseTarget();
+      if(heldTarget)return heldTarget;
+    }
     if (!passingTravelAllowed()) return null;
-    var returning = typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.continuousReturn === 1;
+    if(outboundHuntTravel()) {
+      if(huntTravelExtraAggro()){interruptConvoyForDefense();return null;}
+      var control=huntTravelControl();
+      if(!control || control.reason || control.defending || Date.now()+coordinatorClockOffset-(root.__partyHuntTravelAt||0)>1000)return null;
+    }
+    var convoy = typeof convoyTraveling !== 'undefined' && convoyTraveling;
+    var hunting = convoy && convoy.purpose === 'monster-hunt' && convoy.huntTarget;
+    var returning = convoy && (convoy.continuousReturn === 1 || hunting);
     if (character.rip || Number(character.max_hp)>0 && character.hp/character.max_hp<0.35 || character.ctype === 'merchant' || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive() ||
         partyTownActive || banking || stocking || upgrading || gatheringActive || forceTraveling || townTraveling || eventTraveling || joinedEvent || activeCombatEvent() ||
         (rareActive() && rareControlState.kind !== "patrol") || !returning && unfinishedFight()) return null;
     var candidates = Object.values(parent.entities || {}).filter(function(e) {
+      if(passiveTravelInterruptible() && passiveStopRequired(e))return false;
+      if(control && control.primary && passingKey(e)!==passingKey(control.primary))return false;
       var rule = e && passiveHunting.rules[e.mtype];
       var defending = returning && e && (e.target === character.name || currentPartyList().indexOf(e.target) >= 0);
-      return (defending || rule && rule.enabled && rule.keepMoving) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
+      return (control && control.primary || defending || hunting && e && e.mtype === hunting || rule && rule.enabled && rule.keepMoving) && !committedHuntEncounter(e) && e.type === 'monster' && e.visible && !e.dead && e.hp > 0 &&
         (!e.map || e.map === character.map) && e.mtype !== 'fieldgen0' && is_in_range(e) &&
+        (returning || isPassingEncounter(e) || !(e.target === character.name || currentPartyList().indexOf(e.target) >= 0)) &&
         !isExternallyClaimedMonster(e) && (returning || !groupedCombat || !groupedCombat.target || groupedCombat.target.id !== e.id) &&
         !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(e.id));
     });
-    candidates.sort(function(a,b) {return monsterPriority(b)-monsterPriority(a) || Math.hypot(character.x-a.x,character.y-a.y)-Math.hypot(character.x-b.x,character.y-b.y) || String(a.id).localeCompare(String(b.id));});
+    candidates.sort(function(a,b) {return Number(currentPartyList().indexOf(b.target)>=0)-Number(currentPartyList().indexOf(a.target)>=0) || monsterPriority(b)-monsterPriority(a) || Math.hypot(character.x-a.x,character.y-a.y)-Math.hypot(character.x-b.x,character.y-b.y) || String(a.id).localeCompare(String(b.id));});
     return candidates[0] || null;
   }
-  function beginPassingAttack(target) {
-    var entry = Object.assign(groupedEntityReport(target), {server:reunionRealm(),at:Date.now()+coordinatorClockOffset});
+  function beginPassingAttack(target, admission, reserveOnly) {
+    var previous = passingEncounters[passingKey(target)];
+    var entry = Object.assign(groupedEntityReport(target), {server:reunionRealm(),at:Date.now()+coordinatorClockOffset,startedAt:previous && previous.startedAt || Date.now()+coordinatorClockOffset,admission:admission || previous && previous.admission,reserved:!!reserveOnly});
     passingEncounters[passingKey(entry)] = entry;
     if (root.partyQueueClient) root.partyQueueClient.flush();
+    if (reserveOnly) return;
     if (target.mtype !== 'tinyp' || !passiveHunting.useFieldGenerators || rareFields().length || Math.hypot(character.x-target.x,character.y-target.y)>=200) return;
     var key = passingKey(entry);
     if (!passiveGeneratorAttempt || passiveGeneratorAttempt.key !== key) passiveGeneratorAttempt={key:key,at:Date.now(),sent:false};
@@ -2586,6 +2776,7 @@
       rareKnown[String(e.id)] = e.mtype;
       result.push({ id: String(e.id), mtype: e.mtype, x: e.real_x !== undefined ? e.real_x : e.x,
         y: e.real_y !== undefined ? e.real_y : e.y, hp: e.hp, target: e.target || null, visible: true,
+        reachable: typeof can_attack==='function' && can_attack(e),
         partyEngaged: typeof root !== 'undefined' && !!(root.partyLootClient && root.partyLootClient.rare.engaged({id:String(e.id),realm:':'+String(parent.server_region||'')+String(parent.server_identifier||''),map:character.map,in:String(character.in||character.map)})) });
     });
     return result.sort(function(a,b){return monsterPriority(b)-monsterPriority(a);}).slice(0,64);
@@ -2630,8 +2821,18 @@
           groupedCombat.target.id === rareControlState.target.id)) return false;
     return rareControlCurrent();
   }
+  function ownedRareTarget() {
+    if(typeof groupedFresh!=="function" || !groupedFresh() || navigationIntent.cancelled || character.rip || joinedEvent || eventTraveling || escapeOwns())return null;
+    var t=groupedCombat && groupedCombat.target, control=typeof huntTravelControl==='function' && huntTravelControl();
+    var c=typeof convoyTraveling!=='undefined' && convoyTraveling;
+    if(!c || c.phase!=='defending' || c.holdRequested || c.communication || Number(c.navigationRevision)!==Number(navigationIntent.revision))return null;
+    if(!t || !control || !control.defending || !(control.committed||[]).some(function(e){return passingKey(e)===passingKey(t);}))return null;
+    if(t.map!==character.map || String(t.in)!==String(character.in||character.map) || t.server!==reunionRealm())return null;
+    var e=get_entity(t.id);
+    return e && e.visible && !e.dead && e.hp>0 && !isExternallyClaimedMonster(e) ? e : null;
+  }
   function rareTarget() {
-    if (!rareActive() || rareControlState.kind !== "encounter") return null;
+    if (!rareActive() || rareControlState.kind !== "encounter") return ownedRareTarget();
     var wanted = rareControlState.target;
     if (wanted.map !== character.map || String(wanted.in) !== String(character.in || character.map)) return null;
     var e = get_entity(wanted.id);
@@ -2642,8 +2843,8 @@
     if (target.mtype === "fieldgen0") return false;
     if (target.mtype !== "tinyp") return true;
     if (isPassingEncounter(target) || skill === "attack" && passingTarget() === target) return skill === "attack";
-    if (!rareActive() || !rareTarget() || rareTarget().id !== target.id || skill !== "attack") return false;
-    return !rareControlState.deployer;
+    if (!rareTarget() || rareTarget().id !== target.id || skill !== "attack") return false;
+    return !rareActive() || !rareControlState.deployer;
   }
   function cancelRarePath() {
     if (!rarePath) return;
@@ -3737,12 +3938,29 @@
     root.localStorage.removeItem(productionJournalKey());
   }
   async function recoverProductionJournal() {
+    if (root.__partyProductionWorking) throw Error("Production recovery waiting for game operation");
+    if (!root.__partyProductionRecovery) {
+      root.__partyProductionRecovery = recoverProductionJournalWork().finally(function () { root.__partyProductionRecovery = null; });
+    }
+    return root.__partyProductionRecovery;
+  }
+  async function recoverProductionJournalWork() {
     var journal = JSON.parse(root.localStorage.getItem(productionJournalKey()) || "null");
     if (!journal) return;
     if (journal.phase === "complete") return finishProductionJournal(journal);
+    if (character.q && (character.q.upgrade || character.q.compound)) throw Error("Production recovery waiting for game operation");
+    var inspection = await request("/merchant/production", {method:"POST",body:Object.assign({},journal.request,{character:character.name,action:"inspect"})});
+    if (!inspection || !Array.isArray(inspection.pending)) throw Error("Production recovery inspection unavailable");
+    var orphan = inspection.pending.find(function (attempt) { return attempt.id !== journal.id; });
+    if (orphan) throw Error("Production recovery needs review: " + orphan.id + " (" + orphan.name + " +" + orphan.level + "); local journal " + journal.id);
+    if (inspection.attempt && inspection.attempt.completed) { root.localStorage.removeItem(productionJournalKey()); return; }
+    if (!inspection.attempt) {
+      if (journal.phase !== "prepared") throw Error("Production recovery missing admitted attempt: " + journal.id);
+      root.localStorage.removeItem(productionJournalKey());
+      return;
+    }
     if (journal.request && journal.request.requestId && !journal.issued) return finishProductionJournal(journal);
     if (journal.phase === "prepared") {
-      await request("/merchant/production", {method:"POST",body:journal.request});
       journal.success=false;
     } else {
       if (character.q && (character.q.upgrade || character.q.compound)) throw Error("Production recovery waiting for game operation");
@@ -3767,7 +3985,14 @@
   }
   async function trackedProduction(kind, slots, automatic, operation, offeringAttempt) {
     if (character.ctype !== "merchant") return operation();
-    await recoverProductionJournal();
+    if (root.__partyProductionWorking || root.__partyProductionRecovery) throw Error("Production recovery waiting for game operation");
+    root.__partyProductionWorking = true;
+    try { return await trackedProductionWork(kind, slots, automatic, operation, offeringAttempt); }
+    finally { root.__partyProductionWorking = false; }
+  }
+  async function trackedProductionWork(kind, slots, automatic, operation, offeringAttempt) {
+    await recoverProductionJournalWork();
+    await yieldMerchantForEvent();
     if (automatic) await verifyProductionProtection(slots);
     var item=fingerprint(character.items[slots[0]]), id=character.name+":"+Date.now()+":"+Math.random().toString(36).slice(2);
     if (offeringAttempt && offeringAttempt.requestId) id="manual-offering:"+offeringAttempt.requestId;
@@ -3780,7 +4005,17 @@
         root.localStorage.removeItem(productionJournalKey()); return {success:false,alreadyAttempted:true};
       }
     }
-    catch(error) { if ((error.partyRequest && error.partyRequest.status === 409) || /quota completed|rule removed|Required upgrade offering|Manual upgrade request|Upgrade offering rule changed/i.test(String(error))) root.localStorage.removeItem(productionJournalKey()); throw error; }
+    catch(error) {
+      // A 409 can follow admission when persistence fails. Inspect first: only
+      // a confirmed absent admission permits discarding this unstarted journal.
+      if (error.partyRequest && error.partyRequest.status === 409) {
+        try {
+          var rejected = await request("/merchant/production", {method:"POST",body:Object.assign({},body,{action:"inspect"})});
+          if (rejected && rejected.attempt === null && Array.isArray(rejected.pending)) root.localStorage.removeItem(productionJournalKey());
+        } catch (_inspectionError) { /* Preserve evidence until admission can be confirmed. */ }
+      }
+      throw error;
+    }
     journal.phase="running";root.localStorage.setItem(productionJournalKey(),JSON.stringify(journal));
     var result, failure;
     try { result=await operation(); } catch(error) { failure=error; }
@@ -3847,7 +4082,10 @@
     // Checkpoints yield to inventory updates. Do not use a scroll index that
     // has since moved or was consumed by the preceding step.
     if (intendedScroll) scrollSlot = findInventoryItemByName(intendedScroll);
-    var outcome = await merchantLuckyUpgrade().run(itemSlot, scrollSlot, luckyUpgradeSlot, function (slot, scroll, offering) {
+    var selectedUpgradeSlot = Number.isInteger(luckyUpgradeSlot) && luckyUpgradeSlot >= 0 && luckyUpgradeSlot < 42
+      ? luckyUpgradeSlot : luckySlotTracking().select();
+    var outcome = await merchantLuckyUpgrade().run(itemSlot, scrollSlot, selectedUpgradeSlot, function (slot, scroll, offering) {
+      luckySlotTracking().begin();
       return upgradeAtSlotConfirmed(slot, scroll, expectedName, expectedLevel, offering);
     }, offeringSlot);
     return outcome && Object.assign({}, outcome, {slot: itemSlot});
@@ -3864,7 +4102,7 @@
       write: function (value) { if (value) root.localStorage.setItem(key, JSON.stringify(value)); else root.localStorage.removeItem(key); },
       sleep: sleep, now: Date.now, current: runtimeCurrent,
       log: function (slot) {
-        var message = "Using lucky upgrade slot " + slot + " (inventory position " + (slot + 1) + ")";
+        var message = "Using upgrade slot " + slot + " (" + (slot === luckyUpgradeSlot ? "verified" : "lucky-slot search") + ", inventory position " + (slot + 1) + ")";
         game_log(message, "#facc15");
         var job = root.__merchantActiveJob;
         if (job) request("/merchant/activity", {method:"POST",body:{character:character.name,jobId:job.jobId,
@@ -7324,7 +7562,8 @@
         }
         if (character.items[inventorySlot].l) { blocked.push({id:mark.id,error:"Item is locked"}); continue; }
         var quantity = Math.min(Number(mark.quantity) || 1, Number(character.items[inventorySlot].q) || 1);
-        await smart_move(find_npc("fancypots"));
+        // Named NPC destinations include the walkable interaction offset.
+        await smart_move("fancypots");
         inventorySlot = findItem(mark.item);
         if (inventorySlot < 0 || !sameItem(character.items[inventorySlot], mark.item))
           throw new Error("NPC-sale item moved before confirmation: " + mark.item.name);
@@ -8425,14 +8664,15 @@
         if (typeof stop === "function") try { await stop("smart"); } catch (_) {}
       }
       root.__partyEventWalkFailure = { at: Date.now(), reason: command.reason, convoyId: command.convoyId };
+      var travelControl = root.__partyTravelCombat;
+      if (travelControl && travelControl.id === command.convoyId && travelControl.revision === Number(command.navigationRevision))
+        root.__partyTravelCombat = null;
       if (root.partyRoleRunner) root.partyRoleRunner.wake();
       return;
     }
     if(command.type==='party-monster-travel' && command.phase==='defending') {
-      lastCommand=command.id;root.__partyLastCommand=lastCommand;interruptConvoyForDefense(command.convoyId,command.epoch);
-      if(convoyTraveling && convoyTraveling.defensePaused && convoyTraveling.id===command.convoyId) {
-        convoyTraveling.commandId=command.id;convoyTraveling.epoch=Number(command.epoch);
-      }
+      if(!acceptConvoyDefenseCommand(command))return;
+      lastCommand=command.id;root.__partyLastCommand=lastCommand;
       return;
     }
     if(command.type==='party-monster-travel')root.__partyConvoyDefense=null;
@@ -8453,28 +8693,43 @@
     // The coordinator normally stops dispatching these commands two minutes
     // before the round. This local gate closes the heartbeat-sized race where
     // an already-delivered command could otherwise begin during that window.
+    if (character.ctype === "merchant" && /^merchant-/.test(command.type) && merchantEventWorkReserved()) {
+      reportMerchantCommand(command, "deferred", "event"); return;
+    }
     if (character.ctype === "merchant" && command.type !== "merchant-idle" && command.type !== "merchant-stand-sync" &&
         /^merchant-/.test(command.type) && merchantAnniversaryWorkReserved()) {
-      reportMerchantCommand(command, "deferred", "anniversary"); return;
+      reportMerchantCommand(command, "deferred", merchantEventWorkReserved() ? "event" : "anniversary"); return;
     }
     if (character.ctype === "merchant" && !await gatheringCommandHandoff(command)) return;
     if (command.id <= lastCommand) return;
     reportMerchantCommand(command, "accepted");
     if (command.type !== "town-party" && command.purpose !== "shared-walk-return") root.__partyTownGeneration += 1;
+    var exitOwner = root.__partyEventExitOwner;
+    var exitWalk = root.__partySharedWalking;
+    var exitChild = command.purpose === "shared-walk-return" && exitWalk &&
+      exitWalk.activity === "event-return" && exitOwner && exitWalk.parentCommandId === exitOwner.commandId;
+    if (exitOwner && command.id !== exitOwner.commandId && !exitChild) {
+      exitOwner.cancelled = true;
+      eventReturnPending = false;
+    }
+    if (command.purpose === "monster-hunt")
+      eventRecoveryState = { phase: "idle", cycleId: null, event: null, checkpoint: null, attemptAt: 0, lastError: null };
     lastCommand = command.id;
     root.__partyLastCommand = lastCommand;
     if (convoyTraveling && (command.type !== "party-monster-travel" ||
         command.convoyId !== convoyTraveling.id || command.id !== convoyTraveling.commandId)) {
       // Assembly -> preparation keeps the same convoy's cap. Every other
       // command takeover restores normal speed before awaiting movement stop.
-      if (command.type !== "party-monster-travel" || command.convoyId !== convoyTraveling.id ||
-          Number(command.epoch) !== convoyTraveling.epoch) releaseConvoyCruise(convoyTraveling);
+      if (command.type !== "party-monster-travel" || command.convoyId !== convoyTraveling.id) releaseConvoyCruise(convoyTraveling);
       else convoyTraveling.cruiseHandoff = true;
       if (convoyTraveling.freezeRoute) convoyTraveling.freezeRoute();
       convoyTraveling.cancelled = true;
       if (convoyTraveling.release) convoyTraveling.release();
       if (typeof stop === "function") {
-        try { await stop("smart"); } catch (_stopError) { /* Already stopped. */ }
+        try { await movement.cancel("Command takeover: " + command.type + " / " + (command.phase || "start"), {
+          code:command.convoyId === convoyTraveling.id ? 'convoy-phase-change' : 'command-takeover',
+          convoyId:convoyTraveling.id,epoch:convoyTraveling.epoch,commandId:convoyTraveling.commandId,
+          replacementCommandId:command.id,replacementConvoyId:command.convoyId}); } catch (_stopError) { /* Already stopped. */ }
       }
     }
     if (character.ctype === "merchant" && command.type !== "merchant-idle" && command.type !== "merchant-stand-sync") {
@@ -8711,6 +8966,16 @@
       // Event recovery is coordinated as a barrier: every opted-in character
       // returns first, then the coordinator routes the leader back to the
       // selected farming target.
+      var eventExitOwner = root.__partyEventExitOwner = { commandId: command.id, cancelled: false };
+      var eventExitRevision = Number(navigationIntent.revision) || 0;
+      var eventExitCurrent = function () {
+        return runtimeCurrent() && !escapeOwns() &&
+          (Number(navigationIntent.revision) || 0) === eventExitRevision &&
+          root.__partyEventExitOwner === eventExitOwner && !eventExitOwner.cancelled;
+      };
+      function requireEventExitOwner() {
+        if (!eventExitCurrent()) throw new Error("Event exit superseded by newer navigation");
+      }
       partyLocation = null;
       followingLeader = false;
       forceTraveling = false;
@@ -8727,29 +8992,16 @@
         attemptAt: Date.now(), lastError: null };
       try {
         if (eventRecoveryRetryAt > Date.now()) await sleep(eventRecoveryRetryAt - Date.now());
+        requireEventExitOwner();
         await afterCombat(async function () {
+          requireEventExitOwner();
           if (typeof stop === "function") {
             try { await stop("smart"); } catch (_eventReturnStopSmart) {}
             try { await stop("move"); } catch (_eventReturnStopMove) {}
           }
           eventRecoveryState.phase = "leaving-event";
-          var eventMap = G.maps && G.maps[character.map] && G.maps[character.map].event;
-          if (character.map === "goobrawl") {
-            await exitGoobrawlForRecovery(returnTravel,undefined,command);
-          } else if (eventMap) {
-            try {
-              await anniversaryWithTimeout(leave(), 6000, "Event exit");
-            } catch (leaveError) {
-              // Some completed instances stop accepting `leave` before they
-              // eject their occupants. Instance maps retain direct transport
-              // as their recovery path; normal maps continue below.
-              if (G.maps && G.maps[character.map] && G.maps[character.map].event)
-                await anniversaryWithTimeout(transport("main", 0), 6000, "Event transport");
-            }
-            await sleep(500);
-            if (G.maps && G.maps[character.map] && G.maps[character.map].event)
-              throw new Error("could not leave ended event " + eventMap);
-          }
+          await exitEventMapForRecovery(returnTravel, eventExitCurrent, command);
+          requireEventExitOwner();
           var townPoint = { map: "main", x: 0, y: 0 };
           // Damage can cancel Town, so do not release the coordinator barrier
           // until the character is verifiably in Main's town area.
@@ -8759,18 +9011,19 @@
           while ((character.map !== townPoint.map ||
               Math.hypot(Number(character.x) - townPoint.x, Number(character.y) - townPoint.y) > 90) &&
               Date.now() < recoveryDeadline) {
-            if (escapeOwns()) return;
+            requireEventExitOwner();
             if (character.rip) {
               await respawn();
-              while (character.rip) await sleep(100);
+              while (character.rip && eventExitCurrent()) await sleep(100);
+              requireEventExitOwner();
             }
             if (character.map !== "main") {
               // Town is still useful on remote maps because it shortens the
               // fallback route to that map's spawn. `leave()` above remains
               // the preferred cross-map event exit.
-              await prepareReturnExit(command,"event",function(){return runtimeCurrent() && !escapeOwns();});
+              await prepareReturnExit(command,"event",eventExitCurrent);
               if (character.map !== "main") {
-                try { await sharedPartyWalk(townPoint,"event-return",command.cycleId,command,function(){return !escapeOwns();}); }
+                try { await sharedPartyWalk(townPoint,"event-return",command.cycleId,command,eventExitCurrent); }
                 catch (eventTownRouteError) {
                   lastEventWalkError = String(eventTownRouteError && (eventTownRouteError.reason || eventTownRouteError.message) || eventTownRouteError);
                   eventRecoveryState.lastError = lastEventWalkError;
@@ -8787,27 +9040,32 @@
               Math.hypot(Number(character.x) - townPoint.x, Number(character.y) - townPoint.y) > 90)
             throw new Error("event recovery could not reach Main town before its deadline" +
               (lastEventWalkError ? ": " + lastEventWalkError : ""));
+          requireEventExitOwner();
           eventRecoveryState.phase = "town-ready";
           await saveReturnPhase(command,"event","complete");
           game_log("Event ended; returned to Town", "#c084fc");
         }, "returning from the event");
+        requireEventExitOwner();
         await request("/event-return-complete", {
           method: "POST",
-          body: { character: character.name, cycleId: command.cycleId,
-            navigationRevision: navigationIntent.revision,
+          body: { character: character.name, cycleId: command.cycleId, commandId: command.id,
+            runtimeId: typeof convoyRuntimeId === "undefined" ? undefined : convoyRuntimeId,
+            navigationRevision: eventExitRevision,
             map: character.map,
             mapEvent: G.maps && G.maps[character.map] && G.maps[character.map].event || null,
             x: Number(character.x), y: Number(character.y) },
         });
+        if (!eventExitCurrent()) return;
         eventRecoveryRetryAt = 0;
         eventRecoveryState.phase = command.deferred ? "deferred-town-ready" : "town-ready";
       } catch (eventRecoveryError) {
+        if (!eventExitCurrent()) return;
         eventRecoveryRetryAt = Date.now() + 2500;
         eventRecoveryState.phase = "retry-wait";
         eventRecoveryState.lastError = String(eventRecoveryError.reason || eventRecoveryError.message || eventRecoveryError);
         throw eventRecoveryError;
       } finally {
-        eventReturnPending = false;
+        if (root.__partyEventExitOwner === eventExitOwner) { eventReturnPending = false; root.__partyEventExitOwner = null; }
       }
       return;
     }
@@ -9049,6 +9307,16 @@
     }, 100);
   }
 
+  var merchantVisibilityUntil = 0;
+  async function applyMerchantVisibility(merchant) {
+    var player = merchant && get_player(merchant);
+    var nearby = player && !player.rip && (!player.map || player.map === character.map) &&
+      (player.in == null || character.in == null || player.in === character.in) &&
+      Math.hypot(player.x - character.x, player.y - character.y) <= 180;
+    merchantVisibilityUntil = nearby ? Date.now() + 5000 : 0;
+    if (nearby && character.s && character.s.invis) await stop("invis");
+  }
+
   async function tick() {
     observeBankSortVisit();
     if (busy) return;
@@ -9074,6 +9342,7 @@
         return;
       }
       if (state.upgradePreview) await handleUpgradePreview(state.upgradePreview);
+      await applyMerchantVisibility(state.merchantVisibility);
       if (character.ctype === "merchant") await flushNativePurchaseReceipts();
       if (character.ctype === "merchant" && character.stand && !merchantIdleActive && !root.__merchantActiveJob &&
           !root.__merchantInventoryTidy && !merchantLuckyUpgrade().pending())
@@ -9087,8 +9356,7 @@
         root.__merchantRealmErrors[error.id] = error.message;
         game_log(error.message, "red");
       });
-      if (Number.isFinite(state.serverNow))
-        coordinatorClockOffset = state.serverNow - (statusSentAt + Date.now()) / 2;
+      // Transport receipt already installed clock timing and the walking lease.
       // Install the new convoy barrier before releasing Escape. stop() yields,
       // so role timers can otherwise begin an independent route in this gap.
       partyConvoyActive = !!state.partyConvoyActive;
@@ -9134,7 +9402,8 @@
       var releasedHuntTurnIn = huntTurnInPriority && !state.huntTurnInPriority;
       huntTurnInPriority = !!state.huntTurnInPriority;
       if (releasedHuntTurnIn) setTimeout(function () { pollEvents(); runAnniversaryKiss(); }, 0);
-      convoySignal = state.convoySignal || null;
+      // Do not overwrite a newer fast-channel signal after awaited status work.
+      reloadConvoyGeometry(convoySignal);
       if (convoyTraveling && convoySignal && convoySignal.id === convoyTraveling.id &&
           Number(convoySignal.epoch) === convoyTraveling.epoch && convoySignal.phase === "failed" &&
           convoyTraveling.fail) convoyTraveling.fail(convoySignal.reason || "Convoy held by coordinator");
@@ -9156,7 +9425,8 @@
       var previousSelections = enabledEventSelections;
       statusPhase = "apply event selections";
       enabledEventSelections = Array.isArray(state.eventSelections) ? state.eventSelections : null;
-      eventsEnabled = !!state.eventsEnabled && character.ctype !== "merchant";
+      eventsEnabled = !!state.eventsEnabled;
+      root.__merchantCoordinatorEventRecovery = !!state.merchantEventRecoveryReserved;
       if (previousSelections && enabledEventSelections && previousSelections.join(",") !== enabledEventSelections.join(",")) {
         eventSelectionRevision++;
         pendingEventDisables = root.__partyPendingEventDisables = Array.from(new Set(pendingEventDisables.concat(previousSelections.filter(function(id) { return !eventSelected(id); }))));
@@ -9212,6 +9482,7 @@
       gatheringStandListings = nextStandListings;
       merchantWeapon = state.merchantWeapon || null;
       luckyUpgradeSlot = state.luckyUpgradeSlots && state.luckyUpgradeSlots[character.name];
+      luckySlotTracking().sync(state.luckySlotTracking && state.luckySlotTracking[character.name]);
       merchantForceStand = !!state.merchantForceStand;
       merchantCashTarget = Math.max(0, Number(state.merchantGoldTarget) || 0);
       if (character.ctype === "merchant" && !root.__merchantActiveJob && !gatheringActive &&
@@ -9292,6 +9563,7 @@
         game_log("Party command failed: " + (error.reason || error.message || error), "red");
       });
       if (character.ctype === "merchant" && !state.command && !root.__merchantActiveJob && !root.__merchantInventoryTidy &&
+          !merchantEventWorkReserved() &&
           !banking && !upgrading && !stocking && !gatheringActive && !merchantIdleActive && !anniversaryBusy && !character.rip) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot).catch(function (error) {
           game_log(String(error.message || error), "red");
@@ -9377,7 +9649,24 @@
     return round && (anniversaryCompletedRounds[round] || root.__merchantAnniversaryReleasedRound === round) ? round : null;
   }
 
+  function merchantEventWorkReserved() {
+    return character.ctype === "merchant" && (!!joinedEvent || eventTraveling || eventReturnPending ||
+      !!root.__merchantCoordinatorEventRecovery || eventsEnabled && !navigationIntent.cancelled && !!activeCombatEvent());
+  }
+
+  async function yieldMerchantForEvent() {
+    var active = root.__merchantActiveJob;
+    if (!active || !merchantEventWorkReserved()) return;
+    // Settle journals before this boundary; do not admit another production
+    // operation once event ownership has reserved the merchant.
+    var result = await request("/merchant/checkpoint", { method: "POST", body: {
+      jobId: active.jobId, eventOnly: true,
+    } });
+    if (result.yield) throw new Error("merchant_yield");
+  }
+
   function merchantAnniversaryWorkReserved() {
+    if (merchantEventWorkReserved()) return true;
     if (character.ctype !== "merchant" || !root.partyMerchantAnniversaryControl) return false;
     var event = eventStatus().anniversary, ticket = character.s && character.s.anniversary_visit;
     var round = event && anniversaryRoundId(event, ticket);
@@ -9392,8 +9681,54 @@
     return control.featured || control.reserved || control.kissDue || control.busy;
   }
 
+  async function exitEventMapForRecovery(travel, current, command) {
+    if (!current()) return;
+    var map = character.map, definition = G.maps && G.maps[map];
+    if (!definition || !definition.event) return;
+    if (map === "goobrawl") return exitGoobrawlForRecovery(travel, current, command);
+    if (["abtesting", "ship0"].indexOf(map) < 0)
+      throw new Error("No verified event exit mechanism for " + map);
+    var savedExit = returnPhaseRecord(command, "event");
+    travel.instanceAttempts = Math.max(travel.instanceAttempts || 0, savedExit.exitAttempts || 0);
+    if (travel.instanceAttempts >= 3) throw new Error("Event exit blocked on " + map + " after three attempts");
+    travel.instanceAttempts++;
+    await persistEventExitAttempt(command, current, { exitMap: map, exitAttempts: travel.instanceAttempts });
+    if (!current()) return;
+    eventRecoveryState.phase = "leaving-" + map;
+    var failure = null;
+    try { await anniversaryWithTimeout(leave(), 6000, "Leave " + map); }
+    catch (error) { failure = error; }
+    var deadline = Date.now() + 2000;
+    while (current() && character.map === map && Date.now() < deadline) await sleep(100);
+    if (!current() || character.map !== map) return;
+    // Preserve the supported instance fallback, but only observed new_map can
+    // complete it. A successful transport response alone is insufficient.
+    try { await anniversaryWithTimeout(transport("main", 0), 6000, "Exit " + map); }
+    catch (error) { failure = error; }
+    deadline = Date.now() + 20000;
+    while (current() && character.map === map && Date.now() < deadline) await sleep(100);
+    if (current() && character.map === map)
+      throw new Error("Event exit blocked on " + map + ": " + String(failure && (failure.reason || failure.message) || "no observed map change"));
+  }
+
+  async function persistEventExitAttempt(command, current, detail) {
+    if (!command || !current()) return;
+    var progress = returnPhaseRecord(command, "event");
+    var next = Object.assign({}, progress, detail);
+    var response = await request("/return-progress", { method: "POST", body: Object.assign({
+      character: character.name, kind: "event", cycleId: command.cycleId,
+      navigationRevision: progress.revision, phase: progress.phase
+    }, detail) });
+    if (current()) parent.__partyReturnProgress = root.__partyReturnProgress = response.progress || next;
+  }
+
   async function exitGoobrawlForRecovery(returnTravel, stillCurrent, parentCommand) {
-    stillCurrent = stillCurrent || function () { return !escapeOwns(); };
+    var exitRevision = Number(navigationIntent.revision) || 0;
+    stillCurrent = stillCurrent || function () {
+      return runtimeCurrent() && !escapeOwns() && !navigationIntent.cancelled &&
+        (Number(navigationIntent.revision) || 0) === exitRevision &&
+        (!parentCommand || typeof lastCommand === "undefined" || lastCommand <= parentCommand.id);
+    };
     if (!stillCurrent()) return;
     var npc = (G.maps.goobrawl.npcs || []).find(function (entry) { return entry.id === "transporter"; });
     if (!npc || !Array.isArray(npc.position)) throw new Error("Goobrawl Transporter location is missing");
@@ -9408,8 +9743,31 @@
     if (!nearTransporter()) {
       eventRecoveryState.phase = "approaching-goobrawl-transporter";
       try {
-        if(parentCommand)await sharedPartyWalk(destination,"event-return",parentCommand.cycleId,parentCommand,stillCurrent);
-        else await anniversaryWithTimeout(smart_move(destination), 40000, "Goobrawl Transporter approach");
+        // Each character approaches this map-local NPC independently. Requiring
+        // a convoy origin here can deadlock on a blocked rally beside the NPC.
+        // The coordinator still waits for every verified arrival in Main.
+        try {
+          await anniversaryWithTimeout(smart_move(destination,undefined,{town:false}), 40000, "Goobrawl Transporter approach");
+        } catch (approachError) {
+          var reason=String(approachError && (approachError.reason || approachError.message) || approachError);
+          var savedTownAttempt = parentCommand && returnPhaseRecord(parentCommand, "event").blockedTownAttempted;
+          if(!stillCurrent() || returnTravel.goobrawlTownAttempted || savedTownAttempt || !/no route|path.*not found/i.test(reason))throw approachError;
+          returnTravel.goobrawlTownAttempted=true;
+          await persistEventExitAttempt(parentCommand, stillCurrent, { exitMap: "goobrawl", blockedTownAttempted: true });
+          if (!stillCurrent()) return;
+          eventRecoveryState.phase="recovering-goobrawl-position";
+          eventRecoveryState.lastError=reason;
+          var from={map:character.map,x:character.x,y:character.y};
+          await anniversaryWithTimeout(town(),12000,"Goobrawl blocked-position Town");
+          var townDeadline=Date.now()+12000;
+          while(stillCurrent() && character.map===from.map && Math.hypot(character.x-from.x,character.y-from.y)<10 && Date.now()<townDeadline)await sleep(100);
+          if(!stillCurrent())return;
+          if(character.map===from.map && Math.hypot(character.x-from.x,character.y-from.y)<10)throw new Error("Goobrawl position recovery did not move to spawn");
+          if(character.map!=="goobrawl")return;
+          eventRecoveryState.phase="approaching-goobrawl-transporter";
+          await anniversaryWithTimeout(smart_move(destination,undefined,{town:false}),40000,"Goobrawl Transporter approach after Town");
+          eventRecoveryState.lastError=null;
+        }
       } finally {
         if (stillCurrent()) { try { await stop("smart"); } catch (_goobrawlStop) {} }
       }
@@ -9543,27 +9901,8 @@
         await new Promise(function (resolve) { setTimeout(resolve, 300); });
         if (!stagingCurrent()) return;
       }
-      if (!is_on_cooldown("use_town") && can_use("use_town")) {
-        var beforeTown = { map: character.map, x: Number(character.x), y: Number(character.y) };
-        game_log("Anniversary departure: casting Town on " + character.map, "#51D2E1");
-        try {
-          if (!await eventTravelAllowed("anniversary")) return;
-          await use_skill("use_town");
-          if (!stagingCurrent()) return;
-          var townDeadline = Date.now() + 12000;
-          while (Date.now() < townDeadline) {
-            var relocated = character.map !== beforeTown.map ||
-              Math.hypot(Number(character.x) - beforeTown.x, Number(character.y) - beforeTown.y) > 90;
-            if (relocated && !is_transporting(character)) break;
-            await new Promise(function (resolve) { setTimeout(resolve, 200); });
-            if (!stagingCurrent()) return;
-          }
-        } catch (_anniversaryTownCast) {
-          game_log("Anniversary Town interrupted or unavailable; continuing by route", "#f0b429");
-        }
-      }
       if (stagingCurrent() && (character.map !== "main" || Math.hypot(Number(character.x), Number(character.y)) > 100)) {
-        game_log("Anniversary departure: navigating from " + character.map + " to Main after Town attempt", "#51D2E1");
+        game_log("Anniversary departure: returning from " + character.map + " to Main", "#51D2E1");
         if (!await eventTravelAllowed("anniversary")) return;
         await sharedPartyWalk(townPoint,"anniversary-staging",String(event && (event.id||event.event_id)||"anniversary"),null,stagingCurrent);
       }
@@ -9702,6 +10041,7 @@
   }
 
   async function runAnniversaryKiss() {
+    if (merchantEventWorkReserved()) return;
     if (!eventSelected("anniversary")) return;
     if (await applyAnniversaryAbort()) return;
     var staleKiss = root.__partyAnniversaryKissOperation;
@@ -10311,64 +10651,6 @@
     finally { anniversaryBusy = false; }
   }
 
-  async function runAnniversaryCake() {
-    if (character.ctype !== "merchant" || anniversaryBusy || merchantForceStand || root.__merchantActiveJob ||
-        gatheringActive || merchantIdleActive || banking ||
-        !anniversaryPlan || !anniversaryPlan.craftReady || anniversaryPlan.live ||
-        Date.now() - anniversaryLastCraftAttempt < 60000) return;
-    anniversaryLastCraftAttempt = root.__anniversaryLastCraftAttempt = Date.now();
-    anniversaryBusy = true;
-    anniversaryStage = "assembling Sixfold Cake";
-    if (gatheringSession) gatheringSession.atStandForCooldown = false;
-    try {
-      if (character.stand) await close_stand();
-      await smart_move("bank");
-      var missingSlices = [];
-      for (var i = 0; i < anniversarySliceNames.length; i += 1) {
-        var supply = await retrieveFromBankUntil(anniversarySliceNames[i], 1);
-        if (supply.onPlayer < 1) missingSlices.push(anniversarySliceNames[i]);
-      }
-      if (missingSlices.length) {
-        var supplies = await request("/anniversary/cake-supplies", { method: "POST", body: {
-          character: character.name, missing: missingSlices,
-        }});
-        if (supplies && supplies.pending && supplies.pending.length)
-          throw new Error("waiting for bankboi ingredients: " + supplies.pending.join(", ") +
-            (supplies.missing.length ? "; unavailable locally: " + supplies.missing.join(", ") : ""));
-        throw new Error("missing " + missingSlices.join(", "));
-      }
-      if (character.gold < 100000) {
-        var bankGold = Number(character.bank && character.bank.gold) || 0;
-        var shortage = 100000 - character.gold;
-        if (bankGold < shortage) throw new Error("need 100,000 gold for Mira");
-        await withdrawMerchantCash(shortage);
-      }
-      var beforeCakes = inventoryQuantity("sixcake");
-      await smart_move({ map: "main", x: 64, y: -88 });
-      await auto_craft("sixcake");
-      if (inventoryQuantity("sixcake") <= beforeCakes) throw new Error("Mira did not return a Sixfold Cake");
-      await smart_move("bank");
-      var cakeSlot = findInventoryItemByName("sixcake");
-      if (cakeSlot < 0) throw new Error("crafted cake could not be found");
-      await bankStoreFully(cakeSlot);
-      await request("/anniversary/cake-complete", { method: "POST", body: { character: character.name } });
-      anniversaryStage = "Sixfold Cake banked";
-      root.__anniversaryCraftResult = { at: anniversaryLastCraftAttempt, success: true };
-      game_log("Sixfold Cake crafted and banked intact", "#ff69b4");
-    } catch (error) {
-      anniversaryStage = "cake deferred";
-      root.__anniversaryCraftResult = { at: anniversaryLastCraftAttempt, success: false,
-        error: String(error.reason || error.message || error) };
-      game_log("Anniversary cake deferred: " + (error.reason || error.message || error), "#f0b429");
-    } finally {
-      anniversaryBusy = false;
-      if (gatheringSession) gatheringSession.atStandForCooldown = false;
-      // Publish released ownership so normal scheduling can recover the stand.
-      try { await request("/status", { method: "POST", body: snapshot() }); }
-      catch (_cakeStatusError) { /* The normal status poll retries reporting. */ }
-    }
-  }
-
   async function runAnniversaryChatAdvertisement() {
     if (character.ctype !== "merchant" || anniversaryChatSending || anniversaryBusy ||
         !anniversaryPlan || !anniversaryPlan.chatAdvertisement) return;
@@ -10390,7 +10672,6 @@
     await runAnniversaryChatAdvertisement();
     await runAnniversaryReturns();
     await runAnniversaryHandoff();
-    await runAnniversaryCake();
   }
 
   function currentPartyList() {
@@ -10795,13 +11076,45 @@
     return true;
   }
 
+  async function joinCombatEvent(event, destination, current) {
+    if (!current()) return false;
+    if (root.__partyEventRejoinRequired === event.name || joinedEvent !== event.name || character.map !== destination.map) {
+      await join(event.name);
+      // A join reply can precede the map update. Do not clear death recovery or
+      // fall back to a convoy while the teleport is still arriving.
+      var deadline = Date.now() + 5000;
+      while (current() && character.map !== destination.map && Date.now() < deadline) await sleep(100);
+      if (!current()) return false;
+      if (character.map !== destination.map) throw new Error("Event join has no observed arrival: " + event.name);
+      game_log("Joined " + event.name, "#c084fc");
+    }
+    joinedEvent = event.name;
+    root.__partyJoinedEvent = event.name;
+    root.__partyEventRejoinRequired = null;
+    return true;
+  }
+
   async function pollEvents() {
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
-    if (eventPollBusy || character.ctype === "merchant") return;
+    if (eventPollBusy) return;
     if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return;
     eventPollBusy = true;
     try {
+      if (character.ctype === "merchant" && merchantEventWorkReserved()) {
+        // Never take movement from an unsettled inventory operation or worker.
+        if (root.__merchantActiveJob || root.__merchantInventoryTidy || merchantIdleActive ||
+            banking || stocking || upgrading || root.__partyUpgradePreviewInFlight ||
+            luckyUpgradeService && luckyUpgradeService.pending()) return;
+        var gatheringAttempt = root.__merchantGatheringAttempt;
+        if (gatheringAttempt) {
+          gatheringAttempt.cancelled = "event attendance";
+          if (gatheringAttempt.phase !== "casting" && typeof stop === "function") await stop("smart");
+          return;
+        }
+        if (gatheringActive) return;
+        await closeMerchantStandForTravel();
+      }
       if (!eventsEnabled) {
         eventTargetTypes = [];
         joinedEvent = null;
@@ -10881,27 +11194,29 @@
       }
       if (eventTraveling || banking || stocking || upgrading || departurePending || bankQueued) return;
       if (!await eventTravelAllowed(event.name)) return;
-      if (nearestEventTarget()) return;
+      if (nearestEventTarget()) {
+        joinedEvent = event.name;
+        root.__partyJoinedEvent = event.name;
+        return;
+      }
       eventTraveling = true;
       travellingEventName = event.name;
       var travelSelectionRevision = eventSelectionRevision;
+      var travelNavigationRevision = navigationIntent.revision;
+      function currentEventTravel() {
+        var live = activeCombatEvent();
+        return runtimeCurrent() && !character.rip && !escapeOwns() && !navigationIntent.cancelled &&
+          travelNavigationRevision === navigationIntent.revision && eventSelected(event.name) &&
+          travelSelectionRevision === eventSelectionRevision && live && live.name === event.name;
+      }
       try {
         var destination = eventDestination(event.name, event.state);
-        var destinationIsEventMap = G.maps && G.maps[destination.map] &&
-          G.maps[destination.map].event === event.name;
-        // Death returns an event participant to a normal map while the old
-        // in-memory joined marker survives. Physical map presence is the
-        // authority: re-join rather than trying to walk back into an instance.
-        var rejoinRequired = root.__partyEventRejoinRequired === event.name;
-        if (eventRequiresJoin(event.name) &&
-            (rejoinRequired || joinedEvent !== event.name || (destinationIsEventMap && character.map !== destination.map))) {
+        if (eventRequiresJoin(event.name)) {
           if (!await eventTravelAllowed(event.name)) return;
-          await join(event.name);
-          if (!eventSelected(event.name) || travelSelectionRevision !== eventSelectionRevision) return;
-          joinedEvent = event.name;
-          root.__partyJoinedEvent = event.name;
-          root.__partyEventRejoinRequired = null;
-          game_log("Joined " + ((G.events[event.name] && G.events[event.name].name) || event.name), "#c084fc");
+          if (!await joinCombatEvent(event, destination, currentEventTravel)) return;
+          // Joinable events hand directly to combat, even before the boss is
+          // visible. Local combat movement owns approach after teleportation.
+          return;
         }
         if (!eventRequiresJoin(event.name) && joinedEvent !== event.name) {
           joinedEvent = event.name;
@@ -10909,8 +11224,8 @@
           root.__partyEventRejoinRequired = null;
           game_log("Traveling to " + ((G.events[event.name] && G.events[event.name].name) || event.name), "#c084fc");
         }
-        if (!escapeOwns() && event.kind !== "pvp" && !nearestEventTarget() && await eventTravelAllowed(event.name) && eventSelected(event.name) && travelSelectionRevision === eventSelectionRevision)
-          await sharedPartyWalk(destination,"event",event.name,null,function(){return !escapeOwns() && eventSelected(event.name) && travelSelectionRevision===eventSelectionRevision;});
+        if (event.kind !== "pvp" && !nearestEventTarget() && await eventTravelAllowed(event.name) && currentEventTravel())
+          await sharedPartyWalk(destination,"event",event.name,null,currentEventTravel);
       } catch (error) {
         var reason = error && (error.reason || error.message || error);
         if (reason !== "interrupted" && reason !== "event_not_live")
@@ -10944,7 +11259,12 @@
       return Math.hypot(a.x - character.x, a.y - character.y) - Math.hypot(b.x - character.x, b.y - character.y);
     })[0];
   }
+  function eventExitOwnsMovement() {
+    return typeof eventReturnPending !== "undefined" && eventReturnPending ||
+      !!(root.__partySharedWalking && root.__partySharedWalking.activity === "event-return");
+  }
   function reunionBlocked() {
+    if (eventExitOwnsMovement()) return true;
     if (escapeOwns()) return true;
     // Pause the return, not defensive combat, when the travel party is attacked.
     // Otherwise isOccupied suppresses healing and attacks while mobs kill us.
@@ -10979,6 +11299,7 @@
       !is_on_cooldown(skill) && can_use(skill);
   }
   function beginFarmReunion(command) {
+    if (eventExitOwnsMovement()) return;
     if (character.ctype === "merchant") return;
     if (typeof lastDeathInfo !== "undefined" && lastDeathInfo) root.__partyRecoveredDeathAt = parent.__partyRecoveredDeathAt = lastDeathInfo.at;
     if (combatRecoveryActive()) return;
@@ -11063,6 +11384,12 @@
   };
   var reunionMagiportHandler = root.on_magiport;
   async function farmReunionTick() {
+    if (eventExitOwnsMovement()) {
+      // Retire the obsolete routine without stopping the event's newer route.
+      if (reunion) { reunion.cancelled = true; reunion.moving = false; reunion.lastError = "Event exit owns movement"; }
+      reunion = root.__partyReunion = null;
+      return;
+    }
     // Respawn can finish after its promise times out, or before a reloaded
     // runner observes rip. Recover authorized displacement independently.
     if (runtimeCurrent() && !reunion && partyLocation && !reunionBlocked() &&
@@ -11185,14 +11512,15 @@
 
   async function rejoinActiveEventAfterRespawn() {
     if (escapeOwns() || navigationIntent.cancelled) return { status: "cancelled" };
-    if (!eventsEnabled || character.ctype === "merchant") return { status: "not-applicable" };
+    if (!eventsEnabled) return { status: "not-applicable" };
     var requiredEventName = root.__partyEventRejoinRequired;
     var event = activeCombatEvent();
     if (!event && requiredEventName) return { status: "cancelled" };
     if (!event) return { status: "not-applicable" };
     var revision = Number(navigationIntent.revision), selection = eventSelectionRevision;
-    function current() { return runtimeCurrent() && !escapeOwns() && !navigationIntent.cancelled &&
-      Number(navigationIntent.revision) === revision && eventSelectionRevision === selection && eventSelected(event.name); }
+    function current() { var live = activeCombatEvent(); return runtimeCurrent() && !character.rip && !escapeOwns() && !navigationIntent.cancelled &&
+      Number(navigationIntent.revision) === revision && eventSelectionRevision === selection && eventSelected(event.name) &&
+      live && live.name === event.name; }
     if (!await eventTravelAllowed(event.name)) return { status: "cancelled" };
     if (eventTraveling) return { status: "retryable", reason: "Event travel already in progress" };
     eventTargetTypes = event.types; eventMissingSince = 0;
@@ -11202,12 +11530,13 @@
       if (typeof stop === "function") try { await stop("smart"); } catch (_) {}
       if (!current()) return { status: "cancelled" };
       var destination = eventDestination(event.name, event.state);
-      if (eventRequiresJoin(event.name) && (root.__partyEventRejoinRequired || joinedEvent !== event.name)) await join(event.name);
+      if (eventRequiresJoin(event.name) && !await joinCombatEvent(event, destination, current)) return { status: "cancelled" };
       if (!current() || !await eventTravelAllowed(event.name)) return { status: "cancelled" };
       joinedEvent = event.name; root.__partyJoinedEvent = event.name; root.__partyEventRejoinRequired = null;
-      phase = "event-travel";
-      if (event.name !== "abtesting" && !nearestEventTarget())
+      if (!eventRequiresJoin(event.name) && !nearestEventTarget()) {
+        phase = "event-travel";
         await sharedPartyWalk(destination, "event", event.name, null, current);
+      }
       if (!current()) return { status: "cancelled" };
       game_log("Recovered " + event.name + " participation after respawning", "#c084fc");
       return { status: "recovered", phase: phase };
@@ -11527,21 +11856,45 @@
     return !!(c && c.purpose==='monster-hunt' && c.nonPreemptible && !c.returnWalking &&
       (c.phase!=='travelling' || typeof movement!=='undefined' && movement.transition && movement.transition()==='town'));
   }
-  function interruptConvoyForDefense(id, epoch) {
+  function acceptConvoyDefenseCommand(command) {
+    if(navigationIntent.cancelled || Number(command.navigationRevision||0)!==Number(navigationIntent.revision||0))return false;
     var c=convoyTraveling;
-    if(c && id && (c.id!==id || Number(epoch)<c.epoch))return;
+    if(c && (c.id!==command.convoyId || c.epoch>Number(command.epoch) || c.commandId>=command.id))return false;
+    if(c) {
+      c.commandId=command.id;c.epoch=Number(command.epoch);c.holdRequested=false;
+      delete c.communication;delete c.failure;
+      if(c.phase==='held' || c.phase==='communication-hold')c.phase='stopped';
+    }
+    interruptConvoyForDefense(command.convoyId,command.epoch);
+    return true;
+  }
+  function interruptConvoyForDefense(id, epoch, aggressor) {
+    var c=convoyTraveling;
+    if(c && id && (c.id!==id || Number(epoch)!==c.epoch))return;
+    if(c && (c.holdRequested || c.communication || c.phase==='held' || c.phase==='communication-hold'))return;
+    if(c && typeof navigationIntent!=='undefined' && (navigationIntent.cancelled || Number(navigationIntent.revision||0)!==Number(c.navigationRevision||0)))return;
     if(c && ((c.navigationExempt && c.purpose!=='anniversary-return') || ['escape-recovery','franky-exit','event-return','rare-hunt','phoenix-patrol'].indexOf(c.purpose)>=0))return;
     if(!c && !id)return;
     if(c && (c.returnWalking || c.continuousReturn === 1))return;
+    if(typeof outboundHuntTravel === 'function' && outboundHuntTravel() && !id && !huntTravelExtraAggro())return;
     root.__partyConvoyDefense=id || c.id;
     if(c && (c.routeProtocol===4 || c.purpose==='monster-hunt' && c.nonPreemptible)) {
       if(c.defensePaused)return;
+      var huntPrimary=typeof huntTravelControl === 'function' && huntTravelControl();
+      c.defenseTargets = aggressor ? [Object.assign(groupedEntityReport(aggressor), {server:reunionRealm()})] :
+        typeof currentTravelAttackers === 'function' ? currentTravelAttackers() : [];
+      if(huntPrimary)c.defenseTargets=c.defenseTargets.concat(huntPrimary.committed||[],huntPrimary.primary?[huntPrimary.primary]:[]);
+      c.defenseTargets=Array.from(new Map(c.defenseTargets.map(function(t){return [passingKey(t),t];})).values());
+      c.defenseInterruption = {at:Date.now(),source:id ? 'coordinator' : 'local-attacker',
+        convoyId:c.id,epoch:c.epoch,commandId:c.commandId,navigationRevision:c.navigationRevision,
+        phase:c.phase,targets:c.defenseTargets};
       if(c.freezeRoute)c.freezeRoute();
       if(c.detachRoute)c.detachRoute();
       if(c.townAttempt && c.townAttempt.state==='casting')c.townAttempt.state='interrupted';
       c.defensePaused=true;c.phase='defending';c.routeReady=false;
       try {Promise.resolve(stop()).catch(function(){});}catch(_){}
       root.__partyNavigationDetail='Defending party; convoy will resume after combat';
+      if(huntPrimary && typeof game_log==='function')game_log('Travel encounter: '+(huntPrimary.reason==='passive-setting'?'pursuing ':'defending against ')+c.defenseTargets.map(function(t){return t.mtype+' '+t.id;}).join(', '),'#F5B041');
       if(root.partyQueueClient && root.partyQueueClient.flush)root.partyQueueClient.flush();
       if(root.partyRoleRunner)root.partyRoleRunner.wake();
       return;
@@ -11569,6 +11922,7 @@
   }
   function reportFightDeath(id) {
     if (!id) return;
+    if(root.partyQueueClient && root.partyQueueClient.timing)root.partyQueueClient.timing.death(id);
     if(groupedCombat && groupedCombat.target && groupedCombat.target.id===id)root.__partyQueueLastDeath={id:id,at:Date.now()};
     fightDeaths = root.__partyFightDeaths = fightDeaths.filter(function (d) { return Date.now()-d.at<60000; });
     if (!fightDeaths.some(function (d) { return d.id===id && d.map===character.map && d.in===character.in && d.server===reunionRealm(); }))
@@ -11578,6 +11932,8 @@
   function groupedEntityReport(e) { return {id:e.id,mtype:e.mtype,map:character.map,in:character.in,x:e.x,y:e.y,hp:e.hp,max_hp:e.max_hp}; }
   function currentTravelAttackers() {
     return Object.values(parent.entities || {}).filter(function(e) {
+      if(typeof outboundHuntTravel === 'function' && outboundHuntTravel())return e && e.type==='monster' && e.visible && !e.dead && e.hp>0 &&
+        currentPartyList().indexOf(e.target)>=0 && !fightDeaths.some(function(d){return passingKey(d)===passingKey(e);});
       return e && e.type === "monster" && departureTargetEngaged(e);
     }).map(function(e) { return Object.assign({}, groupedEntityReport(e), { target: e.target, server: reunionRealm() }); });
   }
@@ -11605,8 +11961,10 @@
   function groupedSightings() {
     var current=groupedCombat && groupedCombat.target && get_entity(groupedCombat.target.id);
     if(current && current.visible && !current.dead)root.__partyTargetLastVisible={id:current.id,map:character.map,in:character.in,x:character.x,y:character.y,at:Date.now()};
-    return groupedCombat && groupedCombat.queue ? groupedCombat.queue.map(function(f) {return get_entity(f.id);})
-      .filter(function(e) {return e && e.visible && !e.dead;}).map(function(e){return Object.assign(groupedEntityReport(e),{target:e.target || null});}) : [];
+    var observed=(groupedCombat && groupedCombat.queue || []).slice(), travel=typeof huntTravelControl === 'function' && huntTravelControl();
+    if(travel)observed=observed.concat(travel.committed||[],travel.primary?[travel.primary]:[],travelStopCandidates());
+    return observed.map(function(f) {return get_entity(f.id);})
+      .filter(function(e) {return e && e.visible && !e.dead;}).map(function(e){return Object.assign(groupedEntityReport(e),{target:e.target || null});});
   }
   function unfinishedFight() { return groupedFarming() && groupedCombat && groupedCombat.fights && groupedCombat.fights.length>0; }
   function groupedDefensiveTarget() {
@@ -11625,6 +11983,10 @@
       {id:String(e.id),map:character.map,in:character.in,server:reunionRealm(),at:Date.now()+coordinatorClockOffset} : null;
   }
   function queueMarkers() {
+    if(typeof returnCombatActive==='function' && returnCombatActive()) {
+      var attacker=returnDefenseTarget();
+      return attacker ? [{id:String(attacker.id),map:character.map,in:character.in,server:reunionRealm(),role:'current',state:'engaged',radius:Math.max(18,(Number(attacker.awidth)||24)/2+4),visible:true}] : [];
+    }
     if (typeof eventTargetTypes !== 'undefined' && eventTargetTypes.length && !character.rip) {
       var selected=combatTargetId && get_entity(combatTargetId);
       if (!selected || !selected.visible || selected.dead || selected.hp<=0 ||
@@ -11637,7 +11999,16 @@
       var seen={};return targets.filter(function(t){if(!t||seen[t.id]||t.server!==reunionRealm()||t.map!==character.map||t.in!==character.in)return false;seen[t.id]=true;return true;})
         .map(function(t){var e=get_entity(t.id);return Object.assign({},t,{role:'current',state:'scatter',visible:!!(e&&e.visible&&!e.dead)});});
     }
-    return groupedFarming() && groupedCombat && !navigationIntent.cancelled ? (groupedCombat.queue||[]).slice(0,3).map(function(t,index){
+    var travel=typeof huntTravelControl==='function' && huntTravelControl();
+    var markers=groupedCombat && groupedCombat.queue || [];
+    if(travel && !travel.defending && travel.primary)markers=[travel.primary];
+    var held=typeof convoyTraveling!=='undefined' && convoyTraveling && (convoyTraveling.holdRequested || convoyTraveling.communication || convoyTraveling.phase==='held');
+    if(held) {
+      var defense=typeof convoyHoldDefenseTarget==='function' && convoyHoldDefenseTarget();
+      markers=defense ? [Object.assign(groupedEntityReport(defense),{server:reunionRealm()})] : [];
+    }
+    markers=markers.filter(function(t){var e=get_entity(t.id);return e && e.visible && !e.dead && e.hp!==0 && t.server===reunionRealm() && t.map===character.map && t.in===character.in;});
+    return groupedFarming() && !navigationIntent.cancelled ? markers.slice(0,3).map(function(t,index){
       var e=get_entity(t.id);return {id:t.id,map:t.map,in:t.in,server:t.server,role:['current','next','third'][index],state:t.state,radius:Math.max(18,(Number(e && e.awidth)||24)/2+4),visible:!!(e && e.visible && !e.dead && t.server===reunionRealm() && t.map===character.map && t.in===character.in)};
     }) : [];
   }
@@ -11647,6 +12018,11 @@
     var before=groupedCombat && groupedCombat.target, after=next && next.target;
     if (before && after && before.id!==after.id && groupedCombat.pursuit && groupedCombat.pursuit.replacementKind==='closer-hunt') {
       cancelFarmApproach('Closer hunt monster'); cancelFightRoute(); cancelGroupRoute(); resetCombatMovement();
+    }
+    if(before && (!after || passingKey(before)!==passingKey(after))) {
+      cancelFarmApproach('Travel encounter retired');cancelFightRoute();cancelGroupRoute();resetCombatMovement();
+      combatTargetId=null;
+      if(root.partyRoleRunner)root.partyRoleRunner.resetTargeting();
     }
     if(after && (!before || before.id!==after.id)) {
       cancelFightRoute(); cancelGroupRoute(); resetCombatMovement();
@@ -11707,12 +12083,33 @@
   function queueReport() {
     return {name:character.name,rareObservation:rareObservationReport(),map:character.map,in:character.in,server:reunionRealm(),x:character.x,y:character.y,hp:character.hp,max_hp:character.max_hp,lastDeath:lastDeathInfo,rip:!!character.rip,
       combatSelection:Object.assign({},combatSelection,{runtimeId:convoyRuntimeId,target:groupedNomination()}),
-      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),returnDefense:returnDepartureDefense(),currentAttackers:currentTravelAttackers(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:queueClaims(),candidates:queueCandidates(),retentions:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
+      groupedCombat:{formationRecovery:root.partyQueueClient && root.partyQueueClient.formation ? root.partyQueueClient.formation.report() : undefined,approach:groupedApproachReport(),pursuitAck:groupedCombat && groupedCombat.pursuit && groupedCombat.pursuit.revoking || null,lootPending:!!(root.partyLootClient && root.partyLootClient.huntPending()),reportedAt:Date.now()+coordinatorClockOffset,protocol:4,observationAt:root.__partyEntitiesObservedAt||0,passingEncounters:passingEncounterReport(),passingAcknowledgement:root.partyQueueClient && root.partyQueueClient.passingAcknowledgement && root.partyQueueClient.passingAcknowledgement(),huntDefense:huntTravelDefense(),returnDefense:typeof returnCombatActive==='function' && returnCombatActive() || returnDepartureDefense(),currentAttackers:currentTravelAttackers(),travelCandidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:travelStopCandidates(),currentAttackersAt:travelObservationAt(),travelCommand:localTravelCommand(),epoch:root.__partyCombatResetAt||0,claims:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueClaims(),candidates:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueCandidates(),retentions:typeof returnCombatActive==='function' && returnCombatActive()?[]:queueRetentions(),evidence:root.partyQueueClient ? root.partyQueueClient.reportEvidence(fightDeaths) : [],deaths:fightDeaths,
         threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision,
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
   function acceptCombatControl(state) {
-    if (Array.isArray(state.passingEncounters)) peerPassingEncounters = state.passingEncounters;
+    if(state.passingControl && (!state.serverNow || state.serverNow>=(root.__partyHuntTravelAt||0))) {
+      var beforeHunt=root.__partyHuntTravel, nextHunt=state.passingControl.hunt || null;
+      if(nextHunt && nextHunt.primary && (!beforeHunt || !beforeHunt.primary || passingKey(beforeHunt.primary)!==passingKey(nextHunt.primary)) && typeof game_log==='function')
+        game_log('Travel encounter: '+nextHunt.primary.mtype+' '+nextHunt.primary.id,'#51D2E1');
+      if(beforeHunt && beforeHunt.defending && nextHunt && !nextHunt.defending && nextHunt.id===beforeHunt.id && nextHunt.epoch>beforeHunt.epoch && typeof game_log==='function')
+        game_log('Hunt travel: defense cleared; resuming original destination','#51D2E1');
+      root.__partyHuntTravel=nextHunt;
+      root.__partyHuntTravelAt=state.serverNow||0;
+      if(nextHunt && nextHunt.reason==='passive-setting' && passiveTravelInterruptible() &&
+        state.convoySignal && convoyTraveling && state.convoySignal.commandId===convoyTraveling.commandId &&
+        state.convoySignal.navigationRevision===convoyTraveling.navigationRevision)interruptConvoyForDefense(nextHunt.id,nextHunt.epoch);
+    }
+    if (Array.isArray(state.passingEncounters) && (!state.serverNow || state.serverNow >= (root.__partyPassingControlAt || 0))) {
+      root.__partyPassingControlAt = state.serverNow || 0;
+      var passingNow = Date.now() + coordinatorClockOffset;
+      var retainedPassing = {};
+      peerPassingEncounters.concat(state.passingEncounters).forEach(function(e) {
+        var key = passingKey(e), old = retainedPassing[key];
+        if (passingNow-e.at<60000 && (!old || old.at<=e.at)) retainedPassing[key]=e;
+      });
+      peerPassingEncounters = parent.__partyPeerPassingEncounters = Object.values(retainedPassing).slice(-128);
+    }
     if (typeof acceptRareCombatControl === 'function') acceptRareCombatControl(state);
     if(!state.serverNow || state.serverNow >= (root.__partyTravelCombatAt || 0))
       root.__partyFarmingEngagement=state.convoySignal && state.convoySignal.farmingEngagement || null;
@@ -11727,7 +12124,8 @@
         cancelFarmApproach("Travel owns destination"); cancelFightRoute(); cancelGroupRoute();
       }
     }
-    if(state.convoySignal && state.convoySignal.phase==='defending')interruptConvoyForDefense(state.convoySignal.id,state.convoySignal.epoch);
+    if(state.convoySignal && state.convoySignal.phase==='defending' && convoyTraveling &&
+      state.convoySignal.commandId===convoyTraveling.commandId && state.convoySignal.navigationRevision===convoyTraveling.navigationRevision)interruptConvoyForDefense(state.convoySignal.id,state.convoySignal.epoch);
     var at=Math.max(Number(state.combatResetAt || state.combatResetByCharacter && state.combatResetByCharacter[character.name] || 0),
       Number(state.groupedCombat && state.groupedCombat.resetAt || 0));
     if(at<Number(root.__partyCombatResetAt||0))return;
@@ -11765,7 +12163,7 @@
     var prior=approachObservation, displacement=prior && prior.identity===identity ? Math.hypot(character.x-prior.x,character.y-prior.y) : 0;
     approachObservation={identity:identity,x:character.x,y:character.y};
     var entity=get_entity(t.id), recovery=formationState.recovery, point=recovery && recovery.point;
-    var active=groupedFresh() && !navigationIntent.cancelled && !partyConvoyActive && !convoyTraveling &&
+    var active=groupedFresh() && !navigationIntent.cancelled && (!(partyConvoyActive || convoyTraveling) || huntTravelDefense()) &&
       !character.rip && !eventTraveling && !joinedEvent && !root.sharedRoutine.isOccupied() &&
       !(groupedCombat.recovering || []).length && p.target===t.id;
     return {target:identity,at:now,active:!!active,visible:!!(entity && entity.visible && !entity.dead),
@@ -11798,6 +12196,7 @@
       Math.hypot(character.x-anchor.x,character.y-anchor.y) <= groupedCombat.range;
   }
   function groupedAttackAllowed(target) {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.blocks())return false;
     if (travelCombatActive() && !departureTargetEngaged(target)) return false;
     if(root.partyLootClient && root.partyLootClient.huntPending() && !departureTargetEngaged(target))return false;
@@ -11868,7 +12267,39 @@
     if(groupedFresh() && allies.length && formationMove(fight))return true;
     return root.partyQueueClient.sight.tick(fight.id,fight,remembered,allies);
   }
+  function cancelEncounterCatchup(c) {
+    var route=c && c.encounterCatchup;
+    if(!route)return;
+    route.cancelled=true;delete c.encounterCatchup;
+    if(route.onDone && typeof smart!=='undefined' && smart.on_done===route.onDone)Promise.resolve(stop('smart')).catch(function(){});
+  }
+  function encounterCatchup() {
+    var c=convoyTraveling, control=typeof huntTravelControl==='function' && huntTravelControl();
+    var t=control && control.primary;
+    var allowed=c && control && control.defending && c.phase==='defending' && !c.holdRequested && !c.communication &&
+      !navigationIntent.cancelled && Number(c.navigationRevision)===Number(navigationIntent.revision) &&
+      !character.rip && !joinedEvent && !eventTraveling && !escapeOwns() && groupedFresh();
+    if(!allowed || !t || t.server!==reunionRealm()){cancelEncounterCatchup(c);return false;}
+    if(t.map===character.map && String(t.in??t.map)===String(character.in||character.map)){cancelEncounterCatchup(c);return false;}
+    var key=JSON.stringify([c.id,c.epoch,c.commandId,c.navigationRevision,passingKey(t)]);
+    if(c.encounterCatchup && c.encounterCatchup.key!==key)cancelEncounterCatchup(c);
+    var route=c.encounterCatchup;
+    if(route){
+      if(!route.failed && Date.now()-route.startedAt>30000){route.failed='Encounter catch-up timed out';if(smart.on_done===route.onDone)Promise.resolve(stop('smart')).catch(function(){});}
+      root.__partyNavigationDetail=route.failed || 'Joining '+t.mtype+' encounter; leaving '+character.map;
+      return true;
+    }
+    route=c.encounterCatchup={key:key,target:passingKey(t),from:character.map,map:t.map,startedAt:Date.now()};
+    if(String(t.in??t.map)!==t.map){route.failed='Encounter catch-up requires instance '+t.in;return true;}
+    var moving;
+    try{moving=smart_move({map:t.map,x:t.x,y:t.y});route.onDone=smart.on_done;}
+    catch(error){route.failed='Encounter catch-up failed: '+String(error);return true;}
+    Promise.resolve(moving).then(function(){if(!route.cancelled)route.arrived=true;},function(error){if(!route.cancelled)route.failed='Encounter catch-up failed: '+String(error);});
+    root.__partyNavigationDetail='Joining '+t.mtype+' encounter; leaving '+character.map;
+    return true;
+  }
   function groupedMovement() {
+    if(encounterCatchup())return true;
     if(convoyTraveling && !convoyTraveling.defensePaused)return true;
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
     if (groupedDefensiveTarget() && !navigationIntent.cancelled && !character.rip && !root.sharedRoutine.isOccupied()) {
@@ -11877,7 +12308,7 @@
     }
     // The coordinator announces ownership before the local command arrives.
     // Never stop or reverse that route while waiting for our command.
-    if ((partyConvoyActive || convoyTraveling) && !root.__partyFarmingEngagement) { cancelGroupRoute(); cancelFightRoute(); return true; }
+    if ((partyConvoyActive || convoyTraveling) && !(typeof huntTravelDefense==='function' && huntTravelDefense()) && !root.__partyFarmingEngagement) { cancelGroupRoute(); cancelFightRoute(); return true; }
     if (!groupedFarming() || navigationIntent.cancelled || character.rip || root.sharedRoutine.isOccupied() ||
         typeof rareActive === "function" && rareActive() && rareControlState.kind !== "encounter") { cancelGroupRoute(); cancelFightRoute(); return false; }
     if (!groupedCombat) {cancelFightRoute();return false;}
@@ -11989,6 +12420,7 @@
   }
 
   function isAllowedTarget(target, huntTravelCommand, diagnostic) {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
     function reject(reason) { if (diagnostic) diagnostic.reason = reason; return false; }
     var huntTravel = huntTravelCommand && huntTravelCommand.purpose === "monster-hunt" &&
       huntTravelCommand.combatHandoffAllowed === true && huntTravelCommand.huntTarget === (target && target.mtype);
@@ -12138,6 +12570,7 @@
     var deaths = typeof groupedCombat !== 'undefined' && groupedCombat && groupedCombat.deaths || [];
     if(deaths.some(function(d){return String(d.id)===String(target.id) && d.map===character.map &&
       String(d.in==null?d.map:d.in)===String(character.in==null?character.map:character.in) && d.server===reunionRealm();}))return false;
+    if(typeof huntTravelDefense==='function' && huntTravelDefense() && (convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return true;
     if(isAttackingPartyMember(target))return true;
     return false;
   }
@@ -12348,8 +12781,115 @@
       if(!completed)request("/shared-travel",{method:"POST",timeout:3000,body:Object.assign({},body,{cancel:true})}).catch(function(){});
     }
   }
+  function convoySignalExpired(signal) {
+    if (!signal) return true;
+    if (Number.isFinite(signal.localDeadline)) return convoyDiagnosticClock() >= signal.localDeadline;
+    return Number(signal.validUntil) <= Date.now() + coordinatorClockOffset;
+  }
   function sharedConvoyPoint() {
     return {map:character.map,in:character.in,x:character.real_x,y:character.real_y};
+  }
+  function convoyRetryableRequest(error) {
+    var request = error && error.partyRequest;
+    return !!request && (request.kind === 'network' || request.kind === 'timeout' ||
+      request.status === 408 || request.status === 429 || request.status >= 500);
+  }
+  function convoyCommunication(convoy, operation, kind) {
+    if (!convoy.communication) {
+      convoy.communication = { operation: operation, kind: kind, since: Date.now() + coordinatorClockOffset };
+      game_log('Convoy waiting for coordinator communication: ' + operation + ' (' + kind + ')', '#94a3b8');
+    }
+    root.__partyNavigationDetail = operation === '/convoy-complete' ? 'Arrived; waiting for completion acknowledgement' : 'Waiting for coordinator communication';
+  }
+  async function convoyRetryDelay(ms, ownsConvoy) {
+    var remaining = ms;
+    while (ownsConvoy() && remaining > 0) {
+      var slice = Math.min(100, remaining);
+      await new Promise(function(resolve) { setTimeout(resolve, slice); });
+      remaining -= slice;
+    }
+  }
+  async function acknowledgeConvoyArrival(convoy, command, ownsConvoy) {
+    var attempts = 0;
+    while (ownsConvoy()) {
+      try {
+        var completion = await request('/convoy-complete', { method: 'POST', timeout: 5000, body: {
+          character: character.name, convoyId: command.convoyId, epoch: Number(command.epoch), commandId: command.id,
+          runtimeId: convoyRuntimeId, navigationRevision: Number(command.navigationRevision) || 0, routeVersion: command.routeVersion,
+        }});
+        if (convoy.communication) game_log('Convoy completion communication restored', '#94a3b8');
+        delete convoy.communication; attempts = 0;
+        if (!completion || !completion.waiting) return completion;
+        await convoyRetryDelay(250, ownsConvoy);
+      } catch (error) {
+        if (/stale convoy completion/.test(String(error && (error.message || error)))) {
+          if (ownsConvoy()) await new Promise(function(resolve) { convoy.release = resolve; });
+          return { superseded: true };
+        }
+        if (!convoyRetryableRequest(error)) { delete convoy.communication; throw error; }
+        convoyCommunication(convoy, '/convoy-complete', error.partyRequest.kind);
+        var delay = [1000,2000,5000,10000][Math.min(attempts++,3)];
+        await convoyRetryDelay(Math.min(10000, delay * (0.8 + Math.random() * 0.4)), ownsConvoy);
+      }
+    }
+    return { superseded: true };
+  }
+  function captureConvoyFailureContext(convoy, command) {
+    try {
+      if (convoy.failureContext) return;
+      var signal = convoySignal, now = Date.now() + coordinatorClockOffset;
+      var mono = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+      var http = root.__partyConvoyHttp || {}, mismatches = [];
+      var expected = {id:convoy.id,epoch:convoy.epoch,commandId:convoy.commandId,runtimeId:convoyRuntimeId};
+      if (command.routeProtocol === 4) expected.routeVersion = command.routeVersion;
+      if (signal) Object.keys(expected).forEach(function(field) {
+        var actual = field === 'epoch' || field === 'commandId' ? Number(signal[field]) : signal[field];
+        if (actual !== expected[field]) mismatches.push({field:field,expected:expected[field],received:signal[field]});
+      });
+      var expiry = signal && Number.isFinite(Number(signal.validUntil)) ? Math.max(0, Math.round(Number.isFinite(signal.localDeadline) ? mono - signal.localDeadline : now - Number(signal.validUntil))) : null;
+      var state = !signal ? 'missing' : mismatches.length ? 'identity mismatch' : expiry === null ? 'unknown' : convoySignalExpired(signal) ? 'expired' : 'matching';
+      var age = function(at) { return typeof at === 'number' && Number.isFinite(at) && mono >= at ? Math.round(mono-at) : null; };
+      var p = function(value) { return value ? {map:value.map,x:value.x,y:value.y} : null; };
+      convoy.failureContext = {phase:convoy.phase,position:p(character),destination:p(command.location),
+        convoyId:convoy.id,epoch:convoy.epoch,commandId:convoy.commandId,runtimeId:convoyRuntimeId,routeVersion:command.routeVersion,
+        signal:{state:state,expiredByMs:expiry,mismatches:mismatches},lastStatusResponseAgeMs:age(http.responseAt), transport:JSON.parse(JSON.stringify(root.__partyTravelTransport || null)),
+        lastStatusFailure:http.failure ? {kind:http.failure.kind,durationMs:http.failure.durationMs,ageMs:age(http.failure.at)} : null};
+    } catch (_) {}
+  }
+  function logConvoyFailureContext(context) {
+    try {
+      if (!context) { game_log('Convoy context: unknown', '#94a3b8'); return; }
+      var text = function(value) { return value == null ? 'unknown' : String(value).replace(/[\r\n\t]/g,' ').slice(0,100); };
+      var ms = function(value) { return value == null ? 'unknown' : text(value)+'ms'; };
+      var point = function(value) { return value ? text(value.map)+' ('+text(Number.isFinite(value.x)?Math.round(value.x):null)+','+text(Number.isFinite(value.y)?Math.round(value.y):null)+')' : 'unknown'; };
+      game_log('Convoy context: phase='+text(context.phase)+'; position='+point(context.position)+'; destination='+point(context.destination)+
+        '; convoy='+text(context.convoyId)+'; epoch='+text(context.epoch)+'; command='+text(context.commandId)+'; runtime='+text(context.runtimeId)+'; route='+text(context.routeVersion), '#94a3b8');
+      var signal = context.signal, failure = context.lastStatusFailure;
+      var detail = signal.mismatches.map(function(m) { return m.field+' expected='+text(m.expected)+' received='+text(m.received); }).join(', ');
+      game_log('Convoy signal: '+signal.state+(detail?' ['+detail+']':'')+'; expiry overrun='+ms(signal.expiredByMs)+
+        '; last status response='+ms(context.lastStatusResponseAgeMs)+' ago; latest status failure='+
+        (failure ? text(failure.kind)+' after '+ms(failure.durationMs)+' ('+ms(failure.ageMs)+' ago)' : 'unknown'), '#94a3b8');
+    } catch (_) {}
+  }
+  function reloadConvoyGeometry(signal) {
+    var repair=signal && signal.geometryReload, convoy=convoyTraveling;
+    if (!repair || repair.runtimeId!==convoyRuntimeId || repair.deadline<Date.now()+coordinatorClockOffset || !convoy ||
+        convoy.phase!=='held' || signal.id!==convoy.id || signal.epoch!==convoy.epoch || signal.commandId!==convoy.commandId ||
+        navigationIntent.cancelled || convoy.navigationRevision!==navigationIntent.revision) return;
+    if (parent.__partyGeometryReloaded===repair.id) return;
+    parent.__partyGeometryReloaded=repair.id;
+    var url=(parent.__partyServer || 'http://127.0.0.1:924')+'/CODE/adventure_land/universal-loader.js?t=';
+    var bootstrap="$.ajax({url:"+JSON.stringify(url)+"+Date.now(),dataType:'text',cache:false}).then(function(source){(0,eval)(source);});";
+    game_log('Reloading runtime once to repair shared-route geometry', '#f0b429');
+    parent.setTimeout(function(){
+      if(!runtimeCurrent())return;
+      if(!parent.caracAL && repair.expected && Number(movement.identity.version)!==repair.expected.version && parent.location) {
+        parent.location.reload();
+        return;
+      }
+      if(!parent.caracAL && typeof parent.start_runner==='function')parent.start_runner('maincode',bootstrap);
+      else (0,eval)(bootstrap);
+    },0);
   }
   function sharedConvoyDistance(a,b) {
     if(a.map!==b.map || String(a.in==null?a.map:a.in)!==String(b.in==null?b.map:b.in))return Infinity;
@@ -12360,21 +12900,45 @@
       navigationRevision:Number(command.navigationRevision)||0,runtimeId:convoyRuntimeId,routeVersion:command.routeVersion};
   }
   function sharedMovementOptions(command) {
-    return { shared: true, avoidLeave: !!command.avoidLeave, native: !!command.nativeFallback, speed: command.slowestSpeed,
+    return { owner: {convoyId:command.convoyId,epoch:command.epoch,commandId:command.id,navigationRevision:command.navigationRevision,recoveryStage:command.routeRecovery && command.routeRecovery.stage},
+      relocation:command.routeRecovery && command.routeRecovery.relocation, shared: true, avoidLeave: !!command.avoidLeave, native: !!command.nativeFallback, speed: command.slowestSpeed,
       transitionComplete:function(destination) {
         if(convoyTraveling && convoyTraveling.commandId===command.id)convoyTraveling.transitionMap=destination.map;
       },
+      skipLootWait: command.continuousReturn === 1,
       compareTown: command.continuousReturn === 1 && !command.disableTown,
-      town: command.purpose !== 'monster-hunt' || command.continuousReturn === 1 && !command.disableTown || command.phase === 'plan-return' && !!command.allowTown,
+      town: command.continuousReturn === 1 ? !command.disableTown : command.routeRecovery && command.routeRecovery.relocation === 'town' || command.purpose !== 'monster-hunt' || command.phase === 'plan-return' && !!command.allowTown,
       townAttempt: command.continuousReturn !== 1 ? undefined : function(state, index, from, destination) {
         var c=convoyTraveling;
         if(!c || c.id!==command.convoyId || c.commandId!==command.id)return;
         c.townAttempt={round:[command.epoch,command.routeVersion,index].join(':'),map:from.map,state:state,destination:destination};
       },
       barrier: command.phase === 'plan-return' || command.routeVersion == null ? undefined : function(step, index, completed) {
-        return request('/movement-barrier', {method:'POST',timeout:2000,body:Object.assign(sharedConvoyIdentity(command),{
-          step:index, destination:step, completed:completed, ready:completed || (command.continuousReturn === 1 && !step.town || !departureCombatPending()) && eligibleDepartureChests().length === 0 && (!step.town || can_use('use_town'))
-        })}).then(function(result){return !!result.ready;});
+        var began=convoyDiagnosticClock(), attempts=0, lastFailure;
+        function owned() {
+          var c=convoyTraveling, signal=convoySignal;
+          return c && c.id===command.convoyId && c.commandId===command.id && signal &&
+            signal.id===command.convoyId && Number(signal.epoch)===Number(command.epoch) &&
+            Number(signal.commandId)===command.id && signal.runtimeId===convoyRuntimeId &&
+            signal.routeVersion===command.routeVersion && !convoySignalExpired(signal);
+        }
+        function attempt() {
+          if(lastFailure && convoyDiagnosticClock()-began>=10000)return Promise.reject(lastFailure);
+          if(!owned())return Promise.reject(Object.assign(new Error('Barrier waiting for current coordinator signal'),
+            {partyRequest:{path:'/movement-barrier',method:'POST',kind:'network',status:0}}));
+        return request('/movement-barrier', {method:'POST',timeout:Math.max(1,Math.min(2000,10000-(convoyDiagnosticClock()-began))),body:Object.assign(sharedConvoyIdentity(command),{
+          step:index, destination:step, completed:completed, ready:completed || ((command.continuousReturn === 1 || command.huntTarget) && !step.town || !departureCombatPending()) && (command.continuousReturn === 1 || command.huntTarget || eligibleDepartureChests().length === 0) && (!step.town || can_use('use_town'))
+        })}).then(function(result){
+            if(!owned())throw Object.assign(new Error('Barrier owner superseded'),{partyRequest:{path:'/movement-barrier',kind:'aborted'}});
+            return !!result.ready;
+          }).catch(function(error){
+            lastFailure=error;
+            if(!convoyRetryableRequest(error) || !owned() || convoyDiagnosticClock()-began>=10000)throw error;
+            var delay=Math.min(1000,250*Math.pow(2,attempts++));
+            return new Promise(function(resolve){setTimeout(resolve,delay);}).then(attempt);
+          });
+        }
+        return attempt();
       }
     };
   }
@@ -12389,7 +12953,7 @@
       return gate.original();
     }};
     gate.owner=owner;
-    try {await anniversaryWithTimeout(smart_move(rally,undefined,{town:!command || !command.disableTown}),120000,"Convoy rendezvous");}
+    try {await anniversaryWithTimeout(smart_move(rally,undefined,{town:command ? sharedMovementOptions(command).town : true,owner:command ? sharedMovementOptions(command).owner : undefined}),120000,"Convoy rendezvous");}
     finally {if(gate.owner===owner)gate.owner=null;}
   }
   async function sharedConvoyRendezvous(convoy,command,ownsConvoy,phase) {
@@ -12438,7 +13002,7 @@
     return {destination:segment.location,plot:segment.plot,source:"itinerary"};
   }
   function sharedConvoyEngagement(convoy,command,ownsConvoy,phase) {
-    if(command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
+    if(command.purpose === "monster-hunt" || command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
     if(typeof farmingTravelTarget!=="function" || !command.huntTarget && typeof groupedFollower==="function" && groupedFollower())return;
     var target=farmingTravelTarget(command);
     var approach=target && typeof combatApproachPoint==="function"?combatApproachPoint(target):target;
@@ -12520,7 +13084,10 @@
         if(!result || !result.ok)throw new Error("Route unavailable");
         install(result.route);
       }).catch(function(error){
-        if(ownsConvoy())convoy.fail(error.message || String(error));
+        if(ownsConvoy()) {
+          if(command.routeProtocol===4 && convoyRetryableRequest(error))convoyCommunication(convoy,error.partyRequest.path,error.partyRequest.kind);
+          convoy.fail(error.message || String(error));
+        }
         retryAt=Date.now()+500;
       }).finally(function(){pending=false;});
     }
@@ -12559,8 +13126,10 @@
         var signal=convoySignal,now=Date.now()+coordinatorClockOffset;
         var matches=signal && signal.id===convoy.id && Number(signal.epoch)===convoy.epoch &&
           Number(signal.commandId)===convoy.commandId && signal.runtimeId===convoyRuntimeId && signal.routeVersion===command.routeVersion;
-        if(!matches || Number(signal.validUntil)<=now) {
+        if(!matches || convoySignalExpired(signal)) {
           if(Date.now()-started<3000 && !released)return;
+          if(command.routeProtocol===4 && (!signal || matches))
+            convoyCommunication(convoy, '/status', !signal ? 'missing-signal' : 'expired-signal');
           throw new Error("Shared route coordinator signal expired");
         }
         if(["failed","shared-hold","defending"].indexOf(signal.phase)>=0)throw new Error("Party requested hold");
@@ -12682,7 +13251,7 @@
           var matches = signal && signal.id === convoy.id && Number(signal.epoch) === convoy.epoch &&
             Number(signal.commandId) === convoy.commandId && signal.runtimeId === convoyRuntimeId;
           var now = Date.now() + coordinatorClockOffset;
-          if (!matches || Number(signal.validUntil) <= now)
+          if (!matches || convoySignalExpired(signal))
             throw new Error("Convoy coordinator signal expired or belongs to another runtime");
           if (signal.phase === "failed") throw new Error(signal.reason || "Convoy held by coordinator");
           if (!smart.found) {
@@ -12739,8 +13308,23 @@
     return route;
   }
 
+  function convoyMovementEvidence(convoy) {
+    var current=movement.report(), last=movement.last();
+    if (current && current.owner && current.owner.commandId === convoy.commandId) return current;
+    if (last && last.failureContext && last.failureContext.commandId === convoy.commandId) return last;
+    return null;
+  }
+  var convoyCruiseCap = null;
+  function setConvoyCruise(convoy, speed) {
+    if (convoyTraveling !== convoy) return;
+    var unchanged = convoyCruiseCap && convoyCruiseCap.id === convoy.id && convoyCruiseCap.speed === speed;
+    convoyCruiseCap = {id:convoy.id,owner:convoy,speed:speed};
+    convoy.cruiseReleased = false;
+    if (!unchanged) try { Promise.resolve(cruise(speed)).catch(function () {}); } catch (_) {}
+  }
   function releaseConvoyCruise(convoy) {
-    if (!convoy || convoyTraveling !== convoy || convoy.cruiseReleased) return;
+    if (!convoy || convoyTraveling !== convoy || convoy.cruiseReleased || !convoyCruiseCap || convoyCruiseCap.owner !== convoy) return;
+    convoyCruiseCap = null;
     convoy.cruiseReleased = true;
     // cruise's deferred need not settle; emit the reset before relinquishing
     // ownership, never from a delayed callback that might affect a new route.
@@ -12801,12 +13385,13 @@
 
   async function coordinatedMonsterTravel(command) {
     var convoy = { id: command.convoyId, epoch: Number(command.epoch), commandId: command.id,
-      routeProtocol: command.routeProtocol,
+      routeProtocol: command.routeProtocol, holdRequested: command.phase === 'shared-hold',
       navigationRevision: Number(command.navigationRevision) || 0,
       generation: runtimeGeneration, destination: command.location, cancelled: false,
       phase: "taking-control", routeStarts: 0, replanStarts: 0,
-      purpose:command.purpose,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
+      purpose:command.purpose,huntTarget:command.huntTarget,navigationExempt:!!command.navigationExempt,nonPreemptible: !!command.nonPreemptible,continuousReturn:command.continuousReturn,returnWalking:!!command.returnWalking };
     convoyTraveling = convoy;
+    if (convoyCruiseCap && convoyCruiseCap.id === convoy.id) convoyCruiseCap.owner = convoy;
     if(command.purpose === "party-force-travel")forceTraveling=true;
     if (command.purpose !== "grouped-approach" && !/^shared-walk/.test(command.purpose||""))
       partyLocation = command.purpose === "franky-exit" ? null : command.location;
@@ -12823,9 +13408,11 @@
     }
     convoy.fail = function (reason) {
       if (!ownsConvoy() || convoy.failure) return;
+      captureConvoyFailureContext(convoy,command);
       if(convoy.freezeRoute)convoy.freezeRoute();
       convoy.failure = String(reason); convoy.routeReady = false;
-      phase("failed");
+      movement.cancel('Convoy stopped: '+reason, {code:convoy.communication ? 'convoy-communication-hold' : 'convoy-failure',convoyId:convoy.id,epoch:convoy.epoch,commandId:command.id}).catch(function(){});
+      phase(convoy.communication ? "communication-hold" : "failed");
       Promise.resolve(stop()).catch(function () {});
     };
     async function stopForConvoy() {
@@ -12860,19 +13447,23 @@
     }
     try {
       followingLeader = false;
-      await stop("smart");
+      await movement.cancel('Convoy taking movement ownership', {code:'convoy-takeover',convoyId:convoy.id,epoch:convoy.epoch,commandId:command.id});
       if (!ownsConvoy()) return;
       // stop("smart") cancels only path ownership; stop() also sends a move
       // packet. Wait for that physical stop before declaring assembly ready.
       await stopForConvoy();
       if (!ownsConvoy()) return;
-      if(command.huntTarget && command.combatHandoffAllowed) {
+      if(command.huntTarget && command.combatHandoffAllowed && !convoy.holdRequested) {
         sharedConvoyEngagement(convoy,command,ownsConvoy,phase);
         while(ownsConvoy() && convoy.handoffPending)await new Promise(function(resolve){setTimeout(resolve,80);});
         if(!ownsConvoy())return;
       }
       if (command.phase === "hold") {
-        convoy.failure = command.reason || "Convoy held; request a fresh convoy to retry";
+        convoy.failure = command.reason || "Navigation halted (" + (command.failureCode || "missing-failure-context") +
+          "); convoy " + command.convoyId + ", epoch " + command.epoch + ", destination " + command.location.map +
+          " (" + command.location.x + ", " + command.location.y + ")";
+        convoy.failureContext = command.failureContext || null;
+        releaseConvoyCruise(convoy);
         phase("failed");
         root.__partyNavigationDetail = "Convoy held: " + convoy.failure;
         game_log("Convoy held: " + convoy.failure, "red");
@@ -12906,7 +13497,7 @@
         // cruise is a server speed cap; the source does not settle its
         // deferred on the game_response acknowledgement. Observe the resulting
         // character speed instead of awaiting that deferred.
-        Promise.resolve(cruise(Number(command.slowestSpeed) || character.speed)).catch(function () {});
+        setConvoyCruise(convoy, Number(command.slowestSpeed) || character.speed);
         phase("assembled");
         // Keep ownership until the coordinator sends the scheduled travel
         // command. The role loop must not walk away from the rally.
@@ -12944,7 +13535,7 @@
       if (command.phase !== "prepare" && command.phase !== "shared-prepare") throw new Error("A fresh prepared convoy is required");
       // A hot reload releases the old runtime's throttle. Re-establish it
       // when resuming preparation even if assembly was already completed.
-      Promise.resolve(cruise(Number(command.slowestSpeed) || character.speed)).catch(function () {});
+      setConvoyCruise(convoy, Number(command.slowestSpeed) || character.speed);
       if(command.phase === "shared-prepare") await prepareSharedConvoyRoute(convoy, command, ownsConvoy, phase);
       else await prepareConvoyRoute(convoy, command, ownsConvoy, phase);
       if (!ownsConvoy()) return;
@@ -12955,24 +13546,27 @@
         return;
       }
       phase("arrived");
-      var completion;
-      do {
-        completion = await request("/convoy-complete", { method: "POST", body: {
-          character: character.name, convoyId: command.convoyId,
-          epoch: Number(command.epoch), commandId: command.id, runtimeId: convoyRuntimeId,
-          navigationRevision:Number(command.navigationRevision)||0,routeVersion:command.routeVersion,
-        }});
-        if(completion && completion.waiting)await new Promise(function(resolve){setTimeout(resolve,250);});
-      } while(ownsConvoy() && completion && completion.waiting);
+      var completion = await acknowledgeConvoyArrival(convoy, command, ownsConvoy);
       if(!ownsConvoy())return;
       if (completion && completion.superseded) return;
       if (command.purpose === "event-return") eventRecoveryState.phase = "complete";
       game_log("Arrived with party at " + (command.label || "selected monster"), "#51D2E1");
     } catch (error) {
       if (!ownsConvoy()) return;
+      if (command.routeProtocol === 4 && convoyRetryableRequest(error))
+        convoyCommunication(convoy, error.partyRequest.path, error.partyRequest.kind);
+      if (convoy.communication) {
+        if (convoy.freezeRoute) convoy.freezeRoute();
+        phase('communication-hold'); convoy.routeReady = false;
+        await Promise.resolve(stop()).catch(function() {});
+        if (ownsConvoy()) await new Promise(function(resolve) { convoy.release = resolve; });
+        return;
+      }
+      captureConvoyFailureContext(convoy,command);
       phase("failed");
       var reason = convoy.failure || String(error && (error.reason || error.message || error));
       convoy.failure = reason; convoy.routeReady = false;
+      await Promise.resolve(movement.cancel('Convoy stopped: '+reason, {code:'convoy-failure',convoyId:convoy.id,epoch:convoy.epoch,commandId:command.id})).catch(function(){});
       await Promise.resolve(stop()).catch(function () {});
       if (!ownsConvoy()) return;
       await request("/convoy-failed", { method: "POST", body: {
@@ -12981,10 +13575,12 @@
         failureCode: convoy.townAttempt && ['interrupted','unavailable'].indexOf(convoy.townAttempt.state)>=0 ? 'town-interrupted' : command.phase === "town" ? "town-unavailable" : "route-failed",
         townAttempt: convoy.townAttempt || null,
         routeVersion: command.routeVersion,
-        details: { phase: convoy.phase, routeStarts: convoy.routeStarts,
-          map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null },
+        details: { phase: convoy.phase, failureContext: convoy.failureContext || null, routeStarts: convoy.routeStarts,
+          map: character.map, x: character.x, y: character.y, movementLock: convoy.movementLock || null, interruption: convoy.interruption || null,
+          movement: convoyMovementEvidence(convoy) },
       }}).catch(function () {});
       game_log("Convoy movement failed: " + reason, "red");
+      logConvoyFailureContext(convoy.failureContext);
       if (ownsConvoy()) await new Promise(function (resolve) { convoy.release = resolve; });
     } finally {
       if(convoy.defensePaused && !convoy.cancelled && convoyTraveling===convoy)
@@ -13014,6 +13610,9 @@
   async function emergencyWarriorStomp() {
     if (typeof rareTarget === "function" && rareTarget() && rareTarget().mtype === "tinyp") return false;
     if (character.ctype !== "warrior" || farmingMode === "scatter") return false;
+    var weapon = character.slots && character.slots.mainhand;
+    // can_use checks class and cooldown, not weapon compatibility.
+    if (!weapon || !G.items || !G.items[weapon.name] || G.items[weapon.name].wtype !== "basher") return false;
     var skill = G.skills && G.skills.stomp;
     if (unfinishedFight() && Object.values(parent.entities || {}).some(function(e) {
       return e && e.type==='monster' && e.visible && !e.dead && !leaderLockAllows(e) &&
@@ -13857,6 +14456,7 @@
     kiteState.targetId = null; kiteState.destination = null; kiteState.mode = "idle";
   }
   function sendCombatMove(target, destination, mode) {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return false;
     var now = Date.now(), old = kiteState.destination;
     var timing=root.__partyQueueTiming;
     if(timing && timing.target===target.id && !timing.firstMovementAt)timing.firstMovementAt=now;
@@ -13888,12 +14488,41 @@
       return after >= Math.min(before, Number(enemy.range) || 30) - 1;
     });
   }
+  function eventBossMovement(target) {
+    return !!(target && typeof eventTargetTypes !== "undefined" && eventTargetTypes.indexOf(target.mtype) >= 0);
+  }
+  function eventKitePoint(point, target) {
+    if (!eventBossMovement(target)) return true;
+    var radius = Math.hypot(character.x - target.x, character.y - target.y);
+    var limit = radius + Math.max(0, desiredCombatRange() - combatDistance(target));
+    return Math.hypot(point.x - target.x, point.y - target.y) <= limit;
+  }
+  function eventCornerStep(target, attacker, step) {
+    if (!eventBossMovement(target)) return false;
+    var best = null, clearance = -Infinity;
+    var attackers = Object.values(parent.entities || {}).filter(function (e) {
+      return e && e.type === "monster" && e.visible && !e.dead && e.target === character.name &&
+        (!e.map || e.map === character.map) && (e.in == null || e.in === character.in);
+    });
+    // The two ordinary kite arcs can both point into a corner. Search every
+    // direction, but retain collision, attacker-clearance and boss-range checks.
+    for (var i = 0; i < 16; i++) {
+      var angle = i * Math.PI / 8;
+      var point = { x: character.x + Math.cos(angle) * step, y: character.y + Math.sin(angle) * step };
+      if (!eventKitePoint(point, target) || !safeCombatPoint(point, attacker)) continue;
+      var gap = Math.min.apply(Math, attackers.map(function (e) { return Math.hypot(point.x - e.x, point.y - e.y); }));
+      if (gap > clearance) { best = point; clearance = gap; }
+    }
+    return best ? sendCombatMove(target, best, "event-kiting") : false;
+  }
   async function kiteIfNeeded(target) {
+    if(typeof returnCombatActive==='function' && returnCombatActive())return false;
     var attacker = target && target.target === character.name ? target : Object.keys(parent.entities || {})
       .map(function (id) { return parent.entities[id]; }).filter(function (enemy) {
         return enemy && enemy.type === "monster" && enemy.visible && !enemy.dead && enemy.target === character.name;
       }).sort(function (a, b) { return combatDistance(a) - combatDistance(b); })[0];
     if (!attacker || attacker.dead) { kiteState.targetId = null; return false; }
+    if (eventBossMovement(target) && !is_in_range(target) && await approachCombatTarget(target)) return true;
     if (kiteState.targetId !== attacker.id) { kiteState.targetId = attacker.id; kiteState.direction = 1; }
     var dx = character.x - attacker.x, dy = character.y - attacker.y;
     var radius = Math.hypot(dx, dy), angle = Math.atan2(dy, dx);
@@ -13906,15 +14535,19 @@
     for (var i = 0; i < signs.length; i++) {
       var nextAngle = angle + turn * signs[i];
       var point = { x: attacker.x + nextRadius * Math.cos(nextAngle), y: attacker.y + nextRadius * Math.sin(nextAngle) };
-      if (safeCombatPoint(point, attacker)) {
+      if (eventKitePoint(point, target) && safeCombatPoint(point, attacker)) {
         kiteState.direction = signs[i]; return sendCombatMove(attacker, point, "kiting");
       }
     }
     var outward = { x: character.x + Math.cos(angle) * step, y: character.y + Math.sin(angle) * step };
-    if (safeCombatPoint(outward, attacker)) return sendCombatMove(attacker, outward, "escaping");
+    if (eventKitePoint(outward, target) && safeCombatPoint(outward, attacker)) return sendCombatMove(attacker, outward, "escaping");
+    if (eventCornerStep(target, attacker, step)) return true;
     root.partyCombatPosition = { at: Date.now(), target: attacker.id, distance: combatDistance(attacker),
-      desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat" };
-    return true;
+      desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat",
+      blockingAttacker: attacker.id, reason: "No safe kite step; trying combat approach" };
+    // No move was issued. Let the selected target's approach try its own
+    // collision-checked steps, retaining all secondary-attacker safeguards.
+    return false;
   }
   async function approachCombatTarget(target) {
     if (!target || target.dead) return false;
@@ -13930,12 +14563,16 @@
         y: character.y + Math.sin(angle + offsets[i]) * step };
       if (safeCombatPoint(point, target)) return sendCombatMove(target, point, delta > 0 ? "approaching" : "retreating");
     }
+    var blockedKite = root.partyCombatPosition;
     root.partyCombatPosition = { at: Date.now(), target: target.id, distance: combatDistance(target),
-      desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat" };
+      desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat",
+      blockingAttacker: blockedKite && blockedKite.mode === "blocked" ? blockedKite.blockingAttacker : null,
+      reason: "No collision-safe combat approach satisfying attacker clearance" };
     return false;
   }
 
   root.sharedRoutine = {
+    merchantVisibilityActive: function () { return Date.now() < merchantVisibilityUntil; },
     describeAttackRange: function (target) {
       if (!target || target.mtype !== "crab" || typeof get_width !== "function" || typeof get_height !== "function") return null;
       var dimensions = G.dimensions && G.dimensions.crab;
@@ -14016,7 +14653,7 @@
           (Number(convoyTraveling.commandId) || 1) - 1);
       }
       if (convoyTraveling && typeof stop === "function") {
-        try { stop("smart"); } catch (_navigationStopError) { /* Already stopped. */ }
+        try { movement.cancel('Runtime retired; releasing convoy movement', {code:'runtime-retired',convoyId:convoyTraveling.id,commandId:convoyTraveling.commandId}).catch(function(){}); } catch (_navigationStopError) { /* Already stopped. */ }
       }
       if (timer) clearInterval(timer);
       if (gatheringTimer) clearInterval(gatheringTimer);
@@ -14042,6 +14679,7 @@
         parent.socket.off("test", receiveEventClock);
         parent.socket.off("connect", syncEventClock);
         parent.socket.off("game_response", donationRateListener);
+        parent.socket.off("q_data", luckySlotRollListener);
         parent.socket.off("tracker", trackerCatalogListener);
         parent.socket.off("player", trackerInventoryListener);
         parent.socket.off("players", playerDirectoryListener);
@@ -14074,15 +14712,28 @@
       if (root.on_party_request === acceptConfiguredPartyRequest) root.on_party_request = previousPartyRequestHandler;
     },
     isBanking: function () { return banking || bankQueued; },
+    merchantEventCombatActive: function () {
+      return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
+        !eventReturnPending && !root.__merchantActiveJob;
+    },
+    returnCombatActive: returnCombatActive,
+    returnDefenseTarget: returnDefenseTarget,
+    returnAttacker: returnAttacker,
+    returnMovementTick: cancelReturnTownUnderAttack,
     isOccupied: function () {
       if (root.__partyUpgradePreviewInFlight) return true;
       if (root.__partyConsoleMaintenance) return true;
-      if (convoyTraveling && convoyTraveling.continuousReturn === 1) {
+      if(typeof returnCombatActive==='function' && returnCombatActive()) {
+        cancelReturnTownUnderAttack();
+        return !!(character.c && character.c.town);
+      }
+      if(outboundHuntTravel() && huntTravelExtraAggro())interruptConvoyForDefense();
+      if (convoyTraveling && !convoyTraveling.defensePaused && (convoyTraveling.continuousReturn === 1 || convoyTraveling.purpose === 'monster-hunt' && convoyTraveling.huntTarget)) {
         root.__partyCombatOwner = "convoy:" + convoyTraveling.phase;
         return true;
       }
       if (character.ctype === "merchant" && (root.__merchantInventoryTidy || luckyUpgradeService && luckyUpgradeService.pending())) return true;
-      if (travelCombatActive() && !departureCombatPending()) return true;
+      if (travelCombatActive() && !huntTravelDefense() && !departureCombatPending()) return true;
       if(root.partyLootClient && root.partyLootClient.huntPending() && !departureCombatPending())return true;
       if(convoyTraveling && !joinedEvent && !eventTargetTypes.length && Object.values(parent.entities||{}).some(function(e){
         return e && e.type==='monster' && e.visible && !e.dead && isAttackingPartyMember(e);
@@ -14157,8 +14808,12 @@
     formationMove: formationMove,
     groupedMovement: groupedMovement,
     groupedAttackAllowed: groupedAttackAllowed,
+    noteCombatHandoff: function(stage,id,details) {
+      if(root.partyQueueClient && root.partyQueueClient.timing)root.partyQueueClient.timing.attack(stage,id,details);
+    },
     terrainRecoveryPorts: terrainRecoveryPorts,
     queueReport: queueReport,
+    convoyActive: function(){return !!convoyTraveling || partyConvoyActive;},
     queueSafePoint: formationRecoverySafePoint,
     queueRecoveryMove: function(p){var t=groupedCombat && groupedCombat.target;
       if(t && formationRecoverySafePoint(p))sendCombatMove(t,p,"fight-recovery");},
@@ -14178,6 +14833,9 @@
     queueMembers: function(){return currentPartyList();},
     queueRequest: function(body){return request('/status',{method:'POST',body:Object.assign({name:character.name},body)});},
     acceptQueue: acceptQueue,
+    queueAcknowledgement: function() {
+      return {groupedCombat:{ack:groupedAcknowledgement(),queueAck:groupedCombat && groupedCombat.queueRevision}};
+    },
     sharedTargetId: function(){return groupedFarming() && groupedCombat && groupedCombat.target && groupedCombat.target.id || null;},
     queueEvidence: function(target,state,action){return root.partyQueueClient && root.partyQueueClient.evidence(target,state,action);},
     usesGroupedCombat: groupedFarming,
@@ -14281,11 +14939,13 @@
         observedAt: parent.socket && parent.socket.connected ? Date.now() : 0 };
     },
     skillTargetAllowed: function(target) {
+      if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
       if (!target || target.type !== "monster" || !isAllowedTarget(target) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
+      if(huntTravelDefense() && !isAttackingPartyMember(target) && !(convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return false;
       if (target.target && !isAttackingPartyMember(target)) return false;
       if (groupedAttackAllowed(target)) return true;
       return groupedFarming() && groupedFresh() && groupedCombat.committed &&
-        isAttackingPartyMember(target) && !travelCombatActive();
+        isAttackingPartyMember(target) && (!travelCombatActive() || huntTravelDefense());
     },
     followLeaderIfFar: async function (maximumDistance) {
       if (farmApproach.route || farmingMode === "scatter") return false;
@@ -14490,6 +15150,7 @@
     },
     getRareTarget: rareTarget,
     getPassingTarget: passingTarget,
+    convoyHoldDefenseTarget: convoyHoldDefenseTarget,
     monsterPriority: monsterPriority,
     passingEncounterReport: passingEncounterReport,
     isPassingEncounter: isPassingEncounter,

@@ -11,7 +11,7 @@ export function PartySendMailDialog({ model }: { model: PartyConsoleModel }) {
 function PartySendMailDialogConnected({ base }: { base: PartyConsoleModel }) {
   const [inspection, setInspection] = useState<PartyConsoleModel["selected"]>(null);
   const model = usePanelModel(base, { inventory: true, bank: true });
-  const { state, post, setNotice, mailOpen, setMailOpen, setMailCount } = model;
+  const { state, post, mailOpen, setMailOpen, setMailCount } = model;
   return (
     <SendMailDialog
       key={model.mailDraft ? "aldata-auth" : "mail"}
@@ -28,7 +28,6 @@ function PartySendMailDialogConnected({ base }: { base: PartyConsoleModel }) {
       onSend={async (mail) => {
         await post("/merchant/send-mail", mail);
         if (mail.recipient === "earthiverse" && mail.subject === "aldata_auth") model.setALDataAuthPending(true);
-        setNotice(`Mail to ${mail.recipient} queued`);
       }}
     />
   );

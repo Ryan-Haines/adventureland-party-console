@@ -1,5 +1,6 @@
+import { admitMerchantInterruption, attachMerchantInterruption } from '../navigation/merchant-interruption.ts';
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
-import { reconcileDeliveries, type DeliveryRequest } from '../merchant/delivery-recovery.ts';
+import { deliveryReady, reconcileDeliveries, type DeliveryRequest } from '../merchant/delivery-recovery.ts';
 import type { MerchantCommandReport } from "../merchant/recovery.ts";
 import type { InventoryEntry, Item, ItemMark } from "../contracts/item.ts";
 import type { createGiveawayScheduler } from "../merchant/giveaway-scheduler.ts";
@@ -147,6 +148,9 @@ export function createMerchantScheduling(state: SchedulingState, ports: Scheduli
     upgradeWork(report);
     if (state.compounds[report.name]?.length) ports.queue([report.name], "manual compounds");
     if (state.purchases?.[report.name]?.length) ports.queue([report.name], "manual buying");
+    if (state.merchantAutomations.deliveries !== false &&
+        (state.merchantDeliveries?.[report.name] || []).some(deliveryReady))
+      ports.queue([report.name], "deliveries");
   }
   function collectionSignature(report: SchedulingReport): string {
     const marks = [
@@ -222,15 +226,24 @@ export function createMerchantScheduling(state: SchedulingState, ports: Scheduli
   }
   const equipRetries = new Map<string, number>();
   function resumeDeliveryEquip(name: string): void {
-    if (!state.commands || state.nextCommandId === undefined || state.commands[name]) return;
+    if (!state.commands || state.nextCommandId === undefined) return;
     if ((equipRetries.get(name) || 0) > ports.now()) return;
     const marks = pendingEquipment(name);
     const items = marks.map(mark => mark.item!);
     if (!items.length) return;
-    state.commands[name] = {id: state.nextCommandId++, type:'equip-deliveries', items,
-      deliveryIds: marks.map(mark => mark.id)};
+    if (!equipmentOwnsSlot(name)) return;
+    const command = {id: state.nextCommandId++, type:'equip-deliveries', items, deliveryIds: marks.map(mark => mark.id)};
+    attachMerchantInterruption(state, name, command);
+    state.commands[name] = command;
     equipRetries.set(name, ports.now()+30000);
     ports.persist();
+  }
+  function equipmentOwnsSlot(name: string): boolean {
+    const command = state.commands?.[name];
+    if (command && command.type !== 'party-monster-travel') return false;
+    const admitted = admitMerchantInterruption(state, name, 'delivery-equipment:' + name, ports.now(), 'equipment');
+    if (!admitted) ports.persist();
+    return admitted;
   }
   function reconcileDeliveryState(): void {
     const deliveryChanges = reconcileDeliveries(state.merchantDeliveries || {},

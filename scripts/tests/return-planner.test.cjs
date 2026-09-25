@@ -54,3 +54,12 @@ test('shadow comparison preserves its mode and parent journey identity', async (
   assert.equal(chosen.id, request.id);
   assert.equal(chosen.mode, 'shadow');
 });
+test('failed return candidates preserve a retryable request instead of reporting a broken route',async()=>{
+ const error=Object.assign(new Error('POST /movement-plan timeout'),{partyRequest:{path:'/movement-plan',kind:'timeout',status:0}});
+ await assert.rejects(planReturnCandidates({request:async()=>{throw error;}},validation,request,20),e=>e===error);
+});
+test('one validated return candidate remains usable when the other request times out',async()=>{
+ const error=Object.assign(new Error('timeout'),{partyRequest:{kind:'timeout'}});
+ const chosen=await planReturnCandidates({request:async(_p,{body})=>{if(body.town)throw error;return result(body);}},validation,request,20);
+ assert.equal(chosen.id,request.id);assert.equal(chosen.plot[0].town,undefined);
+});

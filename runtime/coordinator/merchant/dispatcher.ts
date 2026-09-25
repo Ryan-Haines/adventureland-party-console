@@ -24,6 +24,7 @@ interface AnniversaryControl {
   busy: boolean;
 }
 export interface DispatchPorts {
+  eventReserved?(): boolean;
   enabled?(job: MerchantWork): boolean;
   travel?(realm: string): Promise<unknown>;
   headless?(): boolean;
@@ -211,6 +212,7 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   }
 
   function hasQueuedWork(job: MerchantWork): boolean {
+    if (job.reason === "deliveries") return ports.inputs().work(job.target).deliveries.length > 0;
     if (job.reason !== "manual compounds") return true;
     if (ports.inputs().work(job.target).compounds.length) return true;
     ports.log("Discarded empty manual compound job", "info", {jobId: job.id, target: job.target});
@@ -225,6 +227,7 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   }
 
   function dispatch(): void {
+    if (ports.eventReserved?.()) return;
     if (gatheringCastActive(ports.status(ports.merchant()), ports.now())) return;
     if (realmCheck.advance()) return;
     state.queue.forEach(realmCheck.eligibility);

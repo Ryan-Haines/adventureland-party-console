@@ -12,7 +12,10 @@ export interface Role {
 }
 export interface SharedCombat {
   reserveCombatMana?(skill: import('../skills/types.ts').SkillId, survival: boolean, amount?: number): ((accepted: boolean | 'uncertain') => void) | null;
+  noteCombatHandoff?(stage: string, target: string, details: Record<string, unknown>): void;
+  merchantEventCombatActive?(): boolean;
   combatContext?(): import('../skills/types.ts').CombatContext;
+  merchantVisibilityActive?(): boolean;
   skillTargetAllowed?(target: Target): boolean;
   skillSupport?(): Promise<boolean>;
   skillOffense?(target: Target): Promise<boolean>;
@@ -67,6 +70,10 @@ export interface SharedCombat {
   usesLeaderTarget(): boolean;
   usesGroupedCombat?(): boolean;
   getCloserHuntTarget?(current: Target): Target | null;
+  returnCombatActive?(): boolean;
+  returnDefenseTarget?(): Target | null;
+  returnAttacker?(target: Target): boolean;
+  returnMovementTick?(): void;
   groupedMovement?(): boolean;
   groupedAttackAllowed?(target: Target): boolean;
   followLeaderIfFar(distance: number): Promise<unknown>;

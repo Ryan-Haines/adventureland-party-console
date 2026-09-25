@@ -50,18 +50,25 @@ function sameWalk(a: WalkRequest, b: WalkRequest): boolean {
 /** Coalesces independently entered workflow walking legs without duplicating their continuations. */
 export function createSharedWalks(input: unknown, ports: WalkPorts) {
   const state = input as WalkState, requests = new Map<string, WalkRequest>();
+  function merchantWalk(r: WalkRequest): boolean {
+    return r.name === state.merchantCharacter &&
+      (["event", "event-return"].includes(r.activity) || recoveryContinuation(r));
+  }
   function validIntent(r: WalkRequest): boolean {
-    if (!ports.members().includes(r.name)) return false;
+    if (!ports.members().includes(r.name) && !merchantWalk(r)) return false;
     const intent = state.navigationIntents?.[r.name];
     if ((intent?.revision || 0) !== r.revision) return false;
     return !intent?.cancelled || ["town-return", "event-return"].includes(r.activity);
   }
   function authorized(r: WalkRequest): boolean {
     const s = state.statuses[r.name];
-    if (!ports.owned(r.name) || r.name === state.merchantCharacter || !s || s.seenAt < ports.now() - 3000) return false;
+    if (!managedWalker(r) || !s || s.seenAt < ports.now() - 3000) return false;
     if (s.convoyProtocol !== 4 || !validIntent(r) || !ports.allowed(r.activity)) return false;
     if (!workflowCurrent(r)) return false;
     return r.activity !== "event" || ports.enabled(r.name, r.key);
+  }
+  function managedWalker(r: WalkRequest): boolean {
+    return !!ports.owned(r.name) && (r.name !== state.merchantCharacter || merchantWalk(r));
   }
   function workflowCurrent(r: WalkRequest): boolean {
     if (rareOwnsRecovery(r)) return false;
@@ -90,7 +97,8 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
   }
   function eligible(r: WalkRequest): string[] {
     const server = state.statuses[r.name]?.server;
-    return ports.members().filter(name => {
+    const names = merchantWalk(r) ? [r.name] : ports.members();
+    return names.filter(name => {
       const s = state.statuses[name];
       if (!s || s.rip || s.seenAt < ports.now() - 3000 || s.server !== server) return false;
       return r.activity !== "event" || ports.enabled(name, r.key);
@@ -162,9 +170,9 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     const convoy = state.activeConvoy as SharedConvoy | null;
     if (!convoy) return;
     convoy.walkingActivity = waiting[0]?.activity;
-    // Staging suspends farming combat. Waiting for its defense/loot reports
-    // would block the onward route after the map-local Town cast.
-    convoy.navigationExempt = returning || convoy.walkingActivity === "anniversary-staging";
+    // Staging shares the moving-defense return policy with Hunt turn-in.
+    convoy.navigationExempt = returning;
+    if (convoy.walkingActivity === "anniversary-staging") convoy.continuousReturn = 1;
     convoy.combatHandoffAllowed = false;
     for (const name of convoy.participants) state.commands[name]!.navigationExempt = convoy.navigationExempt;
     waiting.forEach(other => { other.convoyId = convoy.id; });
@@ -184,7 +192,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if (prior.complete) return { ok: true, phase: "complete" };
     const c = state.activeConvoy, session = c && sessions.get(c);
     prior.at = ports.now();
-    if (session?.requests.includes(prior)) return { ok: true, phase: returnRetryPending(c!) ? "waiting" : c!.phase === "failed" ? "failed" : "travelling", reason: c!.failure, convoyId: c!.id };
+    if (session?.requests.includes(prior)) return { ok: true, phase: walkingPhase(c!), reason: c!.failure, convoyId: c!.id };
     if (prior.convoyId) return { error: "walking leg superseded" };
     if (parentSuperseded(prior)) return { error: "walking leg superseded" };
     tryStart(prior);
@@ -196,7 +204,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
   function cancel(r: WalkRequest): Record<string, unknown> {
     const prior = requests.get(r.name), c = state.activeConvoy, session = c && sessions.get(c);
     if (prior?.token === r.token && session?.requests.includes(prior)) {
-      if (returnRetryPending(c!)) return {ok:true,phase:"waiting"};
+      if (returnRetryPending(c!) || c!.geometryRepair?.phase === 'waiting') return {ok:true,phase:"waiting"};
       session.requests.forEach(entry => { entry.failed = "Walking workflow cancelled"; });
       if (c!.phase !== "failed") ports.cancel();
       ports.persist();
@@ -209,12 +217,19 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if (failed.walkingParents?.[r.name]?.revision !== r.revision) return null;
     return { ok: true, phase: "failed", reason: failed.failure || "Event walking retries exhausted" };
   }
+  function retainedReturn(r:WalkRequest):Record<string,unknown> | null {
+    const c=state.activeConvoy;
+    if(!c?.continuousReturn || c.walkingActivity!==r.activity || c.walkingParents?.[r.name]?.revision!==r.revision)return null;
+    return {ok:true,phase:'travelling',convoyId:c.id,reason:c.failure};
+  }
   function submit(body: Record<string, unknown>): Record<string, unknown> {
     const r = parse(body, ports.now());
     if (!r || !authorized(r)) return { error: "unauthorized walking leg" };
     if (body.cancel === true) return cancel(r);
     const failure = retainedFailure(r);
     if (failure) return failure;
+    const retained = retainedReturn(r);
+    if(retained)return retained;
     const previous = existing(r);
     if (previous) return previous;
     requests.set(r.name, r);
@@ -228,4 +243,10 @@ function returnRetryPending(c: SharedConvoy): boolean {
 }
 function atDestination(point: RoutePoint, destination: RoutePoint): boolean {
   return point.map === destination.map && Math.hypot(point.x-destination.x,point.y-destination.y)<=100;
+}
+
+function walkingPhase(c:SharedConvoy):string {
+  if(c.continuousReturn)return 'travelling';
+  if(returnRetryPending(c))return 'waiting';
+  return c.phase==='failed'?'failed':'travelling';
 }

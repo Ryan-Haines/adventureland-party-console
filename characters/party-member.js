@@ -1,7 +1,27 @@
 // Generated from TypeScript; run npm run build:runtime -- --publish. Do not edit.
 "use strict";
 (() => {
-  // ../runtime/navigation/contracts.ts
+  // runtime/characters/movement-error.ts
+  function movementError(value) {
+    if (value instanceof Error) return value;
+    const object = value && typeof value === "object" ? value : {};
+    const message = [object.message, object.reason, value].find((item) => typeof item === "string" && item.length);
+    return Object.assign(
+      new Error(typeof message === "string" ? message : "Movement cancelled"),
+      object.partyRequest ? { partyRequest: object.partyRequest } : {}
+    );
+  }
+  function retryableMovementRequest(value) {
+    const r = movementError(value).partyRequest;
+    return !!r && (r.kind === "network" || r.kind === "timeout" || r.status === 408 || r.status === 429 || Number(r.status) >= 500);
+  }
+  function movementFailureCause(failure, cause) {
+    const request = movementError(failure).partyRequest;
+    if (!request) return cause;
+    return { ...cause, partyRequest: request, ...retryableMovementRequest(failure) ? { code: "convoy-communication-hold" } : {} };
+  }
+
+  // runtime/navigation/contracts.ts
   var isTransition = (step) => !!(step.town || step.transport || step.method === "leave");
   var point = (p) => ({ map: p.map, x: p.x, y: p.y, ...p.in === void 0 ? {} : { in: p.in } });
   var distance = (a, b) => a.map === b.map && (a.in === void 0 || b.in === void 0 || a.in === b.in) ? Math.hypot(a.x - b.x, a.y - b.y) : Infinity;
@@ -26,7 +46,38 @@
     return `${(a >>> 0).toString(16)}-${(b >>> 0).toString(16)}-${value.length}`;
   }
 
-  // ../runtime/navigation/validation.ts
+  // runtime/characters/movement-relocation.ts
+  function movementRelocation(game, origin, townAllowed) {
+    const map = game.maps[origin.map];
+    if (!map || restrictedMap(map, origin)) return;
+    const spawn = map.spawns[0];
+    if (townAllowed && spawn && distance(origin, { map: origin.map, x: spawn[0], y: spawn[1] }) > 55)
+      return {
+        method: "town",
+        origin: point(origin),
+        destination: { map: origin.map, x: spawn[0], y: spawn[1] }
+      };
+    const doors = (map.doors || []).filter((d) => ordinaryDoor(game, d)).sort(
+      (a, b) => Math.hypot(Number(a[0]) - origin.x, Number(a[1]) - origin.y) - Math.hypot(Number(b[0]) - origin.x, Number(b[1]) - origin.y)
+    );
+    const door = doors[0];
+    if (!door) return;
+    const target = game.maps[String(door[4])].spawns[Number(door[5])];
+    return {
+      method: "door",
+      origin: point(origin),
+      destination: { map: String(door[4]), x: target[0], y: target[1] }
+    };
+  }
+  function ordinaryDoor(game, door) {
+    const map = game.maps[String(door[4])], spawn = map?.spawns[Number(door[5])];
+    return !!map && !map.instance && !map.event && !!spawn && door[7] !== "key" && door[8] !== "complicated" && spawn.every(Number.isFinite);
+  }
+  function restrictedMap(map, origin) {
+    return !!map.instance || !!map.event || String(origin.in ?? origin.map) !== origin.map;
+  }
+
+  // runtime/navigation/validation.ts
   function atSpawn(g, p, spawn) {
     const xy = g.maps[p.map]?.spawns[spawn];
     return !!xy && Math.hypot(p.x - xy[0], p.y - xy[1]) <= 1;
@@ -70,19 +121,20 @@
     return ["cyberland", "jail"].includes(from.map) && to.map === "main" && (to.in === void 0 || to.in === "main") && atSpawn(game, to, 0) ? null : "invalid leave exit";
   }
 
-  // ../runtime/characters/native-planner.ts
+  // runtime/characters/native-planner.ts
   function createNativePlanner(host, native) {
-    let running = false, failure = "", deadline = 0, serial = 0;
+    let running = false, failure = "", deadline = 0, serial = 0, limit = 3e4;
     function cancel() {
       running = false;
       serial++;
       void Promise.resolve(native.stop("smart")).catch(() => {
       });
     }
-    function begin(destination, town, now) {
+    function begin(destination, town, now, timeout = 3e4) {
       cancel();
       failure = "";
-      deadline = now + 3e4;
+      limit = timeout;
+      deadline = now + timeout;
       const token = serial;
       const promise = native.move(destination);
       void promise.catch((error) => {
@@ -94,7 +146,7 @@
     function tick(now) {
       if (!running) throw Error("Native search not initialized");
       if (failure || now >= deadline) {
-        const reason = failure || "Native planning timed out (30 seconds)";
+        const reason = failure || `Native planning timed out (${limit / 1e3} seconds)`;
         cancel();
         throw Error(reason);
       }
@@ -109,7 +161,7 @@
     return { begin, tick, cancel };
   }
 
-  // ../runtime/characters/movement-executor.ts
+  // runtime/characters/movement-executor.ts
   function transitionLabel(step) {
     return step.method === "leave" ? "leave transition" : step.town ? "town warp" : "map transition";
   }
@@ -161,7 +213,7 @@
       options.barrier(step, index, completed).then((ready) => {
         if (issued === captured) barrierReady = ready;
       }, (error) => {
-        if (issued === captured && issued) issued.error = String(error);
+        if (issued === captured && issued) issued.error = movementError(error);
       }).finally(() => {
         if (issued === captured) barrierPending = false;
       });
@@ -201,7 +253,7 @@
     function observe(current, options) {
       if (current.error) {
         notifyTownRejection(current, options);
-        throw Error(isTransition(current.step) ? transitionLabel(current.step) + ": " + current.error : current.error);
+        throw current.error instanceof Error ? current.error : Error(isTransition(current.step) ? transitionLabel(current.step) + ": " + current.error : String(current.error));
       }
       if (complete(current, options)) return;
       const p = position();
@@ -215,7 +267,18 @@
         notifyTown(current, options, "interrupted");
         throw Error(`Failed ${transitionLabel(current.step)}`);
       }
-      if (!transition && now() - current.progressAt > 5e3) throw Error("Stalled walking movement (5 seconds without progress)");
+      observeWalk(current, p);
+    }
+    function observeWalk(current, p) {
+      if (isTransition(current.step)) return;
+      if (now() - current.progressAt > 5e3) throw Error("Stalled walking movement (5 seconds without progress)");
+      retryStoppedWalk(current, p);
+    }
+    function retryStoppedWalk(current, p) {
+      if (current.reissued || now() - current.progressAt < 250 || !canStart()) return;
+      if (stepIssue(validation, p, current.step, state.use_town)) return;
+      current.reissued = true;
+      sendObserved(current);
     }
     function arrivedTransition(current, p) {
       return isTransition(current.step) && !!current.acknowledged && distance(p, current.step) <= 1;
@@ -236,8 +299,8 @@
       return host.move(step.x, step.y);
     }
     function dispatch(current, options) {
-      if (current.error) throw Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : current.error);
-      if (!lootReady(current.step)) return;
+      if (current.error) throw current.error instanceof Error ? current.error : Error(current.step.method === "leave" ? "Leave transition failed: " + current.error : String(current.error));
+      if (!options.skipLootWait && !lootReady(current.step)) return;
       if (!readyTown(current, options)) return;
       if (isTransition(current.step) && !barrier(options, current.step, false)) return;
       current.finished = false;
@@ -245,15 +308,20 @@
       current.progressAt = now();
       const captured = current;
       notifyTown(current, options, "casting");
+      sendObserved(captured);
+    }
+    function sendObserved(captured) {
+      const version = captured.sendVersion = (captured.sendVersion || 0) + 1;
       try {
         void Promise.resolve(send(captured)).then((result) => {
+          if (issued !== captured || captured.sendVersion !== version) return;
           if (result && typeof result === "object" && "failed" in result && result.failed) throw result;
-          if (issued === captured) captured.acknowledged = true;
+          captured.acknowledged = true;
         }).catch((error) => {
-          if (issued === captured) rejected(captured, error);
+          if (issued === captured && captured.sendVersion === version) rejected(captured, error);
         });
       } catch (error) {
-        rejected(captured, error);
+        if (issued === captured) rejected(captured, error);
       }
     }
     function rejected(current, error) {
@@ -325,13 +393,21 @@
       reset,
       cancel,
       pause,
-      progress: () => ({ step: index, phase: phase(), destination: issued?.step, durations: { ...durations } }),
+      progress: () => ({
+        step: index,
+        phase: phase(),
+        destination: issued?.step,
+        durations: { ...durations },
+        position: position(),
+        noProgressMs: issued ? now() - issued.progressAt : 0,
+        reissued: !!issued?.reissued
+      }),
       transition: () => issued && isTransition(issued.step) ? issued.step.town ? "town" : "transport" : null,
       remaining: () => state.plot.map((p) => ({ ...p }))
     };
   }
 
-  // ../runtime/characters/movement-destination.ts
+  // runtime/characters/movement-destination.ts
   function resolveDestination(host, input) {
     if (input && typeof input === "object") {
       const p = { map: host.character.map, ...input };
@@ -362,28 +438,31 @@
     return { map: "main", x: 56, y: -122 };
   }
 
-  // ../runtime/characters/movement-diagnostics.ts
+  // runtime/characters/movement-diagnostics.ts
   var coordinates = (p) => `${p.map} (${Math.round(p.x * 100) / 100}, ${Math.round(p.y * 100) / 100})`;
   function movementDiagnostics(ports, name, version, fingerprint) {
     const recent = /* @__PURE__ */ new Map();
-    return (id, destination, phase, issue, detail) => {
+    return (id, destination, phase, issue, detail, context) => {
       destination = point(destination);
       if (issue) issue = { reason: issue.reason, from: point(issue.from), to: point(issue.to) };
-      const message = `${name}: ${phase}${issue ? ` \u2014 ${issue.reason} between ${coordinates(issue.from)} and ${coordinates(issue.to)}` : ""}${detail ? `; ${detail}` : ""}. Destination: ${coordinates(destination)}. Journey: ${id}; game ${version}; geometry ${fingerprint}.`;
-      const key = JSON.stringify([phase, issue, destination]);
+      const message = `${name}: ${description(phase, issue, detail)}. Destination: ${coordinates(destination)}. Journey: ${id}; game ${version}; geometry ${fingerprint}.`;
+      const key = JSON.stringify([context?.convoyId || id, phase, detail, issue, destination]);
       const prior = recent.get(key), now = ports.now();
-      const count = (prior?.count || 0) + 1;
+      const count = (prior && now - prior.at < 6e4 ? prior.count : 0) + 1;
       if (prior && now - prior.at < 1e4) {
         prior.count = count;
         return;
       }
       recent.set(key, { count, at: now });
       if (recent.size > 100) recent.delete(recent.keys().next().value);
-      ports.diagnostic({ id, character: name, version, fingerprint, destination, phase, issue, count, at: now }, message + (count > 1 ? ` Repeated ${count} times.` : ""));
+      ports.diagnostic({ id, character: name, version, fingerprint, destination, phase, issue, detail, context, count, at: now }, message + (count > 1 ? ` Similar messages: ${count} (not route attempts).` : ""));
     };
   }
+  function description(phase, issue, detail) {
+    return phase + (issue ? ` \u2014 ${issue.reason} between ${coordinates(issue.from)} and ${coordinates(issue.to)}` : "") + (detail && detail !== phase ? `; ${detail}` : "");
+  }
 
-  // ../runtime/navigation/door-approach.ts
+  // runtime/navigation/door-approach.ts
   function approaches(ports, from, to) {
     const doors = (ports.game.maps[from.map]?.doors || []).filter((d) => d[4] === to.map && Number(d[5] || 0) === to.s).flatMap((d) => {
       const x = Number(d[0]), y = Number(d[1]), w = Number(d[2]), h = Number(d[3]);
@@ -438,7 +517,7 @@
     return result;
   }
 
-  // ../runtime/characters/return-planner.ts
+  // runtime/characters/return-planner.ts
   function routeDuration(request, plot) {
     let at = request.from, ms = 0;
     for (const step of plot) {
@@ -447,35 +526,41 @@
     }
     return ms;
   }
-  async function planReturnCandidates(ports, validation, request, tolerance) {
+  async function planReturnCandidates(ports, validation, request, tolerance, townFirst = false) {
     const outcomes = await Promise.allSettled(
       [false, true].map(async (town) => {
         const candidateId = `${request.id}:${town ? "town" : "walk"}`;
+        const spawn = validation.game.maps[request.from.map]?.spawns[0];
+        const warp = townFirst && town && spawn && Math.hypot(request.from.x - spawn[0], request.from.y - spawn[1]) > 55 ? { map: request.from.map, x: spawn[0], y: spawn[1], town: true } : void 0;
         const response = await ports.request("/movement-plan", {
           method: "POST",
           timeout: 2e3,
-          body: { ...request, id: candidateId, town }
+          body: { ...request, from: warp || request.from, id: candidateId, town }
         });
         if (response.error) throw Error(response.error);
         if (response.id !== candidateId || response.version !== request.version || response.fingerprint !== request.fingerprint)
           throw Error("Planner response identity mismatch");
         if (response.mode === "shadow") return response;
-        const plot = repairDoorApproaches(validation, request.from, response.plot);
+        const remainder = warp && response.plot[0]?.town && distance(warp, response.plot[0]) <= 1 ? response.plot.slice(1) : response.plot;
+        const plot = repairDoorApproaches(validation, request.from, warp ? [warp, ...remainder] : remainder);
         const issue = validateRoute(validation, request.from, request.to, plot, town, tolerance);
         if (issue) throw Error((town ? "Town" : "Walking") + " route: " + issue.reason);
         return { ...response, plot };
       })
     );
     const valid = outcomes.flatMap((r) => r.status === "fulfilled" ? [r.value] : []);
-    if (!valid.length)
+    if (!valid.length) {
+      const unavailable = outcomes.find((r) => r.status === "rejected" && retryableMovementRequest(r.reason));
+      if (unavailable?.status === "rejected") throw unavailable.reason;
       throw Error(
         "Return route candidates failed: " + outcomes.map((r) => r.status === "rejected" ? String(r.reason) : "").join("; ")
       );
-    const selected = valid.sort((a, b) => routeDuration(request, a.plot) - routeDuration(request, b.plot))[0];
+    }
+    const selected = valid.sort((a, b) => (townFirst ? Number(!a.plot[0]?.town) - Number(!b.plot[0]?.town) : 0) || routeDuration(request, a.plot) - routeDuration(request, b.plot))[0];
     return { ...selected, id: request.id };
   }
 
-  // ../runtime/characters/movement.ts
+  // runtime/characters/movement.ts
   function arrivalTolerance(options) {
     const tolerance = options.arrivalTolerance ?? 20;
     if (!Number.isFinite(tolerance) || tolerance < 1) throw Error("Arrival tolerance must be at least 1");
@@ -492,7 +577,7 @@
     const planner = createNativePlanner(host, native);
     const state = { map: host.character.map, x: 0, y: 0, moving: false, searching: false, found: false, plot: [], use_town: true, try_exact_spot: false, edge: 20, on_done() {
     } };
-    let version = host.parent.__partyClientVersion || Number(host.G.version), fingerprint = geometryFingerprint(host.G);
+    let version = Number(host.parent.__partyClientVersion || host.G.version), fingerprint = geometryFingerprint(host.G);
     let report = movementDiagnostics(ports, host.character.name, version, fingerprint);
     const validation = {
       get game() {
@@ -523,7 +608,9 @@
         return false;
       }
     }
-    function finish(done, reason) {
+    function finish(done, failure, cause) {
+      const reason = failure === void 0 ? void 0 : movementError(failure).message;
+      cause = movementFailureCause(failure, cause);
       const j = journey;
       if (!j) return;
       const progress = executor.progress();
@@ -540,6 +627,7 @@
         done,
         reason,
         elapsedMs: ports.now() - j.started,
+        failureContext: { code: done ? "arrived" : "route-failed", character: host.character.name, journeyId: j.id, planner: engine(j), base: { ...host.character.base }, ...j.options.owner, ...j.failureContext, ...cause, origin: position(), destination: point(state), firstIssue: j.firstIssue, relocation: movementRelocation(host.G, position(), state.use_town) },
         searches: j.searches,
         retries: j.retries,
         plannerMs: j.plannerMs,
@@ -549,20 +637,28 @@
         progress
       };
       ports.metrics?.(last);
-      if (j.fallback || !done) report(j.id, state, outcome(done, reason), void 0, reason);
-      state.on_done(done, reason);
+      if (j.fallback || !done) report(j.id, state, outcome(done, reason, cause), j.firstIssue, reason, last.failureContext);
+      state.on_done(done, reason, failure);
     }
     function engine(j) {
       return j.importedEngine || (j.native ? "native" : "alclient");
     }
-    function outcome(done, reason) {
+    function outcome(done, reason, cause) {
+      if (cause?.code === "convoy-communication-hold") return "Movement paused";
+      if (cause?.code === "convoy-failure") return "Movement failed";
       if (done) return "Native fallback succeeded";
       if (reason === "Combat handoff") return "Travel paused for combat";
-      return /cancelled|replaced|superseded/i.test(reason || "") ? "Movement cancelled" : "Movement failed";
+      return /cancelled|replaced|superseded|stop|regroup|takeover|hold/i.test(reason || "") ? "Movement cancelled" : "Movement failed";
     }
     function fallback(j, issue) {
       if (!current(j)) return;
+      if (j.options.owner?.recoveryStage === "post-relocation") {
+        finish(false, "ALClient retry failed after relocation: " + issue.reason);
+        return;
+      }
       report(j.id, state, j.native ? "Native movement recovery" : "ALClient route rejected", issue, "falling back to native smart_move");
+      j.firstIssue ||= issue;
+      delete j.repair;
       j.fallback = true;
       j.native = true;
       j.pending = false;
@@ -573,11 +669,11 @@
     }
     function install(plot, nativeRoute) {
       if (!nativeRoute) plot = repairDoorApproaches(validation, position(), plot);
-      plot = finalApproach(plot, position(), state, journey?.options);
+      plot = trimUncheckedFinal(finalApproach(plot, position(), state, journey?.options));
       const issue = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
       if (issue) {
         if (nativeRoute) throw Error(`Native route rejected: ${issue.reason} between ${JSON.stringify(issue.from)} and ${JSON.stringify(issue.to)}`);
-        fallback(journey, issue);
+        if (!beginRepair(journey, plot, issue)) fallback(journey, issue);
         return false;
       }
       let previous = position(), walking = 0, transitions = 0;
@@ -596,6 +692,47 @@
       executor.reset();
       return true;
     }
+    function beginRepair(j, plot, issue) {
+      j.firstIssue ||= issue;
+      if (j.options.owner?.recoveryStage === "post-relocation" || j.repaired || issue.reason !== "collisions detected" || issue.from.map !== position().map) return false;
+      const index = plot.findIndex((p) => p === issue.to);
+      if (index < 0 || isTransition(plot[index])) return false;
+      j.repaired = true;
+      j.repair = { plot, index, target: point(issue.to), started: false };
+      j.pending = false;
+      state.searching = false;
+      report(j.id, state, "Repairing rejected walking segment", issue, "native same-map connector; limit 3 seconds");
+      return true;
+    }
+    function repairTick(j) {
+      const repair = j.repair;
+      try {
+        if (!repair.started) {
+          planner.begin(repair.target, false, ports.now(), 3e3);
+          repair.started = true;
+          j.searches++;
+        }
+        const bridge = planner.tick(ports.now());
+        if (!bridge) return;
+        if (distance(bridge.at(-1) || position(), repair.target) > 20) throw Error("Repair missed its connector endpoint");
+        if (bridge.some((p) => isTransition(p) || p.map !== position().map)) throw Error("Repair left the current map");
+        const plot = [...bridge, ...repair.plot.slice(repair.index + 1)];
+        const invalid = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
+        if (invalid) throw Error("Repair did not validate: " + invalid.reason);
+        delete j.repair;
+        install(plot, true);
+        report(j.id, state, "Walking segment repaired", j.firstIssue);
+      } catch (error) {
+        planner.cancel();
+        j.failureContext = { repairFailure: String(error) };
+        fallback(j, j.firstIssue);
+      }
+    }
+    function trimUncheckedFinal(plot) {
+      if (journey?.options.shared) return plot;
+      const last2 = plot.at(-1), previous = plot.at(-2);
+      return last2 && previous && !isTransition(last2) && last2.map === previous.map && !validation.walk(previous, last2) && distance(previous, state) <= state.edge ? plot.slice(0, -1) : plot;
+    }
     function nativeTick(j) {
       if (!state.searching) {
         planner.begin(point(state), state.use_town, ports.now());
@@ -603,11 +740,7 @@
         j.searches++;
       }
       const plot = planner.tick(ports.now());
-      if (plot) {
-        const last2 = plot.at(-1), previous = plot.at(-2);
-        if (last2 && previous && !isTransition(last2) && !validation.walk(previous, last2) && distance(previous, state) <= state.edge) plot.pop();
-        install(plot, true);
-      }
+      if (plot) install(plot, true);
     }
     function requestPlan(j) {
       if (j.pending) return;
@@ -617,6 +750,7 @@
       const from = position(), destination = point(state), town = state.use_town;
       const requestedAt = ports.now();
       const body = {
+        base: { ...host.character.base },
         id: j.id,
         character: host.character.name,
         from,
@@ -627,7 +761,7 @@
         fingerprint,
         avoidLeave: j.options.avoidLeave
       };
-      const planning = j.options.compareTown && town ? planReturnCandidates(ports, validation, body, state.edge) : ports.request("/movement-plan", { method: "POST", timeout: 2e3, body });
+      const planning = j.options.compareTown && town ? planReturnCandidates(ports, validation, body, state.edge, true) : ports.request("/movement-plan", { method: "POST", timeout: 2e3, body });
       planning.then((value) => {
         if (!current(j)) return;
         const result = value;
@@ -648,9 +782,13 @@
         install(result.plot, false);
       }).catch((error) => {
         if (!current(j)) return;
+        if (retryableMovementRequest(error)) {
+          finish(false, error);
+          return;
+        }
         const reason = String(error);
         if (/geometry|route|path|walk|segment|collision|blocked/i.test(reason)) fallback(j, { reason, from, to: destination });
-        else finish(false, reason);
+        else finish(false, error);
       });
     }
     function replanDrift(j) {
@@ -662,7 +800,7 @@
       const j = journey;
       if (!j || state.found) return;
       if (!current(j)) {
-        finish(false, "Movement superseded");
+        finish(false, "Navigation revision or runtime superseded this journey", { code: "superseded" });
         return;
       }
       if (host.character.moving || host.is_transporting(host.character)) {
@@ -670,13 +808,25 @@
         return;
       }
       try {
-        if (j.native) nativeTick(j);
-        else requestPlan(j);
+        planningStep(j);
       } catch (error) {
-        finish(false, String(error));
+        finish(false, error);
       }
     }
+    function planningStep(j) {
+      if (j.options.relocation === "town") {
+        install([{ ...point(state), town: true }], true);
+        return;
+      }
+      if (j.repair) repairTick(j);
+      else if (j.native) nativeTick(j);
+      else requestPlan(j);
+    }
     function recover(j, error) {
+      if (j.options.shared) {
+        finish(false, error);
+        return;
+      }
       if (/leave transition/i.test(String(error))) {
         if (j.options.shared || j.retries >= 2) {
           finish(false, "Leave transition failed: " + String(error));
@@ -692,7 +842,7 @@
         return;
       }
       if (j.options.shared || j.retries >= 2) {
-        finish(false, String(error));
+        finish(false, error);
         return;
       }
       j.retries++;
@@ -705,7 +855,7 @@
       const j = journey;
       if (!j || !state.moving) return;
       if (!current(j)) {
-        finish(false, "Movement superseded");
+        finish(false, "Navigation revision or runtime superseded this journey", { code: "superseded" });
         return;
       }
       if (ports.context().paused) {
@@ -724,7 +874,7 @@
     }
     function move(destination, callback, options = {}) {
       if (host.smart_move_logic !== scheduler) return Promise.reject(Error("Movement scheduler was replaced"));
-      finish(false, "Movement replaced");
+      finish(false, "Movement replaced by a new destination", { code: "destination-replaced", replacement: destination });
       refreshGeometry();
       let target, tolerance;
       try {
@@ -743,22 +893,22 @@
       const context = ports.context();
       journey = { id: `${host.character.name}:${context.runtime}:${++sequence}`, context, options, native: !!options.native, pending: false, searches: 0, retries: 0, started: ports.now(), planningAt: ports.now(), fallback: !!options.native };
       return new Promise((resolve, reject) => {
-        state.on_done = (done, reason) => {
+        state.on_done = (done, reason, failure) => {
           callback?.(done);
           if (done) resolve({ success: true });
-          else reject(Error(reason || "Movement cancelled"));
+          else reject(movementError(failure || reason));
         };
       });
     }
     function refreshGeometry() {
-      const nextVersion = host.parent.__partyClientVersion || Number(host.G.version), nextFingerprint = geometryFingerprint(host.G);
+      const nextVersion = Number(host.parent.__partyClientVersion || host.G.version), nextFingerprint = geometryFingerprint(host.G);
       if (nextVersion === version && nextFingerprint === fingerprint) return;
       version = nextVersion;
       fingerprint = nextFingerprint;
       report = movementDiagnostics(ports, host.character.name, version, fingerprint);
     }
     function stop(action, success) {
-      if (!action || action === "move" || action === "smart") finish(!!success, success ? void 0 : "Movement cancelled");
+      if (!action || action === "move" || action === "smart") finish(!!success, success ? void 0 : "Unattributed movement stop", { code: "unattributed-stop", action: action || "all" });
       return native.stop(action, success);
     }
     function scheduler() {
@@ -771,7 +921,9 @@
     host.stop = stop;
     host.smart_move_logic = scheduler;
     function importRoute(plot, identity, plannerEngine = "shared") {
-      if (!identity || identity.version !== version || identity.fingerprint !== fingerprint) throw Error("Shared route game geometry mismatch");
+      refreshGeometry();
+      if (!identity || identity.version !== version || identity.fingerprint !== fingerprint)
+        throw Error("Shared route game geometry mismatch: expected " + JSON.stringify(identity) + "; actual " + JSON.stringify({ version, fingerprint }));
       const issue = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
       if (issue) {
         report(journey.id, state, "Shared route rejected", issue, "falling back to native smart_move after party regroup");
@@ -784,6 +936,10 @@
       state,
       move,
       stop,
+      cancel(reason, cause) {
+        finish(false, reason, cause);
+        return native.stop("smart");
+      },
       tick,
       planTick,
       gate,
@@ -798,6 +954,7 @@
       },
       report: () => journey ? {
         id: journey.id,
+        owner: journey.options.owner,
         engine: engine(journey),
         retries: journey.retries,
         fingerprint,
@@ -822,7 +979,7 @@
   }
   Object.assign(globalThis, { installPartyMovement });
 
-  // ../runtime/bank-stacks.ts
+  // runtime/bank-stacks.ts
   var stackQuantity = (item) => item ? Number(item.q) || 1 : 0;
   function stackIdentity(item) {
     return JSON.stringify(["name", "level", "p", "stat_type", "data", "rid", "b", "m", "l"].map((key) => key === "level" ? Number(item?.level) || 0 : item?.[key] ?? null));
@@ -858,7 +1015,7 @@
     return null;
   }
 
-  // ../runtime/characters/bank-stacks.ts
+  // runtime/characters/bank-stacks.ts
   function createBankStacks(p) {
     const at = (o) => p.bank()[o.pack]?.[o.slot] || null;
     const origin = (l) => ({ pack: l.pack, slot: l.slot, floor: p.floor(l.pack) });
@@ -1046,13 +1203,13 @@
   }
   Object.assign(globalThis, { partyCreateBankStacks: createBankStacks });
 
-  // ../runtime/upgrade-preview.ts
+  // runtime/upgrade-preview.ts
   var previewOptions = ["none", "offeringp", "offering", "offeringx"];
   function unavailablePreview(executor, item, reason) {
     return { executor, item, options: Object.fromEntries(previewOptions.map((option) => [option, { reason }])) };
   }
 
-  // ../runtime/characters/upgrade-preview.ts
+  // runtime/characters/upgrade-preview.ts
   var same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   function matchesPreviewItem(live, wanted) {
     return !!live && Object.entries(wanted).every(([key, value]) => same(live[key], value));
@@ -1097,7 +1254,7 @@
   }
   globalThis.previewPartyUpgrade = previewUpgrade;
 
-  // ../runtime/characters/legacy-entry.ts
+  // runtime/characters/legacy-entry.ts
   var root = globalThis;
   root.__partyReady = root.parent.caracAL.load_scripts([
     "adventure_land/farming-zones.js",

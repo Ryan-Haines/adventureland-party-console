@@ -5,11 +5,12 @@ import { endHuntEventTrip, type HuntEventTrips } from "./hunt-trip.ts";
 import type { StoredCombatLogEntry } from "../telemetry/combat-log.ts";
 
 export interface HuntReturnState extends HuntEventTrips {
+  farmingPolicy?: string;
   monsterHunt?: HuntCycle | null;
-  activeConvoy: HuntConvoy | null;
+  activeConvoy: (HuntConvoy & { merchantInterruption?: unknown }) | null;
   commands: Record<string, HuntCommand | undefined>;
   statuses: Record<string, ReturnStatus | undefined>;
-  deferredEventReturns: Record<string, { cycleId: string } | undefined>;
+  deferredEventReturns: Record<string, { cycleId: string; checkpoint?: import("./return-types.ts").ReturnLocation | null } | undefined>;
   escape?: { stage: string } | null;
   combatRecovery?: { phase: string } | null;
   combatLogs?: Record<string, StoredCombatLogEntry[]>;

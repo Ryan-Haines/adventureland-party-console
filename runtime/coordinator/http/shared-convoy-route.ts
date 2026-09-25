@@ -1,3 +1,4 @@
+import { transportTiming } from '../telemetry/transport-timing.ts';
 import { requestObject, type HttpHandler, type HttpRouter } from "./contracts.ts";
 import { publishSharedRoute, routeOwner, sharedRoute } from "../navigation/shared-route-store.ts";
 import type { SharedState } from "../navigation/shared-route-types.ts";
@@ -8,8 +9,9 @@ export function installSharedConvoyRoute(router: HttpRouter, input: unknown,
   owned: (name: string) => unknown, walks?: Parameters<typeof createSharedWalks>[1]): void {
   const state = input as SharedState;
   router.post('/party-api/movement-barrier', (req, res) => {
-    const result = movementBarrier(state, req.body, Date.now());
-    return res.status(result.error ? 409 : 200).json(result);
+    const receivedAt = Date.now();
+    const result = movementBarrier(state, req.body, receivedAt);
+    return res.status(result.error ? 409 : 200).json({...result, transportTiming: transportTiming(receivedAt, Date.now())});
   });
   const publish: HttpHandler = (req, res) => {
     const body = requestObject(req.body);

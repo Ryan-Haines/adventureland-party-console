@@ -19,7 +19,7 @@ interface AcknowledgementRouteState extends AcknowledgementState, Omit<ReturnPro
   partyFarmingMode: string;
   monsterSearchRadiusByCharacter: Record<string, number | undefined>;
   townCycle: { id: string; pending: string[] } | null;
-  eventReturn: (EngagementOwner & { cycleId: string; event: string; pending: string[] }) | null;
+  eventReturn: (EngagementOwner & { cycleId: string; event: string; pending: string[]; exited?: string[] }) | null;
   anniversary: { eventCycle?: EngagementOwner | null };
   eventSessions: Record<string, EngagementOwner | undefined>;
   statuses: Record<
@@ -29,7 +29,7 @@ interface AcknowledgementRouteState extends AcknowledgementState, Omit<ReturnPro
         x?: number;
         y?: number;
         seenAt: number;
-        combatSelection?: { id: string | null; map: string | null };
+        combatSelection?: { id: string | null; map: string | null; runtimeId?: string };
       }
     | undefined
   >;
@@ -113,6 +113,7 @@ export function createEventAcknowledgementRoutes(
     // Town finishes between heartbeats; destination selection must see its acknowledged position.
     observePosition(name, body);
     recovery.pending = recovery.pending.filter((member) => member !== name);
+    recordExit(recovery, name);
     delete state.deferredEventReturns[name];
     const routedLeader = recovery.pending.length === 0 && !!ports.selectedDestination(state.leader);
     ports.finishReturn();
@@ -126,11 +127,19 @@ export function createEventAcknowledgementRoutes(
     const body = requestObject(req.body),
       name = requestText(body.character);
     if (!ports.owned(name)) return res.status(400).json({ error: "unknown character" });
+    if (!currentExit(name, body)) return res.json({ ok: true, stale: true });
     if (Number(body.navigationRevision || 0) !== ports.intent(name).revision)
       return res.status(409).json({ error: "stale navigation revision" });
     if (!atMain(name) && !mainReport(body))
       return res.status(409).json({error:"waiting for Main town arrival"});
     return acknowledgeReturn(name, body, res);
+  }
+  function currentExit(name: string, body: Record<string, unknown>): boolean {
+    const command = state.commands[name], runtime = state.statuses[name]?.combatSelection?.runtimeId;
+    if (body.commandId !== undefined && command?.id !== body.commandId) return false;
+    if (runtime && body.runtimeId !== runtime) return false;
+    // Legacy clients without runtime identity can only use their still-current exit command.
+    return !command || command.type === "event-return-town" && command.cycleId === body.cycleId;
   }
   function mainReport(body: Record<string, unknown>): boolean {
     return body.map === "main" && typeof body.x === "number" && typeof body.y === "number" && Math.hypot(body.x,body.y)<=90;
@@ -210,4 +219,8 @@ export function createEventAcknowledgementRoutes(
     return res.json({ ok: true });
   }
   return { townComplete, returnComplete, resumeComplete, progress: createReturnProgressRoute(state, ports) };
+}
+
+function recordExit(recovery: { exited?: string[] }, name: string): void {
+  recovery.exited = [...new Set([...(recovery.exited || []), name])];
 }

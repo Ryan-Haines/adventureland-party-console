@@ -1,9 +1,14 @@
 import type { EventRecovery, EventReturnPorts, ReturnConvoy } from "./return-types.ts";
 
 export function isRecoveryWalk(recovery: EventRecovery, convoy: ReturnConvoy): boolean {
+  if (!convoy.participants.length) return false;
+  if (convoy.purpose === "shared-walk" && convoy.walkingActivity === "farm-recovery")
+    return convoy.participants.every(name => {
+      const parent = convoy.walkingParents?.[name], route = recovery.returnRoutes?.[name];
+      return !!route?.commandId && route.commandId === parent?.parentId && route.revision === parent.revision;
+    });
   return convoy.purpose === "shared-walk-return" && convoy.walkingActivity === "event-return" &&
-    convoy.participants.length > 0 && convoy.participants.every(name =>
-      convoy.walkingParents?.[name]?.command?.cycleId === recovery.cycleId);
+    convoy.participants.every(name => convoy.walkingParents?.[name]?.command?.cycleId === recovery.cycleId);
 }
 
 /** Exit walking predates checkpoint dispatch and need not have recovery.convoyId. */

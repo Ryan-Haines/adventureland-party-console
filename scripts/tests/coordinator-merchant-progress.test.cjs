@@ -47,3 +47,17 @@ test('merchant activity accepts known stages only for merchant-owned work',()=>{
  f.send('heartbeat',{jobId:'job',operationStage:'processing'});assert.equal(f.state.merchantCurrent.operationStage,'processing');
  f.state.merchantCurrent.target='F';f.send('heartbeat',{jobId:'job',operationStage:'storing'});assert.equal(f.state.merchantCurrent.operationStage,'processing');
 });
+
+
+test('event checkpoint preserves job identity and resume data and rejects duplicate yields',()=>{
+ const f=fixture();f.state.eventSelectionsByCharacter={M:['snowman']};f.state.statuses.M={seenAt:100,merchantEventReserved:true};
+ Object.assign(f.state.merchantCurrent,{resumeState:{step:4},completedListingKeys:['receipt'],commandId:7});
+ f.state.commands.M={id:7};
+ assert.equal(f.send('checkpoint',{jobId:'job',protectionOnly:true}).body.yield,undefined);
+ assert.equal(f.state.merchantCurrent.id,'job');
+ assert.equal(f.send('checkpoint',{jobId:'job',eventOnly:true}).body.yield,true);
+ assert.equal(f.state.merchantCurrent,null);assert.equal(f.state.merchantQueue.length,1);
+ assert.equal(f.state.merchantQueue[0].id,'job');assert.deepEqual(f.state.merchantQueue[0].resumeState,{step:4});
+ assert.deepEqual(f.state.merchantQueue[0].completedListingKeys,['receipt']);
+ assert.equal(f.send('checkpoint',{jobId:'job',eventOnly:true}).code,409);assert.equal(f.state.merchantQueue.length,1);
+});

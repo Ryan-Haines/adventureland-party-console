@@ -1,7 +1,7 @@
 import type { CombatRoot, Target } from '../roles/types.ts';
 import { monsterAttackBlock } from '../roles/monster-attack-policy.ts';
 import { createSkillEngine } from './engine.ts';
-import { decision, type Actor, type Combatant, type CombatContext, type SkillDefinition, type SkillId, type SkillWorld } from './types.ts';
+import { decision, type Actor, type Combatant, type CombatContext, type SkillDefinition, type SkillDecision, type SkillId, type SkillWorld } from './types.ts';
 import { incomingDps } from './damage.ts';
 import { createProjectileTracker } from './projectiles.ts';
 
@@ -38,7 +38,7 @@ export function installSkillRuntime(root: CombatRoot) {
       actor, context, skills, now: Date.now(),
       item: name => (G.items as Record<string, { wtype?: string; type?: string; charge?: number }>)[name],
       condition: name => (G.conditions as Record<string, ReturnType<SkillWorld['condition']>>)[name],
-      cooldown: id => Number(host.next_skill?.[id]) > Date.now(),
+      cooldown: id => id === 'invis' && !!shared.merchantVisibilityActive?.() || Number(host.next_skill?.[id]) > Date.now(),
       damageMultiplier: host.damage_multiplier || mitigation,
       incoming: t => projectiles.incoming(t.id, Date.now()),
       range: (t, id) => skillRange(actor, t, skills[id]),
@@ -47,6 +47,7 @@ export function installSkillRuntime(root: CombatRoot) {
     return result;
   }
   function authorized(w: SkillWorld, t: Combatant, id: SkillId): boolean {
+    if(returnTargetBlocked(t,id))return false;
     const type = w.skills[id]?.damage_type || 'physical';
     if (id !== 'taunt' && monsterAttackBlock(t.mtype, type, w.actor.range)) return false;
     if (!targetAuthorized(t, id)) return false;
@@ -57,9 +58,23 @@ export function installSkillRuntime(root: CombatRoot) {
   function targetAuthorized(t: Combatant, id: SkillId): boolean {
     return !!shared.skillTargetAllowed?.(t as Target) && shared.rareAttackAllowed?.(t as Target, id) !== false;
   }
+  const returnExcluded = new Set<string>(['taunt','agitate','charge','dash','blink','scare','stomp','cleave','fanofknives']);
+  function returnTargetBlocked(t:Combatant,id:SkillId):boolean {
+    return !!shared.returnCombatActive?.() && (returnExcluded.has(id) || !shared.returnAttacker?.(t as Target));
+  }
+  function returnCastBlocked(d:SkillDecision):boolean {
+    if(!shared.returnCombatActive?.())return false;
+    if(returnExcluded.has(d.skill))return true;
+    return !!world().skills[d.skill]?.hostile && d.targets.some(t=>!shared.returnAttacker?.(t as Target));
+  }
+  function castSkill(d:SkillDecision):Promise<unknown> {
+    if(returnCastBlocked(d))return Promise.reject(new Error('Skill conflicts with return movement or attacker-only policy'));
+    const argument=d.argument ?? (d.targets.length>1 || world().skills[d.skill]?.multi ? d.targets.map(t=>t.id) : d.targets[0]?.id || d.targets[0]?.name);
+    return host.use_skill(d.skill,argument);
+  }
   const engine = createSkillEngine({
     world,
-    cast: d => host.use_skill(d.skill, d.argument ?? (d.targets.length > 1 || world().skills[d.skill]?.multi ? d.targets.map(t => t.id) : d.targets[0]?.id || d.targets[0]?.name)),
+    cast:castSkill,
     evidence: (t, state, action) => shared.queueEvidence?.(t as Target, state, action) || null,
     diagnostic: d => { if (root.partyCombatState) root.partyCombatState.skill = d; },
   });

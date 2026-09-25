@@ -2,7 +2,7 @@ import type { GameData, Geometry, Point, Step } from '../navigation/contracts.ts
 type GameCharacter = typeof character;
 export interface MoveState extends Point {
   moving: boolean; found: boolean; searching: boolean; plot: Step[]; use_town: boolean; try_exact_spot: boolean; edge: number;
-  on_done(done: boolean, reason?: string): void;
+  on_done(done: boolean, reason?: string, failure?: unknown): void;
 }
 // The movement host accepts a minimal payload, with normalized geometry and death state.
 export interface Character extends Point, Pick<GameCharacter, 'name' | 'real_x' | 'real_y' | 'speed' | 'moving'> {
@@ -29,7 +29,8 @@ export interface MovementHost {
   can_use_door(map: string, door: unknown[], x: number, y: number): boolean;
   find_npc(name: string): Point | null;
   game_log(message: string, color: string): void;
-  parent: { __partyClientVersion?: number; socket: { emit(event: string, data: unknown): void }; push_deferred(key: string): Promise<unknown> };
+  // caracAL supplies its selected game-file version through process arguments.
+  parent: { __partyClientVersion?: number | string; socket: { emit(event: string, data: unknown): void }; push_deferred(key: string): Promise<unknown> };
   __partyMovement?: { dispose(): void };
   __partyNativeMovement?: NativeFunctions;
 }
@@ -40,9 +41,12 @@ export interface MovementContext {
   runtime: string; revision: number; current: boolean; paused: boolean;
 }
 export interface MovementOptions {
+  relocation?: 'town' | 'door';
+  owner?: {convoyId?: string; epoch?: number; commandId?: number; navigationRevision?: number; recoveryStage?: string};
   transitionComplete?: (destination: Point) => void;
   townAttempt?: (state: 'casting' | 'interrupted' | 'complete' | 'unavailable', index: number, from: Point, destination: Point) => void;
   compareTown?: boolean;
+  skipLootWait?: boolean;
   avoidLeave?: boolean; town?: boolean; native?: boolean; shared?: boolean; speed?: number;
   arrivalTolerance?: number;
   barrier?: (step: Step, index: number, completed: boolean) => Promise<boolean>;

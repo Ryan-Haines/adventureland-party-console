@@ -87,6 +87,8 @@ test('acknowledged successor promotes on death without another acknowledgement c
  for(let i=0;i<8;i++){f.tick();f.ack();}
  f.members[1].status.groupedCombat.deaths=[{id:'A',map:'cave',in:'cave',server:'USII',at:1800}];f.tick();
  assert.equal(f.g.target.id,'B');assert.equal(f.g.committed,true);f.tick();assert.equal(f.g.target.id,'B','duplicate proof advances once');
+ assert.equal(f.g.handoffTiming.selectedAt,f.g.handoffTiming.committedAt);
+ const timing=f.g.handoffTiming;f.tick();assert.deepEqual(f.g.handoffTiming,timing,'ordinary reports retain transition times');
 });
 test('disappearance, focus change, character death and reload cannot release engagement',()=>{
  const f=fixture();engage(f);f.members.forEach(m=>{m.status.lastDeath={at:2000};m.status.combatSelection.runtimeId+='reload';});f.tick();

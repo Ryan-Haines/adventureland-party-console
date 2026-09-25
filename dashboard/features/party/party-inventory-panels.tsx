@@ -49,7 +49,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     state,
     setSelected,
     detailMeta,
-    setNotice,
+    setActionError,
     post,
     setStandItem,
     setNpcSaleItem,
@@ -79,7 +79,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     realmSetHome,
     switchRealm,
   } = model;
-  const bankWithdrawal = useBankWithdrawal(post, setNotice);
+  const bankWithdrawal = useBankWithdrawal(post, setActionError);
   return (
     <>
       {bankWithdrawal.confirmation}
@@ -112,9 +112,8 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           onDeleteBankboi={async (name) => {
             try {
               await post(`/bankbois/${encodeURIComponent(name)}/delete`, {});
-              setNotice(`${name} deleted`);
             } catch (error) {
-              setNotice(error instanceof Error ? error.message : "Bankboi deletion failed");
+              setActionError(error instanceof Error ? error.message : "Bankboi deletion failed");
             }
           }}
           buyable={state.merchantCatalog?.buyable || []}
@@ -127,7 +126,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
             const listing = (state.standListings || []).find((mark) =>
               mark.bankPack === pack && mark.bankSlot === entry.slot && same(mark.item, entry.item));
             if (listing) void removeStandListing(listing).catch((error) =>
-              setNotice(error instanceof Error ? error.message : "Could not unmark stand listing"));
+              setActionError(error instanceof Error ? error.message : "Could not unmark stand listing"));
           }}
           onStand={(pack, entry, all = false) => {
             const knownMeta = state.merchantCatalog?.allItems?.find(
@@ -150,7 +149,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
                 same(mark.item, entry.item),
             );
             if (!existing && (state.standListings || []).length >= 16)
-              return setNotice("Merchant stand is full (16/16)");
+              return setActionError("Merchant stand is full (16/16)");
             const value = { defaultPrice: Math.max(1, Number(valuedEntry.meta?.definition.g) || 1) };
             setStandItem({
               id: existing?.id,
@@ -164,7 +163,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           }}
           onNpcSale={(pack, entry, all = false) => {
             const targets = all ? bankSaleCopies(state.bank, state.bankbois || [], entry) : undefined;
-            if (targets && !targets.length) return setNotice("No unlocked matching bank items available");
+            if (targets && !targets.length) return setActionError("No unlocked matching bank items available");
             setNpcSaleItem({
               source: "bank",
               pack,
@@ -180,7 +179,6 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           onUnlock={async (vault, kind) => {
             try {
               await model.post('/bank/unlock', { pack: vault.pack, kind });
-              setNotice(`${kind === "key" ? "Bank floor" : "Bank vault"} unlock queued`);
             } catch (error) { model.setActionError(error instanceof Error ? error.message : 'Bank unlock failed'); }
 
           }}
@@ -189,8 +187,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
       <DeconstructionConfirmation selection={deconstructionSelection} catalog={state.deconstructionCatalog || {}}
         items={state.merchantCatalog?.allItems || []} onClose={() => setDeconstructionSelection(null)}
         onConfirm={async ({ pack, entry, all }) => {
-          const result = await model.post('/deconstruction/mark', { pack, slot: entry.slot, item: entry.item, all });
-          setNotice(`Bank deconstruction queued: ${result.added || 0} slots`);
+          await model.post('/deconstruction/mark', { pack, slot: entry.slot, item: entry.item, all });
         }} />
       <DeferredPanel active={standOpen || marketOpen}>
         <StandSheet
@@ -414,7 +411,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
                 <p className="font-semibold">ALData</p>
                 {model.aldataAuthPending ? <output className="block text-sm text-amber-200">Waiting for mail delivery and ALData verification… Do not resend; each message costs gold.</output> : null}
                 <p className="font-mono text-[10px] uppercase text-slate-400">
-                  Auth: {state.aldata?.auth || "NO"} · Publish:{" "}
+                  Auth: {model.aldataAuthStatus ?? state.aldata?.auth ?? "NO"} · Publish:{" "}
                   {state.aldata?.publishStatus || "idle"}
                 </p>
               </div>
@@ -539,6 +536,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
               </span>
             </label>
           ) : null}
+          {model.realmError && <p role="alert" className="text-sm text-rose-200">{model.realmError}</p>}
           <DialogFooter>
             <Button
               type="button"

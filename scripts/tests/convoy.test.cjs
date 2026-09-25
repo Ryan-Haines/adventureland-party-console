@@ -16,6 +16,7 @@ const command = { id: 2, convoyId: 'test', epoch: 7, phase: 'prepare',
 test('explicit cancellation restores cruise before ownership is cleared, only once', () => {
   const r = runtime();
   const old = r.context.convoyTraveling = { id: 'cancelled' };
+  r.context.setConvoyCruise(old,57); r.calls.length=0;
   r.context.releaseConvoyCruise(old);
   r.context.releaseConvoyCruise(old);
   r.context.convoyTraveling = null;
@@ -53,6 +54,16 @@ function schedule(r, at = 4000) {
   r.context.convoySignal = { ...r.context.convoySignal, phase: 'scheduled', departAt: at, validUntil: at+3000 };
   r.tick();
 }
+
+test('a stale arrival response after party regroup does not report another movement failure',async()=>{
+ const r=runtime();const original=r.context.request;
+ r.context.request=async(url,opts)=>{if(url==='/convoy-complete')throw Error('POST /convoy-complete · HTTP 409 · http: stale convoy completion');return original(url,opts);};
+ const {promise}=await r.start();await r.ready();schedule(r);r.setNow(3950);
+ for(let i=0;i<100;i++){r.tick();await settle();if(r.context.convoyTraveling?.phase==='arrived')break;}
+ await settle();assert.equal(r.context.convoyTraveling.phase,'arrived');
+ assert.equal(r.calls.some(c=>c[1]==='/convoy-failed'),false);
+ await r.cancel();await promise;
+});
 test('anniversary planning yields immediately to defense and late route ticks cannot restart movement',async()=>{
  const r=runtime();let attacked=false;r.context.departureCombatPending=()=>attacked;
  vm.runInContext(source.slice(source.indexOf('  function interruptConvoyForDefense('),source.indexOf('  function groupedFarming(')),r.context);
@@ -306,4 +317,32 @@ test('Franky exit resolves at the Mainland boundary without walking the remainin
   assert.equal(r.context.movement.state.searching,false);
   assert.equal(r.context.partyLocation,null);
   assert.equal(r.calls.filter(x=>x[1]==='/convoy-complete').length,1);
+});
+
+
+test('same convoy phase and epoch changes retain one cruise cap; changed speed sends one update',async()=>{
+ const r=runtime();const a=await r.start({...command,id:1,phase:'assemble'});
+ const old=r.context.convoyTraveling;old.cruiseHandoff=true;await r.cancel();await a.promise;
+ const b=await r.start({...command,epoch:8});
+ assert.deepEqual(r.calls.filter(x=>x[0]==='cruise'),[['cruise',57]]);
+ const current=r.context.convoyTraveling;r.context.setConvoyCruise(current,60);r.context.setConvoyCruise(current,60);
+ r.context.releaseConvoyCruise(old);
+ assert.deepEqual(r.calls.filter(x=>x[0]==='cruise'),[['cruise',57],['cruise',60]]);
+ await r.cancel();await b.promise;
+ assert.deepEqual(r.calls.filter(x=>x[0]==='cruise'),[['cruise',57],['cruise',60],['cruise',500]]);
+});
+test('legacy terminal hold without a reason reports convoy identity and missing context',async()=>{
+ const r=runtime();const {promise}=await r.start({...command,phase:'hold'});
+ assert.match(r.context.convoyTraveling.failure,/missing-failure-context.*test.*epoch 7.*main/);
+ assert.equal(r.calls.some(x=>String(x[1]).includes('Convoy held; request a fresh convoy')),false);
+ await r.cancel();await promise;
+});
+
+
+test('convoy diagnostics exclude movement evidence from preceding commands',()=>{
+ const r=runtime();r.context.movement.report=()=>({id:'current',owner:{commandId:8}});
+ r.context.movement.last=()=>({id:'old',failureContext:{commandId:7}});
+ assert.equal(r.context.convoyMovementEvidence({commandId:9}),null);
+ assert.equal(r.context.convoyMovementEvidence({commandId:8}).id,'current');
+ assert.equal(r.context.convoyMovementEvidence({commandId:7}).id,'old');
 });

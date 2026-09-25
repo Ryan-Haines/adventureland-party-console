@@ -16,6 +16,10 @@ interface ConvoyStatus {
   convoyNavigation?: { runtimeId?: string };
 }
 export interface PartyConvoy {
+  routeRecovery?: import('../hunt/route-recovery.ts').RouteRecoveryCommand;
+  communicationHold?: { resumeDefense?: boolean; since: number; reason: string; participants: string[]; legacy?: boolean };
+  communicationResumedAt?: number;
+  communicationLegacyRecovered?: boolean;
   returnTown?: import('./return-town.ts').ReturnTownPolicy;
   townRetry?: boolean;
   townRetryAt?: number;
@@ -87,6 +91,13 @@ function allowsEarlyCombat(purpose: string | null | undefined, cause?: string): 
 }
 
 export function createPartyConvoys(state: ConvoyState, ports: ConvoyPorts) {
+  function workflowPurpose(purpose: string | null | undefined): boolean {
+    return ["shared-walk", "shared-walk-return", "franky-exit", "event-return"].includes(purpose || "");
+  }
+  function memberRole(name: string, explicitWorkflow: boolean, escape: boolean): boolean {
+    if (explicitWorkflow) return true;
+    return name !== state.merchantCharacter && (escape || name === state.leader || !!state.followers[name]);
+  }
   function leaderFor(
     names: string[] | undefined,
     purpose: string | null | undefined,
@@ -105,15 +116,15 @@ export function createPartyConvoys(state: ConvoyState, ports: ConvoyPorts) {
     names: string[] | undefined,
     escape: boolean,
     exit: boolean,
+    workflow: boolean,
   ): string[] {
     const requested = Array.isArray(names) ? new Set(names) : null;
     return ports
       .activeNames()
       .filter(
         (name) =>
-          name !== state.merchantCharacter &&
+          memberRole(name, workflow && !!requested?.has(name), escape) &&
           (exit || !ports.intent(name).cancelled) &&
-          (escape || name === state.leader || state.followers[name]) &&
           state.statuses[name]?.server === leader.server &&
           (!requested || requested.has(name)),
       );
@@ -235,7 +246,8 @@ export function createPartyConvoys(state: ConvoyState, ports: ConvoyPorts) {
       leader = leaderName ? state.statuses[leaderName] : undefined;
     if (!leader || leader.seenAt < ports.now() - 10000) return false;
     const location = resolveLocation(input, purpose);
-    const selected = participants(leader, names, escape, exit);
+    const workflow = workflowPurpose(purpose);
+    const selected = participants(leader, names, escape, exit, workflow);
     if (!selected.includes(leaderName!)) return false;
     assemble(location, label, leaderName!, selected, exit, purpose, cause);
     return true;

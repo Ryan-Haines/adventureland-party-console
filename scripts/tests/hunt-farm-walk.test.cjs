@@ -16,6 +16,42 @@ function fixture(){
  const quests=createHuntQuests(state,{...ports,cancelConvoy:ports.cancelHuntConvoy});ports.returnToDaisy=quests.returnToDaisy;
  return {state,hunt,ports,tick(){createHuntTick(state,ports).tick();},starts:()=>starts};
 }
+function orphan(){
+ const f=fixture();f.state.activeConvoy=null;f.state.commands={};
+ f.state.farmAreaState={pending:{destination:f.hunt.missions[0].destination,revisions:{W:3,P:4},reason:'Travel failed: Regroup retries exhausted: Shared route game geometry mismatch'}};
+ f.ports.destination=h=>h.missions[h.currentIndex].destination;return f;
+}
+test('orphaned failed farming relocation releases expired Hunt to Daisy',()=>{
+ const f=orphan();f.tick();assert.equal(f.state.farmAreaState.pending,null);assert.equal(f.hunt.stage,'returning');assert.equal(f.starts(),1);
+});
+test('stale relocation with its failed walk and expired anniversary checkpoint yields to Daisy',()=>{
+ const f=fixture();f.ports.destination=h=>h.missions[h.currentIndex].destination;
+ f.state.farmAreaState={pending:{destination:f.hunt.missions[0].destination,revisions:{W:3,P:4},reason:'Travel failed: Shared route game geometry mismatch'}};
+ f.state.anniversary={eventCycle:{endsAt:900000,returnDispatchedAt:950000,participants:['W','P'],waypoints:{W:{revision:3},P:{revision:4}}}};
+ f.tick();assert.equal(f.state.farmAreaState.pending,null);assert.equal(f.hunt.stage,'returning');assert.equal(f.starts(),1);
+ assert.equal(f.state.anniversary.eventCycle.supersededAt,1000000);
+});
+test('orphaned failed farming relocation restores the actual Hunt mission origin',()=>{
+ const f=orphan();f.state.statuses.W.monsterHunt.remainingMs=900000;
+ require('../../runtime/coordinator/hunt/farm-walk.ts').recoverHuntFarmWalk(f.hunt,f.state,f.ports);
+ assert.equal(f.state.farmAreaState.pending,null);assert.equal(f.hunt.stage,'mission-travel');assert.equal(f.hunt.originArrivedAt,undefined);
+});
+for(const blocker of ['revision','command','event','destination','stale','cancelled','paused'])test('orphan recovery preserves '+blocker,()=>{
+ const f=orphan(),s=f.state,pending=s.farmAreaState.pending;
+ if(blocker==='revision')s.navigationIntents.P.revision++;
+ if(blocker==='command')s.commands.P={type:'character-travel'};
+ if(blocker==='event')s.statuses.P.activeEvent='abtesting';
+ if(blocker==='destination')pending.destination={map:'other',x:0,y:0};
+ if(blocker==='stale')s.statuses.P.seenAt=0;
+ if(blocker==='cancelled')s.navigationIntents.P.cancelled=true;
+ if(blocker==='paused')s.farmAreaState.paused=true;
+ require('../../runtime/coordinator/hunt/farm-walk.ts').recoverHuntFarmWalk(f.hunt,s,f.ports);
+ assert.equal(s.farmAreaState.pending,pending);assert.equal(f.starts(),0);
+});
+test('failed geometry repair stays held with an accurate Hunt message',()=>{
+ const f=fixture();Object.assign(f.state.activeConvoy,{failureCode:'geometry-mismatch',failure:'Geometry recovery failed after one reload'});
+ f.tick();assert.equal(f.starts(),0);assert.match(f.hunt.message,/Travel held: Geometry recovery failed/);
+});
 for(const phase of ['failed','shared-travel'])test('Daisy deadline preempts owned '+phase+' farm walk before event pause, despite optional attacks',()=>{
  const f=fixture();f.state.activeConvoy.phase=phase;f.tick();assert.equal(f.hunt.stage,'returning');assert.equal(f.hunt.turnIn.phase,'returning');
  assert.equal(f.starts(),1);assert.deepEqual(f.state.activeConvoy.location,{map:'main',x:126,y:-413});f.tick();assert.equal(f.starts(),1);

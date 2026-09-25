@@ -1,8 +1,14 @@
+import { stepHuntArrival } from './hunt-arrival.ts';
+import { ownsHuntRoute, inheritedHuntRoute } from '../hunt/route-recovery.ts';
 import { recordConvoyHistory } from "./convoy-history.ts";
+import { createCommunicationRecovery } from './communication-recovery.ts';
+import { beginGeometryRepair, geometryMismatch, geometryRepairReady, geometryReloadSignal } from './geometry-repair.ts';
+import { reconcileReturnArrival } from './return-arrival.ts';
+import { departureIssue, readinessIssue, readinessExpired, readinessFailure, recoveryPlanner } from './shared-departure.ts';
 import { prepareContinuousReturn, checkpointContinuousReturn } from './continuous-return.ts';
 import { stepMerchantInterruption } from "./merchant-interruption.ts";
 import { stalledTravelMember } from "./travel-progress.ts";
-import { observeReturnTown, returnWalking, townOutcomesReady } from './return-town.ts';
+import { observeReturnTown, returnWalking } from './return-town.ts';
 import type { ConvoyNavigationPlatform } from "../infrastructure/convoy-platform.ts";
 import { engageHunt, propagateHuntTarget } from "../hunt/engagement.ts";
 import { engageFarming } from "./farming-engagement.ts";
@@ -11,6 +17,7 @@ import { characterRuntime, distance, point, reportMatches, type SharedCommand, t
 
 export function sharedCommand(state: SharedState, c: SharedConvoy, phase: string, name: string): SharedCommand {
   const command: SharedCommand = { id: state.nextCommandId++, type: "party-monster-travel", phase,
+    routeRecovery:c.routeRecovery, reason:c.phase === "observing" ? c.defenseReason || undefined : c.failure, failureCode:c.failureCode, failureContext:c.failureDetails,
     convoyId: c.id, epoch: c.epoch, navigationRevision: state.navigationIntents?.[name]?.revision || 0,
     routeProtocol: 4, routeVersion: c.routeVersion || 0, nativeFallback: c.nativeFallback, avoidLeave: c.avoidLeave, location: c.location, rally: c.rally,
     leader: c.leader, participants: c.participants, slowestSpeed: c.slowestSpeed, purpose: c.purpose,
@@ -61,11 +68,12 @@ function compatible(state: SharedState, c: SharedConvoy, now: number): boolean {
 function begin(state: SharedState, c: SharedConvoy, now: number): boolean {
   delete c.missingRoutes;
   const leader = state.statuses[c.leader];
-  if (!compatible(state, c, now) || !leader || leader.moving) return false;
+  if (!compatible(state, c, now) || !leader || leader.moving || leader.transporting) return false;
   c.phase = "shared-prepare";
+  delete c.arrivalReadySince;
   c.routeVersion = (c.routeVersion || 0) + 1;
-  c.rally = point(leader); c.departAt = null; c.sharedReadySince = 0;
-  delete c.returnTownRally;
+  c.rally = c.returnTownRally || point(leader); c.departAt = null; c.sharedReadySince = 0;
+
   c.routeServer = leader.server;
   c.sharedStartedAt = now; c.sharedProgressAt = now; c.sharedDistances = {};
   delete c.sharedWaitingAt;
@@ -99,10 +107,7 @@ function ownerLostReason(state: SharedState, c: SharedConvoy): string {
     " (saved revision " + c.expected?.[name]?.revision + ", current " + state.navigationIntents?.[name]?.revision + ")";
 }
 function readyMember(state: SharedState, c: SharedConvoy, name: string): boolean {
-  const s = state.statuses[name]!, n = s.convoyNavigation!;
-  if (!reportMatches(state, name) || s.moving || distance(s, c.rally) > 55) return false;
-  if (!(Number(s.speed) > 0 && Number(s.speed) <= c.slowestSpeed + 0.1)) return false;
-  return !!n.routeReady && n.routeVersion === c.routeVersion && ["route-ready", "waiting-for-departure"].includes(n.phase);
+  return !readinessIssue(state, c, name);
 }
 function preparationBlocker(state: SharedState, c: SharedConvoy): string | undefined {
   const missing = members(c).filter(name => !reportMatches(state, name));
@@ -129,12 +134,6 @@ function observeProgress(state: SharedState, c: SharedConvoy, now: number): void
 function assemblyTimeout(c: SharedConvoy, now: number): boolean {
   return now - c.sharedStartedAt! >= 120000 || now - c.sharedProgressAt! >= 30000;
 }
-function movedAfterReady(state: SharedState, c: SharedConvoy): boolean {
-  return members(c).some(name => {
-    const s = state.statuses[name]!, origin = c.origins?.[name];
-    return !origin || s.moving || distance(s, origin) > 1;
-  });
-}
 function authorizedHold(state: SharedState, c: SharedConvoy, name: string): boolean {
   const intent = state.navigationIntents?.[name], command = state.commands[name];
   if (command && command.convoyId !== c.id) return false;
@@ -151,43 +150,85 @@ function eventEntry(c: SharedConvoy): boolean {
 }
 function terminalCommand(state: SharedState, c: SharedConvoy, name: string): SharedCommand {
   const command = sharedCommand(state, c, eventEntry(c) ? "event-walk-release" : "hold", name);
-  command.reason = c.failure || "Event walking failed";
+  command.reason = c.failure || `Navigation halted (${c.failureCode || "missing-failure-context"}); convoy ${c.id}, destination ${c.location.map} (${c.location.x}, ${c.location.y})`;
   return command;
 }
 /** Existing Town/itinerary/defense barriers delegate here for every walking leg. */
 export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
   defense: (state: SharedState, now: number, command: typeof sharedCommand) => boolean = () => false): ConvoyNavigationPlatform {
+  const communication = createCommunicationRecovery({ owned: authorizedHold, fail: terminal, resume: resumeCommunication,
+    hold: (state, c) => {
+      c.completed = [];
+      clearSharedRoute(c); delete c.readinessStartedAt; delete c.arrivalReadySince;
+      c.runtimes = Object.fromEntries(c.participants.map(n => [n, characterRuntime(state.statuses[n]) || '']));
+      issue(state, c, 'shared-hold');
+    } });
+  function resumeCommunication(state: SharedState, c: SharedConvoy, now: number): boolean {
+    // Reconcile defense and its loot barrier before granting another movement command.
+    if (!c.continuousReturn) {
+      c.phase=c.communicationHold?.resumeDefense ? 'defending' : 'shared-hold';
+      if (defense(state,now,sharedCommand)) {
+        if(c.phase==='defending')issue(state,c,'defending');
+        return true;
+      }
+    }
+    return begin(state,c,now);
+  }
   function terminal(state: SharedState, reason: string, code: string): boolean {
     const c = state.activeConvoy;
     if (c?.routeProtocol !== 4) return legacy.hold(state, reason, code);
     if (c.phase === "failed") return false;
     clearSharedRoute(c); c.phase = "failed"; c.failure = reason; c.failureCode = code; c.failedAt = Date.now(); c.departAt = null;
+    if (code === 'geometry-mismatch') { c.retryExhausted=true; if(c.geometryRepair)c.geometryRepair.phase='failed'; }
     recordConvoyHistory(state, c, "failed", c.failedAt, { reason, code, commands: Object.fromEntries(members(c).map(name => [name, state.commands[name]?.type])) });
     for (const name of members(c)) if (authorizedHold(state, c, name)) state.commands[name] = terminalCommand(state, c, name);
     return true;
   }
   function recover(state: SharedState, reason: string, now: number): boolean {
     const c = state.activeConvoy!;
+    if (/game geometry mismatch/i.test(reason)) return repairGeometry(state, c, reason, now);
     if (c.phase === "shared-hold" || c.phase === "failed") return false;
-    if ((c.recoveryAttempts || 0) >= 2) {
-      c.retryExhausted = true;
-      return terminal(state, "Regroup retries exhausted: " + reason, "route-failed");
-    }
+    if (readinessFailure(c, reason)) return prepareAgain(state, c, reason, now);
+    if (!c.continuousReturn && ownsHuntRoute(state.monsterHunt,c)) return terminal(state,reason,routeFailureCode(reason));
+    const exhausted = recoveryLimit(c,reason);
+    if(exhausted)return terminal(state,exhausted,"route-failed");
     c.recoveryAttempts = (c.recoveryAttempts || 0) + 1;
+    recoveryPlanner(c, reason);
     disableFailedTown(c,reason);
     // Return itinerary planning precedes begin(), so there is no shared-route
     // realm/runtime identity to validate or resume yet.
     if (unpreparedHuntReturn(c)) {
       return recoverUnprepared(state,c,reason,now);
     }
-    if (/leave transition/i.test(reason)) c.avoidLeave = true;
-    // Ownership/assembly recovery is not evidence of bad planner geometry.
-    c.nativeFallback = !!c.nativeFallback || /route rejected|geometry|unwalkable|path not found|no path/i.test(reason);
     c.epoch++; c.phase = "shared-hold"; c.departAt = null; c.failure = reason;
     c.sharedStoppedAt = now; clearSharedRoute(c);
     issue(state, c, "shared-hold");
     recordConvoyHistory(state, c, "regrouping", now, { reason, recoveryAttempts: c.recoveryAttempts });
     return true;
+  }
+  function repairGeometry(state: SharedState, c: SharedConvoy, reason: string, now: number): boolean {
+    if (c.geometryRepair?.phase === 'waiting') return false;
+    if (!beginGeometryRepair(state,c,now))
+      return terminal(state, 'Geometry recovery failed: ' + reason, 'geometry-mismatch');
+    c.epoch++; c.phase='shared-hold'; c.departAt=null; c.failure=reason;
+    c.sharedStoppedAt=now; clearSharedRoute(c); issue(state,c,'shared-hold');
+    recordConvoyHistory(state,c,'geometry repair',now,{reason,repair:c.geometryRepair});
+    return true;
+  }
+  function stepGeometryRepair(state: SharedState, c: SharedConvoy, now: number): boolean {
+    if (!members(c).every(n=>authorizedHold(state,c,n))) {
+      c.geometryRepair!.phase='failed';
+      return terminal(state,'Geometry recovery superseded by newer navigation','owner-lost');
+    }
+    // A restart preserves the repair budget but recreates only still-owned holds.
+    if (members(c).some(n=>!state.commands[n])) { issue(state,c,'shared-hold'); return true; }
+    if (geometryRepairReady(state,c,now)) {
+      c.geometryRepair!.phase='complete'; c.failure=undefined;
+      return begin(state,c,now);
+    }
+    if (now-c.geometryRepair!.startedAt<60000) return false;
+    c.geometryRepair!.phase='failed';
+    return terminal(state,'Geometry recovery failed after one reload: fresh compatible game geometry not received within 60 seconds','geometry-mismatch');
   }
   function recoverUnprepared(state: SharedState, c: SharedConvoy, reason: string, now: number): boolean {
     if (!returnRuntimeReady(state,c,now))
@@ -220,6 +261,7 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     return begin(state, c, now);
   }
   function prepare(state: SharedState, c: SharedConvoy, now: number): boolean {
+    if (readinessExpired(c, now)) return readinessTimeout(state, c, now);
     observeProgress(state, c, now);
     c.preparationBlocker = preparationBlocker(state, c);
     const allReady = !!sharedRoute(c) && members(c).every(n => readyMember(state, c, n));
@@ -238,11 +280,12 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
   }
   function travel(state: SharedState, c: SharedConvoy, now: number): boolean {
     if (c.phase === "scheduled" && now < c.departAt!) {
-      if (movedAfterReady(state, c) || !members(c).every(n => readyMember(state, c, n)))
-        return recover(state, "Formation or installed route changed before departure", now);
+      const issue = departureIssue(state, c, now);
+      if (issue) return prepareAgain(state, c, issue, now);
       return false;
     }
-    if (c.phase === "scheduled") { c.phase = "travel"; return true; }
+    if (c.phase === "scheduled") { c.phase = "travel"; delete c.readinessStartedAt; return true; }
+    if (reconcileReturnArrival(state, c, now)) return true;
     const missing = missingTravelRoute(state, c, now);
     if (missing) return recover(state, "Travel route disappeared: " + missing, now);
     const stalled = stalledTravelMember(state, c, now);
@@ -250,12 +293,35 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     // Native legacy completion/leg barriers still own workflow advancement.
     return c.returnRouting && !c.continuousReturn ? legacy.step(state, now) : false;
   }
+  function readinessTimeout(state: SharedState, c: SharedConvoy, now: number): boolean {
+    return recover(state, 'Departure readiness timed out: ' + (c.preparationBlocker || 'unstable formation'), now);
+  }
+  function prepareAgain(state: SharedState, c: SharedConvoy, reason: string, now: number): boolean {
+    c.readinessStartedAt ??= c.sharedStartedAt || now;
+    if (now - c.readinessStartedAt >= 60000) return recover(state, 'Departure readiness timed out: ' + reason, now);
+    c.preparationBlocker = reason;
+    c.epoch++; c.phase = 'shared-hold'; c.departAt = null; c.sharedReadySince = 0;
+    c.sharedStoppedAt = now; clearSharedRoute(c); issue(state, c, 'shared-hold');
+    recordConvoyHistory(state, c, 'departure deferred', now, { reason });
+    return true;
+  }
   function activeStep(state: SharedState, c: SharedConvoy, now: number): boolean {
+    if (c.geometryRepair?.phase === 'waiting') return stepGeometryRepair(state,c,now);
     const problem = health(state, c, now);
     if (problem) return terminal(state, problem === "owner-lost" ? ownerLostReason(state, c) : "Convoy " + problem, problem);
+    const mismatched = geometryMismatch(state,c);
+    if (mismatched.length) return repairGeometry(state,c,'Shared route game geometry mismatch: ' + JSON.stringify({
+      expected:sharedRoute(c)?.geometry || state.statuses[c.leader]?.movementGeometry,
+      actual:Object.fromEntries(mismatched.map(n=>[n,state.statuses[n]?.movementGeometry]))}),now);
     if (c.phase === "shared-hold") return resume(state, c, now);
-    if (members(c).some(n => reportMatches(state, n) && state.statuses[n]!.convoyNavigation?.phase === "failed"))
-      return recover(state, members(c).map(n => state.statuses[n]?.convoyNavigation).find(r => r?.phase === "failed")?.failure || "Character requested route recovery", now);
+    return advanceHealthyRoute(state,c,now);
+  }
+  function advanceHealthyRoute(state: SharedState, c: SharedConvoy, now: number): boolean {
+    const failed = members(c).find(n => reportMatches(state, n) && state.statuses[n]!.convoyNavigation?.phase === 'failed');
+    if (failed) {
+      c.failureDetails=state.statuses[failed]!.convoyNavigation?.failureDetails || c.failureDetails;
+      return recover(state, failed + ': ' + (state.statuses[failed]!.convoyNavigation?.failure || 'Character requested route recovery'), now);
+    }
     if (c.phase === "shared-prepare") return prepare(state, c, now);
     return travel(state, c, now);
   }
@@ -281,14 +347,20 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
   }
   function awaitTownRally(state:SharedState,c:SharedConvoy,now:number):boolean {
     observeProgress(state,c,now);
-    if(members(c).every(n=>distance(state.statuses[n]!,c.rally)<=55))return begin(state,c,now);
+    if(members(c).every(n=>distance(state.statuses[n]!,c.rally)<=55)){delete c.returnTownRally;return begin(state,c,now);}
     if(assemblyTimeout(c,now))return recover(state,'Town rendezvous made no progress',now);
     return false;
   }
   function step(input: Parameters<ConvoyNavigationPlatform["step"]>[0], now = Date.now()): boolean {
     const state = input as SharedState, c = state.activeConvoy;
     if (c?.routeProtocol !== 4) return legacy.step(state, now);
+    if(c.walkingActivity==='anniversary-staging'){c.continuousReturn=1;c.navigationExempt=false;}
+    const communicationChanged = communication(state, c, now);
+    if (communicationChanged !== null) return communicationChanged;
     if (refreshReturnTown(state,c,now))return true;
+    // A local attacker can interrupt the stopping acknowledgement. Resolve that
+    // defense and loot before waiting for held reports or resuming the route.
+    if (merchantDefense(state, c, now)) { clearSharedRoute(c); return true; }
     const interruption = stepMerchantInterruption(state, now, {
       hold: name => sharedCommand(state, c, "shared-hold", name),
       resume: phase => {
@@ -302,19 +374,33 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
       fail: reason => terminal(state, reason, "owner-lost"),
     });
     if (interruption !== null) return interruption;
+    const arrival = stepHuntArrival(state, c, now, sharedCommand);
+    if (arrival !== null) return arrival;
     return advanceRoute(state,c,now);
   }
+  function merchantDefense(state: SharedState, c: SharedConvoy, now: number): boolean {
+    return !!c.merchantInterruption && c.merchantInterruption.phase !== 'collecting' &&
+      !c.force && defense(state, now, sharedCommand);
+  }
   function advanceRoute(state:SharedState,c:SharedConvoy,now:number):boolean {
+    if (c.geometryRepair?.phase === 'waiting') return stepGeometryRepair(state,c,now);
     if (c.phase === "failed") return failedStep(state, c, now);
+    if (!c.continuousReturn && inheritHuntBudget(state,c)) return true;
     if (!c.force && defense(state, now, sharedCommand)) { clearSharedRoute(c); return true; }
-    if(c.townRetry)return retryTown(state,c,now);
+
     if (["shared-prepare", "shared-hold", "scheduled", "travel"].includes(c.phase)) return activeStep(state, c, now);
     return bootstrap(state, c, now);
   }
-  function retryTown(state:SharedState,c:SharedConvoy,now:number):boolean {
-    if(townOutcomesReady(state,c,now))return resumeTownRetry(state,c);
-    if(now-(c.townRetryAt || now)>15000)return recover(state,'Town cast outcomes not received',now);
-    return false;
+  function inheritHuntBudget(state:SharedState,c:SharedConvoy):boolean {
+    const g=state.statuses[c.leader]?.movementGeometry;
+    const entry=inheritedHuntRoute(state.monsterHunt,c,g ? g.version+':'+g.fingerprint : 'unknown');
+    if (!entry || c.routeRecovery?.stage==='relocation') return false;
+    if (entry.phase==='post-relocation' || entry.phase==='native') {
+      c.routeRecovery={key:JSON.stringify([c.location.map,c.location.in ?? c.location.map,c.location.x,c.location.y]),stage:entry.phase};
+      c.nativeFallback=entry.phase==='native';
+      return false;
+    }
+    return terminal(state,entry.message || 'Hunt route waiting for its one permitted origin relocation: '+entry.firstFailure,'hunt-route-held');
   }
   function releaseFailedEntry(state: SharedState, c: SharedConvoy): boolean {
     let changed = false;
@@ -360,7 +446,7 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     const state = input as SharedState, c = state.activeConvoy;
     const result = legacy.signal(state, name, now) as Record<string, unknown> | null;
     if (!result || c?.routeProtocol !== 4) return result;
-    return { ...result, returnWalking: returnWalking(c), immediateDeparture: immediateTownDeparture(c), farmingEngagement: c.farmingEngagement || null, routeProtocol: 4, routeVersion: c.routeVersion || 0, routeAvailable: !!sharedRoute(c) };
+    return { ...result, navigationRevision: state.commands[name]?.navigationRevision, geometryReload: geometryReloadSignal(state,c,name), returnWalking: returnWalking(c), immediateDeparture: !!c.continuousReturn || immediateTownDeparture(c), farmingEngagement: c.farmingEngagement || null, routeProtocol: 4, routeVersion: c.routeVersion || 0, routeAvailable: !!sharedRoute(c) };
   }
   const engage: ConvoyNavigationPlatform["engage"] = (state, body, options) =>
     ["", "party-travel", "farm-relocation"].includes((state as SharedState).activeConvoy?.purpose || "")
@@ -391,16 +477,15 @@ function missingTravelRoute(state: SharedState, c: SharedConvoy, now: number): s
 }
 
 function departureDelay(c:SharedConvoy):number {
-  return immediateTownDeparture(c) ? 0 : 4000;
+  return c.continuousReturn || immediateTownDeparture(c) ? 0 : 4000;
 }
 function refreshReturnTown(state:SharedState,c:SharedConvoy,now:number):boolean {
   if(c.participants.some(n=>lostOwner(state,c,n)))return false;
   if(!observeReturnTown(state,c,now))return false;
+  // A recovered Town opportunity can release only a route failure, never an ownership hold.
+  if(c.phase==='failed' && (c.disableTown || !['route-failed','assembly-timeout'].includes(c.failureCode || '')))return false;
+  if(c.phase==='failed'){c.recoveryAttempts=0;c.retryExhausted=false;}
   c.epoch++;reassembleReturn(state,c);return true;
-}
-function resumeTownRetry(state:SharedState,c:SharedConvoy):boolean {
-  if(!c.townRetry)return false;
-  c.townRetry=false;c.epoch++;reassembleReturn(state,c);return true;
 }
 
 function immediateTownDeparture(c:SharedConvoy):boolean {
@@ -409,4 +494,15 @@ function immediateTownDeparture(c:SharedConvoy):boolean {
   if(!route)return false;
   const first=route.plot.find(p=>p.town || p.transport || p.method==='leave' || distance(p,route.origin)>1);
   return first?.town===true;
+}
+
+function routeFailureCode(reason: string): string {
+  return reason.startsWith('Departure readiness timed out:') ? 'assembly-timeout' : 'route-failed';
+}
+
+function recoveryLimit(c:SharedConvoy,reason:string):string | null {
+  if(c.continuousReturn)c.returnFirstFailure ||= reason;
+  if((c.recoveryAttempts || 0)<(c.continuousReturn?1:2))return null;
+  c.retryExhausted=true;
+  return c.continuousReturn ? 'Return route held after two planning cycles; first: '+c.returnFirstFailure+'; latest: '+reason : 'Regroup retries exhausted: '+reason;
 }

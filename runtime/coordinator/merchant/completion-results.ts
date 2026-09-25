@@ -94,7 +94,8 @@ export function createCompletionResults(state: CompletionState, ports: Completio
     const identity = deliveryIds.some(Boolean) ? {deliveryIds} : {};
     const command = state.commands[String(name)];
     if (command?.type === 'apply-stat-scrolls') Object.assign(command, {equipItems: equip}, identity);
-    else state.commands[String(name)] = {id: ports.nextCommand(), type: 'equip-deliveries', items: equip, ...identity};
+    // awaitingEquip persists the receipt until scheduling can safely own the slot.
+    else if (!command) state.commands[String(name)] = {id: ports.nextCommand(), type: 'equip-deliveries', items: equip, ...identity};
   }
   function commerce(current: CompletionJob, body: CompletionReport): void {
     if (current.reason === "collect mail")

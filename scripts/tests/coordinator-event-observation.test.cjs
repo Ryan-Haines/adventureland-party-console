@@ -73,3 +73,13 @@ test('a lost kiss operation expires and no longer blocks departure',()=>{
  f.authorize('P','anniversary',{id:'one',phase:'begin'});f.time(182000);
  assert.equal(f.authorize('W','crabxx').allowed,true);
 });
+
+
+test('merchant departures and joined reports participate in the normal event return',()=>{
+ const f=fixture();assert.equal(f.authorize('M','snowman').allowed,true);
+ assert.deepEqual(f.state.sessions.M.participants,['M']);
+ f.time(12000);f.observe({name:'M'});
+ assert.deepEqual(f.effects.find(Array.isArray),['return','snowman',['M']]);
+ const g=fixture();g.observe({name:'M',joinedEvent:'goobrawl',serverLiveEvents:[{name:'goobrawl'}]});
+ assert.deepEqual(g.state.sessions.M.participants,['M']);
+});

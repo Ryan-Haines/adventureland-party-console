@@ -1,6 +1,7 @@
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 export interface ReturnProgress {
   kind: string; cycleId: string; revision: number; phase: string;
+  exitMap?: string; exitAttempts?: number; blockedTownAttempted?: boolean;
 }
 export interface ReturnProgressState {
   returnProgress?: Record<string, ReturnProgress>;
@@ -31,8 +32,21 @@ export function createReturnProgressRoute(state: ReturnProgressState, ports: {
     const all = state.returnProgress ||= {}, prior = all[name];
     const same = sameReturn(prior,{kind,cycleId,revision,phase});
     if (!same || phases.indexOf(phase) > phases.indexOf(prior.phase)) {
-      all[name] = {kind, cycleId, revision, phase}; ports.persist();
+      all[name] = { ...(same ? prior : {}), kind, cycleId, revision, phase }; ports.persist();
     }
+    const before = JSON.stringify(all[name]);
+    updateExitProgress(all[name]!, body);
+    if (before !== JSON.stringify(all[name])) ports.persist();
     return res.json({ok:true, progress:all[name]});
   };
+}
+
+function updateExitProgress(progress: ReturnProgress, body: Record<string, unknown>): void {
+  if (progress.kind !== "event" || typeof body.exitMap !== "string") return;
+  if (progress.exitMap && progress.exitMap !== body.exitMap) return;
+  progress.exitMap = body.exitMap;
+  const attempts = Number(body.exitAttempts);
+  if (Number.isInteger(attempts) && attempts >= 0 && attempts <= 3)
+    progress.exitAttempts = Math.max(progress.exitAttempts || 0, attempts);
+  if (body.blockedTownAttempted === true) progress.blockedTownAttempted = true;
 }

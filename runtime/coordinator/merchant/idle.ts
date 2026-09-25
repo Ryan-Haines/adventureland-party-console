@@ -14,6 +14,7 @@ interface StandListing {
   [field: string]: unknown;
 }
 interface IdlePorts {
+  eventReserved?(): boolean;
   storagePending(): boolean;
   merchant(): string | null;
   status(name: string | null): IdleStatus | undefined;
@@ -96,8 +97,11 @@ export function createMerchantIdle(ports: IdlePorts) {
       !anniversary.reserved && !ports.forcedStand();
   }
 
+  function reserved(): boolean {
+    return !!ports.eventReserved?.() || ports.storagePending();
+  }
   function idle(): void {
-    if (ports.storagePending()) return;
+    if (reserved()) return;
     const merchant = ports.merchant(),
       status = ports.status(merchant);
     if (["equip", "unequip", "use-item"].includes(ports.command(merchant)?.type || "")) return;

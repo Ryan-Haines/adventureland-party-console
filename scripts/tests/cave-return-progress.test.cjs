@@ -16,6 +16,16 @@ test('return progress is monotonic and belongs to the current cycle and navigati
  const f=coordinator();f.call({phase:'exiting-map'});f.call({phase:'local-town'});assert.equal(f.state.returnProgress.L.phase,'exiting-map');assert.equal(f.saves(),1);
  assert.equal(f.call({cycleId:'old',phase:'complete'}).code,409);f.rev(3);assert.equal(f.call({phase:'complete'}).code,409);
 });
+
+test('event exit attempt budget survives phase advancement and coordinator restoration',()=>{
+ const f=coordinator();f.state.eventReturn={cycleId:'event',pending:['L']};
+ f.call({kind:'event',cycleId:'event',phase:'local-town',exitMap:'ship0',exitAttempts:3});
+ f.call({kind:'event',cycleId:'event',phase:'exiting-map',exitMap:'ship0',exitAttempts:1});
+ const restored=JSON.parse(JSON.stringify(f.state));
+ assert.equal(restored.returnProgress.L.exitAttempts,3);
+ assert.equal(restored.returnProgress.L.phase,'exiting-map');
+ assert.equal(f.call({kind:'event',cycleId:'other',phase:'complete',exitMap:'ship0',exitAttempts:0}).code,409);
+});
 test('local Town is skipped at cave spawn and never repeated after reload or a map change',async()=>{
  const f=coordinator();let casts=0;
  const context={root:{},parent:{},character:{name:'L',map:'level2w',x:16,y:9},navigationIntent:{revision:2},G:{maps:{level2w:{spawns:[[16,9]]},level2:{}}},

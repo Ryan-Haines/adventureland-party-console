@@ -7,7 +7,7 @@ import { receivePlayerSales } from "../merchant/player-npc-sales.ts";
 import type { NpcSale } from "../merchant/npc-sales.ts";
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import type { MerchantWork } from "../merchant/work.ts";
-import { admitMerchantInterruption } from "../navigation/merchant-interruption.ts";
+import { admitMerchantInterruption, attachMerchantInterruption, finishMerchantInterruption } from "../navigation/merchant-interruption.ts";
 
 interface HandoffJob extends MerchantWork {
   order?: { sources: Record<string, unknown> };
@@ -58,7 +58,7 @@ export function createMerchantHandoffRoutes(state: HandoffState, ports: HandoffP
     if (concurrent(name)) {
       command.concurrentService = true;
       (job.recipientServices ||= {})[name] = { ...command, jobId: job.id };
-    } else state.commands[name] = command;
+    } else { state.commands[name] = command; attachMerchantInterruption(state, name, job.id, command.id); }
   }
   function issued(name: string) {
     return state.merchantCurrent?.recipientServices?.[name] || state.commands[name];
@@ -89,7 +89,7 @@ export function createMerchantHandoffRoutes(state: HandoffState, ports: HandoffP
       {
         if (state.merchantCurrent?.recipientServices?.[name]?.id === command.id)
           delete state.merchantCurrent.recipientServices[name];
-        else delete state.commands[name];
+        else { finishMerchantInterruption(state, name, command.id); delete state.commands[name]; }
       }
   }
   function scopeHandoff(name: string, job: HandoffJob, command: NonNullable<HandoffState["commands"][string]>) {

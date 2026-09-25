@@ -29,8 +29,25 @@ test('full bag does not prevent a swap',async()=>{
 for(const options of [{reject:true},{stall:true}])test('failed preparation sends zero upgrades '+JSON.stringify(options),async()=>{
  const f=fixture(options);await assert.rejects(f.service.run(2,4,7,f.action),/Couldn't use lucky slot/);assert.equal(f.calls.length,0);
 });
-test('unknown slot never silently falls back',async()=>{
- const f=fixture();await assert.rejects(f.service.run(2,4,null,f.action),/no verified slot/);assert.equal(f.calls.length,0);
+for(const slot of [null,undefined,-1,42,7.5,'7'])test('unverified slot upgrades normally without swaps or lucky logs: '+slot,async()=>{
+ const f=fixture();await f.service.run(2,4,slot,f.action);
+ assert.deepEqual(f.calls,[[2,4]]);assert.equal(f.items[2].level,4);
+ assert.deepEqual(f.swaps,[]);assert.deepEqual(f.logs,[]);assert.equal(f.journal,null);
+});
+test('ordinary fallback passes the offering unchanged and guards concurrent inventory work',async()=>{
+ const f=fixture();f.items[6]={name:'offeringp'};let finish;
+ const running=f.service.run(2,4,null,async(slot,scroll,offering)=>{
+  assert.deepEqual([slot,scroll,offering],[2,4,6]);await new Promise(resolve=>finish=resolve);
+ },6);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(f.service.pending(),true);
+ await assert.rejects(f.service.run(2,4,null,f.action),/another upgrade/);
+ finish();await running;assert.equal(f.service.pending(),false);
+});
+test('ordinary fallback preserves action failures and does not bypass unresolved inventory recovery',async()=>{
+ const f=fixture({destroy:true});await assert.rejects(f.service.run(2,4,null,f.action),/destroyed/);
+ assert.equal(f.items[2],null);assert.deepEqual(f.swaps,[]);assert.equal(f.service.pending(),false);
+ const blocked=fixture({pending:true});await assert.rejects(blocked.service.run(2,4,7,blocked.action),/pending/);
+ await assert.rejects(blocked.service.run(2,4,null,blocked.action),/pending/);assert.equal(blocked.calls.length,1);
 });
 test('destroyed item restores displaced contents and preserves destruction error',async()=>{
  const f=fixture({destroy:true,occupant:{name:'tracker'}});await assert.rejects(f.service.run(2,4,7,f.action),/destroyed/);

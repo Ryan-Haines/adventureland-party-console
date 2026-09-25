@@ -19,7 +19,7 @@ export interface HuntTravelCheckpoint {
 export function checkpointContinuousReturn(state: SharedState, now: number): boolean {
   const c = state.activeConvoy,
     hunt = state.monsterHunt;
-  if (!c?.continuousReturn || !hunt || now - (hunt.travelCheckpoint?.at || 0) < 1000) return false;
+  if (!c?.continuousReturn || c.purpose !== "monster-hunt" || !hunt || now - (hunt.travelCheckpoint?.at || 0) < 1000) return false;
   hunt.travelCheckpoint = {
     at: now,
     convoyId: c.id,
@@ -56,7 +56,7 @@ export function checkpointContinuousReturn(state: SharedState, now: number): boo
 
 /** Upgrade only at a stopped assembly boundary; never change an executing route. */
 export function prepareContinuousReturn(state: SharedState, c: SharedConvoy): boolean {
-  if (c.purpose !== "monster-hunt" || !c.returnRouting || c.phase !== "assemble") return false;
+  if (!(c.purpose === "monster-hunt" && c.returnRouting || c.walkingActivity === "anniversary-staging") || c.phase !== "assemble") return false;
   if (c.participants.some((n) => state.statuses[n]?.huntReturnProtocol !== 2)) {
     c.failure = "Waiting for Hunt return protocol 2 on every participant";
     return true;

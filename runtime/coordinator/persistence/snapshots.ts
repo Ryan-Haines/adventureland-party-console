@@ -51,6 +51,8 @@ export const settingsFields = [
   "phoenixPatrolActive",
   "phoenixPatrolCheckpoint",
   "rareHuntReturn",
+  "rareRetryEvidence",
+  "rarePursuitProgress",
   "escape",
   "threshold",
   "itemCollectionThreshold",
@@ -102,6 +104,7 @@ export const settingsFields = [
   "merchantForceStand",
   "merchantWeapon",
   "luckyUpgradeSlots",
+  "luckySlotTracking",
   "merchantQueue",
   "merchantCurrent",
   "merchantCargo",
@@ -112,6 +115,7 @@ export const settingsFields = [
   "mluckCastAt",
   "activeRealm",
   "activeConvoy",
+  "convoyCompletionReceipts",
   "navigationEpoch",
 ] as const;
 

@@ -1,3 +1,4 @@
+import {CoordinatorJsonlStore} from '../persistence/jsonl-store.ts';
 import * as rareHunting from "../navigation/rare-hunting.ts";
 import { createSharedConvoyNavigation, sharedCommand } from "../navigation/shared-navigation.ts";
 import type { SharedState } from "../navigation/shared-route-types.ts";
@@ -67,7 +68,7 @@ export function loadCoordinatorDependencies(require: NodeRequire) {
     ctype_to_clid,
   }: import("./platform-contracts.ts").CoordinatorLogging = require("../src/LogUtils");
 
-  const FileStoredKeyValues: import("./platform-contracts.ts").CoordinatorFileStoreConstructor = require("../src/FileStoredKeyValues");
+  const FileStoredKeyValues: import("./platform-contracts.ts").CoordinatorFileStoreConstructor = CoordinatorJsonlStore;
   return {
     huntPolicy,
     watchGenerations,
