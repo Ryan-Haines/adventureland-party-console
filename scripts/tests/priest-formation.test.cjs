@@ -482,8 +482,7 @@ for(const aggro of [null,'W'])test('kill promotion approaches and repeatedly att
  const r=setup(),{c,warrior,monster,entities}=r;
  const bundle=require('esbuild').buildSync({entryPoints:['runtime/characters/roles/runner.ts'],bundle:true,write:false,format:'iife',globalName:'RunnerTest',platform:'browser'}).outputFiles[0].text;
  let now=10000,selected=monster,accepted=[],timers=[],intervals=[];
- Object.assign(warrior,{x:0,y:0,frequency:2,slots:{},items:[],damage_type:'physical',mp:1000,max_mp:1000,mp_cost:0});
- c.G.skills={};
+ Object.assign(warrior,{x:0,y:0,frequency:2,slots:{},items:[],damage_type:'physical'});
  Object.assign(monster,{x:28,hp:100,target:null});
  c.is_in_range=t=>c.combatDistance(t)<=warrior.range;
  c.can_attack=t=>c.is_in_range(t);

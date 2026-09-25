@@ -102,36 +102,3 @@ test('merchant resumption processes combat before waiting for held reports',()=>
  engine.step(s,1000);assert.equal(calls,1);assert.ok(s.activeConvoy.merchantInterruption);
  f.tick();assert.equal(s.activeConvoy.phase,'shared-prepare');assert.equal(s.activeConvoy.merchantInterruption,undefined);
 });
-
-for(const purpose of ['monster-hunt','shared-walk-return','event-return','empty-spawn-recovery']) {
- test(purpose+' continues unchanged while the merchant collects alongside travel',()=>{
-  const f=fixture(purpose),s=f.state,c=s.activeConvoy;
-  s.statuses.F.merchantServiceProtocol=1;
-  const route=structuredClone(c),commands=structuredClone(s.commands);
-  assert.equal(f.send('handoff').body.ok,true);
-  const service=s.merchantCurrent.recipientServices.F;
-  assert.equal(service.concurrentService,true);assert.equal(service.type,'merchant-handoff');
-  f.send('handoff');assert.equal(s.merchantCurrent.recipientServices.F,service);
-  assert.deepEqual(s.commands,commands);assert.deepEqual(c,route);
-  f.send('complete',{jobId:'job',character:'F',commandId:service.id});
-  assert.equal(s.merchantCurrent.recipientServices.F,undefined);
-  assert.deepEqual(s.commands,commands);assert.deepEqual(c,route);
- });
-}
-
-test('stale service receipts cannot complete a newer service and completed collection is not reissued',()=>{
- const f=fixture(),s=f.state;s.statuses.F.merchantServiceProtocol=1;
- f.send('handoff');const service=s.merchantCurrent.recipientServices.F;
- assert.equal(f.send('complete',{jobId:'job',character:'F',commandId:service.id-1}).code,409);
- assert.equal(s.merchantCurrent.recipientServices.F,service);
- assert.equal(f.send('complete',{jobId:'job',character:'F',commandId:service.id}).body.ok,true);
- f.send('handoff');assert.equal(s.merchantCurrent.recipientServices.F,undefined);
-});
-test('commerce completion never deletes a newer navigation command',()=>{
- const f=fixture(),s=f.state;s.statuses.F.merchantServiceProtocol=1;
- s.merchantCurrent.reason='merchant commerce';s.merchantCurrent.order={sources:{F:[]}};
- f.send('order');const service=s.merchantCurrent.recipientServices.F;
- s.commands.F={id:999,type:'character-travel'};
- f.send('orderComplete',{jobId:'job',character:'F',commandId:service.id,sent:[]});
- assert.equal(s.commands.F.id,999);assert.equal(s.merchantCurrent.recipientServices.F,undefined);
-});

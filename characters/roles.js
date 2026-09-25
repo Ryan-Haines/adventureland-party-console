@@ -609,22 +609,10 @@
           cancelSlots();
           return;
         }
-        const settleMana = ports.reserveMana?.();
-        if (ports.reserveMana && !settleMana) {
-          ports.state().skippedAttack = "survival MP reserved";
-          cancelSlots();
-          return;
-        }
-        const manaTimeout = settleMana && setTimeout(() => settleMana("uncertain"), Math.max(1, attempt.expires - Date.now()));
-        const settle = (accepted) => {
-          clearTimeout(manaTimeout || void 0);
-          settleMana?.(accepted);
-        };
         attempt.pending++;
         stats.attempts++;
         stats.lastOffsets.push(Date.now() - deadline);
         if (attempt.passing && ports.preparePassing?.(target) === false) {
-          settle(false);
           attempt.pending--;
           cancelSlots();
           return;
@@ -633,7 +621,6 @@
         try {
           sharedRoutine.noteCombatHandoff?.("attempt", target.id, { cooldownReadyAt: clock(), frequency: Number(character.frequency) });
           Promise.resolve(attack(target)).then(() => {
-            settle(true);
             if (flight !== attempt || attempt.epoch !== ports.epoch() || !ports.active() || attempt.success) return;
             attempt.success = true;
             cancelSlots();
@@ -650,7 +637,6 @@
               if ((ports.state().errorAt ?? 0) <= attempt.sentAt) ports.state().error = null;
             }
           }, (error) => {
-            settle(false);
             if (action) sharedRoutine.queueEvidence?.(target, "rejected", action);
             if (flight !== attempt) return;
             if (errorReason(error) === "cooldown") stats.cooldownRejections++;
@@ -663,7 +649,6 @@
             if (flight === attempt && attempt.slotsDone && !attempt.pending) finish();
           });
         } catch (error) {
-          settle(false);
           if (action) sharedRoutine.queueEvidence?.(target, "rejected", action);
           attempt.pending--;
           cancelSlots();
@@ -824,34 +809,6 @@
     };
   }
 
-  // runtime/characters/skills/spending.ts
-  function createManaSpending() {
-    const entries = /* @__PURE__ */ new Set();
-    let last;
-    function observe(mp, now) {
-      let spent = Math.max(0, (last ?? mp) - mp);
-      const changed = last !== void 0 && mp !== last;
-      last = mp;
-      for (const entry of entries) {
-        const accounted = Math.min(entry.remaining, spent);
-        entry.remaining -= accounted;
-        spent -= accounted;
-        if (!entry.remaining || changed && entry.settled && now >= entry.until) entries.delete(entry);
-      }
-      return [...entries].reduce((sum, entry) => sum + entry.remaining, 0);
-    }
-    function acquire(mp, now, amount, floor) {
-      if (mp - observe(mp, now) - amount < floor) return null;
-      const entry = { remaining: amount, settled: false, until: now + 2500 };
-      entries.add(entry);
-      return (accepted) => {
-        if (accepted === false) entries.delete(entry);
-        else entry.settled = true;
-      };
-    }
-    return { observe, acquire };
-  }
-
   // runtime/characters/skills/types.ts
   var health = (actor) => actor.hp / Math.max(1, actor.max_hp);
   var decision = (skill, targets = [], category = "damage", reason = skill) => ({ skill, targets, category, reason });
@@ -920,7 +877,7 @@
 
   // runtime/characters/skills/eligibility.ts
   function cost(w, id) {
-    const mp = id === "heal" || id === "attack" ? w.actor.mp_cost : w.skills[id]?.mp;
+    const mp = id === "heal" ? w.actor.mp_cost : w.skills[id]?.mp;
     return Math.ceil(Math.max(0, Number(mp) || 0) * (1 - Math.min(100, Math.max(0, w.actor.mp_reduction || 0)) / 100));
   }
   function equipment(w, s) {
@@ -1132,7 +1089,6 @@
   // runtime/characters/skills/engine.ts
   function createSkillEngine(ports) {
     const budget = createManaBudget(), pending = /* @__PURE__ */ new Map();
-    const spending = createManaSpending();
     let epoch = 0, stopped = false, auraAt = -Infinity, auraState = "", openerPending = false;
     const failures = /* @__PURE__ */ new Map();
     function world() {
@@ -1153,7 +1109,7 @@
       });
     }
     function affordable(w, d) {
-      const inFlight = spending.observe(w.actor.mp, w.now);
+      const inFlight = [...pending.values()].reduce((n, p) => n + p.cost, 0);
       const reason = blocked(w, d, inFlight);
       if (reason) {
         report(w, d, "skipped", reason);
@@ -1188,41 +1144,28 @@
         auraState = d.argument || "";
       }
     }
-    function reserveDecision(w, d) {
-      return spending.acquire(w.actor.mp, w.now, cost(w, d.skill), d.category === "survival" ? 0 : reserve(w));
-    }
-    function actionsFor(w, d) {
-      return d.targets.map((t) => w.skills[d.skill]?.hostile ? ports.evidence(t, "pending") : null);
-    }
-    function stale(token) {
-      return epoch !== token.epoch || stopped;
-    }
     async function execute(d) {
       const w = world();
       if (stopped || !affordable(w, d)) return false;
       const id = family(w, d.skill), amount = cost(w, d.skill);
-      const settleSpend = reserveDecision(w, d);
-      if (!settleSpend) return false;
       const token = { epoch, cost: amount, until: w.now + 2500 };
       pending.set(id, token);
       if (d.category === "damage") budget.debit(amount);
-      const actions = actionsFor(w, d);
+      const actions = d.targets.map((t) => w.skills[d.skill]?.hostile ? ports.evidence(t, "pending") : null);
       report(w, d, "selected");
       let timeout;
       try {
         const result = await Promise.race([ports.cast(d), new Promise((_, reject) => {
           timeout = setTimeout(() => reject(new Error("skill acknowledgement timeout")), 2500);
         })]);
-        settleSpend(true);
-        if (stale(token)) return false;
+        if (epoch !== token.epoch || stopped) return false;
         settle(d, actions, result);
         recordAura(w, d);
         report(w, d, "accepted");
         return true;
       } catch (error) {
-        settleSpend(errorReason(error) === "skill acknowledgement timeout" ? "uncertain" : false);
         rejectActions(d, actions);
-        if (stale(token)) return false;
+        if (epoch !== token.epoch || stopped) return false;
         failures.set(d.skill, ports.world().now + 1e3);
         report(w, d, "rejected", errorReason(error));
         return false;
@@ -1237,16 +1180,6 @@
       return d ? execute(d) : false;
     }
     return {
-      reserveSupport(skill, survival, amount) {
-        const w = world();
-        if (stopped || w.actor.rip) return null;
-        return spending.acquire(w.actor.mp, w.now, amount ?? cost(w, skill), survival ? 0 : reserve(w));
-      },
-      reserveBasicAttack() {
-        const w = world();
-        if (stopped || w.actor.rip) return null;
-        return spending.acquire(w.actor.mp, w.now, cost(w, "attack"), reserve(w));
-      },
       ready(d) {
         return affordable(world(), d);
       },
@@ -1402,7 +1335,6 @@
       }
     });
     shared.skillSupport = () => engine.support();
-    shared.reserveCombatMana = (skill, survival, amount) => engine.reserveSupport(skill, survival, amount);
     shared.skillOffense = (t) => engine.offense(t);
     shared.absorbLeaderAggro = () => engine.absorb();
     if (shared.combatContext) {
@@ -2498,7 +2430,6 @@
       equipmentBusy: () => !!equipment2?.busy(),
       skillAttack: (target) => skills?.attack(target) ?? null,
       skillBusy: () => skills?.busy() ?? false,
-      reserveMana: () => skills?.reserveBasicAttack() ?? null,
       report: reportError
     });
     const recoverFromDeath = createDeathRecovery({
@@ -2659,8 +2590,7 @@
       }
     }
     async function supportTick(role8, epoch) {
-      if (sharedRoutine.recoverResources) await sharedRoutine.recoverResources(() => role8.usePotion());
-      else if (!await role8.usePotion()) await sharedRoutine.regenerateHpOrMp();
+      if (!await role8.usePotion()) await sharedRoutine.regenerateHpOrMp();
       if (!supportAllowed(epoch)) return;
       if (await role8.beforeTarget()) return;
       if (!currentEpoch(epoch)) return;
@@ -2685,7 +2615,7 @@
       const epoch = generation;
       try {
         const role8 = resolvedRole();
-        if (character.rip) return;
+        if (character.rip || sharedRoutine.isOccupied()) return;
         const mode = sharedRoutine.getAbtestingMode();
         if (mode === "pending") return;
         if (mode === "feed") {

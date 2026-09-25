@@ -60,7 +60,6 @@ export function installRoleRunner(
     equipmentBusy: () => !!equipment?.busy(),
     skillAttack: target => skills?.attack(target) ?? null,
     skillBusy: () => skills?.busy() ?? false,
-    reserveMana: () => skills?.reserveBasicAttack() ?? null,
     report: reportError,
   });
   const recoverFromDeath = createDeathRecovery({
@@ -223,8 +222,7 @@ export function installRoleRunner(
     }
   }
   async function supportTick(role: Role, epoch: number): Promise<void> {
-    if (sharedRoutine.recoverResources) await sharedRoutine.recoverResources(() => role.usePotion());
-    else if (!(await role.usePotion())) await sharedRoutine.regenerateHpOrMp();
+    if (!(await role.usePotion())) await sharedRoutine.regenerateHpOrMp();
     if (!supportAllowed(epoch)) return;
     if (await role.beforeTarget()) return;
     if (!currentEpoch(epoch)) return;
@@ -252,7 +250,7 @@ export function installRoleRunner(
     const epoch = generation;
     try {
       const role = resolvedRole();
-      if (character.rip) return;
+      if (character.rip || sharedRoutine.isOccupied()) return;
       const mode = sharedRoutine.getAbtestingMode();
       if (mode === "pending") return;
       if (mode === "feed") {

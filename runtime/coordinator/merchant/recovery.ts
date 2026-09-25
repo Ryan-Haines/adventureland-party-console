@@ -88,7 +88,6 @@ export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPort
         ports.now() + Math.min(300000, 20000 * 2 ** Math.min(4, recovered.recoveryAttempts - 1));
     }
     delete recovered.commandReport;
-    delete recovered.recipientServices;
     delete recovered.commandId;
     state.queue.push(ports.stamp(recovered));
     ports.clearCommand(name, current.id);

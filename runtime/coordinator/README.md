@@ -685,27 +685,14 @@ staging requests cannot reclaim movement during combat handoff or recovery.
 Validate the entire return through Hunt leaving `paused-event`; arrival at Main
 alone does not complete recovery to the saved destination.
 
-Merchant collection and commerce run alongside navigation through the heartbeat's
-`merchantService` field. The merchant follows the recipient; recipients never
-stop or change route to service the merchant. Older clients defer service until
-idle. Persisted convoy interruptions are retired only with matching navigation
-ownership. Recipient journals replay completed receipts after reconnect without
-repeating transfers; interrupted transfers with an uncertain outcome stop service
-and report an error instead of risking duplicate sends.
-
-Passing attacks require movement while a destination remains pending, except
-for explicit transition, loot, regrouping, or recovery holds. Three seconds of
-fresh stationary convoy observations trigger bounded recovery to the same
-destination. New commands, movement, and observation gaps reset that timer.
-Basic attacks and support skills share MP accounting, including unacknowledged
-spending, and preserve the existing class reserves. Resource recovery continues
-during travel through one serialized recovery loop.
-
-Validate with `passive-hunting.test.cjs`, `passive-mana.test.cjs`,
-`combat-movement.test.cjs`, `shared-convoy.test.cjs`,
-`recipient-service.test.cjs`, and `merchant-convoy-interruption.test.cjs`.
-Activation requires publishing character assets and the supported full restart
-below; a coordinator-only restart cannot activate this protocol.
+Merchant collection pauses an ordinary or event-return convoy through a persisted
+interruption. All members acknowledge a stop before the recipient receives its
+handoff; completion or the 60-second deadline regroups the party toward the same
+destination. The interruption retains shared-walk parent commands and navigation
+revisions, and never authorizes resuming after a newer navigation order. Protected
+Hunt turn-in remains exclusive. Both collection and commerce callers understand
+the handoff endpoint's `waiting` response; publish the character runtime along
+with coordinator changes to this protocol.
 
 Recovery also recognizes orphaned event-return exit walks by their saved parent
 cycle. A failed exit already at Main is retired before checkpoint dispatch; those

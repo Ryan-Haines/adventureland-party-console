@@ -2,7 +2,7 @@ import type { SkillWorld, SkillId, SkillDefinition, SkillDecision } from './type
 import { incomingDps } from './damage.ts';
 
 export function cost(w: SkillWorld, id: SkillId): number {
-  const mp = id === 'heal' || id === 'attack' ? w.actor.mp_cost : w.skills[id]?.mp;
+  const mp = id === 'heal' ? w.actor.mp_cost : w.skills[id]?.mp;
   return Math.ceil(Math.max(0, Number(mp) || 0) * (1 - Math.min(100, Math.max(0, w.actor.mp_reduction || 0)) / 100));
 }
 function equipment(w: SkillWorld, s: SkillDefinition): boolean {

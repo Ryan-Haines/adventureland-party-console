@@ -11,7 +11,6 @@ export interface Role {
   usePotion(): Promise<boolean>;
 }
 export interface SharedCombat {
-  reserveCombatMana?(skill: import('../skills/types.ts').SkillId, survival: boolean, amount?: number): ((accepted: boolean | 'uncertain') => void) | null;
   noteCombatHandoff?(stage: string, target: string, details: Record<string, unknown>): void;
   merchantEventCombatActive?(): boolean;
   combatContext?(): import('../skills/types.ts').CombatContext;
@@ -90,7 +89,6 @@ export interface SharedCombat {
   approachCombatTarget(target: Target): Promise<unknown>;
   runAbtestingSabotage(): Promise<unknown>;
   regenerateHpOrMp(): Promise<unknown>;
-  recoverResources?(potion?: () => Promise<boolean>): Promise<unknown>;
   smartLoot(): Promise<unknown>;
 }
 export interface CombatState {

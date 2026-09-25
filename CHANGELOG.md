@@ -11,12 +11,6 @@ from the commits merged into `main`.
 
 ### Fixed
 
-- Passive hunting pauses attacks when travel unexpectedly stops and recovers stalled
-  convoys toward their existing destination.
-- Merchant collection and commerce run alongside party movement without pausing
-  travel. Persisted service receipts prevent completed transfers from being repeated.
-- Moving attacks respect class MP reserves and pending spending, while resource
-  recovery continues during travel.
 - Hunt route failures now use bounded segment repair, native fallback and origin
   relocation before trying another spawn. Recovery budgets survive replacement
   convoys and restarts, with explicit causes when movement remains held.
@@ -54,7 +48,7 @@ from the commits merged into `main`.
 - Invisible rogue recipients reveal themselves for merchant servicing, then resume
   their normal invisibility behavior. ([#10](https://github.com/Ryan-Haines/adventureland-party-console/pull/10))
 
-- Enabled passive targets with ï¿½keep movingï¿½ off now interrupt outbound travel
+- Enabled passive targets with “keep moving” off now interrupt outbound travel
   for coordinated combat, including neutral Phoenix sightings and targets already
   admitted as passing attacks. Explicit stop rules override Hunt travel exceptions.
 

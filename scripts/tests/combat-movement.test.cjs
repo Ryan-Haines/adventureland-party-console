@@ -10,7 +10,7 @@ function runner(ctype = 'ranger', native = false, configure = () => {}) {
   let now = 1000, attacks = 0, moves = 0, heals = 0, ready = true, occupied = false;
   const intervals = [], timeouts = [];
   const target = { id: 'm', type: 'monster', mtype: 'goo', visible: true, x: 20, y: 0, map: 'main' };
-  const character = { name: 'Us', ctype, level: 80, hp: 1000, max_hp: 1000, mp: 1000, max_mp: 1000, mp_cost: 0, map: 'main', moving: true, frequency: 2, slots: {mainhand:null,offhand:null}, items: [] };
+  const character = { name: 'Us', ctype, map: 'main', moving: true, frequency: 2, slots: {mainhand:null,offhand:null}, items: [] };
   const routine = {
     isOccupied: () => occupied, getAbtestingMode: () => null, getFarmingMode: () => 'default',
     hasScatterBreakTarget: () => false, getScatterBreakTarget: () => null,
@@ -23,7 +23,7 @@ function runner(ctype = 'ranger', native = false, configure = () => {}) {
   };
   configure(routine);
   const c = vm.createContext({ character, parent: native ? {} : { caracAL: {} }, sharedRoutine: routine, get_entity: () => target,
-    G: {items:{},classes:{},skills:{}},
+    G: {items:{},classes:{}},
     can_attack: () => ready, is_in_range: () => true, game_log() {},
     attack: () => { attacks++; return new Promise(() => {}); },
     Date: class extends Date { static now() { return now; } },
@@ -416,24 +416,6 @@ test('healing reservation cancels remaining burst slots', async () => {
   await r.advance(1098);assert.equal(r.attacks(),1);
   r.routine.basicAttackReserved=()=>true;
   await r.advance(1105);assert.equal(r.attacks(),1);r.c.partyRoleRunner.stop();
-});
-
-for(const ctype of ['mage','priest'])test(ctype+' passing burst checks MP before every actual send',async()=>{
- const r=runner(ctype,false,routine=>{routine.queueReport=()=>({groupedCombat:{}});});
- r.c.partyQueueClient.preparePassing=()=>true;
- Object.assign(r.character,{mp:ctype==='priest'?375:225,max_mp:1000,mp_cost:25});
- r.routine.getPassingTarget=()=>r.target;r.occupied(true);r.c.parent.next_skill={attack:1100};
- await r.advance(1105);assert.equal(r.attacks(),1,'only one attack fits above the reserve');
- assert.equal(r.c.partyCombatState.skippedAttack,'survival MP reserved');
- r.c.partyRoleRunner.stop();
-});
-test('navigation ownership does not suppress the resource recovery loop',async()=>{
- const r=runner('mage');let recovery=0,support=0;
- r.routine.recoverResources=async potion=>{recovery++;await potion();};
- r.routine.absorbSinsBelow=async()=>{support++;return false;};
- r.occupied(true);await r.run(250);
- assert.equal(recovery,1);assert.equal(support,0);
- r.c.partyRoleRunner.stop();
 });
 
 test('selection retains a valid target and immediately changes on confirmed death', async () => {

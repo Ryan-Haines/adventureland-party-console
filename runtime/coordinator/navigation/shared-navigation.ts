@@ -7,7 +7,6 @@ import { reconcileReturnArrival } from './return-arrival.ts';
 import { departureIssue, readinessIssue, readinessExpired, readinessFailure, recoveryPlanner } from './shared-departure.ts';
 import { prepareContinuousReturn, checkpointContinuousReturn } from './continuous-return.ts';
 import { stepMerchantInterruption } from "./merchant-interruption.ts";
-import { stalledTravelMember } from "./travel-progress.ts";
 import { observeReturnTown, returnWalking } from './return-town.ts';
 import type { ConvoyNavigationPlatform } from "../infrastructure/convoy-platform.ts";
 import { engageHunt, propagateHuntTarget } from "../hunt/engagement.ts";
@@ -288,8 +287,6 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
     if (reconcileReturnArrival(state, c, now)) return true;
     const missing = missingTravelRoute(state, c, now);
     if (missing) return recover(state, "Travel route disappeared: " + missing, now);
-    const stalled = stalledTravelMember(state, c, now);
-    if (stalled) return recover(state, "Destination pending without movement: " + stalled, now);
     // Native legacy completion/leg barriers still own workflow advancement.
     return c.returnRouting && !c.continuousReturn ? legacy.step(state, now) : false;
   }
