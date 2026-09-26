@@ -108,6 +108,10 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
   function returnResponse(name: string) {
     return {partyTownCycleId: state.townCycle?.id || null, returnProgress: state.returnProgress?.[name] || null};
   }
+  function turnInPriority(name: string): boolean {
+    return name !== state.merchantCharacter && !!state.monsterHunt?.participants?.includes(name) &&
+      !ports.rareEncounter() && ports.huntTurnInOwnsTravel();
+  }
   function travelResponse(name: string) {
     return {
       partyLocation: ports.partyLocation(name),
@@ -118,7 +122,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
       partyTownActive: name !== state.merchantCharacter && !!state.townCycle,
       ...returnResponse(name),
       partyConvoyActive: !!state.activeConvoy?.participants.includes(name),
-      huntTurnInPriority: !ports.rareEncounter() && ports.huntTurnInOwnsTravel(),
+      huntTurnInPriority: turnInPriority(name),
       mapTelemetry: ports.mapSubscriberCount(name) > 0,
     };
   }

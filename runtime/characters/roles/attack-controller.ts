@@ -36,6 +36,8 @@ export function createAttackController(ports: AttackPorts) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let burstTimer: ReturnType<typeof setTimeout> | null = null;
   let running = false, retryAt = 0, dueAt = 0;
+  let lastTimerLatenessMs=0;
+  const monotonic=()=>typeof performance==='undefined'?Date.now():performance.now();
   const clock = () => {
     const client = parent as unknown as { next_skill?: { attack?: Date }; pings?: number[] };
     const value = Number(client.next_skill?.attack);
@@ -51,7 +53,8 @@ export function createAttackController(ports: AttackPorts) {
     if (!running) return;
     if (timer !== null) clearTimeout(timer);
     dueAt = Date.now() + Math.max(1, delay);
-    timer = setTimeout(() => { timer = null; tick(); }, Math.max(1, delay));
+    const scheduled=monotonic(),wait=Math.max(1,delay);
+    timer = setTimeout(() => { lastTimerLatenessMs=Math.max(0,monotonic()-scheduled-wait);timer = null; tick(); }, Math.max(1, delay));
   }
   const recovery = createCrabRangeRecovery();
   const sample = (target: Target) => sharedRoutine.describeAttackRange?.(target) ?? null;
@@ -147,11 +150,13 @@ export function createAttackController(ports: AttackPorts) {
       }
       const action=attempt.passing ? null : (sharedRoutine as any).queueEvidence?.(target,'pending');
       try {
+        sharedRoutine.noteCombatHandoff?.('attempt', target.id, {cooldownReadyAt:clock(), frequency:Number(character.frequency),timerLatenessMs:lastTimerLatenessMs});
         Promise.resolve(attack(target)).then(() => {
           if (flight !== attempt || attempt.epoch !== ports.epoch() || !ports.active() || attempt.success) return;
           attempt.success = true;
           cancelSlots();
           stats.accepted++;
+          sharedRoutine.noteCombatHandoff?.('accepted', target.id, {sentAt:attempt.sentAt});
           const client = parent as unknown as { pings?: number[] };
           const samples = (client.pings || []).filter(p => Number.isFinite(p) && p >= 0);
           if (samples.length && typeof reduce_cooldown === "function" &&
@@ -230,6 +235,7 @@ export function createAttackController(ports: AttackPorts) {
     send(target);
   }
   function tick() {
+    ports.state().skippedAttack=undefined;
     try {
       sharedRoutine.correctedCombatDistance = correctedDistance;
       const target = ports.target();
@@ -243,10 +249,15 @@ export function createAttackController(ports: AttackPorts) {
       if (flight && (!confirmed(flight) || !ports.allowed() || sharedRoutine.basicAttackReserved?.())) cancelSlots();
       if (ports.allowed() && !flight && reserveHealing()) return;
       if (!target || !ports.allowed()) { ports.state().skippedAttack = "no eligible target or combat blocked"; return; }
-      if (Date.now() < retryAt || remaining() > 2) return;
+      if (Date.now() < retryAt || remaining() > 2) {
+        ports.state().skippedAttack = remaining() > 2 ? 'cooldown' : 'attack retry backoff';
+        return;
+      }
       attackTarget(target);
     } catch (error) { cancelSlots(); flight = null; ports.report(error); }
     finally {
+      const id=ports.selected(), reason=ports.state().skippedAttack;
+      if(id && reason)sharedRoutine.noteCombatHandoff?.('blocked',id,{reason,cooldownReadyAt:clock()});
       schedule(flight ? Math.max(1, flight.expires - Date.now()) : Math.max(remaining() > 2 ? remaining() - 2 : 100, retryAt - Date.now()));
     }
   }

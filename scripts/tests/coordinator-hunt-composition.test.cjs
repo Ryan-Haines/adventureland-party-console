@@ -171,3 +171,12 @@ test('Hunt composition claims at Daisy without travel and uses the current comma
   assert.equal(state.commands.P.cycleId, state.monsterHunt.cycleId);
   assert.equal(calls.some(Array.isArray), false);
 });
+
+test('resumed mission travel clears the previous rare interruption message',()=>{
+ const r=fixture();r.service.lifecycle.begin();
+ const h=r.state.monsterHunt;
+ Object.assign(h,{stage:'mission-travel',target:'rat',convoyId:'travel',message:'Travel encounter: pursuing Fairy 225',owner:'W',policyVersion:3});
+ r.state.activeConvoy={id:'travel',phase:'travel',purpose:'monster-hunt',huntTarget:'rat'};
+ r.service.tick.tick();
+ assert.equal(h.message,'Monster Hunt: rat');
+});

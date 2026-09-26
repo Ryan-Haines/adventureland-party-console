@@ -17,6 +17,7 @@ export interface HuntEncounter {
 }
 
 export interface HuntCycle extends Hunt {
+  routeRecovery?: Record<string, import('./route-recovery.ts').HuntRouteRecovery>;
   encounter?: HuntEncounter;
   travelCheckpoint?: import('../navigation/continuous-return.ts').HuntTravelCheckpoint;
   travelCause?: "farming-conflict";
@@ -64,7 +65,7 @@ export interface HuntCycle extends Hunt {
   skipAfterDeath?: boolean;
   recovering?: boolean;
   resumeStage?: string;
-  arrivalHandoff?: { at: number; confirmedAt?: number };
+  arrivalHandoff?: { at: number; confirmedAt?: number; releasedCommands?: Record<string, {id: number; revision: number}> };
   startedAt?: number;
   returnPolicy?: string;
   returnLocation?: ReturnLocation | null;
@@ -74,6 +75,7 @@ export interface HuntCycle extends Hunt {
   endReason?: string;
 }
 export interface HuntStatus {
+  movementGeometry?: {version:number;fingerprint:string};
   anniversaryState?: { busy?: boolean };
   activeCombatTarget?: { id: string; map: string; in?: string | number; server: string };
   groupedCombat?: {
@@ -113,6 +115,9 @@ export interface LootProgress {
   error?: string;
 }
 interface HuntConvoyState {
+  epoch?: number;
+  routeRecovery?: import('./route-recovery.ts').RouteRecoveryCommand;
+  defenseReason?: string | null;
   communicationHold?: import('../navigation/convoy.ts').PartyConvoy['communicationHold'];
   failureDetails?: unknown;
   communicationLegacyRecovered?: boolean;
@@ -150,6 +155,8 @@ export type HuntConvoy = HuntConvoyState &
     | { returnLegs: { type: string }[]; legIndex: number }
   );
 export interface HuntCommand {
+  continuousReturn?: number;
+  routeRecovery?: import('./route-recovery.ts').RouteRecoveryCommand;
   nativeFallback?: boolean;
   huntTarget?: string;
   id?: number;
@@ -166,6 +173,8 @@ export interface HuntCommand {
   returnRouting?: unknown;
 }
 export interface HuntTickState extends HuntFailureState {
+  location?: ReturnLocation | null;
+  rareHuntState?: {encounter?: {message?:string} | null} | null;
   monsterChoices?: import("../../../dashboard/lib/farming-zones.ts").Catalog | null;
   groupedCombat?: { deaths?: Death[] } | null;
   huntEventTrips?: import("../events/hunt-trip.ts").HuntEventTrips["huntEventTrips"];

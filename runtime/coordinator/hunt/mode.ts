@@ -1,7 +1,9 @@
+import { beginTurnIn } from "../../hunt/policy.ts";
 import type { HuntCycle, HuntStatus } from "./contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
 
 export interface HuntModeState {
+  eventReturn?: import("../events/return-types.ts").EventRecovery | null;
   farmingPolicy: string;
   monsterHunt: HuntCycle | null;
   leader: string | null;
@@ -79,6 +81,29 @@ export function createHuntMode(state: HuntModeState, ports: HuntModePorts) {
   function normalPolicy(previous: string): string {
     return previous === "hunt" ? state.monsterHunt?.returnPolicy || "auto" : previous;
   }
+  function retainTurnIn(mode: string): void {
+    const hunt = state.monsterHunt;
+    if (!hunt || mode === "hunt") return;
+    const completed = hunt.participants.some(name => state.statuses[name]?.monsterHunt?.count === 0);
+    if (!completed && (!hunt.loot || hunt.loot.complete)) return;
+    hunt.exitMode = mode;
+    beginTurnIn(hunt, state.leader!);
+    hunt.stage = "paused-event";
+    hunt.resumeStage = "returning";
+  }
+  function postExitLocation(mode: string, location: ReturnLocation | null): ReturnLocation | null | undefined {
+    return mode === "hunt" ? undefined : ports.selectedDestination(state.leader)?.location || location;
+  }
+  function deferToExit(mode: string, policy: string, location: ReturnLocation | null, restart: boolean, previous: string): boolean {
+    const recovery = state.eventReturn;
+    if (!recovery) return false;
+    if (mode === "hunt" && restart && resumeRequested()) authorize(null);
+    state.farmingPolicy = mode;
+    retainTurnIn(mode);
+    recovery.postExitLocation = postExitLocation(mode, location);
+    if (mode === "hunt" && restart) ports.begin(policy, location, previous === "hunt" && !!state.monsterHunt);
+    return true;
+  }
   function select(
     mode: string,
     location: ReturnLocation | null,
@@ -89,6 +114,7 @@ export function createHuntMode(state: HuntModeState, ports: HuntModePorts) {
       policy = normalPolicy(previous);
     if (mode === "hunt") setBackup(backupFocus);
     const restart = restartRequested(mode, previous, backupSupplied);
+    if (deferToExit(mode, policy, location, restart, previous)) return;
     if (restart && !ports.fighting?.()) authorize(location);
     state.farmingPolicy = mode;
     if (previous === "hunt" && mode !== "hunt") exit(mode);

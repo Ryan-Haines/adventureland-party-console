@@ -51,6 +51,8 @@ export const settingsFields = [
   "phoenixPatrolActive",
   "phoenixPatrolCheckpoint",
   "rareHuntReturn",
+  "rareRetryEvidence",
+  "rarePursuitProgress",
   "escape",
   "threshold",
   "itemCollectionThreshold",

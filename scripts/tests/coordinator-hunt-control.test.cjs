@@ -12,7 +12,7 @@ function fixture(){
 test('manual hunt-return retry waits for runtime compatibility and existing command ownership',()=>{
  const t=fixture();t.state.statuses.P.convoyProtocol=1;assert.equal(t.send('retryReturn').code,409);
  t.state.statuses.P.convoyProtocol=4;t.state.commands.P={convoyId:'other'};assert.equal(t.send('retryReturn').code,409);assert.equal(t.calls.length,0);
- t.state.commands.P.convoyId='old';assert.equal(t.send('retryReturn').body.convoyId,'new');assert.equal(t.state.monsterHunt.returnRetries,0);assert.deepEqual(t.calls,['cancel','start','persist']);
+ t.state.commands.P.convoyId='old';assert.equal(t.send('retryReturn').body.convoyId,'new');assert.deepEqual(t.calls,['cancel','start','persist']);
 });
 test('interaction acknowledgements cannot clear a newer command and success waits for quest telemetry',()=>{
  const t=fixture(),command={id:7,type:'monster-hunt-interact',cycleId:'cycle',action:'claim'};t.state.commands.P=command;

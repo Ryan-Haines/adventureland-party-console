@@ -105,6 +105,7 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
   function retainMissionRoute(hunt: HuntCycle): void {
     const c = state.activeConvoy;
     if (!c || c.id !== hunt.convoyId || c.purpose !== "monster-hunt" || !hunt.target) return;
+    hunt.message=c.defenseReason || (c.phase==='failed' ? 'Hunt travel held: '+c.failure : 'Monster Hunt: '+hunt.target);
     c.combatHandoffAllowed = false;
     c.huntTarget = hunt.target;
     for (const name of hunt.participants) {
@@ -245,8 +246,13 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
       return !!s && !s.rip && s.hp !== 0 && ports.now() - s.seenAt <= 3000 &&
         s.seenAt <= ports.now() + 500 && s.map === destination.map &&
         String(s.in ?? s.map) === String(destination.in ?? destination.map) &&
-        Math.hypot(s.x - destination.x, s.y - destination.y) <= 50;
+        memberInside(destination, s, name);
     });
+  }
+
+  function memberInside(destination: ReturnLocation, s: HuntStatus, name: string): boolean {
+    return s.server === state.statuses[String(state.leader)]?.server &&
+      ports.contains(destination, s, 0, Number(state.monsterSearchRadiusByCharacter[name]) || 400);
   }
 
   function step(hunt: HuntCycle): void {
@@ -270,5 +276,25 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
     if (hunt.stage === "paused-event") { resumeEvent(hunt); return true; }
     return encounter.step(hunt);
   }
-  return { step };
+  function arrivalOwned(hunt:HuntCycle):boolean {
+    const c=state.activeConvoy;
+    if(!c)return true;
+    if(c.routeRecovery?.stage==='relocation')return false;
+    if(c.id!==hunt.convoyId || c.purpose!=='monster-hunt')return false;
+    return hunt.participants.every(n=> {
+      const expected=c.expected?.[n]?.revision;
+      return expected===undefined || expected===ports.intent(n).revision;
+    });
+  }
+  function reconcileArrival(hunt: HuntCycle): void {
+    if(hunt.stage!=='mission-travel' || state.activeConvoy || state.eventReturn || !hunt.target || !originReached(hunt))return;
+    if(!arrivalOwned(hunt))return;
+    if(hunt.participants.some(n=>ports.intent(n).cancelled || state.statuses[n]?.activeEvent || state.statuses[n]?.joinedEvent))return;
+    hunt.originArrivedAt ||= ports.now();
+    hunt.stage='farming';
+    delete hunt.travelCause;
+    hunt.message='Monster Hunt: '+hunt.target;
+    ports.persist();
+  }
+  return { step, reconcileArrival };
 }

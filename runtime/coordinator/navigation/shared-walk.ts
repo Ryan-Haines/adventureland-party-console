@@ -170,9 +170,9 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     const convoy = state.activeConvoy as SharedConvoy | null;
     if (!convoy) return;
     convoy.walkingActivity = waiting[0]?.activity;
-    // Staging suspends farming combat. Waiting for its defense/loot reports
-    // would block the onward route after the map-local Town cast.
-    convoy.navigationExempt = returning || convoy.walkingActivity === "anniversary-staging";
+    // Staging shares the moving-defense return policy with Hunt turn-in.
+    convoy.navigationExempt = returning;
+    if (convoy.walkingActivity === "anniversary-staging") convoy.continuousReturn = 1;
     convoy.combatHandoffAllowed = false;
     for (const name of convoy.participants) state.commands[name]!.navigationExempt = convoy.navigationExempt;
     waiting.forEach(other => { other.convoyId = convoy.id; });
@@ -192,7 +192,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if (prior.complete) return { ok: true, phase: "complete" };
     const c = state.activeConvoy, session = c && sessions.get(c);
     prior.at = ports.now();
-    if (session?.requests.includes(prior)) return { ok: true, phase: returnRetryPending(c!) ? "waiting" : c!.phase === "failed" ? "failed" : "travelling", reason: c!.failure, convoyId: c!.id };
+    if (session?.requests.includes(prior)) return { ok: true, phase: walkingPhase(c!), reason: c!.failure, convoyId: c!.id };
     if (prior.convoyId) return { error: "walking leg superseded" };
     if (parentSuperseded(prior)) return { error: "walking leg superseded" };
     tryStart(prior);
@@ -217,12 +217,19 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if (failed.walkingParents?.[r.name]?.revision !== r.revision) return null;
     return { ok: true, phase: "failed", reason: failed.failure || "Event walking retries exhausted" };
   }
+  function retainedReturn(r:WalkRequest):Record<string,unknown> | null {
+    const c=state.activeConvoy;
+    if(!c?.continuousReturn || c.walkingActivity!==r.activity || c.walkingParents?.[r.name]?.revision!==r.revision)return null;
+    return {ok:true,phase:'travelling',convoyId:c.id,reason:c.failure};
+  }
   function submit(body: Record<string, unknown>): Record<string, unknown> {
     const r = parse(body, ports.now());
     if (!r || !authorized(r)) return { error: "unauthorized walking leg" };
     if (body.cancel === true) return cancel(r);
     const failure = retainedFailure(r);
     if (failure) return failure;
+    const retained = retainedReturn(r);
+    if(retained)return retained;
     const previous = existing(r);
     if (previous) return previous;
     requests.set(r.name, r);
@@ -236,4 +243,10 @@ function returnRetryPending(c: SharedConvoy): boolean {
 }
 function atDestination(point: RoutePoint, destination: RoutePoint): boolean {
   return point.map === destination.map && Math.hypot(point.x-destination.x,point.y-destination.y)<=100;
+}
+
+function walkingPhase(c:SharedConvoy):string {
+  if(c.continuousReturn)return 'travelling';
+  if(returnRetryPending(c))return 'waiting';
+  return c.phase==='failed'?'failed':'travelling';
 }

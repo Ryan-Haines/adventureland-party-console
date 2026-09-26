@@ -75,7 +75,7 @@ test('fresh bounded absence retires the primary without reviving its reservation
 });
 test('defensive combat promotes cached passing encounters and retains the original primary',()=>{
  const f=fixture(), a=monster('a','W');f.reserve(0,a,'a');
- f.members[0].status.groupedCombat.huntDefense=true;f.members[0].status.groupedCombat.threats=[a];
+ f.members[0].status.groupedCombat.huntDefense=true;f.members[0].status.groupedCombat.threats=[a];f.members[0].status.groupedCombat.currentAttackers=[a];
  let queue=reconcileQueue(null,f.members,'W',now,'key',0,true);
  assert.equal(queue.target.id,'a');assert.equal(queue.passingEncounters.length,0);
  assert.equal(retireTravelTargets(queue,f.members,now),queue);
@@ -136,8 +136,82 @@ test('protected movement and stale, dead, or externally targeted sightings canno
   assert.equal(f.control().hunt.primary,null,kind);
  }
 });
-test('defending does not nominate another neutral Phoenix after the first was committed',()=>{
+test('reconciled defense evaluates a fresh neutral Phoenix under passive priority',()=>{
  const f=phoenixFixture();f.members[0].status.groupedCombat.travelCandidates=[f.phoenix];f.control();f.c.phase='defending';
  f.members[0].status.groupedCombat.travelCandidates=[{...f.phoenix,id:'new-neutral'}];f.control();
- assert.deepEqual(f.c.huntTravel.committed.map(t=>t.id),['phoenix']);
+ assert.deepEqual(f.c.huntTravel.committed.map(t=>t.id),['phoenix','new-neutral']);
+});
+
+test('fresh attacking hawk outranks a committed phoenix; inactive retained hawks are released',()=>{
+ const {coordinatorGroupedSnapshot}=require('../../runtime/coordinator/navigation/grouped-snapshot.ts');
+ const {evaluateGroup}=require('../../runtime/combat/grouped.ts');
+ const f=phoenixFixture();f.c.phase='defending';
+ const hawk={...monster('active','P'),mtype:'hawk'},inactive={...monster('inactive'),mtype:'hawk'};
+ const fight=t=>({...t,fighter:'W',startedAt:now-100,state:'engaged'});
+ f.c.huntTravel={primary:fight(f.phoenix),committed:[fight(f.phoenix)],searches:{},reason:'passive-setting'};
+ for(const m of f.members){Object.assign(m.status.groupedCombat,{protocol:4,anchorVisible:true,sightings:[f.phoenix,hawk,inactive],currentAttackers:[hawk],threats:[inactive]});}
+ Object.assign(f.party,{leader:'W',followers:{P:true},headlessSlots:['W','P'],steamMembers:[],partyFarmingMode:'grouped',combatLogs:{},
+  groupedCombat:{protocol:4,leader:'W',fights:[fight(inactive),fight(f.phoenix)],queue:[fight(inactive),fight(f.phoenix)],evidence:[],deaths:[],threats:[],target:fight(inactive),searches:{}}});
+ const ports={now:()=>now,owned:()=>({type:'warrior'}),intent:()=>({revision:1}),tickDisengagement(){},disengagementActive:()=>false,prepare:x=>x,finalize:x=>x,evaluate:evaluateGroup,blocksPulls:()=>false};
+ const group=coordinatorGroupedSnapshot(f.party,ports);
+ assert.equal(group.target.id,'active');assert.deepEqual(group.queue.map(t=>t.id),['active','phoenix']);
+ assert.ok(group.lostTargets.some(t=>t.id==='inactive'));
+ f.members.forEach(m=>m.status.groupedCombat.currentAttackers=[]);
+ const after=coordinatorGroupedSnapshot(f.party,ports);
+ assert.equal(after.target.id,'phoenix');assert.equal(f.c.huntTravel.primary.id,'phoenix');
+});
+
+test('dead phoenix remains retired while its respawn is eligible; absence needs newer live evidence',()=>{
+ const f=phoenixFixture();f.c.phase='defending';f.members[0].status.groupedCombat.travelCandidates=[f.phoenix];f.control();
+ f.members[0].status.groupedCombat.deaths=[{...f.phoenix,at:now}];
+ for(let i=0;i<3;i++)f.control();
+ assert.equal(f.c.huntTravel.primary,null);assert.equal(f.c.huntTravel.reason,undefined);assert.equal(f.c.huntTravel.retired.length,1);
+ f.members[0].status.groupedCombat.travelCandidates=[f.phoenix,{...f.phoenix,id:'respawn'}];f.control();
+ assert.equal(f.c.huntTravel.primary.id,'respawn');
+ const target=f.c.huntTravel.primary;
+ f.members[0].status.groupedCombat.state={lostTargets:[{...target,retiredAt:now,reason:'absent'}]};
+ f.control();assert.equal(f.c.huntTravel.primary,null,'same sample cannot resurrect an absence release');
+ f.members[0].status.groupedCombat.currentAttackersAt=now+1;
+ updateHuntTravel(f.c,f.members,now+1,f.scope,f.party.passiveHunting);
+ assert.equal(f.c.huntTravel.primary.id,'respawn');assert.equal(f.c.huntTravel.retired.length,1);
+});
+
+test('missing attacker observations defer incidental release',()=>{
+ const f=fixture();f.c.phase='defending';const hawk={...monster('hawk','P'),mtype:'hawk'};
+ f.members[0].status.groupedCombat.currentAttackers=[hawk];f.control();
+ f.members[0].status.groupedCombat.currentAttackers=[];f.members[1].status.groupedCombat.currentAttackersAt=0;
+ f.control();assert.equal(f.c.huntTravel.primary.id,'hawk');
+ assert.equal(classifyTravelDefense(f.party,['W','P'],now).state,'waiting-for-observations');
+ f.members[1].status.groupedCombat.currentAttackersAt=now;f.control();assert.equal(f.c.huntTravel.primary,null);
+});
+
+test('held acknowledgement survives defense races and obsolete passive-stop signals',()=>{
+ let stopped=0;const hawk={...monster('hawk','W'),mtype:'hawk'};
+ const c=vm.createContext({Date:{now:()=>now},Math,Number,String,Object,Map,Array,Promise,
+  character:{name:'W',map:'tunnel',in:'tunnel'},parent:{entities:{hawk}},navigationIntent:{revision:3},root:{},
+  convoyTraveling:{id:'C',epoch:4,commandId:8,navigationRevision:3,routeProtocol:4,phase:'taking-control',holdRequested:true},
+  currentPartyList:()=>['W','P'],is_in_range:()=>true,isExternallyClaimedMonster:()=>false,escapeOwns:()=>false,combatRecoveryActive:()=>false,
+  stop:()=>{stopped++;},reunionRealm:()=> 'USII'});
+ vm.runInContext(['interruptConvoyForDefense','convoyHoldDefenseTarget'].map(n=>namedFunction(source,n)).join('\n'),c);
+ c.interruptConvoyForDefense('C',4);assert.equal(c.convoyTraveling.defensePaused,undefined);assert.equal(c.convoyHoldDefenseTarget().id,'hawk');
+ c.convoyTraveling.phase='held';c.interruptConvoyForDefense('C',4);assert.equal(c.convoyTraveling.phase,'held');
+ c.is_in_range=()=>false;assert.equal(c.convoyHoldDefenseTarget(),null);
+ c.convoyTraveling.holdRequested=false;c.convoyTraveling.phase='travelling';
+ c.interruptConvoyForDefense('C',3);c.interruptConvoyForDefense('C',5);
+ c.navigationIntent.revision=4;c.interruptConvoyForDefense('C',4);
+ assert.equal(c.convoyTraveling.phase,'travelling');assert.equal(stopped,0);
+});
+
+
+test('only a newer owned defense command releases a held client into normal combat',()=>{
+ const c=vm.createContext({Number,root:{},navigationIntent:{revision:3},convoyTraveling:{id:'C',epoch:4,commandId:8,navigationRevision:3,phase:'held',holdRequested:true},
+  interruptConvoyForDefense(){c.convoyTraveling.defensePaused=true;c.convoyTraveling.phase='defending';}});
+ vm.runInContext(namedFunction(source,'acceptConvoyDefenseCommand'),c);
+ const command={id:9,convoyId:'C',epoch:4,navigationRevision:3};
+ assert.equal(c.acceptConvoyDefenseCommand({...command,id:7}),false);
+ assert.equal(c.acceptConvoyDefenseCommand({...command,navigationRevision:2}),false);
+ assert.equal(c.acceptConvoyDefenseCommand({...command,epoch:3}),false);
+ assert.equal(c.convoyTraveling.phase,'held');
+ assert.equal(c.acceptConvoyDefenseCommand(command),true);
+ assert.equal(c.convoyTraveling.holdRequested,false);assert.equal(c.convoyTraveling.phase,'defending');assert.equal(c.convoyTraveling.commandId,9);
 });

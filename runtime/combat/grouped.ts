@@ -1,3 +1,5 @@
+import {pairRevision} from './locked-pair.ts';
+import type {HandoffReport, SuccessorGrant} from './successor-grant.ts';
 import type {PassingEncounter} from './passing.ts';
 import type {PassingAcknowledgement} from './passing-admission.ts';
 import { healingAnchor } from './composition.ts';
@@ -12,10 +14,11 @@ import type {ClaimObservation, ClaimState} from './claims.ts';
 export interface Member {
   name: string; ctype: string; revision: number; cancelled?: boolean;
   status?: {
+    monsterHunt?: {id:string;count:number;remainingMs:number} | null;
     seenAt: number; lastDeath?: {at: number}; hp: number; rip?: boolean; map: string; in?: string | number; server?: string;
     x: number; y: number; range?: number; max_hp?: number; joinedEvent?: unknown; activeEvent?: unknown; mapEvent?: unknown;
     combatSelection?: { id: string | null; map: string | null; revision: number; runtimeId: string; target?: Target | null };
-    groupedCombat?: { travelCandidates?: Target[]; huntDefense?: boolean; passingAcknowledgement?: PassingAcknowledgement; returnDefense?: boolean; passingEncounters?: PassingEncounter[]; formationRecovery?: FormationRecoveryReport; approach?: ApproachReport; pursuitAck?: string | null; currentAttackers?: CurrentAttacker[];
+    groupedCombat?: { handoff?:HandoffReport; travelCommitted?: Fight[]; travelCandidates?: Target[]; huntDefense?: boolean; passingAcknowledgement?: PassingAcknowledgement; returnDefense?: boolean; passingEncounters?: PassingEncounter[]; formationRecovery?: FormationRecoveryReport; approach?: ApproachReport; pursuitAck?: string | null; currentAttackers?: CurrentAttacker[];
       currentAttackersAt?: number; travelCommand?: {id:number;revision:number} | null; retentions?:Retention[];retentionPaused?:boolean; observationAt?:number; lootPending?: boolean; epoch?: number; claims?: ClaimObservation[]; candidates?: Candidate[]; evidence?: Evidence[]; queueAck?: string | null; protocol?: number; ack?: string | null; anchorVisible?: boolean; deaths?: Death[]; threats?: Target[]; sightings?: Target[]; state?: Group | null };
   };
 }
@@ -23,6 +26,8 @@ export interface Death { id: string; map: string; in?: string | number; server: 
 export interface Fight extends Target { state?: 'planned' | 'pending' | 'engaged'; score?: number; server: string | undefined; fighter: string; startedAt: number }
 export interface Target { target?: string | null; id: string; mtype: string; map: string; in?: string | number; x: number; y: number; hp?:number; max_hp?:number }
 export interface Group {
+  pairRevision?:string | null; successorGrant?:SuccessorGrant;
+  handoffTiming?: {selectedAt: number; committedAt: number | null};
   passingEncounters?: PassingEncounter[];
   formationRecovery?:FormationRecovery;
   pursuit?: Pursuit; pursuitExclusions?: PursuitExclusion[];
@@ -97,11 +102,14 @@ export function evaluateGroup(previous: Group | null, members: Member[], leader:
     m.status!.groupedCombat?.sightings?.some(t=>t.id===target.id&&t.map===target.map&&t.in===target.in))
     .map(m=>({name:m.name,map:m.status!.map,in:m.status!.in,server:m.status!.server,x:m.status!.x,y:m.status!.y,seenAt:m.status!.seenAt}));
   const acknowledged = !!selection && participating.length > 0 && members.filter(m=>participating.includes(m.name)).every(m=>fresh(m.status) && m.status?.groupedCombat?.ack===selection);
-  const preack = !!previous?.queueRevision && members.length>0 && members.every(m=>fresh(m.status) && m.status?.groupedCombat?.queueAck===previous.queueRevision) && previous.queue.some(t=>t.id===target?.id && t.server===(target as Fight)?.server);
+  const pairAcknowledged = !!previous?.pairRevision && members.length>0 && members.every(m=>fresh(m.status) && m.status?.groupedCombat?.handoff?.pairAck===previous.pairRevision) && previous.queue.slice(0,2).some(t=>t.id===target?.id && t.server===(target as Fight)?.server && t.map===target?.map && t.in===target?.in);
+  const preack = pairAcknowledged || !!previous?.queueRevision && members.length>0 && members.every(m=>fresh(m.status) && m.status?.groupedCombat?.queueAck===previous.queueRevision) && previous.queue.some(t=>t.id===target?.id && t.server===(target as Fight)?.server);
   const terrainRecovery=formationRecovery(same ? previous : null,members,target,key,now,pullsPaused,range);
   const committed = !terrainRecovery && !pursuit?.revoking && !!selection && (target?.state!=='planned' || !pullsPaused) && (target?.state==='engaged' || ready && recovering.length===0 &&
     (same && previous.selection===selection && previous.committed || acknowledged || preack));
   if (!blockers.length && !ready) blockers.push('waiting for stable formation');
+  const priorTiming=previous?.selection===selection ? previous.handoffTiming : undefined;
+  const handoffTiming=selection ? {selectedAt:priorTiming?.selectedAt??now,committedAt:committed ? priorTiming?.committedAt??now : null} : undefined;
   if (selection && !acknowledged && !committed) for (const m of members.filter(m=>participating.includes(m.name)))
     if (m.status?.groupedCombat?.ack!==selection) blockers.push(m.name+': awaiting target revision');
   if (pursuit?.reason) blockers.push(pursuit.reason);
@@ -112,8 +120,8 @@ export function evaluateGroup(previous: Group | null, members: Member[], leader:
   }
   if(restored?.target?.id!==target?.id||lostTargets.length!==(restored?.lostTargets||[]).length)
     transitionTrace.push({at:now,target:target?.id||null,reason:lostTargets.length>(restored?.lostTargets||[]).length?'target retired as lost':'queue target changed'});
-  return {passingEncounters,protocol:4, formationRecovery:terrainRecovery, pursuit, pursuitExclusions, lostTargets, searches, transitionTrace, resetAt, claims, rareRejections, observers, queue, queueRevision, deaths, evidence, fights, threats, fighter, targetLeader, participating, recovering, recoverySince, key,phase:!ready?'regrouping':!target?'ready':target.state==='engaged'?'engaged':target.state==='pending'?'attack-pending':committed?'approaching':'selecting',leader,
-    members:members.map(m=>m.name),priest:priest?.name || null,
+  return {pairRevision:members.every(m=>m.status?.groupedCombat?.handoff?.capability===1)?pairRevision(key,resetAt,queue):null,passingEncounters,protocol:4, formationRecovery:terrainRecovery, pursuit, pursuitExclusions, lostTargets, searches, transitionTrace, resetAt, claims, rareRejections, observers, queue, queueRevision, deaths, evidence, fights, threats, fighter, targetLeader, participating, recovering, recoverySince, key,phase:!ready?'regrouping':!target?'ready':target.state==='engaged'?'engaged':target.state==='pending'?'attack-pending':committed?'approaching':'selecting',leader,
+    handoffTiming,members:members.map(m=>m.name),priest:priest?.name || null,
     anchor:anchor && anchorMember && fresh(anchor) && !anchor.rip && anchor.hp>0 ?
       {name:anchorMember.name,map:anchor.map,in:anchor.in,server:anchor.server,x:anchor.x,y:anchor.y}:null,
     range,ready,readySince,seenAt:now,target,selection,committed,blockers};

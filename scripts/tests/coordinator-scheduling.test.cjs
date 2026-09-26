@@ -89,3 +89,28 @@ test('stock reconciliation makes a formerly missing delivery schedulable',()=>{
  assert.equal(mark.slot,7);assert.equal(mark.blocked,undefined);
  assert.ok(f.effects.some(x=>Array.isArray(x)&&x[2]==='deliveries'));
 });
+
+test('delivered equipment pauses a convoy then resumes its destination after acknowledgement',()=>{
+ const f=fixture(),s=f.state,names=['L','P'];
+ const {createSharedConvoyNavigation}=require('../../runtime/coordinator/navigation/shared-navigation.ts');
+ const {createInventoryReceiptRoutes}=require('../../runtime/coordinator/http/inventory-receipts.ts');
+ const engine=createSharedConvoyNavigation(require('../convoy-navigation.cjs'));
+ s.nextCommandId=10;s.navigationIntents={L:{revision:1},P:{revision:1}};
+ s.commands=Object.fromEntries(names.map(n=>[n,{id:1,type:'party-monster-travel',convoyId:'trip',navigationRevision:1}]));
+ s.activeConvoy={id:'trip',epoch:7,routeProtocol:4,phase:'assemble',leader:'L',participants:names,completed:[],
+   slowestSpeed:57,purpose:'shared-walk',rally:{map:'main',x:0,y:0},location:{map:'halloween',x:-509,y:-626}};
+ for(const n of names)s.statuses[n]={name:n,map:'main',x:0,y:0,speed:57,server:'USII',seenAt:200000,convoyProtocol:4,convoyNavigation:{runtimeId:n}};
+ engine.step(s,200000);const destination=s.activeConvoy.location;
+ s.merchantDeliveries={P:[{id:'delivery',item:{name:'intearring',level:2},awaitingEquip:true}]};
+ const ack=()=>{for(const n of names){const cmd=s.commands[n],c=s.activeConvoy;s.statuses[n].convoyNavigation={id:c.id,epoch:c.epoch,commandId:cmd.id,navigationRevision:cmd.navigationRevision,runtimeId:n,phase:'held'};}};
+ f.observe({name:'P'},false);assert.equal(s.commands.P.type,'party-monster-travel');
+ engine.step(s,200000);ack();engine.step(s,200000);
+ f.observe({name:'P'},false);const equip=s.commands.P;
+ assert.equal(equip.type,'equip-deliveries');assert.equal(equip.convoyContinuation.convoyId,'trip');
+ engine.step(s,200000);assert.equal(s.activeConvoy.merchantInterruption.phase,'collecting','merchant job can already be finished');
+ const receipts=createInventoryReceiptRoutes(s,{owned:()=>true,log(){},persist(){}});
+ receipts.equipment({body:{character:'P',commandId:equip.id,results:[{item:equip.items[0],deliveryId:'delivery',success:true}]}},{json(){},status(){return this;}});
+ engine.step(s,200000);ack();engine.step(s,200000);
+ assert.equal(s.activeConvoy.phase,'shared-prepare');assert.equal(s.activeConvoy.location,destination);
+ assert.equal(s.activeConvoy.merchantInterruption,undefined);assert.equal(s.merchantDeliveries.P.length,0);
+});

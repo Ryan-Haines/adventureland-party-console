@@ -6,6 +6,17 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const target = path.resolve(process.argv[2] || path.join(root, ".caracal"));
 const file = path.join(target, "src/CharacterThread.js");
 let source = (await readFile(file, "utf8")).replaceAll("\r\n", "\n");
+// JSDOM's default window storage is ephemeral and distinct in each CODE window.
+// Expose the IPC stores through the browser names used by game and journal code.
+if (!source.includes('localStorage: { value: result._localStorage, configurable: true }')) {
+  const anchor = '  vm.createContext(result);';
+  if (!source.includes(anchor)) throw new Error('Unrecognized storage context initialization');
+  source = source.replace(anchor, `  Object.defineProperties(result, {
+    localStorage: { value: result._localStorage, configurable: true },
+    sessionStorage: { value: result._sessionStorage, configurable: true },
+  });
+${anchor}`);
+}
 source = source
   .replaceAll(".get_game_files()", ".get_game_files(proc_args.version)")
   .replaceAll(".get_runner_files()", ".get_runner_files(proc_args.version)");

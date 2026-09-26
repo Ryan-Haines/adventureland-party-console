@@ -318,6 +318,55 @@ test('blocked paths never fall back to unvalidated movement, and alternate kite 
   assert.equal(moves.length, count);
 });
 
+test('blocked kiting around an add yields to a safe approach toward the selected event boss', async () => {
+  const { c, target, moves } = geometry(207);
+  target.target = 'Ally'; target.x = -400; target.mtype = 'franky';
+  c.character.x = 0; c.is_in_range = () => false;
+  const add = { id: 'add', type: 'monster', visible: true, x: 0, y: 0, target: 'Us', range: 30 };
+  c.parent.entities.add = add;
+  // At this corner only westward travel is possible; kite arcs go east.
+  c.can_move_to = x => x < 0;
+  assert.equal(await c.kiteIfNeeded(target), false);
+  assert.equal(c.partyCombatPosition.blockingAttacker, 'add');
+  assert.equal(await c.approachCombatTarget(target), true);
+  assert.ok(moves.at(-1).x < 0); assert.equal(c.partyCombatPosition.target, target.id);
+});
+
+test('blocked kite fallback cannot approach through another attacker or a wall', async () => {
+  const { c, target, moves } = geometry(207);
+  target.target = 'Ally'; target.x = -400; c.character.x = 0; c.is_in_range = () => false;
+  c.parent.entities.add = { id: 'add', type: 'monster', visible: true, x: -25, y: 0, target: 'Us', range: 30 };
+  c.can_move_to = (x, y) => x < 0 && Math.abs(y) < 1;
+  assert.equal(await c.kiteIfNeeded(target), false);
+  assert.equal(await c.approachCombatTarget(target), false);
+  assert.equal(moves.length, 0); assert.equal(c.partyCombatPosition.blockingAttacker, 'add');
+  assert.match(c.partyCombatPosition.reason, /attacker clearance/);
+});
+
+test('event add avoidance closes boss range first and cannot kite away from the boss', async () => {
+  const {c,target,moves}=geometry(207);
+  c.eventTargetTypes=['franky'];target.mtype='franky';target.target='Ally';
+  c.character.x=350;c.is_in_range=()=>Math.hypot(c.character.x-target.x,c.character.y-target.y)<=207;
+  c.parent.entities.add={id:'add',type:'monster',visible:true,x:350,y:0,target:'Us'};
+  assert.equal(await c.kiteIfNeeded(target),true);
+  assert.ok(moves.at(-1).x<350);assert.equal(c.partyCombatPosition.target,target.id);
+  c.character.x=190;c.parent.entities.add.x=180;
+  assert.equal(await c.kiteIfNeeded(target),true);
+  assert.ok(Math.hypot(moves.at(-1).x,moves.at(-1).y)<=c.desiredCombatRange());
+});
+
+test('event corner search finds another safe direction while remaining in boss range', async () => {
+  const {c,target,moves}=geometry(207);
+  c.eventTargetTypes=['franky'];target.mtype='franky';target.target='Ally';
+  c.character.x=190;
+  c.parent.entities.add={id:'add',type:'monster',visible:true,x:180,y:0,target:'Us'};
+  c.can_move_to=(x,y)=>x<190 && y>10;
+  assert.equal(await c.kiteIfNeeded(target),true);
+  assert.ok(moves.at(-1).y>10);assert.ok(Math.hypot(moves.at(-1).x,moves.at(-1).y)<=c.desiredCombatRange());
+  c.can_move_to=()=>false;const count=moves.length;
+  assert.equal(await c.kiteIfNeeded(target),false);assert.equal(moves.length,count);
+});
+
 test('Dash cannot overshoot the weapon range boundary', async () => {
   const { c, target } = geometry(25); let casts = 0;
   Object.assign(c, { G: { skills: { dash: { mp: 10 } } }, is_on_cooldown: () => false,
@@ -378,6 +427,27 @@ test('selection retains a valid target and immediately changes on confirmed deat
   await r.run(50);assert.equal(r.attacks(),1);r.c.partyRoleRunner.stop();
 });
 
+test('successor wake uses the existing attack deadline and ignores the previous target promise', async () => {
+ for(const deadline of [1000,1600]) {
+  const r=runner(),sent=[],pending=[];
+  r.c.parent.next_skill={attack:1000};
+  r.c.attack=t=>{sent.push({id:t.id,at:r.c.Date.now()});return new Promise(resolve=>pending.push(resolve));};
+  await r.advance(1001);assert.equal(sent[0].id,'m');
+  const next={...r.target,id:'next'};
+  r.c.parent.next_skill.attack=deadline;
+  r.c.get_entity=id=>id==='next'?next:r.target;
+  r.routine.getPreferredTarget=()=>next;
+  r.c.partyRoleRunner.invalidateTarget('m');await flush();
+  await r.advance(deadline===1000?1002:1597);
+  assert.equal(sent.filter(t=>t.id==='next').length,deadline===1000?1:0);
+  if(deadline===1600)await r.advance(1598);
+  assert.equal(sent.find(t=>t.id==='next').at,deadline===1000?1002:1598);
+  pending[0]();await flush();
+  assert.equal(r.c.partyCombatState.attackTiming.accepted,0,'old success cannot settle the new flight');
+  r.c.partyRoleRunner.stop();
+ }
+});
+
 test('a revoked fight authorization cancels the remaining four attack attempts',async()=>{
  const r=runner();r.c.parent.next_skill={attack:1100};let allowed=true;
  r.routine.groupedAttackAllowed=()=>allowed;
@@ -414,4 +484,38 @@ test('eligible passing and active attacks share priority without passing movemen
     assert.equal(hit[0],passivePriority>50?'passing':r.target.id);
     r.c.partyRoleRunner.stop();
   }
+});
+
+for (const ctype of ['warrior','mage','priest','ranger','rogue','paladin','merchant'])
+test(ctype+' Franky attendance suppresses farming/passing targets and ordinary movement, including boss absence',async()=>{
+  const r=runner(ctype);await flush();
+  const boss={...r.target,id:'boss',mtype:'franky',hp:100};let visible=true,active=true,movement=0,follow=0,stomps=0,dashes=0;
+  r.c.get_entity=id=>id==='boss'?(visible?boss:null):r.target;
+  Object.assign(r.routine,{
+    frankyCombatActive:()=>active,frankyMovementTick:t=>{movement++;assert.equal(t,visible?boss:null);return true;},
+    merchantEventCombatActive:()=>true,getEventTarget:()=>visible?boss:null,
+    allowsTarget:t=>!active || t.mtype==='franky',getPassingTarget:()=>r.target,
+    monsterPriority:t=>t.id==='m'?100:0,getRareTarget:()=>r.target,
+    usesLeaderTarget:()=>true,getGroupedTarget:()=>r.target,sharedTargetId:()=>r.target.id,
+    getCloserHuntTarget:()=>r.target,getFarmingMode:()=> 'scatter',
+    followLeaderIfFar:async()=>{follow++;},pollRareHunting:()=>{throw Error('rare movement during Franky');},
+    formationMove:()=>{throw Error('formation during Franky');},
+    emergencyWarriorStomp:async()=>{stomps++;return false;},dashToward:async()=>{dashes++;return true;},
+    getNearestPartyAttacker:()=>null,regenerateHpOrMp:async()=>false,
+    isPartyHealthy:()=>true,isCurrentPartyTarget:()=>true,energizeLowestMana:async()=>false,
+  });
+  r.character.max_mp=100;r.character.mp=0;
+  r.c.attack=t=>{assert.equal(t.id,'boss');return new Promise(()=>{});};
+  try {
+    await r.run(250);await r.run(100);await r.run(50);
+    assert.equal(r.c.partyCombatState.selectedTarget,'boss');assert.equal(movement,1);
+    assert.equal(stomps,0);assert.equal(dashes,0);
+    visible=false;r.c.partyRoleRunner.wake();await flush();await r.run(100);await r.run(50);
+    assert.equal(r.c.partyCombatState.selectedTarget,null);assert.equal(movement,2);assert.equal(follow,0);
+    assert.equal(r.moves(),0);
+    let exitSelection=null;r.routine.setCombatTarget=t=>{exitSelection=t;};
+    r.routine.returnCombatActive=()=>true;r.routine.returnDefenseTarget=()=>r.target;
+    active=false;r.c.partyRoleRunner.wake();await flush();
+    assert.equal(exitSelection,r.target,'exit defense takes ownership');
+  } finally {r.c.partyRoleRunner.stop();}
 });

@@ -2,7 +2,7 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm');
 const source = fs.readFileSync('characters/shared.js', 'utf8');
 const permissionCode = source.slice(source.indexOf('  async function eventTravelAllowed('), source.indexOf('  async function preemptConvoyForAnniversary('));
-const pollCode = source.slice(source.indexOf('  async function pollEvents('), source.indexOf('  function reunionRealm('));
+const pollCode = source.slice(source.indexOf('  async function joinCombatEvent('), source.indexOf('  function reunionRealm('));
 function fixture() {
   const actions = [];
   const r = vm.createContext({ character: { name: 'Mage', ctype: 'mage', map: 'main' },
@@ -15,7 +15,7 @@ function fixture() {
     G: { maps: { main: {}, goobrawl: { event: 'goobrawl' } }, events: { goobrawl: { join: true } } },
     activeCombatEvent: () => ({ name: 'goobrawl', types: ['goo'], state: {}, kind: 'pve' }),
     nearestEventTarget: () => null, eventDestination: () => ({ map: 'goobrawl', x: 0, y: 0 }),
-    eventRequiresJoin: () => true, join: async name => { actions.push(['join', name]); },
+    eventRequiresJoin: () => true, join: async name => { actions.push(['join', name]); r.character.map = r.eventDestination().map; },
     smart_move: async point => { actions.push(['move', point.map]); }, game_log() {},
     sharedPartyWalk: async point => { actions.push(['move', point.map]); },
   });
@@ -37,20 +37,20 @@ function delayedCrab() {
  return {...f,visible:()=>visible,end:()=>{live=false;}};
 }
 
-test('Gigacrab arriving after teleport releases pending event travel for acquisition',async()=>{
- const {r,actions,visible}=delayedCrab();
+test('Gigacrab teleport releases travel before boss visibility without any convoy request',async()=>{
+ const {r,actions}=delayedCrab();
+ r.sharedPartyWalk=async()=>assert.fail('joinable event must not walk');
  await r.pollEvents();
- assert.equal(visible(),true);assert.equal(r.joinedEvent,'crabxx');
+ assert.equal(r.joinedEvent,'crabxx'); assert.equal(r.nearestEventTarget(),null);
  assert.equal(r.eventTraveling,false);assert.equal(r.eventPollBusy,false);
- assert.equal(r.nearestEventTarget().id,'boss');
- assert.deepEqual(actions,[['join','crabxx'],['walk',false],['walk',true]]);
- assert.equal(r.root.__partySharedWalking,null);
+ assert.deepEqual(actions,[['join','crabxx']]);
+ await r.pollEvents(); assert.deepEqual(actions,[['join','crabxx']]);
 });
 
-test('event ending during a pending route releases travel instead of waiting three minutes',async()=>{
- const f=delayedCrab();f.r.setTimeout=done=>{f.end();done();};
+test('event ending during join releases travel and preserves unconfirmed reentry',async()=>{
+ const f=delayedCrab();f.r.join=async()=>{f.end();};
  await f.r.pollEvents();assert.equal(f.r.eventTraveling,false);assert.equal(f.r.eventPollBusy,false);
- assert.deepEqual(f.actions,[['join','crabxx'],['walk',false],['walk',true]]);
+ assert.equal(f.r.joinedEvent,null); assert.deepEqual(f.actions,[]);
 });
 
 test('dead or other-instance event entities cannot trigger the combat handoff',()=>{
@@ -62,7 +62,7 @@ test('dead or other-instance event entities cannot trigger the combat handoff',(
  r.parent.entities={boss};assert.equal(r.nearestEventTarget().id,'boss');
 });
 
-test('coordinator route rejection releases the event travel gate',async()=>{
+test('joinable entry does not depend on coordinator walking availability',async()=>{
  const f=delayedCrab();f.r.request=async path=>path==='/shared-travel'?{error:'unauthorized walking leg'}:{allowed:true};
  f.r.setTimeout=()=>assert.fail('rejected route must not keep polling');
  await f.r.pollEvents();assert.equal(f.r.eventTraveling,false);assert.equal(f.r.eventPollBusy,false);
@@ -82,7 +82,7 @@ test('event travel rechecks priority after joining and resumes normally once rel
   r.join = async () => { actions.push(['join']); r.character.map = 'goobrawl'; r.huntTurnInPriority = true; };
   await r.pollEvents(); assert.deepEqual(actions, [['join']]);
   r.huntTurnInPriority = false;
-  await r.pollEvents(); assert.deepEqual(actions, [['join'], ['move', 'goobrawl']]);
+  await r.pollEvents(); assert.deepEqual(actions, [['join']]);
 });
 test('coordinator outage denies event movement without interfering with merchant work', async () => {
   const { r } = fixture(); r.request = async () => { throw new Error('offline'); };
@@ -124,7 +124,7 @@ test('coordinator refuses anniversary preemption after the return convoy has com
 test('anniversary staging yields to an enabled combat event',async()=>{
  const {r,actions}=fixture();r.anniversaryStaging=true;
  await r.pollEvents();assert.equal(r.anniversaryStaging,false);
- assert.deepEqual(actions,[['join','goobrawl'],['move','goobrawl']]);
+ assert.deepEqual(actions,[['join','goobrawl']]);
 });
 test('denied handoff leaves anniversary movement intact',async()=>{
  const {r,actions}=fixture();r.anniversaryStaging=true;r.request=async()=>({allowed:false});
@@ -136,7 +136,7 @@ test('preempting an owned staging route invalidates its continuation',async()=>{
  r.navigationIntent={revision:3};r.townTraveling=false;r.forceTraveling=false;
  r.stop=async()=>{};await r.pollEvents();
  assert.equal(operation.cancelled,true);assert.equal(r.root.__partyAnniversaryStagingOperation,null);
- assert.deepEqual(actions,[['join','goobrawl'],['move','goobrawl']]);
+ assert.deepEqual(actions,[['join','goobrawl']]);
 });
 test('an active kiss stays protected until its operation ends',async()=>{
  const {r,actions}=fixture();r.root.__partyAnniversaryKissOperation={startedAt:1};

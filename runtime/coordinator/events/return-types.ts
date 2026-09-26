@@ -24,6 +24,9 @@ export interface ReturnOwner {
   returnRoutes?: Record<string, ReturnRoute> | null;
 }
 export interface EventRecovery extends ReturnOwner {
+  blocker?: string;
+  postExitLocation?: ReturnLocation | null;
+  phase?: "evacuating" | "handoff" | "checkpoint";
   cycleId: string;
   event: string;
   pending: string[];
@@ -42,6 +45,8 @@ export interface EventReturnState {
   deferred: Record<string, { cycleId: string }>;
 }
 export interface ReturnStatus {
+  x?: number;
+  y?: number;
   map?: string;
   mapEvent?: string;
   seenAt?: number;
@@ -58,7 +63,7 @@ export interface ReturnConvoy {
   purpose?: string | null;
   walkingActivity?: string;
   nonPreemptible?: boolean;
-  walkingParents?: Record<string, { revision: number; command?: { cycleId?: string } }>;
+  walkingParents?: Record<string, { revision: number; parentId?: number; command?: { cycleId?: string } }>;
 }
 export interface CommandView {
   convoyId?: string;
@@ -66,6 +71,7 @@ export interface CommandView {
   cycleId?: string;
 }
 export interface EventReturnPorts {
+  huntHandoffPending?(): boolean;
   handoffToHunt?(recovery: EventRecovery): boolean;
   now(): number;
   nextCommandId(): number;

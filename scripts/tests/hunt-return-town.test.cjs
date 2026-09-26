@@ -13,7 +13,7 @@ function party(){
   location:{map:'main',x:126,y:-413},rally:{map:'main',x:500,y:1100},slowestSpeed:57,runtimes:{L:'L',F:'F',P:'P'}};
  const p={activeConvoy:c,nextCommandId:1,commands:{},navigationIntents:{},combatLogs:{},monsterHunt:{stage:'returning'},
   statuses:Object.fromEntries(names.map(name=>[name,{name,seenAt:1000,map:'main',in:'main',x:500,y:1100,hp:100,speed:57,server:'USII',
-   convoyProtocol:4,huntReturnProtocol:2,combatSelection:{runtimeId:name},groupedCombat:{currentAttackersAt:1000,currentAttackers:[]}}]))};
+   convoyProtocol:4,huntReturnProtocol:2,returnTownReady:true,combatSelection:{runtimeId:name},groupedCombat:{currentAttackersAt:1000,currentAttackers:[]}}]))};
  for(const name of names){const cmd=p.commands[name]=sharedCommand(p,c,c.phase,name);p.statuses[name].convoyNavigation={
   id:c.id,epoch:c.epoch,commandId:cmd.id,navigationRevision:0,runtimeId:name,phase:'route-ready'};}
  return p;
@@ -39,22 +39,19 @@ test('unavailable Town selects walking without counting a cast; superseded repor
  p.statuses.F.convoyNavigation={...p.statuses.F.convoyNavigation,commandId:999,townAttempt:{round:'99',map:'main',state:'interrupted'}};
  observeReturnTown(p,c,1000);assert.equal(c.returnTown.interruptions,0);
 });
-test('partial Town failure waits for other casts and regroups at the successful arrival instead of returning to the attackers',()=>{
+test('one failed Town immediately cancels the round and routes everyone toward the forward Town rally',()=>{
  const p=party(),c=p.activeConvoy,engine=createSharedConvoyNavigation(legacy);
  const destination={map:'main',x:0,y:0},attempt={map:'main',round:'1:1:0',destination};
  p.statuses.L.convoyNavigation.townAttempt={...attempt,state:'casting'};
  p.statuses.F.convoyNavigation.townAttempt={...attempt,state:'interrupted'};
- engine.step(p,1000);assert.equal(c.phase,'shared-prepare');assert.equal(c.returnTown.interruptions,1);
- p.statuses.L.convoyNavigation.townAttempt.state='complete';p.statuses.L.x=0;p.statuses.L.y=0;
- for(const s of Object.values(p.statuses))s.seenAt=1100;
- engine.step(p,1100);assert.equal(c.phase,'assemble');assert.deepEqual(c.rally,destination);
+ const old=p.commands.L.id;
+ engine.step(p,1000);
+ assert.equal(c.phase,'assemble');assert.equal(c.returnTown.interruptions,1);
+ assert.notEqual(p.commands.L.id,old,'all outstanding commands are superseded immediately');
  assert.deepEqual(p.commands.F.rally,destination);assert.equal(p.commands.F.disableTown,true);
- engine.step(p,1200);assert.equal(c.phase,'assemble','wait for failed members without sending successful ones back');
- for(const s of Object.values(p.statuses)){s.x=0;s.y=0;s.seenAt=1300;}
- engine.step(p,1300);assert.equal(c.phase,'shared-prepare');assert.equal(c.returnTownRally,undefined);
- const restored=JSON.parse(JSON.stringify(p));observeReturnTown(restored,restored.activeConvoy,1300);
- assert.equal(restored.monsterHunt.returnTown.interruptions,1);
+ assert.equal(c.recoveryAttempts,undefined,'cast cancellation is not a route failure');
 });
+
 test('continuous return ignores defense holds from hits instead of stopping for combat and loot',()=>{
  const p=party(),c=p.activeConvoy;p.statuses.F.convoyNavigation.phase='defending';
  assert.equal(defense.step(p,1000,sharedCommand),false);assert.equal(c.phase,'shared-prepare');
@@ -65,7 +62,7 @@ test('fresh attackers select walking immediately; stale reports cannot change th
  const p=party(),c=p.activeConvoy;
  p.statuses.F.groupedCombat.currentAttackers=[{id:'tortoise',mtype:'tortoise',map:'main',in:'main',hp:50,target:'F'}];
  observeReturnTown(p,c,5000);assert.equal(c.returnTown.walking,false);
- observeReturnTown(p,c,1000);assert.equal(c.returnTown.walking,true);assert.equal(c.townRetry,true);
+ observeReturnTown(p,c,1000);assert.equal(c.returnTown.walking,true);assert.equal(c.disableTown,true);
  assert.equal(c.returnTown.interruptions,0);assert.equal(defense.step(p,1000,sharedCommand),false);
 });
 test('walking fallback retains movement ownership under live attackers, but cancellation still wins',()=>{

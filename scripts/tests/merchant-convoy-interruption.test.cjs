@@ -20,6 +20,28 @@ function fixture(purpose='monster-hunt') {
   function tick(time=now){now=time;return engine.step(state,now);}
   tick();return {state,send,ack,tick};
 }
+
+test('merchant collection waits for communication recovery without capturing its internal phase',()=>{
+ const f=fixture(),s=f.state;f.tick(5000);
+ assert.equal(s.activeConvoy.phase,'communication-hold');
+ assert.equal(f.send('handoff').body.waiting,true);
+ assert.equal(s.activeConvoy.merchantInterruption,undefined);
+ for(let time=6000;time<=12000;time+=1000){f.ack();f.tick(time);}
+ f.ack();f.tick();assert.equal(s.activeConvoy.communicationHold,undefined);
+ assert.equal(f.send('handoff').body.waiting,true);
+ assert.equal(s.activeConvoy.merchantInterruption.resumePhase,'shared-prepare');
+});
+
+test('legacy merchant continuation captured during communication recovery prepares a new route',()=>{
+ const f=fixture(),s=f.state,c=s.activeConvoy,destination=c.location;
+ f.send('handoff');c.merchantInterruption.resumePhase='communication-hold';
+ f.tick();f.ack();f.tick();f.send('handoff');
+ f.send('complete',{jobId:'job',character:'F',commandId:s.commands.F.id});
+ f.tick();f.ack();f.tick();
+ assert.equal(c.phase,'shared-prepare');assert.equal(c.location,destination);
+ for(const command of Object.values(s.commands))assert.equal(command.phase,'shared-prepare');
+ assert.equal(c.merchantInterruption,undefined);
+});
 for(const purpose of ['monster-hunt','shared-walk-return','event-return','empty-spawn-recovery']) {
   test(purpose+' pauses all members, collects once, and resumes its destination',()=>{
     const f=fixture(purpose),s=f.state,c=s.activeConvoy;
@@ -62,7 +84,9 @@ test('another recipient must wait for the first collection to release the convoy
 test('a persisted interrupted convoy resumes with fresh commands after restart',()=>{
   const f=fixture(),s=f.state;f.send('handoff');f.tick();f.ack();f.tick();f.send('handoff');
   Object.assign(s,initialCommandState({activeConvoy:structuredClone(s.activeConvoy)},()=>2000));
-  f.tick(2000);f.ack();f.tick();assert.equal(s.activeConvoy.phase,'shared-prepare');assert.equal(s.activeConvoy.merchantInterruption,undefined);
+  f.tick(2000);f.ack();f.tick();assert.equal(s.activeConvoy.phase,'communication-hold');
+  for(let time=3000;time<=7000;time+=1000){f.tick(time);f.ack();f.tick();}
+  f.ack();f.tick();assert.equal(s.activeConvoy.phase,'shared-prepare');assert.equal(s.activeConvoy.merchantInterruption,undefined);
 });
 test('collection during assembly initializes stop acknowledgements before the first shared route',()=>{
   const f=fixture(),s=f.state;s.activeConvoy.phase='assemble';s.activeConvoy.runtimes=null;
@@ -86,4 +110,17 @@ for (const map of ['main','winterland']) test('orphaned Snowman exit in '+map+' 
   service.reconcile();assert.equal(state.activeConvoy,null);
   if(map==='main'){assert.equal(dispatched,1);service.reconcile();assert.equal(state.eventReturn,null);}
   else {assert.deepEqual(state.eventReturn.pending,names);assert.equal(state.commands.F.type,'event-return-town');assert.equal(dispatched,0);}
+});
+
+test('merchant resumption processes combat before waiting for held reports',()=>{
+ const f=fixture(),s=f.state;f.send('handoff');f.tick();f.ack();f.tick();f.send('handoff');
+ f.send('complete',{jobId:'job',character:'F',commandId:s.commands.F.id});
+ f.tick();f.ack();for(const status of Object.values(s.statuses))status.convoyNavigation.phase='defending';
+ let calls=0;
+ const engine=createSharedConvoyNavigation(legacy,(state,now,make)=>{
+   calls++;for(const n of state.activeConvoy.participants)state.statuses[n].convoyNavigation.phase='held';
+   return true;
+ });
+ engine.step(s,1000);assert.equal(calls,1);assert.ok(s.activeConvoy.merchantInterruption);
+ f.tick();assert.equal(s.activeConvoy.phase,'shared-prepare');assert.equal(s.activeConvoy.merchantInterruption,undefined);
 });

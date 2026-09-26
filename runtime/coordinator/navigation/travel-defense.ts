@@ -1,7 +1,7 @@
 import {passiveStopRequired, type PassiveTravelSettings} from '../../combat/passive-travel.ts';
 import {collectPassing, passingIdentity, type PassingEncounter} from '../../combat/passing.ts';
 import type { Fight, Group, Member, Target } from "../../combat/grouped.ts";
-import {outboundHunt, huntDefense, updateHuntTravel, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
+import {outboundHunt, huntDefense, huntAttackers, updateHuntTravel, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
 
 export interface CurrentAttacker extends Target { target: string; server?: string }
 interface Observation {
@@ -21,10 +21,18 @@ const identity = (t: { server?: string; map: string; in?: string | number; id: s
 function fresh(at: number | undefined, now: number): boolean {
   return typeof at === "number" && now - at <= 3000 && at <= now + 500;
 }
-function ready(status: Observation | undefined, now: number): status is Observation {
-  return !!status && !status.rip && status.hp !== 0 && fresh(status.seenAt, now) &&
-    fresh(status.groupedCombat?.currentAttackersAt, now) && Array.isArray(status.groupedCombat?.currentAttackers);
+export function travelObservationIssue(status: Observation | undefined, now: number): string | null {
+  if (!status) return 'missing character report';
+  if (!fresh(status.seenAt, now)) return 'character report age ' + Math.round(now - (status.seenAt || 0)) + ' ms';
+  const g = status.groupedCombat;
+  if (!g?.currentAttackersAt) return 'missing connected attacker observation';
+  if (!fresh(g.currentAttackersAt, now)) return 'attacker observation age ' + Math.round(now - g.currentAttackersAt) + ' ms';
+  return Array.isArray(g.currentAttackers) ? null : 'missing attacker observation list';
 }
+function ready(status: Observation | undefined, now: number): status is Observation {
+  return !!status && !status.rip && status.hp !== 0 && !travelObservationIssue(status, now);
+}
+
 function current(t: CurrentAttacker, status: Observation, names: string[]): boolean {
   return names.includes(t.target) && t.map === status.map &&
     String(t.in ?? t.map) === String(status.in ?? status.map) &&
@@ -40,7 +48,7 @@ function passingForDefense(party: DefenseState, names: string[], now: number) {
 }
 function includeAttacker(party:DefenseState,passing:Set<string>,attacker:CurrentAttacker,departure?:boolean):boolean {
   const c=party.activeConvoy;
-  return passiveStopRequired(party.passiveHunting,attacker.mtype) || outboundHunt(c) || !!departure || !!(c?.continuousReturn && !c.returnTown?.walking) || !passing.has(passingIdentity(attacker));
+  return passiveStopRequired(party.passiveHunting,attacker.mtype) || outboundHunt(c) || !!departure || !!c?.continuousReturn || !passing.has(passingIdentity(attacker));
 }
 /** Travel consults live targeting, never retained engagements or recent outgoing hits. */
 export function classifyTravelDefense(party: DefenseState, names: string[], now = Date.now()): DefenseResult {
@@ -60,11 +68,16 @@ export function classifyTravelDefense(party: DefenseState, names: string[], now 
   const attackers = [...found.values()];
   const defend = huntNeedsDefense(party,names,attackers,now);
   if (defend) return { state: "defending", attackers, waiting,
-    message: "Defending " + [...new Set(attackers.map(t => t.target))].join(", ") +
-      " from " + attackers.map(t => (t.mtype || "monster") + " " + t.id).join(", ") };
+    message: defenseMessage(party,attackers) };
+
   if (waiting.length) return { state: "waiting-for-observations", attackers, waiting,
     message: "Waiting for fresh travel observations from " + waiting.join(", ") };
   return { state: "clear", attackers, waiting, message: "" };
+}
+
+function defenseMessage(party: DefenseState, attackers: CurrentAttacker[]): string {
+  if(!attackers.length)return 'Travel encounter: pursuing '+(party.activeConvoy?.huntTravel?.committed||[]).map(t=>(t.mtype==='tinyp'?'Fairy':t.mtype)+' '+t.id).join(', ');
+  return 'Defending '+[...new Set(attackers.map(t=>t.target))].join(', ')+' from '+attackers.map(t=>(t.mtype||'monster')+' '+t.id).join(', ');
 }
 
 function huntNeedsDefense(party: DefenseState, names: string[], attackers: CurrentAttacker[], now: number): boolean {
@@ -74,8 +87,7 @@ function huntNeedsDefense(party: DefenseState, names: string[], attackers: Curre
   if(!control)return attackers.length>0;
   if(control.reason==='passive-setting' && !huntDefense(c))return true;
   if(huntDefense(c)) {
-    const group=party.groupedCombat as Group | undefined;
-    return [attackers.length,control.primary,group?.fights?.length].some(Boolean);
+    return attackers.length>0 || !!control.committed?.length;
   }
   const encounters=new Set(attackers.map(identity));
   if(control.primary)encounters.add(identity(control.primary));
@@ -85,9 +97,9 @@ function huntNeedsDefense(party: DefenseState, names: string[], attackers: Curre
 export interface TravelState {
   statuses?: Record<string, Observation | undefined>;
   activeConvoy?: { id?: string; epoch?: number; participants: string[]; purpose?: string | null; force?: boolean; phase?: string; farmingEngagement?: unknown } | null;
-  commands?: Record<string, { id?: number; type?: string; navigationRevision?: number } | undefined>;
+  commands?: Record<string, { id?: number; type?: string; phase?: string; convoyId?: string; navigationRevision?: number } | undefined>;
   navigationIntents?: Record<string, { revision?: number; cancelled?: boolean } | undefined>;
-  monsterHunt?: { cycleId?: string; stage?: string; currentIndex?: number; startedAt?: number; participants: string[]; exitMode?: string | null } | null;
+  monsterHunt?: { arrivalHandoff?: {releasedCommands?: Record<string, {id: number; revision: number}>}; cycleId?: string; stage?: string; currentIndex?: number; startedAt?: number; participants: string[]; exitMode?: string | null } | null;
   farmingPolicy?: string;
   rareHuntState?: { encounter?: { revisions?: Record<string, number> } | null } | null;
   farmAreaState?: { pending?: { at?: number } | null } | null;
@@ -128,8 +140,17 @@ function commandOperation(state: TravelState, name: string): { id: string; at: n
   if (!command || !["travel", "character-travel", "event-resume-travel", "return-leader"].includes(command.type || "")) return null;
   return { id: "command:" + command.id, at: command.id || 0 };
 }
+function releasedEventWalk(state: TravelState, name: string): boolean {
+  const c = state.activeConvoy;
+  const command = state.commands?.[name];
+  // A terminal event-entry walk explicitly returns movement to event combat.
+  // Retaining its diagnostic convoy must not keep the character combat-paused.
+  return c?.phase === "failed" && command?.phase === "event-walk-release" && command.convoyId === c.id &&
+      command.navigationRevision === (state.navigationIntents?.[name]?.revision || 0);
+}
 function operation(state: TravelState, name: string): { id: string; at: number } | null {
   const c = state.activeConvoy;
+  if (releasedEventWalk(state, name)) return null;
   if (c?.participants?.includes(name)) return !c.force && normalTravel(c.purpose)
     ? convoyOperation(c) : null;
   return nonConvoyOperation(state, name);
@@ -143,7 +164,8 @@ function nonConvoyOperation(state: TravelState, name: string): { id: string; at:
 }
 function localOperation(state: TravelState, name: string): { id: string; at: number } | null {
   const status = state.statuses?.[name], command = status?.groupedCombat?.travelCommand;
-  if (!command || !ready(status, Date.now()) || command.revision !== (state.navigationIntents?.[name]?.revision || 0)) return null;
+  if (releasedArrivalCommand(state, name, command)) return null;
+  if (!command || !ready(status, Date.now()) || command.revision !== travelRevision(state, name)) return null;
   return { id: "command:" + command.id, at: status.groupedCombat!.currentAttackersAt! };
 }
 function control(state: TravelState, name: string, owner: { id: string } | null): TravelCombat | null {
@@ -165,10 +187,10 @@ export function travelCombatFor(state: TravelState, name: string): TravelCombat 
 /** Tombstones stop delayed attack evidence and restored snapshots from reviving abandoned targets. */
 export function retireTravelTargets(previous: Group | null, members: Member[], now: number): Group | null {
   if (!previous) return null;
-  if(members.some(m=>m.status && now-m.status.seenAt<=3000 && m.status.groupedCombat?.huntDefense))return previous;
+  const commitments=members.flatMap(m=>m.status?.groupedCombat?.travelCommitted||[]);
   const decision = classifyTravelDefense({ groupedCombat: previous, statuses: Object.fromEntries(members.map(m => [m.name, m.status])) }, members.map(m => m.name), now);
   if (decision.waiting.length) return previous;
-  const active = new Set(decision.attackers.map(identity));
+  const active = new Set([...decision.attackers,...huntAttackers(members,now),...commitments].map(identity));
   const retired = new Map<string, Fight>();
   for (const target of [...previous.fights, ...previous.queue]) if (!active.has(identity(target))) retired.set(identity(target), target);
   if (!retired.size) return previous;
@@ -178,3 +200,11 @@ export function retireTravelTargets(previous: Group | null, members: Member[], n
     target: null, selection: null, committed: false,
     lostTargets: [...(previous.lostTargets || []), ...[...retired.values()].map(t => ({ ...t, retiredAt: now, reason: "released for travel; no current attacker" }))] };
 }
+
+function releasedArrivalCommand(state: TravelState, name: string, command: {id: number; revision: number} | null | undefined): boolean {
+  if (state.monsterHunt?.stage !== 'farming' || !command) return false;
+  const released = state.monsterHunt.arrivalHandoff?.releasedCommands?.[name];
+  return released?.id === command.id && released.revision === command.revision;
+}
+
+function travelRevision(state: TravelState, name: string): number { return state.navigationIntents?.[name]?.revision || 0; }

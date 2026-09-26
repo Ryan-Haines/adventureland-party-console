@@ -11,3 +11,15 @@ Anniversary departure begins 90 seconds before the next server deadline. Each ch
 The first character to exhaust both attempts skips the remainder of the round for the party. The Anniversary modal's gear edits a persistent, case-insensitive player blacklist. Adding the current featured player skips the current round; removing a name does not reopen a skipped round. An empty list is preserved.
 
 Relevant regression coverage: `event-selections`, `event-policy`, `anniversary-kiss`, `farming-navigation`, `merchant-anniversary-reservation`, and `hunt-event-priority` tests.
+
+Franky attendance attacks only living, visible `franky` monsters in the current map
+and instance. It retains the current boss when possible and waits without fallback
+targets if the boss disappears. Every participating class approaches until in attack
+range, then holds position; no kiting, retreating, formation movement, or warrior Dash
+is used. Approaches respect terrain but ignore monster danger zones and healer
+coverage. Offensive skills cannot target adds; area effects that cannot exclude them
+are suppressed. Healing, potions, buffs, and nearby loot continue. Event exit and
+manual navigation retain ownership, and the existing exit-defense policy is unchanged.
+
+Validate with `franky-combat`, `combat-movement`, `class-skills`, `franky-recovery`,
+and `franky-exit`; publish character assets with the full supported restart.

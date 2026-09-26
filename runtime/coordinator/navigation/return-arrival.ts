@@ -5,7 +5,7 @@ import { rememberCompletion } from './completion-receipts.ts';
 
 /** Recover a missing HTTP completion using the same owned arrival reports. */
 export function reconcileReturnArrival(state: SharedState, c: SharedConvoy, now: number): boolean {
-  if (c.purpose !== 'monster-hunt' || !c.continuousReturn || c.phase !== 'travel') return false;
+  if (!recoverableArrival(c)) return false;
   if (!sharedArrivalReady(state, now)) { delete c.arrivalReadySince; return false; }
   c.arrivalReadySince ??= now;
   // Give the normal completion requests time to settle before retiring their commands.
@@ -19,7 +19,14 @@ export function reconcileReturnArrival(state: SharedState, c: SharedConvoy, now:
     }
   }
   c.completed = [...c.participants];
-  recordConvoyHistory(state, c, 'completed', now, { reason: 'Verified return arrival recovered missing completion acknowledgment' });
+  recordConvoyHistory(state, c, 'completed', now, { reason: 'Verified Hunt arrival recovered missing completion acknowledgment' });
   state.activeConvoy = null;
   return true;
+}
+
+function recoverableArrival(c: SharedConvoy): boolean {
+  // Legacy per-leg returns still require their transition barrier. Pickup and
+  // outbound shared routes use the same verified final-arrival recovery.
+  return c.purpose === 'monster-hunt' && c.phase === 'travel' &&
+    (!c.returnRouting || !!c.continuousReturn);
 }

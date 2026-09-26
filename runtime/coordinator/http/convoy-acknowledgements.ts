@@ -92,7 +92,7 @@ export function createConvoyAcknowledgementRoutes(
     ports.persist();
   }
   function recordHuntArrival(active: RouteConvoy): void {
-    if (active.routeProtocol === 4 && active.purpose === 'monster-hunt' &&
+    if (!active.routeRecovery && active.routeProtocol === 4 && active.purpose === 'monster-hunt' &&
         state.monsterHunt?.stage === 'mission-travel' && state.monsterHunt.convoyId === active.id)
       state.monsterHunt.originArrivedAt = ports.now();
   }

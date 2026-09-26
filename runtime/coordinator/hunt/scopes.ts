@@ -7,7 +7,7 @@ const fields = ["farmingPolicy", "monsterHunt", "huntSettings", "huntBlacklist",
   "location", "monsterFocus", "activeConvoy", "farmAreaState", "partyFarmingMode",
   "scatterMonsterTypes", "scatterEpoch", "partyFarmingMonsterType", "scatterBreakTarget",
   "scatterPartySignature", "groupedCombat", "groupedCombatResetAt", "combatRecovery",
-  "combatHuntBoundary", "eventReturn", "eventReturnLast", "eventSessions", "abtestingStrategy", "rareHuntState", "rareHuntReturn", "phoenixPatrolActive", "phoenixPatrolCheckpoint"] as const;
+  "combatHuntBoundary", "eventReturn", "eventReturnLast", "eventSessions", "abtestingStrategy", "rareHuntState", "rareHuntReturn", "rareRetryEvidence", "rarePursuitProgress", "phoenixPatrolActive", "phoenixPatrolCheckpoint"] as const;
 const scopedFields = new Set<string>(fields);
 interface State {
   leader: string | null;
@@ -28,7 +28,7 @@ function defaults(): Record<string, unknown> {
     partyFarmingMonsterType: null, scatterBreakTarget: null, scatterPartySignature: "",
     groupedCombat: null, groupedCombatResetAt: 0, combatRecovery: null, combatHuntBoundary: null,
     eventReturn: null, eventReturnLast: null, eventSessions: {}, abtestingStrategy: null,
-    rareHuntState: null, rareHuntReturn: null, phoenixPatrolActive: false, phoenixPatrolCheckpoint: null };
+    rareHuntState: null, rareHuntReturn: null, rareRetryEvidence: {}, rarePursuitProgress: {}, phoenixPatrolActive: false, phoenixPatrolCheckpoint: null };
 }
 
 /** Stable views share observations/IDs, but have independent controller storage. No global-state swapping. */

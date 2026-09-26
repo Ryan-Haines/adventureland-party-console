@@ -23,7 +23,7 @@ test('BankBoi service commands survive repeated heartbeat delivery until complet
 test('heartbeat follows replaced farming authority, navigation intent and storage snapshots',()=>{
  const {state,api,setIntent,setWaypoint}=fixture();
  assert.deepEqual(api.response('P').partyLocation.focus,['goo']);
- state.farmingPolicy='hunt';state.monsterHunt={target:'rat',turnIn:true};state.monsterChoices=['new catalog'];
+ state.farmingPolicy='hunt';state.monsterHunt={target:'rat',turnIn:true,participants:['P']};state.monsterChoices=['new catalog'];
  state.bankSnapshot={items0:['leather']};state.bankbois={B:['drapes']};state.selection=['franky'];
  const intent={revision:9},point={map:'mansion'};setIntent(intent);setWaypoint(point);
  state.commands={P:{type:'party-monster-travel'}};
@@ -34,6 +34,14 @@ test('heartbeat follows replaced farming authority, navigation intent and storag
  assert.equal(result.eventSelections,state.selection);assert.equal(result.huntTurnInPriority,true);
  state.monsterHunt={target:null};state.monsterFocus=[];
  assert.deepEqual(api.response('P').partyLocation.focus,[]);
+});
+
+test('Hunt turn-in reserves only its fighters, never merchant anniversary travel',()=>{
+ const {state,api}=fixture();state.monsterHunt={target:null,turnIn:true,participants:['P','M']};
+ assert.equal(api.response('P').huntTurnInPriority,true);
+ assert.equal(api.response('M').huntTurnInPriority,false,'merchant stays independent even in a restored participant list');
+ assert.equal(api.response('B').huntTurnInPriority,false);
+ state.monsterHunt.turnIn=null;assert.equal(api.response('P').huntTurnInPriority,false);
 });
 test('combat-only heartbeat does not deliver or decorate pending navigation commands',()=>{
  const {state,api}=fixture();const command={type:'travel'};state.commands.P=command;

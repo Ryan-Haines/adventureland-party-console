@@ -56,6 +56,9 @@ export function craftProtection(state: CraftReservationState, excludeJob?: strin
       const remaining = needs(job, state.merchantCatalog?.craftable || []);
       requirements.push(...remaining);
       reserved.push(...allocations(job, state.merchantCharacter, remaining));
+      const pending = pendingCommerceStock(job);
+      requirements.push(...pending);
+      reserved.push(...pending.map(need => ({...need, location: 'inventory:' + state.merchantCharacter})));
     }
     return protectDeliveries(state, {requirements, allocations: reserved});
   } catch (error) { return {requirements, error: String(error instanceof Error ? error.message : error)}; }
@@ -69,6 +72,30 @@ function deliveryProtection(state: CraftReservationState): NonNullable<CraftProt
 }
 
 function protectDeliveries(state: CraftReservationState, protection: CraftProtection): CraftProtection {
-  const deliveries = deliveryProtection(state);
+  const deliveries = deliveryProtection(state).concat(commerceProtection(state));
   return deliveries.length ? {...protection, deliveries} : protection;
+}
+
+function commerceProtection(state: CraftReservationState): NonNullable<CraftProtection['deliveries']> {
+  return [state.merchantCurrent, ...(state.merchantQueue || [])].flatMap(job => {
+    if (!job) return [];
+    const progress = job.resumeState as {results?: {slot?: number; item: import('../contracts/item.ts').Item}[];
+      activeSlot?: number; activeItem?: import('../contracts/item.ts').Item;
+      pendingUpgrade?: {level: number}; pendingPurchase?: {base?: boolean; name: string}} | undefined;
+    if (!progress) return [];
+    const owned = [...(progress.results || [])];
+    if (progress.activeItem) {
+      owned.push({slot: progress.activeSlot, item: progress.activeItem});
+      if (progress.pendingUpgrade) owned.push({slot: progress.activeSlot,
+        item: {...progress.activeItem, level: progress.pendingUpgrade.level}});
+    }
+    if (progress.pendingPurchase?.base) owned.push({item: {name: progress.pendingPurchase.name as import('../contracts/item.ts').Item['name'], level: 0}});
+    return owned.map(mark => ({...mark, location: 'inventory:' + state.merchantCharacter}));
+  });
+}
+
+function pendingCommerceStock(job: Job): CraftNeed[] {
+  const progress = job.resumeState as {pendingPurchase?: {name: string; quantity: number; before: number}} | undefined;
+  const pending = progress?.pendingPurchase;
+  return pending ? [{id: pending.name, quantity: pending.before + pending.quantity}] : [];
 }

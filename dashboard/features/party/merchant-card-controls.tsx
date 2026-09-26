@@ -132,7 +132,7 @@ export function MerchantCardControls({
                 {jobLabel(job)}
                 {job.target && job.reason !== "join giveaway" ? ` · ${job.target}` : ""}
               </span>
-              <span className="max-w-32 shrink-0 truncate text-emerald-100/70" title={job.realmBlockedReason || status}>{job.realmBlockedReason || status}</span>
+              <span className="max-w-32 shrink-0 truncate text-emerald-100/70" title={job.realmBlockedReason || job.pauseReason || status}>{job.realmBlockedReason || (job.retryAt && job.retryAt > Date.now() ? `Retry at ${new Date(job.retryAt).toLocaleTimeString()}` : job.pauseReason || status)}</span>
               {job.realmRetryExhausted && <button type="button"
                 className="rounded border border-amber-600 bg-zinc-950 px-2 py-1 text-amber-200 hover:border-amber-300 hover:bg-amber-950 hover:text-white"
                 onClick={() => action.mutate({ path: '/merchant/job/retry', body: { id: job.id } })}>Retry</button>}

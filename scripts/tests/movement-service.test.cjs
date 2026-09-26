@@ -22,10 +22,10 @@ test('diagnostics snapshot coordinates and deduplicate independently of mutable 
  const issue={reason:'collisions detected',from:{map:'main',x:0,y:0},to:{map:'main',x:50,y:0}};
  report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
  destination.moving=false;destination.plot=[];
- report('runtime:2',destination,'Route rejected',issue);
+ report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
  assert.equal(logs.length,1);assert.deepEqual(logs[0].data.destination,{map:'main',x:100,y:0});
- now+=10001;report('runtime:3',destination,'Route rejected',issue);
- assert.equal(logs[1].data.count,3);assert.match(logs[1].message,/Repeated 3 times/);
+ now+=10001;report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
+ assert.equal(logs[1].data.count,3);assert.match(logs[1].message,/Similar messages: 3 \(not route attempts\)/);
  destination.x=200;issue.to.x=80;
  assert.equal(logs[0].data.destination.x,100);assert.equal(logs[0].data.issue.to.x,50);
 });
@@ -196,8 +196,8 @@ test('cancellation prevents dispatching the precision final approach',async()=>{
 test('collision produces actionable coordinates and native fallback outcome',async()=>{
  const r=fixture({collision:true,plot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}]});
  const p=r.service.move({map:'main',x:100,y:0});await r.ticks(12);await p;
- assert.equal(r.searches,1);assert.equal(r.calls.some(c=>c[1]===50),false);
- assert.match(r.logs[0].message,/collisions detected between main \(0, 0\) and main \(50, 0\).*falling back to native smart_move/);
+ assert.equal(r.searches,2);assert.equal(r.calls.some(c=>c[1]===50),false);
+ assert.match(r.logs.find(l=>l.phase==='ALClient route rejected').message,/collisions detected between main \(0, 0\) and main \(50, 0\).*falling back to native smart_move/);
  assert.equal(r.logs.at(-1).phase,'Native fallback succeeded');r.dispose();
 });
 test('late plan cannot restart cancelled or superseded navigation',async()=>{
@@ -291,7 +291,7 @@ test('leave validator rejects arbitrary exits and conflicting metadata',()=>{
 test('leave timeout requests ALClient recovery and cancellation ignores a late acknowledgment',async()=>{
  const r=fixture({plot:[{map:'main',x:0,y:0,method:'leave'}]});r.host.G.maps.cyberland={spawns:[[0,0]]};Object.assign(r.c,{map:'cyberland',in:'cyberland'});
  let acknowledge;r.host.parent.push_deferred=()=>new Promise(resolve=>acknowledge=resolve);
- const p=r.service.move({map:'main',x:0,y:0}),failed=assert.rejects(p,/cancelled/i);await r.ticks(4);
+ const p=r.service.move({map:'main',x:0,y:0}),failed=assert.rejects(p,/Unattributed movement stop/i);await r.ticks(4);
  r.setNow(15000);await r.ticks(3);assert.equal(r.request.avoidLeave,true);assert.equal(r.searches,0);
  await r.service.stop();acknowledge();await r.ticks(2);await failed;assert.equal(r.service.state.moving,false);r.dispose();
 });
@@ -325,4 +325,85 @@ test('uncollectable transition loot reports a bounded failure and cancellation c
   {game:f.host.G,walk:()=>true,door:()=>true},()=>now,()=>true,()=>false);
  executor.tick({});now+=30000;assert.throws(()=>executor.tick({}),/Pending nearby loot/);
  executor.cancel();assert.equal(executor.progress().phase,'idle');f.dispose();
+});
+
+
+test('a blocked ALClient walking segment uses one validated native connector and keeps the rest of the route',async()=>{
+ const r=fixture({plot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}],nativePlot:[{map:'main',x:0,y:10},{map:'main',x:50,y:10},{map:'main',x:50,y:0}]});
+ r.host.can_move=p=>!(p.x===0 && p.y===0 && p.going_x===50 && p.going_y===0);
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});await r.ticks(30);await p;
+ assert.equal(r.searches,1);assert.equal(r.c.real_x,100);assert.ok(r.logs.some(l=>l.phase==='Walking segment repaired'));
+ assert.equal(r.logs.some(l=>l.phase==='ALClient route rejected'),false);r.dispose();
+});
+test('repair timeout is three seconds, then the single full native attempt retains its thirty-second bound',async()=>{
+ const r=fixture({collision:true,plot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}]});
+ r.host.__partyNativeMovement.start=()=>{r.host.smart.searching=true;};
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});const failed=assert.rejects(p,/30 seconds/);
+ await r.ticks(3);r.setNow(4000);await r.ticks(1);r.setNow(4001);await r.ticks(2);
+ assert.equal(r.service.state.moving,true);r.setNow(34001);await r.ticks(1);await failed;
+ assert.match(r.service.last().failureContext.repairFailure,/3 seconds/);assert.equal(r.service.last().searches,3);r.dispose();
+});
+test('post-relocation ALClient rejection cannot start another native search or segment repair',async()=>{
+ const r=fixture({collision:true,plot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}]});
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true,owner:{convoyId:'C',epoch:4,commandId:9,recoveryStage:'post-relocation'}});
+ const failed=assert.rejects(p,/ALClient retry failed after relocation/);await r.ticks();await failed;
+ assert.equal(r.searches,0);assert.equal(r.service.last().failureContext.convoyId,'C');r.dispose();
+});
+test('owned cancellation retains actor, cause, journey and command context without duplicate reason text',async()=>{
+ const r=fixture({pending:true});const p=r.service.move({map:'main',x:100,y:0},undefined,{owner:{convoyId:'C',epoch:2,commandId:7}});
+ const failed=assert.rejects(p,/regroup/);await r.ticks(1);
+ await r.service.cancel('Coordinator requested regroup',{code:'regroup',character:'Leader'});await failed;
+ const last=r.service.last();assert.equal(last.failureContext.commandId,7);assert.equal(last.failureContext.code,'regroup');
+ assert.equal(last.failureContext.character,'Leader');assert.equal(last.failureContext.journeyId,last.id);
+ const message=r.logs.at(-1).message;assert.equal((message.match(/Coordinator requested regroup/g)||[]).length,1);r.dispose();
+});
+test('barrier timeout retains request metadata through executor and movement promise',async()=>{
+ const r=fixture(),error=Object.assign(new Error('POST /movement-barrier timeout'),{partyRequest:{path:'/movement-barrier',kind:'timeout',status:0}});
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true,barrier:async()=>{throw error;}});
+ const rejected=assert.rejects(p,e=>e===error && e.partyRequest.kind==='timeout');
+ r.service.install([{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}],r.service.identity);
+ await r.ticks();await r.ticks();await rejected;assert.equal(r.service.last().failureContext.partyRequest.path,'/movement-barrier');r.dispose();
+});
+
+function reachedWalkFixture(plot) {
+ const {createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
+ let now=1000,transporting=false;const calls=[];
+ const character={map:'main',in:'main',real_x:177,real_y:460,moving:false};
+ const host={character,move:(x,y)=>{calls.push([x,y]);character.moving=true;return Promise.resolve();},
+  can_walk:()=>true,is_transporting:()=>transporting,can_use:()=>true,
+  town:()=>{calls.push('town');return new Promise(()=>{});}};
+ const state={plot,use_town:true};
+ const executor=createMovementExecutor(host,state,{game:{maps:{main:{spawns:[[177,460]]},bank:{}}},walk:()=>true},()=>now);
+ return {executor,host,state,calls,character,setNow:value=>now=value,setTransporting:value=>transporting=value};
+}
+for(const duplicates of [1,3])test('reached walking points never issue a zero-distance game move: '+duplicates,()=>{
+ const r=reachedWalkFixture([...Array.from({length:duplicates},()=>({map:'main',x:177,y:460})),{map:'main',x:222,y:430}]);
+ r.executor.tick({});assert.deepEqual(r.calls,[[222,430]]);assert.equal(r.state.plot.length,1);
+ Object.assign(r.character,{real_x:222,real_y:430,moving:false});r.setNow(6100);r.executor.tick({});
+ assert.equal(r.executor.tick({}),true);
+});
+test('entire reached route finishes without a move including the one-unit boundary',()=>{
+ const r=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:178,y:460}]);
+ assert.equal(r.executor.tick({}),true);assert.deepEqual(r.calls,[]);
+});
+test('outside arrival tolerance still issues a walk',()=>{
+ const r=reachedWalkFixture([{map:'main',x:178.01,y:460}]);r.executor.tick({});assert.equal(r.calls.length,1);
+});
+for(const blocked of ['moving','transporting','unable'])test('reached walk cannot advance while '+blocked,()=>{
+ const r=reachedWalkFixture([{map:'main',x:177,y:460}]);
+ if(blocked==='moving')r.character.moving=true;
+ if(blocked==='transporting')r.setTransporting(true);
+ if(blocked==='unable')r.host.can_walk=()=>false;
+ assert.equal(r.executor.tick({}),false);assert.equal(r.state.plot.length,1);assert.deepEqual(r.calls,[]);
+});
+for(const point of [{map:'bank',x:177,y:460},{map:'main',in:'other',x:177,y:460}])test('other map or instance is not consumed: '+JSON.stringify(point),()=>{
+ const r=reachedWalkFixture([point]);try{r.executor.tick({});}catch(error){assert.match(error.message,/collisions/);}
+ assert.equal(r.state.plot.length,1);
+});
+test('skipped walk preserves transition barrier index and pending acknowledgement',async()=>{
+ const r=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:177,y:460,town:true}]),barriers=[];
+ const options={barrier:async(step,index,completed)=>{barriers.push({index,completed});return true;}};
+ r.executor.tick(options);await settle();r.executor.tick(options);await settle();r.executor.tick(options);
+ assert.deepEqual(r.calls,['town']);assert.deepEqual(barriers,[{index:0,completed:false}]);
+ assert.equal(r.state.plot.length,1);assert.equal(r.state.plot[0].town,true);
 });

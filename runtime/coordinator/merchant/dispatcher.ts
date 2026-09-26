@@ -1,3 +1,5 @@
+import { buyUpgradeOrder } from './commerce-progress.ts';
+import { merchantJobReady } from './priority.ts';
 import { splitLegacyWork } from './routines.ts';
 import { mergePickupJobs } from './pickup-jobs.ts';
 import { batchMarketplaceVisits } from "./marketplace-batch.ts";
@@ -106,13 +108,8 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   }
 
   function ready(job: MerchantWork): boolean {
-    return (
-      !job.realmBlockedReason &&
-      Number(job.retryAt || 0) <= ports.now() &&
-      !job.blockedOnBankboi &&
-      !ports.capacityBlocked(job) &&
-      ports.collectionReady(job)
-    );
+    return merchantJobReady(job, {now: ports.now(), priority: candidate => ports.priority(candidate as MerchantWork),
+      capacityBlocked: candidate => ports.capacityBlocked(candidate as MerchantWork), collectionReady: candidate => ports.collectionReady(candidate as MerchantWork)});
   }
 
   function gatherBefore(readyJobs: readonly MerchantWork[]): boolean {
@@ -185,6 +182,11 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   function assign(job: MerchantWork, status: ServiceStatus): void {
     planPonty(job);
     const commandId = ports.nextCommand();
+    if (buyUpgradeOrder(job)) {
+      job.commerceProgressVersion = 2;
+      job.commerceOrderId ||= job.id;
+    }
+    delete job.pauseReason;
     state.current = {
       ...job,
       commandId,

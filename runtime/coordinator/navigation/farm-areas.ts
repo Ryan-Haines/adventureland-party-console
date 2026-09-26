@@ -1,3 +1,4 @@
+import { ownsHuntRoute } from '../hunt/route-recovery.ts';
 import {competitionHold} from "./farm-competition.ts";
 import type { HuntCycle } from "../hunt/contracts.ts";
 import type {
@@ -249,6 +250,9 @@ export function createFarmAreaNavigation(party: FarmNavigationState, ports: Farm
     return party.activeConvoy?.purpose === "empty-spawn-recovery" && recoverFailed(state, hunt, ids, names, areas, now);
   }
 
+  function huntTravelOwns(hunt: HuntCycle | null): boolean {
+    return hunt?.stage==='mission-travel' || !!(hunt && party.activeConvoy && ownsHuntRoute(hunt,party.activeConvoy));
+  }
   function tick(): void {
     if (ports.rareOwns()) return;
     const now = ports.now();
@@ -258,6 +262,7 @@ export function createFarmAreaNavigation(party: FarmNavigationState, ports: Farm
       names = ports.members();
     migrate(state);
     const hunt = party.farmingPolicy === "hunt" ? party.monsterHunt : null;
+    if (huntTravelOwns(hunt)) return;
     const ids = targetIds(hunt);
     const areas = ports.areas(ids),
       active = ports.resolve(ids, party.location);

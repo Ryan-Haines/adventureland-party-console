@@ -46,6 +46,7 @@ export function createMerchantQueue(state: QueueState, ports: QueuePorts) {
   const migrated = mergePickupJobs(state.queue, ports.merchant()).map(job => ports.stamp(job));
   state.queue.splice(0, state.queue.length, ...migrated);
   let lastStandAttempt: string | undefined;
+  let changed = false;
   function resourcesUnchanged(name: string, block: ResourceBlock): boolean {
     if (block.capacitySignature !== undefined)
       return ports.capacitySignature(name) === block.capacitySignature;
@@ -60,6 +61,7 @@ export function createMerchantQueue(state: QueueState, ports: QueuePorts) {
     if (!block) return false;
     if (resourcesUnchanged(name, block)) return true;
     delete state.blocks[key];
+    changed = true;
     ports.log("Resources changed; retrying blocked merchant work", "info", {
       target: name,
       reason,
@@ -81,6 +83,7 @@ export function createMerchantQueue(state: QueueState, ports: QueuePorts) {
     const replacesCollection = previous.reason === "marked items" && reason !== "marked items";
     if (!higherPriority && !replacesCollection) return;
     state.queue[index] = ports.stamp({ ...previous, reason, routine: undefined });
+    changed = true;
     ports.log("Raised queued merchant work for " + previous.target, "info", {
       from: previous.reason,
       to: reason,
@@ -98,16 +101,18 @@ export function createMerchantQueue(state: QueueState, ports: QueuePorts) {
       state.queue.push(
         ports.stamp({ id: ports.nextId(), target: name, reason, queuedAt: ports.now() }),
       );
+      changed = true;
     } else if (name !== ports.merchant()) promote(index, reason);
   }
 
   function queue(names: readonly (string | null | undefined)[], reason = "service"): void {
     if (reason === "upgrades and compounds") { queue(names, "manual upgrades"); queue(names, "manual compounds"); return; }
     if (ports.enabled?.(reason) === false) return;
+    changed = false;
     for (const name of new Set(names)) {
       if (name && !ports.bankboi(name)) enqueue(name, reason);
     }
-    ports.persist();
+    if (changed) ports.persist();
     ports.dispatch();
   }
 

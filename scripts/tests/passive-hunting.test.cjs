@@ -27,7 +27,7 @@ function fixture(){
   escapeOwns:()=>false,combatRecoveryActive:()=>false,activeCombatEvent:()=>false,rareActive:()=>false,unfinishedFight:()=>false,
   reunionRealm:()=> 'USII',get_entity:id=>Object.values(c.parent.entities).find(e=>e.id===id),is_in_range:e=>Math.hypot(e.x,e.y)<=100,
   isExternallyClaimedMonster:e=>!!e.claimed,currentPartyList:()=>['W'],sameEventTeamMember:()=>true,equip:()=>{throw Error('unexpected deployment');},rareFields:()=>[]});
- const names=['passiveStopRequired','passiveTravelInterruptible','travelStopCandidates','outboundHuntTravel','huntTravelDefense','huntTravelControl','huntTravelExtraAggro','returnDepartureDefense','committedHuntEncounter','passingKey','passingEncounterReport','isPassingEncounter','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
+ const names=['passiveStopRequired','passiveTravelInterruptible','travelStopCandidates','outboundHuntTravel','huntTravelDefense','huntTravelControl','huntTravelExtraAggro','returnDepartureDefense','committedHuntEncounter','passingKey','passingEncounterReport','isPassingEncounter','convoyDiagnosticClock','convoySignalExpired','passingTravelAllowed','passingTarget','beginPassingAttack','groupedEntityReport','monsterPriority','passiveRareCandidate','isPartyThreat','isAttackingPartyMember','rareAttackAllowed'];
  vm.runInContext(names.map(n=>namedFunction(source,n)).join('\n'),c);
  return {c,bee};
 }

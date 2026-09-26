@@ -16,6 +16,17 @@ function fixture() {
     send: (sample, data, extra = {}) => http.invoke('POST', '/party-api/dashboard-telemetry', {
       name: 'A', runtime: 'runtime1', ...stream.lease('A'), sample, sampledAt: now, data, ...extra }).response };
 }
+
+test('stand status follows heartbeat snapshot and live open/closed deltas',()=>{
+ const f=fixture();f.statuses.A.standOpen=true;
+ const client=f.connect();
+ assert.equal(messages(client.response)[0].characters.A.vitals.standOpen,true);
+ f.send(1,{vitals:{standOpen:false}});
+ assert.equal(messages(client.response).at(-1).characters.A.vitals.standOpen,false);
+ f.send(2,{vitals:{standOpen:true}});
+ assert.equal(messages(client.response).at(-1).characters.A.vitals.standOpen,true);
+ client.request.close();
+});
 const messages = response => response.chunks.map(chunk => JSON.parse(chunk.slice(6)));
 
 test('display countdown rounding includes nested timers without mutating samples or hiding other changes', () => {

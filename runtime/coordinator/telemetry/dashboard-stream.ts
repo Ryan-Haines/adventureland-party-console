@@ -22,6 +22,7 @@ export const liveFields = [
   "gold",
   "rip",
   "target",
+  "standOpen",
   "conditions",
   "inventorySize",
 ] as const;

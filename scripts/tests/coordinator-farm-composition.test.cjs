@@ -42,3 +42,15 @@ test('event ownership holds a pending Hunt relocation until the live owner relea
  assert.equal(state.monsterHunt.missions[0].destination,next);assert.equal(state.farmAreaState.pending,null);
  assert.equal(calls.some(call=>call[0]==='convoy'),false);
 });
+
+
+test('Hunt route recovery retains its spawn and budget instead of entering the farming retry owner',()=>{
+ const {state,api,calls,next,area,release}=fixture();release();
+ state.farmingPolicy='hunt';state.location=next;
+ state.monsterHunt={cycleId:'H',target:'rat',stage:'mission-travel',currentIndex:0,missions:[{target:'rat',destination:area}]};
+ state.activeConvoy={id:'relocation',purpose:'monster-hunt',phase:'failed',location:next,failure:'Native planning timed out',routeRecovery:{key:'original',stage:'relocation'}};
+ state.farmAreaState.pending={destination:next,revisions:{P:7},at:0,reason:'Travel failed'};
+ api.tick();assert.equal(state.monsterHunt.missions[0].destination,area);
+ assert.equal(calls.some(c=>['hunt','convoy','authorize'].includes(c[0])),false);
+ assert.equal(state.activeConvoy.id,'relocation');
+});

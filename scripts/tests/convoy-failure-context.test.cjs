@@ -6,7 +6,7 @@ function fixture(){
  const r=vm.createContext({Date:{now:()=>now},performance:{now:()=>mono},coordinatorClockOffset:100,convoyRuntimeId:'runtime-1',
  character:{map:'arena',x:-129,y:-208},root:{},game_log:message=>logs.push(message),
  convoySignal:{id:'convoy-1',epoch:7,commandId:9,runtimeId:'runtime-1',routeVersion:3,validUntil:6000}});
- for(const name of ['captureConvoyFailureContext','logConvoyFailureContext','convoyDiagnosticClock','rememberConvoyStatusRequest'])vm.runInContext(namedFunction(source,name),r);
+ for(const name of ['convoySignalExpired','captureConvoyFailureContext','logConvoyFailureContext','convoyDiagnosticClock','rememberConvoyStatusRequest'])vm.runInContext(namedFunction(source,name),r);
  const convoy={id:'convoy-1',epoch:7,commandId:9,phase:'travelling'},command={routeProtocol:4,routeVersion:3,location:{map:'arena',x:384,y:-420}};
  return {r,logs,convoy,command,time(wall,elapsed=wall){now=wall;mono=elapsed;},capture(){r.captureConvoyFailureContext(convoy,command);return convoy.failureContext;}};
 }

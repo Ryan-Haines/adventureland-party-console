@@ -13,6 +13,8 @@ interface SavedFarming extends HuntFailureState {
   phoenixPatrolActive?: unknown;
   phoenixPatrolCheckpoint?: import("./rare-types.ts").Checkpoint | null;
   rareHuntReturn?: unknown;
+  rarePursuitProgress?: import('./rare-types.ts').Party['rarePursuitProgress'];
+  rareRetryEvidence?: import('./rare-types.ts').Party['rareRetryEvidence'];
   farmAreaState?: FarmAreaState | null;
   huntBlacklist?: HuntTickState["huntBlacklist"] | null;
 }
@@ -30,6 +32,8 @@ export function initialFarmingState(saved: SavedFarming, now: () => number) {
     phoenixPatrolActive: !!saved.phoenixPatrolActive,
     phoenixPatrolCheckpoint: saved.phoenixPatrolCheckpoint || null,
     rareHuntReturn: saved.rareHuntReturn || null,
+    rareRetryEvidence: saved.rareRetryEvidence,
+    rarePursuitProgress: saved.rarePursuitProgress,
     farmAreaState: saved.farmAreaState || {},
     huntBlacklist: saved.huntBlacklist || {},
     monsterHunterLocation: null as ReturnLocation | null,

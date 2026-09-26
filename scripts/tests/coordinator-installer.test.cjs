@@ -32,6 +32,19 @@ for (const legacy of [false, true]) test(`installer replaces ${legacy ? 'legacy 
     assert.equal(await fs.readFile(path.join(target, 'game_files.js'), 'utf8'),
       'module.exports = require("../scripts/client-files.cjs");\n');
     const thread = await fs.readFile(path.join(target, files[0]), 'utf8');
+    const storage = new Map(), session = new Map();
+    const context = {JSDOM:require('../../.caracal/node_modules/jsdom').JSDOM,
+      html_spoof:'<!doctype html>',fetch:()=>{},node_query:()=>{},require,console,vm,
+      ipc_storage:{make_IPC_storage:ident=>ident==='ls'?storage:session}};
+    vm.runInNewContext(thread.slice(thread.indexOf('function make_context('), thread.indexOf('async function ev_files(')),context);
+    const game=context.make_context(),runner=context.make_context(game);
+    assert.equal(game.localStorage,storage);
+    assert.equal(runner.localStorage,game.localStorage);
+    runner.localStorage.set('party-production:M','running journal');
+    const replacement=context.make_context(context.make_context());
+    assert.equal(replacement.localStorage.get('party-production:M'),'running journal');
+    assert.equal(replacement.sessionStorage,session);
+    for(const window of [runner,game,replacement,replacement.parent])window.close();
     assert.ok(thread.includes('get_game_files(proc_args.version)'));
     assert.ok(thread.includes('get_runner_files(proc_args.version)'));
     assert.equal(thread.split('const originalInitSocket').length,2);

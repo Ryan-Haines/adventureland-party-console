@@ -16,6 +16,7 @@ export const role: Partial<Role> = {
   name: "warrior",
   combat: true,
   beforeTarget: async function () {
+    if (sharedRoutine.frankyCombatActive?.()) return false;
     return await sharedRoutine.emergencyWarriorStomp();
   },
   chooseTarget: function () {
@@ -29,6 +30,8 @@ export const role: Partial<Role> = {
     return partyTarget();
   },
   beforeAttack: async function (target) {
+    // Franky movement belongs solely to approach-and-hold, including scatter mode.
+    if (sharedRoutine.frankyCombatActive?.()) return false;
     if (target.mtype === "porcupine" && mayTaunt(target)) {
       await taunt(target);
       return true;

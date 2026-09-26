@@ -117,6 +117,7 @@ export function createHuntLifecycle(state: HuntLifecycleState, ports: HuntLifecy
   }
 
   function resume(hunt: HuntCycle): boolean {
+    delete hunt.routeRecovery; // Explicit user retry grants a fresh destination budget.
     ports.cancelConvoy();
     hunt.convoyId = null;
     const pickupStages = ["assigning", "at-daisy", "daisy-sync-travel"];

@@ -1,3 +1,4 @@
+import { transportTiming, measureStatusStage } from '../telemetry/transport-timing.ts';
 import {rememberCharacterAppearance, type AppearanceState} from "./character-appearance.ts";
 import { requestObject, type HttpRequest, type HttpResponse } from "../http/contracts.ts";
 import { createCombatIngestion, preserveNewerCombat } from "./combat-ingestion.ts";
@@ -67,29 +68,32 @@ export function createStatusIngestion<Report extends StatusReport>(
 
   function consume(body: Report): string[] {
     nativeOwnership(body);
-    ports.catalogs(body);
-    ports.ponty(body);
-    ports.bankVaults(body);
-    ports.bank(body);
+    measureStatusStage('catalogs', () => ports.catalogs(body));
+    measureStatusStage('ponty', () => ports.ponty(body));
+    measureStatusStage('bankVaults', () => ports.bankVaults(body));
+    measureStatusStage('bank', () => ports.bank(body));
     return ports.oneShots(body);
   }
 
   function combat(body: Report, previous: Report | undefined, learned: string[]): void {
-    ports.groupedCombat();
+    measureStatusStage('groupedCombat', () => ports.groupedCombat());
     ports.rareReport(body.name, state.statuses[body.name]!);
-    ports.rareTick();
+    measureStatusStage('rareTick', () => ports.rareTick());
     ports.bankboi(body);
-    ports.anniversary(body.name, state.statuses[body.name]!);
-    const before = ports.huntSnapshot();
-    ports.huntTick(previous, body.name);
-    ports.farmAreaTick();
-    if (before !== ports.huntSnapshot()) ports.persist();
+    measureStatusStage('anniversary', () => ports.anniversary(body.name, state.statuses[body.name]!));
+    const before = measureStatusStage('huntSnapshot', () => ports.huntSnapshot());
+    measureStatusStage('huntTick', () => ports.huntTick(previous, body.name));
+    measureStatusStage('farmAreaTick', () => ports.farmAreaTick());
+    if (before !== measureStatusStage('huntSnapshot', () => ports.huntSnapshot())) measureStatusStage('persist', () => ports.persist());
     ports.abtesting();
     ports.scatter(body, learned);
-    ports.events(body);
+    measureStatusStage('events', () => ports.events(body));
   }
 
   function handle(req: HttpRequest, res: HttpResponse): unknown {
+    const receivedAt = ports.now();
+    const sendJson = res.json.bind(res);
+    res.json = value => measureStatusStage('serialize-response', () => sendJson({...requestObject(value), transportTiming: transportTiming(receivedAt, ports.now())}));
     const raw = requestObject(req.body);
     if (typeof raw.name !== "string" || !ports.known(raw.name))
       return res.status(400).json({ error: "unknown character" });
@@ -97,18 +101,18 @@ export function createStatusIngestion<Report extends StatusReport>(
       return channel.handle(raw.name, raw, res);
     // Report fields are decoded by their domain consumer; unrecognized fields remain available to the dashboard.
     const body = raw as unknown as Report;
-    if (receiveLuckySlotTracking(state, raw.name, raw.luckySlotTracking)) ports.persist();
+    if (receiveLuckySlotTracking(state, raw.name, raw.luckySlotTracking)) measureStatusStage('persist', () => ports.persist());
     if (rememberCharacterAppearance(state, body, ports.now())) ports.persistRoster();
     const learned = consume(body);
     const previous = state.statuses[body.name];
     if (body.name === state.merchantCharacter) ports.merchant(body, previous);
-    state.statuses[body.name] = { ...preserveNewerCombat(body, previous), seenAt: ports.now() };
+    state.statuses[body.name] = preserveNewerCombat({ ...body, seenAt: receivedAt }, previous, receivedAt);
     combat(body, previous, learned);
     channel.flush();
-    ports.publishMarket(body.name);
-    if (ports.convoyStep()) ports.persist();
-    ports.merchantScheduling(body, !!previous);
-    return res.json(ports.response(body.name));
+    measureStatusStage('publishMarket', () => ports.publishMarket(body.name));
+    if (measureStatusStage('convoyStep', () => ports.convoyStep())) measureStatusStage('persist', () => ports.persist());
+    measureStatusStage('merchantScheduling', () => ports.merchantScheduling(body, !!previous));
+    return res.json(measureStatusStage('response', () => ports.response(body.name)));
   }
   return { handle };
 }

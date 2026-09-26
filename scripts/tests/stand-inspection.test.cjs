@@ -244,3 +244,12 @@ test('unconfigured occupied buys display terms without editable order controls',
  assert.ok(dialog.findAllByType('span').some(n=>n.children.join('')==='99 wanted'));
  await renderer.act(async()=>root.unmount());
 });
+
+test('missing stand observation is unknown rather than closed',async()=>{
+ let root;
+ await renderer.act(async()=>root=renderer.create(React.createElement(context.exports.StandSheet,{...props(),merchant:{slots:{}}})));
+ const dialog=root.root.findAllByType('DialogContent')[0];
+ assert.ok(dialog.findAllByType('span').some(node=>node.children.includes('Stand status unknown')));
+ assert.ok(!dialog.findAllByType('span').some(node=>node.children.includes('Stand closed')));
+ await renderer.act(async()=>root.unmount());
+});

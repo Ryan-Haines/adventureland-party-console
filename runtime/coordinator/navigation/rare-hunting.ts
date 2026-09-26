@@ -1,4 +1,6 @@
+import { refreshRareApproach } from './rare-progress.ts';
 import { migratePassiveSettings, applyPassivePatch, committedPassiveRules, validPassivePatch } from "./passive-settings.ts";
+import { interruptibleTravel } from '../../combat/hunt-travel.ts';
 import { createRareRetryEvidence } from './rare-retry-evidence.ts';
 // Rare encounters own temporary travel; the saved farming intent remains authoritative.
 import * as zones from "../../../dashboard/lib/farming-zones.ts";
@@ -74,8 +76,9 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
     serial = 0,
     lastMessage: string | null = null;
   const farmingReturn = createRareReturn(party, { ...hooks, realm });
-  const retryEvidence = createRareRetryEvidence();
+  const retryEvidence = createRareRetryEvidence(party.rareRetryEvidence ||= {});
   const combat = createRareCombat(party, members, realm);
+  for (const failed of Object.values(party.rareRetryEvidence)) combat.release(failed.sight, Number.MAX_SAFE_INTEGER, now());
   const diagnostics = new Map<string, number>();
   function diagnostic(message: string, detail: {id?: string; [key: string]: unknown}) {
     const id = message + ':' + (detail.id || '');
@@ -170,6 +173,7 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
       hooks.cancelConvoy();
   }
   function publish(message?: string) {
+    rememberPursuit();
     if (message) lastMessage = message;
     party.rareHuntState = {
       encounter: encounter && {
@@ -196,6 +200,16 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
       message: message || encounter?.message || patrol?.message || lastMessage,
     };
   }
+  function restorePursuit(e:Encounter):void {
+    const saved=party.rarePursuitProgress?.[key(e.target)];
+    if(saved)Object.assign(e,saved);
+    rememberPursuit();
+  }
+  function rememberPursuit():void {
+    if(!encounter)return;
+    const e=encounter, saved=party.rarePursuitProgress||={};
+    saved[key(e.target)]={start:e.start,progress:e.progress,lowHp:e.lowHp};
+  }
   function restore(e: Encounter, travel = true) {
     if(e.convoyId){party.rareHuntReturn=null;return;}
     if (!validIntent(e)) return;
@@ -220,10 +234,11 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
     if (!encounter) return;
     const e = encounter!;
     rejectUnproductive(e,killed,reason);
+    clearFinishedProgress(e,killed);
     encounter = null;
     cancelTravel();
-    const retryAt = now() + 3000;
-    if (!killed) cooldowns.set(key(e.target), retryAt);
+    const retryAt = retryDeadline(e);
+    if (!killed) cooldowns.set(key(e.target), now() + 3000);
     combat.release(e.target, retryAt, now());
     diagnostic('Rare pursuit ended', {id:e.target.id,reason,killed,retryAt});
     if (patrol && e.target.mtype === "phoenix" && killed) {
@@ -232,6 +247,12 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
     restore(e, travel);
     publish(reason);
     hooks.persist();
+  }
+  function retryDeadline(e:Encounter):number {
+    return party.rareRetryEvidence?.[key(e.target)] ? Number.MAX_SAFE_INTEGER : now()+3000;
+  }
+  function clearFinishedProgress(e:Encounter,killed:boolean):void {
+    if(killed || party.rareRetryEvidence?.[key(e.target)])delete party.rarePursuitProgress?.[key(e.target)];
   }
   function rejectUnproductive(e: Encounter, killed: boolean, reason: string): void {
     if (!killed && /selection released|no progress|time limit/i.test(reason)) retryEvidence.reject(key(e.target),e.target,leader());
@@ -271,6 +292,8 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
       y: r.y,
       hp: r.hp,
       target: r.target,
+      reachable: r.reachable === true,
+      partyEngaged: r.partyEngaged === true,
       map: status.map,
       in: instance(status),
       realm: realm(status),
@@ -339,20 +362,29 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
     const checkpoint=party.monsterHunt?.travelCheckpoint;
     if(checkpoint)checkpoint.interruption={at:now(),reason:'rare:'+target.mtype};
   }
-  function retainTravelConvoy(): string | undefined {
-    const id=party.activeConvoy?.huntTravel?.reason ? party.activeConvoy.id : undefined;
+  function retainTravelConvoy(target:Sight): string | undefined {
+    const id=party.activeConvoy && (interruptibleTravel(party.activeConvoy) || party.activeConvoy.huntTravel?.reason) ? party.activeConvoy.id : undefined;
     if(!id)hooks.cancelConvoy();
+    else commitTravelTarget(target);
     return id;
+  }
+  function commitTravelTarget(target:Sight):void {
+    const state=party.activeConvoy!.huntTravel ||= {primary:null,searches:{}};
+    const fight={...target,server:party.statuses[target.reporter]?.server||leader().server||'',fighter:target.reporter,startedAt:now(),state:'planned' as const};
+    state.committed=[...(state.committed||[]).filter(t=>key({...t,realm:target.realm})!==key(target)),fight];
+    state.primary ||= fight;
+    state.reason='passive-setting';
   }
   function retainRareReturn(e: Encounter): void {
     party.rareHuntReturn=e.convoyId ? null : {...capture(),returnLocation:e.returnLocation,hunt:!!e.hunt,cycleId:e.hunt?.cycleId};
   }
   function begin(target: Sight) {
+    hooks.reconcileHuntArrival?.();
     recordHuntInterruption(target);
     diagnostic('Rare sighting handed to combat', {id:target.id,mtype:target.mtype,reporter:target.reporter});
     const old = encounter;
     if (old) cooldowns.set(key(old.target), now() + 3000);
-    const convoyId=retainTravelConvoy();
+    const convoyId=retainTravelConvoy(target);
     if (patrol) patrol.progressPosition = undefined;
     encounter = {
       ...capture(),
@@ -370,6 +402,7 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
       hunt: old?.hunt ?? party.monsterHunt,
       message: `Pursuing ${passiveName(target.mtype)}`,
     };
+    restorePursuit(encounter);
     retainRareReturn(encounter);
     hooks.persist();
     party.partyFarmingMode = "default";
@@ -428,17 +461,27 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
     return !assist(s) && !!s.target && !members().includes(s.target);
   }
   function encounterExpired(e: Encounter): string | null {
-    if (combat.locked(e.target)) return null;
+    if (now()-e.lastSeen<=FRESH && e.target.target && members().includes(e.target.target)) return null;
     if (!e.engaged && (claimed(e.target) || outsideClaim(e.target) || now() - e.lastSeen > FRESH))
       return "Rare pursuit ended: claimed outside party or no fresh sightings";
-    if (combat.grouped() && combat.selected(e.target)) return null;
+    refreshRareApproach(e, members().map(n=>party.statuses[n]), now());
+    if(waitingForAttackers(e))e.progress=now();
     return timeExpired(e) ? "Rare pursuit ended: no progress or time limit" : null;
+  }
+  function waitingForAttackers(e:Encounter):boolean {
+    if(combat.selected(e.target))return false;
+    return members().some(n=>freshOtherAttacker(party.statuses[n],e));
+  }
+  function freshOtherAttacker(s:Status|undefined,e:Encounter):boolean {
+    const g=s?.groupedCombat;
+    if(!s || now()-s.seenAt>FRESH || !g?.currentAttackersAt || now()-g.currentAttackersAt>FRESH)return false;
+    return (g.currentAttackers||[]).some(t=>t.id!==e.target.id && t.map===s.map && members().includes(t.target));
   }
   function timeExpired(e: Encounter) {
     return (
       now() - e.lastSeen >= 30000 ||
       now() - e.start >= 300000 ||
-      (!!e.combatAt && now() - e.progress >= 30000)
+      now() - e.progress >= 30000
     );
   }
   function encounterVisible(e: Encounter) {
@@ -610,7 +653,7 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
     });
   }
   function expireObservations() {
-    for (const [k, s] of sightings) if (now() - s.seenAt > 30000) { sightings.delete(k); retryEvidence.remove(k); }
+    for (const [k, s] of sightings) if (now() - s.seenAt > 30000) sightings.delete(k);
     for (const [k, t] of cooldowns) if (t <= now()) cooldowns.delete(k);
     for (const [k, t] of kills) if (t <= now()) kills.delete(k);
   }
@@ -645,13 +688,24 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
   function eligible(s: Sight) {
     return (
       known(s.mtype) &&
-      retryEvidence.eligible(key(s),s,leader()) &&
+      retryEligible(s) &&
       committedCandidate(s) &&
       !cooldowns.has(key(s)) &&
       !kills.has(key(s)) &&
       !claimed(s) &&
       !!enabled(s)
     );
+  }
+  function retryEligible(s: Sight): boolean {
+    const rejected=!!party.rareRetryEvidence?.[key(s)];
+    const reachable=s.reachable===true && members().some(n=> {
+      const m=party.statuses[n];
+      return m && now()-m.seenAt<=FRESH && realm(m)===s.realm && instance(m)===s.in &&
+        distance(m,s)<=Number(m.range||0) && Number(m.range)>0;
+    });
+    if(!retryEvidence.eligible(key(s),s,leader(),reachable))return false;
+    if(rejected){combat.allow(s);hooks.persist();}
+    return true;
   }
   function committedCandidate(s: Sight): boolean {
     return !(party.passiveHunting?.rules[s.mtype]?.keepMoving && !(s.mtype === 'phoenix' && patrol));
@@ -750,7 +804,11 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
       .sort((a, b) => distance(leader(), a) - distance(leader(), b))[0];
     if (candidate) begin(candidate);
   }
+  function restoreRejections():void {
+    for(const failed of Object.values(party.rareRetryEvidence||{}))if(!combat.rejected(failed.sight))combat.release(failed.sight,Number.MAX_SAFE_INTEGER,now());
+  }
   function tick() {
+    restoreRejections();
     expireObservations();
     if ((encounter && !validIntent(encounter)) || (patrol && !validIntent(patrol))) {
       stop("Rare route superseded");

@@ -1,5 +1,4 @@
 import {recordHuntFailure} from "./settings.ts";
-import { legacyCompletionFailure } from '../navigation/communication-recovery.ts';
 import * as policy from "../../hunt/policy.ts";
 import type { HuntConvoy, HuntCycle, HuntTickPorts, HuntTickState } from "./contracts.ts";
 
@@ -17,9 +16,9 @@ function returnLeg(convoy: HuntConvoy): string {
 
 export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
   function preparationMessage(convoy: HuntConvoy): string {
-    if(convoy.returnTown?.walking)return '; walking out of '+convoy.returnTown.map+'; Town available again on the next map';
+    if(convoy.returnTown?.walking)return '; walking home while defending; Town resumes when aggro clears';
     const count=convoy.returnTown?.interruptions;
-    const town=count ? '; Town interrupted '+count+'/3 times on '+convoy.returnTown!.map : '';
+    const town=count ? '; Town interrupted '+count+' times on '+convoy.returnTown!.map : '';
     return town+(convoy.phase === 'shared-prepare' && convoy.preparationBlocker ? '; ' + convoy.preparationBlocker : '');
   }
   function cancelled(hunt: HuntCycle): boolean {
@@ -52,38 +51,6 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     return true;
   }
 
-  function retryBlocked(hunt: HuntCycle): boolean {
-    const convoy = state.activeConvoy!;
-    if (state.escape && state.escape.stage !== "released") return true;
-    return hunt.participants.some((name) => {
-      const command = state.commands[name];
-      return (
-        (command && command.convoyId !== convoy.id) ||
-        (convoy.expected?.[name] && convoy.expected[name].revision !== ports.intent(name).revision)
-      );
-    });
-  }
-
-  function retry(hunt: HuntCycle): boolean {
-    if (communicationBlocksRetry()) return false;
-    if (
-      !policy.retryReturn(hunt, state.activeConvoy, ports.now()) ||
-      !ports.fresh(hunt) ||
-      cancelled(hunt)
-    )
-      return false;
-    if (retryBlocked(hunt)) return true;
-    if(state.activeConvoy!.returnTown)hunt.returnTown=state.activeConvoy!.returnTown;
-    hunt.returnNativeFallback ||= !!state.activeConvoy!.nativeFallback;
-    hunt.returnRetries = (hunt.returnRetries || 0) + 1;
-    hunt.returnRetryAt = ports.now();
-    ports.cancelHuntConvoy();
-    hunt.convoyId = null;
-    ports.start(hunt, state.monsterHunterLocation, "Resuming Monster Hunt turn-in", "returning");
-    ports.persist();
-    return true;
-  }
-
   function returnMessage(hunt: HuntCycle): void {
     const convoy = state.activeConvoy;
     if (hunt.stage !== "returning" || !convoy) return;
@@ -93,10 +60,6 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     }
     describeReturn(hunt,convoy);
   }
-  function communicationBlocksRetry(): boolean {
-    const c = state.activeConvoy;
-    return !!c && (!!c.communicationHold || legacyCompletionFailure(c));
-  }
   function describeReturn(hunt: HuntCycle, convoy: HuntConvoy): void {
     if (convoy.geometryRepair?.phase === 'waiting') {
       hunt.message='Returning to Daisy: repairing shared-route geometry; waiting for one runtime reload';
@@ -105,7 +68,7 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     if (convoy.phase === "failed") {
       hunt.message =
         "Daisy return held" +
-        ((hunt.returnRetries || 0) >= 3 ? " after three retries" : "; awaiting recovery") +
+        "; request Retry return to resume" +
         ": " +
         convoy.failure;
     } else if (convoy.returnRouting) {
@@ -178,12 +141,14 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     const convoy=state.activeConvoy;
     if (convoy?.geometryRepair?.phase === 'waiting') return 'Repairing shared-route geometry; waiting for one runtime reload';
     if (convoy?.phase === 'failed') return 'Travel held: ' + convoy.failure;
+    if (convoy?.defenseReason) return convoy.defenseReason;
     return eventReturnMessage();
   }
   function eventReturnMessage(): string {
-    const recovery = state.eventReturn as { event?: string; pending?: string[] } | null;
+    const recovery = state.eventReturn as { event?: string; pending?: string[]; blocker?: string } | null;
     if (!recovery)
       return "Waiting for " + (state.activeConvoy?.purpose || "anniversary") + " travel to finish";
+    if (recovery.blocker) return recovery.blocker;
     const pending = recovery.pending?.length
       ? recovery.pending.join(", ") + " leaving event"
       : "waiting for farming-area arrival";
@@ -232,5 +197,5 @@ export function createHuntRecovery(state: HuntTickState, ports: HuntTickPorts) {
     }
     return true;
   }
-  return { failedReturn, reconcile, retry, returnMessage, deaths, pause, retreat };
+  return { failedReturn, reconcile, returnMessage, deaths, pause, retreat };
 }

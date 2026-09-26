@@ -315,6 +315,55 @@ function client(name,p,options={}){
  };
  return r;
 }
+
+test('an authorized Town return completes under its cancelled intent and restores parent commands',()=>{
+ const {p,c}=arrivedReturn();c.purpose='shared-walk-return';c.navigationExempt=true;
+ p.navigationIntents={};c.walkingParents={};
+ for(const name of c.participants){
+  const revision=p.commands[name].navigationRevision;
+  p.navigationIntents[name]={revision,cancelled:true};
+  c.walkingParents[name]={revision,parentId:100,command:{id:100,type:'town-party',cycleId:'town'}};
+ }
+ const {sharedArrivalReady}=require('../../runtime/coordinator/navigation/shared-route-store.ts');
+ assert.equal(sharedArrivalReady(p,1000),true);
+ p.navigationIntents.L.revision++;assert.equal(sharedArrivalReady(p,1000),false,'new navigation still wins');
+ p.navigationIntents.L.revision--;c.navigationExempt=false;assert.equal(sharedArrivalReady(p,1000),false);
+ c.navigationExempt=true;
+ const routes=require('../../runtime/coordinator/http/convoy-acknowledgements.ts').createConvoyAcknowledgementRoutes(p,
+  {now:()=>1000,owned:()=>true,valid:b=>legacy.validReport(p,b),persist(){}});
+ for(const name of c.participants){const cmd=p.commands[name];let response;
+  routes.complete({body:{character:name,convoyId:c.id,epoch:c.epoch,commandId:cmd.id,runtimeId:name,
+   navigationRevision:cmd.navigationRevision,routeVersion:c.routeVersion}},
+   {status(code){assert.equal(code,200);return this;},json(body){response=body;}});
+  assert.equal(response.ok,true);assert.equal(p.commands[name].type,'town-party');
+ }
+ assert.equal(p.activeConvoy,null);
+});
+
+for(const role of ['F','L'])for(const outcome of ['success','rejection','replacement'])
+test(role+' late route '+outcome+' cannot revive a communication hold',async()=>{
+ const p=party(),e=engine();e.step(p,1000);publishSharedRoute(p,publication(p),1000);
+ const r=client(role,p),original=r.context.request;let resolve,reject;
+ r.context.request=(url,options)=>
+  (role==='F'?url.startsWith('/convoy-route?'):url==='/convoy-route')
+   ?new Promise((yes,no)=>{resolve=yes;reject=no;}):original(url,options);
+ const running=await r.start(p.commands[role]);
+ for(let i=0;i<100&&!resolve;i++){r.tick();await settle();}
+ assert.ok(resolve,'route request must be in flight');
+ r.context.convoySignal.validUntil=999;r.setNow(5000);r.tick();await settle();await settle();
+ const held=r.context.convoyTraveling,plot=JSON.stringify(r.context.movement.state.plot);
+ assert.equal(held.phase,'communication-hold');assert.equal(held.routeReady,false);
+ if(outcome==='replacement')r.context.convoyTraveling={id:'replacement',phase:'held'};
+ if(outcome==='rejection')reject(Error('GET /convoy-route · HTTP 409 · http: stale route reader'));
+ else resolve({ok:true,route:copy(sharedRoute(p.activeConvoy))});
+ await settle();await settle();
+ assert.equal(held.phase,'communication-hold');assert.equal(held.routeReady,false);
+ assert.equal(held.failure,'Shared route coordinator signal expired');
+ assert.equal(JSON.stringify(r.context.movement.state.plot),plot);
+ assert.equal(r.calls.some(c=>c[0]==='request'&&c[1]==='/convoy-failed'),false);
+ if(outcome==='replacement')assert.equal(r.context.convoyTraveling.id,'replacement');
+ r.context.convoyTraveling=held;await r.cancel();await running.promise;
+});
 test('leader plans while follower is away; installation acknowledgements gate departure',()=>{
  const p=party(),e=engine();p.statuses.F.x=100;
  assert.equal(e.step(p,1000),true);assert.equal(p.activeConvoy.phase,'shared-prepare');
@@ -381,19 +430,19 @@ test('failure context changes only diagnostics, retaining the original failure a
   if(!enabled){r.context.captureConvoyFailureContext=()=>{};r.context.logConvoyFailureContext=()=>{};}
   const started=await r.start(p.commands.L);await r.ready();
   const phase=r.context.convoyTraveling.phase;
-  r.context.convoySignal.validUntil=999;r.setNow(5000);r.tick();await settle();await settle();
+  r.context.convoySignal.runtimeId='superseded-runtime';r.setNow(5000);r.tick();await settle();await settle();
   const failure=r.calls.find(c=>c[0]==='request'&&c[1]==='/convoy-failed');assert.ok(failure);
   assert.equal(failure[2].body.reason,'Shared route coordinator signal expired');
   assert.equal(failure[2].body.failureCode,'route-failed');
-  if(enabled){assert.equal(failure[2].body.details.failureContext.phase,phase);assert.equal(failure[2].body.details.failureContext.signal.state,'expired');assert.equal(logs.filter(m=>/^Convoy (context|signal):/.test(m)).length,2);}
+  if(enabled){assert.equal(failure[2].body.details.failureContext.phase,phase);assert.equal(failure[2].body.details.failureContext.signal.state,'identity mismatch');assert.equal(logs.filter(m=>/^Convoy (context|signal):/.test(m)).length,2);}
   await r.cancel();await started.promise;
   const body=copy(failure[2].body);delete body.details.failureContext;
   runs.push({body,requests:r.calls.filter(c=>c[0]==='request').map(c=>c[1]),moves:r.moves(),searches:r.searches});
  }
  assert.deepEqual(runs[1],runs[0]);
 });
-test('Hunt signal expiry stops the native route and reports a communication hold without failing movement',async()=>{
- const p=party(),e=engine();p.activeConvoy.purpose='monster-hunt';e.step(p,1000);
+for(const purpose of ['monster-hunt','shared-walk'])test(purpose+' signal expiry stops the native route and reports a communication hold without failing movement',async()=>{
+ const p=party(),e=engine();p.activeConvoy.purpose=purpose;e.step(p,1000);
  const r=client('L',p),started=await r.start(p.commands.L);await r.ready();
  r.context.convoySignal.validUntil=999;r.setNow(5000);r.tick();await settle();await settle();
  assert.equal(r.context.convoyTraveling.phase,'communication-hold');
@@ -415,9 +464,12 @@ test('paused leader retains the issued waypoint and regroups using native fallba
  const p=party(),e=engine();e.step(p,1000);const r=client('L',p,{nativeMovingFlag:true});
  const first=await r.start(p.commands.L);await r.ready();
  r.context.convoySignal={...r.context.convoySignal,phase:'scheduled',departAt:4000,validUntil:9000};r.tick();r.setNow(3950);
- r.tick();r.context.character.moving=false;
- r.context.move=async(x,y)=>{r.context.character.moving=true;r.context.character.going_x=x;r.context.character.going_y=y;};
- for(let i=0;i<6 && r.context.character.going_x!==120;i++){r.tick();await settle();}r.context.character.x=45;r.context.convoyTraveling.freezeRoute();
+ // Install the in-flight movement mock before departure can issue the real leg.
+ r.context.character.moving=false;
+ r.context.move=async(x,y)=>{r.context.character.moving=x===120;r.context.character.going_x=x;r.context.character.going_y=y;};
+ for(let i=0;i<20 && r.context.character.going_x!==120;i++){r.tick();await settle();}
+ assert.equal(r.context.character.going_x,120,'fixture must start the real walking leg before freezing');
+ r.context.character.x=45;r.context.convoyTraveling.freezeRoute();
  assert.equal(r.context.__partySharedRouteRemainder.plot[0].x,120);
  await r.cancel();await first.promise;r.context.character.moving=false;
  e.hold(p,'Shared route rejected: unwalkable segment');const now=Date.now();for(const n of ['L','F','P'])report(p,n,'held',now);
@@ -482,7 +534,7 @@ test('shared route transport preserves leave metadata and rejects conflicting fl
 });
 
 test('return preparation identifies missing acknowledgements and clears the reason after readiness',()=>{
- const p=party(),e=engine();p.activeConvoy.returnRouting=true;p.activeConvoy.continuousReturn=1;
+ const p=party(),e=engine();p.activeConvoy.returnRouting=true;p.activeConvoy.continuousReturn=1;for(const s of Object.values(p.statuses)){s.returnTownReady=true;s.groupedCombat={currentAttackersAt:1000,currentAttackers:[]};}
  e.step(p,1000);e.step(p,1001);assert.match(p.activeConvoy.preparationBlocker,/acknowledgement: L \(no local return handle\), F \(no local return handle\), P \(no local return handle\)/);
  for(const name of ['L','F','P'])report(p,name);
  e.step(p,1100);assert.match(p.activeConvoy.preparationBlocker,/L to publish/);
@@ -504,4 +556,63 @@ test('Hunt arrival requires the installed route endpoint, not just membership in
  p.statuses.F.x-=100;assert.equal(sharedArrivalReady(p,2000),false);
  Object.assign(p.statuses.F,destination);p.statuses.F.rip=true;assert.equal(sharedArrivalReady(p,2000),false);
  p.statuses.F.rip=false;p.statuses.F.seenAt=-2000;assert.equal(sharedArrivalReady(p,2000),false);
+});
+const fs=require('node:fs'),vm=require('node:vm');
+const {namedFunction}=require('./helpers/named-function.cjs');
+test('shared hold acknowledges held despite passive defense arriving while the route stops',async()=>{
+ const r=runtime(),c=r.context,source=fs.readFileSync('characters/shared.js','utf8');
+ vm.runInContext(namedFunction(source,'interruptConvoyForDefense'),c);
+ let releaseStop;const stop=c.movement.cancel;c.movement.cancel=()=>new Promise(resolve=>{releaseStop=resolve;});
+ const running=c.coordinatedMonsterTravel({...command,phase:'shared-hold',routeProtocol:4,purpose:'monster-hunt',huntTarget:'minimush',navigationRevision:c.navigationIntent.revision});
+ await settle();c.interruptConvoyForDefense(command.convoyId,command.epoch);
+ assert.equal(c.convoyTraveling.defensePaused,undefined);
+ c.movement.cancel=stop;releaseStop();await settle();await settle();
+ assert.equal(c.convoyTraveling.phase,'held');
+ c.interruptConvoyForDefense(command.convoyId,command.epoch);assert.equal(c.convoyTraveling.phase,'held');
+ await r.cancel();await running;
+});
+
+test('Daisy pickup recovers a missing follower completion with matching arrived reports',()=>{
+ const {p,e,c}=arrivedReturn();delete c.continuousReturn;c.returnRouting=false;
+ p.monsterHunt.stage='daisy-sync-travel';c.completed=['L','F'];
+ for(const name of c.completed){delete p.commands[name];p.statuses[name].convoyNavigation=null;}
+ e.step(p,1000);assert.equal(p.activeConvoy,c);
+ for(const status of Object.values(p.statuses))status.seenAt=4000;
+ report(p,'P','arrived',4000);e.step(p,4000);
+ assert.equal(p.activeConvoy,null);assert.equal(p.commands.P,undefined);
+ assert.equal(p.monsterHunt.stage,'daisy-sync-travel','Hunt tick owns pickup processing');
+});
+test('legacy per-leg Hunt return is not completed by final arrival recovery',()=>{
+ const {p,c}=arrivedReturn();delete c.continuousReturn;
+ const {reconcileReturnArrival}=require('../../runtime/coordinator/navigation/return-arrival.ts');
+ assert.equal(reconcileReturnArrival(p,c,1000),false);
+ for(const status of Object.values(p.statuses))status.seenAt=5000;
+ assert.equal(reconcileReturnArrival(p,c,5000),false);assert.equal(p.activeConvoy,c);
+});
+
+
+test('planning-origin drift regroups without spending the Hunt route budget',()=>{
+ const p=party(),e=engine();e.step(p,1000);const c=p.activeConvoy;
+ p.monsterHunt={cycleId:'H',stage:'mission-travel',missions:[{destination:c.location}],currentIndex:0};c.purpose='monster-hunt';c.sharedStartedAt=Date.now();
+ e.hold(p,'L: Leader moved from planning origin','route-failed');
+ assert.equal(c.phase,'shared-hold');assert.equal(c.recoveryAttempts,undefined);assert.equal(p.monsterHunt.routeRecovery,undefined);
+ c.phase='shared-prepare';e.hold(p,'Departure readiness timed out: Leader moved from planning origin','route-failed');
+ assert.equal(c.failureCode,'assembly-timeout');assert.equal(p.monsterHunt.routeRecovery,undefined);
+});
+
+for(const lostPhase of ['departure','completion'])test('native Town/transport survives lost '+lostPhase+' barrier response without duplicate transitions',async()=>{
+ const p=party(),e=engine();p.activeConvoy.location={map:'cave',x:120,y:0};e.step(p,1000);
+ const r=client('F',p);r.context.G.maps.main.doors=[[0,0,0,0,'cave',0,0]];
+ const body=publication(p);body.route.plot=[{map:'main',x:0,y:0,town:true},{map:'cave',x:0,y:0,transport:true,s:0},{map:'cave',x:120,y:0}];
+ body.route.geometry={version:16846,fingerprint:require('../../runtime/navigation/contracts.ts').geometryFingerprint(r.context.G)};
+ assert.equal(publishSharedRoute(p,body,1000),null);
+ const originalRequest=r.context.request;let lost=false;
+ r.context.request=async(url,options)=>{if(url==='/movement-barrier' && !lost && !!options.body.completed===(lostPhase==='completion')){lost=true;throw Object.assign(new Error('timeout'),{partyRequest:{path:url,kind:'timeout',status:0}});}return originalRequest(url,options);};
+ const start=await r.start(p.commands.F);r.context.convoySignal=e.signal(p,'F',1000);r.tick();await settle();
+ assert.equal(r.searches,0);assert.equal(r.calls.some(c=>c[0]==='transport'||c[0]==='use'),false);
+ r.context.convoySignal={...r.context.convoySignal,phase:'scheduled',departAt:4000,validUntil:9000};r.tick();r.setNow(3950);
+ for(let i=0;i<150;i++){r.tick();await new Promise(resolve=>setTimeout(resolve,10));}await start.promise;
+ assert.equal(lost,true);assert.equal(r.calls.filter(c=>c[0]==='use'&&c[1]==='town').length,1);assert.equal(r.calls.filter(c=>c[0]==='transport').length,1);
+ assert.ok(r.calls.some(c=>c[0]==='use'&&c[1]==='town'));assert.ok(r.calls.some(c=>c[0]==='transport'));
+ assert.equal(r.context.character.map,'cave');assert.equal(r.context.character.x,120);assert.equal(r.searches,0);
 });

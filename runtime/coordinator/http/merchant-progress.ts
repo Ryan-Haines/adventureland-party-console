@@ -1,3 +1,6 @@
+import { currentMerchantReport } from '../merchant/commerce-progress.ts';
+import { merchantJobReady } from '../merchant/priority.ts';
+import { routineEnabled } from '../merchant/routines.ts';
 import { offeringStock } from '../inventory/offering-stock.ts';
 import { merchantEventReserved, type MerchantEventState } from '../merchant/event-control.ts';
 import type { OfferingRulesState } from '../inventory/upgrade-offerings.ts';
@@ -23,6 +26,9 @@ interface ProgressState extends CraftReservationState, PickupState, OfferingRule
 }
 interface ProgressPorts {
   now(): number;
+  anniversaryReserved?(): boolean;
+  capacityBlocked?(job: MerchantWork): boolean;
+  collectionReady?(job: MerchantWork): boolean;
   priority(job: MerchantWork): number;
   routinePriority(mode: string): number;
   persist(): void;
@@ -56,7 +62,7 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
   function heartbeat(req: HttpRequest, res: HttpResponse): unknown {
     const body = requestObject(req.body),
       current = state.merchantCurrent;
-    if (!current || body.jobId !== current.id)
+    if (!currentMerchantReport(current, body))
       return res.status(409).json({ error: "merchant job is no longer current" });
     current.heartbeatAt = ports.now();
     const stage = operationStage(body.operationStage);
@@ -68,7 +74,10 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
   }
   function priorities(current: MerchantWork) {
     const currentPriority = ports.priority(current),
-      queuedPriority = state.merchantQueue.reduce(
+      queuedPriority = state.merchantQueue.filter(job => routineEnabled(job, state.merchantAutomations || {}) &&
+        merchantJobReady(job, {now: ports.now(), priority: candidate => ports.priority(candidate as MerchantWork),
+          capacityBlocked: candidate => ports.capacityBlocked?.(candidate as MerchantWork) || false,
+          collectionReady: candidate => ports.collectionReady?.(candidate as MerchantWork) !== false})).reduce(
         (highest, job) => Math.max(highest, ports.priority(job)),
         -1,
       );
@@ -92,6 +101,11 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
     delete paused.startedAt;
     delete paused.checkpointAt;
     delete paused.handoff;
+    delete paused.commandId;
+    delete paused.commandReport;
+    delete paused.heartbeatAt;
+    delete paused.progressAt;
+    paused.pauseReason = 'Waiting for higher-priority work or event';
     state.merchantQueue.push(ports.stamp(paused));
     delete state.commands[String(state.merchantCharacter)];
     state.merchantCurrent = null;
@@ -105,7 +119,7 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
   function checkpoint(req: HttpRequest, res: HttpResponse): unknown {
     const body = requestObject(req.body),
       current = state.merchantCurrent;
-    if (!current || body.jobId !== current.id)
+    if (!currentMerchantReport(current, body))
       return res.status(409).json({ error: "merchant job is no longer current" });
     if (body.protectionOnly === true) {
       if (current.itemMarksCleared) return res.status(409).json({ error: "Item marks cleared; refresh merchant work" });
@@ -113,16 +127,23 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
     }
     return checkpointWork(current, body, res);
   }
-  function checkpointWork(current: MerchantWork, body: Record<string, unknown>, res: HttpResponse): unknown {
-    const eventReserved = merchantEventReserved(state, ports.now());
-    if (body.eventOnly === true && !eventReserved) return res.json({ yield: false });
+  function reserved(): boolean {
+    return merchantEventReserved(state, ports.now()) || ports.anniversaryReserved?.() === true;
+  }
+  function saveProgress(current: MerchantWork, body: Record<string, unknown>): void {
     if (body.eventOnly !== true)
       current.resumeState = body.state && typeof body.state === "object" ? body.state : {};
+    if (body.movementSucceeded === true) current.movementRetryCount = 0;
+  }
+  function checkpointWork(current: MerchantWork, body: Record<string, unknown>, res: HttpResponse): unknown {
+    const eventReserved = reserved();
+    if (body.eventOnly === true && !eventReserved) return res.json({ yield: false });
+    saveProgress(current, body);
     current.phase = "checkpointed";
     current.checkpointAt = ports.now();
     current.progressAt = ports.now();
     const { currentPriority, waitingPriority, waitingType } = priorities(current);
-    if (!eventReserved && waitingPriority <= currentPriority) {
+    if (body.cycleBoundary === false || (!eventReserved && waitingPriority <= currentPriority)) {
       current.phase = "processing";
       delete current.checkpointAt;
       ports.persist();

@@ -1,3 +1,4 @@
+import { handoffAnniversaryToHunt } from './hunt-handoff.ts';
 import { createAnniversaryReturns } from "./returns.ts";
 import type { AnniversaryRecoveryPorts, AnniversaryRecoveryState } from "./return-contracts.ts";
 import { ownsWorkflowWalk } from "../events/walk-ownership.ts";
@@ -23,6 +24,7 @@ type CompositionPorts = Pick<
       names: string[],
     ) => boolean;
     reconcile: (cycle: Parameters<RecoveryPorts["reconcile"]>[0], purpose: string) => unknown;
+    finish?: (cycle: Parameters<RecoveryPorts["dispatch"]>[0], reason: string) => void;
   };
 };
 
@@ -53,9 +55,9 @@ export function createCoordinatorAnniversaryReturns(
       ports.persist();
     },
     townBusy: () => !!state.townCycle,
-    dispatch: (cycle, names) => ports.navigation.dispatch(cycle, "anniversary-return", names),
+    dispatch: (cycle, names) => handoffAnniversaryToHunt(state,cycle,ports) || ports.navigation.dispatch(cycle, "anniversary-return", names),
     capture: (names) => ports.navigation.capture(names),
-    reconcile: (cycle) => ports.navigation.reconcile(cycle, "anniversary-return"),
+    reconcile: (cycle) => handoffAnniversaryToHunt(state,cycle,ports) || ports.navigation.reconcile(cycle, "anniversary-return"),
     schedule: () => ports.schedule(),
   });
 }

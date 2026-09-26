@@ -1,6 +1,8 @@
 "use client";
 
 export type MerchantJob = {
+  pauseReason?: string;
+  retryAt?: number;
   operationStage?: 'retrieving' | 'processing' | 'storing';
   seller?: string;
   expectedItem?: { name?: string; level?: number };

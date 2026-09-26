@@ -125,7 +125,7 @@ function arrivalStatus(s: SharedState['statuses'][string], now: number): s is No
 function arrivalOwned(state: SharedState, c: SharedConvoy, name: string): boolean {
   const status = state.statuses[name]!, intent = state.navigationIntents?.[name];
   if (status.server !== c.routeServer || characterRuntime(status) !== c.runtimes?.[name]) return false;
-  return !intent || !intent.cancelled && intent.revision === c.expected?.[name]?.revision;
+  return !intent || (!intent.cancelled || !!c.navigationExempt) && intent.revision === c.expected?.[name]?.revision;
 }
 function arrivedPosition(c: SharedConvoy, status: import('./shared-route-types.ts').SharedStatus): boolean {
   if (c.purpose === 'monster-hunt' && !samePlace(c.location, status)) return false;

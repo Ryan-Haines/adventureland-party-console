@@ -1,11 +1,67 @@
 # Changelog
 
+- Fixed coordinator startup on oversized saved-state journals: stream records and compact by size without constructing one giant string. Preserve existing state and writer locks.
+
+- Unified Hunt turn-in and anniversary staging returns: attack aggressors while planning and walking, cancel interrupted party Town casts together, resume Town after aggro clears, and retain bounded route retries. Removed independent anniversary casting and return combat/loot stops.
+
 ## Unreleased
 
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
 ### Fixed
+
+- Long-running coordinators no longer retain complete character heartbeats in
+  rare-target rejection receipts. Existing receipts are compacted without losing
+  rejection evidence, and unchanged merchant queue checks avoid redundant saves.
+- Upgrade and compound jobs preserve unfinished work after movement communication
+  failures, retrying with persistent 10/30/60/300-second backoff.
+- Added `scripts/watch-console.ps1` to follow redirected local console logs in a
+  visible terminal, with `-Errors` for stderr.
+  ([#21](https://github.com/Ryan-Haines/adventureland-party-console/pull/21))
+
+- Franky attendance now targets only the Franky monster, approaches into attack
+  range, and holds position without kiting, formation movement, or warrior Dash.
+  Approaches ignore monster danger zones while respecting terrain. Adds cannot
+  become fallback or offensive-skill targets; healing and event recovery continue.
+- Buy-with-upgrade orders preserve confirmed purchases, upgrade results, budgets,
+  attempt limits, and reserved items through interruptions and restarts. Priority
+  work yields between completed item cycles; movement failures retain the order
+  with bounded retry delays and visible retry status.
+
+- Hunt route failures now use bounded segment repair, native fallback and origin
+  relocation before trying another spawn. Recovery budgets survive replacement
+  convoys and restarts, with explicit causes when movement remains held.
+- Convoy phase changes no longer send duplicate cruise caps. Movement diagnostics
+  identify command takeovers and retain the original planner failure.
+
+- Delivered equipment pauses and resumes convoy travel without replacing its
+  ownership; combat during merchant recovery no longer deadlocks the regroup hold.
+
+- Hunt pickup travel recovers a missing completion acknowledgement after verified
+  party arrival, preventing an idle party at Daisy from remaining in sync travel.
+
+- Joinable events such as Franky use direct teleportation for entry and respawn
+  recovery, without waiting for a convoy. Arrival is verified before clearing
+  recovery, and failed event walks no longer leave characters unable to attack.
+- Event combat closes into boss range before kiting. Avoiding adds no longer
+  pulls characters away from the boss; blocked kiting tries safe approach and
+  escape directions instead of leaving characters stuck in corners.
+  ([#21](https://github.com/Ryan-Haines/adventureland-party-console/pull/21))
+
+- Hunt event exits resume the current quest instead of an obsolete farming
+  checkpoint. Dedicated event-map evacuation survives restarts, delayed clients,
+  and Hunt toggles; completed anniversary visits hand back to current Hunt policy.
+- Hunt communication holds retain matching runtime and command acknowledgements
+  through defensive combat. Recovery reconciles dead and released encounters,
+  checks loot, and regroups toward the original destination.
+- Rare travel interruptions share convoy ownership. Fairy targeting no longer
+  depends on a detached support controller, and unsuccessful pursuits retain
+  their progress/retry evidence across restarts instead of reopening on wandering.
+- Members separated by a map transition can join a travel encounter under its
+  existing owner. Hunt reconciles verified arrival before optional acquisition,
+  and reports the encounter or specific catch-up blocker instead of stale status.
+  ([#21](https://github.com/Ryan-Haines/adventureland-party-console/pull/21))
 
 - Invisible rogue recipients reveal themselves for merchant servicing, then resume
   their normal invisibility behavior. ([#10](https://github.com/Ryan-Haines/adventureland-party-console/pull/10))
