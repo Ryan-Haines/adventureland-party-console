@@ -1,5 +1,5 @@
 import { requestObject } from '../http/contracts.ts';
-function communicationReason(text: string): boolean {
+export function communicationReason(text: string): boolean {
   const reason = text.replace(/^(?:[A-Za-z0-9_]+: )?(?:Error: )*/, '');
   return reason === 'Shared route coordinator signal expired' ||
     /^POST \/(?:movement-barrier|movement-plan) · (?:network|timeout)(?:$|:)/.test(reason);

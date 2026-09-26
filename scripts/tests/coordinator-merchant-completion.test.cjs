@@ -3,6 +3,23 @@ const {createMerchantCompletionRoute}=require('../../runtime/coordinator/http/me
 const {fixture,scenarios}=require('./helpers/coordinator-completion.cjs');
 const contracts=require('./fixtures/merchant-completion-contracts.json');
 const json=value=>JSON.parse(JSON.stringify(value));
+test('upgrade and compound communication failures preserve work with escalating durable delays',()=>{
+ const {createCompletionRetries}=require('../../runtime/coordinator/merchant/completion-retries.ts');
+ for(const reason of ['upgrades and compounds','manual upgrades','auto upgrade','manual compounds','auto compound']) {
+  const f=fixture({job:{reason}}),retries=createCompletionRetries(f.state,f.ports);
+  let job=f.state.merchantCurrent;
+  for(const delay of [10000,30000,60000,300000,300000]) {
+   const body={success:false,error:'POST /movement-plan · timeout'};
+   const decision=retries.decide(job,body);assert.equal(decision.retry,true);
+   retries.enqueue(job,decision);job=f.state.merchantQueue.shift();
+   assert.equal(job.retryAt,f.ports.now()+delay);
+   assert.equal(job.reason,reason);assert.equal(job.commandId,undefined);
+   job=JSON.parse(JSON.stringify(job));
+  }
+  assert.equal(retries.decide(job,{success:false,error:'Bank item unavailable'}).retry,false);
+  assert.equal(retries.decide(job,{success:true,error:'POST /movement-plan · timeout'}).retry,false);
+ }
+});
 test('transient lucky-slot input loss retries automatic upgrades without a capacity block',()=>{
  const f=fixture({job:{reason:'auto upgrade'}});
  createMerchantCompletionRoute(f.state,f.ports)({body:{jobId:'job',success:false,error:"Couldn't use lucky slot: item or scroll unavailable"}},f.response);

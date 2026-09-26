@@ -3,12 +3,22 @@ export interface Failed {
   sight: Sight;
   origin: Point;
 }
+function snapshot(sight: Sight, origin: Point): Failed {
+  // Callers pass complete heartbeat objects as Point. Never retain their inventory,
+  // catalogs, combat traces or other mutable runtime state in a rejection receipt.
+  return { sight: {id:sight.id, mtype:sight.mtype, map:sight.map, x:sight.x, y:sight.y,
+    hp:sight.hp, target:sight.target, realm:sight.realm, in:sight.in, seenAt:sight.seenAt,
+    reporter:sight.reporter, visible:sight.visible, partyEngaged:sight.partyEngaged,
+    reachable:sight.reachable}, origin: {map:origin.map, x:origin.x, y:origin.y} };
+}
 /** A fresh timestamp alone does not make an unchanged rejected encounter actionable. */
 export function createRareRetryEvidence(saved: Record<string, Failed> = {}) {
+  // Migrate existing receipts without clearing their rejection or retry evidence.
+  for (const [id, entry] of Object.entries(saved)) saved[id] = snapshot(entry.sight, entry.origin);
   const failed = new Map<string, Failed>(Object.entries(saved));
   return {
     reject(id: string, sight: Sight, origin: Point) {
-      saved[id] = { sight: { ...sight }, origin: { ...origin } };
+      saved[id] = snapshot(sight, origin);
       failed.set(id, saved[id]);
     },
     remove(id: string) {

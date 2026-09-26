@@ -11,6 +11,15 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Long-running coordinators no longer retain complete character heartbeats in
+  rare-target rejection receipts. Existing receipts are compacted without losing
+  rejection evidence, and unchanged merchant queue checks avoid redundant saves.
+- Upgrade and compound jobs preserve unfinished work after movement communication
+  failures, retrying with persistent 10/30/60/300-second backoff.
+- Added `scripts/watch-console.ps1` to follow redirected local console logs in a
+  visible terminal, with `-Errors` for stderr.
+  ([#21](https://github.com/Ryan-Haines/adventureland-party-console/pull/21))
+
 - Franky attendance now targets only the Franky monster, approaches into attack
   range, and holds position without kiting, formation movement, or warrior Dash.
   Approaches ignore monster danger zones while respecting terrain. Adds cannot

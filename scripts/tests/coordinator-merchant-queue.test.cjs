@@ -15,6 +15,18 @@ function fixture() {
     dispatch: () => effects.push('dispatch'), log: message => effects.push(message) };
   return {state, ports, effects, service: createMerchantQueue(state, ports)};
 }
+test('repeated heartbeat queue checks do not persist unchanged settings and still dispatch ready work',()=>{
+ const {state,service,effects}=fixture();
+ service.queue(['M'],'auto upgrade');
+ effects.length=0;
+ for(let i=0;i<100;i++)service.queue(['M'],'auto upgrade');
+ assert.equal(state.queue.length,1);
+ assert.equal(effects.filter(e=>e==='persist').length,0);
+ assert.equal(effects.filter(e=>e==='dispatch').length,100);
+ state.current=state.queue.shift();effects.length=0;
+ service.queue(['M'],'auto upgrade');service.queue([]);
+ assert.equal(effects.filter(e=>e==='persist').length,0);
+});
 
 test('saved deconstruction pickups become ordinary collection without dispatching immediately', () => {
   const {state, ports, effects} = fixture();

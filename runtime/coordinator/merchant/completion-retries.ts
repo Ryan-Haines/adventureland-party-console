@@ -1,5 +1,6 @@
 import { buyUpgradeOrder, commerceRouteFailure, commerceRetryDelay } from './commerce-progress.ts';
 import { requestText } from "../http/contracts.ts";
+import { communicationReason } from '../navigation/communication-failure.ts';
 import { failNpcSales } from "./npc-sales.ts";
 import type {
   CompletionState,
@@ -29,7 +30,8 @@ function classify(job: CompletionJob, body: CompletionReport): RetryDecision {
     anniversaryYield = failed && body.error === "merchant_anniversary_reserved";
   const interrupted = failed && (interruptedProduction(error, body.failureKind));
   const rendezvous = failed && retryRendezvous(job, error);
-  const realm = realmFailure(body), movement = commerceRouteFailure(job, body);
+  const realm = realmFailure(body), movement = commerceRouteFailure(job, body) ||
+    improvementCommunicationFailure(job, body);
   return {
     movement,
     realm,
@@ -39,6 +41,11 @@ function classify(job: CompletionJob, body: CompletionReport): RetryDecision {
     interruptedCommerce: interrupted && job.reason === "merchant commerce",
     retry: retryDecision(job, {movement, realm, storageYield, anniversaryYield, rendezvous}, interrupted),
   };
+}
+function improvementCommunicationFailure(job: CompletionJob, body: CompletionReport): boolean {
+  return !body.success &&
+    ['upgrades and compounds', 'manual upgrades', 'auto upgrade', 'manual compounds', 'auto compound'].includes(job.reason) &&
+    communicationReason(requestText(body.error || ''));
 }
 function realmFailure(body: CompletionReport): boolean {
   return !body.success && requestText(body.error || "").startsWith("merchant job failed: wrong realm");
@@ -62,7 +69,7 @@ function completionMessage(
   body: CompletionReport,
   decision: RetryDecision,
 ): string {
-  if (decision.movement) return "Merchant buy order queued for movement retry; progress preserved";
+  if (decision.movement) return "Merchant work queued for movement retry; progress preserved";
   if (decision.anniversaryYield) return "Merchant paused for anniversary; preserving job";
   if (decision.realm) return "Merchant target changed realm; preserving unfinished work";
   if (decision.rendezvous) return "Merchant rendezvous stalled; retrying in ten seconds";

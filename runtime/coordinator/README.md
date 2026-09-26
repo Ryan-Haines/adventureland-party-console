@@ -1,5 +1,24 @@
 # Character coordinator
 
+## Long-running coordinator responsiveness
+
+Rare rejection receipts explicitly project sighting and position fields. Startup
+normalizes older receipts that accidentally retained complete character heartbeats;
+rejection identities and material-change requirements remain intact. Repeated
+merchant queue checks persist only when adding/promoting work or releasing a
+resource block, while dispatch still checks delayed work on every call.
+
+Upgrade and compound communication failures preserve queued work with durable
+10/30/60/300-second movement backoff. Receipt processing precedes retry, and
+ordinary inventory errors retain their existing handling. Validate rare retry
+evidence, merchant queue/completion, commerce and convoy communication tests;
+activate with the supported coordinator-only restart. Verify reduced status-stage
+cost and actual merchant/Hunt advancement separately from build success.
+
+For redirected local launch logs, `scripts/watch-console.ps1` follows the newest
+`.build/*.stdout.log`; `-Errors` follows stderr. Run it in a visible PowerShell
+terminal. Closing the viewer does not stop the coordinator.
+
 ## Durable buy-with-upgrade orders
 
 Buy-with-upgrade saves confirmed purchases and upgrade results separately from
