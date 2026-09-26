@@ -34,6 +34,9 @@ export interface SharedCombat {
   getScatterBreakTarget: TargetGetter;
   getEngagedTarget: TargetGetter;
   getEventTarget: TargetGetter;
+  sharedTargetId?(): string | null;
+  frankyCombatActive?(): boolean;
+  frankyMovementTick?(target: Target | null): boolean;
   getScatterTarget: TargetGetter;
   getLeaderTarget: TargetGetter;
   getPreferredTarget: TargetGetter;

@@ -1,3 +1,4 @@
+import { currentMerchantReport } from '../merchant/commerce-progress.ts';
 import { createCompletionResults } from '../merchant/completion-results.ts';
 import { requestObject, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import { createMerchantCompletion } from "../merchant/completion.ts";
@@ -30,7 +31,7 @@ export function createMerchantCompletionRoute(state: CompletionState, ports: Com
     const body = requestObject(req.body),
       current = state.merchantCurrent;
     if (body.deliveryReceipt === true) return receipt(body, res);
-    if (!current || body.jobId !== current.id)
+    if (!currentMerchantReport(current, body))
       return res.status(409).json({ error: "merchant job is no longer current" });
     completion.complete(current, body as CompletionReport);
     return res.json({ ok: true });

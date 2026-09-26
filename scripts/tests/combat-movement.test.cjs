@@ -485,3 +485,37 @@ test('eligible passing and active attacks share priority without passing movemen
     r.c.partyRoleRunner.stop();
   }
 });
+
+for (const ctype of ['warrior','mage','priest','ranger','rogue','paladin','merchant'])
+test(ctype+' Franky attendance suppresses farming/passing targets and ordinary movement, including boss absence',async()=>{
+  const r=runner(ctype);await flush();
+  const boss={...r.target,id:'boss',mtype:'franky',hp:100};let visible=true,active=true,movement=0,follow=0,stomps=0,dashes=0;
+  r.c.get_entity=id=>id==='boss'?(visible?boss:null):r.target;
+  Object.assign(r.routine,{
+    frankyCombatActive:()=>active,frankyMovementTick:t=>{movement++;assert.equal(t,visible?boss:null);return true;},
+    merchantEventCombatActive:()=>true,getEventTarget:()=>visible?boss:null,
+    allowsTarget:t=>!active || t.mtype==='franky',getPassingTarget:()=>r.target,
+    monsterPriority:t=>t.id==='m'?100:0,getRareTarget:()=>r.target,
+    usesLeaderTarget:()=>true,getGroupedTarget:()=>r.target,sharedTargetId:()=>r.target.id,
+    getCloserHuntTarget:()=>r.target,getFarmingMode:()=> 'scatter',
+    followLeaderIfFar:async()=>{follow++;},pollRareHunting:()=>{throw Error('rare movement during Franky');},
+    formationMove:()=>{throw Error('formation during Franky');},
+    emergencyWarriorStomp:async()=>{stomps++;return false;},dashToward:async()=>{dashes++;return true;},
+    getNearestPartyAttacker:()=>null,regenerateHpOrMp:async()=>false,
+    isPartyHealthy:()=>true,isCurrentPartyTarget:()=>true,energizeLowestMana:async()=>false,
+  });
+  r.character.max_mp=100;r.character.mp=0;
+  r.c.attack=t=>{assert.equal(t.id,'boss');return new Promise(()=>{});};
+  try {
+    await r.run(250);await r.run(100);await r.run(50);
+    assert.equal(r.c.partyCombatState.selectedTarget,'boss');assert.equal(movement,1);
+    assert.equal(stomps,0);assert.equal(dashes,0);
+    visible=false;r.c.partyRoleRunner.wake();await flush();await r.run(100);await r.run(50);
+    assert.equal(r.c.partyCombatState.selectedTarget,null);assert.equal(movement,2);assert.equal(follow,0);
+    assert.equal(r.moves(),0);
+    let exitSelection=null;r.routine.setCombatTarget=t=>{exitSelection=t;};
+    r.routine.returnCombatActive=()=>true;r.routine.returnDefenseTarget=()=>r.target;
+    active=false;r.c.partyRoleRunner.wake();await flush();
+    assert.equal(exitSelection,r.target,'exit defense takes ownership');
+  } finally {r.c.partyRoleRunner.stop();}
+});

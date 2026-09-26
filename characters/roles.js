@@ -106,6 +106,7 @@
     name: "warrior",
     combat: true,
     beforeTarget: async function() {
+      if (sharedRoutine.frankyCombatActive?.()) return false;
       return await sharedRoutine.emergencyWarriorStomp();
     },
     chooseTarget: function() {
@@ -119,6 +120,7 @@
       return partyTarget();
     },
     beforeAttack: async function(target) {
+      if (sharedRoutine.frankyCombatActive?.()) return false;
       if (target.mtype === "porcupine" && mayTaunt(target)) {
         await taunt(target);
         return true;
@@ -1306,7 +1308,7 @@
       return result;
     }
     function authorized(w, t, id) {
-      if (returnTargetBlocked(t, id)) return false;
+      if (returnTargetBlocked(t, id) || frankySkillBlocked(id, [t])) return false;
       const type = w.skills[id]?.damage_type || "physical";
       if (id !== "taunt" && monsterAttackBlock(t.mtype, type, w.actor.range)) return false;
       if (!targetAuthorized(t, id)) return false;
@@ -1326,7 +1328,13 @@
       if (returnExcluded.has(d.skill)) return true;
       return !!world().skills[d.skill]?.hostile && d.targets.some((t) => !shared.returnAttacker?.(t));
     }
+    const frankyExcluded = /* @__PURE__ */ new Set(["agitate", "charge", "dash", "blink", "scare", "stomp", "cleave", "fanofknives"]);
+    function frankySkillBlocked(id, targets) {
+      if (!shared.frankyCombatActive?.()) return false;
+      return frankyExcluded.has(id) || !!world().skills[id]?.hostile && targets.some((t) => t.type !== "monster" || t.mtype !== "franky" || !shared.skillTargetAllowed?.(t));
+    }
     function castSkill(d) {
+      if (frankySkillBlocked(d.skill, d.targets)) return Promise.reject(new Error("Skill conflicts with Franky-only combat"));
       if (returnCastBlocked(d)) return Promise.reject(new Error("Skill conflicts with return movement or attacker-only policy"));
       const argument = d.argument ?? (d.targets.length > 1 || world().skills[d.skill]?.multi ? d.targets.map((t) => t.id) : d.targets[0]?.id || d.targets[0]?.name);
       return host.use_skill(d.skill, argument);
@@ -2584,6 +2592,7 @@
       return active && !character.rip && resolvedRole().combat && (character.ctype !== "merchant" || !!sharedRoutine.merchantEventCombatActive?.()) && !sharedRoutine.isOccupied() && ["pending", "feed"].indexOf(sharedRoutine.getAbtestingMode()) < 0;
     }
     function passingTarget() {
+      if (sharedRoutine.frankyCombatActive?.()) return null;
       if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending", "feed"].includes(sharedRoutine.getAbtestingMode())) return null;
       return sharedRoutine.getPassingTarget?.() || null;
     }
@@ -2622,16 +2631,20 @@
     }
     function chooseTarget() {
       if (sharedRoutine.returnCombatActive?.()) return sharedRoutine.returnDefenseTarget?.() || null;
+      if (sharedRoutine.frankyCombatActive?.()) return sharedRoutine.getEventTarget();
       if (character.ctype === "merchant") return resolvedRole().chooseTarget();
       if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget();
       const rare = sharedRoutine.getRareTarget?.();
       if (rare) return rare;
-      return sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : resolvedRole().chooseTarget();
+      return resolvedRole().chooseTarget();
+    }
+    function exclusiveCombat() {
+      return !!sharedRoutine.returnCombatActive?.() || !!sharedRoutine.frankyCombatActive?.();
     }
     async function publishSelection(target) {
-      selectedTarget = target?.id || !sharedRoutine.returnCombatActive?.() && sharedRoutine.sharedTargetId?.() || null;
+      selectedTarget = target?.id || !exclusiveCombat() && sharedRoutine.sharedTargetId?.() || null;
       sharedRoutine.setCombatTarget(target);
-      if (!target && !sharedRoutine.returnCombatActive?.() && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
+      if (!target && !exclusiveCombat() && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
         await sharedRoutine.followLeaderIfFar(150);
     }
     async function selectTarget() {
@@ -2643,7 +2656,7 @@
         return;
       }
       const current = currentTarget();
-      const closer = !sharedRoutine.returnCombatActive?.() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
+      const closer = !exclusiveCombat() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
       if (closer) {
         root.sharedRoutine?.resetCombatMovement?.();
         await publishSelection(closer);
@@ -2682,6 +2695,16 @@
       const target = sharedRoutine.equipmentTarget ? sharedRoutine.equipmentTarget() : currentTarget();
       equipment2?.tick(target, actor.damage_type, Number(character.range), combatAllowed());
     }
+    function frankyMovement() {
+      if (!sharedRoutine.frankyCombatActive?.()) return false;
+      if (selectedTarget && !currentTarget()) {
+        invalidated = true;
+        void selectTarget();
+      }
+      if (combatAllowed()) sharedRoutine.frankyMovementTick?.(currentTarget());
+      attacks.wake();
+      return true;
+    }
     function movementTick() {
       try {
         equipmentTick();
@@ -2690,6 +2713,7 @@
           attacks.wake();
           return;
         }
+        if (frankyMovement()) return;
         if (sharedRoutine.pollRareHunting?.()) return;
         if (sharedRoutine.pollFarmingCombatHandoff) sharedRoutine.pollFarmingCombatHandoff();
         if (sharedRoutine.pollFarmingSpawnRecovery) sharedRoutine.pollFarmingSpawnRecovery();

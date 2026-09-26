@@ -19,6 +19,8 @@ export interface CompletionJob extends RecoverableWork {
 export interface CompletionReport {
   pendingImprovedDeliveries?: DeliveryReceipt[];
   jobId?: string;
+  commandId?: number;
+  failureKind?: string;
   success?: unknown;
   error?: unknown;
   standSearchResults?: { itemId?: string; listings?: { item?: Item }[]; error?: unknown };

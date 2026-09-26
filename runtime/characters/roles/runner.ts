@@ -90,6 +90,7 @@ export function installRoleRunner(
     );
   }
   function passingTarget(): Target | null {
+    if (sharedRoutine.frankyCombatActive?.()) return null;
     if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending","feed"].includes(sharedRoutine.getAbtestingMode())) return null;
     return (sharedRoutine as any).getPassingTarget?.() || null;
   }
@@ -126,17 +127,20 @@ export function installRoleRunner(
   }
   function chooseTarget() {
     if(sharedRoutine.returnCombatActive?.())return sharedRoutine.returnDefenseTarget?.() || null;
+    if (sharedRoutine.frankyCombatActive?.()) return sharedRoutine.getEventTarget();
     if (character.ctype === "merchant") return resolvedRole().chooseTarget();
     if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget();
     const rare = sharedRoutine.getRareTarget?.();
     if (rare) return rare;
-    return sharedRoutine.usesLeaderTarget?.()
-      ? sharedRoutine.getGroupedTarget() : resolvedRole().chooseTarget();
+    return resolvedRole().chooseTarget();
+  }
+  function exclusiveCombat(): boolean {
+    return !!sharedRoutine.returnCombatActive?.() || !!sharedRoutine.frankyCombatActive?.();
   }
   async function publishSelection(target: Target | null): Promise<void> {
-    selectedTarget = target?.id || (!sharedRoutine.returnCombatActive?.() && (sharedRoutine as any).sharedTargetId?.()) || null;
+    selectedTarget = target?.id || (!exclusiveCombat() && sharedRoutine.sharedTargetId?.()) || null;
     sharedRoutine.setCombatTarget(target);
-    if (!target && !sharedRoutine.returnCombatActive?.() && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
+    if (!target && !exclusiveCombat() && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
       await sharedRoutine.followLeaderIfFar(150);
   }
   async function selectTarget() {
@@ -148,7 +152,7 @@ export function installRoleRunner(
       return;
     }
     const current = currentTarget();
-    const closer = !sharedRoutine.returnCombatActive?.() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
+    const closer = !exclusiveCombat() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
     if (closer) {
       root.sharedRoutine?.resetCombatMovement?.();
       await publishSelection(closer);
@@ -184,6 +188,13 @@ export function installRoleRunner(
     const target = sharedRoutine.equipmentTarget ? sharedRoutine.equipmentTarget() : currentTarget();
     equipment?.tick(target, actor.damage_type, Number(character.range), combatAllowed());
   }
+  function frankyMovement(): boolean {
+    if (!sharedRoutine.frankyCombatActive?.()) return false;
+    if (selectedTarget && !currentTarget()) { invalidated = true; void selectTarget(); }
+    if (combatAllowed()) sharedRoutine.frankyMovementTick?.(currentTarget());
+    attacks.wake();
+    return true;
+  }
   function movementTick() {
     try {
       equipmentTick();
@@ -192,6 +203,7 @@ export function installRoleRunner(
         attacks.wake();
         return;
       }
+      if (frankyMovement()) return;
       if (sharedRoutine.pollRareHunting?.()) return;
       if (sharedRoutine.pollFarmingCombatHandoff) sharedRoutine.pollFarmingCombatHandoff();
       if (sharedRoutine.pollFarmingSpawnRecovery) sharedRoutine.pollFarmingSpawnRecovery();

@@ -121,6 +121,7 @@ export function ownMerchantCommand(
     goldTarget: goldTarget(work, 0),
     order: job.order || null,
     resumeState: job.resumeState || null,
+    ...commerceDetails(job),
     preloadStatScrolls: work.statScrolls,
     ...(job.capacityRecovery ? { capacityRecovery: true, merchantWithdrawals: [], withdrawals: [], npcSales: [] } : {}),
   });
@@ -187,4 +188,8 @@ export function luckMerchantCommand(
     radius: 200,
     npcSales: [],
   };
+}
+
+function commerceDetails(job: MerchantWork) {
+  return job.commerceProgressVersion === 2 ? {commerceProgressVersion: 2, commerceOrderId: job.commerceOrderId} : {};
 }

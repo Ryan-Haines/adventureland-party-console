@@ -3905,11 +3905,20 @@
   async function verifyMerchantItemMarks() {
     var active = root.__merchantActiveJob;
     if (character.ctype !== "merchant" || !active || !active.jobId) return;
-    await request("/merchant/checkpoint", { method: "POST", body: { jobId: active.jobId, protectionOnly: true } });
+    await request("/merchant/checkpoint", { method: "POST", body: { jobId: active.jobId, commandId: active.commandId, protectionOnly: true } });
   }
 
   function productionJournalKey() { return "party-production:" + character.name; }
+  function rememberCommerceProduction(journal) {
+    if (!journal.commerce) return;
+    var progress = JSON.parse(root.localStorage.getItem(journal.commerce.key) || "null");
+    if (!progress || progress.sequence !== journal.commerce.sequence || !progress.pendingUpgrade) return;
+    progress.pendingUpgrade.outcome = {item: journal.outcomeItem || null};
+    progress.sequence += 1;
+    root.localStorage.setItem(journal.commerce.key, JSON.stringify(progress));
+  }
   async function finishProductionJournal(journal) {
+    if (journal.commerce) rememberCommerceProduction(journal);
     await request("/merchant/production", {method:"POST",body:{character:character.name,action:journal.request && journal.request.requestId && !journal.issued ? "abort-manual" : "complete",id:journal.id,success:journal.success}});
     root.localStorage.removeItem(productionJournalKey());
   }
@@ -3947,13 +3956,14 @@
       else if (!live || JSON.stringify(fingerprint(live)) === JSON.stringify(journal.item)) journal.success=false;
       else throw Error("Production outcome needs review before another attempt: " + journal.item.name);
     }
+    if (journal.commerce) journal.outcomeItem = fingerprint(character.items[journal.slots[0]]);
     journal.phase="complete";root.localStorage.setItem(productionJournalKey(),JSON.stringify(journal));
     await finishProductionJournal(journal);
   }
   async function verifyProductionProtection(slots) {
     var active = root.__merchantActiveJob;
     if (!active || !active.jobId) return;
-    var result = await request("/merchant/checkpoint", {method:"POST",body:{jobId:active.jobId,protectionOnly:true}});
+    var result = await request("/merchant/checkpoint", {method:"POST",body:{jobId:active.jobId,commandId:active.commandId,protectionOnly:true}});
     if (!result || !result.craftProtection || result.craftProtection.error) throw Error("Craft reservations unavailable; automatic production deferred");
     var entries=character.items.map(function(item,slot){return item ? {item:item,slot:slot,craftLocation:"inventory:"+character.name} : null;});
     var available=globalThis.partyAvailableCraftStock(entries,result.craftProtection);
@@ -3974,6 +3984,9 @@
     if (offeringAttempt && offeringAttempt.requestId) id="manual-offering:"+offeringAttempt.requestId;
     var body=Object.assign({character:character.name,id:id,kind:kind,item:item,automatic:automatic}, offeringAttempt || {});
     var journal={id:id,item:item,slots:slots,phase:"prepared",request:body};
+    var commerceJob = root.__merchantActiveJob;
+    if (kind === "upgrade" && commerceJob && commerceJob.commerceJournalKey)
+      journal.commerce = {key: commerceJob.commerceJournalKey, sequence: commerceJob.commerceSequence};
     root.localStorage.setItem(productionJournalKey(),JSON.stringify(journal));
     try {
       var admission = await request("/merchant/production",{method:"POST",body:body});
@@ -3999,6 +4012,7 @@
     var live=character.items[slots[0]];
     if (failure && /timed out|uncertain|interrupted|recovery/i.test(String(failure.message || failure))) throw failure;
     journal.success=!!live && live.name===item.name && (live.level || 0)===(item.level || 0)+1;
+    if (journal.commerce) journal.outcomeItem = fingerprint(character.items[journal.slots[0]]);
     journal.phase="complete";root.localStorage.setItem(productionJournalKey(),JSON.stringify(journal));
     await finishProductionJournal(journal);
     if (failure) throw failure;
@@ -4750,7 +4764,7 @@
     async function reservedForCrafting(slot) {
       var protection = command.craftProtection;
       if (command.jobId) {
-        var result = await request('/merchant/checkpoint', {method:'POST',body:{jobId:command.jobId,protectionOnly:true}});
+        var result = await request('/merchant/checkpoint', {method:'POST',body:{jobId:command.jobId,commandId:command.id || command.commandId,protectionOnly:true}});
         protection = result && result.craftProtection;
         if (!protection) throw Error('Craft reservations unavailable; bank deposit deferred');
       }
@@ -4862,7 +4876,7 @@
     if (!command.processingRoutine || command.operationStage === stage) return;
     command.operationStage = stage;
     await request("/merchant/heartbeat", { method: "POST", body: {
-      jobId: command.jobId, operationStage: stage,
+      jobId: command.jobId, commandId: command.id, operationStage: stage,
     } });
   }
 
@@ -4910,7 +4924,7 @@
   }
 
   async function upgradeOfferingCheckpoint(command) {
-    var result = await request("/merchant/checkpoint", {method:"POST",body:{jobId:command.jobId,protectionOnly:true}});
+    var result = await request("/merchant/checkpoint", {method:"POST",body:{jobId:command.jobId,commandId:command.id || command.commandId,protectionOnly:true}});
     if (!result || !result.craftProtection || result.craftProtection.error) throw Error("Offering reservations unavailable; upgrade deferred");
     return result;
   }
@@ -5194,7 +5208,7 @@
   }
 
   async function refreshCompoundProtection(command) {
-    var result = await request("/merchant/checkpoint", {method: "POST", body: {jobId: command.jobId, protectionOnly: true}});
+    var result = await request("/merchant/checkpoint", {method: "POST", body: {jobId: command.jobId, commandId: command.id || command.commandId, protectionOnly: true}});
     if (!result || !result.craftProtection) throw new Error("Craft reservations unavailable; auto compound deferred");
     command.craftProtection = result.craftProtection;
     if (Array.isArray(result.compoundRules)) {
@@ -6078,9 +6092,183 @@
     }
   }
 
+  function verifyCommerceResults(results) {
+    var used = new Set();
+    (results || []).forEach(function (result) {
+      var slot = result.slot;
+      if (used.has(slot) || !sameItem(character.items[slot], result.item))
+        slot = character.items.findIndex(function (item, index) { return !used.has(index) && sameItem(item, result.item); });
+      if (slot < 0) throw new Error("Owned upgrade result missing; order requires inventory review");
+      used.add(slot);
+      result.slot = slot;
+    });
+  }
+
+  // One durable item cycle. Progress saves never imply permission to yield.
+  async function merchantBuyUpgradeLine(command, purchase, buyIndex, services) {
+    var saved = command._commerceState || {}, target = Number(purchase.level), definition = G.items[purchase.id];
+    var sameLine = saved.phase === "leveling" && Number(saved.buyIndex) === buyIndex;
+    var progress = sameLine ? Object.assign({}, saved) : {
+      phase: "leveling", buyIndex: buyIndex, attempts: 0, spent: 0, completedResults: 0,
+      results: saved.results || [], activeItem: null, cycleActive: false,
+    };
+    progress.results = progress.results || [];
+    progress.attempts = Number(progress.attempts) || 0;
+    progress.spent = Number(progress.spent) || 0;
+    progress.completedResults = Number(progress.completedResults) || 0;
+    if (!progress.results.length && progress.completedResults) {
+      var legacyResults = character.items.map(function (item, slot) { return {item: item, slot: slot}; })
+        .filter(function (entry) { return entry.item && entry.item.name === purchase.id && Number(entry.item.level) === target; })
+        .slice(Number(progress.startingResults) || 0, (Number(progress.startingResults) || 0) + progress.completedResults);
+      progress.results = legacyResults.map(function (entry) { return {item: fingerprint(entry.item), slot: entry.slot, buyIndex: buyIndex}; });
+      if (progress.results.length !== progress.completedResults) throw new Error("Owned upgrade results missing; order requires inventory review");
+    }
+    verifyCommerceResults(progress.results);
+    // A legacy survivor already consumed an attempt before its checkpoint.
+    if (progress.activeItem) progress.cycleActive = true;
+    async function save(boundary) { await services.checkpoint(progress, boundary); }
+    function stock(name) {
+      return character.items.reduce(function (sum, item) { return sum + (item && item.name === name ? Number(item.q) || 1 : 0); }, 0);
+    }
+    function ownedSlot() {
+      if (!progress.activeItem) return -1;
+      var direct = character.items[progress.activeSlot];
+      if (direct && sameItem(direct, progress.activeItem)) return progress.activeSlot;
+      return findItem(progress.activeItem);
+    }
+    async function settlePurchase() {
+      var pending = progress.pendingPurchase;
+      if (!pending) return;
+      if (stock(pending.name) < pending.before + pending.quantity) {
+        await services.fund(pending.cost);
+        await services.move(itemSeller(pending.name));
+        await buyConfirmed(pending.name, pending.quantity);
+      }
+      if (pending.base) {
+        var slot = character.items.findIndex(function (item, index) {
+          return item && item.name === purchase.id && !(Number(item.level) || 0) &&
+            pending.beforeSlots[index] !== JSON.stringify(fingerprint(item));
+        });
+        if (slot < 0) throw new Error("Purchased upgrade item could not be identified");
+        progress.activeSlot = slot;
+        progress.activeItem = fingerprint(character.items[slot]);
+      }
+      delete progress.pendingPurchase;
+      await save(false);
+    }
+    async function purchaseStock(name, quantity, base) {
+      var cost = Number(G.items[name].g) * quantity;
+      if (Number.isFinite(Number(purchase.budget)) && progress.spent + cost > Number(purchase.budget))
+        throw new Error("90% estimated budget exhausted for " + purchase.id + " (spent " + progress.spent + " of " + purchase.budget + " gold)");
+      // Route and fund first: failed travel must not spend the order allowance.
+      await services.fund(cost);
+      await services.move(itemSeller(name));
+      progress.spent += cost;
+      progress.pendingPurchase = {name: name, quantity: quantity, cost: cost, before: stock(name), base: base,
+        beforeSlots: base ? character.items.map(function (item) { return JSON.stringify(fingerprint(item)); }) : []};
+      await save(false);
+      await settlePurchase();
+    }
+    async function settleUpgrade() {
+      var pending = progress.pendingUpgrade;
+      if (!pending) return;
+      // runMerchantJob settles the production/lucky-slot journals before entry.
+      var live = pending.outcome ? pending.outcome.item : character.items[progress.activeSlot];
+      if (pending.outcome && live) {
+        var receiptSlot = findItem(live);
+        if (receiptSlot < 0) throw new Error("Owned upgrade item missing; order requires inventory review");
+        progress.activeSlot = receiptSlot;
+      }
+      if (character.q && character.q.upgrade || live && live.name === 'placeholder') throw new Error("Commerce production is still settling");
+      if (!live) {
+        progress.activeItem = null;
+        progress.cycleActive = false;
+        await services.activity({level: "info", message: (definition.name || purchase.id) + " went poof upgrading to +" + pending.level});
+      } else if (live.name === purchase.id && (Number(live.level) || 0) === pending.level) {
+        progress.activeItem = fingerprint(live);
+      } else if (!sameItem(live, progress.activeItem)) {
+        throw new Error("Upgrade outcome needs review before resuming " + purchase.id);
+      }
+      delete progress.pendingUpgrade;
+      await save(false);
+    }
+    async function finishItem() {
+      var slot = ownedSlot(), item = character.items[slot];
+      if (!item || (Number(item.level) || 0) !== target) return false;
+      progress.results.push({slot: slot, item: fingerprint(item), buyIndex: buyIndex});
+      progress.completedResults += 1;
+      progress.activeItem = null;
+      progress.cycleActive = false;
+      delete progress.activeSlot;
+      await save(true);
+      return true;
+    }
+    await settlePurchase();
+    await settleUpgrade();
+    await finishItem();
+    while (progress.completedResults < purchase.quantity) {
+      if (!progress.cycleActive) {
+        await save(true);
+        var limit = Number(purchase.attempts || purchase.maxAttempts) || 10000;
+        if (progress.attempts >= limit)
+          throw new Error("90% attempt allowance exhausted for " + purchase.id + " after spending " + progress.spent + " of " + purchase.budget + " gold");
+        progress.attempts += 1;
+        progress.cycleActive = true;
+        await save(false);
+      }
+      if (!progress.activeItem) {
+        var plan = {};
+        for (var level = 0; level < target; level += 1) {
+          var name = "scroll" + item_grade({name: purchase.id, level: level});
+          plan[name] = (plan[name] || 0) + 1;
+        }
+        var cycleCost = Number(definition.g) || 0;
+        Object.keys(plan).forEach(function (name) { cycleCost += Math.max(0, plan[name] - stock(name)) * Number(G.items[name].g); });
+        if (Number.isFinite(Number(purchase.budget)) && progress.spent + cycleCost > Number(purchase.budget))
+          throw new Error("90% estimated budget exhausted for " + purchase.id + " (spent " + progress.spent + " of " + purchase.budget + " gold)");
+        await services.fund(cycleCost);
+        for (var scrollName of Object.keys(plan)) {
+          var missing = Math.max(0, plan[scrollName] - stock(scrollName));
+          if (missing) await purchaseStock(scrollName, missing, false);
+        }
+        await purchaseStock(purchase.id, 1, true);
+      }
+      var slot = ownedSlot();
+      if (slot < 0) throw new Error("Owned upgrade item missing; order requires inventory review");
+      progress.activeSlot = slot;
+      while (progress.activeItem && (Number(progress.activeItem.level) || 0) < target) {
+        var nextLevel = (Number(progress.activeItem.level) || 0) + 1;
+        var scroll = "scroll" + item_grade(progress.activeItem);
+        if (!stock(scroll)) await purchaseStock(scroll, 1, false);
+        await services.move("newupgrade");
+        progress.pendingUpgrade = {level: nextLevel};
+        await save(false);
+        try { await upgradeConfirmed(slot, findInventoryItemByName(scroll), purchase.id, nextLevel); }
+        catch (error) {
+          // A journal/transport failure is not a poof. Leave its evidence intact.
+          if (error.partyRequest || character.items[slot]) throw error;
+        }
+        await settleUpgrade();
+        if (!progress.activeItem) { await save(true); break; }
+      }
+      await finishItem();
+    }
+    await services.activity({level: "success", message: "Completed " + purchase.quantity + " × " + purchase.id + " at +" + target +
+      " for " + progress.spent + " / " + Number(purchase.budget || progress.spent) + " estimated gold"});
+    await services.checkpoint({phase: "leveling", buyIndex: buyIndex + 1, attempts: 0, spent: 0,
+      results: progress.results, activeItem: null, completedResults: 0}, true);
+  }
+
   async function merchantCommerce(command) {
     var activity = [], order = command.order || {}, buys = order.buys || [], crafts = order.crafts || [];
+    var journalKey = "party-commerce:" + (command.commerceOrderId || command.jobId);
     var resumeState = command.resumeState || {};
+    if (command.commerceProgressVersion === 2) {
+      var local = JSON.parse(root.localStorage.getItem(journalKey) || "null");
+      if (local && Number(local.sequence) > Number(resumeState.sequence || 0)) resumeState = local;
+    }
+    command._commerceState = resumeState;
+    if (root.__merchantActiveJob) root.__merchantActiveJob.commerceCycle = command.commerceProgressVersion === 2;
     var prepared = resumeState.phase === "leveling" || resumeState.phase === "crafting";
     // Craft ingredients must survive the bank errands that prepare this order.
     command.merchantBankMarked = (command.merchantBankMarked || []).filter(function (mark) {
@@ -6090,21 +6278,36 @@
       });
     });
     async function commerceMove(destination) {
+      if (command.commerceProgressVersion === 2 && (!root.__merchantActiveJob || root.__merchantActiveJob.commandId !== command.id)) throw new Error("interrupted");
+      var point = typeof destination === "string" ? find_npc(destination) : destination;
       // smart_move can remain pending when asked to path to an NPC whose
       // destination point we already occupy. Commerce revisits the scroll and
       // upgrade NPCs after every failed item, so treat interaction range as
       // arrival instead of starting another smart path.
-      if (destination && typeof destination === "object" &&
-          (!destination.map || destination.map === character.map) &&
-          Number.isFinite(Number(destination.x)) && Number.isFinite(Number(destination.y)) &&
-          Math.hypot(character.x - Number(destination.x), character.y - Number(destination.y)) <= 35)
+      if (point && typeof point === "object" &&
+          (!point.map || point.map === character.map) &&
+          Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)) &&
+          Math.hypot(character.x - Number(point.x), character.y - Number(point.y)) <= 35)
         return;
-      await smart_move(destination);
+      try { await smart_move(destination); }
+      catch (error) { error.commerceMovement = true; throw error; }
+      command._commerceMovementSucceeded = true;
     }
-    async function checkpoint(state) {
+    async function checkpoint(state, cycleBoundary) {
+      if (command.commerceProgressVersion === 2 && (!root.__merchantActiveJob || root.__merchantActiveJob.commandId !== command.id)) throw new Error("interrupted");
+      if (command.commerceProgressVersion === 2) {
+        if (!state.results) state.results = command._commerceState.results || [];
+        state.sequence = Math.max(Number(command._commerceState.sequence) || 0, Number(state.sequence) || 0) + 1;
+        command._commerceState = JSON.parse(JSON.stringify(state));
+        root.localStorage.setItem(journalKey, JSON.stringify(command._commerceState));
+        root.__merchantActiveJob.commerceJournalKey = journalKey;
+        root.__merchantActiveJob.commerceSequence = state.sequence;
+      }
       var result = await request("/merchant/checkpoint", { method: "POST", body: {
-        jobId: command.jobId, state: state,
+        jobId: command.jobId, commandId: command.id, state: state,
+        cycleBoundary: cycleBoundary, movementSucceeded: command._commerceMovementSucceeded === true,
       }});
+      command._commerceMovementSucceeded = false;
       if (root.__merchantActiveJob && root.__merchantActiveJob.jobId === command.jobId)
         root.__merchantActiveJob.progressAt = Date.now();
       if (result && result.yield) {
@@ -6126,6 +6329,7 @@
       } catch (_activityError) { /* Final job completion still persists the buffered entry. */ }
     }
     try {
+      if (command.commerceProgressVersion === 2) await checkpoint(resumeState, false);
       var sourceNames = prepared ? [] : Object.keys(order.sources || {});
       for (var sourceIndex = 0; sourceIndex < sourceNames.length; sourceIndex += 1) {
         var source = sourceNames[sourceIndex];
@@ -6273,7 +6477,7 @@
       for (var materialIndex = 0; materialIndex < materialBuys.length; materialIndex += 1) {
         var materialPurchase = materialBuys[materialIndex];
         var materialSeller = itemSeller(materialPurchase.id);
-        await commerceMove(find_npc(materialSeller));
+        await commerceMove(materialSeller);
         await buyConfirmed(materialPurchase.id, materialPurchase.quantity);
         activity.push({ level: "success", message: "Bought " + materialPurchase.quantity + " × " +
           materialPurchase.id + " for crafting" });
@@ -6289,7 +6493,11 @@
       }
       async function ensureCommerceGold(amount) {
         if (character.gold >= amount) return;
-        await merchantVisitBank(command, activity);
+        try { await merchantVisitBank(command, activity); }
+        catch (error) {
+          if (error.partyRequest && /movement-plan/.test(error.partyRequest.path || error.message) || /ALClient found no route/.test(error.message || "")) error.commerceMovement = true;
+          throw error;
+        }
         var shortage = amount - character.gold;
         if ((Number(character.bank && character.bank.gold) || 0) < shortage)
           throw new Error("Insufficient bank gold to finish automated item leveling");
@@ -6300,7 +6508,7 @@
         if (!seller) throw new Error("No gold seller found for " + itemId);
         chargePurchase(price);
         await ensureCommerceGold(price);
-        await commerceMove(find_npc(seller)); await buyConfirmed(itemId, 1);
+        await commerceMove(seller); await buyConfirmed(itemId, 1);
       }
       async function ensureScroll(scrollName) {
         var slot = findInventoryItemByName(scrollName);
@@ -6308,7 +6516,7 @@
         var price = G.items[scrollName] && G.items[scrollName].g || 0;
         chargePurchase(price);
         await ensureCommerceGold(price);
-        await commerceMove(find_npc("scrolls")); await buyConfirmed(scrollName, 1);
+        await commerceMove("scrolls"); await buyConfirmed(scrollName, 1);
         return findInventoryItemByName(scrollName);
       }
       async function ensureUpgradeScrollBatch(itemId, targetLevel, reserveGold) {
@@ -6324,7 +6532,7 @@
         // scroll batch so a failed attempt never causes a second cash run.
         await ensureCommerceGold(totalCost + (Number(reserveGold) || 0));
         if (!totalCost) return;
-        await commerceMove(find_npc("scrolls"));
+        await commerceMove("scrolls");
         for (var name of Object.keys(missing)) {
           if (missing[name]) await buyConfirmed(name, missing[name]);
         }
@@ -6345,9 +6553,14 @@
         activePurchase = purchase;
         activeSpent = resumeState.phase === "leveling" && buyIndex === Number(resumeState.buyIndex)
           ? Number(resumeState.spent) || 0 : 0;
+        if (command.commerceProgressVersion === 2 && targetLevel && definition.upgrade) {
+          await merchantBuyUpgradeLine(command, purchase, buyIndex, {checkpoint: checkpoint,
+            move: commerceMove, fund: ensureCommerceGold, activity: liveMerchantActivity});
+          continue;
+        }
         if (!targetLevel) {
           chargePurchase((definition.g || 0) * purchase.quantity);
-          await commerceMove(find_npc(itemSeller(purchase.id)));
+          await commerceMove(itemSeller(purchase.id));
           await buyConfirmed(purchase.id, purchase.quantity);
           activity.push({ level: "success", message: "Bought " + purchase.quantity + " × " + purchase.id });
           await checkpoint({ phase: "leveling", buyIndex: buyIndex + 1, attempts: 0, spent: 0 });
@@ -6394,7 +6607,7 @@
               await buyOne(purchase.id);
               itemSlot = levelSlots(purchase.id, 0).slice(-1)[0];
             }
-            await commerceMove(find_npc("newupgrade"));
+            await commerceMove("newupgrade");
             while (itemSlot !== undefined && character.items[itemSlot] && (character.items[itemSlot].level || 0) < targetLevel) {
               var attemptedFromLevel = Number(character.items[itemSlot].level) || 0;
               var attemptedToLevel = attemptedFromLevel + 1;
@@ -6441,7 +6654,7 @@
                 if (candidates.length < 3) continue;
                 var compoundScroll = "cscroll" + item_grade(character.items[candidates[0]]);
                 var compoundScrollSlot = await ensureScroll(compoundScroll);
-                await commerceMove(find_npc("newupgrade"));
+                await commerceMove("newupgrade");
                 try { await compoundConfirmed(candidates[0], candidates[1], candidates[2], compoundScrollSlot); }
                 catch (error) { activity.push({ level: "error", message: purchase.id + " compound attempt failed",
                   details: String(error.reason || error.message || error) }); }
@@ -6502,16 +6715,23 @@
         }
         activity.push({ level: "success", message: "Crafted " + craftLine.quantity + " × " + craftLine.id });
       }
+      if (command.commerceProgressVersion === 2) verifyCommerceResults(command._commerceState.results);
       await request("/merchant/complete", { method: "POST", body: {
-        jobId: command.jobId, success: true,
+        jobId: command.jobId, commandId: command.id, success: true,
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [], activity: activity,
       }});
+      if (command.commerceProgressVersion === 2) root.localStorage.removeItem(journalKey);
     } catch (error) {
       if (error && (error.reason === "merchant_yield" || error.message === "merchant_yield")) return;
-      activity.push({ level: "error", message: "Merchant order failed", details: String(error.reason || error.message || error) });
+      if (command.commerceProgressVersion === 2 && error.partyRequest && error.partyRequest.path === '/movement-plan') error.commerceMovement = true;
+      var commerceRecovery = command.commerceProgressVersion === 2 && (error.partyRequest ||
+        /Upgrade operation timed out|upgrade_result_not_confirmed|Commerce production is still settling|Production recovery waiting/.test(String(error.reason || error.message || error)));
+      var recoverable = error.commerceMovement || commerceRecovery || /^(interrupted|merchant_anniversary_reserved|bankboi_pending)$/.test(String(error.reason || error.message || error));
+      activity.push({ level: recoverable ? "info" : "error", message: recoverable ? "Merchant order paused; progress preserved" : "Merchant order failed", details: String(error.reason || error.message || error) });
       try { await request("/merchant/complete", { method: "POST", body: {
-        jobId: command.jobId, success: false, error: String(error.reason || error.message || error),
+        jobId: command.jobId, commandId: command.id, success: false,
+        failureKind: error.commerceMovement ? "commerce_movement" : commerceRecovery ? "commerce_recovery" : undefined, error: String(error.reason || error.message || error),
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [], activity: activity,
       }}); } catch (_completeError) { /* The job was already cleared. */ }
@@ -6713,20 +6933,20 @@
       catch (_stopError) { /* There may be no active smart path to cancel. */ }
       root.__merchantActiveJob = null;
     }
-    var token = { jobId: command.jobId, owner: merchantRuntimeId, startedAt: Date.now(),
+    var token = { jobId: command.jobId, commandId: command.id, owner: merchantRuntimeId, startedAt: Date.now(),
       lastHeartbeatAt: Date.now(), progressAt: Date.now(), label: label };
     root.__merchantActiveJob = token;
     async function heartbeat() {
       token.lastHeartbeatAt = Date.now();
       try { await request("/merchant/heartbeat", { method: "POST", body: {
-        jobId: command.jobId, progressAt: token.progressAt, operationStage: command.operationStage,
+        jobId: command.jobId, commandId: command.id, progressAt: token.progressAt, operationStage: command.operationStage,
       } }); }
       catch (_heartbeatError) { /* Completion or recovery already owns the terminal state. */ }
     }
     await heartbeat();
     var heartbeatTimer = setInterval(heartbeat, 5000), suspendedGathering = null, actionStarted = false;
     try {
-      if (["merchant-npc-sale", "merchant-deconstruct"].indexOf(command.type) >= 0) {
+      if (["merchant-npc-sale", "merchant-deconstruct", "merchant-commerce"].indexOf(command.type) >= 0) {
         suspendedGathering = gatheringMode;
         gatheringGeneration += 1; root.__merchantGatheringGeneration = gatheringGeneration;
         if (gatheringTimer) clearInterval(gatheringTimer);
@@ -6740,15 +6960,17 @@
           await new Promise(function (resolve) { setTimeout(resolve, 100); });
         }
       }
+      if (command.type === "merchant-commerce" && character.stand) await close_stand();
+      if (command.commerceProgressVersion === 2) await recoverProductionJournal();
       luckyUpgradeSlot = command.luckyUpgradeSlot;
       if (luckyUpgradeService && luckyUpgradeService.pending()) await luckyUpgradeService.recover();
       else if (character.ctype === "merchant" && root.localStorage.getItem("party-lucky-upgrade:" + character.name)) await merchantLuckyUpgrade().recover();
-      if (freeInventorySlots() > 0) await merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
+      if (command.commerceProgressVersion !== 2 && freeInventorySlots() > 0) await merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
       actionStarted = true;
       return await action();
     } catch (error) {
       if (!actionStarted) {
-        try { await request("/merchant/complete", {method:"POST",body:{jobId:command.jobId,success:false,
+        try { await request("/merchant/complete", {method:"POST",body:{jobId:command.jobId,commandId:command.id,success:false,
           error:String(error.reason || error.message || error)}}); } catch (_) {}
       }
       throw error;
@@ -7490,6 +7712,8 @@
         if (!root.__merchantActiveJob || root.__merchantActiveJob.jobId !== command.jobId) throw new Error("interrupted");
         var goldBefore = Number(character.gold) || 0;
         await verifyMerchantItemMarks();
+        try { await verifyProductionProtection([inventorySlot]); }
+        catch (reservationError) { blocked.push({id:mark.id,error:String(reservationError.message || reservationError)}); continue; }
         await sell(inventorySlot, quantity);
         resolved.push(mark.id);
         activity.push({ level: "success", message: "Sold " + quantity + " × " + mark.item.name +
@@ -9573,11 +9797,11 @@
 
   async function yieldMerchantForEvent() {
     var active = root.__merchantActiveJob;
-    if (!active || !merchantEventWorkReserved()) return;
+    if (!active || active.commerceCycle || !merchantEventWorkReserved()) return;
     // Settle journals before this boundary; do not admit another production
     // operation once event ownership has reserved the merchant.
     var result = await request("/merchant/checkpoint", { method: "POST", body: {
-      jobId: active.jobId, eventOnly: true,
+      jobId: active.jobId, commandId: active.commandId, eventOnly: true,
     } });
     if (result.yield) throw new Error("merchant_yield");
   }
@@ -10791,8 +11015,34 @@
     })[0] || null;
   }
 
+  // Attendance survives temporary loss of the boss/feed, but never owns an exit
+  // or a newer navigation command. Keep this policy shared by attacks and movement.
+  function frankyCombatActive() {
+    var mapped = G.maps && G.maps[character.map] && G.maps[character.map].event;
+    return eventSelected("franky") && (joinedEvent === "franky" || mapped === "franky") &&
+      !navigationIntent.cancelled && !escapeOwns() && !eventExitOwnsMovement() &&
+      !convoyTraveling && !townTraveling && !partyTownActive && !forceTraveling &&
+      !eventTraveling && !root.__partySharedWalking &&
+      !banking && !stocking && !upgrading && !anniversaryBusy && !anniversaryStaging;
+  }
+
+  function frankyTargetAllowed(target) {
+    return !!target && target.type === "monster" && target.mtype === "franky" &&
+      target.visible !== false && !target.dead && target.hp !== 0 &&
+      (!target.map || target.map === character.map) && (target.in == null || target.in === character.in);
+  }
+
   function nearestEventTarget() {
     if (joinedEvent && !eventSelected(joinedEvent) || travellingEventName && !eventSelected(travellingEventName)) return null;
+    if (typeof frankyCombatActive === "function" && frankyCombatActive()) {
+      var bosses = Object.values(parent.entities || {}).filter(frankyTargetAllowed);
+      var retained = bosses.find(function (target) { return target.id === combatTargetId; });
+      bosses.sort(function (a, b) {
+        return Math.hypot(a.x - character.x, a.y - character.y) -
+          Math.hypot(b.x - character.x, b.y - character.y) || String(a.id).localeCompare(String(b.id));
+      });
+      return retained || bosses[0] || null;
+    }
     if (isLiveAbtesting()) return nearestAbtestingOpponent();
     // Special/cooperative event bosses are not always returned by the normal
     // path-checked monster selector even when their live entity is visible.
@@ -11648,6 +11898,7 @@
   }
 
   async function dashToward(target) {
+    if (typeof frankyCombatActive === "function" && frankyCombatActive()) return false;
     if (typeof groupedFarming === "function" && groupedFarming() && formationMembers().some(function (member) { return member.ctype === "priest"; })) return false;
     if (character.ctype !== "warrior" || !target || character.max_mp <= 0 ||
         character.mp / character.max_mp < 0.5 || character.mp < G.skills.dash.mp ||
@@ -12318,6 +12569,8 @@
   function isAllowedTarget(target, huntTravelCommand, diagnostic) {
     if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
     function reject(reason) { if (diagnostic) diagnostic.reason = reason; return false; }
+    if (typeof frankyCombatActive === "function" && frankyCombatActive() && !frankyTargetAllowed(target))
+      return reject("Franky attendance only permits the Franky monster");
     var huntTravel = huntTravelCommand && huntTravelCommand.purpose === "monster-hunt" &&
       huntTravelCommand.combatHandoffAllowed === true && huntTravelCommand.huntTarget === (target && target.mtype);
     huntTravel = huntTravel || !!(huntTravelCommand && ['', 'party-travel', 'farm-relocation', 'manual-monster-override'].indexOf(huntTravelCommand.purpose || '')>=0 && huntTravelCommand.combatHandoffAllowed === true);
@@ -12331,6 +12584,7 @@
           return t.id===target.id && t.map===character.map && t.in===character.in && t.server===reunionRealm();
         }))) return reject("combat recovery owns target");
     if (typeof root !== "undefined" && root.partyRoleRunner && root.partyRoleRunner.isKnownDead && root.partyRoleRunner.isKnownDead(target.id)) return reject("confirmed death");
+    if (typeof frankyCombatActive === "function" && frankyCombatActive()) return true;
     if (target.mtype === "fieldgen0") return reject("excluded monster");
     // Acquisition nominates a new target; only actual combat requires the group selection lock.
     // An attack already pending or engaged must still finish before another hunt pull.
@@ -13999,6 +14253,7 @@
 
   var formationPerformance = { ticks: 0, totalMs: 0, maxMs: 0, candidates: 0, collisionChecks: 0 };
   function formationMove(target) {
+    if (typeof frankyCombatActive === "function" && frankyCombatActive()) return false;
     if(root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
     var context = [character.map, character.in, character.rip, joinedEvent, eventTraveling].join(":");
     if (formationState.mapContext !== context) {
@@ -14418,6 +14673,7 @@
     return best ? sendCombatMove(target, best, "event-kiting") : false;
   }
   async function kiteIfNeeded(target) {
+    if (typeof frankyCombatActive === "function" && frankyCombatActive()) return false;
     if(typeof returnCombatActive==='function' && returnCombatActive())return false;
     var attacker = target && target.target === character.name ? target : Object.keys(parent.entities || {})
       .map(function (id) { return parent.entities[id]; }).filter(function (enemy) {
@@ -14451,7 +14707,35 @@
     // collision-checked steps, retaining all secondary-attacker safeguards.
     return false;
   }
+  function frankyMovementTick(target) {
+    if (!frankyCombatActive()) return false;
+    if (!frankyTargetAllowed(target) || is_in_range(target)) {
+      resetCombatMovement();
+      root.partyCombatPosition = { at: Date.now(), mode: target ? "franky-holding" : "franky-waiting",
+        movementOwner: "combat", target: target && target.id || null,
+        reason: target ? "Franky is in attack range" : "Waiting for Franky" };
+      return true;
+    }
+    var destination = combatApproachPoint(target);
+    var dx = destination.x - character.x, dy = destination.y - character.y;
+    var step = Math.min(Math.hypot(dx, dy), Math.max(1, Number(character.speed || 40) * 0.6));
+    var angle = Math.atan2(dy, dx);
+    for (var offsets = [0, 0.4, -0.4, 0.8, -0.8], i = 0; i < offsets.length; i++) {
+      var point = { x: character.x + Math.cos(angle + offsets[i]) * step,
+        y: character.y + Math.sin(angle + offsets[i]) * step };
+      // Only terrain constrains this approach. Adds and healer coverage must not
+      // cause a retreat or prevent closing on Franky.
+      if (typeof can_move_to === "function" && can_move_to(point.x, point.y))
+        return sendCombatMove(target, point, "franky-approaching");
+    }
+    resetCombatMovement();
+    root.partyCombatPosition = { at: Date.now(), mode: "blocked", movementOwner: "combat",
+      target: target.id, reason: "No terrain-clear approach to Franky" };
+    return true;
+  }
+
   async function approachCombatTarget(target) {
+    if (typeof frankyCombatActive === "function" && frankyCombatActive()) return frankyMovementTick(target);
     if (!target || target.dead) return false;
     var delta = combatDistance(target) - desiredCombatRange();
     var tolerance = Math.min(3, Math.max(0.5, Number(character.range) * 0.01));
@@ -14857,6 +15141,7 @@
       if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
       if (!target || target.type !== "monster" || !isAllowedTarget(target) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
       if(huntTravelDefense() && !isAttackingPartyMember(target) && !(convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return false;
+      if (typeof frankyCombatActive === "function" && frankyCombatActive()) return frankyTargetAllowed(target);
       if (target.target && !isAttackingPartyMember(target)) return false;
       if (groupedAttackAllowed(target)) return true;
       return groupedFarming() && groupedFresh() && groupedCombat.committed &&
@@ -15044,6 +15329,8 @@
     isAttackingPartyMember: isAttackingPartyMember,
     allowsTarget: isAllowedTarget,
     getEventTarget: nearestEventTarget,
+    frankyCombatActive: frankyCombatActive,
+    frankyMovementTick: frankyMovementTick,
     isAggressiveEventCombat: isAggressiveEventCombat,
     getMonsterFocus: function () { return monsterFocus.slice(); },
     getFarmingMode: function () {

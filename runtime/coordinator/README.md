@@ -1,5 +1,22 @@
 # Character coordinator
 
+## Durable buy-with-upgrade orders
+
+Buy-with-upgrade saves confirmed purchases and upgrade results separately from
+scheduling boundaries. Normal priority and anniversary preemption happens after
+an item poofs or reaches its target, before another cycle. Dispatch IDs fence
+late reports; a stable commerce order ID links local progress to coordinator
+recovery across retries and restart. Budgets and attempt allowances never reset.
+Owned survivors and results remain reserved while queued. Named NPC destinations
+use the movement interaction offset. Movement failures preserve the order with
+10/30/60/300-second backoff; diagnostics retain the last error and next retry.
+
+Validate merchant-buy-cycle, merchant-crafting, merchant-npc-sales, merchant
+queue/recovery, production-journal, anniversary, and movement-service tests.
+Publish character and coordinator assets together using the supported full
+restart below. Verify fresh generations, stand departure, and a real cycle
+boundary yield/resume before claiming live behavior verified.
+
 ## Late route responses and independent merchant visits
 
 Shared route download/publication responses cannot reinstall movement or readiness

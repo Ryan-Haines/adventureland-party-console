@@ -36,7 +36,7 @@ const shared=fs.readFileSync('characters/shared.js','utf8');
 function saleRuntime(){
  const calls=[];const r=vm.createContext({root:{__merchantActiveJob:{jobId:'job'}},character:{items:[{name:'hpamulet',level:0},{name:'coat'}],gold:0},
  sameItem:(a,b)=>!!a&&a.name===b.name,findItem:item=>r.character.items.findIndex(i=>i&&i.name===item.name),
- find_npc:id=>id,smart_move:async()=>{},sell:async(slot,q)=>{calls.push([slot,q]);r.character.items[slot]=null;r.character.gold+=12000;},
+ verifyProductionProtection:async()=>{},find_npc:id=>id,smart_move:async()=>{},sell:async(slot,q)=>{calls.push([slot,q]);r.character.items[slot]=null;r.character.gold+=12000;},
  request:async(url,options)=>calls.push(options.body)});
  require('./helpers/client-dependencies.cjs').merchantGuards(r);
  vm.runInContext(shared.slice(shared.indexOf('  async function merchantNpcSale('),shared.indexOf('  async function merchantDonate(')),r);
@@ -88,4 +88,11 @@ test('NPC sale command stays available until completion so retry IDs survive sta
  const r=vm.createContext({command,party:{commands:{M:command}},body:{name:'M'}});
  vm.runInContext(coordinator.slice(start,end),r);
  assert.equal(r.party.commands.M,command);
+});
+
+test('a queued buy result cannot be sold by a later merchant routine',async()=>{
+ const {r,calls}=saleRuntime();r.verifyProductionProtection=async()=>{throw Error('Item reserved for queued order');};
+ await r.merchantNpcSale({jobId:'job',npcSales:[mark()]});
+ assert.equal(r.character.items[0].name,'hpamulet');assert.equal(calls.length,1);
+ assert.equal(calls[0].npcSalesBlocked[0].error,'Item reserved for queued order');
 });

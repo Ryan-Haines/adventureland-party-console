@@ -68,7 +68,7 @@ export interface QueueSelection {
   collectionReady(job: PrioritizedJob): boolean;
 }
 
-function ready(job: PrioritizedJob, policy: QueueSelection): boolean {
+export function merchantJobReady(job: PrioritizedJob, policy: QueueSelection): boolean {
   return (
     !job.realmBlockedReason &&
     Number(job.retryAt || 0) <= policy.now &&
@@ -96,7 +96,7 @@ export function selectMerchantJob(
 ): number | null {
   let selected: number | null = null;
   queue.forEach((job, index) => {
-    if (!ready(job, policy)) return;
+    if (!merchantJobReady(job, policy)) return;
     if (selected === null || precedes(job, queue[selected], policy)) selected = index;
   });
   return selected;

@@ -11,6 +11,15 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Franky attendance now targets only the Franky monster, approaches into attack
+  range, and holds position without kiting, formation movement, or warrior Dash.
+  Approaches ignore monster danger zones while respecting terrain. Adds cannot
+  become fallback or offensive-skill targets; healing and event recovery continue.
+- Buy-with-upgrade orders preserve confirmed purchases, upgrade results, budgets,
+  attempt limits, and reserved items through interruptions and restarts. Priority
+  work yields between completed item cycles; movement failures retain the order
+  with bounded retry delays and visible retry status.
+
 - Hunt route failures now use bounded segment repair, native fallback and origin
   relocation before trying another spawn. Recovery budgets survive replacement
   convoys and restarts, with explicit causes when movement remains held.

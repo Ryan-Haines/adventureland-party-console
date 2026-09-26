@@ -750,6 +750,12 @@ export function startCoordinatorApplication(
       location: marketplaceLocationRoute,
     } = coordinatorPolicies.createCoordinatorMerchantJobActions(party, {
       now: () => Date.now(),
+      capacityBlocked: merchantTransferCapacityBlocked,
+      collectionReady: markedCollectionReady,
+      anniversaryReserved: () => {
+        const control = merchantAnniversaryControl();
+        return control.featured || control.reserved || control.kissDue || control.busy;
+      },
       priority: merchantJobPriority,
       routinePriority: merchantRoutinePriority,
       persist: persistSettings,
