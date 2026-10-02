@@ -154,6 +154,13 @@ export function createTransferCommands(state: TransferState, ports: TransferPort
   }
   function withdraw(body: Request, name: string, item: Item): CommandOutcome {
     if (!validWithdrawal(body)) return undefined;
+    if (body.unmarkAll === true) {
+      const identity = ports.identity(item);
+      state.withdrawals[name] = (state.withdrawals[name] || []).filter(request =>
+        ports.identity(request.item) !== identity);
+      ports.persistBank();
+      return null;
+    }
     const invalid = validateUpgrade(body, name, item);
     if (invalid) return invalid;
     const pending = state.withdrawals[name] || [];
