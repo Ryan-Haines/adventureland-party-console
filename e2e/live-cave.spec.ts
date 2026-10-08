@@ -175,7 +175,37 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       },{timeout:60_000,message:'The actual UI waypoint request must receive fresh native acceptance'}).toBe(true);
     }finally{await info.attach('native-cave-waypoint-submission-ledger',{body:JSON.stringify(attempts),contentType:'application/json'});}
   };
-  await fullMap.getByRole('button', {name:'Add waypoint',exact:true}).click();
+  const activateWaypoint=async(expectedMap:string)=>{
+    const parts=expectedMap.split("_");
+    const expectedRun=parts[1],expectedFloor=Number(parts[2]);
+    const attempts:unknown[]=[];
+    const snapshot=()=>fullMap.evaluate(element=>({
+      adding:element.textContent?.includes('Click the map to place your waypoint.'),
+      disabled:Array.from(element.querySelectorAll('button')).find(button=>button.textContent?.trim()==='Add waypoint')?.disabled,
+      waiting:Array.from(element.querySelectorAll('output')).some(status=>status.textContent==='Waiting for fresh participant reports.'),
+    }));
+    try{
+      await expect.poll(async()=>{
+        const before=await snapshot();
+        if(before.adding)return true;
+        if(!before.disabled)await fullMap.getByRole('button',{name:'Add waypoint',exact:true}).click();
+        let observed=before;
+        await expect.poll(async()=>{
+          observed=await snapshot();
+          return observed.adding || observed.disabled&&observed.waiting;
+        },{timeout:10_000,message:'Add waypoint must activate placement or show its freshness hold'}).toBe(true);
+        attempts.push(observed);
+        if(observed.adding)return true;
+        expect(observed.disabled&&observed.waiting).toBe(true);
+        const view=await dungeon();
+        expect(view.state.phase).toBe('active');expect(view.state.run).toBe(expectedRun);
+        expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===expectedRun&&
+          m.observation.cave.floor===expectedFloor&&!m.observation.cave.paused)).toBe(true);
+        return false;
+      },{timeout:60_000,message:'Native map must visibly acknowledge waypoint placement mode'}).toBe(true);
+    }finally{await info.attach('native-cave-add-waypoint-activation',{body:JSON.stringify(attempts),contentType:'application/json'});}
+  };
+  await activateWaypoint(before.characters.E2EWarrior.map);
   const bounds=await (await page.request.get(live.url+'/party-api/maps/'+before.characters.E2EWarrior.map)).json();
   const mapBox=(await fullMap.locator('canvas').boundingBox())!;
   const fit=Math.min(mapBox.width/(bounds.max_x-bounds.min_x+100),mapBox.height/(bounds.max_y-bounds.min_y+100));
@@ -266,7 +296,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     const previous=(await dungeon()).state;
     const previousIds=new Set([previous.travel?.target?.id,...Object.values(previous.commands).map((c:any)=>c.target?.id)]);
     await controls.getByRole('button',{name:'View full map',exact:true}).click();
-    await fullMap.getByRole('button',{name:'Add waypoint',exact:true}).click();
+    await activateWaypoint(safe.target.map);
     const box=(await fullMap.locator('canvas').boundingBox())!;
     const scale=Math.min(box.width/(bounds.max_x-bounds.min_x+100),box.height/(bounds.max_y-bounds.min_y+100));
     await fullMap.locator('canvas').click({position:{x:box.width/2+(safe.target.x-(bounds.min_x+bounds.max_x)/2)*scale,y:box.height/2+(safe.target.y-(bounds.min_y+bounds.max_y)/2)*scale}});

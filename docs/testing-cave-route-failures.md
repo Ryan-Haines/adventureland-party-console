@@ -452,3 +452,14 @@ Failure modes: freshness must still disable submission, the waiting output
 must remain exclusive to a genuine report gap, fresh output must disappear,
 and reserving space must not relax native waypoint or collision margins.
 `pr64-map-status-layout-red.log` reproduced an 18-CSS-pixel canvas shift before the fix; the same observable freshness/selection case passes after reserving the status row (8.6 seconds, 14.5-second suite). Fresh/stale/recovered canvas geometry and existing action/status assertions remain intact.
+
+### Add-waypoint activation acknowledgement (2afa)
+
+The visible failed nomination (415,396) exactly equals the prior accepted
+waypoint (414.9565,395.5652). The canvas click therefore did not produce a new
+selection: Add waypoint can become freshness-disabled between Playwright's
+check and native click. Require the observable placement instruction before
+clicking terrain. Retry suppressed activation only with an atomic DOM snapshot
+showing Add disabled and the freshness waiting output; validate the same live
+run/floor/alive/unpaused identity. Never interpret an old nomination as new,
+broaden the validated margin, or retry unrelated disabled/error conditions.
