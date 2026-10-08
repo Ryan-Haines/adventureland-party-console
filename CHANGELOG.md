@@ -96,6 +96,8 @@ from the commits merged into `main`.
   with real collision-safe walking before checking assembly displacement.
   Stairs coverage observes native farewell acknowledgement separately from the
   owned route continuation and both characters' actual floor transition.
+  Manual Stop/resume uses a declared collision-safe native waypoint outside camp
+  aggro, then still requires both characters to reach the generated farm.
 - Native merchant checks allow bank travel before the injected lucky return fault,
   generated reward-box exchange chains, and the final recovery batch's two
   upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.

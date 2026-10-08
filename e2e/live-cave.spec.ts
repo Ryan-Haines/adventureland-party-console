@@ -113,11 +113,49 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   const wrongFloor=await page.request.post(live.url+'/party-api/daily-dungeons',{headers:{Origin:live.url},data:{action:'waypoint',operationId:crypto.randomUUID(),run:(await dungeon()).state.run,map:before.characters.E2EWarrior.map.replace(/_0$/,'_1'),x:432,y:384}});
   expect(wrongFloor.status()).toBe(409);
   expect((await wrongFloor.json()).error).toContain('different floor');
+  const safe=await live.admin(`output=(()=>{
+    const people=['E2EWarrior','E2EPriest'].map(n=>get_player(n)),p=people[0],run=generated_entry(p).record;
+    const rooms=run.cave.rooms.filter(r=>r.map===p.map&&['farm','patrol','fight','boss','darkmage'].includes(r.kind)).map(r=>({id:r.id,x:r.x,y:r.y}));
+    const enemies=Array.from(run.cave.actors).filter(a=>!a.dead&&a.map===p.map&&['enemy','predator'].includes(a.zone_actor?.side)).map(a=>({id:a.id,x:a.x,y:a.y}));
+    const clearance=(from,to,obstacles)=>{
+      let result=Infinity;
+      for(let j=0,n=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.y-from.y)/10));j<=n;j++)
+        for(const r of obstacles)result=Math.min(result,Math.hypot(from.x+(to.x-from.x)*j/n-r.x,from.y+(to.y-from.y)*j/n-r.y));
+      return result;
+    };
+    const walk=(from,to)=>can_move({map:p.map,x:from.x,y:from.y,going_x:to.x,going_y:to.y,base:p.base});
+    for(const distance of [320,260,200])for(let radius=0;radius<=200;radius+=20)for(let i=0;i<32;i++){
+      const a=i*Math.PI/16,origin={map:p.map,x:p.x+radius*Math.cos(a),y:p.y+radius*Math.sin(a)};
+      if(!people.every(actor=>walk(actor,origin)&&clearance(actor,origin,enemies)>=300))continue;
+      for(let k=0;k<32;k++){
+        const angle=k*Math.PI/16,target={map:p.map,x:origin.x+distance*Math.cos(angle),y:origin.y+distance*Math.sin(angle)};
+        const roomClearance=clearance(origin,target,rooms),enemyClearance=clearance(origin,target,enemies);
+        if(walk(origin,target)&&roomClearance>=410&&enemyClearance>=300)return {origin,target,distance,roomClearance,enemyClearance,rooms,enemies};
+      }
+    }
+    throw Error('No collision-safe noncombat native Stop/resume segment');
+  })()`);
+  await info.attach('declared-native-cave-manual-travel-segment',{body:JSON.stringify(safe),contentType:'application/json'});
+  await Promise.all(['E2EWarrior','E2EPriest'].map(async name=>{
+    await live.clients[name].frame.evaluate(({x,y})=>(window as any).move(x,y),safe.origin);
+    await expect.poll(async()=>{const s=await live.state();return Math.hypot(s.characters[name].x-safe.origin.x,s.characters[name].y-safe.origin.y);},{timeout:20_000}).toBeLessThan(5);
+  }));
+  await expect.poll(async()=>(await dungeon()).members.every((m:any)=>m.fresh&&m.observation.ready),{timeout:30_000}).toBe(true);
   const departure = await live.state();
   const cave = (await dungeon()).members[0].observation.cave;
-  const target = cave.points.find((p: any) => p.kind === 'farm' && !p.done && Math.hypot(p.x - departure.characters.E2EWarrior.x, p.y - departure.characters.E2EWarrior.y) > 150);
-  expect(target).toBeTruthy();
-  await controls.getByRole('button', { name: target.label, exact: true }).first().click();
+  const farm = cave.points.find((p:any)=>p.kind==='farm'&&!p.done);
+  expect(farm).toBeTruthy();
+  const selectWaypoint=async()=>{
+    await controls.getByRole('button',{name:'View full map',exact:true}).click();
+    await fullMap.getByRole('button',{name:'Add waypoint',exact:true}).click();
+    const box=(await fullMap.locator('canvas').boundingBox())!;
+    const scale=Math.min(box.width/(bounds.max_x-bounds.min_x+100),box.height/(bounds.max_y-bounds.min_y+100));
+    await fullMap.locator('canvas').click({position:{x:box.width/2+(safe.target.x-(bounds.min_x+bounds.max_x)/2)*scale,y:box.height/2+(safe.target.y-(bounds.min_y+bounds.max_y)/2)*scale}});
+    await fullMap.getByRole('button',{name:'Set waypoint',exact:true}).click();
+    await expect(fullMap).not.toBeVisible();
+  };
+  await selectWaypoint();
+  let target=(await dungeon()).state.travel.target;
   const waitForSelectedRoute = async (requireTravelling: boolean) => expect.poll(async () => {
     const view = await dungeon(), state = view.state;
     return (!requireTravelling || state.travel?.stage === 'travelling') && state.travel?.target?.id === target.id &&
@@ -148,7 +186,8 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
   await waitForStoppedTravel();
   await info.attach('native-cave-stopped-en-route', {body:JSON.stringify(await dungeon()), contentType:'application/json'});
-  await controls.getByRole('button', { name: target.label, exact: true }).first().click();
+  await selectWaypoint();
+  target=(await dungeon()).state.travel.target;
   // Defensive combat and real reassembly must finish before charging the
   // native route planner's preparation budget on this resumed selection.
   await expect.poll(async()=>{
@@ -176,6 +215,13 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   }, { timeout: 300_000, message: 'Both characters must reach the selected room, not merely move' }).toBeLessThan(70);
   } finally { await info.attach('native-cave-route-client-state',{body:JSON.stringify(lastNative),contentType:'application/json'}); }
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
+  await waitForStoppedTravel();
+  await controls.getByRole('button',{name:farm.label,exact:true}).first().click();
+  await expect.poll(async()=>{
+    const s=await live.state();
+    return Math.max(...['E2EWarrior','E2EPriest'].map(name=>Math.hypot(s.characters[name].x-farm.x,s.characters[name].y-farm.y)));
+  },{timeout:300_000,message:'Both characters must reach the original native farm after manual waypoint travel'}).toBeLessThan(70);
+  await controls.getByRole('button',{name:'Stop travel',exact:true}).click();
   await waitForStoppedTravel();
   await info.attach('native-cave-manual-travel', { body: JSON.stringify({ dungeon: await dungeon(), state: await live.state() }), contentType: 'application/json' });
   const second = (await dungeon()).members[0].observation.cave.points.find((p: any) => p.kind === 'boss' && !p.done);

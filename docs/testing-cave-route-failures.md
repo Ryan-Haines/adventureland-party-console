@@ -223,3 +223,18 @@ on reset/transition/stale endpoint, and preserve all projection/ownership/150-
 unit/three-second/exact-join/full-validation/repair-count bounds. Pre-code
 regressions cover pause between consumption and next dispatch, stale replacement,
 invalid next edge, and a transition successor.
+
+## Manual Stop/resume fixture avoids an active native farm
+
+CI a931 (37783695714) left serial 3 assembling for 300 seconds: the
+healthy Warrior waited at (475,614), while Priest fought successive native farm
+waves at (540,834), 229 units away. Neither issued the resumed owned move.
+This is the intentional all-ready defensive assembly guard, not a planner
+failure. The manual Stop check must use a declared native waypoint segment
+outside room aggro, then select the original farm and retain its real arrivals
+and combat. Failure modes: unsafe staging, crossing collision geometry or aggro,
+insufficient displacement, stale waypoint identity, and dropping farm coverage.
+Validate straight segments natively, sample combat-room clearance >=410 and
+live enemy clearance >=300, record geometry, use the actual map UI twice,
+and preserve displacement/cruise/Stop/owned preparation/both arrival checks.
+No generated rooms, enemies, combat outcomes, or runtime policies are modified.
