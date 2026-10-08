@@ -5,7 +5,7 @@ interface RealmRouteState {
   steamMembers: string[];
   realmSwitch: RealmOperation | null;
   bankboiTransaction: unknown;
-  statuses: Record<string, { seenAt: number; server?: string } | undefined>;
+  statuses: Record<string, { seenAt: number; server?: string; home?: string } | undefined>;
   commands: Record<string, unknown>;
 }
 interface RealmRoutePorts {
@@ -124,13 +124,21 @@ export function createRealmRoutes(state: RealmRouteState, ports: RealmRoutePorts
     operation.completedAt = ports.now();
     ports.persist();
   }
+  function observedHome(operation: RealmOperation, name: string): string | null {
+    // Native set_home acknowledges the live player before its periodic DB save.
+    // Accept only a fresh observation from this operation's destination realm.
+    const status = state.statuses[name];
+    const fresh = status && status.seenAt >= Math.max(operation.startedAt, ports.now() - 5000) &&
+      "SR_" + String(status.server || "").replace(/^SR_/, "") === operation.realm;
+    return fresh && status.home ? status.home : ports.characterHome(name);
+  }
   async function confirmHome(operation: RealmOperation, name: string, res: HttpResponse): Promise<unknown> {
     try {
       const deadline = ports.now() + 30_000;
       let confirmed = false;
       do {
         await ports.refresh();
-        const home = ports.characterHome(name);
+        const home = observedHome(operation, name);
         confirmed = !!home && "SR_" + home.replace(/^SR_/, "") === operation.realm;
         if (confirmed) break;
         await ports.sleep(500);

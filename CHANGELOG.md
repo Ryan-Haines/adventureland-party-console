@@ -18,7 +18,10 @@ from the commits merged into `main`.
   and return offline. Original assignments are preserved and temporarily paused
   headless workers reconnect. Mixed homes and per-character progress are visible;
   cooldowns and full native-session capacity produce explicit errors. Requests
-  refresh native home data before skipping already-matching characters (#52).
+  refresh native home data before skipping already-matching characters. Successful
+  native acknowledgements and fresh character status confirm changes while the
+  account database catches up; temporary merchants keep exclusive command
+  ownership until their home change and logout finish (#52).
 
 - Debug consoles can open and control their actual game browser through a private
   viewer on the same port, with Debug browser labels instead of Steam.

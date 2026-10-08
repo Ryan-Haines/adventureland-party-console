@@ -20,6 +20,7 @@ interface RealmStatus {
   seenAt: number;
   server?: string;
   ctype?: string;
+  home?: string;
 }
 interface RealmCommand {
   id: number;
@@ -105,7 +106,7 @@ export function createRealmSwitch(ports: RealmPorts) {
   function assignHomeExecutor(operation: RealmOperation): void {
     operation.homeExecutors = [...operation.participants];
     for (const executor of operation.homeExecutors) {
-      const home = ports.characterHome(executor);
+      const home = currentHome(executor, operation);
       if (home && "SR_" + home.replace(/^SR_/, "") === operation.realm) {
         const entry = operation.characters.find((character) => character.name === executor);
         if (entry) entry.homeConfirmed = true;
@@ -128,6 +129,13 @@ export function createRealmSwitch(ports: RealmPorts) {
       await ports.sleep(500);
     }
     throw new Error("Home realm confirmation timed out for " + names.join(", "));
+  }
+
+  function currentHome(name: string, operation: RealmOperation): string | null {
+    const status = ports.status(name);
+    const fresh = status && status.seenAt >= Math.max(operation.startedAt, ports.now() - 5000) &&
+      "SR_" + String(status.server || "").replace(/^SR_/, "") === operation.realm;
+    return fresh && status.home ? status.home : ports.characterHome(name);
   }
 
   async function withCleanup(work: () => Promise<void>, cleanup: () => Promise<void>): Promise<void> {
@@ -245,4 +253,9 @@ export function createRealmSwitch(ports: RealmPorts) {
   }
 
   return { run };
+}
+/** Temporary home visitors retain exclusive command ownership until cleanup. */
+export function realmOperationOwnsCharacter(operation: RealmOperation | null, name: string | null): boolean {
+  return !!operation && !!name && ["switching", "setting-home"].includes(operation.phase) &&
+    [...operation.participants, ...(operation.homeTargets || [])].includes(name);
 }

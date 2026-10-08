@@ -16,6 +16,7 @@ interface RosterStatus {
   seenAt: number;
   server?: string;
   ctype?: string;
+  home?: string;
 }
 interface RosterState {
   bankbois: Record<string, unknown>;
@@ -60,14 +61,22 @@ export function createRosterProjection(
         level: entry.level,
         id: entry.id,
         online: !!entry.online,
-        home: entry.home || null,
+        home: characterHome(entry.name),
         server: entry.server || null,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
+  function characterHome(name: string): string | null {
+    const character = owned(name);
+    if (!character) return null;
+    const status = state.statuses[name];
+    // The game updates connected homes immediately; account DB snapshots lag.
+    return status?.name === name && status.seenAt >= now() - 5000 && status.server && status.home
+      ? status.home : character.home || null;
+  }
   function homeRealm(): string | null {
     const homes = (account().characters || []).map((entry) =>
-      entry.home ? "SR_" + String(entry.home).replace(/^SR_/, "") : null,
+      characterHome(entry.name) ? "SR_" + String(characterHome(entry.name)).replace(/^SR_/, "") : null,
     );
     return homes.length && homes[0] && homes.every((home) => home === homes[0]) ? homes[0] : null;
   }
@@ -142,7 +151,7 @@ export function createRosterProjection(
       homeRealm: homeRealm(),
       homeCharacters: account().characters.map((character) => ({
         name: character.name,
-        home: character.home ? "SR_" + character.home.replace(/^SR_/, "") : null,
+        home: characterHome(character.name) ? "SR_" + String(characterHome(character.name)).replace(/^SR_/, "") : null,
       })),
       split: combatRealms.length > 1,
       characters: observations,
@@ -151,5 +160,5 @@ export function createRosterProjection(
       realms: realms(),
     };
   }
-  return { owned, roster, homeRealm, slots, participants, control };
+  return { owned, roster, homeRealm, characterHome, slots, participants, control };
 }

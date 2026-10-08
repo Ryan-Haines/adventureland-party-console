@@ -6,6 +6,7 @@ import { createUpgradePreviews } from './merchant/upgrade-preview.ts';
 import { merchantVisibility } from './merchant/visibility.ts';
 import { loadCoordinatorDependencies } from "./infrastructure/dependencies.ts";
 import * as coordinatorPolicies from "./index.ts";
+import { realmOperationOwnsCharacter } from "./characters/realm-switch.ts";
 import type { CatalogDefinitions } from './status/catalog-validation.ts';
 import type { WebMiddleware, WebRouter, WebMonitor } from "./infrastructure/web-platform.ts";
 import type { CoordinatorApplicationPlatform } from "./infrastructure/application-platform.ts";
@@ -1560,7 +1561,7 @@ export function startCoordinatorApplication(
     }
 
     function dispatchMerchant() {
-      if (consoleUpdate.current()) return;
+      if (consoleUpdate.current() || realmOwnsMerchant()) return;
       merchantRecovery.expire(String(party.merchantCharacter));
       if (coordinatorPolicies.pruneIneligibleCollections(party, () => Date.now())) persistSettings();
       merchantDispatcher.dispatch();
@@ -1579,8 +1580,12 @@ export function startCoordinatorApplication(
     }
 
     function dispatchMerchantIdle() {
-      if (consoleUpdate.current()) return;
+      if (consoleUpdate.current() || realmOwnsMerchant()) return;
       merchantIdle.idle();
+    }
+
+    function realmOwnsMerchant() {
+      return realmOperationOwnsCharacter(party.realmSwitch, party.merchantCharacter);
     }
 
     function activeNames() {
