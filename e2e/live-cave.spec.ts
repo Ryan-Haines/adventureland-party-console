@@ -4,7 +4,7 @@ const sharp: typeof import('../dashboard/node_modules/sharp') = createRequire(im
 test.use({ initialPosition: { map: 'main', x: 816, y: 1180 } });
 
 test('Cave entry closes settings, shows native choices and keeps follower maps and travel working', async ({ live, page }, info) => {
-  test.setTimeout(600_000);
+  test.setTimeout(900_000);
   page.setDefaultTimeout(20_000);
   await live.admin('Dev=true; Prod=false; G.events.dreams.disabled=false; output=true');
   // Bound encounter selection to native duels/gifts/shops; the six level-100
@@ -148,7 +148,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       }
       const state = await live.state();
       return Math.max(...['E2EWarrior','E2EPriest'].map(name => Math.hypot(state.characters[name].x-second.x,state.characters[name].y-second.y)));
-    }, {timeout:180_000,message:'Both characters must navigate to Lockbreaker'}).toBeLessThan(70);
+    }, {timeout:300_000,message:'Both characters must navigate to Lockbreaker'}).toBeLessThan(70);
     await info.attach('native-cave-lockbreaker-arrival',{body:JSON.stringify({dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
   }
   // Native encounter factory, bounded initial difficulty. Neither attacks,
@@ -201,7 +201,9 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     const current=v.state.travel?.target?.id || (Object.values(v.state.commands).find((c:any)=>c.action==='move') as any)?.target?.id;
     if(current!==required.id)await controls.getByRole('button',{name:required.label,exact:true}).click();
     return false;
-  },{timeout:180_000,message:'Required rooms must finish through native combat and votes'}).toBe(true);
+  // Random floors can require several long trips with native combat along the
+  // corridors. Allow the final vote's acknowledged result to reach telemetry.
+  },{timeout:300_000,message:'Required rooms must finish through native combat and votes'}).toBe(true);
   const stairs=(await dungeon()).members[0].observation.cave.points.find((p:any)=>p.down);
   expect(stairs.locked).toBe(false);
   await live.admin(`output=(()=>{
@@ -280,6 +282,9 @@ test('Cave shared-route pacing keeps the party together and stops the selected r
     return !!w.__partyMovement.state.moving;
   }),{timeout:10_000}).toBe(false);
   await page.goto(live.url);
+  // Walking can reveal a fresh encounter even after travel is stopped. Its
+  // native modal correctly hides background controls until the party answers.
+  await reply(await view());
   await expect(page.getByRole('region',{name:'Cave of Many Dreams controls'})).toBeVisible();
   await info.attach('native-cave-stopped-pacing',{body:await page.getByRole('region',{name:'Cave of Many Dreams controls'}).screenshot(),contentType:'image/png'});
 });

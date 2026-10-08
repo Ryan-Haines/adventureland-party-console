@@ -71,6 +71,19 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Rare encounters remain owned while waiting in the combat queue behind an
+  existing party fight. Tiny P field deployment can finish and combat resumes
+  without falsely rejecting the rare when it temporarily loses the queue head.
+
+- Cave followers validate and reuse the leader's route without duplicate native
+  pathfinding. Large Cave floors allow a bounded 90-second leader search and
+  120-second follower wait; ordinary navigation retains its 30-second limit.
+  Native pacing checks resolve newly revealed encounter votes first; room-completion
+  checks allow cumulative native travel and combat before the final farewell vote.
+- Allow the native merchant skill and recovery E2E enough time for four bank/NPC
+  journeys and a real companion reconnect, preserving individual job deadlines.
+- Allow the native BooBoo reward check to finish return travel and the stable
+  arrival confirmation before requiring the exact Hunt token reward.
 - Native headless E2Es load the server's complete client script manifest and
   retry transient asset-read failures with bounded timeouts. Evidence collection
   is bounded, and teardown closes the isolated gateway and coordinator even
