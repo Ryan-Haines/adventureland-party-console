@@ -104,6 +104,17 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   const target = cave.points.find((p: any) => p.kind === 'farm' && !p.done && Math.hypot(p.x - departure.characters.E2EWarrior.x, p.y - departure.characters.E2EWarrior.y) > 150);
   expect(target).toBeTruthy();
   await controls.getByRole('button', { name: target.label, exact: true }).first().click();
+  await expect.poll(async () => {
+    const view = await dungeon(), state = view.state;
+    return state.travel?.stage === 'travelling' && state.travel.target?.id === target.id &&
+      state.run === cave.run && ['E2EWarrior', 'E2EPriest'].every(name => {
+        const observation = view.members.find((member: any) => member.name === name)?.observation;
+        const command = state.commands[name];
+        return command?.target?.id === target.id && command.run === cave.run &&
+          observation?.cave?.run === cave.run && observation.cave.floor === cave.floor &&
+          observation.travel?.id === command.id && observation.travel.prepared === true;
+      });
+  }, { timeout: 120_000, message: 'The selected native Cave route must prepare for both owned commands' }).toBe(true);
   let lastNative: unknown;
   await expect.poll(async () => {
     const state = await live.state();

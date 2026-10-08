@@ -71,6 +71,19 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Native Cave cruise checks wait for the selected owned route to prepare before
+  applying the motion deadline, preserving displacement and native cruise checks.
+- Native merchant checks allow bank travel before the injected lucky return fault,
+  generated reward-box exchange chains, and the final recovery batch's two
+  upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.
+- Hunt travel preserves pending loot through temporary communication and
+  observation holds, suspends collection until defense resumes, and retries
+  native chest-opening errors so the original Hunt can finish and claim rewards.
+
+- Native passing-combat validation seeds encounters at the existing reservation
+  lookahead limit, allowing peer admission before the walking party passes them.
+  Both outbound and return native kill and Daisy reward checks remain required.
+
 - Native blacklist validation waits for the discovered monster catalog before
   checking scrolling, sprite inspection, and persisted selection, recording
   the native monster IDs as evidence.

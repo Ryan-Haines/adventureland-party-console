@@ -642,6 +642,10 @@ four real bank/NPC work journeys, companion reconnection, and its final recovery
 job. In native CI run 37732652077, the first four jobs all completed in approximately
 66, 49, 54, and 48 seconds; real companion reconnection took another 96 seconds.
 The former 360-second total interrupted the final job after 31 seconds while its
-fresh native movement report showed ongoing travel to the NPC. Each job still
-has a 150-second completion deadline, and HP/MP potion recovery must happen within
-20 seconds. Native actions and outcome assertions remain unchanged.
+fresh native movement report showed ongoing travel to the NPC. Ordinary jobs still
+have a 150-second completion deadline, and HP/MP potion recovery must happen within
+20 seconds. The final two-item recovery batch alone has a 180-second completion
+deadline: run 37740967977 recorded actual completion after 163 seconds, with
+native upgrade successes on both items and NPC travel to replenish the second
+scroll. Other jobs retain their 150-second deadlines. Native actions and outcome
+assertions remain unchanged.

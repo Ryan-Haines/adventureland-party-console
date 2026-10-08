@@ -25,3 +25,13 @@ Its arrival and cumulative required-room checks allow 300 seconds each, within
 a 900-second overall journey. A reproduced random floor completed its final
 farewell vote and opened the stairs milliseconds after the earlier 180-second
 room-completion deadline; the longer bound preserves the completion assertions.
+
+The cruise journey can exhaust a 45-second motion assertion while the selected
+route is still assembling or preparing, then show real shared movement in the
+native failure artifacts. Preparation reports for the earlier map waypoint or
+assembly command must not satisfy the selected farm-route barrier. Match the
+current target ID, run, floor and each participant's actual command and prepared
+travel report. Allow 120 seconds for the bounded preparation stage, then retain
+the 45-second displacement check against the original departure positions and
+the native shared engine and matching cruise checks. Preparation alone never
+establishes that either character moved.
