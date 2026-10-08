@@ -35,3 +35,13 @@ travel report. Allow 120 seconds for the bounded preparation stage, then retain
 the 45-second displacement check against the original departure positions and
 the native shared engine and matching cruise checks. Preparation alone never
 establishes that either character moved.
+
+A subsequent CI floor reached the cruise checkpoint, stopped correctly, then
+resumed its owned serial-3 Bat Roost route. Native bat kills (502, 507 and 501)
+and the real ten-second next-wave announcement showed productive combat pauses;
+both actors retained prepared serial-3 routes and advanced toward the room.
+The old 120-second resumed-room assertion combined new assembly/preparation and
+those fights. Match the resumed prepared commands independently of combat
+readiness, then allow the existing 300-second room-arrival budget. Keep both
+characters within 70 of the selected point, all stop assertions and native
+engine/cruise evidence; combat alone never substitutes for actual arrival.

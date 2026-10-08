@@ -73,9 +73,11 @@ from the commits merged into `main`.
 
 - Native Cave cruise checks wait for the selected owned route to prepare before
   applying the motion deadline, preserving displacement and native cruise checks.
+  Resumed routes separate preparation and native wave combat from room arrival.
 - Native merchant checks allow bank travel before the injected lucky return fault,
   generated reward-box exchange chains, and the final recovery batch's two
   upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.
+  Skill-tier recovery includes the real companion reconnect in its total budget.
 - Hunt travel preserves pending loot through temporary communication and
   observation holds, suspends collection until defense resumes, and retries
   native chest-opening errors so the original Hunt can finish and claim rewards.

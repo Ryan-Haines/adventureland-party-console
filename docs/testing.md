@@ -637,7 +637,7 @@ The native Cave regression is in live-cave.spec.ts. Run npm test -- -- --project
 
 ## Native merchant skill scenario timing
 
-The merchant mass-skill and passive-recovery scenario budgets 600 seconds for
+The merchant mass-skill and passive-recovery scenario budgets 900 seconds for
 four real bank/NPC work journeys, companion reconnection, and its final recovery
 job. In native CI run 37732652077, the first four jobs all completed in approximately
 66, 49, 54, and 48 seconds; real companion reconnection took another 96 seconds.
@@ -649,3 +649,12 @@ deadline: run 37740967977 recorded actual completion after 163 seconds, with
 native upgrade successes on both items and NPC travel to replenish the second
 scroll. Other jobs retain their 150-second deadlines. Native actions and outcome
 assertions remain unchanged.
+
+Before the 900-second adjustment, run 37749904371 verified completion of all four
+initial jobs in 94, 76, 80, and 74 seconds. Native companion reconnect took 128
+seconds. Setup and catalog restoration used approximately 55 seconds, leaving
+only 94 seconds for the final batch under the former 600-second total. At that
+cutoff the final batch had successfully upgraded its first helmet, reported a
+fresh checkpoint, and had no native client errors. The total budget accommodates
+the complete paired sequence; the 150-second ordinary-job, 180-second final-job,
+and 20-second potion-recovery deadlines still enforce progress independently.

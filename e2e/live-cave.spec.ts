@@ -104,9 +104,9 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   const target = cave.points.find((p: any) => p.kind === 'farm' && !p.done && Math.hypot(p.x - departure.characters.E2EWarrior.x, p.y - departure.characters.E2EWarrior.y) > 150);
   expect(target).toBeTruthy();
   await controls.getByRole('button', { name: target.label, exact: true }).first().click();
-  await expect.poll(async () => {
+  const waitForSelectedRoute = async (requireTravelling: boolean) => expect.poll(async () => {
     const view = await dungeon(), state = view.state;
-    return state.travel?.stage === 'travelling' && state.travel.target?.id === target.id &&
+    return (!requireTravelling || state.travel?.stage === 'travelling') && state.travel?.target?.id === target.id &&
       state.run === cave.run && ['E2EWarrior', 'E2EPriest'].every(name => {
         const observation = view.members.find((member: any) => member.name === name)?.observation;
         const command = state.commands[name];
@@ -115,6 +115,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
           observation.travel?.id === command.id && observation.travel.prepared === true;
       });
   }, { timeout: 120_000, message: 'The selected native Cave route must prepare for both owned commands' }).toBe(true);
+  await waitForSelectedRoute(true);
   let lastNative: unknown;
   await expect.poll(async () => {
     const state = await live.state();
@@ -129,6 +130,8 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   expect(Object.values((await dungeon()).state.commands).some((c: any) => c.action === 'move')).toBe(false);
   await info.attach('native-cave-stopped-en-route', {body:JSON.stringify(await dungeon()), contentType:'application/json'});
   await controls.getByRole('button', { name: target.label, exact: true }).first().click();
+  // A prepared owned route can pause while the native Bat Roost fight resolves.
+  await waitForSelectedRoute(false);
   try {
   await expect.poll(async () => {
     const state = await live.state();
@@ -139,7 +142,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
         code:p.__partyLoadedClassHash,ready:w.__partyDungeonRuntime?.report().ready};
     })));
     return Math.max(...['E2EWarrior', 'E2EPriest'].map(name => Math.hypot(state.characters[name].x - target.x, state.characters[name].y - target.y)));
-  }, { timeout: 120_000, message: 'Both characters must reach the selected room, not merely move' }).toBeLessThan(70);
+  }, { timeout: 300_000, message: 'Both characters must reach the selected room, not merely move' }).toBeLessThan(70);
   } finally { await info.attach('native-cave-route-client-state',{body:JSON.stringify(lastNative),contentType:'application/json'}); }
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
   expect(Object.values((await dungeon()).state.commands).some((c: any) => c.action === 'move')).toBe(false);
