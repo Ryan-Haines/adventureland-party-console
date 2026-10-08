@@ -399,3 +399,27 @@ Set plus this reason atomically from the DOM, then checks live run/floor/life/
 pause identity separately. Exact combined 409 admission is itself evidence
 of freshness at request time once the unique active run/floor guards match;
 later freshness recovery is recorded, not treated as an error.
+
+## Native duel completion retains survival checks with a bounded combat window
+
+CI 916e (37813545539) failed the 45-second duel poll, not the 1,500-second
+case limit (original case lasted 20 minutes). Lockbreaker was already done;
+its last death packet preceded duel injection by about 31 seconds, and Priest
+reached the exact boss endpoint 0.748 seconds before injection. Unfinished
+boss combat or movement does not explain this failure. Rival 618 fell from
+100,000 HP to 3,054 while allied actor 617 remained alive at 99,920 HP. Both
+participants actively selected the rival and delivered native hits from
++28.699 through +68.494 seconds after injection. The remaining three percent
+is ongoing real combat, not a terminal stall. Bound the duel poll at 120
+seconds while retaining actual room completion, enemy death, and ally survival.
+Attach the latest native HP/actor snapshot and selected party targets even on
+failure. Audit: .build/cave-916e-native-duel-audit.json. No runtime changes or
+unrelated boss barriers are warranted by this evidence.
+
+The measured original case was already about 20 minutes at this duel. Remaining
+bounded stages allow duel 120 + required rooms 300 + stairs approach 600 +
+farewell acknowledgement 30 + continuation 300 = 1,350 seconds (22.5 minutes),
+before final exit controls and evidence capture. Use a coherent 2,700-second
+overall case bound (45 minutes): 20 + 22.5 minutes plus 2.5 minutes for controls
+and artifacts. Individual phase limits and all native outcomes remain bounded;
+the real game's expiry, clocks, generated rooms, and combat are untouched.

@@ -112,6 +112,9 @@ from the commits merged into `main`.
   travel, while still requiring both characters to physically reach the room.
   Stairs approach uses that same bound for native combat and reassembly before
   the farewell, with separate vote acknowledgement and floor-transition checks.
+  Duel validation allows bounded native combat to finish and retains health and
+  target evidence. The full journey budget accommodates its separate phases
+  without changing native expiry, kills, ally survival, or room completion.
   Waypoint E2Es verify the actual UI request and retry only observed heartbeat
   suppression, retaining accepted-target checks and a submission evidence ledger.
   Freshness-rejection retries additionally verify the requested run and floor,

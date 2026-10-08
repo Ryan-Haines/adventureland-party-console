@@ -4,7 +4,7 @@ const sharp: typeof import('../dashboard/node_modules/sharp') = createRequire(im
 test.use({ initialPosition: { map: 'main', x: 816, y: 1180 } });
 
 test('Cave entry closes settings, shows native choices and keeps follower maps and travel working', async ({ live, page }, info) => {
-  test.setTimeout(1_500_000);
+  test.setTimeout(2_700_000);
   page.setDefaultTimeout(20_000);
   await live.admin('Dev=true; Prod=false; G.events.dreams.disabled=false; output=true');
   // Bound encounter selection to native duels/gifts/shops; the six level-100
@@ -399,7 +399,16 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   const duelChoice=(await dungeon()).members[0].observation.cave.choice;
   await choice.getByRole('button',{name:duelChoice.options.find((o:any)=>o.id==='left').label,exact:true}).click();
   await expect(choice).not.toBeVisible();
-  await expect.poll(async()=>await live.admin("output={done:__e2eCaveDuel.done,allyAlive:!__e2eCaveDuel.npc.dead,enemyDead:!!__e2eCaveDuel.rival.dead};"),{timeout:45_000}).toEqual({done:true,allyAlive:true,enemyDead:true});
+  let latestDuel:{done:boolean;allyAlive:boolean;enemyDead:boolean;allyHp:number;enemyHp:number;at:number}|undefined;
+  try{
+    await expect.poll(async()=>{
+      latestDuel=await live.admin("output={done:__e2eCaveDuel.done,allyAlive:!__e2eCaveDuel.npc.dead,enemyDead:!!__e2eCaveDuel.rival.dead,allyHp:__e2eCaveDuel.npc.hp,enemyHp:__e2eCaveDuel.rival.hp,at:Date.now()};");
+      return {done:latestDuel!.done,allyAlive:latestDuel!.allyAlive,enemyDead:latestDuel!.enemyDead};
+    },{timeout:120_000,message:'The real native duel must finish with the selected ally alive and rival dead'}).toEqual({done:true,allyAlive:true,enemyDead:true});
+  }finally{
+    const native=await live.state();
+    await info.attach('native-cave-duel-combat-result',{body:JSON.stringify({duel,latest:latestDuel,party:['E2EWarrior','E2EPriest'].map(name=>({name,target:native.characters[name].activeCombatTarget,approach:native.characters[name].groupedCombat?.approach}))}),contentType:'application/json'});
+  }
   await info.attach('native-cave-help-duelist',{body:JSON.stringify(duel),contentType:'application/json'});
   const blades=await live.admin(`output=(()=>{
     const p=get_player('E2EWarrior'),run=generated_entry(p).record;
