@@ -119,8 +119,9 @@ from the commits merged into `main`.
   and destination collision geometry for investigating route preparation.
   Map selection checks acknowledge placement mode before clicking terrain,
   preventing a suppressed Add action from reusing a previous waypoint.
-  Waypoint E2Es verify the actual UI request and retry only observed heartbeat
-  suppression, retaining accepted-target checks and a submission evidence ledger.
+  Waypoint E2Es verify the actual UI request and retry observed heartbeat
+  suppression or a guarded unsent click, retaining accepted-target checks and
+  a submission evidence ledger. Pending requests stay observed across retries.
   Freshness-rejection retries additionally verify the requested run and floor,
   live participants, and the observed report gap before another UI submission.
 - Explain disabled Cave waypoint actions with an accessible report-waiting

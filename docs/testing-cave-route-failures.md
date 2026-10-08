@@ -463,3 +463,15 @@ clicking terrain. Retry suppressed activation only with an atomic DOM snapshot
 showing Add disabled and the freshness waiting output; validate the same live
 run/floor/alive/unpaused identity. Never interpret an old nomination as new,
 broaden the validated margin, or retry unrelated disabled/error conditions.
+
+### No-effect Set click recovery (01170)
+
+A Set click returned without observed request or freshness-disabled snapshot;
+the final dialog remained enabled with the same valid nomination and no error.
+The maintained handler synchronously sets busy before awaiting its mutation,
+so an enabled button with no observed POST cannot represent a pending handler.
+Keep request/response observers for the complete helper lifetime. A bounded
+no-effect retry requires an enabled button, unchanged nomination, no rendered
+error, and the same active/alive/unpaused run and floor. Never retry an observed
+pending POST, disabled busy control, changed nomination, unrelated HTTP error,
+or accepted request; attach every request and pending state even on failure.

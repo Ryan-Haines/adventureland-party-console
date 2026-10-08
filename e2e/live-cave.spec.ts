@@ -100,10 +100,13 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     const expectedFloor=Number(expectedMap.split('_').at(-1));
     const expectedRun=expectedMap.slice(5,expectedMap.lastIndexOf('_'));
     const set=fullMap.getByRole('button',{name:'Set waypoint',exact:true});
-    const attempts:{submitted:boolean;status?:number;error?:string;heartbeatDisabled?:boolean}[]=[];
+    const attempts:{submitted:boolean;status?:number;error?:string;heartbeatDisabled?:boolean;noEffect?:boolean}[]=[];
+    const nomination=await fullMap.getByText(/^-?\d+, -?\d+$/).innerText();
     const heartbeatSnapshot=()=>fullMap.evaluate(element=>({
         disabled:Array.from(element.querySelectorAll('button')).find(button=>button.textContent?.trim()==='Set waypoint')?.disabled,
         waiting:Array.from(element.querySelectorAll('output')).some(status=>status.textContent==='Waiting for fresh participant reports.'),
+        error:Array.from(element.querySelectorAll('[role=alert]')).some(alert=>!!alert.textContent?.trim()),
+        nomination:Array.from(element.querySelectorAll('span')).find(span=>/^-?\d+, -?\d+$/.test(span.textContent?.trim()||''))?.textContent?.trim(),
       }));
     const staleHeartbeat=async(snapshot:Awaited<ReturnType<typeof heartbeatSnapshot>>)=>{
       expect(snapshot.disabled,'A suppressed waypoint must be disabled in the same DOM snapshot as its freshness reason').toBe(true);
@@ -120,39 +123,54 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     };
     const isWaypoint=(request:import('@playwright/test').Request)=>request.method()==='POST'&&
       new URL(request.url()).pathname==='/party-api/daily-dungeons'&&request.postDataJSON()?.action==='waypoint';
+    const requests:{request:import('@playwright/test').Request;response?:Promise<{status:number;body:any;request:any}>}[]=[];
+    const requested=(request:import('@playwright/test').Request)=>{if(isWaypoint(request))requests.push({request});};
+    const responded=(reply:import('@playwright/test').Response)=>{
+      const entry=requests.find(entry=>entry.request===reply.request());
+      if(entry)entry.response=reply.json().then(body=>({status:reply.status(),body,request:reply.request().postDataJSON()}));
+    };
+    page.on('request',requested);page.on('response',responded);
+    let consumed=0;
     try{
       await expect.poll(async()=>{
-        let submitted=false,response:Promise<{status:number;body:any;request:any}>|undefined;
-        const requested=(request:import('@playwright/test').Request)=>{if(isWaypoint(request))submitted=true;};
-        const responded=(reply:import('@playwright/test').Response)=>{
-          if(isWaypoint(reply.request()))response=reply.json().then(body=>({status:reply.status(),body,request:reply.request().postDataJSON()}));
-        };
-        page.on('request',requested);page.on('response',responded);
-        try{
+        let submitted=requests.length>consumed;
+        const response=()=>requests[consumed]?.response;
           const initial=await heartbeatSnapshot();
-          if(initial.disabled){
+          submitted=requests.length>consumed;
+          if(!submitted&&initial.disabled){
             expect(await staleHeartbeat(initial),'A disabled waypoint without a request must correspond to stale native reports').toBe(true);
-            attempts.push({submitted:false,heartbeatDisabled:true});return false;
+            if(requests.length===consumed){attempts.push({submitted:false,heartbeatDisabled:true});return false;}
+            submitted=true;
           }
-          await set.click();
+          if(!submitted)await set.click();
           let suppressed:Awaited<ReturnType<typeof heartbeatSnapshot>>|undefined;
           await expect.poll(async()=>{
-            if(response)return true;
+            submitted=requests.length>consumed;
+            if(response())return true;
             if(submitted)return false;
             const snapshot=await heartbeatSnapshot();
-            if(submitted)return !!response;
-            if(snapshot.disabled&&snapshot.waiting){suppressed=snapshot;return true;}
-            return false;
+            submitted=requests.length>consumed;
+            if(submitted)return !!response();
+            suppressed=snapshot;
+            return snapshot.disabled&&snapshot.waiting || !snapshot.disabled&&!snapshot.error&&snapshot.nomination===nomination;
           },{timeout:10_000}).toBe(true);
           if(!submitted){
-            expect(suppressed,'A suppressed click must retain its simultaneous disabled/waiting DOM evidence').toBeDefined();
-            expect(await staleHeartbeat(suppressed!),'A suppressed waypoint click must correspond to stale native reports').toBe(true);
-            // A POST arriving while the live identity check ran must still finish,
-            // rather than being duplicated as a suppressed click.
-            if(!submitted){attempts.push({submitted:false,heartbeatDisabled:true});return false;}
+            expect(suppressed).toBeDefined();
+            if(suppressed!.disabled){
+              expect(await staleHeartbeat(suppressed!)).toBe(true);
+            }else{
+              expect(suppressed!.error).toBe(false);expect(suppressed!.nomination).toBe(nomination);
+              const view=await dungeon();
+              expect(view.state.phase).toBe('active');expect(view.state.run).toBe(expectedRun);
+              expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===expectedRun&&
+                m.observation.cave.floor===expectedFloor&&!m.observation.cave.paused)).toBe(true);
+            }
+            submitted=requests.length>consumed;
+            if(!submitted){attempts.push({submitted:false,heartbeatDisabled:!!suppressed!.disabled,noEffect:!suppressed!.disabled});return false;}
           }
-          await expect.poll(()=>!!response,{timeout:10_000,message:'A submitted waypoint must receive its own response before any retry'}).toBe(true);
-          const result=await response!;
+          await expect.poll(()=>!!response(),{timeout:10_000,message:'A submitted waypoint must receive its own response before any retry'}).toBe(true);
+          const result=await response()!;
+          consumed++;
           expect(result.request.map).toBe(expectedMap);
           expect(result.request.run).toBe(expectedRun);
           attempts.push({submitted:true,status:result.status,error:result.body.error});
@@ -171,9 +189,11 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
           expect(result.status,'Waypoint submission must be accepted; other errors are not retried').toBe(200);
           await expect(fullMap).not.toBeVisible();
           return true;
-        }finally{page.off('request',requested);page.off('response',responded);}
       },{timeout:60_000,message:'The actual UI waypoint request must receive fresh native acceptance'}).toBe(true);
-    }finally{await info.attach('native-cave-waypoint-submission-ledger',{body:JSON.stringify(attempts),contentType:'application/json'});}
+    }finally{
+      page.off('request',requested);page.off('response',responded);
+      await info.attach('native-cave-waypoint-submission-ledger',{body:JSON.stringify({attempts,consumed,requests:requests.map(entry=>({body:entry.request.postDataJSON(),responseObserved:!!entry.response}))}),contentType:'application/json'});
+    }
   };
   const activateWaypoint=async(expectedMap:string)=>{
     const parts=expectedMap.split("_");
