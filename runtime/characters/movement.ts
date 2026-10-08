@@ -9,7 +9,7 @@ import { resolveDestination } from './movement-destination.ts';
 import { movementDiagnostics } from './movement-diagnostics.ts';
 import { repairDoorApproaches } from '../navigation/door-approach.ts';
 import { planReturnCandidates } from './return-planner.ts';
-interface SegmentRepair { plot: Step[]; index: number; target: Point; started: boolean; instance?: string | number }
+interface SegmentRepair { plot: Step[]; index: number; target: Point; started: boolean; instance?: string | number; retainEndpoint?: boolean }
 interface Journey { settlingAt?: number; repair?: SegmentRepair; repaired?: boolean; repairEndpoints?: string[]; firstIssue?: Issue; failureContext?: Record<string, unknown>; id: string; context: MovementContext; options: MovementOptions; native: boolean; pending: boolean; searches: number; retries: number; started: number; planningAt: number; fallback: boolean; plannerMs?: number; requestMs?: number; distance?: number; transitions?: number; importedEngine?: string }
 const failurePhases = new Map([
   ['superseded', 'Movement cancelled'],
@@ -135,7 +135,8 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
       if (!bridge) return;
       if (distance(bridge.at(-1) || position(), repair.target) > 20) throw Error('Repair missed its connector endpoint');
       if (bridge.some(p => isTransition(p) || p.map !== position().map)) throw Error('Repair left the current map');
-      const plot = [...bridge, ...repair.plot.slice(repair.index + 1)];
+      const plot = repair.retainEndpoint ? [...bridge,repair.target,...repair.plot.slice(repair.index)]
+        : [...bridge, ...repair.plot.slice(repair.index + 1)];
       const invalid = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
       if (invalid) throw Error('Repair did not validate: ' + invalid.reason);
       delete j.repair; install(plot, true);
@@ -248,11 +249,23 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     const next = state.plot[0], from = position();
     if (!j.options.repairSharedDrift || !next || isTransition(next) || !sameJourneyInstance(j,from)) return false;
     const reason = stepIssue(validation, from, next, state.use_town);
-    if (reason !== 'collisions detected' || !beginRepair(j,state.plot.slice(),{reason,from,to:next})) return false;
+    const join=localWalkingJoin(from,next);
+    if (reason !== 'collisions detected' || !join || !beginRepair(j,state.plot.slice(),{reason,from,to:next})) return false;
+    j.repair!.target=join.target;
+    j.repair!.retainEndpoint=join.retainEndpoint;
     j.repair!.instance = from.in ?? from.map;
     state.found = false;
     executor.cancel();
     return true;
+  }
+  function localWalkingJoin(from: Point, next: Step): {target:Point;retainEndpoint:boolean} | undefined {
+    const edge=executor.walkingEdge();
+    if(!edge)return distance(from,next)<=150 ? {target:point(next),retainEndpoint:false} : undefined;
+    if(edge.from.map!==from.map || String(edge.from.in??edge.from.map)!==String(from.in??from.map))return;
+    const dx=next.x-edge.from.x,dy=next.y-edge.from.y,length=dx*dx+dy*dy;
+    const along=length ? Math.max(0,Math.min(1,((from.x-edge.from.x)*dx+(from.y-edge.from.y)*dy)/length)) : 0;
+    const target={map:from.map,x:edge.from.x+dx*along,y:edge.from.y+dy*along};
+    return distance(from,target)<=150 ? {target,retainEndpoint:true} : undefined;
   }
   function sameJourneyInstance(j: Journey, from: Point): boolean {
     return from.map === j.context.map && String(from.in ?? from.map) === String(j.context.instance ?? j.context.map);

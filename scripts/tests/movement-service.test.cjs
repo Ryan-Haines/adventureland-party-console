@@ -524,3 +524,28 @@ test('Cave shared drift cannot repeatedly repair the same retained endpoint',asy
  for(let i=0;i<12;i++)await r.advance();await failed;
  assert.equal(r.logs.filter(l=>l.phase==='Walking segment repaired').length,1);r.dispose();
 });
+
+async function pausedLongCaveEdge(nativePlot){
+ const options={stall:true,nativePlot},r=fixture(options);
+ r.promise=r.service.move({map:'main',x:1000,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true,retainOnDirectStop:true});r.promise.catch(()=>{});
+ r.service.install([{map:'main',x:1000,y:0}],r.service.identity,'cave-convoy');await r.ticks(2);
+ await r.host.stop('move');Object.assign(r.c,{x:100,real_x:100,y:30,real_y:30});options.stall=false;
+ r.host.can_move=p=>!(p.y===30&&p.going_x===1000&&p.going_y===0);
+ return r;
+}
+test('Cave paused long walking edge repairs to a nearby original-edge projection',async()=>{
+ const r=await pausedLongCaveEdge([{map:'main',x:100,y:20},{map:'main',x:100,y:0}]);await r.ticks(30);await r.promise;
+ assert.equal(r.searches,1);assert.equal(r.c.real_x,1000);assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===100&&c[2]===0));r.dispose();
+});
+test('Cave local join explicitly executes a safe exact projection after a coarse native endpoint',async()=>{
+ const r=await pausedLongCaveEdge([{map:'main',x:100,y:10}]);await r.ticks(30);await r.promise;
+ assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===100&&c[2]===0));assert.equal(r.c.real_x,1000);r.dispose();
+});
+test('Cave local join rejects an unsafe coarse native gap without destination fallback',async()=>{
+ const r=await pausedLongCaveEdge([{map:'main',x:100,y:10}]);r.host.can_move=p=>!(p.y===10&&p.going_y===0)&&!(p.y===30&&p.going_x===1000);
+ const failed=assert.rejects(r.promise,/Repair did not validate/);await r.ticks(12);await failed;assert.equal(r.searches,1);assert.equal(r.c.real_x,100);r.dispose();
+});
+test('Cave local join cannot reuse a stale issued walking edge for a far retained endpoint',async()=>{
+ const r=await pausedLongCaveEdge([{map:'main',x:100,y:0}]);r.service.state.plot=[{map:'main',x:500,y:0},{map:'main',x:1000,y:0}];r.host.can_move=p=>!(p.y===30&&p.going_x===500);
+ const failed=assert.rejects(r.promise,/collisions detected/);await r.ticks(12);await failed;assert.equal(r.searches,0);r.dispose();
+});

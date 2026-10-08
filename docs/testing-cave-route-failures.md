@@ -185,3 +185,21 @@ center. Sampling at intervals at most 20 leaves more than 400 clearance between
 samples. Record native centers, selected endpoints and measured clearance;
 fail explicitly if no safe path exists. Original Cave combat coverage remains
 unchanged, and regroup still requires real native movement and owned receipts.
+
+## Local join on the original issued walking edge
+
+CI 37773027894's failed connector targeted a retained endpoint about 1,040
+units away. Its three-second native search timed out, causing whole-command
+regroup/replanning; the next journey was visibly progressing at failure.
+A local repair must project onto the original collision-validated walking edge
+that was actually issued, retained across combat pause. Cache only same-map
+walking edges, clear on reset/consumption, and require cached `to` to be the
+current retained first step. Reject stale edges, transitions, changed instance,
+changed owner/runtime and projections more than 150 units from the actor.
+Plan the three-second connector to the local projection, then explicitly append
+that exact join (collision-validating any coarse planner gap) and retain the
+original endpoint and all remaining route steps. Complete validation remains
+mandatory. Keep the three-distinct-endpoint cap keyed to the original retained
+endpoint; no new destination fallback, farther/future join, or budget increase.
+Before code, regressions cover long-edge local repair, exact coarse join,
+unsafe coarse join, and stale retained endpoint.

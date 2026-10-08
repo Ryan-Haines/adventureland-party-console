@@ -77,6 +77,9 @@ from the commits merged into `main`.
   connector fail, while ordinary movement keeps its single-repair limit.
   Ownership, barriers and destination remain intact, and failed repairs never
   start an independent shared destination route.
+  Repairs rejoin a nearby point on the original validated walking segment,
+  execute the exact collision-checked join, and preserve the remaining route.
+  Stale segments, distant joins and unsafe planner gaps are rejected.
 
 - Cave travel recovers when native combat displaces a participant after its
   assembly command completed. Fresh, ready participants regroup under new owned
