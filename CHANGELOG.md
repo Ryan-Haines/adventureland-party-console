@@ -7,6 +7,10 @@ from the commits merged into `main`.
 
 ### Added
 
+- Manual merchant weapon equips update the saved weapon preference, and manual
+  hand changes replace gathering's saved loadout. Temporary gathering tools
+  continue to work; cooldown restoration and restarts preserve the chosen gear.
+
 - The lucky-slot details table provides Lock/Unlock buttons in its rightmost
   column; the leading candidate row turns green above 95% model confidence.
   Merchants can lock the lucky-slot position while continuing

@@ -6013,7 +6013,20 @@
     if (slot < 0) throw new Error("selected equipment is no longer in inventory; refresh and try again");
     // The native catalog owns slot selection (Loaded Die is type orb). Keep
     // class-specific weapon and paired ring/earring selection native too.
+    var previousHands = character.ctype === "merchant" && gatheringSession
+      ? {mainhand:fingerprint(character.slots.mainhand),offhand:fingerprint(character.slots.offhand)} : null;
     await equip(slot);
+    // Gathering owns temporary tools, but manual choices own the loadout that
+    // gets restored afterwards. Update only hands changed by this native equip;
+    // equipping armor or an orb must not save an active tool as the normal hand.
+    if (previousHands && gatheringSession) {
+      ["mainhand","offhand"].forEach(function(hand) {
+        var actual = character.slots[hand];
+        if (!sameItemState(actual, previousHands[hand]) && (!actual || ["rod","pickaxe"].indexOf(actual.name) < 0))
+          gatheringSession[hand] = fingerprint(actual);
+      });
+      root.__merchantGatheringSession = gatheringSession;
+    }
   }
   async function useDashboardItem(command) {
     var item = character.items[command.slot];
@@ -9855,9 +9868,9 @@
       if (typeof command.slot !== "string" || !sameItem(character.slots[command.slot], command.item))
         throw new Error("equipped item no longer matches that slot");
       await unequip(command.slot);
-      if (character.ctype === "merchant" && command.slot === "mainhand" && gatheringSession &&
-          sameItem(gatheringSession.mainhand, command.item)) {
-        gatheringSession.mainhand = null;
+      if (character.ctype === "merchant" && ["mainhand","offhand"].indexOf(command.slot) >= 0 && gatheringSession &&
+          sameItem(gatheringSession[command.slot], command.item)) {
+        gatheringSession[command.slot] = null;
         root.__merchantGatheringSession = gatheringSession;
       }
     }
