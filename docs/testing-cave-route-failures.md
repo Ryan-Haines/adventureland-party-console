@@ -153,3 +153,35 @@ changed`. A DOM click is not acknowledgement of its asynchronous action. Both
 explicit Stop checks must poll the observable coordinator state for no owned
 move commands, no travel and disabled automatic progress, within 20 seconds.
 Keep unrelated no-move assertions and defensive combat/movement allowed.
+
+## Distinct shared walking edges after repeated native combat displacement
+
+CI 37770004187 repaired Warrior journey 16's connector from (2748,303) to the
+retained waypoint (3108,435), then later native combat displaced Warrior back
+to (2830,304) before the next destination edge to (3368,440). The one-repair
+journey cap rejected this distinct second edge; Priest's separate successful
+bridge reached within 32 of the boss. Whole-command retries had exhausted their
+three repairs. Failure modes for a narrowly expanded Cave boundary: unbounded
+repairs, repeated repair of the same retained endpoint, generic behavior change,
+unsafe or cross-instance bridges, transition/superseded ownership, loss of
+remaining target and implicit full destination fallback. Allow at most three
+Cave-only distinct retained endpoints per journey, each with its own three-second
+native bridge and complete remaining-route validation. Refuse a repeated
+endpoint or fourth repair; preserve all generic one-repair behavior. Write
+isolated regressions before implementation for distinct successive endpoints,
+a repeated endpoint, and the three-endpoint cap.
+
+## Isolated assembly displacement must avoid native combat room aggro
+
+In the 4e6 regroup scenario, the declared eastward peer waypoint was only 256
+from a native farm center. Real native farm actors aggroed the Priest and combat
+returned the Warrior within the original 50-unit assembly radius before all
+actors became ready. Thus the intended regroup condition never existed; no
+longer timer would create it. Keep native generation and room state untouched.
+Choose the real 160-unit peer walk and 85-unit Warrior displacement only when
+the actual game collision checker permits them and every sampled path point is
+at least 410 from every current-floor native farm/patrol/fight/boss/darkmage
+center. Sampling at intervals at most 20 leaves more than 400 clearance between
+samples. Record native centers, selected endpoints and measured clearance;
+fail explicitly if no safe path exists. Original Cave combat coverage remains
+unchanged, and regroup still requires real native movement and owned receipts.

@@ -501,3 +501,26 @@ test('Cave connector repair stops on instance changes and superseded runtime own
   Object.assign(r.c,{y:10,real_y:10});change(r);await r.ticks(8);await failed;assert.equal(r.searches,0);r.dispose();
  }
 });
+
+function successiveCaveRepairFixture(count){
+ const options={},r=fixture(options),plot=Array.from({length:count},(_,i)=>({map:'main',x:(i+1)*50,y:0}));
+ const promise=r.service.move(plot.at(-1),undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true});promise.catch(()=>{});
+ r.service.install(plot,r.service.identity,'cave-convoy');
+ r.host.can_move=p=>!(p.x===r.c.real_x&&p.y===0&&p.going_y===0&&p.x!==p.going_x);
+ return Object.assign(r,{promise,async advance(){const issue=r.logs.filter(l=>l.phase==='Repairing rejected walking segment').at(-1)?.issue;if(issue)options.nativePlot=[{map:'main',x:r.c.real_x,y:20},{map:'main',x:issue.to.x,y:20},{map:'main',x:issue.to.x,y:0}];await r.ticks(1);}});
+}
+test('Cave shared drift repairs three successive distinct retained endpoints',async()=>{
+ const r=successiveCaveRepairFixture(3);for(let i=0;i<70;i++)await r.advance();await r.promise;
+ assert.equal(r.searches,3);assert.equal(r.c.real_x,150);r.dispose();
+});
+test('Cave shared drift refuses a fourth retained endpoint and destination fallback',async()=>{
+ const r=successiveCaveRepairFixture(4),failed=assert.rejects(r.promise,/collisions detected/);for(let i=0;i<80;i++)await r.advance();await failed;
+ assert.equal(r.searches,3);assert.equal(r.c.real_x,150);r.dispose();
+});
+test('Cave shared drift cannot repeatedly repair the same retained endpoint',async()=>{
+ const r=successiveCaveRepairFixture(2),failed=assert.rejects(r.promise,/collisions detected/);
+ for(let i=0;i<12&&!r.logs.some(l=>l.phase==='Walking segment repaired');i++)await r.advance();
+ r.service.state.plot=[{map:'main',x:50,y:0},{map:'main',x:100,y:0}];Object.assign(r.c,{x:0,real_x:0,y:0,real_y:0});
+ for(let i=0;i<12;i++)await r.advance();await failed;
+ assert.equal(r.logs.filter(l=>l.phase==='Walking segment repaired').length,1);r.dispose();
+});

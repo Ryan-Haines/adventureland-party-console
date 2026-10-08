@@ -367,7 +367,19 @@ test('Cave assembly regroups displaced completed participants before departure',
   const view=async()=>await (await page.request.get(live.url+'/party-api/daily-dungeons')).json();
   const act=(body:Record<string,unknown>)=>live.post('/daily-dungeons',{operationId:crypto.randomUUID(),...body});
   const positions=()=>live.admin("output=Object.fromEntries(['E2EWarrior','E2EPriest'].map(name=>{const p=get_player(name);return [name,{map:p.map,x:p.x,y:p.y,moving:!!p.moving,cruise:p.cruise}]}))");
-  const point=(name:string,distance:number)=>live.admin(`output=(()=>{const p=get_player(${JSON.stringify(name)});for(let i=0;i<16;i++){const a=i*Math.PI/8,x=p.x+${distance}*Math.cos(a),y=p.y+${distance}*Math.sin(a);if(can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))return {map:p.map,x,y};}throw Error('No collision-safe native displacement')})()`);
+  const point=(name:string,distance:number)=>live.admin(`output=(()=>{
+    const p=get_player(${JSON.stringify(name)}),run=generated_entry(p).record;
+    const rooms=run.cave.rooms.filter(r=>r.map===p.map&&['farm','patrol','fight','boss','darkmage'].includes(r.kind)).map(r=>({id:r.id,kind:r.kind,x:r.x,y:r.y}));
+    for(let i=0;i<16;i++){
+      const a=i*Math.PI/8,x=p.x+${distance}*Math.cos(a),y=p.y+${distance}*Math.sin(a);
+      if(!can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))continue;
+      let clearance=Infinity;
+      const samples=Math.ceil(${distance}/20);
+      for(let j=0;j<=samples;j++)for(const r of rooms)clearance=Math.min(clearance,Math.hypot(p.x+(x-p.x)*j/samples-r.x,p.y+(y-p.y)*j/samples-r.y));
+      if(clearance>=410)return {map:p.map,x,y,clearance,rooms};
+    }
+    throw Error('No collision-safe native displacement outside combat room aggro');
+  })()`);
   const move=async(name:string,destination:{x:number;y:number})=>{
     await live.clients[name].frame.evaluate(({x,y})=>(window as any).move(x,y),destination);
     await expect.poll(async()=>{const p=(await positions())[name];return Math.hypot(p.x-destination.x,p.y-destination.y);},{timeout:20_000}).toBeLessThan(5);

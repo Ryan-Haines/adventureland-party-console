@@ -10,7 +10,7 @@ import { movementDiagnostics } from './movement-diagnostics.ts';
 import { repairDoorApproaches } from '../navigation/door-approach.ts';
 import { planReturnCandidates } from './return-planner.ts';
 interface SegmentRepair { plot: Step[]; index: number; target: Point; started: boolean; instance?: string | number }
-interface Journey { settlingAt?: number; repair?: SegmentRepair; repaired?: boolean; firstIssue?: Issue; failureContext?: Record<string, unknown>; id: string; context: MovementContext; options: MovementOptions; native: boolean; pending: boolean; searches: number; retries: number; started: number; planningAt: number; fallback: boolean; plannerMs?: number; requestMs?: number; distance?: number; transitions?: number; importedEngine?: string }
+interface Journey { settlingAt?: number; repair?: SegmentRepair; repaired?: boolean; repairEndpoints?: string[]; firstIssue?: Issue; failureContext?: Record<string, unknown>; id: string; context: MovementContext; options: MovementOptions; native: boolean; pending: boolean; searches: number; retries: number; started: number; planningAt: number; fallback: boolean; plannerMs?: number; requestMs?: number; distance?: number; transitions?: number; importedEngine?: string }
 const failurePhases = new Map([
   ['superseded', 'Movement cancelled'],
   ['convoy-communication-hold', 'Movement paused: coordinator communication unavailable'],
@@ -107,14 +107,24 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   }
   function beginRepair(j: Journey, plot: Step[], issue: Issue): boolean {
     j.firstIssue ||= issue;
-    if (j.options.owner?.recoveryStage === 'post-relocation' || j.repaired || issue.reason !== 'collisions detected' || issue.from.map !== position().map) return false;
+    if (j.options.owner?.recoveryStage === 'post-relocation' || !repairAllowed(j,issue.to) || issue.reason !== 'collisions detected' || issue.from.map !== position().map) return false;
     const index = plot.findIndex(p => p === issue.to);
     if (index < 0 || isTransition(plot[index])) return false;
-    j.repaired = true;
+    recordRepair(j,issue.to);
     j.repair = {plot, index, target: point(issue.to), started: false};
     j.pending = false; state.searching = false;
     report(j.id, state, 'Repairing rejected walking segment', issue, 'native same-map connector; limit 3 seconds');
     return true;
+  }
+  function repairEndpoint(target: Point): string { return JSON.stringify([target.map,target.x,target.y]); }
+  function recordRepair(j: Journey, target: Point): void {
+    j.repaired = true;
+    if(j.options.shared && j.options.repairSharedDrift)(j.repairEndpoints ||= []).push(repairEndpoint(target));
+  }
+  function repairAllowed(j: Journey, target: Point): boolean {
+    if(!j.options.shared || !j.options.repairSharedDrift)return !j.repaired;
+    const endpoints=j.repairEndpoints || [];
+    return endpoints.length<3 && !endpoints.includes(repairEndpoint(target));
   }
   function repairTick(j: Journey): void {
     const repair = j.repair!;

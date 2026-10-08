@@ -71,11 +71,12 @@ from the commits merged into `main`.
 
 ### Fixed
 
-- Cave travel can repair one blocked local walking connector after combat
-  displaces an actor off its shared route. The bounded native same-floor bridge
-  and remaining route must pass collision validation; ownership, movement
-  barriers and destination remain intact, and failed repairs never start an
-  independent shared destination route.
+- Cave travel can reconnect up to three distinct retained walking endpoints
+  after separate combat displacements. Each connector keeps its three-second
+  native limit and complete route validation; repeated endpoints and a fourth
+  connector fail, while ordinary movement keeps its single-repair limit.
+  Ownership, barriers and destination remain intact, and failed repairs never
+  start an independent shared destination route.
 
 - Cave travel recovers when native combat displaces a participant after its
   assembly command completed. Fresh, ready participants regroup under new owned
