@@ -22,6 +22,9 @@ test('home realm change confirms every active character including merchant', asy
       matched+=result.matchedCount;
     } return matched;})()`);
     expect(seeded).toBe(names.length);
+    // The server seed changes native player/DB state, but existing clients retain
+    // their previous home until a real login sends a fresh character snapshot.
+    await live.reconnectClient('E2EWarrior');
     await live.restartCoordinator();
     await expect.poll(async () => (await live.state()).realmControl?.homeRealm, {timeout:30_000}).toBe('SR_USII');
     await freshParticipants(live, names);
