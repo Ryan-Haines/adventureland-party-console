@@ -106,6 +106,8 @@ from the commits merged into `main`.
   candidates before native collision queries, keeping their existing bounds.
   Fixture staging waits for completed waypoint receipts and acknowledged Stop,
   preventing an owned route from overriding the setup's native movement.
+  Resumed waypoint coverage requires completed owned moves and exact endpoint
+  arrival before starting the farm trip.
 - Native merchant checks allow bank travel before the injected lucky return fault,
   generated reward-box exchange chains, and the final recovery batch's two
   upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.

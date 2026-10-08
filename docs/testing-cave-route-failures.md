@@ -290,3 +290,17 @@ stale completion receipts, and raw movement competing with an owned command.
 Await both fresh current-run/current-target owned move completion receipts and
 actual arrival, then explicitly Stop through the UI and await owned command/
 travel removal before declaring or walking the native staging fixture.
+
+## Finish the resumed safe waypoint before starting native farm assembly
+
+CI 354 (37795392902) stopped resumed waypoint travel when actors were merely
+within 70 units. The next farm assembly captured an intermediate leader point
+(272.247,517.845), outside the validated endpoint margin around the waypoint
+(340.696,496.348). Priest, 72 units from that assembly origin, failed its native
+final collision edge. Both actors were ready and no vote was pending.
+Failure modes: early physical proximity without owned completion, capturing an
+unvalidated intermediate assembly origin, and accidentally dropping the genuine
+midroute Stop test. Retain the first Stop after real >80 displacement; finish
+the resumed waypoint with both matching current-owned move completion receipts
+and actual endpoint distance <5 before the second Stop and original farm UI
+selection. Native farm arrival and subsequent combat assertions are unchanged.

@@ -268,6 +268,16 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     return Math.max(...['E2EWarrior', 'E2EPriest'].map(name => Math.hypot(state.characters[name].x - target.x, state.characters[name].y - target.y)));
   }, { timeout: 300_000, message: 'Both characters must reach the selected room, not merely move' }).toBeLessThan(70);
   } finally { await info.attach('native-cave-route-client-state',{body:JSON.stringify(lastNative),contentType:'application/json'}); }
+  await expect.poll(async()=>{
+    const view=await dungeon(),native=await live.state();
+    return view.state.run===cave.run && ['E2EWarrior','E2EPriest'].every(name=>{
+      const member=view.members.find((m:any)=>m.name===name),receipt=member?.observation?.action;
+      return member?.fresh && receipt?.status==='complete' && receipt.command?.action==='move' &&
+        receipt.command.run===cave.run && receipt.command.target?.id===target.id &&
+        receipt.id===view.state.commands[name]?.id &&
+        Math.hypot(native.characters[name].x-target.x,native.characters[name].y-target.y)<5;
+    });
+  },{timeout:120_000,message:'Both resumed waypoint moves must finish at the validated endpoint before native farm assembly'}).toBe(true);
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
   await waitForStoppedTravel();
   await controls.getByRole('button',{name:farm.label,exact:true}).first().click();
