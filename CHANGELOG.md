@@ -71,6 +71,13 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Native blacklist validation waits for the discovered monster catalog before
+  checking scrolling, sprite inspection, and persisted selection, recording
+  the native monster IDs as evidence.
+- Native Goobrawl validation allows surviving arena monsters to finish fighting
+  before evacuation, including the coordinator restart case, while retaining
+  native kill and resumed Hunt checks.
+
 - Rare encounters remain owned while waiting in the combat queue behind an
   existing party fight. Tiny P field deployment can finish and combat resumes
   without falsely rejecting the rare when it temporarily loses the queue head.
