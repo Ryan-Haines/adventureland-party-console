@@ -104,7 +104,22 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await expect(fullMap.getByRole('button',{name:'Set waypoint',exact:true})).toBeEnabled();
   await fullMap.getByRole('button',{name:'Set waypoint',exact:true}).click();
   await expect(fullMap).not.toBeVisible();
-  await expect.poll(async()=>Object.values((await dungeon()).state.commands).every((c:any)=>c.target?.label==='Waypoint'),{timeout:15_000}).toBe(true);
+  let initialWaypoint: {id:string;map:string;x:number;y:number;label:string;run:string}|undefined;
+  await expect.poll(async()=>{
+    const view=await dungeon(),state=view.state;
+    const candidates=[state.travel?.target,...Object.values(state.commands).filter((c:any)=>c.action==='move'&&c.run===state.run).map((c:any)=>c.target)];
+    const target=candidates.find(target=>target?.label==='Waypoint'&&target.map===before.characters.E2EWarrior.map&&
+      Math.hypot(target.x-before.characters.E2EWarrior.x,target.y-before.characters.E2EWarrior.y)<15);
+    if(target)initialWaypoint={...target,run:state.run};
+    return !!initialWaypoint;
+  },{timeout:15_000,message:'The map selection must acknowledge the actual native waypoint'}).toBe(true);
+  await expect.poll(async()=>{
+    const view=await dungeon();
+    return ['E2EWarrior','E2EPriest'].every(name=>{
+      const command=view.state.commands[name];
+      return command?.action==='move' && command.target?.id===initialWaypoint!.id && command.run===initialWaypoint!.run && view.state.run===initialWaypoint!.run;
+    });
+  },{timeout:120_000,message:'Both owned map-waypoint moves must dispatch after native assembly'}).toBe(true);
   await expect.poll(async()=>{
     const s=await live.state();
     return Math.max(...['E2EWarrior','E2EPriest'].map(n=>Math.hypot(s.characters[n].x-before.characters.E2EWarrior.x,s.characters[n].y-before.characters.E2EWarrior.y)));

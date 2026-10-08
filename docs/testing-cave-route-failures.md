@@ -238,3 +238,16 @@ Validate straight segments natively, sample combat-room clearance >=410 and
 live enemy clearance >=300, record geometry, use the actual map UI twice,
 and preserve displacement/cruise/Stop/owned preparation/both arrival checks.
 No generated rooms, enemies, combat outcomes, or runtime policies are modified.
+
+## Initial map waypoint acknowledges selection before owned travel dispatch
+
+CI f469 (37787109757) timed out the initial 15-second command-label poll.
+The persisted ledger proves the exact selected waypoint (414.9565,475.1304)
+progressed from assembly to travelling with both owned move commands and cruise
+79. Final native reports still mixed a completed Warrior assembly receipt and
+Priest's previous shop vote. A label poll incorrectly charged native assembly
+and report lag to the UI selection acknowledgement. Failure modes: accepting an
+unrelated waypoint, missing participant commands, or accepting position without
+owned travel. First verify the selected map/coordinates, then bound both owned
+move commands by the existing 120-second preparation phase. Retain both actual
+native positions within 50 units and archive the real selected waypoint.

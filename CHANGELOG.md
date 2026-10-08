@@ -98,6 +98,8 @@ from the commits merged into `main`.
   owned route continuation and both characters' actual floor transition.
   Manual Stop/resume uses a declared collision-safe native waypoint outside camp
   aggro, then still requires both characters to reach the generated farm.
+  Map waypoint coverage distinguishes immediate selection acknowledgement from
+  native assembly and owned move dispatch, preserving exact target and run checks.
 - Native merchant checks allow bank travel before the injected lucky return fault,
   generated reward-box exchange chains, and the final recovery batch's two
   upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.
