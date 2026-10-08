@@ -219,7 +219,9 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       await choice.getByRole('button',{name:reply.label,exact:true}).click();
     }
     return v.members.every((m:any)=>m.observation?.cave?.floor===1);
-  },{timeout:120_000,message:'Manual stairs must continue after the farewell vote and transport both members'}).toBe(true);
+  // Random native floors can put these stairs over 4,000 walking units away.
+  // Preserve the vote and actual floor assertions while allowing that route.
+  },{timeout:240_000,message:'Manual stairs must continue after the farewell vote and transport both members'}).toBe(true);
   expect(answeredFarewell).toBe(true);
   await info.attach('native-cave-floor-transition',{body:JSON.stringify({dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
   await controls.getByRole('button', { name: 'Exit dungeon', exact: true }).click();

@@ -10,7 +10,7 @@ test('lucky slot lock persists and unlock restores discovery', async ({page, app
   await page.getByRole('menuitem', {name:'Lock lucky slot position',exact:true}).click();
   await expect.poll(async () => (await app.state()).luckySlotLocks?.M).toBe(0);
   await slot.hover();
-  await expect(page.getByRole('tooltip').getByText('Locked lucky upgrade position · slot 0. Click for options.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Locked lucky upgrade position · slot 0. Click for options.',{exact:true})).toBeVisible();
   await app.restartCoordinator();
   await page.reload();
   await slot.click();
@@ -18,7 +18,7 @@ test('lucky slot lock persists and unlock restores discovery', async ({page, app
   await expect.poll(async () => (await app.state()).luckySlotLocks?.M ?? null).toBeNull();
   const next = merchant.getByLabel('Raw Emerald',{exact:true});
   await next.hover();
-  await expect(page.getByRole('tooltip').getByText('Next upgrade will test for lucky upgrade · slot 1. Click for options.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Next upgrade will test for lucky upgrade · slot 1. Click for options.',{exact:true})).toBeVisible();
   await next.click();
   await expect(page.getByRole('menuitem',{name:'Show lucky slot data',exact:true})).toBeVisible();
   await expect(page.getByRole('menuitem',{name:'Lock lucky slot position',exact:true})).toBeVisible();

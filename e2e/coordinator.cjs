@@ -64,6 +64,14 @@ const logger = {
   error: (...args) => { startupError = new Error(args.map(String).join(' ')); console.error(...args); },
 };
 const adapters = {
+  // Map references resolve against the launcher directory. Read the same pinned
+  // catalog from this scenario, without modifying the installed game cache.
+  'node:fs': { ...fs, readFileSync(file, ...args) {
+    const installedCatalog = path.resolve(launcherDirectory, '../game_files', String(version), 'data.js');
+    const scenarioFile = typeof file === 'string' && path.resolve(file) === installedCatalog
+      ? path.join(directory, 'game_files', String(version), 'data.js') : file;
+    return fs.readFileSync(scenarioFile, ...args);
+  } },
   '../config': { characters: {}, merchant: process.env.E2E_MERCHANT_CONNECTED === 'false' ? null : 'M', watch_CODE: false, enable_TYPECODE: false,
     web_app: { party_dashboard: true, port } },
   '../account_info': async () => account,

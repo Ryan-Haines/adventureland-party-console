@@ -66,6 +66,13 @@ from the commits merged into `main`.
   retry transient asset-read failures with bounded timeouts. Evidence collection
   is bounded, and teardown closes the isolated gateway and coordinator even
   when native video capture fails.
+- Recovery fixtures accept current object snapshots and legacy JSON strings,
+  and the bundle harness supplies Node's native snapshot-cloning API.
+  Console map previews use each scenario's pinned catalog; UI checks wait for
+  hydration, dialog animations, and fresh native status after restart. Generated
+  Cave routes retain their native vote/floor checks with bounded travel time.
+- Restore missing optional native tooling records in the dashboard lockfile so
+  clean Linux/Docker installations succeed with all pinned versions unchanged.
 - Recover burned commerce-upgrade items only after lucky-layout reconciliation
   proves an empty result and no old/new-level survivor remains. Ambiguous layouts
   still require review. Normalize null item metadata in current inventory and

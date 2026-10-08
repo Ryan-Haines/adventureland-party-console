@@ -752,8 +752,19 @@ test('market affordability uses core bank gold and active WTB prices open the fu
   await expect(editor.getByRole('button',{name:/Farm price/}).first()).toBeVisible();
   const farm=editor.getByRole('button',{name:/^Farm price/});
   const npc=editor.getByRole('button',{name:/^NPC sale/});
-  const farmBox=await farm.boundingBox(), npcBox=await npc.boundingBox();
-  const infoBox=await editor.getByRole('button',{name:'Information: Farm price',exact:true}).boundingBox();
+  await editor.evaluate(async element => {
+    await Promise.all(element.getAnimations({subtree:true}).map(animation => animation.finished.catch(() => {})));
+  });
+  const handles = await Promise.all([farm.elementHandle(), npc.elementHandle(),
+    editor.getByRole('button',{name:'Information: Farm price',exact:true}).elementHandle()]);
+  // Collect geometry in one frame so the entry animation cannot skew widths
+  // sampled at different points in time.
+  const [farmBox,npcBox,infoBox] = await page.evaluate(elements => elements.map(element => {
+    if (!element) return null;
+    const {x,y,width,height} = element.getBoundingClientRect();
+    return {x,y,width,height};
+  }), handles);
+  await Promise.all(handles.map(handle => handle?.dispose()));
   expect(farmBox).toBeTruthy(); expect(npcBox).toBeTruthy(); expect(infoBox).toBeTruthy();
   expect(Math.abs(farmBox!.width-npcBox!.width)).toBeLessThan(1);
   expect(infoBox!.x).toBeGreaterThan(farmBox!.x+farmBox!.width/2);

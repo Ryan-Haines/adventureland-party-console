@@ -117,7 +117,9 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           const entries = readFileSync(journal, 'utf8').trim().split('\n').map(line => JSON.parse(line));
           const key = 'party_dashboard_settings_state_v1';
           const stored = Object.assign({}, ...entries);
-          const settings = JSON.parse(stored[key]);
+          const decoded = (stateKey: string) => typeof stored[stateKey] === 'string'
+            ? JSON.parse(stored[stateKey]) : structuredClone(stored[stateKey] || {});
+          const settings = decoded(key);
           const historical = restore(structuredClone(settings));
           const allowed = new Set(['characterLocations', 'location', 'farmingPolicy', 'farmingProfiles', 'eventSelectionsByCharacter', 'activeConvoy', 'deferredEventReturns', 'eventReturn', 'monsterHunt', 'merchantDeliveries', 'npcSaleMarks', 'merchantCurrent', 'merchantCharacter', 'bankbois', 'bankboiTransaction', 'production', 'nativeStand', 'standBids', 'luckyUpgradeSlots', 'autoItemMarks', 'autoUpgradeMarks', 'autoCompounds']);
           if (Object.keys(historical).some(key => !allowed.has(key))) throw Error('Historical seed may only patch declared recovery, Hunt, navigation and native WTB settings');
@@ -127,12 +129,12 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           const selectionKeys = new Set<string>(selectionFields);
           const selectionsPatch = Object.fromEntries(Object.entries(historical).filter(([field]) => selectionKeys.has(field)));
           const settingsPatch = Object.fromEntries(Object.entries(historical).filter(([field]) => !bankKeys.has(field) && !selectionKeys.has(field)));
-          const restored: Record<string, string> = { [key]: JSON.stringify({ ...settings, ...settingsPatch }) };
+          const restored: Record<string, unknown> = { [key]: { ...settings, ...settingsPatch } };
           if (Object.keys(selectionsPatch).length)
-            restored[stateKeys.selections] = JSON.stringify({ ...JSON.parse(stored[stateKeys.selections] || '{}'), ...selectionsPatch });
+            restored[stateKeys.selections] = { ...decoded(stateKeys.selections), ...selectionsPatch };
           if (Object.keys(bankPatch).length) {
             const bankKey = 'party_dashboard_bank_state_v1';
-            restored[bankKey] = JSON.stringify({ ...JSON.parse(stored[bankKey] || '{}'), ...bankPatch });
+            restored[bankKey] = { ...decoded(bankKey), ...bankPatch };
           }
           for (const [stateKey, value] of Object.entries(restored))
             appendFileSync(journal, JSON.stringify({ [stateKey]: value }) + '\n');
