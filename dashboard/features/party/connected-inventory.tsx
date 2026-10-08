@@ -180,6 +180,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       merchantWeapon={state.merchantWeapon}
       luckyUpgradeSlot={state.luckySlotLocks?.[name] ?? state.luckySlotResume?.[name]?.slot ?? state.luckyUpgradeSlots?.[name]}
       luckySlotLocked={state.luckySlotLocks?.[name] != null}
+      luckySlotResuming={state.luckySlotLocks?.[name] == null && state.luckySlotResume?.[name] != null}
       onLuckySlotLock={slot => { void post("/merchant/config", {character: name, slot, action: state.luckySlotLocks?.[name] != null ? "unlock-lucky-slot" : "lock-lucky-slot"}); }}
       luckySlotTracking={luckyTracking}
       onLuckySlot={onLuckySlot}

@@ -6,10 +6,12 @@ test('home realm change confirms every active character including merchant', asy
   test.setTimeout(240_000);
   const names = ['E2EWarrior', 'E2EPriest', 'E2EMerchant'];
   try {
-    await live.admin(`output=(async()=>{for(const name of ${JSON.stringify(names)}) {
+    const seeded = await live.admin(`output=(async()=>{let matched=0;for(const name of ${JSON.stringify(names)}) {
       const p=get_player(name); p.p.home='USII'; delete p.p.dt.last_homeset;
-      await db.collection('character').updateOne({name},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}});
-    } return true;})()`);
+      const result=await db.collection('character').updateOne({'info.name':name},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}});
+      matched+=result.matchedCount;
+    } return matched;})()`);
+    expect(seeded).toBe(names.length);
     await live.restartCoordinator();
     await expect.poll(async () => (await live.state()).realmControl?.homeRealm, {timeout:30_000}).toBe('SR_USII');
     await page.goto(live.url);
@@ -39,9 +41,10 @@ test.describe('temporary native headless home change', () => {
     test.setTimeout(240_000);
     try {
       await live.post('/steam/action', {character:'E2EMerchant',action:'logout'});
-      await expect.poll(async () => (await live.state()).steamSwitch?.phase, {timeout:90_000}).toBe('complete');
+      await expect.poll(async () => (await live.state()).activeSlots.some((slot:any) => slot.character === 'E2EMerchant'), {timeout:90_000}).toBe(false);
       await expect.poll(async () => await live.admin("output=!!get_player('E2EMerchant')"), {timeout:30_000}).toBe(false);
-      await live.admin("output=db.collection('character').updateOne({name:'E2EMerchant'},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}})");
+      const seeded = await live.admin("output=db.collection('character').updateOne({'info.name':'E2EMerchant'},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}})");
+      expect(seeded.matchedCount).toBe(1);
       await live.restartCoordinator();
       await expect.poll(async () => (await live.state()).realmControl?.homeCharacters?.find((entry:any)=>entry.name==='E2EMerchant')?.home).toBe('SR_USII');
       const before = await live.state();
@@ -52,7 +55,7 @@ test.describe('temporary native headless home change', () => {
       const after = await live.state();
       expect(after.realmControl.homeCharacters.every((entry:any)=>entry.home==='SR_USI')).toBe(true);
       expect(after.activeSlots.map((entry:any)=>({index:entry.index,kind:entry.kind,character:entry.character}))).toEqual(before.activeSlots.map((entry:any)=>({index:entry.index,kind:entry.kind,character:entry.character})));
-      const storedHome = await live.admin("output=db.collection('character').findOne({name:'E2EMerchant'}).then(c=>c.info.p.home)");
+      const storedHome = await live.admin("output=db.collection('character').findOne({'info.name':'E2EMerchant'}).then(c=>c.info.p.home)");
       expect(storedHome).toBe('USI');
       await info.attach('offline-character-native-home-and-slot-restoration', {body:JSON.stringify({before,after,storedHome}),contentType:'application/json'});
     } finally { await page.close(); }

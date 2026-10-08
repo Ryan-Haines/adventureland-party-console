@@ -89,7 +89,14 @@ export function createRealmRoutes(state: RealmRouteState, ports: RealmRoutePorts
         .json({ error: "the Steam character must be connected before switching" });
     return start(realm, setHome, participants, res);
   }
-  function switchRealm(req: HttpRequest, res: HttpResponse): unknown {
+  function switchConflict(): string | null {
+    if (state.realmSwitch && ["switching", "setting-home"].includes(state.realmSwitch.phase))
+      return "a realm switch is already in progress";
+    if (state.bankboiTransaction || ports.bankBusy())
+      return "wait for the current bankboi transaction to finish";
+    return null;
+  }
+  async function switchRealm(req: HttpRequest, res: HttpResponse): Promise<unknown> {
     const body = requestObject(req.body),
       realm = typeof body.realm === "string" ? body.realm : "";
     if (!ports.resolve(realm))
@@ -98,10 +105,17 @@ export function createRealmRoutes(state: RealmRouteState, ports: RealmRoutePorts
       return res
         .status(409)
         .json({ error: "PVP realm switching is displayed but intentionally disabled" });
-    if (state.realmSwitch && ["switching", "setting-home"].includes(state.realmSwitch.phase))
-      return res.status(409).json({ error: "a realm switch is already in progress" });
-    if (state.bankboiTransaction || ports.bankBusy())
-      return res.status(409).json({ error: "wait for the current bankboi transaction to finish" });
+    const conflict = switchConflict();
+    if (conflict) return res.status(409).json({ error: conflict });
+    if (body.setHome) {
+      try { await ports.refresh(); }
+      catch (error) {
+        return res.status(502).json({ error: "Could not refresh account home realms: " + requestText(requestObject(error).message || error) });
+      }
+      // Account I/O yields: another transition may have reserved ownership.
+      const refreshedConflict = switchConflict();
+      if (refreshedConflict) return res.status(409).json({ error: refreshedConflict });
+    }
     return checkParticipants(realm, !!body.setHome, res);
   }
   function fail(operation: RealmOperation, error: string): void {

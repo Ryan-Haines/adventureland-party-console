@@ -9,7 +9,7 @@ test('headless spawn and restart use home realm despite stale worker configurati
   test.setTimeout(240_000);
   try {
     await live.post('/steam/action', {character:'E2EMerchant',action:'logout'});
-    await expect.poll(async () => (await live.state()).steamSwitch?.phase, {timeout:90_000}).toBe('complete');
+    await expect.poll(async () => (await live.state()).activeSlots.some((slot:any) => slot.character === 'E2EMerchant'), {timeout:90_000}).toBe(false);
     await expect.poll(async () => await live.admin("output=!!get_player('E2EMerchant')"), {timeout:30_000}).toBe(false);
     await live.post('/slots/1/spawn', {character:'E2EMerchant'});
     await expect.poll(async () => await live.admin("output=get_player('E2EMerchant')?.p.home || null"), {timeout:90_000}).toBe('USI');

@@ -10,7 +10,7 @@ function fixture(){
   pauseMerchant:()=>calls.push('pause'),native:()=> 'F',block:name=>{assert.equal(name,'M');return block;},
   stop:async worker=>{assert.equal(worker,block);calls.push(['stop',worker.realm]);},persist:()=>calls.push('persist'),label:realm=>realm,
   dispatch:()=>calls.push('dispatch'),resolve:realm=>realm==='SR_EUI',bankBusy:()=>false,participants:()=>['F','M'],current:()=>state.activeRealm,
-  accountCharacters:()=>['F','M'],characterHome:()=>home,start:()=>true,connectionCount:()=>2,home:()=>home,refresh:async()=>{calls.push('refresh');home='SR_EUI';},
+  accountCharacters:()=>['F','M'],characterHome:()=>home,start:()=>true,connectionCount:()=>2,home:()=>home,refresh:async()=>{calls.push('refresh');if(Object.values(state.commands).some(command=>command.type==='realm-set-home'))home='SR_EUI';},
  });
  async function invoke(handler,body){const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;return this;}};await handler({body},res);return res;}
  async function settled(){for(let i=0;i<30&&state.realmSwitch.phase==='switching';i++)await new Promise(resolve=>setImmediate(resolve));assert.notEqual(state.realmSwitch.phase,'switching');}

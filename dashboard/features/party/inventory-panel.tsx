@@ -91,6 +91,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   luckySlotTracking,
   onLuckySlot,
   luckySlotLocked,
+  luckySlotResuming,
   onLuckySlotLock,
   marked,
   merchantMarked,
@@ -140,6 +141,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   luckySlotTracking?: LuckySlotTracking;
   onLuckySlot?: () => void;
   luckySlotLocked?: boolean;
+  luckySlotResuming?: boolean;
   onLuckySlotLock?: (slot: number) => void;
   marked: BankMark[];
   merchantMarked: BankMark[];
@@ -218,7 +220,8 @@ export const InventoryPanel = memo(function InventoryPanel({
   const [luckySlotMenu, setLuckySlotMenu] = useState<LuckySlotMenuSelection | null>(null);
   const nextUpgradeSlot = validLuckySlot(luckyUpgradeSlot) ? luckyUpgradeSlot :
     luckySlotSearch(luckySlotTracking || {version: 1, slots: {}}).nextSlot;
-  const luckySlotLabel = luckySlotLocked ? "Locked lucky upgrade position" : validLuckySlot(luckyUpgradeSlot) ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
+  const luckySlotLabel = luckySlotLocked ? "Locked lucky upgrade position" :
+    validLuckySlot(luckyUpgradeSlot) && !luckySlotResuming ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
   type AutomaticSection = "npc" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction";
   const [openAutomaticSections, setOpenAutomaticSections] = useState<
     Partial<Record<AutomaticSection, boolean>>

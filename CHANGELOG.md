@@ -16,7 +16,8 @@ from the commits merged into `main`.
   Active characters confirm individually; offline characters log in sequentially
   and return offline. Original assignments are preserved and temporarily paused
   headless workers reconnect. Mixed homes and per-character progress are visible;
-  cooldowns and full native-session capacity produce explicit errors (#52).
+  cooldowns and full native-session capacity produce explicit errors. Requests
+  refresh native home data before skipping already-matching characters (#52).
 
 - Debug consoles can open and control their actual game browser through a private
   viewer on the same port, with Debug browser labels instead of Steam.

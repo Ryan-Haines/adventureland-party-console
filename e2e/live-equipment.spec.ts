@@ -18,7 +18,7 @@ test('Loaded Die equips through the priest inventory menu into the native orb sl
   const priest=page.locator('article').filter({has:page.getByRole('heading',{name,exact:true})});
   const inventory=priest.getByRole('button',{name:/^Inventory/});
   if(await inventory.getAttribute('aria-expanded')!=='true')await inventory.click();
-  const die=priest.getByRole('button',{name:'Loaded Die',exact:true});
+  const die=priest.getByLabel('Loaded Die',{exact:true});
   await expect(die).toBeVisible();await die.click({button:'right'});
   await expect(page.getByRole('menuitem',{name:'Equip',exact:true})).toBeVisible();
   await page.getByRole('menuitem',{name:'Equip',exact:true}).click();
