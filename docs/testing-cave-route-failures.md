@@ -142,3 +142,14 @@ first await fresh ready actors with the current run/floor/target and owned move
 commands, bounded by the existing 300-second combat allowance. Then start the
 existing 120-second matching route-prepared guard. Keep initial preparation,
 actual arrival within 70, native planner limits and overall 900 seconds intact.
+
+## Stop action acknowledgement
+
+CI 37768552032 read coordinator commands immediately after the Stop travel DOM
+click and observed the previous move command. The persisted native artifact
+then shows Stop succeeded: commands are empty, travel absent, automatic progress
+is disabled, and the Priest's owned move was cancelled with `Dungeon command
+changed`. A DOM click is not acknowledgement of its asynchronous action. Both
+explicit Stop checks must poll the observable coordinator state for no owned
+move commands, no travel and disabled automatic progress, within 20 seconds.
+Keep unrelated no-move assertions and defensive combat/movement allowed.

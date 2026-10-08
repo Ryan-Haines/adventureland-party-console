@@ -140,8 +140,13 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   expect(cruise[0].cruise).toBeGreaterThan(0);
   expect(cruise[0].cruise).toBe(cruise[1].cruise);
   await info.attach('native-cave-cruise',{body:JSON.stringify(cruise),contentType:'application/json'});
+  const waitForStoppedTravel=()=>expect.poll(async()=>{
+    const state=(await dungeon()).state;
+    return !state.travel && state.progress?.enabled===false &&
+      !Object.values(state.commands).some((c:any)=>c.action==='move');
+  },{timeout:20_000,message:'Stop travel must acknowledge removal of owned moves and automatic progress'}).toBe(true);
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
-  expect(Object.values((await dungeon()).state.commands).some((c: any) => c.action === 'move')).toBe(false);
+  await waitForStoppedTravel();
   await info.attach('native-cave-stopped-en-route', {body:JSON.stringify(await dungeon()), contentType:'application/json'});
   await controls.getByRole('button', { name: target.label, exact: true }).first().click();
   // Defensive combat and real reassembly must finish before charging the
@@ -171,7 +176,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   }, { timeout: 300_000, message: 'Both characters must reach the selected room, not merely move' }).toBeLessThan(70);
   } finally { await info.attach('native-cave-route-client-state',{body:JSON.stringify(lastNative),contentType:'application/json'}); }
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
-  expect(Object.values((await dungeon()).state.commands).some((c: any) => c.action === 'move')).toBe(false);
+  await waitForStoppedTravel();
   await info.attach('native-cave-manual-travel', { body: JSON.stringify({ dungeon: await dungeon(), state: await live.state() }), contentType: 'application/json' });
   const second = (await dungeon()).members[0].observation.cave.points.find((p: any) => p.kind === 'boss' && !p.done);
   if (second) {
