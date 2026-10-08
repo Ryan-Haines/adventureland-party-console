@@ -691,3 +691,14 @@ could prepare its route. Native commands were healthy and both members ready.
 The acknowledgement and subsequent actual floor transition each produce
 inspectable artifacts; the farewell and both-character floor assertions remain
 required.
+
+Steam saved-setup handoff uses
+`npm test -- -- --project=console --grep "Steam handoff preserves saved setup"`.
+The browser submits the maintained request adapter through the real gateway and
+restores setup from persisted server preferences after an incomplete browser
+draft. The initial RED returned the reported setup validation error before any
+launch. Desktop launch and inspector are declared external boundaries; this
+checks launch intent and gateway forwarding, not a real Steam process. A remote
+selection must reject launch without forwarding a headless ownership change; an
+already connected remote bridge must allow forwarding. Retain the setup screenshot
+and launch-boundary ledger and run `npm run test:e2e:verify`.

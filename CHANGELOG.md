@@ -7,6 +7,10 @@ from the commits merged into `main`.
 
 ### Added
 
+- Steam primary handoff ignores incomplete browser setup drafts, preserving the
+  saved desktop launcher choices. Setup restores those saved choices when this
+  browser has none, so an empty setup visit cannot disable same-machine launch.
+
 - Manual merchant weapon equips update the saved weapon preference, and manual
   hand changes replace gathering's saved loadout. Temporary gathering tools
   continue to work; cooldown restoration and restarts preserve the chosen gear.
