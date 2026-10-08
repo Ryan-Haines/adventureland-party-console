@@ -35,6 +35,11 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
     return member?.fresh && member.observation?.alive && member.observation.cave?.run === mapCave.run &&
       member.observation.cave.floor === mapCave.floor && !member.observation.cave.paused;
   });
+  const mapWaitingForReports = !!mapCave && view.state.participants.every(name => {
+    const member = view.members.find(candidate => candidate.name === name);
+    return member?.observation?.alive && member.observation.cave?.run === mapCave.run &&
+      member.observation.cave.floor === mapCave.floor && !member.observation.cave.paused;
+  }) && view.state.participants.some(name => !view.members.find(member => member.name === name)?.fresh);
   const recovery = view.state.priestRecovery;
   const priest = view.members.find((m) => m.name === recovery?.priest);
   const report =
@@ -117,7 +122,7 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
           .map((m) => m.name + (m.fresh ? '' : ' — awaiting connection'))
           .join(' · ')}
       </p>
-      {mapCave && <CaveMap key={mapCave.run+':'+mapCave.floor} view={view} cave={mapCave} action={action} actionsReady={mapActionsReady} error={query.actionError}/>}
+      {mapCave && <CaveMap key={mapCave.run+':'+mapCave.floor} view={view} cave={mapCave} action={action} actionsReady={mapActionsReady} waitingForReports={mapWaitingForReports} error={query.actionError}/>}
       {view.state.phase === 'active' && (
         <div className="mt-3">
           <p className="text-sm text-slate-200">

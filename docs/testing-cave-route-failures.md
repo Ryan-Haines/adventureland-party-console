@@ -383,3 +383,19 @@ other rejection types. Permit only this exact 409 after a fresh read proves
 active state matches the submitted run and map/floor, every participant is
 alive/unpaused on that run/floor, and at least one observation is stale.
 All other errors fail; accepted HTTP 200 requests are never retried.
+
+## Stale-click proof uses one observable DOM snapshot
+
+CI ff20 (37811454143) observed no waypoint POST and a disabled Set button,
+then fetched the native view after reports had recovered. Requiring that later
+view to remain stale caused a false failure. Both run/floor/alive/unpaused
+checks passed. Failure modes: conflating stale and dead/paused/busy controls,
+reading button and reason from different renders, and rejecting recovered
+freshness after an actual 409. Before source changes, extend the existing
+console fixture to require accessible `Waiting for fresh participant reports.`
+status while stale and its disappearance after recovery. This status is emitted
+only for current-run/floor freshness gaps. The native test captures disabled
+Set plus this reason atomically from the DOM, then checks live run/floor/life/
+pause identity separately. Exact combined 409 admission is itself evidence
+of freshness at request time once the unique active run/floor guards match;
+later freshness recovery is recorded, not treated as an error.

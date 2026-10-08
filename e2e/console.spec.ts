@@ -807,10 +807,12 @@ test('Cave map survives stale reports without allowing stale waypoint actions',a
   await expect(set).toBeEnabled();
   fresh=false;
   await expect(set).toBeDisabled();
+  await expect(map.getByRole('status')).toHaveText('Waiting for fresh participant reports.');
   await expect(map).toBeVisible();
   await info.attach('stale-cave-map-readonly',{body:await map.screenshot(),contentType:'image/png'});
   fresh=true;
   await expect(set).toBeEnabled();
+  await expect(map.getByRole('status')).toHaveCount(0);
   await expect(map).toBeVisible();
   floor=1;
   await expect(map).not.toBeVisible();

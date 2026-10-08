@@ -96,14 +96,27 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await expect(fullMap.locator('canvas')).toBeVisible();
   await expect(fullMap.getByText('E2EPriest', {exact:true})).toBeVisible();
   await info.attach('native-cave-full-map', {body:await fullMap.screenshot(),contentType:'image/png'});
-  const acceptWaypoint=async()=>{
+  const acceptWaypoint=async(expectedMap:string)=>{
+    const expectedFloor=Number(expectedMap.split('_').at(-1));
+    const expectedRun=expectedMap.slice(5,expectedMap.lastIndexOf('_'));
     const set=fullMap.getByRole('button',{name:'Set waypoint',exact:true});
     const attempts:{submitted:boolean;status?:number;error?:string;heartbeatDisabled?:boolean}[]=[];
-    const staleHeartbeat=async()=>{
-      const view=await dungeon();
-      expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===view.state.run&&!m.observation.cave.paused),
-        'Only a heartbeat gap may suppress this waypoint; other native holds must fail').toBe(true);
-      return view.members.some((m:any)=>!m.fresh);
+    const heartbeatSnapshot=()=>fullMap.evaluate(element=>({
+        disabled:Array.from(element.querySelectorAll('button')).find(button=>button.textContent?.trim()==='Set waypoint')?.disabled,
+        waiting:Array.from(element.querySelectorAll('output')).some(status=>status.textContent==='Waiting for fresh participant reports.'),
+      }));
+    const staleHeartbeat=async(snapshot:Awaited<ReturnType<typeof heartbeatSnapshot>>)=>{
+      expect(snapshot.disabled,'A suppressed waypoint must be disabled in the same DOM snapshot as its freshness reason').toBe(true);
+      if(snapshot.waiting){
+        const view=await dungeon();
+        expect(view.state.phase).toBe('active');
+        expect(view.state.run).toBe(expectedRun);
+        expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===expectedRun&&
+          m.observation.cave.floor===expectedFloor&&!m.observation.cave.paused),
+          'Freshness recovery may not hide a changed run, floor, death, or native pause').toBe(true);
+        await info.attach('native-cave-suppressed-waypoint-snapshot',{body:JSON.stringify({snapshot,expectedMap,dungeon:view}),contentType:'application/json'});
+      }
+      return snapshot.waiting;
     };
     const isWaypoint=(request:import('@playwright/test').Request)=>request.method()==='POST'&&
       new URL(request.url()).pathname==='/party-api/daily-dungeons'&&request.postDataJSON()?.action==='waypoint';
@@ -116,18 +129,32 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
         };
         page.on('request',requested);page.on('response',responded);
         try{
-          if(!await set.isEnabled()){
-            expect(await staleHeartbeat(),'A disabled waypoint without a request must correspond to stale native reports').toBe(true);
+          const initial=await heartbeatSnapshot();
+          if(initial.disabled){
+            expect(await staleHeartbeat(initial),'A disabled waypoint without a request must correspond to stale native reports').toBe(true);
             attempts.push({submitted:false,heartbeatDisabled:true});return false;
           }
           await set.click();
-          await expect.poll(async()=>!!response||(!submitted&&!await set.isEnabled()),{timeout:10_000}).toBe(true);
+          let suppressed:Awaited<ReturnType<typeof heartbeatSnapshot>>|undefined;
+          await expect.poll(async()=>{
+            if(response)return true;
+            if(submitted)return false;
+            const snapshot=await heartbeatSnapshot();
+            if(submitted)return !!response;
+            if(snapshot.disabled&&snapshot.waiting){suppressed=snapshot;return true;}
+            return false;
+          },{timeout:10_000}).toBe(true);
           if(!submitted){
-            expect(await set.isEnabled(),'A suppressed waypoint click must be observably heartbeat-disabled').toBe(false);
-            expect(await staleHeartbeat(),'A suppressed waypoint click must correspond to stale native reports').toBe(true);
-            attempts.push({submitted:false,heartbeatDisabled:true});return false;
+            expect(suppressed,'A suppressed click must retain its simultaneous disabled/waiting DOM evidence').toBeDefined();
+            expect(await staleHeartbeat(suppressed!),'A suppressed waypoint click must correspond to stale native reports').toBe(true);
+            // A POST arriving while the live identity check ran must still finish,
+            // rather than being duplicated as a suppressed click.
+            if(!submitted){attempts.push({submitted:false,heartbeatDisabled:true});return false;}
           }
+          await expect.poll(()=>!!response,{timeout:10_000,message:'A submitted waypoint must receive its own response before any retry'}).toBe(true);
           const result=await response!;
+          expect(result.request.map).toBe(expectedMap);
+          expect(result.request.run).toBe(expectedRun);
           attempts.push({submitted:true,status:result.status,error:result.body.error});
           if(result.status===409&&result.body.error==='Fresh matching dungeon run required'){
             const view=await dungeon(),requested=result.request;
@@ -138,7 +165,6 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
             expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===requested.run&&
               m.observation.cave.floor===floor&&!m.observation.cave.paused),
               'A freshness rejection may not hide a different run, floor, death, or native pause').toBe(true);
-            expect(view.members.some((m:any)=>!m.fresh),'The combined admission rejection must be confirmed as a stale heartbeat').toBe(true);
             await info.attach('native-cave-waypoint-freshness-rejection',{body:JSON.stringify({request:requested,response:result.body,dungeon:view}),contentType:'application/json'});
             return false;
           }
@@ -155,7 +181,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   const fit=Math.min(mapBox.width/(bounds.max_x-bounds.min_x+100),mapBox.height/(bounds.max_y-bounds.min_y+100));
   await fullMap.locator('canvas').click({position:{x:mapBox.width/2+(before.characters.E2EWarrior.x-(bounds.min_x+bounds.max_x)/2)*fit,y:mapBox.height/2+(before.characters.E2EWarrior.y-(bounds.min_y+bounds.max_y)/2)*fit}});
   await expect(fullMap.getByRole('button',{name:'Set waypoint',exact:true})).toBeEnabled();
-  await acceptWaypoint();
+  await acceptWaypoint(before.characters.E2EWarrior.map);
   let initialWaypoint: {id:string;map:string;x:number;y:number;label:string;run:string}|undefined;
   await expect.poll(async()=>{
     const view=await dungeon(),state=view.state;
@@ -248,7 +274,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     const [x,y]=nomination.split(',').map(Number);
     expect(Math.hypot(x-safe.target.x,y-safe.target.y),'Canvas nomination must remain within the validated native endpoint margin').toBeLessThan(10);
     await info.attach('native-cave-visible-waypoint-nomination',{body:JSON.stringify({nomination,intended:safe.target,endpointMargin:safe.endpointMargin}),contentType:'application/json'});
-    await acceptWaypoint();
+    await acceptWaypoint(safe.target.map);
     let selected:{id:string;map:string;x:number;y:number}|undefined;
     await expect.poll(async()=>{
       const view=await dungeon(),state=view.state;
