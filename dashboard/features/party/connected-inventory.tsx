@@ -181,7 +181,6 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       luckyUpgradeSlot={state.luckySlotLocks?.[name] ?? state.luckySlotResume?.[name]?.slot ?? state.luckyUpgradeSlots?.[name]}
       luckySlotLocked={state.luckySlotLocks?.[name] != null}
       luckySlotResuming={state.luckySlotLocks?.[name] == null && state.luckySlotResume?.[name] != null}
-      onLuckySlotLock={slot => { void post("/merchant/config", {character: name, slot, action: state.luckySlotLocks?.[name] != null ? "unlock-lucky-slot" : "lock-lucky-slot"}); }}
       luckySlotTracking={luckyTracking}
       onLuckySlot={onLuckySlot}
       marked={marked}
@@ -222,7 +221,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       onCommand={command}
       onTravel={onTravel}
     />
-    <LuckySlotDialog character={name} tracking={luckyTracking} verified={state.luckyUpgradeSlots?.[name]} open={luckySlotOpen} onOpenChange={setLuckySlotOpen} />
+    <LuckySlotDialog character={name} tracking={luckyTracking} verified={state.luckyUpgradeSlots?.[name]} lockedSlot={state.luckySlotLocks?.[name]} resumingSlot={state.luckySlotResume?.[name]?.slot} onLock={slot => { void post("/merchant/config", {character: name, slot, action: state.luckySlotLocks?.[name] != null ? "unlock-lucky-slot" : "lock-lucky-slot"}); }} open={luckySlotOpen} onOpenChange={setLuckySlotOpen} />
     {char.name === state.merchantCharacter && <SharedRuleConflicts state={state} onResolve={(id, owner) => post("/merchant/rule-conflict", {id,owner})} />}
     <DeconstructionConfirmation selection={deconstructionSelection} catalog={state.deconstructionCatalog || emptyRecord()}
       items={state.merchantCatalog?.allItems || emptyArray()} onClose={() => setDeconstructionSelection(null)}

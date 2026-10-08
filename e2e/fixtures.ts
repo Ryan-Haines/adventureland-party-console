@@ -56,7 +56,7 @@ async function ready(process: ChildProcess, url: string, log: string) {
   }
   throw new Error(`E2E service failed readiness at ${url}\n${existsSync(log) ? readFileSync(log, 'utf8').slice(-12000) : 'No output'}`);
 }
-type App = { url: string; restartCoordinator(): Promise<void>; state(): Promise<any> };
+type App = { url: string; restartCoordinator(): Promise<void>; state(): Promise<any>; deliverStatus(report: unknown): Promise<unknown> };
 
 export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantConnected: boolean; playerInventory: boolean }, { dashboard: { port: number; log: string } }>({
   merchantDialogs: [false, {option:true}],
@@ -111,6 +111,17 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
       app = {
         url,
         async restartCoordinator() { await stop(coordinator!, true); await start(); },
+        // External game observations enter the coordinator's private status
+        // boundary, just like the scenario's recurring fixture heartbeats.
+        async deliverStatus(report: unknown) {
+          const response = await fetch(`http://127.0.0.1:${port}/party-api/status`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(report), signal: AbortSignal.timeout(10_000),
+          });
+          const body = await response.text();
+          if (!response.ok) throw new Error(`Fixture status request failed: ${response.status}: ${body}`);
+          return JSON.parse(body);
+        },
         async state() {
           const response = await fetch(`${url}/party-api/state`, { signal: AbortSignal.timeout(10_000) });
           if (!response.ok) throw new Error(`State request failed: ${response.status}`);

@@ -92,7 +92,6 @@ export const InventoryPanel = memo(function InventoryPanel({
   onLuckySlot,
   luckySlotLocked,
   luckySlotResuming,
-  onLuckySlotLock,
   marked,
   merchantMarked,
   autoItemMarks,
@@ -142,7 +141,6 @@ export const InventoryPanel = memo(function InventoryPanel({
   onLuckySlot?: () => void;
   luckySlotLocked?: boolean;
   luckySlotResuming?: boolean;
-  onLuckySlotLock?: (slot: number) => void;
   marked: BankMark[];
   merchantMarked: BankMark[];
   autoItemMarks: Record<string, "bank" | "merchant">;
@@ -584,7 +582,7 @@ export const InventoryPanel = memo(function InventoryPanel({
       </button>
       {inventoryOpen ? (
         <>
-          <LuckySlotMenu selection={luckySlotMenu} onClose={() => setLuckySlotMenu(null)} onData={() => onLuckySlot?.()} onItem={onSelect} locked={luckySlotLocked} onLock={onLuckySlotLock} />
+          <LuckySlotMenu selection={luckySlotMenu} onClose={() => setLuckySlotMenu(null)} onData={() => onLuckySlot?.()} onItem={onSelect} />
           <div className="grid grid-cols-5 gap-2">
             {(character.name === merchant ? physicalInventory(character.items) : compactInventory(character.items, totalSlots)).map((entry, i) => {
               const lucky = character.name === merchant && i === nextUpgradeSlot;

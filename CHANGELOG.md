@@ -7,7 +7,9 @@ from the commits merged into `main`.
 
 ### Added
 
-- Merchant inventory menus can lock the lucky-slot position while continuing
+- The lucky-slot details table provides Lock/Unlock buttons in its rightmost
+  column; the leading candidate row turns green above 95% model confidence.
+  Merchants can lock the lucky-slot position while continuing
   to record rolls and probabilities. Guarded cleanup preserves displaced cargo;
   unlocking tests the next position before resuming discovery. Locks and the
   next-roll checkpoint survive coordinator restarts. Changes refresh inventory
