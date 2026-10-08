@@ -413,10 +413,31 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
   await waitForStoppedTravel();
   await controls.getByRole('button',{name:farm.label,exact:true}).first().click();
+  const farmCombatSamples:unknown[]=[];
+  let farmSampledAt=0;
+  try {
   await expect.poll(async()=>{
     const s=await live.state();
+    if(Date.now()-farmSampledAt>=5_000&&farmCombatSamples.length<125){
+      farmSampledAt=Date.now();
+      const native=await Promise.all(['E2EWarrior','E2EPriest'].map(name=>live.clients[name].frame.evaluate(()=>{
+        const p=window as any,w=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+        const c=w.character,control=w.__partyGroupedCombat,entity=control?.target?.id?w.get_entity(control.target.id):null;
+        const clock=w.__partyTravelTransport?.clock,now=Date.now(),selected=w.sharedRoutine?.getDungeonTarget?.();
+        const raw=entity?Object.fromEntries(['id','type','visible','dead','hp','map','in','x','y','real_x','real_y','range','target','cave'].map(key=>[key,entity[key]])):null;
+        return {at:now,name:c.name,map:c.map,in:c.in,x:c.real_x,y:c.real_y,cave:c.cave,
+          clock,adjustedAge:control?now+(clock?.offset||0)-control.seenAt:null,
+          control:control?Object.fromEntries(['key','seenAt','target','committed','selection','members','caveScope'].map(key=>[key,control[key]])):null,
+          entity:raw,selected:selected?.id||null,knownDead:entity?!!w.partyRoleRunner?.isKnownDead(entity.id):null,
+          nativeWalk:entity?w.can_move_to(entity.x,entity.y):null,
+          attackAllowed:entity?!!w.sharedRoutine?.groupedAttackAllowed?.(entity):null,
+          runtime:w.__partyDungeonRuntime?.report(),occupied:w.sharedRoutine?.isOccupied?.()};
+      })));
+      farmCombatSamples.push({at:farmSampledAt,native,characters:Object.fromEntries(['E2EWarrior','E2EPriest'].map(name=>[name,{dungeon:s.characters[name].dungeon,movement:s.characters[name].movement}]))});
+    }
     return Math.max(...['E2EWarrior','E2EPriest'].map(name=>Math.hypot(s.characters[name].x-farm.x,s.characters[name].y-farm.y)));
   },{timeout:600_000,message:'Both characters must reach the original native farm after manual waypoint travel'}).toBeLessThan(70);
+  }finally{await info.attach('native-cave-farm-combat-samples',{body:JSON.stringify(farmCombatSamples),contentType:'application/json'});}
   await controls.getByRole('button',{name:'Stop travel',exact:true}).click();
   await waitForStoppedTravel();
   await info.attach('native-cave-manual-travel', { body: JSON.stringify({ dungeon: await dungeon(), state: await live.state() }), contentType: 'application/json' });

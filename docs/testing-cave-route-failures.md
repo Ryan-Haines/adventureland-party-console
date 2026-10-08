@@ -501,3 +501,15 @@ is currently enabled and no rendered error exists, after validating the same
 active/alive/unpaused run and floor. Disabled controls require the existing
 simultaneous freshness reason. Preserve the actual placement instruction and
 exact new nomination/native collision checks; do not infer success from clicks.
+
+### Native farm target rejection diagnostics (aae7)
+
+Both farm routes remain prepared at601s with two steps remaining, but both
+participants are combat-held. Current committed target498 is31px from the
+Warrior (range179); live native enemies still attack while local targets are
+null and the Warrior has no recorded attack. Capture bounded read-only farm
+samples of the actual native entity, selected dungeon getter, attack gate,
+known-death state, native collision, control identity and exact adjusted clock
+age. Failure modes: raw metadata may be absent, diagnostics must not mutate
+selection/tombstones/clock, disappear on timeout, or retain entire entity worlds.
+Cap125 samples at least5s apart, preserve physicalarrival70 and600s boundary.
