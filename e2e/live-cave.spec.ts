@@ -64,13 +64,24 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     }, { timeout: 20_000 }).toBe(true);
     await expect(card.locator('canvas')).toBeVisible();
     let mapScreenshot: Buffer = Buffer.alloc(0);
+    let mapPixels = {floor:0,texture:0,actor:0};
     await expect.poll(async () => {
       mapScreenshot = await card.locator('canvas').screenshot();
-      const { data } = await sharp(mapScreenshot).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-      const colors = new Set<number>();
-      for (let i = 0; i < data.length; i += 3) colors.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
-      return colors.size;
-    }, { timeout: 20_000, message: name + ' cave map must render terrain and actors' }).toBeGreaterThan(150);
+      const { data, info: size } = await sharp(mapScreenshot).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      mapPixels = {floor:0,texture:0,actor:0};
+      for(let y=0;y<size.height;y++)for(let x=0;x<size.width;x++) {
+        const i=(y*size.width+x)*3,r=data[i],g=data[i+1],b=data[i+2];
+        if(r>g*1.3 && g>b*1.3) {
+          mapPixels.floor++;
+          if(x && data[i-3]>=data[i-2] && data[i-2]>=data[i-1] &&
+            Math.abs(r-data[i-3])+Math.abs(g-data[i-2])+Math.abs(b-data[i-1])>20)mapPixels.texture++;
+        }
+        // This minimap follows its actor: native sprite feet are at its center.
+        if(Math.abs(x-size.width/2)<=12 && Math.abs(y-size.height/2)<=12 && r>180 && g>180 && b>140)mapPixels.actor++;
+      }
+      return mapPixels.floor>200 && mapPixels.texture>200 && mapPixels.actor>3;
+    }, { timeout: 20_000, message: name + ' cave map must render textured native floor and its centered actor' }).toBe(true);
+    await info.attach(name+'-cave-map-pixel-evidence',{body:JSON.stringify(mapPixels),contentType:'application/json'});
     await info.attach(name + '-cave-map', { body: mapScreenshot, contentType: 'image/png' });
   }
   await expect.poll(async () => (await dungeon()).state.error || null, { timeout: 15_000 }).toBe(null);
@@ -227,19 +238,27 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   })()`);
   await controls.getByRole('button',{name:'Stairs down',exact:true}).click();
   let answeredFarewell=false;
+  const stairReplies:{id:string;title:string;option:string}[]=[];
   await expect.poll(async()=>{
     const v=await dungeon(),c=v.members[0].observation.cave;
-    if(c?.choice&&!c.choice.resolved){
+    if(v.members.every((m:any)=>m.observation?.cave?.floor===1))return true;
+    if(c?.choice&&!c.choice.resolved&&!stairReplies.some(r=>r.id===c.choice.id)){
       const reply=c.choice.options.find((o:any)=>!o.unavailable&&!o.cost&&!o.amber);
+      try{
+        await choice.getByRole('button',{name:reply.label,exact:true}).click();
+      }catch(error){
+        if((await dungeon()).members.every((m:any)=>m.observation?.cave?.floor===1))return true;
+        throw error;
+      }
+      stairReplies.push({id:c.choice.id,title:c.choice.title,option:reply.label});
       answeredFarewell ||= c.choice.title==='Before You Leave';
-      await choice.getByRole('button',{name:reply.label,exact:true}).click();
     }
     return v.members.every((m:any)=>m.observation?.cave?.floor===1);
   // Random native floors can put these stairs over 4,000 walking units away.
   // Preserve the vote and actual floor assertions while allowing that route.
   },{timeout:240_000,message:'Manual stairs must continue after the farewell vote and transport both members'}).toBe(true);
   expect(answeredFarewell).toBe(true);
-  await info.attach('native-cave-floor-transition',{body:JSON.stringify({dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
+  await info.attach('native-cave-floor-transition',{body:JSON.stringify({stairReplies,dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
   await controls.getByRole('button', { name: 'Exit dungeon', exact: true }).click();
   const exit = page.getByRole('dialog', { name: 'Exit the dungeon?' });
   await expect(exit).toBeVisible();
@@ -305,3 +324,60 @@ test('Cave shared-route pacing keeps the party together and stops the selected r
 
 
 
+
+test('Cave assembly regroups displaced completed participants before departure', async ({live,page},info) => {
+  test.setTimeout(300_000);
+  await live.admin("Dev=true;Prod=false;G.events.dreams.disabled=false;G.events.dreams.encounters=G.events.dreams.encounters.filter(e=>['e11','e20','e31','e50'].includes(e.id));output=true");
+  await live.post('/formation',{leader:'E2EWarrior'});
+  await live.post('/formation',{character:'E2EPriest',follow:true});
+  const view=async()=>await (await page.request.get(live.url+'/party-api/daily-dungeons')).json();
+  const act=(body:Record<string,unknown>)=>live.post('/daily-dungeons',{operationId:crypto.randomUUID(),...body});
+  const positions=()=>live.admin("output=Object.fromEntries(['E2EWarrior','E2EPriest'].map(name=>{const p=get_player(name);return [name,{map:p.map,x:p.x,y:p.y,moving:!!p.moving,cruise:p.cruise}]}))");
+  const point=(name:string,distance:number)=>live.admin(`output=(()=>{const p=get_player(${JSON.stringify(name)});for(let i=0;i<16;i++){const a=i*Math.PI/8,x=p.x+${distance}*Math.cos(a),y=p.y+${distance}*Math.sin(a);if(can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))return {map:p.map,x,y};}throw Error('No collision-safe native displacement')})()`);
+  const move=async(name:string,destination:{x:number;y:number})=>{
+    await live.clients[name].frame.evaluate(({x,y})=>(window as any).move(x,y),destination);
+    await expect.poll(async()=>{const p=(await positions())[name];return Math.hypot(p.x-destination.x,p.y-destination.y);},{timeout:20_000}).toBeLessThan(5);
+  };
+  await expect.poll(async()=>{const v=await view();return v.members.length===2&&v.members.every((m:any)=>m.fresh&&m.observation?.ready&&m.observation?.visit?.available&&m.observation.members.length===2);},{timeout:60_000}).toBe(true);
+  await act({action:'enter'});
+  await expect.poll(async()=>(await view()).state.phase,{timeout:60_000}).toBe('active');
+  const cave=(await view()).members[0].observation.cave;
+  if(cave.choice&&!cave.choice.resolved){
+    const option=cave.choice.options.find((o:any)=>!o.unavailable&&!o.cost&&!o.amber);
+    expect(option).toBeTruthy();
+    await act({action:'vote',run:cave.run,choice:cave.choice.id,option:option.id});
+    await expect.poll(async()=>(await view()).members[0].observation.cave.choice.resolved,{timeout:30_000}).toBe(true);
+  }
+  const before=await positions(),offset=await point('E2EPriest',160);
+  // Real native walking and a temporary native cruise keep assembly open.
+  // No command completion, heartbeat or game response is synthesized.
+  await move('E2EPriest',offset);
+  await live.clients.E2EPriest.run('cruise(1)');
+  let initialId='',regroupId='';
+  try {
+    await expect.poll(async()=>(await view()).members.every((m:any)=>m.fresh&&m.observation.ready),{timeout:30_000}).toBe(true);
+    await act({action:'waypoint',run:cave.run,map:before.E2EWarrior.map,x:offset.x,y:offset.y});
+    await expect.poll(async()=>{
+      const v=await view(),command=v.state.commands.E2EWarrior,report=v.members.find((m:any)=>m.name==='E2EWarrior').observation.action;
+      initialId=command?.id;
+      return v.state.travel?.stage==='assembling'&&command?.action==='gather'&&report?.id===initialId&&report.status==='complete';
+    },{timeout:30_000,intervals:[100,250]}).toBe(true);
+    const displaced=await point('E2EWarrior',85);
+    await info.attach('declared-native-cave-assembly-displacement',{body:JSON.stringify({before,offset,displaced,temporaryPriestCruise:1,initialId}),contentType:'application/json'});
+    // Recovery may turn the actor back before the manual walk reaches its end.
+    await live.clients.E2EWarrior.frame.evaluate(({x,y})=>(window as any).move(x,y),displaced);
+    await expect.poll(async()=>{
+      const v=await view(),command=v.state.commands.E2EWarrior;
+      regroupId=command?.id;
+      return command?.action==='gather'&&regroupId!==initialId&&v.state.travel?.assemblyRepairs===1;
+    },{timeout:30_000,intervals:[100,250]}).toBe(true);
+    await expect.poll(async()=>{
+      const v=await view(),report=v.members.find((m:any)=>m.name==='E2EWarrior').observation.action,p=(await positions()).E2EWarrior;
+      return report?.id===regroupId&&report.status==='complete'&&Math.hypot(p.x-before.E2EWarrior.x,p.y-before.E2EWarrior.y)<50;
+    },{timeout:30_000}).toBe(true);
+  } finally {
+    await live.clients.E2EPriest.run(`cruise(${Number(before.E2EPriest.cruise)||500})`);
+  }
+  await expect.poll(async()=>{const p=await positions();return ['E2EWarrior','E2EPriest'].every(name=>Math.hypot(p[name].x-offset.x,p[name].y-offset.y)<35);},{timeout:90_000}).toBe(true);
+  await info.attach('native-cave-completed-assembly-regroup',{body:JSON.stringify({initialId,regroupId,positions:await positions(),dungeon:await view()}),contentType:'application/json'});
+});

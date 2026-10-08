@@ -468,3 +468,36 @@ test('skipped walk preserves transition barrier index and pending acknowledgemen
  assert.deepEqual(r.calls,['town']);assert.deepEqual(barriers,[{index:0,completed:false}]);
  assert.equal(r.state.plot.length,1);assert.equal(r.state.plot[0].town,true);
 });
+
+test('Cave shared walking repairs one collision-checked connector after actual position drift',async()=>{
+ const r=fixture({nativePlot:[{map:'main',x:0,y:20},{map:'main',x:50,y:20},{map:'main',x:50,y:0}]});
+ r.host.can_move=p=>!(p.y===10 && p.going_x===50 && p.going_y===0);
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true});p.catch(()=>{});
+ r.service.install([{map:'main',x:50,y:0},{map:'main',x:100,y:0}],r.service.identity,'cave-convoy');
+ Object.assign(r.c,{y:10,real_y:10});await r.ticks(30);await p;
+ assert.equal(r.searches,1);assert.equal(r.c.real_x,100);assert.equal(r.c.real_y,0);
+ assert.ok(r.logs.some(l=>l.phase==='Walking segment repaired'));r.dispose();
+});
+test('shared Cave connector rejection cannot fall back to a new destination or cross maps',async()=>{
+ const r=fixture({nativePlot:[{map:'bank',x:50,y:0}]});
+ r.host.can_move=p=>!(p.y===10 && p.going_x===50 && p.going_y===0);
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true});
+ const failed=assert.rejects(p,/Shared connector repair failed/);
+ r.service.install([{map:'main',x:50,y:0},{map:'main',x:100,y:0}],r.service.identity,'cave-convoy');
+ Object.assign(r.c,{y:10,real_y:10});await r.ticks(12);await failed;assert.equal(r.searches,1);assert.equal(r.c.real_x,0);r.dispose();
+});
+test('ordinary shared journeys still reject drifting unsafe connectors without independent planning',async()=>{
+ const r=fixture();r.host.can_move=p=>!(p.y===10 && p.going_x===50 && p.going_y===0);
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true});const failed=assert.rejects(p,/collisions detected/);
+ r.service.install([{map:'main',x:50,y:0},{map:'main',x:100,y:0}],r.service.identity);
+ Object.assign(r.c,{y:10,real_y:10});await r.ticks(8);await failed;assert.equal(r.searches,0);r.dispose();
+});
+test('Cave connector repair stops on instance changes and superseded runtime ownership',async()=>{
+ for(const change of [r=>r.c.in='other',r=>r.supersede()]){
+  const r=fixture({nativePlot:[{map:'main',x:0,y:20},{map:'main',x:50,y:20},{map:'main',x:50,y:0}]});
+  r.host.can_move=p=>!(p.y===10&&p.going_x===50&&p.going_y===0);
+  const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true});const failed=assert.rejects(p);
+  r.service.install([{map:'main',x:50,y:0},{map:'main',x:100,y:0}],r.service.identity);
+  Object.assign(r.c,{y:10,real_y:10});change(r);await r.ticks(8);await failed;assert.equal(r.searches,0);r.dispose();
+ }
+});

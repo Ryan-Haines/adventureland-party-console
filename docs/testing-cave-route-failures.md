@@ -45,3 +45,67 @@ those fights. Match the resumed prepared commands independently of combat
 readiness, then allow the existing 300-second room-arrival budget. Keep both
 characters within 70 of the selected point, all stop assertions and native
 engine/cruise evidence; combat alone never substitutes for actual arrival.
+
+## Assembly displaced after native completion
+
+Native combat can displace a participant after its gather command completed.
+The old completion journal prevents executing the same command again, while the
+coordinator still requires current positions at the assembly point. This can
+strand a newly selected route before departure. Recovery must issue a fresh
+owned gather ID only for a completed current gather that drifted beyond the
+assembly tolerance. Require fresh, living, combat/loot-ready observations on the
+same run and floor; reject stale receipts, different commands and coordinates,
+wrong maps/runs, pending combat, and in-flight gathers. Keep the original target
+and arrival conditions. Bound repeated regroup attempts explicitly instead of
+silently looping; old receipts must not authorize departure or overwrite a
+newer command. The native journey still proves both actual boss arrivals.
+
+The deterministic native assembly case uses actual collision-checked walking
+and a temporarily slow native cruise to keep a peer's gather in flight. It
+observes a real completed gather, displaces that actor with another native walk,
+and verifies a new owned gather receipt and real return before both actors
+reach the selected waypoint. Original cruise is restored in a finally block.
+
+A visually verified rendered Cave minimap had 148 distinct colors and failed
+the old arbitrary 150-color criterion. Screenshot verification now requires
+material native orange floor coverage, variation between neighboring floor
+pixels, and the bright native actor sprite in the camera-centered region.
+Both pixel counts and screenshots are retained; blank or flat terrain cannot
+satisfy these checks. The minimap camera follows the actor, with sprite feet
+at the center (the sprite lies immediately above that point).
+
+The exact archived 148-color Priest canvas measured 13,325 orange floor pixels,
+1,652 transitions from native dark-neutral floor speckles to orange floor, and
+10 bright centered actor pixels. All exceed the coverage/texture/actor limits
+(200/200/3). The texture neighbor accepts dark neutral or warm pixels, excluding
+purple walls/background. Constant purple and constant orange negative-control
+images have zero qualifying texture transitions and zero bright actor pixels;
+both fail, independently of their floor coverage.
+
+## Shared route connector after combat drift
+
+A validated Cave route can be interrupted by native combat/formation movement.
+The current actor can then no longer reach the next retained waypoint directly,
+even though the original edge was valid. Both leader and follower must retain
+collision checks. A Cave-only opt-in may plan one bounded three-second same-map
+walking connector to that next waypoint, then validate the entire bridge and
+remaining owned route before resuming. Reject map/instance changes, transitions,
+supersession, a second repair, unsafe bridges or moved endpoints. A failed
+shared repair must fail the owned journey; it must never independently plan a
+new destination route. Preserve barriers, runtime/revision, cruise, remaining
+endpoint and generic shared-route behavior. Native stair and full journey
+assertions remain the acceptance boundary.
+
+## Native connector validation and transition choice race
+
+The first native connector run completed four distinct walking-segment repairs
+(one Priest and three Warrior journeys), including two stairs connectors; no
+shared connector repair failed. Both native actors reached floor 1. The test
+then timed out clicking a stale previous-floor `Take 2 Amber` reply as the modal
+was replaced by the new-floor shop. Test failure modes: the goal can already be
+true before a choice click, or become true during that click; repeated pending
+choice clicks can target obsolete replies. Check both real floor values first,
+submit each choice ID once, retain successful farewell vote evidence, and only
+accept a click error when a fresh native observation proves both actors already
+reached floor 1. Every other click error must still fail the test. Preserve the
+farewell vote requirement, collision checks and actual floor transition.

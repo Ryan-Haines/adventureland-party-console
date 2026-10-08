@@ -71,6 +71,17 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Cave travel can repair one blocked local walking connector after combat
+  displaces an actor off its shared route. The bounded native same-floor bridge
+  and remaining route must pass collision validation; ownership, movement
+  barriers and destination remain intact, and failed repairs never start an
+  independent shared destination route.
+
+- Cave travel recovers when native combat displaces a participant after its
+  assembly command completed. Fresh, ready participants regroup under new owned
+  command IDs before the selected route departs, with bounded retries and
+  unchanged combat, loot and arrival barriers.
+
 - Native Cave cruise checks wait for the selected owned route to prepare before
   applying the motion deadline, preserving displacement and native cruise checks.
   Resumed routes separate preparation and native wave combat from room arrival.
