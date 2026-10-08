@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { transform, build } from 'esbuild';
-import { LocalSteam } from '../tools/steam/service';
+import { LocalSteam, type DesktopPorts } from '../tools/steam/service';
 import { SteamPreferenceStore } from '../tools/steam/preferences';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -843,13 +843,14 @@ test('Steam handoff preserves saved setup when browser choices are incomplete', 
   const directory = path.resolve('.build/e2e', `steam-setup-${randomUUID()}`);
   const preferences = new SteamPreferenceStore(directory);
   await preferences.save({ placement: 'same', client: 'windows-steam' });
-  let launched = 0, connected = false, forwarded = 0;
-  const steam = new LocalSteam(preferences, {
+  let launched = 0, connected = false, forwarded = 0, attachments = 0;
+  const ports: DesktopPorts = {
     platform: 'win32', targets: async () => launched ? [{url:'http://game',socket:'ws://fixture'}] : [],
     executable: async () => 'declared-steam-executable', running: async () => false,
-    launch: async () => { launched++; }, connect: async () => ({ evaluate: async () => { connected=true; return true; }, close: () => {} }),
+    launch: async () => { launched++; }, connect: async () => ({ evaluate: async () => { attachments++; connected=true; return true; }, close: () => {} }),
     bridgeReady: async () => connected, server: async () => 'http://console', source: async () => '', now: Date.now, sleep: async () => {},
-  });
+  };
+  let steam = new LocalSteam(preferences, ports);
   const upstream = createServer((req,res) => {
     res.setHeader('Content-Type','application/json');
     if(req.method==='POST') { forwarded++; res.end(JSON.stringify({ok:true})); }
@@ -857,7 +858,8 @@ test('Steam handoff preserves saved setup when browser choices are incomplete', 
   });
   await new Promise<void>(resolve=>upstream.listen(0,'127.0.0.1',resolve));
   const access = new Access(path.join(directory,'access.json')); await access.load();
-  const server = gateway({access,steam,configured:()=>true,dashboardPort:1,apiPort:(upstream.address() as {port:number}).port});
+  const options={access,steam,configured:()=>true,dashboardPort:1,apiPort:(upstream.address() as {port:number}).port};
+  const server = gateway(options);
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
   const page = await browser.newPage();
   const origin = `http://127.0.0.1:${(server.address() as {port:number}).port}`;
@@ -885,14 +887,22 @@ test('Steam handoff preserves saved setup when browser choices are incomplete', 
     await expect(page.locator('#client')).toHaveValue('windows-steam');
     expect(JSON.parse(await page.evaluate(()=>localStorage.getItem('party-connection-setup')||'null'))).toMatchObject({placement:'same',client:'windows-steam'});
     await info.attach('steam-saved-setup-restored',{body:await page.screenshot(),contentType:'image/png'});
+    // A hosting restart has no maintenance timer; an already ready local bridge
+    // must be inspected/refreshed before forwarding, without launching again.
+    steam.stop(); steam=new LocalSteam(preferences,ports); options.steam=steam;
+    const beforeRefresh=attachments;
+    const refreshed=await page.request.post(origin+'/party-api/steam/action',{headers:{Origin:origin},data:{action:'primary',character:'W'}});
+    expect(refreshed.ok()).toBe(true); expect(attachments).toBe(beforeRefresh+1);
+    expect(launched).toBe(1); expect(forwarded).toBe(2);
     connected=false;
     const remote=await page.request.post(origin+'/party-api/steam/action',{headers:{Origin:origin},data:{action:'primary',character:'W',clientSetup:{placement:'remote',client:'windows-steam'}}});
     expect(remote.ok()).toBe(false); expect(await remote.text()).toContain('Unable to start Steam client from a different PC');
-    expect(launched).toBe(1); expect(forwarded).toBe(1);
+    expect(launched).toBe(1); expect(forwarded).toBe(2);
     connected=true;
+    const beforeRemote=attachments;
     const attached=await page.request.post(origin+'/party-api/steam/action',{headers:{Origin:origin},data:{action:'primary',character:'W'}});
-    expect(attached.ok()).toBe(true); expect(forwarded).toBe(2);
-    await info.attach('steam-launch-boundary-ledger',{body:JSON.stringify({launched,forwarded,preferences:await preferences.read(),remoteStatus:remote.status(),attachedStatus:attached.status()}),contentType:'application/json'});
+    expect(attached.ok()).toBe(true); expect(forwarded).toBe(3); expect(attachments).toBe(beforeRemote);
+    await info.attach('steam-launch-boundary-ledger',{body:JSON.stringify({launched,forwarded,attachments,preferences:await preferences.read(),remoteStatus:remote.status(),attachedStatus:attached.status()}),contentType:'application/json'});
   } finally {
     steam.stop(); await page.close(); server.closeAllConnections(); upstream.closeAllConnections();
     await Promise.all([new Promise<void>(resolve=>server.close(()=>resolve())),new Promise<void>(resolve=>upstream.close(()=>resolve()))]);

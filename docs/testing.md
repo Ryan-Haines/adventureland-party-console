@@ -709,3 +709,8 @@ HTTP heartbeats after a declared structured native save rejection. Verify its
 reason reaches the failure receipt, private response fields stay absent, and
 no release receipt or native disconnect occurs. The pre-code RED reproduced
 `[object Object]`; retain the heartbeat ledger as evidence.
+
+The Steam saved-setup journey also recreates the hosting service while its local
+bridge is already ready. The next handoff must refresh the native attachment
+without another desktop launch; a connected remote bridge must skip the local
+attachment. The pre-code RED observed no local refresh after service recreation.

@@ -7,6 +7,10 @@ from the commits merged into `main`.
 
 ### Added
 
+- An already connected local Steam client refreshes its managed bridge before
+  handoff after a hosting restart, without relaunching the game. Connected remote
+  clients remain usable without access to a desktop on the console machine.
+
 - Steam handoff errors preserve native API reasons instead of displaying
   `[object Object]`; diagnostics omit unrelated account and session fields.
 
