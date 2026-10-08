@@ -144,8 +144,10 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       if(!people.every(actor=>walk(actor,origin)&&clearance(actor,origin,enemies)>=300))continue;
       for(let k=0;k<32;k++){
         const angle=k*Math.PI/16,target={map:p.map,x:origin.x+distance*Math.cos(angle),y:origin.y+distance*Math.sin(angle)};
-        const roomClearance=clearance(origin,target,rooms),enemyClearance=clearance(origin,target,enemies);
-        if(walk(origin,target)&&roomClearance>=410&&enemyClearance>=300)return {origin,target,distance,roomClearance,enemyClearance,rooms,enemies};
+        const endpoints=[-20,0,20].flatMap(dx=>[-20,0,20].map(dy=>({x:target.x+dx,y:target.y+dy})));
+        const roomClearance=Math.min(...endpoints.map(point=>clearance(origin,point,rooms)));
+        const enemyClearance=Math.min(...endpoints.map(point=>clearance(origin,point,enemies)));
+        if(endpoints.every(point=>walk(origin,point))&&roomClearance>=410&&enemyClearance>=300)return {origin,target,distance,roomClearance,enemyClearance,endpointMargin:20,rooms,enemies};
       }
     }
     throw Error('No collision-safe noncombat native Stop/resume segment');
@@ -161,16 +163,32 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   const farm = cave.points.find((p:any)=>p.kind==='farm'&&!p.done);
   expect(farm).toBeTruthy();
   const selectWaypoint=async()=>{
+    const previous=(await dungeon()).state;
+    const previousIds=new Set([previous.travel?.target?.id,...Object.values(previous.commands).map((c:any)=>c.target?.id)]);
     await controls.getByRole('button',{name:'View full map',exact:true}).click();
     await fullMap.getByRole('button',{name:'Add waypoint',exact:true}).click();
     const box=(await fullMap.locator('canvas').boundingBox())!;
     const scale=Math.min(box.width/(bounds.max_x-bounds.min_x+100),box.height/(bounds.max_y-bounds.min_y+100));
     await fullMap.locator('canvas').click({position:{x:box.width/2+(safe.target.x-(bounds.min_x+bounds.max_x)/2)*scale,y:box.height/2+(safe.target.y-(bounds.min_y+bounds.max_y)/2)*scale}});
+    const nomination=await fullMap.getByText(/^-?\d+, -?\d+$/).innerText();
+    const [x,y]=nomination.split(',').map(Number);
+    expect(Math.hypot(x-safe.target.x,y-safe.target.y),'Canvas nomination must remain within the validated native endpoint margin').toBeLessThan(10);
+    await info.attach('native-cave-visible-waypoint-nomination',{body:JSON.stringify({nomination,intended:safe.target,endpointMargin:safe.endpointMargin}),contentType:'application/json'});
     await fullMap.getByRole('button',{name:'Set waypoint',exact:true}).click();
     await expect(fullMap).not.toBeVisible();
+    let selected:{id:string;map:string;x:number;y:number}|undefined;
+    await expect.poll(async()=>{
+      const view=await dungeon(),state=view.state;
+      const candidates=[state.travel?.target,...Object.values(state.commands).filter((c:any)=>c.action==='move'&&c.run===cave.run).map((c:any)=>c.target)];
+      selected=candidates.find(point=>point?.label==='Waypoint'&&!previousIds.has(point.id)&&state.run===cave.run&&point.map===safe.target.map&&Math.hypot(point.x-safe.target.x,point.y-safe.target.y)<10);
+      return !!selected;
+    },{timeout:15_000}).toBe(true);
+    const nativeValid=await live.admin(`output=can_move({map:${JSON.stringify(safe.origin.map)},x:${safe.origin.x},y:${safe.origin.y},going_x:${selected!.x},going_y:${selected!.y},base:get_player('E2EWarrior').base});`);
+    expect(nativeValid,'Actual canvas-selected waypoint must pass native collision validation').toBe(true);
+    await info.attach('native-cave-selected-waypoint',{body:JSON.stringify(selected),contentType:'application/json'});
+    return selected!;
   };
-  await selectWaypoint();
-  let target=(await dungeon()).state.travel.target;
+  let target=await selectWaypoint();
   const waitForSelectedRoute = async (requireTravelling: boolean) => expect.poll(async () => {
     const view = await dungeon(), state = view.state;
     return (!requireTravelling || state.travel?.stage === 'travelling') && state.travel?.target?.id === target.id &&
@@ -201,8 +219,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
   await waitForStoppedTravel();
   await info.attach('native-cave-stopped-en-route', {body:JSON.stringify(await dungeon()), contentType:'application/json'});
-  await selectWaypoint();
-  target=(await dungeon()).state.travel.target;
+  target=await selectWaypoint();
   // Defensive combat and real reassembly must finish before charging the
   // native route planner's preparation budget on this resumed selection.
   await expect.poll(async()=>{

@@ -100,6 +100,8 @@ from the commits merged into `main`.
   aggro, then still requires both characters to reach the generated farm.
   Map waypoint coverage distinguishes immediate selection acknowledgement from
   native assembly and owned move dispatch, preserving exact target and run checks.
+  Safe waypoint fixtures account for canvas rounding and validate the exact
+  accepted destination with native collision checks.
 - Native merchant checks allow bank travel before the injected lucky return fault,
   generated reward-box exchange chains, and the final recovery batch's two
   upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.

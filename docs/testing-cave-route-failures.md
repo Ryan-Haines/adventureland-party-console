@@ -251,3 +251,15 @@ unrelated waypoint, missing participant commands, or accepting position without
 owned travel. First verify the selected map/coordinates, then bound both owned
 move commands by the existing 120-second preparation phase. Retain both actual
 native positions within 50 units and archive the real selected waypoint.
+
+## Canvas waypoint rounding preserves a collision-safe margin
+
+CI 7d5 (37789339493) selected (255.826,671.391), about 6.4 native
+units from the fixture-validated (260.102,676.164). Native route validation
+correctly rejected its final collision edge. Failure modes: validating only an
+ideal point, accepting a different pixel-nominated position, or masking a real
+collision as a preparation delay. Require native-valid segments to the nine
+endpoint offsets in a +/-20-unit grid, preserving room/enemy clearances for
+all nine segments. Record this explicit margin and verify the visible rounded
+nomination and the actual selected native coordinate; runtime collision
+validation and physical travel assertions remain unchanged.
