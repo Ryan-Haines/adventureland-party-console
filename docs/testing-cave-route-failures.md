@@ -475,3 +475,18 @@ no-effect retry requires an enabled button, unchanged nomination, no rendered
 error, and the same active/alive/unpaused run and floor. Never retry an observed
 pending POST, disabled busy control, changed nomination, unrelated HTTP error,
 or accepted request; attach every request and pending state even on failure.
+
+### Progress-guarded Cave native preparation (b168)
+
+Captured native BFS advanced to about 98,000 processed nodes before each 90s
+cutoff discarded it. Exact pinned 15555 replay with captured collision geometry
+found validated routes in three shuffle orders at 169,581–169,790 nodes;
+remote throughput predicts about155s. Preserve the Cave90s initial deadline,
+but allow up to240s only while the same native search has finite monotonic
+frontier progress within15s. Align shared followers to270s. Generic30s and
+local connector3s remain unchanged. Before runtime edits, retained isolated
+regressions cover progressing completion, stagnant/missing/reset counters,
+hard cap despite progress, generic and repair bounds, and follower alignment.
+Also guard ownership/map/instance and full native route validation through
+existing movement regressions; extension never changes walk permission or
+accepts a partial native route. Replay: .build/b168-exact-pinned-bfs-replay.json.

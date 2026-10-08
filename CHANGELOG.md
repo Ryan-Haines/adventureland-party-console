@@ -71,6 +71,10 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Preserve progress in large Cave native route searches: extend the 90-second
+  initial bound while the same BFS advances, with a 240-second hard limit and
+  a 270-second follower wait. Stalled, reset, or unavailable progress keeps the
+  original deadline; ordinary travel and local repair bounds are unchanged.
 - Cave travel can reconnect up to three distinct retained walking endpoints
   after separate combat displacements. Each connector keeps its three-second
   native limit and complete route validation; repeated endpoints and a fourth
