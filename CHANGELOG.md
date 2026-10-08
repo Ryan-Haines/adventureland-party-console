@@ -7,6 +7,10 @@ from the commits merged into `main`.
 
 ### Added
 
+- Steam handoff stores its generic bootstrap in a free native CODE slot from
+  1–100 instead of an unsupported UUID slot. Occupied slots and original CODE
+  cache stay intact; unavailable or full slot inventories fail before release.
+
 - An already connected local Steam client refreshes its managed bridge before
   handoff after a hosting restart, without relaunching the game. Connected remote
   clients remain usable without access to a desktop on the console machine.

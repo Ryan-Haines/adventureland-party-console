@@ -714,3 +714,10 @@ The Steam saved-setup journey also recreates the hosting service while its local
 bridge is already ready. The next handoff must refresh the native attachment
 without another desktop launch; a connected remote bridge must skip the local
 attachment. The pre-code RED observed no local refresh after service recreation.
+
+Steam numeric CODE-slot allocation uses `Steam bridge reserves a free native
+CODE slot`. The declared native API rejects UUID slots as `no_slot` and rejects
+writes to occupied slots. The browser bridge must choose a free numbered slot
+and preserve unrelated cache and its original snapshot. Native 17665 documents
+numbered slots 1–100 in `/savecode` and `filename_to_cdata`; a missing `X.codes`
+inventory is unknown and must not be treated as an empty account.

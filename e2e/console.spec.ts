@@ -933,7 +933,7 @@ test('Steam bridge reports native save rejection without losing its reason', asy
     await page.evaluate(origin=>{
       const host=window as unknown as Record<string,unknown>;
       host.__partyServer=origin;host.character={name:'P'};host.socket={connected:true,disconnect(){throw Error('Save failure must not disconnect');}};
-      host.X={characters:[{name:'W',id:'owned-w'}]};host.storage_get=()=>null;host.storage_set=()=>{};
+      host.X={characters:[{name:'W',id:'owned-w'}],codes:{}};host.storage_get=()=>null;host.storage_set=()=>{};
       host.stop_runner=()=>{throw Error('Save failure must not stop CODE');};
       host.api_call=async()=>{throw {failed:true,reason:'invalid_slot',error:'Use a supported CODE slot',session:'PRIVATE-SENTINEL'};};
       (host.NativeBridge as {installSteamBridge(host:unknown):void}).installSteamBridge(window);
@@ -945,4 +945,63 @@ test('Steam bridge reports native save rejection without losing its reason', asy
   } finally {
     await page.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));
   }
+});
+
+
+test('Steam bridge reserves a free native CODE slot without overwriting saved code', async ({ browser }, info) => {
+  // Failure modes: UUID slot rejected as no_slot; occupied/user/default CODE is
+  // overwritten; an absent inventory is assumed empty; full slots disconnect the
+  // client; original cache is lost. Native save is a declared protocol boundary.
+  const packets: Record<string,unknown>[]=[];
+  const server=createServer(async(req,res)=>{
+    if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<body></body>');return;}
+    let raw='';for await(const chunk of req)raw+=chunk;packets.push(JSON.parse(raw));
+    res.setHeader('Content-Type','application/json');res.end(JSON.stringify({operation:{id:'native-slot',from:'P',target:'W',phase:'release'},realm:'SR_USII',members:[]}));
+  });
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
+  const page=await browser.newPage();
+  try {
+    await page.goto(origin);
+    const bundle=await build({entryPoints:['runtime/steam/bridge.ts'],bundle:true,write:false,format:'iife',globalName:'NativeBridge',platform:'browser'});
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(origin=>{
+      const host=window as unknown as Record<string,unknown>;
+      host.__partyServer=origin;host.character={name:'P'};const socket={connected:true,disconnect(){socket.connected=false;}};host.socket=socket;
+      host.X={characters:[{name:'W',id:'owned-w'}],codes:{'1':['User code',1],'100':['Other saved code',1]}};
+      const cache=new Map([['code_cache',JSON.stringify({slot_owned_w:'1',code_owned_w:'User code'})]]);
+      host.storage_get=(key:string)=>cache.get(key)||null;host.storage_set=(key:string,value:string)=>cache.set(key,value);
+      host.stop_runner=()=>{};host.saved=[];
+      host.api_call=async(method:string,payload:{slot:string})=>{
+        if(!/^(?:[1-9]|[1-9][0-9]|100)$/.test(String(payload.slot)))throw {failed:true,reason:'no_slot'};
+        if(['1','100'].includes(String(payload.slot)))throw Error('Occupied CODE must not be overwritten');
+        (host.saved as unknown[]).push({method,payload});return {success:true};
+      };
+      host.cache=cache;
+      (host.NativeBridge as {installSteamBridge(host:unknown):void}).installSteamBridge(window);
+    },origin);
+    await expect.poll(()=>packets.some(packet=>packet.released===true)).toBe(true);
+    const result=await page.evaluate(()=>{
+      const host=window as unknown as {saved:{payload:{slot:string}}[];cache:Map<string,string>};
+      return {saved:host.saved,cache:JSON.parse(host.cache.get('code_cache')||'{}'),original:localStorage.getItem('party-console-bootstrap-slot-v1:'+location.origin+':original-cache')};
+    });
+    expect(String(result.saved[0].payload.slot)).toBe('99');expect(result.cache.slot_owned_w).toBe('1');
+    expect(JSON.parse(result.original||'null')).toEqual({slot_owned_w:'1',code_owned_w:'User code'});
+    await info.attach('steam-native-free-slot',{body:JSON.stringify({packets,result}),contentType:'application/json'});
+    for(const inventory of ['full','unknown']) {
+      packets.length=0;
+      await page.evaluate(inventory=>{
+        const host=window as unknown as {__partySteamBridge:{dispose():void};socket:{connected:boolean};X:{codes?:Record<string,unknown>};NativeBridge:{installSteamBridge(host:unknown):void}};
+        host.__partySteamBridge.dispose();localStorage.clear();sessionStorage.clear();host.socket.connected=true;
+        host.X.codes=inventory==='full'?Object.fromEntries(Array.from({length:100},(_,i)=>[String(i+1),['User code',1]])):undefined;
+        host.NativeBridge.installSteamBridge(window);
+      },inventory);
+      await expect.poll(()=>packets.find(packet=>packet.error)?.error).toContain(inventory==='full'?'No free Adventure Land CODE slot':'Cannot inspect saved CODE slots');
+      expect(packets.some(packet=>packet.released===true)).toBe(false);
+      expect(await page.evaluate(()=>((window as unknown as {saved:unknown[]}).saved).length)).toBe(1);
+      expect(await page.evaluate(()=>((window as unknown as {socket:{connected:boolean}}).socket).connected)).toBe(true);
+      await info.attach('steam-native-slot-'+inventory,{body:JSON.stringify(packets),contentType:'application/json'});
+    }
+
+  } finally {await page.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
 });
