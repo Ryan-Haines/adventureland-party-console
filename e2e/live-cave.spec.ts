@@ -109,10 +109,10 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       new URL(request.url()).pathname==='/party-api/daily-dungeons'&&request.postDataJSON()?.action==='waypoint';
     try{
       await expect.poll(async()=>{
-        let submitted=false,response:Promise<{status:number;body:any}>|undefined;
+        let submitted=false,response:Promise<{status:number;body:any;request:any}>|undefined;
         const requested=(request:import('@playwright/test').Request)=>{if(isWaypoint(request))submitted=true;};
         const responded=(reply:import('@playwright/test').Response)=>{
-          if(isWaypoint(reply.request()))response=reply.json().then(body=>({status:reply.status(),body}));
+          if(isWaypoint(reply.request()))response=reply.json().then(body=>({status:reply.status(),body,request:reply.request().postDataJSON()}));
         };
         page.on('request',requested);page.on('response',responded);
         try{
@@ -129,7 +129,19 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
           }
           const result=await response!;
           attempts.push({submitted:true,status:result.status,error:result.body.error});
-          if(result.status===409&&/^.+: fresh dungeon-compatible runtime required$/.test(result.body.error||''))return false;
+          if(result.status===409&&result.body.error==='Fresh matching dungeon run required'){
+            const view=await dungeon(),requested=result.request;
+            const floor=Number(requested.map?.split('_').at(-1));
+            expect(view.state.phase).toBe('active');
+            expect(view.state.run).toBe(requested.run);
+            expect(requested.map).toBe('zone_'+requested.run+'_'+floor);
+            expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===requested.run&&
+              m.observation.cave.floor===floor&&!m.observation.cave.paused),
+              'A freshness rejection may not hide a different run, floor, death, or native pause').toBe(true);
+            expect(view.members.some((m:any)=>!m.fresh),'The combined admission rejection must be confirmed as a stale heartbeat').toBe(true);
+            await info.attach('native-cave-waypoint-freshness-rejection',{body:JSON.stringify({request:requested,response:result.body,dungeon:view}),contentType:'application/json'});
+            return false;
+          }
           expect(result.status,'Waypoint submission must be accepted; other errors are not retried').toBe(200);
           await expect(fullMap).not.toBeVisible();
           return true;

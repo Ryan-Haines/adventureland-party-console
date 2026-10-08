@@ -371,3 +371,15 @@ admission. Observe the real waypoint POST before clicking. Retry only a
 suppressed request with an observed disabled button or an explicit HTTP 409
 fresh-runtime rejection. HTTP 200 must close the map with no retry; all other
 HTTP/rendered errors fail. Preserve owned target and native arrival checks.
+
+## Retry the actual waypoint freshness rejection with identity proof
+
+CI 00aa (37809678287) recorded HTTP 409 with the exact body `Fresh matching
+dungeon run required`. This is the waypoint action's combined admission guard,
+not the entry validator's character-specific freshness error. Both native
+participants remained alive, unpaused, on run 1c603f267b3799f12061a48e floor 0.
+Failure modes: interpreting a changed run/phase/floor as stale, or retrying
+other rejection types. Permit only this exact 409 after a fresh read proves
+active state matches the submitted run and map/floor, every participant is
+alive/unpaused on that run/floor, and at least one observation is stale.
+All other errors fail; accepted HTTP 200 requests are never retried.

@@ -114,6 +114,8 @@ from the commits merged into `main`.
   the farewell, with separate vote acknowledgement and floor-transition checks.
   Waypoint E2Es verify the actual UI request and retry only observed heartbeat
   suppression, retaining accepted-target checks and a submission evidence ledger.
+  Freshness-rejection retries additionally verify the requested run and floor,
+  live participants, and the observed report gap before another UI submission.
 - Keep the same-run Cave map and waypoint selection open during heartbeat gaps,
   while disabling waypoint actions until every participant has a fresh, alive,
   matching-floor observation. Changing run or floor clears the old selection.
