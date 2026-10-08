@@ -284,7 +284,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await expect.poll(async()=>{
     const s=await live.state();
     return Math.max(...['E2EWarrior','E2EPriest'].map(name=>Math.hypot(s.characters[name].x-farm.x,s.characters[name].y-farm.y)));
-  },{timeout:300_000,message:'Both characters must reach the original native farm after manual waypoint travel'}).toBeLessThan(70);
+  },{timeout:600_000,message:'Both characters must reach the original native farm after manual waypoint travel'}).toBeLessThan(70);
   await controls.getByRole('button',{name:'Stop travel',exact:true}).click();
   await waitForStoppedTravel();
   await info.attach('native-cave-manual-travel', { body: JSON.stringify({ dungeon: await dungeon(), state: await live.state() }), contentType: 'application/json' });

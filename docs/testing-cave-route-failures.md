@@ -325,3 +325,19 @@ and records a stale read-only map screenshot plus transition ledger. The old
 run/floor dialog closes and its waypoint is cleared. This reproduces the
 mount-loss vulnerability; the original native trace contains no network
 freshness payloads, so its exact missing-heartbeat instant is not claimed.
+
+## Native farm arrival includes real combat and loot holds
+
+CI 9251 (37801552787) retains one owned serial-4 route, 1,191.705 units long,
+from (404.348,570.609) to the original native farm (1040,584), speed/cruise 79,
+one search and zero retries. Non-heal native hit packets cluster into about
+187 seconds of combat spans (32.210–104.642, 136.892–158.778,
+175.220–267.985 seconds after journey start; these are packet spans, not exact
+readiness hold durations). Native death 496 arrived at 1791474324044 and chest
+opening at 1791474338028. Both owned journeys still had two walking edges,
+no terminal failure, and accepted new movement toward the same retained point:
+Warrior at 1791474343476, Priest at 1791474354035. Thus 300 wall-clock seconds
+expired during real combat/loot progress. Bound this native farm arrival by the
+existing 600-second boss-leg allowance; preserve both physical distances <70,
+all ownership and native kill checks, and the overall 1,500-second case bound.
+Audit artifact: .build/cave-925-native-timing-audit.json. No runtime change.

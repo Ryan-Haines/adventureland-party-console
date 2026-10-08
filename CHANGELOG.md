@@ -108,6 +108,8 @@ from the commits merged into `main`.
   preventing an owned route from overriding the setup's native movement.
   Resumed waypoint coverage requires completed owned moves and exact endpoint
   arrival before starting the farm trip.
+  Native farm arrival allows the same bounded combat and loot time as boss
+  travel, while still requiring both characters to physically reach the room.
 - Keep the same-run Cave map and waypoint selection open during heartbeat gaps,
   while disabling waypoint actions until every participant has a fresh, alive,
   matching-floor observation. Changing run or floor clears the old selection.
