@@ -341,3 +341,21 @@ expired during real combat/loot progress. Bound this native farm arrival by the
 existing 600-second boss-leg allowance; preserve both physical distances <70,
 all ownership and native kill checks, and the overall 1,500-second case bound.
 Audit artifact: .build/cave-925-native-timing-audit.json. No runtime change.
+
+## Stairs approach includes native combat and bounded route repairs
+
+CI e7ab (37804474116) passed native farm and boss arrival. Farewell was
+injected at 1791475608885 on the real stairs (3824,496). At +242.783s,
+both characters were ready and actively walking the prepared serial-14 route,
+length 1,530.329 units, speed 79, with only 19.184/17.715 seconds on the
+current journeys and one remaining edge. Native no-progress ages were only
+354/242ms. Persisted travel recorded two repairs and no terminal failure.
+After injection, 109 native hit packets and enemy deaths through +217.884s
+prove combat continued during the approach. Exact planning/assembly durations
+cannot be partitioned from the untimestamped persisted ledger. The current
+choice was resolved; the injected farewell had not yet been reached.
+Failure mode: charging native combat/reassembly to a 240-second approach bound
+while a fresh owned route is still progressing. Align the stairs approach to
+the existing 600-second farm/boss allowance, preserving the actual farewell
+reply, both native vote acknowledgements, independent continuation/floor-1
+checks, and the overall 1,500-second case bound. No runtime changes.

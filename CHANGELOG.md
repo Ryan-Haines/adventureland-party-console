@@ -110,6 +110,8 @@ from the commits merged into `main`.
   arrival before starting the farm trip.
   Native farm arrival allows the same bounded combat and loot time as boss
   travel, while still requiring both characters to physically reach the room.
+  Stairs approach uses that same bound for native combat and reassembly before
+  the farewell, with separate vote acknowledgement and floor-transition checks.
 - Keep the same-run Cave map and waypoint selection open during heartbeat gaps,
   while disabling waypoint actions until every participant has a fresh, alive,
   matching-floor observation. Changing run or floor clears the old selection.

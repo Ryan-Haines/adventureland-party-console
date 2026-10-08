@@ -388,7 +388,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   // A long native approach can consume this entire window before its vote.
   // Give the acknowledged continuation its own bounded planning/travel window.
   await expect.poll(async()=>{await advanceStairs();return answeredFarewell;},
-    {timeout:240_000,message:'Manual stairs must reach and answer the native farewell'}).toBe(true);
+    {timeout:600_000,message:'Manual stairs must reach and answer the native farewell'}).toBe(true);
   const farewell=stairReplies.find(r=>r.title==='Before You Leave')!;
   await expect.poll(async()=>(await dungeon()).members.every((m:any)=>
     m.fresh&&m.observation?.cave&&(!m.observation.cave.choice||
