@@ -64,11 +64,11 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     }, { timeout: 20_000 }).toBe(true);
     await expect(card.locator('canvas')).toBeVisible();
     let mapScreenshot: Buffer = Buffer.alloc(0);
-    let mapPixels = {floor:0,texture:0,actor:0};
+    let mapPixels = {floor:0,texture:0,actor:0,armor:0};
     await expect.poll(async () => {
       mapScreenshot = await card.locator('canvas').screenshot();
       const { data, info: size } = await sharp(mapScreenshot).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-      mapPixels = {floor:0,texture:0,actor:0};
+      mapPixels = {floor:0,texture:0,actor:0,armor:0};
       for(let y=0;y<size.height;y++)for(let x=0;x<size.width;x++) {
         const i=(y*size.width+x)*3,r=data[i],g=data[i+1],b=data[i+2];
         if(r>g*1.3 && g>b*1.3) {
@@ -77,9 +77,12 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
             Math.abs(r-data[i-3])+Math.abs(g-data[i-2])+Math.abs(b-data[i-1])>20)mapPixels.texture++;
         }
         // This minimap follows its actor: native sprite feet are at its center.
-        if(Math.abs(x-size.width/2)<=12 && Math.abs(y-size.height/2)<=12 && r>180 && g>180 && b>140)mapPixels.actor++;
+        if(Math.abs(x-size.width/2)<=12 && Math.abs(y-size.height/2)<=12) {
+          if(r>180 && g>180 && b>140)mapPixels.actor++;
+          if(g>r*1.05 && b>r*1.15)mapPixels.armor++;
+        }
       }
-      return mapPixels.floor>200 && mapPixels.texture>200 && mapPixels.actor>3;
+      return mapPixels.floor>200 && mapPixels.texture>200 && mapPixels.actor>=1 && mapPixels.armor>8;
     }, { timeout: 20_000, message: name + ' cave map must render textured native floor and its centered actor' }).toBe(true);
     await info.attach(name+'-cave-map-pixel-evidence',{body:JSON.stringify(mapPixels),contentType:'application/json'});
     await info.attach(name + '-cave-map', { body: mapScreenshot, contentType: 'image/png' });

@@ -109,3 +109,13 @@ submit each choice ID once, retain successful farewell vote evidence, and only
 accept a click error when a fresh native observation proves both actors already
 reached floor 1. Every other click error must still fail the test. Preserve the
 farewell vote requirement, collision checks and actual floor transition.
+
+The next real minimap rendered 24,148 orange floor pixels and 3,013 texture
+neighbors, but the Warrior's small centered sprite contained only two bright
+highlight pixels and 13 cool armor pixels. The archived 148-color map contained
+10 highlights and 22 cool armor pixels. Require the paired centered highlight
+(at least one) and cool armor footprint (more than eight), preserving both
+terrain requirements. Flat orange floor and purple background have neither;
+flat steel armor has no highlight, and flat white has no cool armor footprint.
+These paired visual criteria accept both verified native sprites and reject
+those blank/flat negative controls. Keep screenshot and numerical artifacts.
