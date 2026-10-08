@@ -702,3 +702,10 @@ checks launch intent and gateway forwarding, not a real Steam process. A remote
 selection must reject launch without forwarding a headless ownership change; an
 already connected remote bridge must allow forwarding. Retain the setup screenshot
 and launch-boundary ledger and run `npm run test:e2e:verify`.
+
+Steam native rejection diagnostics use the console E2E
+`Steam bridge reports native save rejection`. The actual browser bridge sends
+HTTP heartbeats after a declared structured native save rejection. Verify its
+reason reaches the failure receipt, private response fields stay absent, and
+no release receipt or native disconnect occurs. The pre-code RED reproduced
+`[object Object]`; retain the heartbeat ledger as evidence.

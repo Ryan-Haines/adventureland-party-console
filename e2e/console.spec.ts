@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { transform } from 'esbuild';
+import { transform, build } from 'esbuild';
 import { LocalSteam } from '../tools/steam/service';
 import { SteamPreferenceStore } from '../tools/steam/preferences';
 import { randomUUID } from 'node:crypto';
@@ -896,5 +896,43 @@ test('Steam handoff preserves saved setup when browser choices are incomplete', 
   } finally {
     steam.stop(); await page.close(); server.closeAllConnections(); upstream.closeAllConnections();
     await Promise.all([new Promise<void>(resolve=>server.close(()=>resolve())),new Promise<void>(resolve=>upstream.close(()=>resolve()))]);
+  }
+});
+
+
+test('Steam bridge reports native save rejection without losing its reason', async ({ browser }, info) => {
+  // Failure modes: api_call rejects a native object rather than Error; diagnostics
+  // become [object Object]; private response fields leak; failed save disconnects
+  // the primary or persists a false release receipt. The native API is a declared
+  // rejection boundary, with actual bridge execution and HTTP heartbeat replies.
+  const packets: Record<string,unknown>[]=[];
+  const upstream=createServer(async(req,res)=>{
+    if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<body></body>');return;}
+    let raw='';for await(const chunk of req)raw+=chunk;
+    const packet=JSON.parse(raw);packets.push(packet);
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify({operation:{id:'save-failure',from:'P',target:'W',phase:packet.error?'failed':'release'},realm:'SR_USII',members:[]}));
+  });
+  await new Promise<void>(resolve=>upstream.listen(0,'127.0.0.1',resolve));
+  const origin=`http://127.0.0.1:${(upstream.address() as {port:number}).port}`;
+  const page=await browser.newPage();
+  try {
+    await page.goto(origin);
+    const bundle=await build({entryPoints:['runtime/steam/bridge.ts'],bundle:true,write:false,format:'iife',globalName:'NativeBridge',platform:'browser'});
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(origin=>{
+      const host=window as unknown as Record<string,unknown>;
+      host.__partyServer=origin;host.character={name:'P'};host.socket={connected:true,disconnect(){throw Error('Save failure must not disconnect');}};
+      host.X={characters:[{name:'W',id:'owned-w'}]};host.storage_get=()=>null;host.storage_set=()=>{};
+      host.stop_runner=()=>{throw Error('Save failure must not stop CODE');};
+      host.api_call=async()=>{throw {failed:true,reason:'invalid_slot',error:'Use a supported CODE slot',session:'PRIVATE-SENTINEL'};};
+      (host.NativeBridge as {installSteamBridge(host:unknown):void}).installSteamBridge(window);
+    },origin);
+    await expect.poll(()=>packets.find(packet=>packet.error)?.error).toBe('invalid_slot: Use a supported CODE slot');
+    const failure=packets.find(packet=>packet.error)!;
+    expect(failure.released).toBeUndefined();expect(JSON.stringify(failure)).not.toContain('PRIVATE-SENTINEL');
+    await info.attach('steam-native-save-rejection',{body:JSON.stringify(packets),contentType:'application/json'});
+  } finally {
+    await page.close();upstream.closeAllConnections();await new Promise<void>(resolve=>upstream.close(()=>resolve()));
   }
 });
