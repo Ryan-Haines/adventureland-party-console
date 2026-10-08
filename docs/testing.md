@@ -681,3 +681,13 @@ Both local route joins succeeded and participants
 were fresh and ready when the previous 300-second check expired. The longer
 observation window preserves the under-70-pixel arrival requirement for both
 characters and every native kill, reward, vote, transport, and ownership check.
+
+The stairs check separates its native phases: 240 seconds to reach and answer
+the farewell, 30 seconds for both native vote acknowledgements, then 300 seconds
+for the owned continuation to transport both characters to floor 1. Run
+37780633644 took 236.6 seconds before the vote resolved; the former combined
+240-second check expired just seven seconds later, before the fresh continuation
+could prepare its route. Native commands were healthy and both members ready.
+The acknowledgement and subsequent actual floor transition each produce
+inspectable artifacts; the farewell and both-character floor assertions remain
+required.

@@ -259,7 +259,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await controls.getByRole('button',{name:'Stairs down',exact:true}).click();
   let answeredFarewell=false;
   const stairReplies:{id:string;title:string;option:string}[]=[];
-  await expect.poll(async()=>{
+  const advanceStairs=async()=>{
     const v=await dungeon(),c=v.members[0].observation.cave;
     if(v.members.every((m:any)=>m.observation?.cave?.floor===1))return true;
     if(c?.choice&&!c.choice.resolved&&!stairReplies.some(r=>r.id===c.choice.id)){
@@ -274,9 +274,19 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       answeredFarewell ||= c.choice.title==='Before You Leave';
     }
     return v.members.every((m:any)=>m.observation?.cave?.floor===1);
-  // Random native floors can put these stairs over 4,000 walking units away.
-  // Preserve the vote and actual floor assertions while allowing that route.
-  },{timeout:240_000,message:'Manual stairs must continue after the farewell vote and transport both members'}).toBe(true);
+  };
+  // A long native approach can consume this entire window before its vote.
+  // Give the acknowledged continuation its own bounded planning/travel window.
+  await expect.poll(async()=>{await advanceStairs();return answeredFarewell;},
+    {timeout:240_000,message:'Manual stairs must reach and answer the native farewell'}).toBe(true);
+  const farewell=stairReplies.find(r=>r.title==='Before You Leave')!;
+  await expect.poll(async()=>(await dungeon()).members.every((m:any)=>
+    m.fresh&&m.observation?.cave&&(!m.observation.cave.choice||
+      m.observation.cave.choice.id!==farewell.id||m.observation.cave.choice.resolved)),
+    {timeout:30_000,message:'Both native farewell votes must acknowledge before continuation'}).toBe(true);
+  await info.attach('native-cave-farewell-acknowledgement',{body:JSON.stringify({farewell,dungeon:await dungeon()}),contentType:'application/json'});
+  await expect.poll(advanceStairs,
+    {timeout:300_000,message:'Manual stairs must continue after the farewell vote and transport both members'}).toBe(true);
   expect(answeredFarewell).toBe(true);
   await info.attach('native-cave-floor-transition',{body:JSON.stringify({stairReplies,dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
   const newFloorChoice=(await dungeon()).members[0].observation.cave.choice;

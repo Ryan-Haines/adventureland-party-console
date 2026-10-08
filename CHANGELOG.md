@@ -94,6 +94,8 @@ from the commits merged into `main`.
   Lockbreaker arrival accommodates bounded native replans and the full walking
   distance at the party's cruise speed. The regroup fixture stages both actors
   with real collision-safe walking before checking assembly displacement.
+  Stairs coverage observes native farewell acknowledgement separately from the
+  owned route continuation and both characters' actual floor transition.
 - Native merchant checks allow bank travel before the injected lucky return fault,
   generated reward-box exchange chains, and the final recovery batch's two
   upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.
