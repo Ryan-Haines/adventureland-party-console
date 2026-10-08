@@ -126,3 +126,19 @@ available free reply through the real UI, wait for native resolution and modal
 closure, and dismiss the encounter result before exercising Exit/Stay/Confirm.
 Record the new-floor choice ID, submitted option and resulting native state.
 Preserve all exit confirmation and final held-phase assertions.
+
+## Resumed selection: combat/assembly precedes native route planning
+
+CI 37766427937 stopped Warrior travel at 1791457346286. Six actual Cave Guard
+and Wolf kills continued through 1791457418407 (72 seconds after Stop). Native
+assembly movement completed for Warrior at 1791457438838 and Priest at
+1791457440223 (94 seconds after Stop). At the 120-second preparation deadline,
+the owned move was only 17 seconds into native planning; both actors remained
+815 units from the Bat Roost, ready, with completed gather receipts and no move
+failure. This was not a completed-route race or a hung planner. Failure mode:
+a single preparation wall-clock bound charges defensive combat and reassembly
+against the native 90-second planning allowance. Only on resumed selection,
+first await fresh ready actors with the current run/floor/target and owned move
+commands, bounded by the existing 300-second combat allowance. Then start the
+existing 120-second matching route-prepared guard. Keep initial preparation,
+actual arrival within 70, native planner limits and overall 900 seconds intact.

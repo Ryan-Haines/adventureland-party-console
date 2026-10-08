@@ -144,6 +144,18 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   expect(Object.values((await dungeon()).state.commands).some((c: any) => c.action === 'move')).toBe(false);
   await info.attach('native-cave-stopped-en-route', {body:JSON.stringify(await dungeon()), contentType:'application/json'});
   await controls.getByRole('button', { name: target.label, exact: true }).first().click();
+  // Defensive combat and real reassembly must finish before charging the
+  // native route planner's preparation budget on this resumed selection.
+  await expect.poll(async()=>{
+    const view=await dungeon(),state=view.state;
+    return state.travel?.target?.id===target.id && state.run===cave.run &&
+      ['E2EWarrior','E2EPriest'].every(name=>{
+        const member=view.members.find((m:any)=>m.name===name),command=state.commands[name];
+        return member?.fresh && member.observation?.ready &&
+          member.observation.cave?.run===cave.run && member.observation.cave.floor===cave.floor &&
+          command?.action==='move' && command.run===cave.run && command.target?.id===target.id;
+      });
+  },{timeout:300_000,message:'Resumed Cave selection must dispatch owned moves after native combat and assembly'}).toBe(true);
   // A prepared owned route can pause while the native Bat Roost fight resolves.
   await waitForSelectedRoute(false);
   try {
