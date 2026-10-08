@@ -80,6 +80,8 @@ from the commits merged into `main`.
   Repairs rejoin a nearby point on the original validated walking segment,
   execute the exact collision-checked join, and preserve the remaining route.
   Stale segments, distant joins and unsafe planner gaps are rejected.
+  Reaching a corner retains the validated next segment across a combat pause
+  before its dispatch, so nearby backtracking can rejoin that corner safely.
 
 - Cave travel recovers when native combat displaces a participant after its
   assembly command completed. Fresh, ready participants regroup under new owned

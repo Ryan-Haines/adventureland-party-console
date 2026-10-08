@@ -203,3 +203,23 @@ mandatory. Keep the three-distinct-endpoint cap keyed to the original retained
 endpoint; no new destination fallback, farther/future join, or budget increase.
 Before code, regressions cover long-edge local repair, exact coarse join,
 unsafe coarse join, and stale retained endpoint.
+
+## Confirmed corner consumption before the next walking dispatch
+
+CI 37777846237 was genuinely stalled, not merely slow: current leader travel 9
+failed and remained unchanged for roughly 137 seconds after the three whole
+route repairs were exhausted. The actor was at (3219.244,2402.466), only 58.2
+units behind the consumed corner (3161.044,2402.466), before the next retained
+edge to (2981.044,2297.466). The executor had cleared its edge on consumption;
+combat paused before the next dispatch, so the safe 58-unit join was unavailable
+and the 260-unit direct endpoint exceeded the no-cache repair bound.
+
+Failure modes: caching a corner not actually reached, stale/superseded steps,
+invalid changed geometry, crossing map/instance, future door/town transitions,
+or losing an existing valid edge before completion. After confirmed walking
+consumption, cache the exact consumed vertex to the current next walking step
+only when same-map and freshly collision-valid. Retain it across pause, clear
+on reset/transition/stale endpoint, and preserve all projection/ownership/150-
+unit/three-second/exact-join/full-validation/repair-count bounds. Pre-code
+regressions cover pause between consumption and next dispatch, stale replacement,
+invalid next edge, and a transition successor.

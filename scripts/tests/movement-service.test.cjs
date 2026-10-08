@@ -549,3 +549,30 @@ test('Cave local join cannot reuse a stale issued walking edge for a far retaine
  const r=await pausedLongCaveEdge([{map:'main',x:100,y:0}]);r.service.state.plot=[{map:'main',x:500,y:0},{map:'main',x:1000,y:0}];r.host.can_move=p=>!(p.y===30&&p.going_x===500);
  const failed=assert.rejects(r.promise,/collisions detected/);await r.ticks(12);await failed;assert.equal(r.searches,0);r.dispose();
 });
+
+async function pausedCaveCorner(invalidate=false){
+ const options={nativePlot:[{map:'main',x:42,y:20},{map:'main',x:100,y:20},{map:'main',x:100,y:0}]},r=fixture(options);
+ r.promise=r.service.move({map:'main',x:1000,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true,retainOnDirectStop:true});r.promise.catch(()=>{});
+ r.service.install([{map:'main',x:100,y:0},{map:'main',x:1000,y:0}],r.service.identity,'cave-convoy');
+ await r.ticks(1);assert.equal(r.c.real_x,100);
+ if(invalidate)r.host.can_move=p=>!(p.x===100&&p.going_x===1000);
+ await r.ticks(1);assert.equal(r.service.state.plot[0].x,1000);
+ await r.host.stop('move');Object.assign(r.c,{x:42,real_x:42});
+ const valid=r.host.can_move;r.host.can_move=p=>valid(p)&&!(p.x===42&&p.y===0&&p.going_x>=500&&p.going_y===0);
+ return r;
+}
+test('Cave paused between confirmed corner consumption and next dispatch retains a local join',async()=>{
+ const r=await pausedCaveCorner();await r.ticks(30);await r.promise;
+ assert.equal(r.searches,1);assert.equal(r.c.real_x,1000);assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===100&&c[2]===0));r.dispose();
+});
+test('Cave consumed corner cannot repair a replaced retained endpoint',async()=>{
+ const r=await pausedCaveCorner();r.service.state.plot=[{map:'main',x:500,y:0},{map:'main',x:1000,y:0}];
+ const failed=assert.rejects(r.promise,/collisions detected/);await r.ticks(12);await failed;assert.equal(r.searches,0);r.dispose();
+});
+test('Cave consumed corner cannot cache an invalid next walking edge',async()=>{
+ const r=await pausedCaveCorner(true),failed=assert.rejects(r.promise,/collisions detected/);await r.ticks(12);await failed;assert.equal(r.searches,0);r.dispose();
+});
+test('consumed walking corner does not cache a future native transition',()=>{
+ const r=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:177,y:460,town:true}]);r.executor.tick({});
+ assert.equal(r.executor.walkingEdge(),undefined);assert.deepEqual(r.calls,['town']);
+});

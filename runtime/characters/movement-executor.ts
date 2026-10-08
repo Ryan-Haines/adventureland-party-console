@@ -52,7 +52,10 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
     notifyTown(current,options,'complete');
     if (!transitionReady(current, options, !!transition)) return false;
     notifyTransition(current,options);
-    state.plot.shift(); walkingEdge=undefined; if (transition) index++; issued = undefined; barrierReady = false; return true;
+    state.plot.shift();
+    if(transition){walkingEdge=undefined;index++;}
+    else rememberWalkingEdge({...p,x:current.step.x,y:current.step.y},state.plot[0]);
+    issued = undefined; barrierReady = false; return true;
   }
   function alignArrival(current: Issued, p: Point) {
     if (current.aligned || distance(p, current.step) <= 1 || distance(p, current.step) > 150) return;
@@ -133,9 +136,12 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
       catch (error) { if (issued === captured) rejected(captured,error); }
   }
   function captureWalkingEdge(current: Issued): void {
-    const from=position();
-    walkingEdge=!isTransition(current.step) && from.map===current.step.map && validation.walk(from,current.step)
-      ? {from:{...from},to:current.step} : undefined;
+    if(walkingEdge?.to===current.step)return;
+    rememberWalkingEdge(position(),current.step);
+  }
+  function rememberWalkingEdge(from: Point, next: Step | undefined): void {
+    walkingEdge=next && !isTransition(next) && from.map===next.map && validation.walk(from,next)
+      ? {from:{...from},to:next} : undefined;
   }
   function rejected(current:Issued,error:unknown):void {
     const reason=error && typeof error==='object' && 'reason' in error ? String(error.reason) : String(error);
@@ -164,7 +170,7 @@ export function createMovementExecutor(host: MovementHost, state: MoveState, val
       // Even a zero-distance game move sets moving=true. Consume reached walking
       // points before issuing it; transitions still require dispatch and acknowledgement.
       if (isTransition(next) || distance(p, next) > 1) break;
-      state.plot.shift(); walkingEdge=undefined;
+      state.plot.shift(); rememberWalkingEdge({...p,x:next.x,y:next.y},state.plot[0]);
     }
   }
   function lootReady(step: Step): boolean {
