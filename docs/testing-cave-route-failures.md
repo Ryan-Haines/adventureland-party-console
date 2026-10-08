@@ -263,3 +263,18 @@ endpoint offsets in a +/-20-unit grid, preserving room/enemy clearances for
 all nine segments. Record this explicit margin and verify the visible rounded
 nomination and the actual selected native coordinate; runtime collision
 validation and physical travel assertions remain unchanged.
+
+## Safe-segment geometry searches do not block the native server
+
+CI 63ce reached the initial native waypoint artifact. Verified trace before/after
+records show the wrong-floor request correctly returned HTTP 409 in 7.05ms
+with no error. The next Node native-administration geometry query is not
+recorded in the Playwright trace, aborted, and produced no safe-segment artifact.
+The expensive sampled clearance search therefore remains the implicated
+boundary, not the intentional wrong-floor request. Sampled clearance loops and
+native collision queries eliminated unsafe candidates expensively.
+Failure modes: excessive geometry CPU blocking native administration, reduced
+clearance from optimization, or skipping endpoint collision guards. Use exact
+clamped point-to-segment distance instead of sampled clearance; reject unsafe
+origins and all nine offset segment clearances before native collision calls.
+Keep all nine collision checks, 410-room/300-enemy clearance, and 20-unit margin.

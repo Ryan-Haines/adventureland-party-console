@@ -132,22 +132,29 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     const people=['E2EWarrior','E2EPriest'].map(n=>get_player(n)),p=people[0],run=generated_entry(p).record;
     const rooms=run.cave.rooms.filter(r=>r.map===p.map&&['farm','patrol','fight','boss','darkmage'].includes(r.kind)).map(r=>({id:r.id,x:r.x,y:r.y}));
     const enemies=Array.from(run.cave.actors).filter(a=>!a.dead&&a.map===p.map&&['enemy','predator'].includes(a.zone_actor?.side)).map(a=>({id:a.id,x:a.x,y:a.y}));
-    const clearance=(from,to,obstacles)=>{
+    const clearanceSquared=(from,to,obstacles)=>{
       let result=Infinity;
-      for(let j=0,n=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.y-from.y)/10));j<=n;j++)
-        for(const r of obstacles)result=Math.min(result,Math.hypot(from.x+(to.x-from.x)*j/n-r.x,from.y+(to.y-from.y)*j/n-r.y));
+      const dx=to.x-from.x,dy=to.y-from.y,length=dx*dx+dy*dy;
+      for(const r of obstacles){
+        const t=length?Math.max(0,Math.min(1,((r.x-from.x)*dx+(r.y-from.y)*dy)/length)):0;
+        const x=from.x+t*dx-r.x,y=from.y+t*dy-r.y;
+        result=Math.min(result,x*x+y*y);
+      }
       return result;
     };
     const walk=(from,to)=>can_move({map:p.map,x:from.x,y:from.y,going_x:to.x,going_y:to.y,base:p.base});
     for(const distance of [320,260,200])for(let radius=0;radius<=200;radius+=20)for(let i=0;i<32;i++){
       const a=i*Math.PI/16,origin={map:p.map,x:p.x+radius*Math.cos(a),y:p.y+radius*Math.sin(a)};
-      if(!people.every(actor=>walk(actor,origin)&&clearance(actor,origin,enemies)>=300))continue;
+      if(clearanceSquared(origin,origin,rooms)<410*410 || !people.every(actor=>clearanceSquared(actor,origin,enemies)>=300*300))continue;
+      if(!people.every(actor=>walk(actor,origin)))continue;
       for(let k=0;k<32;k++){
         const angle=k*Math.PI/16,target={map:p.map,x:origin.x+distance*Math.cos(angle),y:origin.y+distance*Math.sin(angle)};
         const endpoints=[-20,0,20].flatMap(dx=>[-20,0,20].map(dy=>({x:target.x+dx,y:target.y+dy})));
-        const roomClearance=Math.min(...endpoints.map(point=>clearance(origin,point,rooms)));
-        const enemyClearance=Math.min(...endpoints.map(point=>clearance(origin,point,enemies)));
-        if(endpoints.every(point=>walk(origin,point))&&roomClearance>=410&&enemyClearance>=300)return {origin,target,distance,roomClearance,enemyClearance,endpointMargin:20,rooms,enemies};
+        const roomSquared=Math.min(...endpoints.map(point=>clearanceSquared(origin,point,rooms)));
+        if(roomSquared<410*410)continue;
+        const enemySquared=Math.min(...endpoints.map(point=>clearanceSquared(origin,point,enemies)));
+        if(enemySquared<300*300)continue;
+        if(endpoints.every(point=>walk(origin,point)))return {origin,target,distance,roomClearance:Math.sqrt(roomSquared),enemyClearance:Math.sqrt(enemySquared),endpointMargin:20,rooms,enemies};
       }
     }
     throw Error('No collision-safe noncombat native Stop/resume segment');

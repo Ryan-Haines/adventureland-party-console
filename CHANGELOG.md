@@ -102,6 +102,8 @@ from the commits merged into `main`.
   native assembly and owned move dispatch, preserving exact target and run checks.
   Safe waypoint fixtures account for canvas rounding and validate the exact
   accepted destination with native collision checks.
+  Fixture clearance searches use exact segment distances and reject unsafe
+  candidates before native collision queries, keeping their existing bounds.
 - Native merchant checks allow bank travel before the injected lucky return fault,
   generated reward-box exchange chains, and the final recovery batch's two
   upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.
