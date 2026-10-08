@@ -119,3 +119,10 @@ terrain requirements. Flat orange floor and purple background have neither;
 flat steel armor has no highlight, and flat white has no cool armor footprint.
 These paired visual criteria accept both verified native sprites and reject
 those blank/flat negative controls. Keep screenshot and numerical artifacts.
+
+After actual floor arrival, a newly activated native shop choice can still hold
+an opaque modal over the exit controls. Read that fresh choice, submit its
+available free reply through the real UI, wait for native resolution and modal
+closure, and dismiss the encounter result before exercising Exit/Stay/Confirm.
+Record the new-floor choice ID, submitted option and resulting native state.
+Preserve all exit confirmation and final held-phase assertions.

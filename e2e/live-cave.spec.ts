@@ -262,6 +262,20 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   },{timeout:240_000,message:'Manual stairs must continue after the farewell vote and transport both members'}).toBe(true);
   expect(answeredFarewell).toBe(true);
   await info.attach('native-cave-floor-transition',{body:JSON.stringify({stairReplies,dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
+  const newFloorChoice=(await dungeon()).members[0].observation.cave.choice;
+  if(newFloorChoice&&!newFloorChoice.resolved){
+    const reply=newFloorChoice.options.find((o:any)=>!o.unavailable&&!o.cost&&!o.amber);
+    expect(reply,'New-floor native encounter must have an available free reply').toBeTruthy();
+    await choice.getByRole('button',{name:reply.label,exact:true}).click();
+    await expect.poll(async()=>{
+      const current=(await dungeon()).members[0].observation.cave.choice;
+      return !current||current.id!==newFloorChoice.id||current.resolved;
+    },{timeout:30_000,message:'New-floor encounter must acknowledge the actual reply'}).toBe(true);
+    await expect(choice).not.toBeVisible({timeout:30_000});
+    if(await shopResult.isVisible())await page.keyboard.press('Escape');
+    await expect(shopResult).not.toBeVisible();
+    await info.attach('native-cave-new-floor-reply',{body:JSON.stringify({choice:newFloorChoice.id,title:newFloorChoice.title,option:reply.id,label:reply.label,dungeon:await dungeon()}),contentType:'application/json'});
+  }
   await controls.getByRole('button', { name: 'Exit dungeon', exact: true }).click();
   const exit = page.getByRole('dialog', { name: 'Exit the dungeon?' });
   await expect(exit).toBeVisible();
