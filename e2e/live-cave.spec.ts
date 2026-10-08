@@ -4,7 +4,7 @@ const sharp: typeof import('../dashboard/node_modules/sharp') = createRequire(im
 test.use({ initialPosition: { map: 'main', x: 816, y: 1180 } });
 
 test('Cave entry closes settings, shows native choices and keeps follower maps and travel working', async ({ live, page }, info) => {
-  test.setTimeout(900_000);
+  test.setTimeout(1_500_000);
   page.setDefaultTimeout(20_000);
   await live.admin('Dev=true; Prod=false; G.events.dreams.disabled=false; output=true');
   // Bound encounter selection to native duels/gifts/shops; the six level-100
@@ -193,7 +193,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       }
       const state = await live.state();
       return Math.max(...['E2EWarrior','E2EPriest'].map(name => Math.hypot(state.characters[name].x-second.x,state.characters[name].y-second.y)));
-    }, {timeout:300_000,message:'Both characters must navigate to Lockbreaker'}).toBeLessThan(70);
+    }, {timeout:600_000,message:'Both characters must navigate to Lockbreaker'}).toBeLessThan(70);
     await info.attach('native-cave-lockbreaker-arrival',{body:JSON.stringify({dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
   }
   // Native encounter factory, bounded initial difficulty. Neither attacks,
@@ -394,6 +394,32 @@ test('Cave assembly regroups displaced completed participants before departure',
     await act({action:'vote',run:cave.run,choice:cave.choice.id,option:option.id});
     await expect.poll(async()=>(await view()).members[0].observation.cave.choice.resolved,{timeout:30_000}).toBe(true);
   }
+  const staging=await live.admin(`output=(()=>{
+    const people=['E2EWarrior','E2EPriest'].map(name=>get_player(name)),p=people[0],run=generated_entry(p).record;
+    const rooms=run.cave.rooms.filter(r=>r.map===p.map&&['farm','patrol','fight','boss','darkmage'].includes(r.kind)).map(r=>({id:r.id,kind:r.kind,x:r.x,y:r.y}));
+    const enemies=Array.from(run.cave.actors).filter(a=>!a.dead&&a.map===p.map&&['enemy','predator'].includes(a.zone_actor?.side)).map(a=>({id:a.id,x:a.x,y:a.y}));
+    const pathClear=(from,to,obstacles,minimum)=>{
+      const samples=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.y-from.y)/20));
+      for(let j=0;j<=samples;j++)for(const r of obstacles)if(Math.hypot(from.x+(to.x-from.x)*j/samples-r.x,from.y+(to.y-from.y)*j/samples-r.y)<minimum)return false;
+      return true;
+    };
+    const displacement=(origin,distance)=>{
+      for(let i=0;i<16;i++){
+        const a=i*Math.PI/8,target={x:origin.x+distance*Math.cos(a),y:origin.y+distance*Math.sin(a)};
+        if(can_move({map:p.map,x:origin.x,y:origin.y,going_x:target.x,going_y:target.y,base:p.base})&&pathClear(origin,target,rooms,420))return target;
+      }
+    };
+    for(let radius=0;radius<=200;radius+=20)for(let i=0;i<32;i++){
+      const a=i*Math.PI/16,target={map:p.map,x:p.x+radius*Math.cos(a),y:p.y+radius*Math.sin(a)};
+      if(!people.every(actor=>actor.map===p.map&&can_move({map:p.map,x:actor.x,y:actor.y,going_x:target.x,going_y:target.y,base:actor.base})&&pathClear(actor,target,enemies,300)))continue;
+      const offset=displacement(target,160),displaced=displacement(target,85);
+      if(offset&&displaced)return {...target,offset,displaced,rooms,enemies,before:people.map(actor=>({name:actor.name,x:actor.x,y:actor.y}))};
+    }
+    throw Error('No nearby collision-safe native staging position');
+  })()`);
+  await info.attach('declared-native-cave-safe-staging',{body:JSON.stringify(staging),contentType:'application/json'});
+  await Promise.all(['E2EWarrior','E2EPriest'].map(name=>move(name,staging)));
+  await expect.poll(async()=>(await view()).members.every((m:any)=>m.fresh&&m.observation.ready),{timeout:30_000}).toBe(true);
   const before=await positions(),offset=await point('E2EPriest',160);
   // Real native walking and a temporary native cruise keep assembly open.
   // No command completion, heartbeat or game response is synthesized.

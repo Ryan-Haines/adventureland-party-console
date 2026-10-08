@@ -658,3 +658,26 @@ cutoff the final batch had successfully upgraded its first helmet, reported a
 fresh checkpoint, and had no native client errors. The total budget accommodates
 the complete paired sequence; the 150-second ordinary-job, 180-second final-job,
 and 20-second potion-recovery deadlines still enforce progress independently.
+
+The assembly regroup fixture must first find a nearby native staging position.
+Run 37775616033 placed the doorway 408 pixels from a farm, making its former
+410-pixel clearance check impossible in every direction. Before changing this
+fixture, the failure modes were recorded: no connected safe staging geometry,
+combat during the walk, stale readiness, and automatic following interfering
+with participant positioning. Staging uses actual native collision checks and
+walking for both characters, stays within 200 pixels, clears living enemies by
+300 pixels, and preserves 410-pixel room clearance for the existing 160-pixel
+offset and 85-pixel displacement. Failed geometry or walking remains an explicit
+bounded failure; camps, kills, rewards, command receipts, and heartbeats are not
+modified.
+
+The native Lockbreaker arrival check allows 600 seconds, with a 1,500-second
+budget for the complete Cave scenario. Run 37775616033 used about 201 seconds
+in three earlier travel attempts before its current route prepared. That route
+was approximately 4,333 pixels at native cruise speed 79, with about 3,640
+pixels remaining: at least 46 seconds of uninterrupted walking was still
+required, in addition to bounded native planning, assembly, and real combat.
+Both local route joins succeeded and participants
+were fresh and ready when the previous 300-second check expired. The longer
+observation window preserves the under-70-pixel arrival requirement for both
+characters and every native kill, reward, vote, transport, and ownership check.

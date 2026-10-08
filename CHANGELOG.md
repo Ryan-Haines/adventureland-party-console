@@ -89,6 +89,9 @@ from the commits merged into `main`.
 - Native Cave cruise checks wait for the selected owned route to prepare before
   applying the motion deadline, preserving displacement and native cruise checks.
   Resumed routes separate preparation and native wave combat from room arrival.
+  Lockbreaker arrival accommodates bounded native replans and the full walking
+  distance at the party's cruise speed. The regroup fixture stages both actors
+  with real collision-safe walking before checking assembly displacement.
 - Native merchant checks allow bank travel before the injected lucky return fault,
   generated reward-box exchange chains, and the final recovery batch's two
   upgrades and NPC scroll trips, preserving item, reward, and recovery assertions.
