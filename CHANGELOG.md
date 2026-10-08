@@ -122,7 +122,8 @@ from the commits merged into `main`.
   Failure evidence includes bounded native planner progress, readiness holds,
   and destination collision geometry for investigating route preparation.
   Map selection checks acknowledge placement mode before clicking terrain,
-  preventing a suppressed Add action from reusing a previous waypoint.
+  preventing a suppressed Add action from reusing a previous waypoint. Guarded
+  local activation retries remain bounded and require an enabled, error-free UI.
   Waypoint E2Es verify the actual UI request and retry observed heartbeat
   suppression or a guarded unsent click, retaining accepted-target checks and
   a submission evidence ledger. Pending requests stay observed across retries.

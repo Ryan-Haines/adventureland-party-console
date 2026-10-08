@@ -203,20 +203,25 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       adding:element.textContent?.includes('Click the map to place your waypoint.'),
       disabled:Array.from(element.querySelectorAll('button')).find(button=>button.textContent?.trim()==='Add waypoint')?.disabled,
       waiting:Array.from(element.querySelectorAll('output')).some(status=>status.textContent==='Waiting for fresh participant reports.'),
+      error:Array.from(element.querySelectorAll('[role=alert]')).some(alert=>!!alert.textContent?.trim()),
     }));
     try{
       await expect.poll(async()=>{
         const before=await snapshot();
         if(before.adding)return true;
-        if(!before.disabled)await fullMap.getByRole('button',{name:'Add waypoint',exact:true}).click();
+        if(!before.disabled){
+          expect(before.error,'Add activation may not retry an unrelated rendered error').toBe(false);
+          await fullMap.getByRole('button',{name:'Add waypoint',exact:true}).click();
+        }
         let observed=before;
         await expect.poll(async()=>{
           observed=await snapshot();
-          return observed.adding || observed.disabled&&observed.waiting;
+          return observed.adding || observed.disabled&&observed.waiting || !observed.disabled&&!observed.error;
         },{timeout:10_000,message:'Add waypoint must activate placement or show its freshness hold'}).toBe(true);
         attempts.push(observed);
         if(observed.adding)return true;
-        expect(observed.disabled&&observed.waiting).toBe(true);
+        if(observed.disabled)expect(observed.waiting).toBe(true);
+        else expect(observed.error).toBe(false);
         const view=await dungeon();
         expect(view.state.phase).toBe('active');expect(view.state.run).toBe(expectedRun);
         expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===expectedRun&&

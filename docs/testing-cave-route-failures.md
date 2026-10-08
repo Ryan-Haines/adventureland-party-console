@@ -490,3 +490,14 @@ hard cap despite progress, generic and repair bounds, and follower alignment.
 Also guard ownership/map/instance and full native route validation through
 existing movement regressions; extension never changes walk permission or
 accepts a partial native route. Replay: .build/b168-exact-pinned-bfs-replay.json.
+
+### Idempotent Add activation retry (8638)
+
+The resumed Add acknowledgement timed out without recording placement mode;
+final context retains the old (426,783) nomination and later freshness-held
+controls. Unlike Set, Add has no external request: its handler only sets local
+placement mode true. Permit bounded re-click when placement is absent but Add
+is currently enabled and no rendered error exists, after validating the same
+active/alive/unpaused run and floor. Disabled controls require the existing
+simultaneous freshness reason. Preserve the actual placement instruction and
+exact new nomination/native collision checks; do not infer success from clicks.
