@@ -278,3 +278,15 @@ clearance from optimization, or skipping endpoint collision guards. Use exact
 clamped point-to-segment distance instead of sampled clearance; reject unsafe
 origins and all nine offset segment clearances before native collision calls.
 Keep all nine collision checks, 410-room/300-enemy clearance, and 20-unit margin.
+
+## Native fixture staging releases the previous owned waypoint
+
+CI eb22 (37793495146) staged toward (419.612,425.732), but both native
+actors ended at the previous owned UI waypoint (510.435,459.217). The follower's
+owned convoy walked 105 units although the initial waypoint differed by only
+about five units, proving that the still-owned journey pulled it back during
+raw native staging. Failure modes: position-only arrival before completion,
+stale completion receipts, and raw movement competing with an owned command.
+Await both fresh current-run/current-target owned move completion receipts and
+actual arrival, then explicitly Stop through the UI and await owned command/
+travel removal before declaring or walking the native staging fixture.

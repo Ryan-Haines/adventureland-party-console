@@ -124,6 +124,21 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     const s=await live.state();
     return Math.max(...['E2EWarrior','E2EPriest'].map(n=>Math.hypot(s.characters[n].x-before.characters.E2EWarrior.x,s.characters[n].y-before.characters.E2EWarrior.y)));
   },{timeout:45_000,message:'Setting the map waypoint must gather and move the actual party'}).toBeLessThan(50);
+  await expect.poll(async()=>{
+    const view=await dungeon();
+    return view.state.run===initialWaypoint!.run && ['E2EWarrior','E2EPriest'].every(name=>{
+      const member=view.members.find((m:any)=>m.name===name),receipt=member?.observation?.action;
+      return member?.fresh && receipt?.status==='complete' && receipt.command?.action==='move' &&
+        receipt.command.run===initialWaypoint!.run && receipt.command.target?.id===initialWaypoint!.id &&
+        receipt.id===view.state.commands[name]?.id;
+    });
+  },{timeout:120_000,message:'Both initial native waypoint moves must complete before raw fixture staging'}).toBe(true);
+  await controls.getByRole('button',{name:'Stop travel',exact:true}).click();
+  await expect.poll(async()=>{
+    const state=(await dungeon()).state;
+    return !state.travel && state.progress?.enabled===false &&
+      !Object.values(state.commands).some((c:any)=>['move','gather'].includes(c.action));
+  },{timeout:20_000,message:'Initial waypoint ownership must be released before native fixture staging'}).toBe(true);
   await info.attach('native-cave-map-waypoint',{body:JSON.stringify(await dungeon()),contentType:'application/json'});
   const wrongFloor=await page.request.post(live.url+'/party-api/daily-dungeons',{headers:{Origin:live.url},data:{action:'waypoint',operationId:crypto.randomUUID(),run:(await dungeon()).state.run,map:before.characters.E2EWarrior.map.replace(/_0$/,'_1'),x:432,y:384}});
   expect(wrongFloor.status()).toBe(409);
