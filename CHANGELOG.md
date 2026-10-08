@@ -123,6 +123,8 @@ from the commits merged into `main`.
   live participants, and the observed report gap before another UI submission.
 - Explain disabled Cave waypoint actions with an accessible report-waiting
   status, keeping map selections intact while current-run reports recover.
+  Reserve space for that status so heartbeat transitions cannot shift the map
+  beneath the pointer during waypoint selection.
 - Keep the same-run Cave map and waypoint selection open during heartbeat gaps,
   while disabling waypoint actions until every participant has a fresh, alive,
   matching-floor observation. Changing run or floor clears the old selection.

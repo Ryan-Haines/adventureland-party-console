@@ -805,14 +805,21 @@ test('Cave map survives stale reports without allowing stale waypoint actions',a
   await map.locator('canvas').click({position:{x:100,y:100}});
   const set=map.getByRole('button',{name:'Set waypoint',exact:true});
   await expect(set).toBeEnabled();
+  const freshCanvas=await map.locator('canvas').boundingBox();
   fresh=false;
   await expect(set).toBeDisabled();
   await expect(map.getByRole('status')).toHaveText('Waiting for fresh participant reports.');
+  await expect.poll(async()=>{
+    const box=await map.locator('canvas').boundingBox();
+    return box && freshCanvas && Math.abs(box.y-freshCanvas.y)+Math.abs(box.height-freshCanvas.height);
+  },{message:'Heartbeat waiting text must not move the selectable map'}).toBeLessThan(1);
   await expect(map).toBeVisible();
   await info.attach('stale-cave-map-readonly',{body:await map.screenshot(),contentType:'image/png'});
   fresh=true;
   await expect(set).toBeEnabled();
   await expect(map.getByRole('status')).toHaveCount(0);
+  const recoveredCanvas=await map.locator('canvas').boundingBox();
+  expect(recoveredCanvas?.y).toBe(freshCanvas?.y);
   await expect(map).toBeVisible();
   floor=1;
   await expect(map).not.toBeVisible();

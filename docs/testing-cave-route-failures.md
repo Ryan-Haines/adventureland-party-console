@@ -437,3 +437,18 @@ its evidence when the physical-arrival assertion fails. Sample at most once
 per five seconds, cap the ledger at 125 snapshots, and capture collision
 geometry once during preparation. Record native collision tests at the exact
 target and neighboring points; these are observations, not success criteria.
+
+### Heartbeat status must not move the map during pointer selection (b505)
+
+The selected waypoint was (298,465), 96.377 native pixels from the validated
+(300.757,561.338). The native canvas click trace records a 966x598 canvas at
+(237,168), and a pointer at (366.47,283.25); its input/action dispatch spans
+several seconds. The centered dialog conditionally inserts/removes a report
+waiting line as heartbeat freshness changes, changing its vertical layout
+while the pointer action is underway. Preserve a constant status-row footprint.
+Before editing product code, extend the observable console fixture to assert
+identical canvas position and height across fresh/stale/fresh transitions.
+Failure modes: freshness must still disable submission, the waiting output
+must remain exclusive to a genuine report gap, fresh output must disappear,
+and reserving space must not relax native waypoint or collision margins.
+`pr64-map-status-layout-red.log` reproduced an 18-CSS-pixel canvas shift before the fix; the same observable freshness/selection case passes after reserving the status row (8.6 seconds, 14.5-second suite). Fresh/stale/recovered canvas geometry and existing action/status assertions remain intact.
