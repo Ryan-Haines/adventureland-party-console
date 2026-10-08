@@ -368,8 +368,32 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   const second = (await dungeon()).members[0].observation.cave.points.find((p: any) => p.kind === 'boss' && !p.done);
   if (second) {
     await controls.getByRole('button', {name:second.label, exact:true}).click();
+    const planningSamples: unknown[] = [];
+    let sampledAt = 0;
+    let planningGeometry: unknown;
+    try {
     await expect.poll(async () => {
-      const encounter = (await dungeon()).members[0].observation.cave.choice;
+      const view = await dungeon();
+      if (Date.now() - sampledAt >= 5_000 && planningSamples.length < 125) {
+        sampledAt = Date.now();
+        const native = await Promise.all(['E2EWarrior','E2EPriest'].map(name => live.clients[name].frame.evaluate(({target,capture}) => {
+          const p=window as any,w=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+          const c=w.character,s=w.smart || {},q=w.queue || [],index=w.start;
+          const probe=(x:number,y:number)=>({x,y,walkable:w.can_move({map:c.map,x,y,going_x:x,going_y:y,base:c.base})});
+          const preparing=!!s.searching && !s.found;
+          return {at:Date.now(),name:c.name,map:c.map,in:c.in,x:c.real_x,y:c.real_y,
+            paused:!!w.__partyMovementPaused || !w.__partyDungeonRuntime?.canMove(),
+            movementPaused:!!w.__partyMovementPaused,dungeonCanMove:w.__partyDungeonRuntime?.canMove(),
+            ready:w.__partyDungeonRuntime?.report().ready,
+            smart:{searching:s.searching,found:s.found,moving:s.moving,x:s.x,y:s.y,map:s.map,start_x:s.start_x,start_y:s.start_y},
+            bfs:{length:q.length,index,best:w.best,current:q[index],last:q[q.length-1]},
+            target:preparing?[-15,0,15].flatMap(dx=>[-15,0,15].map(dy=>probe(target.x+dx,target.y+dy))):undefined,
+            geometry:capture&&preparing?{map:c.map,base:c.base,geometry:p.G.geometry[c.map],mapData:p.G.maps[c.map]}:undefined};
+        },{target:second,capture:planningGeometry===undefined})));
+        planningGeometry ??= native.find(sample=>sample.geometry)?.geometry;
+        planningSamples.push({at:sampledAt,state:view.state,members:view.members.map((member:any)=>({name:member.name,fresh:member.fresh,ready:member.observation?.ready,action:member.observation?.action})),native:native.map(({geometry,...sample})=>sample)});
+      }
+      const encounter = view.members[0].observation.cave.choice;
       if (encounter && !encounter.resolved) {
         const reply = encounter.options.find((o: any) => !o.unavailable && !o.cost && !o.amber);
         expect(reply, 'Encounter must have a free native reply').toBeTruthy();
@@ -381,6 +405,10 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
       const state = await live.state();
       return Math.max(...['E2EWarrior','E2EPriest'].map(name => Math.hypot(state.characters[name].x-second.x,state.characters[name].y-second.y)));
     }, {timeout:600_000,message:'Both characters must navigate to Lockbreaker'}).toBeLessThan(70);
+    } finally {
+      await info.attach('native-cave-boss-planning-samples',{body:JSON.stringify(planningSamples),contentType:'application/json'});
+      await info.attach('native-cave-boss-planning-geometry',{body:JSON.stringify(planningGeometry ?? null),contentType:'application/json'});
+    }
     await info.attach('native-cave-lockbreaker-arrival',{body:JSON.stringify({dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
   }
   // Native encounter factory, bounded initial difficulty. Neither attacks,

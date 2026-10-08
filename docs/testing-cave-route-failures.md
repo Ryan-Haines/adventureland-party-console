@@ -423,3 +423,17 @@ before final exit controls and evidence capture. Use a coherent 2,700-second
 overall case bound (45 minutes): 20 + 22.5 minutes plus 2.5 minutes for controls
 and artifacts. Individual phase limits and all native outcomes remain bounded;
 the real game's expiry, clocks, generated rooms, and combat are untouched.
+
+### Native boss planning diagnostics (7b35)
+
+The owned Warrior plan terminated after 90 seconds and the follower after 120,
+with both still at (808,344), targeting (3464,440). Existing artifacts cannot
+distinguish an unreachable native endpoint from a search starved by readiness
+holds. Before changing runtime, sample verified native BFS globals `queue`,
+`start`, `best` and `smart`, together with current readiness/freshness and pause
+signals. Failure modes: sampling must not advance the search, mutate collision
+geometry, replace native outcomes, retain unbounded frontier arrays, or lose
+its evidence when the physical-arrival assertion fails. Sample at most once
+per five seconds, cap the ledger at 125 snapshots, and capture collision
+geometry once during preparation. Record native collision tests at the exact
+target and neighboring points; these are observations, not success criteria.

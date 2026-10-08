@@ -115,6 +115,8 @@ from the commits merged into `main`.
   Duel validation allows bounded native combat to finish and retains health and
   target evidence. The full journey budget accommodates its separate phases
   without changing native expiry, kills, ally survival, or room completion.
+  Failure evidence includes bounded native planner progress, readiness holds,
+  and destination collision geometry for investigating route preparation.
   Waypoint E2Es verify the actual UI request and retry only observed heartbeat
   suppression, retaining accepted-target checks and a submission evidence ledger.
   Freshness-rejection retries additionally verify the requested run and floor,
