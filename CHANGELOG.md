@@ -112,6 +112,8 @@ from the commits merged into `main`.
   travel, while still requiring both characters to physically reach the room.
   Stairs approach uses that same bound for native combat and reassembly before
   the farewell, with separate vote acknowledgement and floor-transition checks.
+  Waypoint E2Es verify the actual UI request and retry only observed heartbeat
+  suppression, retaining accepted-target checks and a submission evidence ledger.
 - Keep the same-run Cave map and waypoint selection open during heartbeat gaps,
   while disabling waypoint actions until every participant has a fresh, alive,
   matching-floor observation. Changing run or floor clears the old selection.

@@ -96,14 +96,54 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await expect(fullMap.locator('canvas')).toBeVisible();
   await expect(fullMap.getByText('E2EPriest', {exact:true})).toBeVisible();
   await info.attach('native-cave-full-map', {body:await fullMap.screenshot(),contentType:'image/png'});
+  const acceptWaypoint=async()=>{
+    const set=fullMap.getByRole('button',{name:'Set waypoint',exact:true});
+    const attempts:{submitted:boolean;status?:number;error?:string;heartbeatDisabled?:boolean}[]=[];
+    const staleHeartbeat=async()=>{
+      const view=await dungeon();
+      expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===view.state.run&&!m.observation.cave.paused),
+        'Only a heartbeat gap may suppress this waypoint; other native holds must fail').toBe(true);
+      return view.members.some((m:any)=>!m.fresh);
+    };
+    const isWaypoint=(request:import('@playwright/test').Request)=>request.method()==='POST'&&
+      new URL(request.url()).pathname==='/party-api/daily-dungeons'&&request.postDataJSON()?.action==='waypoint';
+    try{
+      await expect.poll(async()=>{
+        let submitted=false,response:Promise<{status:number;body:any}>|undefined;
+        const requested=(request:import('@playwright/test').Request)=>{if(isWaypoint(request))submitted=true;};
+        const responded=(reply:import('@playwright/test').Response)=>{
+          if(isWaypoint(reply.request()))response=reply.json().then(body=>({status:reply.status(),body}));
+        };
+        page.on('request',requested);page.on('response',responded);
+        try{
+          if(!await set.isEnabled()){
+            expect(await staleHeartbeat(),'A disabled waypoint without a request must correspond to stale native reports').toBe(true);
+            attempts.push({submitted:false,heartbeatDisabled:true});return false;
+          }
+          await set.click();
+          await expect.poll(async()=>!!response||(!submitted&&!await set.isEnabled()),{timeout:10_000}).toBe(true);
+          if(!submitted){
+            expect(await set.isEnabled(),'A suppressed waypoint click must be observably heartbeat-disabled').toBe(false);
+            expect(await staleHeartbeat(),'A suppressed waypoint click must correspond to stale native reports').toBe(true);
+            attempts.push({submitted:false,heartbeatDisabled:true});return false;
+          }
+          const result=await response!;
+          attempts.push({submitted:true,status:result.status,error:result.body.error});
+          if(result.status===409&&/^.+: fresh dungeon-compatible runtime required$/.test(result.body.error||''))return false;
+          expect(result.status,'Waypoint submission must be accepted; other errors are not retried').toBe(200);
+          await expect(fullMap).not.toBeVisible();
+          return true;
+        }finally{page.off('request',requested);page.off('response',responded);}
+      },{timeout:60_000,message:'The actual UI waypoint request must receive fresh native acceptance'}).toBe(true);
+    }finally{await info.attach('native-cave-waypoint-submission-ledger',{body:JSON.stringify(attempts),contentType:'application/json'});}
+  };
   await fullMap.getByRole('button', {name:'Add waypoint',exact:true}).click();
   const bounds=await (await page.request.get(live.url+'/party-api/maps/'+before.characters.E2EWarrior.map)).json();
   const mapBox=(await fullMap.locator('canvas').boundingBox())!;
   const fit=Math.min(mapBox.width/(bounds.max_x-bounds.min_x+100),mapBox.height/(bounds.max_y-bounds.min_y+100));
   await fullMap.locator('canvas').click({position:{x:mapBox.width/2+(before.characters.E2EWarrior.x-(bounds.min_x+bounds.max_x)/2)*fit,y:mapBox.height/2+(before.characters.E2EWarrior.y-(bounds.min_y+bounds.max_y)/2)*fit}});
   await expect(fullMap.getByRole('button',{name:'Set waypoint',exact:true})).toBeEnabled();
-  await fullMap.getByRole('button',{name:'Set waypoint',exact:true}).click();
-  await expect(fullMap).not.toBeVisible();
+  await acceptWaypoint();
   let initialWaypoint: {id:string;map:string;x:number;y:number;label:string;run:string}|undefined;
   await expect.poll(async()=>{
     const view=await dungeon(),state=view.state;
@@ -196,8 +236,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     const [x,y]=nomination.split(',').map(Number);
     expect(Math.hypot(x-safe.target.x,y-safe.target.y),'Canvas nomination must remain within the validated native endpoint margin').toBeLessThan(10);
     await info.attach('native-cave-visible-waypoint-nomination',{body:JSON.stringify({nomination,intended:safe.target,endpointMargin:safe.endpointMargin}),contentType:'application/json'});
-    await fullMap.getByRole('button',{name:'Set waypoint',exact:true}).click();
-    await expect(fullMap).not.toBeVisible();
+    await acceptWaypoint();
     let selected:{id:string;map:string;x:number;y:number}|undefined;
     await expect.poll(async()=>{
       const view=await dungeon(),state=view.state;

@@ -359,3 +359,15 @@ while a fresh owned route is still progressing. Align the stairs approach to
 the existing 600-second farm/boss allowance, preserving the actual farewell
 reply, both native vote acknowledgements, independent continuation/floor-1
 checks, and the overall 1,500-second case bound. No runtime changes.
+
+## UI waypoint submission waits for actual fresh acceptance
+
+CI eae (37807572281) clicked Set after 4.88s of actionability waiting, but
+kept the selected map open with Add/Set heartbeat-disabled and no rendered
+error or persisted waypoint. Freshness can change between actionability and
+submission. Failure modes: treating a suppressed stale click as acceptance,
+duplicating an accepted request, retrying arbitrary errors, or bypassing native
+admission. Observe the real waypoint POST before clicking. Retry only a
+suppressed request with an observed disabled button or an explicit HTTP 409
+fresh-runtime rejection. HTTP 200 must close the map with no retry; all other
+HTTP/rendered errors fail. Preserve owned target and native arrival checks.
