@@ -304,3 +304,24 @@ midroute Stop test. Retain the first Stop after real >80 displacement; finish
 the resumed waypoint with both matching current-owned move completion receipts
 and actual endpoint distance <5 before the second Stop and original farm UI
 selection. Native farm arrival and subsequent combat assertions are unchanged.
+
+## Same-run read-only Cave map survives stale heartbeat observations
+
+CI 074 (37798720220) successfully clicked Add waypoint, fetched map bounds in
+501ms, then lost the entire map dialog before canvas lookup. DungeonPanel
+conditionally mounts CaveMap only when some member is fresh; a transient
+three-second heartbeat gap therefore destroys its open state. Failure modes:
+unmounting on freshness gaps, enabling actions from stale observations, leaking
+an old run/floor or waypoint into a new run/floor, and accepting actions while
+native encounters pause. Before source changes, a declared console read fixture
+will switch fresh→stale→fresh and require the same open map/selection to survive,
+Set waypoint disabled while stale and restored when fresh. A new run/floor must
+close the previous dialog/selection. Native coordinator admission remains
+unchanged; only read-only display continuity is retained.
+
+The pre-code console regression failed with the selected dialog removed on a
+stale report. After the UI fix, the same fixture passed (8.6s test, 14.5s suite)
+and records a stale read-only map screenshot plus transition ledger. The old
+run/floor dialog closes and its waypoint is cleared. This reproduces the
+mount-loss vulnerability; the original native trace contains no network
+freshness payloads, so its exact missing-heartbeat instant is not claimed.
