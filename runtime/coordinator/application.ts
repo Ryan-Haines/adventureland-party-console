@@ -294,12 +294,16 @@ export function startCoordinatorApplication(
       participants: realmParticipants,
       current: () => realmControlPayload().currentRealm,
       home: accountHomeRealm,
+      characterHome: (name) => rosterProjection.owned(name)?.home || null,
+      accountCharacters: () => my_acc.response.characters.map((entry) => entry.name),
+      start: (name) => characterManager.start(name),
+      connectionCount: () => my_acc.response.characters.filter((entry) => !!entry.online).length,
       refresh: () => my_acc.updateInfo(),
     });
     const shutdownCoordinator = coordinatorPolicies.createShutdown({
       log: (message) => console.log(message),
       stopCharacters: () => characterManager.stopAll(),
-      closeStorage: () => { movementPlanner.dispose(); localStorage.close(); },
+      closeStorage: () => { persistence.flush(); movementPlanner.dispose(); localStorage.close(); },
       exit: () => process.exit(),
     });
     const { dispatcher: merchantDispatcher, idle: merchantIdle } =
@@ -913,6 +917,10 @@ export function startCoordinatorApplication(
     const workerSetup = coordinatorPolicies.createWorkerSetup(character_manage, party, {
       // Keep the original TypeError if a queued worker no longer has an account entry.
       configuredRealm,
+      homeRealm: (name) => {
+        const home = accountHomeRealm() || ownedCharacter(name)?.home;
+        return home ? "SR_" + home.replace(/^SR_/, "") : null;
+      },
       script: (name) => classScript("./CODE/adventure_land", ownedCharacter(name)!.type),
       watch: watchCharacterCode,
       persist: persistRosterState,
@@ -1197,7 +1205,7 @@ export function startCoordinatorApplication(
     }
 
     function persistSettings() {
-      persistence.settings();
+      persistence.scheduleSettings();
     }
 
     function persistHistory() {
@@ -2000,9 +2008,9 @@ export function startCoordinatorApplication(
       dungeons.reconcile();
       if (party.leader && !dungeonOwns(party)) huntTick.tick();
       for (const service of independentServices()) {
-        const before = JSON.stringify(service.state.monsterHunt);
+        const before = JSON.stringify({...service.state.monsterHunt, message: undefined});
         service.huntTick.tick();
-        if (before !== JSON.stringify(service.state.monsterHunt)) persistSettings();
+        if (before !== JSON.stringify({...service.state.monsterHunt, message: undefined})) persistSettings();
       }
     }
 
@@ -2192,7 +2200,7 @@ export function startCoordinatorApplication(
                 router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
                   [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete')));
                 coordinatorPolicies.installMovementRoutes(router, movementPlanner, ownedCharacter);
-                installProductionRoutes(router, party, persistSettings, merchantLog);
+                installProductionRoutes(router, party, () => persistence.settings(), merchantLog);
                 router.post('/party-api/merchant/stand-location', standLocationRoute(party, (x,y) => canStand(x,y), persistSettings));
                 installSharedRuleRoutes(router, party, persistSettings);
                 router.post("/party-api/merchant/native-stand", coordinatorPolicies.createNativeStandRoute(party, { fulfill: fulfillStandBid, persist: persistSettings, dispatch: dispatchMerchant, stamp: stampMerchantJob }));

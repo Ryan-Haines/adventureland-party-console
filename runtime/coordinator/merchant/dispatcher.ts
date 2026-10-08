@@ -264,6 +264,10 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   function dispatch(): void {
     if (ports.eventReserved?.()) return;
     if (productionHeld()) return;
+    // A receipt can already be settled while its lucky layout or inventory
+    // tidy is still restoring. Hold before realm/home/storage/gathering paths
+    // so none can steal that inventory ownership between native steps.
+    if (ports.status(ports.merchant())?.upgradeInventoryBusy) return;
     dispatchReady();
   }
   function dispatchReady(): void {

@@ -596,12 +596,18 @@
   var lastUpgradePreview = null;
   var luckyUpgradeService = null;
   var luckySlotTracker = null;
+  var luckySlotCharacterId = null;
+  function bindLuckySlotCharacterId(id) {
+    if (typeof id !== "string" || !id || id === luckySlotCharacterId) return;
+    luckySlotCharacterId = id;
+    luckySlotTracker = null;
+  }
   function luckySlotTracking() {
     if (!luckySlotTracker) {
-      var key = "party-lucky-slot-tracking:" + character.owner + ":" + character.name;
+      var key = luckySlotCharacterId && "party-lucky-slot-tracking:" + character.owner + ":" + luckySlotCharacterId;
       luckySlotTracker = root.createPartyLuckySlotTracker({
-        read: function () { return JSON.parse(root.localStorage.getItem(key) || "null"); },
-        write: function (value) { root.localStorage.setItem(key, JSON.stringify(value)); },
+        read: function () { return key ? JSON.parse(root.localStorage.getItem(key) || "null") : null; },
+        write: function (value) { if (key) root.localStorage.setItem(key, JSON.stringify(value)); },
         now: Date.now,
         isUpgradeScroll: function (name) { return !!(G.items[name] && G.items[name].type === "uscroll"); }
       });
@@ -1100,7 +1106,7 @@
     if (!item) return null;
     var copy = {};
     ["name", "level", "q", "p", "stat_type", "data", "price", "rid", "b", "m", "l", "v"].forEach(function (key) {
-      if (item[key] !== undefined) copy[key] = item[key];
+      if (item[key] != null) copy[key] = item[key];
     });
     return copy;
   }
@@ -2513,8 +2519,9 @@
       upgradePreviewSession: upgradePreviewSession,
       upgradePreviewRevision: root.localStorage.getItem("party-upgrade-preview-revision:"+character.name) || "0",
       luckySlotTracking: luckySlotTracking().report(),
+      luckySlotCharacterId: luckySlotCharacterId,
       merchantEventReserved: merchantEventWorkReserved(),
-      upgradeInventoryBusy: !!(root.__merchantInventoryTidy || (luckyUpgradeService ? luckyUpgradeService.pending() :
+      upgradeInventoryBusy: !!(root.__merchantInventoryTidy || root.__partyProductionWorking || root.__partyProductionRecovery || (luckyUpgradeService ? luckyUpgradeService.pending() :
         root.localStorage.getItem("party-lucky-upgrade:" + character.name))),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
       escape: escapeLocal,
@@ -2895,11 +2902,31 @@
     if (committedHuntEncounter(target) || typeof huntTravelDefense === "function" && huntTravelDefense() && !(rule && rule.enabled && rule.keepMoving)) return false;
     var key = passingKey(target), now = Date.now() + coordinatorClockOffset;
     if (target.dead || target.hp === 0) return false;
-    var passingDeaths = (typeof fightDeaths !== 'undefined' ? fightDeaths : []).concat(groupedCombat && groupedCombat.deaths || []);
-    if (passingDeaths.some(function(d){return passingKey(d)===key && now-d.at<60000;})) return false;
-    if (peerPassingEncounters.some(function(e){return passingKey(e)===key && now-e.at<60000;})) return true;
+    // Keep cache ownership inside this function: standalone runtime harnesses
+    // install it without the surrounding script. Weak keys release replaced
+    // coordinator lists; native deaths appended in place invalidate by length.
+    var indexes = isPassingEncounter.indexes || (isPassingEncounter.indexes = new WeakMap());
+    var context = JSON.stringify([reunionRealm(), character.map, String(character.in || character.map)]);
+    function recent(list) {
+      if (!list || !list.length) return false;
+      var cached = indexes.get(list);
+      if (!cached || cached.length !== list.length || cached.context !== context) {
+        var latest = new Map();
+        list.forEach(function(entry) {
+          var at = Number(entry.at);
+          if (Number.isNaN(at)) return;
+          var identity = passingKey(entry);
+          if (!latest.has(identity) || at > latest.get(identity)) latest.set(identity, at);
+        });
+        cached = {length:list.length,context:context,latest:latest};
+        indexes.set(list,cached);
+      }
+      return now - cached.latest.get(key) < 60000;
+    }
+    if (recent(typeof fightDeaths !== 'undefined' ? fightDeaths : null) || recent(groupedCombat && groupedCombat.deaths)) return false;
+    if (recent(peerPassingEncounters)) return true;
     return !!(passingEncounters[key] && now - passingEncounters[key].at < 60000) ||
-      !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
+      recent(groupedCombat && groupedCombat.passingEncounters);
   }
   function passingTravelAllowed() {
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
@@ -4317,24 +4344,37 @@
       journal.success=false;
     } else {
       if (character.q && (character.q.upgrade || character.q.compound)) throw Error("Production recovery waiting for game operation");
+      // Retain the interrupted layout before recovery clears it. An empty old
+      // source alone cannot distinguish a burned item from a relocated survivor.
+      var luckyEvidence = JSON.parse(root.localStorage.getItem("party-lucky-upgrade:" + character.name) || "null") || journal.lucky;
+      var emptyLuckyResult = luckyEvidence && luckyEvidence.phase !== "preparing" &&
+        luckyEvidence.from === journal.slots[0] && sameItemState(luckyEvidence.item, journal.item) &&
+        !character.items[luckyEvidence.to];
       if (luckyUpgradeService && luckyUpgradeService.pending()) await luckyUpgradeService.recover();
       else if (character.ctype === "merchant" && root.localStorage.getItem("party-lucky-upgrade:" + character.name)) await merchantLuckyUpgrade().recover();
       var live = character.items[journal.slots[0]];
       if (journal.commerce && (!live || live.name !== journal.item.name ||
           [(journal.item.level || 0), (journal.item.level || 0) + 1].indexOf(live.level || 0) < 0)) {
-        var previous = JSON.stringify(journal.item), upgraded = JSON.stringify(Object.assign({}, journal.item, {level: (journal.item.level || 0) + 1}));
+        var previous = JSON.stringify(fingerprint(journal.item)), upgraded = JSON.stringify(fingerprint(Object.assign({}, journal.item, {level: (journal.item.level || 0) + 1})));
         var candidates = character.items.map(function (item, slot) {
           var state = JSON.stringify(fingerprint(item));
           return state === previous || state === upgraded ? slot : -1;
         }).filter(function (slot) { return slot >= 0; });
-        if (candidates.length !== 1) throw Error("Production outcome needs review before another attempt: " + journal.item.name);
-        journal.slots[0] = candidates[0]; live = character.items[candidates[0]];
+        var possibleSurvivor = character.items.some(function (item) {
+          return item && item.name === journal.item.name &&
+            [(journal.item.level || 0), (journal.item.level || 0) + 1].indexOf(item.level || 0) >= 0;
+        });
+        if (!candidates.length && emptyLuckyResult && !live && !possibleSurvivor) journal.destroyed = true;
+        else {
+          if (candidates.length !== 1) throw Error("Production outcome needs review before another attempt: " + journal.item.name);
+          journal.slots[0] = candidates[0]; live = character.items[candidates[0]];
+        }
       }
       if (live && live.name === journal.item.name && (live.level || 0) === (journal.item.level || 0)+1) journal.success=true;
-      else if ((!live && !journal.commerce) || JSON.stringify(fingerprint(live)) === JSON.stringify(journal.item)) journal.success=false;
+      else if (journal.destroyed || (!live && !journal.commerce) || JSON.stringify(fingerprint(live)) === JSON.stringify(fingerprint(journal.item))) journal.success=false;
       else throw Error("Production outcome needs review before another attempt: " + journal.item.name);
     }
-    if (journal.commerce) journal.outcomeItem = fingerprint(character.items[journal.slots[0]]);
+    if (journal.commerce) journal.outcomeItem = journal.destroyed ? null : fingerprint(character.items[journal.slots[0]]);
     journal.phase="complete";await saveProductionJournal(journal);
     await finishProductionJournal(journal);
   }
@@ -5961,6 +6001,19 @@
   function isDashboardEquipment(item) {
     var definition = G.items[item && item.name] || {};
     return ["helmet", "pants", "chest", "weapon", "amulet", "earring", "shoes", "gloves", "ring", "shield", "belt", "source", "orb", "quiver", "cape", "misc_offhand", "tool"].includes(definition.type);
+  }
+  async function equipDashboardItem(command) {
+    if (!isDashboardEquipment(command.item)) throw new Error("item is not equipment; use its explicit Use action instead");
+    if (root.partyPorcupineEquipment) await root.partyPorcupineEquipment.manual();
+    if (character.ctype === "merchant") await closeMerchantStandForTravel();
+    // Normalize old dashboard snapshots too: native drag/equip updates can add
+    // or omit null metadata without changing the selected item's identity.
+    // Resolve after preparation awaits, which can restore/move weapon inventory.
+    var slot = findItem(fingerprint(command.item));
+    if (slot < 0) throw new Error("selected equipment is no longer in inventory; refresh and try again");
+    // The native catalog owns slot selection (Loaded Die is type orb). Keep
+    // class-specific weapon and paired ring/earring selection native too.
+    await equip(slot);
   }
   async function useDashboardItem(command) {
     var item = character.items[command.slot];
@@ -9787,11 +9840,7 @@
     }
     if (command.type === "use-item") return useDashboardItem(command);
     if (command.type === "equip") {
-      if (!isDashboardEquipment(command.item)) throw new Error("item is not equipment; use its explicit Use action instead");
-      if (root.partyPorcupineEquipment) await root.partyPorcupineEquipment.manual();
-      if (character.ctype === "merchant") await closeMerchantStandForTravel();
-      var slot = findItem(command.item);
-      if (slot >= 0) await equip(slot);
+      await equipDashboardItem(command);
     }
     if (command.type === "equip-deliveries") {
       var equipResults = await equipDeliveredItems(command.items || []);
@@ -10162,7 +10211,10 @@
         gatheringSession.atStandForCooldown = false;
       gatheringStandListings = nextStandListings;
       merchantWeapon = state.merchantWeapon || null;
-      luckyUpgradeSlot = state.luckyUpgradeSlots && state.luckyUpgradeSlots[character.name];
+      luckyUpgradeSlot = state.luckySlotLocks && Number.isInteger(state.luckySlotLocks[character.name])
+        ? state.luckySlotLocks[character.name] : state.luckySlotResume && state.luckySlotResume[character.name] ? state.luckySlotResume[character.name].slot
+        : state.luckyUpgradeSlots && state.luckyUpgradeSlots[character.name];
+      bindLuckySlotCharacterId(state.luckySlotCharacterIds && state.luckySlotCharacterIds[character.name]);
       luckySlotTracking().sync(state.luckySlotTracking && state.luckySlotTracking[character.name]);
       merchantForceStand = !!state.merchantForceStand;
       if (state.merchantStandLocation && state.merchantStandLocation.map === "main" &&

@@ -15,7 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { sanitizeDollHtml } from './sanitize-doll-html';
 import { Char } from "./char";
 import { comparisonSlotsFor } from "./comparison-slots-for";
 import { EquippedEntry } from "./equipped-entry";
@@ -35,6 +36,8 @@ export function GearComparisonDialog({
   currentCharacter?: Char | null;
   onOpenChange: (open: boolean) => void;
 }) {
+  const dollHtml = currentCharacter?.characterDollHtml || comparison?.character.characterDollHtml;
+  const dollMarkup = useMemo(() => ({__html:sanitizeDollHtml(dollHtml)}), [dollHtml]);
   const [leftLevel, setLeftLevel] = useState(0);
   const [rightLevel, setRightLevel] = useState(0);
   const [leftStatType, setLeftStatType] = useState("none");
@@ -323,7 +326,7 @@ export function GearComparisonDialog({
         <div
           className="h-20 w-16 shrink-0 overflow-hidden"
           dangerouslySetInnerHTML={
-            character.characterDollHtml ? { __html: character.characterDollHtml } : undefined
+            character.characterDollHtml ? dollMarkup : undefined
           }
         />
         <div className="min-w-0">

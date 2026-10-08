@@ -1,11 +1,14 @@
 import * as fs from 'node:fs';
+import {spawnSync} from 'node:child_process';
 import type {CoordinatorFileStore} from '../infrastructure/platform-contracts.ts';
+import {processLockActive, processLockIdentity} from './process-lock.ts';
 
 /** Compatible JSONL store: replay one record at a time, never the entire journal. */
 export class CoordinatorJsonlStore implements CoordinatorFileStore {
   private values = new Map<string,unknown>();
   private handle: number | undefined;
   private lock: number | undefined;
+  private guard: number | undefined;
   private timer: ReturnType<typeof setInterval> | undefined;
   private bytes = 0;
   private compactRetryAt = 0;
@@ -17,8 +20,8 @@ export class CoordinatorJsonlStore implements CoordinatorFileStore {
     this.mainPath=mainPath;this.replacementPath=replacementPath;
     if(mainPath===replacementPath)throw new Error('Storage main and replacement paths must differ');
     this.lockPath=mainPath+'.writer.lock';
-    this.acquire();
     try {
+      this.acquire();
       if(!fs.existsSync(mainPath) && fs.existsSync(replacementPath))fs.renameSync(replacementPath,mainPath);
       this.handle=fs.openSync(mainPath,'a+');
       this.replay();
@@ -28,20 +31,30 @@ export class CoordinatorJsonlStore implements CoordinatorFileStore {
     } catch(error) {this.close();throw error;}
   }
   private acquire():void {
+    if (process.platform === 'linux') this.acquireGuard();
+    const identity = JSON.stringify({...processLockIdentity(), ...(this.guard !== undefined ? {advisory:true} : {})});
     try {this.lock=fs.openSync(this.lockPath,'wx');}
     catch(error) {
       if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;
-      const owner=Number(fs.readFileSync(this.lockPath,'utf8'));
-      if(this.alive(owner))throw new Error('Storage already has a live writer: '+this.mainPath);
+      const owner=fs.readFileSync(this.lockPath,'utf8');
+      if(processLockActive(owner, this.guard !== undefined))throw new Error('Storage already has a live writer: '+this.mainPath);
       fs.unlinkSync(this.lockPath);
       this.lock=fs.openSync(this.lockPath,'wx');
     }
-    fs.writeFileSync(this.lock,String(process.pid));
+    fs.writeFileSync(this.lock,identity);
+    fs.fsyncSync(this.lock);
   }
-  private alive(pid:number):boolean {
-    if(!Number.isSafeInteger(pid) || pid<=0)return false;
-    try {process.kill(pid,0);return true;}
-    catch(error){return (error as NodeJS.ErrnoException).code!=='ESRCH';}
+  private acquireGuard():void {
+    // flock attaches to the inherited open file description. The parent keeps
+    // that description after the helper exits; close/crash releases ownership.
+    // Never unlink this inode: another writer may already have opened it.
+    this.guard = fs.openSync(this.lockPath.replace(/\.lock$/, '.guard'), 'a+');
+    const result = spawnSync('flock', ['--exclusive', '--nonblock', '3'], {
+      stdio: ['ignore', 'pipe', 'pipe', this.guard], timeout: 5000,
+    });
+    if (result.error) throw new Error('Storage requires Linux flock: '+result.error.message);
+    if (result.status === 1) throw new Error('Storage already has a live writer: '+this.mainPath);
+    if (result.status !== 0) throw new Error('Storage advisory ownership is unverifiable: '+result.stderr.toString());
   }
   private replay():void {
     const chunk=Buffer.allocUnsafe(64*1024);
@@ -117,5 +130,6 @@ export class CoordinatorJsonlStore implements CoordinatorFileStore {
     this.closed=true;clearInterval(this.timer);
     if(this.handle!==undefined)fs.closeSync(this.handle);
     if(this.lock!==undefined){fs.closeSync(this.lock);fs.unlinkSync(this.lockPath);}
+    if(this.guard!==undefined)fs.closeSync(this.guard);
   }
 }

@@ -58,6 +58,7 @@ export interface MerchantWork extends MerchantJob {
 }
 
 export interface ServiceStatus extends Partial<Pick<Entity, 'rip'>> {
+  upgradeInventoryBusy?: boolean;
   gatheringPhase?: string;
   gatheringAttemptId?: string;
   seenAt: number;

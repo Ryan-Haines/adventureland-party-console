@@ -7,8 +7,10 @@ export interface LuckySlotMenuSelection {
   slot: number;
   entry: InventoryEntry | null;
 }
-export function LuckySlotMenu({ selection, onClose, onData, onItem }: {
+export function LuckySlotMenu({ selection, onClose, onData, onItem, locked, onLock }: {
   selection: LuckySlotMenuSelection | null;
+  locked?: boolean;
+  onLock?(slot: number): void;
   onClose(): void;
   onData(): void;
   onItem(entry: InventoryEntry): void;
@@ -19,6 +21,7 @@ export function LuckySlotMenu({ selection, onClose, onData, onItem }: {
       <Menu.Positioner anchor={selection?.anchor} side="bottom" align="start" sideOffset={4} className="z-50">
         <Menu.Popup aria-label="Lucky slot options" className="data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 origin-(--transform-origin) duration-100 min-w-48 rounded-lg border border-slate-300 bg-white p-1 text-black shadow-lg outline-none">
           <Menu.Item className={itemClass} onClick={() => { onClose(); onData(); }}>Show lucky slot data</Menu.Item>
+          <Menu.Item className={itemClass} onClick={() => { if (selection) onLock?.(selection.slot); onClose(); }}>{locked ? "Unlock lucky slot position" : "Lock lucky slot position"}</Menu.Item>
           <Menu.Item className={itemClass} disabled={!selection?.entry} onClick={() => {
             if (selection?.entry) { onClose(); onItem(selection.entry); }
           }}>Show item details</Menu.Item>

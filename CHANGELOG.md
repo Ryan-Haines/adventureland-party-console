@@ -7,6 +7,17 @@ from the commits merged into `main`.
 
 ### Added
 
+- Merchant inventory menus can lock the lucky-slot position while continuing
+  to record rolls and probabilities. Guarded cleanup preserves displaced cargo;
+  unlocking tests the next position before resuming discovery. Locks and the
+  next-roll checkpoint survive coordinator restarts (#23).
+
+- Home-realm confirmation warns that every account character is affected.
+  Active characters confirm individually; offline characters log in sequentially
+  and return offline. Original assignments are preserved and temporarily paused
+  headless workers reconnect. Mixed homes and per-character progress are visible;
+  cooldowns and full native-session capacity produce explicit errors (#52).
+
 - Debug consoles can open and control their actual game browser through a private
   viewer on the same port, with Debug browser labels instead of Steam.
 
@@ -48,6 +59,45 @@ from the commits merged into `main`.
   Persisted action receipts prevent blind retries after lost entry or spending replies.
 
 ### Fixed
+
+- Recover burned commerce-upgrade items only after lucky-layout reconciliation
+  proves an empty result and no old/new-level survivor remains. Ambiguous layouts
+  still require review. Normalize null item metadata in current inventory and
+  legacy journals, and hold competing merchant dispatch throughout production,
+  recovery and lucky-slot restoration (#47).
+- Allow unrelated character logins while merchant jobs are running, retaining
+  the joining character's ownership checks and global BankBoi lock (#48).
+- Connect new and restored headless slots to the native home realm rather than
+  stale saved realm configuration. Preserve explicit realm-operation destinations
+  and running workers' event travel (#50).
+- Bind lucky-slot evidence, verified positions, locks and resume checkpoints to
+  stable account character IDs. Same-name recreation clears old state; renames
+  retain it. Client streams use ID-scoped storage to prevent stale reimport.
+  First migration preserves legacy evidence; earlier recreations cannot be
+  detected retroactively (#55).
+- Normalize legacy null metadata in manual equipment selections and report
+  missing gear instead of silently skipping Equip. Loaded Die uses the native
+  orb slot; its menu regression checks displaced-orb conservation and restart.
+- Cache passing-encounter/death identities per list and context, and build one
+  retained-tombstone identity set per combat reconciliation. Preserve timestamp,
+  duplicate and death-precedence behavior while removing repeated scans (#57).
+- Bound completed production receipts to 2,048 while preserving unfinished
+  journals. Coalesce ordinary settings saves over one second, keep production
+  checkpoints immediate, flush orderly shutdowns, omit Hunt message-only writes,
+  and store object snapshots with legacy JSON-string compatibility (#59).
+- Rotate managed console and updater Docker logs to three 10 MB files each.
+  Existing services need recreation with the updated Compose file; subsequent
+  managed updates preserve the limits (#60).
+- Sanitize doll markup before portrait, equipment comparison and map rendering.
+  Rebuild approved tags, attributes and native crop styles with a pure-data HTML
+  parser; reject handlers, unsafe image schemes and executable CSS (#61).
+- Release Linux journal ownership automatically after crashes with an advisory
+  flock guard. Retain process identity metadata, protect competing writers across
+  containers, and conservatively handle unverifiable legacy locks. Coordinator
+  Docker images include util-linux (#62).
+- Stream E2E Docker logs directly to their artifact with bounded memory and
+  collect only the current run during teardown, so large retained logs cannot
+  prevent cleanup or report generation.
 
 - Cave recovery releases a completed dungeon hold before manual Town or farming
   travel. Parties already outside the cave can resume movement instead of

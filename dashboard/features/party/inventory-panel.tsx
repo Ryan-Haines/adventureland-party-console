@@ -90,6 +90,8 @@ export const InventoryPanel = memo(function InventoryPanel({
   luckyUpgradeSlot,
   luckySlotTracking,
   onLuckySlot,
+  luckySlotLocked,
+  onLuckySlotLock,
   marked,
   merchantMarked,
   autoItemMarks,
@@ -137,6 +139,8 @@ export const InventoryPanel = memo(function InventoryPanel({
   luckyUpgradeSlot?: number | null;
   luckySlotTracking?: LuckySlotTracking;
   onLuckySlot?: () => void;
+  luckySlotLocked?: boolean;
+  onLuckySlotLock?: (slot: number) => void;
   marked: BankMark[];
   merchantMarked: BankMark[];
   autoItemMarks: Record<string, "bank" | "merchant">;
@@ -214,7 +218,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   const [luckySlotMenu, setLuckySlotMenu] = useState<LuckySlotMenuSelection | null>(null);
   const nextUpgradeSlot = validLuckySlot(luckyUpgradeSlot) ? luckyUpgradeSlot :
     luckySlotSearch(luckySlotTracking || {version: 1, slots: {}}).nextSlot;
-  const luckySlotLabel = validLuckySlot(luckyUpgradeSlot) ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
+  const luckySlotLabel = luckySlotLocked ? "Locked lucky upgrade position" : validLuckySlot(luckyUpgradeSlot) ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
   type AutomaticSection = "npc" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction";
   const [openAutomaticSections, setOpenAutomaticSections] = useState<
     Partial<Record<AutomaticSection, boolean>>
@@ -577,7 +581,7 @@ export const InventoryPanel = memo(function InventoryPanel({
       </button>
       {inventoryOpen ? (
         <>
-          <LuckySlotMenu selection={luckySlotMenu} onClose={() => setLuckySlotMenu(null)} onData={() => onLuckySlot?.()} onItem={onSelect} />
+          <LuckySlotMenu selection={luckySlotMenu} onClose={() => setLuckySlotMenu(null)} onData={() => onLuckySlot?.()} onItem={onSelect} locked={luckySlotLocked} onLock={onLuckySlotLock} />
           <div className="grid grid-cols-5 gap-2">
             {(character.name === merchant ? physicalInventory(character.items) : compactInventory(character.items, totalSlots)).map((entry, i) => {
               const lucky = character.name === merchant && i === nextUpgradeSlot;

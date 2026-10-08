@@ -1,0 +1,60 @@
+import { test, expect } from './live-fixtures';
+
+// See home-realm-failures.md. Native server/client assertions preserve the
+// endpoint contract; no fabricated home-success receipt or realm response.
+test('home realm change confirms every active character including merchant', async ({ page, live }, info) => {
+  test.setTimeout(240_000);
+  const names = ['E2EWarrior', 'E2EPriest', 'E2EMerchant'];
+  try {
+    await live.admin(`output=(async()=>{for(const name of ${JSON.stringify(names)}) {
+      const p=get_player(name); p.p.home='USII'; delete p.p.dt.last_homeset;
+      await db.collection('character').updateOne({name},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}});
+    } return true;})()`);
+    await live.restartCoordinator();
+    await expect.poll(async () => (await live.state()).realmControl?.homeRealm, {timeout:30_000}).toBe('SR_USII');
+    await page.goto(live.url);
+    await page.getByRole('button', {name:'Interface settings',exact:true}).click();
+    await page.getByRole('combobox', {name:'Change realm',exact:true}).click();
+    await page.getByRole('option', {name:/US I \(/}).click();
+    await page.getByRole('button', {name:'Change realm',exact:true}).click();
+    await page.getByText('Set as home realm', {exact:true}).click();
+    const modal = page.getByRole('dialog', {name:'Change home realm?',exact:true});
+    await expect(modal).toContainText('This will change for all characters in the account including characters not currently logged in.');
+    await expect(modal.getByRole('button', {name:'Cancel',exact:true})).toBeVisible();
+    await info.attach('account-home-confirmation', {body:await page.screenshot(),contentType:'image/png'});
+    await modal.getByRole('button', {name:'Change home realm',exact:true}).click();
+    await expect.poll(async () => (await live.state()).realmControl?.operation?.phase, {timeout:120_000}).toBe('complete');
+    const state = await live.state();
+    expect(state.realmControl.operation.characters.filter((entry:any)=>entry.homeConfirmed).map((entry:any)=>entry.name).sort()).toEqual([...names].sort());
+    const native = await live.admin(`output=Object.fromEntries(${JSON.stringify(names)}.map(name=>[name,get_player(name).p.home]))`);
+    expect(native).toEqual(Object.fromEntries(names.map(name=>[name,'USI'])));
+    expect(state.realmControl.homeCharacters.every((entry:any)=>entry.home==='SR_USI')).toBe(true);
+    await info.attach('native-account-home-realms', {body:JSON.stringify({native,state:state.realmControl}),contentType:'application/json'});
+  } finally { await page.close(); }
+});
+
+test.describe('temporary native headless home change', () => {
+  test.use({ liveHeadless:true });
+  test('offline merchant logs in to set home and returns offline without changing slots', async ({ page, live }, info) => {
+    test.setTimeout(240_000);
+    try {
+      await live.post('/steam/action', {character:'E2EMerchant',action:'logout'});
+      await expect.poll(async () => (await live.state()).steamSwitch?.phase, {timeout:90_000}).toBe('complete');
+      await expect.poll(async () => await live.admin("output=!!get_player('E2EMerchant')"), {timeout:30_000}).toBe(false);
+      await live.admin("output=db.collection('character').updateOne({name:'E2EMerchant'},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}})");
+      await live.restartCoordinator();
+      await expect.poll(async () => (await live.state()).realmControl?.homeCharacters?.find((entry:any)=>entry.name==='E2EMerchant')?.home).toBe('SR_USII');
+      const before = await live.state();
+      const result = await live.post('/realm/switch', {realm:'SR_USI',setHome:true});
+      expect(result.operation.homeTargets).toContain('E2EMerchant');
+      await expect.poll(async () => (await live.state()).realmControl?.operation?.phase, {timeout:150_000}).toBe('complete');
+      await expect.poll(async () => await live.admin("output=!!get_player('E2EMerchant')"), {timeout:30_000}).toBe(false);
+      const after = await live.state();
+      expect(after.realmControl.homeCharacters.every((entry:any)=>entry.home==='SR_USI')).toBe(true);
+      expect(after.activeSlots.map((entry:any)=>({index:entry.index,kind:entry.kind,character:entry.character}))).toEqual(before.activeSlots.map((entry:any)=>({index:entry.index,kind:entry.kind,character:entry.character})));
+      const storedHome = await live.admin("output=db.collection('character').findOne({name:'E2EMerchant'}).then(c=>c.info.p.home)");
+      expect(storedHome).toBe('USI');
+      await info.attach('offline-character-native-home-and-slot-restoration', {body:JSON.stringify({before,after,storedHome}),contentType:'application/json'});
+    } finally { await page.close(); }
+  });
+});

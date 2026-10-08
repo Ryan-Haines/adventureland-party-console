@@ -72,6 +72,7 @@ export const actionDomains = {
   '/anniversary/chat-advertise': core,
 } satisfies Record<string, readonly Domain[]>;
 export type ActionPath =
+  | "/merchant/config"
   | keyof typeof actionDomains
   | '/command'
   | `/slots/${number}/${'spawn' | 'logout'}`

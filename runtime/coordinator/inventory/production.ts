@@ -8,7 +8,7 @@ interface CompoundRule { name: string; targetTier?: number; quantity?: number }
 interface ReceiptRule { family: 'upgrade' | 'compound'; key: string; signature: string }
 // Recovery is a client journal protocol, not a complete game item or operation.
 export interface ProductionJournal { id: string; item: {name: string; level?: number}; slots: number[]; phase: 'prepared' | 'running' | 'complete'; [key: string]: unknown }
-export interface ProductionAttempt { name: string; level: number; kind: 'upgrade' | 'compound'; rules: ReceiptRule[]; journal?: ProductionJournal; automaticCompoundTarget?: number; completed?: boolean; success?: boolean; requestId?: string; offering?: string; resolution?: { outcome: 'unknown'; reason: string; at: number } }
+export interface ProductionAttempt { name: string; level: number; kind: 'upgrade' | 'compound'; rules: ReceiptRule[]; journal?: ProductionJournal; automaticCompoundTarget?: number; completed?: boolean; completedAt?: number; success?: boolean; requestId?: string; offering?: string; resolution?: { outcome: 'unknown'; reason: string; at: number } }
 export interface ProductionState { attempts: Record<string, ProductionAttempt> }
 export function pendingProduction(production: ProductionState, includeJournal = false) {
   return Object.entries(production.attempts).filter(([, attempt]) => !attempt.completed)
@@ -59,7 +59,17 @@ function attemptInput(body: Record<string,unknown>) {
   if (kind !== 'upgrade' && kind !== 'compound') throw Error('Invalid production kind');
   return {id,name:item.name,level,kind:kind as ProductionAttempt["kind"]};
 }
+/** Retain a bounded retry window; unfinished recovery journals are never retired. */
+export function pruneProductionReceipts(production: ProductionState): void {
+  const completed = Object.entries(production.attempts).filter(([, attempt]) => attempt.completed)
+    .sort((a, b) => (b[1].completedAt ?? 0) - (a[1].completedAt ?? 0));
+  for (const [index, [id]] of completed.entries()) {
+    if (index >= 2048)
+      delete production.attempts[id];
+  }
+}
 export function beginProduction(state: State, body: Record<string, unknown>) {
+  pruneProductionReceipts(state.production);
   const input = attemptInput(body), {id,name,level,kind} = input;
   const previous = state.production.attempts[id];
   if (previous) {
@@ -106,11 +116,12 @@ export function finishProduction(state: State, id: string, success: boolean, log
   if (!attempt) throw Error('Unknown production attempt');
   if (attempt.completed) return;
   if (success) consumeQuotas(state, attempt);
-  attempt.completed = true; attempt.success = success;
+  attempt.completed = true; attempt.completedAt = Date.now(); attempt.success = success;
   delete attempt.journal;
   finishManualOffering(state, attempt);
   if (success && attempt.kind === 'compound' && attempt.level === attempt.automaticCompoundTarget)
     log?.('merchant completed auto compound', 'success', {name:attempt.name,level:attempt.level,attemptId:id});
+  pruneProductionReceipts(state.production);
 }
 export function installProductionRoutes(router: HttpRouter, state: State, persist: () => void, log?: ProductionLog) {
   router.post('/party-api/merchant/production', (req,res) => {
@@ -153,6 +164,8 @@ export function resolveUnknownProduction(state: State, body: Record<string, unkn
   if (!reason || reason.length > 1000) throw Error('Production resolution requires a review reason');
   attempt.resolution = {outcome:'unknown', reason, at:now};
   attempt.completed = true;
+  attempt.completedAt = now;
+  pruneProductionReceipts(state.production);
   delete attempt.success;
   // Retire one-shot manual ownership without inventing a success or spending quotas.
   finishManualOffering(state, attempt);

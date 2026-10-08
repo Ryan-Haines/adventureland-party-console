@@ -25,6 +25,7 @@ export const liveFields = [
   "standOpen",
   "conditions",
   "inventorySize",
+  "upgradeInventoryBusy",
 ] as const;
 type RecordValue = Record<string, unknown>;
 export interface LiveRecord {

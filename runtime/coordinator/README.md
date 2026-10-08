@@ -871,6 +871,13 @@ the legacy hardcoded GoldMajesty slot-7 default is retired. Statistical candidat
 `luckyUpgradeSlots` or trigger inventory tidying as if verified.
 
 `luckySlotTracking` persists per-character client streams in coordinator settings.
+The inventory lucky-slot menu can lock the current position without stopping roll
+collection. `luckySlotLocks` persists that choice; the native guarded inventory
+tidy clears occupied slots once current production and other inventory work finish.
+A full inventory reports the existing no-room error rather than discarding cargo.
+Unlocking advances to the following slot for one fresh roll through the durable
+`luckySlotResume` checkpoint, then resumes statistical discovery. Neither a manual
+lock nor a resume checkpoint declares the slot statistically verified.
 Clients retain their stream and last roll receipt locally, replay cumulative counts
 on heartbeats, and receive other clients' history before selecting a slot. Replayed
 or older counters cannot double-count or replace newer evidence. The merchant's
@@ -1551,3 +1558,39 @@ silently counting a fill. Validate the declared historical unconfirmed-reservati
 native E2E and the market editor layout journey. Coordinator-only restart suffices.
 
 Cave encounter votes open an automatic dashboard dialog; resolved encounters remain reviewable. Dungeon ownership suppresses mainland farm reunion, and manual destinations clear stale travel errors. Generated map definitions are shared across participant streams so follower maps and reconnects retain geometry. These character and coordinator changes require the full restart workflow above; building does not update an existing debug session.
+
+## Account-wide home realm changes
+
+The native home endpoint is per character and enforces a 36-hour cooldown.
+Realm switching with Set as home realm verifies every active character's own
+account home, including merchants. Characters already on that home skip another
+native request. Offline account characters temporarily start the maintained
+headless runner, one at a time, change home natively, and log out. Slot assignments
+stay intact. When account connection capacity is full, one managed headless
+participant disconnects and is verified reconnected afterward; full Steam-only
+capacity fails explicitly. Partial success and mixed homes remain visible.
+
+Validate `live-home-realm.spec.ts`: native homes for all active classes, the
+account-wide confirmation, and an offline merchant's actual headless login,
+home persistence, logout, and unchanged original slots. The opt-in liveHeadless
+fixture downloads native assets only from the disposable upstream web server.
+Activate coordinator/dashboard changes using the supported coordinator-only
+restart; building alone does not reload the running service.
+
+New or restored headless slots connect to the native account home, falling back
+to the character home when account homes differ, then the configured setup realm
+if home data is absent. A stale worker.realm or transient merchant event realm
+cannot override this login policy. Running workers and explicit realm-switch or
+home-change visitors retain their owned destination. Validate the native stale
+configuration login/restart journey in `live-home-connect.spec.ts`; activate using
+the supported coordinator-only restart.
+
+
+Lucky-slot evidence, verified positions, locks and resume positions bind to the
+account roster character ID (`CH_...` on the pinned native server), not only the
+name. A replacement ID clears that name's data; a verified same-ID rename moves
+it. Clients store new roll streams under the bound ID and report that ID before
+the coordinator merges evidence. First migration binds and preserves existing
+coordinator evidence; a same-name recreation before this upgrade cannot be
+detected retroactively. Character and coordinator assets both require the full
+supported restart. Validate lucky identity transitions and native upgrade tracking.

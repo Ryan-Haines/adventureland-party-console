@@ -13,7 +13,10 @@ interface Ports {
   log(slot: number): void;
 }
 const copy = (item: Item | null): Item | null => item && JSON.parse(JSON.stringify(item));
-const same = (a: Item | null, b: Item | null) => JSON.stringify(a) === JSON.stringify(b);
+// Normalize both sides so journals saved before null metadata was omitted still
+// match native inventory. Non-null identity fields remain exact comparisons.
+const identity = (item: Item | null) => item && Object.fromEntries(Object.entries(item).filter(([,value]) => value != null));
+const same = (a: Item | null, b: Item | null) => JSON.stringify(identity(a)) === JSON.stringify(identity(b));
 const level = (item: Item) => Number(item.level || 0);
 function describe(error: unknown): string { return error instanceof Error ? error.message : JSON.stringify(error); }
 function reconcileScroll(j: Journal, current: Item | null): void {

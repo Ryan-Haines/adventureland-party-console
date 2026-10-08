@@ -66,8 +66,10 @@ export function createRosterProjection(
       .sort((a, b) => a.name.localeCompare(b.name));
   }
   function homeRealm(): string | null {
-    const home = (account().characters || []).map((entry) => entry && entry.home).find(Boolean);
-    return home ? "SR_" + String(home).replace(/^SR_/, "") : null;
+    const homes = (account().characters || []).map((entry) =>
+      entry.home ? "SR_" + String(entry.home).replace(/^SR_/, "") : null,
+    );
+    return homes.length && homes[0] && homes.every((home) => home === homes[0]) ? homes[0] : null;
   }
   function headlessSlots() {
     return state.headlessSlots.map((name, index) => ({
@@ -138,6 +140,10 @@ export function createRosterProjection(
       activeRealm: state.activeRealm,
       currentRealm: combatRealms.length === 1 ? combatRealms[0] : null,
       homeRealm: homeRealm(),
+      homeCharacters: account().characters.map((character) => ({
+        name: character.name,
+        home: character.home ? "SR_" + character.home.replace(/^SR_/, "") : null,
+      })),
       split: combatRealms.length > 1,
       characters: observations,
       merchantRealm: (merchant && merchant.realm) || null,

@@ -1,0 +1,9 @@
+# Home realm change failure modes (#52)
+
+- One character's acknowledgement must not complete a multi-character home change.
+- A character that stays on its old home must fail native confirmation even if another already matches.
+- Duplicate or stale acknowledgements must not complete another character's work.
+- Merchants must receive home commands too; the native endpoint supports every class.
+- Mixed character homes must not be presented as a single confirmed account home.
+- Offline characters require native logins or explicitly pending changes; local realm configuration does not change their game home.
+- Native home changes have a 36-hour cooldown; partial success must remain visible.

@@ -157,6 +157,8 @@ export type PartyState = {
   merchantStandLocation?: MerchantStandLocation | null;
   merchantWeapon?: { item: Item } | null;
   luckyUpgradeSlots?: Record<string, number | null>;
+  luckySlotLocks?: Record<string, number | null>;
+  luckySlotResume?: Record<string, {slot: number; rolls: number}>;
   luckySlotTracking?: LuckySlotHistory;
   merchantQueue?: MerchantJob[];
   merchantCurrent?: MerchantJob | null;

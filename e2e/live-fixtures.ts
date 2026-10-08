@@ -26,12 +26,14 @@ export type LiveGame = {
   reconnectClient(name: string): Promise<void>;
 };
 
-export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primaryClass: 'warrior' | 'ranger'; merchantDefault: string | null; initialPosition: {map: string; x: number; y: number} | null }>({
+export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primaryClass: 'warrior' | 'ranger'; merchantDefault: string | null; liveHeadless: boolean; staleWorkerRealm: string | null; initialPosition: {map: string; x: number; y: number} | null }>({
   loadout: ['god', {option:true}],
   primaryClass: ['warrior', {option:true}],
   merchantDefault: ['E2EMerchant', {option:true}],
   initialPosition: [null, {option:true}],
-  live: [async ({ browser, dashboard, loadout, primaryClass, merchantDefault, initialPosition }, use, testInfo) => {
+  liveHeadless: [false, {option:true}],
+  staleWorkerRealm: [null, {option:true}],
+  live: [async ({ browser, dashboard, loadout, primaryClass, merchantDefault, initialPosition, liveHeadless, staleWorkerRealm }, use, testInfo) => {
     const directory = path.join(root, '.build/e2e', `live-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
     const manifest = await game.reset();
@@ -69,7 +71,7 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
     async function start() {
       coordinator = child(path.join(root, 'e2e/live-coordinator.cjs'), [], root,
         environment({ E2E_COORDINATOR_PORT: String(port), E2E_DATA_DIR: directory,
-          E2E_GAME_WEB_URL: manifest.webUrl, E2E_GAME_AUTH: manifest.auth, E2E_MERCHANT_DEFAULT: JSON.stringify(merchantDefault) }), log);
+          E2E_GAME_WEB_URL: manifest.webUrl, E2E_GAME_AUTH: manifest.auth, E2E_MERCHANT_DEFAULT: JSON.stringify(merchantDefault), E2E_ALLOW_HEADLESS: String(liveHeadless), E2E_STALE_WORKER_REALM: staleWorkerRealm || '' }), log);
       const current = coordinator;
       await new Promise<void>((resolve, reject) => {
         const details = () => existsSync(log) ? readFileSync(log, 'utf8').slice(-16000) : 'No coordinator output';

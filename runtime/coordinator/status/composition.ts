@@ -73,6 +73,11 @@ export function createCoordinatorStatusIngestion<R extends Report>(
   return createStatusIngestion(state, {
     ...ports,
     known: (name) => Object.prototype.hasOwnProperty.call(workers, name) || !!ports.owned(name),
+    characterId: (name) => {
+      const owned = ports.owned(name);
+      return owned && typeof owned === 'object' && 'id' in owned &&
+        (typeof owned.id === 'string' || typeof owned.id === 'number') ? String(owned.id) : undefined;
+    },
     identifyMerchant: (body) => {
       // The first connected, managed merchant owns logistics until explicitly changed.
       // Roster discovery alone must not pick an offline merchant or a storage worker.
