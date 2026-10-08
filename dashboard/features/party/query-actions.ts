@@ -38,6 +38,7 @@ export const actionDomains = {
   '/bankbois/create': ['core', 'config', 'bank'],
   '/bank/unlock': ['bank', 'core', 'config'],
   '/merchant/clear': core,
+  '/merchant/config': inventory,
   '/merchant/force-stand': core,
   '/merchant/stand-location': core,
   '/merchant/gather': core,
@@ -72,7 +73,6 @@ export const actionDomains = {
   '/anniversary/chat-advertise': core,
 } satisfies Record<string, readonly Domain[]>;
 export type ActionPath =
-  | "/merchant/config"
   | keyof typeof actionDomains
   | '/command'
   | `/slots/${number}/${'spawn' | 'logout'}`

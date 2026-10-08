@@ -16,7 +16,7 @@ test('home realm change confirms every active character including merchant', asy
     await expect.poll(async () => (await live.state()).realmControl?.homeRealm, {timeout:30_000}).toBe('SR_USII');
     await page.goto(live.url);
     await page.getByRole('button', {name:'Interface settings',exact:true}).click();
-    await page.getByRole('combobox', {name:'Change realm',exact:true}).click();
+    await page.getByLabel('Change realm', {exact:true}).click();
     await page.getByRole('option', {name:/US I \(/}).click();
     await page.getByRole('button', {name:'Change realm',exact:true}).click();
     await page.getByText('Set as home realm', {exact:true}).click();

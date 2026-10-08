@@ -232,16 +232,29 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
         await attach('live-action-ledger', exchanges);
         await attach('live-blocked-external-requests', blocked);
       } finally {
-        await context.close();
-        for (const [index, page] of [...nativePages].entries()) {
-          const video = page.video();
-          if (video) await testInfo.attach(`native-game-video-${index}`, { path: await video.path(), contentType: 'video/webm' });
+        try {
+          const closed = await diagnostic(context.close());
+          if (closed) await attach('native-context-close-diagnostic', closed);
+          for (const [index, page] of [...nativePages].entries()) {
+            const video = page.video();
+            if (!video) continue;
+            const result = await diagnostic((async () => {
+              await testInfo.attach(`native-game-video-${index}`, { path: await video.path(), contentType: 'video/webm' });
+            })());
+            if (result) await attach(`native-game-video-${index}-diagnostic`, result);
+          }
+        } finally {
+          server.closeAllConnections();
+          await diagnostic(new Promise<void>(resolve => {
+            if (server.listening) server.close(() => resolve());
+            else resolve();
+          }));
+          try { if (coordinator) await stop(coordinator, true); }
+          finally {
+            for (const file of [log, dashboard.log, path.join(directory, 'state.jsonl')])
+              if (existsSync(file)) await diagnostic(testInfo.attach(path.basename(file), { path: file, contentType: 'text/plain' }));
+          }
         }
-        server.closeAllConnections();
-        if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
-        if (coordinator) await stop(coordinator, true);
-        for (const file of [log, dashboard.log, path.join(directory, 'state.jsonl')])
-          if (existsSync(file)) await testInfo.attach(path.basename(file), { path: file, contentType: 'text/plain' });
       }
     }
   }, { timeout: 300_000 }],

@@ -10,7 +10,8 @@ from the commits merged into `main`.
 - Merchant inventory menus can lock the lucky-slot position while continuing
   to record rolls and probabilities. Guarded cleanup preserves displaced cargo;
   unlocking tests the next position before resuming discovery. Locks and the
-  next-roll checkpoint survive coordinator restarts (#23).
+  next-roll checkpoint survive coordinator restarts. Changes refresh inventory
+  and settings immediately; resumed positions remain tests until verified (#23).
 
 - Home-realm confirmation warns that every account character is affected.
   Active characters confirm individually; offline characters log in sequentially
@@ -61,6 +62,10 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Native headless E2Es load the server's complete client script manifest and
+  retry transient asset-read failures with bounded timeouts. Evidence collection
+  is bounded, and teardown closes the isolated gateway and coordinator even
+  when native video capture fails.
 - Recover burned commerce-upgrade items only after lucky-layout reconciliation
   proves an empty result and no old/new-level survivor remains. Ambiguous layouts
   still require review. Normalize null item metadata in current inventory and

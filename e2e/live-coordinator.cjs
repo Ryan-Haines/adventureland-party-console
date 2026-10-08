@@ -47,10 +47,22 @@ const resolve = createRequire(path.join(root, '.caracal/standalones/CharacterCoo
 let version;
 const platformDirectory = path.join(root, '.build/standalones');
 let gameDirectory;
+async function assetText(route) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await localFetch(webUrl + route, {
+        headers: { Cookie: 'auth=' + auth }, signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw Error('Upstream asset ' + route + ': ' + response.status);
+      return await response.text();
+    } catch (error) {
+      if (attempt === 2) throw new Error('Could not download native asset ' + route, {cause:error});
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+}
 async function main() {
-  const dataResponse = await localFetch(webUrl + '/data.js');
-  if (!dataResponse.ok) throw Error('Upstream /data.js: ' + dataResponse.status);
-  const dataSource = await dataResponse.text();
+  const dataSource = await assetText('/data.js');
   const gameContext = {};
   require('node:vm').runInNewContext(dataSource, gameContext, { timeout: 10000 });
   version = Number(gameContext.G?.version);
@@ -59,18 +71,23 @@ async function main() {
   fs.mkdirSync(gameDirectory, { recursive: true });
   await account.updateInfo();
   for (const [name, route] of [['data.js', '/data.js'], ['old_common_functions.js', '/js/old_common_functions.js']]) {
-    const response = await localFetch(webUrl + route);
-    if (!response.ok) throw Error('Upstream asset ' + route + ': ' + response.status);
-    const source = await response.text();
+    const source = await assetText(route);
     fs.writeFileSync(path.join(gameDirectory, name), source);
   }
   if (process.env.E2E_ALLOW_HEADLESS === 'true') {
     const assets = require('../scripts/client-files.cjs');
-    for (const route of new Set([...assets.get_game_files(), ...assets.get_runner_files()])) {
-      const response = await localFetch(webUrl + route);
-      if (!response.ok) throw Error('Headless upstream asset ' + route + ': ' + response.status);
-      fs.writeFileSync(path.join(gameDirectory, path.posix.basename(route)), await response.text());
+    const character = encodeURIComponent(account.response.characters[0].name);
+    const manifest = {
+      game: assets.scripts(await assetText('/character/' + character + '/in/US/I/')),
+      runner: assets.scripts(await assetText('/runner'), true),
+    };
+    const routes = [...new Set([...manifest.game, ...manifest.runner])];
+    if (new Set(routes.map(route => path.posix.basename(route))).size !== routes.length)
+      throw Error('Native client asset filenames collide');
+    for (const route of routes) {
+      fs.writeFileSync(path.join(gameDirectory, path.posix.basename(route)), await assetText(route));
     }
+    fs.writeFileSync(path.join(gameDirectory, 'client_scripts.json'), JSON.stringify(manifest));
     fs.copyFileSync(path.join(root, '.caracal/html_vars.js'), path.join(directory, 'html_vars.js'));
     process.env.AL_INTERNAL_API_PORT = String(port);
   }

@@ -1,4 +1,5 @@
 import { createStatusIngestion, type StatusReport } from "./ingestion.ts";
+import {requestObject} from '../http/contracts.ts';
 import {
   consumeStatusCatalogs,
   consumeBankVaults,
@@ -96,7 +97,7 @@ export function createCoordinatorStatusIngestion<R extends Report>(
     bank: (body) => consumeBankReport(body, ports.bankState, ports.bankPorts),
     oneShots: (body) =>
       consumeOneShotReports(body, { types: farmingState(body.name).scatterMonsterTypes, epoch: farmingState(body.name).scatterEpoch }),
-    huntSnapshot: () => JSON.stringify(state.monsterHunt),
+    huntSnapshot: () => JSON.stringify({...requestObject(state.monsterHunt), message: undefined}),
     scatter,
     publishMarket: (name) => {
       if (
