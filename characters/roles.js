@@ -410,8 +410,14 @@
   function movementReserved(preWindow, live, complete) {
     return preWindow || live && !complete;
   }
+  function availableReservation(preWindow, featured, event, state) {
+    return preWindow || featured || event?.available !== false || busy(state);
+  }
   function busy(state) {
     return !!state.busy || state.mode === "kiss-active";
+  }
+  function liveBusy(live, state) {
+    return live && busy(state);
   }
   function completedVisit(state, event) {
     return state.mode === "complete" && (state.completedRound === void 0 || state.completedRound === String(event?.round));
@@ -433,8 +439,8 @@
       featured,
       kissDue,
       preWindow,
-      reserved: movementReserved(preWindow, live, completed),
-      busy: live && busy(state),
+      reserved: movementReserved(preWindow, live, completed) && availableReservation(preWindow, featured, event, state),
+      busy: liveBusy(live, state),
       retryAt,
       mode: state.mode || "idle"
     };
@@ -2614,8 +2620,8 @@
     });
     const recoverFromDeath = createDeathRecovery({
       isDead: () => !!character.rip,
-      blocked: () => !!sharedRoutine.dungeonOwned?.(),
-      respawn: () => sharedRoutine.dungeonOwned?.() ? Promise.reject(Error("Dungeon owns revival")) : Promise.resolve(respawn()),
+      blocked: () => !!sharedRoutine.dungeonOwned?.() || !!sharedRoutine.escapeOwnsRevival?.(),
+      respawn: () => sharedRoutine.dungeonOwned?.() || sharedRoutine.escapeOwnsRevival?.() ? Promise.reject(Error("Recovery owns revival")) : Promise.resolve(respawn()),
       releaseCombat: () => {
         working = false;
       },
