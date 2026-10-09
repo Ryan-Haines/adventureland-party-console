@@ -45,6 +45,22 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
         ports.clearCommand(name);
     }
   }
+  function clearOrphanRecoveryCommands(): void {
+    // Commands are shared across profiles; inspect only this service's members.
+    const members = new Set(ports.activeNames());
+    const deferredCycles = new Set(Object.values(state.deferred).map(recovery => recovery.cycleId));
+    let changed = false;
+    for (const [name, command] of Object.entries(ports.commands())) {
+      if (!members.has(name) || !command ||
+          !["event-return-town", "event-resume-travel"].includes(command.type) ||
+          typeof command.cycleId !== "string" || !command.cycleId ||
+          command.cycleId === state.current?.cycleId ||
+          command.cycleId === ports.anniversary()?.id || deferredCycles.has(command.cycleId)) continue;
+      ports.clearCommand(name);
+      changed = true;
+    }
+    if (changed) ports.persist();
+  }
   function cancelPrematureGoobrawlReturn(): boolean {
     const recovery = state.current;
     if (!recovery || recovery.event !== "goobrawl" || !goobrawlStillFighting(ports)) return false;
@@ -149,6 +165,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
   }
 
   function complete(recovery: EventRecovery): void {
+    clearRecoveryCommands(recovery);
     state.last = { event: recovery.event, finishedAt: ports.now() };
     const cycle = ports.anniversary();
     if (cycle && (cycle.combatEvent === recovery.event || recovery.anniversaryRound === cycle.id))
@@ -232,6 +249,7 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
   }
 
   function reconcile(): void {
+    clearOrphanRecoveryCommands();
     if (cancelPrematureGoobrawlReturn()) return;
     const cycle = ports.anniversary();
     if (!state.current && lostCombatHandoff(cycle, ports))

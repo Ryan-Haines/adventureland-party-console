@@ -70,7 +70,8 @@ export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[num
   dailyDungeons?: import("../../dungeons/contracts.ts").DungeonState;
   passiveHunting: import('../navigation/passive-settings.ts').PassiveSettings;
   eventSessions?: import('../merchant/event-control.ts').MerchantEventState['eventSessions'];
-  eventReturn?: import('../merchant/event-control.ts').MerchantEventState['eventReturn'];
+  eventReturn?: Pick<import('../events/return-types.ts').EventRecovery, 'participants'> &
+    Partial<Pick<import('../events/return-types.ts').EventRecovery, 'cycleId'>> | null;
   deferredEventReturns?: import('../merchant/event-control.ts').MerchantEventState['deferredEventReturns'];
   merchantQueue?: import("../merchant/work.ts").MerchantWork[];
   huntEventTrips?: import("../events/hunt-trip.ts").HuntEventTrips["huntEventTrips"];

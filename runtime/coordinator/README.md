@@ -1,3 +1,9 @@
+Event recovery completion retires only matching-cycle return commands. Each
+profile also retires historical orphan exit/continuation commands for its active
+members, preserving current and deferred cycles and other profiles' commands.
+Native heartbeat ownership must cancel an already running handler when its cycle
+disappears; deleting a backend command alone cannot stop an async runner.
+
 Event walking yields to a visible boss only when native attack range or a safe,
 collision-free local approach is available. Visibility across terrain retains
 the maintained route and formation ownership. Validate the native terrain gap

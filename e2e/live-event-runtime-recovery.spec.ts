@@ -3,6 +3,52 @@ import {test,expect} from './live-fixtures';
 const W='E2EWarrior',P='E2EPriest',fighters=[W,P];
 test.use({initialPosition:{map:'halloween',x:-550,y:-290}});
 
+test.describe('retired event exit ownership',()=>{
+  test.use({initialPosition:{map:'uhills',x:-550,y:-160}});
+  // Failure inventory: docs/testing-round2-recovery.md. Restoring a snapshot
+  // without the old recovery must retire its still-running CODE continuation;
+  // no successful Town receipt or native combat outcome is manufactured.
+  test('native event entry resumes after its old return cycle disappears',async({live},info)=>{
+    test.setTimeout(300_000);
+    await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
+    const oldCycle='historical-retired-pumpkin-exit';
+    let started:any,retiredAt=0,seed:any;
+    try {
+      await live.restoreHistoricalSettings(settings=>{
+        const profile=settings.farmingProfiles[W];
+        const waypoints=Object.fromEntries(fighters.map(name=>[name,{revision:settings.navigationIntents?.[name]?.revision||0,location:{map:'uhills',x:-550,y:-160}}]));
+        profile.eventReturn={cycleId:oldCycle,event:'mrpumpkin',participants:fighters,pending:fighters,startedAt:Date.now(),phase:'evacuating',checkpoint:{map:'uhills',x:-550,y:-160},waypoints,deferred:[]};
+        settings.eventReturn=profile.eventReturn;return settings;
+      });
+      await expect.poll(async()=>{const s=await live.state();
+        if(fighters.every(name=>s.characters[name]?.eventRecovery?.cycleId===oldCycle && ['leaving-event','returning-to-main'].includes(s.characters[name].eventRecovery.phase))){started=s;return true;}return false;
+      },{timeout:45_000}).toBe(true);
+      seed=await live.admin(`output=(()=>{const original=G.monsters.mrpumpkin;try{
+        G.monsters.mrpumpkin={...original,hp:10000000,attack:1,speed:0,charge:0,range:1,aggro:0,spawns:[]};
+        const m=new_monster('halloween',{type:'mrpumpkin',count:1,boundary:[-495,685,-495,685]},{temp:1});
+        E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:m.id,map:m.map,x:m.x,y:m.y};
+      }finally{G.monsters.mrpumpkin=original;}})()`);
+      retiredAt=Date.now();
+      await live.restoreHistoricalSettings(settings=>{
+        settings.eventReturn=null;settings.activeConvoy=null;settings.eventSessions={};
+        const profile=settings.farmingProfiles[W];profile.eventReturn=null;profile.activeConvoy=null;profile.eventSessions={};
+        settings.eventSelectionsByCharacter[W]=['mrpumpkin'];return settings;
+      });
+      await expect.poll(async()=>{const s=await live.state();return fighters.every(name=>
+        s.characters[name]?.dashboardRuntime===started.characters[name].dashboardRuntime &&
+        s.characters[name]?.eventRecovery?.cycleId!==oldCycle && !s.characters[name]?.farmingNavigationDebug?.departurePending);
+      },{timeout:15_000}).toBe(true);
+      await expect.poll(async()=>{const events=await live.clients[W].events();return fighters.every(name=>events.some((e:any)=>
+        e.event==='hit'&&String(e.data?.id)===String(seed.id)&&e.data?.hid===name&&e.at>retiredAt));
+      },{timeout:180_000}).toBe(true);
+    }finally{
+      await info.attach('native-retired-event-exit',{body:JSON.stringify({oldCycle,started,retiredAt,seed,final:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
+      await live.post('/formation',{character:W,eventSelections:[]});
+      if(seed)await live.admin(`output=(()=>{const m=get_monster(${JSON.stringify(seed.id)});if(m&&m.type==='mrpumpkin')remove_monster(m,{silent:true});delete E.mrpumpkin;broadcast_e();return true;})()`);
+    }
+  });
+});
+
 test('native event walking recovers owned CODE turnover after coordinator restart',async({live},info)=>{
   test.setTimeout(360_000);
   await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});

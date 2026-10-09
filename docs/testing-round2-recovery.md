@@ -2,6 +2,20 @@
 
 Failure inventory recorded before implementation:
 
+- Completing or abandoning combat recovery can leave an event-return-town or
+  event-resume-travel command after its owning cycle disappears. An old native
+  handler can then block a newly engaged destination. Retirement must match the
+  exact recovery cycle, preserve live and deferred cycles, and avoid clearing
+  unrelated commands; native heartbeat cancellation must retire active handlers.
+
+- Hunt-off Goobrawl expiry leaves real survivors alive; timing native combat and
+  evacuation as a single phase can fail after a healthy late admission. Observe
+  native deaths and retained Hunt cancellation before the unchanged return bound.
+- One-item delivery with zero gold targets also collects and banks seeded gold;
+  that separate trip can consume the durable delivery receipt's deadline. Declare
+  targets retaining initial gold, while preserving real item transfer, exact copy
+  conservation, durable job completion and restart checks.
+
 - Halloween adds never selected, leader/follower splitting targets, add selection
   replacing boss recovery coordinates, unrelated Jr monsters pulled across maps,
   event deselection leaving add hunting enabled, native spawn/loot outcomes faked.

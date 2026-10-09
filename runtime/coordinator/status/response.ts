@@ -1,5 +1,6 @@
 import {collectPassing} from '../../combat/passing.ts';
 import {passingControl} from '../../combat/passing-admission.ts';
+import {requestObject} from '../http/contracts.ts';
 import {outboundHunt} from '../../combat/hunt-travel.ts';
 import { merchantEventRecoveryReserved } from '../merchant/event-control.ts';
 import type {Member} from '../../combat/grouped.ts';
@@ -110,7 +111,10 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
   }
 
   function returnResponse(name: string) {
-    return {partyTownCycleId: state.townCycle?.id || null, returnProgress: state.returnProgress?.[name] || null};
+    const deferred = requestObject(state.deferredEventReturns?.[name]);
+    const cycleId = state.eventReturn?.participants.includes(name) ? state.eventReturn.cycleId : deferred.cycleId;
+    return {partyTownCycleId: state.townCycle?.id || null, returnProgress: state.returnProgress?.[name] || null,
+      eventReturnCycleId: typeof cycleId === 'string' ? cycleId : null};
   }
   function turnInPriority(name: string): boolean {
     return name !== state.merchantCharacter && !!state.monsterHunt?.participants?.includes(name) &&

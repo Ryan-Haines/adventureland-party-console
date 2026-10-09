@@ -8,17 +8,35 @@ test.describe('native Hunt lifecycle', () => {
 
   test('a native Boo Boo Hunt crosses real map doors, kills its target and returns to Daisy', async ({ live }, info) => {
     test.setTimeout(600_000);
+    const overallDeadline=Date.now()+600_000;
     await party(live);
     await quests(live, info, { [W]: { id: 'booboo', count: 1 }, [P]: { id: 'booboo', count: 1 } });
     const before = await world(live);
     const destination = await start(live, W, 'booboo');
-    await expect.poll(async () => (await world(live))[W].map, { timeout: 240_000 }).toBe(destination.map);
-    // Native combat, the return journey and stable Daisy arrival precede claiming the reward.
-    await expect.poll(async () => tokens((await world(live))[W]), { timeout: 300_000 }).toBe(tokens(before[W]) + 1);
-    const events = await live.clients[W].events();
-    expect(events.some((entry: any) => entry.event === 'hit' && entry.data?.kill)).toBe(true);
-    expect((await world(live))[W].map).toBe('main');
-    await artifact(live, info, 'booboo-native-door-combat-reward', { before, destination, loadout: 'god' });
+    const progress:any[]=[];
+    const observe=async(phase:string)=>{
+      const native=await world(live);
+      if(progress.length>=64)progress.shift();
+      progress.push({at:Date.now(),phase,participants:Object.fromEntries(fighters.map(name=>[name,
+        {map:native[name].map,x:native[name].x,y:native[name].y,quest:native[name].quest,tokens:tokens(native[name])}]))});
+      return native;
+    };
+    const remaining=(cap:number)=>Math.max(1,Math.min(cap,overallDeadline-Date.now()));
+    try{
+      await expect.poll(async () => (await observe('native door arrival'))[W].map, { timeout: remaining(240_000) }).toBe(destination.map);
+      await expect.poll(async()=>{
+        const native=await observe('native quest completion');
+        return fighters.every(name=>native[name].quest?.c===0);
+      },{timeout:remaining(300_000),message:'Both actual native Boo Boo quests must complete before timing the Daisy return'}).toBe(true);
+      // The existing reward budget measures the return leg after real kills;
+      // native combat cannot consume that budget before return begins.
+      await expect.poll(async () => tokens((await observe('native Daisy reward'))[W]), { timeout: remaining(300_000) }).toBe(tokens(before[W]) + 1);
+      const events = await live.clients[W].events();
+      expect(events.some((entry: any) => entry.event === 'hit' && entry.data?.kill)).toBe(true);
+      expect((await world(live))[W].map).toBe('main');
+    }finally{
+      await artifact(live, info, 'booboo-native-door-combat-reward', { before, destination, progress, overallDeadline, loadout: 'god' });
+    }
   });
 
   test.describe('native Boo Boo walking-return cache',()=>{

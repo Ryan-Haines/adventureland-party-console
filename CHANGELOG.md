@@ -5,6 +5,14 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Retire combat-return commands when their recovery completes, and clean up
+  historical orphan returns within each active farming profile. Live and
+  deferred recovery cycles retain their movement ownership.
+
+- Separate native Goobrawl survivor combat from Hunt-off evacuation validation,
+  and keep initial gold in the focused item-delivery fixture so unrelated bank
+  deposits cannot obscure its durable item receipt and conservation checks.
+
 - Respect the native one-merchant connection limit when changing every account
   character's home realm: temporarily pause and restore a managed merchant for
   offline merchant visits, even when total connection capacity remains available.

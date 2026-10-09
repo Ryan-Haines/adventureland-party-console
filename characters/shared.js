@@ -9503,6 +9503,24 @@
     }
   }
 
+  async function applyEventReturnOwner(state) {
+    // Command deletion cannot release an old async exit after host restart.
+    if (!Object.prototype.hasOwnProperty.call(state, "eventReturnCycleId")) return;
+    root.__partyEventRecoveryCycleId = state.eventReturnCycleId;
+    var owner = root.__partyEventExitOwner;
+    if (!owner || owner.cycleId === state.eventReturnCycleId) return;
+    owner.cancelled = true;
+    root.__partyEventExitOwner = null;
+    var ownsMovement = !convoyTraveling && !followingLeader && !forceTraveling && !townTraveling;
+    if (ownsMovement && typeof stop === "function") {
+      try { await stop("smart"); await stop("move"); } catch (_retiredEventExitStop) {}
+    }
+    eventReturnPending = false;
+    departurePending = false;
+    eventRecoveryRetryAt = 0;
+    eventRecoveryState = { phase: "idle", cycleId: null, event: null, checkpoint: null, attemptAt: 0, lastError: null };
+  }
+
   async function merchantSendMail(command) {
     var activity = [], mail = command.mail || {}, source = mail.source || {};
     try {
@@ -9657,6 +9675,8 @@
     }
     if (character.ctype === "merchant" && !await gatheringCommandHandoff(command)) return;
     if (command.id <= lastCommand) return;
+    if (command.type === "event-return-town" && root.__partyEventRecoveryCycleId !== undefined &&
+        command.cycleId !== root.__partyEventRecoveryCycleId) return;
     reportMerchantCommand(command, "accepted");
     if (command.type !== "town-party" && command.purpose !== "shared-walk-return") root.__partyTownGeneration += 1;
     var exitOwner = root.__partyEventExitOwner;
@@ -9923,7 +9943,7 @@
       // Event recovery is coordinated as a barrier: every opted-in character
       // returns first, then the coordinator routes the leader back to the
       // selected farming target.
-      var eventExitOwner = root.__partyEventExitOwner = { commandId: command.id, cancelled: false };
+      var eventExitOwner = root.__partyEventExitOwner = { commandId: command.id, cycleId: command.cycleId, cancelled: false };
       var eventExitRevision = Number(navigationIntent.revision) || 0;
       var eventExitCurrent = function () {
         return runtimeCurrent() && !escapeOwns() &&
@@ -10350,6 +10370,7 @@
       statusPhase = "apply escape";
       await applyEscape(state.escape || null);
       statusPhase = "apply navigation";
+      await applyEventReturnOwner(state);
       await applyNavigationIntent(state.navigationIntent);
       statusPhase = "apply combat control";
       acceptCombatControl(state);
