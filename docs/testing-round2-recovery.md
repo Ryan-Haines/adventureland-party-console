@@ -127,6 +127,13 @@ Before changing the existing retirement fence: the last eventRecovery diagnostic
 
 ## Goobrawl survivor blocked by terrain
 
+The Boo Boo walking-cache scenario also records a bounded admission ledger:
+native Town eligibility and cached route steps, coordinator map-local walking
+policy, expected command identity, and actual status-response travel commands.
+Keep the first and latest 64 entries to distinguish an in-flight policy change
+from a legitimate native readiness reset without changing any movement,
+communication hold, cache reuse, reward, or timeout requirement.
+
 Run 37995615362 leaves one real full-health Brawl Goo across arena terrain.
 The warrior is stationary at (230,-230), target (-275,-223), with native range
 rejection and no collision-safe direct approach. Its five forward offsets cannot

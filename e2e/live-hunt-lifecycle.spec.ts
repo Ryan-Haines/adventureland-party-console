@@ -79,6 +79,24 @@ test.describe('native Hunt lifecycle', () => {
     });
     let original:any,held:any,resumed:any,blocking=false;
     const faults:any[]=[],context=live.clients[W].page.context();
+    const walkingAdmission:any[]=[],issuedCommands:any[]=[],responseTasks=new Set<Promise<void>>();
+    let lastAdmissionAt=0;
+    const retain=(entries:any[],entry:any)=>{if(entries.length===128)entries.splice(64,1);entries.push(entry);};
+    const responseObserved=(response:import('@playwright/test').Response)=>{
+      const request=response.request();
+      if(new URL(request.url()).pathname!=='/party-api/status'||request.method()!=='POST')return;
+      const report=request.postDataJSON();if(!fighters.includes(report?.name))return;
+      const task=response.json().then(body=>{
+        const command=body.command;
+        if(command?.type!=='party-monster-travel')return;
+        retain(issuedCommands,{at:Date.now(),name:report.name,status:response.status(),
+          command:{id:command.id,convoyId:command.convoyId,epoch:command.epoch,phase:command.phase,
+            navigationRevision:command.navigationRevision,routeVersion:command.routeVersion,
+            disableTown:command.disableTown,returnWalking:command.returnWalking,continuousReturn:command.continuousReturn}});
+      }).catch(error=>{retain(issuedCommands,{at:Date.now(),name:report.name,error:String(error)});});
+      responseTasks.add(task);void task.finally(()=>responseTasks.delete(task));
+    };
+    context.on('response',responseObserved);
     const intercept=async(route:import('@playwright/test').Route)=>{
       const request=route.request(),body=request.method()==='POST'?request.postDataJSON():null;
       if(blocking&&fighters.includes(body?.name)&&body.combatWait!==true){
@@ -90,12 +108,19 @@ test.describe('native Hunt lifecycle', () => {
     const native=()=>Promise.all(fighters.map(name=>live.clients[name].frame.evaluate(()=>{
       const w=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       return {name:w.character.name,map:w.character.map,in:w.character.in,x:w.character.real_x,y:w.character.real_y,
-        moving:!!w.character.moving,navigation:w.convoyNavigationReport?.(),cache:w.__partySharedRouteRemainder};
+        moving:!!w.character.moving,navigation:w.convoyNavigationReport?.(),cache:w.__partySharedRouteRemainder,
+        townReady:w.can_use('use_town')&&!w.is_on_cooldown('use_town')};
     })));
     await context.route('**/party-api/status',intercept);
     try{
       await expect.poll(async()=>{
         const s=await live.state(),c=s.activeConvoy;
+        if(Date.now()-lastAdmissionAt>=1000){
+          lastAdmissionAt=Date.now();
+          retain(walkingAdmission,{at:lastAdmissionAt,convoy:c&&{id:c.id,epoch:c.epoch,phase:c.phase,
+            routeVersion:c.routeVersion,disableTown:c.disableTown,returnTown:c.returnTown,expected:c.expected},
+            native:await native(),reportedTownReady:Object.fromEntries(fighters.map(name=>[name,s.characters[name]?.returnTownReady]))});
+        }
         if(c?.returnRouting&&c.disableTown&&c.phase==='travel'&&fighters.some(name=>s.characters[name]?.moving)){
           original={convoy:c,native:await native()};return true;
         }
@@ -126,7 +151,8 @@ test.describe('native Hunt lifecycle', () => {
       await artifact(live,info,'native-walking-return-cache-reward',{before,destination,cycle,original,held,resumed,faults});
     }finally{
       blocking=false;await context.unroute('**/party-api/status',intercept);
-      await info.attach('native-walking-return-cache-fault-ledger',{body:JSON.stringify({cycle,original,held,resumed,faults}),contentType:'application/json'});
+      context.off('response',responseObserved);await Promise.allSettled([...responseTasks]);
+      await info.attach('native-walking-return-cache-fault-ledger',{body:JSON.stringify({cycle,original,held,resumed,faults,walkingAdmission,issuedCommands}),contentType:'application/json'});
     }
   });
 
