@@ -47,10 +47,32 @@ const account = {
 const resolve = createRequire(path.join(root, '.caracal/standalones/CharacterCoordinator.js'));
 const nativeExpress = require('express');
 const fixtureExpress = Object.assign((...args) => nativeExpress(...args), nativeExpress);
+const homeVisitorStatusFile = path.join(directory, 'home-visitor-status.jsonl');
+let homeVisitorStatusLines = fs.existsSync(homeVisitorStatusFile)
+  ? fs.readFileSync(homeVisitorStatusFile, 'utf8').trim().split('\n').filter(Boolean).length : 0;
 fixtureExpress.json = (...args) => {
   const parse = nativeExpress.json(...args);
   return (req, res, next) => parse(req, res, error => {
     if (error) return next(error);
+    if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/status' && req.body?.name === 'E2EBankBoi') {
+      const sendJson = res.json;
+      res.json = function(value) {
+        try {
+          if(homeVisitorStatusLines < 128) {
+            fs.appendFileSync(homeVisitorStatusFile, JSON.stringify({at:Date.now(),
+              request:{lastCommandId:req.body.lastCommandId,merchantCommand:req.body.merchantCommand,
+                runtime:req.body.runtime,home:req.body.home,map:req.body.map},
+              response:{command:value?.command ? {id:value.command.id,type:value.command.type,operationId:value.command.operationId} : null,
+                bankboiStorage:value?.bankboiStorage,escapeStage:value?.escape?.stage,
+                dungeonOwned:value?.dailyDungeon?.owned,navigationIntent:value?.navigationIntent,
+                consoleMaintenance:!!value?.consoleMaintenance,partyConvoyActive:value?.partyConvoyActive}
+            })+'\n');
+            homeVisitorStatusLines++;
+          }
+        } catch (_) { /* Observation cannot alter a real response. */ }
+        return sendJson.call(this,value);
+      };
+    }
     if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/status' &&
         req.body?.name === 'E2EMerchant' && fs.existsSync(path.join(directory, 'hold-merchant-status')))
       return res.status(503).json({error:'Declared E2E merchant status transport hold'});

@@ -72,6 +72,10 @@ same hold at the owned native page with the exact API path and retain a bounded
 request/phase/snapshot ledger even on failure. Preserve the original deadline,
 native inventory counts, and transport-only hold; diagnose missed interception
 or delayed native snapshots instead of assuming production failed.
+The exact-page rerun captured the pending upgrade and verified ten new coats
+plus the existing +5 coat. Its failure came from a held route resuming after
+teardown had already handled it. Release the gate and ignore only outstanding
+page-route teardown errors; ordinary handler and inventory failures remain fatal.
 
 - A delivery reports success without a real server inventory transfer, duplicates
   stock, or transfers the wrong slot after movement.
@@ -141,6 +145,14 @@ Before editing the reconnect helper: a test may legitimately replace a Steam mer
 ## Retained event-exit ownership adapter maintenance
 
 Before editing retained fixtures: source-extracted status and Escape release code now invokes the maintained `applyEventReturnOwner` helper. Missing that dependency throws before existing dispatch assertions, hiding normal behavior. Load the actual helper rather than suppressing exceptions or weakening the status/convoy assertions. Deferred Hunt admission now retires the previous exit command while retaining its durable deferred cycle obligation; assert that obligation and absence of stale command instead of demanding the obsolete command remain executable. No new isolated test cases are added.
+
+## Temporary native home visitor transport observation
+
+Before adding the fixture observer: a fresh temporary BankBoi reports full inventory heartbeats with lastCommandId zero and unchanged home, while the real realm operation lists it as an executor. Public state omits commands, so that evidence cannot distinguish coordinator command delivery from a local admission hold. Observe actual BankBoi status JSON at the existing Express transport seam, recording only bounded selected command, ownership and navigation fields. Preserve the original JSON object, invocation order and return value; observation failure must never change production responses. Attach the bounded file in fixture teardown for both passing and failing runs. No commands, responses or native outcomes are fabricated.
+
+## Temporary storage merchant home admission
+
+Before production changes: every merchant non-storage command runs generic production recovery before acceptance. With no local journal, recovery still asks `/merchant/production` for pending receipts; that endpoint correctly rejects a temporary storage merchant which is not the designated logistics merchant. Thus an authentic delivered `realm-set-home` can defer forever with lastCommandId zero, although all native heartbeats remain fresh. A home change neither upgrades nor mutates inventory, so exclude that command from the generic remote production preflight while retaining the preceding inventory-tidy wait and lucky-slot pending recovery safety. Do not broaden the production endpoint to let storage visitors own another merchant's receipts, erase local recovery journals, or weaken preflight for inventory-changing commands. Verify the existing account-wide native home case including real offline BankBoi login, native set_home confirmation, and original slot restoration; use the transport observer to prove actual command delivery and acceptance.
 
 ## Retained heartbeat response contract maintenance
 

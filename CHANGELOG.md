@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Allow an offline secondary merchant to set its account home without requesting
+  the designated merchant's production receipts. Its own production journal and
+  pending lucky-slot safeguards still apply.
+
 - Fetch native CI database and game base images through a digest-pinned mirror to avoid
   shared runner Docker Hub download limits; local cached-image defaults remain.
 

@@ -258,6 +258,8 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           await attach(`startup-page-${index}-location`, { url: page.url() });
         }
         await attach('live-action-ledger', exchanges);
+        const visitorStatus = path.join(directory,'home-visitor-status.jsonl');
+        if(existsSync(visitorStatus)) await testInfo.attach('home-visitor-status',{path:visitorStatus,contentType:'application/x-ndjson'});
         await attach('live-blocked-external-requests', blocked);
       } finally {
         try {

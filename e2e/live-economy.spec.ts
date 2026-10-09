@@ -408,7 +408,7 @@ test('upgrade purchase batch excludes an existing target-level coat', async ({ l
     await record(live, info, 'upgrade-batch-existing-target-coat', before, { order, purchased });
   } finally {
     release!();
-    await nativePage.unroute('**/party-api/merchant/checkpoint');
+    await nativePage.unrouteAll({behavior:'ignoreErrors'});
     await info.attach('native-coat-checkpoint-capture',{body:JSON.stringify({checkpoints,purchased,state:await live.state()}),contentType:'application/json'});
   }
 });

@@ -9669,7 +9669,11 @@
       try { await recoverProductionJournal(); await luckyUpgradeService.recover(); }
       catch (error) { reportMerchantCommand(command, "deferred", error.message || String(error)); return; }
     }
-    if (character.ctype === "merchant" && command.type !== "bankboi-service" && !root.__merchantActiveJob) {
+    // Home visits do not mutate inventory. An offline secondary merchant cannot
+    // inspect the designated merchant's backend receipts; retain recovery only
+    // when this visitor actually has its own local production journal.
+    var productionPreflight = command.type !== "realm-set-home" || readProductionJournal();
+    if (character.ctype === "merchant" && command.type !== "bankboi-service" && productionPreflight && !root.__merchantActiveJob) {
       try { await recoverProductionJournal(); }
       catch (error) { reportMerchantCommand(command, "deferred", error.message || String(error)); return; }
     }
