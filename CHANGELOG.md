@@ -7,6 +7,9 @@ from the commits merged into `main`.
 
 ### Added
 
+- Native Cave validation yields to a newly opened native choice during required-room
+  selection, then resumes through the choice UI without claiming an accepted move.
+
 - Native Cave validation resumes the selected destination after its matching
   native vote resolves, including retained vote receipts, and reports verified
   journey stages explicitly.
@@ -427,6 +430,9 @@ from the commits merged into `main`.
   verified live; Linux has protocol tests and still needs live desktop validation.
 
 ### Added
+
+- Native Cave validation yields to a newly opened native choice during required-room
+  selection, then resumes through the choice UI without claiming an accepted move.
 
 - Merchant setting for upgrade purchase batches (default 1), with bulk starting-tier scrolls, durable item ownership, and completion of every purchased item.
 
