@@ -11899,6 +11899,13 @@
       (!target.map || target.map === character.map) && (target.in == null || target.in === character.in);
   }
 
+  function eventCombatReachable(target) {
+    if (!target || target.dead || target.hp === 0) return false;
+    if (typeof is_in_range === "function" && is_in_range(target)) return true;
+    var point = combatApproachPoint(target);
+    return !!(point && typeof can_move_to === "function" && can_move_to(point.x, point.y) && safeCombatPoint(point, target));
+  }
+
   function eventCombatSighting(target) {
     if (!joinedEvent || eventTraveling || character.rip || character.transporting) return null;
     // Boss location ownership must not follow the temporary selected add.
@@ -11911,7 +11918,7 @@
         !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
     return {id:String(target.id),mtype:target.mtype,map:character.map,
       in:String(character.in || character.map),x:target.x,y:target.y,
-      observedAt:Date.now()+coordinatorClockOffset};
+      attackReachable:eventCombatReachable(target),observedAt:Date.now()+coordinatorClockOffset};
   }
 
   function nearestEventTarget() {
@@ -12195,7 +12202,7 @@
     var revision = navigationIntent.revision, deadline = slenderSearch.startedAt + 180000;
     function owns() { return current() && navigationIntent.revision === revision; }
     while (owns() && Date.now() < deadline) {
-      if (nearestEventTarget()) return;
+      if (eventCombatReachable(nearestEventTarget())) return;
       var sighting = freshSlendermanSighting();
       if (sighting) {
         var sightingId = sighting.id, sightingMap = sighting.map;
@@ -12204,7 +12211,7 @@
           return owns() && Date.now() < deadline && latest && latest.id === sightingId && latest.map === sightingMap &&
             Math.hypot(latest.x - sighting.x, latest.y - sighting.y) < 100;
         });
-        if (nearestEventTarget()) return;
+        if (eventCombatReachable(nearestEventTarget())) return;
         await sleep(250); continue;
       }
       if (slenderSearch.mapIndex >= slenderSearch.maps.length) break;
@@ -12225,7 +12232,7 @@
         // A blocked catalog centre is a failed candidate, not a guessed route.
         game_log("Slenderman search candidate: " + String(error.reason || error.message || error), "#f0b429");
       }
-      if (nearestEventTarget()) return;
+      if (eventCombatReachable(nearestEventTarget())) return;
       slenderSearch.pointIndex++;
       await sleep(250);
     }
@@ -12337,7 +12344,7 @@
       }
       if (eventTraveling || banking || stocking || upgrading || departurePending || bankQueued) return;
       if (!await eventTravelAllowed(event.name)) return;
-      if (!event.staging && nearestEventTarget()) {
+      if (!event.staging && eventCombatReachable(nearestEventTarget())) {
         joinedEvent = event.name;
         root.__partyJoinedEvent = event.name;
         return;
@@ -12369,7 +12376,7 @@
           game_log("Traveling to " + ((G.events && G.events[event.name] && G.events[event.name].name) || event.name), "#c084fc");
         }
         if (event.name === "slenderman") { await discoverSlenderman(event, currentEventTravel); return; }
-        if (event.kind !== "pvp" && !nearestEventTarget() && await eventTravelAllowed(event.name) && currentEventTravel())
+        if (event.kind !== "pvp" && !eventCombatReachable(nearestEventTarget()) && await eventTravelAllowed(event.name) && currentEventTravel())
           await sharedPartyWalk(destination,"event",event.name,null,currentEventTravel);
       } catch (error) {
         var reason = error && (error.reason || error.message || error);
@@ -13967,7 +13974,7 @@
           // Join/teleport can finish before the boss entity arrives. Yield the
           // walking owner as soon as combat can acquire it, even while waiting
           // for the rest of the party or a coordinator route.
-          if(nearestEventTarget())return;
+          if(eventCombatReachable(nearestEventTarget()))return;
         }
         if(Date.now()>deadline)throw new Error("Shared walking rendezvous timed out");
         var result;

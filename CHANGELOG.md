@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Event walking keeps its route when a visible boss is separated by native terrain.
+  Combat takes over only in attack range or with a collision-safe local approach;
+  blocked attendees keep participating in formation instead of remaining idle.
+
 ### Added
 
 - Event staging now prefers the native boss spawn before subordinate monster

@@ -132,7 +132,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
       s.seenAt >= now - 3000 && s.seenAt <= now + 1000 && !s.rip;
   }
   function freshBoss(boss: NonNullable<SharedState["statuses"][string]>["eventCombatSighting"]): boolean {
-    if (!boss || !readRoutePoint(boss) || !Number.isFinite(boss.observedAt)) return false;
+    if (!boss || boss.attackReachable !== true || !readRoutePoint(boss) || !Number.isFinite(boss.observedAt)) return false;
     const now = ports.now();
     return boss.observedAt >= now - 3000 && boss.observedAt <= now + 1000;
   }

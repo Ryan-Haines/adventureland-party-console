@@ -1,3 +1,9 @@
+Event walking yields to a visible boss only when native attack range or a safe,
+collision-free local approach is available. Visibility across terrain retains
+the maintained route and formation ownership. Validate the native terrain gap
+case in `live-event-runtime-recovery.spec.ts`; activate character assets and
+coordinator together. Failure inventory: `docs/testing-event-terrain-approach.md`.
+
 Steam companion restoration retries native `already_running` failures after a
 coalesced `servers_and_characters` account-roster refresh, at most once every
 three seconds. Verified native client 15555 updates `X.characters` through its
