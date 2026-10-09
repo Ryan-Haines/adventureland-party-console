@@ -120,6 +120,10 @@ export type PartyState = {
   scatterMonsterTypes?: string[];
   huntSettings?: import("../../../runtime/coordinator/hunt/settings").HuntSettings;
   huntFailures?: Record<string, {deaths: number; expirations: number}>;
+  achievementHunt?: import("../../../runtime/coordinator/hunt/achievement-settings").AchievementHuntSettings;
+  achievementBlacklist?: Record<string, import("../../../runtime/coordinator/hunt/achievement-settings").AchievementBlacklistEntry>;
+  achievementTarget?: import("../../../runtime/coordinator/hunt/achievement-settings").AchievementTargetState | null;
+  achievementMessage?: string;
   huntBlacklist?: Record<
     string,
     { monsterId: string; at: number; deaths: number; expirations?: number; reason?: string; characters?: string[] }
@@ -130,6 +134,10 @@ export type PartyState = {
     monsterHunt?: MonsterHuntState | null;
     huntSettings?: import("../../../runtime/coordinator/hunt/settings").HuntSettings;
     huntBlacklist?: PartyState["huntBlacklist"];
+    achievementHunt?: PartyState["achievementHunt"];
+    achievementBlacklist?: PartyState["achievementBlacklist"];
+    achievementTarget?: PartyState["achievementTarget"];
+    achievementMessage?: string;
     monsterFocus?: string[];
     location?: PartyState["partyLocation"];
   }>;

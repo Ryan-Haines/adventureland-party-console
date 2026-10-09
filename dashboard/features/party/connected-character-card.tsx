@@ -205,6 +205,12 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
   const onAddBlacklist = useCallback(async (monsterId: string) => {
     await post('/hunt-blacklist', {action:'add',monsterId,character:name});
   }, [post,name]);
+  const onAchievementHuntSave = useCallback(async (settings: Record<string, unknown>) => {
+    await post('/achievement-hunt', { settings, character: name });
+  }, [post, name]);
+  const onAchievementBlacklist = useCallback(async (blacklist: { action: 'remove' | 'clear'; monsterId?: string }) => {
+    await post('/achievement-hunt', { blacklist, character: name });
+  }, [post, name]);
   const onSelectFarmingPolicy = useCallback(
     (mode: FarmingPolicy) => void setFarmingPolicy(mode, name),
     [setFarmingPolicy, name],
@@ -388,6 +394,14 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             hunt={farming.hunt}
             characterHunt={char.monsterHunt}
             onSelect={onSelectFarmingPolicy}
+            achievementSettings={farming.achievementSettings}
+            achievementBlacklist={farming.achievementBlacklist}
+            achievementMessage={farming.achievementMessage}
+            achievementKills={char.monsterAchievementKills || emptyRecord<number>()}
+            bestiary={state.bestiaryCatalog}
+            monsterChoices={state.monsterChoices}
+            onAchievementSave={onAchievementHuntSave}
+            onAchievementBlacklist={onAchievementBlacklist}
           />
         ) : null}
         {char.name === state.merchantCharacter ? (

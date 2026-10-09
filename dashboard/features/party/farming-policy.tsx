@@ -1,3 +1,3 @@
 "use client";
 
-export type FarmingPolicy = "auto" | "default" | "scatter" | "hunt";
+export type FarmingPolicy = "auto" | "default" | "scatter" | "hunt" | "achievements";

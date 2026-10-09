@@ -16,5 +16,8 @@ export function farmingContext(state: PartyState, name: string) {
     blacklist: effective?.huntBlacklist || (legacy ? state.huntBlacklist : undefined) || {},
     settings: effective?.huntSettings || (legacy ? state.huntSettings : undefined),
     hunt: effective?.monsterHunt ?? (legacy ? state.monsterHunt : null),
+    achievementSettings: effective?.achievementHunt || (legacy ? state.achievementHunt : undefined),
+    achievementBlacklist: effective?.achievementBlacklist || (legacy ? state.achievementBlacklist : undefined) || {},
+    achievementMessage: effective?.achievementMessage ?? (legacy ? state.achievementMessage : undefined) ?? "",
   };
 }

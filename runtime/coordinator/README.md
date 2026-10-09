@@ -1447,6 +1447,18 @@ The scoped settings endpoint merges per-monster patches and validates catalog me
 an empty key restores Automatic. Settings use the existing persistence/export path.
 Validate hunt-spawn-preferences and hunt-settings; activate with coordinator-only restart.
 
+## Achievement Hunt
+
+The `achievements` farming mode farms selected monsters for their kill
+achievements (docs/achievement-hunt.md). `hunt/achievement-hunt.ts` picks the
+target from `runtime/hunt/achievement-policy.ts` and moves the scope with the
+manual-monster convoy, keeping the farming mode. Each farming scope has its own
+`achievementHunt`, `achievementBlacklist`, `achievementTarget` and
+`achievementMessage`, like Hunt settings; followers use the leader's. The
+scoped `/party-api/achievement-hunt` route edits one character's settings.
+Settings use the existing persistence and export path. Validate
+achievement-hunt; activate with coordinator-only restart.
+
 ## Event entry and follower movement
 
 A follower that reaches a selected live event before its leader stays in that

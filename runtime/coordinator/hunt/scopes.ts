@@ -1,4 +1,5 @@
 import { defaultHuntSettings } from "./settings.ts";
+import { defaultAchievementHuntSettings } from "./achievement-settings.ts";
 import { initialCommandState } from "../navigation/initial-commands.ts";
 
 /** Durable personal preferences and controller state. Never copy these when Follow changes. */
@@ -7,7 +8,8 @@ const fields = ["farmingPolicy", "monsterHunt", "huntSettings", "huntBlacklist",
   "location", "monsterFocus", "activeConvoy", "farmAreaState", "partyFarmingMode",
   "scatterMonsterTypes", "scatterEpoch", "partyFarmingMonsterType", "scatterBreakTarget",
   "scatterPartySignature", "groupedCombat", "groupedCombatResetAt", "combatRecovery",
-  "combatHuntBoundary", "eventReturn", "eventReturnLast", "eventSessions", "abtestingStrategy", "rareHuntState", "rareHuntReturn", "rareRetryEvidence", "rarePursuitProgress", "phoenixPatrolActive", "phoenixPatrolCheckpoint"] as const;
+  "combatHuntBoundary", "eventReturn", "eventReturnLast", "eventSessions", "abtestingStrategy", "rareHuntState", "rareHuntReturn", "rareRetryEvidence", "rarePursuitProgress", "phoenixPatrolActive", "phoenixPatrolCheckpoint",
+  "achievementHunt", "achievementBlacklist", "achievementTarget", "achievementMessage"] as const;
 const scopedFields = new Set<string>(fields);
 interface State {
   leader: string | null;
@@ -28,7 +30,8 @@ function defaults(): Record<string, unknown> {
     partyFarmingMonsterType: null, scatterBreakTarget: null, scatterPartySignature: "",
     groupedCombat: null, groupedCombatResetAt: 0, combatRecovery: null, combatHuntBoundary: null,
     eventReturn: null, eventReturnLast: null, eventSessions: {}, abtestingStrategy: null,
-    rareHuntState: null, rareHuntReturn: null, rareRetryEvidence: {}, rarePursuitProgress: {}, phoenixPatrolActive: false, phoenixPatrolCheckpoint: null };
+    rareHuntState: null, rareHuntReturn: null, rareRetryEvidence: {}, rarePursuitProgress: {}, phoenixPatrolActive: false, phoenixPatrolCheckpoint: null,
+    achievementHunt: { ...defaultAchievementHuntSettings }, achievementBlacklist: {}, achievementTarget: null, achievementMessage: "" };
 }
 
 /** Stable views share observations/IDs, but have independent controller storage. No global-state swapping. */
@@ -39,7 +42,9 @@ export function createFarmingScopes<T extends State>(root: T, now: () => number 
   const existing = Object.keys(root.farmingProfiles);
   for (const name of existing) {
     const saved = root.farmingProfiles[name]!;
-    root.farmingProfiles[name] = { ...defaults(), ...saved,
+    // Fields added after a profile was saved keep the leader's legacy party-wide values.
+    const inherited = name === root.leader ? legacy : {};
+    root.farmingProfiles[name] = { ...defaults(), ...inherited, ...saved,
       activeConvoy: initialCommandState(saved, now).activeConvoy, groupedCombat: null };
   }
   function profile(name: string): Record<string, unknown> {
