@@ -5794,10 +5794,21 @@
           scrollSlot = findInventoryItemByName(scrollName);
           if (scrollSlot < 0) continue;
           var beforeCompound = JSON.stringify(candidates.map(function (slot) { return character.items[slot]; }));
+          var compoundOutputCount = function () {
+            return character.items.filter(function (item) {
+              return item && item.name === autoMark.name && (item.level || 0) === level + 1;
+            }).length;
+          };
+          var outputsBeforeCompound = compoundOutputCount();
           try {
             await compoundConfirmed(candidates[0], candidates[1], candidates[2], scrollSlot, {family:"compound",key:autoMark.name});
-            if (level + 1 === targetTier) producedThisPass++;
-            activity.push({ level: "success", message: "Auto compounded " + autoMark.name + " to +" + (level + 1) });
+            var producedCompoundOutput = compoundOutputCount() > outputsBeforeCompound;
+            if (producedCompoundOutput) {
+              if (level + 1 === targetTier) producedThisPass++;
+              activity.push({ level: "success", message: "Auto compounded " + autoMark.name + " to +" + (level + 1) });
+            } else {
+              activity.push({ level: "error", message: "Auto compound failed for " + autoMark.name });
+            }
           } catch (autoError) {
             activity.push({ level: "error", message: "Auto compound failed for " + autoMark.name,
               details: String(autoError.reason || autoError.message || autoError) });

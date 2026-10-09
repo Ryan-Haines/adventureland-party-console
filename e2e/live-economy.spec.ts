@@ -930,6 +930,15 @@ for (const kind of ['upgrade', 'compound']) test(`auto merchant collects twelve 
   // clients must transfer all copies even though only one result is requested.
   const name=kind==='upgrade'?'helmet':'ringsj', owner='E2EWarrior';
   await catalog(live,'helmet'); // Catalog readiness; ringsj is loot-only stock.
+  if(kind==='compound') await live.clients[merchant].run(`(()=>{
+    globalThis.__e2eCompoundOutcomes=[];
+    parent.socket.on('game_response',data=>{
+      const response=typeof data==='string'?data:data&&data.response;
+      if(response==='compound_success'||response==='compound_fail')
+        globalThis.__e2eCompoundOutcomes.push({at:Date.now(),response,data});
+    });return true;
+  })()`);
+  try {
   await live.post('/config',{itemCollectionThreshold:10});
   await live.admin(`output=(()=>{const p=get_player('${owner}');for(let i=0;i<12;i++)p.items[20+i]={name:'${name}',level:0};cache_player_items(p);resend(p,'reopen+cid');return p.items.slice(20,32)})()`);
   await expect.poll(async()=>(await live.clients[owner].snapshot()).items.filter((i:Item|null)=>i?.name===name).length).toBe(12);
@@ -942,9 +951,24 @@ for (const kind of ['upgrade', 'compound']) test(`auto merchant collects twelve 
     {timeout:180_000,message:'Every copy must reach the merchant through native collection'}).toBe(0);
   const count=async()=>{const all=(await economy(live)).characters;return Object.values(all).flatMap(c=>c.items).filter(i=>i?.name===name)};
   await expect.poll(async()=> (await count()).filter(i=>i?.level===1).length,{timeout:90_000}).toBe(1);
-  expect((await count()).length).toBe(kind==='upgrade'?12:10);
+  const completed=await count();
+  if(kind==='compound') {
+    const outcomes=await live.clients[merchant].run('globalThis.__e2eCompoundOutcomes');
+    const successes=outcomes.filter((event:any)=>event.response==='compound_success').length;
+    const failures=outcomes.filter((event:any)=>event.response==='compound_fail').length;
+    expect(successes).toBe(1);
+    expect(completed.length).toBe(12-2*successes-3*failures);
+    expect(completed.every(item=>item?.level===0||item?.level===1)).toBe(true);
+    await expect.poll(async()=>(await live.state()).autoCompounds?.[merchant]?.find((rule:any)=>rule.name===name)?.quantity).toBe(0);
+  } else expect(completed.length).toBe(12);
   await live.restartCoordinator();
   await expect.poll(async()=>(await live.state()).characters[merchant]?.items?.some((e:any)=>e.item?.name===name&&e.item.level===1)).toBe(true);
-  expect((await count()).length).toBe(kind==='upgrade'?12:10);
-  await info.attach('auto-merchant-finite-processing-native',{body:JSON.stringify({kind,state:await live.state(),inventory:await economy(live),events:await live.clients[owner].events()}),contentType:'application/json'});
+  const afterRestart=await count();
+  expect(afterRestart.length).toBe(completed.length);
+  expect(afterRestart.filter(item=>item?.level===1).length).toBe(1);
+  } finally {
+    await info.attach('auto-merchant-finite-processing-native',{body:JSON.stringify({kind,declaredNativeIngredients:12,state:await live.state(),inventory:await economy(live),
+      compoundOutcomes:kind==='compound'?await live.clients[merchant].run('globalThis.__e2eCompoundOutcomes'):undefined,
+      events:await live.clients[merchant].events(),ownerEvents:await live.clients[owner].events()}),contentType:'application/json'});
+  }
 });

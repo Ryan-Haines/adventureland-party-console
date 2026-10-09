@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Count automatic compound production only when native inventory gains the next
+  tier. Failed rolls continue with remaining ingredients instead of consuming a
+  finite production quota or reporting a successful compound.
+
 - Retire combat-return commands when their recovery completes, and clean up
   historical orphan returns within each active farming profile. Live and
   deferred recovery cycles retain their movement ownership. Heartbeats release
