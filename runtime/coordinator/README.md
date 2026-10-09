@@ -56,6 +56,12 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Native splash packets from a visible monster fighting an identified outsider
+do not repeatedly stop owned party travel. Direct hits and unknown or party
+targets retain defense safety. Validate native Targetron collateral and direct
+party-target control journeys; publish character assets with a full supported
+restart. Failure inventory: `docs/testing-collateral-convoy-defense.md`.
+
 Escape skill leaders are separate from requested evacuation membership. Missing
 or duplicate class metadata uses independent native evacuation for every member.
 Restart reconciliation expands an active escape only for the matching current

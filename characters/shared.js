@@ -872,6 +872,13 @@
     if (convoyTraveling && convoyTraveling.continuousReturn === 1) return;
     if(data && currentPartyList().indexOf(String(data.id))>=0) {
       var aggressor=get_entity(data.hid || data.actor);
+      // Native explosion hits can strike a passing party while the monster is
+      // fighting another player. Such a splash cannot nominate that player's
+      // fight or repeatedly replace our owned route with defense/loot holds.
+      // Direct and unknown-target hits retain the conservative safety path.
+      var victim=aggressor && aggressor.target && get_entity(aggressor.target);
+      if(data.splash===true && victim && victim.type==='character' && !victim.npc &&
+        currentPartyList().indexOf(String(aggressor.target))<0)return;
       var passingRule=aggressor && passiveHunting.rules[aggressor.mtype];
       if(aggressor && aggressor.type==='monster' && (!isPassingEncounter(aggressor) || returnDepartureDefense() && !(passingRule && passingRule.enabled && passingRule.keepMoving)) && !joinedEvent && !eventTargetTypes.length) {
         root.__partyDefensiveHit={target:groupedEntityReport(aggressor),at:Date.now()};

@@ -5,8 +5,14 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Keep owned party travel moving through native explosion splash from monsters
+  fighting another player. Genuine party-target attacks, direct hits and unknown
+  attackers retain defensive interruption and existing external-claim protection.
+
 - Drain held native commerce checkpoint requests before test teardown and
   handle a completed Cave shop result reopening over waypoint controls.
+  Wait for the separate native compound receipt before checking finite-rule
+  conservation, retaining its original processing deadline and quota checks.
 
 - Keep every requested character in party escape recovery when class metadata
   arrives late or classes are duplicated. Use independent evacuation when the

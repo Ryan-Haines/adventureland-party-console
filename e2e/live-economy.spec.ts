@@ -956,7 +956,12 @@ for (const kind of ['upgrade', 'compound']) test(`auto merchant collects twelve 
   await expect.poll(async()=>(await live.clients[owner].snapshot()).items.filter((i:Item|null)=>i?.name===name).length,
     {timeout:180_000,message:'Every copy must reach the merchant through native collection'}).toBe(0);
   const count=async()=>{const all=(await economy(live)).characters;return Object.values(all).flatMap(c=>c.items).filter(i=>i?.name===name)};
-  await expect.poll(async()=> (await count()).filter(i=>i?.level===1).length,{timeout:90_000}).toBe(1);
+  await expect.poll(async()=> {
+    if((await count()).filter(i=>i?.level===1).length!==1)return false;
+    if(kind!=='compound')return true;
+    const outcomes=await live.clients[merchant].run('globalThis.__e2eCompoundOutcomes');
+    return outcomes.some((event:any)=>event.response==='compound_success');
+  },{timeout:90_000,message:'Native inventory and the actual compound response must both confirm the result'}).toBe(true);
   const completed=await count();
   if(kind==='compound') {
     const outcomes=await live.clients[merchant].run('globalThis.__e2eCompoundOutcomes');

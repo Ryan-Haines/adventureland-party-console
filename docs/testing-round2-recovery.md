@@ -127,6 +127,13 @@ Before changing the existing retirement fence: the last eventRecovery diagnostic
 
 ## Linux checkpoint and Cave modal fixture ownership
 
+The same run's finite compound case observed its native level-one inventory
+before the separate `game_response` callback arrived. Its final artifact records
+one real compound success and ten conserved rings (one level one, nine level
+zero). Wait for both native inventory and response evidence within the existing
+90-second processing deadline before asserting the response count; do not
+manufacture outcomes or alter quota and restart checks.
+
 Run 37995615362 captured the real coat purchase (ten level-zero coats and the
 existing level-five coat) at checkpoint 28. Its cleanup removed routes while
 the released checkpoint callback was still continuing the request, producing
