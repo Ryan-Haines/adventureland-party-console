@@ -15,6 +15,8 @@ from the commits merged into `main`.
   storage echoes and rejects another attempt's lucky-slot evidence. Explicit
   operator review can resume a missing commerce item with an audited unknown
   outcome while preserving paid spending, attempts and completed-result counts.
+  Reviewed recovery reloads authoritative coordinator progress instead of stale
+  client storage, including receipts reviewed before this fix was activated.
 
 - Event staging now prefers the native boss spawn before subordinate monster
   spawns, keeping Mr. Green attendance in Spookytown while prioritizing its adds

@@ -105,6 +105,7 @@ test('operator unknown receipt review resumes a missing commerce cycle without r
   // Declared interrupted-state input: an admitted attempt's item has no native
   // inventory survivor. No successful/destroyed receipt is fabricated.
   await live.restoreHistoricalSettings(()=>({production:{attempts:{[receipt]:{name:'helmet',level:1,kind:'upgrade',rules:[],journal:{id:receipt,item:{name:'helmet',level:0},slots:[10],phase:'running',request:{character:merchant,id:receipt,kind:'upgrade',item:{name:'helmet',level:0}},commerce:{key:'party-commerce:'+id,sequence:2,state:progress}}}}},merchantQueue:[{id,target:merchant,reason:'merchant commerce',queuedAt:Date.now(),commerceOrderId:id,commerceProgressVersion:2,order:{buys:[{id:'helmet',quantity:1,level:1,attempts:20,budget:100000}],crafts:[]},resumeState:progress}]}));
+  await live.clients[merchant].run(`localStorage.setItem(${JSON.stringify('party-commerce:'+id)},${JSON.stringify(JSON.stringify({...progress,sequence:1,activeItem:{name:'helmet',level:2}}))})`);
   await live.post('/merchant/production',{character:merchant,action:'resolve-unknown',resumeMissing:true,id:receipt,kind:'upgrade',item:{name:'helmet',level:0},reason:'E2E operator reviewed native inventory; interrupted item missing; preserve spending and resume remaining allowance'});
   await expect.poll(async()=>{
     const state=await live.state();
