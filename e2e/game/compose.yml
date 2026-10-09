@@ -15,7 +15,10 @@ services:
       timeout: 10s
       retries: 60
   game:
-    build: .
+    build:
+      context: .
+      args:
+        NODE_IMAGE: ${E2E_NODE_IMAGE:-node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c}
     network_mode: "service:database"
     depends_on:
       database:

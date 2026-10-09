@@ -90,6 +90,11 @@ and native fixtures. A configurable registry source must retain the exact pinned
 image digest, leave local cached-image defaults intact, and still fail visibly
 when acquisition fails. Google's mirror resolves the existing local MongoDB
 digest c630c59342c1493d50345136df2af14a76b9e827dd5316bfabee07a0880a5f3a.
+The next focused run passed that acquisition but hit the same Hub limit on the
+game's Node base image. Apply the registry override to both pinned image inputs;
+the Node mirror must resolve existing digest
+43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+before changing build wiring. Do not substitute runtime versions.
 
 Every scenario must capture the initial seed, action requests, coordinator state,
 authoritative server observations, client/socket logs, and screenshots/traces.

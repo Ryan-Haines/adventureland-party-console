@@ -22,6 +22,7 @@ jobs:
     env:
       # Same pinned MongoDB image through the mirror avoids shared Hub pull limits.
       E2E_MONGO_IMAGE: mirror.gcr.io/library/mongo@sha256:c630c59342c1493d50345136df2af14a76b9e827dd5316bfabee07a0880a5f3a
+      E2E_NODE_IMAGE: mirror.gcr.io/library/node@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
     timeout-minutes: 180
     strategy:
       fail-fast: false
