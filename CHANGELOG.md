@@ -10,9 +10,9 @@ from the commits merged into `main`.
   skill sequence cannot cover everyone, and reconcile matching persisted death
   recovery membership after coordinator restart without changing newer navigation.
 
-- Confirm every requested home realm against the refreshed native account roster
-  after temporary visitors stop, so completion and account-wide home projection
-  agree without extending the existing home confirmation budget.
+- Confirm requested homes using fresh native reports for connected characters
+  and the refreshed account roster for offline visitors, so completion and home
+  projection agree within the existing confirmation budget.
 
 - Reject obsolete event-return walking requests after their cycle authority
   ends, and retire an owned deferred exit even after another peer has already

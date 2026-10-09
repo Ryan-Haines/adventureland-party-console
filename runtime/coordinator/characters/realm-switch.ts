@@ -258,11 +258,17 @@ export function createRealmSwitch(ports: RealmPorts) {
     const names = operation.homeTargets || operation.participants;
     do {
       await ports.refresh();
-      if (names.every(name => 'SR_' + String(ports.characterHome(name) || '').replace(/^SR_/, '') === operation.realm)) return;
+      if (names.every(name => persistedHomeConfirmed(name, operation))) return;
       if (ports.now() >= deadline) break;
       await ports.sleep(500);
     } while (ports.now() < deadline);
     throw new Error('Account roster did not confirm every persisted home realm before the confirmation deadline');
+  }
+  function persistedHomeConfirmed(name: string, operation: RealmOperation): boolean {
+    // Native set_home changes connected player state without a synchronous DB
+    // write. Visitors have stopped, so only their refreshed account home counts.
+    const home = operation.participants.includes(name) ? currentHome(name, operation) : ports.characterHome(name);
+    return 'SR_' + String(home || '').replace(/^SR_/, '') === operation.realm;
   }
 
   async function run(operation: RealmOperation): Promise<void> {
