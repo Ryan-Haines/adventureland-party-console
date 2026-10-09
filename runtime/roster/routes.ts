@@ -31,6 +31,8 @@ interface Member {
   online: boolean;
 }
 export interface RosterRoutesPorts extends HandoffPorts {
+  resolveRealm(realm: string): unknown;
+  manualChange?(): void;
   observationsChanged?(entries: import('./connection-status.ts').SteamObservation[]): void;
   members(): Member[];
   realm(): string;
@@ -70,6 +72,7 @@ export function installRosterRoutes(
   const route = (path: string, handler: (request: Request) => Promise<unknown>) =>
     router.post(path, async (request, response) => {
       const exclusive = !path.endsWith("/bridge");
+      if (exclusive) ports.manualChange?.();
       if (exclusive && rosterBusy) {
         response.status(409).json({ error: "Another roster operation is in progress" });
         return;
@@ -211,5 +214,28 @@ export function installRosterRoutes(
   });
   const expiration = setInterval(() => { if (state.handoff?.multi) group.expire(); else service.expire(); }, 1000);
   expiration.unref();
-  return { service, dispose: () => clearInterval(expiration) };
+  async function automatic(action: 'login' | 'logout' | 'realm', name: string, realm: string): Promise<void> {
+    if (rosterBusy) throw new RosterConflict('Another roster operation is in progress');
+    rosterBusy = true;
+    try {
+      if (action === 'logout') { await logoutHeadless(name); return; }
+      let index = state.slots.indexOf(name);
+      if (action === 'realm' && index >= 0) {
+        if (ports.characterBusy?.(name)) throw new RosterConflict('Wait for active inventory work before restoring the realm');
+        await ports.stopHeadless(name);
+        if (!await ports.confirmOffline(name)) throw new RosterConflict('Waiting for account-level logout');
+      } else {
+        index = state.slots.indexOf(null);
+        if (index < 0) throw new RosterConflict('No headless slot is available');
+        assertSpawnAvailable(index + 1, name);
+        state.slots[index] = name; ports.save();
+        try {
+          if (!await ports.confirmOffline(name)) throw new RosterConflict('External session conflict for ' + name);
+        } catch (error) { state.slots[index] = null; ports.save(); throw error; }
+      }
+      if (!ports.resolveRealm(realm)) throw new RosterConflict('The operating realm is unavailable');
+      ports.startHeadless(name, index, realm);
+    } finally { rosterBusy = false; }
+  }
+  return { service, automatic, dispose: () => clearInterval(expiration) };
 }

@@ -1,4 +1,7 @@
 import { createDungeons } from './dungeons/service.ts';
+import { createItemSwapsRoute } from './http/item-swaps.ts';
+import { createCombatStrategiesRoute } from './http/combat-strategies.ts';
+import { realmSwitchInProgress } from './characters/realm-switch.ts';
 import { dungeonOwns } from '../dungeons/contracts.ts';
 import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
 import { consoleMaintenance } from './lifecycle/console-maintenance.ts';
@@ -14,6 +17,9 @@ import { migrateSharedRules, installSharedRuleRoutes, sharedMember } from "./inv
 import { loadCoordinatorGeometry } from './navigation/planner-geometry.ts';
 import { initializeStandLocation, standLocationRoute } from './merchant/stand-location.ts';
 import { createRareRouteDistance } from './navigation/rare-route-distance.ts';
+import { createActivityPlan } from './activity/service.ts';
+import { installActivityPreferences } from './activity/preferences.ts';
+import { planDesired } from '../activity-plan.ts';
 export function startCoordinatorApplication(
   platform: CoordinatorApplicationPlatform,
 ): Promise<void> {
@@ -151,6 +157,9 @@ export function startCoordinatorApplication(
       },
     });
     migrateSharedRules(party, Object.keys(character_manage).filter(name => !party.bankbois[name]));
+    installActivityPreferences(party);
+    let activityPlan: ReturnType<typeof createActivityPlan> | undefined;
+    let activityRoster: ReturnType<typeof installRosterRoutes> | undefined;
     const farmingScopes = coordinatorPolicies.createFarmingScopes(party);
     const soloServices = new Map<string, ReturnType<typeof createSoloServices>>();
     const aldataPublicationScheduler = coordinatorPolicies.createPublicationScheduler(
@@ -202,6 +211,8 @@ export function startCoordinatorApplication(
     };
     const { manager: characterManager, code: characterCode } =
       coordinatorPolicies.createCoordinatorCharacterServices({
+        allowed: name => !party.activityPlan?.run || party.activityPlan.run.mode === 'paused' ||
+          planDesired(party.activityPlan).includes(name),
         blocks: character_manage,
         clock: workerClock,
         log: console,
@@ -484,6 +495,7 @@ export function startCoordinatorApplication(
     const upgradePreviews = createUpgradePreviews(party, {persist:persistSettings, dispatch:dispatchMerchant, stamp:stampMerchantJob});
     const heartbeatResponse = coordinatorPolicies.createCoordinatorHeartbeatResponse(party, {
       now: () => Date.now(),
+      persist: persistSettings,
       activeNames: () => activeNames().filter(n => n === party.merchantCharacter || farmingScopes.owner(n) === party.leader),
       enabled: eventsEnabledFor,
       intent: (name) => farmingNavigation.intent(name),
@@ -923,6 +935,20 @@ export function startCoordinatorApplication(
       () => my_acc.response,
       () => Date.now(),
     );
+    activityPlan = createActivityPlan(party, {
+      now: Date.now, persist: persistSettings, roster: rosterPayload,
+      resolveRealm: realm => my_acc.resolve_realm(realm),
+      worker: name => character_manage[name],
+      waypoint: name => farmingScopes.profile(name).location || party.characterLocations[name],
+      blocked: () => !!consoleUpdate.current() || realmSwitchInProgress(party.realmSwitch),
+      cancelEventTravel: cancelActiveConvoy,
+      rosterOperation: async (action, name, realm) => {
+        if (!activityRoster) throw Error('Waiting for the roster service');
+        await activityRoster.automatic(action, name, realm);
+      },
+    });
+    const activityReadyAt = Date.now() + 5000;
+    setInterval(() => { if (Date.now() >= activityReadyAt) void activityPlan?.tick(); }, 1000);
     const {
       giveaways: giveawayScheduler,
       improvements: improvementScheduler,
@@ -955,6 +981,7 @@ export function startCoordinatorApplication(
     });
     const inventoryReservations = coordinatorPolicies.createInventoryReservations(party);
     const bankQueueService = coordinatorPolicies.createBankQueue(party, {
+      allowed: name => !(activityPlan?.owns(name) && activityPlan.merchantReserved()),
       now: () => Date.now(),
       nextCommand: () => party.nextCommandId++,
     });
@@ -994,7 +1021,7 @@ export function startCoordinatorApplication(
         merchant: merchantObservation.observe,
         groupedCombat: groupedCombatSnapshot,
         rareReport: (name, report) => rareControl.report(name, report),
-        rareTick: () => { if (!dungeonOwns(party)) rareControl.tick(); },
+        rareTick: () => { if (!dungeonOwns(party) && (!party.activityPlan?.run || party.activityPlan.run.phase === 'solo')) rareControl.tick(); },
         bankboi: bankboiObservation.observe,
         anniversary: reconcileAnniversaryReturnFromStatus,
         huntTick: monsterHuntTick,
@@ -1002,7 +1029,7 @@ export function startCoordinatorApplication(
         persist: persistSettings,
         abtesting: resolveAbtestingStrategy,
         activeNames,
-        events: report => (soloFor(report.name)?.eventObservations || eventObservations).observe(report),
+        events: report => { if (!activityPlan?.owns(report.name)) (soloFor(report.name)?.eventObservations || eventObservations).observe(report); },
         publish: scheduleALDataPublish,
         convoyStep: stepAllConvoys,
         merchantScheduling: merchantScheduling.observe,
@@ -1011,7 +1038,14 @@ export function startCoordinatorApplication(
           const maintenance = consoleUpdate.current();
           if (maintenance) return { serverNow: Date.now(), consoleMaintenance: maintenance };
           const lease = mode ? undefined : dashboardStream.lease(name);
+          const activity = activityPlan?.control(name);
           return { ...(soloFor(name)?.heartbeatResponse || heartbeatResponse).response(name, mode),
+            ...(activity ? { activityPlanControl: activity, halloweenAttendance: activityPlan?.attendance(name),
+              farmTravelPaused: activity.phase !== 'solo', partyTownActive: ['town', 'collecting'].includes(activity.phase),
+              partyTownCycleId: activity.id, partyEventHint: null,
+              ...(activity.phase !== 'solo' ? { rareControl: null, passiveRareHunts: {},
+                passiveHunting: {rules:{},useFieldGenerators:false}, monsterHunt:null, huntTurnInPriority:false,
+                farmingPolicy:'auto', farmingMode:'default', farmAreaState:null } : {}) } : {}),
             ...(dungeonOwns(party, name) ? { groupedCombat: groupedCombatSnapshot() } : {}),
             ...(party.dailyDungeons ? { dailyDungeon: dungeons.control(name) } : {}),
             merchantVisibility: merchantVisibility(party, name, Date.now()),
@@ -1539,6 +1573,7 @@ export function startCoordinatorApplication(
     }
 
     function ensureMerchantHome(reason: Parameters<typeof merchantHomeRecovery.ensureHome>[0]) {
+      if (party.activityPlan?.run?.mode === 'paused') return false;
       const merchant = String(party.merchantCharacter);
       if (party.steamMembers.includes(merchant)) {
         party.merchantHomeReturnAt = 0;
@@ -1548,11 +1583,13 @@ export function startCoordinatorApplication(
     }
 
     function recoverStalledMerchantSale() {
+      if (activityPlan?.merchantReserved()) return false;
       return merchantHomeRecovery.recoverStalledSale();
     }
 
     function dispatchMerchant() {
       if (consoleUpdate.current()) return;
+      if (activityPlan?.merchantReserved()) return;
       merchantRecovery.expire(String(party.merchantCharacter));
       if (coordinatorPolicies.pruneIneligibleCollections(party, () => Date.now())) persistSettings();
       merchantDispatcher.dispatch();
@@ -1572,6 +1609,7 @@ export function startCoordinatorApplication(
 
     function dispatchMerchantIdle() {
       if (consoleUpdate.current()) return;
+      if (activityPlan?.merchantReserved()) return;
       merchantIdle.idle();
     }
 
@@ -1605,7 +1643,7 @@ export function startCoordinatorApplication(
       persist: persistSettings,
       escapeStep: () => { if (!dungeonOwns(party)) escapeControl.step(); },
       disengagementTick: () => { if (!dungeonOwns(party)) combatDisengagement.tick(); },
-      rareTick: () => { if (!dungeonOwns(party)) rareControl.tick(); },
+      rareTick: () => { if (!dungeonOwns(party) && (!party.activityPlan?.run || party.activityPlan.run.phase === 'solo')) rareControl.tick(); },
       eventReturn: () => { if (!dungeonOwns(party)) reconcileCombatEventReturn(); },
       anniversaryTick: () => { if (!dungeonOwns(party)) anniversaryReturns.tick(); },
       dispatchAnniversary: dispatchAnniversaryReturn,
@@ -1764,6 +1802,7 @@ export function startCoordinatorApplication(
 
     const heartbeatResponse = coordinatorPolicies.createCoordinatorHeartbeatResponse(party, {
       now: () => Date.now(),
+      persist: persistSettings,
       activeNames,
       enabled: eventsEnabledFor,
       intent: (name) => farmingNavigation.intent(name),
@@ -1947,6 +1986,7 @@ export function startCoordinatorApplication(
     }
 
     function farmAreaTick() {
+      if (party.activityPlan?.run && party.activityPlan.run.phase !== 'solo') return;
       if (!dungeonOwns(party)) farmAreaNavigation.tick();
       for (const service of independentServices()) service.farmAreaNavigation.tick();
     }
@@ -1997,6 +2037,7 @@ export function startCoordinatorApplication(
     }
 
     function monsterHuntTick(_previousStatus?: unknown, _changedName?: string) {
+      if (party.activityPlan?.run && party.activityPlan.run.phase !== 'solo') return;
       dungeons.reconcile();
       if (party.leader && !dungeonOwns(party)) huntTick.tick();
       for (const service of independentServices()) {
@@ -2069,6 +2110,7 @@ export function startCoordinatorApplication(
     }
 
     function reconcileCombatEventReturn() {
+      if (activityPlan?.owns()) return;
       eventReturns.reconcile();
       for (const service of independentServices()) service.eventReturns.reconcile();
     }
@@ -2138,16 +2180,25 @@ export function startCoordinatorApplication(
               characterCreationRoutes,
               bankboiStorageRoutes,
               bankboiDeleteRoute,
-              realmRoutes,
+              realmRoutes: { ...realmRoutes, switchRealm: (req,res) => {
+                activityPlan?.manual('Paused by a manual realm change. Resume when ready.');
+                return realmRoutes.switchRealm(req,res);
+              } },
               statusIngestion,
               monsterSelectionRoutes,
               focusRoute: scopedRoute(focusRoute, service => service.focusRoute),
-              formationRoute,
+              formationRoute: (req,res) => {
+                activityPlan?.manual('Paused by a manual party formation change. Resume when ready.');
+                return formationRoute(req,res);
+              },
               huntBlacklistRoute: scopedRoute(huntBlacklistRoute, service => service.huntBlacklistRoute, true),
               huntSettingsRoute: scopedRoute(huntSettingsRoute, service => service.huntSettingsRoute, true),
               huntModeRoute: scopedRoute(huntModeRoute, service => service.huntModeRoute, true, true),
               huntControlRoutes: { permission: scopedRoute(huntControlRoutes.permission, service => service.huntControlRoutes.permission), retryReturn: scopedRoute(huntControlRoutes.retryReturn, service => service.huntControlRoutes.retryReturn), interactionComplete: scopedRoute(huntControlRoutes.interactionComplete, service => service.huntControlRoutes.interactionComplete) },
-              eventRecoveryRoutes: { disabled: scopedRoute(eventRecoveryRoutes.disabled, service => service.eventRecoveryRoutes.disabled), ended: scopedRoute(eventRecoveryRoutes.ended, service => service.eventRecoveryRoutes.ended) },
+              eventRecoveryRoutes: { disabled: (req,res) => activityPlan?.owns(String(coordinatorPolicies.requestObject(req.body).character))
+                ? res.json({ok:true}) : scopedRoute(eventRecoveryRoutes.disabled, service => service.eventRecoveryRoutes.disabled)(req,res),
+                ended: (req,res) => activityPlan?.owns(String(coordinatorPolicies.requestObject(req.body).character))
+                ? res.json({ok:true}) : scopedRoute(eventRecoveryRoutes.ended, service => service.eventRecoveryRoutes.ended)(req,res) },
               eventAcknowledgementRoutes: { progress: scopedRoute(eventAcknowledgementRoutes.progress, service => service.eventAcknowledgementRoutes.progress), townComplete: scopedRoute(eventAcknowledgementRoutes.townComplete, service => service.eventAcknowledgementRoutes.townComplete), returnComplete: scopedRoute(eventAcknowledgementRoutes.returnComplete, service => service.eventAcknowledgementRoutes.returnComplete), resumeComplete: scopedRoute(eventAcknowledgementRoutes.resumeComplete, service => service.eventAcknowledgementRoutes.resumeComplete) },
               convoyEngagementRoutes: { engage: scopedRoute(convoyEngagementRoutes.engage, service => service.convoyEngagementRoutes.engage), approach: scopedRoute(convoyEngagementRoutes.approach, service => service.convoyEngagementRoutes.approach) },
               farmingReturnRoute: scopedRoute(farmingReturnRoute, service => service.farmingReturnRoute),
@@ -2181,12 +2232,20 @@ export function startCoordinatorApplication(
               inventoryReceiptRoutes,
               restockRoute,
               thresholdRoute,
-              characterCommandRoute,
+              characterCommandRoute: (req,res) => {
+                const body=coordinatorPolicies.requestObject(req.body);
+                if (['character-travel','party-monster-travel','town','go-home','return-leader'].includes(String(body.type)))
+                  activityPlan?.manual('Paused by manual character travel. Resume when ready.');
+                return characterCommandRoute(req,res);
+              },
             },
             {
               json: (options) => express.json(options),
               text: (options) => express.text(options),
               maps: (router) => {
+                activityPlan?.install(router);
+                router.post('/party-api/item-swaps', createItemSwapsRoute(party, { owned: ownedCharacter, persist: persistSettings }));
+                router.post('/party-api/combat-strategies', createCombatStrategiesRoute(party, { owned: ownedCharacter, persist: persistSettings }));
                 dungeons.install(router);
                 upgradePreviews.install(router);
                 router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
@@ -2201,6 +2260,8 @@ export function startCoordinatorApplication(
                   now: () => Date.now(), members: () => farmingNavigation.members(), owned: ownedCharacter,
                   enabled: eventsEnabledFor, start: startPartyMonsterConvoy, persist: persistSettings, cancel: cancelActiveConvoy,
                   allowed: (activity) => (!party.escape || party.escape.stage === "released") &&
+                    (!party.activityPlan?.run || activity === 'event' && ['preparing','participating'].includes(party.activityPlan.run.phase) ||
+                      activity === 'farm-recovery' && party.activityPlan.run.phase === 'solo') &&
                     (["town-return", "event-return"].includes(activity) || !huntTurnInOwnsTravel(party.monsterHunt)),
                 });
               },
@@ -2208,10 +2269,10 @@ export function startCoordinatorApplication(
               combatLogs: (router) => combatLogRoutes.install(router),
               roster: (express_inst) => {
                 const ownership = coordinatorPolicies.coordinatorOwnership(party);
-                installRosterRoutes(
+                activityRoster = installRosterRoutes(
                   express_inst,
                   ownership,
-                  coordinatorPolicies.createCoordinatorOwnershipPorts(party, character_manage, {
+                  { ...coordinatorPolicies.createCoordinatorOwnershipPorts(party, character_manage, {
                     now: Date.now,
                     id: () => crypto.randomUUID(),
                     save: persistRosterState,
@@ -2222,8 +2283,9 @@ export function startCoordinatorApplication(
                     assignSlot: assignHeadlessSlot,
                     roster: rosterPayload,
                     configuredRealm,
+                    resolveRealm: realm => my_acc.resolve_realm(realm),
                     releaseBankboi: (confirm) => bankboiService.releaseForSteam(confirm),
-                  }),
+                  }), manualChange: () => activityPlan?.manual('Paused by a manual roster change. Resume when ready.') },
                 );
               },
               startMail: () =>
@@ -2277,8 +2339,9 @@ export function startCoordinatorApplication(
     function assignHeadlessSlot(
       slot: Parameters<typeof workerSetup.assign>[0],
       name: Parameters<typeof workerSetup.assign>[1],
+      realm?: string,
     ) {
-      workerSetup.assign(slot, name);
+      workerSetup.assign(slot, name, realm);
     }
 
     async function restoreMerchantAfterBankboi(
@@ -2288,6 +2351,7 @@ export function startCoordinatorApplication(
     }
 
     async function maybeStartBankboiService() {
+      if (activityPlan?.owns()) return;
       return bankboiService.start();
     }
     //attempts to softkill child processes
@@ -2312,6 +2376,7 @@ export function startCoordinatorApplication(
       return shutdownCoordinator(signal);
     }
     coordinatorPolicies.startCoordinatorCharacters(character_manage, party, {
+      activityOwned: () => activityPlan?.startupOwned() || false,
       events: process,
       shutdown,
       watch: watchCharacterCode,

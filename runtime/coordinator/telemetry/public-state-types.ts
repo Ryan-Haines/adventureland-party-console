@@ -2,6 +2,9 @@ import type { MerchantWork } from "../merchant/work.ts";
 
 /** These values are owned by other services; the overview only projects them. */
 export const publicStateFields = [
+  'activityPlan',
+  'combatStrategies',
+  "itemSwaps",
   "characterAppearances",
   "gameVersion", "clientUpdate", "merchantRules",
   "bankboiPrefix", "anniversaryAutoChat",
@@ -63,8 +66,10 @@ export const publicStateFields = [
   "huntFailures",
   "characterLocations",
   "restockPolicies",
+  "autoConsumables",
   "merchantCharacter",
   "merchantForceStand",
+  "merchantEventCombatEnabled",
   "merchantStandLocation",
   "merchantWeapon",
   "luckyUpgradeSlots",

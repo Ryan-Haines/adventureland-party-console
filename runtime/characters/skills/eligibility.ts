@@ -32,6 +32,7 @@ export function unlocked(w: SkillWorld, id: SkillId): boolean {
     Number(Reflect.get(w.actor, key)) >= Number(value));
 }
 export function reserve(w: SkillWorld): number {
+  if (!!w.context.farmingScript) return 0;
   const availableCost = (id: SkillId) => unlocked(w, id) ? cost(w, id) : 0;
   const c = w.actor.ctype;
   if (c === 'paladin') return Math.max(w.actor.max_mp * .3, 2 * availableCost('selfheal') + availableCost('guardians_oath'));
@@ -62,6 +63,9 @@ function safePull(w: SkillWorld, d: SkillDecision): boolean {
   return w.actor.hp - incomingDps({ ...w, context }, w.actor) * 2 > w.actor.max_hp * .3;
 }
 export function blocked(w: SkillWorld, d: SkillDecision, pending = 0): string | null {
+  if (d.skill === 'absorb' && w.context.strategies?.['absorb-sins'] === false) return 'Absorb sins strategy disabled';
+  if (d.skill === 'rspeed' && w.context.strategies?.rspeed === false) return 'Rspeed strategy disabled';
+  if (d.skill === 'mentalburst' && w.context.strategies?.mentalburst === false) return 'Mentalburst strategy disabled';
   if (w.context.mode === 'blocked' || w.actor.rip) return 'combat activity blocked';
   if (!ownsAggro(w, d)) return 'leader owns aggro transfers';
   if (!unlocked(w, d.skill)) return 'level, equipment, or requirements';

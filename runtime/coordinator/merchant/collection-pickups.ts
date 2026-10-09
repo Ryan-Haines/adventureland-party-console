@@ -1,11 +1,14 @@
 import type { InventoryEntry, Item, ItemMark } from '../contracts/item.ts';
+import { sameSwapItem, validSwapItem, type ItemSwaps } from '../../item-swaps.ts';
 import { requestObject } from '../http/contracts.ts';
 import { itemRuleConflicts, ruleOwner, sharedMember, type ConflictState } from '../inventory/shared-rules.ts';
 import { markedItem, sameMarkedItem } from '../inventory/item-identity.ts';
 import { availableCraftStock, craftProtection, type CraftReservationState } from './craft-reservations.ts';
 
 export interface PickupState extends ConflictState, CraftReservationState {
-  statuses?: Record<string, {items?: (InventoryEntry | null)[]} | undefined>;
+  autoConsumables?: Record<string, string | undefined>;
+  itemSwaps?: ItemSwaps;
+  statuses?: Record<string, {items?: (InventoryEntry | null)[]; itemSwap?: { reserved?: import('../../item-swaps.ts').SwapItem[] }} | undefined>;
   merchantAutomations?: Record<string, boolean | undefined>;
   marked?: Record<string, unknown[] | undefined>;
   merchantMarked?: Record<string, unknown[] | undefined>;
@@ -39,7 +42,11 @@ function upgradeMarks(state: PickupState, name: string): ItemMark[] {
   }).map(mark);
 }
 function protectedEntry(state: PickupState, name: string, entry: InventoryEntry | null): boolean {
-  return !entry?.item || personalTracker(entry.item) || !!entry.item.l || !!entry.item.b || manuallyReserved(state, name, entry) || itemRuleConflicts(state, entry.item).length > 0;
+  return !entry?.item || swapReserved(state, name, entry.item) || personalTracker(entry.item) || !!entry.item.l || !!entry.item.b || manuallyReserved(state, name, entry) || itemRuleConflicts(state, entry.item).length > 0;
+}
+function swapReserved(state: PickupState, name: string, item: Item | null | undefined): boolean {
+  return validSwapItem(item) && ((state.itemSwaps?.[name] || []).some(swap => swap.items.some(selection => sameSwapItem(item, selection.item))) ||
+    !!state.statuses?.[name]?.itemSwap?.reserved?.some(reserved => sameSwapItem(item, reserved)));
 }
 function personalTracker(item: Item | null | undefined): boolean { return item?.name === 'tracker' || item?.name === 'supercomputer'; }
 function collectable(value: ItemMark): boolean { return !personalTracker(markedItem(value)); }
@@ -63,11 +70,23 @@ function manualSalePickups(state: PickupState, name: string) {
 /** Same selection drives counts, admission and the kept-item handoff. No processing payloads. */
 export function collectionPickups(state: PickupState, name: string, reason = 'marked items') {
   if (reason === 'npc sale pickup') return manualSalePickups(state, name);
-  const bank = (state.marked?.[name] || []).map(mark).filter(collectable);
-  const keep = (state.merchantMarked?.[name] || []).map(mark).filter(value => collectable(value) && automaticSale(state, value));
+  const bank = (state.marked?.[name] || []).map(mark).filter(value => collectable(value) && !swapReserved(state, name, markedItem(value)));
+  const keep = (state.merchantMarked?.[name] || []).map(mark).filter(value => collectable(value) && !swapReserved(state, name, markedItem(value)) && automaticSale(state, value));
   const occupied = bank.concat(keep);
   for (const pickup of processing(state, name)) {
     if (!occupied.some(value => value.slot === pickup.slot && sameMarkedItem(markedItem(value), pickup.item))) keep.push(pickup);
   }
   return {bank, keep};
+}
+
+/** Mandatory event pickup bypasses pressure/marks, retaining the same protected and reserved stock. */
+export function mandatoryCollectionPickups(state: PickupState, name: string): ItemMark[] {
+  const stock = availableCraftStock((state.statuses?.[name]?.items || []).map(entry => entry &&
+    {...entry, craftLocation: 'inventory:' + name}), craftProtection(state));
+  return stock.flatMap(entry => {
+    if (protectedEntry(state, name, entry) || !entry?.item ||
+        entry.item.name === state.autoConsumables?.[name] ||
+        ['computer', 'hpot0', 'hpot1', 'mpot0', 'mpot1'].includes(String(entry.item.name))) return [];
+    return [{slot: entry.slot, item: entry.item, quantity: Number(entry.item.q) || 1}];
+  });
 }

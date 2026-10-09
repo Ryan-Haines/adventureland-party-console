@@ -1,9 +1,12 @@
 import { characterRuntime, distance, type RoutePoint, type SharedConvoy, type SharedState } from "./shared-route-types.ts";
 import { readRoutePoint } from "./shared-route-store.ts";
+import { eventPolicy } from '../../../dashboard/lib/event-policy.ts';
+import { halloweenPreparation, sameHalloweenSpawn, type HalloweenAttendance } from '../../events/halloween.ts';
 
 interface WalkRequest {
   name: string; token: string; runtimeId: string; revision: number; at: number;
   activity: string; key: string; destination: RoutePoint; parentId: number;
+  halloweenGeneration?: number;
   parent?: SharedState["commands"][string]; complete?: boolean; failed?: string; convoyId?: string;
 }
 interface WalkSession { requests: WalkRequest[]; convoy: SharedConvoy }
@@ -23,6 +26,9 @@ interface WalkPorts {
   cancel(): void;
 }
 interface WalkState extends SharedState {
+  activityPlan?: import('../../activity-plan.ts').ActivityPlan | null;
+  halloweenAttendance?: Record<string, HalloweenAttendance>;
+  followers?: Record<string, boolean>;
   phoenixPatrolActive?: boolean;
   rareHuntState?: {encounter?: unknown} | null;
   anniversary?: { eventCycle?: {
@@ -42,7 +48,8 @@ function parse(body: Record<string, unknown>, now: number): WalkRequest | null {
   if (typeof body.token !== "string" || body.token.length > 300 || typeof body.key !== "string" || body.key.length > 200) return null;
   return { name: String(body.character), token: body.token, runtimeId: String(body.runtimeId),
     revision: Number(body.navigationRevision), activity: String(body.activity), key: body.key, at: now,
-    parentId: Number(body.parentCommandId) || 0, destination: {map:p.map,x:p.x,y:p.y} };
+    parentId: Number(body.parentCommandId) || 0, destination: {map:p.map,x:p.x,y:p.y},
+    halloweenGeneration: typeof body.halloweenGeneration === 'number' ? body.halloweenGeneration : undefined };
 }
 function sameWalk(a: WalkRequest, b: WalkRequest): boolean {
   return a.activity === b.activity && a.key === b.key && distance(a.destination, b.destination) <= 1;
@@ -71,10 +78,28 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     return !!ports.owned(r.name) && (r.name !== state.merchantCharacter || merchantWalk(r));
   }
   function workflowCurrent(r: WalkRequest): boolean {
+    if (r.activity === 'event' && r.key === 'halloween' && !halloweenCurrent(r)) return false;
     if (rareOwnsRecovery(r)) return false;
     const recoveryOwns = ["farm-recovery", "event", "anniversary-staging"].includes(r.activity) &&
       !!state.eventReturn?.participants.includes(r.name);
     return runtimeMatches(r) && !stagingHandedOff(r) && (!recoveryOwns || recoveryContinuation(r));
+  }
+  function halloweenCurrent(r: WalkRequest): boolean {
+    const source = eventPolicy(state, r.name).source, realm = state.statuses[r.name]?.server;
+    const commitment = state.halloweenAttendance?.[JSON.stringify([source, realm])];
+    if (!commitment || (commitment.phase !== 'preparing' && commitment.phase !== 'attending') ||
+        commitment.generation !== r.halloweenGeneration || distance(commitment.encounter, r.destination) > 1) return false;
+    if (commitment.phase === 'attending') return commitment.lastLiveAt >= ports.now() - 10000;
+    const reporter = state.statuses[source];
+    const plan = state.activityPlan;
+    if (plan?.run && plan.config.farmer === source && plan.run.phase === 'preparing') {
+      const announced = reporter?.halloweenObservation?.upcoming?.find(spawn => sameHalloweenSpawn(spawn, commitment.encounter));
+      return !!announced && Number(reporter?.seenAt) >= ports.now()-10000 &&
+        ports.now()-Number(reporter?.halloweenObservation?.feedAt) <= 120000 &&
+        announced.spawnAt-ports.now() <= plan.config.preparationSeconds*1000 && ports.now() <= announced.spawnAt+30000;
+    }
+    const upcoming = halloweenPreparation(reporter?.halloweenObservation, ports.now());
+    return !!upcoming && Number(reporter?.seenAt) >= ports.now() - 10000 && sameHalloweenSpawn(upcoming, commitment.encounter);
   }
   function rareOwnsRecovery(r: WalkRequest): boolean {
     return r.activity === 'farm-recovery' && !recoveryContinuation(r) &&
@@ -222,9 +247,21 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if(!c?.continuousReturn || c.walkingActivity!==r.activity || c.walkingParents?.[r.name]?.revision!==r.revision)return null;
     return {ok:true,phase:'travelling',convoyId:c.id,reason:c.failure};
   }
+  function cancelHalloween(r: WalkRequest): Record<string, unknown> {
+    // Revoking an encounter must still release its exact old walk. Generation
+    // checks admit new movement; they must not deny cleanup of that owner.
+    const prior = requests.get(r.name);
+    if (!prior || prior.token !== r.token || !sameWalk(prior, r) ||
+        prior.runtimeId !== r.runtimeId || prior.revision !== r.revision ||
+        !managedWalker(r) || !runtimeMatches(r) || !validIntent(r))
+      return { error: 'unauthorized walking cancellation' };
+    return cancel(r);
+  }
   function submit(body: Record<string, unknown>): Record<string, unknown> {
     const r = parse(body, ports.now());
-    if (!r || !authorized(r)) return { error: "unauthorized walking leg" };
+    if (!r) return { error: 'unauthorized walking leg' };
+    if (body.cancel === true && r.activity === 'event' && r.key === 'halloween') return cancelHalloween(r);
+    if (!authorized(r)) return { error: "unauthorized walking leg" };
     if (body.cancel === true) return cancel(r);
     const failure = retainedFailure(r);
     if (failure) return failure;

@@ -1,4 +1,5 @@
 import {CoordinatorJsonlStore} from '../persistence/jsonl-store.ts';
+import * as eventPolicies from '../../../dashboard/lib/event-policy.ts';
 import * as rareHunting from "../navigation/rare-hunting.ts";
 import { createSharedConvoyNavigation, sharedCommand } from "../navigation/shared-navigation.ts";
 import type { SharedState } from "../navigation/shared-route-types.ts";
@@ -25,7 +26,7 @@ export function loadCoordinatorDependencies(require: NodeRequire) {
     selectedEvents,
     eventEnabled,
     supportedEvents,
-  }: typeof import("../../../dashboard/lib/event-policy.ts") = require("../../dashboard/lib/event-policy.cjs");
+  } = eventPolicies;
   const child_process: typeof import("node:child_process") = require("node:child_process");
   const account_info: (
     session: string | undefined,

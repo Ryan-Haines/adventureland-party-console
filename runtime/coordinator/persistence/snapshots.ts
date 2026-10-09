@@ -1,3 +1,4 @@
+import { activitySavedPreferences } from '../activity/preferences.ts';
 /** Persisted v1 keys are API contracts: keep them stable across coordinator builds. */
 export const stateKeys = {
   bank: "party_dashboard_bank_state_v1",
@@ -35,6 +36,9 @@ export const selectionFields = [
 ] as const;
 
 export const settingsFields = [
+  'activityPlan',
+  'combatStrategies',
+  "itemSwaps",
   "dailyDungeons",
   "merchantRules", "production", "upgradeOfferingRules", "upgradePreviewResults",
   "bankboiPrefix", "anniversaryAutoChat",
@@ -86,6 +90,7 @@ export const settingsFields = [
   "eventsByCharacter",
   "eventSelectionsByCharacter",
   "eventSessions",
+  "halloweenAttendance",
   "eventReturn",
   "deferredEventReturns",
   "abtestingStrategy",
@@ -101,8 +106,10 @@ export const settingsFields = [
   "townCycle",
   "returnProgress",
   "restockPolicies",
+  "autoConsumables",
   "merchantCharacter",
   "merchantForceStand",
+  "merchantEventCombatEnabled",
   "merchantStandLocation",
   "merchantWeapon",
   "luckyUpgradeSlots",
@@ -144,6 +151,7 @@ type SettingsInput = Record<(typeof settingsFields)[number], unknown> & {
 export function settingsSnapshot<T extends SettingsInput>(state: T) {
   return {
     ...selectSnapshot(state, settingsFields),
+    ...activitySavedPreferences(state),
     aldataMarketListings: state.aldata.marketListings,
     aldataMarketBuyOrders: state.aldata.marketBuyOrders,
     aldataTrades: state.aldata.trades,

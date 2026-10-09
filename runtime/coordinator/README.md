@@ -9,6 +9,16 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Combat/farming strategies and Halloween attendance are configurable per character.
+The durable Solo Farming + Events plan owns roster preparation, event attendance,
+receipt-confirmed cleanup and the saved farming return. See
+[Combat and event automation](../../docs/combat-event-automation.md),
+[Inventory swaps](../../docs/inventory-swaps.md), and
+[Solo Farming + Events](../../docs/solo-farming-events.md).
+Character, coordinator and dashboard assets require full activation by the user;
+PR preparation performs TypeScript checks only.
+
+
 Merchant settings stores one Main-map stand location for parking, Town-return
 checks and marketplace fallbacks. A fresh settings store chooses integer X/Y
 coordinates independently within -100..100, rejects native collision geometry

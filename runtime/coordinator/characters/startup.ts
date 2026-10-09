@@ -15,6 +15,7 @@ interface StartupState {
   steamSwitch: RosterOwnership["handoff"];
 }
 interface StartupPorts<Block> {
+  activityOwned?: () => boolean;
   events: Parameters<typeof installCoordinatorShutdownSignals>[0];
   shutdown: (reason: string) => Promise<unknown>;
   watch: (name: string, worker: Block) => void;
@@ -55,7 +56,7 @@ export function startCoordinatorCharacters<Block extends Worker>(
     persist: ports.persist,
   });
   slots.prepare();
-  ports.later(() => slots.restore(), 4000);
+  ports.later(() => { if (!ports.activityOwned?.()) slots.restore(); }, 4000);
   if (ports.watchCode)
     ports.watchGenerations(
       coordinatorGenerationPorts(workers, {
