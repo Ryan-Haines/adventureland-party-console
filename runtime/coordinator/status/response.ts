@@ -31,6 +31,7 @@ const retainedCommands = new Set([
   "merchant-join-giveaway",
   "merchant-stand-buy",
   "merchant-ponty-buy",
+  "merchant-ponty-shop",
   "merchant-aldata-buy",
   "merchant-aldata-sell",
   "merchant-aldata-auth",
@@ -180,6 +181,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
         convoySignal: ports.convoySignal(name),
         combatRecovery: state.combatRecovery,
         combatResetByCharacter: state.combatResetByCharacter,
+        combatStrategies: state.combatStrategies,
         travelCombat: travelCombatFor(state as TravelState, name),
       };
     const names = ports.activeNames();
@@ -189,6 +191,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
     return {
       ...Object.fromEntries(heartbeatStateFields.map((field) => [field, state[field]])),
       serverNow: ports.now(),
+      autoConsumable: state.autoConsumables?.[name] || null,
       travelCombat,
       ...realmErrors(name),
       command,

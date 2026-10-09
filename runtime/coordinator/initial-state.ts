@@ -21,6 +21,9 @@ import { initialALDataState } from "./commerce/initial-aldata.ts";
 import type { SavedServiceSettings } from "./persistence/settings-contracts.ts";
 import type { loadCoordinatorBankVaults } from "./infrastructure/game-data.ts";
 import type { ResourceBlock } from "./merchant/queue.ts";
+import { restoreCharacterStrategies } from '../combat/strategies.ts';
+import { validItemSwapMap, type ItemSwaps } from '../item-swaps.ts';
+import { restoreActivityPlan } from '../activity-plan.ts';
 
 type Settings = Record<string, unknown> &
   SavedServiceSettings &
@@ -96,6 +99,10 @@ export function createInitialCoordinatorState<Merchant extends string | null = s
     characterLocations: persistedSettings.characterLocations || {},
     navigationIntents: persistedSettings.navigationIntents || {},
     restockPolicies: persistedSettings.restockPolicies || {},
+    combatStrategies: restoreCharacterStrategies(persistedSettings.combatStrategies),
+    itemSwaps: validItemSwapMap(persistedSettings.itemSwaps) ? persistedSettings.itemSwaps : {} satisfies ItemSwaps,
+    autoConsumables: persistedSettings.autoConsumables || {},
+    activityPlan: restoreActivityPlan(persistedSettings.activityPlan),
     ...initialMerchantRuntime<Merchant>(persistedSettings, ports.merchantDefault),
     ...initialCoordinatorHistory(persistedHistory, persistedSettings),
     ...initialMarketObservations(),

@@ -4,6 +4,8 @@ import { migrateRoutinePriorities } from '../merchant/routines.ts';
 import {validHuntSettings} from "../hunt/settings.ts";
 import { stateKeys } from "./snapshots.ts";
 import { validStandLocation } from '../merchant/stand-location.ts';
+import { validCharacterStrategies } from '../../combat/strategies.ts';
+import { validItemSwapMap } from '../../item-swaps.ts';
 
 type ObjectValue = Record<string, unknown>;
 const object = (value: unknown): value is ObjectValue =>
@@ -37,6 +39,9 @@ function validProfile(value: unknown): boolean {
 
 // Deliberately excludes jobs, credentials, runtime ownership and navigation checkpoints.
 export const validators: Record<string, (value: unknown) => boolean> = {
+  combatStrategies: validCharacterStrategies,
+  itemSwaps: validItemSwapMap,
+  autoConsumables: mapOf(text),
   farmingProfiles: mapOf(validProfile),
   marked: mapOf(listOf(mark)),
   merchantMarked: mapOf(listOf(mark)),
@@ -65,6 +70,8 @@ export const validators: Record<string, (value: unknown) => boolean> = {
   phoenixRouteOrder: listOf(text),
   merchantRoutinePriorities: mapOf(number),
   merchantAutomations: mapOf(boolean),
+  pontyShoppingList: listOf(text),
+  pontyShopLastRunAt: (value: unknown) => value === null || (number(value) && Number(value) >= 0),
   npcSaleMarks: listOf((value) => object(value) && item(value.item) && text(value.id)),
   deconstructionMarks: listOf((value) => object(value) && item(value.item) && text(value.id) && text(value.owner) && text(value.origin) && number(value.quantity)),
   autoDeconstruction: mapOf(mapOf((value) => object(value) && item(value.item))),
@@ -89,6 +96,9 @@ export const validators: Record<string, (value: unknown) => boolean> = {
   gatheringNoTool: mapOf(boolean),
 };
 const perCharacter = new Set([
+  'combatStrategies',
+  'itemSwaps',
+  'autoConsumables',
   'farmingProfiles',
   "marked",
   "merchantMarked",

@@ -1,3 +1,5 @@
+import { realmSwitchInProgress, type RealmOperation } from '../characters/realm-switch.ts';
+
 interface Worker {
   realm?: string;
 }
@@ -13,6 +15,7 @@ interface HomeState {
   statuses: Record<string, { server?: string } | undefined>;
   commands: Record<string, unknown>;
   merchantCurrent?: Sale | null;
+  realmSwitch?: Pick<RealmOperation, 'phase'> | null;
 }
 interface HomePorts<T extends Worker> {
   now(): number;
@@ -29,6 +32,7 @@ export function merchantRoutineNeedsHome(reason: string): boolean {
     "ALData marketplace sales",
     "join giveaway",
     "Ponty purchases",
+    "ponty shop",
     "stand maintenance",
   ].includes(reason);
 }
@@ -39,6 +43,7 @@ export function createMerchantHomeRecovery<T extends Worker>(
   ports: HomePorts<T>,
 ) {
   function ensureHome(reason: string): boolean {
+    if (realmSwitchInProgress(state.realmSwitch)) return false;
     const merchant = state.merchantCharacter,
       status = state.statuses[String(merchant)];
     if (!merchant || !status) return false;
@@ -64,6 +69,7 @@ export function createMerchantHomeRecovery<T extends Worker>(
 
   /** Never retry an ambiguous WTB sale: the server may already have fulfilled it. */
   function recoverStalledSale(): boolean {
+    if (realmSwitchInProgress(state.realmSwitch)) return false;
     const job = state.merchantCurrent;
     const merchant = state.merchantCharacter;
     if (

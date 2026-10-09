@@ -15,6 +15,8 @@ interface SavedListing extends Partial<StandMark> {
   queuedAt?: number;
 }
 interface SavedMerchantSettings {
+  pontyShoppingList?: string[];
+  pontyShopLastRunAt?: number | null;
   upgradePreviewResults?: Record<string, import("./upgrade-preview.ts").StoredUpgradePreview>;
   giveawayAttempts?: Record<string, number>;
   deconstructionMarks?: DeconstructionMark[];
@@ -62,6 +64,7 @@ export function defaultMerchantRoutinePriorities(): Record<string, number> {
     "merchant commerce": 65,
     "merchant donation": 60,
     "join giveaway": 55,
+    "ponty shop": 30,
     "stand search": 50,
     "stand maintenance": 40,
     fishing: 20,
@@ -88,12 +91,15 @@ export function defaultMerchantAutomations(): Record<string, boolean> {
     "automatic exchange": true,
     "stand bid purchases": true,
     "join giveaway": true,
+    "ponty shop": true,
   };
 }
 
 /** Fill legacy listing metadata while retaining saved automation overrides, including false and zero. */
 export function initialMerchantSales(settings: SavedMerchantSettings, now: () => number) {
   return {
+    pontyShoppingList: [...new Set(settings.pontyShoppingList || [])],
+    pontyShopLastRunAt: settings.pontyShopLastRunAt ?? null,
     upgradePreviewResults: settings.upgradePreviewResults || {},
     giveawayAttempts: settings.giveawayAttempts || {},
     standListings: (settings.standListings || []).map((entry, index) => ({
@@ -105,8 +111,10 @@ export function initialMerchantSales(settings: SavedMerchantSettings, now: () =>
     deconstructionMarks: settings.deconstructionMarks || [],
     autoDeconstruction: settings.autoDeconstruction || {},
     deconstructionCatalog: {} as DeconstructionCatalog,
-    npcSaleMarks: Array.isArray(settings.npcSaleMarks) ? settings.npcSaleMarks : [],
-    autoNpcSales: settings.autoNpcSales || {},
+    npcSaleMarks: Array.isArray(settings.npcSaleMarks) ? settings.npcSaleMarks.map(mark =>
+      mark.auto ? { ...mark, autoRuleKey: String(mark.item.name) } : mark) : [],
+    autoNpcSales: Object.fromEntries(Object.values(settings.autoNpcSales || {}).map(rule =>
+      [String(rule.item.name), { item: { name: rule.item.name }, createdAt: rule.createdAt }])),
     autoStandMarks: settings.autoStandMarks || {},
     merchantRoutinePriorities: {
       ...defaultMerchantRoutinePriorities(),

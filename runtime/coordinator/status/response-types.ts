@@ -26,6 +26,8 @@ export interface EntityReference {
 }
 
 export const heartbeatStateFields = [
+  'combatStrategies',
+  'itemSwaps',
   "combatRecovery",
   "combatResetByCharacter",
   "threshold",
@@ -52,6 +54,7 @@ export const heartbeatStateFields = [
 ] as const;
 
 export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[number], unknown> {
+  autoConsumables?: import('../../consumables.ts').AutoConsumables;
   dailyDungeons?: import("../../dungeons/contracts.ts").DungeonState;
   passiveHunting: import('../navigation/passive-settings.ts').PassiveSettings;
   eventSessions?: import('../merchant/event-control.ts').MerchantEventState['eventSessions'];

@@ -2,6 +2,7 @@ import type { MerchantWork } from "../merchant/work.ts";
 
 /** These values are owned by other services; the overview only projects them. */
 export const publicStateFields = [
+  'combatStrategies',
   "characterAppearances",
   "gameVersion", "clientUpdate", "merchantRules",
   "bankboiPrefix", "anniversaryAutoChat",
@@ -25,6 +26,7 @@ export const publicStateFields = [
   "autoStandMarks",
   "merchantRoutinePriorities",
   "merchantAutomations",
+  "pontyShoppingList", "pontyShopLastRunAt",
   "merchantBlacklist",
   "standBids",
   "nativeStand",

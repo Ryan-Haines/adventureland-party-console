@@ -35,6 +35,10 @@ export const selectionFields = [
 ] as const;
 
 export const settingsFields = [
+  'activityPlan',
+  'itemSwaps',
+  'autoConsumables',
+  'combatStrategies',
   "dailyDungeons",
   "merchantRules", "production", "upgradeOfferingRules", "upgradePreviewResults",
   "bankboiPrefix", "anniversaryAutoChat",
@@ -66,6 +70,7 @@ export const settingsFields = [
   "autoStandMarks",
   "merchantRoutinePriorities",
   "giveawayAttempts",
+  "pontyShoppingList", "pontyShopLastRunAt",
   "merchantAutomations",
   "standBids",
   "nativeStand",

@@ -1,4 +1,6 @@
 import { createDungeons } from './dungeons/service.ts';
+import { createCombatStrategiesRoute } from './http/combat-strategies.ts';
+import { planOwns } from '../activity-plan.ts';
 import { dungeonOwns } from '../dungeons/contracts.ts';
 import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
 import { consoleMaintenance } from './lifecycle/console-maintenance.ts';
@@ -14,6 +16,7 @@ import { migrateSharedRules, installSharedRuleRoutes, sharedMember } from "./inv
 import { loadCoordinatorGeometry } from './navigation/planner-geometry.ts';
 import { initializeStandLocation, standLocationRoute } from './merchant/stand-location.ts';
 import { createRareRouteDistance } from './navigation/rare-route-distance.ts';
+import { createPontyShopping } from './merchant/ponty-shopping.ts';
 export function startCoordinatorApplication(
   platform: CoordinatorApplicationPlatform,
 ): Promise<void> {
@@ -302,10 +305,16 @@ export function startCoordinatorApplication(
       closeStorage: () => { movementPlanner.dispose(); localStorage.close(); },
       exit: () => process.exit(),
     });
+    const pontyShopping = createPontyShopping(party, {
+      now: () => Date.now(), nextCommand: () => party.nextCommandId++, stamp: stampMerchantJob,
+      persist: persistSettings, dispatch: dispatchMerchant, log: merchantLog,
+      ensureHome: ensureMerchantHome,
+    });
     const { dispatcher: merchantDispatcher, idle: merchantIdle } =
       coordinatorPolicies.createCoordinatorMerchantServices(party, {
         now: () => Date.now(),
         headless: () => !party.steamMembers.includes(String(party.merchantCharacter)),
+        started: job => pontyShopping.started(job),
         travel: async (realm) => {
           const merchant = String(party.merchantCharacter);
           if (!my_acc.resolve_realm(realm)) throw new Error("Unknown merchant destination realm");
@@ -954,7 +963,24 @@ export function startCoordinatorApplication(
       persist: persistBankState,
     });
     const inventoryReservations = coordinatorPolicies.createInventoryReservations(party);
+    // Equivalent to the activity control's membership/phase projection. Paused
+    // solo farming releases inventory; non-solo event phases keep ownership.
+    function activityOwnsInventory(name: string): boolean {
+      return planOwns(party.activityPlan, name) && party.activityPlan?.run?.phase !== 'solo';
+    }
+    function inventoryCleanoutPlan(name: string) {
+      return coordinatorPolicies.inventoryCleanoutPlan(party, name, {
+        now: Date.now,
+        destination: name => farmingNavigation.waypoint(name),
+        blocked: name => activityOwnsInventory(name) || !!consoleUpdate.current() || dungeonOwns(party, name) ||
+          rareControl.owns() || party.merchantCurrent?.target === name &&
+            activeNames().includes(String(party.merchantCharacter)) ||
+          !!farmingScopes.effective(name).activeConvoy?.participants.includes(name),
+      });
+    }
     const bankQueueService = coordinatorPolicies.createBankQueue(party, {
+      allowed: name => !activityOwnsInventory(name),
+      cleanout: inventoryCleanoutPlan,
       now: () => Date.now(),
       nextCommand: () => party.nextCommandId++,
     });
@@ -1005,7 +1031,11 @@ export function startCoordinatorApplication(
         events: report => (soloFor(report.name)?.eventObservations || eventObservations).observe(report),
         publish: scheduleALDataPublish,
         convoyStep: stepAllConvoys,
-        merchantScheduling: merchantScheduling.observe,
+        merchantScheduling: (report, hadPrevious) => {
+          merchantScheduling.observe(report, hadPrevious);
+          if (hadPrevious && inventoryCleanoutPlan(report.name))
+            bankQueueService.queue([report.name], 'inventory-cleanout');
+        },
         response: (name, mode) => {
           dungeons.reconcile();
           const maintenance = consoleUpdate.current();
@@ -1056,6 +1086,7 @@ export function startCoordinatorApplication(
       stamp: stampMerchantJob,
     });
     setInterval(() => merchantSettingsRoutes.bankSort.reconcile(), 1000);
+    setInterval(() => { if (!consoleUpdate.current()) pontyShopping.tick(); }, 1000);
     const { maps: mapStreams, combat: combatLogRoutes, prepareVersion } =
       coordinatorPolicies.createCoordinatorTelemetry(__dirname, version, party.combatLogs, {
         owned: ownedCharacter,
@@ -1554,6 +1585,7 @@ export function startCoordinatorApplication(
     function dispatchMerchant() {
       if (consoleUpdate.current()) return;
       merchantRecovery.expire(String(party.merchantCharacter));
+      pontyShopping.schedule();
       if (coordinatorPolicies.pruneIneligibleCollections(party, () => Date.now())) persistSettings();
       merchantDispatcher.dispatch();
     }
@@ -2187,7 +2219,9 @@ export function startCoordinatorApplication(
               json: (options) => express.json(options),
               text: (options) => express.text(options),
               maps: (router) => {
+                router.post('/party-api/combat-strategies', createCombatStrategiesRoute(party, { owned: ownedCharacter, persist: persistSettings }));
                 dungeons.install(router);
+                pontyShopping.install(router);
                 upgradePreviews.install(router);
                 router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
                   [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete')));

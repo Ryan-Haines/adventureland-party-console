@@ -9,6 +9,13 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+See [Merchant and inventory automation](../../docs/merchant-inventory-automation.md)
+and [Ponty shopping](../../docs/ponty-shopping.md) for shopping, sale-policy, native
+handoff and opt-in full-inventory cleanout behavior. Cleanout uses phase-based
+activity ownership: paused solo farming releases inventory; non-solo phases retain
+it. PR preparation performs TypeScript checks only; activation remains user-owned.
+
+
 Merchant settings stores one Main-map stand location for parking, Town-return
 checks and marketplace fallbacks. A fresh settings store chooses integer X/Y
 coordinates independently within -100..100, rejects native collision geometry
