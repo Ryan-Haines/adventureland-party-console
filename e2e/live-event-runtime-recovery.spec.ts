@@ -156,7 +156,7 @@ test('native event selection replaces a failed old entry without waiting on anot
     },{timeout:180000,intervals:[500,1000],message:'Each genuinely selected boss must receive native fighter damage after CODE replacement and restart'}).toBe(true);
   } finally {
     await info.attach('native-different-event-turnover',{body:JSON.stringify({seeds,before,samples}),contentType:'application/json'});
-    await live.post('/formation',{character:W,eventSelections:[]});await live.post('/formation',{character:P,eventSelections:[]});
+    await live.post('/formation',{character:W,eventSelections:[]});
     await live.admin(`output=(()=>{for(const [type,seed]of Object.entries(${JSON.stringify(seeds)})){
       const m=Object.values(instances).flatMap(i=>Object.values(i.monsters||{})).find(m=>String(m.id)===String(seed.id)&&m.type===type);if(m)remove_monster(m,{silent:true});delete E[type];}broadcast_e();return true;})()`);
   }
