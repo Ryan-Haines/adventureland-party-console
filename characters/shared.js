@@ -376,12 +376,40 @@
   var convoyTraveling = null;
   var convoySignal = null;
   var convoyRuntimeId = Date.now() + "-" + Math.random().toString(36).slice(2);
+  var partyMetrics = root.installPartyMetrics({
+    now: function () { return Date.now() + coordinatorClockOffset; },
+    current: runtimeCurrent,
+    connected: function () { return !!character && (!parent.socket || parent.socket.connected !== false); },
+    name: function () { return character.name; },
+    own: ownActor,
+    ownedCharacter: function (name) {
+      var player = get_player(name);
+      return name === character.name ||
+        !!player && player.owner === character.owner ||
+        partyPositions.some(function (member) { return member.name === name; });
+    },
+    context: function () { return {
+      server: String(parent.server_region || '') + String(parent.server_identifier || '') || 'unknown',
+      map: character.map, instance: String(character.in || character.map), party: currentPartyList()
+    }; },
+    sample: function () {
+      var encouragementLuck = root.partyMetricsEncouragementLuck(character.encouragement, character.s);
+      return {
+        gold: Number(character.gold) || 0, luck: Number(character.luckm) || 1,
+        encouragementLuck: encouragementLuck === null ? undefined : encouragementLuck,
+        ping: typeof character.ping === 'number' && isFinite(character.ping) && character.ping >= 0 ? character.ping : null,
+        level: Number(character.level) || 1, xp: Number(character.xp) || 0, maxXp: Number(character.max_xp) || 0
+      };
+    },
+    storage: root.localStorage,
+    send: function (body) { return request('/metrics', { method: 'POST', body: body, timeout: 5000 }); }
+  });
   var dashboardSampler = root.createPartyDashboardSampler && root.createPartyDashboardSampler({
     now: function () { return Date.now() + coordinatorClockOffset; }, current: runtimeCurrent,
     name: function () { return character.name; }, runtime: function () { return convoyRuntimeId; },
     sample: function () {
       return { vitals: { hp: character.hp, mp: character.mp, max_hp: character.max_hp,
-        max_mp: character.max_mp, x: character.real_x === undefined ? character.x : character.real_x,
+        max_mp: character.max_mp, cc: Math.ceil(Number(character.cc) || 0), x: character.real_x === undefined ? character.x : character.real_x,
         y: character.real_y === undefined ? character.y : character.real_y, map: character.map,
         in: character.in, xp: character.xp || 0, max_xp: character.max_xp || 0, gold: character.gold,
         rip: !!character.rip, target: character.target || null, standOpen: !!character.stand, conditions: activeConditions(),
@@ -862,6 +890,7 @@
     }
   }
   var combatHitListener = function (data) {
+    if (data) partyMetrics.hit(data, get_entity(data.id) || groupedCombat && groupedCombat.target && groupedCombat.target.id === String(data.id) && groupedCombat.target);
     escapeObserveHit(data);
     defendPartyHit(data);
     if(data && (data.kill || data.dead) && root.partyLootClient && currentPartyList().indexOf(String(data.hid||data.actor||''))>=0) {
@@ -968,6 +997,7 @@
   };
   var combatKillCreditListener = function (data) {
     if (!data || !data.mtype) return;
+    partyMetrics.credit(data);
     observeFightPacket("kill_credit",data);
     var now = Date.now();
     recentOwnKills = recentOwnKills.filter(function (kill) { return now - kill.at < 3000; });
@@ -1021,6 +1051,7 @@
   };
   var dungeonOpenedChests = root.__partyDungeonOpenedChests = root.__partyDungeonOpenedChests || {run:null, ids:{}};
   var combatLootListener = function (data) {
+    if (data && Array.isArray(data.items)) partyMetrics.loot(data);
     if (data && data.cave && character.cave) {
       if (dungeonOpenedChests.run !== character.cave.run) dungeonOpenedChests = root.__partyDungeonOpenedChests = {run:character.cave.run, ids:{}};
       dungeonOpenedChests.ids[data.id] = true;
@@ -1038,6 +1069,7 @@
   };
   var combatResponseListener = function (data) {
     if (!data || data.failed) return;
+    partyMetrics.goldMovement(data);
     var skill = data.place === "skill" ? (data.skill || data.name) : data.place;
     if (skill && skill !== "attack" && G.skills && G.skills[skill]) {
       queueCombatEvent("skill", "Used " + (G.skills[skill].name || skill), { skill: skill }, "skill:" + skill);
@@ -2587,6 +2619,7 @@
       max_hp: character.max_hp,
       mp: character.mp,
       max_mp: character.max_mp,
+      cc: Math.ceil(Number(character.cc) || 0),
       gold: character.gold,
       gameParty: currentPartyList(),
       standOpen: !!character.stand,
@@ -2895,11 +2928,15 @@
     if (committedHuntEncounter(target) || typeof huntTravelDefense === "function" && huntTravelDefense() && !(rule && rule.enabled && rule.keepMoving)) return false;
     var key = passingKey(target), now = Date.now() + coordinatorClockOffset;
     if (target.dead || target.hp === 0) return false;
+    // Ordinary farming has no passing reservation. Do not scan its growing
+    // death history on every target, skill and movement eligibility check.
+    var reserved = !!(passingEncounters[key] && now - passingEncounters[key].at < 60000) ||
+      peerPassingEncounters.some(function(e){return passingKey(e)===key && now-e.at<60000;}) ||
+      !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
+    if (!reserved) return false;
     var passingDeaths = (typeof fightDeaths !== 'undefined' ? fightDeaths : []).concat(groupedCombat && groupedCombat.deaths || []);
     if (passingDeaths.some(function(d){return passingKey(d)===key && now-d.at<60000;})) return false;
-    if (peerPassingEncounters.some(function(e){return passingKey(e)===key && now-e.at<60000;})) return true;
-    return !!(passingEncounters[key] && now - passingEncounters[key].at < 60000) ||
-      !!(groupedCombat && (groupedCombat.passingEncounters || []).some(function(e) {return passingKey(e) === key && now-e.at<60000;}));
+    return true;
   }
   function passingTravelAllowed() {
     if (character.c && character.c.town || typeof movement !== 'undefined' && movement.transition && movement.transition()) return false;
@@ -13314,12 +13351,13 @@
 
   function departureTargetEngaged(target) {
     if(!target || !target.visible || target.dead || target.hp === 0 || root.partyRoleRunner && root.partyRoleRunner.isKnownDead(target.id))return false;
+    // Check ownership before scanning retained deaths for neutral farm monsters.
+    var defense=typeof huntTravelDefense==='function' && huntTravelDefense() && (convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);});
+    if(!defense && !isAttackingPartyMember(target))return false;
     var deaths = typeof groupedCombat !== 'undefined' && groupedCombat && groupedCombat.deaths || [];
     if(deaths.some(function(d){return String(d.id)===String(target.id) && d.map===character.map &&
       String(d.in==null?d.map:d.in)===String(character.in==null?character.map:character.in) && d.server===reunionRealm();}))return false;
-    if(typeof huntTravelDefense==='function' && huntTravelDefense() && (convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return true;
-    if(isAttackingPartyMember(target))return true;
-    return false;
+    return true;
   }
   function departureCombatPending() {
     return Object.values(parent.entities||{}).some(function(e){return e && e.type==='monster' && departureTargetEngaged(e);});

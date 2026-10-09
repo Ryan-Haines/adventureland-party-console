@@ -180,6 +180,7 @@ export type PartyState = {
   merchantCatalog?: MerchantCatalog;
   bank?: BankSnapshot | null;
   bankGold?: number | null;
+  accountGold?: { carried: number | null; total: number | null };
   bankVaults?: BankVault[];
   bankbois?: Bankboi[];
   bankboiQueue?: {
