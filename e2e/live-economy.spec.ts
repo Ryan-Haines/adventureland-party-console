@@ -14,6 +14,7 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
   const checkpoints:any[]=[];
   let held=false,release!:()=>void;
   const gate=new Promise<void>(resolve=>{release=resolve;});
+  try {
   await live.clients[merchant].page.route('**/party-api/merchant/checkpoint',async route=>{
     const body=route.request().postDataJSON(),response=await route.fetch();
     checkpoints.push(body.state);
@@ -35,6 +36,14 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
   expect(Math.max(...checkpoints.map(state=>Number(state.spent)||0))).toBeLessThanOrEqual(10000);
   expect(checkpoints.some(state=>state.spent>0&&/^scroll/.test(state.pendingPurchase?.name||''))).toBe(true);
   await info.attach('capped-native-upgrade-restart',{body:JSON.stringify({order,before,after:await live.state(),checkpoints,events:await live.clients[merchant].events()}),contentType:'application/json'});
+  } finally {
+    // A failed assertion must not leave a real checkpoint response held while
+    // the fixture disposes its browser/request context. Suppress route errors
+    // only during teardown, after ordinary assertions and response handling.
+    release();
+    if(!live.clients[merchant].page.isClosed())
+      await live.clients[merchant].page.unrouteAll({behavior:'ignoreErrors'});
+  }
 });
 
 test('merchant stand location is valid at first setup and stays saved through restart', async ({ live, page }, info) => {

@@ -19,18 +19,22 @@ test('merchant grade estimates match the native grace reference in dashboard and
   // server/overall grace, and the existing deterministic seed (not this estimator).
   test.setTimeout(90_000);
   const initial=await app.state(),original=initial.merchantCatalog,observed:any[]=[];
+  await page.goto('/');
+  const merchant=page.locator('article').filter({has:page.getByRole('heading',{name:'M',exact:true})});
+  await expect(merchant.getByRole('button',{name:'Buy',exact:true})).toBeVisible();
   for(const reference of graceReference.results){
-    const choice={...reference.choice,name:'Native grace staff',seller:'basics',sprite:null};
+    const choice={...reference.choice,name:`Native grace staff (grade ${reference.grade})`,seller:'basics',sprite:null};
     await app.deliverStatus({...initial.characters.M,name:'M',ctype:'merchant',clientVersion:17175,merchantCatalog:{...original,buyable:[choice]}});
-    await page.goto('/');
-    await page.locator('article').filter({has:page.getByRole('heading',{name:'M',exact:true})}).getByRole('button',{name:'Buy',exact:true}).click();
+    await merchant.getByRole('button',{name:'Buy',exact:true}).click();
     const shopping=page.getByRole('dialog',{name:'Merchant shopping'});
+    await expect(shopping.getByText(choice.name,{exact:true})).toBeVisible();
     await shopping.getByRole('button',{name:'Add',exact:true}).click();
     await shopping.getByTitle('Desired upgrade level').fill(String(reference.target));
     await expect(shopping.getByText(`Gold (est): ${reference.result.budget.toLocaleString()}g`,{exact:true})).toBeVisible({timeout:30_000});
     await expect(shopping.getByText(new RegExp(`90% budget: ${reference.result.attempts} base items`))).toBeVisible();
     await info.attach(`native-grace-grade-${reference.grade}`,{body:await page.screenshot(),contentType:'image/png'});
     await shopping.getByRole('button',{name:'Buy all',exact:true}).click();
+    await expect(shopping).not.toBeVisible();
     await expect.poll(async()=>{
       const state=await app.state();return [state.merchantCurrent,...state.merchantQueue].some((job:any)=>job?.order?.buys.some((line:any)=>line.budget===reference.result.budget&&line.attempts===reference.result.attempts&&JSON.stringify(line.scrolls)===JSON.stringify(reference.result.scrolls)));
     }).toBe(true);
