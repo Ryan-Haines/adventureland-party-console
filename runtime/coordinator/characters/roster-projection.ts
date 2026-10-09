@@ -1,3 +1,5 @@
+import { characterHomeWorld } from './home-world.ts';
+
 export interface AccountCharacter {
   name: string;
   type?: string;
@@ -18,6 +20,7 @@ interface RosterStatus {
   ctype?: string;
 }
 interface RosterState {
+  characterHomeRealms?: Record<string, string>;
   bankbois: Record<string, unknown>;
   statuses: Record<string, RosterStatus | undefined>;
   headlessSlots: (string | null)[];
@@ -61,6 +64,7 @@ export function createRosterProjection(
         id: entry.id,
         online: !!entry.online,
         home: entry.home || null,
+        homeWorld: characterHomeWorld(state.characterHomeRealms?.[entry.name], entry.home, state.activeRealm),
         server: entry.server || null,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
