@@ -37,6 +37,7 @@ interface WalkState extends SharedState {
     pending?: string[];
     returnRoutes?: Record<string, { commandId?: number; revision: number }> | null;
   } | null;
+  deferredEventReturns?: Record<string, {cycleId: string; navigationRevision?: number}>;
 }
 function parse(body: Record<string, unknown>, now: number): WalkRequest | null {
   const p = readRoutePoint(body.destination);
@@ -76,6 +77,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     return !!ports.owned(r.name) && (r.name !== state.merchantCharacter || merchantWalk(r));
   }
   function workflowCurrent(r: WalkRequest): boolean {
+    if (!eventReturnAuthority(r)) return false;
     if (rareOwnsRecovery(r)) return false;
     const recoveryOwns = ["farm-recovery", "event", "anniversary-staging"].includes(r.activity) &&
       !!state.eventReturn?.participants.includes(r.name);
@@ -206,6 +208,14 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if (!ports.start(r.destination, r.activity + " walking leg", names, returning ? "shared-walk-return" : "shared-walk")) return;
     attach(waiting, returning);
     restoreTurnoverBudget(turnover);
+  }
+  function eventReturnAuthority(r: WalkRequest): boolean {
+    if (r.activity !== 'event-return') return true;
+    const current = state.eventReturn;
+    if (current?.cycleId === r.key && current.participants.includes(r.name) &&
+        (!current.pending || current.pending.includes(r.name))) return true;
+    const deferred = state.deferredEventReturns?.[r.name];
+    return deferred?.cycleId === r.key && deferred.navigationRevision === r.revision;
   }
   function turnoverBudget(r: WalkRequest): SharedConvoy | null {
     const c = state.activeConvoy;

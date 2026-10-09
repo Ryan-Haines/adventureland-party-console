@@ -91,6 +91,7 @@ test('anniversary staging leaves farming combat behind on its shared route to Ma
 });
 test('command-owned return legs restore exactly the suspended completion owner',()=>{
  const t=fixture();for(const n of ['L','F','P'])t.state.commands[n]={id:t.state.nextCommandId++,type:'event-return-town',cycleId:'event-1'};
+ t.state.eventReturn={cycleId:'event-1',participants:['L','F','P'],pending:['L','F','P']};
  const parents={...t.state.commands},b=n=>t.body(n,{activity:'event-return',key:'event-1',parentCommandId:parents[n].id});
  for(const n of ['L','F','P'])t.walks.submit(b(n));const c=t.state.activeConvoy;
  assert.equal(c.navigationExempt,true);assert.equal(c.purpose,'shared-walk-return');
@@ -203,7 +204,7 @@ for(const restarted of [false,true])test('Goobrawl return retires farming walk a
   t.state.activeConvoy=structuredClone(t.old);
   Object.assign(t.state.activeConvoy,{phase:'failed',restartRecovery:true,failureCode:'runtime-lost'});
   for(const name of ['L','F']){
-   t.state.deferredEventReturns[name]={cycleId:recovery.cycleId};
+   t.state.deferredEventReturns[name]={cycleId:recovery.cycleId,navigationRevision:t.state.navigationIntents[name].revision};
    t.state.commands[name]={id:200+name.charCodeAt(0),type:'party-monster-travel',convoyId:t.old.id};
   }
   recovery.pending=['P'];
@@ -349,6 +350,7 @@ test('independent merchant owns event walking and return convoys but cannot requ
  assert.equal(f.state.activeConvoy.leader,'M');
  f.convoys.cancel();
  assert.match(f.walks.submit(f.body('M',{token:'farm',activity:'farm-recovery'})).error,/unauthorized/);
+ f.state.eventReturn={cycleId:'cycle',participants:['M'],pending:['M']};
  const returned=f.walks.submit(f.body('M',{token:'return',activity:'event-return',key:'cycle'}));
  assert.equal(returned.error,undefined);assert.deepEqual(f.state.activeConvoy.participants,['M']);
  assert.equal(f.state.activeConvoy.purpose,'shared-walk-return');

@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Reject obsolete event-return walking requests after their cycle authority
+  ends, and retire an owned deferred exit even after another peer has already
+  transferred to the next event. Preserve newer commands and ordinary Town returns.
+
 - Release an owned failed event-entry route when a fresh participant selects a
   different live event, and keep event rendezvous from waiting on characters
   joining another event. Preserve same-event retry limits and newer commands.

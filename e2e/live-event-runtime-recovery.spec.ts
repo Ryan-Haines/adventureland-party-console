@@ -26,8 +26,17 @@ test.describe('retired event exit ownership',()=>{
       },{timeout:45_000}).toBe(true);
       seed=await live.admin(`output=(()=>{const original=G.monsters.mrpumpkin;try{
         G.monsters.mrpumpkin={...original,hp:10000000,attack:1,speed:0,charge:0,range:1,aggro:0,spawns:[]};
-        const m=new_monster('halloween',{type:'mrpumpkin',count:1,boundary:[-495,685,-495,685]},{temp:1});
-        E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:m.id,map:m.map,x:m.x,y:m.y};
+        // This case verifies retired exit ownership, not the separate long
+        // Halloween terrain leg. Use the native Mainland door arrival spawn and
+        // collision-validate the initial encounter before creating it.
+        const doorway=G.maps.main.doors.find(door=>door[4]==='halloween');
+        const portal=doorway&&G.maps.halloween.spawns[doorway[5]];
+        if(!portal)throw Error('Native Mainland-to-Halloween arrival spawn is unavailable');
+        const point=[[60,0],[-60,0],[0,60],[0,-60]].map(([dx,dy])=>({x:portal[0]+dx,y:portal[1]+dy})).find(point=>
+          ${JSON.stringify(fighters)}.every(name=>can_move({map:'halloween',x:portal[0],y:portal[1],going_x:point.x,going_y:point.y,base:get_player(name).base})));
+        if(!point)throw Error('No collision-safe native portal encounter seed');
+        const m=new_monster('halloween',{type:'mrpumpkin',count:1,boundary:[point.x,point.y,point.x,point.y]},{temp:1});
+        E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:m.id,map:m.map,x:m.x,y:m.y,portal,scope:'retired exit ownership; native door spawn with collision-safe initial encounter'};
       }finally{G.monsters.mrpumpkin=original;}})()`);
       retiredAt=Date.now();
       await live.restoreHistoricalSettings(settings=>{

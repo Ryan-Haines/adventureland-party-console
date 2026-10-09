@@ -71,6 +71,7 @@ export function createCoordinatorEventObservations(
       hasCommand: (name) => !!state.commands[name],
       retireDeferredWalk: (name, cycleId) => {
         const convoy = state.activeConvoy;
+        if (state.deferredEventReturns[name]?.cycleId !== cycleId) return;
         if (!convoy || !convoy.participants.includes(name) || !ownsDeferredWalk(convoy, cycleId)) return;
         ports.cancelConvoy();
       },
@@ -91,9 +92,15 @@ export function createCoordinatorEventObservations(
         convoy.walkingActivity !== "event-return" || !convoy.participants.length) return false;
     return convoy.participants.every(name => {
       const parent = convoy.walkingParents?.[name], deferred = state.deferredEventReturns[name];
-      return !!parent && !!deferred && deferred.cycleId === cycleId &&
-        parent.command?.cycleId === cycleId && parent.revision === deferred.navigationRevision &&
-        parent.revision === ports.navigation.intent(name).revision && ports.activeNames().includes(name);
+      return !!parent && parent.command?.cycleId === cycleId &&
+        (!deferred || deferred.cycleId === cycleId && parent.revision === deferred.navigationRevision) &&
+        parent.revision === ports.navigation.intent(name).revision && ports.activeNames().includes(name) &&
+        deferredCommandOwned(convoy, name, cycleId);
     });
+  }
+  function deferredCommandOwned(convoy: ReturnConvoy, name: string, cycleId: string): boolean {
+    const command = state.commands[name];
+    return !command || command.convoyId === convoy.id || command.cycleId === cycleId &&
+      ['event-return-town', 'event-resume-travel'].includes(String(command.type));
   }
 }
