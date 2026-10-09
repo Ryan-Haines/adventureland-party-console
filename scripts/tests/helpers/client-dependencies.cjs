@@ -38,7 +38,9 @@ exports.merchantGuards = (context, {stock = false, journal = false} = {}) => {
       removeItem: key => storage.delete(key),
     };
     context.luckyUpgradeService ??= null;
-    functions(context, ['productionJournalKey', 'saveProductionJournal', 'finishProductionJournal', 'recoverProductionJournal', 'recoverProductionJournalWork',
+    context.productionJournalLoaded ??= false;
+    context.productionJournal ??= null;
+    functions(context, ['productionJournalKey', 'readProductionJournal', 'writeProductionJournal', 'rememberCommerceProduction', 'rememberReviewedCommerce', 'saveProductionJournal', 'finishProductionJournal', 'recoverProductionJournal', 'recoverProductionJournalWork',
       'verifyProductionProtection', 'trackedProduction', 'trackedProductionWork']);
   }
   return context;

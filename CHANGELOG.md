@@ -11,6 +11,11 @@ from the commits merged into `main`.
 
 ### Added
 
+- Production recovery keeps current attempt journals in memory despite delayed
+  storage echoes and rejects another attempt's lucky-slot evidence. Explicit
+  operator review can resume a missing commerce item with an audited unknown
+  outcome while preserving paid spending, attempts and completed-result counts.
+
 - Event staging now prefers the native boss spawn before subordinate monster
   spawns, keeping Mr. Green attendance in Spookytown while prioritizing its adds
   during combat.

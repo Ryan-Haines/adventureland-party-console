@@ -198,7 +198,7 @@ for (const original of [{ id: 'mrgreen' }, { id: 'mrpumpkin' }]) {
       await expect.poll(async () => {
         const native = await world(live, encounter.id);
         return fighters.every(name => native.players[name] && native.players[name].map === encounter.map && Math.hypot(native.players[name].x - (encounter.x + 160), native.players[name].y - encounter.y) < 100);
-      }, { timeout: 180_000, message: 'Deselection must return both actual clients to their saved pre-event checkpoint' }).toBe(true);
+      }, { timeout: encounter.id === 'mrgreen' ? 240_000 : 180_000, message: 'Deselection must return both actual clients to their saved pre-event checkpoint' }).toBe(true);
       await info.attach('halloween-saved-checkpoint-return', { body: JSON.stringify({ native: await world(live, encounter.id), coordinator: await live.state() }), contentType: 'application/json' });
     });
   });

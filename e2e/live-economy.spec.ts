@@ -63,6 +63,60 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
   }
 });
 
+test('production journal storage echoes retain the current native attempt ownership',async({live},info)=>{
+  test.setTimeout(360_000);
+  await live.restoreHistoricalSettings(()=>({luckyUpgradeSlots:{[merchant]:30}}));
+  await catalog(live,'helmet');
+  const before=await economy(live);
+  await live.clients[merchant].run(`(()=>{
+    const key='party-production:'+character.name,set=Storage.prototype.setItem;
+    let older=null;globalThis.__e2eProductionEchoes=0;
+    Storage.prototype.setItem=function(k,value){
+      set.call(this,k,value);
+      if(k!==key)return;
+      const current=JSON.parse(value);
+      if(!older&&current.phase==='complete')older=JSON.stringify({...current,phase:'running'});
+      else if(older&&current.id!==JSON.parse(older).id){
+        set.call(this,k,older);globalThis.__e2eProductionEchoes++;
+      }
+    };return true;
+  })()`);
+  const order=await live.post('/merchant/order',{buys:[{id:'helmet',quantity:2,level:3}],crafts:[]});
+  await expect.poll(async()=>{
+    const state=await live.state();
+    return ![state.merchantCurrent,...state.merchantQueue].some((job:any)=>job?.commerceOrderId===order.jobId);
+  },{timeout:240_000}).toBe(true);
+  expect(await live.clients[merchant].run('globalThis.__e2eProductionEchoes')).toBeGreaterThan(0);
+  const after=await economy(live);
+  const results=(value:Economy)=>value.characters[merchant].items.filter(item=>item?.name==='helmet'&&item.level===3).length;
+  expect(results(after)-results(before)).toBe(2);
+  const pending=await live.post('/merchant/production',{character:merchant,action:'pending'});
+  expect(pending.pending).toEqual([]);
+  await restartAndObserve(live);
+  expect(results(await economy(live))).toBe(results(after));
+  await record(live,info,'production-storage-echo-ownership',before,{order,after,pending,echoes:await live.clients[merchant].run('globalThis.__e2eProductionEchoes')});
+});
+
+test('operator unknown receipt review resumes a missing commerce cycle without resetting spend',async({live},info)=>{
+  test.setTimeout(240_000);
+  await catalog(live,'helmet');
+  const id='reviewed-missing-commerce-cycle',receipt='reviewed-missing-production';
+  const progress={phase:'leveling',buyIndex:0,attempts:1,spent:4200,completedResults:0,results:[],activeItem:{name:'helmet',level:0},activeSlot:10,cycleActive:true,batchItems:[],batchRemaining:0,sequence:2,pendingUpgrade:{level:1}};
+  // Declared interrupted-state input: an admitted attempt's item has no native
+  // inventory survivor. No successful/destroyed receipt is fabricated.
+  await live.restoreHistoricalSettings(()=>({production:{attempts:{[receipt]:{name:'helmet',level:1,kind:'upgrade',rules:[],journal:{id:receipt,item:{name:'helmet',level:0},slots:[10],phase:'running',request:{character:merchant,id:receipt,kind:'upgrade',item:{name:'helmet',level:0}},commerce:{key:'party-commerce:'+id,sequence:2,state:progress}}}}},merchantQueue:[{id,target:merchant,reason:'merchant commerce',queuedAt:Date.now(),commerceOrderId:id,commerceProgressVersion:2,order:{buys:[{id:'helmet',quantity:1,level:1,attempts:20,budget:100000}],crafts:[]},resumeState:progress}]}));
+  await live.post('/merchant/production',{character:merchant,action:'resolve-unknown',resumeMissing:true,id:receipt,kind:'upgrade',item:{name:'helmet',level:0},reason:'E2E operator reviewed native inventory; interrupted item missing; preserve spending and resume remaining allowance'});
+  await expect.poll(async()=>{
+    const state=await live.state();
+    return ![state.merchantCurrent,...state.merchantQueue].some((job:any)=>job?.commerceOrderId===id);
+  },{timeout:180_000}).toBe(true);
+  expect((await live.clients[merchant].snapshot()).items.some((item:any)=>item?.name==='helmet'&&item.level===1)).toBe(true);
+  const inspection=await live.post('/merchant/production',{character:merchant,action:'inspect',id:receipt,kind:'upgrade',item:{name:'helmet',level:0}});
+  expect(inspection.attempt.resolution.outcome).toBe('unknown');
+  expect(inspection.attempt.success).toBeUndefined();
+  await info.attach('reviewed-unknown-native-continuation',{body:JSON.stringify({progress,inspection,state:await live.state(),events:await live.clients[merchant].events()}),contentType:'application/json'});
+});
+
 test('merchant stand location is valid at first setup and stays saved through restart', async ({ live, page }, info) => {
   test.setTimeout(240_000);
   // Failure modes: a shared constant survives first setup; a wall point is saved;

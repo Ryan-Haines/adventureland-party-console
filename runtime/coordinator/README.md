@@ -1095,6 +1095,14 @@ identity fields with `action: "resolve-unknown"` and a nonempty `reason`. This
 retains a timestamped unknown-outcome receipt, does not consume quotas, and prevents
 replay or late completion from changing the resolution. Automatic recovery never
 uses this operator action. Merchant retries retain their reported deferral cause.
+After explicitly reviewing a missing commerce item, an operator may additionally
+send `resumeMissing: true`. The matched queued order receives a durable
+`reviewedMissing` disposition and advances its progress sequence, retaining paid
+spending, attempt allowance and result counts. Client continuation checks for
+possible inventory survivors and reports the operator review rather than a burn.
+Without this explicit flag, an unknown resolution never authorizes another item
+cycle. Production and lucky checkpoints use activation-scoped journal ownership;
+delayed storage echoes cannot attach a previous attempt's layout to current work.
 Stand open/closed observations travel in both the dashboard snapshot and fast
 telemetry; absent observations display as unknown. Validate production reconciliation,
 production journal, offering recovery, merchant recovery, dashboard live and stand

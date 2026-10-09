@@ -40,6 +40,8 @@ runtime and parent/navigation ownership may retire that obsolete failed convoy.
 Ordinary same-episode geometric failures and exhausted retries stay bounded.
 # Native Halloween threshold observer corrections
 
+Frozen native Mr. Green staging/restart/death/reentry passed, but its Main evacuation and Spookytown saved-point return exhausted180 seconds while both actors were genuinely walking at(465,1018)/(481,1019), about330 units from saved(796,994.5). Native movement showed zero/153ms without progress and a next waypoint(767,1045), confirming active walking rather than a stall. Give Mr. Green's existing actual saved-point return observation240 seconds; keep checkpoint coordinates, native arrival tolerance and all runtime deadlines unchanged. Other boss return budgets remain unchanged.
+
 Production staging priority regression: adding Green Jr to the eligible event target list made the generic destination search choose its earlier Halloween map entry before the actual Mr. Green boss entry in Spookytown. Verified native G15555: Green Jr boundary[-720,-820,-418,-203], Mr. Green boundary[524,860,748,1129]. Destination lookup must search exact boss entries across all maps first, then retain the existing broader-type fallback. This preserves add combat priority without staging at an add's unrelated spawn. The existing native-catalog staging scenario verifies real boss-area walking before combat.
 
 The Slenderman case's overall observation ceiling is600 seconds so its separately bounded180-second reacquisition,240-second actual kill and saved-return phases can finish after the measured116-second native chase. This changes fixture observation budgets only; no runtime deadline, monster HP, damage, reflection, movement or native outcome is altered.
