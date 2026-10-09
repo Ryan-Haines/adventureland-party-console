@@ -22,9 +22,13 @@ test.describe('native Hunt lifecycle', () => {
   });
 
   test.describe('native Boo Boo walking-return cache',()=>{
-  test.use({initialEventSpawn:'booboo'});
+  test.use({initialMonsterSpawn:'booboo'});
   test('native Boo Boo walking return reuses its validated route after a communication hold', async ({ live }, info) => {
     test.setTimeout(900_000);
+    const initialClearance=await live.admin(`output=${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return {name,map:p.map,x:p.x,y:p.y,base:p.base,
+      selfClear:can_move({map:p.map,x:p.x,y:p.y,going_x:p.x,going_y:p.y,base:p.base})};})`);
+    expect(initialClearance.every((p:any)=>p.selfClear)).toBe(true);
+    await info.attach('native-booboo-initial-clearance',{body:JSON.stringify(initialClearance),contentType:'application/json'});
     await party(live);
     await quests(live,info,{[W]:{id:'booboo',count:1},[P]:{id:'booboo',count:1}});
     const before=await world(live),destination=await start(live,W,'booboo');
