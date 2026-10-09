@@ -102,6 +102,7 @@ export const settingsFields = [
   "returnProgress",
   "restockPolicies",
   "merchantCharacter",
+  "merchantRealmRequests",
   "merchantForceStand",
   "merchantStandLocation",
   "merchantWeapon",

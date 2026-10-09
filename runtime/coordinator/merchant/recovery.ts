@@ -176,7 +176,7 @@ export function createMerchantRecovery(state: RecoveryState, ports: RecoveryPort
     const job = state.current;
     // A timer can recover offline workers. Marketplace sales retain their
     // existing no-replay recovery because completion may be ambiguous.
-    if (!job || job.reason === 'ALData marketplace sales') return;
+    if (!job || job.reason === 'ALData marketplace sales' || job.phase === 'switching party realm') return;
     if (ports.now() - Number(job.heartbeatAt || job.startedAt || 0) <= 180_000) return;
     requeue(name, ['phase', 'startedAt', 'checkpointAt', 'heartbeatAt', 'progressAt', 'handoff'],
       'Merchant stopped reporting; retry scheduled for ');

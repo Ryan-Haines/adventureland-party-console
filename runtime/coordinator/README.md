@@ -9,6 +9,77 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Halloween respawn walking may replace a failed event convoy only when a fresh
+alive report proves a death after its preparation and still matches its event,
+runtime, realm, navigation revision and parent scope. Matching pre-death release
+commands and session requests retire; newer owners and exhausted/same-episode
+route failures retain their holds. Event convoy identity includes walkingEvent
+for durable event binding. Validate both native Green/Pumpkin death-reentry E2Es.
+Town-recovery's Ice Skates equipment check subtracts only active native War Cry's
+verified speed definition; evidence retains the actual speed and active buff.
+Publish character/coordinator assets through the supported full restart.
+
+Merchant shopping uses one shared asynchronous estimator in
+`runtime/upgrade-estimate.ts`. A deterministically ordered cart/request shares
+60 million native random-roll simulations across at most 3,000 runs per line.
+Incomplete runs are discarded; fewer than 30 completed runs makes a line
+unavailable. Cooperative yields keep heartbeats responsive. Stale browser
+edits cancel queued or active estimates; only completed batches are cached.
+Personal grace uses the native grade modifiers +1/−1/−2. Unobservable server-wide
+and overall player grace remain omitted. Targets cannot exceed the item's
+highest contiguous attainable level, currently +12 for ordinary upgrades.
+
+An unavailable estimate requires explicit confirmation and a positive per-line
+gold cap. The coordinator recomputes the batch, validates consent/caps, and
+rechecks the merchant/catalog before queueing. The cap includes base-item and
+scroll purchases; durable checkpoints preserve accrued spending through
+restart. An unavailable estimate supplies no fabricated attempt count or
+replacement price. Validate the console/native journeys in `docs/testing.md`;
+publish character, coordinator and dashboard assets with the supported full
+restart.
+
+Halloween attendance prioritizes the native HP-threshold adds of Mr. Green and
+Mr. Pumpkin without changing passive-hunting settings. Boss sighting telemetry
+continues to describe the boss during add combat. Anniversary staging survives
+older slice handoffs and owns farm movement. Native transition connectors retry
+one-second stalls without renewing the twelve-second deadline; recovering Escape
+owns its throttled revival requests. Validate the threshold-add journeys and
+`live-hunt-round2-recovery.spec.ts`, retaining native packet/combat/reward artifacts.
+These changes require the supported full rebuild/restart and fresh character
+generations; a coordinator-only restart does not activate them.
+
+Lucky discovery skips positions with 100+ observations and at least 99.9%
+ordinary probability under the shared joint posterior. The dashboard shows
+Ruled out rows and count; eligibility is recomputed from persisted observations,
+never a sticky flag. Validate the lucky elimination console journey and retained
+lucky tracker/identity journeys. Character and dashboard assets require full restart.
+
+Bag-only merchant handoffs interleave with native combat without initiating farm
+reunion for a stationary fighter. Equipped upgrade marks retain combat waiting.
+Every item/gold send checks range below 400, living peers and call cost <=120;
+one thirty-second handoff budget bounds waiting. Inventory is resolved after waits
+and protection checks, and acknowledged sends alone populate partial receipts.
+Unsent marks stay pending. Partial emergency cleanout queues a durable retryAt
+ten seconds later; pickup merging and dispatcher eligibility retain the cooldown.
+Validate native mid-fight handoff and held call-cost timeout/retry E2Es, existing
+Hunt merchant interruption/death/restart and Tracktrix cleanout journeys. Publish
+character/coordinator assets with the supported full restart; building is not activation.
+
+Bank NPC-sale rules queue plain whole-stack withdrawals in batches of up to ten,
+then use the existing carried-inventory sale pipeline. Disabled sales, locked or
+reserved stock and ambiguous NPC/stand rules are excluded. Visit bank in the
+merchant destination dialog queues the existing deduplicated self-bank routine.
+Validate `live-bank-npc-sales.spec.ts` and the console bank-visit journey.
+
+Merchant realm requests are persisted independently of native home. Global realm
+switches supersede requests; fresh destination observations release ownership.
+Each home return attempt has a 60-second arrival window and requires a report
+no older than three seconds. Home returns stop after three attempts and keep affected jobs for explicit Retry;
+unrelated work remains eligible. Cross-realm party visits keep their own bounded
+transition timeout. Validate `live-merchant-realm-recovery.spec.ts` and existing
+home/merchant journeys. Coordinator/dashboard-only restart activates these
+changes; rebuilding alone does not reload the running coordinator.
+
 Walking returns can reuse a validated remaining route after a communication
 hold even when Town is disabled. Reuse checks realm, instance, runtime,
 navigation, destination and geometry, rejects forbidden shortcuts, and passes

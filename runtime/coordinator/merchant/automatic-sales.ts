@@ -94,10 +94,27 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
     return true;
   }
 
+  type BankEntry = InventoryEntry & SaleEntry & {craftLocation:string};
+  function bankEntry(entry: (InventoryEntry & {craftLocation:string}) | null): entry is BankEntry {
+    return !!entry?.item && !entry.item.l && Number.isSafeInteger(entry.slot);
+  }
+  function markBankNpc(entry: BankEntry): boolean {
+    const key = automaticCommerceRuleKey(entry.item);
+    if (!state.autoNpcSales[key] || state.autoStandMarks[key] || saleConflict(entry.item) ||
+        state.merchantAutomations?.['auto npc sales'] === false) return false;
+    const pending = ((state.withdrawals ||= {})[state.merchantCharacter!] ||= []);
+    pending.push({pack: entry.craftLocation, slot: entry.slot, item: entry.item});
+    return true;
+  }
   function markBankStock(): boolean {
     if (!bankStockReady()) return false;
-    let changed = false;
+    let changed = false, npcStacks = 0;
     for (const entry of availableBankStock()) {
+      if (!bankEntry(entry)) continue;
+      if (npcStacks < 10 && markBankNpc(entry)) {
+        npcStacks++; changed = true;
+        continue;
+      }
       if (!bankStandEntry(entry)) continue;
       const key = automaticCommerceRuleKey(entry.item);
       if (!markStandSale(entry, key, entry.craftLocation)) continue;

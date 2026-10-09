@@ -1,5 +1,17 @@
 # Testing
 
+Merchant upgrade estimates use the console scenarios matching
+`merchant estimates stay responsive|merchant grade estimates` and the native
+scenario `unavailable upgrade estimate enforces its gold cap`.
+The console declares gold-shop catalog metadata at its external game boundary;
+order validation, queueing and persistence use the real coordinator. Grade
+reference budgets in `e2e/upgrade-grace-reference.json` were calculated from the
+published native server grace expressions with unobservable server-wide and
+overall player grace set to zero. The source hash is retained with the values.
+The native journey keeps real item/scroll purchases and upgrades, holds one
+already persisted checkpoint response for restart, and checks the original
+gold cap still bounds accrued spending.
+
 CI merchant recovery timing evidence: the final two-item batch in native run
 37862993344 issued its order at 1791507816685 and recorded the second actual
 upgrade success at 1791508000619, 183.9 seconds later. Final coordinator evidence

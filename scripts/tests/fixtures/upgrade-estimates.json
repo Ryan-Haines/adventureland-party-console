@@ -7,7 +7,11 @@
     },
     "quantity": 1,
     "target": 0,
-    "result": null
+    "result": {
+      "attempts": 1,
+      "budget": 2000,
+      "scrolls": []
+    }
   },
   {
     "choice": {
@@ -18,10 +22,10 @@
     "quantity": 2,
     "target": 5,
     "result": {
-      "attempts": 9,
-      "budget": 58000,
+      "attempts": 10,
+      "budget": 57000,
       "scrolls": [
-        40,
+        37,
         0,
         0,
         0
@@ -43,12 +47,12 @@
     "quantity": 1,
     "target": 8,
     "result": {
-      "attempts": 433,
-      "budget": 147430000,
+      "attempts": 458,
+      "budget": 171197000,
       "scrolls": [
-        1284,
-        832,
-        70,
+        1361,
+        863,
+        84,
         0
       ]
     }

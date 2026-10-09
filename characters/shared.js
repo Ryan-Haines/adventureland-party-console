@@ -208,7 +208,13 @@
       if (["complete", "failed-hold", "recovery-convoy"].indexOf(state.stage) >= 0) return;
       if (state.stage === "recovering") {
         if(local.recoveryFailed)return;
-        if (character.rip) { await respawn(); return; }
+        if (character.rip) {
+          if (Date.now() - (local.lastRespawnAt || 0) >= 1000) {
+            local.lastRespawnAt = Date.now();
+            await respawn();
+          }
+          return;
+        }
         if (character.map === "main" && Math.hypot(character.x, character.y) <= 65) return;
         // Failed group rescue does not stop survivors: each still escapes.
         if (character.ctype === "mage" && !local.recoveryBlinked && escapeReady("blink")) {
@@ -4815,7 +4821,7 @@
       player = get_player(name);
       if (player && Math.hypot(Number(player.x) - Number(character.x),
           Number(player.y) - Number(character.y)) <= 300) return player;
-      if (player && !character.moving && !approachPending) {
+      if (player && !character.moving && !approachPending && !engagedMonster()) {
         approachPending = true;
         try {
           Promise.resolve(xmove(Number(player.x), Number(player.y))).catch(function () {}).finally(function () { approachPending = false; });
@@ -5098,10 +5104,14 @@
 
   async function withMerchantHandoffRecovery(command, action) {
     var revision = navigationIntent.revision;
-    try { return await afterCombat(action, "merchant handoff"); }
+    var needsUnequip = (command.upgrades || []).some(function (mark) {
+      return mark.equipped && typeof mark.slot === "string" && sameItem(character.slots[mark.slot], mark.item);
+    });
+    command.__handoffApproached = false;
+    try { return needsUnequip ? await afterCombat(action, "merchant handoff") : await action(); }
     finally {
       // A late handoff must never override a new manual move or cleared focus.
-      if (!command.convoyContinuation && runtimeCurrent() && lastCommand === command.id && navigationIntent.revision === revision &&
+      if ((needsUnequip || command.__handoffApproached) && !command.convoyContinuation && runtimeCurrent() && lastCommand === command.id && navigationIntent.revision === revision &&
           !navigationIntent.cancelled && partyLocation && character.ctype !== "merchant") {
         beginFarmReunion();
       }
@@ -5128,9 +5138,39 @@
     }
   }
 
+  // One bounded budget covers every bag transfer and gold; combat keeps the
+  // native call-cost headroom. Never move an engaged fighter toward collection.
+  async function waitForHandoffSendWindow(command, window) {
+    var waited = false;
+    while (Date.now() < window.deadline) {
+      var continuation = command.convoyContinuation;
+      if (!runtimeCurrent() || lastCommand !== command.id || navigationIntent.revision !== window.revision || reunionRealm() !== window.realm ||
+          character.rip || continuation && (navigationIntent.revision !== continuation.navigationRevision || Date.now() >= continuation.deadline)) {
+        window.reason = "handoff interrupted";
+        return { ready: false, waited: waited };
+      }
+      var player = get_player(command.merchant);
+      var sameLocation = player && !player.rip && (!player.map || player.map === character.map) &&
+        (player.in == null || String(player.in) === String(character.in));
+      var distance = sameLocation ? Math.hypot(Number(player.x) - Number(character.x), Number(player.y) - Number(character.y)) : Infinity;
+      var cost = Number(character.cc);
+      if (distance < 400 && Number.isFinite(cost) && cost <= 120) return { ready: true, waited: waited };
+      if (sameLocation && distance >= 400 && !character.moving && !window.approachPending && !engagedMonster()) {
+        window.approachPending = true;
+        command.__handoffApproached = true;
+        try {
+          Promise.resolve(xmove(Number(player.x), Number(player.y))).catch(function () {}).finally(function () { window.approachPending = false; });
+        } catch (_handoffApproachError) { window.approachPending = false; }
+      }
+      waited = true;
+      await sleep(250);
+    }
+    window.reason = "no safe send window within 30 seconds";
+    return { ready: false, waited: waited };
+  }
+
   async function merchantHandoff(command) {
-    var merchant = await waitForPlayer(command.merchant, 45000);
-    assertMerchantContinuation(command);
+    var window = { deadline: Date.now() + 30000, revision: navigationIntent.revision, realm: reunionRealm(), approachPending: false, reason: null };
     var sent = [], banked = [], kept = [], cleaned = [], reserved = [];
     for (var equippedIndex = 0; equippedIndex < (command.upgrades || []).length; equippedIndex += 1) {
       assertMerchantContinuation(command);
@@ -5210,56 +5250,78 @@
     var capacity = Math.max(0, Number(command.capacity) || 0);
     var cleanoutFreeSlots = freeInventorySlots();
     var cleanoutEmergency = cleanoutFreeSlots <= 3;
-    for (var i = 0; i < requests.length; i += 1) {
-      assertMerchantContinuation(command);
-      if (capacity <= 0) break;
-      // Once an emergency visit starts, use its available carrying capacity.
-      // Only the follow-up visit depends on the remaining free slots.
-      if (requests[i].kind === "cleanout" && !cleanoutEmergency) break;
-      var slot = Number.isInteger(requests[i].slot) && sameItem(character.items[requests[i].slot], requests[i].item)
-        ? requests[i].slot : findItem(requests[i].item);
-      if (slot < 0) continue;
-      if (requests[i].mark && requests[i].mark.automaticPickup) {
-        // Recheck ownership, enabled rules and craft/delivery reservations immediately before sending.
-        var pickupJob = await request("/merchant/job/" + command.jobId + "?target=" + encodeURIComponent(character.name));
-        var livePickups = pickupJob.collectionPickups && pickupJob.collectionPickups.keep || [];
-        var authorizedPickup = livePickups.find(function (mark) {
-          return mark.automaticPickup && mark.slot === requests[i].slot && sameItem(mark.item, requests[i].item);
-        });
-        slot = requests[i].slot;
-        if (!authorizedPickup || !Number.isInteger(slot) || !sameItem(character.items[slot], requests[i].item) ||
-            character.items[slot].l || character.items[slot].b) continue;
-        command.craftProtection = pickupJob.craftProtection;
-        var pickupStock = compoundAvailableStock(command)[slot];
-        if (!pickupStock) continue;
-        requests[i].quantity = Math.min(Number(authorizedPickup.quantity) || 1, itemQuantity(pickupStock.item));
+    try {
+      for (var i = 0; i < requests.length; i += 1) {
+        if (capacity <= 0) break;
+        // Once an emergency visit starts, use its available carrying capacity.
+        // Only the follow-up visit depends on the remaining free slots.
+        if (requests[i].kind === "cleanout" && !cleanoutEmergency) break;
+        if (!(await waitForHandoffSendWindow(command, window)).ready) break;
+        var slot = Number.isInteger(requests[i].slot) && sameItem(character.items[requests[i].slot], requests[i].item)
+          ? requests[i].slot : findItem(requests[i].item);
+        if (slot < 0) continue;
+        if (requests[i].mark && requests[i].mark.automaticPickup) {
+          // Recheck ownership, enabled rules and craft/delivery reservations immediately before sending.
+          var pickupJob = await request("/merchant/job/" + command.jobId + "?target=" + encodeURIComponent(character.name));
+          var livePickups = pickupJob.collectionPickups && pickupJob.collectionPickups.keep || [];
+          var authorizedPickup = livePickups.find(function (mark) {
+            return mark.automaticPickup && mark.slot === requests[i].slot && sameItem(mark.item, requests[i].item);
+          });
+          slot = requests[i].slot;
+          if (!authorizedPickup || !Number.isInteger(slot) || !sameItem(character.items[slot], requests[i].item) ||
+              character.items[slot].l || character.items[slot].b) continue;
+          command.craftProtection = pickupJob.craftProtection;
+          var pickupStock = compoundAvailableStock(command)[slot];
+          if (!pickupStock) continue;
+          requests[i].quantity = Math.min(Number(authorizedPickup.quantity) || 1, itemQuantity(pickupStock.item));
+        }
+        if (requests[i].mark && requests[i].mark.autoCompound) {
+          await refreshCompoundProtection(command);
+          if (!compoundAvailableStock(command)[slot]) continue;
+        }
+        // Authorization and protection reads can yield while combat/loot changes
+        // range, call cost or slots. Reauthorize on a newly opened send window.
+        var finalWindow = await waitForHandoffSendWindow(command, window);
+        if (!finalWindow.ready) break;
+        if (finalWindow.waited) { i -= 1; continue; }
+        slot = Number.isInteger(requests[i].slot) && sameItem(character.items[requests[i].slot], requests[i].item)
+          ? requests[i].slot : findItem(requests[i].item);
+        if (slot < 0) continue;
+        if (requests[i].mark && requests[i].mark.automaticPickup && slot !== requests[i].slot) { i -= 1; continue; }
+        if (requests[i].mark && (requests[i].mark.autoCompound || requests[i].mark.automaticPickup) && !compoundAvailableStock(command)[slot]) continue;
+        if (isPersonalTracker(character.items[slot]) || command.cleanout && cleanoutProtected(character.items[slot])) continue;
+        var sendQuantity = Math.min(Number(requests[i].quantity) || itemQuantity(character.items[slot]),
+          itemQuantity(character.items[slot]));
+        if (requests[i].mark && (requests[i].mark.deconstructionId || requests[i].mark.npcSaleId) && (character.items[slot].l || character.items[slot].b)) continue;
+        var clearsSlot = sendQuantity >= itemQuantity(character.items[slot]);
+        await send_item(command.merchant, slot, sendQuantity);
+        if (clearsSlot) cleanoutFreeSlots += 1;
+        sent.push(requests[i]);
+        capacity -= 1;
+        if (requests[i].kind === "bank") banked.push(requests[i].mark);
+        if (requests[i].kind === "keep") kept.push((requests[i].mark.deconstructionId || requests[i].mark.npcSaleId || requests[i].mark.automaticPickup) ? Object.assign({}, requests[i].mark, { quantity: sendQuantity }) : requests[i].mark);
+        if (requests[i].kind === "cleanout") cleaned.push(requests[i].mark);
       }
-      if (requests[i].mark && requests[i].mark.autoCompound) {
-        await refreshCompoundProtection(command);
-        if (!compoundAvailableStock(command)[slot]) continue;
-      }
-      if (isPersonalTracker(character.items[slot]) || command.cleanout && cleanoutProtected(character.items[slot])) continue;
-      var sendQuantity = Math.min(Number(requests[i].quantity) || itemQuantity(character.items[slot]),
-        itemQuantity(character.items[slot]));
-      if (requests[i].mark && (requests[i].mark.deconstructionId || requests[i].mark.npcSaleId) && (character.items[slot].l || character.items[slot].b)) continue;
-      var clearsSlot = sendQuantity >= itemQuantity(character.items[slot]);
-      await send_item(command.merchant, slot, sendQuantity);
-      if (clearsSlot) cleanoutFreeSlots += 1;
-      sent.push(requests[i]);
-      capacity -= 1;
-      if (requests[i].kind === "bank") banked.push(requests[i].mark);
-      if (requests[i].kind === "keep") kept.push((requests[i].mark.deconstructionId || requests[i].mark.npcSaleId || requests[i].mark.automaticPickup) ? Object.assign({}, requests[i].mark, { quantity: sendQuantity }) : requests[i].mark);
-      if (requests[i].kind === "cleanout") cleaned.push(requests[i].mark);
+    } catch (handoffError) {
+      // Confirmed earlier sends still belong in the receipt. Unacknowledged
+      // requests remain marked for native inventory reconciliation/retry.
+      window.reason = String(handoffError.reason || handoffError.message || handoffError);
     }
     // The threshold only decides when an automatic visit is queued. Once the
     // merchant is here—automatically or manually—the character hands over all
     // carried gold. Any requested walking balance is delivered after pickup.
-    var excess = Math.max(0, character.gold);
-    assertMerchantContinuation(command);
-    if (excess) await send_gold(command.merchant, excess);
+    var excess = 0;
+    if (character.gold > 0 && !window.reason && (await waitForHandoffSendWindow(command, window)).ready) {
+      var outgoingGold = Math.max(0, character.gold);
+      if (outgoingGold) {
+        try { await send_gold(command.merchant, outgoingGold); excess = outgoingGold; }
+        catch (goldError) { window.reason = String(goldError.reason || goldError.message || goldError); }
+      }
+    }
     await request("/merchant/handoff-complete", { method: "POST", body: {
       jobId: command.jobId, commandId: command.id, character: character.name, sent: sent, banked: banked, kept: kept, cleaned: cleaned,
-      cleanoutRemaining: !!command.cleanout && cleanoutFreeSlots <= 3 && sent.length < requests.length, gold: excess,
+      cleanoutRemaining: !!command.cleanout && freeInventorySlots() <= 3 && sent.length < requests.length, gold: excess,
+      partial: !!window.reason, reason: window.reason,
     }});
     game_log("Merchant handoff complete", "#51D2E1");
   }
@@ -6651,6 +6713,11 @@
 
   // One durable item cycle. Progress saves never imply permission to yield.
   async function merchantBuyUpgradeLine(command, purchase, buyIndex, services) {
+    if (purchase.estimateUnavailable) {
+      if (!Number.isSafeInteger(purchase.goldCap) || purchase.goldCap <= 0)
+        throw new Error("Unavailable upgrade estimate requires a positive gold cap");
+      purchase.budget = purchase.goldCap;
+    }
     var saved = command._commerceState || {}, target = Number(purchase.level), definition = G.items[purchase.id];
     var sameLine = saved.phase === "leveling" && Number(saved.buyIndex) === buyIndex;
     var progress = sameLine ? Object.assign({}, saved) : {
@@ -6771,13 +6838,17 @@
     while (progress.completedResults < purchase.quantity || progress.activeItem || progress.batchItems.length || progress.batchRemaining) {
       if (!progress.activeItem && !progress.batchItems.length && !progress.batchRemaining) {
         await save(true);
-        var limit = Number(purchase.attempts || purchase.maxAttempts) || 10000;
+        // An unknown estimate has no attempt prediction. Its actual remaining
+        // spending cap bounds base-item purchases, including after restart.
+        var limit = purchase.estimateUnavailable
+          ? progress.attempts + Math.floor(Math.max(0, purchase.goldCap - progress.spent) / Number(definition.g))
+          : Number(purchase.attempts || purchase.maxAttempts) || 10000;
         // Older checkpoints reserved one attempt before buying their active item.
         var legacyAllowance = progress.cycleActive ? 1 : 0;
         var count = Math.min(Math.max(1, Math.min(42, Math.floor(Number(command.buyUpgradeBatchSize) || 1))),
           limit - progress.attempts + legacyAllowance);
         if (count <= 0)
-          throw new Error("90% attempt allowance exhausted for " + purchase.id + " after spending " + progress.spent + " of " + purchase.budget + " gold");
+          throw new Error((purchase.estimateUnavailable ? "Gold cap" : "90% attempt allowance") + " exhausted for " + purchase.id + " after spending " + progress.spent + " of " + purchase.budget + " gold");
         var basicScroll = "scroll" + item_grade({name: purchase.id, level: 0}), basicSteps = 0;
         for (var level = 0; level < target; level += 1) {
           if ("scroll" + item_grade({name: purchase.id, level: level}) !== basicScroll) break;
@@ -7140,6 +7211,11 @@
       for (var buyIndex = resumeState.phase === "crafting" ? buys.length : resumeState.phase === "leveling" ? Number(resumeState.buyIndex) || 0 : 0;
            buyIndex < buys.length; buyIndex += 1) {
         var purchase = buys[buyIndex], definition = G.items[purchase.id] || {}, targetLevel = Number(purchase.level) || 0;
+        if (purchase.estimateUnavailable) {
+          if (!Number.isSafeInteger(purchase.goldCap) || purchase.goldCap <= 0)
+            throw new Error("Unavailable upgrade estimate requires a positive gold cap");
+          purchase.budget = purchase.goldCap;
+        }
         activePurchase = purchase;
         activeSpent = resumeState.phase === "leveling" && buyIndex === Number(resumeState.buyIndex)
           ? Number(resumeState.spent) || 0 : 0;
@@ -7177,7 +7253,7 @@
         while (completedResults < purchase.quantity) {
           attempts += 1;
           var attemptLimit = Number(purchase.attempts || purchase.maxAttempts) || 0;
-          if (!attemptLimit && attempts > 10000) throw new Error("Automated leveling safety limit reached for " + purchase.id);
+          if (!attemptLimit && !purchase.estimateUnavailable && attempts > 10000) throw new Error("Automated leveling safety limit reached for " + purchase.id);
           if (attemptLimit && attempts > attemptLimit)
             throw new Error("90% attempt allowance exhausted for " + purchase.id + " after spending " +
               activeSpent.toLocaleString() + " of " + Number(purchase.budget).toLocaleString() + " gold");
@@ -11090,6 +11166,7 @@
       }
       if (event.available === false) {
         anniversaryMerchantMode = "waiting-available";
+        anniversaryStaging = false;
         anniversaryStage = "waiting for " + event.target + " to become available";
         return;
       }
@@ -11358,6 +11435,18 @@
   }
 
   var anniversaryHandoffRetryAt = {};
+  function releaseAnniversaryHandoffStaging(round) {
+    var event = eventStatus() && eventStatus().anniversary;
+    if (event) {
+      if (event.live === false || String(round) !== anniversaryRoundId(event, character.s && character.s.anniversary_visit)) return;
+      var cycle = anniversaryPlan && anniversaryPlan.eventCycle;
+      var start = Number(cycle && cycle.startsAt) || anniversaryEpoch(event.expires) - 300000;
+      if ((event.target === character.name || anniversaryPlan && anniversaryPlan.partyFeatured) &&
+          start && Date.now() < start + 60000) return;
+    } else if (anniversaryRound && String(round) !== String(anniversaryRound)) return;
+    anniversaryStaging = false;
+  }
+
   async function runAnniversaryHandoff() {
     if (anniversaryBusy || character.rip || merchantForceStand || !anniversaryPlan) return;
     if (character.ctype !== "merchant" && eventsEnabled && (activeCombatEvent() || eventTraveling || eventReturnPending)) return;
@@ -11377,7 +11466,7 @@
       var handedOffRound = anniversaryPendingHandoff.round;
       if (anniversaryPendingHandoff.attempted) {
         anniversaryPendingHandoff = root.__anniversaryPendingHandoff = null;
-        anniversaryStaging = false;
+        releaseAnniversaryHandoffStaging(handedOffRound);
         if (!activeCombatEvent()) reportAnniversaryReturn(handedOffRound);
         return;
       }
@@ -11386,14 +11475,14 @@
       if (!merchant || merchant.map !== character.map ||
           Math.hypot(merchant.x - character.x, merchant.y - character.y) > 390) {
         anniversaryPendingHandoff = root.__anniversaryPendingHandoff = null;
-        anniversaryStaging = false;
+        releaseAnniversaryHandoffStaging(handedOffRound);
         if (!activeCombatEvent()) reportAnniversaryReturn(handedOffRound);
         return;
       }
       var slot = findInventoryItemByName(anniversaryPendingHandoff.slice);
       if (slot < 0) {
         anniversaryPendingHandoff = root.__anniversaryPendingHandoff = null;
-        anniversaryStaging = false;
+        releaseAnniversaryHandoffStaging(handedOffRound);
         if (!activeCombatEvent()) reportAnniversaryReturn(handedOffRound);
         return;
       }
@@ -11405,12 +11494,12 @@
           round: anniversaryPendingHandoff.round, slice: anniversaryPendingHandoff.slice } });
         anniversaryPendingHandoff = root.__anniversaryPendingHandoff = null;
         anniversaryStage = "slice delivered";
-        anniversaryStaging = false;
+        releaseAnniversaryHandoffStaging(handedOffRound);
         if (!activeCombatEvent()) reportAnniversaryReturn(handedOffRound);
       } catch (error) {
         anniversaryStage = "slice handoff attempted";
         anniversaryPendingHandoff = root.__anniversaryPendingHandoff = null;
-        anniversaryStaging = false;
+        releaseAnniversaryHandoffStaging(handedOffRound);
         if (!activeCombatEvent()) reportAnniversaryReturn(handedOffRound);
       } finally { anniversaryBusy = false; }
       return;
@@ -11630,6 +11719,11 @@
     // Goo Brawl starts with ordinary Brawl Goos and later spawns the Rainbow
     // Goo. Keep both eligible; nearestEventTarget applies its two-phase rule.
     if (eventName === "goobrawl") candidates = ["rgoo", "bgoo", "goo"].concat(candidates);
+    if (eventName === "mrgreen" || eventName === "mrpumpkin") {
+      (((G.monsters || {})[eventName] || {}).spawns || []).forEach(function (spawn) {
+        if (typeof spawn[0] === "string" && spawn[0].indexOf("hp:") === 0) candidates.push(spawn[1]);
+      });
+    }
     return candidates.filter(function (type, index, all) {
       return type && G.monsters && G.monsters[type] && all.indexOf(type) === index;
     });
@@ -11781,10 +11875,15 @@
   }
 
   function eventCombatSighting(target) {
-    if (!joinedEvent || eventTraveling || character.rip || character.transporting || !target ||
-        target.mtype !== joinedEvent || !is_in_range(target)) return null;
-    var visible = nearestEventTarget();
-    if (!visible || visible.id !== target.id) return null;
+    if (!joinedEvent || eventTraveling || character.rip || character.transporting) return null;
+    // Boss location ownership must not follow the temporary selected add.
+    if (!target || target.mtype !== joinedEvent) target = Object.values(parent.entities || {}).find(function (entry) {
+      return entry && entry.type === "monster" && entry.mtype === joinedEvent && entry.visible !== false &&
+        !entry.dead && entry.hp > 0 && (!entry.map || entry.map === character.map) &&
+        (entry.in == null || entry.in === character.in);
+    });
+    if (!target || target.visible === false || target.dead || target.hp <= 0 ||
+        !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
     return {id:String(target.id),mtype:target.mtype,map:character.map,
       in:String(character.in || character.map),x:target.x,y:target.y,
       observedAt:Date.now()+coordinatorClockOffset};
@@ -11814,6 +11913,25 @@
         (character.map === "goobrawl" ? ["rgoo","bgoo","goo"] : eventTargetTypes).indexOf(entity.mtype) >= 0;
     });
     var currentMapEvent = G.maps && G.maps[character.map] && G.maps[character.map].event;
+    if (joinedEvent === "mrgreen" || joinedEvent === "mrpumpkin") {
+      var boss = targets.find(function (entry) { return entry.mtype === joinedEvent; });
+      var sight = boss || freshPartyEventDestination(joinedEvent);
+      var adds = targets.filter(function (entry) {
+        return entry.mtype !== joinedEvent && !isExternallyClaimedMonster(entry) &&
+          (entry.master != null ? boss && String(entry.master) === String(boss.id) :
+            sight && Math.hypot(entry.x - sight.x, entry.y - sight.y) <= 400);
+      });
+      if (adds.length) {
+        var leaderReport = (partyPositions || []).find(function (member) {
+          return member.name === leader && member.server === reunionRealm() && member.map === character.map &&
+            member.in === character.in && Date.now() + coordinatorClockOffset - member.seenAt <= 3000;
+        });
+        var leaderAdd = leaderReport && leaderTarget && adds.find(function (entry) { return entry.id === leaderTarget.id; });
+        var retainedAdd = adds.find(function (entry) { return entry.id === combatTargetId; });
+        adds.sort(function (a,b) { return String(a.id).localeCompare(String(b.id)); });
+        return leaderAdd || retainedAdd || adds[0];
+      }
+    }
     var gooBrawl = joinedEvent === "goobrawl" || currentMapEvent === "goobrawl";
     if (gooBrawl) {
       // Farm whichever ordinary goo is nearest until Rainbow Goo appears.
@@ -14751,6 +14869,10 @@
     if(route)root.partyCombatPosition={at:Date.now(),mode:"recovery-cancelled",reason:reason,movementOwner:null};
   }
   function recoverFarmApproach(target) {
+    if (anniversaryStaging || anniversaryBusy) {
+      cancelFarmApproach("anniversary owns staging movement");
+      return !target;
+    }
     if (typeof groupedDefensiveTarget === "function" && groupedDefensiveTarget()) {
       cancelFarmApproach("defending visible party attackers");
       return false;
@@ -16298,6 +16420,7 @@
     isAttackingPartyMember: isAttackingPartyMember,
     allowsTarget: isAllowedTarget,
     getEventTarget: nearestEventTarget,
+    escapeOwnsRevival: function () { return escapeOwns() && escapeState.stage === "recovering"; },
     frankyCombatActive: frankyCombatActive,
     frankyMovementTick: frankyMovementTick,
     isAggressiveEventCombat: isAggressiveEventCombat,
