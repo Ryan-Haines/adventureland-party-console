@@ -5,6 +5,15 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Keep every requested character in party escape recovery when class metadata
+  arrives late or classes are duplicated. Use independent evacuation when the
+  skill sequence cannot cover everyone, and reconcile matching persisted death
+  recovery membership after coordinator restart without changing newer navigation.
+
+- Confirm every requested home realm against the refreshed native account roster
+  after temporary visitors stop, so completion and account-wide home projection
+  agree without extending the existing home confirmation budget.
+
 - Reject obsolete event-return walking requests after their cycle authority
   ends, and retire an owned deferred exit even after another peer has already
   transferred to the next event. Preserve newer commands and ordinary Town returns.

@@ -62,7 +62,11 @@ test('home realm change confirms every active character including merchant', asy
     const native = await live.admin(`output=Object.fromEntries(${JSON.stringify(names)}.map(name=>[name,get_player(name).p.home]))`);
     expect(native).toEqual(Object.fromEntries(names.map(name=>[name,'USI'])));
     expect(state.realmControl.homeCharacters.every((entry:any)=>entry.home==='SR_USI')).toBe(true);
-    await info.attach('native-account-home-realms', {body:JSON.stringify({native,state:state.realmControl}),contentType:'application/json'});
+    const database = await live.admin(`output=(async()=>{const homes={};for(const name of ${JSON.stringify(accountNames)}){
+      const record=await db.collection('character').findOne({'info.name':name});homes[name]=record.info.p.home;
+    }return homes;})()`);
+    expect(database).toEqual(Object.fromEntries(accountNames.map(name=>[name,'USI'])));
+    await info.attach('native-account-home-realms', {body:JSON.stringify({native,database,state:state.realmControl}),contentType:'application/json'});
   } catch (error) {
     const screenshot = await page.screenshot({timeout:10_000}).catch(()=>null);
     if (screenshot) await info.attach('home-realm-dashboard-failure', {body:screenshot,contentType:'image/png'}).catch(()=>{});

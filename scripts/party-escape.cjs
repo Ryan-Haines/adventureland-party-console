@@ -1,3 +1,13 @@
+function recoveryMembershipOwned(party, recovery, escape) {
+  return recovery && ['escaping', 'recovering'].includes(recovery.phase) &&
+    recovery.leader === party.leader && recovery.policy === party.farmingPolicy &&
+    recovery.focus === JSON.stringify(party.monsterFocus) &&
+    escape.participants.every(name => recovery.names.includes(name)) &&
+    recovery.names.every(name => {
+      const intent = party.navigationIntents?.[name];
+      return intent && !intent.cancelled && intent.revision === recovery.revisions[name];
+    });
+}
 module.exports = function createEscape(party, hooks) {
   const now = hooks.now || Date.now;
   const owns = name => !!(party.escape && party.escape.stage !== 'released' && party.escape.participants.includes(name));
@@ -14,11 +24,17 @@ module.exports = function createEscape(party, hooks) {
       const role = party.statuses[name]?.ctype;
       if (['warrior', 'mage', 'priest'].includes(role) && !roles[role]) roles[role] = name;
     }
-    party.escape = { id: 'escape-' + now(), roles, participants: Object.values(roles),
+    // Every requested member must evacuate, including members whose class has
+    // not arrived yet and additional characters sharing a skill leader's role.
+    // Roles select the coordinated skill sequence; they do not define recovery.
+    const participants = [...new Set(names)];
+    party.escape = { id: 'escape-' + now(), roles, participants,
       stage: 'blink', startedAt: now(), deadline: now() + 30000, progress: {}, error: null,
-      deaths: Object.fromEntries(Object.values(roles).map(name => [name, party.statuses[name]?.lastDeath])) };
+      deaths: Object.fromEntries(participants.map(name => [name, party.statuses[name]?.lastDeath])) };
     hooks.cancel();
     if (Object.keys(roles).length !== 3) fail('Missing warrior, mage, or priest');
+    else if (participants.length !== Object.keys(roles).length)
+      fail('Requested members need independent escape recovery');
     step(); hooks.persist(); return party.escape;
   }
   function release() {
@@ -70,6 +86,14 @@ module.exports = function createEscape(party, hooks) {
     if (e.stage === 'priest' && at(party.statuses[e.roles.priest], e.destination)) { e.stage = 'complete'; hooks.persist(); }
   }
   if (party.escape && !['released', 'complete', 'failed-hold'].includes(party.escape.stage)) {
+    const recovery = party.combatRecovery, e = party.escape;
+    // Repair only the still-owned death recovery after a restart. An unrelated
+    // manual escape or superseded navigation must not acquire extra members.
+    if (recoveryMembershipOwned(party, recovery, e)) {
+      e.participants = [...new Set(recovery.names)];
+      e.deaths ||= {};
+      for (const name of e.participants) if (!(name in e.deaths)) e.deaths[name] = party.statuses[name]?.lastDeath;
+    }
     party.escape.stage = 'blink'; fail('Coordinator restarted during escape');
   }
   return { start, release, step, owns, fail };

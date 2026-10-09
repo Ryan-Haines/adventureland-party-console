@@ -49,6 +49,7 @@ interface RealmPorts {
   characterHome(name: string): string | null;
   characterType?(name:string):string|null;
   connectionCount(): number;
+  refresh(): Promise<unknown>;
 }
 
 /** Coordinates one requested realm transition without changing worker restart ownership. */
@@ -240,9 +241,11 @@ export function createRealmSwitch(ports: RealmPorts) {
       : "Every active character arrived on " + ports.label(operation.realm);
     ports.persist();
     if (operation.setHome) {
+      const confirmationDeadline = ports.now() + 120_000;
       assignHomeExecutor(operation);
       await waitHome(operation, operation.participants);
       await offlineHomes(operation);
+      await confirmAccountHomes(operation, confirmationDeadline);
       operation.phase = "complete";
       operation.homeRealm = operation.realm;
       operation.completedAt = ports.now();
@@ -250,6 +253,16 @@ export function createRealmSwitch(ports: RealmPorts) {
       ports.persist();
     }
     ports.dispatchMerchant();
+  }
+  async function confirmAccountHomes(operation: RealmOperation, deadline: number): Promise<void> {
+    const names = operation.homeTargets || operation.participants;
+    do {
+      await ports.refresh();
+      if (names.every(name => 'SR_' + String(ports.characterHome(name) || '').replace(/^SR_/, '') === operation.realm)) return;
+      if (ports.now() >= deadline) break;
+      await ports.sleep(500);
+    } while (ports.now() < deadline);
+    throw new Error('Account roster did not confirm every persisted home realm before the confirmation deadline');
   }
 
   async function run(operation: RealmOperation): Promise<void> {

@@ -2,6 +2,47 @@ import {test,expect} from './live-fixtures';
 import {killNativeCharacter} from './hunt-interruption-helpers';
 import {W,P,M,world,beginAnniversary,endAnniversary} from './game/hunt-events';
 
+test.describe('native escape requested membership',()=>{
+  test.use({initialPosition:{map:'main',x:200,y:-120}});
+  for(const metadata of ['missing','duplicate'] as const)test(`native escape retains both members with ${metadata} role metadata`,async({live},info)=>{
+    test.setTimeout(120_000);
+    // Failure inventory is recorded before the implementation in
+    // docs/testing-escape-membership.md. Only coordinator metadata is faulted;
+    // the native classes, movement and server arrival remain genuine.
+    await live.post('/formation',{leader:W});
+    await live.post('/formation',{character:P,follow:true});
+    const context=live.clients[W].page.context();
+    await context.route('**/party-api/status',async route=>{
+      const body=route.request().postDataJSON();
+      if(body?.name===P){if(metadata==='missing')delete body.ctype;else body.ctype='warrior';}
+      await route.continue({postData:JSON.stringify(body)});
+    });
+    const positions:any[]=[];let admission:any;
+    try{
+      // Let the real coordinator observe the declared metadata before admission.
+      await expect.poll(async()=>{const s=(await live.state()).characters[P];return metadata==='missing'?!s?.ctype:s?.ctype==='warrior';},{timeout:15_000}).toBe(true);
+      admission=await live.post('/escape',{});
+      expect(admission.escape.participants).toEqual(expect.arrayContaining([W,P]));
+      if(metadata==='missing'){
+        const before=await live.state();
+        // Historical persisted omission, not a fabricated gameplay outcome:
+        // restore the old membership bug with unchanged native/navigation state.
+        await live.restoreHistoricalSettings(settings=>({
+          escape:{...settings.escape,participants:[W],stage:'recovering'},
+          combatRecovery:{id:'declared-historical-membership-death',names:[W,P],leader:W,
+            policy:settings.farmingPolicy,focus:JSON.stringify(before.monsterFocus),
+            revisions:Object.fromEntries([W,P].map(name=>[name,settings.navigationIntents[name].revision])),
+            phase:'recovering',at:Date.now(),deaths:[],reason:'Declared persisted omission'},
+        }));
+      }else await live.restartCoordinator();
+      await expect.poll(async()=>{const native=await world(live);positions.push({at:Date.now(),players:native.players});return [W,P].every(name=>{const p=native.players[name];return p&&!p.rip&&p.map==='main'&&Math.hypot(p.x,p.y)<=65;});},{timeout:60_000,intervals:[500]}).toBe(true);
+    }finally{
+      await info.attach('native-escape-requested-membership',{body:JSON.stringify({metadata,admission,positions,final:await live.state(),native:await world(live),events:{[W]:await live.clients[W].events(),[P]:await live.clients[P].events()}}),contentType:'application/json'});
+      await context.unrouteAll({behavior:'ignoreErrors'});
+    }
+  });
+});
+
 test.describe('native arrival connector recovery',()=>{
   test.use({initialPosition:{map:'main',x:200,y:-120}});
   for(const dropped of ['first','all'] as const)test(`native Town connector ${dropped} submission loss preserves arrival and deadline`,async({live},info)=>{

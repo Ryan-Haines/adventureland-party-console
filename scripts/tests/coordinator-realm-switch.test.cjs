@@ -11,7 +11,8 @@ function fixture() {
     clearCommand:name=>effects.push(['clear',name]),native:()=> 'S',steamMembers:()=>['S'],block:name=>blocks[name],
     stop:async block=>effects.push(['stop',block]),nextCommand:()=>++id,command:(...args)=>effects.push(['command',...args]),
     persist:()=>effects.push('persist'),status:name=>statuses[name],setActiveRealm:realm=>effects.push(['realm',realm]),
-    characterHome:()=>null,start:()=>true,connectionCount:()=>0,label:realm=>realm,leader:()=> 'P',dispatchMerchant:()=>effects.push('dispatch')};
+    characterHome:name=>operation.characters.find(entry=>entry.name===name&&entry.homeConfirmed)?operation.realm.replace(/^SR_/,''):null,
+    refresh:async()=>{},start:()=>true,connectionCount:()=>0,label:realm=>realm,leader:()=> 'P',dispatchMerchant:()=>effects.push('dispatch')};
   return {operation,ports,effects,statuses,blocks,service:createRealmSwitch(ports)};
 }
 

@@ -56,6 +56,12 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Escape skill leaders are separate from requested evacuation membership. Missing
+or duplicate class metadata uses independent native evacuation for every member.
+Restart reconciliation expands an active escape only for the matching current
+death recovery and unchanged navigation revisions. Validate the native requested
+membership cases; supported CoordinatorOnly restart activates this backend fix.
+
 Heartbeat eventReturnCycleId explicitly fences running character exit continuations
 against completed or replaced recoveries. Authorizing a new event transfers a
 matching-revision deferred checkpoint into its event snapshot and retires only
