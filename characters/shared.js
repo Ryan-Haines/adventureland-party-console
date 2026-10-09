@@ -13767,7 +13767,10 @@
     if (huntTravel && farmApproach.failed[target.id]>Date.now()) return reject("failed approach cooldown");
     if (typeof passiveRareCandidate === "function" && passiveRareCandidate(target)) return true;
     if (isAttackingPartyMember(target)) return true;
-    if(typeof root!=='undefined' && root.__partyFarmingEngagement && root.__partyFarmingEngagement.target.id===target.id) return true;
+    if(typeof root!=='undefined' && root.__partyFarmingEngagement && root.__partyFarmingEngagement.target.id===target.id) {
+      if (!inFarmArea(target, partyLocation)) return reject("farming engagement left selected area");
+      return true;
+    }
     // Farm boundaries govern new pulls. The exact unfinished target must stay
     // eligible after it wanders out, or the lock and selector deadlock.
     if (typeof unfinishedFight === "function" && unfinishedFight() &&
@@ -13990,7 +13993,8 @@
           (!entity.map || entity.map === character.map) &&
           (entity.in === undefined || entity.in === character.in) &&
           (allTypes || monsterFocus.indexOf(entity.mtype) >= 0) &&
-          isAllowedTarget(entity, farmTravel ? command : undefined) && (farmTravel ? Math.hypot(entity.x-character.x,entity.y-character.y)<=monsterSearchRadius : inFarmArea(entity, waypoint));
+          isAllowedTarget(entity, farmTravel ? command : undefined) && inFarmArea(entity, waypoint) &&
+          (!farmTravel || Math.hypot(entity.x-character.x,entity.y-character.y)<=monsterSearchRadius);
       });
     candidates.sort(function (a, b) {
       return monsterPriority(b) - monsterPriority(a) ||
@@ -14364,12 +14368,18 @@
     if(first.town || first.transport || first.method === "leave" || first.map!==origin.map || !can_move_to(first.x,first.y))return null;
     return {destination:segment.location,plot:segment.plot,source:"itinerary"};
   }
+  function convoyHandoffReachable(target, command) {
+    // Farming keeps smart-route ownership until the leader can attack now.
+    // A walkable future approach does not establish group combat clearance.
+    if (command && ['', 'party-travel', 'farm-relocation', 'manual-monster-override'].indexOf(command.purpose || '') >= 0)
+      return !!(target && !target.dead && target.hp !== 0 && typeof is_in_range === "function" && is_in_range(target));
+    return eventCombatReachable(target);
+  }
   function sharedConvoyEngagement(convoy,command,ownsConvoy,phase) {
     if(command.purpose === "monster-hunt" || command.combatHandoffAllowed===false || convoy.handoffPending || Date.now()<(convoy.handoffRetryAt||0))return;
     if(typeof farmingTravelTarget!=="function" || !command.huntTarget && typeof groupedFollower==="function" && groupedFollower())return;
     var target=farmingTravelTarget(command);
-    var approach=target && typeof combatApproachPoint==="function"?combatApproachPoint(target):target;
-    if(!target || !(typeof is_in_range==="function" && is_in_range(target) || approach && can_move_to(approach.x,approach.y)))return;
+    if(!convoyHandoffReachable(target,command))return;
     convoy.handoffPending=true;
     if (command.huntTarget) huntAcquisitionLog(command,target,"requesting handoff",null,"request");
     request("/convoy-engage",{method:"POST",body:Object.assign(sharedConvoyIdentity(command),{
@@ -14572,11 +14582,7 @@
               // obstacle-aware smart route to direct combat movement until the
               // character can actually walk a straight segment into attack
               // position (or is already in range).
-              var attackPoint = target && typeof combatApproachPoint === "function"
-                ? combatApproachPoint(target) : target;
-              var directEngagement = target &&
-                (typeof is_in_range === "function" && is_in_range(target) ||
-                 typeof can_move_to !== "function" || attackPoint && can_move_to(attackPoint.x, attackPoint.y));
+              var directEngagement = convoyHandoffReachable(target,command);
               if (target && directEngagement) {
                 convoy.handoffPending = true;
                 if (command.huntTarget) huntAcquisitionLog(command,target,"requesting handoff",null,"request");

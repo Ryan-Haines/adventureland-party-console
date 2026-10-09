@@ -25,7 +25,8 @@ export function engageFarming(state: SharedState, body: Record<string, unknown>,
 function leaderTarget(state: SharedState, c: SharedConvoy, body: Record<string, unknown>,
   target: NonNullable<SharedConvoy['farmingEngagement']>['target'], options: Options, now: number): boolean {
   const lead = state.statuses[c.leader];
-  return body.character === c.leader && !!lead && validTarget(target, lead, options, now);
+  return body.character === c.leader && !!lead &&
+    contains(c.location, target, 0, options.radius) && validTarget(target, lead, options, now);
 }
 function arrivedForCombat(state: SharedState, c: SharedConvoy,
   target: NonNullable<SharedConvoy['farmingEngagement']>['target'], radius: number, now: number): boolean {

@@ -5,6 +5,12 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Keep farming navigation until the leader is actually in native attack range,
+  rather than yielding across terrain to a merely visible monster. Both travel
+  handoff paths enforce the selected farm boundary, and fresh observations
+  retire farming targets that leave it while preserving defense against party
+  attackers. This prevents stale encounters from holding relocation indefinitely.
+
 - Fence retired Anniversary item-response callbacks before reading native
   character getters during Steam CODE replacement, preventing detached-frame
   errors while preserving native socket handlers and the active game window.
