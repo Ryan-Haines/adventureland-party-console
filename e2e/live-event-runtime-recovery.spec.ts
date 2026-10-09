@@ -41,13 +41,17 @@ test.describe('retired event exit ownership',()=>{
         s.characters[name]?.dashboardRuntime===started.characters[name].dashboardRuntime &&
         s.characters[name]?.eventRecovery?.cycleId!==oldCycle && !s.characters[name]?.farmingNavigationDebug?.departurePending);
       },{timeout:15_000}).toBe(true);
+      if(deferred){const resumed=await live.state();for(const name of fighters){
+        expect(resumed.deferredEventReturns[name]).toBeUndefined();
+        expect(resumed.farmingProfiles[W].eventSessions[name].waypoints[name].location).toEqual({map:'uhills',x:-550,y:-160});
+      }}
       await expect.poll(async()=>{const events=await live.clients[W].events();return fighters.every(name=>events.some((e:any)=>
         e.event==='hit'&&String(e.data?.id)===String(seed.id)&&e.data?.hid===name&&e.at>retiredAt));
       },{timeout:180_000}).toBe(true);
     }finally{
       await info.attach('native-retired-event-exit',{body:JSON.stringify({oldCycle,deferred,started,retiredAt,seed,final:await live.state().catch(error=>({error:String(error)})),events:await live.clients[W].events()}),contentType:'application/json'});
       await live.post('/formation',{character:W,eventSelections:[]});
-      if(seed)await live.admin(`output=(()=>{const m=get_monster(${JSON.stringify(seed.id)});if(m&&m.type==='mrpumpkin')remove_monster(m,{silent:true});delete E.mrpumpkin;broadcast_e();return true;})()`);
+      if(seed)await live.admin(`output=(()=>{const m=Object.values(instances).flatMap(i=>Object.values(i.monsters||{})).find(m=>String(m.id)===${JSON.stringify(String(seed.id))}&&m.type==='mrpumpkin');if(m)remove_monster(m,{silent:true});delete E.mrpumpkin;broadcast_e();return true;})()`);
     }
   });
 });
