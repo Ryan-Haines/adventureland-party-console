@@ -106,3 +106,27 @@ Fixture boundaries must also clear only prior fixture-owned encounters between
 cases, and derive Slender's initial bounded HP from fighters actually permitted
 to damage its reflection; a blocked magical priest cannot contribute expected
 DPS. Native damage, kills and movement remain untouched after declaration.
+# CI staging restart failure inventory
+
+Tiny P projectile failure inventory: native server attack initiation teleports an escapist monster before a projectile resolves unless a live field generator is within 300 units of its actual current position. A field deployed near its previous position does not suffice. Class, actor, weapon, skin and skill projectile overrides must follow native precedence; actual melee attacks remain eligible outside a field. Dead, invisible or foreign-map fields must not grant permission. CI's existing native Tiny P case recorded a magiport and avoided zero-damage priest attack outside the deployed field before this fix; positive damage, native kill and native loot assertions remain unchanged.
+
+CI roaming-boss reentry failure inventory: a living Mr. Pumpkin can move away from its initial server coordinates while another character respawns. A returning character must use fresh actual party boss evidence; stale, cross-realm, wrong-event, dead-reporter or mismatched map/instance evidence must not replace its destination. Staging still targets the announced spawn. The existing native Mr. Pumpkin death/reentry scenario failed in CI with the priest fighting 1,500 units away from the original destination before this change.
+
+- A coordinator restart can leave persisted attendance without a fresh character report for more than ten seconds; that gap must not begin recovery before the captured spawn deadline.
+- The persisted allowance must end at its original spawn plus 120 seconds, without renewal by repeated announcements.
+- Character deselection still cancels attendance; a session that has actually observed the boss live must use live-event completion rather than the old staging allowance.
+- The existing native Mr. Green restart scenario failed in CI before the announced spawn and provides the pre-change behavioral regression.
+
+The focused restart rerun passed Mr. Green with 35 verified evidence files.
+The subsequent Mr. Pumpkin and Slenderman rerun passed both cases in 10.3
+minutes with 64 verified evidence files. It requires actual native death and
+reentry damage for Pumpkin, and warp reacquisition, native kill, saved-point
+arrival and retired recovery for Slenderman. Artifacts are retained under
+`.build/halloween-ci-stage-restart-{results,report}` and
+`.build/halloween-ci-reentry-{results,report}`.
+
+The missed-spawn and TinyP rerun passed both existing native cases in 5.2
+minutes with 63 verified evidence files, retained under
+`.build/halloween-absent-tinyp-{results,report}`. TinyP still requires actual
+field deployment, positive party damage, native kill and loot; the missed-spawn
+case still requires immutable expiry, saved-point arrival and no reopening.

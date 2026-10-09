@@ -1,5 +1,25 @@
 # Testing
 
+CI merchant recovery timing evidence: the final two-item batch in native run
+37862993344 issued its order at 1791507816685 and recorded the second actual
+upgrade success at 1791508000619, 183.9 seconds later. Final coordinator evidence
+has no active or queued work and native inventory has all four completed +1
+helmets. The previous 180-second final-job poll therefore expired during
+successful bank/NPC procurement, rather than demonstrating blocked recovery.
+Keep both native skill tiers, the MP reserve and 20-second potion recovery
+assertions; budget this final two-item batch separately with a bounded deadline.
+The focused rerun passed in 4.3 minutes with 33 verified evidence files under
+`.build/native-merchant-mass-recovery-passing-{results,report}`.
+
+Native Town recovery uses
+`npm test -- -- --project=live --grep "partial native Town failure"`.
+The initial peaceful Bee fixture is declared before actual party travel;
+otherwise native aggro can move the first arrival away before its peer arrives.
+Actual walking, interrupted Town, coordinator restart, delayed transport and
+both characters' reward checks remain observable native behavior. All three
+cases passed with 102 verified evidence files, retained under
+`.build/native-town-recovery-passing-{results,report}`.
+
 Steam CODE lifecycle uses
 `npm test -- -- --project=live --grep "Steam-style CODE replacement"`.
 The test declares a valid changed class artifact and holds one real status

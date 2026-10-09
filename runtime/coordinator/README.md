@@ -9,6 +9,14 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Walking returns can reuse a validated remaining route after a communication
+hold even when Town is disabled. Reuse checks realm, instance, runtime,
+navigation, destination and geometry, rejects forbidden shortcuts, and passes
+the ordinary route installation checks. Stale reports still stop movement.
+Validate the native Boo Boo walking-return communication-hold case and retain
+its actual stop, fresh resume and Daisy reward evidence. This character change
+requires the supported full restart; a coordinator-only restart is insufficient.
+
 Merchant settings stores one Main-map stand location for parking, Town-return
 checks and marketplace fallbacks. A fresh settings store chooses integer X/Y
 coordinates independently within -100..100, rejects native collision geometry

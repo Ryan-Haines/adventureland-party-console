@@ -274,10 +274,11 @@ export function createEventObservations(
         .filter((entry) => entry?.event === session.event)
         .map((entry) => Number(entry.lastLiveAt) || 0),
     );
+    // Persisted staging owns its immutable deadline across coordinator restarts
+    // and temporary report gaps. A stale report must not retire it early.
     const staging = Object.entries(state.sessions).some(([member, entry]) =>
-      entry.event === session.event && entry.stagingSpawnAt !== undefined && ports.now() <= entry.stagingSpawnAt + 120000 &&
-      Number(ports.statuses()[member]?.seenAt) >= ports.now() - 10000 &&
-      ports.statuses()[member]?.serverStagingEvents?.some(report => report.name === entry.event && (report.spawnId ?? report.spawnAt) === (entry.stagingSpawnId ?? entry.stagingSpawnAt)));
+      entry.event === session.event && !entry.wasLive && ports.enabled(member, entry.event) &&
+      Number.isFinite(entry.stagingSpawnAt) && ports.now() <= Number(entry.stagingSpawnAt) + 120000);
     return (
       !staging &&
       !rawLive(session.event) &&

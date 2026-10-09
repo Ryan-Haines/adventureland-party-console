@@ -25,6 +25,7 @@ function position(name: string, status: HeartbeatStatus) {
   return {
     name,
     ...Object.fromEntries(positionFields.map((field) => [field, status[field]])),
+    ...(status.eventCombatSighting ? { eventCombatSighting: status.eventCombatSighting } : {}),
     kiting: !!status.combat?.kiting,
     team: status.eventTeam || null,
     activeEvent: status.activeEvent || status.joinedEvent || null,

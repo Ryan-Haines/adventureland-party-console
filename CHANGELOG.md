@@ -7,6 +7,30 @@ from the commits merged into `main`.
 
 ### Added
 
+- Native Cave validation resumes the selected destination after its matching
+  native vote resolves, including retained vote receipts, and reports verified
+  journey stages explicitly.
+- Native Cave validation measures accepted-generation assembly and route
+  preparation separately from physical boss arrival, retaining bounded phase
+  deadlines and real arrival checks for both characters.
+- The native merchant recovery scenario budgets its final two-item bank/NPC
+  batch separately, while retaining the rapid potion recovery and skill checks.
+- Reuse validated walking return routes after communication recovery when Town
+  is disabled, while rejecting changed realm, instance, runtime, navigation,
+  destination or geometry and forbidden shortcuts. Freshness holds still stop
+  movement and resumed routes pass full installation validation.
+- Add native evidence for walking-route reuse after interrupted heartbeat
+  delivery, including the actual stop, fresh resume and Daisy reward.
+- Prevent Tiny P from escaping an unprotected ranged attack after it moves beyond
+  a deployed field generator; preserve eligible melee attacks.
+- Recovering Halloween attendees follow fresh party boss sightings when a living
+  boss has moved from its initial server coordinates.
+- The native Town recovery fixture establishes peaceful initial Bees before
+  actual party travel, so unrelated aggro cannot disrupt its setup rendezvous.
+- Announced Halloween attendance keeps its original bounded spawn deadline across
+  coordinator restarts and temporary heartbeat gaps instead of returning early.
+- The native merchant equipment regression retires inherited gathering sessions
+  before declaring fixture cooldowns available, preserving real tool/equip checks.
 - Steam CODE reload retires the old runner before replacing its iframe and
   removes older leaked Party Console response callbacks, preventing repeated
   null `character` and server-event-state errors without logging out the game.

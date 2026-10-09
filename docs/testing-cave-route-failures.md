@@ -526,3 +526,36 @@ run/floor/alive/unpaused; other HTTP errors must fail; suppressed no-effect
 clicks may retry only currently enabled/error-free with unchanged live identity.
 Keep request listeners throughout the bounded helper, attach attempts including
 pending state finally, and retain every native arrival/combat/floor assertion.
+
+### Boss phase budgets (06c362a)
+
+The accepted Lockbreaker selection remained serial5 throughout105 samples over
+598 seconds. Thirty-six samples covered native assembly/combat, then the native
+planner completed a fully validated19-point route. Both participants progressed
+from1048,528 to the2523 corridor; their current journeys still had11 points and
+only52/70 seconds of active walking. No terminal failure or BFS stall occurred.
+Failure inventory: do not charge assembly/search against the physical-arrival
+budget; do not restart phase clocks on repeated reports, substitute another
+serial/run/target, or treat route preparation as physical arrival. Wait at most
+300 seconds for the accepted generation's owned moves, then270 seconds for its
+prepared routes, before the existing600-second both-members physical70 check.
+Every predicate retains current run/floor/command ownership; deadlines remain
+bounded and the overall2700-second/native-expiry limits are unchanged.
+
+### Native choice stops before room arrival
+
+The subsequent local run reached a real Before You Leave encounter on the farm
+route. Its deadline resolved to `fallback` with no votes, and commands became
+empty while the intended Amber Nest936,408 remained undone. The farm poll had
+not answered or resumed the stopped selection. Preserve this failure archive
+`.build/pr64-cave-phases-choice-failure-e2e-results/`. Failure inventory: answer
+unresolved native choices through actual UI; only a new choice ID observed after
+the accepted selection permits a same-target continuation; do not confuse the
+old resolved shop with a new interruption, retry unexplained empty commands,
+duplicate replies/reselects, lose run/floor ownership or reset phase deadlines.
+Record accepted continuation serials explicitly so genuine choices during boss
+assembly/preparation can resume inside the existing bounded polls.
+
+### Resolved native vote commands at the continuation boundary
+
+The local choice-continuation repeat retained 449 intact evidence files (original failed; regroup passed). The actual boss approach answered Two People Claim the Chest, choice `5e5f07e7f98e4045bac7ea13:54`, through the UI. Of 351 continuation snapshots, 350 retained both matching vote commands after native resolution. The fixture's empty-command requirement therefore prevented reselecting Lockbreaker. Coordinator `ensureSettled` deliberately permits these resolved votes. The fixture must accept only the same run and choice's resolved vote commands, reject unrelated pending actions, and retain unchanged absolute phase deadlines. Explicit progress output follows verified assertions rather than inferred native encounter titles.

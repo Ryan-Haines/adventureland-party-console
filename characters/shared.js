@@ -3172,10 +3172,37 @@
     var e = get_entity(wanted.id);
     return e && e.visible && !e.dead && e.mtype === wanted.mtype && !isExternallyClaimedMonster(e) ? e : null;
   }
+  function nativeAttackProjectile(skill) {
+    var actorClass = G.classes && G.classes[character.ctype] || {};
+    var weapon = character.slots && character.slots.mainhand;
+    var item = weapon && G.items && G.items[weapon.name] || {};
+    var projectile = actorClass.projectile || null;
+    if (character.projectile) projectile = character.projectile;
+    if (item.projectile) projectile = item.projectile;
+    if (character.tskin === "konami") projectile = "stone_k";
+    var definition = G.skills && G.skills[skill] || {};
+    if ((skill !== "attack" || !projectile || skill === "heal") && definition.projectile) projectile = definition.projectile;
+    return projectile;
+  }
+  function tinyProjectileProtected(target, skill) {
+    if (!nativeAttackProjectile(skill)) return true;
+    var x = Number(target.real_x !== undefined ? target.real_x : target.x);
+    var y = Number(target.real_y !== undefined ? target.real_y : target.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    return Object.values(parent.entities || {}).some(function (field) {
+      return field && field.mtype === "fieldgen0" && field.visible !== false && !field.dead && field.hp > 0 &&
+        (!field.map || field.map === character.map) && (!field.in || String(field.in) === String(character.in || character.map)) &&
+        Math.hypot(Number(field.real_x !== undefined ? field.real_x : field.x) - x,
+          Number(field.real_y !== undefined ? field.real_y : field.y) - y) < 300;
+    });
+  }
   function rareAttackAllowed(target, skill) {
     if (!target) return false;
     if (target.mtype === "fieldgen0") return false;
     if (target.mtype !== "tinyp") return true;
+    // Native escapist monsters warp before an unprotected projectile lands.
+    // Keep genuine melee attacks eligible when the boss leaves the field.
+    if (skill === "attack" && !tinyProjectileProtected(target, skill)) return false;
     if (isPassingEncounter(target) || skill === "attack" && passingTarget() === target) return skill === "attack";
     if (!rareTarget() || rareTarget().id !== target.id || skill !== "attack") return false;
     return !rareActive() || !rareControlState.deployer;
@@ -11627,7 +11654,25 @@
     }) || eventName;
   }
 
+  function freshPartyEventDestination(eventName) {
+    var now = Date.now() + coordinatorClockOffset;
+    return partyPositions.filter(function (member) {
+      var sight = member.eventCombatSighting;
+      return !member.rip && member.activeEvent === eventName && member.server === reunionRealm() &&
+        Number.isFinite(member.seenAt) && member.seenAt >= now - 3000 && member.seenAt <= now + 1000 &&
+        sight && sight.mtype === eventName && typeof sight.id === "string" && sight.id &&
+        sight.map === member.map && String(sight.in || sight.map) === String(member.in || member.map) &&
+        Number.isFinite(sight.x) && Number.isFinite(sight.y) &&
+        Number.isFinite(sight.observedAt) && sight.observedAt >= now - 3000 && sight.observedAt <= now + 1000;
+    }).sort(function (a, b) { return b.eventCombatSighting.observedAt - a.eventCombatSighting.observedAt; })
+      .map(function (member) { var s = member.eventCombatSighting; return { map: s.map, in: s.in, x: s.x, y: s.y }; })[0] || null;
+  }
+
   function eventDestination(eventName, state) {
+    if (halloweenEvent(eventName) && state && state.live === true) {
+      var actual = freshPartyEventDestination(eventName);
+      if (actual) return actual;
+    }
     if (state && state.map && Number.isFinite(Number(state.x)) && Number.isFinite(Number(state.y))) {
       return { map: state.map, x: Number(state.x), y: Number(state.y) };
     }
@@ -14010,7 +14055,11 @@
     var saved=root.__partySharedRouteRemainder;
     if(!saved || saved.id!==command.convoyId || saved.revision!==Number(command.navigationRevision||0) ||
         saved.destinationKey!==JSON.stringify(command.location) || saved.runtimeId!==convoyRuntimeId)return null;
+    if(!saved.origin || saved.origin.map!==origin.map || saved.origin.in!==origin.in || saved.server!==reunionRealm() ||
+        !saved.geometry || saved.geometry.version!==movement.identity.version || saved.geometry.fingerprint!==movement.identity.fingerprint)return null;
     if(!saved.plot.length || saved.transporting)return null;
+    if(command.disableTown && saved.plot.some(function(p){return p.town;}))return null;
+    if(command.avoidLeave && saved.plot.some(function(p){return p.method === "leave";}))return null;
     var first=saved.plot[0];
     if(first.town || first.transport || first.method === "leave" || first.map!==origin.map || !can_move_to(first.x,first.y))return null;
     return saved;
@@ -14060,7 +14109,8 @@
     var leaderRoute=character.name===command.leader,origin=sharedConvoyPoint(),gate=sharedConvoyGate();
     var destination=leaderRoute?farmingEntryPoint(command.location):command.location,started=Date.now(),identity=sharedConvoyIdentity(command);
     var released=false,onDone,plot,installed=false,published=false,pending=false,retryAt=0,payload=null,fingerprint=null;
-    var saved=leaderRoute && !command.nativeFallback && !command.avoidLeave && !command.disableTown?(sharedConvoyReusable(command,origin)||sharedConvoyItinerary(command,origin)):null;
+    var saved=leaderRoute && !command.nativeFallback?sharedConvoyReusable(command,origin):null;
+    if(!saved && leaderRoute && !command.nativeFallback && !command.avoidLeave && !command.disableTown)saved=sharedConvoyItinerary(command,origin);
     if(saved)destination=saved.destination;
     convoy.routeVersion=command.routeVersion;
     phase(leaderRoute?"preparing-route":"waiting-for-route");
@@ -14072,6 +14122,7 @@
       // Prepending a pre-tick snapshot would resurrect already-consumed waypoints.
       root.__partySharedRouteRemainder={id:command.convoyId,revision:Number(command.navigationRevision)||0,
         runtimeId:convoyRuntimeId,destinationKey:JSON.stringify(command.location),destination:destination,
+        origin:sharedConvoyPoint(),server:reunionRealm(),geometry:Object.assign({},movement.identity),
         transporting:!!is_transporting(character),plot:remaining};
     }
     convoy.freezeRoute=freeze;
