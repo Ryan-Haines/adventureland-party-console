@@ -31,7 +31,7 @@ function setup(priestSelf = false) {
   const monster = { id: 'A', type: 'monster', mtype: 'goo', map: 'main', x: 186, y: 0, range: 20, target: 'W', visible: true };
   const players = { W: warrior, P: priest }, entities = { A: monster };
   const c = require('./helpers/client-dependencies.cjs').passingContext({ farmingTravelToken: null, character: priestSelf ? priest : warrior, leader: 'W', followLeader: true,
-    farmingMode: 'default', eventTraveling: false, joinedEvent: null, eventTargetTypes: [],
+    farmingMode: 'default', eventTraveling: false, joinedEvent: null, eventTargetTypes: [], runtimeCurrent: () => true,
     G: { maps: { main: {} }, monsters: { goo: { range: 20 } } }, parent: { entities },
     partyPositions: [warrior, priest].map(p => ({ ...p, seenAt: now, server: 'USII' })),
     get_player: name => players[name], get_entity: id => entities[id], currentPartyList: () => ['W', 'P'],

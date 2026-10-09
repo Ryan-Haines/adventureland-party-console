@@ -5,6 +5,9 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Route event combat around native terrain with a bounded, owned local detour,
+  preserving secondary-attacker clearance so Goobrawl survivors remain reachable.
+
 - Keep owned party travel moving through native explosion splash from monsters
   fighting another player. Genuine party-target attacks, direct hits and unknown
   attackers retain defensive interruption and existing external-claim protection.

@@ -37,11 +37,13 @@ async function prepare(live: LiveGame, event: string) {
   await live.post('/formation', { leader: W });
   await live.post('/formation', { character: P, follow: true });
   const checkpoint = await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)});return {map:p.map,x:p.x,y:p.y}})()`);
-  await live.post('/travel', checkpoint);
   await expect.poll(async () => {
     const state = await live.state();
-    return !state.activeConvoy || state.activeConvoy.phase === 'complete';
-  }, { timeout: 30_000 }).toBe(true);
+    const leader=state.characters[W];
+    return leader&&Date.now()-leader.seenAt<3000&&leader.map===checkpoint.map&&
+      Math.hypot(leader.x-checkpoint.x,leader.y-checkpoint.y)<1;
+  }, { timeout: 30_000, message:'Save only the fresh native leader checkpoint' }).toBe(true);
+  await live.post('/checkpoint', {});
   await live.post('/formation', { character: W, eventSelections: [event] });
 }
 
@@ -119,6 +121,19 @@ for (const encounter of [{id:'mrgreen',add:'greenjr',drop:'ashleaf',map:'spookyt
       // fabricated spawn/death/loot; add policy survives event deselection.
       const ledgers:any[]=[];
       const observedHits=new Map<string,any>();
+      const attacks:any[]=[];
+      for(const name of fighters)await live.clients[name].frame.evaluate(()=>{
+        const game=window as any,socket=game.socket,emit=socket.emit;
+        game.__e2eHalloweenAttacks=[];
+        socket.emit=function(event:string,...args:any[]){
+          if(event==='attack'){
+            game.__e2eHalloweenAttacks.push({at:Date.now(),actor:game.character.name,id:String(args[0]?.id)});
+            if(game.__e2eHalloweenAttacks.length>2048)game.__e2eHalloweenAttacks.shift();
+          }
+          return emit.apply(socket,[event,...args]);
+        };
+        game.__e2eHalloweenRestoreAttack=()=>{socket.emit=emit;};
+      });
       const before=await live.admin(`output=${JSON.stringify(fighters)}.map(name=>({name,items:get_player(name).items}))`);
       await live.admin(`output=(()=>{
         globalThis.__e2eThresholdAdds=[];
@@ -139,6 +154,8 @@ for (const encounter of [{id:'mrgreen',add:'greenjr',drop:'ashleaf',map:'spookyt
           const selection=await live.state();
           ledgers[ledgers.length-1].selections=fighters.map(name=>({name,target:selection.characters[name]?.combatSelection?.target}));
           const events=await live.clients[W].events();
+          attacks.length=0;
+          for(const name of fighters)attacks.push(...await live.clients[name].frame.evaluate(()=>(window as any).__e2eHalloweenAttacks||[]));
           for(const event of events) {
             if(event.event==='hit'&&fighters.includes(event.data?.hid)&&event.data?.damage>0&&
               (String(event.data.id)===String(seed.id)||sample.adds.some((add:any)=>String(event.data.id)===add.id)))
@@ -146,10 +163,9 @@ for (const encounter of [{id:'mrgreen',add:'greenjr',drop:'ashleaf',map:'spookyt
           }
           return [0.75,0.5,0.25].every(threshold=>sample.adds.some((add:any)=>
             add.master===String(seed.id)&&add.bossHp/add.bossMaxHp<=threshold&&add.bossHp/add.bossMaxHp>threshold-0.2&&
-            [...observedHits.values()].some((event:any)=>String(event.data.id)===add.id)&&
-            ledgers.some(observation=>observation.boss?.hp>0&&observation.selections?.some((actor:any)=>
-              String(actor.target?.id)===add.id&&ledgers.some(previous=>previous.at<observation.at&&
-                previous.selections?.some((prior:any)=>prior.name===actor.name&&String(prior.target?.id)===String(seed.id)))))));
+            attacks.some(attack=>attack.id===add.id&&attacks.some(previous=>previous.actor===attack.actor&&
+              previous.id===String(seed.id)&&previous.at<attack.at)&&
+              [...observedHits.values()].some((event:any)=>String(event.data.id)===add.id&&event.data.hid===attack.actor&&event.at>=attack.at))));
         },{timeout:300_000,intervals:[250,500],message:'Native boss damage must spawn and the party must attack adds at each threshold'}).toBe(true);
         const firstAddHit=[...observedHits.values()].filter(event=>String(event.data.id)!==String(seed.id)).sort((a,b)=>a.at-b.at)[0];
         expect([...observedHits.values()].some(event=>String(event.data.id)===String(seed.id)&&event.at>firstAddHit.at),
@@ -160,12 +176,15 @@ for (const encounter of [{id:'mrgreen',add:'greenjr',drop:'ashleaf',map:'spookyt
           return items.reduce((n:number,item:any)=>n+(item?.name===encounter.drop?(item.q||1):0),0)>
             before.flatMap((p:any)=>p.items).reduce((n:number,item:any)=>n+(item?.name===encounter.drop?(item.q||1):0),0);
         },{timeout:30_000,message:'Real native add loot must reach party inventory'}).toBe(true);
-        await info.attach('native-threshold-add-combat-and-loot',{body:JSON.stringify({seed,before,ledgers,
+        await info.attach('native-threshold-add-combat-and-loot',{body:JSON.stringify({seed,before,ledgers,attacks,
           events:await live.clients[W].events(),after:await live.admin(`output=${JSON.stringify(fighters)}.map(name=>({name,items:get_player(name).items}))`),state:await live.state()}),contentType:'application/json'});
       } finally {
-        await info.attach('native-threshold-observer-final',{body:JSON.stringify({ledgers,hits:[...observedHits.values()],
+        await info.attach('native-threshold-observer-final',{body:JSON.stringify({ledgers,attacks,hits:[...observedHits.values()],
           native:await live.admin(`output={adds:globalThis.__e2eThresholdAdds,players:${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return {name,map:p.map,x:p.x,y:p.y,rip:p.rip}})}`),
           state:await live.state()}),contentType:'application/json'});
+        for(const name of fighters)await live.clients[name].frame.evaluate(()=>{
+          const game=window as any;game.__e2eHalloweenRestoreAttack?.();delete game.__e2eHalloweenRestoreAttack;
+        });
         await live.admin(`if(globalThis.__e2eAddSpawner){new_monster=globalThis.__e2eAddSpawner;delete globalThis.__e2eAddSpawner;}output=true`);
         await live.post('/formation',{character:W,eventSelections:[]});
       }

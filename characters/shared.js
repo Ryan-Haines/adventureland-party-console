@@ -15848,6 +15848,7 @@
     return { x: target.x + dx / length * radius, y: target.y + dy / length * radius };
   }
   function resetCombatMovement() {
+    eventCombatDetour = null;
     // Only cancel the exact direct segment still owned by combat. Navigation
     // may already have installed another destination since the last tick.
     var dest = kiteState.destination;
@@ -15984,21 +15985,70 @@
     return true;
   }
 
+  var eventCombatDetour = null;
+  function eventApproachDetour(target, destination, step) {
+    // Event combat owns this local detour; farming/navigation never inherit it.
+    if (!runtimeCurrent()) { eventCombatDetour=null; return false; }
+    if (!joinedEvent || !can_walk(character) ||
+        navigationIntent.cancelled || convoyTraveling || followingLeader || forceTraveling || townTraveling || departurePending) {
+      if(eventCombatDetour)resetCombatMovement();
+      return false;
+    }
+    var identity = [target.id, character.map, character.in, joinedEvent, navigationIntent.revision].join(":");
+    var route = eventCombatDetour;
+    if (!route || route.identity !== identity || Math.hypot(route.goal.x-destination.x,route.goal.y-destination.y)>80)
+      route = eventCombatDetour = {identity:identity,goal:destination,point:null,retryAt:0};
+    if (route.point && (Math.hypot(route.point.x-character.x,route.point.y-character.y)<8 ||
+        !safeCombatPoint(route.point,target))) route.point=null;
+    if (!route.point && Date.now()>=route.retryAt) {
+      route.retryAt=Date.now()+1000;
+      var score=Infinity;
+      // Native collision checks validate both legs; all intermediate samples
+      // retain the same secondary-attacker clearance as ordinary combat.
+      for(var ring=0;ring<4;ring++)for(var angle=0;angle<16;angle++) {
+        var radius=80*Math.pow(2,ring), radians=angle*Math.PI/8;
+        var point={x:character.x+Math.cos(radians)*radius,y:character.y+Math.sin(radians)*radius};
+        var cost=radius+Math.hypot(destination.x-point.x,destination.y-point.y);
+        if(cost>=score || !safeCombatPoint(point,target) ||
+            !can_move({map:character.map,x:point.x,y:point.y,going_x:destination.x,going_y:destination.y,base:character.base}) ||
+            !eventApproachLegSafe(character,point,target) || !eventApproachLegSafe(point,destination,target))continue;
+        route.point=point;score=cost;
+      }
+    }
+    if(!route.point)return false;
+    var dx=route.point.x-character.x,dy=route.point.y-character.y,length=Math.hypot(dx,dy);
+    var next={x:character.x+dx*Math.min(1,step/length),y:character.y+dy*Math.min(1,step/length)};
+    return safeCombatPoint(next,target) && sendCombatMove(target,next,"event-terrain-detour");
+  }
+  function eventApproachLegSafe(from,to,target) {
+    var attackers=Object.values(parent.entities||{}).filter(function(enemy){
+      return enemy && enemy.type==="monster" && enemy.visible && !enemy.dead && enemy.id!==target.id && enemy.target===character.name;
+    });
+    var samples=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.y-from.y)/20));
+    for(var index=0;index<=samples;index++) {
+      var point={x:from.x+(to.x-from.x)*index/samples,y:from.y+(to.y-from.y)*index/samples};
+      if(attackers.some(function(enemy){return Math.hypot(point.x-enemy.x,point.y-enemy.y)<
+        Math.min(Math.hypot(character.x-enemy.x,character.y-enemy.y),Number(enemy.range)||30)-1;}))return false;
+    }
+    return true;
+  }
   async function approachCombatTarget(target) {
     if (typeof frankyCombatActive === "function" && frankyCombatActive()) return frankyMovementTick(target);
-    if (!target || target.dead) return false;
+    if (!target || target.dead) { eventCombatDetour=null; return false; }
     var delta = combatDistance(target) - desiredCombatRange();
     var tolerance = Math.min(3, Math.max(0.5, Number(character.range) * 0.01));
-    if (Math.abs(delta) <= tolerance && is_in_range(target)) return false;
+    if (Math.abs(delta) <= tolerance && is_in_range(target)) { eventCombatDetour=null; return false; }
     var destination = combatApproachPoint(target);
     var dx = destination.x - character.x, dy = destination.y - character.y, length = Math.hypot(dx, dy);
     var step = Math.min(length, Math.max(1, Number(character.speed || 40) * 0.6));
     var angle = Math.atan2(dy, dx);
+    if (delta>0 && eventCombatDetour && eventCombatDetour.point && eventApproachDetour(target,destination,step)) return true;
     for (var i = 0, offsets = [0, 0.4, -0.4, 0.8, -0.8]; i < offsets.length; i++) {
       var point = { x: character.x + Math.cos(angle + offsets[i]) * step,
         y: character.y + Math.sin(angle + offsets[i]) * step };
       if (safeCombatPoint(point, target)) return sendCombatMove(target, point, delta > 0 ? "approaching" : "retreating");
     }
+    if (delta>0 && eventApproachDetour(target,destination,step)) return true;
     var blockedKite = root.partyCombatPosition;
     root.partyCombatPosition = { at: Date.now(), target: target.id, distance: combatDistance(target),
       desiredRange: desiredCombatRange(), mode: "blocked", movementOwner: "combat",

@@ -125,6 +125,17 @@ Retired-exit fixture isolation: get_monster takes a monster type rather than a d
 Before changing the existing retirement fence: the last eventRecovery diagnostic can retain an old cycle after its asynchronous owner is cancelled, and departurePending can independently belong to new travel. Observe actual native CODE exit ownership and coordinator-published recovery selection for both fighters, preserving runtime identity. The unchanged 15-second fence requires no live uncancelled old exit owner and no old published selection; retain old diagnostics in a bounded ledger instead of treating them as ownership. Preserve the 180-second requirement for both real native boss hits and the exact deferred checkpoint assertions. A missing owner alone never proves resumed behavior.
 # Deferred event handoff: admitted return walk
 
+## Goobrawl survivor blocked by terrain
+
+Run 37995615362 leaves one real full-health Brawl Goo across arena terrain.
+The warrior is stationary at (230,-230), target (-275,-223), with native range
+rejection and no collision-safe direct approach. Its five forward offsets cannot
+find a route around the corner. The existing Hunt-off scenario fails before any
+fix and requires genuine survivor deaths followed by native evacuation.
+Use a bounded collision-checked two-leg event approach, retain one waypoint
+until reached, and cancel its ownership when target, map, event, or navigation
+revision changes. Secondary attackers must never lose their clearance barrier.
+
 ## Linux checkpoint and Cave modal fixture ownership
 
 The same run's finite compound case observed its native level-one inventory
