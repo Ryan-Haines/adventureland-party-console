@@ -5,6 +5,11 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Resume paid upgrade batches after inventory sorting moves identical owned
+  items: restore disjoint batch slots only when the complete carried group matches
+  recorded ownership. Extra identical cargo still requires review; spending,
+  attempts, and completed results remain preserved.
+
 - Allow focused native CI regression runs alongside the full gameplay suite, so
   failure diagnosis does not wait for long Cave scenarios to finish.
 

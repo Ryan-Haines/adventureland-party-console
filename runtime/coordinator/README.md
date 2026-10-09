@@ -492,7 +492,12 @@ subsequent grades are purchased one at a time. Capacity, remaining attempts and
 budget can reduce the batch. All purchased items finish even after the requested
 quantity succeeds. Durable `batchItems` and pending purchase checkpoints reserve
 queued items across yields/restarts; uncertain outcomes cannot consume another
-batch item as a replacement. Validate merchant-buy-cycle and merchant configuration
+batch item as a replacement. After native inventory sorting moves slots, remap
+recorded active/batch/result groups disjointly only when the carried fingerprint
+count exactly matches recorded ownership. Surplus identical cargo remains held
+for inventory review. Corrected slots are checkpointed without resetting spending,
+attempts, or results. Pending production receipts retain their separate recovery.
+Validate merchant-buy-cycle and merchant configuration
 tests. Publish character assets along with coordinator and dashboard using the full
 restart workflow below.
 

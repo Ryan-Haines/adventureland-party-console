@@ -4,6 +4,32 @@ import type { Item } from '../runtime/coordinator/contracts/item';
 
 const merchant = 'E2EMerchant';
 
+for (const surplus of [false,true]) test(`restarted upgrade batch ${surplus ? 'holds surplus identical cargo' : 'remaps compacted owned items'}`,async({live},info)=>{
+  test.setTimeout(240_000);
+  await catalog(live,'helmet');
+  const id='compacted-owned-upgrade-batch',item={name:'helmet',level:0};
+  const inventory:Record<number,Item>={17:item,18:item,19:item};
+  if(surplus) inventory[20]=item;
+  await seed(live,inventory);
+  const before=await economy(live);
+  const progress={phase:'leveling',buyIndex:0,attempts:3,spent:9600,completedResults:0,results:[],
+    activeItem:item,activeSlot:22,cycleActive:true,batchItems:[{slot:24,item},{slot:25,item}],batchRemaining:0,sequence:2};
+  await live.restoreHistoricalSettings(()=>({merchantQueue:[{id,target:merchant,reason:'merchant commerce',queuedAt:Date.now(),commerceOrderId:id,
+    commerceProgressVersion:2,order:{buys:[{id:'helmet',quantity:3,level:1,attempts:3,budget:100000}],crafts:[]},resumeState:progress}]}));
+  if(surplus){
+    await expect.poll(async()=> (await live.state()).merchantQueue.some((job:any)=>job.commerceOrderId===id&&/ambiguous/.test(job.lastError||'')),{timeout:90_000}).toBe(true);
+    expect((await economy(live)).characters[merchant].items).toEqual(before.characters[merchant].items);
+  }else{
+    await expect.poll(async()=>{const s=await live.state();return ![s.merchantCurrent,...s.merchantQueue].some((job:any)=>job?.commerceOrderId===id);},{timeout:180_000}).toBe(true);
+    const after=await economy(live);
+    expect(after.characters[merchant].items.filter(item=>item?.name==='helmet'&&item.level===1)).toHaveLength(3);
+    expect((await live.clients[merchant].events()).filter((event:any)=>event.event==='game_response'&&event.data?.response==='upgrade_success')).toHaveLength(3);
+    await live.restartCoordinator();
+    expect((await economy(live)).characters[merchant].items.filter(item=>item?.name==='helmet'&&item.level===1)).toHaveLength(3);
+  }
+  await record(live,info,'compacted-upgrade-batch-ownership',before,{progress,surplus,state:await live.state()});
+});
+
 test('unavailable upgrade estimate enforces its gold cap across native purchases and restart',async({live},info)=>{
   // Failure inventory: fabricated attempt allowance; base/scroll spending skips
   // cap; restart resets accrued spend; retry purchases beyond the same cap.
