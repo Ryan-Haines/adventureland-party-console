@@ -72,7 +72,7 @@ test('merchant role and runner use event targets and block ordinary farming and 
  global.sharedRoutine.getEventTarget=()=>null;assert.equal(role.chooseTarget(),null);}finally{global.sharedRoutine=saved;}
  const c={character:{ctype:'merchant',rip:false},active:true,resolvedRole:()=>({...role,chooseTarget:()=>event}),
  sharedRoutine:{merchantEventCombatActive:()=>false,isOccupied:()=>false,getAbtestingMode:()=>'',getRareTarget:()=>farm}};
- vm.createContext(c);vm.runInContext(functions(fs.readFileSync('runtime/characters/roles/runner.ts','utf8'),['combatAllowed','passingTarget','chooseTarget']),c);
+ vm.createContext(c);vm.runInContext(functions(fs.readFileSync('runtime/characters/roles/runner.ts','utf8'),['combatAllowed','passingTarget','chooseTarget','priorityEventTarget','fallbackTarget','exclusiveCombat']),c);
  assert.equal(c.combatAllowed(),false);c.sharedRoutine.merchantEventCombatActive=()=>true;assert.equal(c.combatAllowed(),true);
  assert.equal(c.chooseTarget(),event);assert.equal(c.passingTarget(),null);c.sharedRoutine.isOccupied=()=>true;assert.equal(c.combatAllowed(),false);
 });

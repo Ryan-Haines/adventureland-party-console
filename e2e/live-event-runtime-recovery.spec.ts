@@ -19,7 +19,7 @@ test('native event walking recovers owned CODE turnover after coordinator restar
       if(c?.walkingActivity==='event'&&c.walkingEvent==='mrpumpkin'&&c.phase==='travel'){before=s;return true;}return false;
     },{timeout:90_000}).toBe(true);
     // Actual upstream CODE iframe replacement, with the same maintained loader.
-    for(const name of fighters)await live.clients[name].frame.evaluate(()=>{
+    await live.clients[P].frame.evaluate(()=>{
       const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);
     });
@@ -28,7 +28,9 @@ test('native event walking recovers owned CODE turnover after coordinator restar
     },{timeout:30_000}).toBe(true);
     await live.restartCoordinator();
     await expect.poll(async()=>{const s=await live.state(),c=s.activeConvoy;
-      if(c?.id!==before.activeConvoy.id&&c?.walkingEvent==='mrpumpkin'&&fighters.every(n=>c.runtimes?.[n]&&c.runtimes[n]!==before.activeConvoy.runtimes[n])){recovered=s;return true;}return false;
+      if(c?.id!==before.activeConvoy.id&&c?.walkingEvent==='mrpumpkin'&&
+        c.runtimes?.[P]&&c.runtimes[P]!==before.activeConvoy.runtimes[P]&&
+        c.runtimes?.[W]===before.activeConvoy.runtimes[W]){recovered=s;return true;}return false;
     },{timeout:60_000}).toBe(true);
     expect(recovered.activeConvoy.recoveryAttempts||0).toBeGreaterThanOrEqual(failed.activeConvoy.recoveryAttempts||0);
     await expect.poll(async()=>{const events=await live.clients[W].events();return events.some((e:any)=>e.event==='hit'&&String(e.data?.id)===String(seed.id)&&fighters.includes(e.data?.hid));},{timeout:120_000}).toBe(true);

@@ -23,8 +23,9 @@ Activate with the supported coordinator/dashboard-only restart.
 # Character coordinator
 
 Failed event walking with runtime-lost can also recover after CODE turnover and
-coordinator restart. Every captured participant must have a different, fresh,
-living runtime still owning the same event, realm, navigation revision and parent
+coordinator restart. At least one captured runtime must change, and every
+participant must report fresh living ownership of the same event, realm,
+navigation revision and parent
 scope; only the old convoy's release command may remain. Replacement retains
 route retry counts. Exhausted, geometry, unchanged-runtime, manual and stale
 ownership failures remain held. Validate `live-event-runtime-recovery.spec.ts`

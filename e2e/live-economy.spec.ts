@@ -9,6 +9,8 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
   // cap; restart resets accrued spend; retry purchases beyond the same cap.
   // Native buys/upgrades remain real. Only checkpoint transport is held after
   // the coordinator has persisted the first paid purchase, to place restart.
+  // Protection-only checkpoint probes have no progress state; forward them
+  // normally and retain only actual durable commerce progress for assertions.
   test.setTimeout(300_000);
   await catalog(live,'helmet');
   // Native helmet starts at 3,200 plus seven 1,000-gold basic scrolls: a 10,000
@@ -30,8 +32,10 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
   try {
   await live.clients[merchant].page.route('**/party-api/merchant/checkpoint',async route=>{
     const body=route.request().postDataJSON(),response=await route.fetch();
-    checkpoints.push(body.state);
-    if(!held&&Number(body.state.spent)>0&&!body.state.pendingPurchase){held=true;await gate;}
+    if(body.state&&typeof body.state==='object') {
+      checkpoints.push(body.state);
+      if(!held&&Number(body.state.spent)>0&&!body.state.pendingPurchase){held=true;await gate;}
+    }
     await route.fulfill({response});
   });
   const order=await live.post('/merchant/order',{buys:[{id:'helmet',quantity:1,level:12,acknowledgeUnavailable:true,goldCap:20000}],crafts:[]});

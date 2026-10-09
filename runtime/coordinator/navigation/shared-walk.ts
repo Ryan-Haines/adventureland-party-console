@@ -283,7 +283,8 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if (!turnoverFailure(c, r)) return false;
     const parent = c.walkingParents?.[r.name];
     if (!parent || parent.parentId !== r.parentId || parent.revision !== r.revision) return false;
-    return c.participants.every(name => freshTurnoverParticipant(c, name, r.key));
+    return c.participants.every(name => freshTurnoverParticipant(c, name, r.key)) &&
+      c.participants.some(name => characterRuntime(state.statuses[name]) !== c.runtimes?.[name]);
   }
   function turnoverFailure(c: SharedConvoy, r: WalkRequest): boolean {
     if (!preDeathEventFailure(c, r) || c.purpose !== 'shared-walk' || c.failureCode !== 'runtime-lost') return false;
@@ -297,7 +298,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
   function turnoverEvent(c: SharedConvoy, s: SharedStatus, name: string, event: string): boolean {
     if (s.server !== c.routeServer || s.joinedEvent !== event || !ports.enabled(name, event)) return false;
     const runtime = characterRuntime(s);
-    return !!runtime && !!c.runtimes?.[name] && runtime !== c.runtimes[name];
+    return !!runtime && !!c.runtimes?.[name];
   }
   function turnoverCommand(c: SharedConvoy, name: string): boolean {
     const command = state.commands[name];

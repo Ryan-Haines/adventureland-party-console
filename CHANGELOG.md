@@ -9,7 +9,8 @@ from the commits merged into `main`.
 
 - Recover event walking interrupted by an actual CODE runtime replacement and
   coordinator restart when every participant reports fresh living ownership of
-  the same event, realm and navigation revision. Preserve existing route retry
+  the same event, realm and navigation revision, with at least one replaced
+  runtime; unchanged Steam participants can retain their ownership. Preserve existing route retry
   counts and keep exhausted, manual, stale and unchanged-runtime failures held.
 
 - Mr. Green and Mr. Pumpkin combat now reevaluates native add priority while a

@@ -26,7 +26,13 @@ Console evidence must show Visit bank and its resulting request/queue state.
 The third-attempt restart scenario restores a declared pending realm request with
 three attempts and an elapsed sixty-second deadline, then verifies exhaustion,
 preserved bank work, explicit Retry and a real managed bank visit. The transition
-timeout scenario restores an interrupted switching phase and holds only actual
-merchant status HTTP traffic. Neither scenario invents a successful game receipt.
+timeout scenario admits a real US I to US II job and holds only actual merchant
+status HTTP traffic; native arrival remains independently observable on US II.
+Neither scenario invents a successful game receipt.
 Legacy NPC/stand conflicts are restored as input because normal editor commands
 correctly remove conflicting rules; selection and all sale outcomes remain native.
+
+Native bank sorting/compaction can move retained stock after withdrawal. Verify
+remaining unlocked/locked/conflicting identities across all packs rather than
+assuming an item keeps its initial slot. Exact ten-stack selection, twelve native
+sale receipts, cleared carried stock and account gold remain required outcomes.
