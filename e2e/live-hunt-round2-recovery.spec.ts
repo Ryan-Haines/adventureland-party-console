@@ -45,12 +45,12 @@ test.describe('native escape requested membership',()=>{
 });
 
 test.describe('native collateral convoy defense',()=>{
-  test.use({initialPosition:{map:'main',x:200,y:-120}});
+  test.use({initialPosition:{map:'main',x:0,y:0}});
   for(const partyTarget of [false,true])test(`native Targetron splash ${partyTarget?'preserves party defense':'does not stop an outsider convoy pass'}`,async({live},info)=>{
     test.setTimeout(180_000);
     await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
-    await live.post('/merchant/stand-location',{map:'main',x:200,y:-120});
-    await expect.poll(()=>live.clients[M].run('Math.hypot(character.real_x-200,character.real_y+120)'),{timeout:45_000}).toBeLessThan(4);
+    await live.post('/merchant/stand-location',{map:'main',x:0,y:0});
+    await expect.poll(()=>live.clients[M].run('Math.hypot(character.real_x,character.real_y)'),{timeout:45_000}).toBeLessThan(4);
     await expect.poll(()=>live.clients[W].run(`!parent.party_list.includes('${M}')`),{timeout:15_000}).toBe(true);
     // Lose the readiness transport while the real client has installed its
     // owner. This gives the native explosion a stationary initial window;
@@ -63,24 +63,26 @@ test.describe('native collateral convoy defense',()=>{
       return route.continue();
     });
     const samples:any[]=[];let monster:any;
+    const destination=await live.clients[W].run(`(()=>{for(let i=0;i<16;i++){const x=100*Math.cos(i*Math.PI/8),y=100*Math.sin(i*Math.PI/8);if(can_move_to(x,y))return {map:character.map,x,y};}throw Error('No native clear convoy endpoint');})()`);
+    expect(await live.clients[P].run(`can_move_to(${destination.x},${destination.y})`),'The same native endpoint must be clear for the Priest footprint').toBe(true);
     try{
-      await live.post('/travel',{map:'main',x:400,y:-120});
+      await live.post('/travel',destination);
       await expect.poll(async()=>{const s=await live.state();return s.activeConvoy?.participants?.includes(W)&&['shared-prepare','shared-travel','travel'].includes(s.activeConvoy.phase);},{timeout:30_000}).toBe(true);
       await expect.poll(async()=>{const s=await live.state();return s.characters[W]?.convoyNavigation?.id===s.activeConvoy.id;},{timeout:15_000}).toBe(true);
       monster=await live.admin(`output=(()=>{const p=get_player('${W}'),original=G.monsters.targetron;try{
         G.monsters.targetron={...original,hp:1000000,attack:1000,speed:0,charge:0,aggro:0,range:200};
         const m=new_monster(p.in,{type:'targetron',count:1,boundary:[p.x+40,p.y,p.x+41,p.y+1]},{temp:1});
-        m.target='${partyTarget?W:M}';return {id:m.id,target:m.target,map:m.map,x:m.x,y:m.y,explosion:m.explosion};
+        target_player(m,get_player('${partyTarget?W:M}'));return {id:m.id,target:m.target,map:m.map,x:m.x,y:m.y,explosion:m.explosion};
       }finally{G.monsters.targetron=original;}})()`);
       await expect.poll(async()=>{const hits=(await live.clients[W].events()).filter((e:any)=>e.event==='hit'&&String(e.data?.hid)===String(monster.id)&&e.data?.id===W&&e.data?.damage>0);return partyTarget?hits.length:hits.filter((e:any)=>e.data.splash===true).length;},{timeout:30_000}).toBeGreaterThan(0);
       holdReady=false;
       await expect.poll(async()=>{const state=await live.state(),native=await world(live);samples.push({at:Date.now(),convoy:state.activeConvoy&&{id:state.activeConvoy.id,phase:state.activeConvoy.phase,epoch:state.activeConvoy.epoch},players:Object.fromEntries([W,P].map(n=>[n,{map:native.players[n].map,x:native.players[n].x,y:native.players[n].y}]))});
-        return partyTarget?[W,P].some(n=>state.characters[n]?.convoyNavigation?.defenseTargets?.some((t:any)=>String(t.id)===String(monster.id))):[W,P].every(n=>native.players[n].map==='main'&&Math.hypot(native.players[n].x-400,native.players[n].y+120)<=100);
+        return partyTarget?[W,P].some(n=>state.characters[n]?.convoyNavigation?.defenseTargets?.some((t:any)=>String(t.id)===String(monster.id))):[W,P].every(n=>native.players[n].map===destination.map&&Math.hypot(native.players[n].x-destination.x,native.players[n].y-destination.y)<=25);
       },{timeout:60_000}).toBe(true);
     }finally{
       holdReady=false;
       await context.unrouteAll({behavior:'ignoreErrors'});
-      await info.attach('native-targetron-collateral-ownership',{body:JSON.stringify({partyTarget,monster,samples,native:await world(live),state:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
+      await info.attach('native-targetron-collateral-ownership',{body:JSON.stringify({partyTarget,destination,monster,samples,native:await world(live),state:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
     }
   });
 });

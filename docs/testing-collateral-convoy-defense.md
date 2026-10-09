@@ -18,3 +18,9 @@ merchant's stand position. The upstream monster produces the real hits. Require
 positive splash receipts, an owned convoy's actual arrival, and a separate
 party-target control that retains native defensive interruption. Preserve native
 positions, hit receipts and ownership reports even on failure.
+
+The first native run failed during setup: Main (400,-120) had no native route,
+and direct assignment of monster.target skipped the upstream target_player
+initialization. Use the native Town spawn with a collision-clear endpoint and
+the upstream target_player admission while the initial stats are declared.
+The hit recorder already includes native hit packets; do not fabricate receipts.
