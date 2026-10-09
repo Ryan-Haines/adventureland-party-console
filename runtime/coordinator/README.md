@@ -1731,3 +1731,14 @@ the coordinator merges evidence. First migration binds and preserves existing
 coordinator evidence; a same-name recreation before this upgrade cannot be
 detected retroactively. Character and coordinator assets both require the full
 supported restart. Validate lucky identity transitions and native upgrade tracking.
+
+Halloween event walking updates its destination only from a fresh actual party
+boss sighting in the same realm, map and instance. During active travel, movement
+of at least 250 units can trigger a new route generation at most once every twenty
+seconds. The convoy ID, navigation revision, parent ownership and retry counters
+remain intact, and the character's original walking deadline still applies.
+After CODE turnover, a fresh idle report can refresh an already-consumed pending
+event exit command for the same cycle and saved revision. Main arrival must still
+be explicitly acknowledged before checkpoint travel begins. Activate these
+coordinator changes using the supported full restart and verify native death
+reentry and saved-point return artifacts; building alone does not activate them.

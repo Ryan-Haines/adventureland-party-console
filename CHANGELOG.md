@@ -5,6 +5,17 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Allow focused native CI regression runs alongside the full gameplay suite, so
+  failure diagnosis does not wait for long Cave scenarios to finish.
+
+- Recover pending event exits after a CODE restart consumes their original command:
+  refresh the same owned exit and require its explicit native Town acknowledgement
+  before routing the party back to the saved checkpoint.
+- Refresh Halloween event walking routes when a fresh native party sighting shows
+  the same boss has moved, so revived fighters can catch up to a kiting fight.
+  Route generations change without resetting ownership, retry budgets, or the
+  original walking deadline.
+
 - Event walking keeps its route when a visible boss is separated by native terrain.
   Combat takes over only in attack range or with a collision-safe local approach;
   blocked attendees keep participating in formation instead of remaining idle.
