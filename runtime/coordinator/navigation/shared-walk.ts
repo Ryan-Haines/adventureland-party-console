@@ -106,7 +106,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     return names.filter(name => {
       const s = state.statuses[name];
       if (!s || s.rip || s.seenAt < ports.now() - 3000 || s.server !== server) return false;
-      return r.activity !== "event" || ports.enabled(name, r.key);
+      return r.activity !== "event" || ports.enabled(name, r.key) && (!s.joinedEvent || s.joinedEvent === r.key);
     });
   }
   function workflowMembers(r: WalkRequest): string[] {
@@ -286,6 +286,31 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     return c.participants.every(name => freshTurnoverParticipant(c, name, r.key)) &&
       c.participants.some(name => characterRuntime(state.statuses[name]) !== c.runtimes?.[name]);
   }
+  function retireSupersededEventEntry(r: WalkRequest): void {
+    const c = state.activeConvoy, s = state.statuses[r.name];
+    if (!c || !s || !supersedableEventEntry(c) || !supersedingEventRequest(c, r, s)) return;
+    if (!c.participants.every(name => freshSupersededParticipant(c, name))) return;
+    // A different native event supersedes this exact failed entry. Same-event
+    // recovery still retains its original retry budget and terminal guards.
+    cancelObsoleteWalk(c);
+  }
+  function supersedableEventEntry(c: SharedConvoy): boolean {
+    return [c.purpose === 'shared-walk', c.phase === 'failed', c.walkingActivity === 'event',
+      c.failureCode === 'runtime-lost', !!c.restartRecovery, !c.retryExhausted,
+      c.geometryRepair?.phase !== 'failed', !!c.routeServer].every(Boolean);
+  }
+  function supersedingEventRequest(c: SharedConvoy, r: WalkRequest, s: SharedStatus): boolean {
+    if (![r.activity === 'event', !!c.walkingEvent, c.walkingEvent !== r.key, c.participants.includes(r.name)].every(Boolean)) return false;
+    const parent = c.walkingParents?.[r.name];
+    if (!parent || parent.revision !== r.revision || parent.parentId !== r.parentId) return false;
+    return s.joinedEvent === r.key && s.server === c.routeServer && ports.enabled(r.name, r.key);
+  }
+  function freshSupersededParticipant(c: SharedConvoy, name: string): boolean {
+    const report = state.statuses[name];
+    if (!report || !revivedReport(report, Number(c.failedAt) || 0)) return false;
+    return report.server === c.routeServer && !!characterRuntime(report) &&
+      participantOwned(c, name) && turnoverCommand(c, name);
+  }
   function turnoverFailure(c: SharedConvoy, r: WalkRequest): boolean {
     if (!preDeathEventFailure(c, r) || c.purpose !== 'shared-walk' || c.failureCode !== 'runtime-lost') return false;
     return !!c.restartRecovery && c.geometryRepair?.phase !== 'failed' && !!c.routeServer;
@@ -362,6 +387,7 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if (!r || !authorized(r)) return { error: "unauthorized walking leg" };
     if (body.cancel === true) return cancel(r);
     retirePreDeathWalk(r);
+    retireSupersededEventEntry(r);
     const failure = retainedFailure(r);
     if (failure) return failure;
     const retained = retainedReturn(r);

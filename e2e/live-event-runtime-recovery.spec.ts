@@ -122,6 +122,43 @@ test('native event walking recovers owned CODE turnover after coordinator restar
   }
 });
 
+test('native event selection replaces a failed old entry without waiting on another boss',async({live},info)=>{
+  test.setTimeout(360000);
+  // Failure inventory: CODE turnover plus a different genuine event selection
+  // must not leave the old failed rendezvous holding both live event workflows.
+  await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
+  const seeds=await live.admin(`output=(()=>{const result={};
+    for(const [type,x,y] of [['mrpumpkin',-495,685],['mrgreen',-200,-200]]){
+      const original=G.monsters[type];try{G.monsters[type]={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,spawns:[]};
+        const m=new_monster('halloween',{type,count:1,boundary:[x,y,x,y]},{temp:1});
+        result[type]={id:m.id,map:m.map,x:m.x,y:m.y};
+        if(type==='mrpumpkin')E[type]={live:true,map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};
+      }finally{G.monsters[type]=original;}}
+    broadcast_e();return result;})()`);
+  const samples:unknown[]=[];
+  let before:any;
+  try {
+    await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
+    await expect.poll(async()=>{const s=await live.state();if(s.activeConvoy?.walkingEvent==='mrpumpkin'&&s.activeConvoy.phase==='travel'){before=s;return true;}return false;},{timeout:90000}).toBe(true);
+    await live.clients[P].frame.evaluate(()=>{const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+      game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);});
+    await live.post('/formation',{character:P,eventSelections:['mrgreen']});
+    await live.admin(`output=(()=>{const seed=${JSON.stringify(seeds.mrgreen)};E.mrgreen={live:true,...seed,hp:100000000,max_hp:100000000};broadcast_e();return true;})()`);
+    await live.restartCoordinator();
+    await expect.poll(async()=>{const state=await live.state();
+      const hits=await Promise.all([[W,'mrpumpkin'],[P,'mrgreen']].map(async([name,type])=>({name,type,hit:(await live.clients[name].events()).find((event:any)=>event.event==='hit'&&String(event.data?.id)===String(seeds[type].id)&&event.data?.hid===name&&event.data?.damage>0)})));
+      samples.push({at:Date.now(),convoy:state.activeConvoy&&{id:state.activeConvoy.id,phase:state.activeConvoy.phase,event:state.activeConvoy.walkingEvent},characters:Object.fromEntries(fighters.map(name=>[name,{map:state.characters[name]?.map,event:state.characters[name]?.joinedEvent,runtime:state.characters[name]?.dashboardRuntime}])),hits});
+      if(samples.length>64)samples.shift();
+      return hits.every(value=>!!value.hit);
+    },{timeout:180000,intervals:[500,1000],message:'Each genuinely selected boss must receive native fighter damage after CODE replacement and restart'}).toBe(true);
+  } finally {
+    await info.attach('native-different-event-turnover',{body:JSON.stringify({seeds,before,samples}),contentType:'application/json'});
+    await live.post('/formation',{character:W,eventSelections:[]});await live.post('/formation',{character:P,eventSelections:[]});
+    await live.admin(`output=(()=>{for(const [type,seed]of Object.entries(${JSON.stringify(seeds)})){
+      const m=Object.values(instances).flatMap(i=>Object.values(i.monsters||{})).find(m=>String(m.id)===String(seed.id)&&m.type===type);if(m)remove_monster(m,{silent:true});delete E[type];}broadcast_e();return true;})()`);
+  }
+});
+
 test.describe('visible event boss separated by native terrain',()=>{
   test.use({initialPosition:{map:'halloween',x:-200,y:460}});
   test('native event route retains ownership until the visible boss is attack reachable',async({live},info)=>{

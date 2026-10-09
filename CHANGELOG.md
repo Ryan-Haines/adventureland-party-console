@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Release an owned failed event-entry route when a fresh participant selects a
+  different live event, and keep event rendezvous from waiting on characters
+  joining another event. Preserve same-event retry limits and newer commands.
+
 - Retire an already admitted deferred event-return walk when a new combat event
   takes ownership, preserving saved checkpoints and newer navigation owners.
 

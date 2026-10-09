@@ -1,3 +1,13 @@
+New-event takeover also cancels an already admitted deferred return convoy only
+when all its participants, cycle identities, and navigation revisions still
+belong to that deferred recovery. Validate the native deferred takeover journey.
+
+Farming handoff requires actual native leader attack range in both walking
+implementations. Admission and fresh encounter retention obey the selected farm
+boundary; genuine party attackers still use travel defense. Validate native
+UHills relocation and both fighters' attack receipts in
+`live-farming-handoff.spec.ts`. Publish character assets and restart together.
+
 Event recovery completion retires only matching-cycle return commands. Each
 profile also retires historical orphan exit/continuation commands for its active
 members, preserving current and deferred cycles and other profiles' commands.
