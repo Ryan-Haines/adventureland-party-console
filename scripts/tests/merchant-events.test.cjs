@@ -21,11 +21,11 @@ function client(event='snowman') {
   activeCombatEvent:()=>event?{name:event,state:{},types:[event],kind:event==='abtesting'?'pvp':'monster'}:null,
   eventSelected:()=>true,escapeOwns:()=>false,runtimeCurrent:()=>true,
   eventTravelAllowed:async()=>true,closeMerchantStandForTravel:async()=>calls.push('close'),
-  nearestEventTarget:()=>null,eventDestination:()=>({map:'winterland',x:1,y:2}),
+  is_in_range:()=>true,nearestEventTarget:()=>null,eventDestination:()=>({map:'winterland',x:1,y:2}),
   eventRequiresJoin:()=>event!=='snowman',join:async name=>{calls.push(['join',name]);c.character.map='winterland';},
   sharedPartyWalk:async(...args)=>calls.push(['walk',...args]),game_log(){},Date,
   request:async(...args)=>{calls.push(['request',...args]);return {yield:true};}};
- vm.createContext(c);vm.runInContext(functions(shared,['merchantEventWorkReserved','yieldMerchantForEvent','joinCombatEvent','pollEvents','rejoinActiveEventAfterRespawn','eventExitOwnsMovement']),c);
+ vm.createContext(c);vm.runInContext(functions(shared,['eventCombatReachable','merchantEventWorkReserved','yieldMerchantForEvent','joinCombatEvent','pollEvents','rejoinActiveEventAfterRespawn','eventExitOwnsMovement']),c);
  return {c,calls};
 }
 test('merchant reservations survive restart, deselection and deferred return, then release',()=>{
