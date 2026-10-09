@@ -11700,7 +11700,7 @@
   }
 
   function anniversaryItemReceived(data) {
-    if (character.ctype !== "merchant" || !data || data.response !== "item_received" ||
+    if (!runtimeCurrent() || character.ctype !== "merchant" || !data || data.response !== "item_received" ||
         anniversarySliceNames.indexOf(data.item) < 0) return;
     var event = eventStatus() && eventStatus().anniversary;
     var senderEntity = get_player(data.name);

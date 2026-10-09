@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Fence retired Anniversary item-response callbacks before reading native
+  character getters during Steam CODE replacement, preventing detached-frame
+  errors while preserving native socket handlers and the active game window.
+
 - Allow an offline secondary merchant to set its account home without requesting
   the designated merchant's production receipts. Its own production journal and
   pending lucky-slot safeguards still apply.

@@ -13,6 +13,7 @@ test.describe('retired event exit ownership',()=>{
     await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
     const oldCycle='historical-retired-pumpkin-exit';
     let started:any,retiredAt=0,seed:any;
+    const exitOwnerSamples:any[]=[];
     try {
       await live.restoreHistoricalSettings(settings=>{
         const profile=settings.farmingProfiles[W];
@@ -37,9 +38,16 @@ test.describe('retired event exit ownership',()=>{
           farmingProfiles:{...settings.farmingProfiles,[W]:{...settings.farmingProfiles[W],eventReturn:null,activeConvoy:null,eventSessions:{}}},
           eventSelectionsByCharacter:{...settings.eventSelectionsByCharacter,[W]:['mrpumpkin']}};
       });
-      await expect.poll(async()=>{const s=await live.state();return fighters.every(name=>
-        s.characters[name]?.dashboardRuntime===started.characters[name].dashboardRuntime &&
-        s.characters[name]?.eventRecovery?.cycleId!==oldCycle && !s.characters[name]?.farmingNavigationDebug?.departurePending);
+      await expect.poll(async()=>{const s=await live.state();
+        const native=Object.fromEntries(await Promise.all(fighters.map(async name=>[name,
+          await live.clients[name].run(`(()=>{const owner=globalThis.__partyEventExitOwner;
+            return {owner:owner?{cycleId:owner.cycleId,cancelled:!!owner.cancelled,commandId:owner.commandId}:null,
+              selectionPublished:Object.prototype.hasOwnProperty.call(globalThis,'__partyEventRecoveryCycleId'),
+              selectedCycle:globalThis.__partyEventRecoveryCycleId===undefined?null:globalThis.__partyEventRecoveryCycleId};})()`)])));
+        if(exitOwnerSamples.length===64)exitOwnerSamples.shift();
+        exitOwnerSamples.push({at:Date.now(),native,diagnostics:Object.fromEntries(fighters.map(name=>[name,s.characters[name]?.eventRecovery]))});
+        return fighters.every(name=>s.characters[name]?.dashboardRuntime===started.characters[name].dashboardRuntime &&
+          native[name].selectionPublished && native[name].selectedCycle!==oldCycle && (!native[name].owner || native[name].owner.cancelled || native[name].owner.cycleId!==oldCycle));
       },{timeout:15_000}).toBe(true);
       if(deferred){const resumed=await live.state();for(const name of fighters){
         expect(resumed.deferredEventReturns[name]).toBeUndefined();
@@ -49,7 +57,7 @@ test.describe('retired event exit ownership',()=>{
         e.event==='hit'&&String(e.data?.id)===String(seed.id)&&e.data?.hid===name&&e.at>retiredAt));
       },{timeout:180_000}).toBe(true);
     }finally{
-      await info.attach('native-retired-event-exit',{body:JSON.stringify({oldCycle,deferred,started,retiredAt,seed,final:await live.state().catch(error=>({error:String(error)})),events:await live.clients[W].events()}),contentType:'application/json'});
+      await info.attach('native-retired-event-exit',{body:JSON.stringify({oldCycle,deferred,started,retiredAt,seed,exitOwnerSamples,final:await live.state().catch(error=>({error:String(error)})),events:await live.clients[W].events()}),contentType:'application/json'});
       await live.post('/formation',{character:W,eventSelections:[]});
       if(seed)await live.admin(`output=(()=>{const m=Object.values(instances).flatMap(i=>Object.values(i.monsters||{})).find(m=>String(m.id)===${JSON.stringify(String(seed.id))}&&m.type==='mrpumpkin');if(m)remove_monster(m,{silent:true});delete E.mrpumpkin;broadcast_e();return true;})()`);
     }

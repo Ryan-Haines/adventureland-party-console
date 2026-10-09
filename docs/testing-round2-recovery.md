@@ -2,6 +2,12 @@
 
 Failure inventory recorded before implementation:
 
+- Native CODE turnover can expose a historical managed Anniversary response
+  callback between old-frame removal and new-generation socket migration. The
+  Linux trace proves anniversaryItemReceived read character.ctype through native
+  runner_functions.js:2816 after parent became null. Ownership must be checked
+  before any native getter; keep native response handlers and migration intact.
+
 - Completing or abandoning combat recovery can leave an event-return-town or
   event-resume-travel command after its owning cycle disappears. An old native
   handler can then block a newly engaged destination. Retirement must match the
@@ -114,3 +120,6 @@ unrelated recovery or command label without character reports.
 Deferred return takeover failure inventory: live followers can retain an old same-cycle deferred event-resume-travel command even after eventReturn becomes null. A newly authorized event trip has parent command ID zero, so shared walking cannot capture that checkpoint command and remains waiting. The new event admission must transfer a still-authorized deferred checkpoint into its new return snapshot and retire only that deferred cycle and its own exit/continuation command. Changed revisions, newer unrelated commands, and active recovery barriers must remain protected. Native regression declares both abandoned and deferred old exits before requiring unchanged CODE runtimes and real boss hits.
 
 Retired-exit fixture isolation: get_monster takes a monster type rather than a declared monster ID. Passing the ID during cleanup left the first declared living boss behind, so the second case's fighters acquired different bosses (observed Priest target489 versus Warrior target491). Between scenarios, retire only the declared ID/type by searching native instance monster maps. Retain all real boss-hit assertions and original deadlines; never remove competing bosses during an active assertion.
+# Retired native event exit observation
+
+Before changing the existing retirement fence: the last eventRecovery diagnostic can retain an old cycle after its asynchronous owner is cancelled, and departurePending can independently belong to new travel. Observe actual native CODE exit ownership and coordinator-published recovery selection for both fighters, preserving runtime identity. The unchanged 15-second fence requires no live uncancelled old exit owner and no old published selection; retain old diagnostics in a bounded ledger instead of treating them as ownership. Preserve the 180-second requirement for both real native boss hits and the exact deferred checkpoint assertions. A missing owner alone never proves resumed behavior.
