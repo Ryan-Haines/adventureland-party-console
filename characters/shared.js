@@ -10425,7 +10425,7 @@
     return ["mrgreen", "mrpumpkin"].map(function (name) {
       if (!eventSelected(name)) return null;
       var attendance = halloweenAttendance(name, status[name]);
-      return attendance && attendance.staging ? { name: name, spawnAt: attendance.spawnAt, spawnId: attendance.spawnId } : null;
+      return attendance && attendance.staging ? { name: name, spawnAt: attendance.spawnAt + coordinatorClockOffset, spawnId: attendance.spawnId } : null;
     }).filter(Boolean);
   }
 

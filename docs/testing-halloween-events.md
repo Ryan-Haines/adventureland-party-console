@@ -14,6 +14,9 @@ are repeatable evidence; no fixture records successful combat or travel outcomes
   the existing ten-second ended-event sweep and coordinator restart.
 - A missed spawn cannot hold attendance beyond spawn plus 120 seconds, refresh
   that deadline from later status receipts, or reopen the same expired timer.
+- Staging reports must translate the captured client-wall deadline into the
+  coordinator clock, as sightings do. Different client clocks must not alter
+  eligibility; the local wait deadline and native spawn identity remain fixed.
 - Native spawn regions are rectangular, not one exact boss location. Live
   coordinates and local entities supersede staging destinations.
 - A new timer or loss of the announcement must release old staging ownership;
@@ -72,6 +75,10 @@ coordinator and character assets; a build does not activate running clients.
 - Full retained unit run: 3,346 passed, no failures; two Linux-only checks skipped
   on Windows. See `.build/halloween-full-unit-green.log`.
 - Full build, all four TypeScript projects, and the CI coordinator lint passed.
+- Staging clock normalization passed a further native Mr. Pumpkin journey,
+  including restart, post-respawn damage, evacuation with the boss alive, and
+  saved-point return. Its 35 verified files are archived under
+  `.build/halloween-clock-normalization-report` and `-results`.
 
 Native fixtures isolate previously declared Halloween encounters between cases.
 Slenderman's initial health budget counts only damage types eligible against its

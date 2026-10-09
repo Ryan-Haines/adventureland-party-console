@@ -7,6 +7,8 @@ from the commits merged into `main`.
 
 ### Added
 
+- Scheduled boss reports use the coordinator clock, so client clock differences
+  do not change staging eligibility or renew the fixed missed-spawn deadline.
 - Retained event regression fixtures load the current workflow helpers and pinned
   game geometry consistently with CI. Optional boss-sighting and game-data
   fields preserve existing heartbeat and ordinary attack behavior when absent.
