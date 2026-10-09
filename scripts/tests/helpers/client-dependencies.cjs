@@ -23,6 +23,20 @@ exports.passingContext = values => {
   return context;
 };
 
+exports.productionJournalContext = context => {
+  context.root ||= {};
+  const storage = new Map();
+  context.root.localStorage ||= {
+    getItem: key => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: key => storage.delete(key),
+  };
+  context.productionJournalLoaded ??= false;
+  context.productionJournal ??= null;
+  functions(context,['productionJournalKey','readProductionJournal','writeProductionJournal']);
+  return context;
+};
+
 exports.merchantGuards = (context, {stock = false, journal = false} = {}) => {
   context.root ||= {};
   functions(context, ['verifyMerchantItemMarks']);
