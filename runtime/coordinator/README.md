@@ -1,3 +1,10 @@
+Steam companion restoration retries native `already_running` failures after a
+coalesced `servers_and_characters` account-roster refresh, at most once every
+three seconds. Verified native client 15555 updates `X.characters` through its
+own information handler; the bridge never falsifies account online flags.
+Ordinary AFK roster refresh can otherwise take about ninety seconds. Recovery
+requests and delayed retries stop when the bridge lifecycle is retired.
+
 Halloween add-priority changes involve both `characters/shared.js` and the
 maintained role runner under `runtime/characters/roles/`. Build and activate the
 character assets together; restarting only coordinator bundles does not activate

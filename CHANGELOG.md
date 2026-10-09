@@ -204,6 +204,12 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Steam companion reconnect refreshes the native account roster after an
+  `already_running` rejection, so stale online entries cannot delay restoring
+  a stopped companion until the native AFK refresh. Concurrent refreshes are
+  coalesced, ownership flags remain authoritative, and retired bridges stop
+  scheduling recovery.
+
 - Preserve progress in large Cave native route searches: extend the 90-second
   initial bound while the same BFS advances, with a 240-second hard limit and
   a 270-second follower wait. Stalled, reset, or unavailable progress keeps the

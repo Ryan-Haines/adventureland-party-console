@@ -101,6 +101,9 @@ test('merchant finishes native upgrades despite delayed lucky journal storage ec
   test.setTimeout(480_000);
   // Failure modes: IPC echoes resurrect a cleared lucky journal, move the next
   // owned item during recovery, and strand the durable order in receipt review.
+  // Reconnect can also reject a missing companion as already_running when the
+  // native account roster still says online; its AFK refresh takes about 90s.
+  // Observe authoritative native roster refreshes without changing online flags.
   await live.restoreHistoricalSettings(() => ({ luckyUpgradeSlots: { [merchant]: 30 } }));
   await catalog(live, 'helmet');
   const before = await economy(live);
@@ -124,7 +127,26 @@ test('merchant finishes native upgrades despite delayed lucky journal storage ec
     j.phase='running';delete j.result;j.item.level=0;
     const target=character.items.findIndex((i,n)=>n!==j.from&&n!==j.to&&!i);
     swap(j.from,target);localStorage.setItem(key,JSON.stringify(j));return true})()`);
-  await live.reconnectClient(merchant);
+  const nativeReconnectRoster = () => live.clients.E2EWarrior.frame.evaluate(() => {
+    const game = window as any;
+    return { at: Date.now(), active: game.get_active_characters(),
+      roster: game.X.characters.map((entry: any) => ({ name: entry.name,
+        online: entry.online, server: entry.server })),
+      frames: Array.from(document.querySelectorAll('iframe')).map(frame => frame.id) };
+  });
+  const reconnectBefore = await nativeReconnectRoster(), rosterRefreshes: number[] = [];
+  const observeRosterRefresh = (request: import('@playwright/test').Request) => {
+    if (request.postData()?.includes('servers_and_characters')) rosterRefreshes.push(Date.now());
+  };
+  live.clients.E2EWarrior.page.on('request', observeRosterRefresh);
+  try { await live.reconnectClient(merchant); }
+  finally {
+    live.clients.E2EWarrior.page.off('request', observeRosterRefresh);
+    await info.attach('native-companion-reconnect-roster', { body: JSON.stringify({
+      before: reconnectBefore, after: await nativeReconnectRoster(), rosterRefreshes,
+      coordinator: (await live.state()).characterConnections,
+    }), contentType: 'application/json' });
+  }
   await expect.poll(async () => (await live.state()).characters[merchant]?.upgradeInventoryBusy,
     { timeout: 30_000, message: 'Idle recovery must clear the inventory gate before another job is dispatched' }).toBe(false);
   const followup = await live.post('/merchant/order', { buys: [{ id: 'helmet', quantity: 1, level: 1 }], crafts: [] });
