@@ -35,6 +35,9 @@ Use upstream `start_runner` and verify a new unique dashboard runtime identity
 plus a fresh successful report. The in-frame generation counter restarts in a
 new CODE iframe and cannot prove replacement. A full Steam reconnect immediately after coordinator restart
 can race the bridge heartbeat and reject restoration before CODE activation.
+The restarted coordinator initially has no character reports. Wait for a fresh
+merchant report before capturing its old runtime identity, and tolerate that
+absence while polling the replacement runtime's first report.
 
 Batch recovery failure inventory (live sequence 3667): native inventory sorting
 moved three owned base wands from recorded slots 22/24/25 to 17/18/19. Stale

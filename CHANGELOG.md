@@ -5,6 +5,11 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Make native bank-sale validation wait for every actual sale receipt, and
+  establish fresh Cave observations before floor validation. Cave assembly
+  fixtures search native collision-safe staging beyond cramped entry areas
+  while retaining combat-room clearance and real movement assertions.
+
 - Resume paid upgrade batches after inventory sorting moves identical owned
   items: restore disjoint batch slots only when the complete carried group matches
   recorded ownership. Extra identical cargo still requires review; spending,
