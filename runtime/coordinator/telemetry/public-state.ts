@@ -63,6 +63,8 @@ function giveawayPayload(
  * what the dashboard needs to poll quickly.
  */
 const configFields = [
+  'combatStrategies',
+  "itemSwaps",
   "characterAppearances", "merchantRules",
   "bankboiPrefix", "anniversaryAutoChat", "farmingProfiles",
   "passiveRareHunts", "passiveHunting", "phoenixRouteOrder",
@@ -79,6 +81,8 @@ const configFields = [
   "farmingPolicy",
   "huntBlacklist", "huntSettings",
   "restockPolicies", "merchantCharacter", "merchantForceStand", "merchantStandLocation", "merchantWeapon",
+  "autoConsumables",
+  "merchantEventCombatEnabled",
 ] as const satisfies readonly (typeof publicStateFields)[number][];
 /** Keys present only in the assembled dashboard payload, not publicStateFields. */
 const configExtraKeys = [

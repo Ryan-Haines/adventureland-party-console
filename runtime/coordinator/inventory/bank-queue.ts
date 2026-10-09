@@ -16,9 +16,10 @@ interface State {
   goldTargets: Record<string, unknown>;
 }
 /** Serializes legacy character bank visits and snapshots their command payload at dispatch. */
-export function createBankQueue(state: State, ports: { now(): number; nextCommand(): number }) {
+export function createBankQueue(state: State, ports: { now(): number; nextCommand(): number; allowed?(name: string): boolean }) {
   function dispatch(): void {
     if (state.bankCurrent || !state.bankQueue.length) return;
+    if (ports.allowed?.(state.bankQueue[0]!.name) === false) return;
     const job = state.bankQueue.shift()!,
       name = job.name;
     state.bankCurrent = job;

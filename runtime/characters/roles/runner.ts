@@ -2,6 +2,8 @@ import {passiveStopRequired} from '../../combat/passive-travel.ts';
 import {installCombatTrace} from "../../combat/trace.ts";
 import {createEntityRefresh} from "../../combat/entity-refresh.ts";
 import { installPorcupineEquipment } from "./porcupine-equipment-runtime.ts";
+import { installItemSwaps } from './item-swaps-runtime.ts';
+import { installAutoConsumable } from './auto-consumable.ts';
 import { merchantAnniversaryControl } from "../../coordinator/merchant/anniversary-control.ts";
 import { createAttackController } from "./attack-controller.ts";
 import { installSkillRuntime } from '../skills/runtime.ts';
@@ -9,6 +11,7 @@ import {installQueueClient} from '../../combat/client.ts';
 import {installQueueMarkers} from '../../combat/markers.ts';
 import {installLootClient} from '../../combat/departure-loot.ts';
 import { createDeathRecovery } from "./death-recovery.ts";
+import { installDeathLoop } from './death-loop.ts';
 import { defaultRole } from "./default.ts";
 import { targetRejection, eligibleSelection } from "./target-state.ts";
 import { errorReason, type Role, type CombatRoot, type Target } from "./types.ts";
@@ -21,6 +24,8 @@ export function installRoleRunner(
   (root as any).partyMerchantAnniversaryControl = merchantAnniversaryControl;
   root.partyRoleRunner?.stop();
   let equipment: ReturnType<typeof installPorcupineEquipment> | null = null;
+  let itemSwaps: ReturnType<typeof installItemSwaps> | null = null;
+  let autoConsumable: ReturnType<typeof installAutoConsumable> | null = null;
   function resolvedRole(): Role {
     return { ...defaultRole, ...classRole };
   }
@@ -57,14 +62,14 @@ export function installRoleRunner(
     active: () => active, allowed: () => combatAllowed() || !!passingTarget(),
     passing: target => target.id !== currentTarget()?.id && target.id === passingTarget()?.id,
     preparePassing: target => queueClient?.preparePassing(target) ?? false, state: () => root.partyCombatState,
-    equipmentBusy: () => !!equipment?.busy(),
+    equipmentBusy: () => !!equipment?.busy() || !!itemSwaps?.busy(),
     skillAttack: target => skills?.attack(target) ?? null,
     skillBusy: () => skills?.busy() ?? false,
     report: reportError,
   });
   const recoverFromDeath = createDeathRecovery({
     isDead: () => !!character.rip,
-    blocked: () => !!sharedRoutine.dungeonOwned?.(),
+    blocked: () => !!sharedRoutine.dungeonOwned?.() || !!sharedRoutine.deathLoopActive?.(),
     respawn: () => sharedRoutine.dungeonOwned?.() ? Promise.reject(Error('Dungeon owns revival')) : Promise.resolve(respawn()),
     releaseCombat: () => {
       working = false;
@@ -91,12 +96,19 @@ export function installRoleRunner(
     );
   }
   function passingTarget(): Target | null {
+    if (sharedRoutine.deathLoopActive?.()) return null;
     if (sharedRoutine.dungeonOwned?.()) return null;
     if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending","feed"].includes(sharedRoutine.getAbtestingMode())) return null;
     if (sharedRoutine.frankyCombatActive?.()) return sharedRoutine.getWalkingPassiveTarget?.() || null;
     return (sharedRoutine as any).getPassingTarget?.() || null;
   }
   function attackTarget(): Target | null {
+    const focus = sharedRoutine.getMonsterFocus?.();
+    if (focus?.length === 1 && focus[0] === 'crab' && sharedRoutine.rogueKnifeFarm?.()) {
+      // Crab respawns must be eligible on this attack tick, without waiting for
+      // the ordinary one-second selection refresh after the previous batch dies.
+      return eligibleSelection(sharedRoutine.getRogueKnifeTarget?.() || null);
+    }
     const current = currentTarget(), passing = passingTarget();
     if (!current) return passing;
     if (!passing) return current;
@@ -128,6 +140,7 @@ export function installRoleRunner(
     return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
   }
   function chooseTarget() {
+    if (sharedRoutine.rogueKnifeFarm?.()) return sharedRoutine.getRogueKnifeTarget?.() || null;
     if (sharedRoutine.dungeonOwned?.()) return sharedRoutine.getDungeonTarget?.() || null;
     if(sharedRoutine.returnCombatActive?.())return sharedRoutine.returnDefenseTarget?.() || null;
     if (sharedRoutine.frankyCombatActive?.()) return sharedRoutine.getEventTarget();
@@ -146,6 +159,22 @@ export function installRoleRunner(
     if (!target && !exclusiveCombat() && sharedRoutine.getFarmingMode() !== "scatter" && !sharedRoutine.usesGroupedCombat?.())
       await sharedRoutine.followLeaderIfFar(150);
   }
+  function retainCurrentTarget(current: Target | null, priority: Target | null | undefined): boolean {
+    if (!current || invalidated || sharedRoutine.returnCombatActive?.()) return false;
+    if (priority && priority.id !== selectedTarget) return false;
+    return !encounterTargetChanged();
+  }
+  function encounterTargetChanged(): boolean {
+    const dungeon = sharedRoutine.dungeonOwned?.();
+    const rare = dungeon ? null : sharedRoutine.getRareTarget?.();
+    if (rare && rare.id !== selectedTarget) return true;
+    return formationTargetChanged(dungeon);
+  }
+  function formationTargetChanged(dungeon: boolean | undefined): boolean {
+    if (dungeon) return sharedRoutine.getDungeonTarget?.()?.id !== selectedTarget;
+    if (sharedRoutine.usesLeaderTarget?.()) return sharedRoutine.getGroupedTarget()?.id !== selectedTarget;
+    return false;
+  }
   async function selectTarget() {
     if (selecting || !active) return;
     if (!combatAllowed()) {
@@ -155,6 +184,7 @@ export function installRoleRunner(
       return;
     }
     const current = currentTarget();
+    const priorityEventTarget = sharedRoutine.getPriorityEventTarget?.();
     const closer = !exclusiveCombat() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
     if (closer) {
       root.sharedRoutine?.resetCombatMovement?.();
@@ -162,16 +192,12 @@ export function installRoleRunner(
       attacks.wake();
       return;
     }
-    if (!sharedRoutine.returnCombatActive?.() && !invalidated && current) {
-      const rare = sharedRoutine.dungeonOwned?.() ? null : sharedRoutine.getRareTarget?.();
-      const nominated = sharedRoutine.dungeonOwned?.() ? sharedRoutine.getDungeonTarget?.() : sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
-      if ((!rare || rare.id === selectedTarget) && (!(sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
-    }
+    if (retainCurrentTarget(current, priorityEventTarget)) return;
     invalidated = false;
     selecting = true;
     const epoch = generation;
     try {
-      const selected = chooseTarget();
+      const selected = priorityEventTarget || chooseTarget();
       if (!currentEpoch(epoch) || !combatAllowed()) return;
       const target = selected && !killed.has(selected.id) ? eligibleSelection(selected) : null;
       await publishSelection(target);
@@ -187,6 +213,8 @@ export function installRoleRunner(
     root.sharedRoutine?.resetCombatMovement?.();
   }
   function equipmentTick() {
+    itemSwaps?.tick(!character.rip && combatAllowed());
+    if (itemSwaps?.busy() || itemSwaps?.ownsEquipment()) return;
     const actor = character as typeof character & { damage_type?: string };
     const target = sharedRoutine.equipmentTarget ? sharedRoutine.equipmentTarget() : currentTarget();
     equipment?.tick(target, actor.damage_type, Number(character.range), combatAllowed());
@@ -199,10 +227,15 @@ export function installRoleRunner(
     return true;
   }
   function movementTick() {
+    if (sharedRoutine.deathLoopActive?.()) return;
     const dungeon = !!sharedRoutine.dungeonOwned?.();
-    if (dungeon && !combatAllowed()) { root.sharedRoutine?.resetCombatMovement?.(); return; }
     try {
       equipmentTick();
+      // This pass follows the independent skill cooldown, never the attack
+      // scheduler's pending Fan of Knives cast or attack-family deadline.
+      if (character.ctype === 'rogue' && combatAllowed() && !equipment?.busy() && !itemSwaps?.busy())
+        void skills?.mentalburst(attackTarget()).catch(reportError);
+      if (dungeon && !combatAllowed()) { root.sharedRoutine?.resetCombatMovement?.(); return; }
       if (!dungeon) {
         if(sharedRoutine.returnCombatActive?.()) {
           sharedRoutine.returnMovementTick?.();
@@ -221,6 +254,7 @@ export function installRoleRunner(
       if (target) missingSince = 0;
       else if (!missingSince) missingSince = Date.now();
       attacks.wake();
+      if (combatAllowed() && skills?.farmMovement()) return;
       if (!dungeon && sharedRoutine.groupedMovement?.()) return;
       if (!dungeon && (target || Date.now() - missingSince >= 750) && sharedRoutine.recoverFarmApproach && sharedRoutine.recoverFarmApproach(target)) return;
       if (dungeon && sharedRoutine.caveRecoveryMove?.()) return;
@@ -258,6 +292,7 @@ export function installRoleRunner(
       await role.beforeAttack(target);
   }
   async function lootTick(): Promise<void> {
+    if (sharedRoutine.deathLoopActive?.()) return;
     if (looting || !active || character.rip || ["pending", "feed"].includes(sharedRoutine.getAbtestingMode())) return;
     looting = true;
     try {
@@ -276,7 +311,11 @@ export function installRoleRunner(
     const epoch = generation;
     try {
       const role = resolvedRole();
-      if (character.rip || sharedRoutine.isOccupied()) return;
+      await root.partyDeathLoop?.tick();
+      if (sharedRoutine.deathLoopActive?.()) return;
+      if (character.rip) return;
+      if (character.ctype === 'rogue') await skills?.maintainRspeed();
+      if (!currentEpoch(epoch) || character.rip || sharedRoutine.isOccupied()) return;
       const mode = sharedRoutine.getAbtestingMode();
       if (mode === "pending") return;
       if (mode === "feed") {
@@ -311,7 +350,10 @@ export function installRoleRunner(
         throw new Error("Shared party code is not ready; refusing to start combat timers");
       if (timer) return;
       skills = installSkillRuntime(root);
+      root.partyDeathLoop = installDeathLoop(root);
       equipment = installPorcupineEquipment(root);
+      itemSwaps = installItemSwaps(root);
+      autoConsumable = installAutoConsumable(root);
       game_log(character.name + " loaded generic " + resolvedRole().name + " behavior", "#51D2E1");
       active = true;
       root.partyCombatState = { at: Date.now(), stage: "start", error: null };
@@ -325,6 +367,7 @@ export function installRoleRunner(
       movementTimer = setInterval(movementTick, 100);
       void selectTarget();
       respawnTimer = setInterval(function () {
+        if (sharedRoutine.deathLoopActive?.()) return;
         if (character.rip) {
           generation += 1;
           selectedTarget = null;
@@ -338,8 +381,11 @@ export function installRoleRunner(
       void recoverFromDeath();
     },
     stop: function () {
+      root.partyDeathLoop?.stop();
       skills?.stop();
       equipment?.stop();
+      itemSwaps?.stop();
+      autoConsumable?.stop();
       queueClient?.stop();queueMarkers?.stop();
       lootClient?.stop();trace?.stop();
       active = false;

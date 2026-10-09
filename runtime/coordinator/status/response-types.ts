@@ -2,6 +2,8 @@ import type { MerchantCommand } from "../merchant/work.ts";
 import type { Catalog } from "../../../dashboard/lib/farming-zones.ts";
 
 export interface HeartbeatStatus {
+  halloweenObservation?: import('../../events/halloween.ts').HalloweenObservation | null;
+  halloweenDeparturePending?: boolean;
   [field: string]: unknown;
   name: string;
   server?: string;
@@ -26,6 +28,8 @@ export interface EntityReference {
 }
 
 export const heartbeatStateFields = [
+  'combatStrategies',
+  "itemSwaps",
   "combatRecovery",
   "combatResetByCharacter",
   "threshold",
@@ -35,6 +39,7 @@ export const heartbeatStateFields = [
   "abtestingStrategy",
   "merchantCharacter",
   "merchantForceStand",
+  "merchantEventCombatEnabled",
   "merchantStandLocation",
   "merchantWeapon",
   "luckyUpgradeSlots",
@@ -52,6 +57,8 @@ export const heartbeatStateFields = [
 ] as const;
 
 export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[number], unknown> {
+  autoConsumables?: import('../../consumables.ts').AutoConsumables;
+  halloweenAttendance?: Record<string, import('../../events/halloween.ts').HalloweenAttendance>;
   dailyDungeons?: import("../../dungeons/contracts.ts").DungeonState;
   passiveHunting: import('../navigation/passive-settings.ts').PassiveSettings;
   eventSessions?: import('../merchant/event-control.ts').MerchantEventState['eventSessions'];
@@ -61,6 +68,7 @@ export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[num
   huntEventTrips?: import("../events/hunt-trip.ts").HuntEventTrips["huntEventTrips"];
   leader: string | null;
   merchantCharacter: string | null;
+  merchantEventCombatEnabled: boolean;
   merchantStandLocation: import('../merchant/stand-location.ts').MerchantStandLocation | null;
   commands: Record<string, MerchantCommand | undefined>;
   statuses: Record<string, HeartbeatStatus | undefined>;
@@ -95,6 +103,7 @@ export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[num
 }
 
 export interface HeartbeatResponsePorts {
+  persist?(): void;
   now(): number;
   activeNames(): string[];
   enabled(name: string, event?: string): boolean;

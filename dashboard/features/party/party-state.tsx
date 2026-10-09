@@ -41,6 +41,10 @@ import { UpgradeMark } from "./upgrade-mark";
 import { Withdrawal } from "./withdrawal";
 
 export type PartyState = {
+  activityPlan?: import('../../../runtime/activity-plan').ActivityPlan | null;
+  combatStrategies?: import('../../../runtime/combat/strategies').CharacterStrategies;
+  autoConsumables?: import('../../../runtime/consumables').AutoConsumables;
+  itemSwaps?: import('../../../runtime/item-swaps').ItemSwaps;
   upgradeOfferingRules?: import("../../../runtime/upgrade-offerings").UpgradeOfferingRule[];
   upgradeOfferingStock?: Partial<Record<import("../../../runtime/upgrade-offerings").UpgradeOffering, number>>;
   characterAppearances?: Record<string, Pick<Char, "skin" | "characterSprite" | "characterDollHtml"> & {updatedAt:number}>;
@@ -111,6 +115,7 @@ export type PartyState = {
   followers?: Record<string, boolean>;
   eventsByCharacter?: Record<string, boolean>;
   eventSelectionsByCharacter?: Record<string, string[]>;
+  merchantEventCombatEnabled?: boolean;
   eventSchedules?: import("./event-selection-control").EventSchedule[];
   monsterFocus?: string[] | string;
   monsterFocusByCharacter?: Record<string, string[]>;

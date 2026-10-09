@@ -11,6 +11,24 @@ export interface Role {
   usePotion(): Promise<boolean>;
 }
 export interface SharedCombat {
+  activityReserved?(): boolean;
+  deathLoopActive?(): boolean;
+  deathLoopEnter?(): Promise<void>;
+  deathLoopLeave?(): Promise<void>;
+  deathLoopMove?(destination: string | Pick<Target, 'x' | 'y'>): Promise<unknown>;
+  partyBuffTargets?(): import('../skills/types.ts').Combatant[];
+  combatStrategySettings?(): import('../../combat/strategies.ts').StrategySettings;
+  combatStrategyEnabled?(id: import('../../combat/strategies.ts').CombatStrategyId): boolean;
+  stationaryCombatDestination?(target: Target, priest: Pick<Character, 'x' | 'y' | 'name' | 'ctype' | 'range'> | null, desired: number): Pick<Target, 'x' | 'y'> | null;
+  autoConsumable?(): string | null;
+  itemSwapSettings?(): import('../../item-swaps.ts').ItemSwap[];
+  itemSwapMutationBlocked?(): boolean;
+  rogueKnifeFarm?(): { map: string; x: number; y: number } | null;
+  rogueKnifeFarmMove?(point?: { map: string; x: number; y: number }): boolean;
+  rogueKnifeFarmContains?(point: { map: string; x: number; y: number }): boolean;
+  getRogueKnifeTarget?: TargetGetter;
+  // Console focus also accepts the "all" selector and newly released monster IDs.
+  getMonsterFocus?(): string[];
   dungeonOwned?(): boolean;
   caveRecoveryReserved?(): boolean;
   caveRecoveryTick?(): Promise<boolean>;
@@ -39,6 +57,7 @@ export interface SharedCombat {
   getScatterBreakTarget: TargetGetter;
   getEngagedTarget: TargetGetter;
   getEventTarget: TargetGetter;
+  getPriorityEventTarget?: TargetGetter;
   sharedTargetId?(): string | null;
   frankyCombatActive?(): boolean;
   frankyMovementTick?(target: Target | null): boolean;
@@ -101,6 +120,8 @@ export interface SharedCombat {
   smartLoot(): Promise<unknown>;
 }
 export interface CombatState {
+  itemSwap?: import('./item-swap-controller.ts').SwapDiagnostic;
+  crabFarm?: import('../farming/rogue-knives.ts').RogueKnifePositionDiagnostic | null;
   skill?: import('../skills/types.ts').SkillDiagnostic;
   entityRefresh?: import('../../combat/entity-refresh.ts').EntityRefreshDiagnostic;
   recovery?: { phase: string; attempt: number; lastError: string | null; errorAt: number | null; status: string; at: number; recoveredAt: number | null };
@@ -127,6 +148,8 @@ export interface RoleRunner {
   stop(): void;
 }
 export interface CombatRoot {
+  partyDeathLoop?: { active(): boolean; tick(): Promise<void>; stop(): void };
+  partyItemSwaps?: import('./item-swaps-runtime.ts').ItemSwapRuntime;
   partyPorcupineEquipment?: ReturnType<typeof import("./porcupine-equipment.ts").createPorcupineEquipment>;
   sharedRoutine: SharedCombat;
   partyRoleRunner?: RoleRunner;

@@ -2,6 +2,8 @@ import {collectPassing} from '../../combat/passing.ts';
 import {passingControl} from '../../combat/passing-admission.ts';
 import {outboundHunt} from '../../combat/hunt-travel.ts';
 import { merchantEventRecoveryReserved } from '../merchant/event-control.ts';
+import { eventEnabled } from '../../../dashboard/lib/event-policy.ts';
+import { createHalloweenAttendance } from '../events/halloween.ts';
 import type {Member} from '../../combat/grouped.ts';
 import { monsterFocus, needsCatalog, partyResponse } from "./response-party.ts";
 import {
@@ -12,6 +14,7 @@ import {
 } from "./response-types.ts";
 
 const retainedCommands = new Set([
+  'activity-plan',
   "bank",
   "bankboi-service",
   "upgrade",
@@ -56,6 +59,10 @@ const navigationCommands = new Set([
 
 /** Long-running commands remain deliverable until their completion endpoint acknowledges them. */
 export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatResponsePorts) {
+  const halloween = createHalloweenAttendance(state, {
+    now: () => ports.now(), selected: name => eventEnabled(state, name, 'halloween'),
+    persist: () => ports.persist?.(),
+  });
   function restoreTownCommand(name: string): void {
     const town = state.townCycle;
     if (town?.pending.includes(name) && !state.commands[name] && town.revisions?.[name] === ports.navigationRevision(name))
@@ -180,6 +187,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
         convoySignal: ports.convoySignal(name),
         combatRecovery: state.combatRecovery,
         combatResetByCharacter: state.combatResetByCharacter,
+        combatStrategies: state.combatStrategies,
         travelCombat: travelCombatFor(state as TravelState, name),
       };
     const names = ports.activeNames();
@@ -190,6 +198,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
       ...Object.fromEntries(heartbeatStateFields.map((field) => [field, state[field]])),
       serverNow: ports.now(),
       travelCombat,
+      autoConsumable: state.autoConsumables?.[name] || null,
       ...realmErrors(name),
       command,
       rareControl: ports.rareControl(name),
@@ -198,7 +207,10 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
       convoySignal: ports.convoySignal(name),
       ...travelResponse(name),
       ...merchantResponse(name),
-      ...(name === state.merchantCharacter ? { merchantEventRecoveryReserved: merchantEventRecoveryReserved(state) } : {}),
+      ...(name === state.merchantCharacter ? {
+        merchantEventRecoveryReserved: merchantEventRecoveryReserved(state),
+        merchantCombatEvent: state.eventSessions?.[name]?.event || null,
+      } : {}),
       ...partyResponse(state, names, leader),
       groupedCombat: ports.groupedCombat(),
         passingEncounters: passingReports(),
@@ -206,6 +218,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
       followLeader: !!state.followers[name],
       eventsEnabled: !!ports.enabled(name),
       eventSelections: ports.selectedEvents(name),
+      halloweenAttendance: halloween.response(name),
       partyEventHint: liveEvent(name, names),
       anniversary: ports.anniversary(),
       ...leaderResponse(leader),

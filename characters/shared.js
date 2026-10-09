@@ -13,7 +13,11 @@
   var runtimeGeneration = root.__partyRuntimeGeneration =
     (Number(root.__partyRuntimeGeneration) || 0) + 1;
   function runtimeCurrent() { return Number(root.__partyRuntimeGeneration) === runtimeGeneration; }
+  function deathLoopActive() {
+    return character.ctype !== 'merchant' && !!(root.partyDeathLoop && root.partyDeathLoop.active());
+  }
   var movement = root.installPartyMovement(root, {
+    allowed: function(options) { return !deathLoopActive() || !!(options.owner && options.owner.deathLoop); },
     now: Date.now,
     context: function() { return { runtime: convoyRuntimeId || String(runtimeGeneration), revision: Number(navigationIntent && navigationIntent.revision) || 0,
       current: runtimeCurrent() && (!parent.socket || parent.socket.connected !== false), paused: !!root.__partyMovementPaused || !!(dungeonClient && !dungeonClient.canMove()) }; },
@@ -185,6 +189,7 @@
     return candidates[0];
   }
   async function escapeSurvivalPulse() {
+    if (deathLoopActive()) return;
     if (!runtimeCurrent() || !escapeOwns() || ['recovering','recovery-convoy','complete','failed-hold'].indexOf(escapeState.stage)<0 || character.rip || escapeSurvivalBusy) return;
     var state = escapeState;
     function current() { return runtimeCurrent() && escapeState && escapeState.id === state.id && !character.rip; }
@@ -198,6 +203,7 @@
     } finally { escapeSurvivalBusy = false; }
   }
   async function escapePulse() {
+    if (deathLoopActive()) return;
     if (!runtimeCurrent() || !escapeOwns() || !escapeLocal || escapePulseBusy) return;
     var state = escapeState, local = escapeLocal;
     function current() { return runtimeCurrent() && escapeState && escapeState.id === state.id && escapeState.stage === state.stage && escapeLocal === local; }
@@ -425,7 +431,11 @@
   var travellingEventName = null, eventSelectionRevision = 0;
   var eventClockOffset = 0, eventClockSyncedAt = 0, eventClockRequest = null;
   var eventFeedAt = Date.now(), eventClockTimer = null;
-  function eventSelected(name) { return enabledEventSelections === null ? name === "anniversary" || eventsEnabled : enabledEventSelections.indexOf(name) >= 0; }
+  var merchantEventCombatEnabled = false;
+  function eventSelected(name) {
+    if (character.ctype === "merchant" && name !== "anniversary" && !merchantEventCombatEnabled) return false;
+    return enabledEventSelections === null ? name === "anniversary" || eventsEnabled : enabledEventSelections.indexOf(name) >= 0;
+  }
   function receiveEventFeed() { eventFeedAt = Date.now(); }
   function receiveEventClock(data) {
     if (!eventClockRequest) return;
@@ -444,7 +454,15 @@
   function eventScheduleSnapshot() {
     var status = eventStatus(), names = Object.keys(G.events || {});
     if (names.indexOf("snowman") < 0) names.push("snowman");
+    if (names.indexOf("halloween") < 0) names.push("halloween");
     return names.map(function(id) {
+      if (id === "halloween") {
+        var halloween = halloweenObservation();
+        var preparation = root.partyHalloweenEvents.preparation(halloween, Date.now() + coordinatorClockOffset);
+        return { id: id, name: "Halloween", live: Date.now() - eventFeedAt <= 120000 && halloween.bosses.length > 0,
+          next: halloween.next, statusLabel: preparation ? "Preparing for " + (preparation.type === "mrpumpkin" ? "Mr. Pumpkin" : "Mr. Green") :
+            halloween.season ? "Season active; waiting for a boss" : "Season inactive" };
+      }
       var value = status[id] || {};
       var schedule = status.schedule || {}, kind = ["crabxx", "goobrawl", "abtesting"].indexOf(id) >= 0 ? "daily" : ["icegolem", "franky"].indexOf(id) >= 0 ? "nightly" : null;
       var hours = kind === "daily" ? schedule.dailies : kind === "nightly" ? schedule.nightlies : null;
@@ -466,6 +484,84 @@
   var manuallySuppressedEvent = root.__partyManuallySuppressedEvent || null;
   var eventMissingSince = 0;
   var partyEventHint = null;
+  var halloweenAttendance = null;
+  function halloweenObservation() {
+    var observation = root.partyHalloweenEvents.observe(eventStatus(), G, eventFeedAt + coordinatorClockOffset);
+    // eventStatus maps game timestamps to the character's wall clock. Publish
+    // upcoming deadlines on the coordinator clock, just like the feed timestamp.
+    observation.upcoming = (observation.upcoming || []).map(function(spawn) {
+      return Object.assign({}, spawn, {spawnAt: spawn.spawnAt + coordinatorClockOffset});
+    });
+    if (typeof observation.next === "number") observation.next += coordinatorClockOffset;
+    return observation;
+  }
+  function halloweenCommitment() {
+    var value = halloweenAttendance;
+    var source = root.__partyActivityPlan ? root.__partyActivityPlan.farmer :
+      character.ctype !== "merchant" && followLeader && leader ? leader : character.name;
+    return value && (value.phase === "attending" || value.phase === "preparing") && value.source === source && value.realm === reunionRealm() &&
+      value.validUntil > Date.now() + coordinatorClockOffset ? value : null;
+  }
+  function halloweenOtherTarget(target) {
+    if (target) return !!target.target && target.target !== character.name;
+    var commitment = halloweenCommitment();
+    if (!commitment || Date.now() - eventFeedAt > 120000) return false;
+    if (commitment.phase === "preparing") return true;
+    var observed = halloweenObservation().bosses.find(function(boss) { return boss.type === commitment.encounter.type; });
+    var visible = target || Object.values(parent.entities || {}).find(function(entity) {
+      return entity && entity.type === "monster" && entity.mtype === commitment.encounter.type &&
+        entity.visible !== false && !entity.dead && entity.hp > 0 &&
+        (!entity.map || entity.map === character.map) && (entity.in == null || entity.in === character.in);
+    });
+    var holder = visible ? visible.target : observed && observed.target;
+    return !!holder && holder !== character.name;
+  }
+  function halloweenMerchantSafe(target) {
+    return character.ctype !== "merchant" || halloweenOtherTarget(target);
+  }
+  function loneHalloweenRogue() {
+    if (character.ctype !== "rogue") return false;
+    var party = typeof get_party === "function" && get_party() || {};
+    return !currentPartyList().some(function(name) {
+      if (name === character.name) return false;
+      var member = get_player(name) || party[name] || partyPositions.find(function(p) { return p.name === name; });
+      return !member || (member.ctype || member.type) !== "merchant";
+    });
+  }
+  function halloweenRogueReady() {
+    return !loneHalloweenRogue() || halloweenOtherTarget();
+  }
+  function halloweenBossAttackAllowed(target) {
+    if (target && root.__partyActivityPlan && !root.__partyActivityPlan.fightersReady &&
+        ['mrpumpkin','mrgreen','jr'].indexOf(target.mtype)>=0) return false;
+    return !target || ["mrpumpkin", "mrgreen"].indexOf(target.mtype) < 0 ||
+      !loneHalloweenRogue() || halloweenOtherTarget(target);
+  }
+  function halloweenTargetAllowed(target) {
+    var commitment = halloweenCommitment();
+    return !!commitment && commitment.phase === "attending" && !!target && target.type === "monster" && halloweenTargetTypes(commitment).indexOf(target.mtype) >= 0 &&
+      target.visible !== false && !target.dead && target.hp > 0 && (!target.map || target.map === character.map) &&
+      (target.mtype !== "jr" || character.map === commitment.encounter.map) &&
+      (target.in == null || target.in === character.in) && halloweenMerchantSafe(target) && halloweenBossAttackAllowed(target);
+  }
+  function halloweenTargetTypes(commitment) {
+    if (!commitment || commitment.phase !== "attending") return [];
+    return commitment.encounter.type === "mrpumpkin" ? ["jr", "mrpumpkin"] : [commitment.encounter.type];
+  }
+  function halloweenPriorityTarget() {
+    if (character.cave || escapeOwns() || eventExitOwnsMovement() || !halloweenOwnsCombat()) return null;
+    var target = nearestEventTarget();
+    return target && target.mtype === "jr" && isAllowedTarget(target) ? target : null;
+  }
+  function halloweenOwnsCombat() {
+    return eventSelected("halloween") && (joinedEvent === "halloween" || travellingEventName === "halloween");
+  }
+  function halloweenCombatEvent() {
+    var commitment = halloweenCommitment();
+    if (!commitment || !eventSelected("halloween") || !halloweenMerchantSafe()) return null;
+    return { name: "halloween", state: commitment.encounter, types: halloweenTargetTypes(commitment), preparing: commitment.phase === "preparing",
+      generation: commitment.generation, kind: "monster" };
+  }
   var eventReturnPending = false;
   var eventRecoveryRetryAt = 0;
   var eventRecoveryState = { phase: "idle", cycleId: null, event: null,
@@ -496,6 +592,10 @@
   if (root.__partyEventTimer) clearInterval(root.__partyEventTimer);
   root.__partyEventTimer = null;
   var partyPositions = [];
+  var itemSwapSettings = [];
+  var combatStrategySettings = {};
+  var combatStrategySettingsAt = 0;
+  var autoConsumable = null;
   var bankStackHomes = {};
   var reunion = root.__partyReunion || null, reunionWorking = false;
   var reunionMageOffer = null;
@@ -531,6 +631,7 @@
     var trip = huntEventTrip && !huntEventTrip.endedAt ? huntEventTrip :
       !huntEventTrip && joinedEvent ? {event: joinedEvent, startedAt: at} : null;
     return { at: at, message: death.message, details: death.details,
+      strategy: deathLoopActive() ? 'death-loop' : null,
       eventTrip: trip ? Object.assign({}, trip) : null };
   }
   var pendingKillCredits = [];
@@ -636,6 +737,10 @@
   // only the precomputed valuation probabilities are adjusted.
   var valuationLuckMultiplier = 1.15;
   var merchantCatalogVersion = "exchange-rewards-v4";
+  var AUTOMATIC_CALL_MAX_CC = 170;
+  function automaticCallBudgetAvailable(cost) {
+    return (Number(character.cc) || 0) + cost <= AUTOMATIC_CALL_MAX_CC;
+  }
   var trackerDropData = typeof tracker !== "undefined" && tracker && Object.keys(tracker).length ? tracker : null;
   var trackerCatalogInitialized = !!trackerDropData;
   // The native game updates parent.tracker before calling render_tracker.
@@ -683,6 +788,8 @@
   }
   function requestTrackerSnapshot() {
     if (!trackerWasHeld) return;
+    // Native limitdcreport charges 50 for tracker; leave room for combat and transfers.
+    if (!automaticCallBudgetAvailable(50)) { scheduleTrackerSnapshot(1000); return; }
     // Retry a missing response; a successful response schedules the slower refresh.
     scheduleTrackerSnapshot(2000);
     if (requestSilentTracker) requestSilentTracker();
@@ -722,6 +829,8 @@
       .sort(function (a, b) { return a.localeCompare(b); });
   };
   function requestPlayerDirectory() {
+    // Directory polling costs 12 and can coincide with a collection burst.
+    if (!automaticCallBudgetAvailable(12)) return;
     if (parent.socket && typeof parent.socket.emit === "function") parent.socket.emit("players", {});
   }
   var merchantMarketLocation = { map: "main", x: -63, y: 100 };
@@ -2540,6 +2649,7 @@
       activeCombatTarget: activeCombatTarget(),
       combatTrace: root.__partyCombatTrace || [],
       recovery: root.partyCombatState && root.partyCombatState.recovery || null,
+      itemSwap: root.partyCombatState && root.partyCombatState.itemSwap || null,
       eventWalkFailure: root.__partyEventWalkFailure || null,
       lastCommandId: lastCommand,
       merchantCommand: root.__merchantCommandReport || null,
@@ -2615,6 +2725,11 @@
       mapEvent: G.maps && G.maps[character.map] && G.maps[character.map].event || null,
       activeEvent: liveEventName,
       serverLiveEvents: serverLiveEvents,
+      halloweenObservation: halloweenObservation(),
+      activityEligibleChests: eligibleDepartureChests().length,
+      activityDepartureCombatPending: departureCombatPending(),
+      halloweenDeparturePending: joinedEvent === "halloween" &&
+        (departureCombatPending() || eligibleDepartureChests().length > 0),
       goobrawlCombat: hasGoobrawlCombat(),
       activeEventId: liveEventName && eventStatus() && eventStatus()[liveEventName] &&
         (eventStatus()[liveEventName].id || eventStatus()[liveEventName].event_id) || null,
@@ -2658,6 +2773,7 @@
       y: Math.round(character.y),
       moving: !!character.moving,
       rip: !!character.rip,
+      deathLoop: deathLoopActive(),
       lastDeath: lastDeathInfo,
       farmingNavigationDebug: { location: partyLocation, cancelled: navigationIntent.cancelled,
         occupied: root.sharedRoutine && root.sharedRoutine.isOccupied(),
@@ -2772,7 +2888,7 @@
       connected: !!(parent.socket && parent.socket.connected), transport:root.__partyTravelTransport || null};
     Object.assign(body, {map:character.map, in:character.in, x:character.x, y:character.y,
       moving:!!character.moving, transporting:!!parent.transporting, speed:character.speed,
-      hp:character.hp, max_hp:character.max_hp, rip:!!character.rip,
+      hp:character.hp, max_hp:character.max_hp, rip:!!character.rip, deathLoop:deathLoopActive(),
       convoyProtocol:4, convoyNavigation:convoyNavigationReport(), movementGeometry:movement.identity,
       movement:movement.report() || movement.last()});
     group.currentAttackers = currentTravelAttackers();
@@ -3105,9 +3221,11 @@
     Promise.resolve(stop('smart')).catch(function(){});
   }
   function rareControlCurrent() {
+    if (deathLoopActive()) return false;
     return !!(rareControlState && Date.now() - rareControlAt < 3500 && !navigationIntent.cancelled &&
       rareControlState.revision === navigationIntent.revision && !character.rip &&
-      !partyTownActive && !eventTraveling && !joinedEvent && !escapeOwns());
+      !partyTownActive && !eventTraveling && !joinedEvent && !activeCombatEvent() &&
+      !(G.maps && G.maps[character.map] && G.maps[character.map].event) && !escapeOwns());
   }
   function rareActive() {
     if (typeof unfinishedFight === "function" && unfinishedFight() &&
@@ -3276,6 +3394,7 @@
   }
 
   async function stockUp() {
+    if (root.__partyActivityPlan && ['looting','town','collecting','returning'].indexOf(root.__partyActivityPlan.phase)>=0) return false;
     var potionName = "hpot1";
     var targetQuantity = 20;
     var currentQuantity = quantity(potionName);
@@ -3557,6 +3676,7 @@
     if (result.deferred) activity.push({ level: "info", message: "Bank stack cleanup deferred: inventory buffers unavailable" });
   }
   async function bankStoreFully(slot) {
+    if (itemSwapReserved(character.items[slot])) throw new Error("Item reserved for inventory swaps");
     var attempts = 0;
     while (character.items[slot] && attempts < 50) {
       var inventorySize = Number(character.isize) || character.items.length;
@@ -4970,7 +5090,20 @@
   }
 
   function cleanoutProtected(item) {
-    return item.l || item.b || ["tracker", "supercomputer", "hpot0", "mpot0", "hpot1", "mpot1"].indexOf(item.name) >= 0;
+    return item.name === autoConsumable || itemSwapReserved(item) || item.l || item.b || ["tracker", "supercomputer", "hpot0", "mpot0", "hpot1", "mpot1"].indexOf(item.name) >= 0;
+  }
+
+  function itemSwapReserved(item) {
+    return !!item && (itemSwapSettings.some(function (swap) {
+      return swap.items.some(function (selection) {
+        var wanted = selection.item;
+        return item.name === wanted.name && (item.level || 0) === (wanted.level || 0) &&
+          (item.p == null ? undefined : item.p) === (wanted.p == null ? undefined : wanted.p) &&
+          (item.stat_type == null ? undefined : item.stat_type) === (wanted.stat_type == null ? undefined : wanted.stat_type) &&
+          (item.rid == null ? undefined : item.rid) === (wanted.rid == null ? undefined : wanted.rid) &&
+          JSON.stringify(item.data) === JSON.stringify(wanted.data);
+      });
+    }) || root.partyItemSwaps && root.partyItemSwaps.reserved(item));
   }
 
   function isPersonalTracker(item) {
@@ -5016,12 +5149,41 @@
     });
   }
 
+  // Transfers share the native call budget with attacks without stopping combat.
+  async function waitForCallBudget(deadline) {
+    var owner = lastCommand, revision = navigationIntent.revision;
+    // Each send awaits its native acknowledgement; only high call cost adds a delay.
+    while (!automaticCallBudgetAvailable(4)) {
+      if (!runtimeCurrent() || character.rip || owner !== lastCommand || navigationIntent.revision !== revision)
+        throw new Error("interrupted");
+      if (Date.now() >= deadline) throw new Error("combat handoff timed out waiting for call budget");
+      await sleep(100);
+    }
+    if (!runtimeCurrent() || character.rip || owner !== lastCommand || navigationIntent.revision !== revision)
+      throw new Error("interrupted");
+  }
+
+  // The merchant pursues the fighter; the fighter keeps its combat movement.
+  async function waitForHandoffRecipient(name, deadline) {
+    var owner = lastCommand, revision = navigationIntent.revision;
+    while (Date.now() < deadline) {
+      if (!runtimeCurrent() || character.rip || owner !== lastCommand || navigationIntent.revision !== revision)
+        throw new Error("interrupted");
+      var player = typeof get_player === "function" && get_player(name);
+      if (player && !player.rip && Math.hypot(
+          Number(player.real_x !== undefined ? player.real_x : player.x) - character.x,
+          Number(player.real_y !== undefined ? player.real_y : player.y) - character.y) <= 300) return player;
+      await sleep(500);
+    }
+    throw new Error("combat handoff timed out waiting for " + name);
+  }
+
   async function withMerchantHandoffRecovery(command, action) {
     var revision = navigationIntent.revision;
-    try { return await afterCombat(action, "merchant handoff"); }
+    try { return command.combatHandoff ? await action() : await afterCombat(action, "merchant handoff"); }
     finally {
       // A late handoff must never override a new manual move or cleared focus.
-      if (!command.convoyContinuation && runtimeCurrent() && lastCommand === command.id && navigationIntent.revision === revision &&
+      if (!command.combatHandoff && !command.convoyContinuation && runtimeCurrent() && lastCommand === command.id && navigationIntent.revision === revision &&
           !navigationIntent.cancelled && partyLocation && character.ctype !== "merchant") {
         beginFarmReunion();
       }
@@ -5049,7 +5211,9 @@
   }
 
   async function merchantHandoff(command) {
-    var merchant = await waitForPlayer(command.merchant, 45000);
+    var handoffDeadline = Date.now() + (command.combatHandoff ? 180000 : 60000);
+    if (command.combatHandoff) await waitForHandoffRecipient(command.merchant, handoffDeadline);
+    else await waitForPlayer(command.merchant, 45000);
     assertMerchantContinuation(command);
     var sent = [], banked = [], kept = [], cleaned = [], reserved = [];
     for (var equippedIndex = 0; equippedIndex < (command.upgrades || []).length; equippedIndex += 1) {
@@ -5096,7 +5260,7 @@
       var liveSlot = markedSlot !== null && sameItem(character.items[markedSlot], wanted)
         ? markedSlot : findItem(wanted);
       if (liveSlot >= 0 && !requests.some(function (request) { return request.slot === liveSlot; }))
-        requests.push({ item: wanted, slot: liveSlot, mark: mark, kind: "keep", quantity: (mark.deconstructionId || mark.npcSaleId || mark.automaticPickup) ? mark.quantity : undefined });
+        requests.push({ item: wanted, slot: liveSlot, mark: mark, kind: "keep", quantity: (command.activityCollection || mark.deconstructionId || mark.npcSaleId || mark.automaticPickup) ? mark.quantity : undefined });
     });
     // Resolve automatic rules against the character's live bag at rendezvous
     // time. The coordinator snapshot can be one status beat behind when loot
@@ -5136,6 +5300,10 @@
       // Once an emergency visit starts, use its available carrying capacity.
       // Only the follow-up visit depends on the remaining free slots.
       if (requests[i].kind === "cleanout" && !cleanoutEmergency) break;
+      if (command.combatHandoff) {
+        await waitForHandoffRecipient(command.merchant, handoffDeadline);
+        assertMerchantContinuation(command);
+      }
       var slot = Number.isInteger(requests[i].slot) && sameItem(character.items[requests[i].slot], requests[i].item)
         ? requests[i].slot : findItem(requests[i].item);
       if (slot < 0) continue;
@@ -5158,14 +5326,20 @@
         await refreshCompoundProtection(command);
         if (!compoundAvailableStock(command)[slot]) continue;
       }
-      if (isPersonalTracker(character.items[slot]) || command.cleanout && cleanoutProtected(character.items[slot])) continue;
+      // Range and inventory requests above can yield while combat spends calls.
+      await waitForCallBudget(handoffDeadline);
+      assertMerchantContinuation(command);
+      if (!sameItem(character.items[slot], requests[i].item)) continue;
+      if (command.activityCollection && (cleanoutProtected(character.items[slot]) || character.items[slot].name === 'computer' ||
+          (command.protectedSlots || []).indexOf(slot) >= 0 || !compoundAvailableStock(command)[slot])) continue;
+      if (itemSwapReserved(character.items[slot]) || isPersonalTracker(character.items[slot]) || command.cleanout && cleanoutProtected(character.items[slot])) continue;
       var sendQuantity = Math.min(Number(requests[i].quantity) || itemQuantity(character.items[slot]),
         itemQuantity(character.items[slot]));
       if (requests[i].mark && (requests[i].mark.deconstructionId || requests[i].mark.npcSaleId) && (character.items[slot].l || character.items[slot].b)) continue;
       var clearsSlot = sendQuantity >= itemQuantity(character.items[slot]);
       await send_item(command.merchant, slot, sendQuantity);
       if (clearsSlot) cleanoutFreeSlots += 1;
-      sent.push(requests[i]);
+      sent.push(command.activityCollection ? Object.assign({}, requests[i], {quantity:sendQuantity}) : requests[i]);
       capacity -= 1;
       if (requests[i].kind === "bank") banked.push(requests[i].mark);
       if (requests[i].kind === "keep") kept.push((requests[i].mark.deconstructionId || requests[i].mark.npcSaleId || requests[i].mark.automaticPickup) ? Object.assign({}, requests[i].mark, { quantity: sendQuantity }) : requests[i].mark);
@@ -5176,12 +5350,58 @@
     // carried gold. Any requested walking balance is delivered after pickup.
     var excess = Math.max(0, character.gold);
     assertMerchantContinuation(command);
-    if (excess) await send_gold(command.merchant, excess);
+    if (excess && command.combatHandoff) {
+      await waitForHandoffRecipient(command.merchant, handoffDeadline);
+      assertMerchantContinuation(command);
+    }
+    if (excess) {
+      await waitForCallBudget(handoffDeadline);
+      assertMerchantContinuation(command);
+      excess = Math.max(0, character.gold);
+      if (excess) {
+        await send_gold(command.merchant, excess);
+      }
+    }
+    if (command.activityCollection) {
+      command.activitySent = sent;
+      return;
+    }
     await request("/merchant/handoff-complete", { method: "POST", body: {
       jobId: command.jobId, commandId: command.id, character: character.name, sent: sent, banked: banked, kept: kept, cleaned: cleaned,
       cleanoutRemaining: !!command.cleanout && cleanoutFreeSlots <= 3 && sent.length < requests.length, gold: excess,
     }});
     game_log("Merchant handoff complete", "#51D2E1");
+  }
+
+  async function runActivityCommand(command) {
+    var failure = null;
+    try {
+      if (!root.__partyActivityPlan || root.__partyActivityPlan.id !== command.planId ||
+          root.__partyActivityPlan.generation !== command.encounterGeneration) throw Error('Activity command was superseded');
+      if (command.action === 'collect') {
+        command.activityCollection = true;
+        command.combatHandoff = true;
+        await merchantHandoff(command);
+      } else await afterCombat(async function () {
+        while (runtimeCurrent() && eligibleDepartureChests().length) { await smartLoot(); await sleep(100); }
+        if (!runtimeCurrent() || lastCommand !== command.id) throw Error('Activity travel interrupted');
+        if (reunion) await cancelFarmReunion('activity plan travel');
+        cancelFarmApproach('activity plan travel');
+        if (command.action === 'town') {
+          await smart_move({map:'main',x:0,y:0});
+        } else if ((command.action === 'farm' || command.action === 'event') && command.location) {
+          await smart_move(command.location);
+        } else throw Error('Activity travel destination is missing');
+      }, 'activity plan ' + command.action);
+    } catch (error) { failure = String(error.reason || error.message || error); }
+    var receipt = {planId:command.planId,encounterGeneration:command.encounterGeneration,
+      commandId:command.id,character:character.name,clientInstance:parent.__partyClientInstance || null,
+      success:!failure,error:failure,sent:(command.activitySent || []).map(function(entry) {
+        return {item:entry.item,quantity:entry.quantity};
+      })};
+    root.__partyActivityReceipt = receipt;
+    await request('/activity-plan/receipt', {method:'POST',body:receipt});
+    if (failure) throw Error(failure);
   }
 
   async function merchantOrderHandoff(command) {
@@ -5280,7 +5500,7 @@
       })) || (command.merchantWithdrawals || []).some(function (work) {
         return work.improvement && sameItem(bankingItem, work.item);
       });
-      if (improvementReserved) continue;
+      if (improvementReserved || itemSwapReserved(bankingItem)) continue;
       var slot = findMarkedItem(mark);
       if (slot < 0) {
         // The persistent auto-mark policy lives separately; this concrete slot
@@ -6050,7 +6270,7 @@
         // Delivery swaps may borrow two reserve slots, but retain one so the
         // lucky slot can be cleared even before the outbound delivery.
         capacity: Math.max(0, freeInventorySlots() - (useTemporaryReserve ? 1 : 3)) } });
-      var deadline = Date.now() + 60000, current;
+      var deadline = Date.now() + (command.combatHandoff ? 180000 : 60000), current;
       do {
         await new Promise(function (resolve) { setTimeout(resolve, 250); });
         current = await request("/merchant/job/" + command.jobId);
@@ -8192,6 +8412,7 @@
           activity.push({ level: "error", message: "NPC-sale item changed before sale: " + mark.item.name });
           continue;
         }
+        if (itemSwapReserved(character.items[inventorySlot])) { blocked.push({id:mark.id,error:"Item reserved for inventory swaps"}); continue; }
         if (character.items[inventorySlot].l) { blocked.push({id:mark.id,error:"Item is locked"}); continue; }
         var quantity = Math.min(Number(mark.quantity) || 1, Number(character.items[inventorySlot].q) || 1);
         // Named NPC destinations include the walkable interaction offset.
@@ -9261,9 +9482,17 @@
   }
 
   async function handle(command) {
+    if (deathLoopActive()) return;
     if (root.__partyTracktrixMove) await root.__partyTracktrixMove;
     root.__partyInventoryCommands = (root.__partyInventoryCommands || 0) + 1;
-    try { return await handleOwnedCommand(command); }
+    try {
+      if (root.partyItemSwaps) {
+        if (command && ["equip", "unequip", "equip-deliveries"].indexOf(command.type) >= 0)
+          await root.partyItemSwaps.manual();
+        else await root.partyItemSwaps.restoreForActivity();
+      }
+      return await handleOwnedCommand(command);
+    }
     finally { root.__partyInventoryCommands -= 1; }
   }
 
@@ -9272,6 +9501,8 @@
     if (escapeOwns() && !(escapeState.stage === "recovery-convoy" && command && command.purpose === "escape-recovery")) {
       reportMerchantCommand(command, "deferred", "escape"); return;
     }
+    if (command && command.type === 'activity-plan' && command.id <= lastCommand)
+      return handleCommand(command);
     if (!command || command.id <= lastCommand) return;
     var ownReunionConvoy=root.__partySharedWalking && root.__partySharedWalking.activity==="farm-recovery" &&
       command.type==="party-monster-travel" && /^shared-walk/.test(command.purpose||"");
@@ -9289,6 +9520,12 @@
   }
 
   async function handleCommand(command) {
+    if (command && command.type === 'activity-plan' && command.id <= lastCommand) {
+      var planReceipt = root.__partyActivityReceipt;
+      if (planReceipt && planReceipt.commandId === command.id && planReceipt.planId === command.planId)
+        await request('/activity-plan/receipt', {method:'POST',body:planReceipt});
+      return;
+    }
     if (root.__partyUpgradePreviewInFlight) return;
     if (root.__partyConsoleMaintenance) return;
     if (!command || command.id <= lastCommand) return;
@@ -9498,6 +9735,7 @@
       command, "stand inventory sync", function () { return merchantStandSync(command); });
     if (command.type === "merchant-idle" && character.ctype === "merchant") return merchantIdle(command);
     if (command.type === "bankboi-service" && character.ctype === "merchant") return runBankboiService(command);
+    if (command.type === 'activity-plan') return runActivityCommand(command);
     if (command.type === "merchant-handoff") return withMerchantHandoffRecovery(command, function () { return merchantHandoff(command); });
     if (command.type === "merchant-order-handoff") return afterCombat(function () {
       return merchantOrderHandoff(command);
@@ -9789,11 +10027,13 @@
     if (command.type === "equip") {
       if (!isDashboardEquipment(command.item)) throw new Error("item is not equipment; use its explicit Use action instead");
       if (root.partyPorcupineEquipment) await root.partyPorcupineEquipment.manual();
+      if (root.partyItemSwaps) await root.partyItemSwaps.manual();
       if (character.ctype === "merchant") await closeMerchantStandForTravel();
       var slot = findItem(command.item);
       if (slot >= 0) await equip(slot);
     }
     if (command.type === "equip-deliveries") {
+      if (root.partyItemSwaps) await root.partyItemSwaps.manual();
       var equipResults = await equipDeliveredItems(command.items || []);
       equipResults.forEach(function(result, index) { if (command.deliveryIds) result.deliveryId = command.deliveryIds[index]; });
       await request("/equip-delivery-complete", { method: "POST", body: {
@@ -9802,6 +10042,7 @@
     }
     if (command.type === "unequip") {
       if (root.partyPorcupineEquipment) await root.partyPorcupineEquipment.manual();
+      if (root.partyItemSwaps) await root.partyItemSwaps.manual();
       if (character.ctype === "merchant") await closeMerchantStandForTravel();
       if (typeof command.slot !== "string" || !sameItem(character.slots[command.slot], command.item))
         throw new Error("equipped item no longer matches that slot");
@@ -9893,6 +10134,7 @@
     parent.__partyReturnProgress=root.__partyReturnProgress=result.progress || Object.assign({},saved,{phase:phase});
   }
   async function enforcePartyTownOverride() {
+    if (deathLoopActive()) return;
     if (escapeOwns()) return;
     if (character.ctype === "merchant" || !partyTownActive || townTraveling || townOverrideInFlight) return;
     var townPoint = { map: "main", x: 0, y: 0 };
@@ -9974,6 +10216,65 @@
     if (nearby && character.s && character.s.invis) await stop("invis");
   }
 
+  var eventDisableBusy = false;
+  function removePendingEventDisable(name) {
+    var index = pendingEventDisables.indexOf(name);
+    if (index >= 0) pendingEventDisables.splice(index, 1);
+  }
+  async function stopDisabledEventMovement(name) {
+    var revision = navigationIntent.revision, command = lastCommand, generation = runtimeGeneration;
+    function ownsStop() {
+      return runtimeCurrent() && runtimeGeneration === generation && navigationIntent.revision === revision &&
+        lastCommand === command && !eventSelected(name) && !joinedEvent &&
+        (!eventTraveling || travellingEventName === name) &&
+        !convoyTraveling && !forceTraveling && !townTraveling && !eventReturnPending;
+    }
+    if (!ownsStop() || typeof stop !== "function") return;
+    try { await stop("smart"); if (ownsStop()) await stop(); } catch (_eventDisableStop) {}
+  }
+  async function cancelDisabledEvent(name, disabledMerchantEvent) {
+    if (name === "anniversary") {
+      var oldKiss = root.__partyAnniversaryKissOperation;
+      var staging = root.__partyAnniversaryStagingOperation;
+      var owned = !!oldKiss || !!staging || anniversaryBusy || anniversaryStaging;
+      if (oldKiss) oldKiss.cancelled = true;
+      if (staging) staging.cancelled = true;
+      root.__partyAnniversaryKissOperation = null;
+      root.__partyAnniversaryStagingOperation = null;
+      anniversaryBusy = false; anniversaryStaging = false;
+      anniversaryMerchantFeaturedHold = false; anniversaryMerchantRetryAt = 0;
+      anniversaryStage = "anniversary disabled; resuming previous activity";
+      if (owned && !eventTraveling && !joinedEvent) await stopDisabledEventMovement(name);
+    } else if (name === joinedEvent || name === travellingEventName || name === disabledMerchantEvent) {
+      if (joinedEvent === name) {
+        eventTargetTypes = []; joinedEvent = null; root.__partyJoinedEvent = null;
+      }
+      await stopDisabledEventMovement(name);
+    }
+  }
+  async function reconcileDisabledEvents(disabledMerchantEvent) {
+    if (eventDisableBusy || !pendingEventDisables.length) return;
+    eventDisableBusy = true;
+    try {
+      for (var name of pendingEventDisables.slice()) {
+        if (!runtimeCurrent()) return;
+        if (eventSelected(name)) { removePendingEventDisable(name); continue; }
+        try {
+          await cancelDisabledEvent(name, disabledMerchantEvent);
+          if (!runtimeCurrent()) return;
+          if (eventSelected(name)) { removePendingEventDisable(name); continue; }
+          var result = await request("/event-disabled", { method: "POST", body: { character: character.name, event: name } });
+          if (name === "anniversary" && result.anniversary && !eventSelected(name)) anniversaryPlan = result.anniversary;
+          removePendingEventDisable(name);
+        } catch (error) {
+          // Retain this acknowledgement, but never block another heartbeat or
+          // the commands needed to complete the coordinator's current return.
+          recordStatusFailure(error, "event deselection: " + name);
+        }
+      }
+    } finally { eventDisableBusy = false; }
+  }
+
   async function tick() {
     observeBankSortVisit();
     if (busy) return;
@@ -9994,7 +10295,14 @@
       statusPhase = "request status";
       var state = await request("/status", { method: "POST", body: statusBody });
       if (!runtimeCurrent()) return;
+      acceptCombatStrategies(state);
       root.__partyConsoleMaintenance = state.consoleMaintenance || null;
+      if (deathLoopActive()) {
+        root.__partyStatusSuccessAt = Date.now();
+        if (dashboardSampler) dashboardSampler.renew(state.dashboardLease);
+        return;
+      }
+      autoConsumable = state.autoConsumable || null;
       if (root.__partyConsoleMaintenance) {
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');
         return;
@@ -10029,6 +10337,7 @@
           !root.__merchantInventoryTidy && !merchantLuckyUpgrade().pending())
         await nativeStandSync(null, false);
       statusPhase = "apply status";
+      root.__partyActivityPlan = state.activityPlanControl || null;
       if (dashboardSampler) dashboardSampler.renew(state.dashboardLease);
       root.__partyStatusSuccessAt = Date.now();
       root.__merchantRealmErrors = root.__merchantRealmErrors || {};
@@ -10106,32 +10415,19 @@
       var previousSelections = enabledEventSelections;
       statusPhase = "apply event selections";
       enabledEventSelections = Array.isArray(state.eventSelections) ? state.eventSelections : null;
+      merchantEventCombatEnabled = state.merchantEventCombatEnabled === true;
+      if (character.ctype === "merchant" && !merchantEventCombatEnabled && enabledEventSelections)
+        enabledEventSelections = enabledEventSelections.filter(function(name) { return name === "anniversary"; });
       eventsEnabled = !!state.eventsEnabled;
       root.__merchantCoordinatorEventRecovery = !!state.merchantEventRecoveryReserved;
+      // A reconnect must also withdraw a persisted combat session when disabled.
+      var disabledMerchantEvent = character.ctype === "merchant" && !merchantEventCombatEnabled &&
+        state.merchantCombatEvent !== "anniversary" && state.merchantCombatEvent;
+      if (disabledMerchantEvent && pendingEventDisables.indexOf(disabledMerchantEvent) < 0)
+        pendingEventDisables.push(disabledMerchantEvent);
       if (previousSelections && enabledEventSelections && previousSelections.join(",") !== enabledEventSelections.join(",")) {
         eventSelectionRevision++;
         pendingEventDisables = root.__partyPendingEventDisables = Array.from(new Set(pendingEventDisables.concat(previousSelections.filter(function(id) { return !eventSelected(id); }))));
-      }
-      if (pendingEventDisables.length) {
-        for (var disabledEvent of pendingEventDisables.slice()) {
-          if (eventSelected(disabledEvent)) { pendingEventDisables.splice(pendingEventDisables.indexOf(disabledEvent), 1); continue; }
-          if (disabledEvent === "anniversary") {
-            var oldKiss = root.__partyAnniversaryKissOperation;
-            if (oldKiss) oldKiss.cancelled = true;
-            if (!convoyTraveling && !forceTraveling && !townTraveling) { try { await stop("smart"); await stop(); } catch (_eventDisableStop) {} }
-            anniversaryBusy = false; anniversaryStaging = false;
-            root.__partyAnniversaryKissOperation = null;
-            anniversaryMerchantFeaturedHold = false; anniversaryMerchantRetryAt = 0;
-            anniversaryStage = "anniversary disabled; resuming previous activity";
-            var disabledResult = await request("/event-disabled", { method: "POST", body: { character: character.name, event: disabledEvent } });
-            if (disabledResult.anniversary) anniversaryPlan = disabledResult.anniversary;
-          } else if (disabledEvent === joinedEvent || disabledEvent === partyEventHint || disabledEvent === travellingEventName) {
-            if (!convoyTraveling && !forceTraveling && !townTraveling) { try { await stop("smart"); await stop(); } catch (_disabledTravel) {} }
-            await request("/event-disabled", { method: "POST", body: { character: character.name, event: disabledEvent } });
-            eventTargetTypes = []; joinedEvent = null; root.__partyJoinedEvent = null;
-          }
-          pendingEventDisables.splice(pendingEventDisables.indexOf(disabledEvent), 1);
-        }
       }
       if (followedBeforeRefresh && !followLeader && followingLeader && typeof stop === "function") {
         statusPhase = "stop leader follow";
@@ -10147,6 +10443,7 @@
       if (root.partyRoleRunner && root.partyRoleRunner.wake) root.partyRoleRunner.wake();
       leaderLocation = state.leaderLocation || null;
       partyEventHint = state.partyEventHint || null;
+      halloweenAttendance = root.partyHalloweenEvents.readAttendance(state.halloweenAttendance);
       if (state.eventTrip && (!huntEventTrip || state.eventTrip.startedAt >= huntEventTrip.startedAt))
         huntEventTrip = root.__partyHuntEventTrip = state.eventTrip;
       abtestingStrategy = state.abtestingStrategy || null;
@@ -10168,6 +10465,7 @@
       if (state.merchantStandLocation && state.merchantStandLocation.map === "main" &&
           Number.isFinite(state.merchantStandLocation.x) && Number.isFinite(state.merchantStandLocation.y))
         merchantMarketLocation = {map:"main",x:state.merchantStandLocation.x,y:state.merchantStandLocation.y};
+      itemSwapSettings = state.itemSwaps && state.itemSwaps[character.name] || [];
       merchantCashTarget = Math.max(0, Number(state.merchantGoldTarget) || 0);
       if (character.ctype === "merchant" && !root.__merchantActiveJob && !gatheringActive &&
           !(merchantWeapon && merchantWeapon.item) && character.slots && character.slots.mainhand &&
@@ -10235,6 +10533,11 @@
       catalogKnown = !state.needsCatalog;
       void prepareCatalog();
       flushStatusDiagnostics();
+      // Selection acknowledgements can wait for another return. Keep status,
+      // encounter authority and convoy command delivery live while they retry.
+      reconcileDisabledEvents(disabledMerchantEvent).catch(function(error) {
+        recordStatusFailure(error, "event deselection");
+      });
       statusPhase = "dispatch command";
       handle(state.command).catch(function (error) {
         if (state.command && lastCommand === Number(state.command.id) &&
@@ -10277,7 +10580,7 @@
       var value = raw[name];
       if (!value || typeof value !== "object") { corrected[name] = value; return; }
       corrected[name] = Object.assign({}, value);
-      ["next", "expires", "end"].forEach(function(key) {
+      ["next", "spawn", "expires", "end"].forEach(function(key) {
         if (value[key]) corrected[name][key] = anniversaryEpoch(value[key]) - eventClockOffset;
       });
     });
@@ -10287,12 +10590,14 @@
   function supportedEventNames() {
     var names = Object.keys(G.events || {});
     if (names.indexOf("snowman") < 0) names.push("snowman");
+    if (names.indexOf("halloween") < 0) names.push("halloween");
     return names;
   }
 
   function rawServerLiveEvents() {
     var status = eventStatus();
     return supportedEventNames().filter(function (name) {
+      if (name === "halloween") return Date.now() - eventFeedAt <= 120000 && halloweenObservation().bosses.length > 0;
       var state = status && status[name];
       return eventIsSupported(name) && state && state.live !== false;
     }).map(function (name) {
@@ -10318,7 +10623,9 @@
   }
 
   function anniversaryEpoch(input) {
-    var value = Number(input) || 0;
+    var value = Number(input);
+    if (!Number.isFinite(value) && typeof input === "string") value = Date.parse(input);
+    if (!Number.isFinite(value)) return 0;
     return value && value < 1000000000000 ? value * 1000 : value;
   }
 
@@ -10333,7 +10640,8 @@
   }
 
   function merchantEventWorkReserved() {
-    return character.ctype === "merchant" && (!!joinedEvent || eventTraveling || eventReturnPending ||
+    return character.ctype === "merchant" && (root.__partyActivityPlan &&
+      (root.__partyActivityPlan.phase !== 'solo' || root.__partyActivityPlan.mode === 'paused') || !!joinedEvent || eventTraveling || eventReturnPending ||
       !!root.__merchantCoordinatorEventRecovery || eventsEnabled && !navigationIntent.cancelled && !!activeCombatEvent());
   }
 
@@ -10725,6 +11033,7 @@
   }
 
   async function runAnniversaryKiss() {
+    if (deathLoopActive()) return;
     if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (merchantEventWorkReserved()) return;
     if (!eventSelected("anniversary")) return;
@@ -11316,6 +11625,7 @@
   }
 
   async function runAnniversaryReturns() {
+    if (deathLoopActive()) return;
     if (character.ctype !== "merchant" || anniversaryBusy || merchantForceStand || root.__merchantActiveJob ||
         !anniversaryPlan || !(anniversaryPlan.pendingReturns || []).length) return;
     var debt = anniversaryPlan.pendingReturns[0];
@@ -11351,6 +11661,7 @@
   }
 
   async function runAnniversaryTick() {
+    if (deathLoopActive()) return;
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
     await runAnniversaryKiss();
@@ -11449,6 +11760,10 @@
   }
 
   function eventMonsterTypes(eventName) {
+    if (eventName === "halloween") {
+      var commitment = halloweenCommitment();
+      return halloweenTargetTypes(commitment);
+    }
     var definition = G.events && G.events[eventName];
     var candidates = [];
     if (definition && definition.sprite) candidates.push(definition.sprite);
@@ -11468,7 +11783,7 @@
   function eventIsSupported(eventName) {
     // Snowman is a live, open-world boss. It appears in server.status like
     // instanced events do, but has no join action; travel to it normally.
-    return eventRequiresJoin(eventName) || eventName === "snowman";
+    return eventRequiresJoin(eventName) || eventName === "snowman" || eventName === "halloween";
   }
 
   function eventMapName(eventName) {
@@ -11524,6 +11839,7 @@
 
   function followLeavesCurrentEvent(destination) {
     var event = activeCombatEvent();
+    if (event && event.name === "halloween" && joinedEvent === "halloween") return true;
     return !!(event && destination && destination.map !== character.map &&
       G.maps[character.map] && G.maps[character.map].event === event.name);
   }
@@ -11543,6 +11859,8 @@
     var status = eventStatus();
     if (manuallySuppressedEvent) {
       var suppressedState = status && status[manuallySuppressedEvent.name];
+      if (manuallySuppressedEvent.name === "halloween")
+        suppressedState = Date.now() - eventFeedAt <= 120000 && halloweenObservation().bosses.length > 0 ? {} : null;
       var suppressedId = suppressedState && (suppressedState.id || suppressedState.event_id) || null;
       if (!suppressedState || suppressedState.live === false ||
           manuallySuppressedEvent.id && suppressedId && manuallySuppressedEvent.id !== suppressedId) {
@@ -11550,6 +11868,10 @@
       }
     }
     return supportedEventNames().map(function (name) {
+      if (name === "halloween") {
+        if (manuallySuppressedEvent && manuallySuppressedEvent.name === name) return null;
+        return halloweenCombatEvent();
+      }
       var state = status && status[name];
       var types = eventMonsterTypes(name);
       var corroborated = partyEventHint === name || name === "goobrawl" && hasGoobrawlCombat();
@@ -11585,6 +11907,17 @@
 
   function nearestEventTarget() {
     if (joinedEvent && !eventSelected(joinedEvent) || travellingEventName && !eventSelected(travellingEventName)) return null;
+    if (halloweenOwnsCombat()) {
+      var halloweenTargets = Object.values(parent.entities || {}).filter(function(target) {
+        return halloweenTargetAllowed(target) && !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead(target.id));
+      });
+      // Mr. Pumpkin's adds interrupt boss damage, including an engaged boss.
+      var juniors = halloweenTargets.filter(function(target) { return target.mtype === "jr"; });
+      if (juniors.length) halloweenTargets = juniors;
+      var retainedHalloween = halloweenTargets.find(function(target) { return target.id === combatTargetId; });
+      halloweenTargets.sort(function(a, b) { return distance(character, a) - distance(character, b) || String(a.id).localeCompare(String(b.id)); });
+      return retainedHalloween || halloweenTargets[0] || null;
+    }
     if (typeof frankyCombatActive === "function" && frankyCombatActive()) {
       var bosses = Object.values(parent.entities || {}).filter(frankyTargetAllowed);
       var retained = bosses.find(function (target) { return target.id === combatTargetId; });
@@ -11813,6 +12146,7 @@
   }
 
   async function pollEvents() {
+    if (deathLoopActive()) return;
     if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (root.__partyConsoleMaintenance) return;
     if (escapeOwns()) return;
@@ -11820,6 +12154,17 @@
     if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return;
     eventPollBusy = true;
     try {
+      if (character.ctype === "merchant" && joinedEvent === "halloween" && !eventReturnPending && !halloweenMerchantSafe()) {
+        var unsafeCommitment = halloweenCommitment();
+        if (unsafeCommitment) {
+          try {
+            await request("/event-ended", { method: "POST", body: { character: character.name, event: "halloween",
+              reason: "unsafe-halloween", boss: unsafeCommitment.encounter.type } });
+            eventTargetTypes = []; joinedEvent = root.__partyJoinedEvent = null;
+          } catch (_unsafeHalloweenReturn) {}
+          return;
+        }
+      }
       if (character.ctype === "merchant" && merchantEventWorkReserved()) {
         // Never take movement from an unsettled inventory operation or worker.
         if (root.__merchantActiveJob || root.__merchantInventoryTidy || merchantIdleActive ||
@@ -11877,7 +12222,9 @@
       if (!event) {
         eventTargetTypes = [];
         if (joinedEvent && !eventReturnPending) {
-          if (partyEventHint === joinedEvent) {
+          if (joinedEvent === "halloween" && (departureCombatPending() || eligibleDepartureChests().length > 0)) return;
+          if (partyEventHint === joinedEvent && (joinedEvent !== "halloween" ||
+              (Date.now() - eventFeedAt <= 120000 && halloweenObservation().bosses.length > 0))) {
             eventMissingSince = 0;
             return;
           }
@@ -11913,7 +12260,18 @@
       }
       if (eventTraveling || banking || stocking || upgrading || departurePending || bankQueued) return;
       if (!await eventTravelAllowed(event.name)) return;
-      if (nearestEventTarget()) {
+      if (event.name === "halloween" && !halloweenRogueReady()) {
+        root.__partyNavigationDetail = "Waiting for another character to tank the Halloween boss";
+        return;
+      }
+      var visibleEventTarget = nearestEventTarget();
+      if (event.name === "halloween" && event.preparing && character.map === event.state.map &&
+          Math.hypot(character.x - event.state.x, character.y - event.state.y) <= 55) {
+        joinedEvent = root.__partyJoinedEvent = event.name;
+        root.__partyNavigationDetail = "Waiting for " + event.state.type + " to spawn";
+        return;
+      }
+      if (visibleEventTarget && (event.name !== "halloween" || is_in_range(visibleEventTarget))) {
         joinedEvent = event.name;
         root.__partyJoinedEvent = event.name;
         return;
@@ -11922,11 +12280,13 @@
       travellingEventName = event.name;
       var travelSelectionRevision = eventSelectionRevision;
       var travelNavigationRevision = navigationIntent.revision;
+      var travelEventGeneration = event.generation;
       function currentEventTravel() {
         var live = activeCombatEvent();
         return runtimeCurrent() && !character.rip && !escapeOwns() && !navigationIntent.cancelled &&
           travelNavigationRevision === navigationIntent.revision && eventSelected(event.name) &&
-          travelSelectionRevision === eventSelectionRevision && live && live.name === event.name;
+          travelSelectionRevision === eventSelectionRevision && live && live.name === event.name &&
+          (event.name !== "halloween" || live.generation === travelEventGeneration && halloweenRogueReady());
       }
       try {
         var destination = eventDestination(event.name, event.state);
@@ -11943,8 +12303,9 @@
           root.__partyEventRejoinRequired = null;
           game_log("Traveling to " + ((G.events[event.name] && G.events[event.name].name) || event.name), "#c084fc");
         }
-        if (event.kind !== "pvp" && !nearestEventTarget() && await eventTravelAllowed(event.name) && currentEventTravel())
-          await sharedPartyWalk(destination,"event",event.name,null,currentEventTravel);
+        if (event.kind !== "pvp" && await eventTravelAllowed(event.name) && currentEventTravel()) {
+          await walkCombatEvent(event, destination, currentEventTravel);
+        }
       } catch (error) {
         var reason = error && (error.reason || error.message || error);
         if (reason !== "interrupted" && reason !== "event_not_live")
@@ -11983,6 +12344,7 @@
       !!(root.__partySharedWalking && root.__partySharedWalking.activity === "event-return");
   }
   function reunionBlocked() {
+    if (deathLoopActive()) return true;
     if (dungeonOwned()) return true;
     if (eventExitOwnsMovement()) return true;
     if (escapeOwns()) return true;
@@ -12019,11 +12381,12 @@
       !is_on_cooldown(skill) && can_use(skill);
   }
   function beginFarmReunion(command) {
-    if (dungeonOwned()) return;
-    if (eventExitOwnsMovement()) return;
-    if (character.ctype === "merchant") return;
+    if (deathLoopActive()) return false;
+    if (dungeonOwned()) return false;
+    if (eventExitOwnsMovement()) return false;
+    if (character.ctype === "merchant") return false;
     if (typeof lastDeathInfo !== "undefined" && lastDeathInfo) root.__partyRecoveredDeathAt = parent.__partyRecoveredDeathAt = lastDeathInfo.at;
-    if (combatRecoveryActive()) return;
+    if (combatRecoveryActive()) return false;
     if (farmingTravelToken) farmingTravelToken.cancelled = true;
     reunion = root.__partyReunion = { id: character.name + "-" + Date.now(),
       revision: navigationIntent.revision, phase: "waiting", retryAt: 0,
@@ -12032,6 +12395,7 @@
     followingLeader = false;
     kiteState.targetId = null;
     Promise.resolve(stop("smart")).catch(function () {});
+    return true;
   }
   function reunionCurrent(token) {
     return runtimeCurrent() && reunion === token && !token.cancelled &&
@@ -12105,6 +12469,7 @@
   };
   var reunionMagiportHandler = root.on_magiport;
   async function farmReunionTick() {
+    if (deathLoopActive()) return;
     if (dungeonOwned()) {
       if (reunion) { reunion.cancelled = true; reunion.moving = false; }
       reunion = root.__partyReunion = null;
@@ -12243,10 +12608,12 @@
     var event = activeCombatEvent();
     if (!event && requiredEventName) return { status: "cancelled" };
     if (!event) return { status: "not-applicable" };
+    if (event.name === "halloween" && !halloweenRogueReady())
+      return {status: "retryable", reason: "Waiting for another character to tank the Halloween boss"};
     var revision = Number(navigationIntent.revision), selection = eventSelectionRevision;
     function current() { var live = activeCombatEvent(); return runtimeCurrent() && !character.rip && !escapeOwns() && !navigationIntent.cancelled &&
       Number(navigationIntent.revision) === revision && eventSelectionRevision === selection && eventSelected(event.name) &&
-      live && live.name === event.name; }
+      live && live.name === event.name && (event.name !== "halloween" || live.generation === event.generation && halloweenRogueReady()); }
     if (!await eventTravelAllowed(event.name)) return { status: current() ? "retryable" : "cancelled", reason: "Waiting for event travel permission" };
     if (eventTraveling) return { status: "retryable", reason: "Event travel already in progress" };
     eventTargetTypes = event.types; eventMissingSince = 0;
@@ -12260,9 +12627,9 @@
       if (!current()) return { status: "cancelled" };
       if (!await eventTravelAllowed(event.name)) return { status: current() ? "retryable" : "cancelled", reason: "Waiting for event travel permission" };
       joinedEvent = event.name; root.__partyJoinedEvent = event.name; root.__partyEventRejoinRequired = null;
-      if (!eventRequiresJoin(event.name) && !nearestEventTarget()) {
+      if (!eventRequiresJoin(event.name)) {
         phase = "event-travel";
-        await sharedPartyWalk(destination, "event", event.name, null, current);
+        await walkCombatEvent(event, destination, current);
       }
       if (!current()) return { status: "cancelled" };
       game_log("Recovered " + event.name + " participation after respawning", "#c084fc");
@@ -12280,13 +12647,13 @@
     var hpRatio = character.max_hp > 0 ? character.hp / character.max_hp : 1;
     var mpRatio = character.max_mp > 0 ? character.mp / character.max_mp : 1;
     var skill = null;
+    // Potions take priority over free regeneration below 50% MP for every class.
+    regenerationBusy = true;
+    try {
+      if (await useRecoveryPotion({ hpBelow: character.ctype === "merchant" ? 0.2 : undefined, mpBelow: 0.5, priority: "hp" })) return true;
+    } finally { regenerationBusy = false; }
     if (character.ctype === "merchant") {
       // The independent pulse runs while production owns the role loop.
-      // Critical pools use potions first, then fall through to free recovery.
-      regenerationBusy = true;
-      try {
-        if (await useRecoveryPotion({hpBelow:0.2,mpBelow:0.2,priority:"hp"})) return true;
-      } finally { regenerationBusy = false; }
       // use_hp consumes the last inventory item that grants HP. Match that
       // selection so the threshold reflects the potion actually consumed.
       var healAmount = 0;
@@ -12337,6 +12704,7 @@
   }
 
   function passiveRegenerationTick() {
+    if (deathLoopActive()) return;
     if (escapeOwns() && ["complete", "failed-hold"].indexOf(escapeState.stage) < 0) return;
     if (!runtimeCurrent() || !passiveRegenerationEligible()) return;
     // Regular heals do not own movement. Top off nearby party members so
@@ -12827,7 +13195,16 @@
         threats:groupedThreatReports(),sightings:groupedSightings(),ack:groupedAcknowledgement(),handoff:root.partyQueueClient && root.partyQueueClient.handoff && root.partyQueueClient.handoff.report(),queueAck:groupedCombat && groupedCombat.queueRevision,
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
+  function acceptCombatStrategies(state) {
+    if (state.combatStrategies && (!state.serverNow || state.serverNow >= combatStrategySettingsAt)) {
+      var wasKiting = combatStrategyEnabled('kiting');
+      combatStrategySettings = state.combatStrategies[character.name] || {};
+      combatStrategySettingsAt = state.serverNow || 0;
+      if (wasKiting && !combatStrategyEnabled('kiting')) resetCombatMovement();
+    }
+  }
   function acceptCombatControl(state) {
+    acceptCombatStrategies(state);
     if(state.passingControl && (!state.serverNow || state.serverNow>=(root.__partyHuntTravelAt||0))) {
       var beforeHunt=root.__partyHuntTravel, nextHunt=state.passingControl.hunt || null;
       if(nextHunt && nextHunt.primary && (!beforeHunt || !beforeHunt.primary || passingKey(beforeHunt.primary)!==passingKey(nextHunt.primary)) && typeof game_log==='function')
@@ -12936,6 +13313,9 @@
       Math.hypot(character.x-anchor.x,character.y-anchor.y) <= groupedCombat.range;
   }
   function groupedAttackAllowed(target) {
+    if (!halloweenBossAttackAllowed(target)) return false;
+    if (rogueKnifeFarm() && target && monsterFocus.indexOf(target.mtype) >= 0 && isAllowedTarget(target) &&
+        (!target.target || target.target === character.name)) return true;
     if (dungeonOwned()) return !!(character.cave && !character.cave.paused && dungeonTargetAllowed(target) && groupedFresh() &&
       groupedCombat.target?.id === target.id && groupedCombat.committed);
     if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
@@ -13146,6 +13526,9 @@
     return true;
   }
   function leaderLockAllows(target) {
+    // Fan of Knives pulls multiple farm targets. The ordinary group lock selects only
+    // one monster; remaining eligibility checks still enforce bounds and claims.
+    if (target && monsterFocus.indexOf(target.mtype) >= 0 && rogueKnifeFarm()) return true;
     if(!groupedFarming())return true;
     return !!(target && groupedCombat && groupedCombat.protocol===4 && groupedCombat.target &&
       groupedCombat.target.id===target.id && groupedCombat.target.map===character.map &&
@@ -13162,9 +13545,15 @@
   }
 
   function isAllowedTarget(target, huntTravelCommand, diagnostic) {
+    if (!halloweenBossAttackAllowed(target)) {
+      if (diagnostic) diagnostic.reason = "Lone rogue requires another Halloween boss target";
+      return false;
+    }
     if (character.cave || typeof root !== "undefined" && root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return dungeonTargetAllowed(target);
     if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
     function reject(reason) { if (diagnostic) diagnostic.reason = reason; return false; }
+    if (halloweenOwnsCombat() && !isAttackingPartyMember(target) && !halloweenTargetAllowed(target))
+      return reject("Halloween attendance permits only its committed boss");
     if (typeof frankyCombatActive === "function" && frankyCombatActive() && !frankyTargetAllowed(target))
       return reject("Franky attendance only permits the Franky monster");
     var huntTravel = huntTravelCommand && huntTravelCommand.purpose === "monster-hunt" &&
@@ -13298,6 +13687,7 @@
       }
       combatTargetId = null;
       if (navigationOwner && navigationOwner.cancelled) return;
+      if (root.partyItemSwaps) await root.partyItemSwaps.restoreForActivity();
       return await action();
     } finally {
       departurePending = false;
@@ -13493,11 +13883,76 @@
     if(!points.length)throw new Error("No walkable entry point in selected farming zone");
     return points[0];
   }
+  async function independentHalloweenWalk(destination, current) {
+    var revision = navigationIntent.revision, generation = runtimeGeneration;
+    var owner = { activity: "event", key: "halloween" }, route = null, direct = false;
+    var deadline = Date.now() + 180000;
+    root.__partySharedWalking = owner;
+    try {
+      while (true) {
+        if (!runtimeCurrent() || runtimeGeneration !== generation || navigationIntent.revision !== revision ||
+            root.__partySharedWalking !== owner || current && !current()) throw new Error("interrupted");
+        if (Date.now() > deadline) throw new Error("Halloween travel timed out");
+        // Shared arrival owns its route through the final acknowledgement.
+        // Local closing must wait for that owner before issuing another path.
+        if (convoyTraveling || partyConvoyActive) { await sleep(100); continue; }
+        var target = nearestEventTarget();
+        if (target && isAllowedTarget(target) && is_in_range(target)) return;
+        if (!target && character.map === destination.map &&
+            Math.hypot(character.x - destination.x, character.y - destination.y) <= 55) return;
+        var goal = target ? { map: character.map, x: target.x, y: target.y } : destination;
+        if (route && route.failed) throw route.failed;
+        // A path can finish at the closest walkable point outside melee range.
+        // Close the remaining terrain-clear gap before releasing combat.
+        var point = target && combatApproachPoint(target);
+        if (route && route.done && point && can_move_to(point.x, point.y)) {
+          direct = true;
+          // This segment belongs to event travel. Recording it as a combat
+          // move lets the paused role's idle reset stop it on the next tick.
+          root.__partyNavigationDetail = "Closing on " + target.mtype + " until in attack range";
+          if (!character.moving || Math.hypot(Number(character.going_x) - point.x, Number(character.going_y) - point.y) > 2)
+            (function(leg) { Promise.resolve(move(point.x, point.y)).catch(function(error) { leg.failed = error; }); })(route);
+        } else if (!route || route.done || route.goal.map !== goal.map ||
+            Math.hypot(route.goal.x - goal.x, route.goal.y - goal.y) > 35) {
+          if (route && !route.done) {
+            await stop("smart");
+            if (!runtimeCurrent() || runtimeGeneration !== generation || navigationIntent.revision !== revision ||
+                root.__partySharedWalking !== owner || current && !current()) throw new Error("interrupted");
+          }
+          route = { goal: goal, done: false, failed: null };
+          (function(leg) {
+            Promise.resolve(smart_move(leg.goal)).then(function() { leg.done = true; }, function(error) { leg.failed = error; leg.done = true; });
+          })(route);
+        }
+        await new Promise(function(resolve) { setTimeout(resolve, 250); });
+      }
+    } finally {
+      if (root.__partySharedWalking === owner) {
+        root.__partySharedWalking = null;
+        // A newer manual command owns its own movement and must survive cleanup.
+        if ((route && !route.done || direct && character.moving) && runtimeCurrent() && runtimeGeneration === generation && navigationIntent.revision === revision) {
+          try { await stop("smart"); await stop("move"); } catch (_halloweenWalkStop) {}
+        }
+      }
+    }
+  }
+  async function walkCombatEvent(event, destination, current) {
+    if (!nearestEventTarget()) await sharedPartyWalk(destination, "event", event.name, null, current);
+    var target = nearestEventTarget();
+    if (event.name === "halloween" && current() && target && !is_in_range(target))
+      await independentHalloweenWalk(destination, current);
+  }
   async function sharedPartyWalk(destination, activity, key, parentCommand, current) {
-    if(character.name!==leader && !followLeader)return smart_move(destination);
+    if(character.name!==leader && !followLeader)
+      return activity === "event" && key === "halloween" ? independentHalloweenWalk(destination, current) : smart_move(destination);
     var revision=Number(navigationIntent.revision)||0,generation=runtimeGeneration;
     var body={character:character.name,runtimeId:convoyRuntimeId,navigationRevision:revision,
       destination:destination,activity:activity,key:String(key||activity),parentCommandId:parentCommand?parentCommand.id:0};
+    if (activity === "event" && key === "halloween") {
+      var halloweenOwner = halloweenCommitment();
+      if (!halloweenOwner) throw new Error("Halloween encounter authority unavailable");
+      body.halloweenGeneration = halloweenOwner.generation;
+    }
     root.__partyWalkSequence=(Number(root.__partyWalkSequence)||0)+1;
     body.token=convoyRuntimeId+":"+root.__partyWalkSequence;
     var deadline=Date.now()+180000,completed=false,requestFailures=0;
@@ -13511,7 +13966,9 @@
           // Join/teleport can finish before the boss entity arrives. Yield the
           // walking owner as soon as combat can acquire it, even while waiting
           // for the rest of the party or a coordinator route.
-          if(nearestEventTarget())return;
+          // Halloween visibility is not arrival. Cancelling this shared leg
+          // here also strands party members whose weapons have shorter range.
+          if(key !== "halloween" && nearestEventTarget())return;
         }
         if(Date.now()>deadline)throw new Error("Shared walking rendezvous timed out");
         var result;
@@ -14878,8 +15335,26 @@
   }
 
   var formationPerformance = { ticks: 0, totalMs: 0, maxMs: 0, candidates: 0, collisionChecks: 0 };
+  function combatStrategyEnabled(id) {
+    return root.sharedRoutine && root.sharedRoutine.combatStrategyEnabled ?
+      root.sharedRoutine.combatStrategyEnabled(id) : combatStrategySettings[id] !== false;
+  }
+  function stationaryCombatMove(target) {
+    if (!target || target.dead) return false;
+    var priest = formationMembers().filter(function(member) { return member.ctype === 'priest'; })
+      .sort(function(a,b) { return Number(b.name === leader) - Number(a.name === leader) || a.name.localeCompare(b.name); })[0] || null;
+    var destination = root.sharedRoutine.stationaryCombatDestination &&
+      root.sharedRoutine.stationaryCombatDestination(target, priest, desiredCombatRange());
+    kiteState.targetId = null;
+    if (!destination) return holdFormation(target, 'No reachable stationary combat position');
+    // Position tolerance must never leave a melee fighter outside attack range.
+    if (is_in_range(target) && Math.hypot(destination.x-character.x,destination.y-character.y) <= 3)
+      return holdFormation(target, 'Kiting disabled; holding combat position');
+    return sendCombatMove(target, destination, 'stationary-positioning');
+  }
   function formationMove(target) {
     if (typeof frankyCombatActive === "function" && frankyCombatActive()) return false;
+    if (!combatStrategyEnabled('kiting')) return stationaryCombatMove(target);
     if(!character.cave && root.partyQueueClient && root.partyQueueClient.formation && root.partyQueueClient.formation.movement())return true;
     var context = [character.map, character.in, character.rip, joinedEvent, eventTraveling].join(":");
     if (formationState.mapContext !== context) {
@@ -14951,9 +15426,9 @@
     var priestSpacing = 25;
     var warriorPhaseBefore = formationState.warriorPhase;
     if (warrior) {
-      if (!is_in_range(reference))
-        formationState.warriorPhase = "approaching";
-      if (is_in_range(reference)) formationState.warriorPhase = "melee-kiting";
+      var closeEnough = is_in_range(reference) &&
+        (character.ctype !== "warrior" || combatDistance(reference) <= desired + 3);
+      formationState.warriorPhase = closeEnough ? "melee-kiting" : "approaching";
     }
     var closing = warrior && formationState.warriorPhase === "approaching";
     var secondary = selfPriest || mage ? formationFrame.enemies.filter(function (enemy) {
@@ -15207,6 +15682,8 @@
 
   function desiredCombatRange() {
     var range = Math.max(1, Number(character.range) || 25);
+    // Stay deep inside melee range so a moving target cannot immediately leave it.
+    if (combatStrategyEnabled('kiting') && character.ctype === "warrior" && range < 100) return Math.max(1, Math.min(4, range * 0.125));
     return Math.max(1, range - Math.min(12, Math.max(2, range * 0.05)));
   }
   function combatDistance(target) {
@@ -15301,6 +15778,7 @@
   async function kiteIfNeeded(target) {
     if (typeof frankyCombatActive === "function" && frankyCombatActive()) return false;
     if(typeof returnCombatActive==='function' && returnCombatActive())return false;
+    if (!combatStrategyEnabled('kiting')) return stationaryCombatMove(target);
     var attacker = target && target.target === character.name ? target : Object.keys(parent.entities || {})
       .map(function (id) { return parent.entities[id]; }).filter(function (enemy) {
         return enemy && enemy.type === "monster" && enemy.visible && !enemy.dead && enemy.target === character.name;
@@ -15363,6 +15841,7 @@
   async function approachCombatTarget(target) {
     if (typeof frankyCombatActive === "function" && frankyCombatActive()) return frankyMovementTick(target);
     if (!target || target.dead) return false;
+    if (!combatStrategyEnabled('kiting')) return stationaryCombatMove(target);
     var delta = combatDistance(target) - desiredCombatRange();
     var tolerance = Math.min(3, Math.max(0.5, Number(character.range) * 0.01));
     if (Math.abs(delta) <= tolerance && is_in_range(target)) return false;
@@ -15383,7 +15862,43 @@
     return false;
   }
 
+  function rogueKnifeFarm() {
+    if (character.ctype !== 'rogue' || character.rip || !monsterFocus.length ||
+        (farmingMode !== 'scatter' && (monsterFocus.length !== 1 || monsterFocus[0] !== 'crab')) ||
+        !partyLocation || partyLocation.map !== character.map || navigationIntent.cancelled ||
+        root.sharedRoutine.isOccupied() || activeCombatEvent() || joinedEvent || dungeonOwned() ||
+        travelCombatActive() || returnCombatActive() || typeof rareActive === 'function' && rareActive()) return null;
+    // Crab focus always owns stationary farming, including with other fighters.
+    return { map: partyLocation.map, x: partyLocation.x, y: partyLocation.y };
+  }
+
+  function rogueKnifeFarmMove(destination) {
+    var farm = rogueKnifeFarm();
+    if (!farm) return false;
+    var center = destination || farm;
+    cancelGroupRoute(); cancelFightRoute(); cancelFarmApproach('rogue knife farm owns positioning');
+    if (Math.hypot(character.x-center.x, character.y-center.y) <= 1) {
+      resetCombatMovement();
+      root.partyCombatPosition = { at: Date.now(), mode: 'rogue-knives-hold', movementOwner: 'combat', destination: center };
+      return true;
+    }
+    if (typeof can_move_to === 'function' && can_move_to(center.x, center.y))
+      return sendCombatMove({ id: 'rogue-knives-position', x: center.x, y: center.y }, center, 'rogue-knives-position');
+    root.partyCombatPosition = { at: Date.now(), mode: 'blocked', movementOwner: 'combat', destination: center,
+      reason: 'Rogue farming position is not directly reachable' };
+    return true;
+  }
+
   root.sharedRoutine = {
+    rogueKnifeFarm: rogueKnifeFarm,
+    rogueKnifeFarmContains: function(point) { return !!partyLocation && inFarmArea(point, partyLocation, 0); },
+    rogueKnifeFarmMove: rogueKnifeFarmMove,
+    getRogueKnifeTarget: function() {
+      return Object.values(parent.entities || {}).filter(function(t) {
+        return t && t.type === 'monster' && monsterFocus.indexOf(t.mtype) >= 0 && t.visible && !t.dead && t.hp > 0 &&
+          (!t.target || t.target === character.name) && isAllowedTarget(t);
+      }).sort(function(a,b) { return combatDistance(a)-combatDistance(b); })[0] || null;
+    },
     merchantVisibilityActive: function () { return Date.now() < merchantVisibilityUntil; },
     describeAttackRange: function (target) {
       if (!target || target.mtype !== "crab" || typeof get_width !== "function" || typeof get_height !== "function") return null;
@@ -15525,7 +16040,7 @@
     },
     isBanking: function () { return banking || bankQueued; },
     merchantEventCombatActive: function () {
-      return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
+      return character.ctype === "merchant" && merchantEventCombatEnabled && !!joinedEvent && eventSelected(joinedEvent) &&
         !eventReturnPending && !root.__merchantActiveJob;
     },
     dungeonOwned: dungeonOwned,
@@ -15538,6 +16053,8 @@
     returnAttacker: returnAttacker,
     returnMovementTick: cancelReturnTownUnderAttack,
     isOccupied: function () {
+      if (root.__partyActivityPlan && root.__partyActivityPlan.hold && !departureCombatPending()) return true;
+      if (deathLoopActive()) { root.__partyCombatOwner = 'death-loop'; return true; }
       if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns())
         return !runtimeCurrent() || !!root.__partyConsoleMaintenance || !!character.cave?.paused;
       if (root.__partyUpgradePreviewInFlight) return true;
@@ -15748,6 +16265,13 @@
       return !!(leaderStatus && leaderStatus.team === eventTeam(character));
     },
     isLeader: function () { return (leader || character.name) === character.name; },
+    partyBuffTargets: function () {
+      return [character].concat(currentPartyList().filter(function(name) { return name !== character.name; })
+        .map(function(name) { return get_player(name); })).filter(function(member) {
+          return member && !member.rip && member.hp > 0 && member.map === character.map &&
+            (member.in == null || character.in == null || member.in === character.in);
+        });
+    },
     combatContext: function () {
       var event = character.cave ? { name: "cave", types: [] } : activeCombatEvent();
       var roster = currentPartyList();
@@ -15767,22 +16291,28 @@
         G.maps[character.map] && G.maps[character.map].event === event.name ||
         monsters.some(function(m){return event.types.indexOf(m.mtype) >= 0;}));
       return { leader: leader || character.name, allies: allies, monsters: monsters,
+        strategies: combatStrategySettings,
+        farmingScript: rogueKnifeFarm() ? farmingMode === 'scatter' ? 'rogue-scatter' : 'lone-crab' : undefined,
+        farmingFocus: monsterFocus.slice(),
         event: eventCombat ? event.name : null,
         mode: root.sharedRoutine.isOccupied() || isLiveAbtesting() ? "blocked" : eventCombat ? "event" : !character.cave && farmingMode === "scatter" ? "scatter" : "grouped",
         observedAt: parent.socket && parent.socket.connected ? Date.now() : 0 };
     },
     skillTargetAllowed: function(target) {
+      if (!halloweenBossAttackAllowed(target)) return false;
       if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
       if (!target || target.type !== "monster" || !isAllowedTarget(target) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
       if(dungeonOwned()) return dungeonTargetAllowed(target);
       if(huntTravelDefense() && !isAttackingPartyMember(target) && !(convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return false;
       if (typeof frankyCombatActive === "function" && frankyCombatActive()) return frankyTargetAllowed(target);
+      if (halloweenOwnsCombat()) return halloweenTargetAllowed(target) || isAttackingPartyMember(target);
       if (target.target && !isAttackingPartyMember(target)) return false;
       if (groupedAttackAllowed(target)) return true;
       return groupedFarming() && groupedFresh() && groupedCombat.committed &&
         isAttackingPartyMember(target) && (!travelCombatActive() || huntTravelDefense());
     },
     followLeaderIfFar: async function (maximumDistance) {
+      if (deathLoopActive()) return false;
       if (farmApproach.route || farmingMode === "scatter") return false;
       if (partyTownActive || partyConvoyActive || convoyTraveling || departurePending || bankQueued || !this.shouldFollowLeader() || !leaderLocation) return false;
       // A follower can arrive before its leader. Event combat owns that map;
@@ -15978,6 +16508,7 @@
     isAttackingPartyMember: isAttackingPartyMember,
     allowsTarget: isAllowedTarget,
     getEventTarget: nearestEventTarget,
+    getPriorityEventTarget: halloweenPriorityTarget,
     frankyCombatActive: frankyCombatActive,
     frankyMovementTick: frankyMovementTick,
     isAggressiveEventCombat: isAggressiveEventCombat,
@@ -16052,6 +16583,50 @@
       if (groupedFarming() && groupedCombat && groupedCombat.protocol === 4) return groupedCombat.target || null;
       var target = combatTargetId && get_entity(combatTargetId);
       return target && target.visible && !target.dead ? target : null;
+    },
+    itemSwapSettings: function () { return itemSwapSettings; },
+    combatStrategySettings: function () { return combatStrategySettings; },
+    deathLoopActive: deathLoopActive,
+    activityReserved: function () { return !!root.__partyActivityPlan && root.__partyActivityPlan.phase !== 'solo'; },
+    deathLoopMove: function(destination) {
+      return smart_move(destination, undefined, { owner: { deathLoop: true }, skipLootWait: true });
+    },
+    deathLoopEnter: async function() {
+      combatTargetId = null;
+      publishCombatSelection(null, true);
+      if (root.partyRoleRunner) root.partyRoleRunner.resetTargeting();
+      cancelGroupRoute(); cancelFightRoute(); cancelRarePath();
+      cancelFarmApproach('death loop owns movement');
+      if (farmingTravelToken) farmingTravelToken.cancelled = true;
+      followingLeader = false;
+      if (reunion) await cancelFarmReunion('death loop owns movement');
+      if (convoyTraveling) {
+        var priorConvoy = convoyTraveling;
+        releaseConvoyCruise(priorConvoy);
+        priorConvoy.cancelled = true;
+        if (priorConvoy.release) priorConvoy.release();
+        lastCommand = root.__partyLastCommand = Math.min(lastCommand, Number(priorConvoy.commandId) - 1);
+        convoyTraveling = null;
+      }
+      resetCombatMovement();
+      await stop();
+    },
+    deathLoopLeave: async function() {
+      await stop();
+      if (root.partyRoleRunner) root.partyRoleRunner.resetTargeting();
+      var result = await rejoinActiveEventAfterRespawn();
+      if (result.status === 'retryable') throw new Error(result.reason || 'Saved event recovery pending');
+      if (result.status === 'not-applicable' && !beginFarmReunion())
+        throw new Error('Saved farming recovery pending');
+    },
+    autoConsumable: function () {
+      return runtimeCurrent() && !root.__partyConsoleMaintenance &&
+        (!parent.socket || parent.socket.connected !== false) &&
+        Date.now() - (root.__partyStatusSuccessAt || 0) < 10000 ? autoConsumable : null;
+    },
+    itemSwapMutationBlocked: function () {
+      return !!(root.__partyInventoryCommands && !departurePending || root.__partyTracktrixMove || banking ||
+        bankQueued || stocking || upgrading || gatheringActive || root.__merchantActiveJob);
     },
     setCombatTarget: function (target) {
       publishCombatSelection(target, false);

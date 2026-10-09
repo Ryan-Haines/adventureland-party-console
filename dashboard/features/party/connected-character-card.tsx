@@ -10,6 +10,7 @@ import { CharacterMapSection } from './character-map-section';
 import { MonsterDetailsDialog } from './monster-details-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { FarmingModeControl } from './farming-mode-control';
+import { CombatStrategies } from './combat-strategies';
 import { farmingContext } from './farming-context';
 import { GoldTargetControl } from './gold-target-control';
 import { MerchantCardControls } from './merchant-card-controls';
@@ -124,6 +125,10 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     (eventSelections: string[]) => formation({ character: name, eventSelections }),
     [formation, name],
   );
+  const onMerchantCombatChange = useCallback(
+    (merchantEventCombatEnabled: boolean) => formation({ character: name, merchantEventCombatEnabled }),
+    [formation, name],
+  );
   const onFollowChange = useCallback(
     (checked: boolean) => formation({ character: name, follow: !!checked }),
     [formation, name],
@@ -137,12 +142,13 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     () => ({
       leader: state.leader,
       merchantCharacter: state.merchantCharacter,
+      merchantEventCombatEnabled: state.merchantEventCombatEnabled,
       followers: state.followers,
       eventsByCharacter: state.eventsByCharacter,
       eventSelectionsByCharacter: state.eventSelectionsByCharacter,
       eventSchedules: state.eventSchedules,
     }),
-    [state.leader, state.merchantCharacter, state.followers, state.eventsByCharacter,
+    [state.leader, state.merchantCharacter, state.merchantEventCombatEnabled, state.followers, state.eventsByCharacter,
       state.eventSelectionsByCharacter, state.eventSchedules],
   );
   const onRadiusSave = useCallback(
@@ -324,6 +330,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             <span>Follow</span>
           </label>
           <EventSelectionControl onAnniversary={onAnniversary}
+            onMerchantCombatChange={onMerchantCombatChange}
             state={eventState}
             name={char.name}
             merchant={char.ctype === 'merchant'}
@@ -390,6 +397,9 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             onSelect={onSelectFarmingPolicy}
           />
         ) : null}
+        {char.ctype !== 'merchant' && <CombatStrategies ctype={char.ctype}
+          settings={state.combatStrategies?.[name]}
+          onToggle={(strategy, enabled) => post('/combat-strategies', { character: name, strategy, enabled })} />}
         {char.name === state.merchantCharacter ? (
           <GoldTargetControl
             character={char.name}

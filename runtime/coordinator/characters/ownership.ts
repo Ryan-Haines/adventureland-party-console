@@ -40,7 +40,8 @@ interface OwnershipPorts<Block> {
   updateAccount: () => Promise<unknown>;
   sleep: (milliseconds: number) => Promise<unknown>;
   stop: (block: Block, reason: string) => Promise<unknown>;
-  assignSlot: (slot: number, name: string) => unknown;
+  assignSlot: (slot: number, name: string, realm?: string) => unknown;
+  resolveRealm: (realm: string) => unknown;
   roster: () => Member[];
   configuredRealm: string;
   releaseBankboi?: (confirm: (name: string) => Promise<boolean>) => Promise<void>;
@@ -160,6 +161,7 @@ export function createCoordinatorOwnershipPorts<Block extends { enabled?: boolea
     },
     nativeBusy: () => busy(String(state.nativeOwner)),
     realm: () => state.activeRealm || ports.configuredRealm,
+    resolveRealm: ports.resolveRealm,
     observedRealm,
     realmContext: () => {
       const primary = String(state.nativeOwner);
@@ -182,7 +184,7 @@ export function createCoordinatorOwnershipPorts<Block extends { enabled?: boolea
       await ports.stop(block, "dashboard ownership transfer");
       state.lifecycle[name] = "offline";
     },
-    startHeadless: (name, index) => ports.assignSlot(index + 1, name),
+    startHeadless: (name, index, realm) => ports.assignSlot(index + 1, name, realm),
     confirmOffline: (name) => confirmOffline(name, ports),
     members: () => groupedRoster(state, ports.roster),
   };
