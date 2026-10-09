@@ -14,6 +14,8 @@ import { migrateSharedRules, installSharedRuleRoutes, sharedMember } from "./inv
 import { loadCoordinatorGeometry } from './navigation/planner-geometry.ts';
 import { initializeStandLocation, standLocationRoute } from './merchant/stand-location.ts';
 import { createRareRouteDistance } from './navigation/rare-route-distance.ts';
+import { characterHomeWorld } from './characters/home-world.ts';
+import { realmSwitchInProgress } from './characters/realm-switch.ts';
 export function startCoordinatorApplication(
   platform: CoordinatorApplicationPlatform,
 ): Promise<void> {
@@ -1539,6 +1541,7 @@ export function startCoordinatorApplication(
     }
 
     function ensureMerchantHome(reason: Parameters<typeof merchantHomeRecovery.ensureHome>[0]) {
+      if (realmSwitchInProgress(party.realmSwitch)) return false;
       const merchant = String(party.merchantCharacter);
       if (party.steamMembers.includes(merchant)) {
         party.merchantHomeReturnAt = 0;
@@ -2222,6 +2225,7 @@ export function startCoordinatorApplication(
                     assignSlot: assignHeadlessSlot,
                     roster: rosterPayload,
                     configuredRealm,
+                    resolveRealm: realm => my_acc.resolve_realm(realm),
                     releaseBankboi: (confirm) => bankboiService.releaseForSteam(confirm),
                   }),
                 );
@@ -2277,8 +2281,9 @@ export function startCoordinatorApplication(
     function assignHeadlessSlot(
       slot: Parameters<typeof workerSetup.assign>[0],
       name: Parameters<typeof workerSetup.assign>[1],
+      realm?: string,
     ) {
-      workerSetup.assign(slot, name);
+      workerSetup.assign(slot, name, realm);
     }
 
     async function restoreMerchantAfterBankboi(
@@ -2317,6 +2322,8 @@ export function startCoordinatorApplication(
       watch: watchCharacterCode,
       owned: ownedCharacter,
       ensure: ensureCharacterBlock,
+      homeWorld: name => characterHomeWorld(party.characterHomeRealms[name], ownedCharacter(name)?.home,
+        party.activeRealm || configuredRealm),
       start: start_char,
       persist: persistRosterState,
       later: (callback, milliseconds) => setTimeout(callback, milliseconds),

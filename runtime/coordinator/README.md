@@ -9,6 +9,15 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Headless loading offers separate Home world and Login realm controls. The saved
+per-character home preference persists in the roster journal; a login override
+applies only to that login. Explicit login and startup restoration share the same
+home resolution. Merchant home recovery yields while a party realm switch owns
+worker assignments, and legacy event-selection migration no longer changes them.
+Steam login behavior is unchanged. See [Console configuration and usability](../../docs/console-improvements.md)
+for settings, recovery behavior and manual review. Activation remains user-owned.
+
+
 Merchant settings stores one Main-map stand location for parking, Town-return
 checks and marketplace fallbacks. A fresh settings store chooses integer X/Y
 coordinates independently within -100..100, rejects native collision geometry
