@@ -22,6 +22,11 @@ overall player grace set to zero. The source hash is retained with the values.
 The native journey keeps real item/scroll purchases and upgrades, holds one
 already persisted checkpoint response for restart, and checks the original
 gold cap still bounds accrued spending.
+The native capped fixture uses a 20,000-gold cap and 1,000,000 bank gold.
+Its helmet costs 3,200 and the initial seven basic scrolls cost 7,000; the
+previous 10,000 cap correctly refused that 10,200 batch before any purchase.
+The larger cap exercises purchases and restart while bank funds remain below
+the full +12 scroll chain, preserving the cap-aware prefunding check.
 
 CI merchant recovery timing evidence: the final two-item batch in native run
 37862993344 issued its order at 1791507816685 and recorded the second actual

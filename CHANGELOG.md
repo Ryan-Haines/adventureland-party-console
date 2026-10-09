@@ -7,6 +7,10 @@ from the commits merged into `main`.
 
 ### Added
 
+- Mr. Green and Mr. Pumpkin combat now reevaluates native add priority while a
+  living boss is retained, switching onto its spawned adds and resuming the boss
+  afterward while preserving other combat and movement owners.
+
 - Disposable native E2E now runs separate US I and US II game processes with a
   shared account database, enabling actual merchant realm-transition validation
   and cleanup of native connection/bank leases in both realms.

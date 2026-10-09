@@ -16466,6 +16466,9 @@
       return targets[0] || null;
     },
     getRareTarget: rareTarget,
+    getPriorityEventTarget: function () {
+      return joinedEvent === "mrgreen" || joinedEvent === "mrpumpkin" ? nearestEventTarget() : null;
+    },
     getPassingTarget: passingTarget,
     convoyHoldDefenseTarget: convoyHoldDefenseTarget,
     monsterPriority: monsterPriority,

@@ -1,7 +1,7 @@
 import { test as base, expect, unusedPort, child, environment, stop } from './fixtures';
 import { launchGameClient, type LiveClient } from './live-game-client';
 import { type ChildProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -21,6 +21,8 @@ export type LiveGame = {
   state(catalogs?: boolean): Promise<any>;
   post(route: string, body: unknown): Promise<any>;
   admin(code: string): Promise<any>;
+  adminRealm(realm:'USI'|'USII', code:string):Promise<any>;
+  holdMerchantStatus(hold:boolean):void;
   restartCoordinator(): Promise<void>;
   restoreHistoricalSettings(restore: (settings: any) => any): Promise<void>;
   reconnectClient(name: string): Promise<void>;
@@ -109,6 +111,17 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           const result = await game.admin(code);
           exchanges.push({ at: Date.now(), administrative: true, code, result });
           return result;
+        },
+        async adminRealm(realm,code) {
+          const result = await game.admin(code,{},realm);
+          exchanges.push({at:Date.now(),administrative:true,realm,code,result});
+          return result;
+        },
+        holdMerchantStatus(hold) {
+          const marker=path.join(directory,'hold-merchant-status');
+          if(hold) writeFileSync(marker,'Declared missing merchant arrival reports');
+          else rmSync(marker,{force:true});
+          exchanges.push({at:Date.now(),transportFault:'merchant-status',hold});
         },
         async restartCoordinator() { await stop(coordinator!, true); await start(); },
         async restoreHistoricalSettings(restore) {
@@ -199,6 +212,7 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
       await testInfo.attach('live-build-manifest', { path: path.join(root, '.build/game/manifest.json'), contentType: 'application/json' });
       await use(live);
     } finally {
+      rmSync(path.join(directory,'hold-merchant-status'),{force:true});
       const attach = async (name: string, body: unknown) => testInfo.attach(name, { body: JSON.stringify(body, null, 2), contentType: 'application/json' });
       const diagnostic = async (work: Promise<unknown>) => {
         let timer: ReturnType<typeof setTimeout>;

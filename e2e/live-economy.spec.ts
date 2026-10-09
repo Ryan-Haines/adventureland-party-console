@@ -11,7 +11,9 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
   // the coordinator has persisted the first paid purchase, to place restart.
   test.setTimeout(300_000);
   await catalog(live,'helmet');
-  // Keep the ordinary 1M bank balance: enough for the 10K cap, but below the
+  // Native helmet starts at 3,200 plus seven 1,000-gold basic scrolls: a 10,000
+  // cap cannot start that retained batch. Use 20,000 to exercise real purchases.
+  // Keep the ordinary 1M bank balance: enough for the 20K cap, but below the
   // complete +12 scroll chain. Preflight must respect the cap before purchases,
   // without requiring tens of millions or fabricating a native receipt.
   const funding=await live.admin(`output=(async()=>{const p=get_player('${merchant}');
@@ -32,11 +34,11 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
     if(!held&&Number(body.state.spent)>0&&!body.state.pendingPurchase){held=true;await gate;}
     await route.fulfill({response});
   });
-  const order=await live.post('/merchant/order',{buys:[{id:'helmet',quantity:1,level:12,acknowledgeUnavailable:true,goldCap:10000}],crafts:[]});
+  const order=await live.post('/merchant/order',{buys:[{id:'helmet',quantity:1,level:12,acknowledgeUnavailable:true,goldCap:20000}],crafts:[]});
   await expect.poll(()=>held,{timeout:120_000}).toBe(true);
   const before=await live.state();
   const job=[before.merchantCurrent,...before.merchantQueue].find((entry:any)=>entry?.id===order.jobId);
-  expect(job.order.buys[0]).toMatchObject({goldCap:10000,budget:10000,estimateUnavailable:true});
+  expect(job.order.buys[0]).toMatchObject({goldCap:20000,budget:20000,estimateUnavailable:true});
   expect(job.order.buys[0].attempts).toBeUndefined();
   expect(job.resumeState.spent).toBeGreaterThan(0);
   await live.restartCoordinator();release();
@@ -44,7 +46,7 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
     const state=await live.state();
     return [state.merchantCurrent,...state.merchantQueue].some((entry:any)=>entry?.id===order.jobId&&/budget exhausted|gold cap/i.test(entry.lastError||entry.error||entry.blockedReason||''))||state.merchantActivity.some((entry:any)=>/budget exhausted|gold cap/i.test(JSON.stringify(entry)));
   },{timeout:120_000}).toBe(true);
-  expect(Math.max(...checkpoints.map(state=>Number(state.spent)||0))).toBeLessThanOrEqual(10000);
+  expect(Math.max(...checkpoints.map(state=>Number(state.spent)||0))).toBeLessThanOrEqual(20000);
   expect(checkpoints.some(state=>state.spent>0&&/^scroll/.test(state.pendingPurchase?.name||''))).toBe(true);
   await info.attach('capped-native-upgrade-restart',{body:JSON.stringify({order,before,after:await live.state(),checkpoints,events:await live.clients[merchant].events()}),contentType:'application/json'});
   } finally {

@@ -1,3 +1,9 @@
+Halloween add-priority changes involve both `characters/shared.js` and the
+maintained role runner under `runtime/characters/roles/`. Build and activate the
+character assets together; restarting only coordinator bundles does not activate
+the runner's live-boss retargeting behavior. The native threshold scenarios record
+living-boss-to-add selections, actual add hits, resumed boss damage and native loot.
+
 Exchange rule previews provide Mark multiple modes for bank, stand, upgrade
 (target level), and NPC sale. Gear buttons in the exchange catalog open rules;
 item clicks open full details with Add at the bottom. Bulk edits remain local until Done; closing either the rules preview or the

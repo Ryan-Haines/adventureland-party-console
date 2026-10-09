@@ -10,7 +10,7 @@ async function main() {
     // This container exclusively owns this hardcoded disposable database. Docker
     // may have killed its predecessor before upstream saved offline leases.
     // Clear them before either upstream process starts; leave map/account data.
-    await db.collection('server').deleteOne({ _id: 'SR_USI' });
+    await db.collection('server').deleteMany({ _id: {$in:['SR_USI','SR_USII']} });
     await db.collection('character').updateMany({}, { $set: { online: false, server: '' } });
     await db.collection('user').updateMany({}, { $set: { server: '', mounted_to: '' } });
   }
@@ -20,6 +20,8 @@ async function main() {
     if (seed.status !== 0) throw new Error('Map seed failed');
   }
   const children = [spawn(process.execPath, ['main.js'], { stdio: 'inherit' }), spawn(process.execPath, ['server.js', 'local'], { cwd: '/game/node', stdio: 'inherit' })];
+  if (require('../secretsandconfig/options.js').servers.local2)
+    children.push(spawn(process.execPath, ['server.js', 'local2'], {cwd:'/game/node',stdio:'inherit'}));
   let stopping = false;
   const stop = (code) => { if (stopping) return; stopping = true; children.forEach(child => child.kill('SIGTERM')); setTimeout(() => process.exit(code), 2000); };
   children.forEach(child => child.on('exit', code => stop(code || 1)));

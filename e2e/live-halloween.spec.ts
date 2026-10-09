@@ -120,16 +120,24 @@ for (const encounter of [{id:'mrgreen',add:'greenjr',drop:'ashleaf',map:'spookyt
         await expect.poll(async()=>{
           const sample=await live.admin(`output=(()=>{const boss=instances[${JSON.stringify(seed.map)}]?.monsters[${JSON.stringify(seed.id)}];return {adds:globalThis.__e2eThresholdAdds,boss:boss?{id:String(boss.id),hp:boss.hp,max_hp:boss.max_hp,map:boss.map,x:boss.x,y:boss.y}:null}})()`);
           ledgers.push({at:Date.now(),...sample});
+          const selection=await live.state();
+          ledgers[ledgers.length-1].selections=fighters.map(name=>({name,target:selection.characters[name]?.combatSelection?.target}));
           const events=await live.clients[W].events();
           for(const event of events) {
-            if(event.event==='hit'&&event.data?.hid===W&&event.data?.damage>0&&
-              sample.adds.some((add:any)=>String(event.data.id)===add.id))
+            if(event.event==='hit'&&fighters.includes(event.data?.hid)&&event.data?.damage>0&&
+              (String(event.data.id)===String(seed.id)||sample.adds.some((add:any)=>String(event.data.id)===add.id)))
               observedHits.set(String(event.data.pid||`${event.at}:${event.data.id}`),event);
           }
           return [0.75,0.5,0.25].every(threshold=>sample.adds.some((add:any)=>
             add.master===String(seed.id)&&add.bossHp/add.bossMaxHp<=threshold&&add.bossHp/add.bossMaxHp>threshold-0.2&&
-            [...observedHits.values()].some((event:any)=>String(event.data.id)===add.id)));
-        },{timeout:300_000,intervals:[250,500],message:'Native boss damage must spawn and the warrior must attack adds at each threshold'}).toBe(true);
+            [...observedHits.values()].some((event:any)=>String(event.data.id)===add.id)&&
+            ledgers.some(observation=>observation.boss?.hp>0&&observation.selections?.some((actor:any)=>
+              String(actor.target?.id)===add.id&&ledgers.some(previous=>previous.at<observation.at&&
+                previous.selections?.some((prior:any)=>prior.name===actor.name&&String(prior.target?.id)===String(seed.id)))))));
+        },{timeout:300_000,intervals:[250,500],message:'Native boss damage must spawn and the party must attack adds at each threshold'}).toBe(true);
+        const firstAddHit=[...observedHits.values()].filter(event=>String(event.data.id)!==String(seed.id)).sort((a,b)=>a.at-b.at)[0];
+        expect([...observedHits.values()].some(event=>String(event.data.id)===String(seed.id)&&event.at>firstAddHit.at),
+          'Actual party boss damage must resume after a native add engagement').toBe(true);
         await expect.poll(async()=>!(await world(live,encounter.id)).boss,{timeout:180_000}).toBe(true);
         await expect.poll(async()=>{
           const items=await live.admin(`output=${JSON.stringify(fighters)}.flatMap(name=>get_player(name).items)`);
