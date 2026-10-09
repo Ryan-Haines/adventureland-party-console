@@ -39,8 +39,9 @@ test('native event walking recovers owned CODE turnover after coordinator restar
         ownerObservations.push({convoy:c,characters:Object.fromEntries(fighters.map(name=>[name,s.characters[name]]))});
         expect(c.recoveryAttempts||0).toBeGreaterThanOrEqual(before.activeConvoy.recoveryAttempts||0);
         expect(c.walkingFailures||0).toBeGreaterThanOrEqual(before.activeConvoy.walkingFailures||0);
-        for(const name of fighters)expect(c.walkingParents[name].revision).toBe(before.activeConvoy.walkingParents[name].revision);
-        const owned=fighters.every(name=>{const report=s.characters[name]?.convoyNavigation,expected=c.expected?.[name];
+        for(const name of c.participants){expect(fighters).toContain(name);
+          expect(c.walkingParents[name].revision).toBe(before.activeConvoy.walkingParents[name].revision);}
+        const owned=c.participants.every((name:string)=>{const report=s.characters[name]?.convoyNavigation,expected=c.expected?.[name];
           return report?.id===c.id&&report.runtimeId===c.runtimes?.[name]&&
             report.commandId===expected?.commandId&&report.navigationRevision===expected?.revision;});
         if(fresh&&identities&&owned&&c.phase!=='failed'){recovered=s;return true;}
@@ -52,7 +53,7 @@ test('native event walking recovers owned CODE turnover after coordinator restar
           e.data?.hid===name&&e.at>turnoverAt))){recovered=s;return true;}}
       return false;
     },{timeout:60_000}).toBe(true);
-    await expect.poll(async()=>{const events=await live.clients[W].events();return events.some((e:any)=>e.event==='hit'&&String(e.data?.id)===String(seed.id)&&fighters.includes(e.data?.hid));},{timeout:120_000}).toBe(true);
+    await expect.poll(async()=>{const events=await live.clients[W].events();return fighters.every(name=>events.some((e:any)=>e.event==='hit'&&String(e.data?.id)===String(seed.id)&&e.data?.hid===name&&e.at>turnoverAt));},{timeout:120_000}).toBe(true);
   }finally{
     await info.attach('native-event-runtime-turnover',{body:JSON.stringify({seed,before,turnoverAt,failed,recovered,ownerObservations,final:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
     await live.post('/formation',{character:W,eventSelections:[]});

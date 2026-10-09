@@ -77,3 +77,11 @@ Observe the explicit Main exit/dispatch phase for 120 seconds and the actual
 checkpoint walk for its existing 120 seconds. Neither change extends the native
 spawn-plus-120-second abandonment deadline or any production walking budget;
 the test's overall 420-second budget covers these separate bounded phases.
+
+Slender phase-split correction: the first arrival-only poll could see Halloween
+0,0 during evacuation through that map, before Main exit and checkpoint dispatch.
+The resulting thirty-second acknowledgement window began while the real return
+convoy was still walking through Mtunnel (both native actors progressed with
+1–34 ms of no-progress time). Arrival must belong to the dispatched checkpoint
+phase, or an already fully retired recovery, before the acknowledgement window
+starts. Preserve both phase bounds and the actual native coordinate checks.

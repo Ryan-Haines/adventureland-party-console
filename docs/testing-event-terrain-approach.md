@@ -6,4 +6,16 @@ Native E2E starts on Halloween (-200,460), declares a stationary native Pumpkin 
 
 CI fixture failure inventory (recorded before fixture edits): native CODE turnover can recover through the existing communication barrier without ever becoming terminal runtime-lost; asserting a fleeting terminal phase rejects successful recovery. Setup can permit ordinary navigation after initial login and before encounter declaration; verify the actual native start position through supported travel before declaring the terrain encounter. A fast route can finish before a state poll; native position packets plus actual boss hits remain the durable observable behavior. Preserve ownership/runtime identity and original recovery budgets under either communication recovery or retained failed-convoy recovery.
 
+After restart, fresh actors can briefly form a partial walking cohort while another
+CODE runtime reports in. Validate ownership and original revisions for every
+captured participant, then require both original fighters' fresh identities and
+actual boss hits after CODE replacement. Do not reject an observed cohort merely
+because a returning actor has not joined that particular leg yet.
+
 Additional observed race: a convoy can complete and release its command before all heartbeat reports simultaneously expose its final owner fingerprint. A retained observation series must check budget/parent revision on the active convoy and fresh owner reports when present; completed recovery requires unchanged Warrior/new Priest CODE identities, the same event, living fresh participants, and real post-replacement boss hits. Completion removes convoy reports by design and must not invalidate durable successful recovery.
+
+## Boo Boo walking-return fixture boundaries
+
+Observed Linux chronology before fixture revision: Hunt route started at 1791530172289, entered Halloween at 1791530259797 and Spookytown at 1791530351614. Native quest-target kill occurred at 1791530469890; a legitimately admitted defensive Boo Boo died at 1791530477248, approximately 0.5 seconds after the last coordinator heartbeat captured at the combined 300-second boundary. Accepted native attacks and subsequent Town departure demonstrate progress, rather than a locked attack cooldown.
+
+The first lifecycle case retains full native outbound map-door coverage. The second, cache-focused case declares its initial login position from the native Boo Boo spawn catalog, before any journey begins. It retains the existing 300-second native kill/return-checkpoint gate and every existing walking, communication-hold, remainder-reuse, native Daisy arrival, and reward assertion. Its return destination must be Main, so starting on Spookytown cannot make the return degenerate. Bounded phase/position chronology and native quest counts are retained on failure. No product timeout or journey deadline changes.
