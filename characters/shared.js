@@ -6783,7 +6783,7 @@
     async function purchaseStock(name, quantity, base) {
       var cost = Number(G.items[name].g) * quantity;
       if (Number.isFinite(Number(purchase.budget)) && progress.spent + cost > Number(purchase.budget))
-        throw new Error("90% estimated budget exhausted for " + purchase.id + " (spent " + progress.spent + " of " + purchase.budget + " gold)");
+        throw new Error((purchase.estimateUnavailable ? "Gold cap for unavailable estimate exhausted" : "90% estimated budget exhausted") + " for " + purchase.id + " (spent " + progress.spent + " of " + purchase.budget + " gold)");
       // Route and fund first: failed travel must not spend the order allowance.
       await services.fund(cost);
       await services.move(itemSeller(name));
@@ -6861,7 +6861,7 @@
           return n * Number(definition.g) + Math.max(0, basicSteps * n - stock(basicScroll)) * Number(G.items[basicScroll].g);
         }
         while (count > 0 && Number.isFinite(Number(purchase.budget)) && progress.spent + batchCost(count) > Number(purchase.budget)) count -= 1;
-        if (!count) throw new Error("90% estimated budget exhausted for " + purchase.id + " (spent " + progress.spent + " of " + purchase.budget + " gold)");
+        if (!count) throw new Error((purchase.estimateUnavailable ? "Gold cap for unavailable estimate exhausted" : "90% estimated budget exhausted") + " for " + purchase.id + " (spent " + progress.spent + " of " + purchase.budget + " gold)");
         await services.fund(batchCost(count));
         progress.attempts -= legacyAllowance;
         progress.cycleActive = false;
@@ -7148,7 +7148,7 @@
       function chargePurchase(amount) {
         if (activePurchase && Number.isFinite(Number(activePurchase.budget)) &&
             activeSpent + amount > Number(activePurchase.budget))
-          throw new Error("90% estimated budget exhausted for " + activePurchase.id +
+          throw new Error((activePurchase.estimateUnavailable ? "Gold cap for unavailable estimate exhausted" : "90% estimated budget exhausted") + " for " + activePurchase.id +
             " (spent " + activeSpent.toLocaleString() + " of " + Number(activePurchase.budget).toLocaleString() + " gold)");
         activeSpent += amount;
       }

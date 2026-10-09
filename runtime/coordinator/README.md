@@ -44,7 +44,7 @@ continues to describe the boss during add combat. Anniversary staging survives
 older slice handoffs and owns farm movement. Native transition connectors retry
 one-second stalls without renewing the twelve-second deadline; recovering Escape
 owns its throttled revival requests. Validate the threshold-add journeys and
-`live-hunt-round2-recovery.spec.ts`, retaining native packet/combat/reward artifacts.
+`live-hunt-round2-recovery.spec.ts`, retaining native submission/combat/reward artifacts.
 These changes require the supported full rebuild/restart and fresh character
 generations; a coordinator-only restart does not activate them.
 

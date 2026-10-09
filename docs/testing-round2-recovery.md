@@ -13,8 +13,10 @@ Failure inventory recorded before implementation:
 - Escape revival called every pulse, timestamp set after a rejected call, retry
   throttle leaking between distinct attempts, role revival competing with escape.
 
-Use real native clients and acknowledged movements. Transport faults drop outgoing
-packets before native ingestion; they never manufacture arrival or native replies.
+Use real native clients and acknowledged movements. Connector faults drop native
+move submissions before client prediction, then forward retries unchanged. Socket
+packet loss alone lets the client predict arrival and does not reproduce a stopped
+connector. Record actual server positions; never manufacture arrival or replies.
 Initial historical stock and schedule projections are declared fixtures. Save
 native event/transfer/kill histories, final states and screenshots, and verify the
 artifact manifest after each focused run.
