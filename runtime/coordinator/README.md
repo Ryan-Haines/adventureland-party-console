@@ -5,6 +5,10 @@ own information handler; the bridge never falsifies account online flags.
 Ordinary AFK roster refresh can otherwise take about ninety seconds. Recovery
 requests and delayed retries stop when the bridge lifecycle is retired.
 
+Timer-only staging resolves the exact native boss spawn before subordinate
+monster spawns. Mr. Green's Green Jr combat priority must not move pre-spawn
+attendance from the boss's Spookytown area to Green Jr's Halloween area.
+
 Halloween add-priority changes involve both `characters/shared.js` and the
 maintained role runner under `runtime/characters/roles/`. Build and activate the
 character assets together; restarting only coordinator bundles does not activate

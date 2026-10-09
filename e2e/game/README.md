@@ -57,3 +57,8 @@ The marker belongs to the scenario's disposable directory and is removed both
 in the test's `finally` and fixture teardown. Arrival is independently read from
 the actual US II process, while timeout assertions retain the job's original
 admission timestamp. This fault does not synthesize successful realm observations.
+
+The boot harness transparently forwards container-local published ports 9003 and
+9004 to native listeners 7192 and 7193. Native cross-realm account confirmation
+uses advertised server addresses, so those addresses must work inside the
+container as well as from host browsers. No authentication responses are replaced.

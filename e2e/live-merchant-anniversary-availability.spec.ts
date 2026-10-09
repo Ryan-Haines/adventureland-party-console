@@ -26,6 +26,13 @@ test('unavailable native Anniversary host releases merchant bank work then visit
     const nativeBank=await live.admin(`output=(async()=>{const p=get_player('${M}'),user=await db.collection('user').findOne({_id:p.owner});return Object.entries(p.user||user.info).filter(([k,v])=>/^items[0-9]+$/.test(k)&&Array.isArray(v)).flatMap(([,v])=>v).filter(i=>i?.name==='leather')})()`);
     expect(quantity(nativeBank,'leather')).toBe(3);
     await info.attach('anniversary-unavailable-native-bank-work',{body:JSON.stringify({seed,before,banked,nativeBank,events:await live.clients[M].events()}),contentType:'application/json'});
+    // The native deposit receipt precedes completion of its coordinator inventory
+    // handoff. Login resumes once the real banking operation reports finished.
+    await expect.poll(async()=>{
+      const state=await live.state(), merchant=state.characters[M];
+      return !state.merchantCurrent && !state.bankboiTransaction &&
+        !merchant.banking && !merchant.stocking && !merchant.upgrading;
+    },{timeout:30_000}).toBe(true);
     await live.post('/steam/action',{character:P,action:'login'});
     await expect.poll(async()=>await live.admin(`output=!!get_player('${P}')`),{timeout:90_000}).toBe(true);
     await expect.poll(async()=>await live.admin('output=E.anniversary?.available'),{timeout:30_000}).toBe(true);

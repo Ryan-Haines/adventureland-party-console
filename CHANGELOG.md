@@ -7,6 +7,10 @@ from the commits merged into `main`.
 
 ### Added
 
+- Event staging now prefers the native boss spawn before subordinate monster
+  spawns, keeping Mr. Green attendance in Spookytown while prioritizing its adds
+  during combat.
+
 - Recover event walking interrupted by an actual CODE runtime replacement and
   coordinator restart when every participant reports fresh living ownership of
   the same event, realm and navigation revision, with at least one replaced
@@ -19,7 +23,9 @@ from the commits merged into `main`.
 
 - Disposable native E2E now runs separate US I and US II game processes with a
   shared account database, enabling actual merchant realm-transition validation
-  and cleanup of native connection/bank leases in both realms.
+  and cleanup of native connection/bank leases in both realms. Transparent internal
+  port forwarding preserves native cross-server account confirmation when both
+  realms use Docker-published addresses.
 
 - Keep merchant upgrade estimates responsive with a shared, cancellable
   60-million-roll budget for each cart/order. Discard incomplete simulations,

@@ -4,11 +4,16 @@ Declared before extending the disposable stack for issues #69 and #74.
 
 - US II is only a fabricated alias and never hosts a native game process.
 - Both processes bind the same socket port or publish the same realm ID.
+- Published host ports are unreachable from inside the game container, causing
+  native cross-realm account confirmation to reject otherwise valid logins.
 - Account discovery drops the second server or worker setup routes both realms
   to US I despite the requested realm.
 - Reset disconnects only US I, leaving US II characters/account bank leases live.
 - An admin read silently queries the wrong process and invents missing cargo.
 - A logout is followed by a spawn before the native ownership handoff completes.
+- A native primary reconnect opens the current/home realm choice and the scenario
+  never answers it, leaving companions offline; explicitly choose the observed
+  current realm during the ordinary ownership handoff.
 - Holding transition reports prevents unrelated participants from reporting.
 - A transport fault survives a failed test or coordinator restart and contaminates
   another scenario; hold markers must live inside the disposable scenario directory.

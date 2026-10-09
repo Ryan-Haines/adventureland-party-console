@@ -11800,10 +11800,11 @@
     // Some joinable events (notably Giga Crab / crabxx) happen in a normal
     // map instead of a map carrying `map.event`.
     var types = eventMonsterTypes(eventName), location = null;
-    Object.keys(G.maps || {}).some(function (candidateMap) {
+    function findSpawn(exactBoss) {
+      return Object.keys(G.maps || {}).some(function (candidateMap) {
       var monsters = G.maps[candidateMap] && G.maps[candidateMap].monsters || [];
       var monsterSpawn = monsters.find(function (entry) {
-        return entry && types.indexOf(entry.type) >= 0;
+        return entry && (exactBoss ? entry.type === eventName : types.indexOf(entry.type) >= 0);
       });
       if (!monsterSpawn) return false;
       var bounds = monsterSpawn.boundary ||
@@ -11814,7 +11815,9 @@
         x: (Number(bounds[offset]) + Number(bounds[offset + 2])) / 2,
         y: (Number(bounds[offset + 1]) + Number(bounds[offset + 3])) / 2 };
       return true;
-    });
+      });
+    }
+    findSpawn(true) || findSpawn(false);
     return location || { map: character.map, x: Number(character.x) || 0, y: Number(character.y) || 0 };
   }
 
