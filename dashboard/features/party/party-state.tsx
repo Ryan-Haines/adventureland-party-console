@@ -41,6 +41,7 @@ import { UpgradeMark } from "./upgrade-mark";
 import { Withdrawal } from "./withdrawal";
 
 export type PartyState = {
+  combatStrategies?: import('../../../runtime/combat/strategies').CharacterStrategies;
   upgradeOfferingRules?: import("../../../runtime/upgrade-offerings").UpgradeOfferingRule[];
   upgradeOfferingStock?: Partial<Record<import("../../../runtime/upgrade-offerings").UpgradeOffering, number>>;
   characterAppearances?: Record<string, Pick<Char, "skin" | "characterSprite" | "characterDollHtml"> & {updatedAt:number}>;
@@ -91,6 +92,8 @@ export type PartyState = {
   merchantRoutinePriorities?: Record<string, number>;
   merchantBlacklist?: Record<string, MerchantBlacklistEntry>;
   merchantAutomations?: Record<string, boolean>;
+  pontyShoppingList?: string[];
+  pontyShopLastRunAt?: number | null;
   giveawayRealms?: { key: string; label: string }[];
   giveawayPlayers?: Record<string, string[]>;
   standBids?: Record<string, StandBid>;

@@ -107,6 +107,9 @@ export const InventoryPanel = memo(function InventoryPanel({
   onRetryDeconstruction,
   onRemoveNpcSale,
   autoStandMarks,
+  pontyShoppingList = [],
+  onRemovePonty,
+  onClearPonty,
   buyable,
   catalog,
   priceHistory,
@@ -154,6 +157,9 @@ export const InventoryPanel = memo(function InventoryPanel({
   onRemoveNpcSale?: (id: string) => void;
   autoNpcSales: Record<string, { item: Item; createdAt: number; character?: string }>;
   autoStandMarks: Record<string, { item: Item; price: number; createdAt: number }>;
+  pontyShoppingList?: string[];
+  onRemovePonty?: (itemId: string) => void;
+  onClearPonty?: () => Promise<void>;
   buyable: MerchantBuyItem[];
   catalog: MerchantCatalogItem[];
   priceHistory: Record<string, StandPriceHistory>;
@@ -215,7 +221,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   const nextUpgradeSlot = validLuckySlot(luckyUpgradeSlot) ? luckyUpgradeSlot :
     luckySlotSearch(luckySlotTracking || {version: 1, slots: {}}).nextSlot;
   const luckySlotLabel = validLuckySlot(luckyUpgradeSlot) ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
-  type AutomaticSection = "npc" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction";
+  type AutomaticSection = "npc" | "npc-manual" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction" | "ponty";
   const [openAutomaticSections, setOpenAutomaticSections] = useState<
     Partial<Record<AutomaticSection, boolean>>
   >({});
@@ -298,7 +304,7 @@ export const InventoryPanel = memo(function InventoryPanel({
             <span>{title}</span>
             <span className="ml-auto font-mono opacity-70">{entries.length}</span>
           </button>
-          <button
+          {section !== "npc-manual" && <button
             type="button"
             disabled={!entries.length}
             aria-label={clearArmed ? `Really clear all ${title}` : `Clear all ${title}`}
@@ -318,7 +324,7 @@ export const InventoryPanel = memo(function InventoryPanel({
               Really?
             </span>
             <X className="h-4 w-4 shrink-0" />
-          </button>
+          </button>}
         </div>
         <div
           className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
@@ -513,7 +519,7 @@ export const InventoryPanel = memo(function InventoryPanel({
       const key = `${item.name}@+${item.level || 0}`, commerceKey = automaticCommerceRuleKey(item);
       return Boolean(autoItemMarks[key] || (!item.level && autoItemMarks[item.name]) || autoUpgradeMarks[key] ||
         autoCompoundMarks.some(rule => rule.name === item.name) || autoDeconstruction[commerceKey] ||
-        autoNpcSales[sharedRules || character.name === merchant ? commerceKey : JSON.stringify([character.name, commerceKey])] ||
+        autoNpcSales[String(item.name)] ||
         (character.name === merchant && (autoStandMarks[commerceKey] || autoExchanges[`${item.name}@${item.level || 0}`] || (merchantWeapon?.item && same(item, merchantWeapon.item)))));
     },
     [autoItemMarks, autoUpgradeMarks, autoCompoundMarks, autoDeconstruction, autoNpcSales, sharedRules, character.name, merchant, autoStandMarks, autoExchanges, merchantWeapon],
@@ -528,6 +534,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   );
   const clearAutomaticSection = async (section: AutomaticSection) => {
     if (section === "npc" || section === "stand") onClearAutomaticSales(section);
+    else if (section === "ponty") await onClearPonty?.();
     else if (section === "compound") await onCommand(character.name, "clear-auto-compounds");
     else if (section === "upgrade") await onCommand(character.name, "clear-auto-upgrades");
     else if (section === "deconstruction") {
@@ -671,7 +678,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                 character.name === merchant && !!autoExchanges[autoExchangeKey];
               const automaticSaleKey = automaticCommerceRuleKey(entry.item);
               const autoNpcSaleMarked =
-                !!autoNpcSales[sharedRules || character.name === merchant ? automaticSaleKey : JSON.stringify([character.name, automaticSaleKey])];
+                !!autoNpcSales[String(entry.item.name)];
               const npcSale = npcSaleMarks.find(mark =>
                 (character.name === merchant ? mark.source === "merchant" : mark.source === "character" && mark.character === character.name) && mark.slot === entry.slot &&
                 automaticCommerceRuleKey(mark.item) === automaticSaleKey);
@@ -1086,19 +1093,30 @@ export const InventoryPanel = memo(function InventoryPanel({
         </div>
       )}
       <div className={`${character.name !== merchant ? "mt-2" : "mt-5"} grid gap-2`}>
+        {automaticSection('ponty', 'Ponty shopping list', <ShoppingCart className="h-4 w-4" />,
+          'border-cyan-800 text-cyan-300', pontyShoppingList.map(itemId => ({
+            key: itemId, item: { name: itemId }, onRemove: () => onRemovePonty?.(itemId),
+          })))}
         {automaticSection(
               "npc",
               "Auto NPC sales",
               <DollarSign className="h-4 w-4" />,
               "border-rose-800 text-rose-300",
-              [...Object.entries(autoNpcSales).filter(([, rule]) => character.name === merchant ? !rule.character : rule.character === character.name).map(([key, rule]) => ({
+              Object.entries(autoNpcSales).map(([key, rule]) => ({
                 key,
                 item: rule.item,
                 onRemove: () => onRemoveAutomaticSale("npc", rule.item),
-              })), ...npcSaleMarks.map(mark => ({
+              })),
+            )}
+        {npcSaleMarks.some(mark => !mark.auto) && automaticSection(
+              "npc-manual",
+              "Manual NPC sales",
+              <DollarSign className="h-4 w-4" />,
+              "border-rose-800 text-rose-300",
+              npcSaleMarks.filter(mark => !mark.auto).map(mark => ({
                 key: mark.id, item: mark.item, detail: `${mark.character || merchant} · ${mark.quantity} × · ${mark.state || 'queued'}${mark.error ? ` · ${mark.error}` : ''}`,
                 disabled: mark.state === 'running', onRemove: () => onRemoveNpcSale?.(mark.id),
-              }))],
+              })),
             )}
         {automaticSection(
           "deconstruction", "Auto deconstruction", <BrokenStickIcon className="h-4 w-4" />,

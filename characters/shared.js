@@ -13,12 +13,17 @@
   var runtimeGeneration = root.__partyRuntimeGeneration =
     (Number(root.__partyRuntimeGeneration) || 0) + 1;
   function runtimeCurrent() { return Number(root.__partyRuntimeGeneration) === runtimeGeneration; }
+  function deathLoopActive() {
+    return character.ctype !== 'merchant' && !!(root.partyDeathLoop && root.partyDeathLoop.active());
+  }
+  function combatStrategyEnabled(id) { return combatStrategySettings[id] === true; }
   var movement = root.installPartyMovement(root, {
     now: Date.now,
     context: function() { return { runtime: convoyRuntimeId || String(runtimeGeneration), revision: Number(navigationIntent && navigationIntent.revision) || 0,
       current: runtimeCurrent() && (!parent.socket || parent.socket.connected !== false), paused: !!root.__partyMovementPaused || !!(dungeonClient && !dungeonClient.canMove()) }; },
     request: request,
-    townReady: function() { return !departureCombatPending() && eligibleDepartureChests().length === 0; },
+    townReady: function() { return !departureCombatPending() &&
+      (inventoryCleanoutOwner && inventoryCleanoutOwner.id === lastCommand || eligibleDepartureChests().length === 0); },
     transitionReady: function() { return eligibleDepartureChests().length === 0; },
     metrics: function(event) { queueCombatEvent('navigation', 'Movement '+(event.phase || (event.done?'completed':'stopped'))+' · '+(event.engine || 'ALClient comparison'), event, 'movement-metrics:'+event.id+':'+(event.phase || 'done')); },
     diagnostic: function(event, message) {
@@ -335,6 +340,7 @@
   root.__partyPassiveRegenTimer = null;
   var coordinatorClockOffset = 0;
   var banking = false;
+  var inventoryCleanoutOwner = null;
   var bankQueued = false;
   var stocking = false;
   var upgrading = false;
@@ -496,6 +502,9 @@
   if (root.__partyEventTimer) clearInterval(root.__partyEventTimer);
   root.__partyEventTimer = null;
   var partyPositions = [];
+  var itemSwapSettings = [];
+  var autoConsumable = null;
+  var combatStrategySettings = {};
   var bankStackHomes = {};
   var reunion = root.__partyReunion || null, reunionWorking = false;
   var reunionMageOffer = null;
@@ -636,6 +645,10 @@
   // only the precomputed valuation probabilities are adjusted.
   var valuationLuckMultiplier = 1.15;
   var merchantCatalogVersion = "exchange-rewards-v4";
+  var AUTOMATIC_CALL_MAX_CC = 170;
+  function automaticCallBudgetAvailable(cost) {
+    return (Number(character.cc) || 0) + cost <= AUTOMATIC_CALL_MAX_CC;
+  }
   var trackerDropData = typeof tracker !== "undefined" && tracker && Object.keys(tracker).length ? tracker : null;
   var trackerCatalogInitialized = !!trackerDropData;
   // The native game updates parent.tracker before calling render_tracker.
@@ -683,6 +696,8 @@
   }
   function requestTrackerSnapshot() {
     if (!trackerWasHeld) return;
+    // Native limitdcreport charges 50 for tracker; leave room for combat and transfers.
+    if (!automaticCallBudgetAvailable(50)) { scheduleTrackerSnapshot(1000); return; }
     // Retry a missing response; a successful response schedules the slower refresh.
     scheduleTrackerSnapshot(2000);
     if (requestSilentTracker) requestSilentTracker();
@@ -722,6 +737,8 @@
       .sort(function (a, b) { return a.localeCompare(b); });
   };
   function requestPlayerDirectory() {
+    // Directory polling costs 12 and can coincide with a collection burst.
+    if (!automaticCallBudgetAvailable(12)) return;
     if (parent.socket && typeof parent.socket.emit === "function") parent.socket.emit("players", {});
   }
   var merchantMarketLocation = { map: "main", x: -63, y: 100 };
@@ -2141,6 +2158,10 @@
   }
   function previewSuppliesKey() { return "party-preview-supplies:"+character.name; }
   async function previewTravel(destination) {
+    if (destination === "newupgrade" && merchantUsesComputer()) {
+      await computerSmartMove(destination);
+      return;
+    }
     if(character.map===destination)return;
     var npc=typeof find_npc==="function"?find_npc(destination):null;
     if(npc && (!npc.map || npc.map===character.map) && Math.hypot(character.x-npc.x,character.y-npc.y)<=35)return;
@@ -2666,6 +2687,7 @@
         town: partyTownActive || townTraveling, anniversary: anniversaryBusy || anniversaryStaging,
         event: eventTraveling, forceTravel: forceTraveling, stocking: stocking, upgrading: upgrading },
       banking: banking,
+      inventoryCleanoutRetry: Date.now() < (root.__partyInventoryCleanoutRetryAt || 0),
       bankQueued: bankQueued,
       stocking: stocking,
       upgrading: upgrading,
@@ -3289,7 +3311,7 @@
     try {
       var vendor = find_npc("fancypots");
       if (!vendor) throw new Error("fancypots vendor not found");
-      await smart_move(vendor);
+      await computerSmartMove(vendor);
       currentQuantity = quantity(potionName);
       needed = Math.max(0, targetQuantity - currentQuantity);
       if (needed && character.gold >= potion.g * needed) {
@@ -3328,6 +3350,21 @@
         return npcId;
     }
     return null;
+  }
+
+  function merchantUsesComputer() {
+    return (character.items || []).some(function (item) {
+      return item && (item.name === "computer" || item.name === "supercomputer");
+    });
+  }
+  // Computers allow remote NPC work, but it must happen outside every bank floor.
+  // Bank visits and player trades keep their ordinary movement paths.
+  async function computerSmartMove(destination) {
+    if (merchantUsesComputer()) {
+      if (bankSortMap(character.map)) await smart_move("main");
+      return;
+    }
+    await smart_move(destination);
   }
 
   async function upgradeMarked(marks, compoundGroups, purchases, returnLocation) {
@@ -3413,18 +3450,18 @@
           purchased.push(purchase);
           continue;
         }
-        await smart_move(find_npc(seller));
+        await computerSmartMove(find_npc(seller));
         await buy(purchase.name, 1);
         purchased.push(purchase);
       }
       if (goldNeeded) {
-        await smart_move(find_npc("scrolls"));
+        await computerSmartMove(find_npc("scrolls"));
         for (var scroll in required) {
           var missing = Math.max(0, required[scroll] - inventoryQuantity(scroll));
           if (missing) await buy(scroll, missing);
         }
       }
-      await smart_move(find_npc("newupgrade"));
+      await computerSmartMove(find_npc("newupgrade"));
       for (var i = 0; i < work.length; i += 1) {
         var itemSlot = findMarkedItem(work[i].mark);
         for (var step = 0; step < work[i].tiers; step += 1) {
@@ -3557,6 +3594,7 @@
     if (result.deferred) activity.push({ level: "info", message: "Bank stack cleanup deferred: inventory buffers unavailable" });
   }
   async function bankStoreFully(slot) {
+    if (itemSwapReserved(character.items[slot])) throw new Error("Item reserved for inventory swaps");
     var attempts = 0;
     while (character.items[slot] && attempts < 50) {
       var inventorySize = Number(character.isize) || character.items.length;
@@ -3929,15 +3967,61 @@
     }
   }
 
-  async function goBank(marked, withdrawals, goldTarget, returnLocation) {
+  async function goBank(marked, withdrawals, goldTarget, returnLocation, cleanout) {
     if (banking) return;
     while (stocking) await new Promise(function (resolve) { setTimeout(resolve, 250); });
     banking = true;
     var origin = { map: character.map, x: character.x, y: character.y };
+    var sold = [];
+    var cleanoutRevision = navigationIntent.revision;
+    function cleanoutCurrent() {
+      return !cleanout || runtimeCurrent() && lastCommand === cleanout.id &&
+        navigationIntent.revision === cleanoutRevision && !character.rip && !deathLoopActive();
+    }
     try {
-      await smart_move("bank");
+      if (cleanout) {
+        if (character.ctype === 'merchant' || !combatStrategyEnabled('inventory-cleanout') || freeInventorySlots() > 0) return;
+        inventoryCleanoutOwner = cleanout;
+        cancelGroupRoute(); cancelFightRoute(); cancelRarePath();
+        cancelFarmApproach('inventory cleanout owns movement');
+        followingLeader = false;
+        resetCombatMovement();
+        await stop();
+        if ((cleanout.npcSales || []).length) {
+          // A full bag cannot drain item chests before leaving for cleanout.
+          await smart_move('fancypots', undefined, { skipLootWait: true });
+          for (var saleIndex = 0; saleIndex < cleanout.npcSales.length; saleIndex += 1) {
+            if (!cleanoutCurrent() || !combatStrategyEnabled('inventory-cleanout')) break;
+            var saleMark = cleanout.npcSales[saleIndex];
+            var saleSlot = Number.isInteger(saleMark.slot) && sameItem(character.items[saleMark.slot], saleMark.item)
+              ? saleMark.slot : findItem(saleMark.item);
+            var saleItem = character.items[saleSlot];
+            if (!saleItem || cleanoutProtected(saleItem)) continue;
+            var saleQuantity = Math.min(Number(saleMark.quantity) || 1, Number(saleItem.q) || 1);
+            var beforeQuantity = Number(saleItem.q) || 1;
+            await sell(saleSlot, saleQuantity);
+            var saleDeadline = Date.now() + 2500;
+            while (sameItem(character.items[saleSlot], saleMark.item) &&
+                (Number(character.items[saleSlot].q) || 1) > beforeQuantity - saleQuantity && Date.now() < saleDeadline)
+              await sleep(100);
+            if (sameItem(character.items[saleSlot], saleMark.item) &&
+                (Number(character.items[saleSlot].q) || 1) > beforeQuantity - saleQuantity)
+              throw new Error('NPC sale was not confirmed: ' + saleItem.name);
+            if (saleMark.id) sold.push(saleMark.id);
+          }
+        }
+      }
+      if (cleanout && (!cleanoutCurrent() || !combatStrategyEnabled('inventory-cleanout'))) return;
+      if (!cleanout || marked.length) {
+        await smart_move("bank", undefined, cleanout ? { skipLootWait: true } : undefined);
+        await waitForBankPack('items1', 10000);
+      }
       for (var i = 0; i < marked.length; i += 1) {
-        var slot = findItem(marked[i]);
+        if (cleanout && (!cleanoutCurrent() || !combatStrategyEnabled('inventory-cleanout'))) break;
+        var wanted = marked[i].item || marked[i];
+        var slot = Number.isInteger(marked[i].slot) && sameItem(character.items[marked[i].slot], wanted)
+          ? marked[i].slot : findItem(wanted);
+        if (cleanout && slot >= 0 && cleanoutProtected(character.items[slot])) continue;
         if (slot >= 0) await bankStoreFully(slot);
       }
       var withdrawn = [];
@@ -3950,9 +4034,9 @@
         withdrawn.push(withdrawals[w]);
       }
       var targetGold = Number.isInteger(goldTarget) && goldTarget >= 0 ? goldTarget : 0;
-      if (character.gold > targetGold) {
+      if (!cleanout && character.gold > targetGold) {
         await bank_deposit(character.gold - targetGold);
-      } else if (character.gold < targetGold) {
+      } else if (!cleanout && character.gold < targetGold) {
         var desired = targetGold - character.gold;
         var available = character.bank && Number(character.bank.gold) || 0;
         var amount = Math.min(desired, available);
@@ -3961,18 +4045,22 @@
       }
       game_log("Bank run complete", "#51D2E1");
     } catch (error) {
+      if (cleanout && cleanoutCurrent()) root.__partyInventoryCleanoutRetryAt = Date.now() + 30000;
       game_log("Bank run failed: " + (error.reason || error.message || error), "red");
     } finally {
       try {
-        await smart_move(returnLocation || partyLocation || origin);
+        if (cleanoutCurrent())
+          await smart_move(returnLocation || partyLocation || origin, undefined, cleanout ? { skipLootWait: true } : undefined);
       } catch (returnError) {
         game_log("Return from bank failed: " + (returnError.reason || returnError.message || returnError), "red");
       }
       banking = false;
+      if (inventoryCleanoutOwner === cleanout) inventoryCleanoutOwner = null;
       try {
         await request("/bank-complete", {
           method: "POST",
-          body: { character: character.name, withdrawn: withdrawn || [] },
+          body: { character: character.name, withdrawn: withdrawn || [],
+            ...(cleanout ? { commandId: cleanout.id, npcSalesResolved: sold } : {}) },
         });
       } catch (completeError) {
         game_log("Bank queue release failed: " + (completeError.message || completeError), "red");
@@ -4969,8 +5057,21 @@
     }
   }
 
+  function itemSwapReserved(item) {
+    return !!item && (itemSwapSettings.some(function (swap) {
+      return swap.items.some(function (selection) {
+        var wanted = selection.item;
+        return item.name === wanted.name && (item.level || 0) === (wanted.level || 0) &&
+          (item.p == null ? undefined : item.p) === (wanted.p == null ? undefined : wanted.p) &&
+          (item.stat_type == null ? undefined : item.stat_type) === (wanted.stat_type == null ? undefined : wanted.stat_type) &&
+          (item.rid == null ? undefined : item.rid) === (wanted.rid == null ? undefined : wanted.rid) &&
+          JSON.stringify(item.data) === JSON.stringify(wanted.data);
+      });
+    }) || root.partyItemSwaps && root.partyItemSwaps.reserved(item));
+  }
+
   function cleanoutProtected(item) {
-    return item.l || item.b || ["tracker", "supercomputer", "hpot0", "mpot0", "hpot1", "mpot1"].indexOf(item.name) >= 0;
+    return item.name === autoConsumable || itemSwapReserved(item) || item.l || item.b || ["tracker", "supercomputer", "hpot0", "mpot0", "hpot1", "mpot1"].indexOf(item.name) >= 0;
   }
 
   function isPersonalTracker(item) {
@@ -5016,12 +5117,41 @@
     });
   }
 
+  // Transfers share the native call budget with attacks without stopping combat.
+  async function waitForCallBudget(deadline) {
+    var owner = lastCommand, revision = navigationIntent.revision;
+    // Each send awaits its native acknowledgement; only high call cost adds a delay.
+    while (!automaticCallBudgetAvailable(4)) {
+      if (!runtimeCurrent() || character.rip || owner !== lastCommand || navigationIntent.revision !== revision)
+        throw new Error("interrupted");
+      if (Date.now() >= deadline) throw new Error("combat handoff timed out waiting for call budget");
+      await sleep(100);
+    }
+    if (!runtimeCurrent() || character.rip || owner !== lastCommand || navigationIntent.revision !== revision)
+      throw new Error("interrupted");
+  }
+
+  // The merchant pursues the fighter; the fighter keeps its combat movement.
+  async function waitForHandoffRecipient(name, deadline) {
+    var owner = lastCommand, revision = navigationIntent.revision;
+    while (Date.now() < deadline) {
+      if (!runtimeCurrent() || character.rip || owner !== lastCommand || navigationIntent.revision !== revision)
+        throw new Error("interrupted");
+      var player = typeof get_player === "function" && get_player(name);
+      if (player && !player.rip && Math.hypot(
+          Number(player.real_x !== undefined ? player.real_x : player.x) - character.x,
+          Number(player.real_y !== undefined ? player.real_y : player.y) - character.y) <= 300) return player;
+      await sleep(500);
+    }
+    throw new Error("combat handoff timed out waiting for " + name);
+  }
+
   async function withMerchantHandoffRecovery(command, action) {
     var revision = navigationIntent.revision;
-    try { return await afterCombat(action, "merchant handoff"); }
+    try { return command.combatHandoff ? await action() : await afterCombat(action, "merchant handoff"); }
     finally {
       // A late handoff must never override a new manual move or cleared focus.
-      if (!command.convoyContinuation && runtimeCurrent() && lastCommand === command.id && navigationIntent.revision === revision &&
+      if (!command.combatHandoff && !command.convoyContinuation && runtimeCurrent() && lastCommand === command.id && navigationIntent.revision === revision &&
           !navigationIntent.cancelled && partyLocation && character.ctype !== "merchant") {
         beginFarmReunion();
       }
@@ -5049,7 +5179,9 @@
   }
 
   async function merchantHandoff(command) {
-    var merchant = await waitForPlayer(command.merchant, 45000);
+    var handoffDeadline = Date.now() + (command.combatHandoff ? 180000 : 60000);
+    if (command.combatHandoff) await waitForHandoffRecipient(command.merchant, handoffDeadline);
+    else await waitForPlayer(command.merchant, 45000);
     assertMerchantContinuation(command);
     var sent = [], banked = [], kept = [], cleaned = [], reserved = [];
     for (var equippedIndex = 0; equippedIndex < (command.upgrades || []).length; equippedIndex += 1) {
@@ -5136,6 +5268,10 @@
       // Once an emergency visit starts, use its available carrying capacity.
       // Only the follow-up visit depends on the remaining free slots.
       if (requests[i].kind === "cleanout" && !cleanoutEmergency) break;
+      if (command.combatHandoff) {
+        await waitForHandoffRecipient(command.merchant, handoffDeadline);
+        assertMerchantContinuation(command);
+      }
       var slot = Number.isInteger(requests[i].slot) && sameItem(character.items[requests[i].slot], requests[i].item)
         ? requests[i].slot : findItem(requests[i].item);
       if (slot < 0) continue;
@@ -5158,7 +5294,11 @@
         await refreshCompoundProtection(command);
         if (!compoundAvailableStock(command)[slot]) continue;
       }
-      if (isPersonalTracker(character.items[slot]) || command.cleanout && cleanoutProtected(character.items[slot])) continue;
+      // Range and inventory requests above can yield while combat spends calls.
+      await waitForCallBudget(handoffDeadline);
+      assertMerchantContinuation(command);
+      if (!sameItem(character.items[slot], requests[i].item)) continue;
+      if (itemSwapReserved(character.items[slot]) || isPersonalTracker(character.items[slot]) || command.cleanout && cleanoutProtected(character.items[slot])) continue;
       var sendQuantity = Math.min(Number(requests[i].quantity) || itemQuantity(character.items[slot]),
         itemQuantity(character.items[slot]));
       if (requests[i].mark && (requests[i].mark.deconstructionId || requests[i].mark.npcSaleId) && (character.items[slot].l || character.items[slot].b)) continue;
@@ -5176,7 +5316,18 @@
     // carried gold. Any requested walking balance is delivered after pickup.
     var excess = Math.max(0, character.gold);
     assertMerchantContinuation(command);
-    if (excess) await send_gold(command.merchant, excess);
+    if (excess && command.combatHandoff) {
+      await waitForHandoffRecipient(command.merchant, handoffDeadline);
+      assertMerchantContinuation(command);
+    }
+    if (excess) {
+      await waitForCallBudget(handoffDeadline);
+      assertMerchantContinuation(command);
+      excess = Math.max(0, character.gold);
+      if (excess) {
+        await send_gold(command.merchant, excess);
+      }
+    }
     await request("/merchant/handoff-complete", { method: "POST", body: {
       jobId: command.jobId, commandId: command.id, character: character.name, sent: sent, banked: banked, kept: kept, cleaned: cleaned,
       cleanoutRemaining: !!command.cleanout && cleanoutFreeSlots <= 3 && sent.length < requests.length, gold: excess,
@@ -5280,7 +5431,7 @@
       })) || (command.merchantWithdrawals || []).some(function (work) {
         return work.improvement && sameItem(bankingItem, work.item);
       });
-      if (improvementReserved) continue;
+      if (improvementReserved || itemSwapReserved(bankingItem)) continue;
       var slot = findMarkedItem(mark);
       if (slot < 0) {
         // The persistent auto-mark policy lives separately; this concrete slot
@@ -5448,7 +5599,7 @@
       if (!seller || !G.items[purchase.name]) { activity.push({ level: "error", message: "No seller for " + (purchase && purchase.name) }); continue; }
       var purchasePrice = G.items[purchase.name].g || 0;
       if (character.gold < purchasePrice) { await merchantVisitBank(command, activity); await withdrawMerchantCash(Math.min(purchasePrice - character.gold, Number(character.bank && character.bank.gold) || 0), command); }
-      await smart_move(find_npc(seller)); await buyConfirmed(purchase.name, 1);
+      await computerSmartMove(find_npc(seller)); await buyConfirmed(purchase.name, 1);
       var purchasedSlot = character.items.findIndex(function (item, index) { return !used[index] && item && item.name === purchase.name && (item.level || 0) === 0; });
       if (purchasedSlot >= 0) { used[purchasedSlot] = true; returns.push(purchasedSlot); }
     }
@@ -5479,7 +5630,7 @@
           await ensureOwnedItemQuantity(scrollName, refillNeeds[scrollName] || 1, command, activity);
           scrollSlot = findInventoryItemByName(scrollName);
         }
-        await smart_move(find_npc("newupgrade"));
+        await computerSmartMove(find_npc("newupgrade"));
         try {
           var before = character.items[slot].level || 0;
           var outcome = await upgradeConfirmed(slot, scrollSlot, undefined, undefined, mark.auto ? {family:"upgrade",key:mark.item.name+"@+"+(mark.item.level||0),mark:Object.assign({},mark,{slot:slot,equipped:false})} : undefined, offeringAttempt);
@@ -5523,7 +5674,7 @@
         await ensureOwnedItemQuantity(cscroll, 1, command, activity);
         cscrollSlot = findInventoryItemByName(cscroll);
       }
-      await smart_move(find_npc("newupgrade"));
+      await computerSmartMove(find_npc("newupgrade"));
       try {
         await compoundConfirmed(slots[0], slots[1], slots[2], cscrollSlot);
         var resultSlot = sameItem(character.items[slots[0]], {
@@ -5582,7 +5733,7 @@
             scrollSlot = findInventoryItemByName(scrollName);
           }
           await merchantOperationStage(command, "processing");
-          await smart_move(find_npc("newupgrade"));
+          await computerSmartMove(find_npc("newupgrade"));
           await refreshCompoundProtection(command);
           candidates = compoundInventorySlots(command, autoMark.name, level);
           if (candidates.length < 3) continue;
@@ -5735,7 +5886,7 @@
         throw new Error("Insufficient bank gold for " + missing + " × " + name);
       await withdrawMerchantCash(shortfall, command);
     }
-    await smart_move(find_npc("scrolls"));
+    await computerSmartMove(find_npc("scrolls"));
     await buyConfirmed(name, missing);
     return itemAvailability(name);
   }
@@ -5766,7 +5917,7 @@
       await withdrawMerchantCash(neededGold, command);
     }
     if (names.some(function (name) { return missing[name] > 0; })) {
-      await smart_move(find_npc("scrolls"));
+      await computerSmartMove(find_npc("scrolls"));
       for (var buyIndex = 0; buyIndex < names.length; buyIndex += 1)
         if (missing[names[buyIndex]] > 0) await buyConfirmed(names[buyIndex], missing[names[buyIndex]]);
     }
@@ -5819,7 +5970,7 @@
       }
     }
     if (names.some(function (name) { return purchasableStatScrolls[name] && itemAvailability(name).onPlayer < needs[name]; }))
-      await smart_move(find_npc("scrolls"));
+      await computerSmartMove(find_npc("scrolls"));
     for (var b = 0; b < names.length; b += 1) {
       if (!purchasableStatScrolls[names[b]]) continue;
       var buyCount = Math.max(0, needs[names[b]] - itemAvailability(names[b]).onPlayer);
@@ -5849,7 +6000,7 @@
         continue;
       }
       try {
-        await smart_move(find_npc("newupgrade"));
+        await computerSmartMove(find_npc("newupgrade"));
         await upgrade(itemSlot, scrollSlot);
         if (character.items[itemSlot]) {
           var completed = fingerprint(character.items[itemSlot]);
@@ -5902,7 +6053,7 @@
     try {
       // Travel while fully equipped. At the shrine, expose only one piece at a
       // time and put it straight back on before touching the next one.
-      await smart_move(find_npc("newupgrade"));
+      await computerSmartMove(find_npc("newupgrade"));
       for (var i = 0; i < (command.items || []).length; i += 1) {
         var mark = command.items[i];
         if (!mark || typeof mark.slot !== "string" || !sameItemState(character.slots[mark.slot], mark.item)) {
@@ -6050,7 +6201,7 @@
         // Delivery swaps may borrow two reserve slots, but retain one so the
         // lucky slot can be cleared even before the outbound delivery.
         capacity: Math.max(0, freeInventorySlots() - (useTemporaryReserve ? 1 : 3)) } });
-      var deadline = Date.now() + 60000, current;
+      var deadline = Date.now() + (command.combatHandoff ? 180000 : 60000), current;
       do {
         await new Promise(function (resolve) { setTimeout(resolve, 250); });
         current = await request("/merchant/job/" + command.jobId);
@@ -6102,7 +6253,7 @@
             var buyQuantity = Math.max(0, needed - inventoryQuantity(supply.item));
             if (character.gold >= G.items[supply.item].g * buyQuantity) {
               if (buyQuantity) {
-                await smart_move(find_npc(seller));
+                await computerSmartMove(find_npc(seller));
                 await buyConfirmed(supply.item, buyQuantity);
               }
               deliveries.push({ name: supply.item, quantity: needed });
@@ -6773,7 +6924,7 @@
           Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)) &&
           Math.hypot(character.x - Number(point.x), character.y - Number(point.y)) <= 35)
         return;
-      try { await smart_move(destination); }
+      try { await computerSmartMove(destination); }
       catch (error) { error.commerceMovement = true; throw error; }
       command._commerceMovementSucceeded = true;
     }
@@ -7333,7 +7484,7 @@
           if (exactInventoryQuantity(pendingLine.id, pendingLine.level) < pendingRequired)
             throw new Error("Exchange inventory changed before travel: " + pendingLine.id);
         }
-        await smart_move(find_npc(line.reward ? itemDefinition.npc || line.id + "s" : exchangeNpc(line.id)));
+        await computerSmartMove(find_npc(line.reward ? itemDefinition.npc || line.id + "s" : exchangeNpc(line.id)));
         for (var count = 0; count < Math.max(1, Number(line.quantity) || 1); count += 1) {
           var slot = character.items.findIndex(function (item) {
             return item && item.name === line.id && (Number(item.level) || 0) === (Number(line.level) || 0) &&
@@ -7546,6 +7697,122 @@
         bidPurchases: completed,
         activity: activity.concat([{ level: "error", message: "Stand purchase failed", details: String(error.reason || error.message || error) }]),
       }}); } catch (_completeError) { /* Job was cleared. */ }
+      throw error;
+    }
+  }
+
+  async function merchantPontyShop(command) {
+    function currentRealm() { return "SR_" + parent.server_region + parent.server_identifier; }
+    function errorText(error) { return String(error.reason || error.message || error); }
+    async function jobState() {
+      var job = await request("/merchant/job/" + command.jobId);
+      if (job.commandId !== command.id || !runtimeCurrent()) throw new Error("Ponty Shop command superseded");
+      return job;
+    }
+    async function atPonty() {
+      await smart_move(find_npc("secondhands"));
+      if (character.map !== "main") throw new Error("Ponty Shop requires Mainland town");
+    }
+    async function changeRealm(realm) {
+      // Always leave from Mainland town; a bank floor must not become the next server's spawn.
+      await atPonty();
+      await jobState();
+      var response = await request("/merchant/realm-switch", { method: "POST", body: {
+        jobId: command.jobId, commandId: command.id, character: character.name, realm: realm,
+      }});
+      // The coordinator recreates this worker. Its retained command reads the durable trip on arrival.
+      if (!response.alreadyThere) await new Promise(function () {});
+    }
+    async function listings() {
+      var response = await get_secondhands(10000);
+      if (Array.isArray(response)) return response;
+      if (response && Array.isArray(response.items)) return response.items;
+      if (response && Array.isArray(response.secondhands)) return response.secondhands;
+      throw new Error("Ponty returned no shop inventory");
+    }
+    function price(item) {
+      return Math.max(1, Math.round(Number(calculate_item_value(item)) * (G.items[item.name] && G.items[item.name].cash ? 3 : 2))) * Math.max(1, Number(item.q) || 1);
+    }
+    async function scan(realm, job) {
+      var purchases = [], failures = [], wanted = new Set(job.pontyShoppingList || []);
+      var available = await listings();
+      for (var candidate of available) {
+        if (!candidate || candidate.b || !candidate.rid || !wanted.has(candidate.name)) continue;
+        if (job.pontyShop.attemptedListingKeys.includes(realm + ":" + String(candidate.rid))) continue;
+        try {
+          var live = candidate, cost = price(live), quantity = Math.max(1, Number(live.q) || 1);
+          if (!Number.isFinite(cost)) throw new Error("Ponty price is unavailable for " + live.name);
+          if (!purchasePreservesLogisticsReserve(live, quantity)) throw new Error("Three merchant logistics slots are reserved");
+          if (character.gold < cost) {
+            await merchantVisitBank(command, []);
+            var shortage = cost - character.gold;
+            if ((Number(character.bank && character.bank.gold) || 0) < shortage) throw new Error("Insufficient bank gold for " + live.name);
+            await withdrawMerchantCash(shortage, command);
+            await atPonty();
+            live = (await listings()).find(function (item) { return item && String(item.rid) === String(candidate.rid) && item.name === candidate.name && !item.b; });
+            if (!live) throw new Error("Ponty listing disappeared: " + candidate.name);
+            cost = price(live);
+            quantity = Math.max(1, Number(live.q) || 1);
+          }
+          await atPonty();
+          await jobState();
+          if (!Number.isFinite(cost) || character.gold < cost) throw new Error("Insufficient gold for " + live.name);
+          if (!purchasePreservesLogisticsReserve(live, quantity)) throw new Error("Three merchant logistics slots are reserved");
+          var claim = await request("/merchant/ponty-shop-progress", { method: "POST", body: {
+            jobId: command.jobId, commandId: command.id, character: character.name,
+            action: "claim", realm: realm, itemId: live.name, rid: String(live.rid),
+          }});
+          if (!claim.allowed) continue;
+          await buy_secondhand(String(live.rid), 10000);
+          purchases.push({ item: live.name, quantity: quantity, gold: cost });
+        } catch (error) {
+          failures.push(errorText(error));
+          // A funding detour can end in the bank even when the item could not be bought.
+          await atPonty();
+          await jobState();
+        }
+      }
+      return { purchases: purchases, error: failures.length ? failures.join("; ") : null };
+    }
+    try {
+      await nativeStandSync(command, true);
+      if (character.stand) await close_stand();
+      while (true) {
+        var job = await jobState();
+        var nextRealm = job.pontyShopRealms.find(function (realm) { return !job.pontyShop.scannedRealms.includes(realm); });
+        // Deleting the last shopping item ends this trip and still returns the merchant home.
+        if (!nextRealm || !(job.pontyShoppingList || []).length || !job.pontyShopEnabled) {
+          if (currentRealm() !== job.pontyShopHomeRealm) await changeRealm(job.pontyShopHomeRealm);
+          await atPonty();
+          await request("/merchant/complete", { method: "POST", body: {
+            jobId: command.jobId, commandId: command.id, success: true,
+            activity: [{ level: "success", message: "Ponty Shop finished and returned to the party server" }],
+          }});
+          return;
+        }
+        if (currentRealm() !== nextRealm) await changeRealm(nextRealm);
+        var result;
+        try {
+          await atPonty();
+          result = await scan(nextRealm, await jobState());
+        } catch (error) {
+          await jobState();
+          result = { purchases: [], error: errorText(error) };
+        }
+        await request("/merchant/ponty-shop-progress", { method: "POST", body: {
+          jobId: command.jobId, commandId: command.id, character: character.name,
+          action: "scanned", realm: nextRealm, purchases: result.purchases, error: result.error,
+        }});
+        var checkpoint = await request("/merchant/checkpoint", { method: "POST", body: {
+          jobId: command.jobId, commandId: command.id, state: {}, cycleBoundary: true,
+        }});
+        if (checkpoint.yield) return;
+      }
+    } catch (error) {
+      try { await request("/merchant/complete", { method: "POST", body: {
+        jobId: command.jobId, commandId: command.id, success: false, error: errorText(error),
+        activity: [{ level: "error", message: "Ponty Shop stopped", details: errorText(error) }],
+      }}); } catch (_completionError) { /* A newer command owns recovery. */ }
       throw error;
     }
   }
@@ -8039,7 +8306,7 @@
       for (var index = 0; index < needs.length; index += 1) {
         var request = needs[index], seller = itemSeller(request.supply.item);
         if (!seller) throw new Error("Could not find potion seller for " + request.supply.item);
-        await smart_move(find_npc(seller));
+        await computerSmartMove(find_npc(seller));
         await buyConfirmed(request.supply.item, request.quantity);
         activity.push({ level: "success", message: "Restocked " + request.quantity + " × " +
           (G.items[request.supply.item] && G.items[request.supply.item].name || request.supply.item) +
@@ -8121,7 +8388,7 @@
     var activity = [];
     try {
       if (character.stand) await close_stand();
-      await smart_move("craftsman");
+      await computerSmartMove("craftsman");
       for (var mark of command.deconstructionMarks || []) {
         for (var unit = 0; unit < mark.quantity; unit += 1) {
           assertMerchantContinuation(command);
@@ -8138,7 +8405,7 @@
               assertMerchantContinuation(command);
               await withdrawMerchantCash(definition.cost - character.gold, command);
               if (character.gold < definition.cost) throw new Error("Insufficient gold: deconstruction needs " + definition.cost);
-              await smart_move("craftsman");
+              await computerSmartMove("craftsman");
               assertMerchantContinuation(command);
               slot = findItem(mark.item);
               item = character.items[slot];
@@ -8192,10 +8459,11 @@
           activity.push({ level: "error", message: "NPC-sale item changed before sale: " + mark.item.name });
           continue;
         }
+        if (itemSwapReserved(character.items[inventorySlot])) { blocked.push({id:mark.id,error:"Item reserved for inventory swaps"}); continue; }
         if (character.items[inventorySlot].l) { blocked.push({id:mark.id,error:"Item is locked"}); continue; }
         var quantity = Math.min(Number(mark.quantity) || 1, Number(character.items[inventorySlot].q) || 1);
         // Named NPC destinations include the walkable interaction offset.
-        await smart_move("fancypots");
+        await computerSmartMove("fancypots");
         inventorySlot = findItem(mark.item);
         if (inventorySlot < 0 || !sameItem(character.items[inventorySlot], mark.item))
           throw new Error("NPC-sale item moved before confirmation: " + mark.item.name);
@@ -9263,7 +9531,14 @@
   async function handle(command) {
     if (root.__partyTracktrixMove) await root.__partyTracktrixMove;
     root.__partyInventoryCommands = (root.__partyInventoryCommands || 0) + 1;
-    try { return await handleOwnedCommand(command); }
+    try {
+      if (root.partyItemSwaps) {
+        if (command && ["equip", "unequip", "equip-deliveries"].indexOf(command.type) >= 0)
+          await root.partyItemSwaps.manual();
+        else await root.partyItemSwaps.restoreForActivity();
+      }
+      return await handleOwnedCommand(command);
+    }
     finally { root.__partyInventoryCommands -= 1; }
   }
 
@@ -9448,6 +9723,9 @@
       command, "stand purchase", function () { return afterCombat(function () {
         return merchantStandBuy(command);
       }, "stand purchase"); });
+    if (command.type === "merchant-ponty-shop" && character.ctype === "merchant") return runMerchantJob(
+      command, "Ponty Shop", function () { return merchantPontyShop(command); }
+    );
     if (command.type === "merchant-ponty-buy" && character.ctype === "merchant") return runMerchantJob(
       command, "Ponty purchase", function () { return afterCombat(function () {
         return merchantPontyBuy(command);
@@ -9534,7 +9812,8 @@
       return;
     }
     if (command.type === "bank") return afterCombat(function () {
-      return goBank(command.marked || [], command.withdrawals || [], command.goldTarget, command.returnLocation);
+      return goBank(command.marked || [], command.withdrawals || [], command.goldTarget, command.returnLocation,
+        command.inventoryCleanout ? command : null);
     }, "banking");
     if (command.type === "upgrade") return afterCombat(function () {
       return upgradeMarked(command.items || [], command.compounds || [], command.purchases || [], command.returnLocation);
@@ -9994,6 +10273,9 @@
       statusPhase = "request status";
       var state = await request("/status", { method: "POST", body: statusBody });
       if (!runtimeCurrent()) return;
+      itemSwapSettings = state.itemSwaps && state.itemSwaps[character.name] || [];
+      autoConsumable = state.autoConsumable || null;
+      combatStrategySettings = state.combatStrategies && state.combatStrategies[character.name] || {};
       root.__partyConsoleMaintenance = state.consoleMaintenance || null;
       if (root.__partyConsoleMaintenance) {
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');

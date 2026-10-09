@@ -63,6 +63,7 @@ function giveawayPayload(
  * what the dashboard needs to poll quickly.
  */
 const configFields = [
+  'combatStrategies',
   "characterAppearances", "merchantRules",
   "bankboiPrefix", "anniversaryAutoChat", "farmingProfiles",
   "passiveRareHunts", "passiveHunting", "phoenixRouteOrder",
@@ -71,6 +72,7 @@ const configFields = [
   "standListings", "npcSaleMarks", "deconstructionMarks", "autoDeconstruction",
   "deconstructionCatalog", "autoNpcSales", "autoStandMarks",
   "merchantRoutinePriorities", "merchantAutomations", "merchantBlacklist",
+  "pontyShoppingList", "pontyShopLastRunAt",
   "standBids", "autoStandBuys", "autoBlacklistMerchants", "standSearch",
   "upgrades", "statScrolls", "compounds", "autoCompounds", "autoExchanges", "goldTargets",
   "leader", "followers", "eventsByCharacter", "eventSelectionsByCharacter",
