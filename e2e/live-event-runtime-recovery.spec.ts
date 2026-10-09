@@ -140,10 +140,13 @@ test('native event selection replaces a failed old entry without waiting on anot
   try {
     await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
     await expect.poll(async()=>{const s=await live.state();if(s.activeConvoy?.walkingEvent==='mrpumpkin'&&s.activeConvoy.phase==='travel'){before=s;return true;}return false;},{timeout:90000}).toBe(true);
+    // Followers inherit the leader's opt-ins. Preserve Warrior's already joined
+    // Pumpkin attendance while the replacement Priest can choose the newly
+    // announced, earlier-ending Green event from the same enabled set.
+    await live.post('/formation',{character:W,eventSelections:['mrpumpkin','mrgreen']});
+    await live.admin(`output=(()=>{const seed=${JSON.stringify(seeds.mrgreen)};E.mrgreen={live:true,...seed,hp:100000000,max_hp:100000000,end:Date.now()+600000};broadcast_e();return true;})()`);
     await live.clients[P].frame.evaluate(()=>{const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);});
-    await live.post('/formation',{character:P,eventSelections:['mrgreen']});
-    await live.admin(`output=(()=>{const seed=${JSON.stringify(seeds.mrgreen)};E.mrgreen={live:true,...seed,hp:100000000,max_hp:100000000};broadcast_e();return true;})()`);
     await live.restartCoordinator();
     await expect.poll(async()=>{const state=await live.state();
       const hits=await Promise.all([[W,'mrpumpkin'],[P,'mrgreen']].map(async([name,type])=>({name,type,hit:(await live.clients[name].events()).find((event:any)=>event.event==='hit'&&String(event.data?.id)===String(seeds[type].id)&&event.data?.hid===name&&event.data?.damage>0)})));
