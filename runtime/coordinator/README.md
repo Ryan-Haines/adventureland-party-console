@@ -15,6 +15,14 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Failed event walking with runtime-lost can also recover after CODE turnover and
+coordinator restart. Every captured participant must have a different, fresh,
+living runtime still owning the same event, realm, navigation revision and parent
+scope; only the old convoy's release command may remain. Replacement retains
+route retry counts. Exhausted, geometry, unchanged-runtime, manual and stale
+ownership failures remain held. Validate `live-event-runtime-recovery.spec.ts`
+with actual upstream CODE replacement and native boss hits before activation.
+
 Halloween respawn walking may replace a failed event convoy only when a fresh
 alive report proves a death after its preparation and still matches its event,
 runtime, realm, navigation revision and parent scope. Matching pre-death release
