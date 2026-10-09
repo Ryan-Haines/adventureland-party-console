@@ -11,6 +11,43 @@ import { Access } from '../tools/hosting/access';
 import { startupRealms } from '../tools/hosting/realms';
 import { accountConfig, sessionValue } from '../tools/hosting/account';
 
+test('held escape shows its reason and resumes only through an explicit action', async ({page},info) => {
+  // Failure inventory: hidden hold reason; no release control; active rescue
+  // released prematurely; failed release hides the hold; released errors linger.
+  // Declare the escape read boundary; the actual Resume POST reaches the
+  // coordinator. This checks console recovery controls, not rescue skill outcomes.
+  let stage='failed-hold', rejectResume=true;
+  const requests: {path:string,status:number}[]=[];
+  await page.route('**/party-api/escape', async route => {
+    if (route.request().method()!=='GET') {await route.continue();return;}
+    await route.fulfill({json:{escape:{id:'console-held-escape',stage,
+      error:'Missing warrior, mage, or priest',progress:{W:{error:'cant_respawn'}}}}});
+  });
+  await page.route('**/party-api/escape/resume',async route=>{
+    if(rejectResume){requests.push({path:'/escape/resume',status:409});await route.fulfill({status:409,json:{error:'Recovery is still held'}});return;}
+    const response=await route.fetch();requests.push({path:'/escape/resume',status:response.status()});
+    expect(response.ok()).toBe(true);stage='released';
+    await route.fulfill({response,json:{escape:{id:'console-held-escape',stage,error:null,progress:{}}}});
+  });
+  await page.goto('/');
+  const resume=page.getByRole('button',{name:'Resume automation',exact:true});
+  await expect(page.getByText('Missing warrior, mage, or priest',{exact:true})).toBeVisible();
+  await expect(resume).toBeVisible();
+  await resume.scrollIntoViewIfNeeded();
+  await info.attach('escape-held-reason',{body:await page.screenshot(),contentType:'image/png'});
+  await resume.click();
+  await expect(page.getByText('Recovery is still held',{exact:true})).toBeVisible();
+  await expect(resume).toBeEnabled();
+  rejectResume=false;await resume.click();
+  await expect(resume).toHaveCount(0);
+  await expect(page.getByText('Missing warrior, mage, or priest',{exact:true})).toHaveCount(0);
+  stage='blink';await page.reload();
+  await expect(page.getByRole('button',{name:/Escape - failed$/})).toBeDisabled();
+  await expect(resume).toHaveCount(0);
+  await info.attach('escape-resume-actions',{body:JSON.stringify(requests),contentType:'application/json'});
+  await info.attach('escape-active-rescue',{body:await page.screenshot(),contentType:'image/png'});
+});
+
 test('Halloween events stay opt-in, show partial-feed timers, inherit and persist', async ({page,app},info) => {
   // Failure modes: a partial feed hides supported bosses; legacy all-events flags
   // silently opt characters in; follower/merchant policy leaks; saves disappear

@@ -1,5 +1,21 @@
 # Testing
 
+Steam CODE lifecycle uses
+`npm test -- -- --project=live --grep "Steam-style CODE replacement"`.
+The test declares a valid changed class artifact and holds one real status
+request while the loader performs native iframe replacement. It requires the
+same connected game window, retired runtime ownership, stable listener counts,
+preserved native response handlers, a fresh heartbeat and actual walking arrival.
+Historical managed callbacks are replayed at the socket-subscription boundary
+before fresh CODE migration. The focused run passed with 32 verified files.
+
+Escape hold controls use
+`npm test -- -- --project=console --grep "held escape shows its reason"`.
+The declared escape read-boundary fixture checks the visible failure reason,
+explicit Resume action, rejected release, and active-rescue guard. A successful
+Resume click reaches the coordinator's existing release endpoint. Screenshots
+and the action ledger are retained; this does not simulate native rescue skills.
+
 Merchant stand setup uses
 `npm test -- -- --project=live --grep "merchant stand location is valid"`.
 The native journey checks randomized, geometry-valid first setup, wall rejection,

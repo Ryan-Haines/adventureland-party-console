@@ -4,15 +4,17 @@
   if (!parent.caracAL && typeof parent.start_runner === "function" &&
       !parent.__partyFreshConvoyRunnerV3) {
     parent.__partyFreshConvoyRunnerV3 = true;
+    if (root.__partyCodeLoader && typeof root.__partyCodeLoader.dispose === "function") root.__partyCodeLoader.dispose();
+    var migrationHost = parent;
     var bootstrap = "$.ajax({url:" + JSON.stringify((parent.__partyServer || "http://127.0.0.1:924") + "/CODE/adventure_land/universal-loader.js?t=") + " + Date.now()," +
       "dataType:'text',cache:false}).then(function(source){(0,eval)(source);});";
-    parent.setTimeout(function () { parent.start_runner("maincode", bootstrap); }, 0);
+    migrationHost.setTimeout(function () { migrationHost.start_runner("maincode", bootstrap); }, 0);
     return;
   }
   if (!root.partyFarmingZones) throw new Error("Load farming-zones.js before shared.js; party startup aborted");
   var runtimeGeneration = root.__partyRuntimeGeneration =
     (Number(root.__partyRuntimeGeneration) || 0) + 1;
-  function runtimeCurrent() { return Number(root.__partyRuntimeGeneration) === runtimeGeneration; }
+  function runtimeCurrent() { return Number(root.__partyRuntimeGeneration) === runtimeGeneration && !!parent; }
   var movement = root.installPartyMovement(root, {
     now: Date.now,
     context: function() { return { runtime: convoyRuntimeId || String(runtimeGeneration), revision: Number(navigationIntent && navigationIntent.revision) || 0,
@@ -301,7 +303,10 @@
     var signatures={action:["rememberMapEvent", "queueCombatEvent"],hit:["rememberMapEvent", "recentOwnHits", "observeFarmHit"],
       death:["deathCombatMessage", "reportFightDeath"],kill_credit:["pendingKillCredits"],
       disappearing_text:["pendingKillCredits"],chest_opened:["lastInventoryTotals"],
-      disappear:["observeFightPacket"],entities:["reportFightDeath"]};
+      disappear:["observeFightPacket"],entities:["reportFightDeath"],
+      // Older CODE frames left these direct subscriptions outside the registry.
+      // Native game_response handlers do not contain these Party Console symbols.
+      game_response:["queueCombatEvent", "anniversarySliceNames", "anniversaryKissResponses", "donationXpPerGold"]};
     Object.keys(signatures).forEach(function(event) {
       socket.listeners(event).slice().forEach(function(handler) {
         var source=String(handler);
@@ -10045,6 +10050,7 @@
   }
 
   async function tick() {
+    if (!runtimeCurrent()) return;
     observeBankSortVisit();
     if (busy) return;
     busy = true;
@@ -10336,10 +10342,10 @@
       }
     } catch (error) {
       // The local dashboard is optional; combat continues if it is unavailable.
-      recordStatusFailure(error, statusPhase);
+      if (runtimeCurrent()) recordStatusFailure(error, statusPhase);
     } finally {
       busy = false;
-      wakeGatheringAfterStatus();
+      if (runtimeCurrent()) wakeGatheringAfterStatus();
     }
   }
 

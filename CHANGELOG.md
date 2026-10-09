@@ -7,6 +7,11 @@ from the commits merged into `main`.
 
 ### Added
 
+- Steam CODE reload retires the old runner before replacing its iframe and
+  removes older leaked Party Console response callbacks, preventing repeated
+  null `character` and server-event-state errors without logging out the game.
+- Escape holds show their failure reason and a Resume automation button, so a
+  preserved recovery hold can be released without restarting the coordinator.
 - Scheduled boss reports use the coordinator clock, so client clock differences
   do not change staging eligibility or renew the fixed missed-spawn deadline.
 - Retained event regression fixtures load the current workflow helpers and pinned
