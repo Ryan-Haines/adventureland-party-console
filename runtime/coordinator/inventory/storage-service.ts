@@ -1,4 +1,6 @@
 import { queueExchangeStorage } from "./exchange-storage.ts";
+import {protectedMerchantStorageStock} from './merchant-storage-stock.ts';
+import type {UpgradeOffering} from '../../upgrade-offerings.ts';
 
 type ExchangeArguments = Parameters<typeof queueExchangeStorage>;
 interface StorageState {
@@ -25,6 +27,16 @@ export function createCoordinatorStorageService(state: StorageState, persist: ()
       );
       if (pending) persist();
       return pending;
+    },
+    queueOffering(offering:UpgradeOffering):boolean {
+      const entry=protectedMerchantStorageStock(state).find(entry=>String(entry.craftLocation).startsWith('bankboi:') &&
+        entry.item?.name===offering && !entry.item.l && !entry.item.b);
+      if(!entry) return false;
+      const requests=state.withdrawals[String(state.merchantCharacter)] ||= [];
+      if(!requests.some(request=>request.pack===entry.craftLocation && request.slot===entry.slot))
+        requests.push({pack:String(entry.craftLocation),slot:entry.slot,item:entry.item});
+      persist();
+      return true;
     },
   };
 }

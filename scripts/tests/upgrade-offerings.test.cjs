@@ -26,7 +26,7 @@ test('ranges cover transitions, with adjacent ranges and no overlap',()=>{
  const first=state.upgradeOfferingRules[0];assert.equal(command({type:'upgrade-offering-rule',rule:{...first,required:false}}),null);
  assert.equal(command({type:'upgrade-offering-rule',rule:{id:first.id},remove:true}),null);assert.equal(state.upgradeOfferingRules.length,1);
 });
-test('stock counts merchant and bank only, excluding locked and reserved quantities',()=>{
+test('stock excludes locked and reserved quantities across merchant storage locations',()=>{
  const state=fixture();state.statuses.M.items=[{slot:0,item:{name:'offeringp',q:3}},{slot:1,item:{name:'offeringx',l:'l'}}];
  state.statuses.F={items:[{item:{name:'offering',q:50}}]};state.bankSnapshot={packs:{items0:[{item:{name:'offering',q:2}}]}};
  state.merchantQueue=[{id:'craft',order:{crafts:[{id:'sword',quantity:1}],requirements:[{id:'offeringp',quantity:2}]}}];

@@ -5593,7 +5593,7 @@
     var found = availableOfferingEntries(checkpoint).find(function(entry) { return !entry.pack && entry.item.name === name; });
     return found ? found.slot : -1;
   }
-  async function retrieveUpgradeOffering(command, name, activity) {
+  async function retrieveUpgradeOffering(command, name, mark, item, activity) {
     await merchantVisitBank(command,activity);
     var floors = accessibleBankSortFloors();
     for (var i=0;i<floors.length;i++) {
@@ -5609,6 +5609,16 @@
       await bankRetrieveConfirmed(found.pack,found.slot);
       if (carriedOffering(await upgradeOfferingCheckpoint(command),name)>=0) return;
     }
+    // BankBoi owns a different native login slot. Yield this exact job before
+    // storage takes that slot; its original upgrade intent survives the handoff.
+    var supply = await request("/merchant/offering-supply", {method:"POST",body:{
+      jobId:command.jobId, commandId:command.id || command.commandId,
+      offering:name, item:fingerprint(item), mark:mark,
+    }});
+    if (supply && supply.pending) {
+      activity.push({level:"info",message:"Waiting for BankBoi upgrade offering",details:{offering:name}});
+      throw new Error("bankboi_pending");
+    }
   }
   async function prepareUpgradeOffering(command, mark, slot, activity) {
     if (!mark.auto && !mark.offering) return undefined;
@@ -5619,7 +5629,7 @@
     });
     if (!rule) return undefined;
     if (carriedOffering(checkpoint,rule.offering)<0 && Number((checkpoint.upgradeOfferingStock || {})[rule.offering])>0) {
-      await retrieveUpgradeOffering(command,rule.offering,activity);
+      await retrieveUpgradeOffering(command,rule.offering,mark,item,activity);
       checkpoint = await upgradeOfferingCheckpoint(command);
     }
     var offeringSlot = carriedOffering(checkpoint,rule.offering);

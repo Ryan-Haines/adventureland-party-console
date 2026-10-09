@@ -2,6 +2,8 @@ import { requestObject, type HttpRequest, type HttpResponse } from "./contracts.
 import type { MerchantWork } from "../merchant/work.ts";
 import type { queueExchangeStorage } from "../inventory/exchange-storage.ts";
 import { exchangeRewardAction, type AutomaticActionState } from '../inventory/automatic-action.ts';
+import {createOfferingSupplyRoute} from '../inventory/offering-supply.ts';
+import type {UpgradeOffering} from '../../upgrade-offerings.ts';
 
 interface ExchangeChoice {
   id: string;
@@ -28,6 +30,7 @@ interface ExchangePorts {
   persist(): void;
   dispatch(): void;
   queueStorage(job: MerchantWork, shortages: Parameters<typeof queueExchangeStorage>[1]): boolean;
+  queueOffering(offering:UpgradeOffering):boolean;
 }
 
 function normalizeExchange(raw: unknown, choices: ExchangeChoice[]): ExchangeLine | null {
@@ -110,5 +113,5 @@ export function createMerchantExchangeRoutes(state: ExchangeState, ports: Exchan
     }
     return enqueue(exchanges, res);
   }
-  return { progress, supply, order };
+  return { progress, supply, order, offeringSupply:createOfferingSupplyRoute(state,offering=>ports.queueOffering(offering)) };
 }

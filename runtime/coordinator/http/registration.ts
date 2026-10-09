@@ -198,7 +198,7 @@ export interface MerchantTransactionsHandlers<Handler> {
   merchantRequestRoutes: { giveaway: Handler; search: Handler };
   manualMarketOrderRoutes: { stand: Handler; purchase: Handler; ponty: Handler; sale: Handler };
   merchantOrderRoute: { handle: Handler };
-  merchantExchangeRoutes: { progress: Handler; supply: Handler; order: Handler };
+  merchantExchangeRoutes: { progress: Handler; supply: Handler; order: Handler; offeringSupply:Handler };
   merchantControlRoutes: { clear: Handler; force: Handler };
   merchantHandoffRoutes: {
     handoff: Handler;
@@ -234,6 +234,7 @@ export function installMerchantTransactionsRoutes<Handler>(
   router.post("/party-api/merchant/order", handlers.merchantOrderRoute.handle);
   router.post("/party-api/merchant/exchange-progress", handlers.merchantExchangeRoutes.progress);
   router.post("/party-api/merchant/exchange-supply", handlers.merchantExchangeRoutes.supply);
+  router.post("/party-api/merchant/offering-supply", handlers.merchantExchangeRoutes.offeringSupply);
   router.post("/party-api/merchant/exchange-order", handlers.merchantExchangeRoutes.order);
   router.post("/party-api/merchant/clear", handlers.merchantControlRoutes.clear);
   router.post("/party-api/merchant/force-stand", handlers.merchantControlRoutes.force);

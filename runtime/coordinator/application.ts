@@ -549,6 +549,7 @@ export function startCoordinatorApplication(
       persist: persistSettings,
       dispatch: dispatchMerchant,
       queueStorage: queueExchangeStorage,
+      queueOffering:offering=>storageService.queueOffering(offering),
     });
     const {
       visits: anniversaryVisitRoutes,

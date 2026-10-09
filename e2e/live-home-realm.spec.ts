@@ -47,7 +47,7 @@ test('home realm change confirms every active character including merchant', asy
     await modal.getByRole('button', {name:'Change home realm',exact:true}).click();
     await expect.poll(async () => (await live.state()).realmControl?.operation?.phase, {timeout:120_000}).toBe('complete');
     const state = await live.state();
-    expect(state.realmControl.operation.characters.filter((entry:any)=>entry.homeConfirmed).map((entry:any)=>entry.name).sort()).toEqual([...names].sort());
+    expect(state.realmControl.operation.characters.filter((entry:any)=>entry.homeConfirmed).map((entry:any)=>entry.name).sort()).toEqual([...names,'E2EBankBoi'].sort());
     const native = await live.admin(`output=Object.fromEntries(${JSON.stringify(names)}.map(name=>[name,get_player(name).p.home]))`);
     expect(native).toEqual(Object.fromEntries(names.map(name=>[name,'USI'])));
     expect(state.realmControl.homeCharacters.every((entry:any)=>entry.home==='SR_USI')).toBe(true);

@@ -6,6 +6,7 @@ const roster = [
   { name: 'E2EWarrior', type: 'warrior' },
   { name: 'E2EPriest', type: 'priest' },
   { name: 'E2EMerchant', type: 'merchant' },
+  { name: 'E2EBankBoi', type: 'merchant' },
 ];
 async function admin(code, data = {}, realm = 'USI') {
   if (!['USI','USII'].includes(realm)) throw Error('Unknown disposable native realm: '+realm);

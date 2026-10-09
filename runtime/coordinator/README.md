@@ -40,6 +40,18 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Upgrade offering availability derives from one protected merchant/bank/BankBoi
+stock boundary, shared with upgrade-input sourcing. BankBoi whole-stack retrievals
+require the complete stack to be unreserved. After bank floors are exhausted,
+the current upgrade command requests `/merchant/offering-supply` with its current
+job/command identity, selected offering, live item and original mark. The route
+validates the live level's rule or manual request identity and queues an existing
+storage withdrawal; the merchant yields before BankBoi owns the slot. Pending
+supply preserves the original mark. Validate native manual/automatic BankBoi
+offering journeys and console availability; publish character and coordinator
+assets with the supported full restart. Failure inventory:
+`docs/testing-bankboi-offerings.md`.
+
 Party status scheduling dispatches an admitted `switching party realm` job so
 its native-arrival check and original sixty-second deadline continue while it
 owns the current job. Ordinary executing jobs retain their existing scheduling

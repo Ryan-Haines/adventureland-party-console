@@ -5,6 +5,11 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Include protected BankBoi stock when selecting upgrade offerings and waking
+  required offering rules. Manual and automatic upgrades retrieve fully available
+  stored offering stacks through the existing BankBoi handoff before production;
+  locked, bound and reserved cargo remains protected.
+
 - Make native bank-sale validation wait for every actual sale receipt, and
   establish fresh Cave observations before floor validation. Cave assembly
   fixtures search native collision-safe staging beyond cramped entry areas
