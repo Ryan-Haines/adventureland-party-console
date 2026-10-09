@@ -11,6 +11,57 @@ import { Access } from '../tools/hosting/access';
 import { startupRealms } from '../tools/hosting/realms';
 import { accountConfig, sessionValue } from '../tools/hosting/account';
 
+test('Halloween events stay opt-in, show partial-feed timers, inherit and persist', async ({page,app},info) => {
+  // Failure modes: a partial feed hides supported bosses; legacy all-events flags
+  // silently opt characters in; follower/merchant policy leaks; saves disappear
+  // after restart; raw catalog IDs replace friendly labels or spawn countdowns.
+  const ids=['slenderman','mrgreen','mrpumpkin'];
+  let legacy=true;
+  let inherited=false;
+  const next=Date.now()+600000;
+  await page.route('**/party-api/state*',async route=>{
+    const response=await route.fetch(),state=await response.json();
+    await route.fulfill({response,json:{...state,
+      ...(legacy ? {eventsByCharacter:{...state.eventsByCharacter,W:true},eventSelectionsByCharacter:{...state.eventSelectionsByCharacter,W:undefined}} : {}),
+      // The console fixture does not launch native workers, so observe a
+      // declared managed-party projection for follower inheritance.
+      ...(inherited ? {leader:'W',followers:{...state.followers,P:true}} : {}),
+      eventSchedules:[{id:'mrgreen',name:'mrgreen',next},{id:'mrpumpkin',name:'mrpumpkin',next},{id:'unsupported-fixture',name:'Other event',live:true}],
+    }});
+  });
+  await page.goto('/');
+  const card=(name:string)=>page.locator('article').filter({has:page.getByRole('heading',{name,exact:true})});
+  const open=async(name:string)=>{await card(name).getByRole('button',{name:/^Events \(/}).click();};
+  const row=(name:string)=>page.locator('[data-slot="popover-content"]').locator('div').filter({has:page.getByText(new RegExp(`^${name} —`))}).filter({has:page.getByRole('checkbox')}).last();
+  await open('W');
+  for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) await expect(row(name).getByRole('checkbox')).not.toBeChecked();
+  await expect(page.getByText(/^Mr\. Green —.*\(\d+m \d+s\)$/)).toBeVisible();
+  await expect(page.getByText(/^Mr\. Pumpkin —.*\(\d+m \d+s\)$/)).toBeVisible();
+  await expect(page.getByText('Other event — Unsupported',{exact:true})).toBeVisible();
+  await info.attach('halloween-legacy-opt-in',{body:await page.screenshot(),contentType:'image/png'});
+  legacy=false;
+  for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) {
+    // This controlled checkbox reflects the acknowledged coordinator save.
+    await row(name).getByRole('checkbox').click();
+    await expect.poll(async()=>{const state=await app.state();return ids.filter(id=>state.eventSelectionsByCharacter.W?.includes(id)).length;}).toBe(['Slenderman','Mr. Green','Mr. Pumpkin'].indexOf(name)+1);
+    await expect(row(name).getByRole('checkbox')).toBeChecked();
+  }
+  await page.keyboard.press('Escape');
+  inherited=true;
+  await page.reload();
+  await open('P');
+  await expect(page.getByText('Using W’s events',{exact:true})).toBeVisible();
+  for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) {await expect(row(name).getByRole('checkbox')).toBeChecked();await expect(row(name).getByRole('checkbox')).toBeDisabled();}
+  await page.keyboard.press('Escape');
+  await open('M');
+  for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) {await expect(row(name).getByRole('checkbox')).not.toBeChecked();await expect(row(name).getByRole('checkbox')).toBeEnabled();}
+  await page.keyboard.press('Escape');
+  await app.restartCoordinator();await page.reload();await open('W');
+  for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) await expect(row(name).getByRole('checkbox')).toBeChecked();
+  await info.attach('halloween-persisted-selections',{body:JSON.stringify(await app.state()),contentType:'application/json'});
+  await info.attach('halloween-events-after-restart',{body:await page.screenshot(),contentType:'image/png'});
+});
+
 test.describe('marked withdrawal scheduling', () => {
   test.use({ merchantDialogs: true });
   test('marked withdrawals default on and Merchant settings survive restart', async ({page,app},info) => {

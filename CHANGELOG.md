@@ -7,6 +7,33 @@ from the commits merged into `main`.
 
 ### Added
 
+- Retained event regression fixtures load the current workflow helpers and pinned
+  game geometry consistently with CI. Optional boss-sighting and game-data
+  fields preserve existing heartbeat and ordinary attack behavior when absent.
+- Halloween point returns keep their owned checkpoint route until the same
+  100-unit arrival used by shared navigation, avoiding early cancellation.
+- Halloween deselection exits living boss combat through a bounded Town attempt
+  and owned walking with moving defense, rather than waiting for the boss to die.
+- Cave native E2E entry checks now retain accepted room responses in a durable
+  ledger and retry guarded requests before verifying actual room arrival.
+- Keep ranged characters already fighting a freshly observed event boss out of a
+  recovering party member's walking rendezvous, so death recovery can rejoin
+  combat without waiting for an unnecessary walking request.
+- Added opt-in Slenderman, Mr. Green, and Mr. Pumpkin character events without
+  changing existing selections. Green/Pumpkin spawn countdowns support staging
+  one minute early and returning to saved work after a two-minute missed spawn.
+- Slenderman attendance uses local and fresh party sightings, bounded discovery
+  across Halloween, Spookytown, and Cave, and the existing magical reflection
+  protections. Unproductive searches release attendance and saved-work recovery.
+- Windows full restarts build and publish shared event policies alongside the
+  character runtime, so newly selectable events are accepted by the coordinator.
+- Physical fighters can attack reflection monsters when the native player
+  payload omits damage type, using their equipped weapon and class definitions.
+  Magical attacks and offensive skills retain their reflection protection.
+- Event exits release characters that already supplied a verified Town receipt
+  from the remaining walking rendezvous, preventing recovery from waiting on a
+  finished participant while preserving the saved checkpoint and cycle owner.
+
 - Steam handoff stores its generic bootstrap in a free native CODE slot from
   1–100 instead of an unsupported UUID slot. Occupied slots and original CODE
   cache stay intact; unavailable or full slot inventories fail before release.

@@ -5,7 +5,7 @@ import { Settings } from "lucide-react";
 
 import { useClock } from "@/hooks/use-clock";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { eventPolicy, selectedEvents, supportedEvents } from "@/lib/event-policy";
+import { eventDisplayNames, eventPolicy, selectedEvents, supportedEvents } from "@/lib/event-policy";
 import { PartyState } from "./party-state";
 
 export type EventSchedule = { id: string; name: string; live?: boolean; next?: number; expires?: number; stale?: boolean; slotAt?: number; slotKind?: string };
@@ -21,7 +21,13 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
   state: EventSelectionState; name: string; merchant: boolean; onAnniversary: () => void; onChange: (events: string[]) => void;
 }) {
   const now = useClock(), policy = eventPolicy(state, name), selected = selectedEvents(state, name);
-  const catalog: EventSchedule[] = state.eventSchedules?.length ? state.eventSchedules : supportedEvents.map(id => ({ id, name: id }));
+  // Server schedules are observations, not the supported catalog: seasonal
+  // bosses must remain selectable even when the current feed omits them.
+  const schedules = new Map((state.eventSchedules ?? []).map(event => [event.id, event]));
+  const catalog: EventSchedule[] = [...new Set([...supportedEvents, ...schedules.keys()])].map(id => {
+    const schedule = schedules.get(id);
+    return { ...schedule, id, name: eventDisplayNames[id] ?? schedule?.name ?? id };
+  });
   return <Popover>
     <PopoverTrigger className="cursor-pointer rounded border border-slate-500 bg-[#101c1a] px-2 py-1 text-xs text-emerald-100 hover:bg-[#20332e]">Events ({selected.length}) ▾</PopoverTrigger>
     <PopoverContent align="start" className="max-h-[min(20rem,var(--available-height))] w-96 max-w-[calc(100vw-1rem)] overflow-auto rounded border border-slate-500 bg-[#101c1a] p-3 text-xs text-emerald-50 shadow-xl">

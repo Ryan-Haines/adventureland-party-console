@@ -412,7 +412,66 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   },{timeout:120_000,message:'Both resumed waypoint moves must finish at the validated endpoint before native farm assembly'}).toBe(true);
   await controls.getByRole('button', { name: 'Stop travel', exact: true }).click();
   await waitForStoppedTravel();
-  await controls.getByRole('button',{name:farm.label,exact:true}).first().click();
+  const acceptRoom=async(point:{id:string;label:string;map:string})=>{
+    const expectedRun=point.map.slice(5,point.map.lastIndexOf('_')),expectedFloor=Number(point.map.split('_').at(-1));
+    const requests:{request:import('@playwright/test').Request;response?:Promise<{status:number;body:any;request:any}>}[]=[],attempts:unknown[]=[];
+    let consumed=0;
+    const match=(request:import('@playwright/test').Request)=>request.method()==='POST'&&new URL(request.url()).pathname==='/party-api/daily-dungeons'&&
+      request.postDataJSON()?.action==='move'&&request.postDataJSON()?.target===point.id;
+    const requested=(request:import('@playwright/test').Request)=>{if(match(request))requests.push({request});};
+    const responded=(reply:import('@playwright/test').Response)=>{
+      const entry=requests.find(entry=>entry.request===reply.request());
+      if(entry)entry.response=reply.json().then(body=>({status:reply.status(),body,request:reply.request().postDataJSON()}));
+    };
+    const identity=async()=>{
+      const view=await dungeon();expect(view.state.phase).toBe('active');expect(view.state.run).toBe(expectedRun);
+      expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===expectedRun&&m.observation.cave.floor===expectedFloor&&!m.observation.cave.paused)).toBe(true);
+      return view;
+    };
+    page.on('request',requested);page.on('response',responded);
+    try{
+      await expect.poll(async()=>{
+        if(requests.length===consumed){
+          await identity();
+          if(requests.length===consumed){
+            const button=controls.getByRole('button',{name:point.label,exact:true}).first();
+            if(!await button.isEnabled()){attempts.push({submitted:false,disabled:true});return false;}
+            await button.click();
+          }
+        }
+        let noEffect=false;
+        await expect.poll(async()=>{
+          if(requests[consumed]?.response)return true;
+          if(requests.length>consumed)return false;
+          const snapshot=await controls.evaluate((element,label)=>({
+            enabled:Array.from(element.querySelectorAll('button')).find(button=>button.textContent?.trim()===label)?.disabled===false,
+            error:Array.from(element.querySelectorAll('[role=alert]')).map(alert=>alert.textContent?.trim()).filter(Boolean),
+          }),point.label);
+          if(requests.length>consumed)return !!requests[consumed]?.response;
+          if(snapshot.error.length)throw Error('Unaccepted room selection: '+snapshot.error.join('; '));
+          noEffect=snapshot.enabled;return noEffect;
+        },{timeout:10_000,message:'Room selection must receive its own response or remain an enabled no-effect control'}).toBe(true);
+        if(noEffect&&requests.length===consumed){
+          await identity();
+          if(requests.length===consumed){attempts.push({submitted:false,noEffect:true});return false;}
+        }
+        await expect.poll(()=>!!requests[consumed]?.response,{timeout:10_000,message:'A pending room move must receive its own response before retry'}).toBe(true);
+        const result=await requests[consumed++].response!;
+        expect(result.request.run).toBe(expectedRun);expect(result.request.target).toBe(point.id);
+        attempts.push({submitted:true,status:result.status,error:result.body.error});
+        if(result.status===409&&result.body.error==='Fresh matching dungeon run required'){await identity();return false;}
+        expect(result.status,'Room selection must be accepted; unrelated errors are not retried').toBe(200);
+        const accepted=result.body.state;expect(accepted.run).toBe(expectedRun);
+        const targets=[accepted.travel?.target,...Object.values(accepted.commands).filter((c:any)=>c.action==='move'&&c.run===expectedRun).map((c:any)=>c.target)];
+        expect(targets.some((target:any)=>target?.id===point.id&&target.map===point.map),'Accepted native room response must acknowledge the exact chosen target').toBe(true);
+        return true;
+      },{timeout:60_000,message:'Native room selection must receive an owned accepted action'}).toBe(true);
+    }finally{
+      page.off('request',requested);page.off('response',responded);
+      await info.attach('native-cave-room-selection-acceptance',{body:JSON.stringify({point,attempts,consumed,requests:requests.map(entry=>({body:entry.request.postDataJSON(),responseObserved:!!entry.response}))}),contentType:'application/json'});
+    }
+  };
+  await acceptRoom(farm);
   const farmCombatSamples:unknown[]=[];
   let farmSampledAt=0;
   try {
@@ -443,7 +502,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
   await info.attach('native-cave-manual-travel', { body: JSON.stringify({ dungeon: await dungeon(), state: await live.state() }), contentType: 'application/json' });
   const second = (await dungeon()).members[0].observation.cave.points.find((p: any) => p.kind === 'boss' && !p.done);
   if (second) {
-    await controls.getByRole('button', {name:second.label, exact:true}).click();
+    await acceptRoom(second);
     const planningSamples: unknown[] = [];
     let sampledAt = 0;
     let planningGeometry: unknown;
@@ -476,7 +535,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
         await choice.getByRole('button',{name:reply.label,exact:true}).click();
         await expect(choice).not.toBeVisible({timeout:30_000});
         expect(Object.values((await dungeon()).state.commands).some((c: any) => c.action === 'move')).toBe(false);
-        await controls.getByRole('button',{name:second.label,exact:true}).click();
+        await acceptRoom(second);
       }
       const state = await live.state();
       return Math.max(...['E2EWarrior','E2EPriest'].map(name => Math.hypot(state.characters[name].x-second.x,state.characters[name].y-second.y)));
@@ -544,7 +603,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     if(!required)return true;
     const v=await dungeon();
     const current=v.state.travel?.target?.id || (Object.values(v.state.commands).find((c:any)=>c.action==='move') as any)?.target?.id;
-    if(current!==required.id)await controls.getByRole('button',{name:required.label,exact:true}).click();
+    if(current!==required.id)await acceptRoom(required);
     return false;
   // Random floors can require several long trips with native combat along the
   // corridors. Allow the final vote's acknowledged result to reach telemetry.
@@ -556,7 +615,7 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     const room={id:'e2e-farewell',floor:0,map:p.map,x:${stairs.x},y:${stairs.y},kind:'encounter',required:false,revealed:true,started:false,done:false,actors:[],enemies:[],encounter:source};
     run.cave.rooms.push(room);cave_activate(run,room);cave_publish(run,true);return {room:room.id};
   })()`);
-  await controls.getByRole('button',{name:'Stairs down',exact:true}).click();
+  await acceptRoom(stairs);
   let answeredFarewell=false;
   const stairReplies:{id:string;title:string;option:string}[]=[];
   const advanceStairs=async()=>{

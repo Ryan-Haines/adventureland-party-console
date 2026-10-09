@@ -513,3 +513,16 @@ known-death state, native collision, control identity and exact adjusted clock
 age. Failure modes: raw metadata may be absent, diagnostics must not mutate
 selection/tombstones/clock, disappear on timeout, or retain entire entity worlds.
 Cap125 samples at least5s apart, preserve physicalarrival70 and600s boundary.
+
+### Room selection acceptance (aaf4)
+
+The farm button submitted a rejected room-move action: final UI displayed
+`Fresh matching dungeon run required`, commands remained empty, and107 native
+samples stayed at the previous completed waypoint. Room clicks must observe
+actual move POST responses before awaiting physical travel. Failure inventory:
+late/pending POST cannot be duplicated; accepted200 must acknowledge exact
+run/target/map; only the exact freshness409 may retry while same unique active
+run/floor/alive/unpaused; other HTTP errors must fail; suppressed no-effect
+clicks may retry only currently enabled/error-free with unchanged live identity.
+Keep request listeners throughout the bounded helper, attach attempts including
+pending state finally, and retain every native arrival/combat/floor assertion.
