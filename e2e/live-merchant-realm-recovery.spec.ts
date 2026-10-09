@@ -93,6 +93,14 @@ test.describe('merchant destination ownership', () => {
     const merchant='E2EMerchant',fighter='E2EWarrior';
     await prepareCrossRealmCollection(live);
     const observations:any[]=[];
+    let admitted:any;
+    await expect.poll(async()=>{
+      const state=await live.state();
+      observations.push({at:Date.now(),merchant:state.characters[merchant]?.server,current:state.merchantCurrent,queue:state.merchantQueue});
+      if(state.merchantCurrent?.phase==='switching party realm') admitted=state.merchantCurrent;
+      return !!admitted;
+    },{timeout:90_000,intervals:[100],message:'A real US I to US II transition must be admitted before collection'}).toBe(true);
+    expect(admitted.destinationRealm).toBe('SR_USII');
     await expect.poll(async()=>{
       const state=await live.state();
       observations.push({at:Date.now(),merchant:state.characters[merchant]?.server,current:state.merchantCurrent,queue:state.merchantQueue});
@@ -102,7 +110,7 @@ test.describe('merchant destination ownership', () => {
     expect(after.merchantActivity.some((entry:any)=>entry.message?.startsWith('Merchant stopped reporting'))).toBe(false);
     await expect.poll(async()=>(await nativeLeather(live)).total,{timeout:30_000}).toBe(7);
     const total=await nativeLeather(live);
-    await info.attach('cross-realm-native-collection',{body:JSON.stringify({observations,after,total,events:await live.clients[fighter].events()}),contentType:'application/json'});
+    await info.attach('cross-realm-native-collection',{body:JSON.stringify({admitted,observations,after,total,events:await live.clients[fighter].events()}),contentType:'application/json'});
   });
   test('merchant reconnect completes bank work off its native home', async ({ live }, info) => {
     test.setTimeout(240_000);

@@ -3,6 +3,11 @@ import { test, expect } from './live-fixtures';
 // Failure modes: stale saved/setup realms win over native home; startup repeats
 // that stale connection; home selection overwrites an explicit realm transition.
 // The native home-realm suite separately covers explicit temporary home visitors.
+// A stale worker default must not initialize the party's automatic merchant
+// return destination: that creates a stale home request before its first spawn
+// and wins over native home selection. Native auth must reach USI without hopsickness.
+// After native logout, its old status cannot authorize a headless home return
+// while no managed slot/runtime owns that merchant.
 test.use({ liveHeadless:true, staleWorkerRealm:'SR_USII' });
 
 test('headless spawn and restart use home realm despite stale worker configuration', async ({ page, live }, info) => {

@@ -222,6 +222,13 @@ from the commits merged into `main`.
 
 ### Fixed
 
+- Initial coordinator realm defaults follow the account's unanimous native
+  home instead of a stale saved worker realm. Offline merchants cannot create
+  new headless home-return requests from retired Steam status; managed ownership
+  and fresh headless status are required for admission. Existing returns retain
+  their retry deadline while disconnected. Saved explicit party realms and
+  admitted realm/job transitions retain their destinations.
+
 - Steam companion reconnect refreshes the native account roster after an
   `already_running` rejection, so stale online entries cannot delay restoring
   a stopped companion until the native AFK refresh. Concurrent refreshes are

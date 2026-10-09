@@ -4,6 +4,14 @@ the maintained route and formation ownership. Validate the native terrain gap
 case in `live-event-runtime-recovery.spec.ts`; activate character assets and
 coordinator together. Failure inventory: `docs/testing-event-terrain-approach.md`.
 
+Startup uses the account's unanimous native home as the initial realm default,
+falling back to saved worker configuration when homes are absent or mixed.
+Explicit persisted party realm settings still take precedence. New merchant
+return requests require a managed headless slot and a fresh headless observation;
+retired Steam status cannot create a request while the merchant is offline.
+Already admitted returns retain their sixty-second retry window and three-attempt
+exhaustion limit while their worker is offline or its status is stale.
+
 Steam companion restoration retries native `already_running` failures after a
 coalesced `servers_and_characters` account-roster refresh, at most once every
 three seconds. Verified native client 15555 updates `X.characters` through its

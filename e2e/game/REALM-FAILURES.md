@@ -8,6 +8,9 @@ Declared before extending the disposable stack for issues #69 and #74.
   native cross-realm account confirmation to reject otherwise valid logins.
 - Account discovery drops the second server or worker setup routes both realms
   to US I despite the requested realm.
+- A phantom offline home request connects the merchant directly to US II and
+  lets a transfer-only check pass without any realm transition. Both cross-realm
+  collection cases must observe actual switching-phase admission at 100ms polls.
 - Reset disconnects only US I, leaving US II characters/account bank leases live.
 - An admin read silently queries the wrong process and invents missing cargo.
 - A logout is followed by a spawn before the native ownership handoff completes.
