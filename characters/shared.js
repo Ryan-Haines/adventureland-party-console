@@ -4341,9 +4341,14 @@
     progress.sequence += 1;
     root.localStorage.setItem(journal.commerce.key, JSON.stringify(progress));
   }
-  function rememberReviewedCommerce(journal, attempt) {
+  function rememberReviewedCommerce(journal, attempt, reviewedCommerce) {
     if (!journal.commerce || !attempt.resolution || attempt.resolution.outcome !== "unknown" || !attempt.resolution.resumeMissing) return false;
     var progress = JSON.parse(root.localStorage.getItem(journal.commerce.key) || "null") || journal.commerce.state;
+    if (reviewedCommerce && reviewedCommerce.key === journal.commerce.key && reviewedCommerce.state) {
+      if (!progress || Number(progress.sequence) <= Number(reviewedCommerce.state.sequence))
+        root.localStorage.setItem(journal.commerce.key,JSON.stringify(reviewedCommerce.state));
+      return true;
+    }
     // The durable queued disposition or a later cycle has already applied this
     // review. Retire only the old receipt; do not inspect/mutate the new cycle.
     if (progress && Number(progress.sequence) > Number(journal.commerce.sequence)) return true;
@@ -4355,8 +4360,7 @@
     if (progress && progress.pendingUpgrade && progress.pendingUpgrade.outcome &&
         progress.pendingUpgrade.outcome.reviewedMissing === true &&
         progress.pendingUpgrade.outcome.resolution && progress.pendingUpgrade.outcome.resolution.at === attempt.resolution.at) return true;
-    if (!progress || progress.sequence !== journal.commerce.sequence || !progress.pendingUpgrade || !sameItemState(progress.activeItem,journal.item))
-      throw Error("Reviewed production no longer owns this commerce cycle");
+    if (!progress || progress.sequence !== journal.commerce.sequence || !progress.pendingUpgrade || !sameItemState(progress.activeItem,journal.item)) return true;
     progress.pendingUpgrade.outcome = {reviewedMissing:true,resolution:attempt.resolution};
     progress.sequence += 1;
     root.localStorage.setItem(journal.commerce.key,JSON.stringify(progress));
@@ -4365,7 +4369,7 @@
   async function finishProductionJournal(journal) {
     var receipt = await request("/merchant/production", {method:"POST",body:{character:character.name,action:journal.request && journal.request.requestId && !journal.issued ? "abort-manual" : "complete",id:journal.id,success:journal.success}});
     var attempt = receipt && receipt.attempt || {};
-    if (attempt.resolution && attempt.resolution.outcome === "unknown") rememberReviewedCommerce(journal,attempt);
+    if (attempt.resolution && attempt.resolution.outcome === "unknown") rememberReviewedCommerce(journal,attempt,receipt.reviewedCommerce);
     else rememberCommerceProduction(journal);
     var currentJournal = readProductionJournal();
     if (currentJournal && currentJournal.id === journal.id) writeProductionJournal(null);
@@ -4412,7 +4416,7 @@
     // pending identities, then recover the newer coordinator journal normally.
     // Never restore the completed attempt's old lucky layout or replay it.
     if (inspection.attempt && inspection.attempt.completed) {
-      rememberReviewedCommerce(journal,inspection.attempt);
+      rememberReviewedCommerce(journal,inspection.attempt,inspection.reviewedCommerce);
       writeProductionJournal(null);
       return recoverProductionJournalWork();
     }

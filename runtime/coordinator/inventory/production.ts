@@ -143,7 +143,8 @@ export function installProductionRoutes(router: HttpRouter, state: State, persis
       else if (body.action === 'complete') finishProduction(state,String(body.id),body.success === true,log);
       else beginProduction(state,body);
       persist();
-      return res.json({ok:true,attempt:state.production.attempts[String(body.id)]});
+      const attempt = state.production.attempts[String(body.id)];
+      return res.json({ok:true,attempt,reviewedCommerce:reviewedCommerceProgress(state,attempt)});
     } catch(error) { return res.status(409).json({error:String(error)}); }
   });
 }
@@ -153,7 +154,18 @@ export function inspectProduction(state: State, body: Record<string, unknown>) {
   const input = attemptInput(body), attempt = state.production.attempts[input.id];
   if (attempt) validateReceipt(attempt, input);
   const pending = pendingProduction(state.production);
-  return {attempt:attempt || null, pending};
+  return {attempt:attempt || null, pending,reviewedCommerce:reviewedCommerceProgress(state,attempt)};
+}
+
+function reviewedCommerceProgress(state: State, attempt: ProductionAttempt | undefined) {
+  if (!attempt?.resolution?.resumeMissing) return;
+  const commerce = requestObject(attempt.journal?.commerce);
+  const job = [state.merchantCurrent,...(state.merchantQueue || [])].find(entry =>
+    entry && commerce.key === 'party-commerce:' + (typeof entry.commerceOrderId === 'string' ? entry.commerceOrderId : entry.id));
+  const progress = requestObject(job?.resumeState), pending = requestObject(progress.pendingUpgrade);
+  const outcome = requestObject(pending.outcome), resolution = requestObject(outcome.resolution);
+  if (outcome.reviewedMissing !== true || resolution.at !== attempt.resolution.at) return;
+  return {key:commerce.key,state:structuredClone(progress)};
 }
 
 /** Explicit operator resolution only; automatic recovery never guesses an orphan's outcome. */
