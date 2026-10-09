@@ -9,6 +9,8 @@ from the commits merged into `main`.
   required offering rules. Manual and automatic upgrades retrieve fully available
   stored offering stacks through the existing BankBoi handoff before production;
   locked, bound and reserved cargo remains protected.
+- Identify dedicated BankBoi storage workers on their first heartbeat so ordinary
+  potion restocking cannot replace a storage transfer's bank journey at startup.
 
 - Make native bank-sale validation wait for every actual sale receipt, and
   establish fresh Cave observations before floor validation. Cave assembly

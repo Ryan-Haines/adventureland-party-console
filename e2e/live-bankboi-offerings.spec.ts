@@ -19,10 +19,10 @@ for(const automatic of [false,true]) test(`BankBoi-only offering supplies ${auto
     c.info.items=[{name:'offeringp',q:2}${automatic?",{name:'helmet',level:0}":''}];await db.collection('character').replaceOne({_id:c._id},c);
     const p=get_player('${merchant}');${automatic?'':"p.items[20]={name:'helmet',level:0};"}cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
   if(!automatic) await expect.poll(async()=> (await live.state()).characters[merchant]?.items[20]?.item?.name).toBe('helmet');
-  await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'idle',items:[{slot:0,item:{name:'offeringp',q:2}},...(automatic?[{slot:1,item:{name:'helmet',level:0}}]:[])]}}}));
+  await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'ready',items:[{slot:0,item:{name:'offeringp',q:2}},...(automatic?[{slot:1,item:{name:'helmet',level:0}}]:[])]}}}));
   await expect.poll(async()=> (await live.state()).upgradeOfferingStock.offeringp).toBe(2);
   if(automatic){
-    await live.post('/command',{type:'upgrade-offering-rule',rule:{name:'helmet',floor:0,ceiling:1,offering:'offeringp',required:true}});
+    await live.post('/command',{character:merchant,type:'upgrade-offering-rule',rule:{name:'helmet',floor:0,ceiling:1,offering:'offeringp',required:true}});
     await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto upgrade':true}});
   }
   await live.post('/command',{character:merchant,type:automatic?'auto-upgrade-mark':'upgrade-mark',slot:automatic?-1:20,item:{name:'helmet',level:0},tiers:1,...(!automatic?{offering:'offeringp'}:{})});

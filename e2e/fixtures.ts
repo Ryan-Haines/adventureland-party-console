@@ -81,7 +81,7 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
     mkdirSync(directory, { recursive: true });
     if(bankboiOfferings){
       // Declared historical account inventory, not a synthetic public stock map.
-      const bankbois={E2EOfferingBank:{name:'E2EOfferingBank',state:'offline',items:['offeringp','offering','offeringx'].map((name,slot)=>({slot,item:{name,q:2}}))}};
+      const bankbois={E2EOfferingBank:{name:'E2EOfferingBank',state:'ready',items:['offeringp','offering','offeringx'].map((name,slot)=>({slot,item:{name,q:2}}))}};
       appendFileSync(path.join(directory,'state.jsonl'),JSON.stringify({party_dashboard_bank_state_v1:{bankbois}})+'\n');
       await testInfo.attach('declared-bankboi-offering-stock',{body:JSON.stringify(bankbois),contentType:'application/json'});
     }

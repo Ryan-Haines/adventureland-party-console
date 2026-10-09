@@ -1,5 +1,7 @@
 import { test, expect, type LiveGame } from './live-fixtures';
 
+test.use({ liveHeadless:true });
+
 async function freshParticipants(live: LiveGame, names: string[]) {
   await expect.poll(async () => {
     const state = await live.state();
@@ -15,13 +17,14 @@ test('home realm change confirms every active character including merchant', asy
   const pageErrors: string[] = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   const names = ['E2EWarrior', 'E2EPriest', 'E2EMerchant'];
+  const accountNames = [...names, 'E2EBankBoi'];
   try {
-    const seeded = await live.admin(`output=(async()=>{let matched=0;for(const name of ${JSON.stringify(names)}) {
-      const p=get_player(name); p.p.home='USII'; delete p.p.dt.last_homeset;
+    const seeded = await live.admin(`output=(async()=>{let matched=0;for(const name of ${JSON.stringify(accountNames)}) {
+      const p=get_player(name); if(p){p.p.home='USII'; delete p.p.dt.last_homeset;}
       const result=await db.collection('character').updateOne({'info.name':name},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}});
       matched+=result.matchedCount;
     } return matched;})()`);
-    expect(seeded).toBe(names.length);
+    expect(seeded).toBe(accountNames.length);
     // The server seed changes native player/DB state, but existing clients retain
     // their previous home until a real login sends a fresh character snapshot.
     await live.reconnectClient('E2EWarrior');
@@ -47,7 +50,7 @@ test('home realm change confirms every active character including merchant', asy
     await modal.getByRole('button', {name:'Change home realm',exact:true}).click();
     await expect.poll(async () => (await live.state()).realmControl?.operation?.phase, {timeout:120_000}).toBe('complete');
     const state = await live.state();
-    expect(state.realmControl.operation.characters.filter((entry:any)=>entry.homeConfirmed).map((entry:any)=>entry.name).sort()).toEqual([...names,'E2EBankBoi'].sort());
+    expect(state.realmControl.operation.characters.filter((entry:any)=>entry.homeConfirmed).map((entry:any)=>entry.name).sort()).toEqual([...accountNames].sort());
     const native = await live.admin(`output=Object.fromEntries(${JSON.stringify(names)}.map(name=>[name,get_player(name).p.home]))`);
     expect(native).toEqual(Object.fromEntries(names.map(name=>[name,'USI'])));
     expect(state.realmControl.homeCharacters.every((entry:any)=>entry.home==='SR_USI')).toBe(true);

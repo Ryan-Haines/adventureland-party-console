@@ -19,3 +19,15 @@ The BankBoi service owns managed headless slots. Convert the native browser
 merchant to a managed headless worker before declaring stock; an external Steam
 runner cannot be stopped through the service's worker ownership boundary.
 After handoff, observe coordinator heartbeats and upstream inventory directly.
+An offline provisioned storage worker must be declared `ready`, matching the
+service planner's established admission state. Declaring `idle` leaves no storage
+plan and causes the preserved upgrade to retry without a slot transaction. The
+existing dispatcher already reserves a valid pending plan before assigning work;
+this failure requires correcting historical fixture input, not weakening that gate.
+
+The ready-worker native run exposed a separate startup ownership failure: empty
+storage inventory triggered autonomous potion restocking before the service
+command arrived. Its pending return to the party destination replaced the bank
+journey, failing the storage transaction. The first heartbeat must identify
+dedicated BankBoi storage ownership so ordinary restocking never starts for it;
+the storage command retains exclusive logistics movement throughout the handoff.

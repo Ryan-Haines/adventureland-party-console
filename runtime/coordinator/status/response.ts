@@ -142,6 +142,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
         Number(state.goldTargets[String(state.merchantCharacter)]) || 0,
       ),
       gatheringModes: state.bankbois[name] ? [] : state.gatheringModes,
+      bankboiStorage: !!state.bankbois[name],
     };
   }
 

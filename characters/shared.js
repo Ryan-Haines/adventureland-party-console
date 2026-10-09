@@ -346,6 +346,7 @@
   root.__partyPassiveRegenTimer = null;
   var coordinatorClockOffset = 0;
   var banking = false;
+  var bankboiStorage = false;
   var bankQueued = false;
   var stocking = false;
   var upgrading = false;
@@ -3353,7 +3354,7 @@
     var potionName = "hpot1";
     var targetQuantity = 20;
     var currentQuantity = quantity(potionName);
-    if (stocking || upgrading || banking || bankQueued || departurePending || character.rip || currentQuantity > 0) return false;
+    if (bankboiStorage || stocking || upgrading || banking || bankQueued || departurePending || character.rip || currentQuantity > 0) return false;
     var potion = G.items[potionName];
     var needed = targetQuantity - currentQuantity;
     if (!potion || character.gold < potion.g * needed) return false;
@@ -10458,6 +10459,7 @@
         try { await recoverMerchantDeliveryReceipts(); } catch (_) { /* Keep receipts for the next heartbeat. */ }
       }
       statusPhase = "apply merchant settings";
+      bankboiStorage = state.bankboiStorage === true;
       var nextStandListings = state.standListings || gatheringStandListings;
       if (JSON.stringify(nextStandListings) !== JSON.stringify(gatheringStandListings) && gatheringSession)
         gatheringSession.atStandForCooldown = false;
@@ -10557,7 +10559,7 @@
           game_log(String(error.message || error), "red");
         }).finally(function () { root.__merchantInventoryTidy = null; });
       }
-      if (!escapeOwns() && !banking && !bankQueued && !stocking && !upgrading && !departurePending && !character.rip && quantity("hpot1") === 0 &&
+      if (!bankboiStorage && !escapeOwns() && !banking && !bankQueued && !stocking && !upgrading && !departurePending && !character.rip && quantity("hpot1") === 0 &&
           !root.__merchantInventoryTidy && !root.__merchantActiveJob &&
           Date.now() - lastStockAttempt >= 5000) {
         lastStockAttempt = Date.now();
