@@ -110,3 +110,5 @@ The test retained the first exit ID and rejected every valid replacement report.
 Observe the current exit convoy only within the original recovery cycle, preserve
 both native ownership checks and the thirty-second bound, and never accept an
 unrelated recovery or command label without character reports.
+
+Deferred return takeover failure inventory: live followers can retain an old same-cycle deferred event-resume-travel command even after eventReturn becomes null. A newly authorized event trip has parent command ID zero, so shared walking cannot capture that checkpoint command and remains waiting. The new event admission must transfer a still-authorized deferred checkpoint into its new return snapshot and retire only that deferred cycle and its own exit/continuation command. Changed revisions, newer unrelated commands, and active recovery barriers must remain protected. Native regression declares both abandoned and deferred old exits before requiring unchanged CODE runtimes and real boss hits.

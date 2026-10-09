@@ -7,7 +7,9 @@ from the commits merged into `main`.
 
 - Retire combat-return commands when their recovery completes, and clean up
   historical orphan returns within each active farming profile. Live and
-  deferred recovery cycles retain their movement ownership.
+  deferred recovery cycles retain their movement ownership. Heartbeats release
+  abandoned running exits. A newly authorized event takes over a deferred return
+  while preserving its still-authorized farming checkpoint for the next return.
 
 - Separate native Goobrawl survivor combat from Hunt-off evacuation validation,
   and keep initial gold in the focused item-delivery fixture so unrelated bank

@@ -69,6 +69,11 @@ export function createCoordinatorEventObservations(
       location: (recovery, name) => ports.navigation.location(recovery, name),
       intent: (name) => ports.navigation.intent(name),
       hasCommand: (name) => !!state.commands[name],
+      retireDeferredCommand: (name, cycleId) => {
+        const command = state.commands[name];
+        if (command?.cycleId === cycleId &&
+            ['event-return-town', 'event-resume-travel'].includes(String(command.type))) delete state.commands[name];
+      },
       command: (name, command) => {
         state.commands[name] = command;
       },

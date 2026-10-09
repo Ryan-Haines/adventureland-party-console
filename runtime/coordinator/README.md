@@ -46,6 +46,14 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Heartbeat eventReturnCycleId explicitly fences running character exit continuations
+against completed or replaced recoveries. Authorizing a new event transfers a
+matching-revision deferred checkpoint into its event snapshot and retires only
+the previous deferred cycle's own exit/continuation commands. Validate both native
+retired-exit cases in live-event-runtime-recovery.spec.ts. Publish character assets
+and coordinator together for the heartbeat fence; subsequent backend-only deferred
+handoff changes can use the supported CoordinatorOnly restart.
+
 Account-wide home visits respect both total connection capacity and native
 one-merchant admission. Visiting an offline merchant temporarily suspends a
 managed active merchant and restores its original worker configuration after

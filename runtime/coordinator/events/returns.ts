@@ -54,12 +54,14 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
       if (!members.has(name) || !command ||
           !["event-return-town", "event-resume-travel"].includes(command.type) ||
           typeof command.cycleId !== "string" || !command.cycleId ||
-          command.cycleId === state.current?.cycleId ||
-          command.cycleId === ports.anniversary()?.id || deferredCycles.has(command.cycleId)) continue;
+          retainedRecoveryCycle(command.cycleId, deferredCycles)) continue;
       ports.clearCommand(name);
       changed = true;
     }
     if (changed) ports.persist();
+  }
+  function retainedRecoveryCycle(cycleId: string, deferredCycles: Set<string>): boolean {
+    return cycleId === state.current?.cycleId || cycleId === ports.anniversary()?.id || deferredCycles.has(cycleId);
   }
   function cancelPrematureGoobrawlReturn(): boolean {
     const recovery = state.current;

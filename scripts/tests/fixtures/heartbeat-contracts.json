@@ -14,11 +14,13 @@
       "cancelled": false
     },
     "partyTownActive": false,
+    "eventReturnCycleId": null,
     "partyConvoyActive": false,
     "huntTurnInPriority": false,
     "mapTelemetry": false,
     "bankQueued": false,
     "bankStackHomes": {},
+    "bankboiStorage": false,
     "partyPositions": [
       {
         "name": "P",
@@ -161,11 +163,13 @@
       "cancelled": false
     },
     "partyTownActive": false,
+    "eventReturnCycleId": null,
     "partyConvoyActive": false,
     "huntTurnInPriority": false,
     "mapTelemetry": false,
     "bankQueued": false,
     "bankStackHomes": {},
+    "bankboiStorage": false,
     "partyPositions": [
       {
         "name": "P",

@@ -8,7 +8,7 @@ test.describe('retired event exit ownership',()=>{
   // Failure inventory: docs/testing-round2-recovery.md. Restoring a snapshot
   // without the old recovery must retire its still-running CODE continuation;
   // no successful Town receipt or native combat outcome is manufactured.
-  test('native event entry resumes after its old return cycle disappears',async({live},info)=>{
+  for (const deferred of [false,true]) test(`native event entry resumes after its old ${deferred?'deferred return is superseded':'return cycle disappears'}`,async({live},info)=>{
     test.setTimeout(300_000);
     await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
     const oldCycle='historical-retired-pumpkin-exit';
@@ -17,8 +17,8 @@ test.describe('retired event exit ownership',()=>{
       await live.restoreHistoricalSettings(settings=>{
         const profile=settings.farmingProfiles[W];
         const waypoints=Object.fromEntries(fighters.map(name=>[name,{revision:settings.navigationIntents?.[name]?.revision||0,location:{map:'uhills',x:-550,y:-160}}]));
-        profile.eventReturn={cycleId:oldCycle,event:'mrpumpkin',participants:fighters,pending:fighters,startedAt:Date.now(),phase:'evacuating',checkpoint:{map:'uhills',x:-550,y:-160},waypoints,deferred:[]};
-        settings.eventReturn=profile.eventReturn;return settings;
+        const recovery={cycleId:oldCycle,event:'mrpumpkin',participants:fighters,pending:fighters,startedAt:Date.now(),phase:'evacuating',checkpoint:{map:'uhills',x:-550,y:-160},waypoints,deferred:[]};
+        return {farmingProfiles:{...settings.farmingProfiles,[W]:{...profile,eventReturn:recovery}},eventReturn:recovery};
       });
       await expect.poll(async()=>{const s=await live.state();
         if(fighters.every(name=>s.characters[name]?.eventRecovery?.cycleId===oldCycle && ['leaving-event','returning-to-main'].includes(s.characters[name].eventRecovery.phase))){started=s;return true;}return false;
@@ -30,9 +30,12 @@ test.describe('retired event exit ownership',()=>{
       }finally{G.monsters.mrpumpkin=original;}})()`);
       retiredAt=Date.now();
       await live.restoreHistoricalSettings(settings=>{
-        settings.eventReturn=null;settings.activeConvoy=null;settings.eventSessions={};
-        const profile=settings.farmingProfiles[W];profile.eventReturn=null;profile.activeConvoy=null;profile.eventSessions={};
-        settings.eventSelectionsByCharacter[W]=['mrpumpkin'];return settings;
+        const deferredEventReturns=deferred?Object.fromEntries(fighters.map(name=>[name,{event:'mrpumpkin',cycleId:oldCycle,
+          checkpoint:{map:'uhills',x:-550,y:-160},navigationRevision:settings.navigationIntents?.[name]?.revision||0,
+          deferredAt:Date.now(),phase:'returning-to-checkpoint'}])):{};
+        return {eventReturn:null,activeConvoy:null,deferredEventReturns,
+          farmingProfiles:{...settings.farmingProfiles,[W]:{...settings.farmingProfiles[W],eventReturn:null,activeConvoy:null,eventSessions:{}}},
+          eventSelectionsByCharacter:{...settings.eventSelectionsByCharacter,[W]:['mrpumpkin']}};
       });
       await expect.poll(async()=>{const s=await live.state();return fighters.every(name=>
         s.characters[name]?.dashboardRuntime===started.characters[name].dashboardRuntime &&
@@ -42,7 +45,7 @@ test.describe('retired event exit ownership',()=>{
         e.event==='hit'&&String(e.data?.id)===String(seed.id)&&e.data?.hid===name&&e.at>retiredAt));
       },{timeout:180_000}).toBe(true);
     }finally{
-      await info.attach('native-retired-event-exit',{body:JSON.stringify({oldCycle,started,retiredAt,seed,final:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
+      await info.attach('native-retired-event-exit',{body:JSON.stringify({oldCycle,deferred,started,retiredAt,seed,final:await live.state().catch(error=>({error:String(error)})),events:await live.clients[W].events()}),contentType:'application/json'});
       await live.post('/formation',{character:W,eventSelections:[]});
       if(seed)await live.admin(`output=(()=>{const m=get_monster(${JSON.stringify(seed.id)});if(m&&m.type==='mrpumpkin')remove_monster(m,{silent:true});delete E.mrpumpkin;broadcast_e();return true;})()`);
     }

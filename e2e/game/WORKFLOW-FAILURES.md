@@ -103,3 +103,7 @@ Before implementation: stopping the last Steam primary can disconnect its bridge
 Activation exposed persisted Cave travel without a leader travel sample or command. Comparing two missing IDs must not dereference the missing sample and break every character's status response after coordinator restart. Verify the retained dungeon control behavior with missing observations before fixing this activation blocker.
 
 Native client evidence: game.js disconnect() schedules auto_reload even after CODE stops; character_to_load can schedule another reconnect. An intentional primary release must disable both reconnect paths and cancel any scheduled reload before disconnect. Persist the release receipt before disconnect handlers can destroy the browsing context. Verify a game-compatible disconnect handler leaves no reconnect scheduled, both for the multi-character and legacy handoff protocols, without stopping unaffected companions.
+
+## Retained heartbeat response contract maintenance
+
+Before updating the existing baseline: source and bundled heartbeat exact-response checks use the same JSON contract. Newly maintained `bankboiStorage` and `eventReturnCycleId` fields must be represented as `false` and `null` for the existing ordinary, inactive-recovery fixture. Omitting fields rejects the valid response; masking or deleting runtime fields would weaken the contract. Update only the shared response fixture and preserve every existing source/bundle, timing, combat-ownership, and repeated-heartbeat assertion. No new unit cases are introduced.
