@@ -65,6 +65,14 @@ damage/loot, or move a character to the asserted destination after the action.
 
 ## Merchant and inventory
 
+Native coat-batch diagnosis: full shard 1 retained ten actual zero-tier coats,
+one preexisting +5 coat, and a persisted pending upgrade, but the context-level
+checkpoint capture did not complete before its original deadline. Register the
+same hold at the owned native page with the exact API path and retain a bounded
+request/phase/snapshot ledger even on failure. Preserve the original deadline,
+native inventory counts, and transport-only hold; diagnose missed interception
+or delayed native snapshots instead of assuming production failed.
+
 - A delivery reports success without a real server inventory transfer, duplicates
   stock, or transfers the wrong slot after movement.
 - Buy/upgrade jobs consume the wrong item, repeat after restart, or report a
@@ -74,6 +82,14 @@ damage/loot, or move a character to the asserted destination after the action.
 - An inventory preview enqueues economic work merely by opening the menu.
 
 ## Evidence and boundaries
+
+Native CI infrastructure failure inventory: run 37994171693 first timed out
+fetching MongoDB authentication, then hit Docker Hub's unauthenticated shared
+runner rate limit before any scenario started. Keep the existing MongoDB image
+and native fixtures. A configurable registry source must retain the exact pinned
+image digest, leave local cached-image defaults intact, and still fail visibly
+when acquisition fails. Google's mirror resolves the existing local MongoDB
+digest c630c59342c1493d50345136df2af14a76b9e827dd5316bfabee07a0880a5f3a.
 
 Every scenario must capture the initial seed, action requests, coordinator state,
 authoritative server observations, client/socket logs, and screenshots/traces.
@@ -110,7 +126,16 @@ Before changing the existing E2E: native RNG can destroy the first triple, leavi
 
 ## Native fixture reconnect ownership
 
+The reconnect rerun also proves public `activeSlots` includes Steam reservations;
+occupied slots alone do not establish headless ownership. Use the observed native
+runtime for Steam participants and exclude reported headless workers, rather than
+excluding every occupied slot.
+
 Before editing the reconnect helper: a test may legitimately replace a Steam merchant with a managed headless worker. Closing the Steam primary must wait only for its observed native Steam participants to leave `players` and `dc_players`; requiring the entire server to become empty waits forever on the correctly online managed merchant. Reopening that merchant as a Steam companion would also steal its ownership and invalidate the home-change test. Capture native runtime ownership and exclude occupied managed slots before disconnecting, restore only those Steam companions, and reject requests to reconnect a managed participant through this browser helper. Preserve the existing native disconnect and Steam operation completion gates.
+
+## Retained event-exit ownership adapter maintenance
+
+Before editing retained fixtures: source-extracted status and Escape release code now invokes the maintained `applyEventReturnOwner` helper. Missing that dependency throws before existing dispatch assertions, hiding normal behavior. Load the actual helper rather than suppressing exceptions or weakening the status/convoy assertions. Deferred Hunt admission now retires the previous exit command while retaining its durable deferred cycle obligation; assert that obligation and absence of stale command instead of demanding the obsolete command remain executable. No new isolated test cases are added.
 
 ## Retained heartbeat response contract maintenance
 

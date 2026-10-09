@@ -5,6 +5,9 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Fetch the native CI database image through a digest-pinned mirror to avoid
+  shared runner Docker Hub download limits; local cached-image defaults remain.
+
 - Count automatic compound production only when native inventory gains the next
   tier. Failed rolls continue with remaining ingredients instead of consuming a
   finite production quota or reporting a successful compound.

@@ -81,6 +81,7 @@ function statusFixture() {
   handle:async()=>{r.handled=(r.handled||0)+1;},escapeOwns:()=>false,
   banking:false,stocking:false,upgrading:false,departurePending:false,quantity:()=>1,
  });
+ vm.runInContext(source.slice(source.indexOf('  async function applyEventReturnOwner('),source.indexOf('  async function merchantSendMail(')),r);
  vm.runInContext(tick,r);return f;
 }
 test('status request failure releases busy and the next successful update dispatches normally',async()=>{

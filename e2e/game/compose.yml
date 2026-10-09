@@ -1,7 +1,7 @@
 name: al-e2e-pr21
 services:
   database:
-    image: mongo:7.0.16
+    image: ${E2E_MONGO_IMAGE:-mongo:7.0.16}
     command: ["mongod", "--replSet", "e2e", "--bind_ip", "127.0.0.1"]
     ports:
       - "127.0.0.1:8083:8090"

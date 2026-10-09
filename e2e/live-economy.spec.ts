@@ -382,14 +382,19 @@ test('upgrade purchase batch excludes an existing target-level coat', async ({ l
   await seed(live, { 30: { name: 'coat', level: 5 } });
   await live.post('/config', { buyUpgradeBatchSize: 10 });
   const before = await economy(live);
-  const context = live.clients[merchant].page.context();
+  const nativePage = live.clients[merchant].page;
+  const checkpoints: any[] = [];
   let purchased: Economy | undefined;
   let release: (() => void) | undefined;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  await context.route('**/merchant/checkpoint', async route => {
+  await nativePage.route('**/party-api/merchant/checkpoint', async route => {
     const body = route.request().postDataJSON();
+    if (checkpoints.length < 64) checkpoints.push({at:Date.now(),commandId:body.commandId,
+      sequence:body.state?.sequence,pendingUpgrade:body.state?.pendingUpgrade,
+      spent:body.state?.spent,frame:route.request().frame().url()});
     if (!purchased && body.state?.pendingUpgrade) {
       purchased = await economy(live);
+      if (checkpoints.length < 64) checkpoints.push({at:Date.now(),snapshotCaptured:true});
       await gate;
     }
     await route.continue();
@@ -403,7 +408,8 @@ test('upgrade purchase batch excludes an existing target-level coat', async ({ l
     await record(live, info, 'upgrade-batch-existing-target-coat', before, { order, purchased });
   } finally {
     release!();
-    await context.unroute('**/merchant/checkpoint');
+    await nativePage.unroute('**/party-api/merchant/checkpoint');
+    await info.attach('native-coat-checkpoint-capture',{body:JSON.stringify({checkpoints,purchased,state:await live.state()}),contentType:'application/json'});
   }
 });
 
