@@ -27,3 +27,9 @@ Failure inventory before revision: a 20K Helmet cap legitimately permits seven p
 ## Collision-safe Boo cache initial position
 
 Failure inventory before setup correction: adding 160 pixels to a native event-map spawn can put both characters inside native collision geometry (observed Spookytown 575,-702), so even self movement is rejected and no real Hunt kill occurs. Preserve Halloween event-map/timer spawn semantics. Only the Boo cache fixture uses a separate monster-boundary initial-position declaration: read the actual native monster definition, validate candidates using native character footprint and native collision checks before login, and verify the actual logged-in character can move from its own position. Never edit geometry or teleport an active journey; deadlines stay unchanged.
+
+## Halloween fixture isolation and native cadence
+
+Failure inventory recorded before fixture changes: native irregular monster reconstitution replaces the object and drops fixture-only marker properties while retaining the declared ID; marker-only cleanup leaks living bosses and their native offspring into later cases. Cleanup must retain exact declared IDs/type outside native monster objects, find actual descendants by native master IDs, and retire them only between cases. Never remove a living encounter during its assertions or fabricate kills/loot.
+
+CI observed 93 accepted native attacks over 240 seconds against an ideal ~1.2/second cadence (~0.323 of nominal). The Pumpkin threshold case produced 159 positive hits over ~297 seconds yet remained just above the third quarter (543953/2149800). Initial difficulty must account for real native cadence while retaining all native quarter-spawn, positive add-hit, resumed boss-hit, loot, death, and return checks. Deadlines remain unchanged. Separate initial HP windows preserve staged death/reentry and Slender's actual map warp before requiring natural native death.

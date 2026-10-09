@@ -5,6 +5,11 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Respect the native one-merchant connection limit when changing every account
+  character's home realm: temporarily pause and restore a managed merchant for
+  offline merchant visits, even when total connection capacity remains available.
+  Steam-only incumbents produce an explicit capacity error without replacing them.
+
 - Include protected BankBoi stock when selecting upgrade offerings and waking
   required offering rules. Manual and automatic upgrades retrieve fully available
   stored offering stacks through the existing BankBoi handoff before production;

@@ -85,3 +85,14 @@ convoy was still walking through Mtunnel (both native actors progressed with
 1–34 ms of no-progress time). Arrival must belong to the dispatched checkpoint
 phase, or an already fully retired recovery, before the acknowledgement window
 starts. Preserve both phase bounds and the actual native coordinate checks.
+
+### Franky native exit replacement identity
+
+Failure inventory before the fixture correction: the native first exit convoy
+`1791540503060` failed because the priest's Town shortcut did not complete.
+Persisted state records the same recovery cycle reissuing exit `1791540522804`;
+both actual clients reported its issued command IDs, revisions and runtime IDs.
+The test retained the first exit ID and rejected every valid replacement report.
+Observe the current exit convoy only within the original recovery cycle, preserve
+both native ownership checks and the thirty-second bound, and never accept an
+unrelated recovery or command label without character reports.

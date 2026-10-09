@@ -4,16 +4,26 @@ import { nativeEventSpawn } from './game/event-spawn';
 
 const W = 'E2EWarrior', P = 'E2EPriest', fighters = [W, P];
 
-test.beforeEach(async ({live}) => {
+test.beforeEach(async ({live},info) => {
   // Reset only declarations from previous Halloween cases, before this case
   // creates any encounter. Never manufacture a kill or absence during a fight.
-  await live.admin(`output=(()=>{
-    for(const instance of Object.values(instances))for(const monster of Object.values(instance.monsters||{}))
-      if(monster.e2eHalloween)remove_monster(monster,{silent:true});
+  const cleanup=await live.admin(`output=(()=>{
+    const declared=globalThis.__e2eHalloweenDeclared||{},owned=new Set(Object.keys(declared));
+    const monsters=Object.values(instances).flatMap(instance=>Object.values(instance.monsters||{}));
+    // Native irregular reconstitution drops ad-hoc fields. Keep fixture identity
+    // outside the native object; offspring belong only by actual master chains.
+    let changed=true;while(changed){changed=false;for(const monster of monsters)
+      if(monster.master!=null&&owned.has(String(monster.master))&&!owned.has(String(monster.id))){owned.add(String(monster.id));changed=true;}}
+    const removed=[];
+    for(const monster of monsters){const id=String(monster.id),definition=declared[id];
+      if(monster.e2eHalloween||owned.has(id)&&(!definition||definition.type===monster.type)){
+        removed.push({id,type:monster.type,master:monster.master});remove_monster(monster,{silent:true});}}
+    globalThis.__e2eHalloweenDeclared={};
     for(const entry of Object.values(globalThis.__e2eHalloweenAnnouncements||{}))clearInterval(entry.timer);
     globalThis.__e2eHalloweenAnnouncements={};
     for(const type of ['mrgreen','mrpumpkin','slenderman'])delete E[type];
-    broadcast_e();return true;})()`);
+    broadcast_e();return {removed,scope:'between-case exact declared native IDs and actual descendants'};})()`);
+  await info.attach('native-halloween-between-case-cleanup',{body:JSON.stringify(cleanup),contentType:'application/json'});
 });
 
 // Failure inventory, written before runtime implementation: unsupported native
@@ -83,14 +93,17 @@ async function spawn(live: LiveGame, event: string, map: string, x: number, y: n
     });
     const dps=eligible.reduce((n,p)=>n+p.attack*p.frequency,0);
     if(!dps)throw Error('No native fighter eligible for declared encounter');
+    const nominalSeconds=${nativeAdds ? 30 : event === 'slenderman' ? 40 : ['mrgreen','mrpumpkin'].includes(event) ? 45 : 90};
     try {
-      G.monsters[type]={...original,hp:Math.ceil(dps*90),attack:1,speed:0,charge:0,range:1,aggro:0,phresistance:0,spawns:${nativeAdds ? 'original.spawns' : '[]'}};
+      G.monsters[type]={...original,hp:Math.ceil(dps*nominalSeconds),attack:1,speed:0,charge:0,range:1,aggro:0,phresistance:0,spawns:${nativeAdds ? 'original.spawns' : '[]'}};
       const m=new_monster(${JSON.stringify(map)},{type,count:1,boundary:[${x},${y},${x},${y}]},{temp:1});
       m.e2eHalloween=true;
+      (globalThis.__e2eHalloweenDeclared||={})[String(m.id)]={type,map:m.map};
       E[type]={live:true,map:m.map,hp:m.hp,max_hp:m.max_hp,target:m.target};
       // Native Slender status deliberately omits coordinates.
       if(type!=='slenderman'){E[type].x=m.x;E[type].y=m.y;}
-      broadcast_e();return {id:m.id,type,map:m.map,x:m.x,y:m.y,hp:m.hp,eligibleFighters:eligible.map(p=>p.name),difficultyDps:dps,initialDefinition:G.monsters[type],nativeStatus:E[type]};
+      broadcast_e();return {id:m.id,type,map:m.map,x:m.x,y:m.y,hp:m.hp,eligibleFighters:eligible.map(p=>p.name),difficultyDps:dps,
+        difficulty:{nominalSeconds,observedNativeCadence:93/240,nominalCadence:1.2,scope:'initial encounter HP only'},initialDefinition:G.monsters[type],nativeStatus:E[type]};
     } finally {G.monsters[type]=original;}
   })()`);
 }
@@ -112,6 +125,8 @@ for (const encounter of [{id:'mrgreen',add:'greenjr',drop:'ashleaf',map:'spookyt
         const original=new_monster;globalThis.__e2eAddSpawner=original;
         new_monster=function(...args){const m=original.apply(this,args);
           if(m&&m.type===${JSON.stringify(encounter.add)}&&m.master){
+            if(globalThis.__e2eHalloweenDeclared?.[String(m.master)])
+              globalThis.__e2eHalloweenDeclared[String(m.id)]={type:m.type,map:m.map,master:String(m.master)};
             const boss=instances[m.in]?.monsters[m.master];globalThis.__e2eThresholdAdds.push({id:String(m.id),master:String(m.master),type:m.type,at:Date.now(),bossHp:boss?.hp,bossMaxHp:boss?.max_hp});
           }return m;};return true;})()`);
       try {

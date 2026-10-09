@@ -40,6 +40,13 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Account-wide home visits respect both total connection capacity and native
+one-merchant admission. Visiting an offline merchant temporarily suspends a
+managed active merchant and restores its original worker configuration after
+cleanup. A Steam-only incumbent remains online and receives an explicit capacity
+failure before any visitor login. Validate the real account-home journey with
+an offline second merchant; activate through CoordinatorOnly restart.
+
 Upgrade offering availability derives from one protected merchant/bank/BankBoi
 stock boundary, shared with upgrade-input sourcing. BankBoi whole-stack retrievals
 require the complete stack to be unreserved. After bank floors are exhausted,

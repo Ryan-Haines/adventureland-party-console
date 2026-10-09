@@ -12,3 +12,13 @@
 - The upstream `set_home` success receipt updates the connected player immediately, but `servers_and_characters` reads a database snapshot that may lag periodic saves. Completion accepts the success receipt followed by a fresh home observation from the operation's destination realm; stale or cross-realm status cannot confirm it.
 - Temporarily connected merchants can attract idle work before the home command arrives. Realm transitions reserve every account home target from merchant dispatch until completion or failure and cleanup.
 - Offline coverage continues to verify the saved database home after temporary logout and preserves original roster slots.
+# Merchant class capacity during offline home visits
+
+Native account-wide home confirmation with an offline second merchant failed
+temporary login while the first merchant remained online, despite a free total
+connection slot. Native admission allows one merchant at a time. Suspend a
+managed active merchant while visiting offline merchants and restore its prior
+enabled state/realm afterward. A Steam-only incumbent must cause an explicit
+capacity error before attempting the visitor; preserve all Steam sessions.
+Existing native account-home coverage includes the second offline merchant and
+observes confirmed native homes plus restored active participants.

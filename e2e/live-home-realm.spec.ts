@@ -19,6 +19,14 @@ test('home realm change confirms every active character including merchant', asy
   const names = ['E2EWarrior', 'E2EPriest', 'E2EMerchant'];
   const accountNames = [...names, 'E2EBankBoi'];
   try {
+    // Native admission permits only one merchant. A managed merchant can be
+    // paused and restored while the offline storage merchant changes its home.
+    await live.post('/steam/action', {character:'E2EMerchant',action:'logout'});
+    await expect.poll(async () => (await live.state()).activeSlots.some((slot:any)=>slot.character==='E2EMerchant'), {timeout:90_000}).toBe(false);
+    await expect.poll(async () => live.admin("output=!!get_player('E2EMerchant')"), {timeout:30_000}).toBe(false);
+    await expect.poll(async () => {const operation=(await live.state()).steamSwitch;return !operation || operation.phase==='complete';}, {timeout:90_000}).toBe(true);
+    await live.post('/slots/1/spawn', {character:'E2EMerchant'});
+    await expect.poll(async () => (await live.state()).characters.E2EMerchant?.runtime, {timeout:90_000}).toBe('headless');
     const seeded = await live.admin(`output=(async()=>{let matched=0;for(const name of ${JSON.stringify(accountNames)}) {
       const p=get_player(name); if(p){p.p.home='USII'; delete p.p.dt.last_homeset;}
       const result=await db.collection('character').updateOne({'info.name':name},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}});

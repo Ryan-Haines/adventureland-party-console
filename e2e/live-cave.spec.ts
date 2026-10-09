@@ -196,6 +196,9 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     }
   };
   const activateWaypoint=async(expectedMap:string)=>{
+    // A requested shop can resolve while outside its nearby radius, then reopen
+    // its result when Stop/resume crosses the shop again. Dismiss that real
+    // result before accessing the map; never dismiss an unresolved native vote.
     const parts=expectedMap.split("_");
     const expectedRun=parts[1],expectedFloor=Number(parts[2]);
     const attempts:unknown[]=[];
@@ -207,6 +210,11 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
     }));
     try{
       await expect.poll(async()=>{
+        const resolvedEncounter=page.getByRole('dialog').filter({has:page.getByText('Encounter result',{exact:true})});
+        if(await resolvedEncounter.isVisible()){
+          await resolvedEncounter.getByRole('button',{name:'Close',exact:true}).click();
+          await expect(resolvedEncounter).not.toBeVisible();
+        }
         const before=await snapshot();
         if(before.adding)return true;
         if(!before.disabled){

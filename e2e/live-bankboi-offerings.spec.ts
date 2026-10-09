@@ -22,6 +22,9 @@ for(const automatic of [false,true]) test(`BankBoi-only offering supplies ${auto
   await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'ready',items:[{slot:0,item:{name:'offeringp',q:2}},...(automatic?[{slot:1,item:{name:'helmet',level:0}}]:[])]}}}));
   await expect.poll(async()=> (await live.state()).upgradeOfferingStock.offeringp).toBe(2);
   if(automatic){
+    await expect.poll(async()=> (await live.state(true)).merchantCatalog?.allItems?.some((entry:any)=>
+      entry.id==='helmet' && (entry.upgradeable || entry.meta?.upgradeable)),
+    {timeout:120_000,message:'Native upgrade catalog must authorize the offering rule'}).toBe(true);
     await live.post('/command',{character:merchant,type:'upgrade-offering-rule',rule:{name:'helmet',floor:0,ceiling:1,offering:'offeringp',required:true}});
     await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto upgrade':true}});
   }

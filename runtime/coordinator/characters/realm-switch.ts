@@ -47,6 +47,7 @@ interface RealmPorts {
   dispatchMerchant(): void;
   start(name: string): unknown;
   characterHome(name: string): string | null;
+  characterType?(name:string):string|null;
   connectionCount(): number;
 }
 
@@ -181,7 +182,20 @@ export function createRealmSwitch(ports: RealmPorts) {
     });
   }
 
-  function connectionToSuspend(operation: RealmOperation): string | undefined {
+  function characterType(name:string):string|undefined|null {
+    return ports.characterType?.(name) || ports.status(name)?.ctype;
+  }
+  function merchantToSuspend(operation:RealmOperation,offline:string[]):string|undefined {
+    if(!offline.some(name=>characterType(name)==='merchant')) return undefined;
+    const incumbent=operation.participants.find(name=>characterType(name)==='merchant');
+    if(!incumbent) return undefined;
+    if(ports.steamMembers().includes(incumbent))
+      throw new Error('A managed merchant slot must be available to temporarily log in offline merchants; existing Steam merchant sessions were preserved');
+    return incumbent;
+  }
+  function connectionToSuspend(operation: RealmOperation,offline:string[]): string | undefined {
+    const merchant=merchantToSuspend(operation,offline);
+    if(merchant) return merchant;
     if (ports.connectionCount() < 4) return undefined;
     const name = operation.participants.find((participant) => !ports.steamMembers().includes(participant));
     if (!name) throw new Error("A headless slot must be available to temporarily log in offline characters; existing Steam sessions were preserved");
@@ -204,7 +218,7 @@ export function createRealmSwitch(ports: RealmPorts) {
     if (!offline.length) return;
     // Free one headless connection while retaining its slot and configuration. No
     // Steam window is replaced, and temporary visitors are never assigned slots.
-    const suspendedName = connectionToSuspend(operation);
+    const suspendedName = connectionToSuspend(operation,offline);
     const suspended = suspendedName ? ports.block(suspendedName) : null;
     const enabled = suspended?.enabled;
     await withCleanup(async () => {

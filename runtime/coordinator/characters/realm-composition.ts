@@ -22,6 +22,7 @@ type CompositionPorts = Pick<
   | "dispatchMerchant"
   | "start"
   | "characterHome"
+  | "characterType"
   | "connectionCount"
 >;
 
@@ -52,6 +53,7 @@ export function createCoordinatorRealmSwitch(state: RealmState, ports: Compositi
     dispatchMerchant: () => ports.dispatchMerchant(),
     start: (name) => ports.start(name),
     characterHome: (name) => ports.characterHome(name),
+    characterType:(name)=>ports.characterType?.(name) || null,
     connectionCount: () => ports.connectionCount(),
   });
 }
