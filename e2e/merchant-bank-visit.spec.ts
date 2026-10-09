@@ -14,7 +14,7 @@ test('merchant destination dialog offers a deduplicated Visit bank action', asyn
   const state = await app.state();
   expect(request.postDataJSON().character).toBe(state.merchantCharacter);
   await expect(page.getByRole('status').filter({hasText:'Bank visit queued'})).toBeVisible();
-  const response = await page.request.post('/party-api/command', {data:request.postDataJSON()});
+  const response = await page.request.post('/party-api/command', {headers:{Origin:app.url},data:request.postDataJSON()});
   expect(response.ok()).toBe(true);
   const after = await app.state();
   expect([after.merchantCurrent,...after.merchantQueue].filter((job:any) => job?.target===state.merchantCharacter && job.reason==='manual bank exchange').length).toBeLessThanOrEqual(1);

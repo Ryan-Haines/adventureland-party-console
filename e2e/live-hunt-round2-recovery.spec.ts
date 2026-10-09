@@ -20,7 +20,7 @@ test.describe('native arrival connector recovery',()=>{
         }return emit.apply(socket,[event,...args]);
       };
       fault.restore=()=>{socket.emit=emit;socket.off('new_map',arrival);};
-      __partyMovement.move({map:'main',x:0,y:0},{relocation:'town',arrivalTolerance:1})
+      __partyMovement.move({map:'main',x:0,y:0},undefined,{relocation:'town',arrivalTolerance:1})
         .then(()=>{fault.done={ok:true,at:Date.now()};},error=>{fault.done={ok:false,error:String(error.reason||error.message||error),at:Date.now()};});
       return true;})()`);
     try {
@@ -65,16 +65,16 @@ test('native escape revival is throttled while native respawn is unavailable',as
     expect(calls.length).toBeGreaterThan(1);
     for(let index=1;index<calls.length;index++)expect(calls[index]-calls[index-1]).toBeGreaterThanOrEqual(950);
     await info.attach('native-escape-respawn-ledger',{body:JSON.stringify({death,calls,events:await live.clients[W].events(),final:await world(live)}),contentType:'application/json'});
-  }finally{recovery=false;await live.clients[W].run('__e2eRespawnRestore()');}
+  }finally{recovery=false;await context.unrouteAll({behavior:'wait'});await live.clients[W].run('__e2eRespawnRestore()');}
 });
 
+test.describe('native Anniversary staging recovery',()=>{
+test.use({initialPosition:{map:'main',x:200,y:-120}});
 test('native Anniversary staging survives an old-round slice without repeated Town warps',async({live},info)=>{
   test.setTimeout(240_000);
   // Historical stock/schedule read-boundary fixtures only; real Town calls,
   // walking, native live-round kiss and reward are observed unchanged.
   await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
-  await live.post('/travel',{map:'main',x:350,y:-120});
-  await expect.poll(async()=>{const s=await live.state();return !s.activeConvoy||s.activeConvoy.phase==='complete';},{timeout:60_000}).toBe(true);
   await live.admin(`output=(()=>{const p=get_player('${W}');p.items[20]={name:'slice_strawberry',q:1};resend(p,'u+cid');return true;})()`);
   await live.post('/command',{character:M,type:'bank'});
   await expect.poll(async()=>(await world(live)).players[M].map,{timeout:60_000}).toBe('bank');
@@ -104,7 +104,8 @@ test('native Anniversary staging survives an old-round slice without repeated To
     const seed=await beginAnniversary(live,P);
     await expect.poll(async()=>(await world(live)).players[W].conditions.anniversary_kiss,{timeout:90_000}).toBeTruthy();
     await info.attach('native-anniversary-staging-history',{body:JSON.stringify({next,samples,casts,seed,final:await world(live),state:await live.state()}),contentType:'application/json'});
-  }finally{scheduled=false;
+  }finally{scheduled=false;await context.unrouteAll({behavior:'wait'});
     await live.admin('clearInterval(globalThis.__e2eStagingTimer);if(globalThis.__e2eStagingBroadcast){broadcast_e=globalThis.__e2eStagingBroadcast;delete globalThis.__e2eStagingBroadcast;}output=true');
     await live.post('/formation',{character:W,eventSelections:[]});await endAnniversary(live);}
+});
 });
