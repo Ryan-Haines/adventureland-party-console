@@ -67,6 +67,7 @@ interface EventObservationPorts {
   intent(name: string): { revision: number; cancelled?: boolean };
   hasCommand(name: string): boolean;
   retireDeferredCommand?(name: string, cycleId: string): void;
+  retireDeferredWalk?(name: string, cycleId: string): void;
   command(name: string, command: Record<string, unknown>): void;
   nextCommand(): number;
   releaseAnniversary?(cycle: AnniversaryReturnCycle): unknown;
@@ -233,6 +234,7 @@ export function createEventObservations(
   function transferDeferredCheckpoint(name: string): void {
     const recovery = state.deferred[name];
     if (!recovery) return;
+    ports.retireDeferredWalk?.(name, recovery.cycleId);
     const intent = ports.intent(name), session = state.sessions[name]!;
     if (recovery.checkpoint && recovery.navigationRevision === intent.revision && !intent.cancelled)
       session.waypoints = {...session.waypoints, [name]: {revision:intent.revision, location:{...recovery.checkpoint}}};

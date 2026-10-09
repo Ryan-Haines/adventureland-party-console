@@ -5,6 +5,9 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Retire an already admitted deferred event-return walk when a new combat event
+  takes ownership, preserving saved checkpoints and newer navigation owners.
+
 - Keep farming navigation until the leader is actually in native attack range,
   rather than yielding across terrain to a merely visible monster. Both travel
   handoff paths enforce the selected farm boundary, and fresh observations

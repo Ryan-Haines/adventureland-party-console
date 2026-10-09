@@ -13,6 +13,7 @@ test('native UHills farming handoff reaches terrain-safe combat for both fighter
   try {
     await live.post('/formation',{leader:W});
     await live.post('/formation',{character:P,follow:true});
+    await live.post('/travel',{map:'uhills',x:-544,y:-275});
     await live.post('/focus',{monsterFocus:['targetron','sparkbot'],monsterPriorities:{},monsterSearchRadius:500});
     await expect.poll(async()=>{
       const state=await live.state();
