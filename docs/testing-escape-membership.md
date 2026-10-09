@@ -27,3 +27,8 @@ untouched. Additional members must use independent evacuation rather than leave
 the three-role rescue sequence marked complete while a peer remains behind.
 The native journey restarts the coordinator after admission before requiring
 both actual arrivals.
+
+The first live restart exposed a persisted `failed-hold`, not `recovering`:
+the incomplete subset had reached Main and retired its own recovery convoy.
+Restart must reopen that hold only when a matching current death recovery has
+additional requested members. A complete-membership failed hold remains held.

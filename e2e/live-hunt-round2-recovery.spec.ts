@@ -28,7 +28,7 @@ test.describe('native escape requested membership',()=>{
         // Historical persisted omission, not a fabricated gameplay outcome:
         // restore the old membership bug with unchanged native/navigation state.
         await live.restoreHistoricalSettings(settings=>({
-          escape:{...settings.escape,participants:[W],stage:'recovering'},
+          escape:{...settings.escape,participants:[W],stage:'failed-hold'},
           combatRecovery:{id:'declared-historical-membership-death',names:[W,P],leader:W,
             policy:settings.farmingPolicy,focus:JSON.stringify(before.monsterFocus),
             revisions:Object.fromEntries([W,P].map(name=>[name,settings.navigationIntents[name].revision])),

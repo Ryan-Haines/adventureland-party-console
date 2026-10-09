@@ -8,6 +8,11 @@ function recoveryMembershipOwned(party, recovery, escape) {
       return intent && !intent.cancelled && intent.revision === recovery.revisions[name];
     });
 }
+function reopenOmittedHold(party) {
+  const held = party.escape, recovery = party.combatRecovery;
+  if (held?.stage === 'failed-hold' && recoveryMembershipOwned(party, recovery, held) &&
+      recovery.names.some(name => !held.participants.includes(name))) held.stage = 'recovering';
+}
 module.exports = function createEscape(party, hooks) {
   const now = hooks.now || Date.now;
   const owns = name => !!(party.escape && party.escape.stage !== 'released' && party.escape.participants.includes(name));
@@ -85,6 +90,7 @@ module.exports = function createEscape(party, hooks) {
     if (e.stage === 'warrior' && at(party.statuses[e.roles.warrior], e.destination)) { e.stage = 'priest'; hooks.persist(); }
     if (e.stage === 'priest' && at(party.statuses[e.roles.priest], e.destination)) { e.stage = 'complete'; hooks.persist(); }
   }
+  reopenOmittedHold(party);
   if (party.escape && !['released', 'complete', 'failed-hold'].includes(party.escape.stage)) {
     const recovery = party.combatRecovery, e = party.escape;
     // Repair only the still-owned death recovery after a restart. An unrelated
