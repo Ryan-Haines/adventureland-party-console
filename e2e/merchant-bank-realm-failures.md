@@ -8,6 +8,8 @@ Declared before implementation for issues #28, #69, #70 and #74.
   restart forgets pending work; rules changed during travel cause stale sales.
 - Explicit Visit bank queues duplicate trips or fails to refresh the snapshot.
 - Generic worker expiry cancels a realm transition before its own deadline.
+- Scheduling routes every current job to idle, starving an admitted realm phase
+  of arrival/deadline advancement while fresh other-character reports continue.
 - Reconnect replaces the requested destination with native home; coordinator
   restart forgets the request; stale status clears ownership before arrival.
 - Global switches lose priority; ordinary login inherits an old destination.

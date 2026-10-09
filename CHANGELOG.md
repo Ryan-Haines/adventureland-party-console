@@ -11,6 +11,10 @@ from the commits merged into `main`.
 
 ### Added
 
+- Advance admitted merchant realm transitions on party status reports, so native
+  arrivals resume their original work and missing arrival reports retain the
+  original sixty-second timeout instead of leaving the switching job held.
+
 - Production recovery keeps current attempt journals in memory despite delayed
   storage echoes and rejects another attempt's lucky-slot evidence. Explicit
   operator review can resume a missing commerce item with an audited unknown

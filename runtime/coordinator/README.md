@@ -40,6 +40,12 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Party status scheduling dispatches an admitted `switching party realm` job so
+its native-arrival check and original sixty-second deadline continue while it
+owns the current job. Ordinary executing jobs retain their existing scheduling
+ownership. Validate both native cross-realm collection cases, including the
+isolated merchant-status transport hold; activate with CoordinatorOnly restart.
+
 Failed event walking with runtime-lost can also recover after CODE turnover and
 coordinator restart. At least one captured runtime must change, and every
 participant must report fresh living ownership of the same event, realm,
