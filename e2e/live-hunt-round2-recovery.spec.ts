@@ -4,31 +4,35 @@ import {W,P,M,world,beginAnniversary,endAnniversary} from './game/hunt-events';
 
 test.describe('native arrival connector recovery',()=>{
   test.use({initialPosition:{map:'main',x:200,y:-120}});
-  for(const dropped of ['first','all'] as const)test(`native Town connector ${dropped} packet loss preserves arrival and deadline`,async({live},info)=>{
+  for(const dropped of ['first','all'] as const)test(`native Town connector ${dropped} submission loss preserves arrival and deadline`,async({live},info)=>{
     test.setTimeout(120_000);
     // Failure inventory: lost connector never resent; repeated sends extend
     // transition timeout; retry collides or issues after cancellation.
     await live.clients[W].run(`(()=>{
-      const socket=parent.socket,emit=socket.emit;
-      const fault=globalThis.__e2eConnector={packets:[],landedAt:null,startedAt:Date.now(),done:null};
-      const arrival=()=>{fault.landedAt=Date.now();};socket.on('new_map',arrival);
-      socket.emit=function(event,...args){
-        if(event==='move'&&fault.landedAt&&Math.hypot(args[0]?.going_x-character.real_x,args[0]?.going_y-character.real_y)>1){
-          const drop=${JSON.stringify(dropped)}==='all'||fault.packets.length===0;
-          fault.packets.push({at:Date.now(),drop,from:{map:character.map,x:character.real_x,y:character.real_y},packet:args[0]});
-          if(drop)return socket;
-        }return emit.apply(socket,[event,...args]);
+      const socket=parent.socket,nativeMove=globalThis.move;
+      const fault=globalThis.__e2eConnector={submissions:[],landedAt:null,landing:null,startedAt:Date.now(),done:null};
+      const arrival=()=>{fault.landedAt=Date.now();fault.landing={map:character.map,x:character.real_x,y:character.real_y};};socket.on('new_map',arrival);
+      // Drop before native move's optimistic prediction; server/client positions
+      // and native packet handlers remain untouched throughout the fault.
+      globalThis.move=function(x,y){
+        if(fault.landedAt&&Math.hypot(x-character.real_x,y-character.real_y)>1){
+          const drop=${JSON.stringify(dropped)}==='all'||fault.submissions.length===0;
+          fault.submissions.push({at:Date.now(),drop,from:{map:character.map,x:character.real_x,y:character.real_y},target:{x,y}});
+          if(drop)return new Promise(()=>{});
+        }return nativeMove.call(globalThis,x,y);
       };
-      fault.restore=()=>{socket.emit=emit;socket.off('new_map',arrival);};
+      fault.restore=()=>{globalThis.move=nativeMove;socket.off('new_map',arrival);};
       __partyMovement.move({map:'main',x:0,y:0},undefined,{relocation:'town',arrivalTolerance:1})
         .then(()=>{fault.done={ok:true,at:Date.now()};},error=>{fault.done={ok:false,error:String(error.reason||error.message||error),at:Date.now()};});
       return true;})()`);
+    const nativeSamples:any[]=[];
+    const nativePosition=()=>live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)});return {map:p.map,x:p.x,y:p.y,moving:!!p.moving};})()`);
     try {
-      await expect.poll(()=>live.clients[W].run('globalThis.__e2eConnector.done'),{timeout:35_000}).toBeTruthy();
-      const proof=await live.clients[W].run(`({done:__e2eConnector.done,packets:__e2eConnector.packets,landedAt:__e2eConnector.landedAt,startedAt:__e2eConnector.startedAt,last:__partyMovement.last(),position:{map:character.map,x:character.real_x,y:character.real_y}})`);
-      expect(proof.packets.length).toBeGreaterThanOrEqual(2);
-      expect(proof.packets[0].drop).toBe(true);
-      expect(proof.packets[1].at-proof.packets[0].at).toBeGreaterThanOrEqual(950);
+      await expect.poll(async()=>{nativeSamples.push({at:Date.now(),position:await nativePosition()});return live.clients[W].run('globalThis.__e2eConnector.done');},{timeout:35_000,intervals:[250]}).toBeTruthy();
+      const proof=await live.clients[W].run(`({done:__e2eConnector.done,submissions:__e2eConnector.submissions,landing:__e2eConnector.landing,landedAt:__e2eConnector.landedAt,startedAt:__e2eConnector.startedAt,last:__partyMovement.last(),position:{map:character.map,x:character.real_x,y:character.real_y}})`);
+      expect(proof.submissions.length).toBeGreaterThanOrEqual(2);
+      expect(proof.submissions[0].drop).toBe(true);
+      expect(proof.submissions[1].at-proof.submissions[0].at).toBeGreaterThanOrEqual(950);
       if(dropped==='first'){
         expect(proof.done.ok).toBe(true);expect(Math.hypot(proof.position.x,proof.position.y)).toBeLessThanOrEqual(1);
         await expect.poll(()=>live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)});return Math.hypot(p.x,p.y);})()`),{timeout:5000}).toBeLessThanOrEqual(1);
@@ -36,9 +40,11 @@ test.describe('native arrival connector recovery',()=>{
         expect(proof.done.ok).toBe(false);expect(proof.done.error).toContain('town warp');
         expect(proof.done.at-proof.startedAt).toBeLessThan(18_000);
       }
-      const nativePosition=await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)});return {map:p.map,x:p.x,y:p.y,moving:!!p.moving};})()`);
-      await info.attach('native-connector-loss-ledger',{body:JSON.stringify({dropped,proof,nativePosition,events:await live.clients[W].events()}),contentType:'application/json'});
-    }finally{await live.clients[W].run('__e2eConnector.restore()');}
+    }finally{
+      const proof=await live.clients[W].run(`({done:__e2eConnector.done,submissions:__e2eConnector.submissions,landing:__e2eConnector.landing,landedAt:__e2eConnector.landedAt,startedAt:__e2eConnector.startedAt,last:__partyMovement.last(),position:{map:character.map,x:character.real_x,y:character.real_y}})`);
+      await info.attach('native-connector-submission-loss-ledger',{body:JSON.stringify({dropped,proof,nativeSamples,nativePosition:await nativePosition(),events:await live.clients[W].events()}),contentType:'application/json'});
+      await live.clients[W].run('__e2eConnector.restore()');
+    }
   });
 });
 
@@ -65,7 +71,7 @@ test('native escape revival is throttled while native respawn is unavailable',as
     expect(calls.length).toBeGreaterThan(1);
     for(let index=1;index<calls.length;index++)expect(calls[index]-calls[index-1]).toBeGreaterThanOrEqual(950);
     await info.attach('native-escape-respawn-ledger',{body:JSON.stringify({death,calls,events:await live.clients[W].events(),final:await world(live)}),contentType:'application/json'});
-  }finally{recovery=false;await context.unrouteAll({behavior:'wait'});await live.clients[W].run('__e2eRespawnRestore()');}
+  }finally{recovery=false;await context.unrouteAll({behavior:'ignoreErrors'});await live.clients[W].run('__e2eRespawnRestore()');}
 });
 
 test.describe('native Anniversary staging recovery',()=>{
@@ -104,7 +110,7 @@ test('native Anniversary staging survives an old-round slice without repeated To
     const seed=await beginAnniversary(live,P);
     await expect.poll(async()=>(await world(live)).players[W].conditions.anniversary_kiss,{timeout:90_000}).toBeTruthy();
     await info.attach('native-anniversary-staging-history',{body:JSON.stringify({next,samples,casts,seed,final:await world(live),state:await live.state()}),contentType:'application/json'});
-  }finally{scheduled=false;await context.unrouteAll({behavior:'wait'});
+  }finally{scheduled=false;await context.unrouteAll({behavior:'ignoreErrors'});
     await live.admin('clearInterval(globalThis.__e2eStagingTimer);if(globalThis.__e2eStagingBroadcast){broadcast_e=globalThis.__e2eStagingBroadcast;delete globalThis.__e2eStagingBroadcast;}output=true');
     await live.post('/formation',{character:W,eventSelections:[]});await endAnniversary(live);}
 });
