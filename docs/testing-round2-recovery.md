@@ -125,6 +125,20 @@ Retired-exit fixture isolation: get_monster takes a monster type rather than a d
 Before changing the existing retirement fence: the last eventRecovery diagnostic can retain an old cycle after its asynchronous owner is cancelled, and departurePending can independently belong to new travel. Observe actual native CODE exit ownership and coordinator-published recovery selection for both fighters, preserving runtime identity. The unchanged 15-second fence requires no live uncancelled old exit owner and no old published selection; retain old diagnostics in a bounded ledger instead of treating them as ownership. Preserve the 180-second requirement for both real native boss hits and the exact deferred checkpoint assertions. A missing owner alone never proves resumed behavior.
 # Deferred event handoff: admitted return walk
 
+## Linux checkpoint and Cave modal fixture ownership
+
+Run 37995615362 captured the real coat purchase (ten level-zero coats and the
+existing level-five coat) at checkpoint 28. Its cleanup removed routes while
+the released checkpoint callback was still continuing the request, producing
+`Route is already handled`. Drain the released handler before fixture teardown.
+
+The Cave failure snapshot shows its full map underneath a reopened, completed
+shop result. A native update reopened that result between the existing Close
+and Add clicks; the default 20-second click blocked the outer modal handling.
+Retry only this observed completed-result obstruction inside the original
+60-second activation deadline. Keep unrelated click failures, unresolved votes,
+native waypoint acceptance, movement, and collision checks strict.
+
 Linux run 37997222115 retained both old native exit owners after a new combat
 event was authorized. Deferred checkpoints transferred successfully, but an
 already admitted `shared-walk-return` convoy still contained the old cycle's
@@ -134,3 +148,12 @@ seconds, unchanged CODE identities, checkpoint preservation, and real boss hits.
 Retire only an event-return walk whose participants, parent cycle IDs, and
 navigation revisions all still belong to the superseded deferred recovery;
 preserve other profiles, manual navigation, and newer walking owners.
+# Capped commerce retry identity
+
+Full native run 37995615362 shard 1 retained capped order spending after restart,
+then scheduled a stalled-worker retry with a new job ID and the original
+commerceOrderId. The terminal-outcome poll matched only the initial job ID,
+so it could miss a legitimate resumed order's cap exhaustion. Match either
+the original job ID or its durable commerce order ID. Preserve the original
+120-second observation bound and all actual purchase/spending assertions;
+the recorded retry latency does not establish a production cap defect.

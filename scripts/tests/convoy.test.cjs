@@ -159,6 +159,8 @@ test('native multi-tick search prepares without movement; same plot walks at off
 
 test('native route handoff restores cruise and relinquishes movement without false arrival', async () => {
   const r = runtime();
+  r.context.character.range = 120;
+  r.context.is_in_range = target => r.context.simple_distance(r.context.character, target) <= r.context.character.range;
   r.context.farmingTravelTarget = () => ({ id: 'm', mtype: 'goo', x: 100, y: 0 });
   r.context.request = async (url, options) => { r.calls.push(['request', url, options]); return { ok: true }; };
   const { promise } = await r.start(); await r.ready();

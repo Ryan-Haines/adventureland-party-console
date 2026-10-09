@@ -79,7 +79,7 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
   await live.restartCoordinator();release();
   await expect.poll(async()=>{
     const state=await live.state();
-    return [state.merchantCurrent,...state.merchantQueue].some((entry:any)=>entry?.id===order.jobId&&/budget exhausted|gold cap/i.test(entry.lastError||entry.error||entry.blockedReason||''))||state.merchantActivity.some((entry:any)=>/budget exhausted|gold cap/i.test(JSON.stringify(entry)));
+    return [state.merchantCurrent,...state.merchantQueue].some((entry:any)=>(entry?.id===order.jobId||entry?.commerceOrderId===order.jobId)&&/budget exhausted|gold cap/i.test(entry.lastError||entry.error||entry.blockedReason||''))||state.merchantActivity.some((entry:any)=>/budget exhausted|gold cap/i.test(JSON.stringify(entry)));
   },{timeout:120_000}).toBe(true);
   expect(Math.max(...checkpoints.map(state=>Number(state.spent)||0))).toBeLessThanOrEqual(cap);
   expect(checkpoints.some(state=>state.pendingPurchase?.name==='scroll1'&&state.pendingPurchase.quantity===1&&state.pendingPurchase.cost===nativeCosts.scroll)).toBe(true);
@@ -408,7 +408,7 @@ test('upgrade purchase batch excludes an existing target-level coat', async ({ l
     await record(live, info, 'upgrade-batch-existing-target-coat', before, { order, purchased });
   } finally {
     release!();
-    await nativePage.unrouteAll({behavior:'ignoreErrors'});
+    await nativePage.unrouteAll({behavior:'wait'});
     await info.attach('native-coat-checkpoint-capture',{body:JSON.stringify({checkpoints,purchased,state:await live.state()}),contentType:'application/json'});
   }
 });

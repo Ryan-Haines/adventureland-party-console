@@ -219,7 +219,14 @@ test('Cave entry closes settings, shows native choices and keeps follower maps a
         if(before.adding)return true;
         if(!before.disabled){
           expect(before.error,'Add activation may not retry an unrelated rendered error').toBe(false);
-          await fullMap.getByRole('button',{name:'Add waypoint',exact:true}).click();
+          try {
+            await fullMap.getByRole('button',{name:'Add waypoint',exact:true}).click({timeout:1000});
+          } catch (error) {
+            // A fresh native shop update may reopen its completed result
+            // after Close. Only that observed modal obstruction is retryable.
+            if(await resolvedEncounter.isVisible())return false;
+            throw error;
+          }
         }
         let observed=before;
         await expect.poll(async()=>{

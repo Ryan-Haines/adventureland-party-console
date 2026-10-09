@@ -5,6 +5,9 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Drain held native commerce checkpoint requests before test teardown and
+  handle a completed Cave shop result reopening over waypoint controls.
+
 - Keep every requested character in party escape recovery when class metadata
   arrives late or classes are duplicated. Use independent evacuation when the
   skill sequence cannot cover everyone, and reconcile matching persisted death
