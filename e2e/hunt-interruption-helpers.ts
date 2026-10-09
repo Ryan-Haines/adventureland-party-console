@@ -104,6 +104,7 @@ export async function killedByParty(live:LiveGame,id:string,timeout=45000,observ
           ...(sample?{diagnostic:{at:Date.now(),id,position:{map:c.map,x:c.real_x,y:c.real_y,going_x:c.going_x,going_y:c.going_y,moving:c.moving,range:c.range},
             target:target&&{id:target.id,x:target.real_x??target.x,y:target.real_y??target.y,hp:target.hp,visible:target.visible,dead:target.dead,inRange:runner?.is_in_range?.(target)},
             candidate:candidate&&{id:candidate.id,mtype:candidate.mtype},combatOwner:runner?.__partyCombatOwner,
+            attackState:runner?.partyCombatState&&{stage:runner.partyCombatState.stage,skippedAttack:runner.partyCombatState.skippedAttack,targetRejection:runner.partyCombatState.targetRejection,selectedTarget:runner.partyCombatState.selectedTarget},
             acknowledgement:runner?.partyQueueClient?.passingAcknowledgement?.(),
             encounters:Object.values(game.__partyPassingEncounters||{}).filter((e:any)=>String(e.id)===id),
             recentHandoffs:(runner?.__partyHandoffTrace||[]).slice(-6)}}:{}),
