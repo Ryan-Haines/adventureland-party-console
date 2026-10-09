@@ -27,13 +27,14 @@ test.describe('native escape requested membership',()=>{
         const before=await live.state();
         // Historical persisted omission, not a fabricated gameplay outcome:
         // restore the old membership bug with unchanged native/navigation state.
-        await live.restoreHistoricalSettings(settings=>({
-          escape:{...settings.escape,participants:[W],stage:'failed-hold'},
-          combatRecovery:{id:'declared-historical-membership-death',names:[W,P],leader:W,
+        await live.restoreHistoricalSettings(settings=>{
+          const recovery={id:'declared-historical-membership-death',names:[W,P],leader:W,
             policy:settings.farmingPolicy,focus:JSON.stringify(before.monsterFocus),
             revisions:Object.fromEntries([W,P].map(name=>[name,settings.navigationIntents[name].revision])),
-            phase:'recovering',at:Date.now(),deaths:[],reason:'Declared persisted omission'},
-        }));
+            phase:'recovering',at:Date.now(),deaths:[],reason:'Declared persisted omission'};
+          return {escape:{...settings.escape,participants:[W],stage:'failed-hold'},combatRecovery:recovery,
+            farmingProfiles:{...settings.farmingProfiles,[W]:{...settings.farmingProfiles[W],combatRecovery:recovery}}};
+        });
       }else await live.restartCoordinator();
       await expect.poll(async()=>{const native=await world(live);positions.push({at:Date.now(),players:native.players});return [W,P].every(name=>{const p=native.players[name];return p&&!p.rip&&p.map==='main'&&Math.hypot(p.x,p.y)<=65;});},{timeout:60_000,intervals:[500]}).toBe(true);
     }finally{

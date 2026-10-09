@@ -32,3 +32,9 @@ The first live restart exposed a persisted `failed-hold`, not `recovering`:
 the incomplete subset had reached Main and retired its own recovery convoy.
 Restart must reopen that hold only when a matching current death recovery has
 additional requested members. A complete-membership failed hold remains held.
+
+The first native historical seed incorrectly patched only the legacy top-level
+combatRecovery field. Existing farmingProfiles own that field, so initialization
+correctly retained the profile's null recovery and rejected the unrelated escape
+expansion. Seed the same historical recovery into its actual leader profile;
+do not relax production ownership guards to accept the invalid seed.
