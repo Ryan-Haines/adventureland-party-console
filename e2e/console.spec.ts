@@ -10,6 +10,80 @@ import { gateway } from '../tools/hosting/gateway';
 import { Access } from '../tools/hosting/access';
 import { startupRealms } from '../tools/hosting/realms';
 import { accountConfig, sessionValue } from '../tools/hosting/account';
+import ts from 'typescript';
+
+test('Steam merchant realm switch replaces its page and resumes saved progress', async ({ page }, info) => {
+  // Failure modes: Steam waits forever; headless navigates; IV/V rejected;
+  // rejected HTTP switches navigate; saved completed listings bought twice.
+  // Desktop Steam, coordinator dispatch, and native purchases are external
+  // boundaries here. Maintained functions execute in a real browser and use
+  // HTTP switch/receipt boundaries and actual page replacement.
+  const source=readFileSync('characters/shared.js','utf8');
+  const tree=ts.createSourceFile('shared.js',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
+  const pieces:string[]=[];
+  let nativeSwitch='';
+  function visit(node:ts.Node){
+    if(ts.isFunctionDeclaration(node)&&node.name&&['realmPagePath','awaitRealmRestart','merchantPontyBuy','merchantJoinGiveaway','merchantALDataBuy','merchantALDataSell','merchantIdle'].includes(node.name.text))pieces.push(node.getText(tree));
+    if(ts.isIfStatement(node)&&node.expression.getText(tree)==='command.type === "native-realm-switch"')nativeSwitch=node.getText(tree);
+    ts.forEachChild(node,visit);
+  }
+  visit(tree);
+  const packets:{url:string;body:any}[]=[];
+  let reject=false;
+  await page.route('http://merchant.test/**',async route=>{
+    const request=route.request();
+    if(request.method()==='POST'){
+      packets.push({url:new URL(request.url()).pathname,body:request.postDataJSON()});
+      await route.fulfill({status:reject?409:200,json:{ok:!reject}});
+    }else await route.fulfill({contentType:'text/html',body:'<body>Merchant native page boundary</body>'});
+  });
+  async function install(headless=false){
+    await page.addScriptTag({content:`var character={name:'Patinder',gold:1000,items:Array(42).fill(null)};
+      parent.server_region='US';parent.server_identifier='III';parent.caracAL=${headless?'{}':'null'};
+      var switchAccepted=false;
+      async function request(url,args){var response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(args.body)});if(!response.ok)throw Error('Rejected switch');var body=await response.json();if(url==='/merchant/realm-switch')switchAccepted=true;return body;}
+      var root=window,lastCommand=0,merchantIdleActive=false,merchantHomeRealm='SR_USII';function game_log(){};
+      async function refreshPontyListings(){};${pieces.join('\n')}
+      async function nativeSwitch(command){${nativeSwitch}}`});
+  }
+  const listing={key:'listing-86',rid:'native-listing',item:{name:'coat',level:0},quantity:1,unitPrice:100,price:100,serverRegion:'US',serverIdentifier:'II'};
+  await page.goto('http://merchant.test/character/Patinder/in/US/III/');await install();
+  await page.evaluate(listing=>{void (window as any).merchantPontyBuy({jobId:'issue-86',listings:[listing]});},listing);
+  await expect(page).toHaveURL('http://merchant.test/character/Patinder/in/US/II/');
+  expect(packets[0].body.realm).toBe('SR_USII');
+  await install();
+  await page.evaluate(async listing=>{await (window as any).merchantPontyBuy({jobId:'issue-86',listings:[listing],completedListingKeys:[listing.key]});},listing);
+  expect(packets.find(packet=>packet.url==='/merchant/complete')?.body.success).toBe(true);
+  await page.goto('http://merchant.test/character/Patinder/in/US/III/');await install(true);
+  await page.evaluate(listing=>{void (window as any).merchantPontyBuy({jobId:'headless-86',listings:[listing]});},listing);
+  await expect.poll(()=>packets.some(packet=>packet.body.jobId==='headless-86')).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>(window as any).switchAccepted)).toBe(true);
+  expect(page.url()).toBe('http://merchant.test/character/Patinder/in/US/III/');
+  await install();reject=true;
+  const rejection=await page.evaluate(async listing=>{try{await (window as any).merchantPontyBuy({jobId:'rejected-86',listings:[listing]});return null;}catch(error){return String(error);}},listing);
+  expect(rejection).toContain('Rejected switch');expect(page.url()).toBe('http://merchant.test/character/Patinder/in/US/III/');reject=false;
+  for(const [handler,command] of [
+    ['merchantJoinGiveaway',{jobId:'giveaway-86',realm:'SR_USII'}],
+    ['merchantALDataBuy',{jobId:'aldata-buy-86',listings:[listing]}],
+    ['merchantALDataSell',{jobId:'aldata-sale-86',buyOrder:{item:{name:'coat'},buyer:'Buyer',serverRegion:'US',serverIdentifier:'II'}}],
+    ['merchantIdle',{homeRealm:'SR_USII'}],
+  ] as const){
+    await page.goto('http://merchant.test/character/Patinder/in/US/III/');await install();
+    await page.evaluate(({handler,command})=>{const host=window as any;host.character.items[0]={name:'coat'};void host[handler](command);},{handler,command});
+    await expect(page).toHaveURL('http://merchant.test/character/Patinder/in/US/II/');
+  }
+  const destinations=[];
+  for(const [realm,destination] of [['SR_USI','US/I'],['SR_USII','US/II'],['SR_USIII','US/III'],['SR_USIV','US/IV'],['SR_USV','US/V'],['SR_EUIV','EU/IV'],['SR_ASIAII','ASIA/II'],['SR_USPVP','US/PVP']]){
+    await page.goto('http://merchant.test/start');await install();
+    await page.evaluate(realm=>{void (window as any).nativeSwitch({type:'native-realm-switch',realm});},realm);
+    await expect(page).toHaveURL(`http://merchant.test/character/Patinder/in/${destination}/`);
+    destinations.push({realm,url:page.url()});
+  }
+  await install();expect(await page.evaluate(()=>(window as any).realmPagePath('SR_MOON'))).toBeNull();
+  expect(await page.evaluate(async()=>{try{await (window as any).nativeSwitch({type:'native-realm-switch',realm:'SR_MOON'});return null;}catch(error){return String(error);}})).toContain('Invalid realm switch destination');
+  await info.attach('steam-merchant-realm-ledger',{body:JSON.stringify({packets,destinations}),contentType:'application/json'});
+  await info.attach('steam-merchant-realm-page',{body:await page.screenshot(),contentType:'image/png'});
+});
 const graceReference:{nativeSha256:string;results:{grade:number;choice:Record<string,unknown>;quantity:number;target:number;result:{attempts:number;budget:number;scrolls:number[]}}[]}=JSON.parse(readFileSync(new URL('./upgrade-grace-reference.json',import.meta.url),'utf8'));
 
 test('merchant logistics shows capacity blocked collection in red and clears when space returns',async({page,app},info)=>{

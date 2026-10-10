@@ -7977,6 +7977,23 @@
     }
   }
 
+  function realmPagePath(realm) {
+    var match = String(realm || "").match(/^SR_(US|EU|ASIA)([IVX]+|PVP)$/);
+    return match ? "/character/" + encodeURIComponent(character.name) +
+      "/in/" + match[1] + "/" + match[2] + "/" : null;
+  }
+
+  async function awaitRealmRestart(realm) {
+    // Headless is replaced by the coordinator; Steam owns its page navigation.
+    if (!parent.caracAL) {
+      var path = realmPagePath(realm);
+      if (!path) throw new Error("Invalid realm switch destination");
+      parent.window.location.href = path;
+    }
+    // Prevent this outgoing runtime from doing work on the previous realm.
+    await new Promise(function () {});
+  }
+
   async function merchantPontyBuy(command) {
     var activity = [], purchases = command.listings || [], completed = [];
     var done = new Set(command.completedListingKeys || []);
@@ -7985,7 +8002,7 @@
       var response = await request("/merchant/realm-switch", { method: "POST", body: {
         jobId: command.jobId, character: character.name, realm: realm,
       }});
-      if (!response.alreadyThere) await new Promise(function () {});
+      if (!response.alreadyThere) await awaitRealmRestart(realm);
     }
     function exactProperties(item) {
       var clean = Object.assign({}, item, { level: Number(item.level) || 0 });
@@ -8103,7 +8120,7 @@
       await request("/merchant/realm-switch", { method: "POST", body: {
         jobId: command.jobId, character: character.name, realm: realm,
       }});
-      await new Promise(function () {});
+      await awaitRealmRestart(realm);
     }
     function activeGiveaways(seller) {
       if (!seller || !seller.slots) return [];
@@ -8219,7 +8236,7 @@
       await request("/merchant/realm-switch", { method: "POST", body: {
         jobId: command.jobId, character: character.name, realm: realm,
       }});
-      await new Promise(function () {});
+      await awaitRealmRestart(realm);
     }
     try {
       if (character.stand) await close_stand();
@@ -8363,7 +8380,7 @@
       await request("/merchant/realm-switch", { method: "POST", body: {
         jobId: command.jobId, character: character.name, realm: realm,
       }});
-      await new Promise(function () {});
+      await awaitRealmRestart(realm);
     }
     try {
       if (!order.item || !order.buyer) throw new Error("ALData buy order is incomplete");
@@ -8848,9 +8865,9 @@
         await request("/merchant/ensure-home-realm", { method: "POST", body: {
           character: character.name, realm: merchantHomeRealm,
         }});
-        // The coordinator restarts this character on the home realm. Keep this
-        // old runtime from walking/opening a stand while shutdown is pending.
-        await new Promise(function () {});
+        // Wait for headless replacement or navigate the Steam page home before
+        // this character can walk or open its stand again.
+        await awaitRealmRestart(merchantHomeRealm);
       }
       if (command.inPlace) {
         // Closed stands retain their trade inventory server-side. Suspend an
@@ -10284,11 +10301,10 @@
     }
     if (command.type === "native-realm-switch") {
       if (parent.caracAL) throw new Error("Native realm switching requires the Steam game client");
-      var realmMatch = String(command.realm || "").match(/^SR_(US|EU|ASIA)(I{1,4}|PVP)$/);
-      if (!realmMatch) throw new Error("Invalid realm switch destination");
-      game_log("Switching realm to " + realmMatch[1] + " " + realmMatch[2], "#51D2E1");
-      parent.window.location.href = "/character/" + encodeURIComponent(character.name) +
-        "/in/" + encodeURIComponent(realmMatch[1]) + "/" + encodeURIComponent(realmMatch[2]) + "/";
+      var realmPath = realmPagePath(command.realm);
+      if (!realmPath) throw new Error("Invalid realm switch destination");
+      game_log("Switching realm to " + String(command.realm).replace(/^SR_/, ""), "#51D2E1");
+      parent.window.location.href = realmPath;
     }
     if (command.type === "realm-set-home") {
       try {

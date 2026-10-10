@@ -246,6 +246,12 @@ Validate `live-bank-npc-sales.spec.ts` and the console bank-visit journey.
 
 Merchant realm requests are persisted independently of native home. Global realm
 switches supersede requests; fresh destination observations release ownership.
+Steam merchant jobs navigate their own game page after an accepted realm request.
+Coordinator-owned home recovery publishes a targeted native realm-switch command
+for Steam runtimes instead of stopping their disabled headless worker. Validate
+the Steam realm-hop redispatch and stand-return journey described in
+`docs/testing-steam-merchant-realms.md`. These character changes require the
+supported full restart; a coordinator-only restart does not activate them.
 Each home return attempt has a 60-second arrival window and requires a report
 no older than three seconds. Home returns stop after three attempts and keep affected jobs for explicit Retry;
 unrelated work remains eligible. Cross-realm party visits keep their own bounded

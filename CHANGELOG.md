@@ -5,6 +5,13 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Fix Steam merchants hanging when giveaways, Ponty purchases, ALData purchases
+  or sales, or stand return require another realm. Navigate the Steam game page
+  after the coordinator accepts the switch; retain headless restart behavior.
+  Send Steam merchants a native realm-switch command for coordinator home returns.
+  Steam party realm switches also accept Roman-numeral destinations IV and V.
+  Fixes #86 on `bugfix-1.4`.
+
 - Keep the event dropdown open while editing and saving event settings, so the
   next event's settings gear remains available immediately.
 

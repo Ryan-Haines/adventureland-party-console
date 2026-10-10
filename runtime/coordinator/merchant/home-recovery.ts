@@ -13,7 +13,7 @@ interface HomeState {
   activeRealm: string;
   merchantHomeReturnAt?: number;
   merchantRealmRequests?: Record<string, RealmRequest | undefined>;
-  statuses: Record<string, { server?: string; seenAt?: number } | undefined>;
+  statuses: Record<string, { server?: string; seenAt?: number; runtime?: string } | undefined>;
   commands: Record<string, unknown>;
   merchantCurrent?: Sale | null;
 }

@@ -1566,21 +1566,25 @@ export function startCoordinatorApplication(
       return coordinatorPolicies.merchantRoutineNeedsHome(reason);
     }
 
+    function merchantRuntimeFresh(merchant: string, runtime: "native" | "headless") {
+      const status = party.statuses[merchant];
+      return status?.runtime === runtime && Number(status.seenAt) >= Date.now() - 10_000;
+    }
+
     function ensureMerchantHome(reason: Parameters<typeof merchantHomeRecovery.ensureHome>[0]) {
       const merchant = String(party.merchantCharacter);
+      const returningHome = party.merchantRealmRequests[merchant]?.owner === "home";
       if (party.steamMembers.includes(merchant)) {
-        party.merchantHomeReturnAt = 0;
-        return "SR_" + String(party.statuses[merchant]?.server || "").replace(/^SR_/, "") === party.activeRealm;
+        if (!returningHome && !merchantRuntimeFresh(merchant, "native")) return false;
+        return merchantHomeRecovery.ensureHome(reason);
       }
-      const status = party.statuses[merchant];
       // A retired native status is not permission to create a headless realm
       // return. Wait for the assigned worker's own fresh observation so initial
       // native-home login cannot inherit an offline merchant's phantom request.
       // Already admitted returns retain their original retry/exhaustion clock
       // even while the worker disconnects or its status becomes stale.
-      const returningHome = party.merchantRealmRequests[merchant]?.owner === "home";
-      if (!returningHome && (!party.headlessSlots.includes(merchant) || status?.runtime !== "headless" ||
-          !(Number(status.seenAt) >= Date.now() - 10_000))) return false;
+      if (!returningHome && (!party.headlessSlots.includes(merchant) ||
+          !merchantRuntimeFresh(merchant, "headless"))) return false;
       return merchantHomeRecovery.ensureHome(reason);
     }
 

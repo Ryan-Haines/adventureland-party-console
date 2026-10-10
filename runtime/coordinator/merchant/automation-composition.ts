@@ -52,7 +52,17 @@ export function createCoordinatorMerchantAutomation<Block extends { realm?: stri
     ...shared,
     block: ports.block,
     realmLabel: ports.realmLabel,
-    restart: (block, delay) => ports.later(() => ports.stop(block), delay),
+    restart: (block, delay) => {
+      const merchant = state.merchantCharacter;
+      if (merchant && state.statuses[merchant]?.runtime === 'native') {
+        state.commands[merchant] = {
+          id: state.nextCommandId++, type: 'native-realm-switch', realm: state.activeRealm,
+        };
+        ports.persist();
+        return;
+      }
+      return ports.later(() => ports.stop(block), delay);
+    },
   });
   const sales = createAutomaticMerchantSales(state, {
     ...shared,

@@ -1,5 +1,45 @@
 import { test, expect } from './live-fixtures';
 
+test('Steam merchant realm hop redispatches saved work and returns home natively',async({live},info)=>{
+  // Failure modes: native page never changes; CODE does not reconnect; saved
+  // work stays current forever; idle stand return strands the merchant away.
+  // Seed an interrupted, already-purchased Ponty itinerary. No purchase receipt
+  // is claimed: this journey verifies real realm login, redispatch and return.
+  test.setTimeout(300_000);
+  const merchant='E2EMerchant',id='steam-realm-86';
+  const before=await live.state();
+  const completionCount=before.merchantActivity.filter((entry:any)=>entry.message===`Merchant job completed for ${merchant}`).length;
+  expect(before.characters[merchant].runtime).toBe('native');
+  await live.admin("const m=get_player('E2EMerchant');m.items[10]={name:'stand0'};cache_player_items(m);resend(m,'reopen+cid');output=m.items[10]");
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'manual marketplace purchases':true}});
+  await live.restoreHistoricalSettings(()=>({merchantCurrent:null,merchantQueue:[{
+    id,reason:'Ponty purchases',target:merchant,queuedAt:Date.now(),priority:100,
+    listings:[],completedListingKeys:[],homeRealm:'SR_USII',
+  }]}));
+  let nativeAway:any=null;
+  await expect.poll(async()=>{
+    nativeAway=await live.adminRealm('USII',"output=(()=>{const p=get_player('E2EMerchant');return p?{name:p.name,map:p.map,x:p.x,y:p.y}:null})()");
+    return !!nativeAway;
+  },{timeout:120_000,intervals:[100]}).toBe(true);
+  const arrived=await live.state();
+  await expect.poll(async()=>{
+    const state=await live.state();
+    return ![state.merchantCurrent,...state.merchantQueue].some((job:any)=>job?.id===id)
+      && state.merchantActivity.filter((entry:any)=>entry.message===`Merchant job completed for ${merchant}`).length>completionCount;
+  },{timeout:120_000}).toBe(true);
+  await expect.poll(async()=>{
+    const frame=live.clients[merchant].page.frames().find(frame=>frame.url().includes('/character/'+merchant+'/'));
+    if(!frame)return false;
+    try{return await frame.evaluate(()=>!!(window as any).character?.stand);}
+    catch(error){if(/Execution context was destroyed|Cannot find context|Frame was detached/.test(String(error)))return false;throw error;}
+  },{timeout:120_000}).toBe(true);
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.standOpen,{timeout:20_000}).toBe(true);
+  const after=await live.state();
+  expect(after.characters[merchant].runtime).toBe('native');
+  expect(after.characters[merchant].server).toEqual(before.characters[merchant].server);
+  await info.attach('native-steam-merchant-realm-redispatch',{body:JSON.stringify({before,arrived,nativeAway,after}),contentType:'application/json'});
+});
+
 async function logoutMerchant(live:import('./live-fixtures').LiveGame, merchant:string) {
   await live.post('/steam/action',{character:merchant,action:'logout'});
   await expect.poll(async()=>{
