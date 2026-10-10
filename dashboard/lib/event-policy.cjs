@@ -25,6 +25,7 @@ __export(event_policy_exports, {
   eventDisplayNames: () => eventDisplayNames,
   eventEnabled: () => eventEnabled,
   eventPolicy: () => eventPolicy,
+  eventPriorityOrder: () => eventPriorityOrder,
   selectedEvents: () => selectedEvents,
   supportedEvents: () => supportedEvents
 });
@@ -47,7 +48,7 @@ function selectedEvents(party, name) {
   const source = eventPolicy(party, name).source;
   const saved = party.eventSelectionsByCharacter?.[source];
   const selections = saved ?? ["anniversary", ...party.eventsByCharacter?.[source] ? legacyDefaultEvents.filter((id) => id !== "anniversary") : []];
-  return selections.filter((id) => supportedEvents.includes(id));
+  return eventPriorityOrder(party, name).filter((id) => selections.includes(id));
 }
 function eventEnabled(party, name, event) {
   return selectedEvents(party, name).includes(event);
@@ -62,4 +63,8 @@ function eventPolicy(party, name) {
     source,
     enabled: party.eventSelectionsByCharacter?.[source] ? party.eventSelectionsByCharacter[source].some((id) => id !== "anniversary" && supportedEvents.includes(id)) : Boolean(party.eventsByCharacter?.[source])
   };
+}
+function eventPriorityOrder(party, name) {
+  const source = eventPolicy(party, name).source;
+  return [.../* @__PURE__ */ new Set([...party.eventPrioritiesByCharacter?.[source] ?? [], ...supportedEvents])].filter((id) => supportedEvents.includes(id));
 }
