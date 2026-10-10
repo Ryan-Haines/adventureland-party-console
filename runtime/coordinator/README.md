@@ -1,3 +1,10 @@
+Commerce may adopt actual compatible intermediate inventory when an old pending
+upgrade has no linked outcome and its old input is missing. This is explicitly
+logged as an inventory assumption, never a confirmed historical receipt. Paid
+spending and attempts remain intact; finished target-tier, reserved, locked or
+bound stock stays excluded. Validate the native unlinked-intermediate journey
+in `live-economy.spec.ts`; see `docs/testing-commerce-inventory-adoption.md`.
+
 Bankboi-only compound stock stages a delivery but does not admit an empty
 merchant improvement visit. Admission uses carried or native-bank stock until
 real storage completion rewrites the withdrawal location. Validate the native
@@ -17,6 +24,11 @@ triples and bankable leftovers remain runnable. Validate native NPC cleanout and
 subsequent compound receipts in `live-bank-npc-sales.spec.ts`; failure inventory
 is `docs/testing-merchant-compound-capacity.md`. Publish character assets and
 restart the coordinator together when changing withdrawal completion handling.
+
+Uncertain upgrade completions retain error severity even when their commerce
+order is retryable. A newly queued retry logs the actual retryAt in explicit UTC
+and numeric detail; do not announce a retry before delay classification finishes.
+Validate browser rendering with the uncertain merchant retry console scenario.
 
 New-event takeover also cancels an already admitted deferred return convoy only
 when all its participants, cycle identities, and navigation revisions still

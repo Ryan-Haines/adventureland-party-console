@@ -4,6 +4,44 @@ import type { Item } from '../runtime/coordinator/contracts/item';
 
 const merchant = 'E2EMerchant';
 
+test('unlinked upgrade adopts compatible native intermediate without claiming existing results',async({live},info)=>{
+  test.setTimeout(300_000);
+  await catalog(live,'helmet');
+  await seed(live,{10:{name:'helmet',level:2},11:{name:'helmet',level:3},12:{name:'helmet',level:3},23:{name:'helmet',level:0},24:{name:'helmet',level:0},25:{name:'helmet',level:0}});
+  const id='unlinked-intermediate-commerce',before=await economy(live),checkpoints:any[]=[];
+  const progress={phase:'leveling',buyIndex:0,attempts:4,spent:4200,completedResults:1,results:[{slot:8,item:{name:'helmet',level:3},buyIndex:0}],activeItem:{name:'helmet',level:1},activeSlot:26,cycleActive:true,batchItems:[20,21,22].map(slot=>({slot,item:{name:'helmet',level:0}})),batchRemaining:0,sequence:2,pendingUpgrade:{level:2}};
+  let held=false,release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  await live.clients[merchant].page.route('**/party-api/merchant/checkpoint',async route=>{
+    const body=route.request().postDataJSON(),response=await route.fetch();if(body.state&&typeof body.state==='object')checkpoints.push(body.state);
+    if(!held&&body.state?.inventoryAdoption&&!body.state.pendingUpgrade){held=true;await gate;}
+    await route.fulfill({response}).catch(error=>{if(!held)throw error;});
+  });
+  try{
+    await live.restoreHistoricalSettings(()=>({production:{attempts:{'historical-unlinked-receipt':{name:'helmet',level:2,kind:'upgrade',rules:[],completed:true,completedAt:Date.now(),success:true}}},
+      merchantQueue:[{id,target:merchant,reason:'merchant commerce',queuedAt:Date.now(),commerceOrderId:id,commerceProgressVersion:2,
+        order:{buys:[{id:'helmet',quantity:2,level:3,attempts:100,budget:500000}],crafts:[]},resumeState:progress}]}));
+    await expect.poll(()=>checkpoints.some(s=>s.activeItem?.level===2&&!s.pendingUpgrade),{timeout:90_000}).toBe(true);
+    const adoption=checkpoints.find(s=>s.activeItem?.level===2&&!s.pendingUpgrade);
+    expect(adoption).toMatchObject({spent:4200,attempts:4,completedResults:1,activeSlot:10});
+    expect(adoption.batchItems.map((entry:any)=>entry.slot).sort()).toEqual([23,24,25]);
+    const oldRuntime=(await live.state()).characters[merchant].dashboardRuntime;
+    await live.clients[merchant].frame.evaluate(()=>{const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);});
+    release();
+    await expect.poll(async()=>(await live.state()).characters[merchant]?.dashboardRuntime,{timeout:60_000}).not.toBe(oldRuntime);
+    await jobFinished(live,id,180_000);
+    const after=await economy(live);
+    const finished=(v:Economy)=>v.characters[merchant].items.filter(i=>i?.name==='helmet'&&i.level===3).length;
+    const newResults=Math.max(...checkpoints.map(s=>Number(s.completedResults)||0))-1;
+    expect(newResults).toBeGreaterThanOrEqual(1);
+    expect(finished(after)-finished(before)).toBe(newResults);
+    expect((await live.state()).merchantActivity.some((a:any)=>String(a.message).includes('Inventory adoption assumption'))).toBe(true);
+    await record(live,info,'native-unlinked-intermediate-adoption',before,{id,adoption,checkpoints,after});
+  }finally{
+    release();await live.clients[merchant].page.unrouteAll({behavior:'ignoreErrors'});
+    await info.attach('unlinked-commerce-adoption-progress',{body:JSON.stringify({id,progress,checkpoints,state:await live.state()}),contentType:'application/json'});
+  }
+});
+
 test('completed native upgrade receipt restores commerce after a lost completion response',async({live},info)=>{
   test.setTimeout(300_000);
   await catalog(live,'helmet');

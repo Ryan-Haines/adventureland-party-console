@@ -5,6 +5,15 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Show uncertain merchant upgrades as errors with item, tier and inventory-slot
+  diagnostics. Log each admitted order retry with its actual scheduled timestamp
+  in explicit UTC and retain the numeric deadline for remote consoles.
+
+- Resume an unlinked interrupted commerce upgrade using compatible unfinished
+  inventory when available, recording an explicit adoption assumption. Preserve
+  paid spending and attempts, protect reserved stock, and keep existing finished
+  items outside the order's newly produced quota.
+
 - Stage Bankboi compound deliveries without starting empty merchant improvement
   visits. Remote inputs become runnable after their genuine native-bank deposit;
   carried triples, native-bank inputs and leftover storage remain available.

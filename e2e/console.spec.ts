@@ -12,6 +12,68 @@ import { startupRealms } from '../tools/hosting/realms';
 import { accountConfig, sessionValue } from '../tools/hosting/account';
 const graceReference:{nativeSha256:string;results:{grade:number;choice:Record<string,unknown>;quantity:number;target:number;result:{attempts:number;budget:number;scrolls:number[]}}[]}=JSON.parse(readFileSync(new URL('./upgrade-grace-reference.json',import.meta.url),'utf8'));
 
+test('merchant logistics shows capacity blocked collection in red and clears when space returns',async({page,app},info)=>{
+  const initial=await app.state();
+  let occupied=39;
+  // Declared status read boundary: exercise dashboard presentation, not native transfers.
+  await page.route('**/party-api/state*',async route=>{
+    const response=await route.fetch(),state=await response.json();
+    await route.fulfill({response,json:{...state,merchantCharacter:'M',merchantCurrent:null,
+      characters:{...initial.characters,...state.characters,M:{...initial.characters.M,...state.characters?.M,items:Array.from({length:42},(_,slot)=>slot<occupied?{slot,item:{name:'helmet'}}:null)}},
+      merchantQueue:[{id:'capacity-collection',reason:'party collection',target:'GermanicHP',priority:82}]}});
+  });
+  await page.goto('/');
+  await page.getByText(/Merchant logistics ·/).click();
+  const row=page.locator('div').filter({has:page.locator('span[title="Item collection · GermanicHP"]')}).last();
+  const status=row.getByText('blocked',{exact:true});
+  await expect(status).toBeVisible();
+  const color=await status.evaluate(element=>{
+    const canvas=document.createElement('canvas'),context=canvas.getContext('2d')!;
+    context.fillStyle=getComputedStyle(element).color;context.fillRect(0,0,1,1);
+    return Array.from(context.getImageData(0,0,1,1).data);
+  });
+  expect(color[0]).toBeGreaterThan(color[1]);expect(color[0]).toBeGreaterThan(color[2]);
+  await expect(status).toHaveAttribute('title',/39\/42/);
+  await info.attach('merchant-capacity-blocked',{body:await page.screenshot(),contentType:'image/png'});
+  occupied=38;
+  await expect(row.getByText('queued',{exact:true})).toBeVisible();
+  await info.attach('merchant-capacity-restored',{body:await page.screenshot(),contentType:'image/png'});
+});
+
+test('uncertain merchant upgrade shows red diagnostics and authoritative UTC retry time',async({page,app},info)=>{
+  const initial=await app.state();
+  const source=initial.merchantCatalog.allItems.find((item:any)=>item.id==='staff');
+  const choice={id:'staff',name:source.name,cost:Number(source.meta.definition.g),seller:'basics',sprite:null,upgradeable:true,upgradeGrade:0,
+    upgradeChances:[1,.9999999,.98,.95,.7,.6,.4,.25,.15,.07,.024,.14,.11],grades:[9,10,11,12],scrollCosts:[1000,40000,1600000,64000000]};
+  await app.deliverStatus({...initial.characters.M,name:'M',ctype:'merchant',clientVersion:17175,merchantCatalog:{...initial.merchantCatalog,buyable:[choice]}});
+  const response=await page.request.post('/party-api/merchant/order',{headers:{Origin:app.url},data:{buys:[{id:choice.id,quantity:1,level:1}]}});
+  expect(response.ok()).toBe(true);
+  await expect.poll(async()=>(await app.state()).merchantCurrent?.reason).toBe('merchant commerce');
+  const current=(await app.state()).merchantCurrent;
+  const error=`Upgrade outcome uncertain; ${choice.id} from +0 to +1 at inventory slot 7; inventory review required`;
+  await app.deliverMerchantCompletion({jobId:current.id,commandId:current.commandId,success:false,failureKind:'commerce_recovery',error});
+  await expect.poll(async()=>(await app.state()).merchantActivity.some((entry:any)=>entry.level==='error'&&JSON.stringify(entry.details).includes(error))).toBe(true);
+  const state=await app.state(),retry=state.merchantQueue.find((job:any)=>job.resumedFrom===current.id);
+  expect(retry.retryAt).toBeGreaterThan(Date.now());
+  const timestamp=new Date(retry.retryAt).toISOString().replace('T',' ').replace(/\.\d{3}Z$/,' UTC');
+  await page.goto('/');
+  const line=page.locator('p').filter({hasText:`Retrying order at ${timestamp}`});
+  await expect(line).toBeVisible();
+  await expect(line).toContainText(error);
+  const {color,channels}=await line.evaluate(element=>{
+    const color=getComputedStyle(element).color,canvas=document.createElement('canvas');
+    canvas.width=canvas.height=1;
+    const context=canvas.getContext('2d')!;
+    context.fillStyle=color;
+    context.fillRect(0,0,1,1);
+    return {color,channels:Array.from(context.getImageData(0,0,1,1).data)};
+  });
+  expect(channels[0]).toBeGreaterThan(channels[1]);
+  expect(channels[0]).toBeGreaterThan(channels[2]);
+  await info.attach('merchant-uncertain-retry-state',{body:JSON.stringify({state,retry,error,color}),contentType:'application/json'});
+  await info.attach('merchant-uncertain-retry-console',{body:await page.screenshot(),contentType:'image/png'});
+});
+
 test('merchant grade estimates match the native grace reference in dashboard and queued orders',async({page,app},info)=>{
   // Failure modes: grade replaces igrace; dashboard/server disagree; a partial
   // simulation produces a false percentile. Fixed reference numbers were

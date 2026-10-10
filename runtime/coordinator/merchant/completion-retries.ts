@@ -109,6 +109,15 @@ function retryIncrement(decision: RetryDecision): number {
   return decision.movementOwned || decision.storageYield || decision.anniversaryYield || decision.rendezvous ? 0 : 1;
 }
 
+function uncertainUpgrade(error: unknown): boolean {
+  return /upgrade.*uncertain|uncertain.*upgrade/i.test(requestText(error || ''));
+}
+
+function completionLevel(body: CompletionReport, decision: RetryDecision): string {
+  if (!body.success && uncertainUpgrade(body.error)) return 'error';
+  return decision.interruptedCommerce || decision.retry ? 'info' : body.success ? 'success' : 'error';
+}
+
 export function createCompletionRetries(state: CompletionState, ports: CompletionPorts) {
   function resourceBlock(job: CompletionJob, body: CompletionReport): void {
     const error = requestText(body.error || ""),
@@ -160,9 +169,7 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
     if (!body.success && buyUpgradeOrder(job)) job.lastError = requestText(body.error);
     if (decision.movement) job.lastMovementError = requestText(body.error);
     npcSales(job, body);
-    const level =
-      decision.interruptedCommerce || decision.retry ? "info" : body.success ? "success" : "error";
-    ports.log(completionMessage(job.target, body, decision), level, body.error);
+    ports.log(completionMessage(job.target, body, decision), completionLevel(body, decision), body.error);
     return decision;
   }
   function enqueue(job: CompletionJob, decision: RetryDecision): void {
@@ -188,8 +195,19 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
     delete retry.checkpointAt;
     delete retry.handoff;
     delete retry.itemMarksCleared;
-    if (!state.merchantQueue.some(queued => queued.id === retry.id)) state.merchantQueue.unshift(ports.stamp(retry));
+    if (!state.merchantQueue.some(queued => queued.id === retry.id)) {
+      state.merchantQueue.unshift(ports.stamp(retry));
+      logOrderRetry(retry);
+    }
     logLuckRetry(job);
+  }
+  function logOrderRetry(retry: CompletionJob): void {
+    if (retry.reason !== 'merchant commerce') return;
+    const retryAt = Number(retry.retryAt) || ports.now();
+    const retryAtUTC = new Date(retryAt).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+    ports.log('Retrying order at ' + retryAtUTC, uncertainUpgrade(retry.lastError) ? 'error' : 'info', {
+      jobId: retry.id, resumedFrom: retry.resumedFrom, retryAt, retryAtUTC, error: retry.lastError || null,
+    });
   }
   function logLuckRetry(job: CompletionJob): void {
     if (job.reason === "merchant luck")

@@ -6812,12 +6812,13 @@
     }
   }
 
-  function verifyCommerceResults(results) {
+  function verifyCommerceResults(results, available) {
     var used = new Set();
+    function eligible(slot) { return !available || available[slot] && available[slot].item && !available[slot].item.l && !available[slot].item.b; }
     (results || []).forEach(function (result) {
       var slot = result.slot;
-      if (used.has(slot) || !sameItem(character.items[slot], result.item))
-        slot = character.items.findIndex(function (item, index) { return !used.has(index) && sameItem(item, result.item); });
+      if (used.has(slot) || !eligible(slot) || !sameItem(character.items[slot], result.item))
+        slot = character.items.findIndex(function (item, index) { return !used.has(index) && eligible(index) && (available ? sameItemState(item, result.item) : sameItem(item, result.item)); });
       if (slot < 0) throw new Error("Owned upgrade result missing; order requires inventory review");
       used.add(slot);
       result.slot = slot;
@@ -6882,6 +6883,12 @@
     }
     // A pending native attempt owns its separate receipt/lucky reconciliation.
     // Otherwise remap the whole paid group before individual slot lookups.
+    if (progress.inventoryAdoption) {
+      await refreshCompoundProtection(command);
+      if (!runtimeCurrent() || !root.__merchantActiveJob || root.__merchantActiveJob.commandId !== command.id)
+        throw new Error("interrupted");
+      verifyCommerceResults(progress.results,availableCommerceInventory());
+    }
     if (!progress.pendingUpgrade && remapCommerceOwnedItems(progress)) await services.checkpoint(progress, false);
     verifyCommerceResults(progress.results);
     // A legacy survivor already consumed an attempt before its checkpoint.
@@ -6958,7 +6965,14 @@
         sameItem(character.items[progress.activeSlot], expected) ? progress.activeSlot : -1;
       if (receiptSlot < 0 && !destroyed && !reviewedMissing) receiptSlot = ownedSlot();
       var live = receiptSlot >= 0 ? character.items[receiptSlot] : null;
-      if (!destroyed && !reviewedMissing && !live) throw new Error("Upgrade outcome uncertain; owned item missing without confirmed destruction");
+      if (!destroyed && !reviewedMissing && !live) {
+        if (!pending.outcome && await adoptIntermediateInventory(pending)) return;
+        var occupant = character.items[progress.activeSlot];
+        throw new Error("Upgrade outcome uncertain; " + purchase.id + " from +" + Number(progress.activeItem && progress.activeItem.level || 0) +
+          " to +" + pending.level + " at inventory slot " + progress.activeSlot +
+          "; actual occupant " + (occupant ? occupant.name + " +" + Number(occupant.level || 0) : "absent") +
+          "; owned item missing without confirmed destruction");
+      }
       if (live) progress.activeSlot = receiptSlot;
       if (destroyed || reviewedMissing) {
         progress.activeItem = null;
@@ -6971,6 +6985,43 @@
       }
       delete progress.pendingUpgrade;
       await save(false);
+    }
+    async function adoptIntermediateInventory(pending) {
+      await refreshCompoundProtection(command);
+      if (!runtimeCurrent() || !root.__merchantActiveJob || root.__merchantActiveJob.commandId !== command.id)
+        throw new Error("interrupted");
+      var available = availableCommerceInventory();
+      var excluded = new Set(progress.results.concat(progress.batchItems).map(function(entry) { return entry.slot; }));
+      var candidates = available.filter(function(entry) {
+        if (!entry || !entry.item || entry.item.l || entry.item.b || excluded.has(entry.slot)) return false;
+        var level = Number(entry.item.level || 0);
+        if (level <= 0 || level >= target) return false;
+        return sameItemState(entry.item,Object.assign({},progress.activeItem,{level:level}));
+      }).sort(function(a,b) { return Number(b.item.level || 0) - Number(a.item.level || 0) || a.slot - b.slot; });
+      if (!candidates.length) return false;
+      var adopted = candidates[0], oldSlot = progress.activeSlot, oldItem = progress.activeItem;
+      verifyCommerceResults(progress.results,available);
+      progress.activeSlot = adopted.slot;
+      progress.activeItem = fingerprint(adopted.item);
+      progress.cycleActive = true;
+      delete progress.pendingUpgrade;
+      progress.inventoryAdoption = {at:Date.now(),input:progress.activeItem,slot:adopted.slot};
+      // Existing result quota is unchanged. Paid unfinished groups retain the
+      // strict exact-count remap; surplus base items remain ambiguous.
+      remapCommerceOwnedItems(progress);
+      // This is a newly owned actual input, not a receipt for the old attempt.
+      await save(false);
+      await services.activity({level:"info",message:"Inventory adoption assumption: continuing " + purchase.id +
+        " +" + Number(adopted.item.level || 0) + " from inventory slot " + adopted.slot +
+        "; old upgrade +" + Number(oldItem && oldItem.level || 0) + " to +" + pending.level +
+        " at slot " + oldSlot + " remains unconfirmed; paid spending and attempts retained"});
+      return true;
+    }
+    function availableCommerceInventory() {
+      var entries = character.items.map(function(item,slot) {
+        return item ? {slot:slot,item:item,craftLocation:"inventory:"+character.name} : null;
+      });
+      return globalThis.partyAvailableCraftStock(entries,command.craftProtection);
     }
     async function finishItem() {
       var slot = ownedSlot(), item = character.items[slot];
@@ -7566,7 +7617,7 @@
       if (command.commerceProgressVersion === 2 && error.partyRequest && error.partyRequest.path === '/movement-plan') error.commerceMovement = true;
       var commerceRecovery = command.commerceProgressVersion === 2;
       var recoverable = error.reason === "hunt_movement_owned" || error.commerceMovement || commerceRecovery || /^(interrupted|merchant_anniversary_reserved|bankboi_pending)$/.test(String(error.reason || error.message || error));
-      activity.push({ level: recoverable ? "info" : "error", message: recoverable ? "Merchant order paused; progress preserved" : "Merchant order failed", details: String(error.reason || error.message || error) });
+      activity.push({ level: /upgrade.*uncertain|uncertain.*upgrade/i.test(String(error.reason || error.message || error)) ? "error" : recoverable ? "info" : "error", message: recoverable ? "Merchant order paused; progress preserved" : "Merchant order failed", details: String(error.reason || error.message || error) });
       try { await request("/merchant/complete", { method: "POST", body: {
         jobId: command.jobId, commandId: command.id, success: false,
         failureKind: error.reason === "hunt_movement_owned" ? "hunt_movement_owned" : error.commerceMovement ? "commerce_movement" : commerceRecovery ? "commerce_recovery" : undefined, error: String(error.reason || error.message || error),
