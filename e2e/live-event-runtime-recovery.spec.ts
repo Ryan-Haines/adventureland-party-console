@@ -1,4 +1,5 @@
 import {test,expect} from './live-fixtures';
+import type {Route} from '@playwright/test';
 
 const W='E2EWarrior',P='E2EPriest',fighters=[W,P];
 test.use({initialPosition:{map:'halloween',x:-550,y:-290}});
@@ -8,12 +9,24 @@ test.describe('retired event exit ownership',()=>{
   // Failure inventory: docs/testing-round2-recovery.md. Restoring a snapshot
   // without the old recovery must retire its still-running CODE continuation;
   // no successful Town receipt or native combat outcome is manufactured.
-  for (const deferred of [false,true]) test(`native event entry resumes after its old ${deferred?'deferred return is superseded':'return cycle disappears'}`,async({live},info)=>{
+  for (const variant of ['plain','deferred','stale-peer'] as const) test(`native event entry resumes after its old ${variant==='plain'?'return cycle disappears':variant==='deferred'?'deferred return is superseded':'deferred return admits a temporarily stale peer'}`,async({live},info)=>{
+    const deferred=variant!=='plain';
     test.setTimeout(300_000);
     await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
     const oldCycle='historical-retired-pumpkin-exit';
     let started:any,retiredAt=0,seed:any;
     const exitOwnerSamples:any[]=[];
+    const communicationFaults:any[]=[];
+    const context=live.clients[P].page.context();
+    let holdUntil=0;
+    let priestSeenAtBeforeHold=0;
+    const intercept=async(route:Route)=>{
+      if(Date.now()<holdUntil&&route.request().method()==='POST'&&route.request().postDataJSON()?.name===P){
+        if(communicationFaults.length<128)communicationFaults.push({at:Date.now(),action:'dropped-priest-status'});
+        await route.abort('failed');return;
+      }
+      await route.fallback();
+    };
     try {
       await live.restoreHistoricalSettings(settings=>{
         const profile=settings.farmingProfiles[W];
@@ -38,6 +51,13 @@ test.describe('retired event exit ownership',()=>{
         const m=new_monster('halloween',{type:'mrpumpkin',count:1,boundary:[point.x,point.y,point.x,point.y]},{temp:1});
         E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:m.id,map:m.map,x:m.x,y:m.y,portal,scope:'retired exit ownership; native door spawn with collision-safe initial encounter'};
       }finally{G.monsters.mrpumpkin=original;}})()`);
+      if(variant==='stale-peer'){
+        priestSeenAtBeforeHold=Number((await live.state()).characters[P]?.seenAt);
+        expect(priestSeenAtBeforeHold).toBeGreaterThan(0);
+        holdUntil=Date.now()+20_000;
+        await context.route('**/party-api/status',intercept);
+        await expect.poll(async()=>Date.now()-Number((await live.state()).characters[P]?.seenAt||priestSeenAtBeforeHold),{timeout:8_000}).toBeGreaterThan(3500);
+      }
       retiredAt=Date.now();
       await live.restoreHistoricalSettings(settings=>{
         const deferredEventReturns=deferred?Object.fromEntries(fighters.map(name=>[name,{event:'mrpumpkin',cycleId:oldCycle,
@@ -47,6 +67,21 @@ test.describe('retired event exit ownership',()=>{
           farmingProfiles:{...settings.farmingProfiles,[W]:{...settings.farmingProfiles[W],eventReturn:null,activeConvoy:null,eventSessions:{}}},
           eventSelectionsByCharacter:{...settings.eventSelectionsByCharacter,[W]:['mrpumpkin']}};
       });
+      if(variant==='stale-peer'){
+        await expect.poll(async()=>{const s=await live.state();return !s.deferredEventReturns[W]&&!!s.farmingProfiles[W].eventSessions[W];},{timeout:12_000}).toBe(true);
+        expect(Date.now()).toBeLessThan(holdUntil);
+        const admission=await live.state();
+        const priestSeenAt=Number(admission.characters[P]?.seenAt||priestSeenAtBeforeHold);
+        const priestNative=await live.clients[P].snapshot();
+        expect(priestNative.name).toBe(P);
+        expect(priestNative.connected).toBe(true);
+        expect(Date.now()-priestSeenAt).toBeGreaterThan(3000);
+        expect(admission.deferredEventReturns[P]?.cycleId).toBe(oldCycle);
+        communicationFaults.push({at:Date.now(),action:'released-after-warrior-admission',priestSeenAt,priestSeenAtBeforeHold,
+          priestNative:{name:priestNative.name,connected:priestNative.connected,runtimeGeneration:priestNative.runtimeGeneration},
+          warriorSession:admission.farmingProfiles[W].eventSessions[W],priestDeferred:admission.deferredEventReturns[P]});
+        holdUntil=0;
+      }
       await expect.poll(async()=>{const s=await live.state();
         const native=Object.fromEntries(await Promise.all(fighters.map(async name=>[name,
           await live.clients[name].run(`(()=>{const owner=globalThis.__partyEventExitOwner;
@@ -66,7 +101,9 @@ test.describe('retired event exit ownership',()=>{
         e.event==='hit'&&String(e.data?.id)===String(seed.id)&&e.data?.hid===name&&e.at>retiredAt));
       },{timeout:180_000}).toBe(true);
     }finally{
-      await info.attach('native-retired-event-exit',{body:JSON.stringify({oldCycle,deferred,started,retiredAt,seed,exitOwnerSamples,final:await live.state().catch(error=>({error:String(error)})),events:await live.clients[W].events()}),contentType:'application/json'});
+      holdUntil=0;
+      await context.unroute('**/party-api/status',intercept);
+      await info.attach('native-retired-event-exit',{body:JSON.stringify({oldCycle,deferred,variant,communicationFaults,started,retiredAt,seed,exitOwnerSamples,final:await live.state().catch(error=>({error:String(error)})),events:await live.clients[W].events()}),contentType:'application/json'});
       await live.post('/formation',{character:W,eventSelections:[]});
       if(seed)await live.admin(`output=(()=>{const m=Object.values(instances).flatMap(i=>Object.values(i.monsters||{})).find(m=>String(m.id)===${JSON.stringify(String(seed.id))}&&m.type==='mrpumpkin');if(m)remove_monster(m,{silent:true});delete E.mrpumpkin;broadcast_e();return true;})()`);
     }

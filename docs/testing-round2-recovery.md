@@ -204,3 +204,39 @@ so it could miss a legitimate resumed order's cap exhaustion. Match either
 the original job ID or its durable commerce order ID. Preserve the original
 120-second observation bound and all actual purchase/spending assertions;
 the recorded retry latency does not establish a production cap defect.
+
+## Temporarily stale deferred peer admission
+
+A first fighter can authorize a new event while a matching deferred peer's last
+real status is older than the three-second freshness bound. Source review raised
+the possibility that retiring the first fighter's journal could leave the peer
+blocked, because later requests no longer identify that superseded cycle. This
+was a hypothesis to verify, not an observed production failure.
+The native retired-exit scenario now drops only Priest status transport for a
+bounded twenty-second window, proves it is stale at real Warrior admission,
+then releases communication. It retains the fifteen-second owner retirement
+bound, unchanged CODE identities, both original saved checkpoints, and actual
+boss hits. The bounded fault ledger records dropped requests and real admission;
+no response, readiness flag, or successful receipt is manufactured.
+
+The corrected native scenario passed on unchanged production commit 0a85cb1:
+one scenario, 34 verified evidence files. At Warrior admission Priest remained
+connected, its verified last status was approximately 9.5 seconds old, and its
+deferred journal was still present. After communication resumed, Warrior's old
+owner disappeared at 5.6 seconds after restoration; Priest resumed its real old
+return handler and its owner disappeared at 13.9 seconds. Both saved waypoints
+and actual boss hits passed. Priest ultimately had its own admitted event
+session containing its original checkpoint; Warrior's repeated permission
+requests cannot transfer that journal once Warrior's journal is gone. These
+observations support Priest progressing through its own admission after the old
+return released its local gate, rather than establishing the hypothesized
+deadlock. The ledger does not record every permission request or Priest Town
+receipt, so it cannot attribute that gate release to an exact native receipt.
+Retain the bounded regression scenario; no provenance production change is
+justified by this passing result.
+
+The first stale-peer run stopped in fixture setup: public state intentionally
+omits stale characters, so reading Priest's projected seenAt after admission
+threw before the owner check. Capture its verified finite timestamp before the
+hold, retain any newer projected timestamp, and independently verify its native
+client remains connected at admission. This setup failure is not product RED.
