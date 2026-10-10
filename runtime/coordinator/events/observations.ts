@@ -227,7 +227,7 @@ export function createEventObservations(
     participate(name, event);
     if (cycle?.combatEvent === event && cycle.waypoints)
       state.sessions[name]!.waypoints = cycle.waypoints;
-    transferDeferredCheckpoint(name);
+    transferDeferredParty(name, event);
     ports.persist();
     return { allowed: true };
   }
@@ -240,6 +240,28 @@ export function createEventObservations(
       session.waypoints = {...session.waypoints, [name]: {revision:intent.revision, location:{...recovery.checkpoint}}};
     ports.retireDeferredCommand?.(name, recovery.cycleId);
     delete state.deferred[name];
+  }
+  function transferDeferredParty(name: string, event: string): void {
+    const cycleId = state.deferred[name]?.cycleId;
+    const followers = cycleId ? ports.activeNames().filter(member =>
+      member !== name && canTransferDeferredFighter(member, cycleId, event)) : [];
+    // Admission, not a global boss sighting, hands the original return party
+    // to combat. Blocked followers cannot independently request permission.
+    transferDeferredCheckpoint(name);
+    for (const member of followers) {
+      participate(member, event);
+      transferDeferredCheckpoint(member);
+    }
+  }
+  function canTransferDeferredFighter(name: string, cycleId: string, event: string): boolean {
+    const deferred = state.deferred[name], intent = ports.intent(name);
+    if (!deferred || deferred.cycleId !== cycleId || name === ports.merchant() ||
+        !ports.enabled(name, event) || intent.cancelled || deferred.navigationRevision !== intent.revision) return false;
+    return freshDeferredFighter(ports.statuses()[name]);
+  }
+  function freshDeferredFighter(report: ReturnStatus | undefined): boolean {
+    const at = Number(report?.seenAt);
+    return !!report && !report.rip && Number.isFinite(at) && ports.now()-at<=3000 && at<=ports.now()+500;
   }
 
   function reportAnniversaryHandoff(body: EventReport): void {

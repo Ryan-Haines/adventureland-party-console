@@ -5,6 +5,9 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Transfer the matching deferred return party together when a new combat event
+  is admitted, so blocked followers retain their checkpoints and can join.
+
 - Apply event-return ownership on fast heartbeat receipts so an awaiting old
   exit cannot retain a fighter after new event admission; fence delayed replies.
 

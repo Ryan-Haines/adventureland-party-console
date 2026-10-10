@@ -127,6 +127,16 @@ Before changing the existing retirement fence: the last eventRecovery diagnostic
 
 ## Fast heartbeat retirement while an exit handler is awaiting
 
+Run 38010082218 exposes a second dependency: the warrior's new-event permission
+clears its deferred checkpoint and cancels the old shared walk, but its enabled
+priest follower still has that same deferred cycle. Its old exit blocks its own
+permission request, and the backend correctly republishes the still-owned cycle.
+New party event admission must hand off fresh enabled fighters from that exact
+deferred cycle together, retaining each matching navigation revision/checkpoint.
+Do not include merchants, offline/dead fighters, another profile/cycle, disabled
+events, cancelled navigation, or newer revisions. Keep the existing 15-second
+native ownership gate and real combat checks unchanged.
+
 Latest Linux deferred-handoff evidence clears both backend deferred journals and
 the old convoy, but the priest's native exit owner retains the old cycle while
 the warrior clears it. The priest's normal tick awaits its existing exit handler;
