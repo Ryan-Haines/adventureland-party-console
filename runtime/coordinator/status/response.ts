@@ -180,6 +180,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
     if (mode === "combat")
       return {
         serverNow: ports.now(),
+        ...returnResponse(name),
         rareControl: ports.rareControl(name),
         groupedCombat: ports.groupedCombat(),
         passingEncounters: passingReports(),

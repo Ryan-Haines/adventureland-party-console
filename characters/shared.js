@@ -2861,7 +2861,14 @@
           var t=value.transportTiming || {}, duration=convoyDiagnosticClock()-transportStart.mono;
           (root.__partyTravelTransport || (root.__partyTravelTransport={})).barrier={at:Date.now(),durationMs:duration,processingMs:Math.max(0,(t.sentAt||0)-(t.receivedAt||0)),eventLoopMaxMs:t.eventLoopMaxMs,outcome:'success'};
         }
-        if (path === '/status') acceptTravelResponse(value, transportStart, !!(options.body && (options.body.combatOnly || options.body.combatWait)));
+        if (path === '/status') {
+          acceptTravelResponse(value, transportStart, !!(options.body && (options.body.combatOnly || options.body.combatWait)));
+          // The ordinary status tick can still be awaiting this exit handler.
+          // Fast heartbeat ownership must fence it at the transport boundary.
+          void applyEventReturnOwner(value).catch(function(error){
+            if(runtimeCurrent())game_log("Event ownership update: "+String(error.message||error),"red");
+          });
+        }
         rememberConvoyStatusRequest(convoyStatusStarted, 'success');
         resolve(value);
       }).fail(function (xhr, status, error) {
@@ -9523,20 +9530,26 @@
 
   async function applyEventReturnOwner(state) {
     // Command deletion cannot release an old async exit after host restart.
+    if (!runtimeCurrent()) return;
     if (!Object.prototype.hasOwnProperty.call(state, "eventReturnCycleId")) return;
+    var at=Number(state.transportTiming && state.transportTiming.sentAt || state.serverNow);
+    if(Number.isFinite(at)) {
+      if(at<(root.__partyEventRecoveryOwnerAt||0))return;
+      root.__partyEventRecoveryOwnerAt=at;
+    }
     root.__partyEventRecoveryCycleId = state.eventReturnCycleId;
     var owner = root.__partyEventExitOwner;
     if (!owner || owner.cycleId === state.eventReturnCycleId) return;
     owner.cancelled = true;
     root.__partyEventExitOwner = null;
     var ownsMovement = !convoyTraveling && !followingLeader && !forceTraveling && !townTraveling;
-    if (ownsMovement && typeof stop === "function") {
-      try { await stop("smart"); await stop("move"); } catch (_retiredEventExitStop) {}
-    }
     eventReturnPending = false;
     departurePending = false;
     eventRecoveryRetryAt = 0;
     eventRecoveryState = { phase: "idle", cycleId: null, event: null, checkpoint: null, attemptAt: 0, lastError: null };
+    if (ownsMovement && typeof stop === "function") {
+      try { await Promise.all([stop("smart"),stop("move")]); } catch (_retiredEventExitStop) {}
+    }
   }
 
   async function merchantSendMail(command) {

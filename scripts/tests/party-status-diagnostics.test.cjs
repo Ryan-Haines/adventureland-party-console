@@ -8,7 +8,7 @@ function fixture() {
   const requests = [], logs = [];
   const r = vm.createContext({ observeBankSortVisit() {}, recoverBankSortBeforeWork:async()=>{}, root: {}, Date: { now: () => now }, api: 'http://localhost/party-api',
     character: { name: 'Warrior', ctype: 'warrior' }, convoySignal: { id: 'convoy', epoch: 4, phase: 'scheduled' }, convoyTraveling: null,
-    game_log: message => logs.push(message),
+    game_log: message => logs.push(message), applyEventReturnOwner: async () => {},
     $: { ajax(options) { requests.push(options); return {
       done(fn) { if (!failure) fn(response); return this; },
       fail(fn) { if (failure) fn(...failure); return this; },

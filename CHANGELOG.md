@@ -5,6 +5,9 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Apply event-return ownership on fast heartbeat receipts so an awaiting old
+  exit cannot retain a fighter after new event admission; fence delayed replies.
+
 - Route event combat around native terrain with a bounded, owned local detour,
   preserving secondary-attacker clearance so Goobrawl survivors remain reachable.
 

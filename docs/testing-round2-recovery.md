@@ -125,6 +125,18 @@ Retired-exit fixture isolation: get_monster takes a monster type rather than a d
 Before changing the existing retirement fence: the last eventRecovery diagnostic can retain an old cycle after its asynchronous owner is cancelled, and departurePending can independently belong to new travel. Observe actual native CODE exit ownership and coordinator-published recovery selection for both fighters, preserving runtime identity. The unchanged 15-second fence requires no live uncancelled old exit owner and no old published selection; retain old diagnostics in a bounded ledger instead of treating them as ownership. Preserve the 180-second requirement for both real native boss hits and the exact deferred checkpoint assertions. A missing owner alone never proves resumed behavior.
 # Deferred event handoff: admitted return walk
 
+## Fast heartbeat retirement while an exit handler is awaiting
+
+Latest Linux deferred-handoff evidence clears both backend deferred journals and
+the old convoy, but the priest's native exit owner retains the old cycle while
+the warrior clears it. The priest's normal tick awaits its existing exit handler;
+independent combat heartbeats continue, but their responses omitted return-cycle
+ownership and the transport receipt did not install it. Publish that ownership
+on fast responses and fence the native continuation immediately on receipt.
+Reject older ownership responses and clear old flags before any asynchronous
+movement stop, preserving newer routes. The existing native scenario retains its
+15-second limit, unchanged CODE identities, saved checkpoints, and real boss hits.
+
 ## Goobrawl survivor blocked by terrain
 
 The Boo Boo walking-cache scenario also records a bounded admission ledger:
