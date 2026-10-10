@@ -15,12 +15,14 @@ const graceReference:{nativeSha256:string;results:{grade:number;choice:Record<st
 test('merchant logistics shows capacity blocked collection in red and clears when space returns',async({page,app},info)=>{
   const initial=await app.state();
   let occupied=39;
+  let cooldown=0;
+  await page.route('**/party-api/dashboard-stream',route=>route.abort());
   // Declared status read boundary: exercise dashboard presentation, not native transfers.
   await page.route('**/party-api/state*',async route=>{
     const response=await route.fetch(),state=await response.json();
     await route.fulfill({response,json:{...state,merchantCharacter:'M',merchantCurrent:null,
       characters:{...initial.characters,...state.characters,M:{...initial.characters.M,...state.characters?.M,items:Array.from({length:42},(_,slot)=>slot<occupied?{slot,item:{name:'helmet'}}:null)}},
-      gatheringModes:['fishing','mining'],gatheringCooldowns:{fishing:0,mining:0},
+      gatheringModes:['fishing','mining'],gatheringCooldowns:{fishing:cooldown,mining:cooldown},
       merchantQueue:[{id:'capacity-collection',reason:'party collection',target:'GermanicHP',priority:82}]}});
   });
   await page.goto('/');
@@ -44,6 +46,9 @@ test('merchant logistics shows capacity blocked collection in red and clears whe
   await expect(row.getByText('queued',{exact:true})).toBeVisible();
   await expect(page.getByText('BLOCKED',{exact:true})).toHaveCount(0);
   await info.attach('merchant-capacity-restored',{body:await page.screenshot(),contentType:'image/png'});
+  cooldown=Date.now()+600000;
+  await expect(page.locator('span[title="Fishing · M"]')).toHaveCount(0);
+  await expect(page.locator('span[title="Mining · M"]')).toHaveCount(0);
 });
 
 test('uncertain merchant upgrade shows red diagnostics and authoritative UTC retry time',async({page,app},info)=>{
@@ -244,6 +249,13 @@ test('Halloween events stay opt-in, show partial-feed timers, inherit and persis
     await expect.poll(async()=>{const state=await app.state();return ids.filter(id=>state.eventSelectionsByCharacter.W?.includes(id)).length;}).toBe(['Slenderman','Mr. Green','Mr. Pumpkin'].indexOf(name)+1);
     await expect(row(name).getByRole('checkbox')).toBeChecked();
   }
+  // Priority failure modes: reordering changes attendance, leaks to another
+  // character, loses persistence, or allows an unsupported event into the order.
+  await expect(row('Other event').getByLabel('Other event priority')).toHaveText('0');
+  const priorityOrder = async () => (await app.state()).eventPrioritiesByCharacter?.W;
+  await row('Mr. Green').dragTo(row('Anniversary'));
+  await expect.poll(priorityOrder).toEqual(['mrgreen','anniversary','abtesting','goobrawl','crabxx','franky','icegolem','snowman','slenderman','mrpumpkin']);
+  await expect(row('Mr. Green').getByLabel('Mr. Green priority')).toHaveText('10');
   await page.keyboard.press('Escape');
   inherited=true;
   await page.reload();
@@ -252,10 +264,12 @@ test('Halloween events stay opt-in, show partial-feed timers, inherit and persis
   for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) {await expect(row(name).getByRole('checkbox')).toBeChecked();await expect(row(name).getByRole('checkbox')).toBeDisabled();}
   await page.keyboard.press('Escape');
   await open('M');
+  await expect(row('Anniversary').getByLabel('Anniversary priority')).toHaveText('10');
   for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) {await expect(row(name).getByRole('checkbox')).not.toBeChecked();await expect(row(name).getByRole('checkbox')).toBeEnabled();}
   await page.keyboard.press('Escape');
   await app.restartCoordinator();await page.reload();await open('W');
   for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) await expect(row(name).getByRole('checkbox')).toBeChecked();
+  await expect(row('Mr. Green').getByLabel('Mr. Green priority')).toHaveText('10');
   await info.attach('halloween-persisted-selections',{body:JSON.stringify(await app.state()),contentType:'application/json'});
   await info.attach('halloween-events-after-restart',{body:await page.screenshot(),contentType:'image/png'});
 });

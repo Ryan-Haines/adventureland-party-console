@@ -124,6 +124,10 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     (eventSelections: string[]) => formation({ character: name, eventSelections }),
     [formation, name],
   );
+  const onEventPriorityChange = useCallback(
+    (eventPriorities: string[]) => formation({ character: name, eventPriorities }),
+    [formation, name],
+  );
   const onFollowChange = useCallback(
     (checked: boolean) => formation({ character: name, follow: !!checked }),
     [formation, name],
@@ -139,11 +143,12 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
       merchantCharacter: state.merchantCharacter,
       followers: state.followers,
       eventsByCharacter: state.eventsByCharacter,
+      eventPrioritiesByCharacter: state.eventPrioritiesByCharacter,
       eventSelectionsByCharacter: state.eventSelectionsByCharacter,
       eventSchedules: state.eventSchedules,
     }),
     [state.leader, state.merchantCharacter, state.followers, state.eventsByCharacter,
-      state.eventSelectionsByCharacter, state.eventSchedules],
+      state.eventSelectionsByCharacter, state.eventPrioritiesByCharacter, state.eventSchedules],
   );
   const onRadiusSave = useCallback(
     (radius: number) => setFocus(name, monsterFocusSelected, monsterFocusPriorities, radius),
@@ -327,7 +332,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             state={eventState}
             name={char.name}
             merchant={char.ctype === 'merchant'}
-            onChange={onEventSelectionChange}
+            onChange={onEventSelectionChange} onPriorityChange={onEventPriorityChange}
           />
         </div>
         <div className="mt-5 grid gap-3">

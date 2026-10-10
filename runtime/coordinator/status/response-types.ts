@@ -125,7 +125,7 @@ export interface HeartbeatResponsePorts {
   mapSubscriberCount(name: string): number;
   bankStackHomes(): unknown;
   groupedCombat(): unknown;
-  selectedEvents(name: string): unknown;
+  selectedEvents(name: string): string[];
   anniversary(): unknown;
   rareOwns(): boolean;
 }

@@ -91,7 +91,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
           status.serverLiveEvents.some((event) => ports.enabled(name, event.name)),
       );
     return (
-      reporter?.serverLiveEvents?.find((event) => ports.enabled(name, event.name))?.name || null
+      ports.selectedEvents(name).find(event => reporter?.serverLiveEvents?.some(live => live.name === event)) || null
     );
   }
 

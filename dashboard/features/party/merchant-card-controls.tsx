@@ -28,6 +28,7 @@ import { MerchantCancelJobControl } from "./merchant-cancel-job-control";
 import { routineFor } from '../../../runtime/coordinator/merchant/routines';
 import { coordinatorMerchantTransferBlocked } from '../../../runtime/coordinator/merchant/job-policy';
 import { collectsPartyItems, pickupReason } from '../../../runtime/coordinator/merchant/pickup-jobs';
+import { useCharacterData } from './dashboard-live';
 
 export const MerchantCardControls = memo(function MerchantCardControls({
   state: baseState,
@@ -65,10 +66,11 @@ export const MerchantCardControls = memo(function MerchantCardControls({
   const logs = useQueries({ queries: [{ ...domainOptions(client, 'logs'), enabled: visible }].filter(() => activityOpen) })[0];
   const state = { ...baseState, ...logs?.data };
   const [cleanupResult, setCleanupResult] = useState<string | null>(null);
-  const merchant = state.merchantCharacter ? state.characters[state.merchantCharacter] : null;
+  const inventory = useCharacterData(state.merchantCharacter || "", 'inventory');
+  const merchantStatus = state.merchantCharacter ? state.characters[state.merchantCharacter] : null;
+  const merchant = merchantStatus ? {...merchantStatus, ...inventory} : null;
   const inventoryAtCapacity = Array.isArray(merchant?.items) && merchant.items.filter(entry => !entry).length <= 3;
   const readiness = (mode: "fishing" | "mining") => {
-    if (inventoryAtCapacity && state.gatheringModes?.includes(mode)) return <span className="text-red-400">BLOCKED</span>;
     const remaining = Math.max(
       0,
       Math.max(
@@ -96,12 +98,12 @@ export const MerchantCardControls = memo(function MerchantCardControls({
     if (job.reason === "fishing" || job.reason === "mining") return inventoryAtCapacity;
     const reason = pickupReason(job.reason, job.target, state.merchantCharacter);
     return coordinatorMerchantTransferBlocked(
-      { merchantCharacter: state.merchantCharacter || null, statuses: state.characters },
+      { merchantCharacter: state.merchantCharacter || null, statuses: {...state.characters, ...(merchant && state.merchantCharacter ? {[state.merchantCharacter]: merchant} : {})} },
       { ...job, reason: collectsPartyItems(reason) ? "marked items" : reason },
     );
   };
   const capacityReason = `Merchant capacity blocked (${merchant?.items?.filter(Boolean).length}/${merchant?.items?.length} slots occupied; three slots reserved)`;
-  const merchantJobs = [
+  const merchantJobs: {job: MerchantJob; status: string}[] = [
     ...(state.merchantCurrent
       ? [
           {
@@ -117,9 +119,10 @@ export const MerchantCardControls = memo(function MerchantCardControls({
     ...(state.merchantQueue || []).map((job) => ({ job, status: capacityBlocked(job) ? (job.reason === "fishing" || job.reason === "mining" ? "BLOCKED" : "blocked") : "queued" })),
     ...(state.gatheringModes || []).filter((mode): mode is "fishing" | "mining" =>
       (mode === "fishing" || mode === "mining") &&
+      Math.max(Number(merchant?.gatheringCooldowns?.[mode] || 0), Number(state.gatheringCooldowns?.[mode] || 0)) <= now &&
       ![state.merchantCurrent, ...(state.merchantQueue || [])].some(job => job?.reason === mode)
-    ).map(mode => ({job: {reason: mode, target: state.merchantCharacter || ""} as MerchantJob,
-      status: inventoryAtCapacity ? "BLOCKED" : Math.max(Number(merchant?.gatheringCooldowns?.[mode] || 0), Number(state.gatheringCooldowns?.[mode] || 0)) > now ? "cooling down" : "queued"})),
+    ).map(mode => ({job: {reason: mode, target: state.merchantCharacter || ""} satisfies MerchantJob,
+      status: inventoryAtCapacity ? "BLOCKED" : "queued"})),
   ];
   return (
     <section className="border-b border-amber-900/70 bg-amber-400/[0.03] p-4">

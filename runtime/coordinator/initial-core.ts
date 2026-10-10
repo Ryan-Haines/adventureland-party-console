@@ -19,6 +19,7 @@ export function initialPartySelection(saved: SavedPartySelection) {
     leader: saved.leader || null,
     followers: saved.followers || {},
     eventsByCharacter: saved.eventsByCharacter || {},
+    eventPrioritiesByCharacter: saved.eventPrioritiesByCharacter || {},
     eventSelectionsByCharacter: saved.eventSelectionsByCharacter || {},
   };
 }

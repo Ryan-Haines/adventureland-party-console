@@ -174,7 +174,7 @@ test('native event selection replaces a failed old entry without waiting on anot
   // must not leave the old failed rendezvous holding both live event workflows.
   await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
   const seeds=await live.admin(`output=(()=>{const result={};
-    for(const [type,x,y] of [['mrpumpkin',-495,685],['mrgreen',-200,-200]]){
+    for(const [type,x,y] of [['mrpumpkin',-495,685],['mrgreen',-495,650]]){
       const original=G.monsters[type];try{G.monsters[type]={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,spawns:[]};
         const m=new_monster('halloween',{type,count:1,boundary:[x,y,x,y]},{temp:1});
         result[type]={id:m.id,map:m.map,x:m.x,y:m.y};
@@ -186,16 +186,15 @@ test('native event selection replaces a failed old entry without waiting on anot
   try {
     await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
     await expect.poll(async()=>{const s=await live.state();if(s.activeConvoy?.walkingEvent==='mrpumpkin'&&s.activeConvoy.phase==='travel'){before=s;return true;}return false;},{timeout:90000}).toBe(true);
-    // Followers inherit the leader's opt-ins. Preserve Warrior's already joined
-    // Pumpkin attendance while the replacement Priest can choose the newly
-    // announced, earlier-ending Green event from the same enabled set.
-    await live.post('/formation',{character:W,eventSelections:['mrpumpkin','mrgreen']});
+    // A higher-priority live boss must preempt retained attendance for both
+    // leader and follower, including after CODE turnover and persistence replay.
+    await live.post('/formation',{character:W,eventSelections:['mrpumpkin','mrgreen'],eventPriorities:['mrgreen','mrpumpkin','anniversary','abtesting','goobrawl','crabxx','franky','icegolem','snowman','slenderman']});
     await live.admin(`output=(()=>{const seed=${JSON.stringify(seeds.mrgreen)};E.mrgreen={live:true,...seed,hp:100000000,max_hp:100000000,end:Date.now()+600000};broadcast_e();return true;})()`);
     await live.clients[P].frame.evaluate(()=>{const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);});
     await live.restartCoordinator();
     await expect.poll(async()=>{const state=await live.state();
-      const hits=await Promise.all([[W,'mrpumpkin'],[P,'mrgreen']].map(async([name,type])=>({name,type,hit:(await live.clients[name].events()).find((event:any)=>event.event==='hit'&&String(event.data?.id)===String(seeds[type].id)&&event.data?.hid===name&&event.data?.damage>0)})));
+      const hits=await Promise.all([[W,'mrgreen'],[P,'mrgreen']].map(async([name,type])=>({name,type,hit:(await live.clients[name].events()).find((event:any)=>event.event==='hit'&&String(event.data?.id)===String(seeds[type].id)&&event.data?.hid===name&&event.data?.damage>0)})));
       samples.push({at:Date.now(),convoy:state.activeConvoy&&{id:state.activeConvoy.id,phase:state.activeConvoy.phase,event:state.activeConvoy.walkingEvent},characters:Object.fromEntries(fighters.map(name=>[name,{map:state.characters[name]?.map,event:state.characters[name]?.joinedEvent,runtime:state.characters[name]?.dashboardRuntime}])),hits});
       if(samples.length>64)samples.shift();
       return hits.every(value=>!!value.hit);

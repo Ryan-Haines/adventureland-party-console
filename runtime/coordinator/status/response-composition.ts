@@ -20,7 +20,7 @@ type ResponsePorts = Omit<HeartbeatResponsePorts, ComposedPorts> & {
   resolveArea: typeof resolve;
   huntOwns: (hunt: ResponseState["monsterHunt"]) => boolean;
   stackHomes: (bank: unknown, bankbois: ResponseState["bankbois"]) => unknown;
-  selectedEvents: (state: ResponseState, name: string) => unknown;
+  selectedEvents: (state: ResponseState, name: string) => string[];
 };
 
 /** Heartbeats project the current farming authority, navigation intent and storage ownership. */

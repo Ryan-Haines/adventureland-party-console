@@ -3,6 +3,7 @@ interface EventFormation {
   merchantCharacter?: string | null;
   followers?: Record<string, boolean>;
   eventsByCharacter?: Record<string, boolean>;
+  eventPrioritiesByCharacter?: Record<string, string[]>;
   eventSelectionsByCharacter?: Record<string, string[]>;
 }
 
@@ -20,7 +21,7 @@ export function selectedEvents(party: EventFormation, name: string): string[] {
   const source = eventPolicy(party, name).source;
   const saved = party.eventSelectionsByCharacter?.[source];
   const selections = saved ?? ["anniversary", ...(party.eventsByCharacter?.[source] ? legacyDefaultEvents.filter(id => id !== "anniversary") : [])];
-  return selections.filter(id => supportedEvents.includes(id));
+  return eventPriorityOrder(party, name).filter(id => selections.includes(id));
 }
 
 export function eventEnabled(party: EventFormation, name: string, event: string) {
@@ -42,4 +43,11 @@ export function eventPolicy(party: EventFormation, name: string) {
       ? party.eventSelectionsByCharacter[source].some(id => id !== "anniversary" && supportedEvents.includes(id))
       : Boolean(party.eventsByCharacter?.[source]),
   };
+}
+
+// Order is independent of attendance checkboxes; new supported events append.
+export function eventPriorityOrder(party: EventFormation, name: string): string[] {
+  const source = eventPolicy(party, name).source;
+  return [...new Set([...(party.eventPrioritiesByCharacter?.[source] ?? []), ...supportedEvents])]
+    .filter(id => supportedEvents.includes(id));
 }

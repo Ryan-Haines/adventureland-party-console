@@ -60,6 +60,7 @@ export const validators: Record<string, (value: unknown) => boolean> = {
   goldTargets: mapOf(number),
   eventsByCharacter: mapOf(boolean),
   eventSelectionsByCharacter: mapOf(listOf(text)),
+  eventPrioritiesByCharacter: mapOf(listOf(text)),
   passiveRareHunts: mapOf(boolean),
   passiveHunting: value => object(value) && value.version === 1 && validPassivePatch({rules:value.rules,useFieldGenerators:value.useFieldGenerators}),
   phoenixRouteOrder: listOf(text),
@@ -103,7 +104,7 @@ const perCharacter = new Set([
   "monsterSearchRadiusByCharacter",
   "goldTargets",
   "eventsByCharacter",
-  "eventSelectionsByCharacter",
+  "eventSelectionsByCharacter", "eventPrioritiesByCharacter",
   "restockPolicies",
   "autoDeconstruction",
 ]);

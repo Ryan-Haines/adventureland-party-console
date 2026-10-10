@@ -9,7 +9,7 @@ function fixture(){
   now:()=>100,activeNames:()=>[],enabled:()=>false,intent:()=>intent,escapeOwns:()=>false,rareControl:()=>null,
   convoySignal:(current,name)=>({current,name}),waypoint:()=>waypoint,resolveArea:(catalog,focus,point)=>({catalog,focus,point}),
   rareEncounter:()=>null,huntOwns:hunt=>!!hunt?.turnIn,mapSubscriberCount:()=>0,
-  stackHomes:(bank,bankbois)=>({bank,bankbois}),groupedCombat:()=>null,selectedEvents:current=>current.selection,
+  stackHomes:(bank,bankbois)=>({bank,bankbois}),groupedCombat:()=>null,selectedEvents:current=>current.selection||[],
   anniversary:()=>null,rareOwns:()=>false,
  });
  return {state,api,setIntent:value=>intent=value,setWaypoint:value=>waypoint=value};

@@ -14,6 +14,7 @@ export interface SavedPartySelection {
   leader?: string | null;
   followers?: Record<string, boolean> | null;
   eventsByCharacter?: Record<string, boolean> | null;
+  eventPrioritiesByCharacter?: Record<string, string[]> | null;
   eventSelectionsByCharacter?: Record<string, string[]> | null;
 }
 

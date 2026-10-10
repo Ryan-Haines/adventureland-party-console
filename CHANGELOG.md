@@ -5,11 +5,17 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Save a separate event attendance priority for each character. Drag supported
+  events to reorder them; followers inherit their leader's order and merchants
+  retain their own. Higher-priority events can replace lower-priority attendance,
+  and the order survives coordinator restarts.
+
 - Show queued merchant item collections as red “blocked” in the logistics list
   when inventory capacity reaches the three-slot reserve (39/42). Include a
   capacity explanation on hover and restore “queued” when space becomes available.
-  Show enabled fishing/mining in logistics as red “BLOCKED” at capacity, and
-  defer gathering without casting or resetting its cooldown until space returns.
+  Show due fishing/mining in logistics as red “BLOCKED” at capacity, hide modes
+  that are still cooling down, and defer gathering without casting or resetting
+  its cooldown until space returns.
 
 - Show uncertain merchant upgrades as errors with item, tier and inventory-slot
   diagnostics. Log each admitted order retry with its actual scheduled timestamp

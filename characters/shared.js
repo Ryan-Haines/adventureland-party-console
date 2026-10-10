@@ -11267,7 +11267,7 @@
       return;
     }
     if (character.ctype !== "merchant" && eventsEnabled &&
-        (activeCombatEvent() || joinedEvent || eventTraveling || eventReturnPending ||
+        (activeCombatEvent() || eventTraveling || eventReturnPending ||
           anniversaryPlan && anniversaryPlan.eventCycle && anniversaryPlan.eventCycle.combatHandoffAt &&
             Date.now() <= anniversaryPlan.eventCycle.endsAt)) {
       if (!anniversaryBusy) anniversaryStaging = false;
@@ -12110,6 +12110,16 @@
       var kind = name === "abtesting" ? "pvp" : "monster";
       var attendance = halloweenEvent(name) ? halloweenAttendance(name, state) : null;
       if (manuallySuppressedEvent && manuallySuppressedEvent.name === name) return null;
+      var anniversary = status && status.anniversary;
+      var cycle = anniversaryPlan && anniversaryPlan.eventCycle;
+      var anniversaryPending = eventSelected("anniversary") && anniversary && anniversary.active !== false &&
+        !anniversaryRoundAborted(anniversary) && !(cycle &&
+          (cycle.returnCompletedAt || cycle.supersededAt || cycle.combatHandoffAt) && Date.now() <= cycle.endsAt) &&
+        (anniversary.live !== false ? !!(character.s && character.s.anniversary_visit) ||
+          !(character.s && character.s.anniversary_kiss) :
+          anniversaryEpoch(anniversary.next) > Date.now() && anniversaryEpoch(anniversary.next) - Date.now() <= 90000);
+      if (anniversaryPending && enabledEventSelections &&
+          enabledEventSelections.indexOf("anniversary") < enabledEventSelections.indexOf(name)) return null;
       if (!eventSelected(name) || !eventIsSupported(name) || (kind === "monster" && !types.length) ||
           (halloweenEvent(name) ? !attendance : !corroborated && (!state || state.live === false))) return null;
       return { name: name, state: state || {}, types: types, kind: kind,
@@ -12118,7 +12128,9 @@
       var mapped = G.maps && G.maps[character.map] && G.maps[character.map].event;
       var aCurrent = Number(a.name === mapped || a.name === joinedEvent);
       var bCurrent = Number(b.name === mapped || b.name === joinedEvent);
-      return bCurrent - aCurrent || (Number(a.state.end) || Infinity) - (Number(b.state.end) || Infinity);
+      var aPriority = enabledEventSelections ? enabledEventSelections.indexOf(a.name) : -1;
+      var bPriority = enabledEventSelections ? enabledEventSelections.indexOf(b.name) : -1;
+      return (aPriority >= 0 && bPriority >= 0 ? aPriority - bPriority : 0) || bCurrent - aCurrent || (Number(a.state.end) || Infinity) - (Number(b.state.end) || Infinity);
     })[0] || null;
   }
 
@@ -12584,7 +12596,7 @@
       }
       if (eventTraveling || banking || stocking || upgrading || departurePending || bankQueued) return;
       if (!await eventTravelAllowed(event.name)) return;
-      if (!event.staging && eventCombatReachable(nearestEventTarget())) {
+      if (!event.staging && joinedEvent === event.name && eventCombatReachable(nearestEventTarget())) {
         joinedEvent = event.name;
         root.__partyJoinedEvent = event.name;
         return;

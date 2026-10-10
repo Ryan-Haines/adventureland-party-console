@@ -5,6 +5,7 @@ interface FormationState {
   merchantCharacter: string | null;
   followers: Record<string, boolean>;
   eventsByCharacter: Record<string, boolean>;
+  eventPrioritiesByCharacter: Record<string, string[]>;
   eventSelectionsByCharacter: Record<string, string[]>;
 }
 interface FormationPorts {
@@ -38,12 +39,24 @@ export function createFormationRoute(state: FormationState, ports: FormationPort
     ];
     return null;
   }
+  function priorities(name: string, value: unknown): FormationError | null {
+    if (!Array.isArray(value) || value.length !== ports.supported.length ||
+        new Set(value).size !== value.length || value.some(id => !ports.supported.includes(id)))
+      return { code: 400, error: "invalid event priorities" };
+    if (ports.inherited(name)) return { code: 409, error: "using leader events" };
+    state.eventPrioritiesByCharacter[name] = [...value] as string[];
+    return null;
+  }
   function character(body: Record<string, unknown>): FormationError | null {
     const name = requestText(body.character);
     if (!ports.owned(name)) return { code: 400, error: "invalid character" };
     if (body.follow !== undefined) {
       if (typeof body.follow !== "boolean") return { code: 400, error: "invalid follower" };
       state.followers[name] = body.follow;
+    }
+    if (body.eventPriorities !== undefined) {
+      const error = priorities(name, body.eventPriorities);
+      if (error) return error;
     }
     if (body.eventSelections !== undefined) {
       const error = selections(name, body.eventSelections);
@@ -68,6 +81,7 @@ export function createFormationRoute(state: FormationState, ports: FormationPort
       leader: state.leader,
       followers: state.followers,
       eventsByCharacter: state.eventsByCharacter,
+      eventPrioritiesByCharacter: state.eventPrioritiesByCharacter,
       eventSelectionsByCharacter: state.eventSelectionsByCharacter,
     });
   };

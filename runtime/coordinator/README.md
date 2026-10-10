@@ -1846,3 +1846,12 @@ event exit command for the same cycle and saved revision. Main arrival must stil
 be explicitly acknowledged before checkpoint travel begins. Activate these
 coordinator changes using the supported full restart and verify native death
 reentry and saved-point return artifacts; building alone does not activate them.
+
+
+Event attendance priorities are saved per character independently of event opt-ins.
+Followers use the leader's order; merchants retain their own order. Higher displayed
+numbers run first, including takeover from an already joined lower-priority event.
+Unsupported catalog events show zero and cannot enter the order; Cave is excluded.
+Validate the Halloween console order/inheritance/restart journey and native higher
+priority boss takeover in live-event-runtime-recovery.spec.ts. Publish character
+assets and coordinator/dashboard together through the supported full restart.
