@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Run native gameplay CI across 16 isolated runners: one for each of the three
+  Cave scenarios and 13 for the remaining suite. Increase retained unit-test CI
+  concurrency from two to four isolated test-file workers.
+
 - Save a separate event attendance priority for each character. Drag supported
   events to reorder them; followers inherit their leader's order and merchants
   retain their own. Higher-priority events can replace lower-priority attendance,

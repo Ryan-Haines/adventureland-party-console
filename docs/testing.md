@@ -1,5 +1,31 @@
 # Testing
 
+## CI parallelism
+
+The full native workflow uses 16 isolated GitHub runners with one Playwright
+worker each. Shards 1–3 run the three named `live-cave.spec.ts` journeys separately;
+shards 4–16 set `E2E_SKIP_CAVE=1` and distribute the remaining live project over
+13 shards. Focused `grep` runs retain one runner and include Cave normally.
+When adding or renaming a Cave scenario, update its workflow filter. Validate
+the complete allocation with Playwright `--list`: the union must equal the
+normal live listing, with no duplicate or missing test identities. Retain that
+allocation as an artifact. No game setup or live coordinator restart is required
+for this listing check.
+
+Parallelism failure inventory: a Cave filter can omit or accidentally duplicate
+a scenario; the remaining shards can repeat Cave unless the exclusion is scoped
+to the live project; a wrong shard denominator can lose coverage; focused runs
+must not inherit the exclusion. Native tests continue to use isolated runners
+and the existing evidence verifier. Sixteen native jobs leave four of the Free
+account's 20 concurrent-job slots for validation and focused work.
+
+Retained unit CI uses four process-isolated test-file workers on its existing
+runner; local unit runs remain at two. Concurrency can expose fixed ports,
+shared writable files or CPU-sensitive deadlines, so preserve TAP results and
+the regression checker, and diagnose any failures without relaxing assertions.
+More file workers do not parallelize sequential tests inside one file or shorten
+deliberate timer waits. No unit assertions or test deadlines change here.
+
 Native bank-sale completion must include the full expected set of real sale
 receipts: a transient empty inventory report between bank withdrawal and its
 next status report does not establish that the second batch sold. Cave floor
