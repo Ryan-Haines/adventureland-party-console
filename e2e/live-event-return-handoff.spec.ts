@@ -15,9 +15,9 @@ for(const variant of ['leaving Green','following a Pumpkin leader','restoring a 
     await expect.poll(async()=>{const s=await live.state();return !s.activeConvoy&&fighters.every(name=>
       s.characters[name]?.map===checkpoint.map&&Math.hypot(s.characters[name].x-checkpoint.x,s.characters[name].y-checkpoint.y)<100);},{timeout:90_000}).toBe(true);
     const seeds=await live.admin(`output=(()=>{const result={};for(const [type,x,y] of [['mrgreen',-495,650],['mrpumpkin',-495,685]]){
-      const original=G.monsters[type];try{G.monsters[type]={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,spawns:[]};
-        const m=new_monster('halloween',{type,count:1,boundary:[x,y,x,y]},{temp:1});result[type]={id:String(m.id),map:m.map,x:m.x,y:m.y};
-        E[type]={live:true,...result[type],hp:m.hp,max_hp:m.max_hp};}finally{G.monsters[type]=original;}}
+      const original=G.monsters[type];try{G.monsters[type]={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,rage:0,peaceful:true,spawns:[]};
+        const m=new_monster('halloween',{type,count:1,boundary:[x,y,x,y]},{temp:1});result[type]={id:String(m.id),map:m.map,x:m.x,y:m.y,original};
+        E[type]={live:true,id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};}catch(error){G.monsters[type]=original;throw error;}}
       broadcast_e();return result;})()`);
     const samples:any[]=[];
     const hits=async(name:string,event:string,after=0)=>(await live.clients[name].events()).some(packet=>
@@ -33,10 +33,9 @@ for(const variant of ['leaving Green','following a Pumpkin leader','restoring a 
       }
       const transitionAt=Date.now();
       const beforeTransition=await live.state();
-      // Changing follow mode is a new navigation intent. Its newly captured
-      // checkpoint is the follower's position, rather than an older solo intent.
+      // Following captures the leader's current location as the new destination.
       const checkpoints=Object.fromEntries(fighters.map(name=>[name,variant==='following a Pumpkin leader'&&name===P?
-        {map:beforeTransition.characters[name].map,x:beforeTransition.characters[name].x,y:beforeTransition.characters[name].y}:checkpoint]));
+        {map:beforeTransition.characters[W].map,x:beforeTransition.characters[W].x,y:beforeTransition.characters[W].y}:checkpoint]));
       if(variant==='restoring a held Green return'||variant==='interrupting a checkpoint return'){
         // Declare the persisted failure state, never a successful exit or hit.
         // Its dispatched timestamp must not strand an empty recovery.
@@ -72,13 +71,6 @@ for(const variant of ['leaving Green','following a Pumpkin leader','restoring a 
       },{timeout:120_000,message:'Both native fighters must damage Pumpkin without an active return holding either member'}).toBe(true);
       const fighting=await live.state();
       await info.attach('active-return-handoff-combat',{body:JSON.stringify({variant,seeds,checkpoints,samples,state:fighting,events:await live.clients[W].events()}),contentType:'application/json'});
-      if(variant==='following a Pumpkin leader'){
-        // Follow mode changed the solo navigation intent. Check the leader's
-        // saved checkpoint here; the other journeys verify full native arrival
-        // without introducing a separate mixed-checkpoint formation return.
-        expect(fighting.farmingProfiles[W].eventSessions[W].waypoints[W].location).toMatchObject(checkpoint);
-        return;
-      }
       await live.post('/formation',{character:W,eventSelections:[]});
       await expect.poll(async()=>{const s=await live.state();return !s.eventReturn&&fighters.every(name=>
         s.characters[name]?.map===checkpoints[name].map&&!s.characters[name]?.joinedEvent&&Math.hypot(s.characters[name].x-checkpoints[name].x,s.characters[name].y-checkpoints[name].y)<100);},{timeout:150_000,message:'After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint'}).toBe(true);
@@ -86,7 +78,7 @@ for(const variant of ['leaving Green','following a Pumpkin leader','restoring a 
       await info.attach('active-return-handoff-final',{body:JSON.stringify({variant,samples,state:await live.state(),events:await Promise.all(fighters.map(name=>live.clients[name].events()))}),contentType:'application/json'});
       await live.post('/formation',{character:W,eventSelections:[]});
       await live.post('/formation',{character:P,eventSelections:[]}).catch(()=>{});
-      await live.admin(`output=(()=>{for(const type of ['mrgreen','mrpumpkin']){for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(m.type===type&&m.hp>1000000)remove_monster(m,{silent:true});delete E[type];}broadcast_e();return true;})()`);
+      await live.admin(`output=(()=>{const seeds=${JSON.stringify(seeds)};for(const type of ['mrgreen','mrpumpkin']){for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(m.type===type&&m.hp>1000000)remove_monster(m,{silent:true});G.monsters[type]=seeds[type].original;delete E[type];}broadcast_e();return true;})()`);
     }
   });
 }

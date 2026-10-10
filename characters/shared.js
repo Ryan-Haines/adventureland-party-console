@@ -10585,6 +10585,8 @@
         eventSelectionRevision++;
         pendingEventDisables = root.__partyPendingEventDisables = Array.from(new Set(pendingEventDisables.concat(previousSelections.filter(function(id) { return !eventSelected(id); }))));
       }
+      if (!previousSelections && state.eventTrip && !state.eventTrip.endedAt && !eventSelected(state.eventTrip.event))
+        pendingEventDisables = root.__partyPendingEventDisables = Array.from(new Set(pendingEventDisables.concat(state.eventTrip.event)));
       if (pendingEventDisables.length) {
         for (var disabledEvent of pendingEventDisables.slice()) {
           if (eventSelected(disabledEvent)) { pendingEventDisables.splice(pendingEventDisables.indexOf(disabledEvent), 1); continue; }
@@ -10598,8 +10600,11 @@
             anniversaryStage = "anniversary disabled; resuming previous activity";
             var disabledResult = await request("/event-disabled", { method: "POST", body: { character: character.name, event: disabledEvent } });
             if (disabledResult.anniversary) anniversaryPlan = disabledResult.anniversary;
-          } else if (disabledEvent === joinedEvent || disabledEvent === partyEventHint || disabledEvent === travellingEventName) {
-            if (!convoyTraveling && !forceTraveling && !townTraveling) { try { await stop("smart"); await stop(); } catch (_disabledTravel) {} }
+          } else if (disabledEvent === joinedEvent || disabledEvent === partyEventHint || disabledEvent === travellingEventName ||
+              state.eventTrip && !state.eventTrip.endedAt && state.eventTrip.event === disabledEvent) {
+            if (!convoyTraveling && !forceTraveling && !townTraveling && !eventExitOwnsMovement() && !reunion) {
+              try { await stop("smart"); await stop(); } catch (_disabledTravel) {}
+            }
             await request("/event-disabled", { method: "POST", body: { character: character.name, event: disabledEvent } });
             eventTargetTypes = []; joinedEvent = null; root.__partyJoinedEvent = null;
           }
@@ -10747,8 +10752,11 @@
     }
   }
 
+  function nativeEventStatus() {
+    return typeof server !== "undefined" && server && server.status || parent.server && parent.server.status || parent.S || {};
+  }
   function eventStatus() {
-    var raw = typeof server !== "undefined" && server && server.status || parent.server && parent.server.status || parent.S || {};
+    var raw = nativeEventStatus();
     if (!eventClockOffset) return raw;
     var corrected = {};
     Object.keys(raw).forEach(function(name) {
@@ -10834,7 +10842,9 @@
   }
 
   function rawServerLiveEvents() {
-    var status = eventStatus();
+    // Instance identity must not change when clock synchronization adjusts the
+    // local deadline. Crab and other timestamp-only feeds use this fallback.
+    var status = nativeEventStatus();
     return supportedEventNames().filter(function (name) {
       var state = status && status[name];
       return eventIsSupported(name) && state && (halloweenEvent(name)
@@ -12741,7 +12751,10 @@
   }
   function beginFarmReunion(command) {
     if (dungeonOwned()) return;
-    if (eventExitOwnsMovement()) return;
+    if (eventExitOwnsMovement()) {
+      if (command) throw new Error("Waiting for event exit to release movement");
+      return;
+    }
     if (character.ctype === "merchant") return;
     if (typeof lastDeathInfo !== "undefined" && lastDeathInfo) root.__partyRecoveredDeathAt = parent.__partyRecoveredDeathAt = lastDeathInfo.at;
     if (combatRecoveryActive()) return;
@@ -12878,13 +12891,18 @@
     }
     // A full wipe has no survivor to rendezvous with. Use the authorized
     // waypoint itself so everyone can return instead of waiting on each other.
-    var member = reunionMembers()[0] || (partyLocation && Object.assign({name:"the saved farming waypoint"},partyLocation));
+    // Individually dispatched returns own their destination. A leader returning
+    // elsewhere cannot rendezvous with them or authorize a shared walk there.
+    var independentReturn = token.command && !token.command.convoyHandoff;
+    var member = independentReturn
+      ? Object.assign({name:"the saved farming waypoint"},farmingEntryPoint(token.command.location))
+      : reunionMembers()[0] || (partyLocation && Object.assign({name:"the saved farming waypoint"},partyLocation));
     if (!member) { token.phase = "waiting-for-party-near-farm"; token.retryAt = Date.now() + 5000; return; }
     var distance = character.map === member.map ? Math.hypot(character.x - member.x, character.y - member.y) : Infinity;
     var commandArrived = !token.command || !!token.command.convoyHandoff || (token.command.location.shapes || token.command.location.allOf
       ? inFarmArea(character,token.command.location,0) : character.map === token.command.location.map &&
         Math.hypot(character.x-token.command.location.x,character.y-token.command.location.y)<=150);
-    if (distance <= 150 && commandArrived &&
+    if (distance <= (independentReturn ? 55 : 150) && commandArrived &&
         (character.in == null || member.in == null || character.in === member.in) && can_move_to(member.x, member.y)) {
       if (token.moving) {token.moving=false; try {await stop("smart");} catch (_) {}}
       if (!reunionCurrent(token)) return;
@@ -12903,7 +12921,7 @@
     token.destination = { map: member.map, x: member.x, y: member.y };
     if (token.command && distance <= 150 && !commandArrived) token.destination = token.command.location;
     if (token.portExpires && Date.now() < token.portExpires) return;
-    if (!token.portAttempted && distance > 300 && reunionOrdinaryMap(character.map)) {
+    if (!independentReturn && !token.portAttempted && distance > 300 && reunionOrdinaryMap(character.map)) {
       var mage = reunionMembers().find(function (entry) { return entry.ctype === "mage"; });
       if (mage) {
         token.portAttempted = true; token.mage = mage.name; token.portExpires = Date.now() + 10000;
@@ -12943,7 +12961,7 @@
         if (!token.command && character.map === member.map && Math.hypot(character.x - member.x, character.y - member.y) <= 150) return;
       }
       if (!reunionCurrent(token) || reunionBlocked()) return;
-      if(!reunionMembers().length && leader && farmingMode!=="scatter")
+      if(!independentReturn && !reunionMembers().length && leader && farmingMode!=="scatter")
         await sharedPartyWalk(farmingEntryPoint(token.destination),"farm-recovery","farming",token.command,function(){return reunionCurrent(token);});
       else await anniversaryWithTimeout(smart_move(farmingEntryPoint(destination)), 90000, "Farming reunion travel");
     } catch (error) {
@@ -16559,6 +16577,7 @@
     },
     shouldFollowLeader: function () {
       if (navigationIntent.cancelled && !activeCombatEvent()) return false;
+      if (root.__partyEventRecoveryCycleId && !activeCombatEvent()) return false;
       if (typeof groupedFarming === "function" && groupedFarming() && groupedCombat && groupedCombat.protocol === 4) return groupedFollower();
       if (!(followLeader && leader && leader !== character.name)) return false;
       if (!isLiveAbtesting()) return true;

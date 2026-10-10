@@ -1164,7 +1164,8 @@ export function startCoordinatorApplication(
     }
 
     function eventsEnabledFor(name: string, event?: string) {
-      const enabled = event ? eventEnabled(party, name, event) : eventPolicy(party, name).enabled;
+      const enabled = event ? eventEnabled(party, name, event)
+        : selectedEvents(party, name).some(selected => eventInstanceAllowed(party, name, selected));
       if (!enabled || event && !eventInstanceAllowed(party, name, event)) return false;
       const report = party.statuses[name];
       const live = !!report && Date.now() - report.seenAt < 3000 && (event === 'anniversary'

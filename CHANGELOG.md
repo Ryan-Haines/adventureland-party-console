@@ -9,6 +9,16 @@ from the commits merged into `main`.
   acknowledges a safe stop. Preserve the original travel error and exhausted
   retry limits instead of repeatedly timing out each nearby collection job.
 
+- Return event participants independently when a follow-mode change leaves them
+  with different saved destinations, without waiting for an unrelated leader route.
+  Keep ordinary following paused until the active return cycle finishes.
+- Keep timestamp-based event identities stable across clock synchronization and
+  CODE reloads. Crab attendance no longer resets its timer on clock updates;
+  limits added during attendance include time already spent in that instance.
+  Treat fully exhausted selections as disabled and recover open event trips
+  even when CODE replacement has lost the local join marker.
+  Include members whose later heartbeat exceeds the limit in the same return.
+
 - Release members held by an event return when another selected event is live.
   Retire their matching return commands, preserve the original checkpoint, and
   let followers join their leader's next event. Fresh enabled event reports

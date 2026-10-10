@@ -12,16 +12,17 @@ must lead both fighters to genuine Pumpkin damage without a holding return.
 A Green-attending follower that adopts a Pumpkin leader must likewise fight
 Pumpkin and retain the leader's checkpoint. The leave and restored-return
 journeys then deselect Pumpkin and verify actual arrival at the saved navigation
-checkpoint. Changing follow mode captures a new follower intent, so mixed
-checkpoint formation return is outside the follower handoff assertion.
+checkpoint. Changing follow mode captures the leader's current location for
+the follower, so that journey also verifies two distinct return destinations.
 Record native damage, return/command observations,
 and final checkpoint positions as repeatable artifacts.
 
 The initial broader follower-return assertion exposed an existing mixed-
 checkpoint formation return problem after changing follow mode. It reproduced
 with the old coordinator too. Retain its diagnostic artifacts separately; this
-fix covers the active return hold and subsequent event combat, not that separate
-formation return problem.
+independent-return fix now covers that separate formation problem too. Individual
+return commands travel to their authorized waypoint without requiring a leader
+shared walk or retargeting to surviving party members.
 
 A third journey declares the persisted stuck Green return, including its
 dispatched timestamp, while Pumpkin is selected. It requires real Pumpkin hits

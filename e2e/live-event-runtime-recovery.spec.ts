@@ -5,6 +5,46 @@ import type {Route} from '@playwright/test';
 const W='E2EWarrior',P='E2EPriest',fighters=[W,P];
 test.use({initialPosition:{map:'halloween',x:-550,y:-290}});
 
+test('native fixed-end event timer survives clock resync and a limit added during attendance',async({live},info)=>{
+  test.setTimeout(300000);
+  // Failure inventory: docs/testing-event-timer-identity.md. Fixed end epochs
+  // exercise Crab's identity fallback with genuine native boss combat.
+  const checkpoint={map:'halloween',x:-550,y:-290};
+  await live.post('/formation',{leader:W});
+  await live.post('/formation',{character:P,follow:true});
+  await live.post('/travel',checkpoint);
+  await expect.poll(async()=>{const s=await live.state();return !s.activeConvoy&&fighters.every(name=>
+    s.characters[name]?.map===checkpoint.map&&Math.hypot(s.characters[name].x-checkpoint.x,s.characters[name].y-checkpoint.y)<100);},{timeout:90000}).toBe(true);
+  const seed=await live.admin(`output=(()=>{const original=G.monsters.mrpumpkin;try{
+    G.monsters.mrpumpkin={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true,spawns:[]};
+    const m=new_monster('halloween',{type:'mrpumpkin',count:1,boundary:[-495,685,-495,685]},{temp:1});
+    const end=Date.now()+3600000;E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,end,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:String(m.id),end,original};
+  }catch(error){G.monsters.mrpumpkin=original;throw error;}})()`);
+  const samples:any[]=[];
+  try{
+    await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
+    await expect.poll(async()=>{const s=await live.state();samples.push(s.eventAttendance);
+      return s.eventAttendance?.[W]?.mrpumpkin?.elapsedMs>12000&&fighters.every(name=>s.characters[name]?.joinedEvent==='mrpumpkin');},{timeout:120000}).toBe(true);
+    const before=await live.state(),runtime=before.characters[W].dashboardRuntime;
+    expect(before.eventAttendance[W].mrpumpkin.id).toBe(String(seed.end));
+    await live.clients[W].frame.evaluate(()=>{const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+      game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);});
+    await expect.poll(async()=>{const s=await live.state();return s.characters[W]?.dashboardRuntime!==runtime&&s.characters[W]?.eventClockStale===false;},{timeout:45000}).toBe(true);
+    const resumed=await live.state();
+    expect(resumed.eventAttendance[W].mrpumpkin.id).toBe(String(seed.end));
+    expect(resumed.eventAttendance[W].mrpumpkin.elapsedMs).toBeGreaterThanOrEqual(before.eventAttendance[W].mrpumpkin.elapsedMs);
+    await live.post('/formation',{character:W,eventLimits:{event:'mrpumpkin',limits:{deathLimit:null,timeLimitMinutes:0.1}}});
+    await expect.poll(async()=>{const s=await live.state();samples.push(s.eventAttendance);return s.eventAttendance?.[W]?.mrpumpkin?.ignored==='time limit';},{timeout:15000}).toBe(true);
+    await expect.poll(async()=>{const s=await live.state();return !s.eventReturn&&fighters.every(name=>
+      !s.characters[name]?.joinedEvent&&s.characters[name]?.map===checkpoint.map&&Math.hypot(s.characters[name].x-checkpoint.x,s.characters[name].y-checkpoint.y)<100);},{timeout:150000}).toBe(true);
+    expect((await live.clients[W].events()).some(packet=>packet.event==='hit'&&String(packet.data?.id)===seed.id&&packet.data?.hid===W&&packet.data?.damage>0)).toBe(true);
+  }finally{
+    await info.attach('fixed-end-event-timer',{body:JSON.stringify({seed,samples,state:await live.state(),events:await Promise.all(fighters.map(name=>live.clients[name].events()))}),contentType:'application/json'});
+    await live.post('/formation',{character:W,eventSelections:[]});
+    await live.admin(`output=(()=>{for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(String(m.id)===${JSON.stringify(seed.id)})remove_monster(m,{silent:true});G.monsters.mrpumpkin=${JSON.stringify(seed.original)};delete E.mrpumpkin;broadcast_e();return true;})()`);
+  }
+});
+
 test.describe('retired event exit ownership',()=>{
   test.use({initialPosition:{map:'uhills',x:-550,y:-160}});
   // Failure inventory: docs/testing-round2-recovery.md. Restoring a snapshot

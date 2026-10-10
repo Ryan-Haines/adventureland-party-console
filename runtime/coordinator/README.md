@@ -6,6 +6,18 @@ failed-convoy collection/restart journey and retained interruption/communication
 regressions; see docs/testing-failed-convoy-collection.md. Coordinator-only
 activation uses the supported scripts/start-console.ps1 -CoordinatorOnly restart.
 
+Individual event return commands can own a different saved destination from the
+leader. Character recovery must travel independently to that authorized waypoint;
+it cannot require a leader rendezvous or a shared walk to another checkpoint.
+Ordinary following waits until the participant's return cycle finishes, so an
+early arrival cannot leave its saved waypoint while another member is returning.
+Native timestamp-based event identities use uncorrected server timestamps so
+clock synchronization never resets the attendance ledger. Validate the follower
+handoff and fixed-end timer journeys. Activation requires publishing character
+assets as well as restarting the coordinator with the supported full workflow.
+Matching forced event returns include members who exceed their limit on later
+heartbeats; capture their waypoints and complete their Town exit before redispatch.
+
 Active event returns release members whose fresh, connected reports show another
 enabled event live. Retire only their matching-cycle exit/continuation commands
 and owned return walk; preserve the saved checkpoint until normal admission

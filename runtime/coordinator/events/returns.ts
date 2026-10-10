@@ -146,13 +146,37 @@ export function createEventReturns(state: EventReturnState, ports: EventReturnPo
     return !forced && event === "goobrawl" && goobrawlStillFighting(ports);
   }
 
+  function extendForcedReturn(current: EventRecovery, session?: { participants?: string[]; waypoints?: Waypoints } | null): void {
+    const joining = participantsFor(current.event, session?.participants, true)
+      .filter(name => !current.participants.includes(name));
+    if (!joining.length) return;
+    const captured = session?.waypoints || ports.capture(joining);
+    current.waypoints ||= {};
+    for (const name of joining) {
+      if (captured[name]) current.waypoints[name] = captured[name];
+      current.participants.push(name);
+      current.pending.push(name);
+    }
+    // A later heartbeat can exhaust another member after checkpoint travel
+    // was dispatched. Their Town exit must precede redispatch.
+    current.returnDispatchedAt = null;
+    for (const name of joining) issueInitialTown(name, current);
+    ports.persist();
+  }
+
+  function reuseReturn(current: EventRecovery, event: string,
+    session: { participants?: string[]; waypoints?: Waypoints } | null | undefined, forced: boolean): EventRecovery {
+    if (forced && current.event === event) extendForcedReturn(current, session);
+    return current;
+  }
+
   function begin(
     event: string,
     session?: { participants?: string[]; waypoints?: Waypoints } | null,
     forced = false,
   ): EventRecovery | null {
     if (waitingForCombat(event, forced)) return null;
-    if (state.current) return state.current;
+    if (state.current) return reuseReturn(state.current, event, session, forced);
     if (recentReturn(event)) return null;
     const participants = participantsFor(event, session?.participants, forced);
     if (!participants.length) return null;
