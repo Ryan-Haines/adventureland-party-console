@@ -35,3 +35,12 @@ failed. The fixture held the persisted adoption checkpoint and replaced CODE
 before its subsequent client activity request. Record a new adoption transition
 at the authoritative command-fenced checkpoint, rather than claiming it before
 persistence or depending on an old runtime continuation for the audit.
+
+Linux focused run 38017005116 passed adoption and CODE replacement, then
+continued genuine paid-batch upgrades through progress sequence 45 with four
+counted results and no error. Its final unfinished base item was still buying
+individual scrolls and travelling between NPCs when the original deadline ended.
+Declare twenty native scroll0 units in unused slot five so this ownership test
+does not repeatedly exercise unrelated scroll procurement. Preserve the three
+shifted paid inputs, existing target-tier surplus, quota conservation, actual
+upgrade outcomes and the original 180-second completion deadline.

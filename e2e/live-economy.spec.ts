@@ -7,7 +7,7 @@ const merchant = 'E2EMerchant';
 test('unlinked upgrade adopts compatible native intermediate without claiming existing results',async({live},info)=>{
   test.setTimeout(300_000);
   await catalog(live,'helmet');
-  await seed(live,{10:{name:'helmet',level:2},11:{name:'helmet',level:3},12:{name:'helmet',level:3},23:{name:'helmet',level:0},24:{name:'helmet',level:0},25:{name:'helmet',level:0}});
+  await seed(live,{5:{name:'scroll0',q:20},10:{name:'helmet',level:2},11:{name:'helmet',level:3},12:{name:'helmet',level:3},23:{name:'helmet',level:0},24:{name:'helmet',level:0},25:{name:'helmet',level:0}});
   const id='unlinked-intermediate-commerce',before=await economy(live),checkpoints:any[]=[];
   const progress={phase:'leveling',buyIndex:0,attempts:4,spent:4200,completedResults:1,results:[{slot:8,item:{name:'helmet',level:3},buyIndex:0}],activeItem:{name:'helmet',level:1},activeSlot:26,cycleActive:true,batchItems:[20,21,22].map(slot=>({slot,item:{name:'helmet',level:0}})),batchRemaining:0,sequence:2,pendingUpgrade:{level:2}};
   let held=false,release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
