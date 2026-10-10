@@ -9,6 +9,7 @@ import { MapDefinition } from "./map-definition";
 import { MapFrame } from "./map-frame";
 import { drawDreamsGate } from './dreams-gate';
 import { drawDue, prepareMap, visibleTiles, type PreparedPlacement, type MapRenderBuffer } from "./map-render-buffer";
+import type { MapCaptureState } from "./map-capture-button";
 
 export function MapCanvas({
   definition,
@@ -25,6 +26,7 @@ export function MapCanvas({
   fullMap = false,
   pins = [],
   onWaypoint,
+  capture,
 }: {
   definition: MapDefinition | null;
   frame: MapFrame | null;
@@ -40,6 +42,7 @@ export function MapCanvas({
   fullMap?: boolean;
   pins?: {x:number;y:number;label:string;color:string}[];
   onWaypoint?: (point:{x:number;y:number}) => void;
+  capture?: RefObject<MapCaptureState | null>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewport = useRef({left:0,top:0,scale:1});
@@ -88,6 +91,7 @@ export function MapCanvas({
       const p = { ...propsRef.current, ...buffer?.current };
       if (!canvas) return;
       if (!p.definition || !p.frame || p.definition.name !== p.frame.map) {
+        if (capture) capture.current = null;
         canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
         return;
       }
@@ -492,10 +496,11 @@ export function MapCanvas({
         ctx.strokeText(pin.label,pin.x,y); ctx.fillText(pin.label,pin.x,y);
       }
       ctx.restore();
+      if (capture) capture.current = {canvas,map:p.frame.map,x:cameraX,y:cameraY};
     };
     animation = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(animation); resize.disconnect(); };
-  }, [active, buffer, fps]);
+  }, [active, buffer, fps, capture]);
   return <canvas ref={canvasRef} className="block h-full w-full" onClick={event => {
     if (!onWaypoint) return;
     const rect = event.currentTarget.getBoundingClientRect(), v = viewport.current;

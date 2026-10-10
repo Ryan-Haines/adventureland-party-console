@@ -11,6 +11,7 @@ interface Ports {
   now(): number;
   current(): boolean;
   log(slot: number): void;
+  warn?(reason: string, journal: Journal): void;
 }
 const copy = (item: Item | null): Item | null => item && JSON.parse(JSON.stringify(item));
 // Normalize both sides so journals saved before null metadata was omitted still
@@ -107,6 +108,10 @@ export function createLuckyUpgrade(ports: Ports) {
     if (!validResult(j, result))
       throw failure('upgrade slot changed; inventory recovery required');
     j.result = copy(result); j.phase = 'restoring'; await save(j);
+    // Checkpoint transport yields to native deliveries and manual moves. Never
+    // swap a changed layout merely because the pre-checkpoint layout matched.
+    if (!same(ports.item(j.from), j.displaced) || !same(ports.item(j.to), j.result ?? null))
+      throw failure('inventory changed while saving restoration; leaving current positions unchanged');
     await swapConfirmed(j.from, j.to, () => originalLayout(j, ports.item(j.from), ports.item(j.to)));
     ports.write(null);
   }
@@ -114,6 +119,22 @@ export function createLuckyUpgrade(ports: Ports) {
     return failure('displaced item changed; inventory recovery required ' + JSON.stringify({
       phase:j.phase,from:j.from,to:j.to,expected:j.displaced,actual:ports.item(j.from),upgrade:ports.item(j.to),
     }));
+  }
+  function abandonRestoration(journal: Journal, reason: string): void {
+    // This is layout bookkeeping only. The production receipt remains the
+    // authority for the roll outcome, and actual inventory is never changed.
+    ports.write(null);
+    try { ports.warn?.(reason, journal); } catch { /* Diagnostics cannot own inventory. */ }
+  }
+  async function restoreBestEffort(journal: Journal, recovering = false): Promise<void> {
+    try { await restore(journal); }
+    catch (error) {
+      // Preparation and unsettled operations still own their inventory. A
+      // retired runtime must not clear bookkeeping belonging to its successor.
+      if (journal.phase === 'preparing' && !recovering || !ports.current() || ports.busy()
+        || !(error instanceof Error) || !('code' in error) || error.code !== 'lucky_slot_unavailable') throw error;
+      abandonRestoration(journal, describe(error));
+    }
   }
   function arrivalResult(j: Journal, item: Item | null): boolean {
     if (j.phase === 'preparing') return same(item,j.item);
@@ -137,17 +158,20 @@ export function createLuckyUpgrade(ports: Ports) {
     if (active) throw failure('another upgrade owns the inventory');
     await wait(() => !ports.busy(), 'upgrade still pending; inventory recovery required');
     const journal = ports.read();
-    if (journal) await restore(journal);
+    if (journal) await restoreBestEffort(journal, true);
   }
   function retireSettled(): boolean {
     // Only the caller's authoritative absence of pending production receipts
-    // permits this path. The displaced destination proves the return layout is
-    // already restored; later cargo/gear movement need not match the old source.
-    if (active || ports.busy()) return false;
+    // permits this path. Layout bookkeeping cannot keep settled production
+    // blocked when later cargo/gear movement no longer matches the old layout.
+    if (active || ports.busy() || !ports.current()) return false;
     const journal = ports.read();
     if (!journal) return false;
     const destination = ports.item(journal.to);
-    if (!same(destination,journal.displaced) && !sameStack(journal.displaced,destination)) return false;
+    if (!same(destination,journal.displaced) && !sameStack(journal.displaced,destination)) {
+      abandonRestoration(journal, 'Settled production no longer has its original return layout; leaving native inventory unchanged');
+      return true;
+    }
     ports.write(null);
     return true;
   }
@@ -185,7 +209,7 @@ export function createLuckyUpgrade(ports: Ports) {
       journal.phase = 'running'; await save(journal); ports.log(to);
       try { return await action(to, nextScroll, nextOffering); }
       finally {
-        await restore(journal);
+        await restoreBestEffort(journal);
       }
     } finally { active = false; }
   }

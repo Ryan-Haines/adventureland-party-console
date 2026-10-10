@@ -91,7 +91,7 @@ test('durable coordinator evidence survives replay, restart, and native/headless
  assert.equal(receiveLuckySlotTracking(state,'M',a.tracker.report()),false);
  receiveLuckySlotTracking(state,'M',b.tracker.report());const restored=JSON.parse(JSON.stringify(state));
  assert.equal(aggregateSlotTracking(restored.luckySlotTracking.M).slots[7].totalRolls,2);
- a.tracker.sync(restored.luckySlotTracking.M);assert.equal(a.tracker.select(),0);
+ a.tracker.sync(restored.luckySlotTracking.M);assert.equal(a.tracker.select(),8);
  assert.equal(aggregateSlotTracking(restored.luckySlotTracking.M,a.tracker.report()).slots[7].totalRolls,2);
  assert.equal(receiveLuckySlotTracking(restored,'Other',a.tracker.report()),true);
  assert.equal(aggregateSlotTracking(restored.luckySlotTracking.Other).slots[7].totalRolls,1);
@@ -101,8 +101,8 @@ test('durable coordinator evidence survives replay, restart, and native/headless
  createCoordinatorPersistence({...restored,aldata:{}},{set:(key,value)=>writes.set(key,structuredClone(value))}).settings();
  assert.deepEqual(writes.get('party_dashboard_settings_state_v1').luckySlotTracking,restored.luckySlotTracking);
 });
-test('a high roll moves exploration to an untested slot without waiting for a verified slot',()=>{
- const f=fixture();assert.equal(f.tracker.select(),0);f.tracker.observe(event(7,[9,9,9,9]));assert.equal(f.tracker.select(),0);
+test('a high roll advances exploration one square without waiting for a verified slot',()=>{
+ const f=fixture();assert.equal(f.tracker.select(),0);f.tracker.observe(event(7,[9,9,9,9]));assert.equal(f.tracker.select(),8);
 });
 test('each sampled slot advances the next test across all 42 slots and survives reload',()=>{
  const f=fixture();
@@ -124,6 +124,7 @@ test('rotating search converges on a simulated lucky slot using only scheduled a
   const slot=decision.nextSlot;let roll=random();if(slot===23 && random()<0.6)roll=Math.max(random()/10000,roll*0.975-0.012);
   roll=Math.floor(roll*10000)/10000;const stats=tracking.slots[slot]??=emptyRolls();
   stats.totalRolls++;stats.sumRolls+=roll;if(roll===0)stats.perfectRolls++;if(roll>0.963)stats.rollsAbove96_3++;
+  tracking.cursor={slot:(slot+1)%42,at:attempt+1,rolls:attempt+1};
   decision=luckySlotSearch(tracking);
  }
  assert.equal(decision.inferred,true);assert.equal(decision.slot,23);assert.ok(decision.confidence>=0.999);

@@ -11,6 +11,7 @@ import { MapFrame } from "./map-frame";
 import { receiveMapFrame, type MapRenderBuffer } from "./map-render-buffer";
 import { useCharacterData } from './dashboard-live';
 import { committedLiveRecord } from './live-metrics';
+import { MapCaptureButton, type MapCaptureState } from './map-capture-button';
 
 // Beyond the initial fallback, only `char.name` matters here: map/x/y come
 // from this component's own live `position` subscription below, so a fresh
@@ -30,6 +31,7 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
   const definition = caveMap ? (streamDefinition?.name === char.map ? streamDefinition : null) : definitionQuery.data || null;
   const visible = useVisible();
   const buffer = useRef<MapRenderBuffer>({ frame: null, previous: null, receivedAt: 0 });
+  const capture = useRef<MapCaptureState | null>(null);
   const [streamState, setStreamState] = useState("loading");
   useEffect(() => {
     if (!open || !visible) return;
@@ -103,9 +105,12 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
       <Dialog open={large} onOpenChange={setLarge}>
         <DialogContent className="w-[min(804px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-2 border-emerald-700 bg-[#081713] p-0 text-emerald-50 sm:max-w-none [&_[data-slot=dialog-close]]:right-3 [&_[data-slot=dialog-close]]:top-3 [&_[data-slot=dialog-close]]:text-emerald-100 [&_[data-slot=dialog-close]]:hover:bg-emerald-900">
           <DialogHeader className="border-b border-emerald-800 px-5 py-3">
-            <DialogTitle className="text-emerald-50">
-              {char.name} — {mapLabel}
-            </DialogTitle>
+            <div className="flex items-center gap-3 pr-8">
+              <DialogTitle className="text-emerald-50">
+                {char.name} — {mapLabel}
+              </DialogTitle>
+              <MapCaptureButton capture={capture} />
+            </div>
           </DialogHeader>
           <div className="h-[min(600px,calc(100vh-8rem))] w-full overflow-hidden bg-[#07110f]">
             <MapCanvas
@@ -118,6 +123,7 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
               active={open && visible && large}
               scale={1}
               detailed
+              capture={capture}
             />
           </div>
         </DialogContent>

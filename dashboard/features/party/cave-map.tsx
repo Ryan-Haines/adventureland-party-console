@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { API } from './api';
 import type { MapFrame } from './map-frame';
 import { MapCanvas } from './map-canvas';
 import { dungeonButton } from './dungeon-settings';
+import { MapCaptureButton, type MapCaptureState } from './map-capture-button';
 
 export function CaveMap({
   view,
@@ -33,6 +34,7 @@ export function CaveMap({
 }) {
   const [open, setOpen] = useState(false),
     [adding, setAdding] = useState(false);
+  const capture = useRef<MapCaptureState | null>(null);
   const [waypoint, setWaypoint] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -86,9 +88,12 @@ export function CaveMap({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[min(1000px,calc(100vw-2rem))] max-w-none border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-none [&_[data-slot=dialog-close]]:border [&_[data-slot=dialog-close]]:border-emerald-600 [&_[data-slot=dialog-close]]:bg-slate-950 [&_[data-slot=dialog-close]]:text-emerald-50 [&_[data-slot=dialog-close]]:hover:bg-emerald-950">
           <DialogHeader>
-            <DialogTitle>
-              Cave of Many Dreams — Floor {cave.floor + 1}
-            </DialogTitle>
+            <div className="flex items-center gap-3 pr-8">
+              <DialogTitle>
+                Cave of Many Dreams — Floor {cave.floor + 1}
+              </DialogTitle>
+              <MapCaptureButton capture={capture} />
+            </div>
             <DialogDescription className="text-slate-300">
               Cyan: party · Orange: required · Green: complete · Yellow: events
               · Pink: waypoint
@@ -115,6 +120,7 @@ export function CaveMap({
               receivedAt={0}
               scale={1}
               detailed
+              capture={capture}
               fullMap={!nativeSize}
               pins={pins}
               active={open}

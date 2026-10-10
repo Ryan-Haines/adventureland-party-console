@@ -52,6 +52,8 @@ export function createLuckySlotTracker(ports: Ports) {
     stats.sumRolls += roll;
     if (roll > 0.963) stats.rollsAbove96_3++;
     if (roll === 0) stats.perfectRolls++;
+    state.cursor = {slot: (event.num + 1) % 42, at,
+      rolls: Object.values(state.slots).reduce((sum, entry) => sum + entry.totalRolls, 0)};
     save();
     return true;
   }

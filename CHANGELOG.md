@@ -5,6 +5,16 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Add screenshot capture to expanded map views for debugging. Character and
+  Cave maps open an immediate image in a new tab, with the map and camera-center
+  coordinates included in the image footer.
+
+- Make lucky-slot swap restoration best-effort: changed inventory layouts no
+  longer hold subsequent merchant work. Preserve confirmed upgrade outcomes and
+  actual result locations independently of swap-back. Advance unlocked discovery
+  one inventory square per recorded roll with a durable cursor; locked positions
+  keep collecting rolls without moving.
+
 - Run native gameplay CI across 16 isolated runners: one for each of the three
   Cave scenarios and 13 for the remaining suite. Increase retained unit-test CI
   concurrency from two to four isolated test-file workers.

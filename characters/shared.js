@@ -4473,7 +4473,7 @@
       if (luckyUpgradeService && luckyUpgradeService.pending()) await luckyUpgradeService.recover();
       else if (character.ctype === "merchant" && root.localStorage.getItem("party-lucky-upgrade:" + character.name)) await merchantLuckyUpgrade().recover();
       var live = character.items[journal.slots[0]];
-      if (journal.commerce && (!live || live.name !== journal.item.name ||
+      if ((journal.commerce || journal.request && journal.request.kind === "upgrade") && (!live || live.name !== journal.item.name ||
           [(journal.item.level || 0), (journal.item.level || 0) + 1].indexOf(live.level || 0) < 0)) {
         var previous = JSON.stringify(fingerprint(journal.item)), upgraded = JSON.stringify(fingerprint(Object.assign({}, journal.item, {level: (journal.item.level || 0) + 1})));
         var candidates = character.items.map(function (item, slot) {
@@ -4550,7 +4550,12 @@
     var ownedJournal = readProductionJournal();
     if (ownedJournal && ownedJournal.id === journal.id) journal = Object.assign(journal,ownedJournal);
     if (body.requestId) journal.issued=!!(readProductionJournal() || {}).issued;
-    var live=journal.commerce && result && result.item || character.items[slots[0]];
+    // Swap-back is optional. A confirmed native upgrade can remain at its actual
+    // upgrade slot; the production receipt must follow that result, not cargo
+    // now occupying the original source cell.
+    if (kind === "upgrade" && result && result.item && Number.isInteger(result.slot) &&
+        sameItemState(character.items[result.slot],result.item)) journal.slots[0] = result.slot;
+    var live=kind === "upgrade" && result && result.item || character.items[journal.slots[0]];
     if (journal.commerce && !live && !(failure && failure.reason === "upgrade_destroyed" && failure.confirmedDestroyed === true))
       throw Error("Upgrade outcome uncertain; production receipt requires inventory review");
     if (journal.commerce && failure && !(failure.reason === "upgrade_destroyed" && failure.confirmedDestroyed === true)) throw failure;
@@ -4637,7 +4642,12 @@
       luckySlotTracking().begin();
       return upgradeAtSlotConfirmed(slot, scroll, expectedName, expectedLevel, offering);
     }, offeringSlot);
-    return outcome && Object.assign({}, outcome, {slot: itemSlot});
+    if (!outcome || !outcome.item) return outcome;
+    var actualSlot = sameItemState(character.items[itemSlot],outcome.item) ? itemSlot :
+      sameItemState(character.items[outcome.slot],outcome.item) ? outcome.slot :
+      character.items.findIndex(function(item){return sameItemState(item,outcome.item);});
+    if (actualSlot < 0) throw Error("Upgrade outcome uncertain; confirmed result moved before receipt reconciliation");
+    return Object.assign({},outcome,{slot:actualSlot});
   }
 
   function merchantLuckyUpgrade() {
@@ -4665,6 +4675,13 @@
         await saveProductionJournal(journal);
       },
       sleep: sleep, now: Date.now, current: runtimeCurrent,
+      warn: function (reason, layout) {
+        var message = "Lucky slot restoration skipped; leaving items in their current positions";
+        game_log(message + ": " + reason, "#facc15");
+        request("/merchant/activity", {method:"POST",body:{character:character.name,
+          jobId:root.__merchantActiveJob && root.__merchantActiveJob.jobId,
+          message:message,level:"info",details:{reason:reason,layout:layout}}}).catch(function(){});
+      },
       log: function (slot) {
         var message = "Using upgrade slot " + slot + " (" + (slot === luckyUpgradeSlot ? "verified" : "lucky-slot search") + ", inventory position " + (slot + 1) + ")";
         game_log(message, "#facc15");

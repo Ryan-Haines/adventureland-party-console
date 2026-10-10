@@ -1,3 +1,10 @@
+Lucky-slot swap-back is best-effort. Keep real production outcomes and spending
+reconciliation independent of inventory layout restoration; never move unrelated
+cargo to satisfy an old journal. Discovery uses a durable sequential cursor,
+advanced only by a deduplicated native upgrade roll. Validate the native
+best-effort lucky restoration cases, then publish character assets with the
+supported full restart when activating this behavior.
+
 Commerce may adopt actual compatible intermediate inventory when an old pending
 upgrade has no linked outcome and its old input is missing. This is explicitly
 logged as an inventory assumption, never a confirmed historical receipt. Paid

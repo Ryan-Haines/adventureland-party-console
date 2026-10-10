@@ -8,6 +8,7 @@ export interface SlotRollStatistics {
 export interface LuckySlotTracking {
   version: 1;
   streamId?: string;
+  cursor?: { slot: number; at: number; rolls: number };
   slots: Record<string, SlotRollStatistics>;
 }
 export type LuckySlotStreams = Record<string, LuckySlotTracking>;
@@ -19,6 +20,10 @@ export function mergeSlotStream(previous: LuckySlotTracking, incoming: LuckySlot
     if (old && (stats.totalRolls <= old.totalRolls ||
       !(['sumRolls', 'rollsAbove96_3', 'perfectRolls'] as const).every(key => stats[key] >= old[key]))) continue;
     previous.slots[slot] = {...stats};
+    changed = true;
+  }
+  if (incoming.cursor && (!previous.cursor || incoming.cursor.rolls > previous.cursor.rolls)) {
+    previous.cursor = {...incoming.cursor};
     changed = true;
   }
   return changed;
@@ -39,7 +44,18 @@ export function normalizeSlotTracking(raw: unknown): LuckySlotTracking {
   for (const [slot, stats] of Object.entries(raw.slots)) {
     if (/^(?:[0-9]|[1-3][0-9]|4[01])$/.test(slot) && validSlotStatistics(stats)) result.slots[slot] = {...stats};
   }
+  restoreCursor(result, raw);
   return result;
+}
+function restoreCursor(result: LuckySlotTracking, raw: object): void {
+  if ('cursor' in raw && validCursor(raw.cursor, result)) result.cursor = {...raw.cursor};
+}
+function validCursor(value: unknown, tracking: LuckySlotTracking): value is NonNullable<LuckySlotTracking['cursor']> {
+  if (!value || typeof value !== 'object') return false;
+  const cursor = value as NonNullable<LuckySlotTracking['cursor']>;
+  const rolls = Object.values(tracking.slots).reduce((sum, stats) => sum + stats.totalRolls, 0);
+  return Number.isInteger(cursor.slot) && cursor.slot >= 0 && cursor.slot < 42 &&
+    Number.isFinite(cursor.at) && cursor.at >= 0 && Number.isSafeInteger(cursor.rolls) && cursor.rolls > 0 && cursor.rolls <= rolls;
 }
 function readStreamId(raw: object): string | undefined {
   return 'streamId' in raw && typeof raw.streamId === 'string' && /^[a-z0-9]{1,30}-[a-z0-9-]{1,60}$/.test(raw.streamId) ? raw.streamId : undefined;
@@ -58,7 +74,9 @@ export function aggregateSlotTracking(streams: LuckySlotStreams = {}, local?: Lu
     const total = slots[slot] ??= emptyRolls();
     for (const key of ['totalRolls', 'sumRolls', 'rollsAbove96_3', 'perfectRolls'] as const) total[key] += stats[key];
   }
-  return {version: 1, slots};
+  const cursor = Object.values(combined).flatMap(stream => stream.cursor ? [stream.cursor] : [])
+    .sort((a, b) => b.at - a.at || b.rolls - a.rolls || a.slot - b.slot)[0];
+  return {version: 1, slots, ...(cursor ? {cursor: {...cursor}} : {})};
 }
 // Source: kaansoral/adventureland_mongodb node/server.js, upgrade handler.
 // 60%: max(U/10000, 0.975*R - 0.012), otherwise uniform R.
@@ -95,9 +113,7 @@ export function luckySlotSearch(tracking: LuckySlotTracking) {
   const confidence = best.probability;
   const total = ranked.reduce((sum, entry) => sum + entry.samples, 0);
   const inferred = confidence >= 0.999 && best.samples >= 100;
-  const remaining = ranked.filter(entry => !entry.ruledOut);
-  const candidates = remaining.length ? remaining : ranked;
-  const nextSlot = inferred ? best.slot : [...candidates].sort((a, b) => a.samples - b.samples || a.slot - b.slot)[0]!.slot;
+  const nextSlot = tracking.cursor?.slot ?? 0;
   return {slot: total ? best.slot : null, confidence, samples: best.samples, total,
     inferred, nextSlot, slots: Object.fromEntries(ranked.map(entry => [entry.slot, entry])),
     ruledOutCount: ranked.filter(entry => entry.ruledOut).length};

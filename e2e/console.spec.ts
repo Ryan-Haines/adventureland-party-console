@@ -1054,6 +1054,106 @@ test('market affordability uses core bank gold and active WTB prices open the fu
   await info.attach('market-core-bank-gold-affordability',{body:await page.screenshot(),contentType:'image/png'});
 });
 
+test('expanded character and Cave maps capture real canvas pixels with map and camera-center footers',async({page,app},info)=>{
+  // Declared map/read fixture only: real browser image loading, canvas drawing,
+  // CORS, popup creation and PNG serialization remain the production path.
+  const tile=await page.evaluate(()=>{
+    const canvas=document.createElement('canvas');canvas.width=16;canvas.height=16;
+    const context=canvas.getContext('2d')!;context.fillStyle='#d923a7';context.fillRect(0,0,16,16);
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  let imageRequests=0;
+  const images=createServer((_request,response)=>{
+    imageRequests++;response.writeHead(200,{'Content-Type':'image/png','Access-Control-Allow-Origin':'*'});response.end(Buffer.from(tile,'base64'));
+  });
+  await new Promise<void>(resolve=>images.listen(0,'127.0.0.1',resolve));
+  try {
+    const address=images.address();if(!address||typeof address==='string')throw Error('Image fixture did not listen');
+    const map='zone_abc123_0',name='W',x=31,y=47;
+    const definition={name:map,min_x:-100,min_y:-200,max_x:500,max_y:400,default:0,
+      tiles:[['capture',0,0,16,16]],placements:[],groups:[],tilesets:{capture:{file:`http://127.0.0.1:${address.port}/tile.png`}}};
+    const initial=await app.state();
+    await app.deliverStatus({...initial.characters.W,name,map,x,y});
+    // Keep the declared map position stable across fixture status emissions.
+    // Aborting the dashboard stream exercises its normal HTTP read fallback.
+    await page.route('**/party-api/dashboard-stream',route=>route.abort());
+    await page.route('**/party-api/state*',async route=>{
+      const response=await route.fetch(),state=await response.json();
+      await route.fulfill({response,json:{...state,characters:{...state.characters,
+        W:{...initial.characters.W,...state.characters?.W,name,map,x,y}}}});
+    });
+    await page.route('**/party-api/map-stream/*',route=>route.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({name,map,x,y,at:Date.now(),entities:[],definition})+'\n\n'}));
+    await page.route('**/party-api/daily-dungeons',route=>route.fulfill({json:{state:{phase:'active',run:'abc123',participants:[name],protectFromEvents:true,commands:{},operations:[],progress:{enabled:false,serial:0}},members:[{name,fresh:true,observation:{protocol:1,at:Date.now(),supported:true,alive:true,ready:true,members:[name],cave:{run:'abc123',floor:0,expires:Date.now()+600000,remainingMs:600000,paused:false,gold:0,amber:0,points:[]}}}]}}));
+    await page.goto('/');
+    await page.locator('div').filter({has:page.locator('span').filter({hasText:'Cave of Many Dreams [31, 47]'})}).filter({has:page.getByRole('button',{name:'Expand live map',exact:true})}).last().getByRole('button',{name:'Expand live map',exact:true}).click();
+    await page.getByRole('button',{name:'Open native-size map',exact:true}).click();
+    const captures=[];
+    for(const mode of ['character','full-floor','native-floor']) {
+      if(mode==='full-floor') {
+        await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+        await page.getByRole('button',{name:'View full map',exact:true}).click();
+      }
+      const dialog=page.getByRole('dialog');
+      if(mode==='native-floor')await dialog.getByRole('button',{name:'Native-size view',exact:true}).click();
+      const canvas=dialog.locator('canvas');
+      await expect.poll(()=>canvas.evaluate(element=>{
+        const c=element as HTMLCanvasElement,p=c.getContext('2d')!.getImageData(2,2,1,1).data;
+        return [...p];
+      })).toEqual([217,35,167,255]);
+      // Observe exactly the canvas that the production click handler captures.
+      // Native-size toggles can still redraw between a separate read and click.
+      await dialog.evaluate(element=>{
+        element.addEventListener('click',event=>{
+          if(!(event.target instanceof Element)||!event.target.closest('button[aria-label="Capture map screenshot"]'))return;
+          const c=element.querySelector('canvas')!;
+          (globalThis as typeof globalThis & {mapCaptureObserved?:unknown}).mapCaptureObserved={width:c.width,height:c.height,ratio:Math.max(1,c.width/c.clientWidth),pixels:Array.from(c.getContext('2d')!.getImageData(0,0,c.width,c.height).data)};
+        },{capture:true,once:true});
+      });
+      const popupPromise=page.waitForEvent('popup');
+      await dialog.getByRole('button',{name:'Capture map screenshot',exact:true}).click();
+      const original=await page.evaluate(()=>(globalThis as typeof globalThis & {mapCaptureObserved:{width:number;height:number;ratio:number;pixels:number[]}}).mapCaptureObserved);
+      const popup=await popupPromise;
+      const center=mode==='full-floor'?'200.00, 100.00':'31.00, 47.00';
+      await expect(popup.locator('img')).toHaveAttribute('alt',`Map: ${map}. Center: ${center}`);
+      await expect(popup).toHaveTitle(`Map screenshot — ${map} — Center: ${center}`);
+      const result=await popup.locator('img').evaluate(async(element,source)=>{
+        const image=element as HTMLImageElement;await image.decode();
+        const c=document.createElement('canvas');c.width=image.naturalWidth;c.height=image.naturalHeight;
+        const context=c.getContext('2d')!;context.drawImage(image,0,0);
+        const pixels=context.getImageData(0,0,source.width,source.height).data;
+        const footer=context.getImageData(0,source.height,c.width,c.height-source.height).data;
+        let textPixels=0;for(let i=0;i<footer.length;i+=4)if(footer[i]===236&&footer[i+1]===253&&footer[i+2]===245)textPixels++;
+        return {width:c.width,height:c.height,identical:source.pixels.every((value,index)=>value===pixels[index]),textPixels,png:image.src};
+      },original);
+      await info.attach(`map-capture-${mode}`,{body:Buffer.from(result.png.split(',')[1],'base64'),contentType:'image/png'});
+      expect(result.width).toBe(original.width);expect(result.height).toBe(original.height+Math.ceil(64*original.ratio));
+      expect(result.identical).toBe(true);expect(result.textPixels).toBeGreaterThan(20);
+      captures.push({mode,center,width:result.width,height:result.height,identical:result.identical,textPixels:result.textPixels});
+      await popup.close();
+    }
+    expect(imageRequests).toBeGreaterThan(0);
+    await info.attach('map-capture-ledger',{body:JSON.stringify({map,imageRequests,captures}),contentType:'application/json'});
+    // Actual dashboard server boundary: fetch the verified native Dreams
+    // tileset through the maintained fixed-origin proxy, without intercepting it.
+    const nativeUrl='https://adventure.land/images/tiles/map/dreams-v3.png?v=3';
+    const proxied=await page.request.get('/api/map-image?url='+encodeURIComponent(nativeUrl));
+    expect(proxied.status()).toBe(200);
+    expect(proxied.headers()['content-type']).toContain('image/png');
+    expect(proxied.headers()['x-content-type-options']).toBe('nosniff');
+    expect(proxied.headers()['cache-control']).toContain('max-age=86400');
+    const nativeBytes=await proxied.body();
+    expect([...nativeBytes.subarray(0,8)]).toEqual([137,80,78,71,13,10,26,10]);
+    expect(nativeBytes.length).toBeGreaterThan(100);
+    const rejected=await page.request.get('/api/map-image?url='+encodeURIComponent('https://example.com/images/map.png'));
+    expect(rejected.status()).toBe(400);
+    await info.attach('native-dreams-proxy-image',{body:nativeBytes,contentType:'image/png'});
+    await info.attach('map-image-proxy-ledger',{body:JSON.stringify({nativeUrl,status:proxied.status(),headers:proxied.headers(),bytes:nativeBytes.length,rejectedExternalStatus:rejected.status()}),contentType:'application/json'});
+  } finally {
+    images.closeAllConnections();
+    await new Promise<void>((resolve,reject)=>images.close(error=>error?reject(error):resolve()));
+  }
+});
+
 test('Cave map survives stale reports without allowing stale waypoint actions',async({page},info)=>{
   // Declared read-boundary fixture: no native receipts, combat, or ownership is forged.
   let run='read-fixture-a',floor=0,fresh=true;

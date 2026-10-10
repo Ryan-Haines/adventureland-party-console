@@ -290,6 +290,120 @@ test('merchant stand location is valid at first setup and stays saved through re
 const names = ['E2EWarrior', 'E2EPriest', merchant];
 type Items = (Item | null)[];
 
+for(const locked of [false,true]) test(`best-effort lucky restoration preserves changed native cargo and ${locked?'locked':'sequential'} rolls across CODE restart`,async({live},info)=>{
+  test.setTimeout(480_000);
+  const slot=4,movedSlot=27,checkpoints:any[]=[];
+  let changed=false;
+  const context=live.clients[merchant].page.context();
+  await live.clients[merchant].frame.evaluate(()=>{
+    const game=window as any;
+    game.__e2eLuckyRollPackets=[];
+    game.__e2eLuckyRollObserver=(data:unknown)=>{
+      game.__e2eLuckyRollPackets.push({at:Date.now(),data:JSON.parse(JSON.stringify(data))});
+      if(game.__e2eLuckyRollPackets.length>256)game.__e2eLuckyRollPackets.shift();
+    };
+    game.socket.on('q_data',game.__e2eLuckyRollObserver);
+  });
+  const rolls=(state:any,index:number)=>Object.values(state.luckySlotTracking?.[merchant]||{}).reduce((total:number,stream:any)=>total+Number(stream.slots?.[index]?.totalRolls||0),0);
+  const finish=async(jobId:string)=>expect.poll(async()=>{
+    const state=await live.state();
+    return ![state.merchantCurrent,...state.merchantQueue].some((job:any)=>job?.id===jobId||job?.commerceOrderId===jobId);
+  },{timeout:150_000,message:'Changed lucky layout must not fence completed or unrelated merchant work'}).toBe(true);
+  try {
+    await live.restoreHistoricalSettings(()=>({luckyUpgradeSlots:{},luckySlotResume:{[merchant]:{slot,rolls:0}},luckySlotLocks:locked?{[merchant]:slot}:{}}));
+    await catalog(live,'helmet');
+    await seed(live,{[slot]:{name:'seashell',q:3}});
+    const rollSetup=await live.admin(`output=(()=>{
+      const p=get_player('${merchant}'),skills=['massproduction','massproductionpp'].map(name=>({name,level:Number(G.skills[name].level)}));
+      const requirement=Math.min(...skills.map(skill=>skill.level));
+      if(!Number.isFinite(requirement)||requirement<=1)throw Error('Native mass-production level requirements unavailable');
+      if(p.s.massproduction||p.s.massproductionpp)throw Error('Roll fixture unexpectedly has an active native mass buff');
+      p.level=requirement-1;resend(p,'reopen+cid');return {level:p.level,skills};
+    })()`);
+    await expect.poll(async()=>live.clients[merchant].run('character.level')).toBe(rollSetup.level);
+    checkpoints.push({rollSetup});
+    await live.admin(`output=(()=>{const p=get_player('E2EPriest');if(p.items[10])throw Error('Fixture slot occupied');p.items[10]={name:'seashell',q:1};cache_player_items(p);resend(p,'reopen+cid');return true})()`);
+    await expect.poll(async()=>(await live.clients.E2EPriest.snapshot()).items[10]?.q).toBe(1);
+    await live.clients[merchant].run(`(()=>{const native=swap;globalThis.__e2eChangedLuckyLayout=false;globalThis.__e2eForbiddenRestoreSwaps=[];
+      swap=function(a,b){const journal=JSON.parse(localStorage.getItem('party-lucky-upgrade:'+character.name)||'null');
+        if(globalThis.__e2eChangedLuckyLayout&&journal?.phase==='restoring'&&
+          (a===journal.from&&b===journal.to||a===journal.to&&b===journal.from))
+          globalThis.__e2eForbiddenRestoreSwaps.push({a,b,journal,items:character.items.map(i=>i&&({...i}))});
+        return native(a,b)};return true})()`);
+    const before=await economy(live),initial=await live.state();
+    await context.route('**/merchant/production',async route=>{
+      const body=route.request().postDataJSON(),journal=body.journal?.lucky;
+      if(!changed&&body.action==='checkpoint'&&journal?.phase==='restoring') {
+        changed=true;
+        expect(journal.to).toBe(slot);
+        const original=await live.clients[merchant].snapshot();
+        expect(original.items[slot]?.name).toBe('helmet');
+        expect(original.items[slot]?.level).toBe(1);
+        expect(original.items[journal.from]?.name).toBe('seashell');
+        await live.clients.E2EPriest.run(`send_item('${merchant}',10,1).then(()=>true)`);
+        await expect.poll(async()=>(await live.clients[merchant].snapshot()).items[journal.from]?.q).toBe(4);
+        expect((await live.clients[merchant].snapshot()).items[movedSlot]).toBeNull();
+        await live.clients[merchant].run(`swap(${slot},${movedSlot}).then(()=>true)`);
+        await expect.poll(async()=>(await live.clients[merchant].snapshot()).items[movedSlot]?.level).toBe(1);
+        await live.clients[merchant].run('globalThis.__e2eChangedLuckyLayout=true');
+        checkpoints.push({journal,original,changed:await live.clients[merchant].snapshot()});
+      }
+      await route.continue();
+    });
+    const first=await live.post('/merchant/order',{buys:[{id:'helmet',quantity:1,level:1}],crafts:[]});
+    await expect.poll(()=>changed,{timeout:150_000}).toBe(true);
+    await finish(first.jobId);
+    await context.unroute('**/merchant/production');
+    const after=await economy(live);
+    expect(quantity(after.characters[merchant].items,'seashell')-quantity(before.characters[merchant].items,'seashell')).toBe(1);
+    expect(after.characters[merchant].items.filter(item=>item?.name==='helmet'&&item.level===1)).toHaveLength(1);
+    await expect.poll(async()=>rolls(await live.state(),slot)-rolls(initial,slot)).toBe(1);
+    expect(await live.clients[merchant].run(`localStorage.getItem('party-lucky-upgrade:'+character.name)`)).toBeNull();
+    const restorationSwaps=await live.clients[merchant].run('globalThis.__e2eForbiddenRestoreSwaps');
+    expect(restorationSwaps).toEqual([]);
+    checkpoints.push({restorationSwaps,retiredInventory:await live.clients[merchant].snapshot()});
+    const runtime=(await live.state()).characters[merchant].dashboardRuntime;
+    await live.clients[merchant].frame.evaluate(()=>{
+      const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+      game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);
+    });
+    await live.restartCoordinator();
+    await expect.poll(async()=>{
+      const current=(await live.state()).characters[merchant]?.dashboardRuntime;
+      return !!current&&current!==runtime;
+    },{timeout:60_000}).toBe(true);
+    await catalog(live,'shoes');
+    const shoesBefore=quantity((await economy(live)).characters[merchant].items,'shoes');
+    const purchase=await live.post('/merchant/order',{buys:[{id:'shoes',quantity:1,level:0}],crafts:[]});
+    await finish(purchase.jobId);
+    expect(quantity((await economy(live)).characters[merchant].items,'shoes')-shoesBefore).toBe(1);
+    await catalog(live,'helmet');
+    const second=await live.post('/merchant/order',{buys:[{id:'helmet',quantity:1,level:1}],crafts:[]});
+    await finish(second.jobId);
+    const final=await live.state(),inventory=await economy(live);
+    expect(rolls(final,slot)-rolls(initial,slot)).toBe(locked?2:1);
+    expect(rolls(final,slot+1)-rolls(initial,slot+1)).toBe(locked?0:1);
+    if(locked) expect(final.luckySlotLocks[merchant]).toBe(slot);
+    expect(inventory.characters[merchant].items.filter(item=>item?.name==='helmet'&&item.level===1)).toHaveLength(2);
+    expect(quantity(inventory.characters[merchant].items,'seashell')).toBe(4);
+  } finally {
+    await context.unroute('**/merchant/production');
+    await info.attach('lucky-best-effort-native-evidence',{body:JSON.stringify({locked,changed,checkpoints,
+      tracking:await live.clients[merchant].frame.evaluate(()=>{
+        const game=window as any,stored:Record<string,unknown>={};
+        for(let i=0;i<localStorage.length;i++){
+          const key=localStorage.key(i)!;
+          if(key.startsWith('party-lucky-slot-tracking:'))stored[key]=JSON.parse(localStorage.getItem(key)||'null');
+        }
+        game.socket.off('q_data',game.__e2eLuckyRollObserver);
+        return {packets:game.__e2eLuckyRollPackets,stored};
+      }).catch(error=>({captureError:String(error)})),
+      state:await live.state().catch(error=>({captureError:String(error)})),
+      inventory:await economy(live).catch(error=>({captureError:String(error)})),
+      events:await live.clients[merchant].events().catch(error=>({captureError:String(error)}))}),contentType:'application/json'});
+  }
+});
+
 test('merchant finishes native upgrades despite delayed lucky journal storage echoes', async ({ live }, info) => {
   // Two native orders plus reconnect and lucky-slot swaps share this budget.
   test.setTimeout(480_000);
@@ -351,7 +465,7 @@ test('merchant finishes native upgrades despite delayed lucky journal storage ec
   await record(live, info, 'lucky-journal-storage-echo', before, { order, echoes, after, followup, recovered });
 });
 
-test('lucky upgrade preserves party deliveries across preparation and interrupted restoration', async ({ live }, info) => {
+test('lucky upgrade preserves party deliveries across preparation and best-effort restoration', async ({ live }, info) => {
   test.setTimeout(300_000);
   // Failure modes: a preparing checkpoint leaves an empty-slot assumption stale;
   // stack quantity changes after restoration is persisted permanently fence
@@ -365,7 +479,7 @@ test('lucky upgrade preserves party deliveries across preparation and interrupte
       if(j?.phase==='restoring'&&!globalThis.__e2eDeliveryRestoreFault){globalThis.__e2eDeliveryRestoreFault=true;throw Error('Injected interruption before return swap');}
       return native(a,b)};return true})()`);
   const before = await economy(live), context = live.clients[merchant].page.context();
-  let preparingDelivery = false, restoringDelivery = false, holdRecovery = true;
+  let preparingDelivery = false, restoringDelivery = false;
   const checkpoints: unknown[] = [];
   await context.route('**/merchant/production', async route => {
     const body = route.request().postDataJSON(), j = body.journal?.lucky;
@@ -382,18 +496,14 @@ test('lucky upgrade preserves party deliveries across preparation and interrupte
       await expect.poll(async () => (await live.clients[merchant].snapshot()).items[j.from]?.q).toBe(4);
       checkpoints.push({ phase: 'restoring', journal: j, inventory: await economy(live) });
     }
-    if (holdRecovery && ['pending', 'inspect'].includes(body.action) &&
-        await live.clients[merchant].run('!!globalThis.__e2eDeliveryRestoreFault')) await route.abort('failed');
-    else await route.continue();
+    await route.continue();
   });
   try {
     const order = await live.post('/merchant/order', { buys: [{ id: 'helmet', quantity: 1, level: 1 }], crafts: [] });
-    await expect.poll(() => live.clients[merchant].run('!!globalThis.__e2eDeliveryRestoreFault'), { timeout: 150_000 }).toBe(true);
-    await expect.poll(async () => (await live.state()).merchantQueue.some((job: any) => job.commerceOrderId === order.jobId)).toBe(true);
+    await expect.poll(() => restoringDelivery, { timeout: 150_000 }).toBe(true);
+    await expect.poll(async () => ![(await live.state()).merchantCurrent, ...(await live.state()).merchantQueue]
+      .some((job:any)=>job?.id===order.jobId||job?.commerceOrderId===order.jobId),{timeout:90_000}).toBe(true);
     await live.restartCoordinator();
-    holdRecovery = false;
-    const queued = (await live.state()).merchantQueue.find((job: any) => job.commerceOrderId === order.jobId);
-    if (queued) await live.post('/merchant/job/retry', { id: queued.id });
     await expect.poll(async () => ![(await live.state()).merchantCurrent, ...(await live.state()).merchantQueue]
       .some((job: any) => job?.commerceOrderId === order.jobId), { timeout: 90_000 }).toBe(true);
     const after = await economy(live);
@@ -403,7 +513,7 @@ test('lucky upgrade preserves party deliveries across preparation and interrupte
     await restartAndObserve(live);
     expect(quantity((await economy(live)).characters[merchant].items, 'seashell')).toBe(4);
     await record(live, info, 'lucky-party-delivery-restart', before, { order, checkpoints, after });
-  } finally { holdRecovery = false; await context.unroute('**/merchant/production'); }
+  } finally { await context.unroute('**/merchant/production'); }
 });
 
 test('merchant mass skills use both tiers and passive recovery restores critical HP and MP during work', async ({ live }, info) => {
@@ -522,7 +632,7 @@ test('buy with upgrade target survives lucky restoration failure and missing cli
   await live.restoreHistoricalSettings(() => ({ luckyUpgradeSlots: { [merchant]: 30 } }));
   await catalog(live, 'helmet');
   const context = live.clients[merchant].page.context();
-  let holdRecovery = true;
+  let holdRecovery = false;
   await context.route('**/merchant/production', async route => {
     const body = route.request().postDataJSON();
     if (holdRecovery && body.action === 'pending') await route.abort('failed');
@@ -547,11 +657,11 @@ test('buy with upgrade target survives lucky restoration failure and missing cli
   const before = await economy(live);
   const order = await live.post('/merchant/order', { buys: [{ id: 'helmet', quantity: 2, level: 1 }], crafts: [] });
   await expect.poll(() => live.clients[merchant].run('!!globalThis.__e2eLuckyRestoreFault'), { timeout: 180_000 }).toBe(true);
-  await expect.poll(async () => (await live.state()).merchantQueue.some((job: any) => job.commerceOrderId === order.jobId),
-    { timeout: 15_000, message: 'Lucky restoration failure must retain the unfinished order' }).toBe(true);
-  const held = (await live.state()).merchantQueue.find((job: any) => job.commerceOrderId === order.jobId);
-  expect(held.resumeState.attempts).toBeGreaterThan(0);
-  expect(held.resumeState.spent).toBeGreaterThan(0);
+  await expect.poll(async () => {
+    const state=await live.state();
+    return ![state.merchantCurrent,...state.merchantQueue].some((job:any)=>job?.id===order.jobId||job?.commerceOrderId===order.jobId);
+  },{timeout:180_000,message:'Best-effort swapback must preserve real results without failing completed commerce'}).toBe(true);
+  const held = await live.state();
   expect(completedJournal).toBeDefined();
   await live.clients[merchant].run(`(()=>{localStorage.setItem('party-production:'+character.name,${JSON.stringify(JSON.stringify({...completedJournal, phase: 'running'}))});localStorage.removeItem('party-lucky-upgrade:'+character.name);localStorage.removeItem('party-commerce:${order.jobId}');return true})()`);
   await live.restartCoordinator();
@@ -563,11 +673,21 @@ test('buy with upgrade target survives lucky restoration failure and missing cli
   const after = await economy(live);
   const results = (value: Economy) => value.characters[merchant].items.filter(item => item?.name === 'helmet' && item.level === 1).length;
   expect(results(after) - results(before)).toBe(2);
+  // Reconciliation runs before subsequent production; idle has no production
+  // mutation to execute merely because this old local receipt was restored.
+  await catalog(live,'shoes');
+  const upgradedShoes=(value:Economy)=>value.characters[merchant].items.filter(item=>item?.name==='shoes'&&item.level===1).length;
+  const shoesBefore=upgradedShoes(await economy(live));
+  const followup=await live.post('/merchant/order',{buys:[{id:'shoes',quantity:1,level:1}],crafts:[]});
+  await expect.poll(async()=>{
+    const state=await live.state();return ![state.merchantCurrent,...state.merchantQueue].some((job:any)=>job?.id===followup.jobId||job?.commerceOrderId===followup.jobId);
+  },{timeout:90_000}).toBe(true);
+  expect(upgradedShoes(await economy(live))-shoesBefore).toBe(1);
   await expect.poll(() => live.clients[merchant].run(`localStorage.getItem('party-production:'+character.name)`)).toBeNull();
   await context.unroute('**/merchant/production');
   await restartAndObserve(live);
   expect(results(await economy(live))).toBe(results(after));
-  await record(live, info, 'buy-upgrade-lucky-journal-recovery', before, { order, held, after });
+  await record(live, info, 'buy-upgrade-lucky-journal-recovery', before, { order, held, after, followup });
 });
 type Economy = {
   characters: Record<string, { map: string; gold: number; isize: number; items: Items; upgrading: boolean }>;

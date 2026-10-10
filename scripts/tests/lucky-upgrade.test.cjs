@@ -73,9 +73,9 @@ test('pending operation survives service replacement and is reconciled before ne
  const next=createLuckyUpgrade(f.ports);await assert.rejects(next.recover(),/pending/);
  f.setBusy(false);f.items[7].level=4;await next.recover();assert.equal(f.items[2].level,4);assert.equal(f.items[7].name,'tracker');assert.equal(f.journal,null);
 });
-test('changed displaced item prevents restoration instead of moving unrelated inventory',async()=>{
- const f=fixture({occupant:{name:'tracker'}});await assert.rejects(f.service.run(2,4,7,async()=>{f.items[2]={name:'unexpected'};}),/displaced item changed/);
- assert.equal(f.swaps.length,1);assert.ok(f.journal);
+test('changed displaced item skips restoration without moving unrelated inventory or blocking work',async()=>{
+ const f=fixture({occupant:{name:'tracker'}});await f.service.run(2,4,7,async()=>{f.items[2]={name:'unexpected'};});
+ assert.equal(f.swaps.length,1);assert.equal(f.journal,null);assert.equal(f.items[2].name,'unexpected');assert.equal(f.items[7].name,'sword');
 });
 
 test('delivery into the freed lucky slot does not hide a completed return swap',async()=>{
@@ -114,15 +114,16 @@ test('destroyed upgrade still preserves a delivery into its former source cell',
 test('unexpected lucky-slot contents cannot authorize adopting an incoming source item',async()=>{
  const f=fixture();f.items[2]={name:'seashell',q:3};f.items[7]={name:'unrelated'};
  f.ports.write({from:2,to:7,item:{name:'wcap',level:3},displaced:null,phase:'running'});
- await assert.rejects(f.service.recover(),/inventory recovery required/);
- assert.equal(f.journal.displaced,null);assert.equal(f.swaps.length,0);
+ await f.service.recover();
+ assert.equal(f.journal,null);assert.equal(f.swaps.length,0);assert.equal(f.items[2].name,'seashell');assert.equal(f.items[7].name,'unrelated');
 });
 
 test('incoming item cannot prove recovery when the result is missing or displaced inventory is unresolved',async()=>{
  for(const displaced of [null,{name:'tracker'}]) {
   const f=fixture();f.items[2]=displaced?{name:'wcap',level:3}:null;f.items[7]={name:'seashell',q:6};
   f.ports.write({from:2,to:7,item:{name:'wcap',level:2},displaced,phase:'restoring',result:displaced?{name:'wcap',level:3}:null});
-  await assert.rejects(f.service.recover(),/inventory recovery required/);assert.ok(f.journal);assert.equal(f.swaps.length,0);
+  const before=structuredClone(f.items);
+  await f.service.recover();assert.equal(f.journal,null);assert.equal(f.swaps.length,0);assert.deepEqual(f.items,before);
  }
 });
 test('tidy packs actual inventory in order leaving lucky slot as the sole internal hole',async()=>{
