@@ -20,11 +20,11 @@ function completesStorageHandoff<Bid extends { priorityOverride?: number }>(
   state: PriorityState<Bid>,
   job: PrioritizedJob,
 ): boolean {
-  if (job.target !== state.merchantCharacter || !["withdrawals", "manual bank exchange", "upgrades and compounds", "manual upgrades", "auto upgrade", "manual compounds", "auto compound"].includes(job.reason)) return false;
+  if (job.target !== state.merchantCharacter || !["withdrawals", "bank collection", "manual bank exchange", "upgrades and compounds", "manual upgrades", "auto upgrade", "manual compounds", "auto compound"].includes(job.reason)) return false;
   return (state.withdrawals?.[String(state.merchantCharacter)] || []).some(
     (request) =>
       (routineFor(job) === routineFor({reason: request.improvement || "manual bank exchange"}) ||
-        job.reason === 'withdrawals' && hasMarkedWithdrawals([request])) &&
+        ['withdrawals','bank collection'].includes(job.reason) && hasMarkedWithdrawals([request])) &&
       request.pack === "items1" &&
       Number(request.slot) >= 35 &&
       state.bankSnapshot?.packs?.items1?.[Number(request.slot)],

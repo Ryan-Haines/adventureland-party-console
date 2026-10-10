@@ -253,6 +253,9 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           catalog={catalogAllItems}
           priceHistory={standPriceHistory}
           autoStandMarks={autoStandMarks}
+          automaticRules={{merchantCharacter:state.merchantCharacter,merchantRules:state.merchantRules,autoItemMarks:state.autoItemMarks,
+            autoNpcSales:state.autoNpcSales,autoStandMarks:state.autoStandMarks,autoUpgradeMarks:state.autoUpgradeMarks,
+            autoCompounds:state.autoCompounds,autoDeconstruction:state.autoDeconstruction,autoExchanges:state.autoExchanges}}
           standListings={standListings}
       standBids={standBids}
           onUnstand={onUnstand}

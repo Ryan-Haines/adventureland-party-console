@@ -283,7 +283,7 @@ test.describe('marked withdrawal scheduling', () => {
     await page.goto('/');
     await page.getByRole('button', {name:'Settings',exact:true}).click();
     const settings = page.getByRole('dialog', {name:'Merchant settings',exact:true});
-    const toggle = settings.getByRole('checkbox', {name:'Marked withdrawals create merchant jobs',exact:true});
+    const toggle = settings.getByRole('checkbox', {name:'Marked withdrawals always create merchant jobs',exact:true});
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
     await expect.poll(async () => (await app.state()).merchantAutomations.withdrawals).toBe(false);

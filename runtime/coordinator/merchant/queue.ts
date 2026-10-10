@@ -73,6 +73,7 @@ export function createMerchantQueue(state: QueueState, ports: QueuePorts) {
   const separateRoutines = new Set(['deliveries', 'manual upgrades', 'auto upgrade', 'manual compounds', 'auto compound', 'manual buying', 'npc sale pickup', 'auto npc sale pickup', 'npc sales', 'auto npc sales']);
   function sameWork(job: MerchantJob | null, name: string, reason: string): boolean {
     if (!job || job.target !== name) return false;
+    if (name === ports.merchant() && ['withdrawals','bank collection'].includes(reason) && ['withdrawals','bank collection'].includes(job.reason)) return true;
     if (name === ports.merchant() || separateRoutines.has(reason) || separateRoutines.has(job.reason)) return job.reason === reason;
     return true;
   }
@@ -101,6 +102,9 @@ export function createMerchantQueue(state: QueueState, ports: QueuePorts) {
       state.queue.push(
         ports.stamp({ id: ports.nextId(), target: name, reason, queuedAt: ports.now() }),
       );
+      changed = true;
+    } else if (name === ports.merchant() && ['withdrawals','bank collection'].includes(reason) && state.queue[index].reason !== reason) {
+      state.queue[index] = ports.stamp({...state.queue[index],reason,routine:undefined});
       changed = true;
     } else if (name !== ports.merchant()) promote(index, reason);
   }

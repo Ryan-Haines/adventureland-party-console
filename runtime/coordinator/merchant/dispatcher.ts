@@ -228,7 +228,7 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   }
 
   function hasQueuedWork(job: MerchantWork): boolean {
-    if (job.reason === 'withdrawals') return hasMarkedWithdrawals(ports.inputs().work(job.target).withdrawals);
+    if (job.reason === 'withdrawals' || job.reason === 'bank collection') return hasMarkedWithdrawals(ports.inputs().work(job.target).withdrawals);
     if (job.reason === "deliveries") return ports.inputs().work(job.target).deliveries.length > 0;
     if (job.reason !== "manual compounds") return true;
     if (ports.inputs().work(job.target).compounds.length) return true;

@@ -132,6 +132,7 @@ export function createCoordinatorMerchantConfiguration(
     {
       collectionChanged: () => {
         state.transferSignatures = {};
+        ports.reconcile?.();
       },
       persist: () => ports.persist(),
     },

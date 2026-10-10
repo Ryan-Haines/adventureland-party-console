@@ -5,6 +5,16 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Show automatic bank, NPC sale, deconstruction, stand, upgrade, compound and
+  exchange rules on bank and Bankboi items. Use “Auto NPC” for automatic sale
+  intent and “NPC sale” for individually marked items.
+- Recover bank NPC-sale withdrawals when rules or merchant settings change.
+  “Marked withdrawals always create merchant jobs” admits even small bank
+  pickups; with it disabled, Automatic item collection also visits the bank
+  once its marked-slot threshold is reached. Rename the delivery setting to
+  “Marked deliveries always create merchant jobs” and preserve deduplicated,
+  protected stock and native withdrawal/sale receipts.
+
 - Add screenshot capture to expanded map views for debugging. Character and
   Cave maps open an immediate image in a new tab, with the map and camera-center
   coordinates included in the image footer.

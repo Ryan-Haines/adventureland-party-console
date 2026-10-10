@@ -2,7 +2,7 @@
 
 import { BankSortControl, type BankSortState } from "./bank-sort-control";
 import { automaticCommerceRuleKey } from "./automatic-commerce-rule-key";
-import { AutoStandBanner } from "./auto-stand-banner";
+import { BankItemBanner, type BankItemRules } from './bank-item-banner';
 import type { PartyState } from "./party-state";
 import { standIsFull } from "./stand-capacity";
 import type { StandBid } from "./stand-bid";
@@ -138,6 +138,7 @@ export const BankSheet = memo(function BankSheet({
   standListings,
   standBids = {},
   autoStandMarks = {},
+  automaticRules = {},
 
   onStand,
 
@@ -214,6 +215,7 @@ export const BankSheet = memo(function BankSheet({
 
   standListings: StandListing[];
   autoStandMarks?: PartyState["autoStandMarks"];
+  automaticRules?: BankItemRules;
   standBids?: Record<string, StandBid>;
 
   onStand: (pack: string, entry: InventoryEntry, all?: boolean) => void;
@@ -340,7 +342,7 @@ export const BankSheet = memo(function BankSheet({
 
     npcSaleMarks.some(
 
-      (mark) => mark.pack === pack && mark.slot === entry.slot && same(mark.item, entry.item),
+      (mark) => !mark.auto && mark.pack === pack && mark.slot === entry.slot && same(mark.item, entry.item),
 
     );
 
@@ -536,7 +538,7 @@ export const BankSheet = memo(function BankSheet({
                               ) : null}
 
                               <MluckClover item={entry.item} />
-                              <AutoStandBanner item={entry.item} rules={autoStandMarks} />
+                              <BankItemBanner item={entry.item} rules={automaticRules} manualNpc={npcMarked(pack,entry)} />
 
                               {reserved ? (
 
@@ -559,22 +561,6 @@ export const BankSheet = memo(function BankSheet({
                                 >
 
                                   <DollarSign className="h-3.5 w-3.5" />
-
-                                </span>
-
-                              ) : null}
-
-                              {npcMarked(pack, entry) ? (
-
-                                <span
-
-                                  title="Marked for NPC sale"
-
-                                  className="absolute right-1 top-7 z-20 rounded bg-rose-700 px-1 font-mono text-[8px] font-bold text-white"
-
-                                >
-
-                                  NPC
 
                                 </span>
 
@@ -1061,7 +1047,7 @@ export const BankSheet = memo(function BankSheet({
                                   ) : null}
 
                                   <MluckClover item={entry.item} />
-                              <AutoStandBanner item={entry.item} rules={autoStandMarks} />
+                              <BankItemBanner item={entry.item} rules={automaticRules} manualNpc={npcMarked(`bankboi:${bankboi.name}`,entry)} />
 
                                 </ContextMenuTrigger>
 

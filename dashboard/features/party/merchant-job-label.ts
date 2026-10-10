@@ -5,6 +5,7 @@ const labels: Record<string, string> = {
   fishing: 'Fishing',
   mining: 'Mining',
   'party collection': 'Item collection',
+  'bank collection': 'Bank item collection',
   'manual visit': 'Manual visit',
   deliveries: 'Marked deliveries',
   withdrawals: 'Marked withdrawals',

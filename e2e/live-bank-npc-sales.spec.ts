@@ -63,7 +63,7 @@ async function helmetSaleReceipts(live:LiveGame,merchant:string) {
 test('bank NPC sale rule withdraws native stock and respects disabled sales across restart', async ({ live }, info) => {
   test.setTimeout(240_000);
   const merchant = 'E2EMerchant';
-  await live.post('/merchant/routine-priorities', { priorities: {}, enabled: { 'auto npc sales': false } });
+  await live.post('/merchant/routine-priorities', { priorities: {}, enabled: { 'auto npc sales': false, withdrawals: true } });
   await live.admin(`output=(async()=>{const p=get_player('${merchant}');await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items0.0':{name:'helmet',level:0},'info.items0.1':{name:'helmet',level:0,l:'l'}}});return true})()`);
   await live.post('/command', { character: merchant, type: 'bank' });
   await expect.poll(async () => (await live.state()).bank?.packs?.items0?.[0]?.item?.name, {timeout:90_000}).toBe('helmet');
@@ -87,7 +87,7 @@ test('bank NPC sale rule withdraws native stock and respects disabled sales acro
 test('bank NPC selection caps ten stacks and excludes persisted NPC stand conflicts', async ({live},info) => {
   test.setTimeout(360_000);
   const merchant='E2EMerchant';
-  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto npc sales':false}});
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto npc sales':false,withdrawals:true}});
   const seeded=await live.admin(`output=(async()=>{const p=get_player('${merchant}'),items=Array.from({length:12},()=>({name:'helmet',level:0}));items.push({name:'helmet',level:0,l:'l'},{name:'shoes',level:0});const patch=Object.fromEntries(items.map((item,i)=>['info.items0.'+i,item]));await db.collection('user').updateOne({_id:p.owner},{$set:patch});return items})()`);
   await live.post('/command',{character:merchant,type:'bank'});
   await expect.poll(async () => (await live.state()).bank?.packs.items0?.[13]?.item.name,{timeout:90_000}).toBe('shoes');

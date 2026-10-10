@@ -101,6 +101,15 @@ Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
 
+Bank automatic-sale rules materialize deduplicated native-bank withdrawals even
+when unrelated requests already exist. Always-on withdrawals admit small visits;
+otherwise `bank collection` uses the automatic item collection routine at its
+marked-cell threshold. Settings and threshold changes reconcile durable intent.
+Specialized production, stand and storage withdrawals keep their own routines.
+Validate `console-bank-automarks.spec.ts`, `live-bank-collection.spec.ts` and the
+retained native bank NPC-sale scenarios. Publish coordinator/dashboard assets
+using the supported CoordinatorOnly restart when activating these changes.
+
 Fishing and mining wait when the merchant has three or fewer empty inventory
 slots. Dispatcher admission and the native gathering loop preserve cooldowns
 while capacity blocks work; logistics shows enabled modes as red BLOCKED rows.

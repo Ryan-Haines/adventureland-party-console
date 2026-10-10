@@ -13,6 +13,7 @@ interface RoutineState {
   queue: MerchantJob[];
 }
 interface RoutinePorts {
+  reconcile?(): void;
   gathering?(values: Record<string, unknown>): void;
   priorities: Readonly<Record<string, number>>;
   automations: Readonly<Record<string, boolean>>;
@@ -54,6 +55,7 @@ export function createRoutinePriorityRoute(state: RoutineState, ports: RoutinePo
     }
     state.queue = state.queue.map((job) => ports.stamp(job));
     ports.persist();
+    ports.reconcile?.();
     ports.dispatch();
     return response.json({ ok: true, priorities: state.priorities, enabled: state.automations });
   };

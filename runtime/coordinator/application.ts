@@ -1060,6 +1060,10 @@ export function startCoordinatorApplication(
       priorities: routinePriorityRoute,
       thresholds: thresholdRoute,
     } = coordinatorPolicies.createCoordinatorMerchantConfiguration(party, {
+      reconcile: () => {
+        const status = party.statuses[String(party.merchantCharacter)];
+        if (status) reconcileAutomaticMerchantSales(status);
+      },
       runtime: (name) => {
         const status = party.statuses[name];
         return status && !status.rip && Date.now() - status.seenAt < 10000
