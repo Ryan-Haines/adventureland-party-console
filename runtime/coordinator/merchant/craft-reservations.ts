@@ -77,8 +77,8 @@ function protectDeliveries(state: CraftReservationState, protection: CraftProtec
 }
 
 function commerceProtection(state: CraftReservationState, excludeCommerceJob?: string): NonNullable<CraftProtection['deliveries']> {
-  return [state.merchantCurrent, ...(state.merchantQueue || [])].flatMap(job => {
-    if (!job || (excludeCommerceJob && job.id === excludeCommerceJob)) return [];
+  return [state.merchantCurrent, ...(state.merchantQueue || [])]
+    .filter((job): job is Job => !!job && (!excludeCommerceJob || job.id !== excludeCommerceJob)).flatMap(job => {
     const progress = job.resumeState as {results?: {slot?: number; item: import('../contracts/item.ts').Item}[];
       batchItems?: {slot: number; item: import('../contracts/item.ts').Item}[];
       activeSlot?: number; activeItem?: import('../contracts/item.ts').Item;
