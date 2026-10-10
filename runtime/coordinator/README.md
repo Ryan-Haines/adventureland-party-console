@@ -4,6 +4,12 @@ logged as an inventory assumption, never a confirmed historical receipt. Paid
 spending and attempts remain intact; finished target-tier, reserved, locked or
 bound stock stays excluded. Validate the native unlinked-intermediate journey
 in `live-economy.spec.ts`; see `docs/testing-commerce-inventory-adoption.md`.
+Adoption requests an owner-specific protection view using the current paid job
+and command identities. Only that job's commerce identity markers are excluded;
+craft requirements, other orders and merchant deliveries remain protected.
+The authoritative checkpoint logs a newly persisted adoption marker once,
+including previous input/slot and unresolved target, so a replaced CODE
+continuation is not responsible for publishing the audit.
 
 Bankboi-only compound stock stages a delivery but does not admit an empty
 merchant improvement visit. Admission uses carried or native-bank stock until
@@ -87,6 +93,12 @@ Validate the exchange console journey, preserving screenshots and saved rules.
 Activate with the supported coordinator/dashboard-only restart.
 
 # Character coordinator
+
+Fishing and mining wait when the merchant has three or fewer empty inventory
+slots. Dispatcher admission and the native gathering loop preserve cooldowns
+while capacity blocks work; logistics shows enabled modes as red BLOCKED rows.
+Validate the capacity console and native gathering E2Es. Activate character and
+coordinator assets together through the supported full restart.
 
 Native splash packets from a visible monster fighting an identified outsider
 do not repeatedly stop owned party travel. Direct hits and unknown or party

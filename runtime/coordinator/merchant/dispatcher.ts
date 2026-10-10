@@ -125,6 +125,8 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
   }
 
   function gatherBefore(readyJobs: readonly MerchantWork[]): boolean {
+    const items = ports.status(ports.merchant())?.items;
+    if (Array.isArray(items) && items.filter(entry => !entry).length <= 3) return false;
     const modes = ports
       .gatheringModes()
       .filter((mode) => Number(ports.gatheringCooldown(mode) || 0) <= ports.now())

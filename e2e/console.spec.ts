@@ -20,6 +20,7 @@ test('merchant logistics shows capacity blocked collection in red and clears whe
     const response=await route.fetch(),state=await response.json();
     await route.fulfill({response,json:{...state,merchantCharacter:'M',merchantCurrent:null,
       characters:{...initial.characters,...state.characters,M:{...initial.characters.M,...state.characters?.M,items:Array.from({length:42},(_,slot)=>slot<occupied?{slot,item:{name:'helmet'}}:null)}},
+      gatheringModes:['fishing','mining'],gatheringCooldowns:{fishing:0,mining:0},
       merchantQueue:[{id:'capacity-collection',reason:'party collection',target:'GermanicHP',priority:82}]}});
   });
   await page.goto('/');
@@ -34,14 +35,26 @@ test('merchant logistics shows capacity blocked collection in red and clears whe
   });
   expect(color[0]).toBeGreaterThan(color[1]);expect(color[0]).toBeGreaterThan(color[2]);
   await expect(status).toHaveAttribute('title',/39\/42/);
+  for(const mode of ['Fishing','Mining']){
+    const gathering=page.locator(`span[title="${mode} · M"]`).locator('..');
+    await expect(gathering.getByText('BLOCKED',{exact:true})).toBeVisible();
+  }
   await info.attach('merchant-capacity-blocked',{body:await page.screenshot(),contentType:'image/png'});
   occupied=38;
   await expect(row.getByText('queued',{exact:true})).toBeVisible();
+  await expect(page.getByText('BLOCKED',{exact:true})).toHaveCount(0);
   await info.attach('merchant-capacity-restored',{body:await page.screenshot(),contentType:'image/png'});
 });
 
 test('uncertain merchant upgrade shows red diagnostics and authoritative UTC retry time',async({page,app},info)=>{
   const initial=await app.state();
+  const enabled=Object.fromEntries(Object.keys(initial.merchantAutomations).map(name=>[name,false]));
+  const configuration=await page.request.post('/party-api/merchant/routine-priorities',{headers:{Origin:app.url},data:{priorities:{},enabled}});
+  expect(configuration.ok()).toBe(true);
+  // The console worker has no native executor. Complete its already admitted
+  // fixture luck visit through the real receipt boundary before the order.
+  const automatic=(await app.state()).merchantCurrent;
+  if(automatic) await app.deliverMerchantCompletion({jobId:automatic.id,commandId:automatic.commandId,success:true});
   const source=initial.merchantCatalog.allItems.find((item:any)=>item.id==='staff');
   const choice={id:'staff',name:source.name,cost:Number(source.meta.definition.g),seller:'basics',sprite:null,upgradeable:true,upgradeGrade:0,
     upgradeChances:[1,.9999999,.98,.95,.7,.6,.4,.25,.15,.07,.024,.14,.11],grades:[9,10,11,12],scrollCosts:[1000,40000,1600000,64000000]};
@@ -57,6 +70,8 @@ test('uncertain merchant upgrade shows red diagnostics and authoritative UTC ret
   expect(retry.retryAt).toBeGreaterThan(Date.now());
   const timestamp=new Date(retry.retryAt).toISOString().replace('T',' ').replace(/\.\d{3}Z$/,' UTC');
   await page.goto('/');
+  const merchant=page.locator('article').filter({has:page.getByRole('heading',{name:'M',exact:true})});
+  await merchant.locator('summary').filter({hasText:/^Activity$/}).click();
   const line=page.locator('p').filter({hasText:`Retrying order at ${timestamp}`});
   await expect(line).toBeVisible();
   await expect(line).toContainText(error);

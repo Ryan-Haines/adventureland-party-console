@@ -6884,10 +6884,10 @@
     // A pending native attempt owns its separate receipt/lucky reconciliation.
     // Otherwise remap the whole paid group before individual slot lookups.
     if (progress.inventoryAdoption) {
-      await refreshCompoundProtection(command);
+      var adoptionProtection = await refreshCommerceAdoptionProtection();
       if (!runtimeCurrent() || !root.__merchantActiveJob || root.__merchantActiveJob.commandId !== command.id)
         throw new Error("interrupted");
-      verifyCommerceResults(progress.results,availableCommerceInventory());
+      verifyCommerceResults(progress.results,availableCommerceInventory(adoptionProtection));
     }
     if (!progress.pendingUpgrade && remapCommerceOwnedItems(progress)) await services.checkpoint(progress, false);
     verifyCommerceResults(progress.results);
@@ -6987,10 +6987,10 @@
       await save(false);
     }
     async function adoptIntermediateInventory(pending) {
-      await refreshCompoundProtection(command);
+      var adoptionProtection = await refreshCommerceAdoptionProtection();
       if (!runtimeCurrent() || !root.__merchantActiveJob || root.__merchantActiveJob.commandId !== command.id)
         throw new Error("interrupted");
-      var available = availableCommerceInventory();
+      var available = availableCommerceInventory(adoptionProtection);
       var excluded = new Set(progress.results.concat(progress.batchItems).map(function(entry) { return entry.slot; }));
       var candidates = available.filter(function(entry) {
         if (!entry || !entry.item || entry.item.l || entry.item.b || excluded.has(entry.slot)) return false;
@@ -7005,23 +7005,27 @@
       progress.activeItem = fingerprint(adopted.item);
       progress.cycleActive = true;
       delete progress.pendingUpgrade;
-      progress.inventoryAdoption = {at:Date.now(),input:progress.activeItem,slot:adopted.slot};
+      progress.inventoryAdoption = {at:Date.now(),input:progress.activeItem,slot:adopted.slot,
+        previousInput:oldItem,previousSlot:oldSlot,pendingLevel:pending.level};
       // Existing result quota is unchanged. Paid unfinished groups retain the
       // strict exact-count remap; surplus base items remain ambiguous.
       remapCommerceOwnedItems(progress);
       // This is a newly owned actual input, not a receipt for the old attempt.
       await save(false);
-      await services.activity({level:"info",message:"Inventory adoption assumption: continuing " + purchase.id +
-        " +" + Number(adopted.item.level || 0) + " from inventory slot " + adopted.slot +
-        "; old upgrade +" + Number(oldItem && oldItem.level || 0) + " to +" + pending.level +
-        " at slot " + oldSlot + " remains unconfirmed; paid spending and attempts retained"});
       return true;
     }
-    function availableCommerceInventory() {
+    async function refreshCommerceAdoptionProtection() {
+      var response = await request("/merchant/checkpoint", {method:"POST",body:{jobId:command.jobId,commandId:command.id,
+        protectionOnly:true,commerceAdoptionProtection:true}});
+      if (!response || !response.commerceAdoptionProtection || response.commerceAdoptionProtection.error)
+        throw new Error("Craft reservations unavailable; commerce adoption deferred");
+      return response.commerceAdoptionProtection;
+    }
+    function availableCommerceInventory(protection) {
       var entries = character.items.map(function(item,slot) {
         return item ? {slot:slot,item:item,craftLocation:"inventory:"+character.name} : null;
       });
-      return globalThis.partyAvailableCraftStock(entries,command.craftProtection);
+      return globalThis.partyAvailableCraftStock(entries,protection);
     }
     async function finishItem() {
       var slot = ownedSlot(), item = character.items[slot];
@@ -9339,6 +9343,7 @@
     if (upgrading) return "upgrading";
     if (departurePending) return "departure pending";
     if (character.rip) return "dead";
+    if (freeInventorySlots() <= 3) return "inventory capacity";
     return null;
   }
 
@@ -9439,6 +9444,7 @@
       // Keep travel equipment (notably the broom's speed bonus) until arrival.
       await equipGatheringTool(session, current);
       if (!current()) return;
+      if (freeInventorySlots() <= 3) return;
       if (!is_on_cooldown(mode) && can_use(mode)) {
         var beforeGathering = gatheringInventoryTotals();
         gatheringStatus(mode === "fishing" ? "Fishing…" : "Mining…", "info");

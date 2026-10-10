@@ -2,7 +2,7 @@ import { test, expect, type LiveGame } from './live-fixtures';
 import { automaticCommerceRuleKey } from '../runtime/coordinator/inventory/item-identity';
 
 test('full merchant defers external compounds until native NPC sales free capacity', async ({live},info) => {
-  test.setTimeout(300_000);
+  test.setTimeout(420_000);
   const merchant='E2EMerchant';
   try {
     await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto compound':false,'auto npc sales':false}});
@@ -32,9 +32,14 @@ test('full merchant defers external compounds until native NPC sales free capaci
     await live.post('/merchant/auto-npc-sale',{item:{name:'helmet',level:0}});
     await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto compound':true,'auto npc sales':true}});
     await expect.poll(async()=>{
+      const sales=await helmetSaleReceipts(live,merchant),client=await live.clients[merchant].snapshot();
+      return sales.length===8&&sales.every(entry=>Number(entry.data.gold)>0)&&client.items.filter((item:any)=>!item).length>3;
+    },{timeout:150_000,message:'Eight genuine NPC sales must free native withdrawal capacity'}).toBe(true);
+    await info.attach('compound-capacity-native-cleanout',{body:JSON.stringify({sales:await helmetSaleReceipts(live,merchant),client:await live.clients[merchant].snapshot(),state:await live.state()}),contentType:'application/json'});
+    await expect.poll(async()=>{
       const receipts=await live.clients[merchant].run('globalThis.__capacityCompoundReceipts');
       return (await helmetSaleReceipts(live,merchant)).length>3&&receipts.length>0;
-    },{timeout:150_000,message:'Genuine NPC sales must unblock actual native compound attempts'}).toBe(true);
+    },{timeout:150_000,message:'Freed capacity must permit actual native compound processing'}).toBe(true);
   } finally {
     await info.attach('compound-capacity-native-evidence',{body:JSON.stringify({state:await live.state(),client:await live.clients[merchant].snapshot(),events:await live.clients[merchant].events(),compoundReceipts:await live.clients[merchant].run('globalThis.__capacityCompoundReceipts||[]')}),contentType:'application/json'});
   }

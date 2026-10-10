@@ -5,6 +5,12 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Show queued merchant item collections as red “blocked” in the logistics list
+  when inventory capacity reaches the three-slot reserve (39/42). Include a
+  capacity explanation on hover and restore “queued” when space becomes available.
+  Show enabled fishing/mining in logistics as red “BLOCKED” at capacity, and
+  defer gathering without casting or resetting its cooldown until space returns.
+
 - Show uncertain merchant upgrades as errors with item, tier and inventory-slot
   diagnostics. Log each admitted order retry with its actual scheduled timestamp
   in explicit UTC and retain the numeric deadline for remote consoles.
@@ -13,6 +19,10 @@ from the commits merged into `main`.
   inventory when available, recording an explicit adoption assumption. Preserve
   paid spending and attempts, protect reserved stock, and keep existing finished
   items outside the order's newly produced quota.
+  Its command-fenced adoption view excludes only its own commerce identity
+  reservations while retaining craft, delivery and other-order protection.
+  Record the adoption audit at its authoritative checkpoint so CODE replacement
+  cannot lose the assumption message after paid progress has been accepted.
 
 - Stage Bankboi compound deliveries without starting empty merchant improvement
   visits. Remote inputs become runnable after their genuine native-bank deposit;

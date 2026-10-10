@@ -25,6 +25,16 @@ compound job was queued behind those sales. This was an unrelated forty-sale
 initial workload. Declare eight sellable fillers and natively lock the remaining
 initial fillers; retain the full bag, genuine sales, compound response, and
 original 150-second processing deadline. No production behavior changes.
+
+Run 38014979039 subsequently completed all eight sales in 52.618 seconds,
+admitted compound work and genuinely retrieved three rings. Its native bank
+withdrew 6,400 gold for processing only about nine seconds before the combined
+150-second observation expired; there were no merchant errors. Separate the
+serial cleanout and compound phases: at most 150 seconds for eight positive-gold
+native sale receipts plus actual free capacity, then the original 150 seconds
+for a genuine native compound response. The overall case budget is 420 seconds
+including initial bank setup and blocked-admission observation. Preserve all
+native outcomes and admission assertions; no runtime deadlines change.
 # Bankboi delivery admission
 
 Linux focused run 38013958761 sold all eight declared helmets, withdrew three
