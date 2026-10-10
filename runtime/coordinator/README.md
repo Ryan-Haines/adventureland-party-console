@@ -1,3 +1,12 @@
+Active event returns release members whose fresh, connected reports show another
+enabled event live. Retire only their matching-cycle exit/continuation commands
+and owned return walk; preserve the saved checkpoint until normal admission
+adopts it. New ended-event returns exclude these members too. Stale reports and
+disabled events retain the return. Validate both native Halloween handoffs and
+checkpoint arrival in `live-event-return-handoff.spec.ts`; failure inventory is
+`docs/testing-event-return-handoff.md`. Coordinator-only activation uses the
+supported `scripts/start-console.ps1 -CoordinatorOnly` restart.
+
 BankBoi deletion refreshes the account roster before applying storage guards.
 If the character is already absent, remove only its stale console storage record
 without requesting native deletion. Failed refreshes preserve the record, and

@@ -5,6 +5,11 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Release members held by an event return when another selected event is live.
+  Retire their matching return commands, preserve the original checkpoint, and
+  let followers join their leader's next event. Fresh enabled event reports
+  also exclude members from new ended-event returns. Fixes #93 on `bugfix-1.4`.
+
 - Fix Steam merchants hanging when giveaways, Ponty purchases, ALData purchases
   or sales, or stand return require another realm. Navigate the Steam game page
   after the coordinator accepts the switch; retain headless restart behavior.

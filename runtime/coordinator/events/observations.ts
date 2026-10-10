@@ -303,6 +303,58 @@ export function createEventObservations(
       );
   }
 
+  function nextLiveEvent(name: string, returningFrom: string): string | null {
+    const report = ports.statuses()[name];
+    const at = Number(report?.seenAt);
+    if (!report || !Number.isFinite(at) || ports.now() - at > 10000 || at > ports.now() + 500 ||
+        report.eventFeedConnected === false || report.eventClockStale || ports.intent(name).cancelled) return null;
+    return report.serverLiveEvents?.find(entry => entry.name !== returningFrom &&
+      ports.enabled(name, entry.name) && rawLive(entry.name) &&
+      !(entry.name === 'slenderman' && report.slendermanSearchExhausted))?.name || null;
+  }
+
+  function carryCheckpoint(name: string, event: string, previous: EventSession): void {
+    const waypoint = previous.waypoints[name];
+    const intent = ports.intent(name);
+    if (!waypoint || waypoint.revision !== intent.revision || intent.cancelled) return;
+    const target = state.sessions[name]?.event === event ? state.sessions[name] : liveSession({name: event});
+    target.waypoints[name] = {
+      revision: waypoint.revision,
+      location: waypoint.location && {...waypoint.location},
+    };
+    state.sessions[name] = target;
+  }
+
+  function releaseLiveMembers(): void {
+    const recovery = state.current;
+    if (!recovery) return;
+    const released = recovery.participants.filter(name => nextLiveEvent(name, recovery.event));
+    if (!released.length) return;
+    for (const name of released) {
+      // Retain the checkpoint until normal event authorization adopts it.
+      // Merely observing a live boss must not manufacture participation.
+      state.deferred[name] = {
+        event: recovery.event,
+        cycleId: recovery.cycleId,
+        checkpoint: ports.location(recovery, name),
+        navigationRevision: ports.intent(name).revision,
+        deferredAt: ports.now(),
+        phase: 'awaiting-event-handoff',
+      };
+      ports.retireDeferredWalk?.(name, recovery.cycleId);
+      ports.retireDeferredCommand?.(name, recovery.cycleId);
+      if (recovery.returnRoutes) delete recovery.returnRoutes[name];
+    }
+    recovery.participants = recovery.participants.filter(name => !released.includes(name));
+    recovery.pending = recovery.pending.filter(name => !released.includes(name));
+    if (!recovery.participants.length) {
+      recovery.returnRoutes = null;
+      recovery.returnDispatchedAt = null;
+    }
+    ports.persist();
+    ports.finishIfReady();
+  }
+
   function ended(name: string, session: EventSession): boolean {
     if (!session || !ports.enabled(name, session.event)) return false;
     const latest = Math.max(
@@ -329,7 +381,13 @@ export function createEventObservations(
     const sessions = Object.values(state.sessions).filter(
       (entry) => entry?.event === session.event,
     );
-    const participants = [...new Set(sessions.flatMap((entry) => entry.participants))];
+    const participants = [...new Set(sessions.flatMap((entry) => entry.participants))].filter(name => {
+      const event = nextLiveEvent(name, session.event);
+      if (!event) return true;
+      const previous = sessions.find(entry => entry.participants.includes(name))!;
+      carryCheckpoint(name, event, previous);
+      return false;
+    });
     if (participants.length) ports.begin(session.event, { ...session, participants });
     clearEndedSessions(session.event);
     ports.persist();
@@ -375,7 +433,7 @@ export function createEventObservations(
 
   function resumeDeferred(body: EventReport): void {
     const recovery = state.deferred[body.name];
-    if (!recovery || ports.hasCommand(body.name)) return;
+    if (!recovery || ports.hasCommand(body.name) || nextLiveEvent(body.name, recovery.event)) return;
     const atTown = body.map === "main" && Math.hypot(Number(body.x), Number(body.y)) <= 90;
     const revision = invalidateCheckpoint(recovery, body.name);
     if (atTown && !recovery.checkpoint) delete state.deferred[body.name];
@@ -416,6 +474,7 @@ export function createEventObservations(
     if (participating && ports.enabled(body.name, participating))
       participate(body.name, participating);
     reportAnniversaryHandoff(body);
+    releaseLiveMembers();
     beginEndedReturn();
     deferStaleMembers();
     resumeDeferred(body);

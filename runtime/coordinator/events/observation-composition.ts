@@ -72,7 +72,8 @@ export function createCoordinatorEventObservations(
       retireDeferredWalk: (name, cycleId) => {
         const convoy = state.activeConvoy;
         if (state.deferredEventReturns[name]?.cycleId !== cycleId) return;
-        if (!convoy || !convoy.participants.includes(name) || !ownsDeferredWalk(convoy, cycleId)) return;
+        if (!convoy || !convoy.participants.includes(name) ||
+            !(ownsDeferredWalk(convoy, cycleId) || ownsActiveReturn(convoy, cycleId))) return;
         ports.cancelConvoy();
       },
       retireDeferredCommand: (name, cycleId) => {
@@ -95,6 +96,19 @@ export function createCoordinatorEventObservations(
       return !!parent && parent.command?.cycleId === cycleId &&
         (!deferred || deferred.cycleId === cycleId && parent.revision === deferred.navigationRevision) &&
         parent.revision === ports.navigation.intent(name).revision && ports.activeNames().includes(name) &&
+        deferredCommandOwned(convoy, name, cycleId);
+    });
+  }
+  function ownsActiveReturn(convoy: ReturnConvoy, cycleId: string): boolean {
+    // Checkpoint convoys carry ownership in returnRoutes, rather than the
+    // walking parents used by a deferred command's shared return walk.
+    const recovery = state.eventReturn;
+    if (!recovery || recovery.cycleId !== cycleId || convoy.nonPreemptible ||
+        convoy.purpose !== 'event-return' || !convoy.participants.length) return false;
+    return convoy.participants.every(name => {
+      const route = recovery.returnRoutes?.[name];
+      return recovery.participants.includes(name) && route?.convoyId === convoy.id &&
+        route.revision === ports.navigation.intent(name).revision && ports.activeNames().includes(name) &&
         deferredCommandOwned(convoy, name, cycleId);
     });
   }
