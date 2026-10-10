@@ -27,6 +27,14 @@ initial fillers; retain the full bag, genuine sales, compound response, and
 original 150-second processing deadline. No production behavior changes.
 # Bankboi delivery admission
 
+Linux focused run 38013958761 sold all eight declared helmets, withdrew three
+real rings, and continued six additional bank sorting swaps before the final
+gold withdrawal and native transport response. The nine-ring seed added work
+unrelated to proving one compound attempt; the evidence did not establish a
+product deadlock. Seed one three-ring triple and observe bank slot two instead
+of eight. Keep the full-bag fifteen-second admission hold, genuine NPC sales,
+actual compound response, and original 150-second observation deadline.
+
 Failure inventory before implementation: shared compound planning includes
 remote Bankboi stock and admits merchant improvement work before that stock has
 been deposited into the native bank. The native merchant correctly skips remote

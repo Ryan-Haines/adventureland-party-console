@@ -6,9 +6,11 @@ test('full merchant defers external compounds until native NPC sales free capaci
   const merchant='E2EMerchant';
   try {
     await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto compound':false,'auto npc sales':false}});
-    await live.admin(`output=(async()=>{const p=get_player('${merchant}');const patch=Object.fromEntries(Array.from({length:9},(_,i)=>['info.items0.'+i,{name:'ringsj',level:0}]));await db.collection('user').updateOne({_id:p.owner},{$set:patch});return true})()`);
+    // One native triple suffices to prove capacity admission and a real
+    // compound attempt; extra triples add unrelated bank sorting work.
+    await live.admin(`output=(async()=>{const p=get_player('${merchant}');const patch=Object.fromEntries(Array.from({length:3},(_,i)=>['info.items0.'+i,{name:'ringsj',level:0}]));await db.collection('user').updateOne({_id:p.owner},{$set:patch});return true})()`);
     await live.post('/command',{character:merchant,type:'bank'});
-    await expect.poll(async()=>(await live.state()).bank?.packs?.items0?.[8]?.item?.name,{timeout:90_000}).toBe('ringsj');
+    await expect.poll(async()=>(await live.state()).bank?.packs?.items0?.[2]?.item?.name,{timeout:90_000}).toBe('ringsj');
     await expect.poll(async()=>(await live.state()).merchantCurrent,{timeout:90_000}).toBeNull();
     // Initial inventory declaration only fills empty native slots; no existing
     // items are removed and subsequent capacity changes require real sales.
