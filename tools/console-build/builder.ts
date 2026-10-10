@@ -8,7 +8,7 @@ import type {Candidate, CandidateManifest} from './contracts.ts';
 
 // Maintained debug hosting imports the native fixture client/bootstrap boundary.
 const roots = ['runtime', 'characters', 'dashboard', 'tools', 'scripts', 'patches', 'e2e', '.caracal'];
-const excluded = new Set(['node_modules','.git','.build','.wrangler','dist','game_files','localStorage','CODE','TYPECODE','logs','sessions','cache']);
+const excluded = new Set(['node_modules','.git','.build','.wrangler','.vinext','dist','game_files','localStorage','CODE','TYPECODE','logs','sessions','cache']);
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 async function removeOwnedStage(parent:string,stage:string):Promise<void>{
   const relative=path.relative(path.resolve(parent),path.resolve(stage));

@@ -2183,7 +2183,9 @@
       return target && target.type === 'monster' && target.visible && !target.dead && target.hp > 0 && consoleDrainAllows(target);
     });
   }
-  function receiveConsoleMaintenance(pause) {
+  function receiveConsoleMaintenance(pause, serverNow) {
+    if (serverNow && serverNow < (root.__partyConsoleMaintenanceAt || 0)) return;
+    root.__partyConsoleMaintenanceAt = serverNow || root.__partyConsoleMaintenanceAt || 0;
     if (pause && pause.mode === 'draining' && pause.id !== (root.__partyConsoleMaintenance || {}).id) {
       // Snapshot the current red-circle fight before enabling the acquisition gate.
       var targets = {};
@@ -10501,7 +10503,7 @@
       statusPhase = "request status";
       var state = await request("/status", { method: "POST", body: statusBody });
       if (!runtimeCurrent()) return;
-      receiveConsoleMaintenance(state.consoleMaintenance || null);
+      receiveConsoleMaintenance(state.consoleMaintenance || null, state.serverNow);
       if (root.__partyConsoleMaintenance && (!consoleDraining() || !consoleDrainCombatActive())) {
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');
         return;
@@ -13492,8 +13494,11 @@
       {id:String(e.id),map:character.map,in:character.in,server:reunionRealm(),at:Date.now()+coordinatorClockOffset} : null;
   }
   function queueMarkers() {
-    return queueMarkersUnfiltered().filter(function(marker) {
-      return !consoleDraining() || consoleDrainAllows(get_entity(marker.id));
+    return queueMarkersUnfiltered().map(function(marker) {
+      // A planned successor may lead the coordinator queue after the old fight
+      // dies; the drain still keeps it yellow instead of admitting a red target.
+      return marker.role === 'current' && consoleDraining() && !consoleDrainAllows(get_entity(marker.id))
+        ? Object.assign({}, marker, {role:'next'}) : marker;
     });
   }
   function queueMarkersUnfiltered() {
@@ -13609,6 +13614,7 @@
         anchorVisible:groupedAnchorVisible(),state:groupedCombat}};
   }
   function acceptCombatControl(state) {
+    if ('consoleMaintenance' in state) receiveConsoleMaintenance(state.consoleMaintenance || null, state.serverNow);
     if(state.passingControl && (!state.serverNow || state.serverNow>=(root.__partyHuntTravelAt||0))) {
       var beforeHunt=root.__partyHuntTravel, nextHunt=state.passingControl.hunt || null;
       if(nextHunt && nextHunt.primary && (!beforeHunt || !beforeHunt.primary || passingKey(beforeHunt.primary)!==passingKey(nextHunt.primary)) && typeof game_log==='function')
@@ -13717,6 +13723,7 @@
       Math.hypot(character.x-anchor.x,character.y-anchor.y) <= groupedCombat.range;
   }
   function groupedAttackAllowed(target) {
+    if (!consoleDrainAllows(target)) return false;
     if (dungeonOwned()) return !!(character.cave && !character.cave.paused && dungeonTargetAllowed(target) && groupedFresh() &&
       groupedCombat.target?.id === target.id && groupedCombat.committed);
     if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
@@ -16600,6 +16607,7 @@
     },
     terrainRecoveryPorts: terrainRecoveryPorts,
     successorAllowed: function(grant) {
+      if(consoleDraining())return false;
       if(!groupedFarming() || !groupedFresh() || navigationIntent.cancelled || character.rip || partyConvoyActive || convoyTraveling ||
           eventTraveling || joinedEvent || eventTargetTypes.length || combatRecoveryActive() || travelCombatActive() ||
           root.partyLootClient && root.partyLootClient.huntPending())return false;

@@ -9,6 +9,8 @@ safety. Interrupted waits preserve the active build and expire/release the hold.
 Validate `console-build.spec.ts`, `console-build-safe-host.spec.ts` and
 `live-console-safe-reload.spec.ts`; see `docs/testing-safe-console-reload.md`.
 Activate dashboard, coordinator and character assets together for this protocol.
+Fast combat snapshots carry the same ordered maintenance lease as full status;
+successor promotion and the final attack gate reject new targets during the hold.
 
 Immutable console activation sets `AL_CONSOLE_ARTIFACT` to the selected release's
 `app` directory. The maintained launcher resolves repository bundles and support

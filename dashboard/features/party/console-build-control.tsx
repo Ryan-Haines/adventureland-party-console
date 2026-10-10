@@ -100,7 +100,6 @@ export function ConsoleBuildControl() {
         <Button className="justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy} onClick={() => void deploy('safe', menuSelection)}>Load when safe</Button>
       </PopoverContent>
     </Popover>}
-    {busy && <output className="ml-3 text-xs text-cyan-200">{operation?.phase === 'waiting-safe' ? 'Waiting for combat to finish; new targets paused…' : operation?.phase === "rolling-back" ? "Restoring previous build…" : "Deploying build; reconnecting…"}</output>}
     {(error || operation?.phase === "failed" || operation?.phase === "rolling-back" && operation.error) && <span role="alert" className="ml-3 max-w-sm text-xs text-rose-200">{error || operation?.error || "Deployment failed."}</span>}
     <Dialog open={!!selection} onOpenChange={open => { if (!open && !submitting) setSelection(null); }}>
       <DialogContent showCloseButton={false} className="border-slate-600 bg-[#091614] text-slate-100">

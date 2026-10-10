@@ -99,7 +99,9 @@ test('reload menu confirms immediate loading and safely deploys the exact select
     await info.attach('reload-options-context-window',{body:await page.screenshot(),contentType:'image/png'});
     const c = await stage('C', 3);
     await page.getByRole('button', {name:'Load when safe',exact:true}).click();
-    await expect(page.getByText('Waiting for combat to finish; new targets paused…')).toBeVisible();
+    await expect(refresh).toBeDisabled();
+    await expect(page.getByText('Waiting for combat to finish; new targets paused…')).toHaveCount(0);
+    await expect.poll(async()=>(await store.journal())?.phase).toBe('waiting-safe');
     expect((await store.journal())?.target).toBe(b.id);
     expect((await store.journal())?.phase).toBe('waiting-safe');
     expect(ledger.filter(entry=>entry.action==='activate')).toHaveLength(0);
@@ -108,9 +110,9 @@ test('reload menu confirms immediate loading and safely deploys the exact select
     expect(await refresh.locator('svg').evaluate(element=>getComputedStyle(element).transform)).not.toBe(rotation);
     await info.attach('safe-reload-waiting-menu-selection', {body:await page.screenshot(),contentType:'image/png'});
     await page.reload();
-    await expect(page.getByText('Waiting for combat to finish; new targets paused…')).toBeVisible();
+    await expect(refresh).toBeDisabled();
     finishFight?.();
-    await expect(page.getByText('Deploying build; reconnecting…')).toBeVisible();
+    await expect(refresh).toBeDisabled();
     await expect.poll(() => ledger.filter(entry => entry.action === 'activate').length).toBe(1);
     expect(ledger.find(entry => entry.action === 'activate')?.buildId).toBe(b.id);
     expect((await store.references()).active).toBe(a.id);
@@ -134,7 +136,8 @@ test('reload menu confirms immediate loading and safely deploys the exact select
     await page.getByRole('button', {name:'Load now',exact:true}).click();
     await dialog.getByRole('button', {name: 'Load now', exact: true}).click();
     await expect(page.getByRole('alert').filter({hasText: 'rollback failed: Declared rollback readiness failure'})).toBeVisible();
-    await expect(page.getByText('Restoring previous build…')).toBeVisible();
+    await expect(refresh).toBeDisabled();
+    await expect(page.getByText('Restoring previous build…')).toHaveCount(0);
     await expect(refresh).toBeDisabled();
     expect((await store.references()).active).toBe(b.id);
     expect((await store.journal())?.phase).toBe('rolling-back');

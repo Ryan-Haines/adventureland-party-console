@@ -94,6 +94,10 @@ export function createAttackController(ports: AttackPorts) {
     return !!target && !!ports.passing?.(target);
   }
   function permitted(target: Target): boolean {
+    if (!sharedRoutine.allowsTarget(target)) {
+      ports.state().skippedAttack = "target no longer eligible";
+      return false;
+    }
     if (ports.equipmentBusy?.()) {
       ports.state().skippedAttack = "weapon equipment change in progress";
       return false;

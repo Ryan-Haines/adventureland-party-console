@@ -5,6 +5,12 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Deliver pending reload holds through fast combat updates, block successor
+  handoffs and recheck attack eligibility so queued targets stay unengaged.
+  Show only the spinning reload icon while deployment is pending. Exclude
+  machine-specific font caches from console artifacts to restore dashboard fonts.
+  Retry brief Windows file-sharing conflicts when saving deployment journals.
+
 - Fix first console-artifact activation rejecting its managed native dependency
   junction before starting the coordinator.
 

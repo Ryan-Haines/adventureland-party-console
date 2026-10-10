@@ -11,7 +11,16 @@ export async function atomicJson(file: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(file), {recursive: true});
   const temporary = file + '.' + randomUUID() + '.tmp';
   await writeFile(temporary, JSON.stringify(value, null, 2) + '\n');
-  await rename(temporary, file);
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    try { await rename(temporary, file); return; }
+    catch (error) {
+      // Windows briefly denies replacement while a reader/antivirus holds the
+      // destination. Keep the atomic replacement and the existing valid file.
+      if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException).code || '') || Date.now() >= deadline) throw error;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  }
 }
 export async function withBuildLock<T>(directory: string, action: () => Promise<T>): Promise<T> {
   await mkdir(directory, {recursive: true});
