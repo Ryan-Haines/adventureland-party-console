@@ -4,7 +4,7 @@ function dispatchRuntime(overrides={}) {
   const effects=[];
   const party={merchantCharacter:'M',merchantQueue:[],merchantCurrent:null,merchantHomeReturnAt:0,
     bankbois:{},bankboiTransaction:null,gatheringModes:[],gatheringCooldowns:{},commands:{},nextCommandId:100,
-    statuses:{M:{seenAt:100000,server:'USII',map:'main',x:1,y:2,gold:500,items:[]},
+    statuses:{M:{seenAt:100000,server:'USII',map:'main',x:1,y:2,gold:500,items:Array(42).fill(null)},
       Q:{seenAt:100000,server:'USII',map:'main',x:3,y:4,gold:50,items:[{slot:1,item:{name:'ring',level:2}}]}},
     marked:{M:[{slot:0,item:{name:'coat'}}],Q:[{slot:2,item:{name:'sword'}}]},upgrades:{M:[{slot:4,tiers:8}]},
     purchases:{M:[{id:'hpot0',quantity:20}]},compounds:{},autoCompounds:{M:[{name:'ring',targetTier:2}],Q:[{name:'ring',targetTier:2}]},

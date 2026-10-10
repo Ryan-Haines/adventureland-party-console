@@ -10,10 +10,12 @@ const {craftProtection, availableCraftStock} = require('../../runtime/coordinato
 
 function worker(poofs = 0) {
   let failures = poofs, buys = 0, upgrades = 0, checkpointHook = () => {}, upgradeHook = () => {};
-  const items = Array(42).fill(null), calls = [], command = {_commerceState: {}};
+  const items = Array(42).fill(null), calls = [], command = {id:1,jobId:'fixture-commerce',_commerceState: {}};
   const purchase = {id: 'coat', level: 3, quantity: 1, attempts: 1000, budget: 100000};
   const copy = value => JSON.parse(JSON.stringify(value));
-  const context = vm.createContext({character: {items}, G: {items: {coat: {g: 10, upgrade: true}, scroll0: {g: 1, s: 9999}}},
+  const context = vm.createContext({character: {name:'M',items}, G: {items: {coat: {g: 10, upgrade: true}, scroll0: {g: 1, s: 9999}}},
+    root:{__merchantActiveJob:{commandId:command.id}},runtimeCurrent:()=>true,
+    request:async()=>({commerceAdoptionProtection:{requirements:[]}}),partyAvailableCraftStock:availableCraftStock,
     fingerprint: item => item ? {...item} : null,
     sameItem: (item, ref) => !!item && item.name === ref.name && (item.level || 0) === (ref.level || 0),
     findItem: ref => items.findIndex(item => item && item.name === ref.name && (item.level || 0) === (ref.level || 0)),
