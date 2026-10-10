@@ -2165,6 +2165,39 @@
       luckyUpgradeService && luckyUpgradeService.pending() ||
       character.q && Object.keys(character.q).length || currentTravelAttackers().length);
   }
+  function consoleDraining() {
+    var pause = root.__partyConsoleMaintenance;
+    if (pause && pause.mode === 'draining' && pause.expires <= Date.now() + coordinatorClockOffset) {
+      root.__partyConsoleMaintenance = null; root.__partyConsoleDrainTargets = null; return false;
+    }
+    return !!(pause && pause.mode === 'draining' && pause.expires > Date.now() + coordinatorClockOffset);
+  }
+  function consoleDrainKey(target) {
+    return [reunionRealm(), character.map, character.in, target && target.id].join(':');
+  }
+  function consoleDrainAllows(target) {
+    return !consoleDraining() || !!(target && ((root.__partyConsoleDrainTargets || {})[consoleDrainKey(target)] || isAttackingPartyMember(target)));
+  }
+  function consoleDrainCombatActive() {
+    return consoleDraining() && Object.values(parent.entities || {}).some(function(target) {
+      return target && target.type === 'monster' && target.visible && !target.dead && target.hp > 0 && consoleDrainAllows(target);
+    });
+  }
+  function receiveConsoleMaintenance(pause) {
+    if (pause && pause.mode === 'draining' && pause.id !== (root.__partyConsoleMaintenance || {}).id) {
+      // Snapshot the current red-circle fight before enabling the acquisition gate.
+      var targets = {};
+      var markers = queueMarkers().filter(function(marker) { return marker.role === 'current' && marker.visible; });
+      markers.forEach(function(marker) {
+        targets[consoleDrainKey(marker)] = true;
+      });
+      var active = activeCombatTarget();
+      if (active && !markers.length) targets[consoleDrainKey(active)] = true;
+      root.__partyConsoleDrainTargets = targets;
+    }
+    root.__partyConsoleMaintenance = pause;
+    if (!pause) root.__partyConsoleDrainTargets = null;
+  }
   function previewSuppliesKey() { return "party-preview-supplies:"+character.name; }
   async function previewTravel(destination) {
     if(character.map===destination)return;
@@ -2259,7 +2292,8 @@
   }
   function consoleMaintenanceReport() {
     var pause = root.__partyConsoleMaintenance;
-    return pause ? { id: pause.id, ready: !consoleMaintenanceBusy() && !character.moving &&
+    var combat = consoleDrainCombatActive();
+    return pause ? { id: pause.id, mode: pause.mode, combat: combat, ready: !combat && !consoleMaintenanceBusy() && !character.moving &&
       !(typeof smart !== 'undefined' && smart.moving) } : null;
   }
   var dungeonClient;
@@ -10467,8 +10501,8 @@
       statusPhase = "request status";
       var state = await request("/status", { method: "POST", body: statusBody });
       if (!runtimeCurrent()) return;
-      root.__partyConsoleMaintenance = state.consoleMaintenance || null;
-      if (root.__partyConsoleMaintenance) {
+      receiveConsoleMaintenance(state.consoleMaintenance || null);
+      if (root.__partyConsoleMaintenance && (!consoleDraining() || !consoleDrainCombatActive())) {
         if (!consoleMaintenanceBusy() && typeof stop === 'function') await stop('smart');
         return;
       }
@@ -13458,6 +13492,11 @@
       {id:String(e.id),map:character.map,in:character.in,server:reunionRealm(),at:Date.now()+coordinatorClockOffset} : null;
   }
   function queueMarkers() {
+    return queueMarkersUnfiltered().filter(function(marker) {
+      return !consoleDraining() || consoleDrainAllows(get_entity(marker.id));
+    });
+  }
+  function queueMarkersUnfiltered() {
     if(!character.cave && typeof returnCombatActive==='function' && returnCombatActive()) {
       var attacker=returnDefenseTarget();
       return attacker ? [{id:String(attacker.id),map:character.map,in:character.in,server:reunionRealm(),role:'current',state:'engaged',radius:Math.max(18,(Number(attacker.awidth)||24)/2+4),visible:true}] : [];
@@ -13904,6 +13943,7 @@
   }
 
   function isAllowedTarget(target, huntTravelCommand, diagnostic) {
+    if (!consoleDrainAllows(target)) { if (diagnostic) diagnostic.reason = 'waiting for safe console reload'; return false; }
     if (character.cave || typeof root !== "undefined" && root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return dungeonTargetAllowed(target);
     if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
     function reject(reason) { if (diagnostic) diagnostic.reason = reason; return false; }
@@ -16465,9 +16505,9 @@
     returnMovementTick: cancelReturnTownUnderAttack,
     isOccupied: function () {
       if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns())
-        return !runtimeCurrent() || !!root.__partyConsoleMaintenance || !!character.cave?.paused;
+        return !runtimeCurrent() || !!root.__partyConsoleMaintenance && (!consoleDraining() || !consoleDrainCombatActive()) || !!character.cave?.paused;
       if (root.__partyUpgradePreviewInFlight) return true;
-      if (root.__partyConsoleMaintenance) return true;
+      if (root.__partyConsoleMaintenance && (!consoleDraining() || !consoleDrainCombatActive())) return true;
       if(typeof returnCombatActive==='function' && returnCombatActive()) {
         cancelReturnTownUnderAttack();
         return !!(character.c && character.c.town);

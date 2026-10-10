@@ -5,6 +5,11 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Add Load now and Load when safe to the console reload menu. Immediate loading
+  warns about combat deaths; safe loading finishes current fights while blocking
+  new targets, then deploys after fresh combat-free acknowledgements. Animate
+  the refresh icon throughout the pending reload.
+
 - Recover combat approaches blocked by terrain by choosing a reachable side of
   the target and retaining that detour until it completes. Healthy, unattacked
   melee fighters may briefly separate from healing coverage for that detour.

@@ -24,6 +24,7 @@ export type LiveGame = {
   admin(code: string): Promise<any>;
   adminRealm(realm:'USI'|'USII', code:string):Promise<any>;
   holdMerchantStatus(hold:boolean):void;
+  consoleDrainLease(id: string | null, expires?: number): void;
   restartCoordinator(): Promise<void>;
   restoreHistoricalSettings(restore: (settings: any) => any): Promise<void>;
   reconnectClient(name: string): Promise<void>;
@@ -129,6 +130,13 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           if(hold) writeFileSync(marker,'Declared missing merchant arrival reports');
           else rmSync(marker,{force:true});
           exchanges.push({at:Date.now(),transportFault:'merchant-status',hold});
+        },
+        consoleDrainLease(id, expires = Date.now()+180000) {
+          const file = path.join(directory,'updates/pause.json');
+          mkdirSync(path.dirname(file),{recursive:true});
+          if (id) writeFileSync(file,JSON.stringify({id,mode:'draining',expires}));
+          else rmSync(file,{force:true});
+          exchanges.push({at:Date.now(),hostMaintenanceLease:id,expires});
         },
         async restartCoordinator() { await stop(coordinator!, true); await start(); },
         async restoreHistoricalSettings(restore) {

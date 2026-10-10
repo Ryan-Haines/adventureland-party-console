@@ -129,6 +129,7 @@ export interface RoleRunner {
   stop(): void;
 }
 export interface CombatRoot {
+  __partyConsoleMaintenance?: {id: string; expires: number; mode?: 'draining'} | null;
   partyPorcupineEquipment?: ReturnType<typeof import("./porcupine-equipment.ts").createPorcupineEquipment>;
   sharedRoutine: SharedCombat;
   partyRoleRunner?: RoleRunner;

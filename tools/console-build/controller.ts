@@ -10,6 +10,7 @@ export class ConsoleBuildController {
   readonly store: ConsoleBuildStore;
   private driver: DeploymentDriver;
   private timeoutMs: number;
+  private safeWait?: AbortController;
   constructor(store: ConsoleBuildStore, driver: DeploymentDriver, timeoutMs = 120_000) {
     this.store = store; this.driver = driver; this.timeoutMs = timeoutMs;
   }
@@ -25,17 +26,18 @@ export class ConsoleBuildController {
       buildError: builder?.error, available: latest && latest.id !== refs.active && (!active || latest.createdAt >= active.createdAt) ? latest.id : undefined};
   }
   /** Accepted operation runs asynchronously; its exact target is durably pinned first. */
-  async deploy(id: string): Promise<DeploymentJournal> {
+  async deploy(id: string, mode: 'now' | 'safe' = 'now'): Promise<DeploymentJournal> {
+    if (mode === 'safe' && !this.driver.waitUntilSafe) throw new Error('Safe reload is unavailable on this host');
     if (this.busy) throw new DeploymentConflict('A console deployment is already in progress');
     this.busy = true;
     try {
       const operation = await this.store.locked(async () => {
         const pending = await this.store.journal();
-        if (pending && ['activating', 'rolling-back'].includes(pending.phase)) throw new DeploymentConflict('An incomplete deployment requires recovery');
+        if (pending && ['waiting-safe', 'activating', 'rolling-back'].includes(pending.phase)) throw new DeploymentConflict('An incomplete deployment requires recovery');
         await this.store.verify(id);
         const refs = await this.store.references();
         const journal: DeploymentJournal = {id: randomUUID(), target: id, previous: refs.active,
-          startedAt: new Date().toISOString(), phase: 'activating'};
+          startedAt: new Date().toISOString(), mode, phase: mode === 'safe' ? 'waiting-safe' : 'activating'};
         await this.store.setJournal(journal);
         return journal;
       });
@@ -76,6 +78,13 @@ export class ConsoleBuildController {
   }
   private async run(operation: DeploymentJournal) {
     try {
+      if (operation.phase === 'waiting-safe') {
+        this.safeWait = new AbortController();
+        await this.driver.waitUntilSafe!(operation.id, this.safeWait.signal);
+        this.safeWait = undefined;
+        operation.phase = 'activating';
+        await this.store.setJournal(operation);
+      }
       const target = await this.store.verify(operation.target), previous = await this.prior(operation);
       await this.timed(signal => this.driver.activate(target, previous, signal));
       await this.store.locked(async () => {
@@ -86,17 +95,28 @@ export class ConsoleBuildController {
       });
       await this.store.cleanup();
     } catch (error) {
-      if (operation.phase !== 'complete') await this.rollback(operation, error);
+      if (operation.phase === 'waiting-safe') {
+        operation.phase = 'failed';
+        operation.error = error instanceof Error ? error.message : String(error);
+        await this.store.setJournal(operation);
+      } else if (operation.phase !== 'complete') await this.rollback(operation, error);
       else console.error('Console candidate cleanup deferred:', error);
-    }
+    } finally { await this.driver.releaseSafeWait?.(operation.id); }
   }
   async recover(): Promise<void> {
     if (this.busy) throw new DeploymentConflict('A console deployment is already in progress');
     this.busy = true;
     try {
       const journal = await this.store.journal();
+      if (journal?.phase === 'waiting-safe') {
+        await this.driver.releaseSafeWait?.(journal.id);
+        journal.phase = 'failed'; journal.error = 'The safe reload wait was interrupted; the running build was preserved.';
+        await this.store.setJournal(journal);
+        return;
+      }
       if (journal && ['activating', 'rolling-back'].includes(journal.phase))
         await this.rollback(journal, journal.error || 'Interrupted console deployment');
     } finally { this.busy = false; }
   }
+  stopWaiting() { this.safeWait?.abort(new Error('The host stopped before safe reload; the running build was preserved.')); }
 }

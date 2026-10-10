@@ -10,16 +10,21 @@ import type { CandidateManifest } from '../tools/console-build/contracts';
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 
-test('completed console builds require confirmation and deploy the exact selected artifact', async ({page, app}, info) => {
+test('reload menu confirms immediate loading and safely deploys the exact selected artifact', async ({page, app}, info) => {
   // External service boundary: the real controller/store/routes run here. Only
   // native process activation is a declared driver; browser requests are genuine.
   const root = info.outputPath('build-host');
   const store = new ConsoleBuildStore(root);
   const ledger: Array<Record<string, unknown>> = [];
   let finish: (() => void) | undefined;
+  let finishFight: (() => void) | undefined;
   let rejectActivation = false;
   let rejectRestore = false;
   const controller = new ConsoleBuildController(store, {
+    async waitUntilSafe(id) {
+      ledger.push({action:'wait-for-combat', id});
+      await new Promise<void>(resolve => { finishFight = resolve; });
+    },
     async activate(candidate) {
       ledger.push({action: 'activate', buildId: candidate.manifest.id});
       if (rejectActivation) throw new Error('Declared process readiness failure');
@@ -82,15 +87,29 @@ test('completed console builds require confirmation and deploy the exact selecte
     const refresh = page.getByRole('button', {name: 'Deploy new console build'});
     await expect(refresh).toBeVisible();
     await refresh.click();
-    const dialog = page.getByRole('dialog', {name: 'Deploy console build?'});
+    await page.getByRole('button', {name:'Load now',exact:true}).click();
+    const dialog = page.getByRole('dialog', {name: 'Load console build now?'});
+    await expect(dialog.getByText(/Characters could die while reconnecting/)).toBeVisible();
+    await info.attach('immediate-reload-combat-warning',{body:await dialog.screenshot(),contentType:'image/png'});
     await expect(dialog.getByText(b.id, {exact: true})).toHaveCount(2);
     await dialog.getByRole('button', {name: 'Cancel', exact: true}).click();
     expect(ledger.filter(entry => entry.action === 'activate')).toHaveLength(0);
     await refresh.click();
+    await expect.poll(()=>page.locator('[data-slot="popover-content"]').evaluate(element=>getComputedStyle(element).opacity)).toBe('1');
+    await info.attach('reload-options-context-window',{body:await page.screenshot(),contentType:'image/png'});
     const c = await stage('C', 3);
-    await expect(dialog.getByText(b.id, {exact: true})).toHaveCount(2);
-    await info.attach('exact-candidate-confirmation', {body: await dialog.screenshot(), contentType: 'image/png'});
-    await dialog.getByRole('button', {name: 'Deploy build', exact: true}).click();
+    await page.getByRole('button', {name:'Load when safe',exact:true}).click();
+    await expect(page.getByText('Waiting for combat to finish; new targets paused…')).toBeVisible();
+    expect((await store.journal())?.target).toBe(b.id);
+    expect((await store.journal())?.phase).toBe('waiting-safe');
+    expect(ledger.filter(entry=>entry.action==='activate')).toHaveLength(0);
+    const rotation = await refresh.locator('svg').evaluate(element=>getComputedStyle(element).transform);
+    await page.waitForTimeout(150);
+    expect(await refresh.locator('svg').evaluate(element=>getComputedStyle(element).transform)).not.toBe(rotation);
+    await info.attach('safe-reload-waiting-menu-selection', {body:await page.screenshot(),contentType:'image/png'});
+    await page.reload();
+    await expect(page.getByText('Waiting for combat to finish; new targets paused…')).toBeVisible();
+    finishFight?.();
     await expect(page.getByText('Deploying build; reconnecting…')).toBeVisible();
     await expect.poll(() => ledger.filter(entry => entry.action === 'activate').length).toBe(1);
     expect(ledger.find(entry => entry.action === 'activate')?.buildId).toBe(b.id);
@@ -104,14 +123,16 @@ test('completed console builds require confirmation and deploy the exact selecte
     await expect(refresh).toBeVisible();
     rejectActivation = true;
     await refresh.click();
-    await dialog.getByRole('button', {name: 'Deploy build', exact: true}).click();
+    await page.getByRole('button', {name:'Load now',exact:true}).click();
+    await dialog.getByRole('button', {name: 'Load now', exact: true}).click();
     await expect(page.getByRole('alert').filter({hasText: 'Declared process readiness failure'})).toBeVisible();
     expect((await store.references()).active).toBe(b.id);
     expect(ledger.filter(entry => entry.action === 'restore')).toEqual([{action: 'restore', buildId: b.id}]);
     await info.attach('deployment-rollback-error', {body: await page.screenshot(), contentType: 'image/png'});
     rejectRestore = true;
     await refresh.click();
-    await dialog.getByRole('button', {name: 'Deploy build', exact: true}).click();
+    await page.getByRole('button', {name:'Load now',exact:true}).click();
+    await dialog.getByRole('button', {name: 'Load now', exact: true}).click();
     await expect(page.getByRole('alert').filter({hasText: 'rollback failed: Declared rollback readiness failure'})).toBeVisible();
     await expect(page.getByText('Restoring previous build…')).toBeVisible();
     await expect(refresh).toBeDisabled();
@@ -120,6 +141,7 @@ test('completed console builds require confirmation and deploy the exact selecte
     await info.attach('deployment-rollback-readiness-failure', {body: await page.screenshot(), contentType: 'image/png'});
     await info.attach('console-build-deployment-ledger', {body: JSON.stringify({ledger, documents, status: await controller.status()}), contentType: 'application/json'});
   } finally {
+    finishFight?.();
     finish?.();
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));

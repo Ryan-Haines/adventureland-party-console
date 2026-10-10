@@ -1,3 +1,14 @@
+Safe console loading uses an expiring host maintenance lease with mode `draining`.
+Normal combat heartbeats, attacks and healing continue for the captured current
+red-circle fight and genuine attackers; the character eligibility gate rejects
+new pulls across farming, events and dungeons. Once combat ends, movement stops
+and participants acknowledge a combat-free hold. The host requires fresh matching
+acknowledgements for two seconds before activation; missing reports never imply
+safety. Interrupted waits preserve the active build and expire/release the hold.
+Validate `console-build.spec.ts`, `console-build-safe-host.spec.ts` and
+`live-console-safe-reload.spec.ts`; see `docs/testing-safe-console-reload.md`.
+Activate dashboard, coordinator and character assets together for this protocol.
+
 Immutable console activation sets `AL_CONSOLE_ARTIFACT` to the selected release's
 `app` directory. The maintained launcher resolves repository bundles and support
 code from that artifact while native dependencies and mutable caracAL storage

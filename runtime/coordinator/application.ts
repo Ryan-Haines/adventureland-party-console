@@ -1032,9 +1032,10 @@ export function startCoordinatorApplication(
         response: (name, mode) => {
           dungeons.reconcile();
           const maintenance = consoleUpdate.current();
-          if (maintenance) return { serverNow: Date.now(), consoleMaintenance: maintenance };
+          if (maintenance && maintenance.mode !== 'draining') return { serverNow: Date.now(), consoleMaintenance: maintenance };
           const lease = mode ? undefined : dashboardStream.lease(name);
           return { ...(soloFor(name)?.heartbeatResponse || heartbeatResponse).response(name, mode),
+            consoleMaintenance: maintenance,
             ...(dungeonOwns(party, name) ? { groupedCombat: groupedCombatSnapshot() } : {}),
             ...(party.dailyDungeons ? { dailyDungeon: dungeons.control(name) } : {}),
             merchantVisibility: merchantVisibility(party, name, Date.now()),
@@ -1747,7 +1748,7 @@ export function startCoordinatorApplication(
           prepare: members => members,
           evaluate: evaluateGroup,
           finalize: group => group,
-          blocksPulls: () => false,
+          blocksPulls: () => !!consoleUpdate.current(),
         });
       }
 
@@ -2325,7 +2326,7 @@ export function startCoordinatorApplication(
         prepare: (members) => combatDisengagement.prepare(members),
         evaluate: evaluateGroup,
         finalize: (group) => combatDisengagement.finalize(group),
-        blocksPulls: () => rareControl.blocksPulls(),
+        blocksPulls: () => !!consoleUpdate.current() || rareControl.blocksPulls(),
         patrolAcquisitionAllowed: () => rareControl.patrolAcquisitionAllowed?.() || false,
       });
     }

@@ -17,13 +17,16 @@ export interface DeploymentJournal {
   target: string;
   previous?: string;
   startedAt: string;
-  phase: 'activating' | 'rolling-back' | 'complete' | 'failed';
+  phase: 'waiting-safe' | 'activating' | 'rolling-back' | 'complete' | 'failed';
+  mode?: 'now' | 'safe';
   error?: string;
 }
 /** Methods acknowledge actual component readiness, never merely successful spawn.
  * Activation/restore must honor cancellation before changing additional code.
  * State, credentials and configuration remain outside candidate directories. */
 export interface DeploymentDriver {
+  waitUntilSafe?(id: string, signal: AbortSignal): Promise<void>;
+  releaseSafeWait?(id: string): Promise<void>;
   activate(candidate: Candidate, previous: Candidate | undefined, signal: AbortSignal): Promise<void>;
   restore(candidate: Candidate | undefined, signal: AbortSignal): Promise<void>;
 }

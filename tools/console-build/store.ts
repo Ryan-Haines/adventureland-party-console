@@ -216,7 +216,7 @@ export class ConsoleBuildStore {
     await this.locked(async () => {
       const history = await this.history(), refs = await this.references(), journal = await this.journal();
       const keep = new Set([...history.slice(-20).map(item => item.id), ...Object.values(refs)]);
-      if (journal && ['activating', 'rolling-back'].includes(journal.phase)) { keep.add(journal.target); keep.add(journal.previous); }
+      if (journal && ['waiting-safe', 'activating', 'rolling-back'].includes(journal.phase)) { keep.add(journal.target); keep.add(journal.previous); }
       for (const id of await this.livePins(/^live-\d+\.json$/)) keep.add(id);
       for (const item of history) if (!keep.has(item.id)) await this.removeCandidate(item.id);
       const dependencies = new Set(history.filter(item => keep.has(item.id)).map(item => item.dependencyId).filter((id): id is string => !!id));

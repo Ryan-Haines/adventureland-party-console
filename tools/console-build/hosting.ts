@@ -12,6 +12,7 @@ import {startConsoleBuilder} from './watch.ts';
 import {buildCandidate} from './builder.ts';
 import {verifyManifest,type GameManifest,type CharacterClass} from '../game/manifest.ts';
 import {atomicJson,readJson} from '../build-store.ts';
+import {safeReload} from './safe-reload.ts';
 
 interface ManagedOptions{dashboardPort:number;apiPort:number;coordinatorEnv?:NodeJS.ProcessEnv;coordinatorOnly?:boolean}
 interface CharacterReport{seenAt?:number;connected?:boolean;rip?:boolean;type?:string;ctype?:string;codeHash?:string;name?:string}
@@ -114,7 +115,11 @@ export async function createManagedConsole(root:string,services:Services,options
       return {coordinator,dashboardHash:dashboard.currentHash,characters};
     },
   };
-  const driver=createDeploymentDriver(ports);
+  const drain=()=>safeReload(path.resolve(coordinatorEnv?.AL_DATA_DIR || process.env.AL_DATA_DIR || path.join(root,'.build/hosting-data')),
+    signal=>json<{id?:string|null;ready?:boolean}>(options.apiPort,'/party-api/console-maintenance',signal));
+  const driver={...createDeploymentDriver(ports),
+    waitUntilSafe:(id:string,signal:AbortSignal)=>drain().waitUntilSafe(id,signal),
+    releaseSafeWait:(id:string)=>drain().releaseSafeWait(id)};
   const controller=new ConsoleBuildController(store,driver);
   const refs=await store.references();
   let active=refs.active?await store.verify(refs.active):undefined;
@@ -148,6 +153,6 @@ export async function createManagedConsole(root:string,services:Services,options
       }
       await store.setReferences({...await store.references(),active:candidate.manifest.id});
     },
-    async stop(){await watcher.dispose();await services.stopService('console-coordinator');await dashboard.stop();await store.pin([]);},
+    async stop(){controller.stopWaiting();await watcher.dispose();await services.stopService('console-coordinator');await dashboard.stop();await store.pin([]);},
   };
 }
