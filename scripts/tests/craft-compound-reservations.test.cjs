@@ -47,7 +47,7 @@ test('empty merchant schedules bank-only triplets, but protected-only stock cann
 });
 test('BankBoi stages only surplus copies after craft reservations',()=>{
  const f=scheduler([]);f.state.bankbois={B:{name:'B',items:entries(6)}};
- assert.equal(f.service.compound('M',{items:nativeInventory([])}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([])}),false);
  assert.deepEqual(f.state.withdrawals.M.map(x=>x.slot),[3,4,5]);
 });
 test('protection checkpoint refreshes new jobs without changing progress or yielding',()=>{

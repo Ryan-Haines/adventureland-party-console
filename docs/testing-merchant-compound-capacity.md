@@ -25,3 +25,13 @@ compound job was queued behind those sales. This was an unrelated forty-sale
 initial workload. Declare eight sellable fillers and natively lock the remaining
 initial fillers; retain the full bag, genuine sales, compound response, and
 original 150-second processing deadline. No production behavior changes.
+# Bankboi delivery admission
+
+Failure inventory before implementation: shared compound planning includes
+remote Bankboi stock and admits merchant improvement work before that stock has
+been deposited into the native bank. The native merchant correctly skips remote
+Bankboi slots, but then reports an empty improvement job successful. Stage the
+real Bankboi delivery while free capacity permits it; admit only currently
+carried/native-bank runnable inputs, preserving carried triples and leftovers.
+The native transfer scenario records actual bank deposits, pending storage
+references and job admission, then requires a genuine native compound response.

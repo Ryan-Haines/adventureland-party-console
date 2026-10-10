@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Stage Bankboi compound deliveries without starting empty merchant improvement
+  visits. Remote inputs become runnable after their genuine native-bank deposit;
+  carried triples, native-bank inputs and leftover storage remain available.
+
 - Retain bounded completed production evidence for commerce orders and replay
   its confirmed outcome after a lost completion response or CODE restart.
   Recovery requires the exact paid order sequence and input identity; historical

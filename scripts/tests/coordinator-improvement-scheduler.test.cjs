@@ -10,7 +10,7 @@ const stored=(slot,level=0)=>({slot,...ring(level)});
 test('bankboi ingredients stage one missing triple and repeated observations do not duplicate it',()=>{
  const f=fixture();f.state.autoCompounds.M=[{name:'ring',targetTier:2}];
  f.state.bankbois={B:{name:'B',items:[stored(0),stored(1),stored(2),stored(3)]}};
- assert.equal(f.service.compound('M',{items:nativeInventory([ring(0)])}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([ring(0)])}),false);
  assert.deepEqual(f.state.withdrawals.M.map(x=>[x.pack,x.slot]),[['bankboi:B',0],['bankboi:B',1]]);
  f.service.compound('M',{items:nativeInventory([ring(0)])});assert.equal(f.state.withdrawals.M.length,2);
  // Normal-bank staging is still an outstanding withdrawal, so it cannot trigger another batch.
@@ -38,7 +38,7 @@ test('completed quota remains saved and active work defers retrieval',()=>{
  assert.equal(f.service.compound('M',{items:nativeInventory([])}),false);assert.equal(f.state.autoCompounds.M[0].quantity,0);
  assert.equal(f.state.withdrawals,undefined);
  f.state.autoCompounds.M=[{name:'ring',targetTier:2}];f.state.merchantCurrent={reason:'auto compound'};
- assert.equal(f.service.compound('M',{items:nativeInventory([])}),true);assert.equal(f.state.withdrawals,undefined);
+ assert.equal(f.service.compound('M',{items:nativeInventory([])}),false);assert.equal(f.state.withdrawals,undefined);
  f.state.merchantCurrent=null;f.state.bankboiTransaction={};
  f.service.compound('M',{items:nativeInventory([])});assert.equal(f.state.withdrawals,undefined);
 });

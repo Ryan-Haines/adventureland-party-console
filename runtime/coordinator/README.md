@@ -1,3 +1,8 @@
+Bankboi-only compound stock stages a delivery but does not admit an empty
+merchant improvement visit. Admission uses carried or native-bank stock until
+real storage completion rewrites the withdrawal location. Validate the native
+Bankboi compound admission journey in `live-bankboi-offerings.spec.ts`.
+
 Completed commerce production receipts retain their complete recovery journal
 within the existing 2,048-receipt bound. Recovery replays only confirmed outcomes
 whose durable commerce key, sequence, input identity and target level match the

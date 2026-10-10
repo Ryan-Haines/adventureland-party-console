@@ -124,7 +124,7 @@ export function createImprovementScheduler(state: SchedulerState, ports: Schedul
     const carried = local.slice(0, inventory.length);
     const receivesInputs = canReceiveCompoundInputs(status);
     if (receivesInputs) stageCompound(name, result.remaining, local, workers);
-    return evaluateAutoCompounds(rules, carried).runnable || (receivesInputs && result.runnable) || compoundStorageLeftovers(rules, carried,
+    return evaluateAutoCompounds(rules, carried).runnable || (receivesInputs && evaluateAutoCompounds(rules, local).runnable) || compoundStorageLeftovers(rules, carried,
       local.concat(workers.flatMap(worker => worker.items || []))).length > 0;
   }
   function compound(name: string, status: Status | null | undefined): boolean {
