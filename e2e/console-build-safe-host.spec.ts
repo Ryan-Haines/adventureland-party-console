@@ -34,7 +34,15 @@ test('safe reload requires fresh combat-free acknowledgements and preserves inte
     combat=false;stale=true;
     await new Promise(resolve=>setTimeout(resolve,1200));expect(ledger).toHaveLength(0);
     stale=false;
-    await expect.poll(()=>ledger.length).toBe(1);
+    await new Promise(resolve=>setTimeout(resolve,2200));expect(ledger).toHaveLength(0);
+    combat=true;
+    await new Promise(resolve=>setTimeout(resolve,700));expect(ledger).toHaveLength(0);
+    combat=false;
+    const clearedAt=Date.now();
+    await new Promise(resolve=>setTimeout(resolve,2200));expect(ledger).toHaveLength(0);
+    await expect.poll(()=>ledger.length,{timeout:6000}).toBe(1);
+    expect(Date.now()-clearedAt).toBeGreaterThanOrEqual(3000);
+    ledger[0].combatClearWindowMs=Date.now()-clearedAt;
     expect((await store.references()).active).toBe(a);
     expect((await readJson<{id:string}>(path.join(root,'updates/pause.json')))?.id).toBe(request.id);
     finish?.();await expect.poll(async()=>(await store.journal())?.phase).toBe('complete');
@@ -43,7 +51,7 @@ test('safe reload requires fresh combat-free acknowledgements and preserves inte
     combat=true;
     const waiting=await controller.deploy(a,'safe');await expect.poll(()=>maintenance.current()?.id).toBe(waiting.id);
     controller.stopWaiting();await expect.poll(async()=>(await store.journal())?.phase).toBe('failed');
-    expect(ledger).toEqual([{action:'activate',target:b}]);expect((await store.references()).active).toBe(b);
+    expect(ledger).toHaveLength(1);expect(ledger[0]).toMatchObject({action:'activate',target:b});expect((await store.references()).active).toBe(b);
     await expect.poll(()=>readJson(path.join(root,'updates/pause.json'))).toBeUndefined();
     await store.setJournal({...waiting,phase:'waiting-safe'});
     await controller.recover();

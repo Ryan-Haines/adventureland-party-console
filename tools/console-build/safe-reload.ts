@@ -15,7 +15,7 @@ export function safeReload(directory: string, observe: (signal: AbortSignal) => 
         const status = await observe(signal).catch(() => ({id: null, ready: false}));
         if (status.id === id && status.ready) {
           safeSince ||= Date.now();
-          if (Date.now() - safeSince >= 2000) {
+          if (Date.now() - safeSince >= 3000) {
             // Hold acquisition through component activation and readiness checks.
             await atomicJson(file, {id, mode: 'draining', expires: Date.now() + 180000});
             return;

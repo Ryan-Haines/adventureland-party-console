@@ -8,6 +8,9 @@ dungeon targets must be rejected while genuine attackers remain defensible;
 a visible current red-circle target must prevent activation; stale or missing
 character reports and Steam handoffs must never count as safe. No connected
 participants is safe only after the coordinator acknowledges the lease.
+Require three continuous seconds of fresh combat-free reports before activation;
+renewed aggro or a missing report must reset that window rather than accumulate
+time from separate safe intervals.
 
 The waiting operation must persist across page reloads, retain its candidate
 during build-history cleanup, and spin the icon through waiting, activation and
