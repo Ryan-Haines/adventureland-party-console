@@ -1,6 +1,40 @@
 import { test, expect, type LiveGame } from './live-fixtures';
 import { automaticCommerceRuleKey } from '../runtime/coordinator/inventory/item-identity';
 
+test('full merchant defers external compounds until native NPC sales free capacity', async ({live},info) => {
+  test.setTimeout(300_000);
+  const merchant='E2EMerchant';
+  try {
+    await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto compound':false,'auto npc sales':false}});
+    await live.admin(`output=(async()=>{const p=get_player('${merchant}');const patch=Object.fromEntries(Array.from({length:9},(_,i)=>['info.items0.'+i,{name:'ringsj',level:0}]));await db.collection('user').updateOne({_id:p.owner},{$set:patch});return true})()`);
+    await live.post('/command',{character:merchant,type:'bank'});
+    await expect.poll(async()=>(await live.state()).bank?.packs?.items0?.[8]?.item?.name,{timeout:90_000}).toBe('ringsj');
+    await expect.poll(async()=>(await live.state()).merchantCurrent,{timeout:90_000}).toBeNull();
+    // Initial inventory declaration only fills empty native slots; no existing
+    // items are removed and subsequent capacity changes require real sales.
+    await live.admin(`output=(()=>{const p=get_player('${merchant}');for(let i=0;i<p.items.length;i++)if(!p.items[i])p.items[i]={name:'helmet',level:0};cache_player_items(p);resend(p,'reopen+cid');return true})()`);
+    await expect.poll(async()=>(await live.clients[merchant].snapshot()).items.filter((i:any)=>!i).length).toBe(0);
+    await live.clients[merchant].run(`(()=>{globalThis.__capacityCompoundReceipts=[];parent.socket.on('game_response',data=>{const response=typeof data==='string'?data:data?.response;if(response==='compound_success'||response==='compound_fail')globalThis.__capacityCompoundReceipts.push({at:Date.now(),response,data})});return true})()`);
+    await live.restoreHistoricalSettings(()=>({autoCompounds:{[merchant]:[{name:'ringsj',targetTier:1,quantity:1}]}}));
+    await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto compound':true,'auto npc sales':false}});
+    const blockedAt=Date.now();
+    await expect.poll(async()=>(await live.clients[merchant].snapshot()).statusAt,{timeout:30_000}).toBeGreaterThan(blockedAt+15_000);
+    const blocked=await live.state();
+    expect(blocked.merchantCurrent?.reason).not.toBe('auto compound');
+    expect(blocked.merchantQueue.some((job:any)=>job.reason==='auto compound')).toBe(false);
+    expect(blocked.withdrawals?.[merchant]?.length||0).toBe(0);
+    await info.attach('full-bag-compound-admission',{body:JSON.stringify(blocked),contentType:'application/json'});
+    await live.post('/merchant/auto-npc-sale',{item:{name:'helmet',level:0}});
+    await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto compound':true,'auto npc sales':true}});
+    await expect.poll(async()=>{
+      const receipts=await live.clients[merchant].run('globalThis.__capacityCompoundReceipts');
+      return (await helmetSaleReceipts(live,merchant)).length>3&&receipts.length>0;
+    },{timeout:150_000,message:'Genuine NPC sales must unblock actual native compound attempts'}).toBe(true);
+  } finally {
+    await info.attach('compound-capacity-native-evidence',{body:JSON.stringify({state:await live.state(),client:await live.clients[merchant].snapshot(),events:await live.clients[merchant].events(),compoundReceipts:await live.clients[merchant].run('globalThis.__capacityCompoundReceipts||[]')}),contentType:'application/json'});
+  }
+});
+
 async function totalGold(live:LiveGame, merchant:string):Promise<number> {
   return live.admin(`output=(async()=>{const p=get_player('${merchant}'),user=await db.collection('user').findOne({_id:p.owner});return p.gold+((p.user||user.info).gold||0)})()`);
 }

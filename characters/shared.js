@@ -5453,6 +5453,11 @@
     }
     for (var i = 0; i < (command.merchantWithdrawals || []).length; i += 1) {
       if (freeInventorySlots() <= 3) {
+        if (command.type === "merchant-self-improve") {
+          command._capacityDeferredWithdrawals = command.merchantWithdrawals.slice(i).filter(function (entry) {
+            return String(entry.pack || "").indexOf("bankboi:") !== 0;
+          });
+        }
         activity.push({ level: "info", message: "Deferred withdrawals; three inventory slots are reserved" });
         break;
       }
@@ -6752,6 +6757,9 @@
         }
       }
       await restoreAnyEquippedUpgrades();
+      if ((command._capacityDeferredWithdrawals || []).some(function (withdrawal) {
+        return (command._merchantWithdrawalsCompleted || []).indexOf(withdrawal) < 0;
+      })) throw new Error("inventory_full");
       activity.push({ level: "success", message: "Finished merchant-owned upgrades and compounds" });
       await request("/merchant/complete", { method: "POST", body: {
         jobId: command.jobId, success: true, banked: [], bankedByCharacter: {}, kept: [],

@@ -52,6 +52,11 @@ interface Status {
   items?: (InventoryEntry | null)[];
 }
 
+/** The native withdrawal runner reserves three inventory slots. */
+function canReceiveCompoundInputs(status: Status): boolean {
+  return (status.items || []).filter(entry => !entry?.item).length > 3;
+}
+
 /** Translate inventory evaluations into durable rules and serialized merchant work. */
 export function createImprovementScheduler(state: SchedulerState, ports: SchedulerPorts) {
   let reservationError = "";
@@ -116,8 +121,10 @@ export function createImprovementScheduler(state: SchedulerState, ports: Schedul
     });
     const rules = evaluateAutoCompounds(sharedCompoundRules(state), improvementItems(state)).remaining;
     const result = evaluateAutoCompounds(rules, local.concat(workers.flatMap(worker => worker.items || [])));
-    stageCompound(name, result.remaining, local, workers);
-    return result.runnable || compoundStorageLeftovers(rules, local.slice(0, inventory.length),
+    const carried = local.slice(0, inventory.length);
+    const receivesInputs = canReceiveCompoundInputs(status);
+    if (receivesInputs) stageCompound(name, result.remaining, local, workers);
+    return evaluateAutoCompounds(rules, carried).runnable || (receivesInputs && result.runnable) || compoundStorageLeftovers(rules, carried,
       local.concat(workers.flatMap(worker => worker.items || []))).length > 0;
   }
   function compound(name: string, status: Status | null | undefined): boolean {

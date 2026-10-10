@@ -1,3 +1,10 @@
+Automatic compound admission respects the native merchant withdrawal reserve:
+bank and Bankboi inputs require more than three empty inventory slots. Carried
+triples and bankable leftovers remain runnable. Validate native NPC cleanout and
+subsequent compound receipts in `live-bank-npc-sales.spec.ts`; failure inventory
+is `docs/testing-merchant-compound-capacity.md`. Publish character assets and
+restart the coordinator together when changing withdrawal completion handling.
+
 New-event takeover also cancels an already admitted deferred return convoy only
 when all its participants, cycle identities, and navigation revisions still
 belong to that deferred recovery. Validate the native deferred takeover journey.

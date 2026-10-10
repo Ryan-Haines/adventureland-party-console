@@ -5,6 +5,13 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Defer automatic compounds that require bank or Bankboi inputs while the
+  merchant has only its three reserved slots available. Keep carried triples
+  and bankable leftovers runnable, and resume external work when genuine
+  inventory changes free space instead of repeatedly scheduling empty jobs.
+  Already admitted jobs report capacity-blocked withdrawals instead of false
+  success, retaining completed withdrawal acknowledgements.
+
 - Transfer the matching deferred return party together when a new combat event
   is admitted, so blocked followers retain their checkpoints and can join.
 
