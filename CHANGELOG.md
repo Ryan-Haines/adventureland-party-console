@@ -5,6 +5,11 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Remove stale BankBoi storage records when a refreshed account roster confirms
+  the character was deleted outside the console. Recorded inventory no longer
+  disables the confirmation button; existing characters retain deletion safeguards,
+  and failed roster refreshes preserve storage records.
+
 - Show automatic bank, NPC sale, deconstruction, stand, upgrade, compound and
   exchange rules on bank and Bankboi items. Use “Auto NPC” for automatic sale
   intent and “NPC sale” for individually marked items.

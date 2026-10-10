@@ -1,3 +1,11 @@
+BankBoi deletion refreshes the account roster before applying storage guards.
+If the character is already absent, remove only its stale console storage record
+without requesting native deletion. Failed refreshes preserve the record, and
+existing characters retain asset, pending-work and cooldown safeguards. Validate
+the BankBoi outside-console deletion browser journey and retained route cases;
+see `docs/testing-bankboi-deletion-reconciliation.md`. Coordinator/dashboard-only
+activation uses the supported `scripts/start-console.ps1 -CoordinatorOnly` restart.
+
 Lucky-slot swap-back is best-effort. Keep real production outcomes and spending
 reconciliation independent of inventory layout restoration; never move unrelated
 cargo to satisfy an old journal. Discovery uses a durable sequential cursor,

@@ -934,14 +934,6 @@ export const BankSheet = memo(function BankSheet({
 
                   const occupied = (bankboi.items || []).filter(Boolean).length;
 
-                  const empty =
-
-                    occupied === 0 &&
-
-                    !Object.keys(bankboi.slots || {}).length &&
-
-                    !Number(bankboi.gold);
-
                   return (
 
                     <div key={bankboi.name} className="min-w-0 rounded border border-cyan-900 bg-[#071315] p-3">
@@ -971,8 +963,6 @@ export const BankSheet = memo(function BankSheet({
                           <button
 
                             type="button"
-
-                            disabled={!empty}
 
                             onClick={() =>
 

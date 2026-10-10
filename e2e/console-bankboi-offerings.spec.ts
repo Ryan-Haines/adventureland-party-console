@@ -2,6 +2,40 @@ import {test,expect} from './fixtures';
 
 test.use({merchantManaged:true,bankboiOfferings:true});
 
+test('BankBoi deleted outside the console can be forgotten despite stale storage and stays removed after restart',async({page,app},info)=>{
+  // Declared external account roster excludes this historical storage worker.
+  // The real coordinator must reconcile it without calling the game mutation
+  // transport, which this fixture rejects. Stale items must not disable the UI.
+  const name='E2EOfferingBank',before=await app.state();
+  expect(before.bankbois.find((entry:any)=>entry.name===name).items.length).toBe(3);
+  expect(before.upgradeOfferingStock.offeringp).toBe(2);
+  await page.goto('/');
+  await expect(page.getByRole('heading',{name:'M',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Inspect bank',exact:true}).click();
+  const bank=page.getByRole('dialog',{name:'Bank',exact:true});
+  await expect(bank).toBeVisible();
+  await expect(bank.getByText(name,{exact:true})).toBeVisible();
+  const remove=bank.getByRole('button',{name:'Delete',exact:true});
+  await expect(remove).toBeEnabled();
+  await info.attach('stale-bankboi-delete-enabled',{body:await bank.screenshot(),contentType:'image/png'});
+  await remove.click();
+  const reply=page.waitForResponse(response=>response.url().endsWith(`/bankbois/${name}/delete`)&&response.request().method()==='POST');
+  await bank.getByRole('button',{name:'Really? ×',exact:true}).click();
+  const response=await reply,body=await response.json();
+  expect(response.status()).toBe(200);expect(body).toEqual({ok:true,alreadyDeleted:true});
+  await expect(bank.getByText(name,{exact:true})).toHaveCount(0);
+  await app.restartCoordinator();
+  const after=await app.state();
+  expect(after.bankbois.some((entry:any)=>entry.name===name)).toBe(false);
+  expect(after.upgradeOfferingStock.offeringp).toBe(0);
+  await page.reload();
+  await expect(page.getByRole('heading',{name:'M',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Inspect bank',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'Bank',exact:true}).getByText(name,{exact:true})).toHaveCount(0);
+  await info.attach('stale-bankboi-removal-after-restart',{body:await page.screenshot(),contentType:'image/png'});
+  await info.attach('stale-bankboi-deletion-ledger',{body:JSON.stringify({name,before,response:{status:response.status(),body},after}),contentType:'application/json'});
+});
+
 test('BankBoi-only boosters enable upgrade choices and manual confirmation',async({page,app},info)=>{
   // Failure modes: storage worker stock is omitted; availability is duplicated
   // from a stale online worker; menu enables but confirmation rejects the same
