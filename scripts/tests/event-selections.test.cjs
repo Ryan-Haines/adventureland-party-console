@@ -42,7 +42,7 @@ test('dropdown disables inherited and unsupported selections and permits indepen
   const body=source.includes(memoMarker)
     ? source.slice(source.indexOf(memoMarker)).replace('export const EventSelectionControl = memo(','').replace(/\}\);\s*$/,'}')
     : source.slice(source.indexOf('export function EventSelectionControl(')).replace('export function','function');
-  const c={CaveEventRow:'CaveEventRow',Settings:'Settings',Popover:"Popover",PopoverTrigger:"PopoverTrigger",PopoverContent:"PopoverContent",...policy,useClock:()=>0,eventTimeLabel:()=> 'Time not announced',React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})}};
+  const c={CaveEventRow:'CaveEventRow',GripVertical:'GripVertical',Settings:'Settings',Popover:"Popover",PopoverTrigger:"PopoverTrigger",PopoverContent:"PopoverContent",...policy,useState:value=>[value,()=>{}],useClock:()=>0,eventTimeLabel:()=> 'Time not announced',React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})}};
   vm.runInNewContext(ts.transpileModule(body,{compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText,c);
   const nodes=t=>t&&typeof t==='object'?[t,...t.children.flatMap(nodes)]:[];
   const state={leader:'L',followers:{F:true},eventSelectionsByCharacter:{L:['anniversary'],F:['snowman']},eventSchedules:[{id:'anniversary',name:'Anniversary'},{id:'egghunt',name:'Egg Hunt'}]};
