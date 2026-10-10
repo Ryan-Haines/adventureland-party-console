@@ -20,3 +20,8 @@ CODE generation receipts, coordinator identity, dashboard hash and deployment
 journal. Dashboard-only activation must leave coordinator and CODE identities
 unchanged. Failure/cancellation must preserve settings and restore the prior
 component identities. Successful process spawn alone is insufficient proof.
+
+Native installation must ignore the managed root dependency junction while still
+rejecting redirected executable files or directories. Verify installation from a
+complete immutable artifact into the installed native runtime, then confirm live
+coordinator identity and character CODE hashes.

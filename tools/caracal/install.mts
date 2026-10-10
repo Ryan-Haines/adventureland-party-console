@@ -23,6 +23,9 @@ async function nativeFiles(directory:string,relative=''):Promise<string[]>{
   const result:string[]=[];
   for(const entry of await readdir(path.join(directory,relative),{withFileTypes:true})){
     const name=relative?relative+'/'+entry.name:entry.name;
+    // Dependency junctions are verified by the artifact store and are not copied
+    // as native executables. Keep rejecting links inside the executable tree.
+    if(!relative && entry.name==='node_modules')continue;
     if(entry.isSymbolicLink())throw new Error('Native artifact contains a redirected executable: '+name);
     if(!nativeIncluded(relative,entry.name,entry.isDirectory()))continue;
     if(entry.isDirectory())result.push(...await nativeFiles(directory,name));

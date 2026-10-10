@@ -5,6 +5,9 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Fix first console-artifact activation rejecting its managed native dependency
+  junction before starting the coordinator.
+
 - Add Load now and Load when safe to the console reload menu. Immediate loading
   warns about combat deaths; safe loading finishes current fights while blocking
   new targets, then deploys after three continuous seconds of fresh combat-free
