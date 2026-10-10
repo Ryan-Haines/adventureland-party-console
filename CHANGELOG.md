@@ -5,6 +5,13 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Recover combat approaches blocked by terrain by choosing a reachable side of
+  the target and retaining that detour until it completes. Healthy, unattacked
+  melee fighters may briefly separate from healing coverage for that detour.
+  Use native hitbox distance for recovery goals, admit mage attack range before
+  preferred target spacing, and retire old movement when switching targets.
+  Addresses #75, #83 and #85 on `bugfix-1.4`.
+
 - Stage complete console builds in the background and add a refresh control
   beside Party Console to deploy a completed build at a chosen moment. Builds
   and tests no longer replace running source-development code automatically;

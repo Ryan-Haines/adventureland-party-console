@@ -1,6 +1,6 @@
 import type { ItemInfo } from 'typed-adventureland';
 
-export type NativeLoadout = 'fragile' | 'god';
+export type NativeLoadout = 'fragile' | 'god' | 'combat-range';
 type Equipment = Pick<ItemInfo, 'name' | 'level'>;
 const item = (name: Equipment['name'], level: number): Equipment => ({name, level});
 
@@ -18,10 +18,17 @@ export const loadouts = {
       ring1:item('vitring',100),ring2:item('vitring',100)},
     weaponLevel: 100,
   },
+  'combat-range': {
+    description: 'Level 80, native level-zero class weapon for normal mage range, durable armor for bounded range-recovery observation.',
+    armor: {helmet:item('hhelmet',100),chest:item('harmor',100),pants:item('hpants',100),
+      gloves:item('hgloves',100),shoes:item('wingedboots',12),cape:item('angelwings',20),
+      ring1:item('vitring',100),ring2:item('vitring',100)},
+    weaponLevel: 0,
+  },
 } as const;
 
 /** Runs after reset, before native login: no connected character is modified. */
-export async function seedLoadout(admin: (code: string) => Promise<unknown>, profile: NativeLoadout, primaryClass: 'warrior' | 'ranger' = 'warrior') {
+export async function seedLoadout(admin: (code: string) => Promise<unknown>, profile: NativeLoadout, primaryClass: 'warrior' | 'ranger' | 'mage' = 'warrior') {
   const selected=loadouts[profile];
   if(!selected)throw Error('Unknown native loadout: '+profile);
   const result = await admin(`output=(async()=>{
@@ -34,16 +41,17 @@ export async function seedLoadout(admin: (code: string) => Promise<unknown>, pro
       // both receive the requested class before equipment is calculated.
       if(name==='E2EWarrior')c.type=${JSON.stringify(primaryClass)};
       const slots=structuredClone(G.classes[c.type].base_slots||{});
-      for(const value of Object.values(slots))if(value&&value.name)value.level=definition.weaponLevel;
+      const weaponLevel=definition.weaponLevel;
+      for(const value of Object.values(slots))if(value&&value.name)value.level=weaponLevel;
       Object.assign(slots,structuredClone(definition.armor));
-      if(profile==='god') {
+      if(profile==='god'||profile==='combat-range') {
         const stat=c.type==='warrior'?'str':c.type==='ranger'?'dex':'int';
         slots.amulet={name:stat+'amulet',level:20};slots.belt={name:stat+'belt',level:20};
       }
       for(const [slot,value] of Object.entries(slots))if(value&&value.name&&!G.items[value.name])throw Error('Unknown native gear '+slot+': '+value.name);
       c.info.slots=slots;
       // Native login computes maximum health/mana and clamps these starting pools.
-      c.info.hp=profile==='god'?1000000000:10000;c.info.mp=profile==='god'?1000000000:10000;
+      c.info.hp=profile==='fragile'?10000:1000000000;c.info.mp=profile==='fragile'?10000:1000000000;
       const update=await db.collection('character').replaceOne({_id:c._id},c);
       if(update.matchedCount!==1)throw Error('Loadout character was not persisted: '+name);
       const saved=await db.collection('character').findOne({_id:c._id});
@@ -57,7 +65,8 @@ export async function seedLoadout(admin: (code: string) => Promise<unknown>, pro
     throw Error('Native loadout returned an incomplete seed: '+JSON.stringify(result));
   for(const name of ['E2EWarrior','E2EPriest','E2EMerchant']) {
     const character=seed.characters.find(entry=>entry.name===name);
-    if(character?.slots?.mainhand?.level!==selected.weaponLevel)
+    const weaponLevel=selected.weaponLevel;
+    if(character?.slots?.mainhand?.level!==weaponLevel)
       throw Error('Native loadout weapon mismatch: '+name);
     for(const [slot,expected] of Object.entries(selected.armor)) {
       const actual=character.slots[slot];

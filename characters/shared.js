@@ -15454,9 +15454,30 @@
   // A bounded local detour, not smart_move/A*. One owner keeps the waypoint
   // until reached; the full formation optimizer cannot fight it each tick.
   function recoverFormationCorner(reference, priest, selfPriest, members, step) {
-    var goal = combatApproachPoint(reference, formationDesiredRange(reference, priest, selfPriest, members, step));
-    if (!selfPriest && character.ctype === "mage" && formationDistance(character, priest) > Number(priest.range) * 0.9) goal = priest;
+    var approachRange = formationDesiredRange(reference, priest, selfPriest, members, step);
+    var goal = combatApproachPoint(reference, approachRange);
+    var regroupPriest = !selfPriest && character.ctype === "mage" && formationDistance(character, priest) > Number(priest.range) * 0.9;
+    if (regroupPriest) goal = priest;
     var obstacles = formationFrame.enemies.filter(function (e) { return e.id !== reference.id || !formationMelee(character); });
+    var regroupGoals = [];
+    if (regroupPriest && typeof can_move === "function") {
+      // An attacked priest can stand inside the selected monster's safety
+      // radius. Regroup into healing coverage, not onto that unsafe center.
+      var healingCoverage = Number(priest.range) - Math.min(20, Math.max(8, Number(priest.range) * 0.1));
+      var regroupReach = Math.min(Number(character.range) - 3,
+        Math.max(approachRange, formationMonsterSafety(reference) + 12));
+      for (var regroupSide = 0; regroupSide < 16; regroupSide++) {
+        var regroupPoint = terrainRecoveryPoint(reference, regroupReach, regroupSide * Math.PI / 8);
+        if (!regroupPoint || formationDistance(formationBody(character, regroupPoint), priest) > healingCoverage ||
+            !can_move({ map: character.map, x: regroupPoint.x, y: regroupPoint.y,
+              going_x: regroupPoint.x, going_y: regroupPoint.y, base: character.base }) ||
+            obstacles.some(function (enemy) { return formationDistance(formationBody(character, regroupPoint), enemy) <= formationMonsterSafety(enemy); })) continue;
+        regroupGoals.push(regroupPoint);
+      }
+      regroupGoals.sort(function (a, b) { return Math.hypot(a.x-character.x,a.y-character.y)-Math.hypot(b.x-character.x,b.y-character.y); });
+      regroupGoals = regroupGoals.slice(0, 4);
+      if (regroupGoals.length) goal = regroupGoals[0];
+    }
     var identity = [reference.id, priest.name, character.map, character.in, joinedEvent, eventTraveling].join(":");
     if (formationState.approachIdentity !== identity) {
       formationState.approachIdentity = identity; formationState.approachProgress = null; formationState.recovery = null;
@@ -15468,26 +15489,55 @@
     }
     if (gap < 12) { formationState.recovery = null; return false; }
     if (now - tracking.at < 1500 && !formationState.recovery) return false;
-    var directClear = can_move_to(goal.x, goal.y) && formationSegmentSafe(character, goal, obstacles);
     var recovery = formationState.recovery;
-    if (!recovery || recovery.target !== reference.id || Math.hypot(recovery.goal.x - goal.x, recovery.goal.y - goal.y) > 80) {
-      recovery = formationState.recovery = { target: reference.id, goal: { x: goal.x, y: goal.y }, retryAt: 0, point: null };
+    var goalAnchor = regroupPriest ? priest : reference;
+    if (!recovery || !recovery.targetPoint || recovery.target !== reference.id || recovery.regroupPriest !== regroupPriest ||
+        Math.hypot(recovery.targetPoint.x-goalAnchor.x,recovery.targetPoint.y-goalAnchor.y)>12 ||
+        regroupPriest && (!recovery.referencePoint || Math.hypot(recovery.referencePoint.x-reference.x,recovery.referencePoint.y-reference.y)>12) ||
+        Math.abs(recovery.reach-approachRange)>8) {
+      recovery = formationState.recovery = { target: reference.id, targetPoint: {x:goalAnchor.x,y:goalAnchor.y},
+        referencePoint: {x:reference.x,y:reference.y},
+        reach:approachRange,regroupPriest:regroupPriest,goal: { x: goal.x, y: goal.y }, retryAt: 0, point: null };
     }
     if (recovery.point && (Math.hypot(recovery.point.x - character.x, recovery.point.y - character.y) < 8 ||
         !can_move_to(recovery.point.x, recovery.point.y) || !formationSegmentSafe(character, recovery.point, obstacles))) recovery.point = null;
     if (!recovery.point && now >= recovery.retryAt) {
       recovery.retryAt = now + 1000;
-      var best = directClear ? gap : Infinity;
-      if (directClear) recovery.point = { x: goal.x, y: goal.y };
-      if (typeof can_move === "function") for (var ring = 0; ring < 4; ring++) for (var angle = 0; angle < 16; angle++) {
-        var radius = 80 * Math.pow(2, ring), radians = angle * Math.PI / 8;
-        var point = { x: character.x + Math.cos(radians) * radius, y: character.y + Math.sin(radians) * radius };
-        var score = radius + Math.hypot(goal.x - point.x, goal.y - point.y);
-        if (score >= best || !can_move_to(point.x, point.y) || !can_move({ map: character.map, x: point.x, y: point.y,
-            going_x: goal.x, going_y: goal.y, base: character.base }) ||
-            !formationSegmentSafe(character, point, obstacles) || !formationSegmentSafe(point, goal, obstacles)) continue;
-        recovery.point = point; best = score;
+      var goals = [recovery.goal], best = Infinity;
+      if (Math.hypot(recovery.goal.x-goal.x,recovery.goal.y-goal.y)>1) goals.push(goal);
+      if (regroupPriest) goals = goals.concat(regroupGoals);
+      if (!regroupPriest && !can_move_to(goal.x, goal.y) && typeof can_move === "function") {
+        var sides = [];
+        for (var side = 0; side < 16; side++) {
+          var radians = side * Math.PI / 8;
+          var open = terrainRecoveryPoint(reference, approachRange, radians);
+          if (!open) continue;
+          if (can_move({ map: character.map, x: reference.x, y: reference.y,
+              going_x: open.x, going_y: open.y, base: character.base })) sides.push(open);
+        }
+        sides.sort(function (a, b) { return Math.hypot(a.x-character.x,a.y-character.y)-Math.hypot(b.x-character.x,b.y-character.y); });
+        goals = goals.concat(sides.slice(0, 4));
       }
+      for (var goalIndex = 0; goalIndex < goals.length; goalIndex++) {
+        var approach = goals[goalIndex];
+        var distance = Math.hypot(approach.x-character.x,approach.y-character.y);
+        if (distance < best && can_move_to(approach.x,approach.y) && formationSegmentSafe(character,approach,obstacles)) {
+          recovery.point = { x: approach.x, y: approach.y }; recovery.goal = approach; best = distance;
+        }
+        if (typeof can_move === "function") for (var ring = 0; ring < 4; ring++) for (var angle = 0; angle < 16; angle++) {
+          var radius = 80 * Math.pow(2, ring), radians = angle * Math.PI / 8;
+          var point = { x: character.x + Math.cos(radians) * radius, y: character.y + Math.sin(radians) * radius };
+          var score = radius + Math.hypot(approach.x - point.x, approach.y - point.y);
+          if (score >= best || !can_move_to(point.x, point.y) || !can_move({ map: character.map, x: point.x, y: point.y,
+              going_x: approach.x, going_y: approach.y, base: character.base }) ||
+              !formationSegmentSafe(character, point, obstacles) || !formationSegmentSafe(point, approach, obstacles)) continue;
+          recovery.point = point; recovery.goal = approach; best = score;
+        }
+        // Once selected, keep the same open side while it still has a safe
+        // two-leg route. Reconsider alternatives only when that route fails.
+        if (goalIndex === 0 && recovery.selected && recovery.point) break;
+      }
+      if (recovery.point) recovery.selected = true;
     }
     if (recovery.point) {
       var dx = recovery.point.x - character.x, dy = recovery.point.y - character.y;
@@ -15530,12 +15580,40 @@
       return clearance>=Math.min(before,safety)-0.01;
     });
   }
+  function terrainRecoveryPoint(reference,reach,angle) {
+    var target=formationBody(reference),self=formationBody(character),dx=Math.cos(angle),dy=Math.sin(angle);
+    if(![target.x,target.y,reach,angle].every(Number.isFinite) || reach<0)return null;
+    // Reach and safety are native box-to-box gaps, not center radii. Native
+    // distance also accounts for the asymmetric height above each entity's feet.
+    var low=0,high=Math.max(1,reach+target.awidth+target.aheight+self.awidth+self.aheight);
+    function gap(radius) {
+      return formationDistance(formationBody(character,{x:target.x+dx*radius,y:target.y+dy*radius}),target);
+    }
+    var outerGap=gap(high);
+    for(var expansion=0;expansion<8 && Number.isFinite(outerGap) && outerGap<reach;expansion++) {
+      high*=2;outerGap=gap(high);
+    }
+    if(!Number.isFinite(outerGap) || outerGap<reach)return null;
+    for(var step=0;step<24;step++) {
+      var middle=(low+high)/2;
+      var middleGap=gap(middle);
+      if(!Number.isFinite(middleGap))return null;
+      if(middleGap<reach)low=middle;else high=middle;
+    }
+    return {x:target.x+dx*high,y:target.y+dy*high};
+  }
   function terrainRecoveryGoals(reference,desired) {
     if(!reference)return [];
-    var radius=Math.max(desired,formationMonsterSafety(reference)+12),goals=[];
+    // Coordinator encounter reports omit renderer hitboxes. Prefer the matching
+    // visible native entity so edge-distance goals use the actual monster body.
+    var local=reference.id!=null && get_entity(reference.id);
+    if(local && local.visible && !local.dead && local.hp!==0 &&
+        (!local.map || local.map===character.map) && (local.in==null || local.in===character.in))reference=local;
+    var reach=Number(character.range),radius=Math.min(reach-1,Math.max(desired,formationMonsterSafety(reference)+12)),goals=[];
+    if(!Number.isFinite(radius) || radius<0)return goals;
     for(var i=0;i<16;i++) {
-      var angle=i*Math.PI/8,p={x:reference.x+Math.cos(angle)*radius,y:reference.y+Math.sin(angle)*radius};
-      if(terrainRecoverySafe(p,true))goals.push(p);
+      var p=terrainRecoveryPoint(reference,radius,i*Math.PI/8);
+      if(p && terrainRecoverySafe(p,true))goals.push(p);
     }
     goals.sort(function(a,b){return Math.hypot(a.x-character.x,a.y-character.y)-Math.hypot(b.x-character.x,b.y-character.y);});
     return goals;
@@ -15642,13 +15720,16 @@
     });
     return desired;
   }
-  function formationStepSafe(point, reference, priest, selfPriest, members, safeRange) {
+  function formationStepSafe(point, reference, priest, selfPriest, members, safeRange, separate) {
     if(!safeCombatPoint(point,reference))return false;
     var body=formationBody(character,point);
     var covered=selfPriest ? members.every(function(ally){return ally.name===character.name ||
       formationDistance(body,ally)<=Math.max(safeRange,formationDistance(character,ally))+0.01;}) :
       formationDistance(body,priest)<=Math.max(safeRange,formationDistance(character,priest))+0.01;
-    if(!covered)return false;
+    var otherPartyTarget=members.some(function(ally){return ally.name!==character.name && ally.name===reference.target && !ally.rip;});
+    var canSeparate=separate && !selfPriest && formationMelee(character) && !formationFrame.attackers.length &&
+      Number(character.max_hp)>0 && Number(character.hp)>=Number(character.max_hp)*0.6 && otherPartyTarget;
+    if(!covered && !canSeparate)return false;
     var obstacles=formationFrame.enemies.filter(function(e){return e.id!==reference.id || !formationMelee(character);});
     return priestSecondaryClearance(point,obstacles).risk<=priestSecondaryClearance(character,obstacles).risk+0.01;
   }
@@ -15710,6 +15791,9 @@
     var reference = target || attackers.sort(function (a, b) { return combatDistance(a) - combatDistance(b); })[0];
     if (!reference) return false;
     if (formationState.priest !== priest.name || formationState.targetId !== reference.id) {
+      // Retire only our previous combat-owned segment before adopting a new
+      // target. Every class must shed the old approach and hold state.
+      resetCombatMovement();
       formationState.priest = priest.name; formationState.targetId = reference.id; formationState.direction = 1;
       formationState.secondaryDirection = 0; formationState.secondaryMoving = false;
       formationState.warriorPhase = null; formationState.warriorSegment = null;
@@ -15743,7 +15827,7 @@
     }
     var closing = warrior && formationState.warriorPhase === "approaching";
     var secondary = selfPriest || mage ? formationFrame.enemies.filter(function (enemy) {
-      if (!mage && enemy.id === reference.id) return false;
+      if (enemy.id === reference.id) return false;
       // Keep every enemy capable of entering the swept safety area, with a
       // nearby clearance preference zone. Distant mobs must
       // not make an otherwise settled formation orbit forever.
@@ -15783,6 +15867,10 @@
       var turn = formationState.heading == null ? 0 : 1 - Math.cos(heading - formationState.heading);
       var clearance = avoiding ? priestSecondaryClearance(point, secondary) : null;
       var secondaryRisk = clearance ? clearance.risk : 0;
+      // The selected target's swept safety radius must not keep the mage
+      // permanently outside its own range. Retain that spacing preference
+      // after attack-range admission; other enemies still outrank admission.
+      var targetRisk = mage ? priestSecondaryClearance(point, [reference]).risk : 0;
       var orbitCross = (character.x - reference.x) * (point.y - character.y) -
         (character.y - reference.y) * (point.x - character.x);
       return { point: point, coverage: coverage, danger: danger, rangeError: rangeError,
@@ -15790,6 +15878,7 @@
         facing: facing, progress: progress, heading: heading, turn: turn,
         score: mage ? [Math.round((danger + secondaryRisk) * 2), Math.ceil(coverage / 2), facing,
           Math.ceil(Math.max(0, formationDistance(candidate, reference) - Number(character.range)) / 3),
+          Math.round(targetRisk * 2),
           Math.ceil(Math.max(0, formationDistance(candidate, priest) - priestSpacing) / 3),
           chased ? -progress : Math.hypot(dx, dy), rangeError, turn] :
           [Math.round((danger + secondaryRisk) * 2), Math.ceil(coverage / 2),
@@ -15800,7 +15889,7 @@
           selfPriest ? 0 : -formationDistance(candidate, priest), turn] };
     }
     var current = metrics(character);
-    if(recoveryCandidate && !recoveryCandidate.blocked && formationStepSafe(recoveryCandidate,reference,priest,selfPriest,members,safeRange)) {
+    if(recoveryCandidate && !recoveryCandidate.blocked && formationStepSafe(recoveryCandidate,reference,priest,selfPriest,members,safeRange,true)) {
       sendCombatMove(reference,recoveryCandidate,"formation-regrouping");
       root.partyCombatPosition.reason="local detour around blocked approach";
       root.partyCombatPosition.coverageDeficit=metrics(recoveryCandidate).coverage;
@@ -16022,6 +16111,7 @@
     root.partyCombatPosition = { at: Date.now(), mode: "idle", movementOwner: null, target: null,
       reason: "no valid target or immediate threat" };
     formationState.warriorPhase = null; formationState.warriorSegment = null;
+    formationState.heading = null; formationState.meleeProgress = null;
     formationState.approachProgress = null; formationState.approachIdentity = null; formationState.recovery = null;
     kiteState.targetId = null; kiteState.destination = null; kiteState.mode = "idle";
   }

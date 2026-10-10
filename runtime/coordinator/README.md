@@ -112,6 +112,18 @@ the maintained route and formation ownership. Validate the native terrain gap
 case in `live-event-runtime-recovery.spec.ts`; activate character assets and
 coordinator together. Failure inventory: `docs/testing-event-terrain-approach.md`.
 
+Combat corner recovery samples reachable sides of the selected target using native
+hitbox distance, retaining a selected side until arrival or a meaningful target
+change. Its bounded local detour may separate a healthy, unattacked melee fighter
+from priest coverage only while the target attacks another living formation member.
+Ordinary positioning retains coverage checks. Mage positioning prioritizes entering
+attack range over spacing from its selected target, while other enemy safety retains
+priority. Target changes retire only combat-owned movement and reset approach state.
+Validate `live-hunt-mage-range`, `live-hunt-engaged-terrain`,
+`live-hunt-planned-terrain`, `live-hunt-targetron-terrain` and
+`live-hunt-targetron-mage`; retain native damage,
+movement timelines and terrain evidence. Publish character assets to activate.
+
 Startup uses the account's unanimous native home as the initial realm default,
 falling back to saved worker configuration when homes are absent or mixed.
 Explicit persisted party realm settings still take precedence. New merchant
