@@ -253,24 +253,64 @@ test('Halloween events stay opt-in, show partial-feed timers, inherit and persis
   // character, loses persistence, or allows an unsupported event into the order.
   await expect(row('Other event').getByLabel('Other event priority')).toHaveText('0');
   const priorityOrder = async () => (await app.state()).eventPrioritiesByCharacter?.W;
-  await row('Mr. Green').dragTo(row('Anniversary'));
+  // Drag must visibly follow the pointer and reorder before release.
+  const source = await row('Mr. Green').getByRole('button',{name:'Move Mr. Green'}).boundingBox();
+  const target = await row('Anniversary').boundingBox();
+  await page.mouse.move(source!.x+source!.width/2,source!.y+source!.height/2);
+  await page.mouse.down();
+  await page.mouse.move(target!.x+20,target!.y+4,{steps:12});
+  await expect(page.getByTestId('event-drag-preview')).toBeVisible();
+  await expect(row('Mr. Green').getByLabel('Mr. Green priority')).toHaveText('10');
+  await info.attach('event-priority-dragging',{body:await page.screenshot(),contentType:'image/png'});
+  await page.mouse.up();
   await expect.poll(priorityOrder).toEqual(['mrgreen','anniversary','abtesting','goobrawl','crabxx','franky','icegolem','snowman','slenderman','mrpumpkin']);
   await expect(row('Mr. Green').getByLabel('Mr. Green priority')).toHaveText('10');
+  // Limit settings must keep blank as unlimited, reject invalid values, and
+  // persist independently of another character, without losing event opt-ins.
+  await row('Mr. Green').getByRole('button',{name:'Mr. Green settings'}).click();
+  await expect(page.getByLabel('Death limit',{exact:true})).toHaveValue('');
+  await expect(page.getByLabel('Time limit (mins)',{exact:true})).toHaveValue('');
+  await page.getByLabel('Death limit',{exact:true}).fill('0');
+  await page.getByLabel('Time limit (mins)',{exact:true}).fill('2.5');
+  await expect(page.locator('[data-slot="popover-content"] [data-event="mrgreen"]')).toBeVisible();
+  await info.attach('event-limit-settings',{body:await page.screenshot(),contentType:'image/png'});
+  await page.getByRole('button',{name:'Save event settings',exact:true}).click();
+  await expect.poll(async()=>(await app.state()).eventLimitsByCharacter.W.mrgreen).toEqual({deathLimit:0,timeLimitMinutes:2.5});
+  // Saving keeps the dropdown available for editing the next event.
+  await row('Mr. Pumpkin').getByRole('button',{name:'Mr. Pumpkin settings'}).click();
+  await page.getByLabel('Death limit',{exact:true}).fill('1');
+  await page.getByRole('button',{name:'Save event settings',exact:true}).click();
+  await expect.poll(async()=>(await app.state()).eventLimitsByCharacter.W.mrpumpkin).toEqual({deathLimit:1,timeLimitMinutes:null});
+  await expect(row('Mr. Green').getByRole('button',{name:'Mr. Green settings'})).toBeVisible();
+  await info.attach('event-settings-dropdown-retained',{body:await page.screenshot(),contentType:'image/png'});
   await page.keyboard.press('Escape');
   inherited=true;
   await page.reload();
   await open('P');
   await expect(page.getByText('Using W’s events',{exact:true})).toBeVisible();
+  await row('Mr. Green').getByRole('button',{name:'Mr. Green settings'}).click();
+  await expect(page.getByLabel('Death limit',{exact:true})).toHaveValue('0');
+  await expect(page.getByLabel('Death limit',{exact:true})).toBeDisabled();
+  await expect(page.getByLabel('Time limit (mins)',{exact:true})).toHaveValue('2.5');
+  await page.getByRole('button',{name:'Close event settings',exact:true}).click();
   for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) {await expect(row(name).getByRole('checkbox')).toBeChecked();await expect(row(name).getByRole('checkbox')).toBeDisabled();}
   await page.keyboard.press('Escape');
   await open('M');
   await expect(row('Anniversary').getByLabel('Anniversary priority')).toHaveText('10');
+  await row('Mr. Green').getByRole('button',{name:'Mr. Green settings'}).click();
+  await expect(page.getByLabel('Death limit',{exact:true})).toHaveValue('');
+  await expect(page.getByLabel('Time limit (mins)',{exact:true})).toHaveValue('');
+  await page.getByRole('button',{name:'Close event settings',exact:true}).click();
   for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) {await expect(row(name).getByRole('checkbox')).not.toBeChecked();await expect(row(name).getByRole('checkbox')).toBeEnabled();}
   await page.keyboard.press('Escape');
   await app.restartCoordinator();await page.reload();await open('W');
   for(const name of ['Slenderman','Mr. Green','Mr. Pumpkin']) await expect(row(name).getByRole('checkbox')).toBeChecked();
   await expect(row('Mr. Green').getByLabel('Mr. Green priority')).toHaveText('10');
-  await info.attach('halloween-persisted-selections',{body:JSON.stringify(await app.state()),contentType:'application/json'});
+  await row('Mr. Green').getByRole('button',{name:'Mr. Green settings'}).click();
+  await expect(page.getByLabel('Death limit',{exact:true})).toHaveValue('0');
+  await expect(page.getByLabel('Time limit (mins)',{exact:true})).toHaveValue('2.5');
+  await page.getByRole('button',{name:'Close event settings',exact:true}).click();
+  await info.attach('halloween-persisted-selections' ,{body:JSON.stringify(await app.state()),contentType:'application/json'});
   await info.attach('halloween-events-after-restart',{body:await page.screenshot(),contentType:'image/png'});
 });
 

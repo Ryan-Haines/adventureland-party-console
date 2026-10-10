@@ -7,6 +7,7 @@ import type { ABStrategy } from "./abtesting.ts";
 export interface SavedEventState extends HuntEventTrips {
   activeRealm?: unknown;
   eventReturn?: EventRecovery | null;
+  eventAttendance?: import("./attendance-limits.ts").EventAttendance;
   eventSessions?: Record<string, EventSession> | null;
   deferredEventReturns?: Record<string, DeferredRecovery> | null;
   abtestingStrategy?: ABStrategy | null;

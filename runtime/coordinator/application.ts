@@ -1,3 +1,4 @@
+import { observeEventAttendance, eventInstanceAllowed } from "./events/attendance-limits.ts";
 import { createDungeons } from './dungeons/service.ts';
 import { dungeonOwns } from '../dungeons/contracts.ts';
 import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
@@ -510,7 +511,7 @@ export function startCoordinatorApplication(
       mapSubscriberCount,
       stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois),
       groupedCombat: groupedCombatSnapshot,
-      selectedEvents: (state, name) => selectedEvents(state, name),
+      selectedEvents: (state, name) => selectedEvents(state, name).filter(event => eventInstanceAllowed(party, name, event)),
       anniversary: publicAnniversaryState,
       rareOwns: () => rareControl.owns(),
     });
@@ -1021,7 +1022,10 @@ export function startCoordinatorApplication(
         persist: persistSettings,
         abtesting: resolveAbtestingStrategy,
         activeNames,
-        events: report => (soloFor(report.name)?.eventObservations || eventObservations).observe(report),
+        events: report => {
+          if (observeEventAttendance(party, report, Date.now())) persistSettings();
+          (soloFor(report.name)?.eventObservations || eventObservations).observe(report);
+        },
         publish: scheduleALDataPublish,
         convoyStep: stepAllConvoys,
         merchantScheduling: merchantScheduling.observe,
@@ -1161,7 +1165,7 @@ export function startCoordinatorApplication(
 
     function eventsEnabledFor(name: string, event?: string) {
       const enabled = event ? eventEnabled(party, name, event) : eventPolicy(party, name).enabled;
-      if (!enabled) return false;
+      if (!enabled || event && !eventInstanceAllowed(party, name, event)) return false;
       const report = party.statuses[name];
       const live = !!report && Date.now() - report.seenAt < 3000 && (event === 'anniversary'
         ? !!report.anniversaryServer?.live
@@ -1828,7 +1832,7 @@ export function startCoordinatorApplication(
       mapSubscriberCount,
       stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois),
       groupedCombat: groupedCombatSnapshot,
-      selectedEvents: (state, name) => selectedEvents(state, name),
+      selectedEvents: (state, name) => selectedEvents(state, name).filter(event => eventInstanceAllowed(party, name, event)),
       anniversary: publicAnniversaryState,
       rareOwns: () => rareControl.owns(),
     });

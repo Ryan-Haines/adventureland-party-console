@@ -1,8 +1,19 @@
-interface EventFormation {
+export interface EventLimits {
+  deathLimit: number | null;
+  timeLimitMinutes: number | null;
+}
+export function validEventLimits(value: unknown): value is EventLimits {
+  if (!value || typeof value !== "object") return false;
+  const { deathLimit, timeLimitMinutes } = value as EventLimits;
+  return (deathLimit === null || Number.isSafeInteger(deathLimit) && deathLimit >= 0) &&
+    (timeLimitMinutes === null || typeof timeLimitMinutes === "number" && Number.isFinite(timeLimitMinutes) && timeLimitMinutes > 0);
+}
+export interface EventFormation {
   leader?: string | null;
   merchantCharacter?: string | null;
   followers?: Record<string, boolean>;
   eventsByCharacter?: Record<string, boolean>;
+  eventLimitsByCharacter?: Record<string, Record<string, EventLimits>>;
   eventPrioritiesByCharacter?: Record<string, string[]>;
   eventSelectionsByCharacter?: Record<string, string[]>;
 }
@@ -50,4 +61,8 @@ export function eventPriorityOrder(party: EventFormation, name: string): string[
   const source = eventPolicy(party, name).source;
   return [...new Set([...(party.eventPrioritiesByCharacter?.[source] ?? []), ...supportedEvents])]
     .filter(id => supportedEvents.includes(id));
+}
+
+export function eventLimits(party: EventFormation, name: string): Record<string, EventLimits> {
+  return party.eventLimitsByCharacter?.[eventPolicy(party, name).source] ?? {};
 }

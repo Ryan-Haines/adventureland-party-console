@@ -1,3 +1,4 @@
+import type { AttendanceReport } from "../events/attendance-limits.ts";
 import { createStatusIngestion, type StatusReport } from "./ingestion.ts";
 import {requestObject} from '../http/contracts.ts';
 import {
@@ -12,7 +13,7 @@ import { observeScatter, type ScatterState, type ScatterStatus } from "./scatter
 import type { createMerchantObservation } from "./merchant-observation.ts";
 import type { AnniversaryBuffStatus } from "../anniversary/return-contracts.ts";
 
-type Report = StatusReport &
+type Report = StatusReport & AttendanceReport &
   Record<string, unknown> &
   Parameters<typeof consumePontyReport>[0] &
   Parameters<typeof consumeBankReport>[0] &

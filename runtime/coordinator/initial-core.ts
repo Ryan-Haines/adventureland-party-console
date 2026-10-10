@@ -19,6 +19,7 @@ export function initialPartySelection(saved: SavedPartySelection) {
     leader: saved.leader || null,
     followers: saved.followers || {},
     eventsByCharacter: saved.eventsByCharacter || {},
+    eventLimitsByCharacter: saved.eventLimitsByCharacter || {},
     eventPrioritiesByCharacter: saved.eventPrioritiesByCharacter || {},
     eventSelectionsByCharacter: saved.eventSelectionsByCharacter || {},
   };
@@ -29,6 +30,7 @@ export function initialEventState(saved: SavedEventState, configuredRealm: strin
     realmSwitch: null,
     eventReturn: saved.eventReturn || null,
     eventReturnLast: null as LastEventReturn,
+    eventAttendance: saved.eventAttendance || {},
     eventSessions: saved.eventSessions || {},
     deferredEventReturns: saved.deferredEventReturns || {},
     huntEventTrips: saved.huntEventTrips || {},

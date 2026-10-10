@@ -10825,7 +10825,10 @@
         ? halloweenFeedCurrent() && state.live === true : state.live !== false);
     }).map(function (name) {
       var state = status[name] || {};
-      return { name: name, id: state.id || state.event_id || null };
+      // Native IDs, round identities and fixed end epochs distinguish successive
+      // instances even when the next feed arrives without a long absent interval.
+      var identity = state.id || state.event_id || state.round || state.end || state.expires;
+      return { name: name, id: identity == null ? null : String(identity) };
     });
   }
 

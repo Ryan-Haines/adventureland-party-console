@@ -1,3 +1,4 @@
+import { killNativeCharacter } from "./hunt-interruption-helpers";
 import {test,expect} from './live-fixtures';
 import type {Route} from '@playwright/test';
 
@@ -243,4 +244,75 @@ test.describe('visible event boss separated by native terrain',()=>{
       await live.admin(`output=(()=>{const m=get_monster('mrpumpkin');if(m?.e2eTerrainApproach)remove_monster(m,{silent:true});delete E.mrpumpkin;broadcast_e();return true;})()`);
     }
   });
+});
+
+
+test('native event limits exhaust only the current instance and survive restart', async ({live}, info) => {
+  test.setTimeout(600000);
+  // Failure modes: time is counted before entry or while another event owns
+  // attendance; duplicate death reports exhaust too early; exhausted events
+  // rejoin after reload/restart; new IDs remain incorrectly blacklisted;
+  // blank limits become zero; exit loses the saved pre-event farming task.
+  await live.post('/formation',{leader:W});
+  await live.post('/formation',{character:P,follow:true});
+  const checkpoint = {map:'halloween',x:-550,y:-290};
+  await live.post('/travel',checkpoint);
+  await expect.poll(async()=>{
+    const state=await live.state();
+    return fighters.every(name=>state.characters[name]?.map===checkpoint.map&&Math.hypot(state.characters[name].x-checkpoint.x,state.characters[name].y-checkpoint.y)<100)&&!state.activeConvoy;
+  },{timeout:90000,message:'Both fighters must establish an explicit saved pre-event destination'}).toBe(true);
+  const seeds = await live.admin(`output=(()=>{const result={};
+    for(const [type,x,y] of [['mrpumpkin',-495,685],['mrgreen',-495,650]]){
+      const original=G.monsters[type];try{G.monsters[type]={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,spawns:[]};
+        const m=new_monster('halloween',{type,count:1,boundary:[x,y,x,y]},{temp:1});
+        result[type]={id:String(m.id),map:m.map,x:m.x,y:m.y};
+        E[type]={live:true,...result[type],hp:m.hp,max_hp:m.max_hp};
+      }finally{G.monsters[type]=original;}}
+    broadcast_e();return result;})()`);
+  const samples:unknown[]=[];
+  let death:unknown;
+  try {
+    await live.post('/formation',{character:W,eventLimits:{event:'mrpumpkin',limits:{deathLimit:null,timeLimitMinutes:0.5}}});
+    await live.post('/formation',{character:W,eventLimits:{event:'mrgreen',limits:{deathLimit:0,timeLimitMinutes:null}}});
+    await live.post('/formation',{character:W,eventSelections:['mrpumpkin','mrgreen'],eventPriorities:['mrpumpkin','mrgreen','anniversary','abtesting','goobrawl','crabxx','franky','icegolem','snowman','slenderman']});
+    await expect.poll(async()=>Promise.all(fighters.map(async name=>(await live.clients[name].events()).some((packet:any)=>packet.event==='hit'&&String(packet.data?.id)===seeds.mrpumpkin.id&&packet.data?.hid===name&&packet.data?.damage>0))).then(hits=>hits.every(Boolean)),{timeout:150000,message:'Both fighters must actually reach and fight Pumpkin before its attendance timer expires'}).toBe(true);
+    await expect.poll(async()=>{
+      const state=await live.state();
+      const hits=await Promise.all(fighters.map(async name => (await live.clients[name].events()).some((packet:any)=>packet.event==='hit'&&String(packet.data?.id)===seeds.mrgreen.id&&packet.data?.hid===name&&packet.data?.damage>0)));
+      samples.push({at:Date.now(),attendance:state.eventAttendance,convoy:state.activeConvoy?.phase,hits});
+      return state.eventAttendance?.[W]?.mrpumpkin?.ignored==='time limit'&&hits.every(Boolean);
+    },{timeout:180000,intervals:[500,1000],message:'The timed-out Pumpkin instance must hand attendance to native Green combat'}).toBe(true);
+    death=await killNativeCharacter(live,W);
+    await expect.poll(async()=>{
+      const state=await live.state();
+      samples.push({at:Date.now(),attendance:state.eventAttendance,eventReturn:state.eventReturn,characters:Object.fromEntries(fighters.map(name=>[name,{map:state.characters[name]?.map,event:state.characters[name]?.joinedEvent,rip:state.characters[name]?.rip}]))});
+      return state.eventAttendance?.[W]?.mrgreen?.ignored==='death limit'&&fighters.every(name=>!state.characters[name]?.rip&&!state.characters[name]?.joinedEvent&&state.characters[name]?.map===checkpoint.map&&Math.hypot(state.characters[name].x-checkpoint.x,state.characters[name].y-checkpoint.y)<100)&&!state.eventReturn;
+    },{timeout:180000,intervals:[500,1000],message:'The first actual death must exit Green and restore both fighters rather than rejoining'}).toBe(true);
+    const exhaustedRuntime=(await live.state()).characters[W].dashboardRuntime;
+    await live.clients[W].frame.evaluate(()=>{const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+      game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);});
+    const restartAt=Date.now();
+    await live.restartCoordinator();
+    const restarted=await live.state();
+    expect(restarted.eventAttendance[W].mrgreen.deaths).toBe(1);
+    expect(restarted.eventAttendance[W].mrgreen.ignored).toBe('death limit');
+    await expect.poll(async()=>{
+      const state=await live.state();
+      return state.characters[W]?.seenAt>restartAt&&state.characters[W]?.dashboardRuntime!==exhaustedRuntime&&
+        state.eventAttendance[W].mrgreen.deaths===1&&state.eventAttendance[W].mrgreen.ignored==='death limit'&&
+        fighters.every(name=>!state.characters[name]?.joinedEvent);
+    },{timeout:45000,message:'Fresh replacement CODE must keep the same live instance exhausted after backend restart'}).toBe(true);
+    expect(restarted.eventSelectionsByCharacter[W]).toEqual(['mrpumpkin','mrgreen']);
+    const replacement=await live.admin(`output=(()=>{const old=Object.values(instances).flatMap(i=>Object.values(i.monsters||{})).find(m=>String(m.id)===${JSON.stringify(seeds.mrgreen.id)});if(old)remove_monster(old,{silent:true});
+      const original=G.monsters.mrgreen;try{G.monsters.mrgreen={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,spawns:[]};
+        const m=new_monster('halloween',{type:'mrgreen',count:1,boundary:[-495,650,-495,650]},{temp:1});
+        E.mrgreen={live:true,id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {...E.mrgreen};
+      }finally{G.monsters.mrgreen=original;}})()`);
+    await expect.poll(async()=>Promise.all(fighters.map(async name=>(await live.clients[name].events()).some((packet:any)=>packet.event==='hit'&&String(packet.data?.id)===replacement.id&&packet.data?.hid===name&&packet.data?.damage>0))).then(hits=>hits.every(Boolean)),{timeout:150000,message:'A new native Green instance must receive native damage despite the prior exhausted instance'}).toBe(true);
+    await info.attach('event-limit-new-instance',{body:JSON.stringify({replacement,state:await live.state()}),contentType:'application/json'});
+  } finally {
+    await info.attach('native-event-limit-ledger',{body:JSON.stringify({seeds,death,samples:samples.slice(-128),state:await live.state()}),contentType:'application/json'});
+    await live.post('/formation',{character:W,eventSelections:[]});
+    await live.admin(`output=(()=>{for(const type of ['mrgreen','mrpumpkin']){for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(m.type===type&&m.hp>1000000)remove_monster(m,{silent:true});delete E[type];}broadcast_e();return true;})()`);
+  }
 });

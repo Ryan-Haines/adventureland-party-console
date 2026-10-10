@@ -5,6 +5,16 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Keep the event dropdown open while editing and saving event settings, so the
+  next event's settings gear remains available immediately.
+
+- Give event priority rows outlined cards, a moving drag preview, and live
+  reordering like merchant routines. Add per-event death and time limits with
+  blank defaults for unlimited attendance. Exceeding a limit skips that event
+  instance, resumes the saved farming task or the next eligible event, and
+  survives CODE reloads and coordinator restarts. Followers inherit the leader's
+  configured limits; Cave remains outside event attendance priorities and limits.
+
 - Remove stale BankBoi storage records when a refreshed account roster confirms
   the character was deleted outside the console. Recorded inventory no longer
   disables the confirmation button; existing characters retain deletion safeguards,

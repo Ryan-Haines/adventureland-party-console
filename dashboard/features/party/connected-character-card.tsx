@@ -124,6 +124,10 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     (eventSelections: string[]) => formation({ character: name, eventSelections }),
     [formation, name],
   );
+  const onEventLimitsChange = useCallback(
+    (event: string, limits: import('@/lib/event-policy').EventLimits) => formation({ character: name, eventLimits: { event, limits } }),
+    [formation, name],
+  );
   const onEventPriorityChange = useCallback(
     (eventPriorities: string[]) => formation({ character: name, eventPriorities }),
     [formation, name],
@@ -143,12 +147,14 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
       merchantCharacter: state.merchantCharacter,
       followers: state.followers,
       eventsByCharacter: state.eventsByCharacter,
+      eventAttendance: state.eventAttendance,
+      eventLimitsByCharacter: state.eventLimitsByCharacter,
       eventPrioritiesByCharacter: state.eventPrioritiesByCharacter,
       eventSelectionsByCharacter: state.eventSelectionsByCharacter,
       eventSchedules: state.eventSchedules,
     }),
     [state.leader, state.merchantCharacter, state.followers, state.eventsByCharacter,
-      state.eventSelectionsByCharacter, state.eventPrioritiesByCharacter, state.eventSchedules],
+      state.eventSelectionsByCharacter, state.eventPrioritiesByCharacter, state.eventLimitsByCharacter, state.eventAttendance, state.eventSchedules],
   );
   const onRadiusSave = useCallback(
     (radius: number) => setFocus(name, monsterFocusSelected, monsterFocusPriorities, radius),
@@ -332,7 +338,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             state={eventState}
             name={char.name}
             merchant={char.ctype === 'merchant'}
-            onChange={onEventSelectionChange} onPriorityChange={onEventPriorityChange}
+            onChange={onEventSelectionChange} onPriorityChange={onEventPriorityChange} onLimitsChange={onEventLimitsChange}
           />
         </div>
         <div className="mt-5 grid gap-3">

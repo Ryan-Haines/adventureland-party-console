@@ -1879,3 +1879,16 @@ Unsupported catalog events show zero and cannot enter the order; Cave is exclude
 Validate the Halloween console order/inheritance/restart journey and native higher
 priority boss takeover in live-event-runtime-recovery.spec.ts. Publish character
 assets and coordinator/dashboard together through the supported full restart.
+
+
+Event limits are saved per character/event; followers read the leader's settings.
+Blank is unlimited. Deaths strictly greater than the configured integer limit
+exhaust attendance (0 skips after the first death); time accumulates only while
+attending and excludes pauses for another event. Exhaustion is durable for the
+current native ID/realm or continuous live interval for feeds without IDs. Fresh
+native ID changes, or ten seconds of confirmed feed absence for feeds without
+IDs, admit a new instance; the same known ID retains its exhausted budget;
+stale/disconnected observations cannot reset exhaustion. CODE turnover and backend
+restart preserve counters. Cave is excluded. Expired selections use the existing
+/event-disabled exit and checkpoint recovery. Publish character and coordinator
+assets together through the supported full restart when activating this change.

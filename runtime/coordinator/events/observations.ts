@@ -47,7 +47,7 @@ interface EventReport extends ReturnStatus {
   x?: number;
   y?: number;
   joinedEvent?: string;
-  serverLiveEvents?: { name: string; id?: string }[];
+  serverLiveEvents?: { name: string; id?: string | null }[];
 }
 
 interface EventObservationPorts {
@@ -86,7 +86,7 @@ export function createEventObservations(
   }
 
   function liveSession(
-    report: { name: string; id?: string },
+    report: { name: string; id?: string | null },
     previous?: EventSession,
   ): EventSession {
     return {
@@ -121,7 +121,7 @@ export function createEventObservations(
     state.sessions[name] = session;
     if (changed || previous !== session) ports.persist();
   }
-  function reportLive(name: string, report: { name: string; id?: string }): void {
+  function reportLive(name: string, report: { name: string; id?: string | null }): void {
     if (!ports.enabled(name, report.name)) return;
     const existing = state.sessions[name];
     const previous = existing?.event === report.name ? existing : undefined;
@@ -170,6 +170,7 @@ export function createEventObservations(
     return ports.now() <= cycle.endsAt && !!(cycle.combatHandoffAt || cycle.combatPendingEvent);
   }
   function anniversaryPermission(name: string, operation?: { id: string; phase: string }) {
+    if (!ports.enabled(name, "anniversary")) return { allowed: false, reason: "anniversary disabled or instance exhausted" };
     const cycle = state.anniversary.eventCycle;
     if (name === ports.merchant()) return { allowed: true };
     if (!cycle) return { allowed: true };
