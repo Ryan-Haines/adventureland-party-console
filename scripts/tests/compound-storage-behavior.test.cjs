@@ -1,3 +1,5 @@
+// Native merchant status always reports all 42 inventory slots.
+const nativeInventory=(items=[])=>items.concat(Array(42-items.length).fill(null));
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {compoundStorageLeftovers}=require('../../runtime/compound-storage.ts');
 const {storeCompoundLeftovers}=require('../../runtime/characters/compound-storage.ts');
@@ -23,14 +25,14 @@ test('scheduler queues automatic storage without changing Auto bank and waits fo
   merchantAutomations:{},merchantQueue:[],statuses:{},bankSnapshot:{packs:{items0:[]}},bankbois:{},withdrawals:{}};
  const queued=[],before=JSON.stringify(state.autoItemMarks);
  const scheduler=createImprovementScheduler(Object.assign(state,{production:state.production||{attempts:{}}}),{now:()=>1,nextCommand:()=>1,stamp:x=>x,persist(){},log(){},queue:(names,reason)=>queued.push(reason)});
- assert.equal(scheduler.compound('M',{items:[item(0),item(1)]}),true);
+ assert.equal(scheduler.compound('M',{items:nativeInventory([item(0),item(1)])}),true);
  assert.deepEqual(queued,['auto compound']);
  state.bankSnapshot.packs.items0=[item(0),item(1)];queued.length=0;
- assert.equal(scheduler.compound('M',{items:[]}),false);assert.deepEqual(queued,[]);
- assert.equal(scheduler.compound('M',{items:[item(0)]}),true);
+ assert.equal(scheduler.compound('M',{items:nativeInventory([])}),false);assert.deepEqual(queued,[]);
+ assert.equal(scheduler.compound('M',{items:nativeInventory([item(0)])}),true);
  assert.equal(JSON.stringify(state.autoItemMarks),before);
  state.merchantAutomations['auto compound']=false;queued.length=0;
- assert.equal(scheduler.compound('M',{items:[item(0)]}),false);assert.deepEqual(queued,[]);
+ assert.equal(scheduler.compound('M',{items:nativeInventory([item(0)])}),false);assert.deepEqual(queued,[]);
 });
 
 function storageFixture(){

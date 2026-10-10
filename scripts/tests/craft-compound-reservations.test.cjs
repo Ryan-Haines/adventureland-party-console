@@ -1,3 +1,5 @@
+// Native merchant status always reports all 42 inventory slots.
+const nativeInventory=(items=[])=>items.concat(Array(42-items.length).fill(null));
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {craftProtection,availableCraftStock}=require('../../runtime/coordinator/merchant/craft-reservations.ts');
 const {createImprovementScheduler}=require('../../runtime/coordinator/merchant/improvement-scheduler.ts');
@@ -38,14 +40,14 @@ function scheduler(stock,craft=true){
  return {state,queued,service};
 }
 test('empty merchant schedules bank-only triplets, but protected-only stock cannot interrupt crafting',()=>{
- const f=scheduler(entries(3),false);assert.equal(f.service.compound('M',{items:[]}),true);
+ const f=scheduler(entries(3),false);assert.equal(f.service.compound('M',{items:nativeInventory([])}),true);
  f.state.merchantQueue=[job(),{id:'stale',target:'M',reason:'auto compound'}];
- assert.equal(f.service.compound('M',{items:[]}),false);assert.equal(f.state.merchantQueue.length,1);
- f.state.bankSnapshot.packs.items0=entries(6);assert.equal(f.service.compound('M',{items:[]}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([])}),false);assert.equal(f.state.merchantQueue.length,1);
+ f.state.bankSnapshot.packs.items0=entries(6);assert.equal(f.service.compound('M',{items:nativeInventory([])}),true);
 });
 test('BankBoi stages only surplus copies after craft reservations',()=>{
  const f=scheduler([]);f.state.bankbois={B:{name:'B',items:entries(6)}};
- assert.equal(f.service.compound('M',{items:[]}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([])}),true);
  assert.deepEqual(f.state.withdrawals.M.map(x=>x.slot),[3,4,5]);
 });
 test('protection checkpoint refreshes new jobs without changing progress or yielding',()=>{

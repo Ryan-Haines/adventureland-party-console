@@ -1,3 +1,5 @@
+// Native merchant status always reports all 42 inventory slots.
+const nativeInventory=(items=[])=>items.concat(Array(42-items.length).fill(null));
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,13 +11,13 @@ const reservationPorts={partyAvailableCraftStock:availableCraftStock,request:asy
 
 test('bank ingredients schedule merchant auto-compound without an inventory triple', () => {
   const queued = [];
-  const party = { merchantCharacter: 'M', merchantAutomations: {}, autoCompounds: {
+  const party = { merchantQueue: [], merchantCharacter: 'M', merchantAutomations: {}, autoCompounds: {
     M: [{ name: 'hpamulet', targetTier: 4, quantity: -1 }],
   }, bankSnapshot: { packs: { items0: Array.from({ length: 23 }, () => ({ item: { name: 'hpamulet', level: 0 } })) } } };
   const {createImprovementScheduler}=require('../../runtime/coordinator/merchant/improvement-scheduler.ts');
   const scheduler=createImprovementScheduler(Object.assign(party,{production:party.production||{attempts:{}}}),{now:()=>100,nextCommand:()=>1,stamp:job=>job,
     log(){},persist(){},queue:names=>queued.push(names)});
-  assert.equal(scheduler.compound('M', { items: [] }), true);
+  assert.equal(scheduler.compound('M', { items: nativeInventory([]) }), true);
   assert.equal(queued.length, 1);
 });
 
