@@ -26,6 +26,10 @@ interface Ports {
 }
 interface Stability { since: number; observedAt: number; runtimes: string }
 
+function failedRouteHeld(c: SharedConvoy, legacy: boolean): boolean {
+  return c.merchantInterruption?.resumePhase === 'failed' || c.phase === 'failed' && !legacy;
+}
+
 /** Readiness is intentionally not persisted: every restart requires fresh observations. */
 export function createCommunicationRecovery(ports: Ports) {
   const stable = new WeakMap<SharedConvoy, Stability>();
@@ -43,7 +47,9 @@ export function createCommunicationRecovery(ports: Ports) {
   function detect(state: SharedState, c: SharedConvoy, now: number): boolean {
     const transport = capturedCommunicationFailure(c);
     const legacy = legacyCompletionFailure(c) || transport;
-    if (c.phase === 'failed' && !legacy) return false;
+    // Collection's stopped barrier handles freshness for an exhausted route.
+    // Communication recovery must not turn that temporary hold into fresh travel.
+    if (failedRouteHeld(c, legacy)) return false;
     const names = c.participants.filter(n => affected(state, c, n, now));
     if (!legacy && !names.length) return false;
     if (!c.participants.every(n => ports.owned(state, c, n))) return false;

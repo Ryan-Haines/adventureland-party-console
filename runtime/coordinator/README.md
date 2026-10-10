@@ -1,3 +1,11 @@
+Failed preemptible convoys permit merchant collection through the existing fresh,
+stopped acknowledgement barrier. Collection completion restores the failed hold
+and its diagnostics and retry budget, never another travel attempt. Communication
+loss during this temporary hold cannot admit route recovery. Validate the native
+failed-convoy collection/restart journey and retained interruption/communication
+regressions; see docs/testing-failed-convoy-collection.md. Coordinator-only
+activation uses the supported scripts/start-console.ps1 -CoordinatorOnly restart.
+
 Active event returns release members whose fresh, connected reports show another
 enabled event live. Retire only their matching-cycle exit/continuation commands
 and owned return walk; preserve the saved checkpoint until normal admission

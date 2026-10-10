@@ -5,6 +5,10 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Allow merchant item collection after convoy travel has failed, once the party
+  acknowledges a safe stop. Preserve the original travel error and exhausted
+  retry limits instead of repeatedly timing out each nearby collection job.
+
 - Release members held by an event return when another selected event is live.
   Retire their matching return commands, preserve the original checkpoint, and
   let followers join their leader's next event. Fresh enabled event reports

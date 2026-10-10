@@ -444,6 +444,11 @@ export function createSharedConvoyNavigation(legacy: ConvoyNavigationPlatform,
       hold: name => sharedCommand(state, c, "shared-hold", name),
       resume: phase => {
         c.epoch++; clearSharedRoute(c);
+        if (phase === "failed") {
+          c.phase = "failed";
+          for (const name of members(c)) state.commands[name] = terminalCommand(state, c, name);
+          return true;
+        }
         // Older interruptions could capture communication-hold as their resume
         // phase. Recovery already acknowledged the hold; prepare fresh movement.
         if (["shared-prepare", "shared-hold", "scheduled", "travel", "communication-hold"].includes(phase)) {
