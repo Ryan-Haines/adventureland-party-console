@@ -16,7 +16,7 @@ function fixture(){
   else return {attempt:beginProduction(state,body)};
  },
  });
- vm.runInContext(['productionJournalKey','readProductionJournal','writeProductionJournal','rememberCommerceProduction','rememberReviewedCommerce','saveProductionJournal','verifyProductionProtection','finishProductionJournal','recoverProductionJournal','recoverProductionJournalWork','trackedProduction','trackedProductionWork'].map(n=>namedFunction(source,n)).join('\n'),c);
+ vm.runInContext(['productionJournalKey','readProductionJournal','writeProductionJournal','rememberCommerceProduction','replayCompletedCommerce','rememberReviewedCommerce','saveProductionJournal','verifyProductionProtection','finishProductionJournal','recoverProductionJournal','recoverProductionJournalWork','trackedProduction','trackedProductionWork'].map(n=>namedFunction(source,n)).join('\n'),c);
  return {c,state,storage,mark,lose:()=>lost=true};
 }
 test('surviving failed manual attempt with a lost completion response consumes exactly one offering',async()=>{
