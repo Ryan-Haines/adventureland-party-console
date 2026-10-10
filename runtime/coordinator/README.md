@@ -1,3 +1,11 @@
+Completed commerce production receipts retain their complete recovery journal
+within the existing 2,048-receipt bound. Recovery replays only confirmed outcomes
+whose durable commerce key, sequence, input identity and target level match the
+pending paid attempt. Historical unlinked receipts remain unresolved. Validate
+the lost-completion-response native journey in `live-economy.spec.ts`; failure
+inventory is `docs/testing-completed-commerce-receipts.md`. Publish character
+assets and coordinator together when activating this recovery change.
+
 Automatic compound admission respects the native merchant withdrawal reserve:
 bank and Bankboi inputs require more than three empty inventory slots. Carried
 triples and bankable leftovers remain runnable. Validate native NPC cleanout and

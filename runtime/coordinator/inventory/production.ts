@@ -113,13 +113,18 @@ function validJournalSlots(slots: unknown): boolean {
   return Array.isArray(slots) && slots.length > 0 && slots.every(slot => Number.isInteger(slot) && Number(slot) >= 0 && Number(slot) < 42);
 }
 type ProductionLog = (message: string, level: 'success', details: {name: string; level: number; attemptId: string}) => void;
+function retainCompletedCommerceJournal(attempt: ProductionAttempt): boolean {
+  return attempt.journal?.phase === 'complete' && Boolean(attempt.journal.commerce);
+}
 export function finishProduction(state: State, id: string, success: boolean, log?: ProductionLog): void {
   const attempt = state.production.attempts[id];
   if (!attempt) throw Error('Unknown production attempt');
   if (attempt.completed) return;
   if (success) consumeQuotas(state, attempt);
   attempt.completed = true; attempt.completedAt = Date.now(); attempt.success = success;
-  delete attempt.journal;
+  // Keep bounded completed commerce evidence until its paid progress can replay
+  // the exact outcome. Receipt pruning bounds these journals with the receipts.
+  if (!retainCompletedCommerceJournal(attempt)) delete attempt.journal;
   finishManualOffering(state, attempt);
   if (success && attempt.kind === 'compound' && attempt.level === attempt.automaticCompoundTarget)
     log?.('merchant completed auto compound', 'success', {name:attempt.name,level:attempt.level,attemptId:id});
@@ -130,7 +135,7 @@ export function installProductionRoutes(router: HttpRouter, state: State, persis
     const body = requestObject(req.body);
     if (body.character !== state.merchantCharacter) return res.status(400).json({error:'Only the merchant performs production'});
     try {
-      if (body.action === 'pending') return res.json({ok:true,pending:pendingProduction(state.production, true)});
+      if (body.action === 'pending') return res.json({ok:true,pending:pendingProduction(state.production, true),completedCommerce:completedCommerceReceipts(state)});
       if (body.action === 'inspect') return res.json({ok:true,...inspectProduction(state, body)});
       if (body.action === 'resolve-unknown') {
         resolveUnknownProduction(state, body);
@@ -155,6 +160,15 @@ export function inspectProduction(state: State, body: Record<string, unknown>) {
   if (attempt) validateReceipt(attempt, input);
   const pending = pendingProduction(state.production);
   return {attempt:attempt || null, pending,reviewedCommerce:reviewedCommerceProgress(state,attempt)};
+}
+
+function completedCommerceReceipts(state: State) {
+  const keys = new Set([state.merchantCurrent,...(state.merchantQueue || [])]
+    .filter(Boolean).map(job => 'party-commerce:' + requestText(job?.commerceOrderId || job?.id)));
+  return Object.entries(state.production.attempts).filter(([,attempt]) =>
+    attempt.completed && attempt.journal?.phase === 'complete' &&
+    keys.has(requestText(requestObject(attempt.journal.commerce).key)))
+    .map(([id,attempt]) => ({id,completed:attempt.completed,success:attempt.success,journal:attempt.journal}));
 }
 
 function reviewedCommerceProgress(state: State, attempt: ProductionAttempt | undefined) {

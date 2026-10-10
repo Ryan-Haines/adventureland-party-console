@@ -4356,6 +4356,21 @@
     progress.sequence += 1;
     root.localStorage.setItem(journal.commerce.key, JSON.stringify(progress));
   }
+  function replayCompletedCommerce(attempt) {
+    var journal = attempt && attempt.journal;
+    if (!attempt || !attempt.completed || !journal || journal.phase !== "complete" || !journal.commerce ||
+        attempt.success !== journal.success ||
+        !root.localStorage.getItem(journal.commerce.key)) return;
+    var progress = JSON.parse(root.localStorage.getItem(journal.commerce.key) || "null");
+    if (!progress || progress.sequence !== journal.commerce.sequence || !progress.pendingUpgrade ||
+        !sameItemState(progress.activeItem,journal.item) ||
+        Number(progress.pendingUpgrade.level) !== Number(journal.item.level || 0) + 1) return;
+    if (attempt.success === true) {
+      if (!journal.outcomeItem || journal.outcomeItem.name !== journal.item.name ||
+          Number(journal.outcomeItem.level || 0) !== Number(journal.item.level || 0) + 1) return;
+    } else if (attempt.success !== false || journal.destroyed !== true) return;
+    rememberCommerceProduction(journal);
+  }
   function rememberReviewedCommerce(journal, attempt, reviewedCommerce) {
     if (!journal.commerce || !attempt.resolution || attempt.resolution.outcome !== "unknown" || !attempt.resolution.resumeMissing) return false;
     var progress = JSON.parse(root.localStorage.getItem(journal.commerce.key) || "null") || journal.commerce.state;
@@ -4405,6 +4420,7 @@
     if (!journal) {
       var pending = await request("/merchant/production", {method:"POST",body:{character:character.name,action:"pending"}});
       if (!pending || !Array.isArray(pending.pending)) throw Error("Production recovery inspection unavailable");
+      (pending.completedCommerce || []).forEach(replayCompletedCommerce);
       if (pending.pending.length) {
         var orphaned = pending.pending[0];
         if (!orphaned.journal) throw Error("Production recovery needs review: " + orphaned.id + " (" + orphaned.kind + " " + orphaned.name + " +" + orphaned.level + "); no local journal");
@@ -4431,6 +4447,7 @@
     // pending identities, then recover the newer coordinator journal normally.
     // Never restore the completed attempt's old lucky layout or replay it.
     if (inspection.attempt && inspection.attempt.completed) {
+      replayCompletedCommerce(inspection.attempt);
       rememberReviewedCommerce(journal,inspection.attempt,inspection.reviewedCommerce);
       writeProductionJournal(null);
       return recoverProductionJournalWork();

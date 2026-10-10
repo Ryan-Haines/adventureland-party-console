@@ -5,6 +5,11 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Retain bounded completed production evidence for commerce orders and replay
+  its confirmed outcome after a lost completion response or CODE restart.
+  Recovery requires the exact paid order sequence and input identity; historical
+  receipts without that provenance remain subject to inventory review.
+
 - Defer automatic compounds that require bank or Bankboi inputs while the
   merchant has only its three reserved slots available. Keep carried triples
   and bankable leftovers runnable, and resume external work when genuine

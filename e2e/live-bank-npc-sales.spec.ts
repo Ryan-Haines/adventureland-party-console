@@ -12,7 +12,10 @@ test('full merchant defers external compounds until native NPC sales free capaci
     await expect.poll(async()=>(await live.state()).merchantCurrent,{timeout:90_000}).toBeNull();
     // Initial inventory declaration only fills empty native slots; no existing
     // items are removed and subsequent capacity changes require real sales.
-    await live.admin(`output=(()=>{const p=get_player('${merchant}');for(let i=0;i<p.items.length;i++)if(!p.items[i])p.items[i]={name:'helmet',level:0};cache_player_items(p);resend(p,'reopen+cid');return true})()`);
+    // Eight sellable fillers provide sufficient withdrawal/scroll capacity;
+    // remaining fillers are natively locked, avoiding an unrelated forty-sale
+    // workload before the serialized compound job can run on slower clients.
+    await live.admin(`output=(()=>{const p=get_player('${merchant}');let fillers=0;for(let i=0;i<p.items.length;i++)if(!p.items[i])p.items[i]={name:'helmet',level:0,...(fillers++<8?{}:{l:'l'})};cache_player_items(p);resend(p,'reopen+cid');return true})()`);
     await expect.poll(async()=>(await live.clients[merchant].snapshot()).items.filter((i:any)=>!i).length).toBe(0);
     await live.clients[merchant].run(`(()=>{globalThis.__capacityCompoundReceipts=[];parent.socket.on('game_response',data=>{const response=typeof data==='string'?data:data?.response;if(response==='compound_success'||response==='compound_fail')globalThis.__capacityCompoundReceipts.push({at:Date.now(),response,data})});return true})()`);
     await live.restoreHistoricalSettings(()=>({autoCompounds:{[merchant]:[{name:'ringsj',targetTier:1,quantity:1}]}}));

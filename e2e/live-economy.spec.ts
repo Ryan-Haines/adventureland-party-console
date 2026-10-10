@@ -4,6 +4,68 @@ import type { Item } from '../runtime/coordinator/contracts/item';
 
 const merchant = 'E2EMerchant';
 
+test('completed native upgrade receipt restores commerce after a lost completion response',async({live},info)=>{
+  test.setTimeout(300_000);
+  await catalog(live,'helmet');
+  const before=await economy(live),context=live.clients[merchant].page.context();
+  let journal:any,receipt:any,relocation:any,progress:any,held=false,release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const faults:any[]=[];
+  const checkpoints:any[]=[];
+  await context.route('**/party-api/merchant/checkpoint',async route=>{
+    const body=route.request().postDataJSON();
+    if(body.state&&typeof body.state==='object'){progress=body.state;checkpoints.push(body.state);}
+    await route.continue();
+  });
+  await context.route('**/party-api/merchant/production',async route=>{
+    const body=route.request().postDataJSON();
+    if(body.action==='checkpoint'&&body.journal?.phase==='complete'&&body.journal.success===true&&body.journal.commerce)journal=body.journal;
+    const response=await route.fetch();
+    if(body.action==='complete'&&journal?.id===body.id&&!held){
+      held=true;receipt=await response.json();faults.push({at:Date.now(),action:'held-real-completed-receipt',id:body.id});
+      await gate;
+      await route.abort('failed').catch(()=>{});return;
+    }
+    await route.fulfill({response});
+  });
+  try{
+    const order=await live.post('/merchant/order',{buys:[{id:'helmet',quantity:1,level:1}],crafts:[]});
+    await expect.poll(()=>held,{timeout:120_000}).toBe(true);
+    expect(receipt.attempt.completed).toBe(true);expect(receipt.attempt.success).toBe(true);
+    relocation=await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(merchant)}),item=${JSON.stringify(journal.outcomeItem)};
+      const matches=p.items.map((v,i)=>v&&v.name===item.name&&(v.level||0)===(item.level||0)?i:-1).filter(i=>i>=0);
+      if(matches.length!==1)throw Error('Native completed survivor is not unique');
+      const from=matches[0],to=p.items.findIndex((v,i)=>!v&&i!==from);if(to<0)throw Error('No empty relocation slot');
+      p.items[to]=p.items[from];p.items[from]=null;cache_player_items(p);resend(p,'reopen+cid');return {from,to,item:p.items[to]};})()`);
+    // Declared persistence fault: the completion response was lost and the
+    // replacement CODE has no local production journal. Paid commerce state
+    // remains intact; only authoritative receipt evidence can restore it.
+    await live.clients[merchant].run(`localStorage.removeItem('party-production:'+character.name)`);
+    faults.push({at:Date.now(),action:'lost-local-production-journal-before-code-replacement'});
+    const oldRuntime=(await live.state()).characters[merchant].dashboardRuntime;
+    const replacedAt=Date.now();
+    await live.clients[merchant].frame.evaluate(()=>{
+      const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+      game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);
+    });
+    faults.push({at:replacedAt,action:'abrupt-native-code-replacement',oldRuntime});
+    release();
+    await expect.poll(async()=>{const c=(await live.state()).characters[merchant];return c?.dashboardRuntime&&c.dashboardRuntime!==oldRuntime&&c.seenAt>=replacedAt;},{timeout:60_000}).toBeTruthy();
+    expect((await live.clients[merchant].snapshot()).connected).toBe(true);
+    await expect.poll(async()=>{const s=await live.state();return ![s.merchantCurrent,...s.merchantQueue].some((j:any)=>j?.commerceOrderId===order.jobId);},{timeout:120_000}).toBe(true);
+    const after=await economy(live);
+    const count=(v:Economy)=>v.characters[merchant].items.filter(i=>i?.name==='helmet'&&i.level===1).length;
+    expect(count(after)-count(before)).toBe(1);
+    expect(Math.max(...checkpoints.map(state=>Number(state.spent)||0))).toBe(journal.commerce.state.spent);
+    expect(Math.max(...checkpoints.map(state=>Number(state.attempts)||0))).toBe(journal.commerce.state.attempts);
+    expect(progress.pendingUpgrade).toBeUndefined();
+    await record(live,info,'completed-commerce-receipt-recovery',before,{order,journal,receipt,relocation,faults,checkpoints,progress,after});
+  }finally{
+    release();await context.unrouteAll({behavior:'ignoreErrors'});
+    await info.attach('completed-commerce-receipt-faults',{body:JSON.stringify({journal,receipt,relocation,faults,final:await live.state()}),contentType:'application/json'});
+  }
+});
+
 for (const surplus of [false,true]) test(`restarted upgrade batch ${surplus ? 'holds surplus identical cargo' : 'remaps compacted owned items'}`,async({live},info)=>{
   test.setTimeout(240_000);
   await catalog(live,'helmet');

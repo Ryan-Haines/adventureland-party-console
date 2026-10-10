@@ -17,3 +17,11 @@ The native capacity scenario declares initial bank ingredients and a full bag,
 observes fresh reports without repeated compound admission, then uses genuine
 NPC sales to free space and requires an actual native compound response. Its
 finally attachment preserves inventory, scheduler state, and native receipts.
+
+Linux run 38013269713 passed the blocked admission phase, then timed out while
+the serialized NPC-sale job was still progressing: twenty genuine sales took
+126.843 seconds, twenty-one helmets remained, and the correctly admitted
+compound job was queued behind those sales. This was an unrelated forty-sale
+initial workload. Declare eight sellable fillers and natively lock the remaining
+initial fillers; retain the full bag, genuine sales, compound response, and
+original 150-second processing deadline. No production behavior changes.
