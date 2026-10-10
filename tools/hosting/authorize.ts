@@ -77,17 +77,20 @@ export async function authorizeBrowser(
   }
   return await routeBrowser(req, res, url, options);
 }
+async function routeConsoleService(req: IncomingMessage, res: ServerResponse, url: URL, options: Options) {
+  const services = [
+    ['/console-build', options.builds, 'Staged builds are unavailable on this console.'],
+    ['/console-debug', options.debug, 'Debug instances are unavailable on this console.'],
+    ['/console-update', options.updates, 'Update service is unavailable'],
+  ] as const;
+  const service = services.find(([prefix]) => url.pathname === prefix || url.pathname.startsWith(prefix + '/'));
+  if (!service) return false;
+  if (service[1]) await service[1].route(req, res, url.pathname);
+  else json(res, 503, {error: service[2]});
+  return true;
+}
 async function routeBrowser(req: IncomingMessage, res: ServerResponse, url: URL, options: Options) {
-  if (url.pathname === '/console-debug' || url.pathname.startsWith('/console-debug/')) {
-    if (options.debug) await options.debug.route(req, res, url.pathname);
-    else json(res, 503, { error: 'Debug instances are unavailable on this console.' });
-    return false;
-  }
-  if (url.pathname === '/console-update' || url.pathname.startsWith('/console-update/')) {
-    if (options.updates) await options.updates.route(req, res, url.pathname);
-    else json(res, 503, { error: 'Update service is unavailable' });
-    return false;
-  }
+  if (await routeConsoleService(req, res, url, options)) return false;
   if (url.pathname.startsWith("/setup/")) {
     await setupRoute(req, res, url.pathname, options);
     return false;

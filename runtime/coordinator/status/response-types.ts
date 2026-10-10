@@ -20,6 +20,8 @@ export interface HeartbeatStatus {
   x?: number;
   y?: number;
   seenAt?: number;
+  /** Hash of the compiled character artifact actually executing this heartbeat. */
+  codeHash?: string | null;
   combat?: { kiting?: boolean };
   combatStats?: { armorPiercing?: number };
   combatSelection?: Record<string, unknown>;

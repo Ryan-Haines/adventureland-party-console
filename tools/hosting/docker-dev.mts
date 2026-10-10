@@ -44,9 +44,7 @@ for (const directory of ['/app/.build', '/app/dashboard/.build', '/data']) {
   await mkdir(directory, { recursive: true });
   run('chown', ['-R', `${uid}:${gid}`, directory]);
 }
-for (const script of ['tools/build-shared.mts', 'tools/build-runtime.mts', 'tools/game/build.mts']) {
-  run('gosu', [`${uid}:${gid}`, 'node', script, '--publish']);
-}
-console.log('Development builds ready. Dashboard and character hot reload enabled.');
+process.env.AL_CONSOLE_MANAGED = '1';
+console.log('Starting the active development candidate. Source changes stage complete builds; use the title refresh action to activate them.');
 // Replace this bootstrap so Tini forwards shutdown to the regular host.
 process.execve!('/usr/sbin/gosu', ['gosu', `${uid}:${gid}`, 'node', 'tools/hosting/start.mts'], process.env as Record<string, string>);

@@ -1,3 +1,13 @@
+Immutable console activation sets `AL_CONSOLE_ARTIFACT` to the selected release's
+`app` directory. The maintained launcher resolves repository bundles and support
+code from that artifact while native dependencies and mutable caracAL storage
+remain installed separately. Set `AL_CONSOLE_ARTIFACT_ID` and
+`AL_CONSOLE_COORDINATOR_HASH`; `/party-api/build-identity` reports the running
+coordinator identity. The activation driver waits for this identity, dashboard
+hash and actual connected-character CODE hashes; a successful spawn is not an
+activation acknowledgement. CODE-only changes preserve native connections.
+See `docs/testing-console-build-runtime.md` for failure and rollback validation.
+
 Failed preemptible convoys permit merchant collection through the existing fresh,
 stopped acknowledgement barrier. Collection completion restores the failed hold
 and its diagnostics and retry budget, never another travel attempt. Communication
@@ -1381,9 +1391,10 @@ require the full restart. An already exhausted return uses the existing
 `/party-api/monster-hunt/retry-return` action after fresh runtimes connect.
 
 For coordinator/dashboard-only changes, use `scripts/start-console.ps1 -CoordinatorOnly`.
-This verifies the installed launcher, builds the coordinator, and restarts services
-without installing or publishing character assets or starting their build watcher.
-Use the ordinary restart when character changes must also be published.
+This restarts the selected active console artifact. The flag remains accepted for
+compatibility; restarting never selects a newly built candidate. Source/development
+launchers stage complete builds in the background. Use the refresh control beside
+Party Console to confirm deployment of the exact completed candidate when ready.
 
 Steam-to-headless releases also poll the authoritative account roster: a last
 primary may lose its bridge acknowledgement while disconnecting. Every released
@@ -1396,21 +1407,26 @@ The Steam bridge disables native auto_reload, clears character_to_load and pendi
 reload_state, and persists its receipt before intentionally disconnecting the
 primary. An updated bridge can finish a previously interrupted headless release
 when that primary's CODE reconnects. Publish browser assets with
-`npm run build:runtime -- --publish`, then use the coordinator-only restart to
-preserve the currently installed character generation. Existing stopped Steam
+the staged build pipeline, then deploy the completed candidate from the console.
+Existing stopped Steam
 CODE must be Engaged once to load the updated bridge; subsequent transfers require
 only the Party Console button.
 
-The start script builds before stopping the previous supervisor, installs the
-launcher, publishes character/browser assets, and starts the services. Use that
-supported restart path to activate a manual coordinator change. It restarts the
-party services, so choose an appropriate moment in gameplay.
+The start script restarts the active artifact; an installation without an active
+artifact performs one initial verified build. Compilation occurs in private source
+snapshots with separate dependency caches. Deployment performs no compilation,
+waits for actual readiness and character CODE hashes, and restores the previous
+artifact on failure. Coordinator changes briefly reconnect headless characters;
+character-only changes use the existing CODE handoff. Choose a suitable moment
+before confirming deployment. Packaged release updates retain their existing flow.
 
-For coordinator bundles, `--publish` is unnecessary: they are always written to
-`.build/runtime/`. The runtime builder's `--publish` additionally copies browser
-outputs into `characters/`. Changing the installed launcher can trigger the
-supervisor's file watcher; a supervisor restart also reloads the coordinator.
-Neither is equivalent to merely building a bundle.
+Direct build commands write checkout outputs for development and tests. Managed
+services resolve executable code from `.build/console/releases/<id>/app` and serve
+character assets from the separate deployed CODE store, so those commands do not
+activate a build. The store retains twenty completed builds plus active, previous,
+in-progress and live component pins. `npm run builds -- list console` shows history;
+`deploy console <id>` and `rollback console <id>` request the same deliberate host
+activation as the refresh control. No build is selected merely because it is latest.
 
 After a restart, valid ordinary party travel can rebuild automatically after
 fresh compatible reports arrive. Hunt and event returns keep their own recovery;

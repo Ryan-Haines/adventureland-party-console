@@ -15,6 +15,7 @@ interface LoaderRoot {
   };
   __partyCodeLoader?: { dispose(): void };
   __partyLoaderGeneration?: number;
+  __partyCodeHash?: string;
   __partyRuntimeGeneration?: number;
   __partyStatusSuccessAt?: number;
   __partyLoaderRuntimeStartedAt?: number;
@@ -61,6 +62,7 @@ function install(signature: string, compiled: () => void): void {
   root.partyRoleRunner?.stop();
   root.sharedRoutine?.stop();
   if (!current()) return;
+  root.__partyCodeHash = signature;
   compiled();
   if (!current()) return;
   lastSource = signature;

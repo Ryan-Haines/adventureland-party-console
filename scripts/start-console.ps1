@@ -55,7 +55,7 @@ function Stop-StaleDashboardProcesses {
          $_.CommandLine.ToLowerInvariant().Contains($supervisorToken))
     })
     foreach ($process in $stale) {
-        Write-Host "Stopping stale dashboard process $($process.ProcessId) ($($process.Name)) before build."
+        Write-Host "Stopping stale dashboard process $($process.ProcessId) ($($process.Name)) before startup."
         Stop-ProcessTree -RootProcessId ([int]$process.ProcessId)
     }
 }
@@ -152,42 +152,14 @@ $dashboardProcess = $null
 $gameBuildProcess = $null
 $ownsRuntime = $false
 try {
-    Push-Location $repoRoot
-    try {
-        npm run build:shared
-        if ($LASTEXITCODE -ne 0) { throw "shared policy build failed; current game process retained." }
-        npm run build:runtime
-        if ($LASTEXITCODE -ne 0) { throw "runtime TypeScript build failed; current game process retained." }
-        if (-not $CoordinatorOnly) {
-            npm run build:characters
-            if ($LASTEXITCODE -ne 0) { throw "class TypeScript build failed; current game process retained." }
-        } else {
-            $launcher = Join-Path $caracalRoot 'standalones/CharacterCoordinator.js'
-            $template = Join-Path $repoRoot 'tools/caracal/CharacterCoordinator.cjs'
-            if ((Get-FileHash -LiteralPath $launcher).Hash -ne (Get-FileHash -LiteralPath $template).Hash) {
-                throw "Coordinator-only restart requires the current installed launcher; current process retained."
-            }
-        }
-    } finally { Pop-Location }
+    # The managed host resumes the durable active candidate. Source changes build
+    # isolated candidates in the background and require the title refresh action.
+    # Legacy restart switches remain accepted without implicitly publishing code.
     Stop-ExistingCaracalSupervisor
     $ownsRuntime = $true
-    if (-not $CoordinatorOnly) {
-        node (Join-Path $repoRoot 'tools/build-shared.mts') --publish
-        if ($LASTEXITCODE -ne 0) { throw "shared policy publication failed." }
-        & (Join-Path $PSScriptRoot 'update-routing-guard.ps1')
-        node (Join-Path $repoRoot 'tools/caracal/install.mts')
-        if ($LASTEXITCODE -ne 0) { throw "validated runtime upgrade failed." }
-        node (Join-Path $repoRoot 'tools/game/build.mts') --publish
-        if ($LASTEXITCODE -ne 0) { throw "class generation publication failed." }
-        node (Join-Path $repoRoot 'tools/build-runtime.mts') --publish
-        if ($LASTEXITCODE -ne 0) { throw "Steam bootstrap publication failed." }
-    }
     Stop-StaleDashboardProcesses
-    $localArgs = @()
-    if ($CoordinatorOnly) { $localArgs += '--coordinator-only' }
-    if ($DevDashboard) { $localArgs += '--development' }
-    elseif ($ProductionDashboard) { $localArgs += '--production' }
-    node (Join-Path $repoRoot 'tools/hosting/local.mts') @localArgs
+    Write-Host 'Starting the active console candidate. Completed source builds appear beside the title for deliberate activation.'
+    node (Join-Path $repoRoot 'tools/hosting/local.mts')
     if ($LASTEXITCODE -ne 0) { throw "Party services exited with code $LASTEXITCODE." }
 } finally {
     if ($gameBuildProcess) { Stop-ProcessTree -RootProcessId $gameBuildProcess.Id }

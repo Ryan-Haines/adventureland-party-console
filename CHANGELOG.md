@@ -5,6 +5,17 @@
 Changes queued for the next release. The release workflow determines its version
 from the commits merged into `main`.
 
+- Stage complete console builds in the background and add a refresh control
+  beside Party Console to deploy a completed build at a chosen moment. Builds
+  and tests no longer replace running source-development code automatically;
+  restarts resume the active build, with retained history and rollback on failed
+  activation. Addresses #79 on `bugfix-1.4`.
+
+- Resolve coordinator and native CODE lifecycle support from the selected
+  immutable console artifact, retaining installed native dependencies and mutable
+  storage. Activate only changed components and verify running coordinator,
+  dashboard and character bundle acknowledgements before completing deployment.
+
 - Allow merchant item collection after convoy travel has failed, once the party
   acknowledges a safe stop. Preserve the original travel error and exhausted
   retry limits instead of repeatedly timing out each nearby collection job.

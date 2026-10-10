@@ -2552,6 +2552,7 @@
       codeGeneration: runtimeGeneration,
       dashboardRuntime: convoyRuntimeId,
       loaderGeneration: Number(root.__partyLoaderGeneration) || 0,
+      codeHash: root.__partyCodeHash || null,
       codeRevision: "realm-logistics-v3",
       consoleMaintenance: consoleMaintenanceReport(),
       bankSortProtocol: 1,
