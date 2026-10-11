@@ -27,7 +27,7 @@ const managed = await loadManagedConsole(root, services, { dashboardPort: 3030, 
 const server = gateway({ builds: managed.routes, steam, tls, access, debug: await new DebugInstances(root, path.join(data, 'debug')).load(), updates: await updateHosting(root, data), configured: () => true, healthy: () => servicesHealthy(true), dashboardPort: 3030, publicUrl: process.env.AL_PUBLIC_URL || undefined });
 await listen(server, access);
 await tls.start();
-await managed.startGame(process.env);
+await managed.startGame({...process.env, AL_DATA_DIR: data});
 const stop = () => {
   steam.stop();
   tls.stop();

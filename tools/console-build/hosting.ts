@@ -141,6 +141,7 @@ export async function createManagedConsole(root:string,services:Services,options
     }},
     async startGame(env:NodeJS.ProcessEnv){
       coordinatorEnv={...process.env,...options.coordinatorEnv,...env};
+      coordinatorEnv.AL_DATA_DIR=path.resolve(coordinatorEnv.AL_DATA_DIR || path.join(root,'.build/hosting-data'));
       await controller.recover();
       const operation=await store.journal();if(operation&&['activating','rolling-back'].includes(operation.phase))throw new Error('Console deployment recovery remains incomplete');
       const refs=await store.references(),candidate=refs.active?await store.verify(refs.active):bootstrap;

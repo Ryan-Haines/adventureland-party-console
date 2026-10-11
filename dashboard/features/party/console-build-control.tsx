@@ -85,8 +85,6 @@ export function ConsoleBuildControl() {
   const operation = status.operation;
   const busy = submitting || operation?.phase === "waiting-safe" || operation?.phase === "activating" || operation?.phase === "rolling-back";
   return <>
-    {status.building && <output className="ml-3 text-xs text-slate-300">Building candidate… Running code unchanged.</output>}
-    {status.buildError && <span role="alert" className="ml-3 max-w-sm text-xs text-rose-200">Build failed: {status.buildError}. Running code unchanged.</span>}
     {(candidate && candidate.id !== status.active || busy) && <Popover open={menu} onOpenChange={open => {
       setMenu(open);
       if (open && candidate) { setError(""); setMenuSelection({manifest: candidate, changed: (Object.keys(candidate.components) as Component[]).filter(key => candidate.components[key] !== active?.components[key])}); }
@@ -100,7 +98,6 @@ export function ConsoleBuildControl() {
         <Button className="justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy} onClick={() => void deploy('safe', menuSelection)}>Load when safe</Button>
       </PopoverContent>
     </Popover>}
-    {(error || operation?.phase === "failed" || operation?.phase === "rolling-back" && operation.error) && <span role="alert" className="ml-3 max-w-sm text-xs text-rose-200">{error || operation?.error || "Deployment failed."}</span>}
     <Dialog open={!!selection} onOpenChange={open => { if (!open && !submitting) setSelection(null); }}>
       <DialogContent showCloseButton={false} className="border-slate-600 bg-[#091614] text-slate-100">
         <DialogHeader><DialogTitle>Load console build now?</DialogTitle><DialogDescription className="text-slate-300">Loading now may interrupt combat and briefly disconnect headless characters. Characters could die while reconnecting. Load now anyway?</DialogDescription></DialogHeader>

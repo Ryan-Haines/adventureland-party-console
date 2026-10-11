@@ -1,5 +1,11 @@
 # Safe console reload failure inventory
 
+Local launches without AL_DATA_DIR must pass the host's resolved data directory
+to the coordinator. Otherwise the host renews a lease that the coordinator never
+reads, leaving safe loading pending indefinitely for events and ordinary hunts.
+Explicit directory overrides must remain shared by both processes. Verify the
+real coordinator maintenance endpoint observes the pending operation's ID.
+
 Record these risks before implementation: selecting a menu option must pin the
 displayed candidate, even if another build finishes; immediate reload requires
 an explicit combat/death warning and cancel must do nothing; waiting must not

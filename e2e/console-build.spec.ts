@@ -77,9 +77,11 @@ test('reload menu confirms immediate loading and safely deploys the exact select
     await expect(page.getByRole('heading', {name: 'Party Console', exact: true})).toBeVisible();
     await expect(page.getByRole('button', {name: 'Deploy new console build'})).toHaveCount(0);
     await controller.setBuildState({building: true});
-    await expect(page.getByText('Building candidate… Running code unchanged.')).toBeVisible();
+    await expect.poll(async()=>(await controller.status()).building).toBe(true);
+    await expect(page.getByText('Building candidate… Running code unchanged.')).toHaveCount(0);
     await controller.setBuildState({building: false, error: 'Declared compiler failure'});
-    await expect(page.getByRole('alert').filter({hasText: 'Build failed: Declared compiler failure'})).toBeVisible();
+    await expect.poll(async()=>(await controller.status()).buildError).toBe('Declared compiler failure');
+    await expect(page.getByText(/Build failed: Declared compiler failure/)).toHaveCount(0);
     expect((await store.references()).active).toBe(a.id);
     await info.attach('candidate-build-failure', {body: await page.screenshot(), contentType: 'image/png'});
     await controller.setBuildState({building: false});
@@ -127,7 +129,8 @@ test('reload menu confirms immediate loading and safely deploys the exact select
     await refresh.click();
     await page.getByRole('button', {name:'Load now',exact:true}).click();
     await dialog.getByRole('button', {name: 'Load now', exact: true}).click();
-    await expect(page.getByRole('alert').filter({hasText: 'Declared process readiness failure'})).toBeVisible();
+    await expect.poll(async()=>(await store.journal())?.phase).toBe('failed');
+    await expect(page.getByText('Declared process readiness failure',{exact:true})).toHaveCount(0);
     expect((await store.references()).active).toBe(b.id);
     expect(ledger.filter(entry => entry.action === 'restore')).toEqual([{action: 'restore', buildId: b.id}]);
     await info.attach('deployment-rollback-error', {body: await page.screenshot(), contentType: 'image/png'});
@@ -135,7 +138,7 @@ test('reload menu confirms immediate loading and safely deploys the exact select
     await refresh.click();
     await page.getByRole('button', {name:'Load now',exact:true}).click();
     await dialog.getByRole('button', {name: 'Load now', exact: true}).click();
-    await expect(page.getByRole('alert').filter({hasText: 'rollback failed: Declared rollback readiness failure'})).toBeVisible();
+    await expect.poll(async()=>(await store.journal())?.error).toContain('rollback failed: Declared rollback readiness failure');
     await expect(refresh).toBeDisabled();
     await expect(page.getByText('Restoring previous build…')).toHaveCount(0);
     await expect(refresh).toBeDisabled();

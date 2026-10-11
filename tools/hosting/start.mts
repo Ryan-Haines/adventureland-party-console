@@ -61,7 +61,7 @@ async function startGame() {
     `const config = require(${JSON.stringify(path.join(data, "config.json"))});\nmodule.exports = { ...config, web_app: { ...config.web_app, port: ${apiPort} } };\n`,
   );
   configured = true;
-  const env = { ...process.env, AL_SESSION: session };
+  const env = { ...process.env, AL_DATA_DIR: data, AL_SESSION: session };
   if (managed) await managed.startGame(env);
   else services.launch(path.join(caracal, "main.js"), caracal, env);
 }
