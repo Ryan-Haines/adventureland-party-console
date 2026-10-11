@@ -3,12 +3,107 @@ import type { LiveGame } from './live-fixtures';
 import type { TestInfo } from '@playwright/test';
 import { seedSmallGoobrawl } from './game/event-scenario';
 import { killNativeCharacter } from './hunt-interruption-helpers';
+import { createHash } from 'node:crypto';
 
 const W = 'E2EWarrior', P = 'E2EPriest', M = 'E2EMerchant';
 type Live = LiveGame;
 type Location = { map: string; x: number; y: number };
 const names = [W, P, M];
 const quantity = (items: any[], id: string) => items.reduce((sum, item) => sum + (item?.name === id ? item.q || 1 : 0), 0);
+
+test('Steam-style CODE replacement retires old socket callbacks and pending heartbeat', async ({live},info)=>{
+  // Failure modes: detached CODE callbacks still dereference native parent;
+  // socket listeners accumulate; an old pending heartbeat applies after reload;
+  // retirement disconnects the game or prevents the new runtime from operating.
+  // Deployment can also be deferred by a real activity owner, a stopped loader,
+  // or a changed runner context. Preserve those actual boundaries on failure.
+  const loaderObservations:unknown[]=[],deploymentResponses:unknown[]=[];
+  const client=live.clients[W],game=client.frame;
+  const before=await game.evaluate(()=>{
+    const host=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+    host.__e2eRetiringRunner=runner;host.__e2eRetiringGame=host;
+    // Replay a historical leaked subscription using the actual maintained
+    // callbacks, not a fabricated game response or a replacement native handler.
+    const managed=['queueCombatEvent','anniversarySliceNames','anniversaryKissResponses','donationXpPerGold'];
+    host.__e2eHistoricResponses=host.socket.listeners('game_response').filter((fn:Function)=>managed.some(symbol=>String(fn).includes(symbol)));
+    host.__e2eNativeResponses=host.socket.listeners('game_response').filter((fn:Function)=>!host.__e2eHistoricResponses.includes(fn));
+    return {generation:runner.__partyRuntimeGeneration,at:runner.__partyStatusSuccessAt,listeners:host.socket.listeners('server_info').length,
+      responseListeners:host.socket.listeners('game_response').length,historicResponses:host.__e2eHistoricResponses.length,name:host.character.name};
+  });
+  const oldFrame=game.childFrames().find(frame=>new URL(frame.url()).pathname==='/runner')!;
+  let release!:()=>void,held=false,deploy=false;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  await client.page.route('**/party-api/status*',async route=>{
+    if(!held&&route.request().frame()===oldFrame){held=true;await gate;}
+    try{await route.continue();}catch(error){if(!oldFrame.isDetached())throw error;}
+  });
+  // Declared deployment boundary: identical maintained runtime bytes with an
+  // innocuous comment and a matching checksum represent a new published build.
+  let deployedFile='',deployedBody='',deployedHash='';
+  let replayed=false;
+  await client.page.route('**/CODE/adventure_land/manifest.json*',async route=>{
+    const response=await route.fetch(),manifest=await response.json();
+    if(deploy)manifest.classes.warrior.sha256=deployedHash;
+    if(deploy&&deploymentResponses.length<80)deploymentResponses.push({at:Date.now(),kind:'manifest',oldFrame:route.request().frame()===oldFrame,warriorHash:manifest.classes.warrior.sha256});
+    await route.fulfill({response,json:manifest});
+  });
+  await client.page.route('**/CODE/adventure_land/generated/**/*.js*',async route=>{
+    if(deploy&&new URL(route.request().url()).pathname.endsWith('/'+deployedFile)){
+      if(deploymentResponses.length<80)deploymentResponses.push({at:Date.now(),kind:'class',oldFrame:route.request().frame()===oldFrame,hash:deployedHash});
+      if(!replayed&&route.request().frame()!==oldFrame){
+        replayed=true;
+        await game.evaluate(()=>{const host=window as any;for(const handler of host.__e2eHistoricResponses)host.socket.on('game_response',handler);});
+      }
+      await route.fulfill({status:200,contentType:'text/javascript',body:deployedBody});
+    }
+    else await route.continue();
+  });
+  try{
+    const asset=await game.evaluate(async()=>{
+      const runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+      const base=runner.__partyServer+'/CODE/adventure_land/';
+      const manifest=await (await fetch(base+'manifest.json')).json();
+      return {file:manifest.classes.warrior.file,body:await(await fetch(base+manifest.classes.warrior.file)).text()};
+    });
+    deployedFile=asset.file;deployedBody=asset.body+'\n// Native E2E declared deployment revision.\n';
+    deployedHash=createHash('sha256').update(deployedBody).digest('hex');
+    await expect.poll(()=>held,{timeout:20_000}).toBe(true);deploy=true;
+    await expect.poll(async()=>{
+      const observation=await game.evaluate(()=>{
+        const host=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+        return {at:Date.now(),replaced:!!runner&&runner!==host.__e2eRetiringRunner,
+          caracAL:!!host.caracAL,connected:host.socket.connected,codeActive:host.code_active,
+          loaderPresent:!!runner?.__partyCodeLoader,loaderGeneration:runner?.__partyLoaderGeneration,runtimeGeneration:runner?.__partyRuntimeGeneration,
+          runtimeStartedAt:runner?.__partyLoaderRuntimeStartedAt,statusSuccessAt:runner?.__partyStatusSuccessAt,
+          stopped:host.localStorage.getItem('party-code-stopped:'+host.character.name),
+          occupied:runner?.sharedRoutine?.isOccupied?.(),canReload:runner?.sharedRoutine?.canReload?.(),combatOwner:runner?.__partyCombatOwner};
+      });
+      if(loaderObservations.length<80)loaderObservations.push(observation);
+      return observation.replaced;
+    },{timeout:30_000,message:'The actual loader must replace its native CODE iframe'}).toBe(true);
+    release();
+    await expect.poll(()=>client.snapshot().then(s=>s.statusAt||0),{timeout:30_000}).toBeGreaterThan(before.at);
+    const after=await game.evaluate(()=>{
+      const host=window as any,old=host.__e2eRetiringRunner;
+      return {sameGame:host===host.__e2eRetiringGame,connected:host.socket.connected,name:host.character.name,
+        listeners:host.socket.listeners('server_info').length,responseListeners:host.socket.listeners('game_response').length,
+        nativeResponsesPreserved:host.__e2eNativeResponses.every((fn:Function)=>host.socket.listeners('game_response').includes(fn)),oldGeneration:old.__partyRuntimeGeneration};
+    });
+    await info.attach('native-code-replacement-lifecycle',{body:JSON.stringify({before,after,held,errors:client.errors,state:await live.state()}),contentType:'application/json'});
+    expect(after.sameGame).toBe(true);expect(after.connected).toBe(true);expect(after.name).toBe(before.name);
+    expect(after.listeners,'Retired CODE must remove its game-window socket listeners').toBe(before.listeners);
+    expect(before.historicResponses).toBeGreaterThan(0);expect(replayed).toBe(true);
+    expect(after.responseListeners,'Historical managed response callbacks must be retired too').toBe(before.responseListeners);
+    expect(after.nativeResponsesPreserved).toBe(true);
+    expect(after.oldGeneration,'Retired callbacks must lose runtime ownership').toBeGreaterThan(before.generation);
+    expect(client.errors.filter(error=>/null.*(?:character|S)|(?:character|S).*null/.test(error))).toEqual([]);
+    const destination=await point(live,W,120);await travel(live,W,destination);await arrived(live,[W],destination,60_000);
+    await evidence(live,info,'native-code-replacement-new-runtime-arrival',{before,after,destination});
+  }finally{
+    release();
+    await info.attach('native-loader-deployment-observations',{body:JSON.stringify({before,held,deploy,replayed,deployedHash,loaderObservations,deploymentResponses}),contentType:'application/json'});
+  }
+});
 
 async function observed(live: Live): Promise<Record<string, any>> {
   return live.admin(`output=Object.fromEntries(${JSON.stringify(names)}.map(name=>{const p=get_player(name);return [name,p?{name:p.name,map:p.map,in:p.in,x:p.x,y:p.y,hp:p.hp,rip:!!p.rip,moving:!!p.moving,gold:p.gold,xp:p.xp,items:p.items,slots:p.slots,quest:p.s.monsterhunt||null,party:p.party||null,townAt:p.last.town?+p.last.town:0}:null]}))`);
@@ -200,6 +295,7 @@ test.describe('real server, native clients, maintained character runtime', () =>
 
   for (const restart of [false, true]) {
     test(`Goobrawl interrupts Hunt and real event evacuation resumes it${restart ? ' across coordinator restart' : ''}`, async ({ live }, info) => {
+      test.setTimeout(360_000);
       const encounter = await seedSmallGoobrawl(live);
       await info.attach('goobrawl-initial-encounter', { body: JSON.stringify(encounter), contentType: 'application/json' });
       await party(live);
@@ -216,7 +312,9 @@ test.describe('real server, native clients, maintained character runtime', () =>
       await evidence(live, info, 'inside-live-goobrawl');
       if (restart) await live.restartCoordinator();
       await live.admin(`timers.goobrawl=new Date(0);output=true`);
-      await expect.poll(async () => { const state=await observed(live);return [W,P].every(name=>state[name].map==='main'); }, { timeout: 120_000 }).toBe(true);
+      // Timer expiry leaves native survivors to kill before the ended-event
+      // grace period and real transporter evacuation can begin.
+      await expect.poll(async () => { const state=await observed(live);return [W,P].every(name=>state[name].map==='main'); }, { timeout: 180_000 }).toBe(true);
       const combat = (await Promise.all([W,P].map(name => live.clients[name].events()))).flat();
       expect(combat.some((event: any) => survivors.some((monster: any) => String(monster.id) === String(event.data?.id)) &&
         (event.event === 'death' || event.event === 'hit' && event.data?.kill)), 'Native clients must kill an observed event monster').toBe(true);
@@ -246,7 +344,18 @@ test.describe('real server, native clients, maintained character runtime', () =>
     await live.post('/farming-mode', { character: W, mode: 'default' });
     // Cancelling Hunt must preserve the already-authorized party event entry.
     await expect.poll(async () => { const state=await observed(live);return [W,P].every(name=>state[name].map==='goobrawl'); }, { timeout: 90_000 }).toBe(true);
+    const remainingArenaIds:string[]=await live.admin(`output=Object.values(instances.goobrawl.monsters).filter(m=>!m.dead&&m.hp>0).map(m=>String(m.id))`);
     await live.admin(`timers.goobrawl=new Date(0);output=true`);
+    // Failure inventory: timer expiry does not remove native survivors. Their
+    // real combat can consume the evacuation budget before return is admitted.
+    // Observe completion of that distinct native phase before timing transport.
+    await expect.poll(async()=>({monsters:await live.admin(`output=Object.values(instances.goobrawl.monsters).filter(m=>!m.dead&&m.hp>0).length`),huntActive:!!hunt(await live.state())}),
+      {timeout:120_000,message:'Hunt cancellation must retain native event combat until the remaining arena monsters die'}).toEqual({monsters:0,huntActive:false});
+    const nativeCombat=(await Promise.all([W,P].map(name=>live.clients[name].events()))).flat();
+    if(remainingArenaIds.length)expect(nativeCombat.some((event:any)=>remainingArenaIds.includes(String(event.data?.id))&&
+      (event.event==='death'||event.event==='hit'&&event.data?.kill)),
+      'Cancelled Hunt must still kill an observed surviving event monster').toBe(true);
+    await info.attach('hunt-off-native-survivor-completion',{body:JSON.stringify({remainingArenaIds,hunt:hunt(await live.state())||null}),contentType:'application/json'});
     await expect.poll(async () => { const state=await observed(live);return [W,P].every(name=>state[name].map==='main'); }, { timeout: 120_000 }).toBe(true);
     expect(hunt(await live.state())).toBeFalsy();
     await evidence(live, info, 'event-exit-with-hunt-off', { joining, atCancellation });
@@ -267,6 +376,12 @@ test.describe('real server, native clients, maintained character runtime', () =>
 
   test('a merchant delivery transfers one real item without creating or losing copies', async ({ live }, info) => {
     await live.post('/merchant/routine-priorities', { priorities: {}, enabled: { deliveries: true } });
+    // Failure inventory: zero gold targets add a full native bank deposit after
+    // the item transfer, so an unrelated gold run consumes delivery's receipt
+    // deadline. Retain the seeded gold for this one-item conservation scenario.
+    const initialGold=await observed(live);
+    for(const name of [W,M])await live.post('/command',{character:name,type:'gold-target',amount:initialGold[name].gold});
+    await info.attach('declared-item-delivery-gold-targets',{body:JSON.stringify([W,M].map(name=>({name,gold:initialGold[name].gold}))),contentType:'application/json'});
     await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(M)});p.items[10]={name:'helmet',level:0};cache_player_items(p);resend(p,'u+cid+reopen');return p.items[10]})()`);
     await expect.poll(async () => (await live.state()).characters[M]?.items?.some((entry: any) => entry?.slot===10 && entry.item?.name==='helmet'), { timeout: 20_000 }).toBe(true);
     const before=await observed(live), total=names.reduce((sum,name)=>sum+quantity(before[name].items,'helmet'),0);

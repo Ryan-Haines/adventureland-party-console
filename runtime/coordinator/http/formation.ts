@@ -1,3 +1,4 @@
+import { validEventLimits, type EventLimits } from "../../../dashboard/lib/event-policy.ts";
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 
 interface FormationState {
@@ -5,6 +6,8 @@ interface FormationState {
   merchantCharacter: string | null;
   followers: Record<string, boolean>;
   eventsByCharacter: Record<string, boolean>;
+  eventLimitsByCharacter: Record<string, Record<string, EventLimits>>;
+  eventPrioritiesByCharacter: Record<string, string[]>;
   eventSelectionsByCharacter: Record<string, string[]>;
 }
 interface FormationPorts {
@@ -38,6 +41,34 @@ export function createFormationRoute(state: FormationState, ports: FormationPort
     ];
     return null;
   }
+  function priorities(name: string, value: unknown): FormationError | null {
+    if (!Array.isArray(value) || value.length !== ports.supported.length ||
+        new Set(value).size !== value.length || value.some(id => !ports.supported.includes(id)))
+      return { code: 400, error: "invalid event priorities" };
+    if (ports.inherited(name)) return { code: 409, error: "using leader events" };
+    state.eventPrioritiesByCharacter[name] = [...value] as string[];
+    return null;
+  }
+  function limits(name: string, value: unknown): FormationError | null {
+    const patch = requestObject(value);
+    if (!ports.supported.includes(requestText(patch.event)) || !validEventLimits(patch.limits))
+      return { code: 400, error: "invalid event limits" };
+    if (ports.inherited(name)) return { code: 409, error: "using leader events" };
+    const settings = state.eventLimitsByCharacter[name] ??= {};
+    settings[requestText(patch.event)] = { deathLimit: patch.limits.deathLimit, timeLimitMinutes: patch.limits.timeLimitMinutes };
+    return null;
+  }
+  function settings(name: string, body: Record<string, unknown>): FormationError | null {
+    if (body.eventLimits !== undefined) {
+      const error = limits(name, body.eventLimits);
+      if (error) return error;
+    }
+    if (body.eventPriorities !== undefined) {
+      const error = priorities(name, body.eventPriorities);
+      if (error) return error;
+    }
+    return body.eventSelections !== undefined ? selections(name, body.eventSelections) : null;
+  }
   function character(body: Record<string, unknown>): FormationError | null {
     const name = requestText(body.character);
     if (!ports.owned(name)) return { code: 400, error: "invalid character" };
@@ -45,10 +76,8 @@ export function createFormationRoute(state: FormationState, ports: FormationPort
       if (typeof body.follow !== "boolean") return { code: 400, error: "invalid follower" };
       state.followers[name] = body.follow;
     }
-    if (body.eventSelections !== undefined) {
-      const error = selections(name, body.eventSelections);
-      if (error) return error;
-    }
+    const error = settings(name, body);
+    if (error) return error;
     return body.events !== undefined ? legacyEvents(name, body.events) : null;
   }
   return function formation(req: HttpRequest, res: HttpResponse): unknown {
@@ -68,6 +97,8 @@ export function createFormationRoute(state: FormationState, ports: FormationPort
       leader: state.leader,
       followers: state.followers,
       eventsByCharacter: state.eventsByCharacter,
+      eventLimitsByCharacter: state.eventLimitsByCharacter,
+      eventPrioritiesByCharacter: state.eventPrioritiesByCharacter,
       eventSelectionsByCharacter: state.eventSelectionsByCharacter,
     });
   };

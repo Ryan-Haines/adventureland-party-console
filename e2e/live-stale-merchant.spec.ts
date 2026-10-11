@@ -22,6 +22,15 @@ test('Hunt blacklist full catalog scrolls and sprites select their own monster',
   // Failure modes: absolute sprites cover the modal and intercept other rows;
   // a large native catalog cannot scroll; sprite and text clicks select different
   // monsters; the one-monster console fixture hides those layout failures.
+  // Native catalog preparation follows the first successful heartbeat.
+  let catalog: Array<{id:string}> = [];
+  await expect.poll(async () => {
+    catalog = (await live.state(true)).monsterChoices || [];
+    return catalog.length;
+  }, { timeout: 90_000 }).toBeGreaterThan(30);
+  await info.attach('native-blacklist-catalog-ready', {
+    body: JSON.stringify({monsterIds: catalog.map(monster => monster.id)}), contentType: 'application/json',
+  });
   await page.goto(live.url);
   const warrior=page.locator('article').filter({has:page.getByRole('heading',{name:'E2EWarrior',exact:true})});
   await warrior.getByRole('button',{name:'Farming settings',exact:true}).click();
@@ -71,6 +80,27 @@ test.describe('stale merchant recovery', () => {
       merchantCurrent: { id: 'held-bank-job', target: merchant, reason: 'manual bank exchange', phase: 'assigned', startedAt: Date.now() },
     }));
     if (localJournal) {
+      // This is persisted historical input, so activate genuine native CODE to
+      // load it. The active runtime deliberately owns its cached journal rather
+      // than adopting asynchronous storage echoes as a new production attempt.
+      let previousRuntime: string | undefined;
+      await expect.poll(async () => {
+        const status = (await live.state()).characters[merchant];
+        if (!status?.dashboardRuntime || Date.now() - status.seenAt > 3000) return false;
+        previousRuntime = status.dashboardRuntime;
+        return true;
+      }, { timeout: 60_000 }).toBe(true);
+      const activatedAt = Date.now();
+      await live.clients[merchant].frame.evaluate(() => {
+        const game = window as any;
+        const runner = (document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+        game.start_runner('maincode', `$.getScript(${JSON.stringify(runner.__partyServer + '/CODE/adventure_land/universal-loader.js')});`);
+      });
+      await expect.poll(async () => {
+        const status = (await live.state()).characters[merchant];
+        return !!status?.dashboardRuntime && status.dashboardRuntime !== previousRuntime &&
+          status.seenAt >= activatedAt;
+      }, { timeout: 60_000 }).toBe(true);
       await expect.poll(() => live.clients[merchant].run(`localStorage.getItem('party-production:'+character.name)`)).toBeNull();
       await expect.poll(async () => (await live.clients[merchant].snapshot()).map, { timeout: 90_000 }).toBe('bank');
     } else {

@@ -26,6 +26,9 @@ import { PartyState } from "./party-state";
 import { SendToPartyControl } from "./send-to-party-control";
 import { MerchantCancelJobControl } from "./merchant-cancel-job-control";
 import { routineFor } from '../../../runtime/coordinator/merchant/routines';
+import { coordinatorMerchantTransferBlocked } from '../../../runtime/coordinator/merchant/job-policy';
+import { collectsPartyItems, pickupReason } from '../../../runtime/coordinator/merchant/pickup-jobs';
+import { useCharacterData } from './dashboard-live';
 
 export const MerchantCardControls = memo(function MerchantCardControls({
   state: baseState,
@@ -63,7 +66,10 @@ export const MerchantCardControls = memo(function MerchantCardControls({
   const logs = useQueries({ queries: [{ ...domainOptions(client, 'logs'), enabled: visible }].filter(() => activityOpen) })[0];
   const state = { ...baseState, ...logs?.data };
   const [cleanupResult, setCleanupResult] = useState<string | null>(null);
-  const merchant = state.merchantCharacter ? state.characters[state.merchantCharacter] : null;
+  const inventory = useCharacterData(state.merchantCharacter || "", 'inventory');
+  const merchantStatus = state.merchantCharacter ? state.characters[state.merchantCharacter] : null;
+  const merchant = merchantStatus ? {...merchantStatus, ...inventory} : null;
+  const inventoryAtCapacity = Array.isArray(merchant?.items) && merchant.items.filter(entry => !entry).length <= 3;
   const readiness = (mode: "fishing" | "mining") => {
     const remaining = Math.max(
       0,
@@ -88,7 +94,16 @@ export const MerchantCardControls = memo(function MerchantCardControls({
     );
   };
   const jobLabel = (job: MerchantJob) => merchantJobLabel(job, state.merchantCatalog?.allItems);
-  const merchantJobs = [
+  const capacityBlocked = (job: MerchantJob) => {
+    if (job.reason === "fishing" || job.reason === "mining") return inventoryAtCapacity;
+    const reason = pickupReason(job.reason, job.target, state.merchantCharacter);
+    return coordinatorMerchantTransferBlocked(
+      { merchantCharacter: state.merchantCharacter || null, statuses: {...state.characters, ...(merchant && state.merchantCharacter ? {[state.merchantCharacter]: merchant} : {})} },
+      { ...job, reason: collectsPartyItems(reason) ? "marked items" : reason },
+    );
+  };
+  const capacityReason = `Merchant capacity blocked (${merchant?.items?.filter(Boolean).length}/${merchant?.items?.length} slots occupied; three slots reserved)`;
+  const merchantJobs: {job: MerchantJob; status: string}[] = [
     ...(state.merchantCurrent
       ? [
           {
@@ -101,7 +116,13 @@ export const MerchantCardControls = memo(function MerchantCardControls({
           },
         ]
       : []),
-    ...(state.merchantQueue || []).map((job) => ({ job, status: "queued" })),
+    ...(state.merchantQueue || []).map((job) => ({ job, status: capacityBlocked(job) ? (job.reason === "fishing" || job.reason === "mining" ? "BLOCKED" : "blocked") : "queued" })),
+    ...(state.gatheringModes || []).filter((mode): mode is "fishing" | "mining" =>
+      (mode === "fishing" || mode === "mining") &&
+      Math.max(Number(merchant?.gatheringCooldowns?.[mode] || 0), Number(state.gatheringCooldowns?.[mode] || 0)) <= now &&
+      ![state.merchantCurrent, ...(state.merchantQueue || [])].some(job => job?.reason === mode)
+    ).map(mode => ({job: {reason: mode, target: state.merchantCharacter || ""} satisfies MerchantJob,
+      status: inventoryAtCapacity ? "BLOCKED" : "queued"})),
   ];
   return (
     <section className="border-b border-amber-900/70 bg-amber-400/[0.03] p-4">
@@ -119,7 +140,7 @@ export const MerchantCardControls = memo(function MerchantCardControls({
               key={job.id || `${job.reason}-${index}`}
               className="flex min-w-0 items-center gap-3 text-left"
             >
-              {status === "queued" && job.reason !== "fishing" && job.reason !== "mining" ? (
+              {(status === "queued" || status === "blocked") && job.reason !== "fishing" && job.reason !== "mining" ? (
                 <MerchantCancelJobControl id={job.id} reason={routineFor(job)} label={jobLabel(job)} onCancel={onCancelJob} />
               ) : null}
               <span title={`${jobLabel(job)}${job.target && job.reason !== "join giveaway" ? ` · ${job.target}` : ""}`}
@@ -133,7 +154,7 @@ export const MerchantCardControls = memo(function MerchantCardControls({
                 {jobLabel(job)}
                 {job.target && job.reason !== "join giveaway" ? ` · ${job.target}` : ""}
               </span>
-              <span className="max-w-32 shrink-0 truncate text-emerald-100/70" title={job.realmBlockedReason || job.pauseReason || status}>{job.realmBlockedReason || (job.retryAt && job.retryAt > Date.now() ? `Retry at ${new Date(job.retryAt).toLocaleTimeString()}` : job.pauseReason || status)}</span>
+              <span className={`max-w-32 shrink-0 truncate ${status.toLowerCase() === "blocked" ? "text-red-400" : "text-emerald-100/70"}`} title={status.toLowerCase() === "blocked" ? capacityReason : job.realmBlockedReason || job.pauseReason || status}>{status.toLowerCase() === "blocked" ? status : job.realmBlockedReason || (job.retryAt && job.retryAt > now ? `Retry at ${new Date(job.retryAt).toLocaleTimeString()}` : job.pauseReason || status)}</span>
               {job.realmRetryExhausted && <button type="button"
                 className="rounded border border-amber-600 bg-zinc-950 px-2 py-1 text-amber-200 hover:border-amber-300 hover:bg-amber-950 hover:text-white"
                 onClick={() => action.mutate({ path: '/merchant/job/retry', body: { id: job.id } })}>Retry</button>}

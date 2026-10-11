@@ -42,7 +42,7 @@ test('dropdown disables inherited and unsupported selections and permits indepen
   const body=source.includes(memoMarker)
     ? source.slice(source.indexOf(memoMarker)).replace('export const EventSelectionControl = memo(','').replace(/\}\);\s*$/,'}')
     : source.slice(source.indexOf('export function EventSelectionControl(')).replace('export function','function');
-  const c={CaveEventRow:'CaveEventRow',Settings:'Settings',Popover:"Popover",PopoverTrigger:"PopoverTrigger",PopoverContent:"PopoverContent",...policy,useClock:()=>0,eventTimeLabel:()=> 'Time not announced',React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})}};
+  const c={CaveEventRow:'CaveEventRow',GripVertical:'GripVertical',Settings:'Settings',Popover:"Popover",PopoverTrigger:"PopoverTrigger",PopoverContent:"PopoverContent",...policy,useState:value=>[value,()=>{}],useClock:()=>0,eventTimeLabel:()=> 'Time not announced',React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})}};
   vm.runInNewContext(ts.transpileModule(body,{compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText,c);
   const nodes=t=>t&&typeof t==='object'?[t,...t.children.flatMap(nodes)]:[];
   const state={leader:'L',followers:{F:true},eventSelectionsByCharacter:{L:['anniversary'],F:['snowman']},eventSchedules:[{id:'anniversary',name:'Anniversary'},{id:'egghunt',name:'Egg Hunt'}]};
@@ -50,8 +50,11 @@ test('dropdown disables inherited and unsupported selections and permits indepen
   assert.ok(tree.findIndex(n=>n.type==='CaveEventRow') < tree.findIndex(n=>n.type==='input'));
   let saved;
   const render=()=>nodes(c.EventSelectionControl({state,name:'F',merchant:false,onChange:ids=>saved=ids})).filter(n=>n.type==='input');
-  let inputs=render();assert.equal(inputs[0].props.checked,true);assert.equal(inputs[0].props.disabled,true);assert.equal(inputs[1].props.disabled,true);
-  state.followers.F=false;inputs=render();assert.equal(inputs[0].props.disabled,false);inputs[0].props.onChange({target:{checked:true}});assert.deepEqual(Array.from(saved),['snowman','anniversary']);
+  // The dropdown now includes the complete supported catalog alongside partial
+  // schedule feeds. Find the rendered row, rather than an old two-row index.
+  const inputFor=name=>nodes(c.EventSelectionControl({state,name:'F',merchant:false,onChange:ids=>saved=ids})).find(n=>n.type==='div'&&n.children.some(child=>child?.type==='span'&&child.children[0]===name)).children.find(child=>child?.type==='input');
+  let inputs=render();assert.equal(inputFor('Anniversary').props.checked,true);assert.equal(inputFor('Anniversary').props.disabled,true);assert.equal(inputFor('Egg Hunt').props.disabled,true);
+  state.followers.F=false;inputs=render();assert.equal(inputFor('Anniversary').props.disabled,false);inputFor('Anniversary').props.onChange({target:{checked:true}});assert.deepEqual(Array.from(saved),['snowman','anniversary']);
   state.merchantCharacter='F';state.eventSchedules=policy.supportedEvents.map(id=>({id,name:id}));
   inputs=render();assert.equal(inputs.length,policy.supportedEvents.length);assert.ok(inputs.every(input=>!input.props.disabled));
 });

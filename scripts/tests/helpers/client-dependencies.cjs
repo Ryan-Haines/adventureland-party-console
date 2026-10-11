@@ -14,12 +14,26 @@ exports.passingContext = values => {
     groupedCombat: null, passiveHunting: {rules: {}, useFieldGenerators: true},
     navigationIntent: {}, partyTownActive: false, banking: false, stocking: false,
     upgrading: false, gatheringActive: false, forceTraveling: false, townTraveling: false,
-    eventTraveling: false, joinedEvent: false, root: {},
+    eventTraveling: false, joinedEvent: false, anniversaryStaging: false, anniversaryBusy: false, root: {},
     escapeOwns: () => false, combatRecoveryActive: () => false,
     activeCombatEvent: () => false, rareActive: () => false, unfinishedFight: () => false,
     reunionRealm: () => 'USII', ...values,
   });
   functions(context, ['passiveLevelAllowed', 'passiveStopRequired','passiveTravelInterruptible','travelStopCandidates','outboundHuntTravel', 'huntTravelDefense', 'huntTravelControl', 'huntTravelExtraAggro', 'returnDepartureDefense', 'committedHuntEncounter', 'passingKey', 'isPassingEncounter', 'convoyDiagnosticClock','convoySignalExpired','passingTravelAllowed', 'walkingPassiveTarget','passingTarget']);
+  return context;
+};
+
+exports.productionJournalContext = context => {
+  context.root ||= {};
+  const storage = new Map();
+  context.root.localStorage ||= {
+    getItem: key => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: key => storage.delete(key),
+  };
+  context.productionJournalLoaded ??= false;
+  context.productionJournal ??= null;
+  functions(context,['productionJournalKey','readProductionJournal','writeProductionJournal']);
   return context;
 };
 
@@ -38,7 +52,9 @@ exports.merchantGuards = (context, {stock = false, journal = false} = {}) => {
       removeItem: key => storage.delete(key),
     };
     context.luckyUpgradeService ??= null;
-    functions(context, ['productionJournalKey', 'saveProductionJournal', 'finishProductionJournal', 'recoverProductionJournal', 'recoverProductionJournalWork',
+    context.productionJournalLoaded ??= false;
+    context.productionJournal ??= null;
+    functions(context, ['productionJournalKey', 'readProductionJournal', 'writeProductionJournal', 'rememberCommerceProduction', 'replayCompletedCommerce', 'rememberReviewedCommerce', 'saveProductionJournal', 'finishProductionJournal', 'recoverProductionJournal', 'recoverProductionJournalWork',
       'verifyProductionProtection', 'trackedProduction', 'trackedProductionWork']);
   }
   return context;

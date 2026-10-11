@@ -1,6 +1,6 @@
 import { admitMerchantInterruption, attachMerchantInterruption } from '../navigation/merchant-interruption.ts';
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
-import { hasMarkedWithdrawals } from '../merchant/marked-withdrawals.ts';
+import { bankCollectionReason } from '../merchant/bank-collection.ts';
 import { deliveryReady, reconcileDeliveries, type DeliveryRequest } from '../merchant/delivery-recovery.ts';
 import type { MerchantCommandReport } from "../merchant/recovery.ts";
 import type { InventoryEntry, Item, ItemMark } from "../contracts/item.ts";
@@ -25,7 +25,7 @@ interface SchedulingState {
   merchantDeliveries?: Record<string, DeliveryRequest[] | undefined>;
   withdrawals?: Record<string, unknown[] | undefined>;
   merchantCharacter: string | null;
-  merchantCurrent: unknown;
+  merchantCurrent: import('../merchant/work.ts').MerchantWork | null;
   merchantQueue: unknown[];
   merchantAutomations: Record<string, boolean | undefined>;
   gatheringModes: string[];
@@ -130,7 +130,8 @@ export function createMerchantScheduling(state: SchedulingState, ports: Scheduli
     const blocked = freeSlots(report.items) <= 3;
     if (blocked && !state.merchantCapacityBlocked) state.transferSignatures = {};
     state.merchantCapacityBlocked = blocked;
-    if (hasMarkedWithdrawals(state.withdrawals?.[report.name])) ports.queue([report.name], 'withdrawals');
+    const collection = bankCollectionReason(state);
+    if (collection) ports.queue([report.name], collection);
   }
 
   function upgradeWork(report: SchedulingReport) {
@@ -267,7 +268,8 @@ export function createMerchantScheduling(state: SchedulingState, ports: Scheduli
     if (merchant) merchantInventory(report);
     else collection(report);
     if (merchant) ports.standSync();
-    if (!state.merchantCurrent && (state.merchantQueue.length || state.gatheringModes.length))
+    if (state.merchantCurrent?.phase === 'switching party realm' ||
+        !state.merchantCurrent && (state.merchantQueue.length || state.gatheringModes.length))
       ports.dispatch();
     else ports.idle();
     ports.bankboi();

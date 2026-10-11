@@ -14,6 +14,9 @@ export interface Character extends Point, Pick<GameCharacter, 'name' | 'real_x' 
 export interface MovementHost {
   character: Character; G: GameData & { version: number };
   smart: MoveState;
+  // Pinned runner 15555 exposes BFS queue/start globals; typed-adventureland
+  // omits these internal counters. Optional: unknown runners keep normal bounds.
+  queue?: unknown[]; start?: number;
   smart_move(this: void, destination: unknown, callback?: (done: boolean) => void): Promise<unknown>;
   smart_move_logic(this: void): void;
   start_pathfinding(this: void): void; continue_pathfinding(this: void): void;
@@ -39,10 +42,14 @@ export interface NativeFunctions {
 }
 export interface MovementContext {
   runtime: string; revision: number; current: boolean; paused: boolean;
+  map?: string; instance?: string | number;
 }
 export interface MovementOptions {
   // Cave combat may stop direct movement without retiring the dungeon journey.
   retainOnDirectStop?: boolean;
+  // Cave combat can displace an actor off its validated shared walking edge.
+  // Repair only the local same-map connector, never the destination route.
+  repairSharedDrift?: boolean;
   relocation?: 'town' | 'door';
   owner?: {convoyId?: string; epoch?: number; commandId?: number; navigationRevision?: number; recoveryStage?: string};
   transitionComplete?: (destination: Point) => void;
@@ -51,6 +58,12 @@ export interface MovementOptions {
   skipLootWait?: boolean;
   avoidLeave?: boolean; town?: boolean; native?: boolean; shared?: boolean; speed?: number;
   arrivalTolerance?: number;
+  // Assembled Cave followers consume the leader's validated route instead of
+  // duplicating its search. Large generated floors need an explicit bound.
+  awaitSharedRoute?: boolean;
+  nativePlanningTimeoutMs?: number;
+  // Cave-only maximum while the same native BFS keeps advancing.
+  nativePlanningProgressMs?: number;
   barrier?: (step: Step, index: number, completed: boolean) => Promise<boolean>;
 }
 export interface MovementPorts {

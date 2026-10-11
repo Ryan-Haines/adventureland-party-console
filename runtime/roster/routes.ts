@@ -186,11 +186,9 @@ export function installRosterRoutes(
       throw new RosterConflict("Resolve the pending handoff first");
     if (state.slots[slot - 1] || state.slots.includes(name) || state.steam?.includes(name) || state.native === name)
       throw new RosterConflict("Slot or character is already assigned");
-    ports.validateParticipants([
-      ...state.slots.filter((value): value is string => !!value),
-      ...(state.steam || (state.native ? [state.native] : [])),
-      name,
-    ]);
+    // Existing characters retain their sessions; only the added character is
+    // changing ownership. The validator still enforces the global BankBoi lock.
+    ports.validateParticipants([name]);
   }
   route("/party-api/slots/:slot/spawn", async (request) => {
     const { slot, name } = spawnDestination(request);

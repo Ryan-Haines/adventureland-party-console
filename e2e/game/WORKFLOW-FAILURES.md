@@ -65,6 +65,18 @@ damage/loot, or move a character to the asserted destination after the action.
 
 ## Merchant and inventory
 
+Native coat-batch diagnosis: full shard 1 retained ten actual zero-tier coats,
+one preexisting +5 coat, and a persisted pending upgrade, but the context-level
+checkpoint capture did not complete before its original deadline. Register the
+same hold at the owned native page with the exact API path and retain a bounded
+request/phase/snapshot ledger even on failure. Preserve the original deadline,
+native inventory counts, and transport-only hold; diagnose missed interception
+or delayed native snapshots instead of assuming production failed.
+The exact-page rerun captured the pending upgrade and verified ten new coats
+plus the existing +5 coat. Its failure came from a held route resuming after
+teardown had already handled it. Release the gate and ignore only outstanding
+page-route teardown errors; ordinary handler and inventory failures remain fatal.
+
 - A delivery reports success without a real server inventory transfer, duplicates
   stock, or transfers the wrong slot after movement.
 - Buy/upgrade jobs consume the wrong item, repeat after restart, or report a
@@ -74,6 +86,19 @@ damage/loot, or move a character to the asserted destination after the action.
 - An inventory preview enqueues economic work merely by opening the menu.
 
 ## Evidence and boundaries
+
+Native CI infrastructure failure inventory: run 37994171693 first timed out
+fetching MongoDB authentication, then hit Docker Hub's unauthenticated shared
+runner rate limit before any scenario started. Keep the existing MongoDB image
+and native fixtures. A configurable registry source must retain the exact pinned
+image digest, leave local cached-image defaults intact, and still fail visibly
+when acquisition fails. Google's mirror resolves the existing local MongoDB
+digest c630c59342c1493d50345136df2af14a76b9e827dd5316bfabee07a0880a5f3a.
+The next focused run passed that acquisition but hit the same Hub limit on the
+game's Node base image. Apply the registry override to both pinned image inputs;
+the Node mirror must resolve existing digest
+43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+before changing build wiring. Do not substitute runtime versions.
 
 Every scenario must capture the initial seed, action requests, coordinator state,
 authoritative server observations, client/socket logs, and screenshots/traces.
@@ -103,3 +128,38 @@ Before implementation: stopping the last Steam primary can disconnect its bridge
 Activation exposed persisted Cave travel without a leader travel sample or command. Comparing two missing IDs must not dereference the missing sample and break every character's status response after coordinator restart. Verify the retained dungeon control behavior with missing observations before fixing this activation blocker.
 
 Native client evidence: game.js disconnect() schedules auto_reload even after CODE stops; character_to_load can schedule another reconnect. An intentional primary release must disable both reconnect paths and cancel any scheduled reload before disconnect. Persist the release receipt before disconnect handlers can destroy the browsing context. Verify a game-compatible disconnect handler leaves no reconnect scheduled, both for the multi-character and legacy handoff protocols, without stopping unaffected companions.
+
+## Finite native auto-compound outcome accounting
+
+Before changing the existing E2E: native RNG can destroy the first triple, leaving nine of twelve rings and no +1 result. Counting a completed promise as a successful result incorrectly exhausts the pass allowance and emits a success message; missing native response callbacks can also yield an undefined promise result despite a real successful inventory mutation. Require an actual +1 inventory survivor and successful finite quota completion, not first-attempt success. Preserve the 90-second result gate and twelve declared native ingredients. Record native compound response receipts and initial/final inventories, and verify conservation: twelve minus two per successful triple minus three per failed triple. Restart must not produce additional results or consume more ingredients. If all available triples genuinely fail, retain the failing native ledger rather than fabricate outcomes or add stock. Production success admission must use authoritative inventory result deltas, not promise truthiness.
+
+## Native fixture reconnect ownership
+
+The reconnect rerun also proves public `activeSlots` includes Steam reservations;
+occupied slots alone do not establish headless ownership. Use the observed native
+runtime for Steam participants and exclude reported headless workers, rather than
+excluding every occupied slot.
+
+Before editing the reconnect helper: a test may legitimately replace a Steam merchant with a managed headless worker. Closing the Steam primary must wait only for its observed native Steam participants to leave `players` and `dc_players`; requiring the entire server to become empty waits forever on the correctly online managed merchant. Reopening that merchant as a Steam companion would also steal its ownership and invalidate the home-change test. Capture native runtime ownership and exclude occupied managed slots before disconnecting, restore only those Steam companions, and reject requests to reconnect a managed participant through this browser helper. Preserve the existing native disconnect and Steam operation completion gates.
+
+## Retained event-exit ownership adapter maintenance
+
+Before editing retained fixtures: source-extracted status and Escape release code now invokes the maintained `applyEventReturnOwner` helper. Missing that dependency throws before existing dispatch assertions, hiding normal behavior. Load the actual helper rather than suppressing exceptions or weakening the status/convoy assertions. Deferred Hunt admission now retires the previous exit command while retaining its durable deferred cycle obligation; assert that obligation and absence of stale command instead of demanding the obsolete command remain executable. No new isolated test cases are added.
+
+## Temporary native home visitor transport observation
+
+Before adding the fixture observer: a fresh temporary BankBoi reports full inventory heartbeats with lastCommandId zero and unchanged home, while the real realm operation lists it as an executor. Public state omits commands, so that evidence cannot distinguish coordinator command delivery from a local admission hold. Observe actual BankBoi status JSON at the existing Express transport seam, recording only bounded selected command, ownership and navigation fields. Preserve the original JSON object, invocation order and return value; observation failure must never change production responses. Attach the bounded file in fixture teardown for both passing and failing runs. No commands, responses or native outcomes are fabricated.
+
+## Temporary storage merchant home admission
+
+Before production changes: every merchant non-storage command runs generic production recovery before acceptance. With no local journal, recovery still asks `/merchant/production` for pending receipts; that endpoint correctly rejects a temporary storage merchant which is not the designated logistics merchant. Thus an authentic delivered `realm-set-home` can defer forever with lastCommandId zero, although all native heartbeats remain fresh. A home change neither upgrades nor mutates inventory, so exclude that command from the generic remote production preflight while retaining the preceding inventory-tidy wait and lucky-slot pending recovery safety. Do not broaden the production endpoint to let storage visitors own another merchant's receipts, erase local recovery journals, or weaken preflight for inventory-changing commands. Verify the existing account-wide native home case including real offline BankBoi login, native set_home confirmation, and original slot restoration; use the transport observer to prove actual command delivery and acceptance.
+
+## Durable account home completion after a temporary visitor
+
+Before implementation: Linux native evidence confirms all four home receipts and the temporary BankBoi's real USI home, but its last heartbeat expires while the managed merchant is restored. The account roster still contains USII, so the projection truthfully falls back to stale account data and reports mixed homes immediately after a supposedly complete operation. Completion must refresh the real account API after visitor cleanup and verify offline visitor homes against that refreshed roster within the existing 120-second home confirmation budget. Connected original participants retain fresh destination-realm native home authority. Verified pinned upstream server revision `90052162eb3ebda36c893e1eb4af643913c8f984`, `node/server.js` lines 5405–5417: set_home changes `player.p.home` and sends home_set without a synchronous database write; requiring all connected DB homes within 120 seconds is incorrect. Do not overwrite account data with expected values, indefinitely trust stale native reports, inflate test deadlines, or declare success from receipts alone. Preserve the existing immediate projection assertion and read the offline BankBoi database home for durable verification. Retained port adapters may expose their existing simulated confirmed homes through refresh; no new unit cases are added.
+
+## Retained heartbeat response contract maintenance
+
+Before updating the existing baseline: source and bundled heartbeat exact-response checks use the same JSON contract. Newly maintained `bankboiStorage` and `eventReturnCycleId` fields must be represented as `false` and `null` for the existing ordinary, inactive-recovery fixture. Omitting fields rejects the valid response; masking or deleting runtime fields would weaken the contract. Update only the shared response fixture and preserve every existing source/bundle, timing, combat-ownership, and repeated-heartbeat assertion. No new unit cases are introduced.
+
+Halloween Linux1028 observational inventory (before fixture correction): Green spawned all three native quarter waves and fighters genuinely hit third-wave adds544/546, but coordinator polls approximately3.3s apart sampled a different add545. Requiring one brief sampled selection and hit for the identical add missed real retargeting. Observe bounded native outgoing attack IDs per actual participant and require a boss-to-add submission transition plus that participant's positive native hit; retain native spawns, loot and resumed boss checks. Pumpkin prepare redundantly routes to the exact current native position, leaving one client waiting for departure while its peer already arrived. Save that checkpoint through the supported checkpoint endpoint only after fresh coordinator/native leader agreement, without inventing movement or arrival.

@@ -64,7 +64,18 @@ const logger = {
   error: (...args) => { startupError = new Error(args.map(String).join(' ')); console.error(...args); },
 };
 const adapters = {
-  '../config': { characters: {}, merchant: process.env.E2E_MERCHANT_CONNECTED === 'false' ? null : 'M', watch_CODE: false, enable_TYPECODE: false,
+  // Test the freshly built maintained policy rather than a previous live
+  // deployment's published catalog; E2E builds must not activate live assets.
+  '../../dashboard/lib/event-policy.cjs': require(path.join(root, '.build/shared/event-policy.cjs')),
+  // Map references resolve against the launcher directory. Read the same pinned
+  // catalog from this scenario, without modifying the installed game cache.
+  'node:fs': { ...fs, readFileSync(file, ...args) {
+    const installedCatalog = path.resolve(launcherDirectory, '../game_files', String(version), 'data.js');
+    const scenarioFile = typeof file === 'string' && path.resolve(file) === installedCatalog
+      ? path.join(directory, 'game_files', String(version), 'data.js') : file;
+    return fs.readFileSync(scenarioFile, ...args);
+  } },
+  '../config': { characters: process.env.E2E_MANAGED_MERCHANT === 'true' ? {M:{enabled:false,realm:'SR_USII'}} : {}, merchant: process.env.E2E_MERCHANT_CONNECTED === 'false' ? null : 'M', watch_CODE: false, enable_TYPECODE: false,
     web_app: { party_dashboard: true, port } },
   '../account_info': async () => account,
   '../game_files': { ensure_latest: async () => version, cull_versions: async () => {},

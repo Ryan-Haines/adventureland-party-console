@@ -15,10 +15,11 @@ export function WithdrawalTripSetting({ enabled = true }: { enabled?: boolean })
             { onSettled: () => setPendingChecked(null) });
         }}
         className="size-4 border border-slate-400 bg-slate-950 accent-emerald-400" />
-      Marked withdrawals create merchant jobs
+      Marked withdrawals always create merchant jobs
     </label>
     <p id="withdrawal-trip-help" className="text-xs text-slate-300">
-      When disabled, marked withdrawals wait until the merchant visits the bank for another reason.
+      When disabled, marked withdrawals create a collection trip at the automatic item collection threshold,
+      or wait for another bank visit below that threshold.
       When enabled, pending withdrawal marks create a bank trip at the Marked withdrawals routine priority.
     </p>
     {action.error && <p role="alert" className="text-rose-200">{action.error.message}</p>}

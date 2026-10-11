@@ -27,7 +27,7 @@
     "pretest:unit": "npm run build:shared && node tools/build-runtime.mts && node tools/game/build.mts",
     "test:unit": "node --test --test-concurrency=2 scripts/tests/*.test.cjs",
     "pretest:unit:ci": "npm run build:shared && node tools/build-runtime.mts && node tools/game/build.mts",
-    "test:unit:ci": "node --test --test-concurrency=2 --test-reporter=tap scripts/tests/*.test.cjs",
+    "test:unit:ci": "node --test --test-concurrency=4 --test-reporter=tap scripts/tests/*.test.cjs",
     "pretest:e2e": "npm run build:shared && node tools/build-runtime.mts && node tools/game/build.mts",
     "test:e2e": "playwright test",
     "test:e2e:console": "npm run test:e2e -- --project=console",

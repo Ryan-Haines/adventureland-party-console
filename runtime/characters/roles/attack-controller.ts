@@ -1,8 +1,7 @@
-import type { DamageType } from "typed-adventureland";
 import type { CombatState, Target } from "./types.ts";
 import { errorReason } from "./types.ts";
 import { createCrabRangeRecovery, type RangeSample } from "./crab-range.ts";
-import { monsterAttackBlock } from "./monster-attack-policy.ts";
+import { effectiveAttackDamageType, monsterAttackBlock } from "./monster-attack-policy.ts";
 
 interface Flight {
   passing: boolean;
@@ -95,6 +94,10 @@ export function createAttackController(ports: AttackPorts) {
     return !!target && !!ports.passing?.(target);
   }
   function permitted(target: Target): boolean {
+    if (!sharedRoutine.allowsTarget(target)) {
+      ports.state().skippedAttack = "target no longer eligible";
+      return false;
+    }
     if (ports.equipmentBusy?.()) {
       ports.state().skippedAttack = "weapon equipment change in progress";
       return false;
@@ -105,9 +108,7 @@ export function createAttackController(ports: AttackPorts) {
       ports.state().skippedAttack = "waiting for group readiness and target commitment";
       return false;
     }
-    // The server exposes damage_type, but typed-adventureland 0.0.57 omits it on Character.
-    const actor = character as typeof character & { damage_type?: DamageType };
-    const blocked = monsterAttackBlock(target.mtype, actor.damage_type, Number(character.range));
+    const blocked = monsterAttackBlock(target.mtype, effectiveAttackDamageType(character, typeof G === "undefined" ? undefined : G), Number(character.range));
     if (blocked) {
       ports.state().skippedAttack = blocked;
       return false;

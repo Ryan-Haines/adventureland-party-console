@@ -21,6 +21,12 @@ function occupied(entry: BankboiInventory): boolean {
     !!Number(entry.gold)
   );
 }
+function pending(state: DeletionState, name: string): boolean {
+  return (
+    state.bankboiQueue.some((request) => request.bankboi === name) ||
+    state.bankboiTransaction?.bankboi === name
+  );
+}
 function failureMessage(messages: unknown): Record<string, unknown> | undefined {
   return Array.isArray(messages)
     ? messages
@@ -57,10 +63,19 @@ export function createBankboiDeleteRoute(state: DeletionState, ports: DeletionPo
     const name = req.params.name!,
       entry = state.bankbois[name];
     if (!entry) return res.status(404).json({ error: "unknown bankboi" });
+    try {
+      await ports.refresh();
+      if (!ports.owned(name)) {
+        delete state.bankbois[name];
+        ports.persist();
+        return res.json({ ok: true, alreadyDeleted: true });
+      }
+    } catch (error) {
+      return res.status(502).json({ error: requestText(requestObject(error).message || error) });
+    }
     if (
       occupied(entry) ||
-      state.bankboiQueue.some((request) => request.bankboi === name) ||
-      state.bankboiTransaction?.bankboi === name
+      pending(state, name)
     )
       return res
         .status(409)

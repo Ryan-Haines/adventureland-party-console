@@ -1,5 +1,109 @@
 # Testing
 
+## CI parallelism
+
+The full native workflow uses 16 isolated GitHub runners with one Playwright
+worker each. Shards 1–3 run the three named `live-cave.spec.ts` journeys separately;
+shards 4–16 set `E2E_SKIP_CAVE=1` and distribute the remaining live project over
+13 shards. Focused `grep` runs retain one runner and include Cave normally.
+When adding or renaming a Cave scenario, update its workflow filter. Validate
+the complete allocation with Playwright `--list`: the union must equal the
+normal live listing, with no duplicate or missing test identities. Retain that
+allocation as an artifact. No game setup or live coordinator restart is required
+for this listing check.
+
+Parallelism failure inventory: a Cave filter can omit or accidentally duplicate
+a scenario; the remaining shards can repeat Cave unless the exclusion is scoped
+to the live project; a wrong shard denominator can lose coverage; focused runs
+must not inherit the exclusion. Native tests continue to use isolated runners
+and the existing evidence verifier. Sixteen native jobs leave four of the Free
+account's 20 concurrent-job slots for validation and focused work.
+
+Retained unit CI uses four process-isolated test-file workers on its existing
+runner; local unit runs remain at two. Concurrency can expose fixed ports,
+shared writable files or CPU-sensitive deadlines, so preserve TAP results and
+the regression checker, and diagnose any failures without relaxing assertions.
+More file workers do not parallelize sequential tests inside one file or shorten
+deliberate timer waits. No unit assertions or test deadlines change here.
+
+Native bank-sale completion must include the full expected set of real sale
+receipts: a transient empty inventory report between bank withdrawal and its
+next status report does not establish that the second batch sold. Cave floor
+validation requires fresh matching-run observations before submitting the
+wrong-floor request. Native Cave staging must search beyond the entry's immediate
+neighborhood while retaining collision checks and combat-room clearance; a
+generated Bat room can be only 392 pixels from the entry, so a 200-pixel search
+can fail before assembly is exercised. These are the failure inventory for the
+retained bank and Cave scenarios from native run 37896522250, shard 1.
+
+Cold dashboard startup must complete dependency scanning before relying on a
+warm browser journey. The Linux console failure in run 37884607630 returned
+200 for `app/page.tsx` but 504 for its Base UI dependency imports. Dashboard
+logs identified a failed Rolldown dependency scan caused by a non-UTF-8 middle
+dot in `lucky-slot-tracker.tsx`; subsequent dependency discovery invalidated
+the initial optimized URLs and reloaded the page. Correcting that byte to
+UTF-8 preserves the text and resolves the failed scan. Retain browser errors
+and traces; successful screenshots after automatic reload do not erase a
+first-load error. Audit maintained text with strict UTF-8 decoding when a
+dependency scan reports invalid input rather than adding import retries.
+
+Merchant upgrade estimates use the console scenarios matching
+`merchant estimates stay responsive|merchant grade estimates` and the native
+scenario `unavailable upgrade estimate enforces its gold cap`.
+The console declares gold-shop catalog metadata at its external game boundary;
+order validation, queueing and persistence use the real coordinator. Grade
+reference budgets in `e2e/upgrade-grace-reference.json` were calculated from the
+published native server grace expressions with unobservable server-wide and
+overall player grace set to zero. The source hash is retained with the values.
+The native journey keeps real item/scroll purchases and upgrades, holds one
+already persisted checkpoint response for restart, and checks the original
+gold cap still bounds accrued spending.
+The native capped fixture uses a 20,000-gold cap and 1,000,000 bank gold.
+Its helmet costs 3,200 and the initial seven basic scrolls cost 7,000; the
+previous 10,000 cap correctly refused that 10,200 batch before any purchase.
+The larger cap exercises purchases and restart while bank funds remain below
+the full +12 scroll chain, preserving the cap-aware prefunding check.
+Checkpoint recording excludes protection-only probes, which carry no commerce
+state. One diagnostic run reached restart and cap exhaustion at 19,400 gold,
+then failed while reading an undefined state from such a probe; progress-state
+recording preserves the real purchase and persisted-spending assertions.
+
+CI merchant recovery timing evidence: the final two-item batch in native run
+37862993344 issued its order at 1791507816685 and recorded the second actual
+upgrade success at 1791508000619, 183.9 seconds later. Final coordinator evidence
+has no active or queued work and native inventory has all four completed +1
+helmets. The previous 180-second final-job poll therefore expired during
+successful bank/NPC procurement, rather than demonstrating blocked recovery.
+Keep both native skill tiers, the MP reserve and 20-second potion recovery
+assertions; budget this final two-item batch separately with a bounded deadline.
+The focused rerun passed in 4.3 minutes with 33 verified evidence files under
+`.build/native-merchant-mass-recovery-passing-{results,report}`.
+
+Native Town recovery uses
+`npm test -- -- --project=live --grep "partial native Town failure"`.
+The initial peaceful Bee fixture is declared before actual party travel;
+otherwise native aggro can move the first arrival away before its peer arrives.
+Actual walking, interrupted Town, coordinator restart, delayed transport and
+both characters' reward checks remain observable native behavior. All three
+cases passed with 102 verified evidence files, retained under
+`.build/native-town-recovery-passing-{results,report}`.
+
+Steam CODE lifecycle uses
+`npm test -- -- --project=live --grep "Steam-style CODE replacement"`.
+The test declares a valid changed class artifact and holds one real status
+request while the loader performs native iframe replacement. It requires the
+same connected game window, retired runtime ownership, stable listener counts,
+preserved native response handlers, a fresh heartbeat and actual walking arrival.
+Historical managed callbacks are replayed at the socket-subscription boundary
+before fresh CODE migration. The focused run passed with 32 verified files.
+
+Escape hold controls use
+`npm test -- -- --project=console --grep "held escape shows its reason"`.
+The declared escape read-boundary fixture checks the visible failure reason,
+explicit Resume action, rejected release, and active-rescue guard. A successful
+Resume click reaches the coordinator's existing release endpoint. Screenshots
+and the action ledger are retained; this does not simulate native rescue skills.
+
 Merchant stand setup uses
 `npm test -- -- --project=live --grep "merchant stand location is valid"`.
 The native journey checks randomized, geometry-valid first setup, wall rejection,
@@ -546,6 +650,10 @@ conditions. The discovery pass found 87 files containing Hunt-related references
 its 920 declarations include unrelated cases in mixed suites and are not a claim
 of 920 separate Hunt scenarios. Every discovered file is represented in a ledger.
 
+The [Cave route preparation failure modes](testing-cave-route-failures.md)
+document the retained planner-admission and bounded-wait checks. Native Cave
+E2E remains authoritative for generated terrain, pacing, votes and arrival.
+
 These existing exceptions run with `npm run test:unit`, or
 `npm run test:unit:ci` for the strict TAP report. Both limit Node to two test workers
 (`--test-concurrency=2`) to avoid competing with native game clients and bundlers.
@@ -630,3 +738,90 @@ speed, armor, and resistance. These scenarios validate workflow behavior rather
 than normal player combat difficulty or natural gear progression.
 
 The native Cave regression is in live-cave.spec.ts. Run npm test -- -- --project=live --grep 'Cave entry closes'. It seeds the party beside Dorr, uses native entry and votes, captures both participant maps, verifies both characters reach selected rooms, stops and restarts manual travel, inspects the shop item, and checks exit confirmation through the dashboard. Artifacts include native-cave-entry, native-cave-choice, participant cave-map screenshots, native-cave-manual-travel, and native-cave-exit. Fixture reset destroys only generated runs belonging entirely to its test account, preventing a prior failed run from becoming a resume visit.
+
+## Native merchant skill scenario timing
+
+The merchant mass-skill and passive-recovery scenario budgets 900 seconds for
+four real bank/NPC work journeys, companion reconnection, and its final recovery
+job. In native CI run 37732652077, the first four jobs all completed in approximately
+66, 49, 54, and 48 seconds; real companion reconnection took another 96 seconds.
+The former 360-second total interrupted the final job after 31 seconds while its
+fresh native movement report showed ongoing travel to the NPC. Ordinary jobs still
+have a 150-second completion deadline, and HP/MP potion recovery must happen within
+20 seconds. The final two-item recovery batch alone has a 180-second completion
+deadline: run 37740967977 recorded actual completion after 163 seconds, with
+native upgrade successes on both items and NPC travel to replenish the second
+scroll. Other jobs retain their 150-second deadlines. Native actions and outcome
+assertions remain unchanged.
+
+Before the 900-second adjustment, run 37749904371 verified completion of all four
+initial jobs in 94, 76, 80, and 74 seconds. Native companion reconnect took 128
+seconds. Setup and catalog restoration used approximately 55 seconds, leaving
+only 94 seconds for the final batch under the former 600-second total. At that
+cutoff the final batch had successfully upgraded its first helmet, reported a
+fresh checkpoint, and had no native client errors. The total budget accommodates
+the complete paired sequence; the 150-second ordinary-job, 180-second final-job,
+and 20-second potion-recovery deadlines still enforce progress independently.
+
+The assembly regroup fixture must first find a nearby native staging position.
+Run 37775616033 placed the doorway 408 pixels from a farm, making its former
+410-pixel clearance check impossible in every direction. Before changing this
+fixture, the failure modes were recorded: no connected safe staging geometry,
+combat during the walk, stale readiness, and automatic following interfering
+with participant positioning. Staging uses actual native collision checks and
+walking for both characters, stays within 200 pixels, clears living enemies by
+300 pixels, and preserves 410-pixel room clearance for the existing 160-pixel
+offset and 85-pixel displacement. Failed geometry or walking remains an explicit
+bounded failure; camps, kills, rewards, command receipts, and heartbeats are not
+modified.
+
+The native Lockbreaker arrival check allows 600 seconds, with a 1,500-second
+budget for the complete Cave scenario. Run 37775616033 used about 201 seconds
+in three earlier travel attempts before its current route prepared. That route
+was approximately 4,333 pixels at native cruise speed 79, with about 3,640
+pixels remaining: at least 46 seconds of uninterrupted walking was still
+required, in addition to bounded native planning, assembly, and real combat.
+Both local route joins succeeded and participants
+were fresh and ready when the previous 300-second check expired. The longer
+observation window preserves the under-70-pixel arrival requirement for both
+characters and every native kill, reward, vote, transport, and ownership check.
+
+The stairs check separates its native phases: 240 seconds to reach and answer
+the farewell, 30 seconds for both native vote acknowledgements, then 300 seconds
+for the owned continuation to transport both characters to floor 1. Run
+37780633644 took 236.6 seconds before the vote resolved; the former combined
+240-second check expired just seven seconds later, before the fresh continuation
+could prepare its route. Native commands were healthy and both members ready.
+The acknowledgement and subsequent actual floor transition each produce
+inspectable artifacts; the farewell and both-character floor assertions remain
+required.
+
+Steam saved-setup handoff uses
+`npm test -- -- --project=console --grep "Steam handoff preserves saved setup"`.
+The browser submits the maintained request adapter through the real gateway and
+restores setup from persisted server preferences after an incomplete browser
+draft. The initial RED returned the reported setup validation error before any
+launch. Desktop launch and inspector are declared external boundaries; this
+checks launch intent and gateway forwarding, not a real Steam process. A remote
+selection must reject launch without forwarding a headless ownership change; an
+already connected remote bridge must allow forwarding. Retain the setup screenshot
+and launch-boundary ledger and run `npm run test:e2e:verify`.
+
+Steam native rejection diagnostics use the console E2E
+`Steam bridge reports native save rejection`. The actual browser bridge sends
+HTTP heartbeats after a declared structured native save rejection. Verify its
+reason reaches the failure receipt, private response fields stay absent, and
+no release receipt or native disconnect occurs. The pre-code RED reproduced
+`[object Object]`; retain the heartbeat ledger as evidence.
+
+The Steam saved-setup journey also recreates the hosting service while its local
+bridge is already ready. The next handoff must refresh the native attachment
+without another desktop launch; a connected remote bridge must skip the local
+attachment. The pre-code RED observed no local refresh after service recreation.
+
+Steam numeric CODE-slot allocation uses `Steam bridge reserves a free native
+CODE slot`. The declared native API rejects UUID slots as `no_slot` and rejects
+writes to occupied slots. The browser bridge must choose a free numbered slot
+and preserve unrelated cache and its original snapshot. Native 17665 documents
+numbered slots 1–100 in `/savecode` and `filename_to_cdata`; a missing `X.codes`
+inventory is unknown and must not be treated as an empty account.

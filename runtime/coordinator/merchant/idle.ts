@@ -80,6 +80,7 @@ export function createMerchantIdle(ports: IdlePorts) {
   }
 
   function gatheringReady(status: IdleStatus | undefined): boolean {
+    if (Array.isArray(status?.items) && status.items.filter(entry => !entry).length <= 3) return false;
     return ports
       .modes()
       .some(

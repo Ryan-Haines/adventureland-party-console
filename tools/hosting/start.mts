@@ -13,6 +13,7 @@ import { notifyBoot, waitForRelease } from '../update/boot.ts';
 import { LocalTLS } from './tls.ts';
 import { configureDashboardGateway } from '../dashboard/gateway-access.ts';
 import { createLocalSteam } from '../steam/service.ts';
+import { loadManagedConsole } from '../console-build/bootstrap.ts';
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const data = path.resolve(process.env.AL_DATA_DIR || path.join(root, ".build/hosting-data"));
@@ -27,6 +28,8 @@ let configured = false,
 const services = new Services();
 configureDashboardGateway();
 const development = process.env.AL_DOCKER_DEV === '1' || process.argv.includes('--development');
+const staged = process.env.AL_CONSOLE_MANAGED === '1' || development;
+let managed: Awaited<ReturnType<typeof loadManagedConsole>> | undefined;
 const tls = new LocalTLS(root, data);
 // A failed native startup must not leave detached dashboard/game services behind.
 process.once('exit', () => { services.stop(); tls.stop(); });
@@ -58,7 +61,9 @@ async function startGame() {
     `const config = require(${JSON.stringify(path.join(data, "config.json"))});\nmodule.exports = { ...config, web_app: { ...config.web_app, port: ${apiPort} } };\n`,
   );
   configured = true;
-  services.launch(path.join(caracal, "main.js"), caracal, { ...process.env, AL_SESSION: session });
+  const env = { ...process.env, AL_DATA_DIR: data, AL_SESSION: session };
+  if (managed) await managed.startGame(env);
+  else services.launch(path.join(caracal, "main.js"), caracal, env);
 }
 // The image prepares these links; a native installation must not silently replace existing state.
 for (const name of ["localStorage", "game_files", "logs"]) {
@@ -73,18 +78,19 @@ for (const name of ["localStorage", "game_files", "logs"]) {
     );
   }
 }
-services.launch(path.join(root, "tools/dashboard/supervisor.mts"), path.join(root, "dashboard"), {
+if (staged) managed = await loadManagedConsole(root, services, { dashboardPort, apiPort });
+else services.launch(path.join(root, "tools/dashboard/supervisor.mts"), path.join(root, "dashboard"), {
   ...process.env,
   AL_DASHBOARD_PUBLIC_PORT: String(dashboardPort),
   AL_DASHBOARD_PREBUILT: development ? undefined : ".build/container",
   NODE_ENV: development ? 'development' : 'production',
 }, development ? ['--development'] : []);
-if (development) services.launch(path.join(root, 'tools/game/watch.mts'), root, process.env);
 await notifyBoot(data);
 let steamServer: string | undefined;
 const steam = createLocalSteam(root, data, apiPort, async () => steamServer ??=
   (process.platform === 'linux' ? `https://localhost:${tls.publicPort}` : `http://127.0.0.1:${process.env.AL_PORT || 3010}`) + '/bridge/' + await access.steam());
 const server = gateway({
+  builds: managed?.routes,
   debug: await new DebugInstances(root, path.join(data, 'debug')).load(),
   steam,
   tls,
@@ -107,6 +113,7 @@ function shutdown() {
   tls.stop();
   server.close();
   services.stop();
+  void managed?.stop();
   setTimeout(() => process.exit(0), 15000).unref();
 }
 process.once("SIGINT", shutdown);

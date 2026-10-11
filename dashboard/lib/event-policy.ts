@@ -1,18 +1,38 @@
-interface EventFormation {
+export interface EventLimits {
+  deathLimit: number | null;
+  timeLimitMinutes: number | null;
+}
+export function validEventLimits(value: unknown): value is EventLimits {
+  if (!value || typeof value !== "object") return false;
+  const { deathLimit, timeLimitMinutes } = value as EventLimits;
+  return (deathLimit === null || Number.isSafeInteger(deathLimit) && deathLimit >= 0) &&
+    (timeLimitMinutes === null || typeof timeLimitMinutes === "number" && Number.isFinite(timeLimitMinutes) && timeLimitMinutes > 0);
+}
+export interface EventFormation {
   leader?: string | null;
   merchantCharacter?: string | null;
   followers?: Record<string, boolean>;
   eventsByCharacter?: Record<string, boolean>;
+  eventLimitsByCharacter?: Record<string, Record<string, EventLimits>>;
+  eventPrioritiesByCharacter?: Record<string, string[]>;
   eventSelectionsByCharacter?: Record<string, string[]>;
 }
 
-export const supportedEvents = ["anniversary", "abtesting", "goobrawl", "crabxx", "franky", "icegolem", "snowman"];
+// Persisted legacy all-events flags cover the catalog available when saved.
+// Newly supported fights require an explicit selection, rather than opt-in on upgrade.
+const legacyDefaultEvents = ["anniversary", "abtesting", "goobrawl", "crabxx", "franky", "icegolem", "snowman"];
+export const supportedEvents = [...legacyDefaultEvents, "slenderman", "mrgreen", "mrpumpkin"];
+export const eventDisplayNames: Record<string, string> = {
+  anniversary: "Anniversary", abtesting: "A/B Testing", goobrawl: "Goobrawl",
+  crabxx: "Crabxx", franky: "Franky", icegolem: "Ice Golem", snowman: "Snowman",
+  slenderman: "Slenderman", mrgreen: "Mr. Green", mrpumpkin: "Mr. Pumpkin",
+};
 
 export function selectedEvents(party: EventFormation, name: string): string[] {
   const source = eventPolicy(party, name).source;
   const saved = party.eventSelectionsByCharacter?.[source];
-  const selections = saved ?? ["anniversary", ...(party.eventsByCharacter?.[source] ? supportedEvents.filter(id => id !== "anniversary") : [])];
-  return selections.filter(id => supportedEvents.includes(id));
+  const selections = saved ?? ["anniversary", ...(party.eventsByCharacter?.[source] ? legacyDefaultEvents.filter(id => id !== "anniversary") : [])];
+  return eventPriorityOrder(party, name).filter(id => selections.includes(id));
 }
 
 export function eventEnabled(party: EventFormation, name: string, event: string) {
@@ -34,4 +54,15 @@ export function eventPolicy(party: EventFormation, name: string) {
       ? party.eventSelectionsByCharacter[source].some(id => id !== "anniversary" && supportedEvents.includes(id))
       : Boolean(party.eventsByCharacter?.[source]),
   };
+}
+
+// Order is independent of attendance checkboxes; new supported events append.
+export function eventPriorityOrder(party: EventFormation, name: string): string[] {
+  const source = eventPolicy(party, name).source;
+  return [...new Set([...(party.eventPrioritiesByCharacter?.[source] ?? []), ...supportedEvents])]
+    .filter(id => supportedEvents.includes(id));
+}
+
+export function eventLimits(party: EventFormation, name: string): Record<string, EventLimits> {
+  return party.eventLimitsByCharacter?.[eventPolicy(party, name).source] ?? {};
 }

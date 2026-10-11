@@ -126,17 +126,25 @@
   // runtime/characters/native-planner.ts
   function createNativePlanner(host, native) {
     let running = false, failure = "", deadline = 0, serial = 0, limit = 3e4;
+    let hardDeadline = 0, hardLimit = 3e4, lastIndex, advancedAt = 0, progressValid = false;
+    let searchQueue;
     function cancel() {
       running = false;
       serial++;
       void Promise.resolve(native.stop("smart")).catch(() => {
       });
     }
-    function begin(destination, town, now, timeout = 3e4) {
+    function begin(destination, town, now, timeout = 3e4, progressLimit) {
       cancel();
       failure = "";
       limit = timeout;
       deadline = now + timeout;
+      hardLimit = progressLimit ?? timeout;
+      hardDeadline = now + hardLimit;
+      lastIndex = void 0;
+      searchQueue = void 0;
+      advancedAt = now;
+      progressValid = progressLimit !== void 0;
       const token = serial;
       const promise = native.move(destination);
       void promise.catch((error) => {
@@ -145,15 +153,36 @@
       host.smart.use_town = town;
       running = true;
     }
+    function validFrontier(index, queue) {
+      return Number.isSafeInteger(index) && index >= 0 && Array.isArray(queue) && index <= queue.length && (searchQueue === void 0 || searchQueue === queue) && (lastIndex === void 0 || index >= lastIndex);
+    }
+    function observeProgress(now) {
+      if (!progressValid) return;
+      const index = host.start, queue = host.queue;
+      if (!validFrontier(index, queue)) {
+        progressValid = false;
+        return;
+      }
+      searchQueue = queue;
+      if (lastIndex !== void 0 && index > lastIndex) advancedAt = now;
+      lastIndex = index;
+    }
+    function expired(now) {
+      return now >= hardDeadline || now >= deadline && (!progressValid || now - advancedAt > 15e3);
+    }
+    function checkDeadline(now) {
+      if (!failure && !expired(now)) return;
+      const reason = failure || `Native planning timed out (${(now >= hardDeadline ? hardLimit : limit) / 1e3} seconds)`;
+      cancel();
+      throw Error(reason);
+    }
     function tick(now) {
       if (!running) throw Error("Native search not initialized");
-      if (failure || now >= deadline) {
-        const reason = failure || `Native planning timed out (${limit / 1e3} seconds)`;
-        cancel();
-        throw Error(reason);
-      }
+      if (lastIndex !== void 0) observeProgress(now);
+      checkDeadline(now);
       if (!host.smart.searching) native.start();
       else if (!host.smart.found) native.next();
+      observeProgress(now);
       if (!host.smart.moving && !host.smart.found) throw Error("Native planner found no route");
       if (!host.smart.found) return;
       const plot = host.smart.plot.map((p) => ({ ...p }));
@@ -169,12 +198,14 @@
   }
   function createMovementExecutor(host, state, validation, now, townReady = () => true, lootCollected = () => true) {
     let issued, index = 0, barrierPending = false, barrierReady = false, lastBarrier = 0, waitingBarrier = false;
+    let walkingEdge;
     let sampledAt = now(), sampledPhase = "idle";
     let lootWaitAt;
     let durations = {};
     const position = () => ({ map: host.character.map, in: host.character.in, x: host.character.real_x, y: host.character.real_y });
     function reset() {
       issued = void 0;
+      walkingEdge = void 0;
       index = 0;
       barrierPending = false;
       barrierReady = false;
@@ -235,18 +266,37 @@
       if (!transitionReady(current, options, !!transition)) return false;
       notifyTransition(current, options);
       state.plot.shift();
-      if (transition) index++;
+      if (transition) {
+        walkingEdge = void 0;
+        index++;
+      } else rememberWalkingEdge({ ...p, x: current.step.x, y: current.step.y }, state.plot[0]);
       issued = void 0;
       barrierReady = false;
       return true;
     }
     function alignArrival(current, p) {
-      if (current.aligned || distance(p, current.step) <= 1 || distance(p, current.step) > 150) return;
+      if (distance(p, current.step) <= 1 || distance(p, current.step) > 150) return;
+      if (current.aligned) {
+        if (now() - current.progressAt >= 1e3 && now() - (current.connectorSentAt || 0) >= 1e3) {
+          if (!current.connectorFrom || distance(p, current.connectorFrom) >= 1) {
+            if (!validation.walk(p, current.step)) throw Error("Arrival connector collision after native position correction");
+            current.connectorFrom = point(p);
+          }
+          sendConnector(current);
+        }
+        return;
+      }
       if (!validation.walk(p, current.step)) throw Error(`Arrival connector collision between ${JSON.stringify(p)} and ${JSON.stringify(current.step)}`);
       current.aligned = true;
+      current.connectorFrom = point(p);
       current.progressAt = now();
+      sendConnector(current);
+    }
+    function sendConnector(current) {
+      current.connectorSentAt = now();
+      const version = current.connectorVersion = (current.connectorVersion || 0) + 1;
       void Promise.resolve(host.move(current.step.x, current.step.y)).catch((error) => {
-        if (issued === current) current.error = String(error);
+        if (issued === current && current.connectorVersion === version) current.error = String(error);
       });
     }
     function transitionReady(current, options, transition) {
@@ -318,6 +368,7 @@
     }
     function sendObserved(captured) {
       const version = captured.sendVersion = (captured.sendVersion || 0) + 1;
+      if (version === 1) captureWalkingEdge(captured);
       try {
         void Promise.resolve(send(captured)).then((result) => {
           if (issued !== captured || captured.sendVersion !== version) return;
@@ -329,6 +380,13 @@
       } catch (error) {
         if (issued === captured) rejected(captured, error);
       }
+    }
+    function captureWalkingEdge(current) {
+      if (walkingEdge?.to === current.step) return;
+      rememberWalkingEdge(position(), current.step);
+    }
+    function rememberWalkingEdge(from, next) {
+      walkingEdge = next && !isTransition(next) && from.map === next.map && validation.walk(from, next) ? { from: { ...from }, to: next } : void 0;
     }
     function rejected(current, error) {
       const reason = error && typeof error === "object" && "reason" in error ? String(error.reason) : String(error);
@@ -362,6 +420,7 @@
         if (reason) throw Error(`${reason} between ${p.map} (${p.x}, ${p.y}) and ${next.map} (${next.x}, ${next.y})`);
         if (isTransition(next) || distance(p, next) > 1) break;
         state.plot.shift();
+        rememberWalkingEdge({ ...p, x: next.x, y: next.y }, state.plot[0]);
       }
     }
     function lootReady(step) {
@@ -419,6 +478,7 @@
         reissued: !!issued?.reissued
       }),
       transition: () => issued && isTransition(issued.step) ? issued.step.town ? "town" : "transport" : null,
+      walkingEdge: () => walkingEdge?.to === state.plot[0] ? walkingEdge : void 0,
       remaining: () => state.plot.map((p) => ({ ...p }))
     };
   }
@@ -651,6 +711,18 @@
     if (!Number.isFinite(tolerance) || tolerance < 1) throw Error("Arrival tolerance must be at least 1");
     return tolerance;
   }
+  function nativePlanningTimeout(options) {
+    const timeout = options.nativePlanningTimeoutMs ?? 3e4;
+    if (!Number.isFinite(timeout) || timeout < 1e3 || timeout > 12e4)
+      throw Error("Native planning timeout must be between 1 and 120 seconds");
+    return timeout;
+  }
+  function nativePlanningProgress(options) {
+    const limit = options.nativePlanningProgressMs;
+    if (limit !== void 0 && (!options.shared || !Number.isFinite(limit) || limit !== 24e4 || nativePlanningTimeout(options) !== 9e4))
+      throw Error("Progress-guarded preparation requires a shared Cave 90/240-second budget");
+    return limit;
+  }
   function finalApproach(plot, from, to, options) {
     if (options?.arrivalTolerance === void 0 || options.shared) return plot;
     const remaining = distance(plot.at(-1) || from, to);
@@ -779,19 +851,32 @@
     }
     function beginRepair(j, plot, issue) {
       j.firstIssue ||= issue;
-      if (j.options.owner?.recoveryStage === "post-relocation" || j.repaired || issue.reason !== "collisions detected" || issue.from.map !== position().map) return false;
+      if (j.options.owner?.recoveryStage === "post-relocation" || !repairAllowed(j, issue.to) || issue.reason !== "collisions detected" || issue.from.map !== position().map) return false;
       const index = plot.findIndex((p) => p === issue.to);
       if (index < 0 || isTransition(plot[index])) return false;
-      j.repaired = true;
+      recordRepair(j, issue.to);
       j.repair = { plot, index, target: point(issue.to), started: false };
       j.pending = false;
       state.searching = false;
       report(j.id, state, "Repairing rejected walking segment", issue, "native same-map connector; limit 3 seconds");
       return true;
     }
+    function repairEndpoint(target) {
+      return JSON.stringify([target.map, target.x, target.y]);
+    }
+    function recordRepair(j, target) {
+      j.repaired = true;
+      if (j.options.shared && j.options.repairSharedDrift) (j.repairEndpoints ||= []).push(repairEndpoint(target));
+    }
+    function repairAllowed(j, target) {
+      if (!j.options.shared || !j.options.repairSharedDrift) return !j.repaired;
+      const endpoints = j.repairEndpoints || [];
+      return endpoints.length < 3 && !endpoints.includes(repairEndpoint(target));
+    }
     function repairTick(j) {
       const repair = j.repair;
       try {
+        if (!repairInstanceValid(j, repair)) throw Error("Repair instance changed");
         if (!repair.started) {
           planner.begin(repair.target, false, ports.now(), 3e3);
           repair.started = true;
@@ -801,17 +886,28 @@
         if (!bridge) return;
         if (distance(bridge.at(-1) || position(), repair.target) > 20) throw Error("Repair missed its connector endpoint");
         if (bridge.some((p) => isTransition(p) || p.map !== position().map)) throw Error("Repair left the current map");
-        const plot = [...bridge, ...repair.plot.slice(repair.index + 1)];
+        const plot = repair.retainEndpoint ? [...bridge, repair.target, ...repair.plot.slice(repair.index)] : [...bridge, ...repair.plot.slice(repair.index + 1)];
         const invalid = validateRoute(validation, position(), state, plot, state.use_town, state.edge);
         if (invalid) throw Error("Repair did not validate: " + invalid.reason);
         delete j.repair;
         install(plot, true);
         report(j.id, state, "Walking segment repaired", j.firstIssue);
       } catch (error) {
-        planner.cancel();
-        j.failureContext = { repairFailure: String(error) };
-        fallback(j, j.firstIssue);
+        repairFailed(j, error);
       }
+    }
+    function repairInstanceValid(j, repair) {
+      const from = position(), expected = repair.instance ?? repair.target.map;
+      return !j.options.repairSharedDrift || String(from.in ?? from.map) === String(expected);
+    }
+    function repairFailed(j, error) {
+      planner.cancel();
+      j.failureContext = { repairFailure: String(error) };
+      if (j.options.repairSharedDrift && j.options.shared) {
+        finish(false, "Shared connector repair failed: " + String(error));
+        return;
+      }
+      fallback(j, j.firstIssue);
     }
     function trimUncheckedFinal(plot) {
       if (journey?.options.shared) return plot;
@@ -819,8 +915,13 @@
       return last2 && previous && !isTransition(last2) && last2.map === previous.map && !validation.walk(previous, last2) && distance(previous, state) <= state.edge ? plot.slice(0, -1) : plot;
     }
     function nativeTick(j) {
+      if (j.options.awaitSharedRoute) {
+        if (ports.now() - j.started > (nativePlanningProgress(j.options) ?? nativePlanningTimeout(j.options)) + 3e4)
+          throw Error("Shared route preparation timed out");
+        return;
+      }
       if (!state.searching) {
-        planner.begin(point(state), state.use_town, ports.now());
+        planner.begin(point(state), state.use_town, ports.now(), nativePlanningTimeout(j.options), nativePlanningProgress(j.options));
         state.searching = true;
         j.searches++;
       }
@@ -914,7 +1015,7 @@
     }
     function recover(j, error) {
       if (j.options.shared) {
-        finish(false, error);
+        if (!repairSharedConnector(j)) finish(false, error);
         return;
       }
       if (/leave transition/i.test(String(error))) {
@@ -940,6 +1041,31 @@
       void Promise.resolve(host.move(host.character.real_x, host.character.real_y)).catch(() => {
       });
       fallback(j, { reason: `${String(error)}; recovery ${j.retries}/2`, from: position(), to: state.plot[0] || point(state) });
+    }
+    function repairSharedConnector(j) {
+      const next = state.plot[0], from = position();
+      if (!j.options.repairSharedDrift || !next || isTransition(next) || !sameJourneyInstance(j, from)) return false;
+      const reason = stepIssue(validation, from, next, state.use_town);
+      const join = localWalkingJoin(from, next);
+      if (reason !== "collisions detected" || !join || !beginRepair(j, state.plot.slice(), { reason, from, to: next })) return false;
+      j.repair.target = join.target;
+      j.repair.retainEndpoint = join.retainEndpoint;
+      j.repair.instance = from.in ?? from.map;
+      state.found = false;
+      executor.cancel();
+      return true;
+    }
+    function localWalkingJoin(from, next) {
+      const edge = executor.walkingEdge();
+      if (!edge) return distance(from, next) <= 150 ? { target: point(next), retainEndpoint: false } : void 0;
+      if (edge.from.map !== from.map || String(edge.from.in ?? edge.from.map) !== String(from.in ?? from.map)) return;
+      const dx = next.x - edge.from.x, dy = next.y - edge.from.y, length = dx * dx + dy * dy;
+      const along = length ? Math.max(0, Math.min(1, ((from.x - edge.from.x) * dx + (from.y - edge.from.y) * dy) / length)) : 0;
+      const target = { map: from.map, x: edge.from.x + dx * along, y: edge.from.y + dy * along };
+      return distance(from, target) <= 150 ? { target, retainEndpoint: true } : void 0;
+    }
+    function sameJourneyInstance(j, from) {
+      return from.map === j.context.map && String(from.in ?? from.map) === String(j.context.instance ?? j.context.map);
     }
     function tick() {
       const j = journey;
@@ -981,7 +1107,7 @@
       if (host.character.moving) void Promise.resolve(host.move(host.character.real_x, host.character.real_y)).catch(() => {
       });
       executor.reset();
-      const context = ports.context();
+      const context = { ...ports.context(), map: host.character.map, instance: host.character.in ?? host.character.map };
       journey = { id: `${host.character.name}:${context.runtime}:${++sequence}`, context, options, native: !!options.native, pending: false, searches: 0, retries: 0, started: ports.now(), planningAt: ports.now(), fallback: !!options.native };
       return new Promise((resolve, reject) => {
         state.on_done = (done, reason, failure) => {
@@ -1028,6 +1154,7 @@
         throw Error(`${issue.reason} between ${JSON.stringify(issue.from)} and ${JSON.stringify(issue.to)}; native regroup required`);
       }
       if (journey) journey.importedEngine = plannerEngine;
+      planner.cancel();
       return install(plot, true);
     }
     const service = {

@@ -16,9 +16,11 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
       travelCombat?: unknown;
       rareControl?: unknown;
       serverNow?: number;
+      consoleMaintenance?: {id:string;expires:number;mode?:'draining'} | null;
       combatResetByCharacter?: Record<string, number>;
     };
     const control = {
+      consoleMaintenance: full.consoleMaintenance,
       passingEncounters:full.passingEncounters,
       passingControl:full.passingControl,
       rareControl: full.rareControl,
@@ -28,7 +30,7 @@ export function createCombatChannel(response: (name: string, mode?: "combat") =>
       combatResetAt: full.combatResetByCharacter?.[name] || 0,
 
     };
-    const revisionControl = {...control, convoySignal: control.convoySignal && {...control.convoySignal, validUntil: undefined}};
+    const revisionControl = {...control, consoleMaintenance: control.consoleMaintenance && {...control.consoleMaintenance,expires:undefined}, convoySignal: control.convoySignal && {...control.convoySignal, validUntil: undefined}};
     const group = full?.groupedCombat as {
       queueRevision?: string;
       pairRevision?:string; successorGrant?:{expiresAt:number};

@@ -31,7 +31,7 @@ function setup(priestSelf = false) {
   const monster = { id: 'A', type: 'monster', mtype: 'goo', map: 'main', x: 186, y: 0, range: 20, target: 'W', visible: true };
   const players = { W: warrior, P: priest }, entities = { A: monster };
   const c = require('./helpers/client-dependencies.cjs').passingContext({ farmingTravelToken: null, character: priestSelf ? priest : warrior, leader: 'W', followLeader: true,
-    farmingMode: 'default', eventTraveling: false, joinedEvent: null, eventTargetTypes: [],
+    farmingMode: 'default', eventTraveling: false, joinedEvent: null, eventTargetTypes: [], runtimeCurrent: () => true,
     G: { maps: { main: {} }, monsters: { goo: { range: 20 } } }, parent: { entities },
     partyPositions: [warrior, priest].map(p => ({ ...p, seenAt: now, server: 'USII' })),
     get_player: name => players[name], get_entity: id => entities[id], currentPartyList: () => ['W', 'P'],
@@ -377,7 +377,10 @@ test('terrain-clear mage approach stalled by a monster gets a safe detour or an 
 test('no safe monster detour reports blockage without emitting another wandering move',()=>{
  const r=setup(),{c,warrior:mage,priest,monster,entities,moves}=r;
  Object.assign(mage,{ctype:'mage',range:200,x:-300,y:0});Object.assign(priest,{x:0,y:0});Object.assign(monster,{x:180,target:null});
- entities.blocker={id:'blocker',type:'monster',visible:true,map:'main',x:0,y:0,range:250};
+ // An idle ranged monster only reserves its body-clearance zone. Make this
+ // blocker actively threaten the priest so its 258-unit safety radius really
+ // covers every regroup endpoint within the priest's healing coverage.
+ entities.blocker={id:'blocker',type:'monster',visible:true,map:'main',x:0,y:0,range:250,target:'P'};
  c.can_move=()=>true;c.can_move_to=()=>true;c.formationMove(monster);moves.length=0;r.now(12000);c.formationMove(monster);
  assert.equal(c.partyCombatPosition.mode,'formation-blocked');assert.equal(c.partyCombatPosition.constraint,'monster-blocked approach');assert.equal(moves.length,0);
  const at=c.formationState.recovery.retryAt;r.now(12100);c.formationMove(monster);assert.equal(c.formationState.recovery.retryAt,at);

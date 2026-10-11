@@ -13,17 +13,21 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-game-e2e-${{ github.ref }}
+  group: native-game-e2e-${{ github.ref }}-${{ inputs.grep != '' && 'focused' || 'full' }}
   cancel-in-progress: false
 
 jobs:
   native-game:
     runs-on: ubuntu-latest
+    env:
+      # Same pinned MongoDB image through the mirror avoids shared Hub pull limits.
+      E2E_MONGO_IMAGE: mirror.gcr.io/library/mongo@sha256:c630c59342c1493d50345136df2af14a76b9e827dd5316bfabee07a0880a5f3a
+      E2E_NODE_IMAGE: mirror.gcr.io/library/node@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
     timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(inputs.grep != '' && '[1]' || '[1,2,3,4,5,6]') }}
+        shard: ${{ fromJSON(inputs.grep != '' && '[1]' || '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,8 +46,13 @@ jobs:
         run: |
           if [ -n "$E2E_GREP" ]; then
             npm run test:e2e:live -- --workers=1 --grep "$E2E_GREP"
+          elif [ '${{ matrix.shard }}' -le 3 ]; then
+            # Each Cave journey gets an isolated runner, with no unrelated tests queued behind it.
+            cave_filters=('Cave entry closes' 'Cave shared-route pacing' 'Cave assembly regroups')
+            npm run test:e2e:live -- --workers=1 --grep "${cave_filters[${{ matrix.shard }}-1]}"
           else
-            npm run test:e2e:live -- --fully-parallel --workers=1 --shard=${{ matrix.shard }}/6
+            # Shard the remaining suite independently so every test runs exactly once.
+            E2E_SKIP_CAVE=1 npm run test:e2e:live -- --fully-parallel --workers=1 --shard=$(( ${{ matrix.shard }} - 3 ))/13
           fi
       - name: Verify native evidence
         if: always()

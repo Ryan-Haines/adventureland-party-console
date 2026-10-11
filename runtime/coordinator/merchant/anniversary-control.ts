@@ -89,9 +89,16 @@ function visitDue(
 function movementReserved(preWindow: boolean, live: boolean, complete: boolean): boolean {
   return preWindow || (live && !complete);
 }
+function availableReservation(preWindow: boolean, featured: boolean, event: AnniversaryEvent | undefined,
+  state: NonNullable<AnniversaryMerchantStatus['anniversaryState']>): boolean {
+  return preWindow || featured || event?.available !== false || busy(state);
+}
 
 function busy(state: NonNullable<AnniversaryMerchantStatus["anniversaryState"]>): boolean {
   return !!state.busy || state.mode === "kiss-active";
+}
+function liveBusy(live: boolean, state: NonNullable<AnniversaryMerchantStatus['anniversaryState']>): boolean {
+  return live && busy(state);
 }
 
 function completedVisit(
@@ -131,8 +138,9 @@ export function merchantAnniversaryControl(
     featured,
     kissDue,
     preWindow,
-    reserved: movementReserved(preWindow, live, completed),
-    busy: live && busy(state),
+    reserved: movementReserved(preWindow, live, completed) &&
+      availableReservation(preWindow, featured, event, state),
+    busy: liveBusy(live, state),
     retryAt,
     mode: state.mode || "idle",
   };

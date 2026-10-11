@@ -1,3 +1,5 @@
+// Native merchant status always reports all 42 inventory slots.
+const nativeInventory=(items=[])=>items.concat(Array(42-items.length).fill(null));
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createImprovementScheduler}=require('../../runtime/coordinator/merchant/improvement-scheduler.ts');
 function fixture(){const state={merchantCharacter:'M',merchantAutomations:{},bankSnapshot:{packs:{}},autoCompounds:{},autoExchanges:{},merchantCatalog:{exchangeable:[]},merchantCurrent:null,merchantQueue:[]},calls=[];
@@ -8,37 +10,37 @@ const stored=(slot,level=0)=>({slot,...ring(level)});
 test('bankboi ingredients stage one missing triple and repeated observations do not duplicate it',()=>{
  const f=fixture();f.state.autoCompounds.M=[{name:'ring',targetTier:2}];
  f.state.bankbois={B:{name:'B',items:[stored(0),stored(1),stored(2),stored(3)]}};
- assert.equal(f.service.compound('M',{items:[ring(0)]}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([ring(0)])}),false);
  assert.deepEqual(f.state.withdrawals.M.map(x=>[x.pack,x.slot]),[['bankboi:B',0],['bankboi:B',1]]);
- f.service.compound('M',{items:[ring(0)]});assert.equal(f.state.withdrawals.M.length,2);
+ f.service.compound('M',{items:nativeInventory([ring(0)])});assert.equal(f.state.withdrawals.M.length,2);
  // Normal-bank staging is still an outstanding withdrawal, so it cannot trigger another batch.
  f.state.withdrawals.M=f.state.withdrawals.M.map(x=>({...x,pack:'items1'}));
- f.service.compound('M',{items:[ring(0)]});assert.equal(f.state.withdrawals.M.length,2);
+ f.service.compound('M',{items:nativeInventory([ring(0)])});assert.equal(f.state.withdrawals.M.length,2);
 });
 test('bankboi selection prefers highest complete triple and excludes locked ingredients',()=>{
  const f=fixture();f.state.autoCompounds.M=[{name:'ring',targetTier:3}];
  f.state.bankbois={B:{name:'B',items:[stored(0,0),stored(1,0),stored(2,0),stored(3,2),
   {slot:4,item:{name:'ring',level:2,l:'l'}},stored(5,2)]}};
- f.service.compound('M',{items:[ring(2)]});
+ f.service.compound('M',{items:nativeInventory([ring(2)])});
  assert.deepEqual(f.state.withdrawals.M.map(x=>x.slot),[3,5]);
 });
 test('incomplete mixed levels and party character rules do not retrieve bankboi items',()=>{
  const f=fixture();f.state.autoCompounds={M:[{name:'ring',targetTier:7}],F:[{name:'ring',targetTier:7}]};
  f.state.bankbois={B:{name:'B',items:[stored(0,6),stored(1,6)]}};
- assert.equal(f.service.compound('M',{items:[ring(0)]}),true); // Bank the leftover; do not retrieve an incomplete group.
- assert.equal(f.service.compound('F',{items:[ring(6)]}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([ring(0)])}),true); // Bank the leftover; do not retrieve an incomplete group.
+ assert.equal(f.service.compound('F',{items:nativeInventory([ring(6)])}),true);
  assert.deepEqual(f.calls.at(-1),[['F'],'marked items']);
  assert.equal(f.state.withdrawals,undefined);
 });
 test('completed quota remains saved and active work defers retrieval',()=>{
  const f=fixture();f.state.autoCompounds.M=[{name:'ring',targetTier:2,quantity:0}];
  f.state.bankbois={B:{name:'B',items:[stored(0,2),stored(1),stored(2),stored(3)]}};
- assert.equal(f.service.compound('M',{items:[]}),false);assert.equal(f.state.autoCompounds.M[0].quantity,0);
+ assert.equal(f.service.compound('M',{items:nativeInventory([])}),false);assert.equal(f.state.autoCompounds.M[0].quantity,0);
  assert.equal(f.state.withdrawals,undefined);
  f.state.autoCompounds.M=[{name:'ring',targetTier:2}];f.state.merchantCurrent={reason:'auto compound'};
- assert.equal(f.service.compound('M',{items:[]}),true);assert.equal(f.state.withdrawals,undefined);
+ assert.equal(f.service.compound('M',{items:nativeInventory([])}),false);assert.equal(f.state.withdrawals,undefined);
  f.state.merchantCurrent=null;f.state.bankboiTransaction={};
- f.service.compound('M',{items:[]});assert.equal(f.state.withdrawals,undefined);
+ f.service.compound('M',{items:nativeInventory([])});assert.equal(f.state.withdrawals,undefined);
 });
 test('improvement commands preserve remaining quota regardless of owned stock',()=>{
  const {ownMerchantCommand,partyMerchantCommand}=require('../../runtime/coordinator/merchant/commands.ts');
@@ -52,13 +54,13 @@ test('improvement commands preserve remaining quota regardless of owned stock',(
 });
 test('merchant compound uses bank triplets while ordinary characters use their own bags',()=>{
  const f=fixture();f.state.autoCompounds={M:[{name:'ring',targetTier:2}],F:[{name:'ring',targetTier:2}]};f.state.bankSnapshot.packs.items1=[ring(0),ring(0)];
- assert.equal(f.service.compound('M',{items:[ring(0)]}),true);assert.deepEqual(f.calls,[[['M'],'auto compound']]);
- assert.equal(f.service.compound('F',{items:[ring(0)]}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([ring(0)])}),true);assert.deepEqual(f.calls,[[['M'],'auto compound']]);
+ assert.equal(f.service.compound('F',{items:nativeInventory([ring(0)])}),true);
  assert.deepEqual(f.calls.at(-1),[['F'],'marked items']);
 });
 test('existing finished items do not satisfy a production quota',()=>{
  const f=fixture();f.state.autoCompounds.M=[{name:'ring',targetTier:2,quantity:1},{name:'ring',targetTier:3}];
- assert.equal(f.service.compound('M',{items:[ring(2),ring(0),ring(0),ring(0)]}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([ring(2),ring(0),ring(0),ring(0)])}),true);
  assert.equal(f.state.autoCompounds.M.length,2);assert.equal(f.state.autoCompounds.M[0].quantity,1);assert.deepEqual(f.calls[0],[['M'],'auto compound']);
 });
 test('exchange combines bank quantities, stamps one job, and respects existing exchange work',()=>{
@@ -69,14 +71,14 @@ test('exchange combines bank quantities, stamps one job, and respects existing e
 });
 test('disabled improvements and nonmerchant exchange reports do not mutate work',()=>{
  const f=fixture();f.state.merchantAutomations={'auto compound':false,exchange:false};
- assert.equal(f.service.compound('M',{items:[]}),false);assert.equal(f.service.exchange({name:'M',items:[]}),false);
+ assert.equal(f.service.compound('M',{items:nativeInventory([])}),false);assert.equal(f.service.exchange({name:'M',items:[]}),false);
  f.state.merchantAutomations={};assert.equal(f.service.exchange({name:'F',items:[]}),false);assert.equal(f.service.compound('M',null),false);assert.deepEqual(f.calls,[]);
 });
 test('missing bank panes and empty entries do not hide a valid compound triplet',()=>{
  const f=fixture();
  f.state.autoCompounds.M=[{name:'ring',targetTier:2}];
  f.state.bankSnapshot.packs={items0:undefined,items1:[null,ring(0),ring(0)]};
- assert.equal(f.service.compound('M',{items:[ring(0)]}),true);
+ assert.equal(f.service.compound('M',{items:nativeInventory([ring(0)])}),true);
  assert.deepEqual(f.calls,[[['M'],'auto compound']]);
  assert.equal(f.state.bankSnapshot.packs.items0,undefined);
 });

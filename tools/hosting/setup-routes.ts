@@ -9,6 +9,7 @@ import { trustHelper } from './trust.ts';
 import { requestOrigin } from './request-origin.ts';
 import { transfer } from './setup-transfer.ts';
 export interface Options {
+  builds?: { route(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> };
   realms?: Promise<import('./realms.ts').RealmDiscovery>;
   debug?: import('../debug/service.ts').DebugInstances;
   steam?: import('../steam/service.ts').LocalSteam;

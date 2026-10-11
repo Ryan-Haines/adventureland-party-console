@@ -110,6 +110,9 @@ export type PartyState = {
   leader?: string | null;
   followers?: Record<string, boolean>;
   eventsByCharacter?: Record<string, boolean>;
+  eventAttendance?: Record<string, Record<string, Pick<import("../../../runtime/coordinator/events/attendance-limits").AttendanceInstance, "ignored" | "ended">>>;
+  eventLimitsByCharacter?: Record<string, Record<string, import("../../lib/event-policy").EventLimits>>;
+  eventPrioritiesByCharacter?: Record<string, string[]>;
   eventSelectionsByCharacter?: Record<string, string[]>;
   eventSchedules?: import("./event-selection-control").EventSchedule[];
   monsterFocus?: string[] | string;
@@ -157,6 +160,8 @@ export type PartyState = {
   merchantStandLocation?: MerchantStandLocation | null;
   merchantWeapon?: { item: Item } | null;
   luckyUpgradeSlots?: Record<string, number | null>;
+  luckySlotLocks?: Record<string, number | null>;
+  luckySlotResume?: Record<string, {slot: number; rolls: number}>;
   luckySlotTracking?: LuckySlotHistory;
   merchantQueue?: MerchantJob[];
   merchantCurrent?: MerchantJob | null;

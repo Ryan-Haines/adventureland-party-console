@@ -152,3 +152,26 @@ test('late commerce receipt for an ended job does not overwrite the next job',()
  const reply=f.send('orderComplete',{jobId:'job',character:'F',commandId:1,sent:[]});
  assert.equal(reply.body.stale,true);assert.equal(s.merchantCurrent.orderHandoff,undefined);assert.equal(s.commands.F.id,99);
 });
+
+for(const outcome of ['complete','job failure'])test('failed convoy permits stopped collection and preserves failure after '+outcome,()=>{
+ const f=fixture(),s=f.state,c=s.activeConvoy;
+ c.phase='failed';c.failure='Route exhausted';c.failureCode='route-failed';c.retryExhausted=true;c.recoveryAttempts=3;c.failedAt=900;
+ const destination=structuredClone(c.location);
+ assert.equal(f.send('handoff').body.waiting,true);
+ f.tick();assert.equal(s.commands.F.phase,'shared-hold');
+ f.ack();s.statuses.L.moving=true;f.tick();assert.equal(f.send('handoff').body.waiting,true);
+ s.statuses.L.moving=false;s.statuses.L.seenAt=-5000;f.tick();assert.equal(s.commands.F.type,'party-monster-travel');
+ f.ack();f.tick();assert.equal(f.send('handoff').body.ok,true);assert.equal(s.commands.F.type,'merchant-handoff');
+ if(outcome==='complete')f.send('complete',{jobId:'job',character:'F',commandId:s.commands.F.id});
+ else {require('../../runtime/coordinator/navigation/merchant-interruption.ts').releaseMerchantInterruption(s,'job');s.merchantCurrent=null;}
+ f.tick();f.ack();f.tick();
+ assert.equal(c.phase,'failed');assert.equal(c.failure,'Route exhausted');assert.equal(c.failureCode,'route-failed');
+ assert.equal(c.retryExhausted,true);assert.equal(c.recoveryAttempts,3);assert.equal(c.failedAt,900);
+ assert.deepEqual(c.location,destination);assert.equal(c.merchantInterruption,undefined);
+ assert.equal(s.commands.F.phase,'hold');
+});
+
+test('failed non-preemptible convoy still refuses collection',()=>{
+ const f=fixture(),s=f.state;s.activeConvoy.phase='failed';s.activeConvoy.nonPreemptible=true;
+ assert.equal(f.send('handoff').body.deferred,true);assert.equal(s.activeConvoy.merchantInterruption,undefined);
+});

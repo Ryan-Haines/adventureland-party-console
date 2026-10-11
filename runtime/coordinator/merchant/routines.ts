@@ -9,6 +9,7 @@ function exchangeRoutine(job: RoutineJob): string {
   return job.autoExchangeKeys?.length ? 'automatic exchange' : 'manual exchange';
 }
 export function routineFor(job: RoutineJob): string {
+  if (job.reason === 'bank collection') return 'party collection';
   if (job.reason === 'exchange') return exchangeRoutine(job);
   if (job.routine) return job.routine;
   if (purchases.has(job.reason)) return purchaseRoutine(job);

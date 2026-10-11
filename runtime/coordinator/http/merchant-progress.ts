@@ -126,7 +126,10 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
       return res.status(409).json({ error: "merchant job is no longer current" });
     if (body.protectionOnly === true) {
       if (current.itemMarksCleared) return res.status(409).json({ error: "Item marks cleared; refresh merchant work" });
-      return res.json(protectionReply(state));
+      if (body.commerceAdoptionProtection === true &&
+          (current.reason !== 'merchant commerce' || current.commerceProgressVersion !== 2 || body.commandId !== current.commandId))
+        return res.status(409).json({error:'Commerce adoption requires the current paid command'});
+      return res.json(protectionReply(state, body.commerceAdoptionProtection === true ? current.id : undefined));
     }
     return checkpointWork(current, body, res);
   }
@@ -141,6 +144,7 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
   function checkpointWork(current: MerchantWork, body: Record<string, unknown>, res: HttpResponse): unknown {
     const eventReserved = reserved();
     if (body.eventOnly === true && !eventReserved) return res.json({ yield: false });
+    const adoption = adoptionTransition(current, body);
     saveProgress(current, body);
     current.phase = "checkpointed";
     current.checkpointAt = ports.now();
@@ -150,20 +154,40 @@ export function createMerchantProgressRoutes(state: ProgressState, ports: Progre
       current.phase = "processing";
       delete current.checkpointAt;
       ports.persist();
+      auditAdoption(current, adoption);
       return res.json({ yield: false, currentPriority, waitingPriority, waitingType });
     }
     pause(current, currentPriority, waitingPriority);
+    auditAdoption(current, adoption);
     return res.json({ yield: true, currentPriority, waitingPriority });
+  }
+  function auditAdoption(current: MerchantWork, adoption: Record<string, unknown> | undefined): void {
+    if (!adoption) return;
+    const input = requestObject(adoption.input), previous = requestObject(adoption.previousInput);
+    ports.log('Inventory adoption assumption: continuing ' + String(input.name) + ' +' + Number(input.level || 0) +
+      ' from inventory slot ' + Number(adoption.slot) + '; old upgrade +' + Number(previous.level || 0) +
+      ' to +' + Number(adoption.pendingLevel) + ' at slot ' + Number(adoption.previousSlot) +
+      ' remains unconfirmed; paid spending and attempts retained', 'info',
+      {jobId:current.id,commerceOrderId:current.commerceOrderId,commandId:current.commandId,adoption});
   }
   return { job, heartbeat, checkpoint };
 }
 
-function protectionReply(state: ProgressState) {
+function adoptionTransition(current: MerchantWork, body: Record<string, unknown>) {
+  if (body.eventOnly === true || current.reason !== 'merchant commerce' || current.commerceProgressVersion !== 2) return;
+  const previous = requestObject(requestObject(current.resumeState).inventoryAdoption);
+  const adoption = requestObject(requestObject(body.state).inventoryAdoption);
+  if (!Number.isFinite(adoption.at) || Number(adoption.at) <= Number(previous.at || 0)) return;
+  return adoption;
+}
+
+function protectionReply(state: ProgressState, commerceAdoptionJob?: string) {
   const compoundState = {...state, autoCompounds: state.autoCompounds || {}};
   const compoundRules = state.merchantAutomations?.['auto compound'] === false ? [] : sharedCompoundRules(compoundState)
     .filter(rule => Number(rule.quantity) !== 0);
   const compoundBlocked = compoundRules.flatMap(rule => Array.from({length: rule.targetTier || 1}, (_, level) => ({name:rule.name,level})))
     .filter(item => itemRuleConflicts(compoundState,item).length);
   return {craftProtection: craftProtection(state), compoundRules, compoundBlocked,
+    ...(commerceAdoptionJob ? {commerceAdoptionProtection:craftProtection(state, undefined, commerceAdoptionJob)} : {}),
     upgradeOfferingRules: state.upgradeOfferingRules || [], upgradeOfferingStock: offeringStock(state)};
 }

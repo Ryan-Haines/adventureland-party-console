@@ -39,19 +39,23 @@ function coordinator() {
   return { party, body, options };
 }
 
-test('authorized ordinary farming acquires configured monsters near the party before its destination map',()=>{
+test('authorized ordinary farming retains travel outside its destination farm',()=>{
  const c=client();c.travelCombatActive=()=>true;
  const target={id:'early',type:'monster',mtype:'goo',visible:true,map:'winterland',x:520,y:0};c.parent.entities.early=target;
  const command={location:{map:'cave',x:900,y:0},purpose:null,combatHandoffAllowed:true};
+ assert.equal(c.farmingTravelTarget(command),null);
+ command.location={map:'winterland',x:520,y:0};
  assert.equal(c.farmingTravelTarget(command),target);
  target.x=601;assert.equal(c.farmingTravelTarget(command),null);
  target.x=520;command.combatHandoffAllowed=false;assert.equal(c.farmingTravelTarget(command),null);
 });
 
-test('monster picker travel acquires visible wild boar before reaching its spawn',()=>{
+test('monster picker travel acquires visible wild boar only inside the selected spawn',()=>{
  const c=client();c.travelCombatActive=()=>true;c.monsterFocus=['boar'];
  const target={id:'boar',type:'monster',mtype:'boar',visible:true,map:'winterland',x:520,y:0};c.parent.entities.boar=target;
  const command={location:{map:'winterland',x:1500,y:0},purpose:'manual-monster-override',combatHandoffAllowed:true};
+ assert.equal(c.farmingTravelTarget(command),null);
+ command.location.x=520;
  assert.equal(c.farmingTravelTarget(command),target);
  target.claimed=true;assert.equal(c.farmingTravelTarget(command),null);
  target.claimed=false;target.x=601;assert.equal(c.farmingTravelTarget(command),null);

@@ -11,7 +11,7 @@ export function DeliveryTripSetting({ enabled = true }: { enabled?: boolean }) {
           action.mutate({ path: "/merchant/routine-priorities", body: { priorities: {}, enabled: { deliveries: event.target.checked } } });
         }}
         className="size-4 border border-slate-400 bg-slate-950 accent-emerald-400" />
-      Marked deliveries create merchant jobs
+      Marked deliveries always create merchant jobs
     </label>
     <p id="delivery-trip-help" className="text-xs text-slate-300">
       When disabled, the merchant completes marked deliveries when visiting the party for another reason,

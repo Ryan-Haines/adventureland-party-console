@@ -73,7 +73,7 @@ const configFields = [
   "merchantRoutinePriorities", "merchantAutomations", "merchantBlacklist",
   "standBids", "autoStandBuys", "autoBlacklistMerchants", "standSearch",
   "upgrades", "statScrolls", "compounds", "autoCompounds", "autoExchanges", "goldTargets",
-  "leader", "followers", "eventsByCharacter", "eventSelectionsByCharacter",
+  "leader", "followers", "eventsByCharacter", "eventSelectionsByCharacter", "eventPrioritiesByCharacter", "eventLimitsByCharacter", "eventAttendance",
   "monsterFocus", "monsterFocusByCharacter", "monsterPrioritiesByCharacter",
   "monsterSearchRadiusByCharacter", "scatterMonsterTypes",
   "farmingPolicy",

@@ -1,7 +1,7 @@
 import { test as base, expect, unusedPort, child, environment, stop } from './fixtures';
 import { launchGameClient, type LiveClient } from './live-game-client';
 import { type ChildProcess } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import type { Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +11,7 @@ import { gateway } from '../tools/hosting/gateway';
 import { Access } from '../tools/hosting/access';
 import { selectionFields, stateKeys } from '../runtime/coordinator/persistence/snapshots';
 import { loadouts, seedLoadout, type NativeLoadout } from './game/loadouts';
+import { nativeEventSpawn, nativeMonsterInitialPosition } from './game/event-spawn';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -21,21 +22,32 @@ export type LiveGame = {
   state(catalogs?: boolean): Promise<any>;
   post(route: string, body: unknown): Promise<any>;
   admin(code: string): Promise<any>;
+  adminRealm(realm:'USI'|'USII', code:string):Promise<any>;
+  holdMerchantStatus(hold:boolean):void;
+  consoleDrainLease(id: string | null, expires?: number): void;
   restartCoordinator(): Promise<void>;
   restoreHistoricalSettings(restore: (settings: any) => any): Promise<void>;
   reconnectClient(name: string): Promise<void>;
 };
 
-export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primaryClass: 'warrior' | 'ranger'; merchantDefault: string | null; initialPosition: {map: string; x: number; y: number} | null }>({
+export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primaryClass: 'warrior' | 'ranger' | 'mage'; merchantDefault: string | null; liveHeadless: boolean; staleWorkerRealm: string | null; initialPosition: {map: string; x: number; y: number} | null; initialEventSpawn: string | null; initialMonsterSpawn: string | null }>({
   loadout: ['god', {option:true}],
   primaryClass: ['warrior', {option:true}],
   merchantDefault: ['E2EMerchant', {option:true}],
   initialPosition: [null, {option:true}],
-  live: [async ({ browser, dashboard, loadout, primaryClass, merchantDefault, initialPosition }, use, testInfo) => {
+  initialMonsterSpawn: [null, {option:true}],
+  initialEventSpawn: [null, {option:true}],
+  liveHeadless: [false, {option:true}],
+  staleWorkerRealm: [null, {option:true}],
+  live: [async ({ browser, dashboard, loadout, primaryClass, merchantDefault, initialPosition, initialEventSpawn, initialMonsterSpawn, liveHeadless, staleWorkerRealm }, use, testInfo) => {
     const directory = path.join(root, '.build/e2e', `live-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
     const manifest = await game.reset();
     const equipment = await seedLoadout(game.admin, loadout, primaryClass);
+    if(initialEventSpawn){const spawn=await nativeEventSpawn(game.admin,initialEventSpawn);initialPosition={...spawn,x:spawn.x+160};
+      await testInfo.attach('native-event-catalog-initial-position',{body:JSON.stringify({event:initialEventSpawn,spawn,initialPosition}),contentType:'application/json'});}
+    if(initialMonsterSpawn){const spawn=await nativeMonsterInitialPosition(game.admin,initialMonsterSpawn);initialPosition={map:spawn.map,x:spawn.x,y:spawn.y};
+      await testInfo.attach('native-monster-collision-safe-initial-position',{body:JSON.stringify(spawn),contentType:'application/json'});}
     if (initialPosition) {
       await game.admin("output=db.collection('character').updateMany({owner:data.owner},{$set:{'info.map':data.map,'info.x':data.x,'info.y':data.y}})", { owner: manifest.auth.split('-')[0], ...initialPosition });
       await testInfo.attach('native-initial-position-seed', { body: JSON.stringify(initialPosition), contentType: 'application/json' });
@@ -69,7 +81,7 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
     async function start() {
       coordinator = child(path.join(root, 'e2e/live-coordinator.cjs'), [], root,
         environment({ E2E_COORDINATOR_PORT: String(port), E2E_DATA_DIR: directory,
-          E2E_GAME_WEB_URL: manifest.webUrl, E2E_GAME_AUTH: manifest.auth, E2E_MERCHANT_DEFAULT: JSON.stringify(merchantDefault) }), log);
+          E2E_GAME_WEB_URL: manifest.webUrl, E2E_GAME_AUTH: manifest.auth, E2E_MERCHANT_DEFAULT: JSON.stringify(merchantDefault), E2E_ALLOW_HEADLESS: String(liveHeadless), E2E_STALE_WORKER_REALM: staleWorkerRealm || '' }), log);
       const current = coordinator;
       await new Promise<void>((resolve, reject) => {
         const details = () => existsSync(log) ? readFileSync(log, 'utf8').slice(-16000) : 'No coordinator output';
@@ -108,6 +120,24 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           exchanges.push({ at: Date.now(), administrative: true, code, result });
           return result;
         },
+        async adminRealm(realm,code) {
+          const result = await game.admin(code,{},realm);
+          exchanges.push({at:Date.now(),administrative:true,realm,code,result});
+          return result;
+        },
+        holdMerchantStatus(hold) {
+          const marker=path.join(directory,'hold-merchant-status');
+          if(hold) writeFileSync(marker,'Declared missing merchant arrival reports');
+          else rmSync(marker,{force:true});
+          exchanges.push({at:Date.now(),transportFault:'merchant-status',hold});
+        },
+        consoleDrainLease(id, expires = Date.now()+180000) {
+          const file = path.join(directory,'updates/pause.json');
+          mkdirSync(path.dirname(file),{recursive:true});
+          if (id) writeFileSync(file,JSON.stringify({id,mode:'draining',expires}));
+          else rmSync(file,{force:true});
+          exchanges.push({at:Date.now(),hostMaintenanceLease:id,expires});
+        },
         async restartCoordinator() { await stop(coordinator!, true); await start(); },
         async restoreHistoricalSettings(restore) {
           await stop(coordinator!, true);
@@ -115,9 +145,11 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           const entries = readFileSync(journal, 'utf8').trim().split('\n').map(line => JSON.parse(line));
           const key = 'party_dashboard_settings_state_v1';
           const stored = Object.assign({}, ...entries);
-          const settings = JSON.parse(stored[key]);
-          const historical = restore(structuredClone(settings));
-          const allowed = new Set(['characterLocations', 'location', 'farmingPolicy', 'farmingProfiles', 'eventSelectionsByCharacter', 'activeConvoy', 'deferredEventReturns', 'eventReturn', 'monsterHunt', 'merchantDeliveries', 'npcSaleMarks', 'merchantCurrent', 'merchantCharacter', 'bankbois', 'bankboiTransaction', 'production', 'nativeStand', 'standBids', 'luckyUpgradeSlots', 'autoItemMarks', 'autoUpgradeMarks', 'autoCompounds']);
+          const decoded = (stateKey: string) => typeof stored[stateKey] === 'string'
+            ? JSON.parse(stored[stateKey]) : structuredClone(stored[stateKey] || {});
+          const settings = decoded(key);
+          const historical = await restore(structuredClone(settings));
+          const allowed = new Set(['escape', 'combatRecovery', 'characterLocations', 'location', 'farmingPolicy', 'farmingProfiles', 'eventSelectionsByCharacter', 'activeConvoy', 'deferredEventReturns', 'eventReturn', 'monsterHunt', 'merchantDeliveries', 'npcSaleMarks', 'merchantCurrent', 'merchantQueue', 'merchantRealmRequests', 'autoNpcSales', 'autoStandMarks', 'merchantCharacter', 'bankbois', 'bankboiTransaction', 'production', 'nativeStand', 'standBids', 'luckyUpgradeSlots', 'luckySlotResume', 'luckySlotLocks', 'autoItemMarks', 'autoUpgradeMarks', 'autoCompounds', 'gatheringCooldowns']);
           if (Object.keys(historical).some(key => !allowed.has(key))) throw Error('Historical seed may only patch declared recovery, Hunt, navigation and native WTB settings');
           await testInfo.attach('declared-historical-settings-seed', { body: JSON.stringify(historical), contentType: 'application/json' });
           const bankKeys = new Set(['bankbois', 'bankboiTransaction']);
@@ -125,12 +157,12 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           const selectionKeys = new Set<string>(selectionFields);
           const selectionsPatch = Object.fromEntries(Object.entries(historical).filter(([field]) => selectionKeys.has(field)));
           const settingsPatch = Object.fromEntries(Object.entries(historical).filter(([field]) => !bankKeys.has(field) && !selectionKeys.has(field)));
-          const restored: Record<string, string> = { [key]: JSON.stringify({ ...settings, ...settingsPatch }) };
+          const restored: Record<string, unknown> = { [key]: { ...settings, ...settingsPatch } };
           if (Object.keys(selectionsPatch).length)
-            restored[stateKeys.selections] = JSON.stringify({ ...JSON.parse(stored[stateKeys.selections] || '{}'), ...selectionsPatch });
+            restored[stateKeys.selections] = { ...decoded(stateKeys.selections), ...selectionsPatch };
           if (Object.keys(bankPatch).length) {
             const bankKey = 'party_dashboard_bank_state_v1';
-            restored[bankKey] = JSON.stringify({ ...JSON.parse(stored[bankKey] || '{}'), ...bankPatch });
+            restored[bankKey] = { ...decoded(bankKey), ...bankPatch };
           }
           for (const [stateKey, value] of Object.entries(restored))
             appendFileSync(journal, JSON.stringify({ [stateKey]: value }) + '\n');
@@ -138,10 +170,15 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
         },
         async reconnectClient(name) {
           if (!clients[name]) throw Error('Unknown owned native client: ' + name);
-          const previous = Object.values(clients).filter(client => client !== clients[primaryName]);
+          const ownership = await live!.state();
+          const steamNames = Object.keys(clients).filter(member =>
+            ownership.characters[member]?.runtime === 'native');
+          if (!steamNames.includes(name)) throw Error('Native browser reconnect requires current Steam ownership: ' + name);
+          const companions = steamNames.filter(member=>member!==primaryName);
+          const previous = companions.map(member=>clients[member]);
           if (name === primaryName) {
             await clients[name].page.close();
-            await expect.poll(async () => game.admin("output=Object.keys(players).length+Object.keys(dc_players).length"), { timeout: 45_000 }).toBe(0);
+            await expect.poll(async () => game.admin(`output=Object.values(players).concat(Object.values(dc_players)).filter(p=>${JSON.stringify(steamNames)}.includes(p.name)).length`), { timeout: 45_000 }).toBe(0);
             clients[primaryName] = await launchGameClient(context, optionsFor(primaryName));
             // Production bridge restores its missing companions after observing the new primary session.
           } else {
@@ -149,7 +186,7 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
             await live!.post('/steam/restore', {});
             await expect.poll(() => previous.every(client => client.frame.isDetached()), { timeout: 30_000 }).toBe(true);
           }
-          for (const companion of ['E2EPriest', 'E2EMerchant'])
+          for (const companion of companions)
             clients[companion] = await launchGameClient(context, optionsFor(companion));
           await expect.poll(async () => (await live!.state()).steamSwitch?.phase, { timeout: 90_000 }).toBe('complete');
         },
@@ -195,6 +232,7 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
       await testInfo.attach('live-build-manifest', { path: path.join(root, '.build/game/manifest.json'), contentType: 'application/json' });
       await use(live);
     } finally {
+      rmSync(path.join(directory,'hold-merchant-status'),{force:true});
       const attach = async (name: string, body: unknown) => testInfo.attach(name, { body: JSON.stringify(body, null, 2), contentType: 'application/json' });
       const diagnostic = async (work: Promise<unknown>) => {
         let timer: ReturnType<typeof setTimeout>;
@@ -228,18 +266,33 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           await attach(`startup-page-${index}-location`, { url: page.url() });
         }
         await attach('live-action-ledger', exchanges);
+        const visitorStatus = path.join(directory,'home-visitor-status.jsonl');
+        if(existsSync(visitorStatus)) await testInfo.attach('home-visitor-status',{path:visitorStatus,contentType:'application/x-ndjson'});
         await attach('live-blocked-external-requests', blocked);
       } finally {
-        await context.close();
-        for (const [index, page] of [...nativePages].entries()) {
-          const video = page.video();
-          if (video) await testInfo.attach(`native-game-video-${index}`, { path: await video.path(), contentType: 'video/webm' });
+        try {
+          const closed = await diagnostic(context.close());
+          if (closed) await attach('native-context-close-diagnostic', closed);
+          for (const [index, page] of [...nativePages].entries()) {
+            const video = page.video();
+            if (!video) continue;
+            const result = await diagnostic((async () => {
+              await testInfo.attach(`native-game-video-${index}`, { path: await video.path(), contentType: 'video/webm' });
+            })());
+            if (result) await attach(`native-game-video-${index}-diagnostic`, result);
+          }
+        } finally {
+          server.closeAllConnections();
+          await diagnostic(new Promise<void>(resolve => {
+            if (server.listening) server.close(() => resolve());
+            else resolve();
+          }));
+          try { if (coordinator) await stop(coordinator, true); }
+          finally {
+            for (const file of [log, dashboard.log, path.join(directory, 'state.jsonl')])
+              if (existsSync(file)) await diagnostic(testInfo.attach(path.basename(file), { path: file, contentType: 'text/plain' }));
+          }
         }
-        server.closeAllConnections();
-        if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
-        if (coordinator) await stop(coordinator, true);
-        for (const file of [log, dashboard.log, path.join(directory, 'state.jsonl')])
-          if (existsSync(file)) await testInfo.attach(path.basename(file), { path: file, contentType: 'text/plain' });
       }
     }
   }, { timeout: 300_000 }],

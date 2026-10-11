@@ -22,18 +22,33 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // dashboard/lib/event-policy.ts
 var event_policy_exports = {};
 __export(event_policy_exports, {
+  eventDisplayNames: () => eventDisplayNames,
   eventEnabled: () => eventEnabled,
   eventPolicy: () => eventPolicy,
+  eventPriorityOrder: () => eventPriorityOrder,
   selectedEvents: () => selectedEvents,
   supportedEvents: () => supportedEvents
 });
 module.exports = __toCommonJS(event_policy_exports);
-var supportedEvents = ["anniversary", "abtesting", "goobrawl", "crabxx", "franky", "icegolem", "snowman"];
+var legacyDefaultEvents = ["anniversary", "abtesting", "goobrawl", "crabxx", "franky", "icegolem", "snowman"];
+var supportedEvents = [...legacyDefaultEvents, "slenderman", "mrgreen", "mrpumpkin"];
+var eventDisplayNames = {
+  anniversary: "Anniversary",
+  abtesting: "A/B Testing",
+  goobrawl: "Goobrawl",
+  crabxx: "Crabxx",
+  franky: "Franky",
+  icegolem: "Ice Golem",
+  snowman: "Snowman",
+  slenderman: "Slenderman",
+  mrgreen: "Mr. Green",
+  mrpumpkin: "Mr. Pumpkin"
+};
 function selectedEvents(party, name) {
   const source = eventPolicy(party, name).source;
   const saved = party.eventSelectionsByCharacter?.[source];
-  const selections = saved ?? ["anniversary", ...party.eventsByCharacter?.[source] ? supportedEvents.filter((id) => id !== "anniversary") : []];
-  return selections.filter((id) => supportedEvents.includes(id) && (name !== party.merchantCharacter || id === "anniversary"));
+  const selections = saved ?? ["anniversary", ...party.eventsByCharacter?.[source] ? legacyDefaultEvents.filter((id) => id !== "anniversary") : []];
+  return eventPriorityOrder(party, name).filter((id) => selections.includes(id));
 }
 function eventEnabled(party, name, event) {
   return selectedEvents(party, name).includes(event);
@@ -48,4 +63,8 @@ function eventPolicy(party, name) {
     source,
     enabled: party.eventSelectionsByCharacter?.[source] ? party.eventSelectionsByCharacter[source].some((id) => id !== "anniversary" && supportedEvents.includes(id)) : Boolean(party.eventsByCharacter?.[source])
   };
+}
+function eventPriorityOrder(party, name) {
+  const source = eventPolicy(party, name).source;
+  return [.../* @__PURE__ */ new Set([...party.eventPrioritiesByCharacter?.[source] ?? [], ...supportedEvents])].filter((id) => supportedEvents.includes(id));
 }

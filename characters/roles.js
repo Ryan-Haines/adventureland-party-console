@@ -223,6 +223,15 @@
 
   // runtime/characters/roles/monster-attack-policy.ts
   var reflectors = /* @__PURE__ */ new Set(["slenderman", "tiger", "goblin"]);
+  function knownDamageType(value) {
+    return value === "physical" || value === "magical" || value === "pure" ? value : void 0;
+  }
+  function effectiveAttackDamageType(actor, data) {
+    const nativeType = knownDamageType(actor.damage_type);
+    if (nativeType) return nativeType;
+    const weapon = actor.slots?.mainhand;
+    return knownDamageType(weapon && data?.items?.[weapon.name]?.damage_type) || knownDamageType(data?.classes?.[actor.ctype]?.damage_type);
+  }
   function monsterAttackBlock(monster, damageType, range) {
     if (monster === "porcupine" && damageType !== "magical" && damageType !== "pure" && !(Number.isFinite(range) && range >= 75))
       return "Porcupine damage return: physical attacks require range >= 75";
@@ -401,8 +410,14 @@
   function movementReserved(preWindow, live, complete) {
     return preWindow || live && !complete;
   }
+  function availableReservation(preWindow, featured, event, state) {
+    return preWindow || featured || event?.available !== false || busy(state);
+  }
   function busy(state) {
     return !!state.busy || state.mode === "kiss-active";
+  }
+  function liveBusy(live, state) {
+    return live && busy(state);
   }
   function completedVisit(state, event) {
     return state.mode === "complete" && (state.completedRound === void 0 || state.completedRound === String(event?.round));
@@ -424,8 +439,8 @@
       featured,
       kissDue,
       preWindow,
-      reserved: movementReserved(preWindow, live, completed),
-      busy: live && busy(state),
+      reserved: movementReserved(preWindow, live, completed) && availableReservation(preWindow, featured, event, state),
+      busy: liveBusy(live, state),
       retryAt,
       mode: state.mode || "idle"
     };
@@ -577,8 +592,7 @@
         ports.state().skippedAttack = "waiting for group readiness and target commitment";
         return false;
       }
-      const actor = character;
-      const blocked2 = monsterAttackBlock(target.mtype, actor.damage_type, Number(character.range));
+      const blocked2 = monsterAttackBlock(target.mtype, effectiveAttackDamageType(character, typeof G === "undefined" ? void 0 : G), Number(character.range));
       if (blocked2) {
         ports.state().skippedAttack = blocked2;
         return false;
@@ -1294,7 +1308,7 @@
     const shared = root.sharedRoutine;
     const projectiles = createProjectileTracker(world);
     function world() {
-      const actor = character;
+      const actor = { ...character, damage_type: effectiveAttackDamageType(character, typeof G === "undefined" ? void 0 : G) };
       const context = shared.combatContext?.() || {
         leader: "",
         allies: [],
@@ -2364,10 +2378,11 @@
       }, 3e3);
       socket.once("entities", observe);
     });
+    let convoySuspended = false;
     const rare = createDepartureLoot(ports), hunt = createDepartureLoot({
       ...ports,
       defending: () => mission?.encounter && ports.huntEncounterDefending ? ports.huntEncounterDefending() : ports.defending()
-    }), convoy = createDepartureLoot(ports);
+    }), convoy = createDepartureLoot({ ...ports, defending: () => convoySuspended || ports.defending() });
     let convoyHold = false;
     let lastState = 0, lastRare = null, mission = null, finalKill = null, finalKillAt = 0;
     const activeMission = () => mission && !["ended", "failed-return", "backup-travel", "backup-farming"].includes(mission.stage);
@@ -2402,7 +2417,9 @@
       accept(state) {
         if (state.serverNow < lastState) return lastRare;
         lastState = state.serverNow;
-        convoyHold = !!(state.convoySignal?.phase === "defending" && state.convoySignal.loot);
+        const convoyPhase = state.convoySignal?.phase;
+        convoyHold = !!(["defending", "communication-hold", "observing"].includes(convoyPhase) && state.convoySignal.loot);
+        convoySuspended = convoyHold && convoyPhase !== "defending";
         convoy.accept(convoyHold ? state.convoySignal.loot : null, state.serverNow);
         mission = state.monsterHunt;
         if (state.farmingPolicy && state.farmingPolicy !== "hunt" && !mission?.exitMode) mission = null;
@@ -2603,8 +2620,8 @@
     });
     const recoverFromDeath = createDeathRecovery({
       isDead: () => !!character.rip,
-      blocked: () => !!sharedRoutine.dungeonOwned?.(),
-      respawn: () => sharedRoutine.dungeonOwned?.() ? Promise.reject(Error("Dungeon owns revival")) : Promise.resolve(respawn()),
+      blocked: () => !!sharedRoutine.dungeonOwned?.() || !!sharedRoutine.escapeOwnsRevival?.(),
+      respawn: () => sharedRoutine.dungeonOwned?.() || sharedRoutine.escapeOwnsRevival?.() ? Promise.reject(Error("Recovery owns revival")) : Promise.resolve(respawn()),
       releaseCombat: () => {
         working = false;
       },
@@ -2660,6 +2677,12 @@
       return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
     }
     function chooseTarget() {
+      return priorityEventTarget() || fallbackTarget();
+    }
+    function priorityEventTarget() {
+      return exclusiveCombat() ? null : sharedRoutine.getPriorityEventTarget?.() || null;
+    }
+    function fallbackTarget() {
       if (sharedRoutine.dungeonOwned?.()) return sharedRoutine.getDungeonTarget?.() || null;
       if (sharedRoutine.returnCombatActive?.()) return sharedRoutine.returnDefenseTarget?.() || null;
       if (sharedRoutine.frankyCombatActive?.()) return sharedRoutine.getEventTarget();
@@ -2695,9 +2718,10 @@
         return;
       }
       if (!sharedRoutine.returnCombatActive?.() && !invalidated && current) {
+        const priorityEvent = priorityEventTarget();
         const rare = sharedRoutine.dungeonOwned?.() ? null : sharedRoutine.getRareTarget?.();
         const nominated = sharedRoutine.dungeonOwned?.() ? sharedRoutine.getDungeonTarget?.() : sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
-        if ((!rare || rare.id === selectedTarget) && (!(sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
+        if ((!priorityEvent || priorityEvent.id === selectedTarget) && (!rare || rare.id === selectedTarget) && (!(sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
       }
       invalidated = false;
       selecting = true;

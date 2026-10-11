@@ -6,9 +6,10 @@ const {travelCombatFor}=require('../../runtime/coordinator/navigation/travel-def
 const legacy=require('../convoy-navigation.cjs');
 function fixture(){
  const c={id:'C',epoch:1,phase:'travel',departAt:1000,purpose:null,combatHandoffAllowed:true,routeProtocol:4,
-  leader:'W',participants:['W','P'],completed:[],location:{map:'cave',x:900,y:0},rally:{map:'main',x:0,y:0},runtimes:{W:'w',P:'p'}};
+  leader:'W',participants:['W','P'],completed:[],location:{map:'main',x:900,y:0,boundary:[70,-25,1100,25]},rally:{map:'main',x:0,y:0},runtimes:{W:'w',P:'p'}};
  const p={activeConvoy:c,nextCommandId:10,commands:{},navigationIntents:{W:{revision:1},P:{revision:1}},statuses:{},groupedCombat:{deaths:[]}};
  for(const n of c.participants){p.commands[n]=sharedCommand(p,c,'prepare',n);p.statuses[n]={hp:100,seenAt:2000,map:'main',in:'main',server:'USII',x:0,y:0,groupedCombat:{currentAttackersAt:2000,currentAttackers:[]}};}
+ p.statuses.P.x=-200;
  const body={character:'W',convoyId:'C',epoch:1,commandId:p.commands.W.id,runtimeId:'w',navigationRevision:1,target:{id:'B',mtype:'goo',map:'main',in:'main',x:80,y:0}};
  const options={revisions:{W:1,P:1},focus:['goo'],radius:100};
  return {p,c,body,options};

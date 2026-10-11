@@ -6,6 +6,7 @@ import { automaticCommerceRuleKey, sameMarkedItem } from "../inventory/item-iden
 import { reconcileNpcSales, type NpcSale } from "./npc-sales.ts";
 import type { StandMark } from "./stand-marks.ts";
 import { reconcilePlayerSales, type PlayerSaleState } from "./player-npc-sales.ts";
+import { bankCollectionReason } from './bank-collection.ts';
 
 interface AutomaticStandMark extends StandMark {
   auto?: boolean;
@@ -17,7 +18,8 @@ interface SaleEntry {
 }
 interface SalesState extends PlayerSaleState, CraftReservationState {
   bankSnapshot?: { packs?: Record<string, (InventoryEntry | null)[] | undefined> } | null;
-  withdrawals?: Record<string, { pack?: string; slot?: number; item?: Item | null; standListingId?: string }[] | undefined>;
+  withdrawals?: Record<string, { pack?: string; slot?: number; item?: Item | null; standListingId?: string; autoNpcRuleKey?: string }[] | undefined>;
+  itemCollectionThreshold?: number;
   standBids?: Record<string, { useStandSlot?: boolean } | undefined>;
   deconstructionMarks?: DeconstructionMark[];
   merchantAutomations?: Record<string, boolean | undefined>;
@@ -94,10 +96,28 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
     return true;
   }
 
+  type BankEntry = InventoryEntry & SaleEntry & {craftLocation:string};
+  function bankEntry(entry: (InventoryEntry & {craftLocation:string}) | null): entry is BankEntry {
+    return !!entry?.item && !entry.item.l && Number.isSafeInteger(entry.slot);
+  }
+  function markBankNpc(entry: BankEntry): boolean {
+    const key = automaticCommerceRuleKey(entry.item);
+    if (!state.autoNpcSales[key] || state.autoStandMarks[key] || saleConflict(entry.item) ||
+        state.merchantAutomations?.['auto npc sales'] === false) return false;
+    const pending = ((state.withdrawals ||= {})[state.merchantCharacter!] ||= []);
+    if (pending.some(mark => mark.pack === entry.craftLocation && mark.slot === entry.slot && sameMarkedItem(mark.item, entry.item))) return false;
+    pending.push({pack: entry.craftLocation, slot: entry.slot, item: entry.item, autoNpcRuleKey:key});
+    return true;
+  }
   function markBankStock(): boolean {
     if (!bankStockReady()) return false;
-    let changed = false;
+    let changed = false, npcStacks = (state.withdrawals?.[String(state.merchantCharacter)] || []).filter(mark => mark.autoNpcRuleKey).length;
     for (const entry of availableBankStock()) {
+      if (!bankEntry(entry)) continue;
+      if (npcStacks < Math.max(10, state.itemCollectionThreshold ?? 10) && markBankNpc(entry)) {
+        npcStacks++; changed = true;
+        continue;
+      }
       if (!bankStandEntry(entry)) continue;
       const key = automaticCommerceRuleKey(entry.item);
       if (!markStandSale(entry, key, entry.craftLocation)) continue;
@@ -109,11 +129,12 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
     return changed;
   }
   function bankStockReady(): boolean {
-    return !!state.merchantCharacter && !state.merchantCurrent && !state.withdrawals?.[state.merchantCharacter]?.length;
+    return !!state.merchantCharacter && !state.merchantCurrent;
   }
   function availableBankStock() {
+    const pending = state.withdrawals?.[String(state.merchantCharacter)] || [];
     const stock = Object.entries(state.bankSnapshot?.packs || {}).flatMap(([pack, entries]) =>
-      (entries || []).map(entry => entry && { ...entry, craftLocation: pack }));
+      (entries || []).map(entry => entry && !pending.some(mark => mark.pack === pack && mark.slot === entry.slot && sameMarkedItem(mark.item,entry.item)) ? { ...entry, craftLocation: pack } : null));
     // Withdrawals move whole stacks; leave partially reserved stacks untouched.
     return availableCraftStock(stock, craftProtection(state)).map((entry, index) =>
       entry?.item?.q === stock[index]?.item?.q ? entry : null);
@@ -192,7 +213,10 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
     // Banked sales also reserve capacity against opportunistic buys.
     const marks = markInventory(items), bankChanged = markBankStock();
     const changed = reconcileSales(items) || marks.changed || bankChanged;
-    if (bankChanged) ports.queue([state.merchantCharacter], "manual bank exchange");
+    const collection = bankCollectionReason(state);
+    if (collection) ports.queue([state.merchantCharacter], collection);
+    if (bankChanged && state.withdrawals?.[String(state.merchantCharacter)]?.some(mark => mark.standListingId))
+      ports.queue([state.merchantCharacter], "manual bank exchange");
     if (marks.standChanged || bankChanged) {
       ports.publish();
       if (!ports.syncStand()) ports.idle();

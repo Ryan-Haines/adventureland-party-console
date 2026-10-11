@@ -51,8 +51,9 @@ export function createRunnerHost(options: HostOptions) {
   async function prepare(codeFile = options.codeFile): Promise<CodeRunner> {
     // Syntax errors are discovered while the old runner is still intact.
     const source = await readFile(codeFile, "utf8");
+    const sourceHash = createHash("sha256").update(source).digest("hex");
     const artifactHash = codeFile.replaceAll("\\", "/").match(/\/generated\/([a-f0-9]{64})\//)?.[1];
-    if (artifactHash && createHash("sha256").update(source).digest("hex") !== artifactHash)
+    if (artifactHash && sourceHash !== artifactHash)
       throw new Error("Generated CODE checksum mismatch");
     const compiled = new vm.Script(source, { filename: codeFile });
     const dependencies = new Map<string, vm.Script>();
@@ -62,6 +63,7 @@ export function createRunnerHost(options: HostOptions) {
       dependencies.set(file, new vm.Script(await readFile(file, "utf8"), { filename: file }));
     const scope = new RunnerScope();
     const runner = options.createContext(scope.facade(options.upper));
+    runner.__partyCodeHash = sourceHash;
     configureApiAddress(runner);
     scope.guardAjax(runner.$);
     if (typeof runner.fetch === "function") runner.fetch = scope.guardFetch(runner.fetch);

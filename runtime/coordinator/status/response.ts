@@ -1,5 +1,6 @@
 import {collectPassing} from '../../combat/passing.ts';
 import {passingControl} from '../../combat/passing-admission.ts';
+import {requestObject} from '../http/contracts.ts';
 import {outboundHunt} from '../../combat/hunt-travel.ts';
 import { merchantEventRecoveryReserved } from '../merchant/event-control.ts';
 import type {Member} from '../../combat/grouped.ts';
@@ -74,7 +75,9 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
   function attachLuckySlot(name: string, command: HeartbeatState['commands'][string] | null): void {
     if (!command || name !== state.merchantCharacter) return;
     const slots = state.luckyUpgradeSlots as Record<string, number | null> | undefined;
-    command.luckyUpgradeSlot = slots?.[name] ?? null;
+    const locks = state.luckySlotLocks as Record<string, number | null> | undefined;
+    const resume = state.luckySlotResume as Record<string, {slot: number}> | undefined;
+    command.luckyUpgradeSlot = locks?.[name] ?? resume?.[name]?.slot ?? slots?.[name] ?? null;
   }
 
   function liveEvent(name: string, names: string[]): string | null {
@@ -88,7 +91,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
           status.serverLiveEvents.some((event) => ports.enabled(name, event.name)),
       );
     return (
-      reporter?.serverLiveEvents?.find((event) => ports.enabled(name, event.name))?.name || null
+      ports.selectedEvents(name).find(event => reporter?.serverLiveEvents?.some(live => live.name === event)) || null
     );
   }
 
@@ -108,7 +111,10 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
   }
 
   function returnResponse(name: string) {
-    return {partyTownCycleId: state.townCycle?.id || null, returnProgress: state.returnProgress?.[name] || null};
+    const deferred = requestObject(state.deferredEventReturns?.[name]);
+    const cycleId = state.eventReturn?.participants.includes(name) ? state.eventReturn.cycleId : deferred.cycleId;
+    return {partyTownCycleId: state.townCycle?.id || null, returnProgress: state.returnProgress?.[name] || null,
+      eventReturnCycleId: typeof cycleId === 'string' ? cycleId : null};
   }
   function turnInPriority(name: string): boolean {
     return name !== state.merchantCharacter && !!state.monsterHunt?.participants?.includes(name) &&
@@ -140,6 +146,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
         Number(state.goldTargets[String(state.merchantCharacter)]) || 0,
       ),
       gatheringModes: state.bankbois[name] ? [] : state.gatheringModes,
+      bankboiStorage: !!state.bankbois[name],
     };
   }
 
@@ -173,6 +180,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
     if (mode === "combat")
       return {
         serverNow: ports.now(),
+        ...returnResponse(name),
         rareControl: ports.rareControl(name),
         groupedCombat: ports.groupedCombat(),
         passingEncounters: passingReports(),
@@ -199,7 +207,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
       ...travelResponse(name),
       ...merchantResponse(name),
       ...(name === state.merchantCharacter ? { merchantEventRecoveryReserved: merchantEventRecoveryReserved(state) } : {}),
-      ...partyResponse(state, names, leader),
+      ...partyResponse(state, names, leader, state.statuses[name]?.server),
       groupedCombat: ports.groupedCombat(),
         passingEncounters: passingReports(),
       passingControl: passingAdmission(),

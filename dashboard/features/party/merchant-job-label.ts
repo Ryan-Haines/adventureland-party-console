@@ -2,7 +2,10 @@ import type { MerchantJob } from './merchant-job';
 import { routineFor } from '../../../runtime/coordinator/merchant/routines.ts';
 
 const labels: Record<string, string> = {
+  fishing: 'Fishing',
+  mining: 'Mining',
   'party collection': 'Item collection',
+  'bank collection': 'Bank item collection',
   'manual visit': 'Manual visit',
   deliveries: 'Marked deliveries',
   withdrawals: 'Marked withdrawals',

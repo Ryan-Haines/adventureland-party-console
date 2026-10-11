@@ -44,7 +44,7 @@ function needs(job: Job, choices: OrderChoice[]): CraftNeed[] {
   });
 }
 /** Derived from durable jobs, so pauses, cancellation, and restarts share one reservation lifetime. */
-export function craftProtection(state: CraftReservationState, excludeJob?: string): CraftProtection {
+export function craftProtection(state: CraftReservationState, excludeJob?: string, excludeCommerceJob?: string): CraftProtection {
   const jobs = [state.merchantCurrent, ...(state.merchantQueue || [])].filter((job): job is Job => !!job && (!excludeJob || job.id !== excludeJob));
   const seen = new Set<string>();
   const requirements: CraftNeed[] = [];
@@ -60,7 +60,7 @@ export function craftProtection(state: CraftReservationState, excludeJob?: strin
       requirements.push(...pending);
       reserved.push(...pending.map(need => ({...need, location: 'inventory:' + state.merchantCharacter})));
     }
-    return protectDeliveries(state, {requirements, allocations: reserved});
+    return protectDeliveries(state, {requirements, allocations: reserved}, excludeCommerceJob);
   } catch (error) { return {requirements, error: String(error instanceof Error ? error.message : error)}; }
 }
 
@@ -71,14 +71,14 @@ function deliveryProtection(state: CraftReservationState): NonNullable<CraftProt
       location:'inventory:' + (mark.awaitingEquip ? recipient : state.merchantCharacter)}] : []; }));
 }
 
-function protectDeliveries(state: CraftReservationState, protection: CraftProtection): CraftProtection {
-  const deliveries = deliveryProtection(state).concat(commerceProtection(state));
+function protectDeliveries(state: CraftReservationState, protection: CraftProtection, excludeCommerceJob?: string): CraftProtection {
+  const deliveries = deliveryProtection(state).concat(commerceProtection(state, excludeCommerceJob));
   return deliveries.length ? {...protection, deliveries} : protection;
 }
 
-function commerceProtection(state: CraftReservationState): NonNullable<CraftProtection['deliveries']> {
-  return [state.merchantCurrent, ...(state.merchantQueue || [])].flatMap(job => {
-    if (!job) return [];
+function commerceProtection(state: CraftReservationState, excludeCommerceJob?: string): NonNullable<CraftProtection['deliveries']> {
+  return [state.merchantCurrent, ...(state.merchantQueue || [])]
+    .filter((job): job is Job => !!job && (!excludeCommerceJob || job.id !== excludeCommerceJob)).flatMap(job => {
     const progress = job.resumeState as {results?: {slot?: number; item: import('../contracts/item.ts').Item}[];
       batchItems?: {slot: number; item: import('../contracts/item.ts').Item}[];
       activeSlot?: number; activeItem?: import('../contracts/item.ts').Item;

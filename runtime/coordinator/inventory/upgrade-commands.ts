@@ -185,6 +185,6 @@ export function createUpgradeCommands(state: UpgradeState, ports: UpgradePorts) 
 function validateManualOffering(state: UpgradeState, body: Request): CommandOutcome {
   if (body.offering === undefined || body.remove === true) return null;
   if (!isUpgradeOffering(body.offering) || body.tiers !== 1) return failure("Invalid manual offering attempt");
-  if (!offeringStock(state)[body.offering]) return failure("Offering no longer available in merchant inventory or bank", 409);
+  if (!offeringStock(state)[body.offering]) return failure("Offering no longer available in merchant inventory, bank or BankBoi storage", 409);
   return null;
 }

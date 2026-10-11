@@ -60,6 +60,10 @@ if (!source.includes('installGameRendering(game_context)')) {
   source = source.replace(anchor,
     '  require("../../.build/runtime/lifecycle.cjs").installGameRendering(game_context);\n' + anchor);
 }
+// The long-lived native game context loads executable lifecycle code from the
+// selected immutable artifact while keeping its installed native dependencies.
+const lifecycleRequire = 'require(process.env.AL_CONSOLE_ARTIFACT ? require("node:path").join(process.env.AL_CONSOLE_ARTIFACT, ".build/runtime/lifecycle.cjs") : "../../.build/runtime/lifecycle.cjs")';
+source = source.replaceAll('require("../../.build/runtime/lifecycle.cjs")', lifecycleRequire);
 if (source.includes("createRunnerHost")) {
   await writeFile(file, source);
   process.exit(0);
@@ -74,7 +78,7 @@ const start = source.indexOf("async function make_runner(");
 const end = source.indexOf("async function make_game(", start);
 if (start < 0 || end < 0) throw new Error("Unrecognized caracAL runner layout");
 source = source.slice(0, start) + source.slice(end);
-source = 'const { createRunnerHost } = require("../../.build/runtime/lifecycle.cjs");\n' + source;
+source = `const { createRunnerHost } = ${lifecycleRequire};\n` + source;
 replace(
   "  const old_ng_logic = game_context.new_game_logic;",
   `  let runnerHost;

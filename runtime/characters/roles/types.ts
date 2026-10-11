@@ -30,6 +30,7 @@ export interface SharedCombat {
   queueEvidence?(target: Target, state: 'pending' | 'engaged' | 'rejected', action?: string): string | null;
   equipmentTarget?(): { id: string; mtype?: string } | null;
   getRareTarget?: TargetGetter;
+  getPriorityEventTarget?: TargetGetter;
   rareAttackAllowed?(target: Target, skill: string): boolean;
   pollRareHunting?(): boolean;
   describeAttackRange?(target: Target): RangeSample | null;
@@ -39,6 +40,7 @@ export interface SharedCombat {
   getScatterBreakTarget: TargetGetter;
   getEngagedTarget: TargetGetter;
   getEventTarget: TargetGetter;
+  escapeOwnsRevival?(): boolean;
   sharedTargetId?(): string | null;
   frankyCombatActive?(): boolean;
   frankyMovementTick?(target: Target | null): boolean;
@@ -127,6 +129,7 @@ export interface RoleRunner {
   stop(): void;
 }
 export interface CombatRoot {
+  __partyConsoleMaintenance?: {id: string; expires: number; mode?: 'draining'} | null;
   partyPorcupineEquipment?: ReturnType<typeof import("./porcupine-equipment.ts").createPorcupineEquipment>;
   sharedRoutine: SharedCombat;
   partyRoleRunner?: RoleRunner;

@@ -45,6 +45,7 @@ export interface EventReturnState {
   deferred: Record<string, { cycleId: string }>;
 }
 export interface ReturnStatus {
+  lastCommandId?: number;
   x?: number;
   y?: number;
   map?: string;
@@ -53,6 +54,11 @@ export interface ReturnStatus {
   rip?: boolean;
   goobrawlCombat?: boolean;
   serverLiveEvents?: { name: string }[];
+  /** Local-wall-clock native spawn deadlines; these are attendance, not liveness. */
+  serverStagingEvents?: { name: string; spawnAt: number; spawnId?: number }[];
+  slendermanSearchExhausted?: boolean;
+  eventFeedConnected?: boolean;
+  eventClockStale?: boolean;
   eventRecovery?: { cycleId: string; phase: string };
 }
 export interface ReturnConvoy {
@@ -66,6 +72,7 @@ export interface ReturnConvoy {
   walkingParents?: Record<string, { revision: number; parentId?: number; command?: { cycleId?: string } }>;
 }
 export interface CommandView {
+  id?: number;
   convoyId?: string;
   type: string;
   cycleId?: string;

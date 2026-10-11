@@ -3,10 +3,12 @@ import { returnWalking, type ReturnTownPolicy } from './return-town.ts';
 import { collectPassing, passingIdentity, type PassingEncounter } from '../../combat/passing.ts';
 import type { Member } from '../../combat/grouped.ts';
 import {outboundHunt, type HuntTravelConvoy} from '../../combat/hunt-travel.ts';
+import {contains, type Area} from '../../../dashboard/lib/farming-zones.ts';
 export { classifyTravelDefense } from "./travel-defense.ts";
 interface Loot { id: string; after: number; realm: string; map: string; in: string; x: number; y: number; complete: boolean; progress?: Progress }
 interface Progress { id: string; observedAt: number; realm: string; map: string; in: string; complete: boolean; error?: string }
-interface Status { seenAt: number; rip?: boolean; hp: number; map: string; in?: string; region?: string; server: string; x: number; y: number; convoyLoot?: Progress; activeEvent?: unknown; joinedEvent?: unknown; mapEvent?: unknown }
+interface Status { seenAt: number; rip?: boolean; hp: number; map: string; in?: string; region?: string; server: string; x: number; y: number; convoyLoot?: Progress; activeEvent?: unknown; joinedEvent?: unknown; mapEvent?: unknown;
+  groupedCombat?: NonNullable<Member['status']>['groupedCombat']; }
 interface Convoy extends HuntTravelConvoy {
   defenseTargets?: PassingEncounter[];
   continuousReturn?: number; huntTarget?: string; returnTown?: ReturnTownPolicy; townRetry?: boolean;
@@ -15,12 +17,13 @@ interface Convoy extends HuntTravelConvoy {
   id: string; epoch: number; phase: string; purpose?: string | null; force?: boolean; navigationExempt?: boolean;
   participants: string[]; leader: string; label?: string; loot?: Loot; defenseAt?: number; defenseReason?: string | null;
   departAt?: number | null; completed: string[]; rally?: { map: string; x: number; y: number };
-  observedPhase?: string | null; assembledSince?: number; runtimes?: unknown; location: unknown; finalLocation?: unknown;
+  observedPhase?: string | null; assembledSince?: number; runtimes?: unknown; location: Area; finalLocation?: Area;
   returnLegs?: unknown; returnRouting?: boolean; townFirst?: boolean; townCompleted?: boolean;
   failure?: string | null; failureCode?: string | null; failedAt?: number | null;
   observationPhase?: string; routeProtocol?: number; sharedStoppedAt?: number; observationReadyAt?: number;
 }
 interface Party extends DefenseState {
+  monsterSearchRadiusByCharacter?: Record<string, number | undefined>;
   combatLogs?: Record<string, import("../telemetry/combat-log.ts").StoredCombatLogEntry[]>;
   activeConvoy?: Convoy | null; commands: Record<string, unknown>;
   navigationIntents?: Record<string, { cancelled?: boolean } | undefined>;
@@ -226,9 +229,33 @@ function farmingEngagementPending(p: Party, c: Convoy, now: number): boolean {
   const matches=(t: typeof encounter.target)=>t.id===encounter.target.id && t.map===encounter.target.map &&
     String(t.in??t.map)===String(encounter.target.in??encounter.target.map) && t.server===encounter.target.server;
   const retired=group ? [...(group.deaths||[]),...(group.lostTargets||[])] : [];
-  encounter.finished=retired.some(matches) ||
-    now-encounter.at>15000 && group?.target?.id!==encounter.target.id;
+  encounter.finished=retired.some(matches) || farmingTargetLeftArea(p,c,now) ||
+    farmingTargetTimedOut(encounter,group?.target,now);
   return !encounter.finished;
+}
+
+function farmingTargetTimedOut(encounter: NonNullable<Convoy['farmingEngagement']>, target: {id:string} | undefined, now: number): boolean {
+  return now-encounter.at>15000 && target?.id!==encounter.target.id;
+}
+
+function freshFarmingObservation(at: number | undefined, now: number): boolean {
+  return typeof at==='number' && now-at<=3000 && at<=now+500;
+}
+function sameFarmingPlace(status: Status, target: NonNullable<Convoy['farmingEngagement']>['target']): boolean {
+  return status.server===target.server && status.map===target.map && String(status.in??status.map)===String(target.in??target.map);
+}
+function farmingTargetLeftArea(p: Party, c: Convoy, now: number): boolean {
+  const target=c.farmingEngagement!.target;
+  const radius=Number(p.monsterSearchRadiusByCharacter?.[c.leader]) || 400;
+  return c.participants.some(name=>{
+    const status=p.statuses[name] as Status | undefined;
+    if (!status || !freshFarmingObservation(status.seenAt,now)) return false;
+    const observation=status.groupedCombat;
+    if (!freshFarmingObservation(observation?.observationAt,now) || !sameFarmingPlace(status,target)) return false;
+    const sighting=observation?.sightings?.find(candidate=>candidate.id===target.id &&
+      candidate.map===target.map && String(candidate.in??candidate.map)===String(target.in??target.map));
+    return !!sighting && !contains(c.location,sighting,0,radius);
+  });
 }
 
 function needsDefense(p:Party,c:Convoy,state:string):boolean {

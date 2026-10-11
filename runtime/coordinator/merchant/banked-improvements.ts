@@ -1,9 +1,10 @@
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
+import { protectedMerchantStorageStock } from '../inventory/merchant-storage-stock.ts';
 import { itemRuleConflicts, type ConflictState } from "../inventory/shared-rules.ts";
 import type { InventoryEntry } from "../contracts/item.ts";
 import type { CompoundRule } from "./automatic-improvements.ts";
 import type { StorageReference, BankboiInventory } from "../inventory/bankboi-completion.ts";
-import { availableCraftStock, craftProtection, type CraftReservationState } from "./craft-reservations.ts";
+import { type CraftReservationState } from "./craft-reservations.ts";
 
 type UpgradePreference = number | string | { tiers: number; quantity?: number };
 export interface BankUpgradeRule { name: string; level: number; tiers: number; quantity: number; existingTargetQuantity?: number }
@@ -78,13 +79,7 @@ export function planUpgradeStorage(state: BankImprovementState, rules: BankUpgra
 }
 
 function availableUpgradeStock(state: BankImprovementState) {
-  const locations: [string,(InventoryEntry | null)[]][] = [
-    ['inventory:'+state.merchantCharacter,state.statuses?.[String(state.merchantCharacter)]?.items || []],
-    ...Object.entries(state.bankSnapshot?.packs || {}).map(([pack,items]): [string,(InventoryEntry | null)[]] => [pack,items || []]),
-    ...Object.values(state.bankbois || {}).map((worker): [string,(InventoryEntry | null)[]] => ['bankboi:'+worker.name,worker.items || []])
-  ];
-  const entries = locations.flatMap(([craftLocation,items]) => items.map(entry => entry && {...entry,craftLocation}));
-  return availableCraftStock(entries,craftProtection(state));
+  return protectedMerchantStorageStock(state);
 }
 
 export function hasWaitingUpgrade(state: BankImprovementState, rule: BankUpgradeRule): boolean {

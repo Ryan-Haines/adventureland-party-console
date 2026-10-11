@@ -1,0 +1,17 @@
+# Failed native event entry after a new event selection
+
+The Linux plain retired-exit case cleared both old owners within its original
+15-second gate. Native move receipts showed healthy travel through UHills,
+Gateway, Mainland, and Halloween; at the unchanged 180-second attack deadline,
+three terrain waypoints still remained. Its retirement fixture now declares the
+initial encounter near the native Mainland door's Halloween arrival spawn,
+validated for both fighter footprints. Native movement and attack receipts remain
+required. The separate canonical boss terrain scenario retains its full route.
+
+Deferred-exit race failure inventory before the follow-up change: event authorization transfers members sequentially. One peer's deferred receipt may already be gone when another authentic old exit admits a return route; requiring every peer's receipt then refuses to retire that old owned convoy. Missing admission authority also allows a late old return request to register again. Validate current or exact deferred cycle authority on every event-return submission, including progress polls. Retirement must validate the invoking deferred member while accepting already-transferred peers only with unchanged captured old parent cycle/navigation and no conflicting newer deferred cycle or command. Ordinary Town returns and newer owners remain protected.
+
+Failure inventory before implementation: a retained runtime-lost Mr. Pumpkin entry can hold two captured participants after one genuinely selects Mr. Green. Same-event runtime recovery correctly rejects that mixed selection, but failed-entry replacement also rejects the new authorized Mr. Green request. Event rendezvous eligibility currently includes every enabled follower, even one whose fresh native report selects another event, so separate live events can wait on each other indefinitely.
+
+A proposed retirement must be confined to a failed runtime-lost event entry, with no exhausted budget or terminal geometry failure. Require a fresh alive managed requester whose native joined event equals its different, enabled requested key, exact unchanged parent command identity and navigation revision, and fresh alive original participants in the same realm with captured parent ownership. Retire only commands and cached sessions owned by that obsolete convoy; do not erase newer commands or revive an exhausted same-event episode. Ordinary rendezvous eligibility must exclude participants whose fresh native report selects a different event. Keep genuine actual event navigation and combat outcomes observable; no native joins, arrival receipts or attacks may be manufactured.
+
+Implemented that retirement before retained-failure lookup, after normal request authorization. The requester must belong to the captured old entry. All captured participants must report alive after its failure, within the existing three-second freshness window, with current runtimes and matching parent revision/command ownership. Cleanup uses the existing exact-convoy retirement path. Rendezvous excludes only an explicitly different joined event, preserving the initial join-publication window. Same-event runtime recovery and exhausted-route guards remain unchanged. The existing native event recovery spec now includes actual split Pumpkin/Green CODE turnover and requires real attacks on each respective boss.

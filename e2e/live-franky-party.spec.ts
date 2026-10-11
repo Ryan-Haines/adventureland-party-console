@@ -88,7 +88,8 @@ test('disabling inherited Franky interrupts native boss combat and evacuates bot
   // not coordinator command labels or fixture acknowledgements.
   await expect.poll(async () => {
     const state = await live.state(), convoy = state.activeConvoy;
-    if (convoy?.id !== recovery.exitConvoyId || convoy.purpose !== 'franky-exit') return false;
+    if (state.eventReturn?.cycleId !== recovery.cycleId ||
+      convoy?.id !== state.eventReturn.exitConvoyId || convoy.purpose !== 'franky-exit') return false;
     return members.every(name => {
       const report = state.characters[name]?.convoyNavigation, expected = convoy.expected?.[name];
       return report?.id === convoy.id && report.epoch === convoy.epoch &&

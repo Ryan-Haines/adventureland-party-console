@@ -18,7 +18,7 @@ export function admitMerchantInterruption(input: unknown, name: string, jobId: u
   const state = input as SharedState, c = state.activeConvoy;
   if (!c?.participants.includes(name)) return !navigationCommand(state.commands[name]);
   if (c.communicationHold) return false;
-  if (c.nonPreemptible || ["failed", "defending", "observing", "communication-hold"].includes(c.phase) || c.routeProtocol !== 4) return false;
+  if (c.nonPreemptible || ["defending", "observing", "communication-hold"].includes(c.phase) || c.routeProtocol !== 4) return false;
   const pause = c.merchantInterruption;
   if (pause) return pause.jobId === jobId && pause.recipient === name && pause.phase === "ready";
   c.merchantInterruption = { kind, jobId, recipient: name, phase: "stopping", deadline: now + 60000,
@@ -103,7 +103,9 @@ export function stepMerchantInterruption(input: SharedState, now: number, ports:
   if (!stopped(state, c, now)) return true;
   if (pause.phase === "resuming") {
     c.restartRecovery = false;
-    c.failure = undefined; c.failureCode = undefined;
+    // A collection may temporarily stop a failed convoy, but it never grants
+    // another route attempt or erases the original travel diagnostics.
+    if (pause.resumePhase !== "failed") { c.failure = undefined; c.failureCode = undefined; }
     recordConvoyHistory(state, c, "merchant resume", now, { recipient: pause.recipient, jobId: pause.jobId });
     delete c.merchantInterruption;
     return ports.resume(pause.resumePhase);

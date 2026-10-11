@@ -64,8 +64,9 @@ export function installRoleRunner(
   });
   const recoverFromDeath = createDeathRecovery({
     isDead: () => !!character.rip,
-    blocked: () => !!sharedRoutine.dungeonOwned?.(),
-    respawn: () => sharedRoutine.dungeonOwned?.() ? Promise.reject(Error('Dungeon owns revival')) : Promise.resolve(respawn()),
+    blocked: () => !!sharedRoutine.dungeonOwned?.() || !!sharedRoutine.escapeOwnsRevival?.(),
+    respawn: () => sharedRoutine.dungeonOwned?.() || sharedRoutine.escapeOwnsRevival?.()
+      ? Promise.reject(Error('Recovery owns revival')) : Promise.resolve(respawn()),
     releaseCombat: () => {
       working = false;
     },
@@ -94,7 +95,8 @@ export function installRoleRunner(
     if (sharedRoutine.dungeonOwned?.()) return null;
     if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending","feed"].includes(sharedRoutine.getAbtestingMode())) return null;
     if (sharedRoutine.frankyCombatActive?.()) return sharedRoutine.getWalkingPassiveTarget?.() || null;
-    return (sharedRoutine as any).getPassingTarget?.() || null;
+    const target = (sharedRoutine as any).getPassingTarget?.() || null;
+    return target && sharedRoutine.allowsTarget(target) ? target : null;
   }
   function attackTarget(): Target | null {
     const current = currentTarget(), passing = passingTarget();
@@ -128,6 +130,12 @@ export function installRoleRunner(
     return currentEpoch(epoch) && !character.rip && !sharedRoutine.isOccupied();
   }
   function chooseTarget() {
+    return priorityEventTarget() || fallbackTarget();
+  }
+  function priorityEventTarget(): Target | null {
+    return exclusiveCombat() ? null : sharedRoutine.getPriorityEventTarget?.() || null;
+  }
+  function fallbackTarget() {
     if (sharedRoutine.dungeonOwned?.()) return sharedRoutine.getDungeonTarget?.() || null;
     if(sharedRoutine.returnCombatActive?.())return sharedRoutine.returnDefenseTarget?.() || null;
     if (sharedRoutine.frankyCombatActive?.()) return sharedRoutine.getEventTarget();
@@ -155,6 +163,7 @@ export function installRoleRunner(
       return;
     }
     const current = currentTarget();
+    if (root.__partyConsoleMaintenance?.mode === 'draining' && current) return;
     const closer = !exclusiveCombat() && current && !attacks.hasStarted(current.id) && sharedRoutine.getCloserHuntTarget?.(current);
     if (closer) {
       root.sharedRoutine?.resetCombatMovement?.();
@@ -163,9 +172,10 @@ export function installRoleRunner(
       return;
     }
     if (!sharedRoutine.returnCombatActive?.() && !invalidated && current) {
+      const priorityEvent = priorityEventTarget();
       const rare = sharedRoutine.dungeonOwned?.() ? null : sharedRoutine.getRareTarget?.();
       const nominated = sharedRoutine.dungeonOwned?.() ? sharedRoutine.getDungeonTarget?.() : sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
-      if ((!rare || rare.id === selectedTarget) && (!(sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
+      if ((!priorityEvent || priorityEvent.id === selectedTarget) && (!rare || rare.id === selectedTarget) && (!(sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
     }
     invalidated = false;
     selecting = true;

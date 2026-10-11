@@ -53,7 +53,8 @@ test('staggered restart, deferred exit, failed farm child and Hunt off/on resume
   assert.equal(f.state.eventReturn,null);assert.equal(f.state.activeConvoy,null);assert.equal(f.starts(),0);
   assert.equal(f.state.monsterHunt.stage,'checking-quests');assert.equal(f.state.monsterHunt.target,undefined);
   assert.equal(f.state.deferredEventReturns.GDroidPT.checkpoint,null);
-  assert.equal(f.state.commands.GDroidPT.type,'event-return-town','offline member still has an evacuation obligation');
+  assert.equal(f.state.deferredEventReturns.GDroidPT.cycleId,f.recovery.cycleId,'offline member retains its durable evacuation obligation');
+  assert.equal(f.state.commands.GDroidPT,undefined,'deferred admission retires the old executable exit command');
 });
 
 test('currently connected late member must really leave before handoff',()=>{

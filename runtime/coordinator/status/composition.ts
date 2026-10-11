@@ -1,4 +1,6 @@
+import type { AttendanceReport } from "../events/attendance-limits.ts";
 import { createStatusIngestion, type StatusReport } from "./ingestion.ts";
+import {requestObject} from '../http/contracts.ts';
 import {
   consumeStatusCatalogs,
   consumeBankVaults,
@@ -11,7 +13,7 @@ import { observeScatter, type ScatterState, type ScatterStatus } from "./scatter
 import type { createMerchantObservation } from "./merchant-observation.ts";
 import type { AnniversaryBuffStatus } from "../anniversary/return-contracts.ts";
 
-type Report = StatusReport &
+type Report = StatusReport & AttendanceReport &
   Record<string, unknown> &
   Parameters<typeof consumePontyReport>[0] &
   Parameters<typeof consumeBankReport>[0] &
@@ -73,6 +75,11 @@ export function createCoordinatorStatusIngestion<R extends Report>(
   return createStatusIngestion(state, {
     ...ports,
     known: (name) => Object.prototype.hasOwnProperty.call(workers, name) || !!ports.owned(name),
+    characterId: (name) => {
+      const owned = ports.owned(name);
+      return owned && typeof owned === 'object' && 'id' in owned &&
+        (typeof owned.id === 'string' || typeof owned.id === 'number') ? String(owned.id) : undefined;
+    },
     identifyMerchant: (body) => {
       // The first connected, managed merchant owns logistics until explicitly changed.
       // Roster discovery alone must not pick an offline merchant or a storage worker.
@@ -91,7 +98,7 @@ export function createCoordinatorStatusIngestion<R extends Report>(
     bank: (body) => consumeBankReport(body, ports.bankState, ports.bankPorts),
     oneShots: (body) =>
       consumeOneShotReports(body, { types: farmingState(body.name).scatterMonsterTypes, epoch: farmingState(body.name).scatterEpoch }),
-    huntSnapshot: () => JSON.stringify(state.monsterHunt),
+    huntSnapshot: () => JSON.stringify({...requestObject(state.monsterHunt), message: undefined}),
     scatter,
     publishMarket: (name) => {
       if (

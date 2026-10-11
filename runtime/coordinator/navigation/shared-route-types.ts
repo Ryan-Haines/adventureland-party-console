@@ -23,7 +23,11 @@ export interface SharedReport {
   failure?: string; waypointCount?: number; departedAt?: number;
 }
 export interface SharedStatus extends RoutePoint {
+  // Local visible native boss, including during ranged add combat; not a global S hint.
+  // Instance IDs are normalized because native payloads use either strings or numbers.
+  eventCombatSighting?: (RoutePoint & {id: string; mtype: string; observedAt: number; attackReachable?: boolean}) | null;
   activeEvent?: string | null; joinedEvent?: string | null;
+  lastDeath?: {at: number; eventTrip?: {event?: string; startedAt?: number}} | null;
   movementGeometry?: { version: number; fingerprint: string };
   huntReturnProtocol?: number;
   returnTownReady?: boolean;
@@ -55,6 +59,9 @@ export interface SharedCommand {
   deferRendezvous?: boolean;
 }
 export interface SharedConvoy extends PartyConvoy {
+  eventPursuitBossId?: string;
+  eventRetargetedAt?: number;
+  eventRetargetTravelStartedAt?: number;
   huntArrival?: {cycleId: string; missionIndex: number; missionRevision: number; epoch: number};
   observationPhase?: string; defenseReason?: string; loot?: unknown;
   failureDetails?: unknown;
@@ -81,6 +88,7 @@ export interface SharedConvoy extends PartyConvoy {
   returnFirstFailure?: string;
   missingRoutes?: Record<string, { since: number; observedAt: number }>;
   walkingActivity?: string;
+  walkingEvent?: string;
   routeServer?: string;
   retryExhausted?: boolean;
   walkingParents?: Record<string, { revision: number; parentId: number; command?: SharedCommand }>;

@@ -8,13 +8,15 @@ interface CompoundRule { name: string; targetTier?: number; quantity?: number }
 interface ReceiptRule { family: 'upgrade' | 'compound'; key: string; signature: string }
 // Recovery is a client journal protocol, not a complete game item or operation.
 export interface ProductionJournal { id: string; item: {name: string; level?: number}; slots: number[]; phase: 'prepared' | 'running' | 'complete'; [key: string]: unknown }
-export interface ProductionAttempt { name: string; level: number; kind: 'upgrade' | 'compound'; rules: ReceiptRule[]; journal?: ProductionJournal; automaticCompoundTarget?: number; completed?: boolean; success?: boolean; requestId?: string; offering?: string; resolution?: { outcome: 'unknown'; reason: string; at: number } }
+export interface ProductionAttempt { name: string; level: number; kind: 'upgrade' | 'compound'; rules: ReceiptRule[]; journal?: ProductionJournal; automaticCompoundTarget?: number; completed?: boolean; completedAt?: number; success?: boolean; requestId?: string; offering?: string; resolution?: { outcome: 'unknown'; reason: string; at: number; resumeMissing?: true } }
 export interface ProductionState { attempts: Record<string, ProductionAttempt> }
 export function pendingProduction(production: ProductionState, includeJournal = false) {
   return Object.entries(production.attempts).filter(([, attempt]) => !attempt.completed)
     .map(([id, attempt]) => ({id, name:attempt.name, level:attempt.level, kind:attempt.kind, ...(includeJournal && attempt.journal ? {journal:attempt.journal} : {})}));
 }
 interface State extends ConflictState {
+  merchantCurrent?: import('../merchant/work.ts').MerchantWork | null;
+  merchantQueue?: import('../merchant/work.ts').MerchantWork[];
   upgrades?: Record<string, {requestId?: string}[] | undefined>;
   upgradeOfferingRules?: UpgradeOfferingRule[];
   merchantCharacter: string | null;
@@ -59,7 +61,17 @@ function attemptInput(body: Record<string,unknown>) {
   if (kind !== 'upgrade' && kind !== 'compound') throw Error('Invalid production kind');
   return {id,name:item.name,level,kind:kind as ProductionAttempt["kind"]};
 }
+/** Retain a bounded retry window; unfinished recovery journals are never retired. */
+export function pruneProductionReceipts(production: ProductionState): void {
+  const completed = Object.entries(production.attempts).filter(([, attempt]) => attempt.completed)
+    .sort((a, b) => (b[1].completedAt ?? 0) - (a[1].completedAt ?? 0));
+  for (const [index, [id]] of completed.entries()) {
+    if (index >= 2048)
+      delete production.attempts[id];
+  }
+}
 export function beginProduction(state: State, body: Record<string, unknown>) {
+  pruneProductionReceipts(state.production);
   const input = attemptInput(body), {id,name,level,kind} = input;
   const previous = state.production.attempts[id];
   if (previous) {
@@ -101,23 +113,29 @@ function validJournalSlots(slots: unknown): boolean {
   return Array.isArray(slots) && slots.length > 0 && slots.every(slot => Number.isInteger(slot) && Number(slot) >= 0 && Number(slot) < 42);
 }
 type ProductionLog = (message: string, level: 'success', details: {name: string; level: number; attemptId: string}) => void;
+function retainCompletedCommerceJournal(attempt: ProductionAttempt): boolean {
+  return attempt.journal?.phase === 'complete' && Boolean(attempt.journal.commerce);
+}
 export function finishProduction(state: State, id: string, success: boolean, log?: ProductionLog): void {
   const attempt = state.production.attempts[id];
   if (!attempt) throw Error('Unknown production attempt');
   if (attempt.completed) return;
   if (success) consumeQuotas(state, attempt);
-  attempt.completed = true; attempt.success = success;
-  delete attempt.journal;
+  attempt.completed = true; attempt.completedAt = Date.now(); attempt.success = success;
+  // Keep bounded completed commerce evidence until its paid progress can replay
+  // the exact outcome. Receipt pruning bounds these journals with the receipts.
+  if (!retainCompletedCommerceJournal(attempt)) delete attempt.journal;
   finishManualOffering(state, attempt);
   if (success && attempt.kind === 'compound' && attempt.level === attempt.automaticCompoundTarget)
     log?.('merchant completed auto compound', 'success', {name:attempt.name,level:attempt.level,attemptId:id});
+  pruneProductionReceipts(state.production);
 }
 export function installProductionRoutes(router: HttpRouter, state: State, persist: () => void, log?: ProductionLog) {
   router.post('/party-api/merchant/production', (req,res) => {
     const body = requestObject(req.body);
     if (body.character !== state.merchantCharacter) return res.status(400).json({error:'Only the merchant performs production'});
     try {
-      if (body.action === 'pending') return res.json({ok:true,pending:pendingProduction(state.production, true)});
+      if (body.action === 'pending') return res.json({ok:true,pending:pendingProduction(state.production, true),completedCommerce:completedCommerceReceipts(state)});
       if (body.action === 'inspect') return res.json({ok:true,...inspectProduction(state, body)});
       if (body.action === 'resolve-unknown') {
         resolveUnknownProduction(state, body);
@@ -130,7 +148,8 @@ export function installProductionRoutes(router: HttpRouter, state: State, persis
       else if (body.action === 'complete') finishProduction(state,String(body.id),body.success === true,log);
       else beginProduction(state,body);
       persist();
-      return res.json({ok:true,attempt:state.production.attempts[String(body.id)]});
+      const attempt = state.production.attempts[String(body.id)];
+      return res.json({ok:true,attempt,reviewedCommerce:reviewedCommerceProgress(state,attempt)});
     } catch(error) { return res.status(409).json({error:String(error)}); }
   });
 }
@@ -140,7 +159,27 @@ export function inspectProduction(state: State, body: Record<string, unknown>) {
   const input = attemptInput(body), attempt = state.production.attempts[input.id];
   if (attempt) validateReceipt(attempt, input);
   const pending = pendingProduction(state.production);
-  return {attempt:attempt || null, pending};
+  return {attempt:attempt || null, pending,reviewedCommerce:reviewedCommerceProgress(state,attempt)};
+}
+
+function completedCommerceReceipts(state: State) {
+  const keys = new Set([state.merchantCurrent,...(state.merchantQueue || [])]
+    .filter(Boolean).map(job => 'party-commerce:' + requestText(job?.commerceOrderId || job?.id)));
+  return Object.entries(state.production.attempts).filter(([,attempt]) =>
+    attempt.completed && attempt.journal?.phase === 'complete' &&
+    keys.has(requestText(requestObject(attempt.journal.commerce).key)))
+    .map(([id,attempt]) => ({id,completed:attempt.completed,success:attempt.success,journal:attempt.journal}));
+}
+
+function reviewedCommerceProgress(state: State, attempt: ProductionAttempt | undefined) {
+  if (!attempt?.resolution?.resumeMissing) return;
+  const commerce = requestObject(attempt.journal?.commerce);
+  const job = [state.merchantCurrent,...(state.merchantQueue || [])].find(entry =>
+    entry && commerce.key === 'party-commerce:' + (typeof entry.commerceOrderId === 'string' ? entry.commerceOrderId : entry.id));
+  const progress = requestObject(job?.resumeState), pending = requestObject(progress.pendingUpgrade);
+  const outcome = requestObject(pending.outcome), resolution = requestObject(outcome.resolution);
+  if (outcome.reviewedMissing !== true || resolution.at !== attempt.resolution.at) return;
+  return {key:commerce.key,state:structuredClone(progress)};
 }
 
 /** Explicit operator resolution only; automatic recovery never guesses an orphan's outcome. */
@@ -151,11 +190,31 @@ export function resolveUnknownProduction(state: State, body: Record<string, unkn
   if (attempt.completed) return;
   const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
   if (!reason || reason.length > 1000) throw Error('Production resolution requires a review reason');
-  attempt.resolution = {outcome:'unknown', reason, at:now};
+  if (body.resumeMissing === true) reviewMissingCommerce(state, attempt, reason, now);
+  attempt.resolution = {outcome:'unknown', reason, at:now, ...(body.resumeMissing === true ? {resumeMissing:true as const} : {})};
   attempt.completed = true;
+  attempt.completedAt = now;
+  pruneProductionReceipts(state.production);
   delete attempt.success;
   // Retire one-shot manual ownership without inventing a success or spending quotas.
   finishManualOffering(state, attempt);
+}
+
+/** Explicit reviewed disposition preserves paid progress without asserting destruction. */
+function reviewMissingCommerce(state: State, attempt: ProductionAttempt, reason: string, now: number): void {
+  const commerce = requestObject(attempt.journal?.commerce);
+  if (typeof commerce.key !== 'string') throw Error('Missing commerce recovery ownership');
+  const job = [state.merchantCurrent, ...(state.merchantQueue || [])].find(entry =>
+    entry && commerce.key === 'party-commerce:' + (typeof entry.commerceOrderId === 'string' ? entry.commerceOrderId : entry.id));
+  if (!job) throw Error('Reviewed commerce order is no longer queued');
+  const progress = requestObject(job.resumeState), pending = requestObject(progress.pendingUpgrade);
+  const active = requestObject(progress.activeItem);
+  if (progress.sequence !== commerce.sequence || !Object.keys(pending).length || active.name !== attempt.name || Number(active.level || 0) + 1 !== attempt.level)
+    throw Error('Reviewed receipt no longer owns the active commerce cycle');
+  pending.outcome = {reviewedMissing:true,resolution:{outcome:'unknown',reason,at:now}};
+  progress.pendingUpgrade = pending;
+  progress.sequence = Number(progress.sequence) + 1;
+  job.resumeState = progress;
 }
 
 function validateReceipt(previous: ProductionAttempt, input: ReturnType<typeof attemptInput>): void {

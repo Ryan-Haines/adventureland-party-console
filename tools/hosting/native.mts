@@ -6,7 +6,8 @@ import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const production = process.argv.includes('--production');
+// Native source installations use the managed candidate workflow in both modes.
+process.env.AL_CONSOLE_MANAGED = '1';
 // Port 924 is privileged on ordinary Linux hosts; containers allow it explicitly.
 process.env.AL_INTERNAL_API_PORT ||= '1924';
 function run(command: string, args: string[], cwd = root, env = process.env) {
@@ -46,17 +47,13 @@ try {
 }
 await dependencies(root);
 await dependencies(path.join(root, 'dashboard'));
-run(process.execPath, ['tools/caracal/setup.mts']);
+try { await access(path.join(root, '.caracal/main.js')); }
+catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  run(process.execPath, ['tools/caracal/setup.mts']);
+}
 await dependencies(path.join(root, '.caracal'));
 run(process.execPath, ['tools/hosting/install-caddy.mts']);
-for (const script of ['tools/build-shared.mts', 'tools/build-runtime.mts', 'tools/game/build.mts']) {
-  run(process.execPath, [script, '--publish']);
-}
-if (production) {
-  run(process.execPath, ['tools/dashboard/build.mts'], root, { ...process.env, AL_DASHBOARD_OUT_DIR: '.build/container' });
-} else {
-  process.argv.push('--development');
-}
-console.log('Party Console built! Starting' + (production ? '…' : ' with dashboard and character hot reload…'));
+console.log('Starting the active Party Console candidate. Initial setup builds one complete candidate; later source builds require the title refresh action.');
 console.log('Open a Dashboard address printed below to connect your account. Leave this terminal open; Ctrl+C stops the console.');
 await import('./start.mts');

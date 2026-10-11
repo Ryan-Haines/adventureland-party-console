@@ -37,17 +37,67 @@ const account = {
     return info;
   },
   resolve_char(name) { return this.response.characters.find(character => character.name === name); },
-  resolve_realm(realm) { return this.response.servers.find(server => server.key === realm || server.region + server.name === realm); },
+  resolve_realm(realm) {
+    const server = this.response.servers.find(server => server.key === realm || server.region + server.name === realm);
+    const port = server?.region==='US' && server?.name==='II' ? '9004' : '9003';
+    return server && { ...server, address: new URL(webUrl).origin.replace(':8083', ':'+port).replace(':8090', ':7192') };
+  },
   add_listener(listener) { this.listeners.push(listener); },
 };
 const resolve = createRequire(path.join(root, '.caracal/standalones/CharacterCoordinator.js'));
+const nativeExpress = require('express');
+const fixtureExpress = Object.assign((...args) => nativeExpress(...args), nativeExpress);
+const homeVisitorStatusFile = path.join(directory, 'home-visitor-status.jsonl');
+let homeVisitorStatusLines = fs.existsSync(homeVisitorStatusFile)
+  ? fs.readFileSync(homeVisitorStatusFile, 'utf8').trim().split('\n').filter(Boolean).length : 0;
+fixtureExpress.json = (...args) => {
+  const parse = nativeExpress.json(...args);
+  return (req, res, next) => parse(req, res, error => {
+    if (error) return next(error);
+    if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/status' && req.body?.name === 'E2EBankBoi') {
+      const sendJson = res.json;
+      res.json = function(value) {
+        try {
+          if(homeVisitorStatusLines < 128) {
+            fs.appendFileSync(homeVisitorStatusFile, JSON.stringify({at:Date.now(),
+              request:{lastCommandId:req.body.lastCommandId,merchantCommand:req.body.merchantCommand,
+                runtime:req.body.runtime,home:req.body.home,map:req.body.map},
+              response:{command:value?.command ? {id:value.command.id,type:value.command.type,operationId:value.command.operationId} : null,
+                bankboiStorage:value?.bankboiStorage,escapeStage:value?.escape?.stage,
+                dungeonOwned:value?.dailyDungeon?.owned,navigationIntent:value?.navigationIntent,
+                consoleMaintenance:!!value?.consoleMaintenance,partyConvoyActive:value?.partyConvoyActive}
+            })+'\n');
+            homeVisitorStatusLines++;
+          }
+        } catch (_) { /* Observation cannot alter a real response. */ }
+        return sendJson.call(this,value);
+      };
+    }
+    if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/status' &&
+        req.body?.name === 'E2EMerchant' && fs.existsSync(path.join(directory, 'hold-merchant-status')))
+      return res.status(503).json({error:'Declared E2E merchant status transport hold'});
+    next();
+  });
+};
 let version;
 const platformDirectory = path.join(root, '.build/standalones');
 let gameDirectory;
+async function assetText(route) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await localFetch(webUrl + route, {
+        headers: { Cookie: 'auth=' + auth }, signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw Error('Upstream asset ' + route + ': ' + response.status);
+      return await response.text();
+    } catch (error) {
+      if (attempt === 2) throw new Error('Could not download native asset ' + route, {cause:error});
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+}
 async function main() {
-  const dataResponse = await localFetch(webUrl + '/data.js');
-  if (!dataResponse.ok) throw Error('Upstream /data.js: ' + dataResponse.status);
-  const dataSource = await dataResponse.text();
+  const dataSource = await assetText('/data.js');
   const gameContext = {};
   require('node:vm').runInNewContext(dataSource, gameContext, { timeout: 10000 });
   version = Number(gameContext.G?.version);
@@ -56,10 +106,25 @@ async function main() {
   fs.mkdirSync(gameDirectory, { recursive: true });
   await account.updateInfo();
   for (const [name, route] of [['data.js', '/data.js'], ['old_common_functions.js', '/js/old_common_functions.js']]) {
-    const response = await localFetch(webUrl + route);
-    if (!response.ok) throw Error('Upstream asset ' + route + ': ' + response.status);
-    const source = await response.text();
+    const source = await assetText(route);
     fs.writeFileSync(path.join(gameDirectory, name), source);
+  }
+  if (process.env.E2E_ALLOW_HEADLESS === 'true') {
+    const assets = require('../scripts/client-files.cjs');
+    const character = encodeURIComponent(account.response.characters[0].name);
+    const manifest = {
+      game: assets.scripts(await assetText('/character/' + character + '/in/US/I/')),
+      runner: assets.scripts(await assetText('/runner'), true),
+    };
+    const routes = [...new Set([...manifest.game, ...manifest.runner])];
+    if (new Set(routes.map(route => path.posix.basename(route))).size !== routes.length)
+      throw Error('Native client asset filenames collide');
+    for (const route of routes) {
+      fs.writeFileSync(path.join(gameDirectory, path.posix.basename(route)), await assetText(route));
+    }
+    fs.writeFileSync(path.join(gameDirectory, 'client_scripts.json'), JSON.stringify(manifest));
+    fs.copyFileSync(path.join(root, '.caracal/html_vars.js'), path.join(directory, 'html_vars.js'));
+    process.env.AL_INTERNAL_API_PORT = String(port);
   }
   // Production paths resolve relative to the launcher and cwd. All writable paths stay disposable.
   fs.mkdirSync(platformDirectory, { recursive: true });
@@ -80,8 +145,11 @@ async function main() {
   const realm = account.response.servers.find(server => server.region === 'US' && server.name === 'I');
   if (!realm) throw Error('Disposable US I realm was not registered');
   const configuredCharacters = Object.fromEntries(account.response.characters.map(character =>
-    [character.name, { enabled: false, realm: realm.key, version }]));
+    [character.name, { enabled: false, realm: process.env.E2E_STALE_WORKER_REALM || realm.key, version }]));
   const adapters = {
+    // Use this test build's catalog without publishing assets into the live
+    // installation. Native gameplay and coordinator selection remain real.
+    '../../dashboard/lib/event-policy.cjs': require(path.join(root, '.build/shared/event-policy.cjs')),
     '../config': { characters: configuredCharacters, merchant: JSON.parse(process.env.E2E_MERCHANT_DEFAULT || '"E2EMerchant"'), watch_CODE: false, enable_TYPECODE: false,
       web_app: { party_dashboard: true, expose_CODE: true, port } },
     '../account_info': async () => account,
@@ -93,10 +161,13 @@ async function main() {
       LOCALSTORAGE_ROTA_PATH: path.join(directory, 'rotation.jsonl'), STAT_BEAT_INTERVAL: 1000 },
     '../src/LogUtils': { log: logger, console: logger, ctype_to_clid: {} },
     // Browsers own the three actual clients. Fail if a scenario accidentally requests a headless worker.
-    'node:child_process': { fork() { throw Error('Live E2E uses real browser clients; headless launch requested'); } },
+    'node:child_process': { fork(_file, args, options) {
+      if (process.env.E2E_ALLOW_HEADLESS !== 'true') throw Error('Live E2E uses real browser clients; headless launch requested');
+      return require('node:child_process').fork(path.join(root, '.caracal/src/CharacterThread.js'), args, {...options, cwd:directory});
+    } },
     'bot-web-interface': function() { throw Error('Legacy monitor is disabled'); },
     '../monitoring_util': {},
-    express: require('express'),
+    express: fixtureExpress,
   };
   const { startCoordinatorApplication } = require(path.join(root, '.build/runtime/coordinator-application.cjs'));
   await startCoordinatorApplication({ require: name => Object.hasOwn(adapters, name) ? adapters[name] : resolve(name),
