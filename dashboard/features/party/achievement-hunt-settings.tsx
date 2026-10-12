@@ -14,9 +14,6 @@ import { ItemSprite } from './item-sprite';
 import type { MonsterChoice } from './monster-choice';
 import type { PartyState } from './party-state';
 
-// The coordinator rejects these as targets (runtime/coordinator/application.ts).
-const untargetable = new Set(['phoenix', 'tinyp']);
-
 export type AchievementBlacklistChange = { action: 'remove' | 'clear'; monsterId?: string };
 
 function progress(monster: AchievementMonster, kills: number): string {
@@ -46,8 +43,10 @@ export function AchievementHuntSettingsControl({
   const [deaths, setDeaths] = useState(String(settings.deathThreshold));
   const [open, setOpen] = useState(false), [inspected, setInspected] = useState<string | null>(null);
   useEffect(() => setDeaths(String(settings.deathThreshold)), [settings.deathThreshold]);
+  const [recheck, setRecheck] = useState(String(settings.bossRecheckMinutes));
+  useEffect(() => setRecheck(String(settings.bossRecheckMinutes)), [settings.bossRecheckMinutes]);
   const monsters = useMemo(
-    () => achievementMonsters(bestiary as never, choices as never).filter((m) => !untargetable.has(m.id)),
+    () => achievementMonsters(bestiary as never, choices as never),
     [bestiary, choices],
   );
   const regular = monsters.filter((m) => !m.special), special = monsters.filter((m) => m.special);
@@ -72,6 +71,14 @@ export function AchievementHuntSettingsControl({
     }
     if (n !== settings.deathThreshold) void save({ deathThreshold: n });
   }
+  function recheckMinutes() {
+    const n = Number(recheck);
+    if (!recheck.trim() || !Number.isSafeInteger(n) || n < 1 || n > 120) {
+      setError('The boss recheck time must be a whole number of minutes from 1 to 120.');
+      return;
+    }
+    if (n !== settings.bossRecheckMinutes) void save({ bossRecheckMinutes: n });
+  }
   const checkbox = 'border-cyan-400 bg-[#07110f] text-white data-checked:bg-cyan-700';
   const input = 'w-16 rounded border border-cyan-700 bg-[#07110f] px-2 py-1 text-emerald-50 disabled:border-slate-600 disabled:text-slate-400';
   const control = 'border border-emerald-600 bg-[#07110f] text-emerald-100 hover:border-emerald-300 hover:bg-emerald-950 hover:text-white';
@@ -85,7 +92,7 @@ export function AchievementHuntSettingsControl({
         <span className="min-w-0">
           {monster.name}
           <span className="block text-xs text-emerald-200">
-            {progress(monster, Number(kills[monster.id]) || 0)}{blacklist[monster.id] ? ' · blacklisted' : ''}
+            {progress(monster, Number(kills[monster.id]) || 0)}{monster.rare ? ' · fought when seen' : ''}{blacklist[monster.id] ? ' · blacklisted' : ''}
           </span>
         </span>
       </button>
@@ -102,7 +109,8 @@ export function AchievementHuntSettingsControl({
       </div>
       <p className="text-xs text-emerald-200">
         Farms the selected monsters for their kill achievements, weakest first. Every selected monster reaches its next
-        milestone before any moves on to the one after.
+        milestone before any moves on to the one after. Selected rares, such as Phoenix or Dracul, are never a target:
+        passive hunting fights them when a character sees one.
       </p>
       <div className="flex flex-wrap items-center gap-2 text-sm text-emerald-50">
         <label className="flex items-center gap-3">
@@ -121,9 +129,26 @@ export function AchievementHuntSettingsControl({
           onCheckedChange={(v) => void save({ fillIdle: !!v })} />
         Fill respawn waits with nearby monsters
       </label>
+      <label className="flex items-center gap-3 pl-6 text-sm text-emerald-50">
+        <Checkbox className={checkbox} checked={settings.fillSelectedOnly} disabled={busy || !onSave || !settings.fillIdle}
+          onCheckedChange={(v) => void save({ fillSelectedOnly: !!v })} />
+        Only selected monsters
+      </label>
       <p className="text-xs text-emerald-200">
-        While the target respawns, the party fights weaker monsters that spawn within its search radius. The target always
-        comes first.
+        While the target respawns, the party fights weaker monsters that share its spawn ground: only the ones selected
+        here, unless you turn that off. The target always comes first.
+      </p>
+      <div className="flex flex-wrap items-center gap-2 text-sm text-emerald-50">
+        <span>When a boss attacks, farm another target and check back after</span>
+        <input aria-label="Minutes before checking a boss-held target again" className={input} type="number" min="1" max="120" step="1"
+          value={recheck} disabled={busy || !onSave}
+          onChange={(e) => setRecheck(e.target.value)} onBlur={recheckMinutes}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+        <span>minutes</span>
+      </div>
+      <p className="text-xs text-emerald-200">
+        Fighters keep new pulls away from a boss on the target&apos;s ground. A boss stays until someone kills it, so a
+        shorter wait checks more often at the cost of more trips.
       </p>
       {Object.keys(blacklist).length > 0 && (
         <div aria-label="Achievement Hunt blacklist" className="space-y-2">

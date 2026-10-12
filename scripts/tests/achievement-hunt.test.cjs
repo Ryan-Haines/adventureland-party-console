@@ -52,8 +52,13 @@ test('the list runs weakest to strongest; special and achievement-less monsters 
   const dummy = achievementMonsters([{ id: 'target_ar900', name: 'Target Automatron', xp: 1000, definition: { achievements: ladder(100), unlist: true } }], [{ id: 'target_ar900', locations: [{}] }]);
   assert.equal(dummy[0].special, true);
   // Failure mode 13: Dracul's spawn is a random respawn, though its definition has no special flag.
-  const dracul = achievementMonsters([{ id: 'mvampire', name: 'Dracul', xp: 1, definition: { achievements: ladder(1) } }], [{ id: 'mvampire', locations: [{}] }]);
+  // The spawn type comes from the game's map data, carried in each spawn record.
+  const dracul = achievementMonsters([{ id: 'mvampire', name: 'Dracul', xp: 1, definition: { achievements: ladder(1) } }],
+    [{ id: 'mvampire', locations: [{}], spawnRecords: [{ map: 'cave', x: 0, y: 0, count: 1, restrictions: [], stype: 'randomrespawn' }] }]);
   assert.equal(dracul[0].special, true);
+  const fixedDracul = achievementMonsters([{ id: 'mvampire', name: 'Dracul', xp: 1, definition: { achievements: ladder(1) } }],
+    [{ id: 'mvampire', locations: [{}], spawnRecords: [{ map: 'cave', x: 0, y: 0, count: 3, restrictions: [] }] }]);
+  assert.equal(fixedDracul[0].special, false);
   assert.equal(order.find((m) => m.id === 'dragold').special, true);
   assert.equal(order.find((m) => m.id === 'wolf').special, false);
 });
@@ -185,6 +190,14 @@ test('an Achievement Hunt switch stays in the mode; picking a monster by hand st
   const manual = party();
   createMonsterSelection(manual, ports).select('goo', { map: 'main', x: 1, y: 2 }, undefined);
   assert.equal(manual.farmingPolicy, 'auto');
+  // Failure mode 27: a switch on the hunt's timer keeps event state for members still finishing an event.
+  const returning = () => ({ ...party(), eventReturn: { id: 'r' }, deferredEventReturns: { F: { id: 'd' } }, eventSessions: { goobrawl: {} } });
+  const switched = returning();
+  createMonsterSelection(switched, ports).select('goo', { map: 'main', x: 1, y: 2 }, undefined, true);
+  assert.deepEqual([switched.eventReturn, switched.deferredEventReturns, switched.eventSessions], [{ id: 'r' }, { F: { id: 'd' } }, { goobrawl: {} }]);
+  const picked = returning();
+  createMonsterSelection(picked, ports).select('goo', { map: 'main', x: 1, y: 2 }, undefined);
+  assert.deepEqual([picked.eventReturn, picked.deferredEventReturns, picked.eventSessions], [null, {}, {}]);
 });
 
 test('each farming scope keeps its own Achievement Hunt; a saved leader profile keeps the party-wide selection', () => {
@@ -272,7 +285,8 @@ function snakeFixture(extra = {}) {
   const state = {
     leader: 'L', farmingPolicy: 'achievements', monsterFocus: [], bestiaryCatalog: snakes, monsterChoices: snakeChoices,
     statuses: { L: { seenAt: now, monsterAchievementKills: { snake: 100 } }, F: { seenAt: now, monsterAchievementKills: {} } },
-    achievementHunt: { monsters: ['osnake'], blacklistDeaths: true, deathThreshold: 3, fillIdle: true },
+    // Plain snakes aren't selected, so these tests fill from any regular monster on the ground.
+    achievementHunt: { monsters: ['osnake'], blacklistDeaths: true, deathThreshold: 3, fillIdle: true, fillSelectedOnly: false },
     achievementBlacklist: {}, achievementTarget: null, achievementMessage: '',
     monsterPrioritiesByCharacter: { L: { snake: 70, bat: 20 } }, location: null, activeConvoy: null,
     ...extra,
@@ -418,4 +432,179 @@ test('a leader standing away from the target after a failed trip is sent back, a
   f.state.statuses.L.navigationState = 'idle';
   f.advance(40_000); f.hunt.tick();
   assert.equal(f.selected.length, 4);
+});
+
+test('new installs blacklist a target on its sixth death, the threshold the live run used', () => {
+  const { defaultAchievementHuntSettings } = require('../../runtime/coordinator/hunt/achievement-settings.ts');
+  assert.equal(defaultAchievementHuntSettings.deathThreshold, 6);
+  assert.equal(defaultAchievementHuntSettings.fillSelectedOnly, true);
+});
+
+test('fillers are only selected monsters unless that setting is off', () => {
+  // Failure mode 28: a monster the player left unselected became a filler.
+  const f = snakeFixture();
+  f.state.achievementHunt.fillSelectedOnly = true;
+  f.hunt.tick();
+  assert.deepEqual(f.state.monsterFocus, ['osnake']);
+  const both = snakeFixture();
+  Object.assign(both.state.achievementHunt, { fillSelectedOnly: true, monsters: ['osnake', 'snake'] });
+  both.hunt.tick();
+  assert.deepEqual(both.state.monsterFocus, ['osnake', 'snake']);
+  // Settings saved before this option existed lack it, and get the default.
+  const saved = snakeFixture();
+  delete saved.state.achievementHunt.fillSelectedOnly;
+  saved.hunt.tick();
+  assert.deepEqual(saved.state.monsterFocus, ['osnake']);
+});
+
+// Bosses: failure modes 29 and 30 in docs/achievement-hunt.md.
+const winterBox = { map: 'winterland', x: 433, y: -2745, boundary: [30, -2954, 836, -2536] };
+const bossCatalog = [
+  { id: 'goo', name: 'Goo', xp: 100, threat: 1, hp: 50, definition: { achievements: ladder(10, 100, 1000) } },
+  { id: 'wolf', name: 'White Wolf', xp: 48800, threat: 50, hp: 48000, definition: { achievements: ladder(1, 100, 1000) } },
+  { id: 'stompy', name: 'Stompy', xp: 600000, threat: 900, hp: 640000, definition: { achievements: ladder(1), respawn: 2160 } },
+];
+const bossChoices = [
+  { id: 'goo', locations: [{ map: 'main', x: 0, y: 0 }], spawnRecords: [{ map: 'main', x: 0, y: 0, count: 9, restrictions: [] }] },
+  { id: 'wolf', locations: [winterBox], spawnRecords: [{ ...winterBox, count: 7, restrictions: [] }] },
+  { id: 'stompy', locations: [winterBox], spawnRecords: [{ ...winterBox, count: 1, restrictions: [] }] },
+];
+function bossFixture() {
+  let now = 1_000_000;
+  const selected = [];
+  const state = {
+    leader: 'L', farmingPolicy: 'achievements', monsterFocus: [], bestiaryCatalog: bossCatalog, monsterChoices: bossChoices,
+    // Goo already has step 1, so the weaker-first sweep picks White Wolf.
+    statuses: { L: { seenAt: now, monsterAchievementKills: { goo: 10 } }, F: { seenAt: now, monsterAchievementKills: {} } },
+    achievementHunt: { monsters: ['goo', 'wolf'], blacklistDeaths: true, deathThreshold: 6, fillIdle: true },
+    achievementBlacklist: {}, achievementTarget: null, achievementMessage: '', location: null, activeConvoy: null,
+  };
+  const ports = {
+    now: () => now, members: () => ['L', 'F'], busy: () => null, persist() {}, radius: () => 400,
+    destination: (id) => ({ ...bossChoices.find((c) => c.id === id).locations[0] }),
+    select: (id, location) => { selected.push(id); state.monsterFocus = [id]; state.location = location; return ['L', 'F']; },
+  };
+  return { state, selected, hunt: createAchievementHunt(state, ports), advance: (ms) => { now += ms; for (const s of Object.values(state.statuses)) s.seenAt = now; } };
+}
+
+test('a target with a boss on its ground tells fighters to keep away from that boss', () => {
+  const order = achievementMonsters(bossCatalog, bossChoices);
+  assert.equal(order.find((m) => m.id === 'stompy').boss, true);
+  assert.equal(order.find((m) => m.id === 'wolf').boss, false);
+  const f = bossFixture();
+  f.hunt.tick();
+  assert.deepEqual(f.selected, ['wolf']);
+  assert.deepEqual(f.state.achievementTarget.avoid, ['stompy']);
+  // Seeing the boss is not enough to leave; fighters keep their distance.
+  f.state.statuses.L.avoidSightings = [{ mtype: 'stompy', target: null }];
+  f.advance(5_000); f.hunt.tick();
+  assert.deepEqual(f.selected, ['wolf']);
+});
+
+test('a boss attacking the party sends the hunt to a stand-in, and it returns 10 minutes after the boss was last seen', () => {
+  const f = bossFixture();
+  f.hunt.tick();
+  // Failure mode 29: Stompy attacks a party member at the White Wolf spawn.
+  f.state.statuses.F.avoidSightings = [{ mtype: 'stompy', target: 'F' }];
+  f.state.statuses.F.lastDeath = { at: 1_002_000 };
+  f.advance(5_000); f.hunt.tick();
+  assert.deepEqual(f.selected, ['wolf', 'goo']);
+  assert.equal(f.state.achievementTarget.standInFor, 'wolf');
+  assert.match(f.state.achievementMessage, /Farming Goo: .* while Stompy holds White Wolf \(back in 10m\)/);
+  // The death still counts against White Wolf, not the stand-in, and it stays off the blacklist below the threshold.
+  assert.deepEqual(f.state.achievementBlacklist, {});
+  // Failure mode 30: a later sighting of the boss pushes the return back; then it returns.
+  f.state.statuses.F.avoidSightings = [];
+  f.advance(5 * 60_000); f.state.statuses.L.avoidSightings = [{ mtype: 'stompy', target: null }]; f.hunt.tick();
+  f.state.statuses.L.avoidSightings = [];
+  f.advance(9 * 60_000); f.hunt.tick();
+  assert.deepEqual(f.selected, ['wolf', 'goo'], 'the boss was seen 9 minutes ago');
+  f.advance(2 * 60_000); f.hunt.tick();
+  assert.deepEqual(f.selected, ['wolf', 'goo', 'wolf']);
+  assert.equal(f.state.achievementTarget.standInFor, undefined);
+  assert.equal(f.state.achievementTarget.deaths, 1, 'the death before leaving still counts toward the blacklist');
+});
+
+// Rare spawns: failure mode 31 in docs/achievement-hunt.md.
+const rareCatalog = [
+  { id: 'goo', name: 'Goo', xp: 100, threat: 1, hp: 50, definition: { achievements: ladder(10, 100, 1000) } },
+  { id: 'mvampire', name: 'Dracul', xp: 2000, threat: 9, hp: 240000, definition: { achievements: ladder(1, 10) } },
+  { id: 'phoenix', name: 'Phoenix', xp: 9000, threat: 9, hp: 160000, definition: { achievements: ladder(1, 10) } },
+];
+const rareChoices = [
+  { id: 'goo', locations: [{ map: 'main', x: 0, y: 0 }], spawnRecords: [{ map: 'main', x: 0, y: 0, count: 9, restrictions: [] }] },
+  { id: 'mvampire', locations: [{ map: 'cave', x: 0, y: 0 }], spawnRecords: [{ map: 'cave', x: 0, y: 0, count: 1, restrictions: [], stype: 'randomrespawn' }] },
+  { id: 'phoenix', locations: [{ map: 'main', x: 900, y: 0 }], spawnRecords: [{ map: 'main', x: 900, y: 0, count: 1, restrictions: [] }] },
+];
+function rareFixture(monsters, rules = {}) {
+  let now = 1_000_000;
+  const selected = [], sets = [];
+  const state = {
+    leader: 'L', farmingPolicy: 'achievements', monsterFocus: [], bestiaryCatalog: rareCatalog, monsterChoices: rareChoices,
+    statuses: { L: { seenAt: now, monsterAchievementKills: {} } },
+    achievementHunt: { monsters, blacklistDeaths: true, deathThreshold: 6, fillIdle: true },
+    achievementBlacklist: {}, achievementTarget: null, achievementMessage: '', location: null, activeConvoy: null, achievementPassive: null,
+  };
+  const passive = { rules: { ...rules } };
+  const ports = {
+    now: () => now, members: () => ['L'], busy: () => null, persist() {}, radius: () => 400,
+    destination: (id) => ({ ...rareChoices.find((c) => c.id === id).locations[0] }),
+    select: (id, location) => { selected.push(id); state.monsterFocus = [id]; state.location = location; return ['L']; },
+    passive: { rule: (id) => passive.rules[id], set: (changes) => { sets.push(changes); Object.assign(passive.rules, changes); } },
+  };
+  return { state, selected, sets, passive, hunt: createAchievementHunt(state, ports),
+    advance: (ms) => { now += ms; state.statuses.L.seenAt = now; } };
+}
+
+test('a selected rare is never the target; passive hunting fights it when seen, then gets its old rule back', () => {
+  const order = achievementMonsters(rareCatalog, rareChoices);
+  assert.deepEqual(order.filter((m) => m.rare).map((m) => m.id), ['mvampire', 'phoenix']);
+  assert.ok(order.filter((m) => m.rare).every((m) => m.special), 'rares are listed with the special monsters');
+  // Dracul and Phoenix are at step 1 and Goo at step 2, yet Goo is the target (failure mode 31).
+  const f = rareFixture(['goo', 'mvampire', 'phoenix'], { phoenix: { enabled: false, keepMoving: false, priority: 80, maxLevel: 5 } });
+  f.state.statuses.L.monsterAchievementKills = { goo: 10 };
+  f.hunt.tick();
+  assert.deepEqual(f.selected, ['goo']);
+  assert.deepEqual(f.passive.rules.mvampire, { enabled: true, keepMoving: false, priority: 100, maxLevel: -1 });
+  // The player's own Phoenix priority and level cap are kept while the hunt switches it on.
+  assert.deepEqual(f.passive.rules.phoenix, { enabled: true, keepMoving: false, priority: 80, maxLevel: 5 });
+  // Dracul finishes its ladder: its rule goes back to off. Leaving the mode restores Phoenix exactly.
+  f.state.statuses.L.monsterAchievementKills = { goo: 10, mvampire: 10 };
+  f.advance(5_000); f.hunt.tick();
+  assert.equal(f.passive.rules.mvampire.enabled, false);
+  f.state.farmingPolicy = 'auto';
+  f.advance(5_000); f.hunt.tick();
+  assert.deepEqual(f.passive.rules.phoenix, { enabled: false, keepMoving: false, priority: 80, maxLevel: 5 });
+  assert.deepEqual(f.state.achievementPassive, {});
+  f.advance(5_000); f.hunt.tick();
+  assert.equal(f.sets.length, 3, 'nothing changes once the rules are restored');
+});
+
+test("a rare the player already hunts passively is left alone, and only rares selected waits for them", () => {
+  const own = { enabled: true, keepMoving: false, priority: 300, maxLevel: -1 };
+  const f = rareFixture(['phoenix'], { phoenix: own });
+  f.hunt.tick();
+  assert.deepEqual(f.selected, []);
+  assert.deepEqual(f.sets, []);
+  assert.deepEqual(f.passive.rules.phoenix, own);
+  const g = rareFixture(['mvampire']);
+  g.hunt.tick();
+  assert.equal(g.state.achievementMessage, 'No target to farm: fighting Dracul when seen');
+});
+
+test('the boss recheck time is a setting, validated by the settings route', () => {
+  const f = bossFixture();
+  f.state.achievementHunt.bossRecheckMinutes = 3;
+  f.hunt.tick();
+  f.state.statuses.F.avoidSightings = [{ mtype: 'stompy', target: 'F' }];
+  f.advance(5_000); f.hunt.tick();
+  assert.match(f.state.achievementMessage, /\(back in 3m\)/);
+  f.state.statuses.F.avoidSightings = [];
+  f.advance(2 * 60_000); f.hunt.tick();
+  assert.deepEqual(f.selected, ['wolf', 'goo']);
+  f.advance(60_000); f.hunt.tick();
+  assert.deepEqual(f.selected, ['wolf', 'goo', 'wolf']);
+  const { validAchievementHuntSettings } = require('../../runtime/coordinator/hunt/achievement-settings.ts');
+  assert.equal(validAchievementHuntSettings({ bossRecheckMinutes: 30 }), true);
+  for (const bad of [0, 121, 2.5, '10']) assert.equal(validAchievementHuntSettings({ bossRecheckMinutes: bad }), false, String(bad));
 });

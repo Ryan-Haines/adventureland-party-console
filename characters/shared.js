@@ -400,6 +400,8 @@
   var monsterFocus = ["goo"];
   var monsterPriorities = {};
   var passiveHunting = {rules:{},useFieldGenerators:true};
+  // Bosses the coordinator asks this character to keep away from (Achievement Hunt).
+  var avoidMonsters = [];
   var passingEncounters = parent.__partyPassingEncounters || (parent.__partyPassingEncounters = {});
   var passiveGeneratorAttempt = null, peerPassingEncounters = parent.__partyPeerPassingEncounters || [];
   var passiveRareHunts = { tinyp: false, phoenix: false, goldenbat: false, cutebee: false, hen: false, rooster: false };
@@ -1748,7 +1750,7 @@
               x: valid ? Math.round(x) : undefined, y: valid ? Math.round(y) : undefined,
               boundary: box || undefined, polygon: spawn.polygon || undefined };
             spawnRecords.push(Object.assign({ sourceMap: sourceMapId, count: spawn.count,
-              restrictions: restrictions }, location));
+              restrictions: restrictions, stype: spawn.stype || undefined }, location));
             recorded = true;
             if (!restrictions.length) locations.push(location);
           }
@@ -2500,6 +2502,7 @@
     var liveEventName = selectedLiveEvent && selectedLiveEvent.name || null;
     var status = {
       rareObservation: rareObservationReport(), rareSightings: rareSightings(), rareFields: rareFields(), rareKills: rareKills,
+      avoidSightings: avoidSightings(),
       rareLoot: root.partyLootClient ? root.partyLootClient.rare.report() : rareLoot,
       huntLoot: root.partyLootClient && root.partyLootClient.hunt.report(),
       convoyLoot: root.partyLootClient && root.partyLootClient.convoy.report(),
@@ -3060,6 +3063,28 @@
     if (slot<0) return;
     passiveGeneratorAttempt.sent=true;
     Promise.resolve(equip(slot)).catch(function(){passiveGeneratorAttempt=null;});
+  }
+
+  /** Visible, living bosses from the coordinator's avoid list. */
+  function visibleAvoidedBosses() {
+    if (!avoidMonsters.length) return [];
+    return Object.keys(parent.entities || {}).map(function (id) { return parent.entities[id]; }).filter(function (e) {
+      return e && e.type === "monster" && e.visible && !e.dead && avoidMonsters.indexOf(e.mtype) >= 0;
+    });
+  }
+  // A pull this close to a boss risks drawing it in: twice its attack range plus a margin.
+  function avoidedBossNear(target) {
+    return visibleAvoidedBosses().some(function (boss) {
+      var reach = 150 + 2 * (Number(G.monsters[boss.mtype] && G.monsters[boss.mtype].range) || 50);
+      return Math.hypot(Number(boss.x) - Number(target.x), Number(boss.y) - Number(target.y)) <= reach;
+    });
+  }
+  /** Reported in status; the coordinator leaves the target once one of these attacks the party. */
+  function avoidSightings() {
+    return visibleAvoidedBosses().slice(0, 8).map(function (e) {
+      return { id: String(e.id), mtype: e.mtype, x: e.real_x !== undefined ? e.real_x : e.x,
+        y: e.real_y !== undefined ? e.real_y : e.y, target: e.target || null };
+    });
   }
 
   function rareSightings() {
@@ -10215,6 +10240,8 @@
       }
       monsterPriorities = state.monsterPriorities && typeof state.monsterPriorities === "object"
         ? state.monsterPriorities : {};
+      avoidMonsters = Array.isArray(state.avoidMonsters)
+        ? state.avoidMonsters.filter(function (type) { return typeof type === "string"; }) : [];
       monsterSearchRadius = Number.isFinite(Number(state.monsterSearchRadius))
         ? Math.max(1, Number(state.monsterSearchRadius)) : 400;
       var nextScatterEpoch = Number(state.scatterEpoch) || 0;
@@ -13195,6 +13222,8 @@
     if (typeof passiveRareCandidate === "function" && passiveRareCandidate(target)) return true;
     if (isAttackingPartyMember(target)) return true;
     if(typeof root!=='undefined' && root.__partyFarmingEngagement && root.__partyFarmingEngagement.target.id===target.id) return true;
+    // Achievement Hunt keeps new pulls away from its target's bosses (docs/achievement-hunt.md § Bosses).
+    if (target.id !== combatTargetId && typeof avoidedBossNear === "function" && avoidedBossNear(target)) return reject("boss nearby");
     // Farm boundaries govern new pulls. The exact unfinished target must stay
     // eligible after it wanders out, or the lock and selector deadlock.
     if (typeof unfinishedFight === "function" && unfinishedFight() &&

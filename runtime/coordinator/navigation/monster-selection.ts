@@ -55,6 +55,9 @@ export function createMonsterSelection(state: MonsterSelectionState, ports: Mons
     state.partyFarmingMode = "default";
     state.partyFarmingMonsterType = null;
     state.scatterBreakTarget = null;
+    // A mode's own switch keeps event state: Achievement Hunt switches on a timer, while members
+    // may still be finishing an event. A manual pick clears it.
+    if (keepPolicy) return;
     state.eventReturn = null;
     state.deferredEventReturns = {};
     state.eventSessions = {};

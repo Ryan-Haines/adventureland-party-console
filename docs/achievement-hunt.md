@@ -49,6 +49,7 @@ settings dialog, next to Hunt settings.
   is used.
 - **Moving on.** When the target's kill count reaches its milestone, the next
   target is chosen.
+- **Rares are never the target.** See [Rare spawns](#rare-spawns).
 
 ## Filling respawn waits
 
@@ -69,6 +70,10 @@ box, it is no stronger than the target by XP per kill, it is not special, and
 it is not blacklisted. When the target's spot has no box, spawns within 100 of
 the spot count.
 
+With *Only selected monsters* on (the default), a filler must also be selected:
+a monster the player left unselected is one they did not ask to fight. Turned
+off, any regular monster on the target's ground can fill.
+
 **Rare variants first.** When the chosen target would itself be a filler of
 another selected monster that is rarer (fewer of it spawn on that ground than
 of the chosen target) and at the same step or lower, that monster becomes
@@ -77,6 +82,48 @@ at the same step, the party farms Orange Snakes with snakes as fillers, and the
 snake step clears along the way. This applies only while *Fill respawn waits*
 is on.
 
+## Bosses
+
+Stompy roams the whole White Wolf spawn, and Skeletor and the vampires share
+ground with regular monsters. Achievement Hunt tries to stay out of fights with
+them; deaths they cause still count toward the target's death blacklist.
+
+- **Which bosses.** A boss is a monster the game flags `special`, or a
+  boss-like one (§ 23). Each target lists the bosses whose spawn shares its
+  ground (`achievementTarget.avoid`), and the status response sends that list
+  to the characters as `avoidMonsters`.
+- **Keeping distance.** A character never starts a new pull within
+  150 + 2 × the boss's attack range of a visible boss on the list, which is
+  278 for Stompy. A monster already attacking the party, or the fight already
+  under way, is still fought.
+- **Leaving.** Characters report visible bosses on the list, with whom each one
+  attacks (`avoidSightings`). When one attacks a party member, the hunt farms
+  the next target as a stand-in, and returns once no member has seen the boss
+  for the *check back after* time (`bossRecheckMinutes`, 1 to 120, 10 by
+  default). The party can't see the spawn while away, so in practice it returns
+  after that long and checks again. A boss stays until someone kills it, so the
+  setting trades how often the party checks against how many trips it makes. The deaths the target had go with
+  it, so leaving and coming back never resets its blacklist count. Holds live
+  in memory: after a restart the party goes back, and leaves again if the boss
+  attacks.
+
+## Rare spawns
+
+Rares appear without a fixed spawn: random respawns (Dracul, Phoenix; `G.maps`
+marks their spawns `stype: "randomrespawn"`, and characters copy that into
+each spawn record) and the rares passive hunting already knows (Phoenix, Golden
+Bat, Cute Bee, Tiny, the chickens). They are listed with the special monsters.
+
+A selected rare is never the target: waiting at one of its possible spawns
+would stall the hunt. Instead, while the hunt runs, each selected rare with
+steps left gets an enabled passive hunting rule, so the party fights it when a
+character sees one and then returns. Achievement Hunt already waits while a rare
+hunt owns travel. A rare the player already hunts passively is left alone. Any
+other rule is saved in `achievementPassive` and put back, exactly, once the
+rare finishes its ladder, is unselected or blacklisted, or the mode ends. Only
+the party leader's scope runs rare hunts, so independent characters' hunts
+skip their rares.
+
 ## Skipping and blacklisting
 
 Skipping works like Hunt's blacklist:
@@ -84,7 +131,8 @@ Skipping works like Hunt's blacklist:
 - **Manual skips.** Monsters are left unselected, or added to the
   Achievement Hunt blacklist by hand.
 - **Deaths.** When *Blacklist on deaths* is on, a target is blacklisted after
-  `deathThreshold` party deaths while farming it.
+  `deathThreshold` party deaths while farming it, 6 by default: the live run
+  used 6, and White Wolf was blacklisted on its sixth death.
 - **Removing entries.** Blacklist entries are removed individually or cleared.
 
 ## Failure modes considered before implementation
@@ -195,6 +243,29 @@ Found while running on a live party:
 26. **Event deaths counted against the target.** A death on an event trip
     counted toward the death blacklist. Hunt leaves those out
     (`scripts/hunt-safety.cjs` `eventDeath`), and so does Achievement Hunt.
+
+Found in review of the first version:
+
+27. **A switch erased event state.** Every switch, and every return to the
+    target, went through the manual pick's `reset`, which cleared
+    `eventReturn`, `deferredEventReturns` and `eventSessions`. A member still
+    finishing an event could lose its way back. A switch that keeps the mode
+    now leaves event state alone, and the hunt also waits while
+    `deferredEventReturns` is set.
+28. **Unselected fillers.** Any regular monster on the target's ground filled,
+    including ones the player left unselected. Fillers are now selected
+    monsters only, unless *Only selected monsters* is off.
+
+Found on the live party:
+
+29. **Fighting the boss on the target's ground.** Stompy shares the White Wolf
+    spawn; 5 of White Wolf's 6 deaths were Stompy. See [Bosses](#bosses).
+30. **Coming back too soon, or never.** A stand-in that kept going until its own
+    milestone could hold the party away for hours. A stand-in now gives the
+    target back as soon as the boss has gone unseen for the *check back after*
+    time.
+31. **A rare as the target.** Selecting a rare made it the target, so the party
+    waited at a spawn where it may not appear. See [Rare spawns](#rare-spawns).
 
 ## Tests
 

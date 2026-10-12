@@ -1,4 +1,4 @@
-import { migratePassiveSettings, type PassiveSettings } from "./passive-settings.ts";
+import { migratePassiveSettings, type PassiveRule, type PassiveSettings } from "./passive-settings.ts";
 import type { HuntCycle, HuntTickState } from "../hunt/contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
 import type { FarmAreaState } from "./farm-area-types.ts";
@@ -21,15 +21,17 @@ interface SavedFarming extends HuntFailureState {
   achievementHunt?: Partial<AchievementHuntSettings> | null;
   achievementBlacklist?: Record<string, AchievementBlacklistEntry> | null;
   achievementTarget?: AchievementTargetState | null;
+  achievementPassive?: Record<string, PassiveRule | null> | null;
 }
 
-/** Restore Achievement Hunt settings, blacklist and current target. */
+/** Restore Achievement Hunt settings, blacklist, current target and the passive rules it replaced. */
 function initialAchievementHunt(saved: SavedFarming) {
   return {
     achievementHunt: {...defaultAchievementHuntSettings, ...saved.achievementHunt} as AchievementHuntSettings,
     achievementBlacklist: saved.achievementBlacklist || {},
     achievementTarget: saved.achievementTarget || null,
     achievementMessage: "",
+    achievementPassive: saved.achievementPassive || null,
   };
 }
 

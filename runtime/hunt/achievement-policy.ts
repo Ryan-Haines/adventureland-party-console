@@ -1,5 +1,6 @@
 // Achievement Hunt target choice (docs/achievement-hunt.md). Pure: no state, no I/O.
 import type { GMonster } from "typed-adventureland";
+import { legacyPriorities } from "../coordinator/navigation/passive-settings.ts";
 
 /** A bestiary catalog entry. `definition` is the monster's `G.monsters` entry. */
 export interface AchievementCatalogEntry {
@@ -35,6 +36,10 @@ export interface AchievementMonster {
   /** Bosses, event, cooperative and random-respawn monsters, monsters the game leaves out of its
    *  list (training dummies, Cave of Many Dreams), and any without a regular spawn. */
   special: boolean;
+  /** Flagged special by the game, or boss-like (§ 23): a monster the party keeps away from. */
+  boss: boolean;
+  /** A random respawn or one of passive hunting's rares: fought when seen, never a target (§ Rare spawns). */
+  rare: boolean;
 }
 export interface AchievementTarget {
   id: string;
@@ -53,9 +58,6 @@ export function milestones(achievements: unknown): number[] {
     .sort((a, b) => a - b);
 }
 
-// G.maps marks these spawns `stype: "randomrespawn"` (cave: mvampire, main: phoenix, game
-// data 17665). The bestiary catalog does not carry spawn types.
-const RANDOM_RESPAWN = new Set(["mvampire", "phoenix"]);
 // Boss-like monsters the game does not flag (docs/achievement-hunt.md § 23).
 const BOSS_SPAWNS = 2;
 const BOSS_HP = 50_000;
@@ -75,13 +77,22 @@ function bossLike(entry: AchievementCatalogEntry, choice: AchievementChoice | un
   const spawns = worldSpawns(choice);
   return spawns > 0 && spawns <= BOSS_SPAWNS && (Number(entry.hp) || 0) >= BOSS_HP;
 }
+/** G.maps marks a spawn that moves between places `stype: "randomrespawn"` (Dracul, Phoenix);
+ *  characters copy the spawn type into each spawn record. */
+function randomRespawn(choice: AchievementChoice | undefined): boolean {
+  return (choice?.spawnRecords || []).some((record) => (record as { stype?: unknown } | null)?.stype === "randomrespawn");
+}
 
 /** Bosses, event, cooperative and random-respawn monsters, ones the game leaves out of its list,
  *  and any without a regular spawn. */
 function isSpecial(entry: AchievementCatalogEntry, routable: ReadonlySet<string>, choice: AchievementChoice | undefined): boolean {
   const definition = entry.definition || {};
-  return !!definition.special || !!definition.cooperative || !!definition.unlist ||
-    RANDOM_RESPAWN.has(entry.id) || !routable.has(entry.id) || bossLike(entry, choice);
+  return !!definition.special || !!definition.cooperative || !!definition.unlist || rareSpawn(entry.id, choice) ||
+    !routable.has(entry.id) || bossLike(entry, choice);
+}
+/** Passive hunting's own rares (Phoenix, Golden Bat, Cute Bee, Tiny, chickens) and random respawns. */
+function rareSpawn(id: string, choice: AchievementChoice | undefined): boolean {
+  return randomRespawn(choice) || Object.hasOwn(legacyPriorities, id);
 }
 
 /** Every monster that has achievements, weakest first: by XP, then threat (attack × speed), HP and name.
@@ -103,6 +114,8 @@ export function achievementMonsters(
         threat: Number(entry.threat) || 0,
         hp: Number(entry.hp) || 0,
         special: isSpecial(entry, routable, choiceOf(entry.id)),
+        boss: !!definition.special || bossLike(entry, choiceOf(entry.id)),
+        rare: rareSpawn(entry.id, choiceOf(entry.id)),
       };
     })
     .filter((monster) => monster.ladder.length > 0)
@@ -155,17 +168,31 @@ export function spawnCount(choices: readonly AchievementChoice[] | null | undefi
     .reduce((total, spawn) => total + (Number((spawn as { count?: unknown }).count) || 0), 0);
 }
 
+/** Whether one of `id`'s spawns shares ground with the target spot `at`. */
+function onGround(choices: readonly AchievementChoice[] | null | undefined, id: string, at: SpawnPlace): boolean {
+  return spawnPlaces((choices || []).find((choice) => choice.id === id)).some((spawn) => sharesGround(at, spawn));
+}
+
 /**
  * Monsters the party can fight while the target respawns: a spawn sharing the target spot's
  * ground, no stronger than the target by XP, regular, and not excluded (docs/achievement-hunt.md § 22).
+ * With `selected`, only those monsters fill.
  */
 export function nearbyFillers(order: readonly AchievementMonster[], choices: readonly AchievementChoice[] | null | undefined,
-  targetId: string, at: SpawnPlace, excluded: (id: string) => boolean): string[] {
+  targetId: string, at: SpawnPlace, excluded: (id: string) => boolean, selected?: ReadonlySet<string>): string[] {
   const target = order.find((monster) => monster.id === targetId);
   if (!target) return [];
   return order
     .filter((monster) => monster.id !== targetId && !monster.special && monster.xp <= target.xp && !excluded(monster.id))
-    .filter((monster) => spawnPlaces((choices || []).find((choice) => choice.id === monster.id)).some((spawn) => sharesGround(at, spawn)))
+    .filter((monster) => !selected || selected.has(monster.id))
+    .filter((monster) => onGround(choices, monster.id, at))
+    .map((monster) => monster.id);
+}
+
+/** Bosses with a spawn on the target spot's ground (docs/achievement-hunt.md § Bosses). */
+export function bossesOnGround(order: readonly AchievementMonster[], choices: readonly AchievementChoice[] | null | undefined,
+  targetId: string, at: SpawnPlace): string[] {
+  return order.filter((monster) => monster.boss && monster.id !== targetId && onGround(choices, monster.id, at))
     .map((monster) => monster.id);
 }
 
@@ -187,13 +214,21 @@ export function chooseAchievementTarget(
 ): AchievementTarget | null {
   let best: AchievementTarget | null = null;
   for (const monster of order) {
-    if (!selected.has(monster.id) || excluded(monster.id)) continue;
+    // A rare is fought when seen (§ Rare spawns); waiting at one of its spawns would stall the hunt.
+    if (!selected.has(monster.id) || excluded(monster.id) || monster.rare) continue;
     const count = Number(kills[monster.id]) || 0;
     const step = nextStep(monster.ladder, count);
     if (step < 0) continue;
     if (!best || step < best.step) best = { id: monster.id, step, milestone: monster.ladder[step]!, kills: count };
   }
   return best;
+}
+
+/** Selected rares with steps left, not excluded: the ones to fight when seen. */
+export function wantedRares(order: readonly AchievementMonster[], selected: ReadonlySet<string>,
+  excluded: (id: string) => boolean, kills: Readonly<Record<string, number>>): string[] {
+  return order.filter((monster) => monster.rare && selected.has(monster.id) && !excluded(monster.id) &&
+    nextStep(monster.ladder, Number(kills[monster.id]) || 0) >= 0).map((monster) => monster.id);
 }
 
 /** Account-wide progress: the highest count any party member's client reports. */

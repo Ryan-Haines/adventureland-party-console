@@ -67,6 +67,7 @@ export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[num
   followers: Record<string, boolean>;
   escape: { stage?: string } | null;
   farmingPolicy: string;
+  achievementTarget?: { avoid?: string[] } | null;
   monsterHunt: HuntCycle | null;
   monsterFocus: string[];
   monsterFocusByCharacter: Record<string, string[]>;

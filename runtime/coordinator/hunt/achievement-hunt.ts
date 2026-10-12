@@ -2,14 +2,17 @@
 // from monster kill-achievement progress and hands each one to the regular
 // manual-monster convoy (docs/achievement-hunt.md § Failure modes).
 import type { ReturnLocation } from "../events/return-types.ts";
+import { defaultPassiveRule, type PassiveRule } from "../navigation/passive-settings.ts";
 import {
   achievementMonsters,
+  bossesOnGround,
   chooseAchievementTarget,
   nearbyFillers,
   nearSpawnOf,
   spawnCount,
   nextStep,
   partyAchievementKills,
+  wantedRares,
   type AchievementCatalogEntry,
   type AchievementChoice,
   type AchievementMonster,
@@ -36,6 +39,8 @@ export interface AchievementHuntState {
     y?: number;
     navigationState?: string;
     monsterAchievementKills?: Record<string, unknown> | null;
+    /** Visible monsters from the target's avoid list, with whom each one attacks. */
+    avoidSightings?: { mtype?: unknown; target?: unknown }[] | null;
   } | undefined>;
   bestiaryCatalog?: unknown;
   monsterChoices?: AchievementChoice[] | null;
@@ -47,6 +52,8 @@ export interface AchievementHuntState {
   monsterPrioritiesByCharacter?: Record<string, Record<string, number> | undefined>;
   location?: { map: string; x: number; y: number } | null;
   activeConvoy?: unknown;
+  /** Passive hunting rules this hunt switched on for selected rares, with the rule each replaced (null when unset). */
+  achievementPassive?: Record<string, PassiveRule | null> | null;
 }
 export interface AchievementHuntPorts {
   now(): number;
@@ -59,6 +66,8 @@ export interface AchievementHuntPorts {
   /** The leader's monster search radius. */
   radius(): number;
   persist(): void;
+  /** Passive rare hunting, for the leader's scope only; independent characters have none. */
+  passive?: { rule(id: string): PassiveRule | undefined; set(rules: Record<string, PassiveRule>): void };
 }
 
 // A focus change this soon after our own switch is still settling, not the player.
@@ -78,6 +87,11 @@ const killText = (kills: number, milestone: number, step: number) =>
 
 export function createAchievementHunt(state: AchievementHuntState, ports: AchievementHuntPorts) {
   const unroutable = new Map<string, number>();
+  // Targets a boss holds: the boss and when a party member last saw it. Memory only: after a
+  // restart the party goes back and, if the boss is still there and attacks, leaves again.
+  const bossHolds = new Map<string, { boss: string; seenAt: number }>();
+  // Deaths a boss-held target had when the party left it, picked up again on return.
+  const carriedDeaths = new Map<string, number>();
   let returnedAt = -Infinity;
   // Set again after a restart or a settings change (failure mode 21).
   let refocus = true;
@@ -86,7 +100,78 @@ export function createAchievementHunt(state: AchievementHuntState, ports: Achiev
   const say = (message: string): void => { state.achievementMessage = message; };
   function excluded(id: string): boolean {
     const failedAt = unroutable.get(id);
-    return !!state.achievementBlacklist[id] || (failedAt !== undefined && ports.now() - failedAt < UNROUTABLE_RETRY_MS);
+    return !!state.achievementBlacklist[id] || (failedAt !== undefined && ports.now() - failedAt < UNROUTABLE_RETRY_MS) ||
+      bossHeld(id);
+  }
+  // A boss-held target is left until nobody has seen the boss for this long. The party can't see the
+  // spawn while away, so it goes back after this long and checks. Older settings lack it: the default.
+  const bossAwayMs = (): number =>
+    (Number(settings().bossRecheckMinutes) || defaultAchievementHuntSettings.bossRecheckMinutes) * 60_000;
+  function bossHeld(id: string): boolean {
+    const hold = bossHolds.get(id);
+    if (hold && ports.now() - hold.seenAt >= bossAwayMs()) bossHolds.delete(id);
+    return bossHolds.has(id);
+  }
+  /** Fresh sightings of `names`' avoided bosses: [boss, whom it attacks]. */
+  function bossSightings(names: string[]): [string, string | null][] {
+    return names.flatMap((name) => {
+      const status = state.statuses[name];
+      if (!status || ports.now() - status.seenAt > FRESH_STATUS_MS) return [];
+      return (status.avoidSightings || []).filter((seen) => typeof seen?.mtype === "string")
+        .map((seen): [string, string | null] => [seen.mtype as string, typeof seen.target === "string" ? seen.target : null]);
+    });
+  }
+  /** Leaves the target once one of its bosses attacks a party member; deaths still count against it. */
+  function watchBosses(names: string[]): void {
+    const sightings = bossSightings(names);
+    for (const hold of bossHolds.values())
+      if (sightings.some(([boss]) => boss === hold.boss)) hold.seenAt = ports.now();
+    const current = state.achievementTarget;
+    const attack = current && sightings.find(([boss, target]) => current.avoid?.includes(boss) && !!target && names.includes(target));
+    if (current && attack && !bossHolds.has(current.id)) {
+      bossHolds.set(current.id, { boss: attack[0], seenAt: ports.now() });
+      carriedDeaths.set(current.id, current.deaths);
+    }
+  }
+  /**
+   * Passive hunting fights each wanted rare when a character sees it (docs/achievement-hunt.md § Rare spawns).
+   * A rare the player already hunts passively is left alone; any other gets an enabled rule, and the rule it
+   * replaced comes back once the rare is no longer wanted.
+   */
+  function syncRares(wanted: string[]): void {
+    const passive = ports.passive;
+    if (!passive) return;
+    const saved = (state.achievementPassive ||= {});
+    const changes = { ...enableRares(wanted, saved, (id) => passive.rule(id)), ...restoreRares(wanted, saved) };
+    if (!Object.keys(changes).length) return;
+    passive.set(changes);
+    ports.persist();
+  }
+  /** Rules that switch on each wanted rare not already hunted passively, saving the rule each replaces. */
+  function enableRares(wanted: string[], saved: Record<string, PassiveRule | null>,
+    rule: (id: string) => PassiveRule | undefined): Record<string, PassiveRule> {
+    const changes: Record<string, PassiveRule> = {};
+    for (const id of wanted) {
+      const current = rule(id);
+      if (Object.hasOwn(saved, id) || (current?.enabled && !current.keepMoving)) continue;
+      saved[id] = current ? { ...current } : null;
+      changes[id] = { ...defaultPassiveRule(id), ...current, enabled: true, keepMoving: false };
+    }
+    return changes;
+  }
+  /** The saved rules of rares no longer wanted, put back. */
+  function restoreRares(wanted: string[], saved: Record<string, PassiveRule | null>): Record<string, PassiveRule> {
+    const changes: Record<string, PassiveRule> = {};
+    for (const [id, rule] of Object.entries(saved)) {
+      if (wanted.includes(id)) continue;
+      changes[id] = rule || { ...defaultPassiveRule(id), enabled: false };
+      delete saved[id];
+    }
+    return changes;
+  }
+  /** The selected monsters that may fill, or undefined when any regular monster may. */
+  function fillerChoice(): ReadonlySet<string> | undefined {
+    return settings().fillSelectedOnly === false ? undefined : new Set(settings().monsters);
   }
   function leaderOnline(): boolean {
     const status = state.leader ? state.statuses[state.leader] : undefined;
@@ -119,8 +204,9 @@ export function createAchievementHunt(state: AchievementHuntState, ports: Achiev
   /** Focuses the target and the nearby monsters to fight while it respawns, target first. */
   function focusWithFillers(target: AchievementTargetState, location: ReturnLocation, order: AchievementMonster[]): void {
     const fillers = settings().fillIdle === false ? []
-      : nearbyFillers(order, state.monsterChoices, target.id, location, excluded);
+      : nearbyFillers(order, state.monsterChoices, target.id, location, excluded, fillerChoice());
     target.focus = [target.id, ...fillers];
+    target.avoid = bossesOnGround(order, state.monsterChoices, target.id, location);
     target.savedPriorities = {};
     state.monsterFocus = target.focus.slice();
     if (!fillers.length) return;
@@ -175,18 +261,44 @@ export function createAchievementHunt(state: AchievementHuntState, ports: Achiev
    */
   function stillWorking(order: AchievementMonster[], kills: Record<string, number>, best: AchievementTarget | null): boolean {
     const current = state.achievementTarget;
-    if (!current || !settings().monsters.includes(current.id) || excluded(current.id)) return false;
+    if (!current || dropped(current)) return false;
     const monster = order.find((entry) => entry.id === current.id);
     const count = Number(kills[current.id]) || 0;
     if (!monster || nextStep(monster.ladder, count) !== current.step || (best && best.step < current.step)) return false;
-    say(`Farming ${monster.name}: ${killText(count, current.milestone, current.step)}`);
+    say(`Farming ${monster.name}: ${killText(count, current.milestone, current.step)}${standInText(current, order)}`);
     return true;
   }
+  /** Unselected, excluded, or a stand-in whose boss-held target is free again. */
+  function dropped(current: AchievementTargetState): boolean {
+    return !settings().monsters.includes(current.id) || excluded(current.id) ||
+      (!!current.standInFor && !bossHeld(current.standInFor));
+  }
+  /** " while Stompy holds White Wolf (back in 9m)" for a stand-in, or "". */
+  function standInText(target: AchievementTargetState, order: AchievementMonster[]): string {
+    const hold = target.standInFor ? bossHolds.get(target.standInFor) : undefined;
+    if (!hold) return "";
+    const name = (id: string) => order.find((monster) => monster.id === id)?.name || id;
+    const minutes = Math.max(1, Math.ceil((bossAwayMs() - (ports.now() - hold.seenAt)) / 60_000));
+    return ` while ${name(hold.boss)} holds ${name(target.standInFor!)} (back in ${minutes}m)`;
+  }
 
+  /** The state for a new target, with the deaths it had before a boss sent the party away. */
+  function nextTarget(choice: AchievementTarget, previous: AchievementTargetState | null): AchievementTargetState {
+    const target: AchievementTargetState = { id: choice.id, step: choice.step, milestone: choice.milestone, startedAt: ports.now(),
+      deaths: carriedDeaths.get(choice.id) ?? 0, counted: {} };
+    carriedDeaths.delete(choice.id);
+    // Leaving a boss-held target, or moving on from one stand-in to another, keeps the target to return to.
+    const held = [previous?.id, previous?.standInFor].find((id) => !!id && bossHeld(id));
+    if (held && held !== choice.id) target.standInFor = held;
+    return target;
+  }
   function switchTo(choice: AchievementTarget | null, order: AchievementMonster[]): void {
     if (!choice) {
       release();
-      return say("Nothing left to farm: every selected monster has finished its ladder or is skipped");
+      const names = Object.keys(state.achievementPassive || {}).map((id) => order.find((monster) => monster.id === id)?.name || id);
+      return say(names.length
+        ? `No target to farm: fighting ${names.join(", ")} when seen`
+        : "Nothing left to farm: every selected monster has finished its ladder or is skipped");
     }
     const location = ports.destination(choice.id);
     const started = location ? ports.select(choice.id, location) : null;
@@ -194,12 +306,12 @@ export function createAchievementHunt(state: AchievementHuntState, ports: Achiev
       unroutable.set(choice.id, ports.now());
       return say(`Skipping ${choice.id}: ${location ? "the party convoy could not be started" : "no known spawn location"}`);
     }
+    const target = nextTarget(choice, state.achievementTarget);
     release();
-    const target: AchievementTargetState = { id: choice.id, step: choice.step, milestone: choice.milestone, startedAt: ports.now(), deaths: 0, counted: {} };
     state.achievementTarget = target;
     focusWithFillers(target, location!, order);
     const name = order.find((monster) => monster.id === choice.id)?.name || choice.id;
-    say(`Farming ${name}: ${killText(choice.kills, choice.milestone, choice.step)}`);
+    say(`Farming ${name}: ${killText(choice.kills, choice.milestone, choice.step)}${standInText(target, order)}`);
     ports.persist();
   }
 
@@ -215,7 +327,7 @@ export function createAchievementHunt(state: AchievementHuntState, ports: Achiev
     const count = Number(kills[monster.id]) || 0, step = nextStep(monster.ladder, count);
     const at = step >= 0 && step <= best.step ? ports.destination(monster.id) : null;
     if (!at || !rarer(monster.id, best.id, at)) return null;
-    if (!nearbyFillers(order, state.monsterChoices, monster.id, at, excluded).includes(best.id)) return null;
+    if (!nearbyFillers(order, state.monsterChoices, monster.id, at, excluded, fillerChoice()).includes(best.id)) return null;
     return { id: monster.id, step, milestone: monster.ladder[step]!, kills: count };
   }
   /** Rare variants first: farming Orange Snakes with snakes as fillers clears the snake step too. */
@@ -294,16 +406,19 @@ export function createAchievementHunt(state: AchievementHuntState, ports: Achiev
     if (state.farmingPolicy !== "achievements") {
       // Another mode was chosen: forget the target; that mode owns travel now.
       if (state.achievementTarget) { release(); say(""); ports.persist(); }
+      syncRares([]);
       return;
     }
     if (!leaderOnline()) return say("Waiting for an online party leader");
     const names = ports.members();
     recordDeaths(names);
+    watchBosses(names);
     const hold = holdReason(names);
     if (hold) return say(hold);
     if (focusChangedByHand()) return stop("Switched to Auto: the monster focus was changed by hand");
     const order = achievementMonsters(state.bestiaryCatalog as AchievementCatalogEntry[] | null, state.monsterChoices);
     const kills = partyAchievementKills(state.statuses, names.length ? names : [String(state.leader)]);
+    syncRares(wantedRares(order, new Set(settings().monsters), (id) => !!state.achievementBlacklist[id], kills));
     const best = chooseAchievementTarget(order, new Set(settings().monsters), excluded, kills);
     if (!stillWorking(order, kills, best)) switchTo(preferVariant(best, order, kills), order);
     else if (shouldReturn()) returnToTarget(order);

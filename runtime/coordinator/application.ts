@@ -733,9 +733,14 @@ export function startCoordinatorApplication(
     });
     // Achievement Hunt (docs/achievement-hunt.md): picks targets from kill-achievement
     // progress and moves the party with the manual-monster convoy, keeping its fight style.
+    function achievementHuntEventBusy(state: typeof party): string | null {
+      if (state.eventReturn || Object.keys(state.eventSessions || {}).length) return "an event trip is in progress";
+      return Object.keys(state.deferredEventReturns || {}).length ? "a member is still returning from an event" : null;
+    }
     function achievementHuntBusy(state: typeof party, rareOwns: () => boolean): string | null {
       if (dungeonOwns(state)) return "a daily dungeon is running";
-      if (state.eventReturn || Object.keys(state.eventSessions || {}).length) return "an event trip is in progress";
+      const event = achievementHuntEventBusy(state);
+      if (event) return event;
       if (rareOwns()) return "a rare hunt is running";
       const convoy = state.activeConvoy as { purpose?: string | null; phase?: string } | null | undefined;
       const travelling = !!convoy && convoy.purpose !== "manual-monster-override" && !["complete", "failed"].includes(String(convoy.phase));
@@ -750,6 +755,7 @@ export function startCoordinatorApplication(
     function createAchievementHuntService(state: typeof party, ports: {
       members(): string[]; rareOwns(): boolean;
       select(id: string, location: Parameters<typeof monsterSelectionRoutes.achievementTarget>[1]): string[] | null;
+      passive?: Parameters<typeof coordinatorPolicies.createAchievementHunt>[1]["passive"];
     }) {
       const hunt = coordinatorPolicies.createAchievementHunt(state, {
         now: () => Date.now(),
@@ -760,12 +766,13 @@ export function startCoordinatorApplication(
         select: (id, location) => ports.select(id, location),
         radius: () => Number(state.monsterSearchRadiusByCharacter?.[String(state.leader)]) || 400,
         persist: persistSettings,
+        passive: ports.passive,
       });
-      // Phoenix needs a route order and the Fairy passive hunting; neither can be a target.
+      // Rares, Phoenix and Tiny among them, are never targets; passive hunting fights them when seen.
       const route = coordinatorPolicies.createAchievementHuntRoute(state, {
         now: () => Date.now(),
         known: () => new Set(coordinatorPolicies.achievementMonsters(state.bestiaryCatalog as never, state.monsterChoices)
-          .map((monster) => monster.id).filter((id) => id !== "phoenix" && id !== "tinyp")),
+          .map((monster) => monster.id)),
         reset: () => hunt.reset(),
         persist: persistSettings,
       });
@@ -775,6 +782,7 @@ export function startCoordinatorApplication(
       members: () => farmingNavigation.members(),
       rareOwns: () => rareControl.owns(),
       select: (id, location) => monsterSelectionRoutes.achievementTarget(id, location),
+      passive: { rule: (id) => party.passiveHunting?.rules[id], set: (rules) => rareControl.setSettings({ rules }) },
     });
     const staleOrderRoute = coordinatorPolicies.createStaleOrderRoute(party, persistSettings);
     const {
@@ -1920,6 +1928,8 @@ export function startCoordinatorApplication(
         persist: persistSettings, validPassive: () => false, setPassive: () => {},
         invalidate: (...args) => farmingNavigation.invalidate(...args),
       });
+      // The rare hunt takes its members from the leader's party (recovery-hooks.ts huntParticipants),
+      // so it never includes an independent character.
       const { hunt: achievementHunt, route: achievementHuntRoute } = createAchievementHuntService(party, {
         members: () => [name], rareOwns: () => false,
         select: (id, location) => monsterSelection.select(id, location, undefined, true),
