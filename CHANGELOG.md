@@ -7,6 +7,11 @@ from the commits merged into `main`.
 
 ### Added
 
+- Pair another browser shows a short access code, such as `K7QM-4XRT`, next to
+  the pairing link. Type it into setup on the new browser. A code works once,
+  expires after 10 minutes, and five wrong guesses cancel it. Pairing with either
+  the code or the link retires the other.
+
 - Debug consoles can open and control their actual game browser through a private
   viewer on the same port, with Debug browser labels instead of Steam.
 

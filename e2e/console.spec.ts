@@ -234,6 +234,57 @@ test('setup reports failed startup realm discovery without offering stale realms
   }
 });
 
+test('a paired browser shows an access code that pairs exactly one other browser', async ({ browser }, info) => {
+  // Failure modes: the code or link points at an internal address instead of the
+  // one the browser opened; a code pairs twice; the paired browser keeps showing a
+  // used code; an unpaired browser has nowhere to type the code.
+  const access = new Access(path.resolve('.build/e2e', `pairing-access-${randomUUID()}.json`)); await access.load();
+  const owner = (await access.setRequired(true))!;
+  // The public URL differs from the address the browsers open, as it does behind a proxy.
+  const server = gateway({ access, configured: () => true, dashboardPort: 1, publicUrl: 'https://party.example' });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const ownerContext = await browser.newContext(), guestContext = await browser.newContext(), lateContext = await browser.newContext();
+  try {
+    await ownerContext.addCookies([{ name: 'party', value: owner, url: base }]);
+    const ownerPage = await ownerContext.newPage();
+    await ownerPage.goto(base + '/setup');
+    await ownerPage.getByRole('button', { name: 'Pair another browser' }).click();
+    await expect(ownerPage.locator('#accessCodeValue')).toHaveText(/^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/);
+    const code = (await ownerPage.locator('#accessCodeValue').textContent())!;
+    await expect(ownerPage.locator('#pairAddress')).toHaveText(base + '/setup');
+    await expect(ownerPage.locator('#accessCodeExpiry')).toHaveText(/expires in (10:00|9:[0-5]\d)/);
+    await ownerPage.getByText('Use a pairing link instead').click();
+    await expect(ownerPage.locator('#invitationLink')).toHaveText(new RegExp('^' + base.replace(/[.]/g, '\\.') + '/setup#[0-9a-f]{64}$'));
+    await info.attach('pairing-code-shown', { body: await ownerPage.screenshot(), contentType: 'image/png' });
+
+    const guestPage = await guestContext.newPage();
+    await guestPage.goto(base + '/setup');
+    await expect(guestPage.getByRole('heading', { name: 'Pair this browser' })).toBeVisible();
+    await guestPage.getByLabel('Access code').fill(code.toLowerCase());
+    await guestPage.getByRole('button', { name: 'Pair browser' }).click();
+    await expect(guestPage.getByRole('heading', { name: 'Connection settings' })).toBeVisible();
+    await expect(guestPage.getByRole('heading', { name: 'Pair this browser' })).toBeHidden();
+    expect((await guestContext.cookies(base)).some(cookie => cookie.name === 'party' && access.valid('browsers', cookie.value))).toBe(true);
+    await info.attach('pairing-guest-paired', { body: await guestPage.screenshot(), contentType: 'image/png' });
+
+    await expect(ownerPage.getByRole('status').filter({ hasText: 'The access code was used or replaced' })).toBeVisible({ timeout: 10_000 });
+    await expect(ownerPage.locator('#accessCodeValue')).toBeHidden();
+
+    const latePage = await lateContext.newPage();
+    await latePage.goto(base + '/setup');
+    await latePage.getByLabel('Access code').fill(code);
+    await latePage.getByRole('button', { name: 'Pair browser' }).click();
+    await expect(latePage.getByRole('status').filter({ hasText: 'Access code is invalid or expired' })).toBeVisible();
+    await expect(latePage.getByRole('heading', { name: 'Pair this browser' })).toBeVisible();
+    await info.attach('pairing-code-reused', { body: await latePage.screenshot(), contentType: 'image/png' });
+  } finally {
+    await Promise.all([ownerContext.close(), guestContext.close(), lateContext.close()]);
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
 const pageErrors = new WeakMap<object, string[]>();
 
 test('exchange reward tiles share merchant actions and replace previous rules', async ({ page, app }, info) => {
