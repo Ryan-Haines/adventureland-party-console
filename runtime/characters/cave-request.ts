@@ -7,6 +7,10 @@ interface Reply {
   reason?: string;
   visit?: unknown;
 }
+// The game client resolves a native "interaction" deferred for every interaction
+// reply (resolve_deferred in js/old_common_functions.js) and logs an error when none
+// waits, so a request registers one before it emits (docs/repeated-diagnostics.md).
+interface NativeDeferreds { push_deferred?(name: string): unknown }
 interface Socket {
   connected?: boolean;
   prependAny?(listener: (event: string, data: Reply) => void): unknown;
@@ -24,6 +28,7 @@ export function requestCave(
     setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms),
     clearTimeout: (timer: ReturnType<typeof setTimeout>) => clearTimeout(timer),
   },
+  native: NativeDeferreds = {},
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
     if (!socket || socket.connected === false) return reject(Error("Cave socket disconnected"));
@@ -51,7 +56,10 @@ export function requestCave(
     if (socket.prependAny && socket.offAny) socket.prependAny(incoming);
     else socket.on("game_response", response);
     socket.on("disconnect", disconnected);
-    try { socket.emit("interaction", { ...fields, type: "cave", action, request_id: id }); }
+    try {
+      if (typeof native.push_deferred === "function") Promise.resolve(native.push_deferred("interaction")).catch(() => {});
+      socket.emit("interaction", { ...fields, type: "cave", action, request_id: id });
+    }
     catch (error) {
       finish({ failed: true, reason: error instanceof Error ? error.message : String(error) });
     }

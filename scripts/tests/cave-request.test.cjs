@@ -76,3 +76,33 @@ test('browser timers are invoked with their native global receiver', async () =>
   f.socket.on('interaction', data => f.socket.emit('game_response', { request_id: data.request_id, place: 'interaction', visit: { available: true } }));
   assert.equal((await context.exports.requestCave(f.socket, 'q', 'info')).visit.available, true);
 });
+
+// Native interaction deferreds: docs/repeated-diagnostics.md failure modes 1-5.
+function nativeDeferreds(socket) {
+ const pushed=[];
+ return {pushed,push_deferred(name){pushed.push({name,emitted:socket.sent});return new Promise(()=>{});}};
+}
+test('a cave request registers one native interaction deferred before it emits',async()=>{
+ const f=fixture();f.socket.sent=0;f.socket.on('interaction',()=>{f.socket.sent++;});
+ const native=nativeDeferreds(f.socket);
+ const result=requestCave(f.socket,'q','info',{},f.timers,native);
+ assert.deepEqual(native.pushed,[{name:'interaction',emitted:0}]);assert.equal(f.socket.sent,1);
+ f.socket.emit('game_response',{request_id:'q',place:'interaction',visit:{available:true}});
+ assert.equal((await result).visit.available,true);
+});
+test('a disconnected cave request registers no native deferred',async()=>{
+ const f=fixture();f.socket.connected=false;const native=nativeDeferreds(f.socket);
+ await assert.rejects(requestCave(f.socket,'q','info',{},f.timers,native),/disconnected/);
+ assert.equal(native.pushed.length,0);
+});
+test('a client without push_deferred still sends and settles a cave request',async()=>{
+ const f=fixture();f.socket.on('interaction',data=>f.socket.emit('game_response',{request_id:data.request_id,place:'interaction',visit:{available:true}}));
+ assert.equal((await requestCave(f.socket,'q','info',{},f.timers,{})).visit.available,true);
+});
+test('a rejected native deferred never surfaces as an unhandled rejection',async()=>{
+ const f=fixture();const unhandled=[];const listener=e=>unhandled.push(e);process.on('unhandledRejection',listener);
+ f.socket.on('interaction',data=>f.socket.emit('game_response',{request_id:data.request_id,place:'interaction',visit:{}}));
+ await requestCave(f.socket,'q','info',{},f.timers,{push_deferred:()=>Promise.reject({reason:'queue_overflow'})});
+ await new Promise(resolve=>setImmediate(resolve));process.off('unhandledRejection',listener);
+ assert.equal(unhandled.length,0);
+});

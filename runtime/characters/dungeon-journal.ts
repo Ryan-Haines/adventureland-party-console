@@ -37,11 +37,13 @@ export function createDungeonJournal(
       const climbed = command.action === "stairs" && sameRun && !!command.target?.to &&
         command.target.to === "zone_" + cave?.run + "_" + cave?.floor;
       const exited = command.action === "exit" && !cave;
+      // The game drops a vote that lands after the other votes resolved the
+      // choice, so a resolved or replaced choice also settles it.
       const voted =
         command.action === "vote" &&
         sameRun &&
-        cave?.choice?.id === command.choice &&
-        cave?.choice?.votes[name] === command.option;
+        (cave?.choice?.id !== command.choice || !!cave?.choice?.resolved ||
+          cave?.choice?.votes[name] === command.option);
       const bought =
         command.action === "buy" &&
         sameRun &&

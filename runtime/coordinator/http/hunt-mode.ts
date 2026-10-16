@@ -3,6 +3,8 @@ import { createHuntMode, type HuntModeState, type HuntModePorts } from "../hunt/
 import type { ReturnLocation } from "../events/return-types.ts";
 
 interface ModePorts extends HuntModePorts {
+  /** Why Achievement Hunt can't start, or null. */
+  achievementsAvailable?(): string | null;
   waypoint(name: string | null): ReturnLocation | null;
   validLocation(focus: string[], location: unknown): ReturnLocation | null;
   persist(): void;
@@ -67,12 +69,18 @@ export function createHuntModeRoute(state: HuntModeState, ports: ModePorts) {
       monsterHunt: state.monsterHunt,
     });
   }
+  function unavailableMode(mode: string): string | null {
+    if (mode === "hunt") return availableHunt();
+    if (mode === "achievements")
+      return ports.achievementsAvailable ? ports.achievementsAvailable() : "Achievement Hunt runs for the party leader";
+    return null;
+  }
   return function farmingMode(req: HttpRequest, res: HttpResponse): unknown {
     const body = requestObject(req.body),
       mode = requestText(body.mode);
-    if (!["auto", "default", "scatter", "hunt"].includes(mode))
+    if (!["auto", "default", "scatter", "hunt", "achievements"].includes(mode))
       return res.status(400).json({ error: "invalid farming mode" });
-    const unavailable = mode === "hunt" ? availableHunt() : null;
+    const unavailable = unavailableMode(mode);
     if (unavailable) return res.status(409).json({ error: unavailable });
     let location = returnLocation();
     let backup: Backup | null = null;

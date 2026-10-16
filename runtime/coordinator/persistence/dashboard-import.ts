@@ -4,6 +4,7 @@ import {validPassivePatch, migratePassiveSettings, committedPassiveRules, type P
 import { migrateRoutinePriorities } from '../merchant/routines.ts';
 import {validHuntSettings} from "../hunt/settings.ts";
 import {validMarketIgnoredItem} from "../../market-preferences.ts";
+import {validAchievementHuntSettings} from "../hunt/achievement-settings.ts";
 import { stateKeys } from "./snapshots.ts";
 import { validStandLocation } from '../merchant/stand-location.ts';
 
@@ -26,7 +27,7 @@ const upgradeRule = (value: unknown) =>
   positive(Number(value)) || (object(value) && positive(value.tiers));
 const compound = (value: unknown) => object(value) && text(value.id) && listOf(mark)(value.items);
 const autoCompound = (value: unknown) => item(value) && object(value) && positive(value.targetTier);
-const profileFields = ['huntBlacklist', 'huntFailures', 'huntSettings'] as const;
+const profileFields = ['huntBlacklist', 'huntFailures', 'huntSettings', 'achievementHunt', 'achievementBlacklist'] as const;
 function profilePreferences(value: unknown): unknown {
   if (!object(value)) return value;
   return Object.fromEntries(Object.entries(value).map(([name, profile]) => [name,
@@ -82,6 +83,8 @@ export const validators: Record<string, (value: unknown) => boolean> = {
   huntBlacklist: mapOf(object),
   huntSettings: validHuntSettings,
   huntFailures: mapOf(v => object(v) && [v.deaths, v.expirations].every(n => Number.isSafeInteger(n) && Number(n) >= 0)),
+  achievementHunt: validAchievementHuntSettings,
+  achievementBlacklist: mapOf(v => object(v) && text(v.monsterId)),
   restockPolicies: mapOf(
     (value) =>
       object(value) &&

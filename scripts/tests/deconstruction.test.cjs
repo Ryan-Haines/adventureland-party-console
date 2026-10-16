@@ -148,3 +148,20 @@ test('partial stack pickup limits destructive quantity and releases the source r
  receiveDeconstruction(f.state,'P',[{...f.state.merchantMarked.P[0],quantity:1}],20000);
  assert.equal(mark.quantity,1);assert.equal(mark.owner,'M');assert.deepEqual(f.state.merchantMarked.P,[]);
 });
+
+test('a mark blocked by a full bag retries once the merchant has room, at most every two minutes',()=>{
+ const f=fixture();
+ f.state.deconstructionCatalog.salvage.rewards=[{name:'a',quantity:1,chance:1},{name:'b',quantity:1,chance:1}];
+ f.state.statuses.M.items=[{slot:0,item:f.item},null];
+ const mark={id:'s1',owner:'M',origin:'M',slot:0,item:f.item,quantity:1,auto:false,attempt:1,updatedAt:20000,state:'blocked',error:'Insufficient inventory space for deconstruction results'};
+ f.state.deconstructionMarks=[mark];
+ f.advance(130000);f.service.reconcile('M');
+ assert.equal(mark.state,'blocked','one free slot cannot hold two results');
+ f.state.statuses.M.items.push(null);f.service.reconcile('M');
+ assert.equal(mark.state,'ready');assert.equal(mark.error,undefined);
+ mark.state='blocked';mark.error='Insufficient inventory space for deconstruction results';mark.updatedAt=f.ports.now();
+ f.advance(60000);f.service.reconcile('M');
+ assert.equal(mark.state,'blocked','a fresh failure waits before the next retry');
+ f.advance(61000);f.service.reconcile('M');
+ assert.equal(mark.state,'ready');
+});

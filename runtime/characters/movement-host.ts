@@ -9,6 +9,8 @@ export interface Character extends Point, Pick<GameCharacter, 'name' | 'real_x' 
   base: Geometry;
   hp?: GameCharacter['hp'];
   rip?: Extract<GameCharacter['rip'], boolean>;
+  // The server's socket call cost, sent in each player update (node/server.js player_to_client).
+  cc?: number;
   // Inventory observations need only a name and may include newly introduced item IDs.
   items: ({ name: string } | null)[];
 }
@@ -22,7 +24,7 @@ export interface MovementHost {
   smart_move_logic(this: void): void;
   start_pathfinding(this: void): void; continue_pathfinding(this: void): void;
   stop(this: void, action?: string, success?: boolean): Promise<unknown>;
-  move(x: number, y: number): Promise<unknown>;
+  move(this: void, x: number, y: number): Promise<unknown>;
   use(skill: string): Promise<unknown>;
   town?(): Promise<unknown>;
   can_use(skill: string): boolean;
@@ -42,6 +44,8 @@ export interface MovementHost {
 }
 export interface NativeFunctions {
   move: MovementHost['smart_move']; stop: MovementHost['stop']; start: () => void; next: () => void; tick: () => void;
+  // Native move, kept so a reinstall wraps it once (move-budget.ts).
+  walk?: MovementHost['move'];
 }
 export interface MovementContext {
   runtime: string; revision: number; current: boolean; paused: boolean;

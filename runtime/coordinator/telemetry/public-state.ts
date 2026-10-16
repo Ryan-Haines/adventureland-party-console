@@ -78,6 +78,7 @@ const configFields = [
   "monsterSearchRadiusByCharacter", "scatterMonsterTypes",
   "farmingPolicy",
   "huntBlacklist", "huntSettings",
+  "achievementHunt", "achievementBlacklist", "achievementTarget", "achievementMessage",
   "restockPolicies", "merchantCharacter", "merchantForceStand", "merchantStandLocation", "merchantWeapon",
 ] as const satisfies readonly (typeof publicStateFields)[number][];
 /** Keys present only in the assembled dashboard payload, not publicStateFields. */

@@ -932,3 +932,32 @@ test('correction listener never throws a rejected supported stop into native eve
  const r=correctionFixture(),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p.catch(()=>{});await r.ticks();
  const move=r.host.move;r.host.move=()=>{throw Error('native stop unavailable');};assert.doesNotThrow(()=>r.socket.emit('correction',{x:10,y:20}));r.host.move=move;r.dispose();await assert.rejects(p);
 });
+
+// Repeated combat approach cancellations: docs/repeated-diagnostics.md failure modes 1-5.
+test('repeated combat approach cancellations fold into one message per character per minute',()=>{
+ const {movementDiagnostics}=require('../../runtime/characters/movement-diagnostics.ts');
+ let now=1000;const logs=[];const ports={now:()=>now,diagnostic:(data,message)=>logs.push({data,message})};
+ const warrior=movementDiagnostics(ports,'Warrior',16846,'geometry'),priest=movementDiagnostics(ports,'Priest',16846,'geometry');
+ const cancel=(report,i)=>report('Warrior:run:'+i,{map:'main',x:i,y:-i},'Movement cancelled',undefined,'Individual combat approach cancelled',{code:'combat-approach-cancelled'});
+ cancel(warrior,1);
+ assert.equal(logs.length,1);assert.equal(logs[0].data.phase,'Movement cancelled');assert.deepEqual(logs[0].data.destination,{map:'main',x:1,y:-1});
+ for(let i=2;i<=38;i++){now+=1600;cancel(warrior,i);}
+ assert.equal(logs.length,1,'a minute of re-aims logs once');
+ cancel(priest,1);assert.equal(logs.length,2,'another character folds separately');
+ now+=1600;cancel(warrior,39);
+ assert.equal(logs.length,3);assert.match(logs[2].message,/Similar messages: 39/);assert.deepEqual(logs[2].data.destination,{map:'main',x:39,y:-39});
+ // Other codes keep the 10-second fold by journey and destination.
+ warrior('Warrior:run:a',{map:'main',x:5,y:5},'Movement cancelled',undefined,'Unattributed movement stop',{code:'unattributed-stop'});
+ warrior('Warrior:run:b',{map:'main',x:6,y:6},'Movement cancelled',undefined,'Unattributed movement stop',{code:'unattributed-stop'});
+ assert.equal(logs.length,5);
+});
+
+test('every combat approach cancellation still settles its journey record',async()=>{
+ const r=fixture({pending:true}),ids=new Set();
+ for(let i=0;i<3;i++){
+  const walking=r.service.move({map:'main',x:100+i,y:0});const rejected=assert.rejects(walking);
+  await r.ticks(1);r.service.cancel('Individual combat approach cancelled',{code:'combat-approach-cancelled'});await rejected;
+  assert.equal(r.service.last().failureContext.code,'combat-approach-cancelled');ids.add(r.service.last().failureContext.journeyId);
+ }
+ assert.equal(ids.size,3);assert.equal(r.logs.filter(l=>l.detail==='Individual combat approach cancelled').length,1);r.dispose();
+});

@@ -61,5 +61,11 @@ export function createMonsterSelectionRoutes(
     ports.setPassive(settings);
     return res.json({ ok: true, passiveRareHunts: state.passiveRareHunts, passiveHunting:state.passiveHunting });
   }
-  return { navigate, passive };
+  /** Achievement Hunt's target switch: the same convoy, keeping the fight style. */
+  function achievementTarget(id: string, location: import("../events/return-types.ts").ReturnLocation): string[] | null {
+    if (!known(id) || !onlineLeader()) return null;
+    try { ports.dungeon?.release(); } catch { return null; }
+    return selection.select(id, location, undefined, true);
+  }
+  return { navigate, passive, achievementTarget };
 }

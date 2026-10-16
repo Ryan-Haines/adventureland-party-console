@@ -177,11 +177,18 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
     };
   }
 
+  /** Bosses on the Achievement Hunt target's ground (docs/achievement-hunt.md § Bosses). Characters
+   *  clear their list when the field is absent, so the coordinator sends it only with bosses in it. */
+  function avoidMonsters(): { avoidMonsters?: string[] } {
+    const avoid = state.farmingPolicy === "achievements" ? state.achievementTarget?.avoid || [] : [];
+    return avoid.length ? { avoidMonsters: avoid } : {};
+  }
   function farmingResponse(name: string) {
     return {
       monsterFocus: monsterFocus(state, name),
       huntCombatTarget: state.farmingPolicy === "hunt" && state.monsterHunt?.stage === "farming" ? state.monsterHunt.target : null,
       monsterPriorities: state.monsterPrioritiesByCharacter[name] || {},
+      ...avoidMonsters(),
       monsterSearchRadius:
         Number(state.monsterSearchRadiusByCharacter[state.leader || name]) || 400,
       partyFarmingMode:

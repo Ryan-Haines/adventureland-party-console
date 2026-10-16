@@ -24,6 +24,7 @@ import {HuntSettingsControl} from "./hunt-settings-control";
 import { HuntSpawnSettings } from './hunt-spawn-settings';
 import { huntBlacklistLabel } from './hunt-blacklist-label';
 import { HuntBlacklistPicker } from './hunt-blacklist-picker';
+import { AchievementHuntSettingsControl, type AchievementBlacklistChange } from './achievement-hunt-settings';
 
 export const FarmingModeControl = memo(function FarmingModeControl({
   policy, followingLeader, effectivePolicy = policy, settingsOwner,
@@ -38,7 +39,17 @@ export const FarmingModeControl = memo(function FarmingModeControl({
   passiveRareHunts, passiveHunting,
   onRareChange,
   radius, onRadiusSave, radiusContext, farmArea,
+  achievementSettings, achievementBlacklist = {}, achievementMessage, achievementKills, bestiary, monsterChoices, onAchievementSave, onAchievementBlacklist,
 }: {
+  /** Achievement Hunt settings for this farming scope; the mode is offered when present. */
+  achievementSettings?: PartyState["achievementHunt"];
+  achievementBlacklist?: NonNullable<PartyState["achievementBlacklist"]>;
+  achievementMessage?: string;
+  achievementKills?: Record<string, number>;
+  bestiary?: PartyState["bestiaryCatalog"];
+  monsterChoices?: PartyState["monsterChoices"];
+  onAchievementSave?: (patch: Partial<NonNullable<PartyState["achievementHunt"]>>) => Promise<void>;
+  onAchievementBlacklist?: (change: AchievementBlacklistChange) => Promise<void>;
   farmArea?: PartyState["farmAreaState"];
   followingLeader?: string; effectivePolicy?: FarmingPolicy; settingsOwner?: string;
   huntSettings?: PartyState["huntSettings"];
@@ -109,6 +120,12 @@ export const FarmingModeControl = memo(function FarmingModeControl({
       description: "One quest at a time: leader first, then the next member if its monster is blacklisted",
       color: "border-amber-600 bg-amber-950 text-amber-100 hover:bg-amber-900",
     },
+    ...(achievementSettings ? [{
+      id: "achievements" as const,
+      label: "Achievements",
+      description: "Farm the selected monsters for their kill achievements, weakest first, one milestone step at a time",
+      color: "border-rose-600 bg-rose-950 text-rose-100 hover:bg-rose-900",
+    }] : []),
   ];
   return (
     <section className="mt-4 border-t border-emerald-900/70 pt-3">
@@ -125,7 +142,7 @@ export const FarmingModeControl = memo(function FarmingModeControl({
           </span>
           <span className="rounded border border-cyan-700 bg-cyan-950 px-2 py-1 font-mono text-[10px] uppercase text-cyan-100">
             {followingLeader ? "Copy leader" : policy}
-            {!inherited && (policy === "auto" || policy === "hunt") ? ` · ${effectiveMode}` : ""}
+            {!inherited && (policy === "auto" || policy === "hunt" || policy === "achievements") ? ` · ${effectiveMode}` : ""}
           </span>
         </button>
         <Button
@@ -145,7 +162,7 @@ export const FarmingModeControl = memo(function FarmingModeControl({
           <DialogHeader>
             <DialogTitle>Farming settings{settingsOwner ? ` · ${settingsOwner}` : ""}</DialogTitle>
             <DialogDescription className="text-emerald-100/80">
-              Configure Hunt relocation and automatic blacklisting. Blacklisted quests are skipped until you clear the entry. Normal farming selections are unaffected.
+              Configure Hunt relocation, Achievement Hunt monsters and automatic blacklisting. Blacklisted quests are skipped until you clear the entry. Normal farming selections are unaffected.
             </DialogDescription>
           </DialogHeader>
           <fieldset disabled={inherited} aria-describedby={inherited ? followDescription : undefined}>
@@ -153,6 +170,10 @@ export const FarmingModeControl = memo(function FarmingModeControl({
           </fieldset>
           {onRadiusSave && <MonsterRadiusControl radius={radius||400} onSave={onRadiusSave} context={radiusContext}/>}
           <HuntSpawnSettings catalog={catalog} value={huntSettings} onSave={onHuntSettingsSave} disabled={inherited}/>
+          {achievementSettings && <AchievementHuntSettingsControl value={achievementSettings} blacklist={achievementBlacklist}
+            kills={achievementKills || {}} bestiary={bestiary} choices={monsterChoices} catalog={catalog}
+            onSave={inherited ? undefined : onAchievementSave} onBlacklist={inherited ? undefined : onAchievementBlacklist}
+            onInspectMonster={id => {setSettingsOpen(false);onInspectMonster?.(id);}} renderMonsterDetails={renderMonsterDetails}/>}
           <PassiveHuntingMenu settings={migratePassiveSettings(passiveHunting,passiveRareHunts)} catalog={catalog} disabled={inherited} onSave={onRareChange} renderMonsterDetails={renderMonsterDetails}/>
           <section aria-label="Hunt blacklist" className="space-y-3 rounded border border-emerald-700 bg-[#07110f] p-3">
           <div className="flex items-center gap-3">
@@ -249,6 +270,12 @@ export const FarmingModeControl = memo(function FarmingModeControl({
             <p>Active farming zone: {farmArea.active.map} ({Math.round(farmArea.active.x)}, {Math.round(farmArea.active.y)})</p>
             {farmArea.message && !/farming resumed/i.test(farmArea.message) && <p className="mt-1 text-amber-100">{farmArea.message}</p>}
           </div>}
+          {effectivePolicy === "achievements" ? (
+            <div className="mt-2 border-t border-rose-900/70 pt-2 font-mono text-[10px] text-rose-100/80">
+              <p className="font-semibold text-rose-100">Achievement Hunt status</p>
+              <p>{achievementMessage || "Choosing the next monster"}</p>
+            </div>
+          ) : null}
           {effectivePolicy === "hunt" || hunt || characterHunt ? (
             <div className="mt-2 border-t border-amber-900/70 pt-2 font-mono text-[10px] text-amber-100/80">
               <p className="font-semibold text-amber-100">
