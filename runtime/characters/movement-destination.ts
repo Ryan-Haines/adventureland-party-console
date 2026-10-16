@@ -18,7 +18,9 @@ function resolveName(host: MovementHost, value: string): Point {
   if (map?.event) throw Error(`Event ${map.event} requires the event joining workflow`);
   if (map?.spawns[0]) return { map: name, x: map.spawns[0][0], y: map.spawns[0][1] };
   const npc = host.find_npc(name);
-  if (npc) return { ...npc, y: npc.y + 15 };
+  // Warin stands behind the Winter Inn's closed counter. The ordinary 15px
+  // offset is still inside that island; approach from the customer aisle.
+  if (npc) return { ...npc, y: npc.y + (name === 'wbartender' ? 50 : 15) };
   const aliases: Record<string, Point> = { upgrade: { map: 'main', x: -204, y: -129 }, compound: { map: 'main', x: -204, y: -129 }, exchange: { map: 'main', x: -26, y: -432 }, scrolls: { map: 'main', x: -465, y: -71 } };
   if (name === 'potions') return potions(host.character.map);
   if (aliases[name]) return aliases[name];

@@ -1,3 +1,4 @@
+import { gooHunt, convoy } from './gameplay-scenarios';
 import { test, expect } from './live-fixtures';
 import type { LiveGame } from './live-fixtures';
 import type { TestInfo } from '@playwright/test';
@@ -167,12 +168,7 @@ test.describe('real server, native clients, maintained character runtime', () =>
   });
 
   test('a two-character convoy reaches the destination through real movement', async ({ live }, info) => {
-    await party(live);
-    const before = await observed(live), destination = await point(live, W, 350);
-    await live.post('/travel', destination);
-    await arrived(live, [W, P], destination);
-    for (const name of [W, P]) expect(Math.hypot((await observed(live))[name].x-before[name].x, (await observed(live))[name].y-before[name].y)).toBeGreaterThan(100);
-    await evidence(live, info, 'convoy-arrival', { before, destination });
+    await convoy(live, info);
   });
 
   test('a newer manual order wins over an already moving character route', async ({ live }, info) => {
@@ -298,13 +294,8 @@ test.describe('real server, native clients, maintained character runtime', () =>
   });
 
   test('Hunt kills real monsters then returns to Daisy and receives a real token', async ({ live }, info) => {
-    await party(live);
-    await seedQuest(live, 2);
-    const before = await observed(live), tokens = quantity(before[W].items, 'monstertoken');
-    const backup = await startHunt(live);
-    await expect.poll(async () => quantity((await observed(live))[W].items, 'monstertoken'), { timeout: 180_000, intervals: [1000] }).toBeGreaterThan(tokens);
-    expect((await live.clients[W].events()).some((entry: any) => entry.event === 'hit' || entry.event === 'death')).toBe(true);
-    await evidence(live, info, 'hunt-kills-and-reward', { before, backup });
+    test.setTimeout(240_000);
+    await gooHunt(live, info);
   });
 
   test('a completed Hunt survives restart and claims its reward only once', async ({ live }, info) => {

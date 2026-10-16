@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
-const root = path.resolve(__dirname, '..');
+const root = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve(__dirname, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, '.build/e2e-report/manifest.json'), 'utf8'));
 if (manifest.schema !== 1 || !manifest.tests?.length || !manifest.artifacts?.length)
   throw new Error('Incomplete E2E evidence manifest');

@@ -23,7 +23,7 @@ class ArtifactReporter {
       dirty: git('status', '--porcelain').length > 0,
       node: process.version, platform: process.platform,
       playwright: require('@playwright/test/package.json').version,
-      locks: ['package-lock.json', 'dashboard/package-lock.json', 'e2e/game/backend-package-lock.json', 'e2e/game/server-package-lock.json'].map(file => ({ path: file, sha256: hash(path.join(root, file)) })),
+      locks: ['package-lock.json', 'dashboard/package-lock.json', 'e2e/game/backend-package-lock.json', 'e2e/game/server-package-lock.json', 'tools/sim/pins.json'].map(file => ({ path: file, sha256: hash(path.join(root, file)) })),
     };
     this.selectedTests = suite.allTests().map(test => test.titlePath().join(' > '));
     // Preserve uncommitted test work as well as the base revision for repeatability.
@@ -33,7 +33,7 @@ class ArtifactReporter {
     fs.writeFileSync(this.ledger, '', { flush: true });
     fs.writeFileSync(path.join(reproduction, 'run.json'), JSON.stringify({ started: this.started, ...this.provenance, selectedTests: this.selectedTests }, null, 2));
     fs.writeFileSync(path.join(reproduction, 'working-tree.patch'), gitRaw('diff', '--binary', 'HEAD'));
-    const untracked = git('ls-files', '--others', '--exclude-standard', '--', 'e2e', 'playwright.config.ts', '.github/workflows', 'docs/testing*.md', 'docs/testing*.json');
+    const untracked = git('ls-files', '--others', '--exclude-standard', '--', 'e2e', 'playwright.config.ts', '.github/workflows', 'docs/testing*.md', 'docs/testing*.json', 'tools/sim');
     for (const relative of untracked.split('\n').filter(Boolean)) {
       if (relative === 'unavailable') continue;
       const target = path.join(reproduction, 'untracked', relative);
@@ -59,7 +59,9 @@ class ArtifactReporter {
       return { name, path: file && path.relative(root, file), contentType };
     });
     const outcome = { title: test.titlePath().join(' > '), status: result.status,
-      boundary: /debug-(instance|container)\.spec\.ts$/.test(test.location.file)
+      boundary: /simulation-gameplay\.spec\.ts$/.test(test.location.file)
+        ? 'Virtual-clock native upstream server, maintained coordinator/planner and real character CODE; shared gameplay assertions, isolated in-memory database and declared initial loadout'
+        : /debug-(instance|container)\.spec\.ts$/.test(test.location.file)
         ? 'Disposable Docker lifecycle through the real gateway; isolated native upstream server, god party and production coordinator'
         : /live-franky\.spec\.ts$/.test(test.location.file)
         ? 'Native game clients, maintained runtime and upstream server; initial acknowledged event-return history is a sanitized production-state fixture, followed by real restart, travel and reward claim'

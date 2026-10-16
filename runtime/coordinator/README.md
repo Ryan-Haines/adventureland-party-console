@@ -224,6 +224,16 @@ items. Stand painting preserves existing prices or uses the catalog gold value.
 Validate the exchange console journey, preserving screenshots and saved rules.
 Activate with the supported coordinator/dashboard-only restart.
 
+## Winter Inn merchant purchases
+
+The named `wbartender` movement destination approaches Warin from the customer
+aisle, 50 pixels below his position. The ordinary 15-pixel NPC offset lands
+behind the closed counter: both ALClient and native planners reject that island.
+Validate `merchant buys one Liquid Luck` in `live-economy.spec.ts`, retaining the
+native inventory, exact gold delta and completed-job evidence. This character
+change needs an explicitly requested console load; a completed build alone does
+not activate it.
+
 # Character coordinator
 
 Pane 1's final seven bank cells are reserved for transfers only while a saved

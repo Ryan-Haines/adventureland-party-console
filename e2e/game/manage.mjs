@@ -2,15 +2,16 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, readFileSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import bootstrapModule from './bootstrap.cjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const pins=JSON.parse(readFileSync(resolve(root,'tools/sim/pins.json'),'utf8'));
 const args = ['compose', '--project-name', 'al-e2e-pr21', '-f', 'e2e/game/compose.yml'];
 let gameRunStartedAt;
 function docker(command) {
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', [...args, ...command], { cwd: root, stdio: 'inherit', windowsHide: true });
+    const child = spawn('docker', [...args, ...command], { cwd: root, stdio: 'inherit', windowsHide: true, env:{...process.env,E2E_GAME_REV:pins.game,E2E_COMMON_REV:pins.common,E2E_CONFIG_REV:pins.config} });
     child.on('error', reject);
     child.on('close', code => code === 0 ? resolve() : reject(new Error('Docker exited ' + code)));
   });

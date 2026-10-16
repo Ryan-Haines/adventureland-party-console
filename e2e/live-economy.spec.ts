@@ -5,6 +5,29 @@ import type { Item } from '../runtime/coordinator/contracts/item';
 
 const merchant = 'E2EMerchant';
 
+test('merchant buys one Liquid Luck from the customer side of the Winter Inn bar', async ({live}, info) => {
+  test.setTimeout(240_000);
+  // Failure modes: the destination is behind the counter; arrival never buys;
+  // a duplicated purchase changes quantity/spending; queue removal precedes telemetry.
+  await catalog(live, 'elixirluck');
+  const before = await economy(live);
+  const count = (state: Economy) => Object.values(state.characters).reduce((n, c) => n + quantity(c.items, 'elixirluck'), 0) + bankQuantity(state, 'elixirluck');
+  const order = await live.post('/merchant/order', {buys: [{id: 'elixirluck', quantity: 1, level: 0}], crafts: []});
+  try {
+    await expect.poll(async () => count(await economy(live)), {timeout: 180_000}).toBe(count(before) + 1);
+    await jobFinished(live, order.jobId);
+    const after = await economy(live);
+    expect(count(after)).toBe(count(before) + 1);
+    expect(totalGold(before) - totalGold(after)).toBe(240_000);
+    await expect.poll(async () => {
+      const state = await live.state();
+      return state.characters[merchant]?.items?.some((entry: any) => entry?.item?.name === 'elixirluck');
+    }, {timeout: 30_000}).toBe(true);
+  } finally {
+    await record(live, info, 'native-liquid-luck-purchase', before, {jobId: order.jobId});
+  }
+});
+
 test('unlinked upgrade adopts compatible native intermediate without claiming existing results',async({live},info)=>{
   // The retained paid batch needs ten native upgrades; CI timers are ~20s each.
   test.setTimeout(450_000);

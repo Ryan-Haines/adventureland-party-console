@@ -26,8 +26,12 @@ jobs:
       - run: npm --prefix .caracal ci
       - run: node scripts/ci/restore-game-fixtures.cjs
       - run: npx playwright install --with-deps chromium
-      - name: Console E2E
-        run: npm run test:e2e:console && npm run test:e2e:verify
+      - uses: actions/cache@v4
+        with:
+          path: .build/sim/chronal
+          key: simulation-${{ runner.os }}-node24-${{ hashFiles('tools/sim/pins.json', 'package-lock.json') }}
+      - name: Console and accelerated gameplay E2E
+        run: npm run test:e2e -- --project=console --project=simulation && npm run test:e2e:verify
       - name: Retained isolated regression exceptions
         shell: bash
         run: |

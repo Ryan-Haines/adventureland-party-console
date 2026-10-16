@@ -742,13 +742,13 @@ browser failure-mode documents under `e2e/` show this sequence for this migratio
 
 ## CI and runner budget
 
-Pull requests and pushes to `main` run the three **console E2Es**, evidence
+Pull requests and pushes to `main` run the **console and accelerated gameplay E2Es**, evidence
 verification, retained isolated regressions with the strict TAP checker, coordinator
-lint and the production build. They do not start the native game stack. The
+lint and the production build. They do not start the Docker/MongoDB game stack. The
 existing **Validate and release** workflow keeps its release triggers and job
-dependencies; its validation step uses `npm run test:e2e:console`.
+dependencies; its validation step runs the console and simulation Playwright projects.
 
-Native gameplay runs only when explicitly requested through the separate
+The complete browser-client gameplay suite runs when explicitly requested through the separate
 **Native game E2E (manual)** workflow:
 
 1. Open GitHub **Actions → Native game E2E (manual) → Run workflow**.
@@ -773,10 +773,9 @@ This workflow has read-only repository permissions and **does not publish a rele
 The normal validation and manual gameplay jobs have separate runners, report
 directories and artifact names; both retain evidence for 14 days. Keeping native
 gameplay manual avoids spending its build/gameplay runner time on every PR update
-or `main` push. It also means normal PR validation does **not** certify native Hunt
-behavior: run the manual workflow, or run the native suite locally, for relevant
-changes and preserve its verified result. `npm test` still runs both projects
-locally; the CI split does not narrow that command.
+or `main` push. It also means normal PR validation does **not** certify the remaining native Hunt
+journeys: run the manual workflow, or run the native suite locally, for relevant
+changes and preserve its verified result. `npm test` runs the mixed projects locally; `--project=live` retains all native journeys.
 
 ## Reusable native character loadouts
 
@@ -911,3 +910,18 @@ writes to occupied slots. The browser bridge must choose a free numbered slot
 and preserve unrelated cache and its original snapshot. Native 17665 documents
 numbered slots 1–100 in `/savecode` and `filename_to_cdata`; a missing `X.codes`
 inventory is unknown and must not be treated as an empty account.
+
+## Accelerated simulation and local benchmark
+
+`npm test` runs seven existing gameplay journeys on the virtual-clock fixture,
+with shared native assertion bodies. Browser, deployment and incompatible native
+journeys keep their original fixtures. Run `npm run test:e2e:benchmark` to compare
+the same seven gameplay journeys plus two retained browser/deployment tests on
+both backends. The archives retain verified Playwright reports and per-test and
+full-command wall timings. `npm run test:e2e:selection` checks no scenario was
+lost or duplicated. Explicit `--project=live` and `npm run test:e2e:live` retain
+the complete native project. See [simulation E2E setup and boundaries](testing-simulation.md).
+
+Standalone [ChronAL soak scenarios](../tools/sim/README.md) remain available with
+`npm run sim`. Node 24+ is required for accelerated gameplay. CI validation runs
+console plus accelerated gameplay; the manual native workflow remains complete.
