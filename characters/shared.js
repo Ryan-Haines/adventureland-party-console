@@ -1256,6 +1256,22 @@
       .filter(function (hands, index, all) { return hands && all.indexOf(hands) === index; }) };
   }
 
+  // Class-only and map-only bonuses sit in nested fields that safeItemDefinition
+  // drops, such as Scorpion Seal's warrior field or Graveglass's halloween field.
+  function itemBonuses(definition) {
+    var bonuses = [];
+    Object.keys(definition || {}).forEach(function (key) {
+      var value = definition[key];
+      var kind = G.classes && G.classes[key] ? "class" : G.maps && G.maps[key] ? "map" : null;
+      if (!kind || !value || typeof value !== "object" || Array.isArray(value)) return;
+      var stats = {};
+      Object.keys(value).forEach(function (stat) { if (typeof value[stat] === "number") stats[stat] = value[stat]; });
+      var name = kind === "map" ? G.maps[key].name || key : key.charAt(0).toUpperCase() + key.slice(1);
+      bonuses.push({ kind: kind, id: key, name: name, stats: stats });
+    });
+    return bonuses;
+  }
+
   function maximumItemLevel(definition) {
     return definition && definition.compound ? 7 : definition && definition.upgrade ? 13 : 0;
   }
@@ -1488,7 +1504,8 @@
         if (!Array.isArray(material) || material[1] !== itemName) return;
         uses.push({ id: craftedId, name: craftedDefinition.name || craftedId,
           quantity: Number(material[0]) || 0, level: Number(material[2]) || 0,
-          cost: Number(recipe.cost) || 0, sprite: spriteDefinition(craftedDefinition.skin || craftedId) });
+          cost: Number(recipe.cost) || 0, quest: recipe.quest || null,
+          sprite: spriteDefinition(craftedDefinition.skin || craftedId) });
       });
       return uses;
     }, []).sort(function (a, b) { return a.name.localeCompare(b.name); });
@@ -1565,6 +1582,7 @@
       scaling: safeFields(definition.upgrade || definition.compound || {}),
       maxLevel: maximumItemLevel(definition),
       usage: itemUsage(definition),
+      bonuses: itemBonuses(definition),
       // Live inventory/bank reports must never construct the entire drop graph.
       // Until background preparation finishes, the dashboard uses its catalog.
       world: itemWorldCache[item.name],
@@ -1994,7 +2012,7 @@
         meta: { definition: safeItemDefinition(definition), world: itemWorldInfo(id),
           upgradeable: !!definition.upgrade, compoundable: !!definition.compound,
           buyable: !!itemSeller(id), scaling: safeFields(definition.upgrade || definition.compound || {}),
-          maxLevel: maximumItemLevel(definition), usage: itemUsage(definition),
+          maxLevel: maximumItemLevel(definition), usage: itemUsage(definition), bonuses: itemBonuses(definition),
           sprite: spriteDefinition(definition.skin || id) } };
     }).sort(function (a, b) { return a.name.localeCompare(b.name); });
     var buyable = Object.keys(G.items || {}).map(function (id) {

@@ -19,7 +19,6 @@ import { Char } from "./char";
 import { comparisonSlotLabel } from "./comparison-slot-label";
 import { comparisonSlotsFor } from "./comparison-slots-for";
 import { COMPARISON_SLOTS } from "./comparison-slots";
-import { DefinitionGrid } from "./definition-grid";
 import { durationStat } from "./format-duration";
 import { InventoryEntry } from "./inventory-entry";
 import { EQUIPMENT_TYPES } from "./equipment-types";
@@ -40,6 +39,12 @@ import { ItemExchangeDetails } from "./item-exchange-details";
 import type { MerchantExchangeItem } from "./merchant-exchange-item";
 import type { ReactNode } from 'react';
 import type { ExchangeRewardTileData } from './exchange-reward-tile';
+import { itemSlotExtras, onItemCard } from "./item-card-lines";
+import { ItemCard, ItemExtraStats } from "./item-card";
+import { SkillCards } from "./skill-card";
+import { MonsterCards } from "./monster-card";
+import type { SkillClass } from "./skill-class";
+import type { SkillEntry } from "./skill-entry";
 
 export function ItemDetails({
   selected: initialSelected,
@@ -47,6 +52,7 @@ export function ItemDetails({
   exchanges = [],
   renderExchangeReward,
   monsters,
+  skills = [],
   characters,
   achievements,
   standFull,
@@ -62,6 +68,8 @@ export function ItemDetails({
   exchanges?: MerchantExchangeItem[];
   renderExchangeReward?: (reward: ExchangeRewardTileData) => ReactNode;
   monsters: BestiaryMonster[];
+  // The skill catalog, so a granted skill links to its details.
+  skills?: SkillClass[];
   characters: Char[];
   achievements: Record<string, { score: number; owner: string | null }>;
   standFull: boolean;
@@ -74,7 +82,8 @@ export function ItemDetails({
 }) {
   type DetailNode =
     | { kind: "item"; selected: SelectedItem }
-    | { kind: "monster"; monster: BestiaryMonster };
+    | { kind: "monster"; monster: BestiaryMonster }
+    | { kind: "skill"; skill: SkillEntry };
   const [trail, setTrail] = useState<DetailNode[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [dropSort, setDropSort] = useState<"name" | "percentage">("percentage");
@@ -97,6 +106,17 @@ export function ItemDetails({
   const active = trail[trail.length - 1];
   const selected = active?.kind === "item" ? active.selected : initialSelected;
   const selectedMonster = active?.kind === "monster" ? active.monster : null;
+  const selectedSkill = active?.kind === "skill" ? active.skill : null;
+  const skillById = (id: string) => skills.flatMap((entry) => entry.skills).find((skill) => skill.id === id);
+  const skillName = (id: string) => skillById(id)?.name;
+  const skillHint = (id: string) => {
+    const explanation = skillById(id)?.definition.explanation;
+    return typeof explanation === "string" && explanation ? explanation : undefined;
+  };
+  const onInspectSkill = (id: string) => {
+    const found = skillById(id);
+    if (found) setTrail((current) => [...current, { kind: "skill", skill: found }]);
+  };
   const actualLevel = Math.max(0, Number(selected?.entry.item.level) || 0);
   const [previewLevel, setPreviewLevel] = useState(actualLevel);
   const draftIdentity2 = [
@@ -232,6 +252,40 @@ export function ItemDetails({
           `${key.replaceAll("_", " ")} ${typeof value === "number" && value > 0 ? "+" : ""}${String(value)}`,
       )
       .join(" · ");
+  // Stats the level calculation doesn't cover, such as a fixed lifesteal, keep their live value.
+  const cardProperties = { ...properties, ...previewProperties };
+  const formatStat = (key: string, value: string | number | boolean | unknown[]) =>
+    durationStat(key, value as string | number | boolean, def) ?? (typeof value === "boolean" ? (value ? "Yes" : "No")
+      : Array.isArray(value) ? value.map((v) => (Array.isArray(v) ? v.join(" ") : String(v))).join(", ") : String(value));
+  const extraStats = [...(selected ? itemSlotExtras(selected.entry.item) : []),
+    ...stats.filter(([key]) => !onItemCard(key, def)).map(([key, value]) => [key, formatStat(key, value)] as [string, string])];
+  const usable = !!selected?.entry.meta?.usage?.classes.some((entry) => characters.some((character) => character.ctype === entry.id));
+  if (selectedSkill)
+    return (
+      <Dialog open={!!initialSelected} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto border border-violet-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3 pr-8">
+              <Button type="button" variant="ghost" size="icon" onClick={goBack} title="Back" aria-label="Back"
+                className="shrink-0 text-violet-200 hover:bg-violet-950">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <div className="relative h-12 w-12 shrink-0">
+                {selectedSkill.sprite && <ItemSprite sprite={selectedSkill.sprite} />}
+              </div>
+              <div>
+                <DialogTitle>{selectedSkill.name}</DialogTitle>
+                <DialogDescription className="mt-1 font-mono text-violet-300">G.skills.{selectedSkill.id}</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          {skillHint(selectedSkill.id) ? (
+            <p className="text-sm leading-6 text-emerald-50/80">{skillHint(selectedSkill.id)}</p>
+          ) : null}
+          <SkillCards skill={selectedSkill} skillName={skillName} />
+        </DialogContent>
+      </Dialog>
+    );
   if (selectedMonster)
     return (
       <Dialog open={!!initialSelected} onOpenChange={onOpenChange}>
@@ -275,9 +329,12 @@ export function ItemDetails({
             monster={selectedMonster}
             achievement={achievements[selectedMonster.id] || null}
           />
-          <DefinitionGrid
-            value={selectedMonster.definition}
-            omit={["name", "skin", "achievements"]}
+          <MonsterCards
+            definition={selectedMonster.definition}
+            skillName={skillName}
+            monsterName={(id) => monsters.find((entry) => entry.id === id)?.name}
+            onMonster={onInspectMonster}
+            onSkill={onInspectSkill}
           />
           <section className="rounded border border-amber-900/80 bg-amber-950/10 p-4">
             <BestiaryDrops
@@ -566,18 +623,22 @@ export function ItemDetails({
             </div>
           </section>
         )}
-        <dl className="grid grid-cols-2 gap-x-5 gap-y-2 border-t border-emerald-900 pt-4">
-          {stats.map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-3 border-b border-emerald-950 pb-1">
-              <dt className="capitalize text-emerald-100/50">{key.replaceAll("_", " ")}</dt>
-              <dd className="font-mono text-emerald-200">
-                {durationStat(key, value, def) ?? (Array.isArray(value)
-                  ? value.map((v) => (Array.isArray(v) ? v.join(" ") : String(v))).join(", ")
-                  : String(value))}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <div className="flex flex-wrap items-start gap-3 border-t border-emerald-900 pt-4">
+          {selected && (
+            <ItemCard
+              meta={selected.entry.meta}
+              item={{ ...selected.entry.item, level: previewLevel }}
+              level={previewLevel}
+              properties={cardProperties}
+              setName={world?.set?.name}
+              usable={usable}
+              skillName={skillName}
+              skillHint={skillHint}
+              onSkill={onInspectSkill}
+            />
+          )}
+          {!!extraStats.length && <ItemExtraStats entries={extraStats} />}
+        </div>
         {world?.set && (
           <section className="rounded border border-cyan-900/80 bg-cyan-950/10 p-4">
             <h3 className="font-mono text-xs uppercase tracking-wider text-cyan-300">

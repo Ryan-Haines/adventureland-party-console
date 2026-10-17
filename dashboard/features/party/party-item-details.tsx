@@ -37,6 +37,7 @@ function PartyItemDetailsConnected({ base }: { base: PartyConsoleModel }) {
         catalog={state.merchantCatalog?.allItems || []}
         exchanges={state.merchantCatalog?.exchangeable || []}
         monsters={state.bestiaryCatalog || []}
+        skills={state.skillCatalog || []}
         characters={chars}
         achievements={monsterAchievements}
         standFull={standIsFull(state.standListings || [], state.standBids || {})}

@@ -75,6 +75,12 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
       />
       <MonsterDetailsDialog
         monster={selectedBestiaryMonster}
+        monsters={state.bestiaryCatalog || []}
+        skills={state.skillCatalog || []}
+        onInspectMonster={(id) => {
+          const found = state.bestiaryCatalog?.find((entry) => entry.id === id);
+          if (found) setSelectedBestiaryMonster(found);
+        }}
         catalog={state.merchantCatalog?.allItems || []}
         achievement={
           selectedBestiaryMonster ? monsterAchievements[selectedBestiaryMonster.id] || null : null

@@ -11,11 +11,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
 import { useState } from "react";
-import { DefinitionGrid } from "./definition-grid";
 import { ItemSprite } from "./item-sprite";
 import { SkillClass } from "./skill-class";
 import { SkillEntry } from "./skill-entry";
 import { skillRangeLabel } from "./skill-range-label";
+import { SkillCards } from "./skill-card";
 
 export function SkillsDialog({
   open,
@@ -142,9 +142,9 @@ export function SkillsDialog({
                     equipment. “Not specified” means the game definition does not supply a range.
                   </p>
                 </div>
-                <DefinitionGrid
-                  value={selected.definition}
-                  omit={["name", "skin", "explanation"]}
+                <SkillCards
+                  skill={selected}
+                  skillName={(id) => classes.flatMap((entry) => entry.skills).find((skill) => skill.id === id)?.name}
                 />
               </div>
             )}

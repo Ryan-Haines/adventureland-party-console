@@ -183,6 +183,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
         </DialogContent>
       </Dialog>;
       return <MonsterDetailsDialog monster={monster} catalog={merchantCatalogAllItems}
+        monsters={state.bestiaryCatalog || []} skills={state.skillCatalog || []}
         achievement={monsterAchievements[id] || null}
         onOpenChange={open => { if (!open) close(); }}
         onNavigate={setMonsterNavigateTarget}
@@ -192,7 +193,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
         }} />;
     },
     [state.bestiaryCatalog, merchantCatalogAllItems, monsterAchievements, setMonsterNavigateTarget,
-      state.merchantCatalog, setSelected],
+      state.merchantCatalog, state.skillCatalog, setSelected],
   );
   const onInspectMonster = useCallback(
     (id: string) => {
