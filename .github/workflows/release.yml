@@ -4,6 +4,20 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      self_hosted:
+        description: 'Run manually on the local RTX 5090 runner instead of hosted CI'
+        type: boolean
+        default: false
+      local_project:
+        description: 'Local E2E project (all includes browser, deployment, debug and gameplay)'
+        type: choice
+        options: [console, live, debug, all]
+        default: console
+      local_grep:
+        description: 'Optional local title filter; clear to run the complete selected project'
+        type: string
+        default: 'character sections collapse independently'
 permissions:
   contents: read
 concurrency:
@@ -11,6 +25,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   validate:
+    if: ${{ !inputs.self_hosted }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -51,7 +66,7 @@ jobs:
           retention-days: 14
   version:
     needs: validate
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && !inputs.self_hosted
     runs-on: ubuntu-latest
     permissions:
       contents: write
