@@ -13,11 +13,11 @@ on:
         description: 'Local E2E project (all includes browser, deployment, debug and gameplay)'
         type: choice
         options: [console, live, debug, all]
-        default: console
+        default: all
       local_grep:
         description: 'Optional local title filter; clear to run the complete selected project'
         type: string
-        default: 'character sections collapse independently'
+        default: ''
 permissions:
   contents: read
 concurrency:
