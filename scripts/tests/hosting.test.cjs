@@ -50,6 +50,56 @@ test('pairing is single-use, credentials survive restart, and Steam can be revok
   await b.revokeSteam();assert.equal(b.valid('steam',steam),false);assert.ok(b.valid('browsers',browser));
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+test('access codes pair once, expire, and are cancelled by repeated wrong guesses',async()=>{
+ const {ACCESS_CODE_TTL_MS,ACCESS_CODE_ATTEMPTS}=require('../../tools/hosting/access.ts');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'party-code-'));let now=1_000_000;
+ try {
+  const a=new Access(path.join(dir,'access.json'),()=>now);await a.load();
+  const first=a.accessCode();
+  assert.match(first.code,/^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/);assert.equal(first.expiresIn,ACCESS_CODE_TTL_MS);
+  // Lower case, spaces and a missing dash still match the code as shown.
+  const browser=await a.pairCode(' '+first.code.toLowerCase().replace('-',' ')+' ');
+  assert.ok(a.valid('browsers',browser));assert.equal(a.accessCodeExpiry,null);
+  await assert.rejects(a.pairCode(first.code),/invalid or expired/);
+
+  const replaced=a.accessCode(),current=a.accessCode();
+  await assert.rejects(a.pairCode(replaced.code),/invalid or expired/);
+  now+=ACCESS_CODE_TTL_MS;assert.equal(a.accessCodeExpiry,null);
+  await assert.rejects(a.pairCode(current.code),/invalid or expired/);
+
+  const guessed=a.accessCode();
+  for(let i=0;i<ACCESS_CODE_ATTEMPTS;i++)await assert.rejects(a.pairCode('AAAA-AAAA'),/invalid or expired/);
+  await assert.rejects(a.pairCode(guessed.code),/invalid or expired/);
+
+  // One invitation pairs one browser: using the code retires the link, and the link retires the code.
+  let link=await a.invitation(),code=a.accessCode();await a.pairCode(code.code);
+  await assert.rejects(a.pair(link),/already used/);
+  link=await a.invitation();code=a.accessCode();await a.pair(link);
+  await assert.rejects(a.pairCode(code.code),/invalid or expired/);
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+test('gateway pairs a new browser with an access code from a paired browser',async()=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'party-gateway-code-')),a=new Access(path.join(dir,'access.json'));
+ await a.load();const owner=await a.setRequired(true);
+ const server=gateway({access:a,configured:()=>true,dashboardPort:1});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;
+ const post=(path,body,headers={})=>fetch(base+path,{method:'POST',headers:{Origin:base,...headers},body:JSON.stringify(body)});
+ try {
+  assert.equal((await post('/setup/invite',{})).status,401);
+  const invite=await (await post('/setup/invite',{},{Cookie:'party='+owner})).json();
+  assert.match(invite.code,/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  const state=async()=>(await fetch(base+'/setup/state',{headers:{Cookie:'party='+owner}})).json();
+  assert.equal((await state()).accessCodeExpiresAt,invite.expiresAt);
+  assert.equal((await post('/setup/pair',{code:invite.code},{Origin:'https://foreign.example'})).status,403);
+  assert.equal((await post('/setup/pair',{code:'AAAA-AAAA'})).status,400);
+  const paired=await post('/setup/pair',{code:invite.code});
+  assert.equal(paired.status,200);const cookie=paired.headers.get('set-cookie').split(';')[0];
+  assert.equal((await fetch(base+'/setup/state',{headers:{Cookie:cookie}})).status,200);
+  // The paired browser that showed the code learns it was used.
+  assert.equal((await state()).accessCodeExpiresAt,null);
+  assert.equal((await post('/setup/pair',{code:invite.code})).status,400);
+ }finally{await new Promise(resolve=>server.close(resolve));await fs.rm(dir,{recursive:true,force:true});}
+});
 test('gateway requires pairing and rejects foreign origins and revoked Steam tokens',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'party-gateway-')),a=new Access(path.join(dir,'access.json'));
  await a.load();await a.setRequired(true);const invitation=await a.invitation();

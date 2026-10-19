@@ -1,4 +1,5 @@
 import {test,expect} from './live-fixtures';
+import {gameplayTimers} from './network-clock';
 import {W,P,M} from './hunt-interruption-helpers';
 import {readFile,writeFile,mkdir,cp} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -60,7 +61,7 @@ test('one deployment barrier covers the native browser and real headless workers
     return store.complete(path.dirname(directory),{schema:1,id,sourceHash:id,createdAt:new Date().toISOString(),components:{dashboard:hash('unchanged-dashboard'),coordinator:hash('coordinator-'+label),characters:manifest.generation},files});
   }
   const first=await stage('mixed-first',false),next=await stage('mixed-next',true);await store.setReferences({active:first.manifest.id,latest:next.manifest.id});
-  const drain=safeReload(live.deploymentPaths.directory,async(signal)=>{const response=await fetch(live.deploymentPaths.apiUrl+'/party-api/console-maintenance',{signal});return response.json();});
+  const drain=safeReload(live.deploymentPaths.directory,async(signal)=>{const response=await fetch(live.deploymentPaths.apiUrl+'/party-api/console-maintenance',{signal});return response.json();},{timers:gameplayTimers()});
   const driver=createDeploymentDriver({stopCoordinator:async()=>{},startCoordinator:async(directory)=>{const candidate=await store.verify(path.basename(path.dirname(directory)));await live.restartCoordinatorIdentity(candidate.manifest.id,candidate.manifest.components.coordinator);},
     activateDashboard:async()=>{throw Error('Gameplay-only deployment touched dashboard');},
     reloadCharacters:async(directory)=>{

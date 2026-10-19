@@ -1,0 +1,251 @@
+{
+  "schema": 1,
+  "scenario": "armadillo Hunt kills passing goos outbound and returning before claiming Daisy",
+  "conditions": {
+    "workers": 1,
+    "windowMs": 250,
+    "rendering": "RTX5090 hardware",
+    "sameGameplayAssertions": true,
+    "realBrowserHttpSocketIoPersistenceTelemetry": true,
+    "defaultRateUnchanged": 4
+  },
+  "change": "Guard synchronous combat queue tick reentry; retain dirty state and current report publication",
+  "before": {
+    "requestedRate": 16,
+    "candidate": "3eb6eff5ea5bdccdda97327d3cfdd1877c19df0f79d1b0003e9cdb3017544d70",
+    "sourceHash": "910becfb8f62f6e433ebae3c5e4ca1578fe56d4b7522854c4e0ddd9b2c886aea",
+    "repetitions": 3,
+    "medianBodySeconds": 26.4081772,
+    "achievedClockRate": 2.741455071360724,
+    "meanBrowserCpuSeconds": 39.11441533333333,
+    "samples": [
+      {
+        "wallSeconds": 26.4081772,
+        "gameplaySeconds": 74,
+        "cpuSeconds": 38.739034999999994,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+        "accountingComplete": true
+      },
+      {
+        "wallSeconds": 27.3946023,
+        "gameplaySeconds": 70.25,
+        "cpuSeconds": 39.538171000000006,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+        "accountingComplete": true
+      },
+      {
+        "wallSeconds": 26.355382600000006,
+        "gameplaySeconds": 75.5,
+        "cpuSeconds": 39.066039999999994,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+        "accountingComplete": true
+      }
+    ]
+  },
+  "after": {
+    "candidate": "659d38681a89eef72e782c1cd097ac946ef62e50afaf1f144df3501a8826160f",
+    "sourceHash": "451cb68a75959c9d5f1606c87f0e8751d5f30f8ac94da0917216a16250556111",
+    "rates": [
+      {
+        "requestedRate": 16,
+        "repetitions": 6,
+        "medianBodySeconds": 14.776904249999998,
+        "achievedClockRate": 4.834354731312446,
+        "meanBrowserCpuSeconds": 25.985315333333336,
+        "samples": [
+          {
+            "wallSeconds": 16.1145705,
+            "gameplaySeconds": 74.75,
+            "cpuSeconds": 26.937285000000003,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 14.775291399999999,
+            "gameplaySeconds": 71.25,
+            "cpuSeconds": 25.755673999999996,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 14.6504835,
+            "gameplaySeconds": 71.5,
+            "cpuSeconds": 25.398065000000003,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 15.578699099999998,
+            "gameplaySeconds": 74.75,
+            "cpuSeconds": 26.984855000000003,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 14.703981800000001,
+            "gameplaySeconds": 72,
+            "cpuSeconds": 25.357143,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 14.778517099999998,
+            "gameplaySeconds": 73.75,
+            "cpuSeconds": 25.47887,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          }
+        ]
+      },
+      {
+        "requestedRate": 32,
+        "repetitions": 6,
+        "medianBodySeconds": 15.222215499999999,
+        "achievedClockRate": 4.806658640412753,
+        "meanBrowserCpuSeconds": 26.169119166666665,
+        "samples": [
+          {
+            "wallSeconds": 14.879752700000001,
+            "gameplaySeconds": 70,
+            "cpuSeconds": 25.360069999999997,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 15.341162100000002,
+            "gameplaySeconds": 75,
+            "cpuSeconds": 26.132132000000002,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 15.300709699999999,
+            "gameplaySeconds": 73.75,
+            "cpuSeconds": 26.066105999999998,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 15.1437213,
+            "gameplaySeconds": 72,
+            "cpuSeconds": 26.379973000000003,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 16.1022308,
+            "gameplaySeconds": 76,
+            "cpuSeconds": 27.158463,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          },
+          {
+            "wallSeconds": 15.0321606,
+            "gameplaySeconds": 74.5,
+            "cpuSeconds": 25.917971000000005,
+            "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+            "accountingComplete": true
+          }
+        ]
+      }
+    ]
+  },
+  "improvementPercent": 44.044209723039884,
+  "browserCpuWorkReductionPercent": 33.565885845700905,
+  "plateau": {
+    "confirmed": true,
+    "bestRequestedRate": 16,
+    "firstPlateauRate": 32,
+    "stopReason": "confirmed plateau"
+  },
+  "profiles": {
+    "before": {
+      "profileWallSeconds": 27.869757,
+      "recursiveQueueTickSeconds": 9.37587,
+      "maxRecursiveTickDepth": 43,
+      "method": "Repeated identical CODE tick function URL and source line within one sampled stack; each sample counted once"
+    },
+    "after": {
+      "status": "passed",
+      "profileWallSeconds": 14.304867,
+      "recursiveQueueTickSeconds": 0,
+      "maxRecursiveTickDepth": 1,
+      "method": "Repeated identical CODE tick function URL and source line within one sampled stack; each sample counted once"
+    },
+    "timingComparison": false
+  },
+  "rejectedExperiments": [
+    {
+      "name": "MessageChannel checkpoints",
+      "status": "failed strict clock-error assertion; slower",
+      "archive": ".build/browser-clock-optimization/channel-profile"
+    },
+    {
+      "name": "Playwright control bridge",
+      "status": "passed but slower; implementation removed",
+      "archive": ".build/browser-clock-optimization/bridge-profile"
+    }
+  ],
+  "evidence": {
+    "baseline": ".build/browser-clock-optimization/baseline-16",
+    "baselineManifestSha256": "1123e5368c47df5ced0979afe768989b38db7c1db973bdf1b068be7f47f5e2e4",
+    "comparison": ".build/e2e-rate-benchmarks/2026-10-18T18-36-15-010Z/comparison.json",
+    "comparisonSha256": "5c67f4856f01aa05079d98df7844dea09216e3ff18fb5dce4c57b50fb2299b49",
+    "archives": [
+      {
+        "path": ".build/e2e-rate-benchmarks/2026-10-18T18-36-15-010Z/rate-16",
+        "manifestSha256": "8dcd5f662b9c350b9bac705eb3cd4d281edd9f1f8a17bbe6a8dc4f63a06f2bd6"
+      },
+      {
+        "path": ".build/e2e-rate-benchmarks/2026-10-18T18-36-15-010Z/rate-32",
+        "manifestSha256": "30b71af3b8dea1ba03e0b564314fed8d29060ebf0f103081741812363a894679"
+      },
+      {
+        "path": ".build/e2e-rate-benchmarks/2026-10-18T18-36-15-010Z/confirm-best-16-at-32",
+        "manifestSha256": "f612177f61351dba71a2ca42f6eca12af58b6891f3b5443953b6ae79cde640fa"
+      },
+      {
+        "path": ".build/e2e-rate-benchmarks/2026-10-18T18-36-15-010Z/confirm-rate-32",
+        "manifestSha256": "28382e5e75f962ebc94ba77c0d8d737f3463a945129bba3fbc232ec34e32f9f4"
+      }
+    ]
+  },
+  "focusedCoverage": {
+    "rate": 4,
+    "status": "passed",
+    "tests": [
+      {
+        "title": " > live > live-console-safe-reload.spec.ts > console reload resumes native farming and roaming defense in safe mode",
+        "status": "passed"
+      },
+      {
+        "title": " > live > live-game.spec.ts > Steam-style CODE replacement retires old socket callbacks and pending heartbeat",
+        "status": "passed"
+      },
+      {
+        "title": " > live > live-hunt-combat.spec.ts > native Hunt travel combat and death ownership > fighter death during Hunt releases the failed mission and recovers with native respawn",
+        "status": "passed"
+      },
+      {
+        "title": " > live > live-hunt-combat.spec.ts > native Hunt travel combat and death ownership > stop-required passive Goo combat resumes the original armadillo Hunt after the actual kill",
+        "status": "passed"
+      }
+    ],
+    "archive": ".build/browser-clock-optimization/focused-coverage",
+    "manifestSha256": "97bd8b43f92a681de979510d1af628a15774e8fcce1b35c1ff4ee35c6909c506"
+  },
+  "nativeParity": {
+    "status": "passed",
+    "rate": 1,
+    "bodySeconds": 57.179125,
+    "achievedClockRate": 0.9999978138874983,
+    "archive": ".build/browser-clock-optimization/native-parity",
+    "manifestSha256": "7c8eff2da082e554cad118631779d82a4ea2db3b940703b4da3d23a6c8a88ee3"
+  },
+  "finalCandidate": {
+    "id": "659d38681a89eef72e782c1cd097ac946ef62e50afaf1f144df3501a8826160f",
+    "sourceHash": "451cb68a75959c9d5f1606c87f0e8751d5f30f8ac94da0917216a16250556111",
+    "active": "be9e4135a5ef1f43c3367917b48b930f0769497eb663e3637be4e6bf4ffbbf5d",
+    "activated": false
+  }
+}

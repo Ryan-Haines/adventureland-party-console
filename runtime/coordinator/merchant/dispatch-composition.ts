@@ -2,7 +2,7 @@ import { dungeonOwns } from '../../dungeons/contracts.ts';
 import { realmRequestArrived, type RealmRequest } from '../characters/realm-request.ts';
 import { pendingProduction, type ProductionState } from '../inventory/production.ts';
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
-import { deliveryReady } from './delivery-recovery.ts';
+import { deliveryReady, deliveryMatches } from './delivery-recovery.ts';
 import { merchantEventReserved, type MerchantEventState } from './event-control.ts';
 import { ruleOwner } from "../inventory/shared-rules.ts";
 import { routineEnabled } from './routines.ts';
@@ -89,7 +89,7 @@ function characterWork(state: DispatchCoordinatorState, name: string | null): Ch
     autoCompounds: state.autoCompounds[ruleOwner(state, String(name))] || [],
     withdrawals: state.withdrawals[String(name)] || [],
     statScrolls: state.statScrolls[String(name)] || [],
-    deliveries: (state.merchantDeliveries[String(name)] || []).filter(deliveryReady),
+    deliveries: (state.merchantDeliveries[String(name)] || []).filter(mark => deliveryReady(mark) && !(state.statScrolls[String(state.merchantCharacter)] || []).some(stat => !stat.equipped && deliveryMatches(mark.item, stat.item) && deliveryMatches(stat.item, mark.item))),
     goldTarget: state.goldTargets[String(name)],
   };
 }

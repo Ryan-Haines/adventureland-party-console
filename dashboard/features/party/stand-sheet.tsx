@@ -111,6 +111,7 @@ import {
 } from './wtb-preferences';
 
 import { WTBPriorityInput } from './wtbpriority-input';
+import { WTBUnconfirmedPurchase } from './wtb-unconfirmed-purchase';
 
 export const StandSheet = memo(function StandSheet({
 
@@ -2475,6 +2476,10 @@ export const StandSheet = memo(function StandSheet({
 
 
 
+                            </div>
+
+                            <div className="order-last w-full">
+                              <WTBUnconfirmedPurchase itemId={itemId} name={item?.name || itemId} purchases={nativeStand?.purchases} />
                             </div>
 
                             {(item?.upgradeable ||

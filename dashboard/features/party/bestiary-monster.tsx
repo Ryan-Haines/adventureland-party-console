@@ -14,5 +14,6 @@ export type BestiaryMonster = {
   threat: number;
   definition: Record<string, unknown>;
   drops: BestiaryDrop[];
+  homeRewards?: BestiaryDrop[];
   spawnRecords?: SpawnRecord[];
 };

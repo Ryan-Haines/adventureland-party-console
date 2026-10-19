@@ -1,6 +1,12 @@
 const {createBankStacks}=require('../../../runtime/characters/bank-stacks.ts');
 const {stackIdentity,stackLocations}=require('../../../runtime/bank-stacks.ts');
 function installBankStacks(c) {
+ // Existing VM sort fixtures expose a socket seam; native receipt APIs use it too.
+ if(c.parent?.socket?.emit){
+  c.bank_retrieve ||= async(pack,str,inv)=>c.parent.socket.emit('bank',{operation:'swap',pack,str,inv});
+  c.bank_store ||= async(inv,pack,str)=>c.parent.socket.emit('bank',{operation:'swap',pack,str,inv});
+ }
+
  let journal=null,now=0;
  const protection=()=>c.stackProtection || {locations:[],items:[]};
  const floor=pack=>(c.bank_packs || c.parent?.bank_packs || {})[pack]?.[0] || c.character.map || 'bank';

@@ -2,7 +2,7 @@ import type { ReturnLocation } from "../events/return-types.ts";
 import type { HuntCycle } from "../hunt/contracts.ts";
 import type { Area } from "../../../dashboard/lib/farming-zones.ts";
 
-export interface FarmingArea extends ReturnLocation, Area {}
+export interface FarmingArea extends ReturnLocation, Area { monsterIds?: string[] }
 export interface FarmReport extends ReturnLocation {
   farmCompetition?: import("./farm-competition.ts").FarmCompetitionObservation;
   combatSelection?: {runtimeId?: string};
@@ -13,6 +13,7 @@ export interface FarmReport extends ReturnLocation {
   joinedEvent?: string;
 }
 export interface FarmRelocation {
+  focusChange?: boolean;
   cause?: "farming-conflict";
   source?: FarmingArea;
   actor?: string;
@@ -22,6 +23,7 @@ export interface FarmRelocation {
   reason: string;
 }
 export interface FarmAreaState {
+  preferredLocation?: FarmingArea;
   recoveryVersion?: number;
   paused?: boolean;
   failures?: Record<string, number>;

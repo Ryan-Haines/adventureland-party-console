@@ -1,3 +1,4 @@
+import {waitForGameplay} from './network-clock';
 import {observeNativeNavigationHttp} from './native-navigation-http-observer';
 import {installTerminalSettlementFault} from './native-terminal-settlement-fault';
 import {observeNativeStatus} from './native-status-observer';
@@ -465,7 +466,9 @@ test.describe('Absent Halloween spawn', () => {
   test('Halloween staging abandons an absent native spawn after its fixed deadline and returns without reopening', async ({ live }, info) => {
     test.setTimeout(420_000);
     const announcement = await announceSpawn(live, 'mrpumpkin', 15000);
-    await prepare(live, 'mrpumpkin');
+    const savedCheckpoint = await prepare(live, 'mrpumpkin');
+    expect(savedCheckpoint.location.map).toBe('halloween');
+    await info.attach('absent-native-spawn-saved-checkpoint',{body:JSON.stringify(savedCheckpoint),contentType:'application/json'});
     await expect.poll(async () => (await live.state()).characters[W]?.joinedEvent, { timeout: 30_000 }).toBe('mrpumpkin');
     await expect.poll(async () => {
       const state = await live.state();
@@ -477,11 +480,11 @@ test.describe('Absent Halloween spawn', () => {
     }, { timeout: 120_000, message: 'Both native Main exits must be explicitly acknowledged before checkpoint dispatch' }).toBe(true);
     await expect.poll(async () => {
       const native = await world(live, 'mrpumpkin'), state = await live.state();
-      return fighters.every(name => native.players[name] && native.players[name].map === 'halloween' && Math.hypot(native.players[name].x + 335, native.players[name].y - 685) < 100 && !state.characters[name]?.joinedEvent);
+      return fighters.every(name => native.players[name] && native.players[name].map === 'halloween' && Math.hypot(native.players[name].x - savedCheckpoint.location.x, native.players[name].y - savedCheckpoint.location.y) < 100 && !state.characters[name]?.joinedEvent);
     }, { timeout: 120_000 }).toBe(true);
     await live.admin('broadcast_e();output=true');
-    await live.clients[W].page.waitForTimeout(11000);
+    await waitForGameplay(11000);
     expect((await live.state()).characters[W]?.joinedEvent, 'Another native feed must not reopen the expired timer').toBeFalsy();
-    await info.attach('absent-native-spawn-bounded-return', { body: JSON.stringify({ announcement, native: await world(live, 'mrpumpkin'), coordinator: await live.state() }), contentType: 'application/json' });
+    await info.attach('absent-native-spawn-bounded-return', { body: JSON.stringify({ announcement, savedCheckpoint, native: await world(live, 'mrpumpkin'), coordinator: await live.state() }), contentType: 'application/json' });
   });
 });

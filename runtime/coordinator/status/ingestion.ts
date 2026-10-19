@@ -1,5 +1,7 @@
 import { transportTiming, measureStatusStage } from '../telemetry/transport-timing.ts';
-import {rememberCharacterAppearance, type AppearanceState} from "./character-appearance.ts";
+import {
+  rememberCharacterSnapshot,
+  rememberCharacterAppearance, type AppearanceState} from "./character-appearance.ts";
 import { requestObject, type HttpRequest, type HttpResponse } from "../http/contracts.ts";
 import { createCombatIngestion, preserveNewerCombat } from "./combat-ingestion.ts";
 import { receiveLuckySlotTracking, type LuckySlotState } from "./lucky-slot-tracking.ts";
@@ -101,7 +103,7 @@ export function createStatusIngestion<Report extends StatusReport>(
   function handle(req: HttpRequest, res: HttpResponse): unknown {
     const receivedAt = ports.now();
     const sendJson = res.json.bind(res);
-    res.json = value => measureStatusStage('serialize-response', () => sendJson({...requestObject(value), transportTiming: transportTiming(receivedAt, ports.now())}));
+    res.json = (value) => measureStatusStage('serialize-response', () => sendJson({...requestObject(value), transportTiming: transportTiming(receivedAt, ports.now())}));
     const raw = requestObject(req.body);
     if (typeof raw.name !== "string" || !ports.known(raw.name))
       return res.status(400).json({ error: "unknown character" });
@@ -110,7 +112,8 @@ export function createStatusIngestion<Report extends StatusReport>(
     // Report fields are decoded by their domain consumer; unrecognized fields remain available to the dashboard.
     const body = raw as unknown as Report;
     receiveLuckyEvidence(raw, raw.name);
-    if (rememberCharacterAppearance(state, body, ports.now())) ports.persistRoster();
+    const snapshotChanged = rememberCharacterSnapshot(state, raw, receivedAt);
+    if (rememberCharacterAppearance(state, body, receivedAt) || snapshotChanged) ports.persistRoster();
     const learned = consume(body);
     const previous = state.statuses[body.name];
     if (body.name === state.merchantCharacter) ports.merchant(body, previous);

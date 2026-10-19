@@ -1,3 +1,4 @@
+import {waitForGameplay} from './network-clock';
 import { test, expect } from './live-fixtures';
 import { warrior as W, priest as P, location } from './game/hunt-lifecycle';
 
@@ -45,7 +46,7 @@ test('a mage reaches its booboo while a second booboo attacks the warrior', asyn
           mode:p&&p.mode,reason:p&&p.reason,constraint:p&&p.constraint});};
       ledger.timer=setInterval(capture,1000);capture();return true;
     })()`);
-    await new Promise(resolve=>setTimeout(resolve,60000));
+    await waitForGameplay(60000);
     samples.push(...await live.clients[M].run('globalThis.__e2eMonsterReachSamples.samples'));
     const booboo = samples.filter(s => s.target === 'booboo');
     expect(booboo.length, 'The party must select a booboo').toBeGreaterThan(30);

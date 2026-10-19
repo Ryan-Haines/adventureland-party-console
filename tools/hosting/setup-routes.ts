@@ -41,7 +41,10 @@ async function steamLoader(options: Options, input: Record<string, unknown>) {
   return { code: loaderCode(address.origin + suffix) };
 }
 export async function pair(req: IncomingMessage, res: ServerResponse, options: Options) {
-  const credential = await options.access.pair(text((await body(req)).token));
+  const input = await body(req);
+  const credential = text(input.code)
+    ? await options.access.pairCode(text(input.code))
+    : await options.access.pair(text(input.token));
   browserCookie(req, res, credential);
   json(res, 200, { ok: true });
 }
@@ -57,7 +60,7 @@ async function setupState(req: IncomingMessage, options: Options) {
   const secure = options.tls?.trusted(req);
   const origin = options.publicUrl || (secure ? requestOrigin(req, options) : undefined);
   const tls = options.tls ? { tls: await options.tls.status(), secure, httpPort: Number(process.env.AL_HTTP_PUBLIC_PORT || process.env.AL_PORT || 3010) } : {};
-  return { configured: options.configured(), requirePairing: options.access.required, canConfigureAccount: !!options.configure, serverAddress: setupAddress(req, origin), steamPreferences: await options.steam?.preferences.read(), ...await options.realms, ...tls };
+  return { configured: options.configured(), requirePairing: options.access.required, ...(options.access.required && validBrowser(req, options) ? { accessCodeExpiresAt: options.access.accessCodeExpiry } : {}), canConfigureAccount: !!options.configure, serverAddress: setupAddress(req, origin), steamPreferences: await options.steam?.preferences.read(), ...await options.realms, ...tls };
 }
 async function readSetup(
   req: IncomingMessage,
@@ -111,7 +114,7 @@ export async function setupRoute(req: IncomingMessage, res: ServerResponse, path
       await options.configure(text(input.session), text(input.realm));
       return { ok: true };
     },
-    "/setup/invite": async () => ({ token: await options.access.invitation() }),
+    "/setup/invite": async () => ({ token: await options.access.invitation(), ...options.access.accessCode() }),
     "/setup/revoke": async () => {
       await options.access.revokeSteam();
       return { ok: true };

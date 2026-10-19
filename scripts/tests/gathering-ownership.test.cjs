@@ -18,6 +18,7 @@ function fixture() {
   gatheringStatus:(...args)=>logs.push(args),game_log:()=>{},setGathering:mode=>switches.push(mode),
   reportMerchantCommand:(...args)=>logs.push(args),stop:async()=>cast.reject(new Error('interrupted'))});
  vm.runInContext(source.slice(source.indexOf('  function gatheringAttemptCurrent('),source.indexOf('  function setGathering(')),c);
+ vm.runInContext(require('./helpers/named-function.cjs').namedFunction(source,'gatheringOutcome'),c);
  return {c,cast,logs,switches};
 }
 async function casting(c) { for(let i=0;i<12 && c.root.__merchantGatheringAttempt?.phase!=='casting';i++) await Promise.resolve(); assert.equal(c.root.__merchantGatheringAttempt.phase,'casting'); }

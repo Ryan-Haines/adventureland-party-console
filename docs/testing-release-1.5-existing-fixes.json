@@ -1,0 +1,56 @@
+{
+  "checkedAt": "2026-10-19T00:22:06.262Z",
+  "head": "66f3dadce429845101a04e3601acdc14635d8297",
+  "commands": {
+    "build": "node tools/build-runtime.mts",
+    "regressions": "node --test --test-concurrency=1 --test-reporter=tap scripts/tests/lucky-slot-tracker.test.cjs scripts/tests/lucky-slot-ui.test.cjs scripts/tests/passing-index.test.cjs scripts/tests/passing-admission.test.cjs scripts/tests/combat-queue.test.cjs scripts/tests/native-planner-slice-budget.test.cjs scripts/tests/runner-lifecycle.test.cjs"
+  },
+  "retainedRegressions": {
+    "tests": 98,
+    "pass": 98,
+    "fail": 0,
+    "evidence": "Local .build/release-1.5-validation/existing-fixes/retained-regressions.tap"
+  },
+  "issues": {
+    "23": {
+      "source": "runtime/lucky-slot-tracking.ts:93",
+      "behavior": "42-way posterior, >=100 samples and >=99.9% ordinary probability, recomputed ruledOut set; nextSlot skips eliminated; UI count/row retained",
+      "e2e": "lucky discovery rules out ordinary slots and recomputes after new evidence",
+      "status": "validated: retained regressions and focused browser/native gameplay E2E passed",
+      "evidenceArchive": "integrated-first"
+    },
+    "57": {
+      "source": [
+        "characters/shared.js:isPassingEncounter",
+        "runtime/combat/queue.ts:tombstoneIds"
+      ],
+      "behavior": "WeakMap caches key by array/length/context; retained tombstones Set; randomized invalid/duplicate timestamp equivalence and warm-cache operation count passed",
+      "e2e": "armadillo passing scene in live-hunt.spec.ts",
+      "status": "validated: retained regressions and focused browser/native gameplay E2E passed",
+      "evidenceArchive": "native-first"
+    },
+    "83": {
+      "ancestorCommits": [
+        "218f57a",
+        "d009eb2"
+      ],
+      "behavior": "independent native target approaches, geometric alternate attack positions, actual range/LOS admission preserved",
+      "e2e": [
+        "healthy warrior reaches an engaged Phoenix through its open side",
+        "warrior recovers a blocked Targetron approach in the reported UHills layout",
+        "planned Main hawks recover ranged actors from disconnected approach ring points"
+      ],
+      "status": "validated: retained regressions and focused browser/native gameplay E2E passed",
+      "evidenceArchive": "native-first"
+    },
+    "106": {
+      "ancestorCommit": "4677651f7feee18bd9075349e5dfed33e7f23190",
+      "source": "runtime/characters/native-planner.ts:sliceProfile",
+      "behavior": "raw own-data descriptor saves native is_hidden, finally restores; normal/throw/cancel + CODE retirement isolated regressions passed",
+      "e2e": "existing terrain scenarios exercise actual native planner",
+      "status": "validated: retained regressions and focused browser/native gameplay E2E passed",
+      "evidenceArchive": "native-first"
+    }
+  },
+  "disposableSetup": "Existing native game assets provided read-only through a worktree junction; no live process or CODE changed."
+}

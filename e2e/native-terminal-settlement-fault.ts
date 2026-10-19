@@ -1,4 +1,5 @@
-import {expect,type Page,type Route,type Response,type Request} from '@playwright/test';
+import type {Page,Route,Response,Request} from '@playwright/test';
+import {expect} from './network-clock';
 import type {LiveGame} from './live-fixtures';
 const W='E2EWarrior',P='E2EPriest';
 /** Declared one-shot transport failure; native sockets, ACKs, coordinates and routes remain untouched. */

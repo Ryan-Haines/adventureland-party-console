@@ -111,7 +111,7 @@ export const FarmingModeControl = memo(function FarmingModeControl({
     },
   ];
   return (
-    <section className="mt-4 border-t border-emerald-900/70 pt-3">
+    <section className="border-t border-emerald-900/70 pt-3">
       <div className="flex items-center gap-1">
         <button
           type="button"

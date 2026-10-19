@@ -1,0 +1,37 @@
+{
+  "description": "Five native minutes of two-character farming for paced/accelerated/traced replay comparison.",
+  "seed": 1,
+  "threads": true,
+  "realm": "SR_USI",
+  "minutes": 5,
+  "sampleSeconds": 30,
+  "characters": [
+    {
+      "name": "SimWarrior",
+      "type": "warrior",
+      "level": 60
+    },
+    {
+      "name": "SimPriest",
+      "type": "priest",
+      "level": 60
+    }
+  ],
+  "steps": [
+    {
+      "atSeconds": 30,
+      "action": "farm",
+      "leader": "SimWarrior",
+      "followers": ["SimPriest"],
+      "monster": "goo"
+    }
+  ],
+  "track": ["goo"],
+  "expect": {
+    "minKills": {
+      "goo": 1
+    },
+    "maxDeaths": 0,
+    "maxErrors": 0
+  }
+}

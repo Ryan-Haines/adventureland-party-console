@@ -182,3 +182,61 @@ test('Loaded Die equips through the priest inventory menu into the native orb sl
   await info.attach('loaded-die-native-equipment',{body:JSON.stringify({seed,after,restarted,events:await live.clients[name].events()}),contentType:'application/json'});
   await info.attach('loaded-die-priest-inventory',{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
 });
+
+// Failure inventory: missing tools spend gold without consent; independent toggles
+// overwrite each other; restart loses consent; an existing tool gets duplicated.
+test('gathering tool crafting settings are opt in and persist independently', async ({live},info)=>{
+  const initial=(await live.state()).merchantAutomations;
+  expect(initial['craft fishing tools']).toBe(false);expect(initial['craft mining tools']).toBe(false);
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'craft fishing tools':true}});
+  await live.restartCoordinator();
+  await expect.poll(async()=>{const a=(await live.state()).merchantAutomations;return [a['craft fishing tools'],a['craft mining tools']];}).toEqual([true,false]);
+  await info.attach('gathering-craft-settings',{body:JSON.stringify((await live.state()).merchantAutomations),contentType:'application/json'});
+});
+
+for(const mode of ['fishing','mining'] as const) capacityTest(`missing ${mode} tool crafts once only after opt in and available materials`,async({live},info)=>{
+ test.setTimeout(420_000);
+ const merchant='E2EMerchant',tool=mode==='fishing'?'rod':'pickaxe',responses:any[]=[],pending:Promise<void>[]=[];
+ const native=()=>live.admin(`output=(async()=>{const p=get_player('${merchant}'),u=p.user||(await db.collection('user').findOne({_id:p.owner})).info;return {gold:p.gold+(Number(u.gold)||0),tools:p.items.filter(i=>i&&i.name==='${tool}').length+(p.slots.mainhand?.name==='${tool}'?1:0),bank:Object.entries(u).filter(([k,v])=>/^items[0-9]+$/.test(k)&&Array.isArray(v)).flatMap(([,v])=>v).filter(i=>i&&i.name==='${tool}').length};})()`);
+ const observe=(response:any)=>{if(!new URL(response.url()).pathname.endsWith('/merchant/order'))return;pending.push((async()=>{responses.push({at:Date.now(),status:response.status(),body:await response.json()});})().catch(()=>{}));};
+ live.clients[merchant].page.on('response',observe);
+ try {
+  await expect.poll(async()=>(await live.state(true)).merchantCatalog?.craftable?.some((choice:any)=>choice.id===tool),{timeout:120_000}).toBe(true);
+  const catalog=(await live.state(true)).merchantCatalog,recipe=catalog.craftable.find((choice:any)=>choice.id===tool).materials;
+  expect(recipe.length).toBeGreaterThan(0);
+  expect(recipe.some((material:any)=>!catalog.buyable.some((choice:any)=>choice.id===material.id))).toBe(true);
+  for(const skill of ['fishing','mining'])await live.post('/merchant/gather',{mode:skill,enabled:false});
+  // Declared initial inventory removes only these recipe inputs and tools. No
+  // native action, craft receipt, result or cooldown is substituted by the fixture.
+  const seed=await live.admin(`output=(async()=>{const p=get_player('${merchant}'),u=await db.collection('user').findOne({_id:p.owner}),b=p.user||u.info,names=${JSON.stringify(recipe.map((m:any)=>m.id).concat([tool]))};
+    for(const q of Object.values(players).filter(q=>q.owner===p.owner)){q.items=q.items.map(i=>i&&names.includes(i.name)?null:i);cache_player_items(q);resend(q,'reopen+cid');}
+    for(const [key,items]of Object.entries(b))if(/^items[0-9]+$/.test(key)&&Array.isArray(items))b[key]=items.map(i=>i&&names.includes(i.name)?null:i);
+    if(p.slots.mainhand?.name==='${tool}'){p.slots.mainhand=null;p.cslots.mainhand=null;resend(p,'reopen+cid');}
+    if(!p.user)await db.collection('user').replaceOne({_id:u._id},u);return {recipe:${JSON.stringify(recipe)},bankMounted:!!p.user};})()`);
+  await expect.poll(async()=>{const n=await native();return n.tools+n.bank;},{timeout:30_000}).toBe(0);
+  const before=await native();
+  // Default-off missing-tool behavior neither creates an order nor spends gold.
+  await live.post('/merchant/gather',{mode,enabled:true});
+  await expect.poll(async()=>(await live.state()).gatheringNoTool?.[mode],{timeout:90_000}).toBe(true);
+  expect(responses).toHaveLength(0);expect((await native()).gold).toBe(before.gold);
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{['craft '+mode+' tools']:true}});
+  await live.post('/merchant/gather',{mode,enabled:true});
+  await expect.poll(()=>responses.some(response=>response.status===409&&response.body.error==='crafting materials are no longer available'),{timeout:90_000}).toBe(true);
+  expect((await native()).gold).toBe(before.gold);
+  expect(responses.some(response=>response.status===200)).toBe(false);
+  // Provide exactly one native recipe; successful crafting must own and consume it.
+  await live.admin(`output=(()=>{const p=get_player('${merchant}');for(const material of ${JSON.stringify(recipe)}){const slot=p.items.findIndex(i=>!i);if(slot<0)throw Error('No material seed slot');p.items[slot]={name:material.id,...(material.level?{level:material.level}:{}),...(material.quantity>1?{q:material.quantity}:{})};}cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
+  await expect.poll(async()=>(await native()).tools,{timeout:240_000,message:'Native crafting must produce its missing tool'}).toBe(1);
+  await live.post('/merchant/gather',{mode,enabled:false});
+  await expect.poll(async()=>{const state=await live.state();return [state.merchantCurrent,...state.merchantQueue].some(job=>job?.order?.crafts?.some((line:any)=>line.id===tool));},{timeout:30_000}).toBe(false);
+  await Promise.all(pending);
+  const accepted=responses.filter(response=>response.status===200);
+  expect(accepted.length).toBeGreaterThan(0);
+  expect(new Set(accepted.map(response=>response.body.jobId)).size).toBe(1);
+  expect((await native()).tools).toBe(1);
+  await info.attach('native-replacement-tool-craft',{body:JSON.stringify({mode,tool,seed,before,after:await native(),responses,events:await live.clients[merchant].events(),state:await live.state()}),contentType:'application/json'});
+ } finally {
+  live.clients[merchant].page.off('response',observe);await Promise.all(pending);
+  await live.post('/merchant/gather',{mode,enabled:false}).catch(()=>{});
+ }
+});

@@ -1,10 +1,13 @@
+import {measureBrowserRendering} from './browser-rendering';
 import {waitForLiveRestartState, type RestartStateProbe} from './live-restart-readiness';
-import { test as base, expect, unusedPort, child, environment, stop } from './fixtures';
+import { test as base, unusedPort, child, environment, stop } from './fixtures';
+import {expect,installObservationClock} from './network-clock';
+import {cleanupWorkspace} from './workspace';
 import { launchGameClient, type LiveClient } from './live-game-client';
 import { type ChildProcess } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import type { Page } from '@playwright/test';
+import type { Page,Frame,BrowserContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,10 +17,11 @@ import { selectionFields, stateKeys } from '../runtime/coordinator/persistence/s
 import { loadouts, seedLoadout, type NativeLoadout } from './game/loadouts';
 import { nativeEventSpawn, nativeMonsterInitialPosition } from './game/event-spawn';
 import {nativeNetworkIsolation} from './native-network-isolation';
+import type {GameManifest} from '../tools/game/manifest';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
-const game = require('./game/bootstrap.cjs');
+const bootstrap = require('./game/bootstrap.cjs');
 export type LiveGame = {
   url: string;
   clients: Record<string, LiveClient>;
@@ -50,7 +54,14 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
   recordNativeVideo: [process.env.E2E_NATIVE_VIDEO==='1', {option:true}],
   movementMode: ['alclient', {option:true}],
   staleWorkerRealm: [null, {option:true}],
-  live: [async ({ browser, dashboard, loadout, primaryClass, extraFighter, merchantDefault, initialPosition, initialPositions, initialEventSpawn, initialMonsterSpawn, initialConsoleHold, initialGatheringReady, liveHeadless, recordNativeVideo, movementMode, staleWorkerRealm }, use, testInfo) => {
+  live: [async ({ browser, context:dashboardContext, dashboard, loadout, primaryClass, extraFighter, merchantDefault, initialPosition, initialPositions, initialEventSpawn, initialMonsterSpawn, initialConsoleHold, initialGatheringReady, liveHeadless, recordNativeVideo, movementMode, staleWorkerRealm }, use, testInfo) => {
+    const pools=JSON.parse(process.env.E2E_GAME_POOLS||'[]');
+    const pool=pools[testInfo.parallelIndex];
+    if(!pool)throw Error('Missing isolated game pool for parallel worker '+testInfo.parallelIndex);
+    Object.assign(process.env,pool.environment);
+    const game=bootstrap.createGame({host:pool.host});
+    await testInfo.attach('isolated-game-pool',{body:JSON.stringify({host:pool.host,project:pool.project,parallelIndex:testInfo.parallelIndex}),contentType:'application/json'});
+    const observationClock=await installObservationClock();
     const directory = path.join(root, '.build/e2e', `live-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
     const manifest = await game.reset();
@@ -100,6 +111,19 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
     const network=await nativeNetworkIsolation(blocked);
     const context = await browser.newContext({proxy:network.proxy, viewport: { width: 1280, height: 900 },
       ...(recordNativeVideo ? {recordVideo: { dir: testInfo.outputPath('native-video'), size: { width: 960, height: 675 } }} : {}) }).catch(async error=>{await network.close();throw error;});
+    if(observationClock.backend==='chronal-network'){
+      async function clockContext(context:BrowserContext){
+      const frames=new Map<Frame,string>();
+      const retire=async(id:string)=>{const url=new URL('/leave',process.env.E2E_CLOCK_BROKER);url.searchParams.set('token',process.env.E2E_CLOCK_TOKEN||'');url.searchParams.set('id',id);await fetch(url);};
+      await context.exposeBinding('__e2eChronalFrame',async({frame},id:string)=>{
+        const previous=frames.get(frame);if(previous&&previous!==id)await retire(previous);frames.set(frame,id);
+      });
+      context.on('page',page=>page.on('framedetached',frame=>{const id=frames.get(frame);frames.delete(frame);if(id)void retire(id).catch(error=>exchanges.push({clockRetirementError:String(error)}));}));
+      await context.addInitScript({content:
+      `globalThis.__e2eClockConfiguration=${JSON.stringify({rate:observationClock.rate,wall:observationClock.wall,epoch:observationClock.epoch,broker:process.env.E2E_CLOCK_BROKER,token:process.env.E2E_CLOCK_TOKEN,scope:directory})};\n`+readFileSync(path.join(root,'.build/sim/browser-clock.js'),'utf8')});
+      }
+      await clockContext(dashboardContext);await clockContext(context);
+    }
     await testInfo.attach('native-video-recording-policy',{body:JSON.stringify({enabled:recordNativeVideo}),contentType:'application/json'});
     const nativePages = new Set<Page>();
     context.on('page', page => nativePages.add(page));
@@ -117,7 +141,10 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
     async function start() {
       coordinator = child(path.join(root, 'e2e/live-coordinator.cjs'), [], root,
         environment({ E2E_COORDINATOR_PORT: String(port), E2E_DATA_DIR: directory,
-          E2E_GAME_WEB_URL: manifest.webUrl, E2E_GAME_AUTH: manifest.auth, E2E_MERCHANT_DEFAULT: JSON.stringify(merchantDefault), E2E_ALLOW_HEADLESS: String(liveHeadless), PARTY_MOVEMENT_MODE: movementMode, E2E_STALE_WORKER_REALM: staleWorkerRealm || '',...identityEnvironment }), log);
+          E2E_GAME_WEB_URL: manifest.webUrl, E2E_GAME_AUTH: manifest.auth, E2E_MERCHANT_DEFAULT: JSON.stringify(merchantDefault), E2E_ALLOW_HEADLESS: String(liveHeadless), PARTY_MOVEMENT_MODE: movementMode, E2E_STALE_WORKER_REALM: staleWorkerRealm || '',
+          E2E_CLOCK_RATE:process.env.E2E_CLOCK_RATE||'1',E2E_CLOCK_WALL_EPOCH:process.env.E2E_CLOCK_WALL_EPOCH||'',E2E_CLOCK_VIRTUAL_EPOCH:process.env.E2E_CLOCK_VIRTUAL_EPOCH||'',
+          E2E_CLOCK_BROKER:process.env.E2E_CLOCK_BROKER||'',E2E_CLOCK_TOKEN:process.env.E2E_CLOCK_TOKEN||'',E2E_CLOCK_SCOPE:directory,
+          E2E_CLOCK_PRELOAD:'1',NODE_OPTIONS:[process.env.NODE_OPTIONS,`--require=${JSON.stringify(path.join(root,'tools/sim/network-clock.cjs'))}`].filter(Boolean).join(' '),...identityEnvironment }), log);
       const current = coordinator;
       await new Promise<void>((resolve, reject) => {
         const details = () => existsSync(log) ? readFileSync(log, 'utf8').slice(-16000) : 'No coordinator output';
@@ -125,7 +152,11 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
         const cleanup = () => { clearTimeout(timeout); current.removeListener('message', message); current.removeListener('error', failed); current.removeListener('exit', exited); };
         const failed = (error: Error) => { cleanup(); reject(error); };
         const exited = (code: number | null) => failed(new Error(`Live coordinator exited (${code})\n${details()}`));
-        const message = (value: any) => { if (value?.type === 'ready') { cleanup(); resolve(); } };
+        const message = (value: any) => { if (value?.type === 'ready') {
+          try{if(observationClock.backend==='chronal-network'){
+            expect(value.clock?.backend).toBe('chronal-network');expect(value.clock.rate).toBe(observationClock.rate);expect(value.clock.epoch).toBe(observationClock.epoch);expect(value.clock.errors).toEqual([]);
+          }}catch(error){failed(error as Error);return;}
+          cleanup(); resolve(); } };
         current.on('message', message); current.once('error', failed); current.once('exit', exited);
       });
     }
@@ -190,7 +221,7 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           exchanges.push({at:Date.now(),hostMaintenanceLease:id,expires});
         },
         async restartCoordinator() { await stop(coordinator!, true); await start(); await publicRestartReady('explicit restart'); },
-        deploymentPaths:{directory,apiUrl:`http://127.0.0.1:${port}`,codeRoots:[path.join(root,'.build/CODE/adventure_land'),path.join(directory,'CODE/adventure_land')]},
+        deploymentPaths:{directory,apiUrl:`http://127.0.0.1:${port}`,codeRoots:[path.join(directory,'CODE/adventure_land')]},
         async restartCoordinatorIdentity(artifactId,hash){identityEnvironment={AL_CONSOLE_ARTIFACT_ID:artifactId,AL_CONSOLE_COORDINATOR_HASH:hash};await stop(coordinator!,true);await start();await publicRestartReady('identity restart');},
         async restoreHistoricalSettings(restore) {
           await stop(coordinator!, true);
@@ -297,6 +328,21 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
         await testInfo.attach('native-fourth-fighter-admission',{body:JSON.stringify(extra),contentType:'application/json'});
       }
       await testInfo.attach('live-build-manifest', { path: path.join(root, '.build/game/manifest.json'), contentType: 'application/json' });
+      const compiled=JSON.parse(readFileSync(path.join(root,'.build/game/manifest.json'),'utf8')) as GameManifest;
+      const expectedCode=nativeStats.map((stats:{name:string;type:string})=>{
+        const entry=Object.entries(compiled.classes).find(([ctype])=>ctype===stats.type)?.[1];
+        if(!entry)throw Error('No compiled CODE for native class '+stats.type);
+        return {name:stats.name,ctype:stats.type,sha256:entry.sha256};
+      });
+      const codeObservations:unknown[]=[];
+      try{await expect.poll(async()=>{
+        const state=await live!.state();
+        const observed=expectedCode.map((entry:{name:string})=>({name:entry.name,ctype:state.characters[entry.name]?.ctype,sha256:state.characters[entry.name]?.codeHash}));
+        if(codeObservations.length>=32)codeObservations.shift();
+        codeObservations.push({at:Date.now(),observed});
+        return observed;
+      },{timeout:30000,message:'Every native client must acknowledge this fixture’s exact staged CODE before gameplay starts'}).toEqual(expectedCode);}
+      finally{await testInfo.attach('native-initial-code-identities',{body:JSON.stringify({generation:compiled.generation,names,expected:expectedCode,observations:codeObservations}),contentType:'application/json'});}
       const nativeVersion=await clients[primaryName].run('parent.G.version');
       expect(Number.isSafeInteger(Number(nativeVersion))&&Number(nativeVersion)>0,'The primary native client must supply its actual game version').toBe(true);
       const catalogReadiness:Array<{at:number;version:unknown;choices:number}>=[];
@@ -309,7 +355,31 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
         message:'Native bootstrap must publish the current game version and real monster catalog before starting the scenario'}).toBe(true);}
       finally{await testInfo.attach('native-bootstrap-catalog-readiness',{body:JSON.stringify({nativeVersion,deadline:nativeReadyDeadline,observations:catalogReadiness}),contentType:'application/json'});}
       if(initialConsoleHold)live.consoleDrainLease('native-initial-setup',Date.now()+600000,{loadMode:'now',phase:'holding'});
-      await use(live);
+      const clockReceipts={host:observationClock,realms:await Promise.all(['USI','USII'].map(realm=>game.admin('output=globalThis.__e2eChronalClock?{backend:__e2eChronalClock.backend,rate:__e2eChronalClock.rate,wall:__e2eChronalClock.wall,epoch:__e2eChronalClock.epoch,errors:__e2eChronalClock.errors}:null',{},realm))),
+        clients:await Promise.all(Object.values(clients).map(client=>client.frame.evaluate(()=>{
+          const w=window as any,c=w.__e2eChronalClock,r=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+          return {game:c&&{backend:c.backend,rate:c.rate,wall:c.wall,epoch:c.epoch,errors:c.errors},code:r?.__e2eChronalClock&&{backend:r.__e2eChronalClock.backend,rate:r.__e2eChronalClock.rate,wall:r.__e2eChronalClock.wall,epoch:r.__e2eChronalClock.epoch,errors:r.__e2eChronalClock.errors}};
+        })))};
+      await testInfo.attach('gameplay-clock-participants',{body:JSON.stringify(clockReceipts),contentType:'application/json'});
+      if(observationClock.backend==='chronal-network')for(const receipt of [...clockReceipts.realms,...clockReceipts.clients.flatMap(c=>[c.game,c.code])]){
+        expect(receipt?.backend).toBe('chronal-network');expect(receipt.rate).toBe(observationClock.rate);expect(receipt.wall).toBe(observationClock.wall);expect(receipt.epoch).toBe(observationClock.epoch);expect(receipt.errors).toEqual([]);
+      }
+      const bodyClockSnapshot=async()=>{
+        const url=new URL('/diagnostics',process.env.E2E_CLOCK_BROKER);url.searchParams.set('token',process.env.E2E_CLOCK_TOKEN||'');
+        return {broker:await (await fetch(url)).json(),frames:await Promise.all(Object.entries(clients).map(async([name,client])=>({name,clocks:await client.frame.evaluate(()=>{
+          const w=window as any,r=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+          return [w.__e2eChronalClock,r?.__e2eChronalClock].map(c=>c&&({timing:c.timing,taskStats:c.taskStats}));
+        })})))};
+      };
+      const bodyClockBefore=observationClock.backend==='chronal-network'&&process.env.E2E_MEASURE_BROWSER_CPU==='1'?await bodyClockSnapshot():undefined;
+      const rendering=process.env.E2E_MEASURE_BROWSER_CPU==='1'?await measureBrowserRendering(browser,()=>observationClock.now()):undefined;
+      const cpuProfile=process.env.E2E_PROFILE_BROWSER_CPU==='1'?await context.newCDPSession(clients[primaryName].page):undefined;
+      if(cpuProfile){await cpuProfile.send('Profiler.enable');await cpuProfile.send('Profiler.start');}
+      try {await use(live);} finally {
+        if(cpuProfile)try{const {profile}=await cpuProfile.send('Profiler.stop');await testInfo.attach('native-browser-cpu-profile',{body:JSON.stringify(profile),contentType:'application/json'});}finally{await cpuProfile.detach();}
+        if(rendering)await testInfo.attach('browser-rendering-cpu',{body:JSON.stringify(await rendering(),null,2),contentType:'application/json'});
+        if(bodyClockBefore)await testInfo.attach('gameplay-clock-body-timing',{body:JSON.stringify({before:bodyClockBefore,after:await bodyClockSnapshot()}),contentType:'application/json'});
+      }
     } finally {
       rmSync(path.join(directory,'hold-merchant-status'),{force:true});
       const attach = async (name: string, body: unknown) => testInfo.attach(name, { body: JSON.stringify(body, null, 2), contentType: 'application/json' });
@@ -334,6 +404,13 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           await attach('live-server-final', await live.admin(`output=Object.fromEntries(Object.values(players).filter(p=>${JSON.stringify(names)}.includes(p.name)).map(p=>[p.name,{name:p.name,map:p.map,x:p.x,y:p.y,hp:p.hp,mp:p.mp,gold:p.gold,xp:p.xp,items:p.items,slots:p.slots,s:p.s}]))`).catch(error => ({ error: String(error) })));
         }
         for (const [name, client] of Object.entries(clients)) {
+          if(observationClock.backend==='chronal-network'&&!client.page.isClosed()){
+            const clocks=await diagnostic((async()=>client.frame.evaluate(()=>{
+              const w=window as any,r=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+              return [w.__e2eChronalClock,r?.__e2eChronalClock].map(c=>c&&({backend:c.backend,now:c.now(),errors:c.errors,epoch:c.epoch,rate:c.rate,state:c.state,timing:c.timing,taskStats:c.taskStats}));
+            }))());await attach(name+'-final-clock',clocks);
+            if(Array.isArray(clocks))for(const clock of clocks){expect(clock?.backend).toBe('chronal-network');expect(clock?.errors).toEqual([]);}
+          }
           await attach(name + '-native-disconnects', client.disconnects());
           await attach(name + '-native-events', await diagnostic(client.events()));
           await attach(name + '-character', await diagnostic(client.snapshot()));
@@ -349,6 +426,9 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
         const visitorStatus = path.join(directory,'home-visitor-status.jsonl');
         if(existsSync(visitorStatus)) await testInfo.attach('home-visitor-status',{path:visitorStatus,contentType:'application/x-ndjson'});
         await attach('live-blocked-external-requests', blocked);
+        if(observationClock.backend==='chronal-network'){
+          const url=new URL('/diagnostics',process.env.E2E_CLOCK_BROKER);url.searchParams.set('token',process.env.E2E_CLOCK_TOKEN||'');await attach('gameplay-clock-final',await (await fetch(url)).json());
+        }
       } finally {
         try {
           const closed = await diagnostic(context.close());
@@ -370,8 +450,17 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           }));
           try { if (coordinator) await stop(coordinator, true); }
           finally {
-            for (const file of [log, dashboard.log, path.join(directory, 'state.jsonl')])
-              if (existsSync(file)) await diagnostic(testInfo.attach(path.basename(file), { path: file, contentType: 'text/plain' }));
+            if(observationClock.backend==='chronal-network'){
+              const endpoint=new URL('/scope',process.env.E2E_CLOCK_BROKER);endpoint.searchParams.set('scope',directory);endpoint.searchParams.set('token',process.env.E2E_CLOCK_TOKEN||'');await fetch(endpoint);
+            }
+            let logsCopied=true;
+            for (const file of [log, dashboard.log, path.join(directory, 'state.jsonl'),path.join(directory,'native-assets-receipts.jsonl')])
+              if (existsSync(file)) {
+                const copy=await diagnostic(testInfo.attach(path.basename(file), { path: file, contentType: 'text/plain' }));
+                if(copy!==undefined)logsCopied=false;
+              }
+            await attach('workspace-cleanup',logsCopied?cleanupWorkspace(root,directory):{
+              workspace:path.relative(root,directory),removed:false,retained:true,reason:'Log attachment copy failed'});
           }
         }
       }
@@ -384,3 +473,4 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
   baseURL: async ({}, use) => { await use(undefined); },
 });
 export { expect };
+export {waitForGameplay} from './network-clock';

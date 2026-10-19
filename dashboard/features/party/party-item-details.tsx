@@ -1,4 +1,6 @@
 "use client";
+import { ExchangeItemSelection } from './exchange-item-selection';
+import {loadCharacterInspection} from "./load-character-inspection";
 import { lazy } from "react";
 import { DeferredPanel } from "./deferred-panel";
 const ItemDetails = lazy(() =>
@@ -30,14 +32,25 @@ function PartyItemDetailsConnected({ base }: { base: PartyConsoleModel }) {
   } = model;
   return (
     <DeferredPanel active={!!selected}>
+      <ExchangeItemSelection>
       <UpgradeOfferingProvider character={String(state.merchantCharacter)} executor={state.merchantCharacter} stock={state.upgradeOfferingStock || {}} rules={state.upgradeOfferingRules || []} catalog={state.merchantCatalog?.allItems || []} post={model.post}>
       <ItemDetails
-        renderExchangeReward={reward => <ExchangeRewardTile reward={reward} model={model} />}
+        renderExchangeReward={(reward) => (
+              <ExchangeRewardTile reward={reward} model={model} />
+            )}
         selected={selected}
         catalog={state.merchantCatalog?.allItems || []}
         exchanges={state.merchantCatalog?.exchangeable || []}
         monsters={state.bestiaryCatalog || []}
-        characters={chars}
+        skills={state.skillCatalog || []}
+        characters={[
+              ...chars,
+              ...Object.values(state.characterSnapshots || {}).filter(
+                (saved) => !chars.some((live) => live.name === saved.name),
+              ),
+            ]}
+        offlineCharacters={(state.roster || []).filter(member=>!chars.some(live=>live.name===member.name) && !state.characterSnapshots?.[member.name])}
+        onLoadCharacter={loadCharacterInspection}
         achievements={monsterAchievements}
         standFull={standIsFull(state.standListings || [], state.standBids || {})}
         onNavigate={(monster) => setMonsterNavigateTarget(monster)}
@@ -78,6 +91,7 @@ function PartyItemDetailsConnected({ base }: { base: PartyConsoleModel }) {
         }}
       />
       </UpgradeOfferingProvider>
+    </ExchangeItemSelection>
     </DeferredPanel>
   );
 }

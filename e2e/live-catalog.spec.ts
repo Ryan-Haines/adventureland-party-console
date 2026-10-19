@@ -1,5 +1,6 @@
 import type { Response } from '@playwright/test';
 import { test, expect } from './live-fixtures';
+import {nativeWallNow} from './network-clock';
 
 // Failure modes, written before the coordinator fix:
 // - A stale expected version requests an already accepted catalog forever.
@@ -12,7 +13,7 @@ test('accepted native catalogs stop retransmitting on every character heartbeat'
   const names = ['E2EWarrior', 'E2EPriest', 'E2EMerchant'];
   const catalogFields = ['travelPlaces', 'monsterChoices', 'monsterHunterLocation',
     'bestiaryCatalog', 'skillCatalog', 'appearanceChoices', 'merchantCatalog'];
-  type Exchange = { name: string; started: number; finished: number; bytes: number;
+  type Exchange = { name: string; started: number; finished: number; gameplayObservedAt:number;bytes: number;
     catalogFields: string[]; version?: string; needsCatalog: boolean };
   const exchanges: Exchange[] = [];
   const errors: string[] = [];
@@ -26,7 +27,7 @@ test('accepted native catalogs stop retransmitting on every character heartbeat'
       if (!names.includes(body?.name) || body.combatOnly || body.combatWait || !Array.isArray(body.items)) return;
       const reply = await response.json();
       if (typeof reply.needsCatalog !== 'boolean') return;
-      exchanges.push({ name: body.name, started: request.timing().startTime, finished: Date.now(),
+      exchanges.push({ name: body.name, started: request.timing().startTime, finished: nativeWallNow(),gameplayObservedAt:Date.now(),
         bytes: Buffer.byteLength(request.postData() || ''),
         catalogFields: catalogFields.filter(field => Object.hasOwn(body, field)),
         version: body.merchantCatalogVersion, needsCatalog: reply.needsCatalog });
@@ -55,5 +56,35 @@ test('accepted native catalogs stop retransmitting on every character heartbeat'
     context.off('response', observe);
     await Promise.all(pending);
     await info.attach('native-catalog-handshake', { body: JSON.stringify({ exchanges, errors }, null, 2), contentType: 'application/json' });
+  }
+});
+
+
+test('native tracker home rewards refresh monster and item discovery after later table changes',async({live},info)=>{
+  test.setTimeout(240_000);
+  await expect.poll(async()=>!!(await live.state(true)).bestiaryCatalog?.find((m:any)=>m.id==='goo'),{timeout:90_000}).toBe(true);
+  const observations:any[]=[], exchanges:any[]=[], pending=new Set<Promise<void>>();
+  const context=live.clients.E2EWarrior.page.context();
+  const observe=(response:Response)=>{
+    if(!new URL(response.url()).pathname.endsWith('/status'))return;
+    const work=(async()=>{const body=response.request().postDataJSON();if(!body?.name||body.combatOnly||body.combatWait)return;
+      const reply=await response.json(),monster=body.bestiaryCatalog?.find((m:any)=>m.id==='goo'),item=body.merchantCatalog?.allItems?.find((i:any)=>i.id==='helmet');
+      exchanges.push({at:Date.now(),name:body.name,hasCatalog:!!body.merchantCatalog,home:monster?.homeRewards,source:item?.meta?.world?.drops?.filter((d:any)=>d.monsterId==='goo'),needsCatalog:reply.needsCatalog});
+    })().catch(error=>{exchanges.push({at:Date.now(),error:String(error)});});pending.add(work);void work.finally(()=>pending.delete(work));
+  };context.on('response',observe);
+  try {
+  for(const rate of [0.004,0.008]){
+    const receipt=await live.admin(`output=(()=>{const p=get_player('E2EWarrior'),home=Object.assign({},D.drops.monsters_home_server||{},{goo:[[${rate},'helmet',2]]});
+      p.socket.emit('tracker',{monsters:p.p.stats.monsters,monsters_diff:p.p.stats.monsters_diff,exchanges:p.p.stats.exchanges,max:p.max_stats,
+        drops:D.drops.monsters,maps:D.drops.maps,monsters_home_server:home,drops_home:home,tables:{}});return {name:p.name,id:p.id,socketId:p.socket.id,connected:p.socket.connected,rate:${rate},item:'helmet',quantity:2};})()`);
+    await expect.poll(async()=>{const s=await live.state(true),monster=s.bestiaryCatalog?.find((m:any)=>m.id==='goo'),item=s.merchantCatalog?.allItems?.find((i:any)=>i.id==='helmet');
+      const client=await live.clients.E2EWarrior.run('({name:character.name,trackerHome:parent.tracker?.drops_home?.goo,trackerAlias:parent.tracker?.monsters_home_server?.goo,diagnostic:globalThis.__partyCatalogDiagnostic?.("goo","helmet")})');
+      observations.push({at:Date.now(),rate,receipt,client,home:monster?.homeRewards,source:item?.meta?.world?.drops?.filter((d:any)=>d.monsterId==='goo')});
+      return {home:monster?.homeRewards?.find((d:any)=>d.id==='helmet')?.rate,source:item?.meta?.world?.drops?.find((d:any)=>d.monsterId==='goo'&&d.sourceType==='home')?.rate};},{timeout:90_000}).toEqual({home:rate,source:rate});
+    const s=await live.state(true);observations.push({at:Date.now(),receipt,monster:s.bestiaryCatalog.find((m:any)=>m.id==='goo'),sources:s.merchantCatalog.allItems.find((i:any)=>i.id==='helmet').meta.world.drops.filter((d:any)=>d.monsterId==='goo')});
+  }
+  } finally {
+  context.off('response',observe);await Promise.all(pending);
+  await info.attach('native-home-reward-discovery',{body:JSON.stringify({observations,exchanges}),contentType:'application/json'});
   }
 });

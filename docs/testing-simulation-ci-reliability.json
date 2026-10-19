@@ -1,0 +1,113 @@
+{
+  "linkedRun": 39157328601,
+  "linkedJob": 117763133516,
+  "ciFindings": [
+    {
+      "case": "mage reach",
+      "retainedSamples": 33,
+      "inRange": 29,
+      "observedVirtualMs": 32001,
+      "originalNativeWatchdogMs": 90000
+    },
+    {
+      "case": "offline merchant",
+      "virtualAgeAtFinalMs": 169500,
+      "virtualPollBudgetMs": 200000
+    }
+  ],
+  "fix": "Keep original virtual deadlines; detect a real stall as30s without virtual clock progress. Native Playwright test/fixture bounds remain.",
+  "additionalFailure": {
+    "job": 117763133467,
+    "case": "empty saved hawk spawn",
+    "virtualObservationMs": 15000,
+    "firstEngagementAfterReleaseMs": 1750,
+    "fix": "Assert all fighters see no living focused bird before release; introduce the native bird after observing automatic recovery. Preserve all native combat/readiness/ownership/before-center checks."
+  },
+  "softwareFocused": {
+    "shard16": ".build/ci-shard16-focused",
+    "shard10": ".build/ci-shard10-corrected"
+  },
+  "steam": {
+    "version": 17665,
+    "platform": "tauri",
+    "clock": false,
+    "parentClock": false,
+    "renderer": "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "graphics": true,
+    "fps": {
+      "fps": 16
+    },
+    "visibility": "visible",
+    "frameCount": 158,
+    "elapsedMs": 10042.199999988079,
+    "observedFps": 15.73360419033554,
+    "fpsEnd": {
+      "fps": 20
+    },
+    "gpuProcessCores": 5,
+    "rtx5090Available": true,
+    "chronalTestProcessesLeaked": false,
+    "activeArtifact": "be9e4135a5ef1f43c3367917b48b930f0769497eb663e3637be4e6bf4ffbbf5d",
+    "restartPerformed": false,
+    "recovery": "Steam restart requested; not performed without approval. Party Console and active build remain unchanged."
+  },
+  "evidence": [
+    {
+      "archive": ".build/ci-shard16-focused",
+      "status": "passed",
+      "tests": 2,
+      "rate": 4,
+      "windowMs": 250,
+      "sourceHash": "cd657f8cbef7110a11fa4bb43f89a3044a54b775b7168a4772db9a50b06b44c4",
+      "candidate": "6df9820f430ab0c66753a05bed35abd45c5c8a2f685ec51fbb457b6773d49ebf",
+      "manifestSha256": "ddbe3b9912a51586da7a4eb63668316c8dbc0492c92c6ce0e7abf474e42d2187"
+    },
+    {
+      "archive": ".build/ci-shard10-corrected",
+      "status": "passed",
+      "tests": 1,
+      "rate": 4,
+      "windowMs": 250,
+      "sourceHash": "2e83038b6413d04c92b016afffbf396040b220b46356a170063990d2a1a246b5",
+      "candidate": "84149c6690e333230fb1726f98c5bf0dde8e2fffa78183b46edec9f5b18b4d2d",
+      "manifestSha256": "0a3aa9a6fc3c5ab9c3798ffb7e86863130e517335e73a17764f10ec2ea6fabbc"
+    },
+    {
+      "archive": ".build/ci-mage-two-core",
+      "status": "passed",
+      "tests": 1,
+      "rate": 4,
+      "windowMs": 250,
+      "sourceHash": "2e83038b6413d04c92b016afffbf396040b220b46356a170063990d2a1a246b5",
+      "candidate": "84149c6690e333230fb1726f98c5bf0dde8e2fffa78183b46edec9f5b18b4d2d",
+      "manifestSha256": "31e3600461a946354e592903645ff128e9a449756f0827ffa01f9ec4a9ad4818"
+    },
+    {
+      "archive": ".build/ci-mage-one-core",
+      "status": "passed",
+      "tests": 1,
+      "rate": 4,
+      "windowMs": 250,
+      "sourceHash": "2e83038b6413d04c92b016afffbf396040b220b46356a170063990d2a1a246b5",
+      "candidate": "84149c6690e333230fb1726f98c5bf0dde8e2fffa78183b46edec9f5b18b4d2d",
+      "manifestSha256": "d3d04feb3f78f7c5cea404cc0dc77a046046dabdaf312e1dbfd3391aa3a0c2b8"
+    }
+  ],
+  "smallWindowCheck": {
+    "status": "passed",
+    "windowMs": 50,
+    "wallSeconds": 96.49185899999999,
+    "virtualSeconds": 63.85,
+    "achievedRate": 0.6617138550517512,
+    "samples": 60,
+    "inRange": 55,
+    "archive": ".build/ci-mage-small-windows",
+    "manifestSha256": "626fa1d7f9248592039d2b5ba59abfbeee9bde04ffa73f4db205881a8c4d9188"
+  },
+  "finalCandidate": {
+    "id": "84149c6690e333230fb1726f98c5bf0dde8e2fffa78183b46edec9f5b18b4d2d",
+    "sourceHash": "2e83038b6413d04c92b016afffbf396040b220b46356a170063990d2a1a246b5",
+    "active": "be9e4135a5ef1f43c3367917b48b930f0769497eb663e3637be4e6bf4ffbbf5d",
+    "activated": false
+  }
+}

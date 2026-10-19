@@ -4,13 +4,44 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      self_hosted:
+        description: 'Run manually on the local RTX 5090 runner instead of hosted CI'
+        type: boolean
+        default: false
+      local_project:
+        description: 'Local E2E project (all includes browser, deployment, debug and gameplay)'
+        type: choice
+        options: [console, live, debug, all]
+        default: console
+      local_grep:
+        description: 'Optional local title filter; clear to run the complete selected project'
+        type: string
+        default: 'character sections collapse independently'
 permissions:
   contents: read
 concurrency:
-  group: public-release-${{ github.ref }}
-  cancel-in-progress: false
+  group: public-release-${{ github.ref }}-${{ inputs.self_hosted && 'local' || 'hosted' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  checks:
+    # PR pushes get fast feedback; full E2Es run on main or explicit dispatch.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+      - run: npm ci
+      - run: npm --prefix dashboard ci
+      - run: node tools/caracal/setup.mts
+      - run: npm --prefix .caracal ci
+      - run: npm run typecheck
   validate:
+    if: github.event_name != 'pull_request' && !inputs.self_hosted
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -26,8 +57,8 @@ jobs:
       - run: npm --prefix .caracal ci
       - run: node scripts/ci/restore-game-fixtures.cjs
       - run: npx playwright install --with-deps chromium
-      - name: Console E2E
-        run: npm run test:e2e:console && npm run test:e2e:verify
+      - name: Console, deployment and debug E2E
+        run: npm run test:e2e -- --project=console --project=debug && npm run test:e2e:verify
       - name: Retained isolated regression exceptions
         shell: bash
         run: |
@@ -49,8 +80,136 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14
+  gameplay:
+    if: github.event_name != 'pull_request' && !inputs.self_hosted
+    runs-on: ubuntu-latest
+    env:
+      E2E_MONGO_IMAGE: mirror.gcr.io/library/mongo@sha256:c630c59342c1493d50345136df2af14a76b9e827dd5316bfabee07a0880a5f3a
+      E2E_NODE_IMAGE: mirror.gcr.io/library/node@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+      - run: npm ci
+      - run: npm --prefix dashboard ci
+      - run: node tools/caracal/setup.mts
+      - run: npm --prefix .caracal ci
+      - run: node scripts/ci/restore-game-fixtures.cjs
+      - run: npx playwright install --with-deps chromium
+      - uses: actions/cache@v4
+        with:
+          path: .build/sim/chronal
+          key: simulation-${{ runner.os }}-node24-${{ hashFiles('tools/sim/pins.json', 'package-lock.json') }}
+      - name: Complete ChronAL gameplay allocation
+        run: npm run test:e2e:live -- --workers=1 --shard=${{ matrix.shard }}/16
+      - name: Verify gameplay evidence
+        if: always()
+        run: npm run test:e2e:verify
+      - name: Preserve gameplay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chronal-gameplay-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: |
+            .build/e2e-report/
+            .build/e2e-results/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+  local-e2e:
+    # Never send pull-request code or automatic pushes to the personal machine.
+    if: github.event_name == 'workflow_dispatch' && inputs.self_hosted && github.actor == github.repository_owner && github.ref == 'refs/heads/1.5-feature-branch'
+    runs-on: [party-console-manual-windows]
+    timeout-minutes: 180
+    concurrency:
+      group: party-console-personal-runner
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      E2E_BROWSER_RENDERING: hardware
+      E2E_EXPECT_GPU: NVIDIA GeForce RTX 5090
+      E2E_MEASURE_BROWSER_CPU: '1'
+      E2E_GAMEPLAY_BACKEND: chronal
+      E2E_CLOCK_RATE: '4'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Dedicated runner checkout; retain only ignored dependency/build caches.
+          clean: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+          cache: npm
+      - name: Prepare isolated runner checkout
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix dashboard ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tools/caracal/setup.mts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tools/hosting/install-caddy.mts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix .caracal ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/ci/restore-game-fixtures.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify RTX 5090 rendering
+        run: |
+          @'
+          import {chromium} from '@playwright/test';
+          import {measureBrowserRendering} from './e2e/browser-rendering.ts';
+          import {mkdir,writeFile} from 'node:fs/promises';
+          const browser=await chromium.launch({args:['--enable-gpu']});
+          try {
+            const page=await browser.newPage();
+            await page.evaluate(()=>{const canvas=document.createElement('canvas');if(!canvas.getContext('webgl'))throw Error('WebGL unavailable');});
+            const finish=await measureBrowserRendering(browser,()=>Date.now());
+            const result=await finish();
+            await mkdir('.build/ci',{recursive:true});
+            await writeFile('.build/ci/runner-gpu.json',JSON.stringify(result,null,2));
+            console.log('Verified hardware renderer: '+result.renderer);
+          } finally {await browser.close();}
+          '@ | node --input-type=module
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run selected E2Es with one worker
+        env:
+          LOCAL_PROJECT: ${{ inputs.local_project }}
+          LOCAL_GREP: ${{ inputs.local_grep }}
+        run: |
+          $testArgs = @('run', 'test:e2e', '--', '--workers=1')
+          if ($env:LOCAL_PROJECT -ne 'all') { $testArgs += "--project=$env:LOCAL_PROJECT" }
+          if ($env:LOCAL_GREP) { $testArgs += @('--grep', $env:LOCAL_GREP) }
+          & npm @testArgs
+          exit $LASTEXITCODE
+      - name: Verify repeatable evidence
+        if: always()
+        run: npm run test:e2e:verify
+      - name: Preserve local runner evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-hosted-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .build/ci/runner-gpu.json
+            .build/e2e-report/
+            .build/e2e-results/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
   version:
-    needs: validate
+    needs: [validate, gameplay]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:

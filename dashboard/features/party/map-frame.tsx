@@ -4,6 +4,9 @@ import { MapEntity } from "./map-entity";
 import { MapEvent } from "./map-event";
 
 export type MapFrame = {
+  projectiles?: import("../../../runtime/map-sprites").MapProjectile[];
+  projectilesAt?: number;
+  visuals?: import("../../../runtime/map-sprites").MapVisual[];
   name: string;
   map: string;
   definition?: MapDefinition;

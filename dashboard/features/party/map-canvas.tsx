@@ -1,4 +1,6 @@
 "use client";
+import {drawMapProjectile} from "./draw-map-projectile";
+import {drawMapSprites} from "./draw-map-sprites";
 import {markerStyle} from "../../../runtime/combat/marker-style";
 import { type FarmingArea } from "@/lib/farming-areas";
 import { useEffect, useRef, type RefObject } from "react";
@@ -241,15 +243,17 @@ export function MapCanvas({
             const drawY =
               y + (attackTarget ? ((attackTarget.y - y) / attackLength) * attackAmount : 0);
             let drewDoll = false;
-            if (entity.dollHtml) {
+            if(entity.layers?.length){ctx.save();ctx.translate(drawX,drawY);drewDoll=drawMapSprites(ctx,entity.layers);ctx.restore();}
+            if (!drewDoll && entity.dollHtml) {
               const layers = dollLayers(entity.dollHtml),
-                outerLeft = drawX - 13.5,
-                outerTop = drawY - 38;
+                outerLeft = drawX - (layers[0]?.outerWidth || 27) / 2,
+                outerHeight = layers[0]?.outerHeight || 38,
+                outerTop = drawY - outerHeight;
               layers.forEach((layer) => {
                 const image = cachedMapImage(layer.url);
                 if (!image?.complete || !image.naturalWidth) return;
                 const clipX = outerLeft + layer.left,
-                  clipY = outerTop + 38 - layer.bottom - layer.height;
+                  clipY = outerTop + outerHeight - layer.bottom - layer.height;
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(clipX, clipY, layer.width, layer.height);
@@ -306,7 +310,7 @@ export function MapCanvas({
                 ctx.fillRect(x - 4, y - 8, 8, 8);
               }
             }
-            for (const weapon of entity.weapons || []) {
+            for (const weapon of entity.layers?.length && drewDoll ? [] : entity.weapons || []) {
               const sprite = weapon.sprite, image = sprite && cachedMapImage(sprite.url);
               if (!sprite || !image?.complete || !image.naturalWidth) continue;
               const sw = image.naturalWidth/sprite.columns, sh = image.naturalHeight/sprite.rows;
@@ -316,7 +320,7 @@ export function MapCanvas({
               ctx.drawImage(image,sprite.x*sw+.5,sprite.y*sh+.5,sw-1,sh-1,-8,-16,16,16);
               ctx.restore();
             }
-            if (entity.stand && entity.standSprite) {
+            if (!entity.layers?.length && entity.stand && entity.standSprite) {
               const stand = entity.standSprite,
                 standImage = cachedMapImage(stand.url);
               if (standImage?.complete && standImage.naturalWidth) {
@@ -384,6 +388,9 @@ export function MapCanvas({
           },
         });
       });
+      const projectileNow=(p.frame.projectilesAt || p.frame.at)+performance.now()-p.receivedAt;
+      for(const projectile of (performance.now()-p.receivedAt<1000 ? p.frame.projectiles || [] : []).slice(0,64)){layers.push({y:projectile.y,draw:()=>drawMapProjectile(ctx,projectile,projectileNow)});}
+      if(performance.now()-p.receivedAt<1000){const previousVisuals=new Map((old.visuals || []).map(visual=>[visual.id,visual]));for(const visual of (p.frame.visuals || []).slice(0,64)){const prior=previousVisuals.get(visual.id)||visual;layers.push({y:visual.y,draw:()=>{ctx.save();ctx.translate(prior.x+(visual.x-prior.x)*alpha,prior.y+(visual.y-prior.y)*alpha);drawMapSprites(ctx,visual.layers);ctx.restore();}});}}
       layers.sort((a, b) => a.y - b.y).forEach((layer) => layer.draw());
       // The game's normal camera never exposes space beyond GEO bounds, and
       // some maps include black boundary artwork there. Our centered minimap

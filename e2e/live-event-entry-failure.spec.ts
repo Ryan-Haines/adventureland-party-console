@@ -22,7 +22,7 @@ test(`native event entry recovers ${fault}`,async({live},info)=>{
   let refusals=0;
   const rejectEntry=async(route:Route)=>{
     const req=route.request(),body=req.method()==='POST'?req.postDataJSON():null;
-    if(body?.character!==W)return route.fallback();
+    if(body?.character!==W||body.to?.map!==seed.map||body.to?.x!==seed.x||body.to?.y!==seed.y)return route.fallback();
     const started=Date.now(),sample=await observer.sample(body);
     if(!sample){unmatched.push({at:Date.now(),body,elapsedMs:Date.now()-started,reason:'No current native movement sample'});return route.fallback();}
     const s=await live.state(),c=s.activeConvoy;

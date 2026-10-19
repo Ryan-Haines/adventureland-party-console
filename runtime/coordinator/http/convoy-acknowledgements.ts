@@ -105,11 +105,13 @@ export function createConvoyAcknowledgementRoutes(
     if (superseded(name, body)) return res.json({ ok: true, superseded: true });
     if (
       !ports.valid(body) ||
-      !["scheduled", "travel"].includes(state.activeConvoy!.phase) ||
-      ports.now() < state.activeConvoy!.departAt!
+      !["scheduled", "travel"].includes(state.activeConvoy!.phase)
     )
       return res.status(409).json({ error: "stale convoy completion" });
     const c = state.activeConvoy!;
+    // A current zero-distance route can arrive before this process observes
+    // departure. Keep its acknowledgement retryable; it still cannot complete.
+    if (ports.now() < c.departAt!) return res.json({ ok: false, waiting: true });
     if (c.routeProtocol === 4 && !sharedArrivalReady(state, ports.now())) return res.json({ ok: false, waiting: true });
     rememberCompletion(state, name, body);
     arrived(name, c);

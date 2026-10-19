@@ -40,8 +40,24 @@ const account = {
   add_listener() {},
 };
 function forbidden(operation) { throw new Error('Unsupported E2E external boundary: ' + operation); }
-async function gameFetch(url) {
+const deletedFixtureMail=new Set();
+let inspectionReads=0;
+async function gameFetch(url,options) {
+  if(String(url)==='https://adventure.land/api/mainframe_get_character'){
+    const form=new URLSearchParams(options.body);if(options.headers['Content-Type']!=='application/x-www-form-urlencoded' || options.headers.Cookie!=='auth=e2e-simulated-account' || [...form.keys()].join(',')!=='character')return forbidden('saved profile request contract');const body={character:form.get('character')};if(body.character!=='M')return forbidden('foreign character profile');
+    inspectionReads++;return{ok:true,json:async()=>({success:true,character:'M',character_id:'fixture-merchant',shells:999,session:'must-not-expose',profile:{source:'last_account_snapshot',synchronized_at:'2026-10-18T00:00:00Z',name:'M',class:'merchant',level:42,xp:25,map:'main',x:0,y:0,rip:false,hp:321,mp:234,gold:123+inspectionReads,inventory:[{name:'coat',level:2}],equipment:{chest:{name:'coat',level:0}}}})};
+  }
+  if(process.env.E2E_MAILBOX==='true'&&String(url)==='https://adventure.land/api/delete_mail'){
+    const args=JSON.parse(options.body);if(args.mid!=='mail-collected')return forbidden('deletion before native attachment collection');deletedFixtureMail.add(args.mid);return{ok:true,json:async()=>({success:true})};
+  }
   if (String(url) === 'https://adventure.land/api/pull_mail') {
+    if(process.env.E2E_MAILBOX==='true'){
+      const mail=[{id:'mail-collected',subject:'Collected attachment fixture',item:{name:'hpot1',q:2},taken:true},
+        {id:'mail-unclaimed',subject:'Unclaimed attachment fixture',item:{name:'hpot1',q:2},taken:false},
+        {id:'mail-pending',subject:'Pending attachment fixture',item:{name:'hpot1',q:2},taken:'pending'},
+        {id:'mail-text',subject:'Text message fixture',taken:false}].filter(m=>!deletedFixtureMail.has(m.id)).map(m=>({...m,fro:'Sender',to:'M',message:'Declared native account observation',sent:'2026-10-18T12:00:00Z'}));
+      return{ok:true,json:async()=>({success:true,infs:[{type:'mail',mail,more:false}]} )};
+    }
     return { ok: true, json: async () => [], text: async () => '[]' };
   }
   return forbidden('fetch ' + String(url));

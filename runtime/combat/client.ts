@@ -107,7 +107,16 @@ export function installQueueClient(root:any, shared:any) {
       .catch(()=>{retryAt=Date.now()+1000;})
       .finally(()=>{waiting=false;wait();});
   }
+  let ticking=false;
   function tick(){
+    // Reserving a passing encounter calls flush synchronously. The outer tick
+    // publishes that fresh reservation; an in-flight report retains dirty until
+    // its completion. Re-entering preparation here can reserve recursively.
+    if(ticking){dirty=true;return;}
+    ticking=true;
+    try{tickOnce();}finally{ticking=false;}
+  }
+  function tickOnce(){
     if(!active||Date.now()<retryAt)return;
     if(!enabled())return;
     independent?.tick();

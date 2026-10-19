@@ -1,14 +1,16 @@
 // Production coordinator, with account/client-file transport pointed at the disposable upstream server.
+require('../tools/sim/network-clock.cjs').install();
 // Character status and every game action come from actual browser CODE runtimes.
 const fs = require('node:fs');
 const path = require('node:path');
+const {createHash}=require('node:crypto');
 const { createRequire } = require('node:module');
 const root = path.resolve(__dirname, '..');
 const directory = path.resolve(process.env.E2E_DATA_DIR || '');
 const relative = path.relative(path.join(root, '.build/e2e'), directory);
 if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw Error('Dedicated E2E_DATA_DIR required');
 const webUrl = process.env.E2E_GAME_WEB_URL;
-if (!webUrl || !['localhost', '127.0.0.1'].includes(new URL(webUrl).hostname)) throw Error('Local upstream web URL required');
+if (!webUrl || !['localhost','127.0.0.1','127.0.0.2','127.0.0.3','127.0.0.4'].includes(new URL(webUrl).hostname)) throw Error('Local upstream web URL required');
 const auth = process.env.E2E_GAME_AUTH;
 if (!auth) throw Error('Disposable account auth required');
 const port = Number(process.env.E2E_COORDINATOR_PORT);
@@ -16,7 +18,7 @@ const nativeFetch = globalThis.fetch;
 async function localFetch(input, init) {
   let url = new URL(String(input));
   if (url.hostname === 'adventure.land') url = new URL(url.pathname + url.search, webUrl);
-  if (!['127.0.0.1', 'localhost', '::1'].includes(url.hostname)) throw Error('Unexpected nonlocal request: ' + url.origin);
+  if (!['127.0.0.1', '127.0.0.2', '127.0.0.3', '127.0.0.4', 'localhost', '::1'].includes(url.hostname)) throw Error('Unexpected nonlocal request: ' + url.origin);
   return nativeFetch(url, init);
 }
 globalThis.fetch = localFetch;
@@ -80,7 +82,7 @@ fixtureExpress.json = (...args) => {
   });
 };
 let version;
-const platformDirectory = path.join(root, '.build/standalones');
+const platformDirectory = path.join(directory, 'standalones');
 let gameDirectory;
 async function assetText(route) {
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -97,19 +99,35 @@ async function assetText(route) {
   }
 }
 async function main() {
-  const dataSource = await assetText('/data.js');
+  const assetStarted=process.hrtime.bigint();
+  const cacheFile=path.join(directory,'native-assets.json');
+  const headless=process.env.E2E_ALLOW_HEADLESS==='true';
+  const cached=fs.existsSync(cacheFile)?JSON.parse(fs.readFileSync(cacheFile,'utf8')):null;
+  const digest=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  if(cached){
+    if(cached.schema!==1||cached.webUrl!==webUrl||cached.headless!==headless||!Number.isSafeInteger(cached.version)||cached.version<1)
+      throw Error('Native asset cache belongs to another scenario configuration');
+    for(const [name,hash] of Object.entries(cached.files)){
+      if(name!==path.posix.basename(name)||!/^[-a-zA-Z0-9_.]+$/.test(name))throw Error('Invalid native asset cache filename');
+      const file=name==='html_vars.js'?path.join(directory,name):path.join(directory,'game_files',String(cached.version),name);
+      if(digest(file)!==hash)throw Error('Native asset cache checksum mismatch: '+name);
+    }
+    if(!cached.files['data.js']||!cached.files['old_common_functions.js']||headless&&(!cached.files['client_scripts.json']||!cached.files['html_vars.js']))
+      throw Error('Native asset cache is incomplete');
+  }
+  const dataSource = cached?fs.readFileSync(path.join(directory,'game_files',String(cached.version),'data.js'),'utf8'):await assetText('/data.js');
   const gameContext = {};
   require('node:vm').runInNewContext(dataSource, gameContext, { timeout: 10000 });
   version = Number(gameContext.G?.version);
   if (!Number.isSafeInteger(version) || version < 1) throw Error('Upstream G.version missing');
+  if(cached&&version!==cached.version)throw Error('Native asset cache version mismatch');
   gameDirectory = path.join(directory, 'game_files', String(version));
   fs.mkdirSync(gameDirectory, { recursive: true });
   await account.updateInfo();
-  for (const [name, route] of [['data.js', '/data.js'], ['old_common_functions.js', '/js/old_common_functions.js']]) {
-    const source = await assetText(route);
-    fs.writeFileSync(path.join(gameDirectory, name), source);
-  }
-  if (process.env.E2E_ALLOW_HEADLESS === 'true') {
+  if(!cached){
+  fs.writeFileSync(path.join(gameDirectory,'data.js'),dataSource);
+  fs.writeFileSync(path.join(gameDirectory,'old_common_functions.js'),await assetText('/js/old_common_functions.js'));
+  if (headless) {
     const assets = require('../scripts/client-files.cjs');
     const character = encodeURIComponent(account.response.characters[0].name);
     const manifest = {
@@ -124,17 +142,26 @@ async function main() {
     }
     fs.writeFileSync(path.join(gameDirectory, 'client_scripts.json'), JSON.stringify(manifest));
     fs.copyFileSync(path.join(root, '.caracal/html_vars.js'), path.join(directory, 'html_vars.js'));
-    process.env.AL_INTERNAL_API_PORT = String(port);
   }
+  const files=Object.fromEntries(fs.readdirSync(gameDirectory).filter(name=>fs.statSync(path.join(gameDirectory,name)).isFile()).map(name=>[name,digest(path.join(gameDirectory,name))]));
+  if(headless)files['html_vars.js']=digest(path.join(directory,'html_vars.js'));
+  fs.writeFileSync(cacheFile+'.tmp',JSON.stringify({schema:1,webUrl,headless,version,files}));
+  fs.renameSync(cacheFile+'.tmp',cacheFile);
+  }
+  if(headless)process.env.AL_INTERNAL_API_PORT = String(port);
+  fs.appendFileSync(path.join(directory,'native-assets-receipts.jsonl'),JSON.stringify({reused:!!cached,version,headless,wallMs:Number(process.hrtime.bigint()-assetStarted)/1e6,files:JSON.parse(fs.readFileSync(cacheFile,'utf8')).files})+'\n');
   // Production paths resolve relative to the launcher and cwd. All writable paths stay disposable.
   fs.mkdirSync(platformDirectory, { recursive: true });
-  fs.mkdirSync(path.join(root, '.build/game_files', String(version)), { recursive: true });
-  fs.cpSync(gameDirectory, path.join(root, '.build/game_files', String(version)), { recursive: true });
-  for (const destination of [path.join(root, '.build/CODE/adventure_land'), path.join(directory, 'CODE/adventure_land')]) {
+  for (const destination of [path.join(directory, 'CODE/adventure_land')]) {
     fs.mkdirSync(destination, { recursive: true });
-    fs.cpSync(path.join(root, '.build/game'), destination, { recursive: true });
-    for (const file of ['universal-loader.js', 'steam-bridge.js'])
-      fs.copyFileSync(path.join(root, '.build/runtime', file), path.join(destination, file));
+    const initialized=path.join(directory,'code-initialized.json');
+    if(!fs.existsSync(initialized)){
+      fs.cpSync(path.join(root, '.build/game'), destination, { recursive: true });
+      for (const file of ['universal-loader.js', 'steam-bridge.js'])
+        fs.copyFileSync(path.join(root, '.build/runtime', file), path.join(destination, file));
+      fs.writeFileSync(initialized,JSON.stringify({version,manifestSha256:digest(path.join(destination,'manifest.json'))}));
+    }
+    if(!fs.existsSync(path.join(destination,'manifest.json')))throw Error('Initialized scenario CODE manifest missing');
   }
   process.chdir(directory);
   process.env.AL_SESSION = auth;
@@ -171,10 +198,10 @@ async function main() {
   };
   const { startCoordinatorApplication } = require(path.join(root, '.build/runtime/coordinator-application.cjs'));
   await startCoordinatorApplication({ require: name => Object.hasOwn(adapters, name) ? adapters[name] : resolve(name),
-    directory: platformDirectory, loadFetch: async () => localFetch });
+    directory: platformDirectory, plannerWorkerFile: path.join(root, '.build/runtime/movement-planner.cjs'), loadFetch: async () => localFetch });
   if (startupError) throw startupError;
   const response = await localFetch('http://127.0.0.1:' + port + '/party-api/state?section=core');
   if (!response.ok) throw Error('Coordinator readiness: ' + response.status);
-  if (process.send) process.send({ type: 'ready', port });
+  if (process.send) process.send({ type: 'ready', port,clock:globalThis.__e2eChronalClock });
 }
 main().catch(error => { console.error(error); process.exit(1); });

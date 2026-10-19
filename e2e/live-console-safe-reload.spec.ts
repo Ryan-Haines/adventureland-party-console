@@ -1,3 +1,4 @@
+import {waitForGameplay} from './network-clock';
 import {test,expect} from './live-fixtures';
 import {W,P,M,evidence} from './hunt-interruption-helpers';
 import {readFileSync} from 'node:fs';
@@ -69,7 +70,7 @@ test('safe console reload finishes the native fight without acquiring the next t
     },{timeout:5000,
       message:'Fast combat responses must apply the hold while full status is delayed'}).toBe('native-safe-reload');
     holdFull=false;releases.splice(0).forEach(release=>release());
-    await live.clients[W].page.waitForTimeout(500);
+    await waitForGameplay(500);
     expect(await live.clients[W].run('globalThis.__partyConsoleMaintenance?.id')).toBe('native-safe-reload');
     await expect.poll(async()=>{const state=await live.state();return [W,P,M].every(name=>state.characters[name]?.consoleMaintenance?.id==='native-safe-reload');},{timeout:15000}).toBe(true);
     await expect.poll(async()=>hit(await live.clients[W].events(),seeded.first).length,{timeout:15000,
@@ -82,7 +83,7 @@ test('safe console reload finishes the native fight without acquiring the next t
     },{timeout:90000,intervals:[250,500]}).toBe(true);
     await expect.poll(async()=>{const state=await live.state();return [W,P,M].every(name=>state.characters[name]?.consoleMaintenance?.ready===true);},
       {timeout:15000,message:'Fresh participants must report the finished fight as safe'}).toBe(true);
-    await live.clients[W].page.waitForTimeout(1500);
+    await waitForGameplay(1500);
     expect(hit(await live.clients[W].events(),seeded.next),'The pending reload must not acquire the next monster').toHaveLength(0);
     expect(await live.clients[W].run('sharedRoutine.queueMarkers().filter(m=>m.role==="current"&&m.visible).length')).toBe(0);
     expect(await live.clients[W].run(`sharedRoutine.queueMarkers().some(m=>m.id===${JSON.stringify(seeded.next)}&&m.role==='next'&&m.visible)`)).toBe(true);
@@ -128,7 +129,7 @@ for(const mode of ['safe','now'] as const)test(`console reload resumes native fa
       live.consoleDrainLease('reload-walk');
       await expect.poll(()=>live.clients[W].run('globalThis.__partyConsoleMaintenance?.id'),{timeout:10000}).toBe('reload-walk');
       await expect.poll(()=>live.admin(`output=!!get_player('${W}').moving`),{timeout:10000}).toBe(false);
-      await live.clients[W].page.waitForTimeout(3500);
+      await waitForGameplay(3500);
       expect(await live.clients[W].run('globalThis.__partyMovement.report()?.id')).toBe(journey);
       expect(await live.clients[W].run('sharedRoutine.canReload()')).toBe(true);
       samples.push({phase:'parked',journey,admission,position:await live.clients[W].snapshot()});
@@ -142,7 +143,7 @@ for(const mode of ['safe','now'] as const)test(`console reload resumes native fa
     if(mode==='safe'){
       live.consoleDrainLease('reload-combat');
       await expect.poll(async()=>{const s=await live.state();return s.characters[W]?.consoleMaintenance?.ready;},{timeout:15000}).toBe(true);
-      await live.clients[W].page.waitForTimeout(3200);
+      await waitForGameplay(3200);
       expect(await live.clients[W].run('sharedRoutine.canReload()')).toBe(true);
     }
     const runtime=(await live.state()).characters[W].dashboardRuntime;

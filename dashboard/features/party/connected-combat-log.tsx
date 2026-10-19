@@ -1,5 +1,7 @@
 'use client';
-import { memo, useState } from 'react';
+import { memo, useId } from 'react';
+import {useStoredBoolean} from '@/hooks/use-stored-boolean';
+import {CharacterSectionToggle} from './character-section-toggle';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { domainOptions, useVisible } from './query-cache';
 import { CombatLog } from './combat-log';
@@ -14,7 +16,7 @@ function LogContents({ character }: { character: string }) {
     select: (data) => data.combatLogs?.[character] || empty,
   });
   return (
-    <CombatLog character={character} entries={query.data || empty} expanded />
+    <CombatLog character={character} entries={query.data || empty} />
   );
 }
 export const ConnectedCombatLog = memo(function ConnectedCombatLog({
@@ -22,16 +24,12 @@ export const ConnectedCombatLog = memo(function ConnectedCombatLog({
 }: {
   character: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useStoredBoolean(`party-section:${character}:combat-log`, false);
+  const id=useId();
   return (
-    <details
-      className="mt-4 border-t border-emerald-900/70 pt-3"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="cursor-pointer text-xs text-emerald-200">
-        Combat log
-      </summary>
-      {open && <LogContents character={character} />}
-    </details>
+    <section className="mt-4 border-t border-emerald-900/70">
+      <CharacterSectionToggle label="Combat log" open={open} controls={id} onToggle={()=>setOpen(value=>!value)}/>
+      <div id={id}>{open && <LogContents character={character} />}</div>
+    </section>
   );
 });

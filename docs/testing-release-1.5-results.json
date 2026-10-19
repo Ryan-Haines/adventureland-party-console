@@ -1,0 +1,407 @@
+{
+  "schema": 1,
+  "validatedAt": "2026-10-19T01:05:01.001Z",
+  "branch": "1.5-feature-branch",
+  "sourceHead": "181dafc8f04542de3a42c259c419f6861cd39ad8",
+  "scope": "45 distinct focused browser/native E2Es plus 98 retained isolated regressions; not a full-suite execution",
+  "testSelection": {
+    "scenarios": 322,
+    "gameplayChronALDefault": 219
+  },
+  "typecheck": "passed",
+  "workers": 1,
+  "browserRendering": {
+    "requested": "hardware",
+    "expectedGPU": "NVIDIA GeForce RTX 5090",
+    "proof": "Hardware launch mode requested; per-process GPU/CPU measurement was not enabled for these release checks"
+  },
+  "nativeBoundary": "Disposable pinned upstream game server, MongoDB, actual browser/CODE/network/deployment/persistence; ChronAL gameplay clock. Declared input changes only; exact native receipts and published state assertions retained.",
+  "originalPRHeads": {
+    "87": "4556e015705a8cab7430c6d7f4e10665b261f342",
+    "104": "cdd11b9b3598c2279f7585a45264f14f79c5e2dc",
+    "135": "4014328373a317433aaa64f151d6cb63fa391fc1"
+  },
+  "retainedRegressions": {
+    "passed": 98,
+    "total": 98,
+    "evidence": ".build/release-1.5-validation/existing-fixes/retained-regressions.tap",
+    "sha256": "5a226f60ed73eef30c9932a0ee60bc3e39a60cea77b093b3f4e299a0df147ca2"
+  },
+  "stagedCandidate": {
+    "id": "5168d5bb264028a18991569db47dfa41c16c82af6fe50d8b5a36ce51e582c4fe",
+    "sourceHash": "d582a9b237a7f40b0e9ad03b0f7b983949ef95074d052c56cab182865e615dc8",
+    "activated": false
+  },
+  "runs": [
+    {
+      "archive": "pr-browser-first",
+      "revision": "6a022d6a2833cba3c2d3b838d74297f112066886",
+      "status": "failed",
+      "started": "2026-10-19T00:23:27.130Z",
+      "finished": "2026-10-19T00:24:21.521Z",
+      "selected": 13,
+      "passed": 12,
+      "evidenceFiles": 159,
+      "manifestSha256": "9c42ec9f0b7c7102a85fd523da7aadb1fb2272a482c17aa17efd03c213951694",
+      "candidateId": "7a34fff98aa93228e6350a7f0a9b38939dab7697b068adf71d3903607f7597a9",
+      "sourceHash": "ed9e8994af303b1181c9f0c21041eb456dbf412e0671df950fb57bef90941f86",
+      "backend": "chronal-network"
+    },
+    {
+      "archive": "core-browser",
+      "revision": "afe1211ce3b908bfa20e4d6b2dee643d76a54609",
+      "status": "failed",
+      "started": "2026-10-19T00:34:28.593Z",
+      "finished": "2026-10-19T00:35:56.977Z",
+      "selected": 24,
+      "passed": 23,
+      "evidenceFiles": 271,
+      "manifestSha256": "1662c6ed2ed8595e69315ca643d1c9a40d060dcb5e344886b2392333add24fe2",
+      "candidateId": "344df6954e00f8d931c660ea56f1f42557c1a3610c815578d67b0af9579bdcc8",
+      "sourceHash": "8af6d1d8003621bc40c98b2569169a91313d116f070accb08959fb9966ba4415",
+      "backend": "chronal-network"
+    },
+    {
+      "archive": "native-first",
+      "revision": "afe1211ce3b908bfa20e4d6b2dee643d76a54609",
+      "status": "failed",
+      "started": "2026-10-19T00:36:51.617Z",
+      "finished": "2026-10-19T00:43:43.921Z",
+      "selected": 14,
+      "passed": 10,
+      "evidenceFiles": 573,
+      "manifestSha256": "9a25cecb9b661d3e1f504be82064b42be29525ca5fbc64b1faa5a136a88a04a7",
+      "candidateId": "344df6954e00f8d931c660ea56f1f42557c1a3610c815578d67b0af9579bdcc8",
+      "sourceHash": "8af6d1d8003621bc40c98b2569169a91313d116f070accb08959fb9966ba4415",
+      "backend": "chronal-network"
+    },
+    {
+      "archive": "integrated-first",
+      "revision": "6de6db04a73a6cedc4d22611c587cc02a0e9deba",
+      "status": "failed",
+      "started": "2026-10-19T00:46:50.005Z",
+      "finished": "2026-10-19T00:53:53.188Z",
+      "selected": 35,
+      "passed": 32,
+      "evidenceFiles": 660,
+      "manifestSha256": "36b2790e744b9d4a08873f77ec38d668d9d3ac0ca38f77e83f82637147baa929",
+      "candidateId": "f2c084827c6306e919bfc54180d924e84e0d80ba97e21889fd05034b972b4ecb",
+      "sourceHash": "1bea7f3812bbe11ab0d9d37183613d42724f2fee0cf394b4182d92ecd63e6ebc",
+      "backend": "chronal-network"
+    },
+    {
+      "archive": "focused-second",
+      "revision": "0b76ec269a09dbcfadf627086c528f14b181d2ac",
+      "status": "failed",
+      "started": "2026-10-19T00:55:53.919Z",
+      "finished": "2026-10-19T00:57:30.025Z",
+      "selected": 5,
+      "passed": 4,
+      "evidenceFiles": 174,
+      "manifestSha256": "52bf87d05feff1f2ab956a43bedc1ea48eee6723651d25827bea6b3b43b6635c",
+      "candidateId": "e876a09bda9032626bc39d002a442535d7b5d4ecf00e296cf5f68798a049d6d2",
+      "sourceHash": "7c732495bd580027de91fab7e5e3d8cd8e8f789474a933e8d3c32f19712a88b6",
+      "backend": "chronal-network"
+    },
+    {
+      "archive": "catalog-diagnostic",
+      "revision": "58ffa4abf1a8a316186777e3625134e182891a72",
+      "status": "failed",
+      "started": "2026-10-19T01:00:12.476Z",
+      "finished": "2026-10-19T01:00:56.953Z",
+      "selected": 1,
+      "passed": 0,
+      "evidenceFiles": 44,
+      "manifestSha256": "38bb3e84f9c080533fe879f77f71954c4a067a04fc1ca6a375b95d8e7d855425",
+      "candidateId": "45f2e6d06601d84c4c126671382117620266c9d16a3de195d1a2f1dcff52a29f",
+      "sourceHash": "eecd77c1eb0fb56ac33f8f73aa491fabd6998c505243af2e953bd5a98ae31022",
+      "backend": "chronal-network"
+    },
+    {
+      "archive": "catalog-final",
+      "revision": "181dafc8f04542de3a42c259c419f6861cd39ad8",
+      "status": "passed",
+      "started": "2026-10-19T01:02:46.220Z",
+      "finished": "2026-10-19T01:03:24.428Z",
+      "selected": 3,
+      "passed": 3,
+      "evidenceFiles": 93,
+      "manifestSha256": "3a72d50c481af940ad9acc958e5d675b70695685dbf2b9f4d668a6215debca80",
+      "candidateId": "5168d5bb264028a18991569db47dfa41c16c82af6fe50d8b5a36ce51e582c4fe",
+      "sourceHash": "d582a9b237a7f40b0e9ad03b0f7b983949ef95074d052c56cab182865e615dc8",
+      "backend": "chronal-network"
+    }
+  ],
+  "latestFocusedOutcomes": [
+    {
+      "title": " > console > console.spec.ts > monster rewards separate home drops and explain independent rolls with ratio odds",
+      "status": "passed",
+      "durationMs": 2658,
+      "archive": "catalog-final"
+    },
+    {
+      "title": " > console > console.spec.ts > item details show stats as the game card beside a matching extras box",
+      "status": "passed",
+      "durationMs": 5171,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > character stats show the game's panel beside collapsible extras",
+      "status": "passed",
+      "durationMs": 3485,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > equipment comparison shows each panel's stats in the game card style",
+      "status": "passed",
+      "durationMs": 2807,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > skills show the game's skill card beside an extras box in both dialogs",
+      "status": "passed",
+      "durationMs": 3668,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > monsters show the game's monster card beside an extras box in both dialogs",
+      "status": "passed",
+      "durationMs": 3531,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > each stat reads the same color in every game-style card",
+      "status": "passed",
+      "durationMs": 3182,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > catalog comparison shows each item's stats in the game card style",
+      "status": "passed",
+      "durationMs": 3704,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > every catalog comparison column shows its item's sprite",
+      "status": "passed",
+      "durationMs": 3490,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > item titles name the copy and add the game's title stats",
+      "status": "passed",
+      "durationMs": 4760,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > metrics persists deduplicated native observations across coordinator restart",
+      "status": "passed",
+      "durationMs": 2653,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > a paired browser shows an access code that pairs exactly one other browser",
+      "status": "passed",
+      "durationMs": 4383,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > lucky-slot-elimination.spec.ts > lucky discovery rules out ordinary slots and recomputes after new evidence",
+      "status": "passed",
+      "durationMs": 6044,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console-build-host.spec.ts > immutable console process activation preserves exact selection, rollback and pinned restart",
+      "status": "passed",
+      "durationMs": 6633,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > merchant donation previews target level and progress in both directions",
+      "status": "passed",
+      "durationMs": 2168,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > offline account inspection exposes saved inventory and comparison without item actions",
+      "status": "passed",
+      "durationMs": 2623,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > item batches support control and range selection and hide incompatible common actions",
+      "status": "passed",
+      "durationMs": 2939,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > bank selections preserve physical sources and offer exchange and compound controls",
+      "status": "passed",
+      "durationMs": 3085,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > exchange reward selections apply common automatic actions across mixed upgrade levels",
+      "status": "passed",
+      "durationMs": 2749,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > player and merchant inventory batches preserve owner and mixed upgrade levels",
+      "status": "passed",
+      "durationMs": 3027,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > offline observation persistence > offline character inventory and native stats survive coordinator restart without catalog duplication",
+      "status": "passed",
+      "durationMs": 3434,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > equipment comparison removes two-handed offhands and recalculates both sets",
+      "status": "passed",
+      "durationMs": 2811,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > Steam pointer toggle blocks movement surface clicks and preserves UI controls",
+      "status": "passed",
+      "durationMs": 1972,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > metrics collector retries persisted browser frames after CODE replacement",
+      "status": "passed",
+      "durationMs": 6046,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > live > live-catalog.spec.ts > native tracker home rewards refresh monster and item discovery after later table changes",
+      "status": "passed",
+      "durationMs": 4597,
+      "archive": "catalog-final"
+    },
+    {
+      "title": " > live > live-economy.spec.ts > manual compound from native bank withdraws exactly its reserved triplet",
+      "status": "passed",
+      "durationMs": 8338,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > live > live-equipment.spec.ts > gathering tool crafting settings are opt in and persist independently",
+      "status": "passed",
+      "durationMs": 788,
+      "archive": "native-first"
+    },
+    {
+      "title": " > live > live-equipment.spec.ts > missing fishing tool crafts once only after opt in and available materials",
+      "status": "passed",
+      "durationMs": 11478,
+      "archive": "native-first"
+    },
+    {
+      "title": " > live > live-equipment.spec.ts > missing mining tool crafts once only after opt in and available materials",
+      "status": "passed",
+      "durationMs": 11387,
+      "archive": "native-first"
+    },
+    {
+      "title": " > live > live-exchange-reward-bank.spec.ts > exchange rewards that merge into carried stacks are banked by default",
+      "status": "passed",
+      "durationMs": 10253,
+      "archive": "native-first"
+    },
+    {
+      "title": " > live > live-gathering-cooldown.spec.ts > a missed fishing or mining channel is recast at once; a success waits for the game cooldown",
+      "status": "passed",
+      "durationMs": 59278,
+      "archive": "native-first"
+    },
+    {
+      "title": " > live > live-hunt-combat.spec.ts > native Hunt travel combat and death ownership > armadillo Hunt kills passing goos outbound and returning before claiming Daisy",
+      "status": "passed",
+      "durationMs": 17946,
+      "archive": "native-first"
+    },
+    {
+      "title": " > live > live-hunt-engaged-terrain.spec.ts > healthy warrior reaches an engaged Phoenix through its open side",
+      "status": "passed",
+      "durationMs": 5810,
+      "archive": "native-first"
+    },
+    {
+      "title": " > live > live-hunt-targetron-terrain.spec.ts > warrior recovers a blocked Targetron approach in the reported UHills layout",
+      "status": "passed",
+      "durationMs": 5023,
+      "archive": "native-first"
+    },
+    {
+      "title": " > live > live-stat-scroll-bank.spec.ts > a merchant str stat scroll comes from the bank instead of being bought again",
+      "status": "passed",
+      "durationMs": 4664,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > live > live-stat-scroll-bank.spec.ts > a merchant str stat scroll comes from the bank before higher priority delivery",
+      "status": "passed",
+      "durationMs": 6211,
+      "archive": "focused-second"
+    },
+    {
+      "title": " > live > live-stat-scroll-bank.spec.ts > a merchant luck stat scroll comes from the bank instead of being bought again",
+      "status": "passed",
+      "durationMs": 6283,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > live > live-stat-scroll-bank.spec.ts > a stale stat mark cannot fabricate a completed delivery stat",
+      "status": "passed",
+      "durationMs": 1230,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > console > console.spec.ts > never-loaded account character inspection > owned offline profiles load lazily without starting a character or exposing private account data",
+      "status": "passed",
+      "durationMs": 2376,
+      "archive": "focused-second"
+    },
+    {
+      "title": " > console > console.spec.ts > offline comparison picker > item comparison can select a never-loaded owned character from the roster",
+      "status": "passed",
+      "durationMs": 2758,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > live > live-bank-staging.spec.ts > bank uses all initial slots until the first offline BankBoi reserves its transfer row",
+      "status": "passed",
+      "durationMs": 10925,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > live > live-home-realm.spec.ts > temporary native headless home change > offline merchant logs in to set home and returns offline without changing slots",
+      "status": "passed",
+      "durationMs": 9695,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > live > live-stale-merchant.spec.ts > stale merchant recovery > offline merchant work permits stale-status login and times out without a heartbeat",
+      "status": "passed",
+      "durationMs": 54946,
+      "archive": "integrated-first"
+    },
+    {
+      "title": " > live > live-catalog.spec.ts > accepted native catalogs stop retransmitting on every character heartbeat",
+      "status": "passed",
+      "durationMs": 1386,
+      "archive": "catalog-final"
+    },
+    {
+      "title": " > live > live-economy.spec.ts > automatic compound from native bank withdraws exactly its reserved triplet",
+      "status": "passed",
+      "durationMs": 8266,
+      "archive": "focused-second"
+    }
+  ]
+}

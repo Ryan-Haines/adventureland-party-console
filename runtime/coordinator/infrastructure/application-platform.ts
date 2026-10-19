@@ -4,5 +4,7 @@ export interface CoordinatorApplicationPlatform {
   directory: string;
   /** Immutable executable directory; mutable installed data keeps directory. */
   codeDirectory?: string;
+  /** Built planner executable when a disposable host isolates its CODE directory. */
+  plannerWorkerFile?: string;
   loadFetch(): Promise<typeof import("node-fetch").default>;
 }

@@ -1,12 +1,14 @@
 name: al-e2e-pr21
 services:
   database:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     image: ${E2E_MONGO_IMAGE:-mongo:7.0.16}
     command: ["mongod", "--replSet", "e2e", "--bind_ip", "127.0.0.1"]
     ports:
-      - "127.0.0.1:8083:8090"
-      - "127.0.0.1:9003:7192"
-      - "127.0.0.1:9004:7193"
+      - "${E2E_GAME_HOST:-127.0.0.1}:8083:8090"
+      - "${E2E_GAME_HOST:-127.0.0.1}:9003:7192"
+      - "${E2E_GAME_HOST:-127.0.0.1}:9004:7193"
     volumes:
       - database:/data/db
     healthcheck:
@@ -15,9 +17,24 @@ services:
       timeout: 10s
       retries: 60
   game:
+    environment:
+      E2E_GAME_HOST: ${E2E_GAME_HOST:-127.0.0.1}
+      E2E_CLOCK_RATE: ${E2E_CLOCK_RATE:-1}
+      E2E_CLOCK_WALL_EPOCH: ${E2E_CLOCK_WALL_EPOCH:-0}
+      E2E_CLOCK_VIRTUAL_EPOCH: ${E2E_CLOCK_VIRTUAL_EPOCH:-0}
+      E2E_CHRONAL_DIR: /chronal
+      E2E_CLOCK_BROKER: ${E2E_CLOCK_DOCKER_BROKER:-}
+      E2E_CLOCK_TOKEN: ${E2E_CLOCK_TOKEN:-}
+      E2E_CLOCK_SCOPE: game
+    volumes:
+      - ../../tools/sim:/party-sim:ro
+      - ../../.build/sim/chronal/sim:/chronal/sim:ro
     build:
       context: .
       args:
+        GAME_REV: ${E2E_GAME_REV:-90052162eb3ebda36c893e1eb4af643913c8f984}
+        COMMON_REV: ${E2E_COMMON_REV:-fa74fabf5d3782503712621e037bfb934ecb8439}
+        CONFIG_REV: ${E2E_CONFIG_REV:-6b3493be30abe367cfaf879a2d5ad370742e0866}
         NODE_IMAGE: ${E2E_NODE_IMAGE:-node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c}
     network_mode: "service:database"
     depends_on:

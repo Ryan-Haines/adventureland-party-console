@@ -51,7 +51,7 @@ test('bank snapshots use cached world metadata and never calculate drop graphs',
     character: { bank: { gold: 123, items0: [{ name: 'coat' }] } },
     itemWorldCache: {}, fingerprint: item => ({ ...item }),
     safeItemDefinition: value => value, item_properties: () => ({}), itemSeller: () => null,
-    safeFields: value => value, maximumItemLevel: () => 0, itemUsage: () => ({}),
+    safeFields: value => value, maximumItemLevel: () => 0, itemUsage: () => ({}), itemBonuses: () => [],
     itemWorldInfo: () => { throw Error('blocking world discovery in live report'); },
   });
   vm.runInContext(['itemDefinition', 'bankSnapshot'].map(name => namedFunction(source, name)).join('\n'), context);

@@ -42,7 +42,7 @@ interface DashboardPorts<Handler, Middleware, Router> {
   combatLogs: (router: Router) => void;
   startMail: () => {
     snapshot: Handler;
-    action: (name: "refresh" | "collect" | "delete") => Handler;
+    action: (name: "refresh" | "collect" | "delete" | "settings" | "seen" | "outbox-delete") => Handler;
   };
 }
 
@@ -92,7 +92,7 @@ export function installCoordinatorDashboard<
   installMerchantControlsRoutes(router, handlers);
   const mail = ports.startMail();
   router.get("/party-api/mail", mail.snapshot);
-  for (const action of ["refresh", "collect", "delete"] as const)
+  for (const action of ["refresh", "collect", "delete", "settings", "seen", "outbox-delete"] as const)
     router.post("/party-api/mail/" + action, mail.action(action));
   installMerchantTransactionsRoutes(router, handlers);
 }

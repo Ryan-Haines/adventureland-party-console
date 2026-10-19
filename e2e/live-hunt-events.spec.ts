@@ -1,10 +1,13 @@
 import {test,expect} from './live-fixtures';
 import {W,P,M,world,quantity,prepareHunt,beginAnniversary,endAnniversary,spawnRare,cleanupEvents} from './game/hunt-events';
 import {killedByParty} from './hunt-interruption-helpers';
+import {isolateNativeMapAmbient,restoreNativeMapAmbient} from './native-map-ambient-isolation';
 
 for(const mode of ['resume','restart','hunt-off'] as const) test(`native anniversary visit ${mode} delivers real kiss rewards and event deselection returns to current Hunt policy`,async({live},info)=>{
   test.setTimeout(420_000);
   try {
+    const ambient=await isolateNativeMapAmbient(live,'main');
+    await info.attach('anniversary-native-ambient-input',{body:JSON.stringify(ambient),contentType:'application/json'});
     const hunt=await prepareHunt(live);
     await live.post('/formation',{character:W,eventSelections:['anniversary']});
     await live.post('/formation',{character:M,eventSelections:['anniversary']});
@@ -41,7 +44,7 @@ for(const mode of ['resume','restart','hunt-off'] as const) test(`native anniver
       const encounter=await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)}),destination=${JSON.stringify(destination)},bounds=destination.boundary;
         for(const [dx,dy] of [[35,0],[-35,0],[0,35],[0,-35]]){const x=p.x+dx,y=p.y+dy;
           if(x<bounds[0]||x>bounds[2]||y<bounds[1]||y>bounds[3]||!can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))continue;
-          const m=new_monster(p.in,{type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
+          const m=new_monster(p.in,{__e2eAmbientExempt:true,type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
           return {id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,destination};}
         throw Error('No reachable native encounter inside retained Goo mission');})()`);
       await info.attach('anniversary-resumed-native-encounter',{body:JSON.stringify({mode,encounter}),contentType:'application/json'});
@@ -51,7 +54,12 @@ for(const mode of ['resume','restart','hunt-off'] as const) test(`native anniver
     }
     expect(quantity((await world(live)).players[M].items,'anniversarygift')).toBe(quantity(before.players[M].items,'anniversarygift')+1);
     await info.attach('anniversary-native-hunt-result',{body:JSON.stringify({mode,hunt,before,afterGift,final:await world(live),state:await live.state()}),contentType:'application/json'});
-  } finally {await cleanupEvents(live);}
+  } finally {
+    try {await cleanupEvents(live);} finally {
+      const restored=await restoreNativeMapAmbient(live,true);
+      await info.attach('anniversary-native-ambient-restored',{body:JSON.stringify(restored),contentType:'application/json'});
+    }
+  }
 });
 
 test('disabled anniversary selection leaves native Hunt fighting and creates no visit reward',async({live},info)=>{

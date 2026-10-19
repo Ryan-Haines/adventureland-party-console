@@ -41,10 +41,13 @@ import { UpgradeMark } from "./upgrade-mark";
 import { Withdrawal } from "./withdrawal";
 
 export type PartyState = {
+  characterSnapshots?: Record<string, Char & { updatedAt: number }>;
   upgradeOfferingRules?: import("../../../runtime/upgrade-offerings").UpgradeOfferingRule[];
   upgradeOfferingStock?: Partial<Record<import("../../../runtime/upgrade-offerings").UpgradeOffering, number>>;
-  characterAppearances?: Record<string, Pick<Char, "skin" | "characterSprite" | "characterDollHtml"> & {updatedAt:number}>;
-  merchantRules?: import("../../../runtime/coordinator/inventory/shared-rules").SharedRules | null;
+  characterAppearances?: Record<string, Pick<Char, "skin" | "characterSprite" | "characterDollHtml"> & {updatedAt:number;
+    }>;
+  merchantRules?:
+    | import("../../../runtime/coordinator/inventory/shared-rules").SharedRules | null;
   gameVersion?: number;
   gameLogs?: Record<string, import("../../../runtime/game-log-filters").GameLog[]>;
   bankboiPrefix?: string;
@@ -52,13 +55,16 @@ export type PartyState = {
   referenceRevision?: string;
   accountId?: string | null;
   passiveHunting?: import("../../../runtime/coordinator/navigation/passive-settings").PassiveSettings;
-  passiveRareHunts?: { tinyp: boolean; phoenix: boolean; goldenbat?: boolean; cutebee?: boolean; hen?: boolean; rooster?: boolean };
+  passiveRareHunts?: { tinyp: boolean; phoenix: boolean; goldenbat?: boolean; cutebee?: boolean; hen?: boolean; rooster?: boolean;
+  };
   phoenixRouteOrder?: string[];
   rareHuntState?: {
     message?: string | null;
-    encounter?: { id: string; mtype: string; stage: string; generator: string; message?: string } | null;
+    encounter?: { id: string; mtype: string; stage: string; generator: string; message?: string;
+    } | null;
     patrol?: { active: boolean; paused: boolean; index: number; total: number; stage: string; message?: string; incomplete?: string[];
-      regionId?: string; waypoint?: {map: string; x: number; y: number}; readyAt?: number; retryReason?: string } | null;
+      regionId?: string; waypoint?: {map: string; x: number; y: number}; readyAt?: number; retryReason?: string;
+    } | null;
   };
   farmAreaState?: {
     message?: string;
@@ -97,7 +103,7 @@ export type PartyState = {
   standBids?: Record<string, StandBid>;
   autoStandBuys?: boolean;
   autoBlacklistMerchants?: boolean;
-  nativeStand?: { offers: Record<string, { itemId: string; auto: boolean; phase: string; slot: string; level?: number; price?: number; quantity?: number; acknowledged?: number; problem?: string }>; problems: Record<string, string> };
+  nativeStand?: { offers: Record<string, { itemId: string; auto: boolean; phase: string; slot: string; level?: number; price?: number; quantity?: number; acknowledged?: number; problem?: string }>; problems: Record<string, string>; purchases?: Record<string, { item: { name: string; q?: number; price?: number }; quantity: number; jobId: string }> };
   standPriceHistory?: Record<string, StandPriceHistory>;
   standSearch?: StandSearchState;
   upgrades?: Record<string, UpgradeMark[]>;
@@ -126,7 +132,8 @@ export type PartyState = {
   huntFailures?: Record<string, {deaths: number; expirations: number}>;
   huntBlacklist?: Record<
     string,
-    { monsterId: string; at: number; deaths: number; expirations?: number; reason?: string; characters?: string[] }
+    { monsterId: string; at: number; deaths: number; expirations?: number; reason?: string; characters?: string[];
+    }
   >;
   farmingProfiles?: Record<string, {
     farmAreaState?: PartyState["farmAreaState"];
@@ -151,7 +158,8 @@ export type PartyState = {
     legIndex?: number;
     returnLegs?: { type: "walk" | "town"; location: Location }[];
     blockers?: Record<string, { reason: string; expectedCommandId: number | null;
-      reportedCommandId: number | null; expectedPhase: string; reportedPhase: string | null }>;
+      reportedCommandId: number | null; expectedPhase: string; reportedPhase: string | null;
+      }>;
   } | null;
   characterLocations?: Record<string, Location>;
   partyLocation?: Location | null;
@@ -169,7 +177,8 @@ export type PartyState = {
   merchantActivity?: MerchantActivity[];
   combatLogs?: Record<string, CombatLogEntry[]>;
   bankSortMode?: "automatic" | "request";
-  bankSortRequest?: { id: string; status: "queued" | "sorting" | "retry"; message?: string } | null;
+  bankSortRequest?: { id: string; status: "queued" | "sorting" | "retry"; message?: string;
+  } | null;
   gatheringModes?: string[];
   gatheringNoTool?: Record<string, boolean>;
   gatheringCooldowns?: { fishing?: number; mining?: number };
@@ -186,6 +195,7 @@ export type PartyState = {
   merchantCatalog?: MerchantCatalog;
   bank?: BankSnapshot | null;
   bankGold?: number | null;
+  accountGold?: { carried: number | null; total: number | null };
   bankVaults?: BankVault[];
   bankbois?: Bankboi[];
   bankboiQueue?: {

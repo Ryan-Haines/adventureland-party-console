@@ -1,7 +1,9 @@
 "use client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useId, useRef, useState } from "react";
+import {useStoredBoolean} from "@/hooks/use-stored-boolean";
+import {CharacterSectionToggle} from "./character-section-toggle";
 import { RestockPolicy } from "./restock-policy";
 
 const defaults: RestockPolicy = {
@@ -18,6 +20,8 @@ export const RestockControls = memo(function RestockControls({
   value?: RestockPolicy;
   onSave: (character: string, value: RestockPolicy) => Promise<void>;
 }) {
+  const [open,setOpen]=useStoredBoolean(`party-section:${character}:restock`,false);
+  const id=useId();
   const [draft, setDraft] = useState<RestockPolicy>(value || defaults),
     dirty = useRef(false);
   // Character status polling returns a new policy object on every refresh.
@@ -41,15 +45,18 @@ export const RestockControls = memo(function RestockControls({
             },
           });
         }}
-        className="h-8 border-emerald-900 bg-black/25 text-xs"
+        className="h-8 border-emerald-900 bg-[#07100f] text-xs text-emerald-100"
       />
     </label>
   );
   return (
-    <section className="border-b border-emerald-900/70 p-4">
+    <section className="mt-4 border-y border-emerald-900/70">
+      <CharacterSectionToggle label="Merchant restock" open={open} controls={id} onToggle={()=>setOpen(value=>!value)}/>
+      <div id={id} hidden={!open} className="pb-4">
       <div className="mb-2 flex items-center justify-between">
-        <p className="font-mono text-[10px] uppercase text-emerald-100/45">Merchant restock</p>
+        <span className="font-mono text-[10px] text-emerald-100/65">Potion thresholds</span>
         <Button
+          aria-label="Save restock"
           size="sm"
           variant="outline"
           onClick={async () => {
@@ -66,6 +73,7 @@ export const RestockControls = memo(function RestockControls({
         {field("hp", "max", "HP max")}
         {field("mp", "min", "MP min")}
         {field("mp", "max", "MP max")}
+      </div>
       </div>
     </section>
   );

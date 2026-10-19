@@ -224,6 +224,16 @@ items. Stand painting preserves existing prices or uses the catalog gold value.
 Validate the exchange console journey, preserving screenshots and saved rules.
 Activate with the supported coordinator/dashboard-only restart.
 
+## Winter Inn merchant purchases
+
+The named `wbartender` movement destination approaches Warin from the customer
+aisle, 50 pixels below his position. The ordinary 15-pixel NPC offset lands
+behind the closed counter: both ALClient and native planners reject that island.
+Validate `merchant buys one Liquid Luck` in `live-economy.spec.ts`, retaining the
+native inventory, exact gold delta and completed-job evidence. This character
+change needs an explicitly requested console load; a completed build alone does
+not activate it.
+
 # Character coordinator
 
 Pane 1's final seven bank cells are reserved for transfers only while a saved
@@ -249,6 +259,12 @@ slots. Dispatcher admission and the native gathering loop preserve cooldowns
 while capacity blocks work; logistics shows enabled modes as red BLOCKED rows.
 Validate the capacity console and native gathering E2Es. Activate character and
 coordinator assets together through the supported full restart.
+
+The game starts the fishing/mining reuse cooldown only on a successful channel
+(10% fishing, 20% mining); a miss costs MP only. The merchant recasts after a
+miss and records the game's own cooldown (`next_skill`) after a success (#105).
+Validate `live-gathering-cooldown.spec.ts` (failure inventory
+`e2e/gathering-cooldown-failures.md`); activate through the full restart.
 
 Native splash packets from a visible monster fighting an identified outsider
 do not repeatedly stop owned party travel. Direct hits and unknown or party
@@ -392,6 +408,12 @@ the ordinary route installation checks. Stale reports still stop movement.
 Validate the native Boo Boo walking-return communication-hold case and retain
 its actual stop, fresh resume and Daisy reward evidence. This character change
 requires the supported full restart; a coordinator-only restart is insufficient.
+The Metrics workspace records durable kills, native damage, chest loot, gold and
+ping history independently of an open dashboard. See [Metrics](../../docs/metrics.md)
+for definitions, retention, reset semantics and estimator limits. Publish
+character, coordinator and dashboard assets together with the full supported
+restart below. A coordinator-only restart does not activate the collector.
+
 
 Merchant settings stores one Main-map stand location for parking, Town-return
 checks and marketplace fallbacks. A fresh settings store chooses integer X/Y
@@ -1165,6 +1187,14 @@ priority edits use `editField`, `value`, and `bidRevision` on the bid endpoint;
 only quantity edits replace the remainder. Completed or replaced orders reject
 stale field edits. Validate with `native-stand.test.cjs`,
 `native-stand-client.test.cjs`, and `active-wtb-fields.test.cjs`.
+
+Cosmetic bank sorting confirms each native swap before selecting another mutation.
+The buffer journal records the expected bank and inventory identities and quantities
+before emission; native acknowledgement alone does not prove reactive publication.
+Unconfirmed swaps remain journaled, and departure waits for confirmed cleanup,
+including after cancellation or reload. Validate the native bank collection and NPC
+sale E2Es with ChronAL; they retain locked-stock conservation and exact sale counts.
+Build character and coordinator assets together and leave activation explicit.
 
 Bank sorting defaults to `bankSortMode: "automatic"`. Merchant settings can select
 `"request"`; the bank window then queues/cancels a durable, uniquely identified
@@ -2055,3 +2085,49 @@ full kept-item handoff receipt releases the merchant exchange, including after
 restart. Validate `live-exchange-collection.spec.ts`; see
 `docs/testing-party-exchange.md`. Coordinator/dashboard-only activation requires
 the explicitly requested supported CoordinatorOnly restart.
+
+A valid current convoy arrival received before the coordinator departure clock
+remains waiting and retryable. Zero-distance routes can finish on a client before
+that clock boundary; invalid owners still reject and early arrivals never complete.
+Validate the Halloween staging/restart/combat E2Es with ChronAL and native parity.
+Disposable application hosts can provide `plannerWorkerFile` independently of
+their isolated CODE directories; installed launchers retain the existing path.
+Build and stage the candidate; activation requires an explicit console load.
+
+When current Hunt policy clears an already-dispatched deferred checkpoint, a
+retained checkpoint command must not keep its return-cycle ownership alive.
+Fresh, alive native Main-town presence permits retirement of only that old
+cycle's command/walk and matching event trip. Other navigation remains owned.
+Validate the native Anniversary restart/return-to-Hunt journeys; preserve their
+physical arrival and reward checks. Build and stage; activate only by explicit load.
+
+Merchant bank manual compound marks bind three unlocked native bank sources, including different packs, before admission. The ordinary improvement command withdraws those sources and reports separate native withdrawal receipts; a failed later stage retains confirmed withdrawals for retry. Auto-compound uses the shared bank rules. Stat-scroll marks fence delivery payloads for the exact item regardless of priorities; native completion advances its retained delivery fingerprint. Replacement fishing and mining tools have separate default-off merchant settings; opted-in missing tools use the ordinary durable crafting order and material reservations. Validate the bank triplet, stat-bank/delivery, native gathering miss/hit and tool-setting journeys before staging a complete console artifact.
+
+Mailbox automation settings persist independently. Native attachment collection remains merchant-owned; auto-delete waits for account mail taken=true and no matching active collection job. Confirmed send completions produce local, durable outbox records; deleting a record cannot recall native mail. Opening the mailbox acknowledges incoming message IDs for its new-mail indicator. Validate mailbox-enhancements.case.ts and live-mailbox.spec.ts, retaining native inventory and mailbox receipts. Coordinator/dashboard changes require an explicitly requested supported coordinator-only activation; building alone does not activate them.
+
+Unconfirmed external stand purchases remain durable reservations until their owned
+job ends and a player explicitly resolves the outcome. The native-stand
+resolve-purchase action refuses current or queued jobs; bought uses the ordinary
+bid fulfillment path, not bought only releases the reservation. Repeated decisions
+cannot fill twice. The WTB row displays unresolved ledger entries independently of
+recomputed stand problems. Validate the native dashboard bought/not-bought,
+queued-job refusal and restart journeys in live-wtb-unconfirmed-purchase.spec.ts.
+Build a completed candidate after integrating the dashboard and coordinator; leave
+activation to an explicit console load.
+
+Replacing a farming focus schedules a normal revision-fenced farm relocation when
+the old catalog-tagged area contains none of the new selected species. Compatible
+focus additions and untagged manual waypoints retain their area. During event
+attendance, do not invalidate navigation revisions or replace the saved return
+checkpoint: pending relocation waits for native event/return ownership and combat
+to finish, then authorizes the newly selected catalog area. A later manual
+navigation revision supersedes the pending relocation. Validate the natural
+Halloween focus-change journey and retain its native Bee hits for both fighters.
+
+A farm-relocation convoy's unfinished farming engagement releases its selected
+coordinated target to independent approach, including native range confirmation.
+The coordinator convoy flag remains set until the encounter finishes; it must not
+suppress those readiness reports. Local convoy walking, foreign movement owners,
+unrelated targets and cancelled navigation remain exclusive. Validate the natural
+Halloween completion and changed Bee focus journey in
+`live-event-runtime-recovery.spec.ts`, retaining native damage from both fighters.

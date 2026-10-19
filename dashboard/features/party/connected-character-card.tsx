@@ -170,6 +170,10 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
     },
     [post, name],
   );
+  const restockControls = useMemo(
+    () => <RestockControls character={name} value={state.restockPolicies?.[name]} onSave={saveRestock}/>,
+    [name, state.restockPolicies?.[name], saveRestock],
+  );
   const merchantCatalogAllItems = useMemo(
     () => state.merchantCatalog?.allItems || emptyArray<MerchantCatalogItem>(),
     [state.merchantCatalog],
@@ -183,6 +187,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
         </DialogContent>
       </Dialog>;
       return <MonsterDetailsDialog monster={monster} catalog={merchantCatalogAllItems}
+        monsters={state.bestiaryCatalog || []} skills={state.skillCatalog || []}
         achievement={monsterAchievements[id] || null}
         onOpenChange={open => { if (!open) close(); }}
         onNavigate={setMonsterNavigateTarget}
@@ -192,7 +197,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
         }} />;
     },
     [state.bestiaryCatalog, merchantCatalogAllItems, monsterAchievements, setMonsterNavigateTarget,
-      state.merchantCatalog, setSelected],
+      state.merchantCatalog, state.skillCatalog, setSelected],
   );
   const onInspectMonster = useCallback(
     (id: string) => {
@@ -354,6 +359,12 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
             max={char.max_mp}
             color="bg-cyan-400"
           />
+          <Meter
+            label="CC"
+            value={char.cc || 0}
+            max={200}
+            color={Number(char.cc) >= 180 ? "bg-red-900" : "bg-white"}
+          />
         </div>
         <ActiveStatuses
           key={char.name}
@@ -455,12 +466,7 @@ export const ConnectedCharacterCard = memo(function ConnectedCharacterCard({
           </div>
         </div>
       )}
-      <RestockControls
-        character={char.name}
-        value={state.restockPolicies?.[char.name]}
-        onSave={saveRestock}
-      />
-      <ConnectedInventory name={char.name} model={inventoryModel} />
+      <ConnectedInventory name={char.name} model={inventoryModel} restock={restockControls}/>
     </article>
   );
 });

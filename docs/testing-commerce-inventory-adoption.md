@@ -44,3 +44,39 @@ Declare twenty native scroll0 units in unused slot five so this ownership test
 does not repeatedly exercise unrelated scroll procurement. Preserve the three
 shifted paid inputs, existing target-tier surplus, quota conservation, actual
 upgrade outcomes and the original 180-second completion deadline.
+
+CI run 39161701420, gameplay shard 3, failed in the test's `route.fetch`
+proxy with `ECONNRESET`, rather than a commerce assertion. The trace contains
+41 proxied checkpoint calls; the last reset occurred during later batch progress.
+Native inventory retained both original +3 helmets, gained four additional +3
+helmets, and consumed ten scrolls. The last coordinator snapshot had recorded
+three additional results and still awaited its final upgrade checkpoint. There
+was no coordinator crash in the retained log. These observations identify an
+uncaught test-proxy transport failure; they do not establish why the underlying
+connection reset or explain separately observed live merchant symptoms.
+
+Limit the proxy to the first adoption checkpoint whose response this scenario
+intentionally holds across CODE replacement. Require its successful HTTP response
+before exposing adoption to the test. Observe all subsequent checkpoint request
+states with timestamps, but send them through the browser's ordinary transport.
+Retain the persisted-adoption/release timestamps, exact paid-state and owned-slot
+assertions, real CODE replacement, final queue completion and inventory result
+conservation. No paid-action retries, relaxed counts or longer deadlines are
+introduced. Focused verification evidence is summarized in
+`testing-commerce-checkpoint-ci.json`; full reports remain under
+`.build/merchant-checkpoint-focused/`.
+
+A separate native regression reproduces the reported live symptom: after the
+first confirmed result in a running three-item paid batch, relocate both remaining
+base items from their recorded slots into two empty native slots. Without a CODE
+restart, the old implementation immediately paused with “Owned upgrade item is
+ambiguous; order requires inventory review”, despite exactly two owned base items.
+The retained failing report is `.build/merchant-checkpoint-focused/slot-repro-failed/`.
+
+The slot resolver now remaps the complete owned result/batch/active group before
+a non-pending lookup, using the same exact-count ownership policy already applied
+at order startup. Persisting the next checkpoint retains the remapped slots.
+Pending native outcomes continue through their separate receipt reconciliation.
+Surplus identical cargo must still pause for inventory review. This fixes a
+reproduced way to stall a running batch after item movement; the user's historical
+order was already absent, so it cannot be identified conclusively as that incident.

@@ -7,6 +7,8 @@ export type Item = {
   name: string;
   level?: number;
   q?: number;
+  // Account bound; the game prints "Account Bound" on the card.
+  acl?: number | boolean;
   p?: string;
   stat_type?: string;
   data?: unknown;

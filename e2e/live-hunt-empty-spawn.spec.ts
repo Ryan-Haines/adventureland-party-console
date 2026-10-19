@@ -20,19 +20,22 @@ test('empty saved hawk spawn recovers separated fighters and acquires on sight b
   await live.post('/farming-mode',{character:W,mode:'default'});
   live.consoleDrainLease('empty-spawn-setup');
   await expect.poll(async()=>{const s=await live.state();return fighters.every(n=>s.characters[n]?.consoleMaintenance?.ready);}).toBe(true);
-  seed=await live.admin(`output=(()=>{const point={map:'main',x:1140,y:240};if(!can_move({...point,going_x:point.x,going_y:point.y}))throw Error('Invalid native declaration');const m=new_monster('main',{__e2eAmbientExempt:true,type:'bigbird',position:[point.x,point.y],radius:0,count:1},{temp:1});m.zone_stats={...G.monsters.bigbird,speed:0,charge:0,aggro:0,rage:0,hp:100000};calculate_monster_stats(m);m.hp=m.max_hp=100000;m.u=true;return {id:String(m.id),...point};})()`);
-  await expect.poll(async()=>Promise.all(fighters.map(n=>live.clients[n].run(`!!get_entity(${JSON.stringify(seed.id)})?.visible`)))).toEqual([false,false,false]);
   // A saved user waypoint is input. Starting an artificial recovery convoy or
   // calling /farming-return here would bypass the behavior being tested.
   await live.restoreHistoricalSettings(settings=>({farmingProfiles:{...settings.farmingProfiles,
    [W]:{...settings.farmingProfiles[W],location:farm}},location:farm}));
   for(const n of fighters)await live.clients[n].frame.evaluate(()=>{const p=window as any;p.__e2eObserveMoves=true;p.__e2eObservedMoveCount=0;p.__e2eIndependentObservedAttackCount=0;p.__e2eIndependentObservedTargets={};});
+  await expect.poll(async()=>Promise.all(fighters.map(n=>live.clients[n].run("Object.values(parent.entities||{}).some(e=>e&&e.type==='monster'&&e.mtype==='bigbird'&&e.visible&&!e.dead&&e.hp>0)")))).toEqual([false,false,false]);
   const releasedAt=Date.now();live.consoleDrainLease(null);
   await expect.poll(async()=>{
    const s=await live.state(),c=s.activeConvoy;
    samples.push({at:Date.now(),phase:c?.phase,purpose:c?.purpose,position:s.characters[W]&&{x:s.characters[W].x,y:s.characters[W].y},target:s.farmingProfiles[W]?.groupedCombat?.target});
    return c?.purpose==='empty-spawn-recovery';
   },{timeout:15000,message:'Separated, targetless fighters must automatically start returning to their saved spawn'}).toBe(true);
+  // Keep the recovery decision genuinely targetless. Native visibility can
+  // publish a pre-seeded monster before the 1.5s empty-spawn decision on CI.
+  seed=await live.admin(`output=(()=>{const point={map:'main',x:1140,y:240};if(!can_move({...point,going_x:point.x,going_y:point.y}))throw Error('Invalid native declaration');const m=new_monster('main',{__e2eAmbientExempt:true,type:'bigbird',position:[point.x,point.y],radius:0,count:1},{temp:1});m.zone_stats={...G.monsters.bigbird,speed:0,charge:0,aggro:0,rage:0,hp:100000};calculate_monster_stats(m);m.hp=m.max_hp=100000;m.u=true;return {id:String(m.id),...point};})()`);
+
   await expect.poll(async()=>{
    const s=await live.state();samples.push({at:Date.now(),convoy:s.activeConvoy,group:s.farmingProfiles[W]?.groupedCombat});
    events=Object.fromEntries(await Promise.all(fighters.map(async n=>[n,await live.clients[n].events()])));

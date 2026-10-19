@@ -1,10 +1,11 @@
 import { createEventObservations } from "./observations.ts";
 import { ownsWorkflowWalk } from "./walk-ownership.ts";
 import type { ReturnConvoy } from "./return-types.ts";
+import {endHuntEventTrip,type HuntEventTrips} from './hunt-trip.ts';
 
 type ObservationState = Parameters<typeof createEventObservations>[0];
 type ObservationPorts = Parameters<typeof createEventObservations>[1];
-interface CoordinatorState {
+interface CoordinatorState extends HuntEventTrips {
   activeConvoy?: ReturnConvoy | null;
   eventSessions: ObservationState["sessions"];
   eventReturn: ObservationState["current"];
@@ -81,6 +82,10 @@ export function createCoordinatorEventObservations(
         const command = state.commands[name];
         if (command?.cycleId === cycleId &&
             ['event-return-town', 'event-resume-travel'].includes(String(command.type))) delete state.commands[name];
+      },
+      finishDeferred: (name,cycleId,event) => {
+        if(state.deferredEventReturns[name]?.cycleId===cycleId)
+          endHuntEventTrip(state,name,event,ports.now());
       },
       command: (name, command) => {
         state.commands[name] = command;

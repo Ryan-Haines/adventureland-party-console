@@ -3,6 +3,8 @@ import {createHash, randomUUID} from 'node:crypto';
 import {createServer} from 'node:net';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {mkdir, readFile, writeFile, readdir, symlink} from 'node:fs/promises';
+import filesystem from 'node:fs/promises';
+import {syncBuiltinESMExports} from 'node:module';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {ConsoleBuildStore} from '../tools/console-build/store';
@@ -135,7 +137,26 @@ async function terminal(controller: ConsoleBuildController) {
 test('immutable console process activation preserves exact selection, rollback and pinned restart', async ({}, info) => {
   // Short owned paths avoid Windows CreateProcess cwd limits for nested releases.
   const root = path.resolve('.build/p79', randomUUID().slice(0, 8)), store = new ConsoleBuildStore(root);
-  const a = await stage(store, root, 'process-A', 1), b = await stage(store, root, 'process-B', 2);
+  const a = await stage(store, root, 'process-A', 1);
+  const nativeRename=filesystem.rename,source=path.join(root,'stage-process-B'),destination=path.join(store.directory,'releases',hash('process-B'));
+  const publicationAttempts:Array<{at:number;source:string;destination:string;forced:boolean;success?:boolean;error?:string}>=[];
+  let b:Candidate;
+  try{
+    filesystem.rename=async(from,to)=>{
+      if(String(from)!==source||String(to)!==destination)return nativeRename(from,to);
+      const attempt:(typeof publicationAttempts)[number]={at:Date.now(),source:String(from),destination:String(to),forced:publicationAttempts.length===0};
+      publicationAttempts.push(attempt);
+      if(attempt.forced){attempt.error='EPERM';throw Object.assign(Error('Declared transient publication sharing violation'),{code:'EPERM'});}
+      try{await nativeRename(from,to);attempt.success=true;}catch(error){attempt.error=(error as NodeJS.ErrnoException).code;throw error;}
+    };
+    syncBuiltinESMExports();
+    b=await stage(store,root,'process-B',2);
+  }finally{
+    filesystem.rename=nativeRename;syncBuiltinESMExports();
+    await info.attach('immutable-publication-rename-attempts',{body:JSON.stringify(publicationAttempts),contentType:'application/json'});
+  }
+  expect(publicationAttempts.filter(attempt=>attempt.forced)).toHaveLength(1);
+  expect(publicationAttempts.filter(attempt=>attempt.success)).toHaveLength(1);
   await store.setReferences({active: a.manifest.id, latest: b.manifest.id});
   const state = path.join(root, 'current-account-state.json');
   await writeFile(state, JSON.stringify({currentJob: 'keep-this-job', gold: 1234}));

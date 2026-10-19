@@ -1,3 +1,4 @@
+import {characterInspectionRoute} from "./characters/inspection.ts";
 import { observeEventAttendance, eventInstanceAllowed } from "./events/attendance-limits.ts";
 import { createDungeons } from './dungeons/service.ts';
 import { dungeonOwns } from '../dungeons/contracts.ts';
@@ -17,6 +18,8 @@ import { migrateSharedRules, installSharedRuleRoutes, sharedMember } from "./inv
 import { loadCoordinatorGeometry } from './navigation/planner-geometry.ts';
 import { initializeStandLocation, standLocationRoute } from './merchant/stand-location.ts';
 import { createRareRouteDistance } from './navigation/rare-route-distance.ts';
+import { createMetricsService } from './metrics/service.ts';
+import { accountGoldSnapshot } from './telemetry/account-gold.ts';
 export function startCoordinatorApplication(
   platform: CoordinatorApplicationPlatform,
 ): Promise<void> {
@@ -106,7 +109,7 @@ export function startCoordinatorApplication(
     });
     let version = initialVersion;
     let clientRevision = await game_files.get_revision?.(version) || String(version);
-    const movementPlanner = coordinatorPolicies.createPlannerService((platform.codeDirectory || __dirname) + '/../../.build/runtime/movement-planner.cjs');
+    const movementPlanner = coordinatorPolicies.createPlannerService(platform.plannerWorkerFile || (platform.codeDirectory || __dirname) + '/../../.build/runtime/movement-planner.cjs');
     const movementFingerprints = new Map<number, string>();
     let canStand: (x: number, y: number) => boolean = () => false;
     async function prepareMovement(gameVersion: number) {
@@ -159,6 +162,27 @@ export function startCoordinatorApplication(
         for (const name of names) delete party.commands[name];
       },
     });
+    const metrics = (() => {
+      try {
+        return createMetricsService(LOCALSTORAGE_PATH + '.metrics.jsonl', {
+          owned: name => !!ownedCharacter(name), now: Date.now,
+          accountGold: () => accountGoldSnapshot(party.bankSnapshot, slotPayload(), Object.values(party.bankbois), party.statuses).total,
+          warn: error => log.warn({ error }, 'Metrics retention failed'),
+        });
+      } catch (error) {
+        // A metrics disk/startup failure must not stop character coordination.
+        // Preserve the original history and expose an unavailable endpoint.
+        log.warn({ error }, 'Metrics storage unavailable; party coordination continues');
+        return { close() {}, install(router: HttpRouter) {
+          const unavailable: HttpHandler = (_request, response) => response.status(503).json({ error: 'Metrics storage unavailable' });
+          router.get('/party-api/metrics', unavailable); router.post('/party-api/metrics', unavailable);
+          router.post('/party-api/metrics/reset', unavailable);
+          router.get('/party-api/metrics/kills', unavailable);
+          router.get('/party-api/metrics/bars', unavailable);
+          router.get('/party-api/metrics/account-gold', unavailable);
+        } };
+      }
+    })();
     migrateSharedRules(party, Object.keys(character_manage).filter(name => !party.bankbois[name]));
     const farmingScopes = coordinatorPolicies.createFarmingScopes(party);
     const soloServices = new Map<string, ReturnType<typeof createSoloServices>>();
@@ -314,7 +338,7 @@ export function startCoordinatorApplication(
     const shutdownCoordinator = coordinatorPolicies.createShutdown({
       log: (message) => console.log(message),
       stopCharacters: () => characterManager.stopAll(),
-      closeStorage: () => { persistence.flush(); movementPlanner.dispose(); localStorage.close(); },
+      closeStorage: async () => { persistence.flush(); movementPlanner.dispose(); await metrics.close(); localStorage.close(); },
       exit: () => process.exit(),
     });
     const { dispatcher: merchantDispatcher, idle: merchantIdle } =
@@ -654,6 +678,7 @@ export function startCoordinatorApplication(
     } = coordinatorPolicies.createCoordinatorPartyConfiguration(party, character_manage, {
       dungeon: dungeons,
       changed: previous => coordinatorPolicies.reconcileFarmingMembership(party, farmingScopes, previous),
+      focusChanged: () => farmAreaNavigation.focusChanged(),
       now: () => Date.now(),
       owned: ownedCharacter,
       members: () => farmingNavigation.members(),
@@ -1885,6 +1910,7 @@ export function startCoordinatorApplication(
         abort: finishAnniversaryAbort, begin: beginEventReturn, snapshot: publicAnniversaryState,
       });
       const focusRoute = coordinatorPolicies.createFocusRoute(party, {
+        focusChanged: () => farmAreaNavigation.focusChanged(),
         owned: ownedCharacter, members: () => [name], invalidate: (...args) => farmingNavigation.invalidate(...args), persist: persistSettings,
       });
     const {
@@ -2288,6 +2314,12 @@ export function startCoordinatorApplication(
                   consoleMaintenance:report.consoleMaintenance,map:report.map,in:report.in,x:report.x,y:report.y,
                   dungeon:{cave:{run:coordinatorPolicies.requestObject(coordinatorPolicies.requestObject(report.dungeon).cave).run}},
                 }]))}));
+                router.get('/party-api/characters/:name/inspection', characterInspectionRoute({
+                  owned:name=>!!ownedCharacter(name), now:Date.now, version:()=>version, directory:__dirname,
+                  read:file=>fs_regular.readFileSync(file,'utf8'),
+                  catalog:()=>{const entries=coordinatorPolicies.requestObject(party.merchantCatalog).allItems;return Array.isArray(entries)?entries:[];},
+                  fetch:async name=>{const fetch=await platform.loadFetch();const response=await fetch('https://adventure.land/api/mainframe_get_character',{method:'POST',headers:{Cookie:'auth='+sess,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({character:name}).toString(),signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error('Could not read saved character from the game');return response.json();},
+                }));
                 coordinatorPolicies.installMovementRoutes(router, movementPlanner, ownedCharacter);
                 installProductionRoutes(router, party, () => persistence.settings(), merchantLog);
                 router.post('/party-api/market/ignored-items',marketIgnoredItemsRoute(party,persistSettings));
@@ -2303,7 +2335,7 @@ export function startCoordinatorApplication(
                 });
               },
               liveTelemetry: (router) => dashboardStream.install(router),
-              combatLogs: (router) => combatLogRoutes.install(router),
+              combatLogs: (router) => { combatLogRoutes.install(router); metrics.install(router); },
               roster: (express_inst) => {
                 const ownership = coordinatorPolicies.coordinatorOwnership(party);
                 installRosterRoutes(
@@ -2326,6 +2358,7 @@ export function startCoordinatorApplication(
               },
               startMail: () =>
                 coordinatorPolicies.startCoordinatorMail(party, my_acc, {
+                  persist: persistSettings,
                   session: sess,
                   loadFetch: () => platform.loadFetch(),
                   timeout: (milliseconds) => AbortSignal.timeout(milliseconds),

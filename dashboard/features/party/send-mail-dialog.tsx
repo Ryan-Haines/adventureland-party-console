@@ -1,4 +1,5 @@
 'use client';
+import {MailboxControls} from './mailbox-controls';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -65,6 +66,7 @@ export function SendMailDialog({
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null);
   const [attachmentSearch, setAttachmentSearch] = useState('');
+  const [mailTab,setMailTab]=useState<'inbox'|'outbox'>('inbox');
   const client = useQueryClient();
   const visible = useVisible();
   const action = usePartyAction();
@@ -190,8 +192,9 @@ export function SendMailDialog({
             separately by the merchant.
           </DialogDescription>
         </DialogHeader>
+        <MailboxControls inbox={inbox} tab={mailTab} onTab={setMailTab} />
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
-          <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <div className={mailTab==='inbox'?'grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]':'hidden'}>
             <aside className="max-h-[65vh] space-y-3 overflow-y-auto rounded border border-cyan-800 bg-[#06110f] p-3">
               <h3 className="font-semibold text-cyan-100">
                 Mail received ({inbox.count})

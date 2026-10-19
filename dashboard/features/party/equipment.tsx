@@ -8,7 +8,9 @@ import { Item } from "./item";
 import { same } from "./same";
 import { StatScrollMark } from "./stat-scroll-mark";
 import { UpgradeMark } from "./upgrade-mark";
-import { memo } from "react";
+import { memo, useId } from "react";
+import {useStoredBoolean} from "@/hooks/use-stored-boolean";
+import {CharacterSectionToggle} from "./character-section-toggle";
 
 export const Equipment = memo(function Equipment({
   character,
@@ -39,6 +41,8 @@ export const Equipment = memo(function Equipment({
   onStatScroll: (slot: string, item: Item, remove?: boolean) => void;
   onBuy: (item: Item) => void;
 }) {
+  const [open,setOpen]=useStoredBoolean(`party-section:${character.name}:equipped`,true);
+  const id=useId();
   const known = new Set<string>(equipmentSlots),
     slots = [
       ...equipmentSlots.map((slot) => [slot, character.slots[slot] || null] as const),
@@ -56,8 +60,9 @@ export const Equipment = memo(function Equipment({
     {},
   );
   return (
-    <section>
-      <h3 className="mb-3 font-mono text-xs uppercase text-emerald-100/55">Equipped</h3>
+    <section className="mt-4 border-t border-emerald-900/70">
+      <CharacterSectionToggle label="Equipped" open={open} controls={id} onToggle={()=>setOpen(value=>!value)}/>
+      <div id={id} hidden={!open}>
       <div className="grid grid-cols-2 items-start gap-3">
         <div className="grid gap-2">
           {slots
@@ -153,6 +158,7 @@ export const Equipment = memo(function Equipment({
               />
             ))}
         </div>
+      </div>
       </div>
     </section>
   );

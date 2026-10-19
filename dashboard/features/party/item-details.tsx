@@ -19,12 +19,13 @@ import { Char } from "./char";
 import { comparisonSlotLabel } from "./comparison-slot-label";
 import { comparisonSlotsFor } from "./comparison-slots-for";
 import { COMPARISON_SLOTS } from "./comparison-slots";
-import { DefinitionGrid } from "./definition-grid";
 import { durationStat } from "./format-duration";
 import { InventoryEntry } from "./inventory-entry";
 import { EQUIPMENT_TYPES } from "./equipment-types";
 import { propertiesAtLevel } from "./properties-at-level";
+import { titledName } from "./item-title";
 import { Item } from "./item";
+import type {ItemDropSource} from "./item-drop-source";
 import { ITEM_DETAIL_PROPERTY_RANK } from "./item-detail-property-rank";
 import { effectiveDropRate, formatDropRate as dropRate } from "./drop-rate";
 import { itemMaximumLevel } from "./item-maximum-level";
@@ -40,6 +41,12 @@ import { ItemExchangeDetails } from "./item-exchange-details";
 import type { MerchantExchangeItem } from "./merchant-exchange-item";
 import type { ReactNode } from 'react';
 import type { ExchangeRewardTileData } from './exchange-reward-tile';
+import { itemSlotExtras, onItemCard } from "./item-card-lines";
+import { ItemCard, ItemExtraStats } from "./item-card";
+import { SkillCards } from "./skill-card";
+import { MonsterCards } from "./monster-card";
+import type { SkillClass } from "./skill-class";
+import type { SkillEntry } from "./skill-entry";
 
 export function ItemDetails({
   selected: initialSelected,
@@ -47,7 +54,10 @@ export function ItemDetails({
   exchanges = [],
   renderExchangeReward,
   monsters,
+  skills = [],
   characters,
+  offlineCharacters = [],
+  onLoadCharacter,
   achievements,
   standFull,
   onNavigate,
@@ -62,7 +72,11 @@ export function ItemDetails({
   exchanges?: MerchantExchangeItem[];
   renderExchangeReward?: (reward: ExchangeRewardTileData) => ReactNode;
   monsters: BestiaryMonster[];
+  // The skill catalog, so a granted skill links to its details.
+  skills?: SkillClass[];
   characters: Char[];
+  offlineCharacters?: {name:string;ctype:string}[];
+  onLoadCharacter?: (name:string)=>Promise<Char>;
   achievements: Record<string, { score: number; owner: string | null }>;
   standFull: boolean;
   onNavigate: (monster: BestiaryMonster) => void;
@@ -74,10 +88,12 @@ export function ItemDetails({
 }) {
   type DetailNode =
     | { kind: "item"; selected: SelectedItem }
-    | { kind: "monster"; monster: BestiaryMonster };
+    | { kind: "monster"; monster: BestiaryMonster }
+    | { kind: "skill"; skill: SkillEntry };
   const [trail, setTrail] = useState<DetailNode[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [dropSort, setDropSort] = useState<"name" | "percentage">("percentage");
+  const [comparisonLoading,setComparisonLoading]=useState<string|null>(null),[comparisonError,setComparisonError]=useState('');
   const [compareCharacter, setCompareCharacter] = useState<Char | null>(null);
   const draftIdentity1 = [
     initialSelected?.character,
@@ -97,6 +113,17 @@ export function ItemDetails({
   const active = trail[trail.length - 1];
   const selected = active?.kind === "item" ? active.selected : initialSelected;
   const selectedMonster = active?.kind === "monster" ? active.monster : null;
+  const selectedSkill = active?.kind === "skill" ? active.skill : null;
+  const skillById = (id: string) => skills.flatMap((entry) => entry.skills).find((skill) => skill.id === id);
+  const skillName = (id: string) => skillById(id)?.name;
+  const skillHint = (id: string) => {
+    const explanation = skillById(id)?.definition.explanation;
+    return typeof explanation === "string" && explanation ? explanation : undefined;
+  };
+  const onInspectSkill = (id: string) => {
+    const found = skillById(id);
+    if (found) setTrail((current) => [...current, { kind: "skill", skill: found }]);
+  };
   const actualLevel = Math.max(0, Number(selected?.entry.item.level) || 0);
   const [previewLevel, setPreviewLevel] = useState(actualLevel);
   const draftIdentity2 = [
@@ -232,6 +259,40 @@ export function ItemDetails({
           `${key.replaceAll("_", " ")} ${typeof value === "number" && value > 0 ? "+" : ""}${String(value)}`,
       )
       .join(" · ");
+  // Stats the level calculation doesn't cover, such as a fixed lifesteal, keep their live value.
+  const cardProperties = { ...properties, ...previewProperties };
+  const formatStat = (key: string, value: string | number | boolean | unknown[]) =>
+    durationStat(key, value as string | number | boolean, def) ?? (typeof value === "boolean" ? (value ? "Yes" : "No")
+      : Array.isArray(value) ? value.map((v) => (Array.isArray(v) ? v.join(" ") : String(v))).join(", ") : String(value));
+  const extraStats = [...(selected ? itemSlotExtras(selected.entry.item, selected.entry.meta) : []),
+    ...stats.filter(([key]) => !onItemCard(key, def)).map(([key, value]) => [key, formatStat(key, value)] as [string, string])];
+  const usable = !!selected?.entry.meta?.usage?.classes.some((entry) => characters.some((character) => character.ctype === entry.id));
+  if (selectedSkill)
+    return (
+      <Dialog open={!!initialSelected} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto border border-violet-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
+          <DialogHeader>
+            <div className="flex items-center gap-3 pr-8">
+              <Button type="button" variant="ghost" size="icon" onClick={goBack} title="Back" aria-label="Back"
+                className="shrink-0 text-violet-200 hover:bg-violet-950">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <div className="relative h-12 w-12 shrink-0">
+                {selectedSkill.sprite && <ItemSprite sprite={selectedSkill.sprite} />}
+              </div>
+              <div>
+                <DialogTitle>{selectedSkill.name}</DialogTitle>
+                <DialogDescription className="mt-1 font-mono text-violet-300">G.skills.{selectedSkill.id}</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          {skillHint(selectedSkill.id) ? (
+            <p className="text-sm leading-6 text-emerald-50/80">{skillHint(selectedSkill.id)}</p>
+          ) : null}
+          <SkillCards skill={selectedSkill} skillName={skillName} />
+        </DialogContent>
+      </Dialog>
+    );
   if (selectedMonster)
     return (
       <Dialog open={!!initialSelected} onOpenChange={onOpenChange}>
@@ -275,9 +336,12 @@ export function ItemDetails({
             monster={selectedMonster}
             achievement={achievements[selectedMonster.id] || null}
           />
-          <DefinitionGrid
-            value={selectedMonster.definition}
-            omit={["name", "skin", "achievements"]}
+          <MonsterCards
+            definition={selectedMonster.definition}
+            skillName={skillName}
+            monsterName={(id) => monsters.find((entry) => entry.id === id)?.name}
+            onMonster={onInspectMonster}
+            onSkill={onInspectSkill}
           />
           <section className="rounded border border-amber-900/80 bg-amber-950/10 p-4">
             <BestiaryDrops
@@ -316,7 +380,7 @@ export function ItemDetails({
             )}
             <div className="min-w-0 flex-1">
               <DialogTitle>
-                {String(def.name || selected?.entry.item.name || "Item")}
+                {titledName(String(def.name || selected?.entry.item.name || "Item"), selected?.entry.item || {}, selected?.entry.meta)}
                 {selected?.entry.item.level ? ` +${selected.entry.item.level}` : ""}
               </DialogTitle>
               <DialogDescription className="mt-1 text-emerald-100/55">
@@ -513,6 +577,8 @@ export function ItemDetails({
                                 </span>
                               </button>
                             ))}
+                            {offlineCharacters.map(character=><button type="button" key={character.name} disabled={!!comparisonLoading || !onLoadCharacter} onClick={async()=>{setComparisonLoading(character.name);setComparisonError('');try{chooseComparisonCharacter(await onLoadCharacter!(character.name));}catch(error){setComparisonError(error instanceof Error?error.message:String(error));}finally{setComparisonLoading(null);}}} className="flex items-center justify-between border border-cyan-900 bg-black px-3 py-2 text-left text-xs text-cyan-50 hover:border-cyan-400 hover:bg-cyan-950"><span>{character.name}</span><span>{comparisonLoading===character.name?'Loading…':`${character.ctype} · offline`}</span></button>)}
+                            {comparisonError && <p role="alert" className="text-rose-200">{comparisonError}</p>}
                             <button
                               type="button"
                               onClick={() => {
@@ -566,18 +632,22 @@ export function ItemDetails({
             </div>
           </section>
         )}
-        <dl className="grid grid-cols-2 gap-x-5 gap-y-2 border-t border-emerald-900 pt-4">
-          {stats.map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-3 border-b border-emerald-950 pb-1">
-              <dt className="capitalize text-emerald-100/50">{key.replaceAll("_", " ")}</dt>
-              <dd className="font-mono text-emerald-200">
-                {durationStat(key, value, def) ?? (Array.isArray(value)
-                  ? value.map((v) => (Array.isArray(v) ? v.join(" ") : String(v))).join(", ")
-                  : String(value))}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <div className="flex flex-wrap items-start gap-3 border-t border-emerald-900 pt-4">
+          {selected && (
+            <ItemCard
+              meta={selected.entry.meta}
+              item={{ ...selected.entry.item, level: previewLevel }}
+              level={previewLevel}
+              properties={cardProperties}
+              setName={world?.set?.name}
+              usable={usable}
+              skillName={skillName}
+              skillHint={skillHint}
+              onSkill={onInspectSkill}
+            />
+          )}
+          {!!extraStats.length && <ItemExtraStats entries={extraStats} />}
+        </div>
         {world?.set && (
           <section className="rounded border border-cyan-900/80 bg-cyan-950/10 p-4">
             <h3 className="font-mono text-xs uppercase tracking-wider text-cyan-300">
@@ -703,25 +773,29 @@ export function ItemDetails({
           </section>
         )}
         <ItemExchangeDetails id={selected?.entry.item.name || ""} level={previewLevel} box={def.type === "box" || /box/i.test(selected?.entry.item.name || "")} exchanges={exchanges} onInspect={onInspectItem} renderReward={renderExchangeReward} />
-        {!!world?.drops?.length && (
-          <section className="rounded border border-amber-900/80 bg-amber-950/10 p-4">
+        {!!world?.drops?.length && ([true, false].map(home => {
+          const sources=world.drops!.filter(source => (source.sourceType === "home") === home);
+          if(!sources.length)return null;
+          const groups=new Map<string,ItemDropSource[]>();
+          for(const source of [...sources].sort((a,b)=>(dropSort === "percentage" ? effectiveDropRate(b)-effectiveDropRate(a) : 0)||a.monsterName.localeCompare(b.monsterName)))
+            groups.set(source.monsterId,[...groups.get(source.monsterId)||[],source]);
+          return (
+          <section key={String(home)} className="rounded border border-amber-900/80 bg-amber-950/10 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-mono text-xs uppercase tracking-wider text-amber-300">Monster drops</h3>
+              <h3 className="font-mono text-xs uppercase tracking-wider text-amber-300">{home ? "Home rewards" : "Monster drops"}</h3>
               <label className="flex items-center gap-2 text-xs text-amber-100">
                 Sort
-                <select aria-label="Sort monster drops" value={dropSort}
+                <select aria-label={home ? "Sort home rewards" : "Sort monster drops"} value={dropSort}
                   onChange={event => setDropSort(event.target.value as "name" | "percentage")}
                   className="rounded border border-amber-700 bg-[#07100f] px-2 py-1 text-amber-100 hover:bg-amber-950">
                   <option value="name">Name</option>
-                  <option value="percentage">Percentage</option>
+                  <option value="percentage">Chance</option>
                 </select>
               </label>
             </div>
+            {home && <p className="mt-2 text-xs text-emerald-100/70">Home-server bonus required; these rewards are separate from normal monster drops.</p>}
             <div className="mt-2 grid gap-1 sm:grid-cols-2">
-              {[...world.drops].sort((a, b) =>
-                (dropSort === "percentage" ? effectiveDropRate(b) - effectiveDropRate(a) : 0) ||
-                a.monsterName.localeCompare(b.monsterName),
-              ).map((source, index) => (
+              {[...groups.values()].map((rolls, index) => { const source=rolls[0]; return (
                 <button
                   type="button"
                   onClick={() => onInspectMonster(source.monsterId)}
@@ -739,12 +813,16 @@ export function ItemDetails({
                       </span>
                     </span>
                   </span>
-                  <span className="shrink-0 font-mono text-amber-300">{dropRate(source)}</span>
+                  <span className="shrink-0 font-mono text-amber-300">
+                    {rolls.map((roll,index)=><span key={index} className="block">{rolls.length>1 ? `Roll ${index+1}: ` : ""}{dropRate(roll)}
+                      {roll.sourceType==='zone' ? ` · ${roll.mapName||'Zone'}` : roll.sourceType==='world' ? ' · World' : (roll.acquisitionPath?.length||0)>1 ? ` · ${roll.acquisitionPath!.join(' → ')}` : ''}</span>)}
+                    {rolls.length>1&&<span className="block text-emerald-100/70">Independent rolls</span>}
+                  </span>
                 </button>
-              ))}
+              ); })}
             </div>
           </section>
-        )}
+        ); }))}
         {selected?.exchangeAdd && !selectedMonster && <Button disabled={!selected.exchangeAdd.enabled} onClick={selected.exchangeAdd.onAdd}
           className="w-full border border-emerald-500 bg-emerald-950 text-emerald-100 hover:bg-emerald-900">Add</Button>}
       </DialogContent>

@@ -2,7 +2,7 @@ import {test, expect} from './live-fixtures';
 import {departureSignalFaultSource} from './departure-signal-fault';
 import {warrior as W, fighters, party, world, artifact} from './game/hunt-lifecycle';
 
-// Stall native execution without fabricating movement or acknowledgements.
+// Delay targeted native control responses without fabricating movement or acknowledgements.
 // Install before travel so fault injection does not race a short departure window.
 test('three delayed native departure signals preserve walking recovery budget and reach the destination', async ({live}, info) => {
   test.setTimeout(240_000);
@@ -30,7 +30,7 @@ test('three delayed native departure signals preserve walking recovery budget an
     expect(hook?.signals.length).toBe(3);
     await artifact(live,info,'native-delayed-departures',{installed,signals:hook.signals,maxRecoveryAttempts,destination});
   } finally {
-    const receipt=await live.clients[W].run(`(()=>{const hook=globalThis.__e2eDepartureHook;if(hook)hook.enabled=false;$(document).off('.e2eDepartureFault');return {responses:hook?.signals||[],blocked:globalThis.__e2eDepartureFaults||[],generation:hook?.generation};})()`);
+    const receipt=await live.clients[W].run(`(()=>{const hook=globalThis.__e2eDepartureHook;if(hook){hook.enabled=false;hook.restore?.();}$(document).off('.e2eDepartureFault');return {responses:hook?.signals||[],blocked:globalThis.__e2eDepartureFaults||[],generation:hook?.generation};})()`);
     await info.attach('native-departure-response-delays',{body:JSON.stringify({installed,...receipt}),contentType:'application/json'});
   }
 });

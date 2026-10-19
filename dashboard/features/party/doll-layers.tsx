@@ -10,6 +10,8 @@ export function dollLayers(html: string) {
     const parent = img.parentElement as HTMLElement;
     const px = (value: string) => Number.parseFloat(value || "0") || 0;
     return {
+      outerWidth: px((host.body.firstElementChild as HTMLElement)?.style.width || '27') || 27,
+      outerHeight: px((host.body.firstElementChild as HTMLElement)?.style.height || '38') || 38,
       url: new URL(img.getAttribute('src') || '', document.baseURI).href,
       left: px(parent.style.left),
       bottom: px(parent.style.bottom),

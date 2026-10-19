@@ -44,6 +44,7 @@ export function diagnosticCharacters(statuses: Readonly<Record<string, Presentat
     "activeEvent",
     "joinedEvent",
     "donationXpPerGold",
+    "donationLevelXp",
     "gatheringCooldowns",
     "gatheringPhase",
     "gatheringBlockedReason",
@@ -86,6 +87,7 @@ const metadataFields = [
   "scaling",
   "maxLevel",
   "sprite",
+  "title",
 ] as const;
 
 export function fastCharacters(statuses: Readonly<Record<string, PresentationStatus>>) {

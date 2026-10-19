@@ -1,6 +1,6 @@
 import type { BrowserContext, Page, Frame } from '@playwright/test';
 import {randomUUID} from 'node:crypto';
-import {installCompanionGraphicsDiagnostic} from './native-graphics-diagnostic.js';
+import {installCompanionGraphicsDiagnostic} from './native-graphics-diagnostic.ts';
 
 export interface LiveClientOptions {
   webUrl: string;
@@ -24,7 +24,7 @@ export interface LiveClient {
 /** Connect an unmodified upstream client and run the maintained production CODE loader. */
 export async function launchGameClient(context: BrowserContext, options: LiveClientOptions): Promise<LiveClient> {
   for (const address of [options.webUrl, options.coordinatorUrl]) {
-    if (!['127.0.0.1', 'localhost'].includes(new URL(address).hostname)) throw new Error('Live E2E requires loopback services');
+    if (!['127.0.0.1', '127.0.0.2', '127.0.0.3', '127.0.0.4', 'localhost'].includes(new URL(address).hostname)) throw new Error('Live E2E requires loopback services');
   }
   const page = options.primary?.page || await context.newPage();
   if(!options.primary)await installCompanionGraphicsDiagnostic(context,options,process.env.E2E_COMPANION_NO_GRAPHICS==='1');
@@ -54,7 +54,14 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
   await native.waitForFunction(name => {
     const game = window as any;
     return game.character?.name === name && game.socket?.connected && typeof game.start_runner === 'function';
-  }, options.name, { timeout: 90_000 });
+  }, options.name, { timeout: 90_000, polling: 100 }).catch(async error=>{
+    const observation=await native.evaluate(()=>{
+      const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+      return {at:Date.now(),url:location.href,visibility:document.visibilityState,name:game.character?.name,
+        connected:game.socket?.connected,startRunner:typeof game.start_runner,codeStatus:runner?.__partyStatusSuccessAt};
+    }).catch(String);
+    throw Error(String(error)+'\nNative readiness observation: '+JSON.stringify({expected:options.name,observation}));
+  });
   await installNativeObservers(native);
   await native.evaluate(({ coordinator, primary }) => {
     const game = window as any;
@@ -63,7 +70,14 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
   await native.waitForFunction(() => {
     const runner = (document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
     return runner?.__partyStatusSuccessAt > 0 && runner?.partyRoleRunner;
-  }, undefined, { timeout: 90_000 });
+  }, undefined, { timeout: 90_000, polling: 100 }).catch(async error=>{
+    const diagnostic=await native.evaluate(()=>{
+      const w=window as any,r=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+      const clock=(c:any)=>c&&({now:c.now(),errors:c.errors,state:c.state,rate:c.rate});
+      return {gameClock:clock(w.__e2eChronalClock),codeClock:clock(r?.__e2eChronalClock),codeLocation:r?.location?.href,role:!!r?.partyRoleRunner,status:r?.__partyStatusSuccessAt};
+    }).catch(String);
+    throw Error(String(error)+'\nNative startup observations: '+JSON.stringify(diagnostic));
+  });
   const eventLedger:Array<{sequence:number;[key:string]:unknown}>=[];
   const eventKeys:string[]=[];
   const seenEvents=new Set<string>();

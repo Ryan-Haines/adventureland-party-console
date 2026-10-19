@@ -1,4 +1,5 @@
 import { test, expect } from './live-fixtures';
+import {nativeWallNow} from './network-clock';
 
 const merchant = 'E2EMerchant';
 
@@ -63,8 +64,26 @@ test('Hunt blacklist full catalog scrolls and sprites select their own monster',
   await goo.click({position:{x:20,y:20}});
   await expect(page.getByRole('heading',{name:'Goo',exact:true})).toBeVisible();
   await page.keyboard.press('Escape');
-  await picker.getByRole('button',{name:'Add Goo to blacklist',exact:true}).click();
-  await expect.poll(async()=>(await live.state()).farmingProfiles.E2EWarrior.huntBlacklist.goo?.reason).toBe('Manually blacklisted');
+  const mutation: Array<Record<string,unknown>>=[];
+  const matches=(request: import('@playwright/test').Request)=>{
+    if(request.method()!=='POST'||!request.url().endsWith('/party-api/hunt-blacklist'))return false;
+    const body=request.postDataJSON();return body?.action==='add'&&body.monsterId==='goo'&&body.character==='E2EWarrior';
+  };
+  const started=(request: import('@playwright/test').Request)=>{if(matches(request))mutation.push({phase:'request',wallAt:nativeWallNow(),gameplayAt:Date.now(),body:request.postDataJSON()});};
+  const failed=(request: import('@playwright/test').Request)=>{if(matches(request))mutation.push({phase:'failed',wallAt:nativeWallNow(),gameplayAt:Date.now(),failure:request.failure()});};
+  page.on('request',started);page.on('requestfailed',failed);
+  try {
+    const response=page.waitForResponse(response=>matches(response.request()),{timeout:15_000});
+    await picker.getByRole('button',{name:'Add Goo to blacklist',exact:true}).click();
+    const receipt=await response,body=await receipt.json();
+    mutation.push({phase:'response',wallAt:nativeWallNow(),gameplayAt:Date.now(),status:receipt.status(),body});
+    expect(receipt.ok()).toBe(true);
+    expect(body.blacklist.goo.reason).toBe('Manually blacklisted');
+    await expect.poll(async()=>(await live.state()).farmingProfiles.E2EWarrior.huntBlacklist.goo?.reason).toBe('Manually blacklisted');
+  } finally {
+    page.off('request',started);page.off('requestfailed',failed);
+    await info.attach('native-blacklist-mutation-milestones',{body:JSON.stringify(mutation),contentType:'application/json'});
+  }
   await info.attach('native-blacklist-picker',{body:await page.screenshot(),contentType:'image/png'});
   await info.attach('native-blacklist-selection',{body:JSON.stringify({firstName,lastName,state:await live.state()}),contentType:'application/json'});
   // This page belongs to Playwright's base context, not the native fixture's

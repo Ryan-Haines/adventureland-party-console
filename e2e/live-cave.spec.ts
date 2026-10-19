@@ -1481,14 +1481,15 @@ test(`Cave assembly regroups displaced completed participants before departure (
   }
   const staging=await live.admin(`output=(async()=>{
     const people=['E2EWarrior','E2EPriest'].map(name=>get_player(name)),p=people[0],run=generated_entry(p).record;
-    const started=performance.now(),map=p.map,instance=p.in;
+    const cpuNow=()=>globalThis.__e2eChronalClock?.cpuNow?.()??performance.now();
+    const started=cpuNow(),map=p.map,instance=p.in;
     let sliceStarted=started,yields=0,maxWorkSliceMs=0;
     const assertOwnership=()=>{if(people.some(actor=>get_player(actor.name)!==actor||actor.map!==map||actor.in!==instance||actor.rip))throw Error('Native staging participants changed during search');};
     const yieldToNative=async()=>{
-      maxWorkSliceMs=Math.max(maxWorkSliceMs,performance.now()-sliceStarted);
-      await new Promise(resolve=>setImmediate(resolve));yields++;assertOwnership();sliceStarted=performance.now();
+      maxWorkSliceMs=Math.max(maxWorkSliceMs,cpuNow()-sliceStarted);
+      await new Promise(resolve=>setImmediate(resolve));yields++;assertOwnership();sliceStarted=cpuNow();
     };
-    const timing=()=>({elapsedMs:performance.now()-started,yields,maxWorkSliceMs:Math.max(maxWorkSliceMs,performance.now()-sliceStarted)});
+    const timing=()=>({elapsedMs:cpuNow()-started,yields,maxWorkSliceMs:Math.max(maxWorkSliceMs,cpuNow()-sliceStarted)});
     const rooms=run.cave.rooms.filter(r=>r.map===p.map&&['farm','patrol','fight','boss','darkmage'].includes(r.kind)).map(r=>({id:r.id,kind:r.kind,x:r.x,y:r.y}));
     const encounters=run.cave.rooms.filter(r=>r.map===p.map&&r.encounter&&!r.voted&&!r.done).map(r=>({id:r.id,x:r.x,y:r.y,npc:r.npc?{id:r.npc.id,x:r.npc.x,y:r.npc.y}:null}));
     const enemies=Array.from(run.cave.actors).filter(a=>!a.dead&&a.map===p.map&&['enemy','predator'].includes(a.zone_actor?.side)).map(a=>({id:a.id,x:a.x,y:a.y}));
@@ -1518,7 +1519,7 @@ test(`Cave assembly regroups displaced completed participants before departure (
     const tile=floor.tileSize,grid=floor.grid,seen=new Set(),connected=[{x:p.x,y:p.y,cx:Math.floor(p.x/tile),cy:Math.floor(p.y/tile),parent:-1}];
     seen.add(connected[0].cx+':'+connected[0].cy);
     for(let index=0;index<connected.length;index++){
-      if(performance.now()-sliceStarted>=8)await yieldToNative();
+      if(cpuNow()-sliceStarted>=8)await yieldToNative();
       const node=connected[index];
       for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
         const cx=node.cx+dx,cy=node.cy+dy,key=cx+':'+cy;
@@ -1529,7 +1530,7 @@ test(`Cave assembly regroups displaced completed participants before departure (
       }
     }
     for(let index=0;index<connected.length;index++){
-      if(performance.now()-sliceStarted>=8)await yieldToNative();
+      if(cpuNow()-sliceStarted>=8)await yieldToNative();
       const {x,y}=connected[index],target={map:p.map,x,y};
       if(!people.every(actor=>actor.map===p.map&&can_move({map:p.map,x,y,going_x:x,going_y:y,base:actor.base})))continue;
       const offset=displacement(target,160),displaced=displacement(target,85);

@@ -1,3 +1,4 @@
+import { unequalQuests, followerReward, booBoo } from './gameplay-scenarios';
 import { test, expect } from './live-fixtures';
 import { killNativeCharacter } from './hunt-interruption-helpers';
 import { warrior as W, priest as P, fighters, world, tokens, profile, location, party, quests, start, artifact, rejected } from './game/hunt-lifecycle';
@@ -7,36 +8,8 @@ test.describe('native Hunt lifecycle', () => {
   test.setTimeout(300_000);
 
   test('a native Boo Boo Hunt crosses real map doors, kills its target and returns to Daisy', async ({ live }, info) => {
-    test.setTimeout(600_000);
-    const overallDeadline=Date.now()+600_000;
-    await party(live);
-    await quests(live, info, { [W]: { id: 'booboo', count: 1 }, [P]: { id: 'booboo', count: 1 } });
-    const before = await world(live);
-    const destination = await start(live, W, 'booboo');
-    const progress:any[]=[];
-    const observe=async(phase:string)=>{
-      const native=await world(live);
-      if(progress.length>=64)progress.shift();
-      progress.push({at:Date.now(),phase,participants:Object.fromEntries(fighters.map(name=>[name,
-        {map:native[name].map,x:native[name].x,y:native[name].y,quest:native[name].quest,tokens:tokens(native[name])}]))});
-      return native;
-    };
-    const remaining=(cap:number)=>Math.max(1,Math.min(cap,overallDeadline-Date.now()));
-    try{
-      await expect.poll(async () => (await observe('native door arrival'))[W].map, { timeout: remaining(240_000) }).toBe(destination.map);
-      await expect.poll(async()=>{
-        const native=await observe('native quest completion');
-        return fighters.every(name=>native[name].quest?.c===0);
-      },{timeout:remaining(300_000),message:'Both actual native Boo Boo quests must complete before timing the Daisy return'}).toBe(true);
-      // The existing reward budget measures the return leg after real kills;
-      // native combat cannot consume that budget before return begins.
-      await expect.poll(async () => tokens((await observe('native Daisy reward'))[W]), { timeout: remaining(300_000) }).toBe(tokens(before[W]) + 1);
-      const events = await live.clients[W].events();
-      expect(events.some((entry: any) => entry.event === 'hit' && entry.data?.kill)).toBe(true);
-      expect((await world(live))[W].map).toBe('main');
-    }finally{
-      await artifact(live, info, 'booboo-native-door-combat-reward', { before, destination, progress, overallDeadline, loadout: 'god' });
-    }
+    test.setTimeout(600000);
+    await booBoo(live, info);
   });
 
   test.describe('native Boo Boo walking-return cache',()=>{
@@ -48,15 +21,26 @@ test.describe('native Hunt lifecycle', () => {
     expect(initialClearance.every((p:any)=>p.selfClear)).toBe(true);
     await info.attach('native-booboo-initial-clearance',{body:JSON.stringify(initialClearance),contentType:'application/json'});
     await party(live);
+    let nativeParty:any;
+    try {
+      await expect.poll(async()=>{
+        nativeParty=await live.admin(`output=({at:Date.now(),members:(parties[${JSON.stringify(W)}]||[]).slice(),
+          players:${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return p&&{name,party:p.party,map:p.map,in:p.in,rip:!!p.rip};})})`);
+        return nativeParty.members.length===fighters.length&&fighters.every(name=>nativeParty.members.includes(name))&&
+          nativeParty.players.every((p:any)=>p&&!p.rip&&p.party===W);
+      },{timeout:30_000,message:'Both native party memberships must acknowledge before seeding shared one-kill quests'}).toBe(true);
+    } finally {
+      await info.attach('native-booboo-party-admission',{body:JSON.stringify(nativeParty??null),contentType:'application/json'});
+    }
     await quests(live,info,{[W]:{id:'booboo',count:1},[P]:{id:'booboo',count:1}});
     const before=await world(live),destination=await start(live,W,'booboo');
     const preparation:any[]=[];
     const observe=(s:any)=>{
-      if(preparation.length>=64)preparation.shift();
       preparation.push({at:Date.now(),stage:profile(s).monsterHunt?.stage,message:profile(s).monsterHunt?.message,
         convoy:s.activeConvoy&&{id:s.activeConvoy.id,phase:s.activeConvoy.phase,returnRouting:s.activeConvoy.returnRouting},
         participants:Object.fromEntries(fighters.map(name=>{const c=s.characters[name];return [name,{map:c?.map,x:c?.x,y:c?.y,
           count:c?.monsterHunt?.count,lastAttackAt:c?.combat?.lastAttackAt,lastAttackTarget:c?.combat?.lastAttackTarget}];}))});
+      if(preparation.length>64)preparation.splice(32,1);
     };
     try{
       await expect.poll(async()=>{
@@ -198,47 +182,12 @@ test.describe('native Hunt lifecycle', () => {
   });
 
   test('a follower completed quest waits for leader real kills then both owners receive Daisy rewards', async ({ live }, info) => {
-    await party(live);
-    await quests(live, info, { [W]: { count: 2 }, [P]: { count: 0 } });
-    const before = await world(live);
-    await start(live);
-    await expect.poll(async () => { const current = await world(live); return fighters.every(name => tokens(current[name]) === tokens(before[name]) + 1); }, { timeout: 210_000 }).toBe(true);
-    expect((await live.clients[W].events()).some((entry: any) => entry.event === 'hit' && entry.data?.kill)).toBe(true);
-    await artifact(live, info, 'follower-quest-owner-return', { before });
+    await followerReward(live, info);
   });
 
   test('a real leader final kill leaves an unfinished follower quest usable without a loot hold stall', async ({ live }, info) => {
     test.setTimeout(420_000);
-    await party(live);
-    await quests(live, info, { [W]: { count: 1 }, [P]: { count: 8 } });
-    const before = await world(live);
-    await start(live);
-    let intermediate: Awaited<ReturnType<typeof world>>;
-    await expect.poll(async () => {
-      const current = await world(live);
-      if (current[W].quest?.id === 'goo' && current[W].quest.c === 0 &&
-        current[P].quest?.id === 'goo' && current[P].quest.c > 0 && current[P].quest.c < 8) {
-        intermediate = current;
-        return true;
-      }
-      return false;
-    }, { timeout: 120_000, intervals: [50, 100, 200], message: 'A native kill must complete only the leader quest' }).toBe(true);
-    await info.attach('unequal-native-quest-progress', { body: JSON.stringify(intermediate!), contentType: 'application/json' });
-    await expect.poll(async () => tokens((await world(live))[W]), { timeout: 150_000 }).toBe(tokens(before[W]) + 1);
-    const afterLeaderReward = await world(live);
-    const scopeChange = tokens(afterLeaderReward[P]) === tokens(before[P]);
-    if (scopeChange) {
-      expect(afterLeaderReward[P].quest?.id).toBe('goo');
-      expect(afterLeaderReward[P].quest.c).toBeLessThanOrEqual(intermediate![P].quest.c);
-      // A leader-owned Hunt need not finish the follower's different remaining
-      // count. Explicitly give the follower its own controller to claim that quest.
-      await live.post('/formation', { character: P, follow: false });
-      await start(live, P);
-    }
-    await expect.poll(async () => tokens((await world(live))[P]), { timeout: 150_000 }).toBe(tokens(before[P]) + 1);
-    await artifact(live, info, 'unequal-owners-native-kill-and-claims', {
-      before, intermediate, afterLeaderReward, followerCompletion: scopeChange ? 'explicit Follow-off and solo Hunt' : 'original party Hunt',
-    });
+    await unequalQuests(live, info);
   });
 
   test('an unfollowed priest completes a native solo Hunt without activating the warrior controller', async ({ live }, info) => {

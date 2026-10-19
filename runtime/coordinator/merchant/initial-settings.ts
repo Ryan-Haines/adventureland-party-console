@@ -1,3 +1,4 @@
+import {initialMailbox} from '../commerce/mailbox.ts';
 import { autoUpgradeEnabled } from './routines.ts';
 import { migrateRoutinePriorities, migrateExchangeAutomations } from './routines.ts';
 import type { DeconstructionMark, DeconstructionRules, DeconstructionCatalog } from "./deconstruction.ts";
@@ -15,6 +16,7 @@ interface SavedListing extends Partial<StandMark> {
   queuedAt?: number;
 }
 interface SavedMerchantSettings {
+  mailbox?:unknown;
   upgradePreviewResults?: Record<string, import("./upgrade-preview.ts").StoredUpgradePreview>;
   giveawayAttempts?: Record<string, number>;
   deconstructionMarks?: DeconstructionMark[];
@@ -75,6 +77,8 @@ export function defaultMerchantRoutinePriorities(): Record<string, number> {
 }
 export function defaultMerchantAutomations(): Record<string, boolean> {
   return {
+    'craft fishing tools': false,
+    'craft mining tools': false,
     deliveries: true,
     withdrawals: true,
     "merchant luck": true,
@@ -94,6 +98,7 @@ export function defaultMerchantAutomations(): Record<string, boolean> {
 /** Fill legacy listing metadata while retaining saved automation overrides, including false and zero. */
 export function initialMerchantSales(settings: SavedMerchantSettings, now: () => number) {
   return {
+    mailbox: initialMailbox(settings.mailbox),
     upgradePreviewResults: settings.upgradePreviewResults || {},
     giveawayAttempts: settings.giveawayAttempts || {},
     standListings: (settings.standListings || []).map((entry, index) => ({

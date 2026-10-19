@@ -3,7 +3,8 @@ import {rm} from 'node:fs/promises';
 import {atomicJson,readJson} from '../build-store.ts';
 import type {DeploymentMode} from './contracts.ts';
 export interface MaintenanceLease {id:string;mode:'draining';loadMode:DeploymentMode;phase:'preparing'|'draining'|'moving-main'|'holding';expires:number}
-export function safeReload(directory:string,observe:(signal:AbortSignal)=>Promise<{id?:string|null;ready?:boolean;waiting?:string[]}>,options:{leaseMs?:number;clearMs?:number;pollMs?:number}={}){
+export function safeReload(directory:string,observe:(signal:AbortSignal)=>Promise<{id?:string|null;ready?:boolean;waiting?:string[]}>,options:{leaseMs?:number;clearMs?:number;pollMs?:number;timers?:Pick<typeof globalThis,'setTimeout'|'clearTimeout'|'setInterval'|'clearInterval'>}={}){
+  const {setTimeout,clearTimeout,setInterval,clearInterval}=options.timers??globalThis;
   const file=path.join(directory,'updates/pause.json'),leaseMs=options.leaseMs??10000,clearMs=options.clearMs??3000,pollMs=options.pollMs??500;
   let active:MaintenanceLease|undefined,timer:ReturnType<typeof setInterval>|undefined,writeTail=Promise.resolve(),failure:unknown;
   let waiting:string[]=[];

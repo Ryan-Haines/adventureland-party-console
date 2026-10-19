@@ -12,12 +12,12 @@ async function forwardPublishedPort(published, native) {
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(published, '127.0.0.1', resolve);
+    server.listen(published, process.env.E2E_GAME_HOST||'127.0.0.1', resolve);
   });
   return server;
 }
 async function main() {
-  if (process.env.AL_DEBUG_INSTANCE === '1') require('./configure.cjs');
+  require('./configure.cjs');
   const client = new MongoClient(require('../secretsandconfig/keys.js').mongodb_uri);
   await client.connect();
   const db = client.db('al_e2e');
@@ -40,9 +40,12 @@ async function main() {
   // transparently forward those addresses to their unchanged native listeners.
   const forwards = process.env.AL_DEBUG_INSTANCE === '1' ? [] :
     [await forwardPublishedPort(9003, 7192), await forwardPublishedPort(9004, 7193)];
-  const children = [spawn(process.execPath, ['main.js'], { stdio: 'inherit' }), spawn(process.execPath, ['server.js', 'local'], { cwd: '/game/node', stdio: 'inherit' })];
+  const clockEnvironment = Number(process.env.E2E_CLOCK_RATE || 1)>1
+    ? {...process.env,E2E_CLOCK_PRELOAD:'1',NODE_OPTIONS:[process.env.NODE_OPTIONS,'--require=/party-sim/network-clock.cjs'].filter(Boolean).join(' ')}
+    : process.env;
+  const children = [spawn(process.execPath, ['main.js'], { stdio: 'inherit',env:clockEnvironment }), spawn(process.execPath, ['server.js', 'local'], { cwd: '/game/node', stdio: 'inherit',env:clockEnvironment })];
   if (require('../secretsandconfig/options.js').servers.local2)
-    children.push(spawn(process.execPath, ['server.js', 'local2'], {cwd:'/game/node',stdio:'inherit'}));
+    children.push(spawn(process.execPath, ['server.js', 'local2'], {cwd:'/game/node',stdio:'inherit',env:clockEnvironment}));
   let stopping = false;
   const stop = (code) => { if (stopping) return; stopping = true; forwards.forEach(server => server.close()); children.forEach(child => child.kill('SIGTERM')); setTimeout(() => process.exit(code), 2000); };
   children.forEach(child => child.on('exit', code => stop(code || 1)));

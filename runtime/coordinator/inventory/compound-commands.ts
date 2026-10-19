@@ -1,3 +1,4 @@
+import {protectedMerchantStorageStock} from './merchant-storage-stock.ts';
 import { ruleOwner, type SharedScope } from "./shared-rules.ts";
 import { requestObject, requestText } from "../http/contracts.ts";
 import type { Item, InventoryEntry } from "../contracts/item.ts";
@@ -6,6 +7,7 @@ import type { CommandOutcome } from "../navigation/manual-commands.ts";
 interface Entry extends InventoryEntry {
   slot: number;
   item: Item;
+  storage?: {pack:string;slot:number};
 }
 interface Group {
   id: string;
@@ -78,7 +80,24 @@ export function createCompoundCommands(state: CompoundState, ports: CompoundPort
         (entry.item.level || 0) === (item.level || 0),
     );
   }
+  function bankManual(body: Request, item: Item): CommandOutcome {
+    const name = state.merchantCharacter;
+    if (!name || body.character !== name || typeof body.pack !== 'string' || !/^items\d+$/.test(body.pack) || !Number.isSafeInteger(body.slot))
+      return reply({error:'invalid native bank compound selection'},400);
+    const groups = state.compounds[name] ||= [];
+    if (groups.some(group=>group.items.some(mark=>mark.storage && mark.storage.pack===body.pack && mark.storage.slot===body.slot && JSON.stringify(mark.item)===JSON.stringify(item)))) return null;
+    const reserved = new Set(groups.flatMap(group=>group.items.map(mark=>mark.storage ? mark.storage.pack+':'+mark.storage.slot : 'inventory:'+mark.slot)));
+    const matches = protectedMerchantStorageStock(state).filter(entry=>/^items\d+$/.test(entry.craftLocation) && entry.item && !entry.item.l && !entry.item.b && entry.item.name===item.name && (entry.item.level||0)===(item.level||0) && !reserved.has(entry.craftLocation+':'+entry.slot));
+    const selected = matches.find(entry=>entry.craftLocation===body.pack && entry.slot===body.slot && JSON.stringify(entry.item)===JSON.stringify(item));
+    if (!selected || matches.length<3 || requestObject(selected.meta).compoundable !== true)
+      return reply({error:'Need three available matching compoundable bank items'},409);
+    const triplet=[selected,...matches.filter(entry=>entry!==selected).slice(0,2)];
+    const next=nextGroup(groups);
+    groups.push({id:'group-'+next,name:'Group '+next,items:triplet.map((entry,index)=>({slot:-1-index,item:entry.item!,storage:{pack:entry.craftLocation,slot:entry.slot!}}))});
+    ports.persist();ports.queue?.([name],'manual compounds');return null;
+  }
   function manual(body: Request, item: Item): CommandOutcome {
+    if (body.pack !== undefined) return bankManual(body,item);
     if (!Number.isSafeInteger(body.slot)) return undefined;
     const name = requestText(body.character),
       slot = body.slot as number,

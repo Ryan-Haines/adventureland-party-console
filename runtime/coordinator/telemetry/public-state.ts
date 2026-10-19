@@ -1,4 +1,5 @@
 import { offeringStock } from '../inventory/offering-stock.ts';
+import { accountGoldSnapshot } from './account-gold.ts';
 import { characterConnections } from '../../roster/connection-status.ts';
 import { gameLogs } from "./game-logs.ts";
 import { requestText, type HttpRequest, type HttpResponse } from "../http/contracts.ts";
@@ -63,6 +64,7 @@ function giveawayPayload(
  * what the dashboard needs to poll quickly.
  */
 const configFields = [
+  "characterSnapshots",
   "characterAppearances", "merchantRules",
   "bankboiPrefix", "anniversaryAutoChat", "farmingProfiles",
   "passiveRareHunts", "passiveHunting", "phoenixRouteOrder",
@@ -133,7 +135,8 @@ function fullPayload(
     ...(dashboardCore ? {} : { characters: state.statuses }),
     roster: ports.roster(),
     activeSlots: ports.slots(),
-    characterConnections: characterConnections(state, ports.now(), name =>
+    characterConnections: characterConnections(state, ports.now(),
+      (name) =>
       (state.statuses[name]?.runtime === 'native' || state.statuses[name]?.runtime === 'headless') &&
       state.statuses[name].seenAt > ports.now() - 5000),
     classChoices: ports.classes,
@@ -260,6 +263,7 @@ export function createPublicStateRoute(state: Readonly<PublicState>, ports: Publ
               serverNow: ports.now(),
               accountId: accountId(state),
               bankGold: requestObject(state.bankSnapshot).gold ?? null,
+              accountGold: accountGoldSnapshot(state.bankSnapshot, ports.slots(), ports.bankbois(), state.statuses),
               characterDetails: diagnosticCharacters(dashboardCharacters(state, ports)),
               characters: Object.fromEntries(
                 Object.entries(dashboardCharacters(state, ports)).map(([name, status]) => [

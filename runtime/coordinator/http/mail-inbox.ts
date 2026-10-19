@@ -5,17 +5,22 @@ export interface MailInbox {
   refresh(): Promise<unknown>;
   collect(id: string): Promise<unknown>;
   remove(id: string): Promise<unknown>;
+  configure?(input:unknown):Promise<unknown>;
+  seen?():unknown;
+  removeSent?(id:string):unknown;
+  sent?(id:string,mail:unknown):void;
   complete(id: string, success: boolean, error: unknown): void;
 }
 export function createMailInboxRoutes(inbox: MailInbox) {
   function snapshot(_req: HttpRequest, res: HttpResponse): unknown {
     return res.json(inbox.snapshot());
   }
-  function action(name: "refresh" | "collect" | "delete") {
+  function action(name: "refresh" | "collect" | "delete" | "settings" | "seen" | "outbox-delete") {
     return async function handle(req: HttpRequest, res: HttpResponse): Promise<unknown> {
       try {
         const id = requestText(requestObject(req.body).id || "");
         const result =
+          name === "settings" ? await inbox.configure?.(req.body) : name === "seen" ? inbox.seen?.() : name === "outbox-delete" ? inbox.removeSent?.(id) :
           name === "refresh"
             ? await inbox.refresh()
             : name === "collect"

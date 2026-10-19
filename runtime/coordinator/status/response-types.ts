@@ -100,6 +100,7 @@ export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[num
   bankbois: Record<string, import("../inventory/bankboi-completion.ts").BankboiInventory>;
   goldTargets: Record<string, number>;
   gatheringModes: string[];
+  merchantAutomations?: Record<string, boolean>;
   partyFarmingMode: string;
   monsterLocationsVersion?: number;
   travelPlaces: unknown;

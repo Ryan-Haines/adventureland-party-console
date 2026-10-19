@@ -1,7 +1,9 @@
 import type {BrowserContext, Request} from '@playwright/test';
+import {gameplayTimers} from './network-clock';
 
 /** Observe real status traffic; never reacquire CODE while holding a 2s request. */
 export function observeNativePlanner(context:BrowserContext) {
+  const {setTimeout,clearTimeout}=gameplayTimers()??globalThis;
   const latest=new Map<string,{at:number;body:any}>();
   const listeners=new Set<()=>void>();
   const failures:Array<{at:number;id:unknown;error:string|undefined}>=[];

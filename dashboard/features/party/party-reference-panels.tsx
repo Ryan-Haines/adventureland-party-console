@@ -1,4 +1,5 @@
 "use client";
+import { DonationPreview } from './donation-preview';
 import { API } from "./api";
 
 import { lazy } from "react";
@@ -12,8 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { abbreviatedGold } from "./abbreviated-gold";
 import { AnniversaryDialog } from "./anniversary-dialog";
 import { BestiaryDialog } from "./bestiary-dialog";
 import { liveCharacter } from "./display-character";
@@ -26,7 +25,9 @@ import type { PartyConsoleModel } from "./use-party-console";
 
 import { usePanelModel } from "./use-panel-model";
 export function PartyReferencePanels({ model }: { model: PartyConsoleModel }) {
-  return model.actionError || model.donationOpen || model.bestiaryOpen || model.skillsOpen || model.anniversaryOpen || !!model.selectedBestiaryMonster || !!model.gearComparison ? <PartyReferencePanelsConnected base={model} /> : null;
+  return model.actionError || model.donationOpen || model.bestiaryOpen || model.skillsOpen || model.anniversaryOpen || !!model.selectedBestiaryMonster || !!model.gearComparison ? (
+    <PartyReferencePanelsConnected base={model} />
+  ) : null;
 }
 function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
   const model = usePanelModel(base, { inventory: true, vitals: true, diagnostics: true });
@@ -57,7 +58,7 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
   return (
     <>
       <BestiaryDialog
-        characterNames={model.chars.map(character => character.name)}
+        characterNames={model.chars.map((character) => character.name)}
         open={bestiaryOpen}
         onOpenChange={setBestiaryOpen}
         monsters={state.bestiaryCatalog || []}
@@ -75,15 +76,25 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
       />
       <MonsterDetailsDialog
         monster={selectedBestiaryMonster}
+        monsters={state.bestiaryCatalog || []}
+        skills={state.skillCatalog || []}
+        onInspectMonster={(id) => {
+          const found = state.bestiaryCatalog?.find((entry) => entry.id === id);
+          if (found) setSelectedBestiaryMonster(found);
+        }}
         catalog={state.merchantCatalog?.allItems || []}
         achievement={
-          selectedBestiaryMonster ? monsterAchievements[selectedBestiaryMonster.id] || null : null
+          selectedBestiaryMonster
+            ? monsterAchievements[selectedBestiaryMonster.id] || null
+            : null
         }
         onOpenChange={(open) => {
           if (!open) setSelectedBestiaryMonster(null);
         }}
         onInspectDrop={(itemId, monsterName) => {
-          const item = state.merchantCatalog?.allItems?.find((entry) => entry.id === itemId);
+          const item = state.merchantCatalog?.allItems?.find(
+            (entry) => entry.id === itemId,
+          );
           if (item) {
             setSelectedBestiaryMonster(null);
             setSelected({
@@ -103,23 +114,33 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
         open={anniversaryOpen}
         onOpenChange={setAnniversaryOpen}
         anniversary={state.anniversary}
-        autoChat={state.anniversaryAutoChat} merchant={state.merchantCharacter}
-        onAutoChatChange={async enabled => { const response = await fetch(`${API}/dashboard-preferences`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ anniversaryAutoChat: enabled }) }); if (!response.ok) throw new Error("Could not save anniversary settings"); }}
+        autoChat={state.anniversaryAutoChat}
+        merchant={state.merchantCharacter}
+        onAutoChatChange={async (enabled) => {
+          const response = await fetch(`${API}/dashboard-preferences`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ anniversaryAutoChat: enabled }),
+          });
+          if (!response.ok)
+            throw new Error('Could not save anniversary settings');
+        }}
         characters={state.characters}
         onSendChatAdvertisement={async () => {
           try {
-            await post("/anniversary/chat-advertise", {});
-
+            await post('/anniversary/chat-advertise', {});
           } catch (error) {
             setActionError(String((error as Error).message || error));
-
           }
         }}
       />
       <DeferredPanel active={!!gearComparison}>
         <GearComparisonDialog
           comparison={gearComparison}
-          currentCharacter={liveCharacter(gearComparison?.character || null, state.characters)}
+          currentCharacter={liveCharacter(
+            gearComparison?.character || null,
+            state.characters,
+          )}
           onOpenChange={(open) => {
             if (!open) setGearComparison(null);
           }}
@@ -131,10 +152,15 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
           if (!open) setActionError(null);
         }}
       >
-        <DialogContent showCloseButton={false} className="border-rose-800 bg-[#0b1916] text-emerald-50">
+        <DialogContent
+          showCloseButton={false}
+          className="border-rose-800 bg-[#0b1916] text-emerald-50"
+        >
           <DialogHeader>
             <DialogTitle>Couldn&apos;t complete action</DialogTitle>
-            <DialogDescription className="text-rose-100">{actionError}</DialogDescription>
+            <DialogDescription className="text-rose-100">
+              {actionError}
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter className="border-rose-800 bg-[#0b1916]">
             <Button
@@ -151,41 +177,32 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
           <DialogHeader>
             <DialogTitle>Donate gold for merchant XP</DialogTitle>
             <DialogDescription>
-              {state.merchantCharacter || "The merchant"} will withdraw any shortage, travel to the XP frog, and donate this amount.
+              {state.merchantCharacter || 'The merchant'} will withdraw any
+              shortage, travel to the XP frog, and donate this amount.
             </DialogDescription>
           </DialogHeader>
-          <Input
-            inputMode="numeric"
-            value={donationAmount}
-            onChange={(event) => setDonationAmount(event.target.value.replace(/[^0-9]/g, ""))}
-            placeholder="Donation amount"
-            className="border-amber-800 bg-black/30 font-mono text-amber-100"
+          <DonationPreview
+            amount={donationAmount}
+            onAmountChange={setDonationAmount}
+            character={state.characters[state.merchantCharacter || '']}
           />
-          <div className="rounded border border-violet-900/70 bg-violet-950/20 p-3 font-mono text-sm text-violet-200">
-            Preview:{" "}
-            {abbreviatedGold(
-              Math.floor(
-                (Number(donationAmount) || 0) *
-                  (state.merchantCharacter
-                    ? state.characters[state.merchantCharacter]?.donationXpPerGold || 3.2
-                    : 3.2),
-              ),
-            )}{" "}
-            XP
-            <span className="ml-2 text-[10px] text-violet-200/55">
-              (
-              {state.merchantCharacter
-                ? state.characters[state.merchantCharacter]?.donationXpPerGold || 3.2
-                : 3.2}{" "}
-              XP/gold)
-            </span>
-          </div>
-          {model.donationError && <p role="alert" className="text-sm text-rose-200">{model.donationError}</p>}
+          {model.donationError && (
+            <p role="alert" className="text-sm text-rose-200">
+              {model.donationError}
+            </p>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDonationOpen(false)} className="border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white">
+            <Button
+              variant="outline"
+              onClick={() => setDonationOpen(false)}
+              className="border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white"
+            >
               Cancel
             </Button>
-            <Button onClick={() => void donateGold()} className="bg-amber-400 text-amber-950">
+            <Button
+              onClick={() => void donateGold()}
+              className="bg-amber-400 text-amber-950"
+            >
               Donate
             </Button>
           </DialogFooter>

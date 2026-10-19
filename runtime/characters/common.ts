@@ -1,3 +1,4 @@
+import './map-projectiles.ts';
 import "./geometry.ts";
 import "./dungeons.ts";
 import "./cave-recovery.ts";
@@ -11,4 +12,6 @@ import "./craft-reservations.ts";
 import "./compound-storage.ts";
 import "./bank-stacks.ts";
 import "./movement.ts";
+import "./metrics.ts";
+import "./map-sprites.ts";
 import "../../characters/shared.js";

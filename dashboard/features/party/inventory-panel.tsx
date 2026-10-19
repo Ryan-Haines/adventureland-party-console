@@ -1,4 +1,7 @@
 "use client";
+import {useStoredBoolean} from '@/hooks/use-stored-boolean';
+import {CharacterSectionToggle} from './character-section-toggle';
+import { useItemSelection, BatchItemActions } from './item-selection';
 import { AutomaticItemActions } from './automatic-item-actions';
 import { itemActionBanner } from "./item-action-banner";
 import { standIsFull } from "./stand-capacity";
@@ -43,7 +46,7 @@ import {
   Truck,
   X,
 } from "lucide-react";
-import { memo, useCallback, useState, type ReactNode } from "react";
+import { memo, useCallback, useId, useState, type ReactNode } from "react";
 import { AutoCompoundMark } from "./auto-compound-mark";
 import { ClearItemMarks } from "./clear-item-marks";
 import { AutoUpgradeMarks } from "./auto-upgrade-marks";
@@ -82,6 +85,7 @@ import { upgradeRuleTiers } from "./upgrade-rule-tiers";
 
 export const InventoryPanel = memo(function InventoryPanel({
   character,
+  restock,
   sharedRules = false,
   characters,
   leader,
@@ -123,6 +127,8 @@ export const InventoryPanel = memo(function InventoryPanel({
   onSelect,
   onCompare,
   onCommand,
+  onBatchCommand,
+  onBatchError,
   onTravel,
   onNpcSale,
   onAutoNpcSale,
@@ -131,6 +137,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   onRemoveAutomaticSale,
 }: {
   character: Char;
+  restock?: ReactNode;
   sharedRules?: boolean;
   characters: Char[];
   leader?: string | null;
@@ -170,6 +177,13 @@ export const InventoryPanel = memo(function InventoryPanel({
   autoExchanges: Record<string, { name: string; level: number }>;
   onSelect: (entry: InventoryEntry) => void;
   onCompare: (entry: InventoryEntry, slot?: string) => void;
+  onBatchCommand?: (
+    character: string,
+    type: string,
+    item: Item,
+    extra: Record<string, unknown>,
+  ) => Promise<unknown>;
+  onBatchError?: (message: string) => void;
   onCommand: (
     character: string,
     type:
@@ -215,13 +229,19 @@ export const InventoryPanel = memo(function InventoryPanel({
     !!leader &&
     leader !== character.name &&
     characters.some((member) => member.name === leader && member.seenAt > 0);
-  const [inventoryOpen, setInventoryOpen] = useState(true);
+  const [inventoryOpen, setInventoryOpen] = useStoredBoolean(`party-section:${character.name}:inventory`, true);
+  const inventoryId=useId();
+  const itemSelection = useItemSelection(
+    character.items.filter((entry): entry is InventoryEntry => !!entry),
+    (entry) => String(entry.slot),
+  );
   const [luckySlotMenu, setLuckySlotMenu] = useState<LuckySlotMenuSelection | null>(null);
   const nextUpgradeSlot = validLuckySlot(luckyUpgradeSlot) ? luckyUpgradeSlot :
     luckySlotSearch(luckySlotTracking || {version: 1, slots: {}}).nextSlot;
   const luckySlotLabel = luckySlotLocked ? "Locked lucky upgrade position" :
     validLuckySlot(luckyUpgradeSlot) && !luckySlotResuming ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
-  type AutomaticSection = "npc" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction";
+  type AutomaticSection =
+    | "npc" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction";
   const [openAutomaticSections, setOpenAutomaticSections] = useState<
     Partial<Record<AutomaticSection, boolean>>
   >({});
@@ -302,13 +322,17 @@ export const InventoryPanel = memo(function InventoryPanel({
             />
             {icon}
             <span>{title}</span>
-            <span className="ml-auto font-mono opacity-70">{entries.length}</span>
+            <span className="ml-auto font-mono opacity-70">
+              {entries.length}
+            </span>
           </button>
           <button
             type="button"
             disabled={!entries.length}
-            aria-label={clearArmed ? `Really clear all ${title}` : `Clear all ${title}`}
-            title={clearArmed ? "Click again to clear all" : "Clear all"}
+            aria-label={
+              clearArmed ? `Really clear all ${title}` : `Clear all ${title}`
+            }
+            title={clearArmed ? 'Click again to clear all' : 'Clear all'}
             onClick={() => {
               if (clearArmed) void clearAutomaticSection(section);
               else {
@@ -333,10 +357,12 @@ export const InventoryPanel = memo(function InventoryPanel({
             <div className="space-y-2 border-t border-current/30 bg-black/95 px-5 py-3">
               {entries.length ? (
                 entries.map((entry) => {
-                  const definition = catalog.find((candidate) => candidate.id === entry.item.name);
+                  const definition = catalog.find(
+                    (candidate) => candidate.id === entry.item.name,
+                  );
                   const editKey = `${section}:${entry.key}`;
                   const removalArmed = pendingAutomaticRemoval === editKey;
-                  const title = `${definition?.name || entry.item.name}${entry.item.level ? ` +${entry.item.level}` : ""}`;
+                  const title = `${definition?.name || entry.item.name}${entry.item.level ? ` +${entry.item.level}` : ''}`;
                   const upgradeRange =
                     entry.upgradeTarget === undefined
                       ? null
@@ -348,8 +374,8 @@ export const InventoryPanel = memo(function InventoryPanel({
                     >
                       <button
                         type="button"
-                        title={`View ${title}${upgradeRange ? ` · ${upgradeRange}` : ""}`}
-                        aria-label={`View ${title}${upgradeRange ? ` · ${upgradeRange}` : ""}`}
+                        title={`View ${title}${upgradeRange ? ` · ${upgradeRange}` : ''}`}
+                        aria-label={`View ${title}${upgradeRange ? ` · ${upgradeRange}` : ''}`}
                         onClick={() =>
                           onSelect({
                             slot: -1,
@@ -362,8 +388,8 @@ export const InventoryPanel = memo(function InventoryPanel({
                         <span
                           className={
                             upgradeRange
-                              ? "absolute inset-x-0 top-0 mx-auto block h-10 w-10"
-                              : "absolute inset-0 block"
+                              ? 'absolute inset-x-0 top-0 mx-auto block h-10 w-10'
+                              : 'absolute inset-0 block'
                           }
                         >
                           {definition?.sprite ? (
@@ -371,7 +397,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                           ) : (
                             <PackageOpen className="m-auto h-5 w-5 text-slate-400" />
                           )}
-                      </span>
+                        </span>
                         {upgradeRange ? (
                           <span className="absolute inset-x-0 bottom-0 border-t border-sky-800 bg-[#07121f] text-center font-mono text-xs leading-4 tracking-tight text-sky-100">
                             {upgradeRange}
@@ -385,7 +411,9 @@ export const InventoryPanel = memo(function InventoryPanel({
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-emerald-50">{title}</div>
                         {entry.detail ? (
-                          <div className="truncate text-[10px] text-slate-400">{entry.detail}</div>
+                          <div className="truncate text-[10px] text-slate-400">
+                            {entry.detail}
+                          </div>
                         ) : null}
                       </div>
                       {!removalArmed
@@ -407,7 +435,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                                     )
                                   ) {
                                     setEditingAutomaticRule(null);
-                                    setAutomaticRuleValue("");
+                                    setAutomaticRuleValue('');
                                   }
                                 }}
                                 className="flex shrink-0 items-center gap-1"
@@ -419,20 +447,22 @@ export const InventoryPanel = memo(function InventoryPanel({
                                   onChange={(event) =>
                                     setAutomaticRuleValue(
                                       event.target.value.replace(
-                                        edit.allowUnlimited ? /[^0-9-]/g : /[^0-9]/g,
-                                        "",
+                                        edit.allowUnlimited
+                                          ? /[^0-9-]/g
+                                          : /[^0-9]/g,
+                                        '',
                                       ),
                                     )
                                   }
                                   onKeyDown={(event) => {
-                                    if (event.key === "Enter" && valid) {
+                                    if (event.key === 'Enter' && valid) {
                                       edit.onSave(parsed);
                                       setEditingAutomaticRule(null);
-                                      setAutomaticRuleValue("");
+                                      setAutomaticRuleValue('');
                                     }
-                                    if (event.key === "Escape") {
+                                    if (event.key === 'Escape') {
                                       setEditingAutomaticRule(null);
-                                      setAutomaticRuleValue("");
+                                      setAutomaticRuleValue('');
                                     }
                                   }}
                                   className="h-7 w-14 border-emerald-600 bg-black px-1 text-center font-mono text-xs text-emerald-100"
@@ -444,7 +474,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                                   onClick={() => {
                                     edit.onSave(parsed);
                                     setEditingAutomaticRule(null);
-                                    setAutomaticRuleValue("");
+                                    setAutomaticRuleValue('');
                                   }}
                                   className="flex h-7 w-7 items-center justify-center border border-emerald-300 bg-emerald-500 text-black hover:bg-emerald-400 disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-600"
                                 >
@@ -469,10 +499,18 @@ export const InventoryPanel = memo(function InventoryPanel({
                         : null}
                       <button
                         type="button"
-                        aria-label={removalArmed ? `Really remove ${title}` : `Remove ${title}`}
+                        aria-label={
+                          removalArmed
+                            ? `Really remove ${title}`
+                            : `Remove ${title}`
+                        }
                         disabled={entry.disabled}
-                        title={removalArmed ? "Click again to remove" : "Remove"}
-                        onClick={() => requestAutomaticRemoval(editKey, entry.onRemove)}
+                        title={
+                          removalArmed ? 'Click again to remove' : 'Remove'
+                        }
+                        onClick={() =>
+                          requestAutomaticRemoval(editKey, entry.onRemove)
+                        }
                         className={`flex h-7 shrink-0 items-center justify-center overflow-hidden border transition-all duration-300 disabled:opacity-40 ${removalArmed ? "w-20 border-rose-300 bg-rose-600 px-1 text-white hover:bg-rose-500" : "w-7 border-rose-800 bg-black text-rose-300 hover:bg-rose-950 hover:text-white"}`}
                       >
                         <span
@@ -482,7 +520,15 @@ export const InventoryPanel = memo(function InventoryPanel({
                         </span>
                         <X className="h-4 w-4 shrink-0" />
                       </button>
-                      {entry.retry ? <button type="button" onClick={entry.retry} className="h-7 shrink-0 border border-orange-700 bg-black px-2 text-xs text-orange-200 hover:bg-orange-950 hover:text-white">Retry</button> : null}
+                      {entry.retry ? (
+                        <button
+                          type="button"
+                          onClick={entry.retry}
+                          className="h-7 shrink-0 border border-orange-700 bg-black px-2 text-xs text-orange-200 hover:bg-orange-950 hover:text-white"
+                        >
+                          Retry
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })
@@ -496,118 +542,158 @@ export const InventoryPanel = memo(function InventoryPanel({
     );
   };
   const onUnequip = useCallback(
-    (slot: string, item: Item) => onCommand(character.name, "unequip", item, { slot }),
+    (slot: string, item: Item) =>
+      onCommand(character.name, 'unequip', item, { slot }),
     [onCommand, character.name],
   );
   const onEquipmentUpgrade = useCallback(
     (slot: string, item: Item, tiers?: number, remove?: boolean) =>
-      onCommand(character.name, "upgrade-mark", item, { slot, equipped: true, tiers, remove }),
+      onCommand(character.name, 'upgrade-mark', item, {
+        slot,
+        equipped: true,
+        tiers,
+        remove,
+      }),
     [onCommand, character.name],
   );
   const onEquipmentAutoUpgrade = useCallback(
     (slot: string, item: Item, tiers?: number, remove?: boolean) =>
-      onCommand(character.name, "auto-upgrade-mark", item, { slot, equipped: true, tiers, remove }),
+      onCommand(character.name, 'auto-upgrade-mark', item, {
+        slot,
+        equipped: true,
+        tiers,
+        remove,
+      }),
     [onCommand, character.name],
   );
   const onEquipmentStatScroll = useCallback(
     (slot: string, item: Item, remove?: boolean) =>
-      onCommand(character.name, "stat-scroll-mark", item, { slot, remove }),
+      onCommand(character.name, 'stat-scroll-mark', item, { slot, remove }),
     [onCommand, character.name],
   );
   const hasAutomaticMarks = useCallback(
     (item: Item) => {
-      const key = `${item.name}@+${item.level || 0}`, commerceKey = automaticCommerceRuleKey(item);
-      return Boolean(autoItemMarks[key] || (!item.level && autoItemMarks[item.name]) || autoUpgradeMarks[key] ||
-        autoCompoundMarks.some(rule => rule.name === item.name) || autoDeconstruction[commerceKey] ||
-        autoNpcSales[sharedRules || character.name === merchant ? commerceKey : JSON.stringify([character.name, commerceKey])] ||
+      const key = `${item.name}@+${item.level || 0}`,
+        commerceKey = automaticCommerceRuleKey(item);
+      return Boolean(
+        autoItemMarks[key] ||
+        (!item.level && autoItemMarks[item.name]) ||
+        autoUpgradeMarks[key] ||
+        autoCompoundMarks.some((rule) => rule.name === item.name) ||
+        autoDeconstruction[commerceKey] ||
+        autoNpcSales[
+          sharedRules || character.name === merchant
+            ? commerceKey
+            : JSON.stringify([character.name, commerceKey])
+        ] ||
         (!!merchant && autoExchanges[`${item.name}@${item.level || 0}`]) ||
-        (character.name === merchant && (autoStandMarks[commerceKey] || (merchantWeapon?.item && same(item, merchantWeapon.item)))));
+        (character.name === merchant &&
+          (autoStandMarks[commerceKey] ||
+            (merchantWeapon?.item && same(item, merchantWeapon.item)))),
+      );
     },
-    [autoItemMarks, autoUpgradeMarks, autoCompoundMarks, autoDeconstruction, autoNpcSales, sharedRules, character.name, merchant, autoStandMarks, autoExchanges, merchantWeapon],
+    [
+      autoItemMarks,
+      autoUpgradeMarks,
+      autoCompoundMarks,
+      autoDeconstruction,
+      autoNpcSales,
+      sharedRules,
+      character.name,
+      merchant,
+      autoStandMarks,
+      autoExchanges,
+      merchantWeapon,
+    ],
   );
   const onEquipmentClearMarks = useCallback(
-    (slot: string, item: Item) => onCommand(character.name, "clear-item-marks", item, { slot, equipped: true }),
+    (slot: string, item: Item) =>
+      onCommand(character.name, 'clear-item-marks', item, {
+        slot,
+        equipped: true,
+      }),
     [onCommand, character.name],
   );
   const onEquipmentBuy = useCallback(
-    (item: Item) => onCommand(character.name, "buy-copy", item),
+    (item: Item) => onCommand(character.name, 'buy-copy', item),
     [onCommand, character.name],
   );
   const clearAutomaticSection = async (section: AutomaticSection) => {
-    if (section === "npc" || section === "stand") onClearAutomaticSales(section);
-    else if (section === "compound") await onCommand(character.name, "clear-auto-compounds");
-    else if (section === "upgrade") await onCommand(character.name, "clear-auto-upgrades");
-    else if (section === "deconstruction") {
+    if (section === 'npc' || section === 'stand')
+      onClearAutomaticSales(section);
+    else if (section === 'compound')
+      await onCommand(character.name, 'clear-auto-compounds');
+    else if (section === 'upgrade')
+      await onCommand(character.name, 'clear-auto-upgrades');
+    else if (section === 'deconstruction') {
       for (const rule of Object.values(autoDeconstruction))
         onDeconstruction?.({ slot: -1, item: rule.item }, true, true);
-    }
-    else
-      await onCommand(character.name, "clear-auto-item-marks", undefined, {
+    } else
+      await onCommand(character.name, 'clear-auto-item-marks', undefined, {
         mode: section,
       });
     setPendingAutomaticClear(null);
   };
   return (
     <div className="p-5">
-      <Equipment
-        character={character}
-        upgradeMarks={upgradeMarks}
-        autoUpgradeMarks={autoUpgradeMarks}
-        statScrollMarks={statScrollMarks}
-        statScrollInventory={statScrollInventory}
-        onSelect={onSelect}
-        onUnequip={onUnequip}
-        onUpgrade={onEquipmentUpgrade}
-        onAutoUpgrade={onEquipmentAutoUpgrade}
-        onStatScroll={onEquipmentStatScroll}
-        hasAutomaticMarks={hasAutomaticMarks}
-        onClearMarks={onEquipmentClearMarks}
-        onBuy={onEquipmentBuy}
-      />
-      <button
-        type="button"
-        aria-expanded={inventoryOpen}
-        onClick={() => setInventoryOpen((open) => !open)}
-        className="mb-3 mt-5 flex w-full items-center justify-between border-t border-emerald-900 pt-5 text-left"
-      >
-        <span className="flex items-center gap-2 font-mono text-xs uppercase text-emerald-100/55">
-          {inventoryOpen ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-          Inventory
-        </span>
-        <span className={`font-mono text-xs ${capacityColor}`} title={`${freeSlots} slots free`}>
-          {occupiedSlots}/{totalSlots}
-        </span>
-      </button>
+      <CharacterSectionToggle label="Inventory" open={inventoryOpen} controls={inventoryId} onToggle={()=>setInventoryOpen(value=>!value)}
+        count={<span className={`font-mono text-xs ${capacityColor}`} title={`${freeSlots} slots free`}>{occupiedSlots}/{totalSlots}</span>}/>
+      <div id={inventoryId}>
       {inventoryOpen ? (
         <>
-          <LuckySlotMenu selection={luckySlotMenu} onClose={() => setLuckySlotMenu(null)} onData={() => onLuckySlot?.()} onItem={onSelect} />
+          <LuckySlotMenu
+            selection={luckySlotMenu}
+            onClose={() => setLuckySlotMenu(null)}
+            onData={() => onLuckySlot?.()}
+            onItem={onSelect}
+          />
           <div className="grid grid-cols-5 gap-2">
-            {(character.name === merchant ? physicalInventory(character.items) : compactInventory(character.items, totalSlots)).map((entry, i) => {
-              const lucky = character.name === merchant && i === nextUpgradeSlot;
+            {(character.name === merchant
+              ? physicalInventory(character.items)
+              : compactInventory(character.items, totalSlots)
+            ).map((entry, i) => {
+              const lucky =
+                character.name === merchant && i === nextUpgradeSlot;
               if (!entry)
-                return (
-                  lucky ? <Tooltip key={`empty-${i}`}>
-                    <TooltipTrigger render={<button type="button" onClick={event => setLuckySlotMenu({anchor: event.currentTarget, slot: i, entry: null})} aria-haspopup="menu" aria-expanded={luckySlotMenu?.slot === i} aria-label={`${luckySlotLabel}, slot ${i}. Open lucky slot options`} className="relative aspect-square rounded border border-amber-500 bg-zinc-950 text-amber-200 hover:border-amber-300 hover:bg-amber-950 hover:text-amber-100 focus-visible:outline-2 focus-visible:outline-amber-200" />}>
+                return lucky ? (
+                  <Tooltip key={`empty-${i}`}>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={(event) =>
+                            setLuckySlotMenu({
+                              anchor: event.currentTarget,
+                              slot: i,
+                              entry: null,
+                            })
+                          }
+                          aria-haspopup="menu"
+                          aria-expanded={luckySlotMenu?.slot === i}
+                          aria-label={`${luckySlotLabel}, slot ${i}. Open lucky slot options`}
+                          className="relative aspect-square rounded border border-amber-500 bg-zinc-950 text-amber-200 hover:border-amber-300 hover:bg-amber-950 hover:text-amber-100 focus-visible:outline-2 focus-visible:outline-amber-200"
+                        />
+                      }
+                    >
                       <LuckySlotOutline />
                     </TooltipTrigger>
-                    <TooltipContent className="border border-amber-600 bg-zinc-950 text-amber-100">{luckySlotLabel} · slot {i}. Click for options.</TooltipContent>
-                  </Tooltip> :
+                    <TooltipContent className="border border-amber-600 bg-zinc-950 text-amber-100">
+                      {luckySlotLabel} · slot {i}. Click for options.
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
                   <div
                     key={`empty-${i}`}
                     className="aspect-square rounded border border-dashed border-emerald-950"
                   />
                 );
               const bankMarked = marked.some((mark) =>
-                "item" in mark
+                'item' in mark
                   ? mark.slot === entry.slot && same(mark.item, entry.item)
                   : same(mark, entry.item),
               );
               const merchantMarkedItem = merchantMarked.some((mark) =>
-                "item" in mark
+                'item' in mark
                   ? mark.slot === entry.slot && same(mark.item, entry.item)
                   : same(mark, entry.item),
               );
@@ -623,8 +709,9 @@ export const InventoryPanel = memo(function InventoryPanel({
                 character.name === merchant
                   ? Object.keys(merchantDeliveries).find((target) =>
                       (merchantDeliveries[target] || []).some((mark) =>
-                        "item" in mark
-                          ? mark.slot === entry.slot && same(mark.item, entry.item)
+                        'item' in mark
+                          ? mark.slot === entry.slot &&
+                            same(mark.item, entry.item)
                           : same(mark, entry.item),
                       ),
                     )
@@ -632,7 +719,10 @@ export const InventoryPanel = memo(function InventoryPanel({
               const standMarked =
                 character.name === merchant &&
                 standListings.some(
-                  (mark) => !mark.bankPack && mark.slot === entry.slot && same(mark.item, entry.item),
+                  (mark) =>
+                    !mark.bankPack &&
+                    mark.slot === entry.slot &&
+                    same(mark.item, entry.item),
                 );
               const merchantWeaponMarked =
                 character.name === merchant &&
@@ -640,79 +730,171 @@ export const InventoryPanel = memo(function InventoryPanel({
                 same(merchantWeapon.item, entry.item);
               const upgradeable = !!entry.meta?.upgradeable;
               const compoundable = !!entry.meta?.compoundable;
-              const itemType = String(entry.meta?.definition.type || "");
+              const itemType = String(entry.meta?.definition.type || '');
               const classUsage = entry.meta?.usage?.classes.find(
                 (usage) => usage.id === character.ctype,
               );
               const comparisonSlots =
-                itemType === "ring"
-                  ? ["ring1", "ring2"]
-                  : itemType === "earring"
-                    ? ["earring1", "earring2"]
-                    : itemType === "weapon" && classUsage?.hands === 1
-                      ? ["mainhand", "offhand"]
+                itemType === 'ring'
+                  ? ['ring1', 'ring2']
+                  : itemType === 'earring'
+                    ? ['earring1', 'earring2']
+                    : itemType === 'weapon' && classUsage?.hands === 1
+                      ? ['mainhand', 'offhand']
                       : [];
               const upgradeMark = upgradeable
                 ? upgradeMarks.find(
                     (mark) =>
-                      !mark.equipped && mark.slot === entry.slot && same(mark.item, entry.item),
+                      !mark.equipped &&
+                      mark.slot === entry.slot &&
+                      same(mark.item, entry.item),
                   )
                 : undefined;
               const inventoryStatScrollMark =
                 character.name === merchant
                   ? statScrollMarks.find(
                       (mark) =>
-                        !mark.equipped && mark.slot === entry.slot && same(mark.item, entry.item),
+                        !mark.equipped &&
+                        mark.slot === entry.slot &&
+                        same(mark.item, entry.item),
                     )
                   : undefined;
               const compoundGroup = compoundGroups.find((group) =>
-                group.items.some((mark) => mark.slot === entry.slot && same(mark.item, entry.item)),
+                group.items.some(
+                  (mark) =>
+                    mark.slot === entry.slot && same(mark.item, entry.item),
+                ),
               );
               const autoCompoundMark = autoCompoundMarks.find(
                 (mark) => mark.name === entry.item.name,
               );
               const autoCompoundPending =
-                !!autoCompoundMark && Number(entry.item.level || 0) < autoCompoundMark.targetTier && Number(autoCompoundMark.quantity) !== 0;
+                !!autoCompoundMark &&
+                Number(entry.item.level || 0) < autoCompoundMark.targetTier &&
+                Number(autoCompoundMark.quantity) !== 0;
               const autoExchangeKey = `${entry.item.name}@${entry.item.level || 0}`;
               const autoExchangeMarked =
                 !!merchant && !!autoExchanges[autoExchangeKey];
               const automaticSaleKey = automaticCommerceRuleKey(entry.item);
               const autoNpcSaleMarked =
-                !!autoNpcSales[sharedRules || character.name === merchant ? automaticSaleKey : JSON.stringify([character.name, automaticSaleKey])];
-              const npcSale = npcSaleMarks.find(mark =>
-                (character.name === merchant ? mark.source === "merchant" : mark.source === "character" && mark.character === character.name) && mark.slot === entry.slot &&
-                automaticCommerceRuleKey(mark.item) === automaticSaleKey);
-              const npcSaleStatus = npcSale ? (npcSale.state || "queued") : null;
-              const npcSaleDetails = npcSale ? [
-                `NPC sale: ${npcSaleStatus}`,
-                npcSale.error,
-                npcSale.retryAt ? `Retry after ${new Date(npcSale.retryAt).toLocaleTimeString()}` : null,
-              ].filter(Boolean).join(" · ") : null;
-              const deconstruction = deconstructionMarks.find(mark => mark.owner === character.name && mark.slot === entry.slot &&
-                mark.state !== "complete" && same(entry.item, mark.item));
+                !!autoNpcSales[
+                  sharedRules || character.name === merchant
+                    ? automaticSaleKey
+                    : JSON.stringify([character.name, automaticSaleKey])
+                ];
+              const npcSale = npcSaleMarks.find(
+                (mark) =>
+                  (character.name === merchant
+                    ? mark.source === 'merchant'
+                    : mark.source === 'character' &&
+                      mark.character === character.name) &&
+                  mark.slot === entry.slot &&
+                  automaticCommerceRuleKey(mark.item) === automaticSaleKey,
+              );
+              const npcSaleStatus = npcSale ? npcSale.state || 'queued' : null;
+              const npcSaleDetails = npcSale
+                ? [
+                    `NPC sale: ${npcSaleStatus}`,
+                    npcSale.error,
+                    npcSale.retryAt
+                      ? `Retry after ${new Date(npcSale.retryAt).toLocaleTimeString()}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')
+                : null;
+              const deconstruction = deconstructionMarks.find(
+                (mark) =>
+                  mark.owner === character.name &&
+                  mark.slot === entry.slot &&
+                  mark.state !== 'complete' &&
+                  same(entry.item, mark.item),
+              );
               const autoDeconstruct = !!autoDeconstruction[automaticSaleKey];
-              const deconstructable = canDeconstruct(entry.item, deconstructionCatalog);
+              const deconstructable = canDeconstruct(
+                entry.item,
+                deconstructionCatalog,
+              );
               const autoStandMarked =
                 character.name === merchant && autoStandMarks[automaticSaleKey];
               const exchangeable =
                 !!merchant && Number(entry.meta?.definition.e || 0) > 0;
-              const banner = itemActionBanner([
-                !!deconstruction && {action:'deconstruction',label:'Deconstruction'},
-                !!npcSale && {action:'npc',label:npcSale.auto ? 'Auto NPC' : 'NPC sale',automatic:!!npcSale.auto,title:npcSaleDetails || undefined},
-                !!inventoryStatScrollMark && {action:'stat',label:'Stat scroll'},
-                !!upgradeMark && {action:'upgrade',automatic:!!upgradeMark.auto,label:upgradeMark.auto ? `Auto → +${Number(upgradeMark.item.level || 0)+Number(upgradeMark.tiers || 1)}` : `+${upgradeMark.item.level || 0} → +${Number(upgradeMark.item.level || 0)+Number(upgradeMark.tiers || 1)}`},
-                !!compoundGroup && {action:'compound',label:`+${entry.item.level || 0} → +${Number(entry.item.level || 0)+1}`},
-                !!standMarked && {action:'stand',label:'Stand sale'},
-                autoCompoundPending && {action:'compound',automatic:true,label:`Auto compound → +${autoCompoundMark!.targetTier}`},
-                autoDeconstruct && {action:'deconstruction',automatic:true,label:'Auto deconstruction'},
-                autoNpcSaleMarked && {action:'npc',automatic:true,label:'Auto NPC',title:npcSaleDetails || 'Auto NPC sale'},
-                !!autoStandMarked && {action:'stand',automatic:true,label:'Auto stand'},
-                autoExchangeMarked && {action:'exchange',automatic:true,label:'Auto exchange'},
-                !!deliveryTarget && {action:'delivery',label:`To ${deliveryTarget}`},
-                (autoMarkMode === 'bank' || bankMarked) && {action:'bank',label:autoMarkMode === 'bank' ? 'Auto bank' : 'Bank'},
-                (autoMarkMode === 'merchant' || merchantMarkedItem) && {action:'merchant',label:autoMarkMode === 'merchant' ? 'Auto merchant' : 'Mark for merchant'},
-                merchantWeaponMarked && {action:'weapon',label:'Merchant weapon'},
-              ], character.name === merchant);
+              const banner = itemActionBanner(
+                [
+                  !!deconstruction && {
+                    action: 'deconstruction',
+                    label: 'Deconstruction',
+                  },
+                  !!npcSale && {
+                    action: 'npc',
+                    label: npcSale.auto ? 'Auto NPC' : 'NPC sale',
+                    automatic: !!npcSale.auto,
+                    title: npcSaleDetails || undefined,
+                  },
+                  !!inventoryStatScrollMark && {
+                    action: 'stat',
+                    label: 'Stat scroll',
+                  },
+                  !!upgradeMark && {
+                    action: 'upgrade',
+                    automatic: !!upgradeMark.auto,
+                    label: upgradeMark.auto
+                      ? `Auto → +${Number(upgradeMark.item.level || 0)+Number(upgradeMark.tiers || 1)}`
+                      : `+${upgradeMark.item.level || 0} → +${Number(upgradeMark.item.level || 0)+Number(upgradeMark.tiers || 1)}`,
+                  },
+                  !!compoundGroup && {
+                    action: 'compound',
+                    label: `+${entry.item.level || 0} → +${Number(entry.item.level || 0)+1}`,
+                  },
+                  !!standMarked && { action: 'stand', label: 'Stand sale' },
+                  autoCompoundPending && {
+                    action: 'compound',
+                    automatic: true,
+                    label: `Auto compound → +${autoCompoundMark!.targetTier}`,
+                  },
+                  autoDeconstruct && {
+                    action: 'deconstruction',
+                    automatic: true,
+                    label: 'Auto deconstruction',
+                  },
+                  autoNpcSaleMarked && {
+                    action: 'npc',
+                    automatic: true,
+                    label: 'Auto NPC',
+                    title: npcSaleDetails || 'Auto NPC sale',
+                  },
+                  !!autoStandMarked && {
+                    action: 'stand',
+                    automatic: true,
+                    label: 'Auto stand',
+                  },
+                  autoExchangeMarked && {
+                    action: 'exchange',
+                    automatic: true,
+                    label: 'Auto exchange',
+                  },
+                  !!deliveryTarget && {
+                    action: 'delivery',
+                    label: `To ${deliveryTarget}`,
+                  },
+                  (autoMarkMode === 'bank' || bankMarked) && {
+                    action: 'bank',
+                    label: autoMarkMode === 'bank' ? 'Auto bank' : 'Bank',
+                  },
+                  (autoMarkMode === 'merchant' || merchantMarkedItem) && {
+                    action: 'merchant',
+                    label:
+                      autoMarkMode === 'merchant'
+                        ? 'Auto merchant'
+                        : 'Mark for merchant',
+                  },
+                  merchantWeaponMarked && {
+                    action: 'weapon',
+                    label: 'Merchant weapon',
+                  },
+                ],
+                character.name === merchant,
+              );
 
               return (
                 <ContextMenu key={entry.slot}>
@@ -720,11 +902,36 @@ export const InventoryPanel = memo(function InventoryPanel({
                     <TooltipTrigger
                       render={
                         <ContextMenuTrigger
-                          onClick={event => lucky ? setLuckySlotMenu({anchor: event.currentTarget, slot: i, entry}) : onSelect(entry)}
-                          aria-haspopup={lucky ? "menu" : undefined}
-                          aria-expanded={lucky ? luckySlotMenu?.slot === i : undefined}
+                          render={<button type="button" />}
+                          onClick={(event) => {
+                            if (!itemSelection.click(event, entry)) {
+                              if (lucky)
+                                setLuckySlotMenu({
+                                  anchor: event.currentTarget,
+                                  slot: i,
+                                  entry,
+                                });
+                              else onSelect(entry);
+                            }
+                          }}
+                          onContextMenu={() => itemSelection.context(entry)}
+                          aria-pressed={itemSelection.has(entry)}
+                          style={
+                            itemSelection.has(entry)
+                              ? {
+                                  outline: '3px solid #38bdf8',
+                                  outlineOffset: -3,
+                                }
+                              : undefined
+                          }
+                          aria-haspopup={lucky ? 'menu' : undefined}
+                          aria-expanded={
+                            lucky ? luckySlotMenu?.slot === i : undefined
+                          }
                           className={`relative aspect-square ${lucky ? "overflow-visible" : "overflow-hidden"} rounded border bg-black/40 p-1 text-left hover:border-emerald-400 ${banner?.border || "border-emerald-900"}`}
-                          aria-label={String(entry.meta?.definition.name || entry.item.name)}
+                          aria-label={String(
+                            entry.meta?.definition.name || entry.item.name,
+                          )}
                         />
                       }
                     >
@@ -740,7 +947,9 @@ export const InventoryPanel = memo(function InventoryPanel({
                         <ItemOperationOverlay operation={entry.operation} />
                       ) : null}
                       {!entry.operation && entry.item.level ? (
-                        <span className={`${itemLevelLabelClass} left-1`}>+{entry.item.level}</span>
+                        <span className={`${itemLevelLabelClass} left-1`}>
+                          +{entry.item.level}
+                        </span>
                       ) : null}
                       {entry.item.stat_type ? (
                         <span
@@ -755,7 +964,15 @@ export const InventoryPanel = memo(function InventoryPanel({
                         </span>
                       ) : null}
                       <MluckClover item={entry.item} />
-                      {banner && <span data-item-action-banner title={banner.title} className={`absolute inset-x-0 top-0 z-10 whitespace-normal break-words px-1 text-center text-[9px] leading-tight ${banner.colors}`}>{banner.label}</span>}
+                      {banner && (
+                        <span
+                          data-item-action-banner
+                          title={banner.title}
+                          className={`absolute inset-x-0 top-0 z-10 whitespace-normal break-words px-1 text-center text-[9px] leading-tight ${banner.colors}`}
+                        >
+                          {banner.label}
+                        </span>
+                      )}
                     </TooltipTrigger>
                     {character.name === merchant ? (
                       <TooltipContent
@@ -763,315 +980,590 @@ export const InventoryPanel = memo(function InventoryPanel({
                         align="center"
                         className="block max-h-[70vh] w-96 overflow-y-auto border border-amber-700 bg-black p-3 text-left font-mono text-[11px] leading-relaxed text-emerald-50 shadow-2xl"
                       >
-                        {lucky ? <p className="mb-2 text-amber-300">{luckySlotLabel} · slot {i}. Click for options.</p> : null}
+                        {lucky ? (
+                          <p className="mb-2 text-amber-300">
+                            {luckySlotLabel} · slot {i}. Click for options.
+                          </p>
+                        ) : null}
                         <SuggestedPriceDetails
                           entry={entry}
                           buyable={buyable}
                           observed={priceHistory[entry.item.name]}
                         />
-                        {deconstruction || autoDeconstruct ? <p className="mt-1 text-[#dfb18c]">Deconstruction{autoDeconstruct ? " · automatic" : ""}{deconstruction ? " · " + deconstruction.state : ""}</p> : null}
-                        {npcSaleDetails ? <p className="mt-1 text-rose-200">{npcSaleDetails}</p> : null}
+                        {deconstruction || autoDeconstruct ? (
+                          <p className="mt-1 text-[#dfb18c]">
+                            Deconstruction
+                            {autoDeconstruct ? ' · automatic' : ''}
+                            {deconstruction ? ' · ' + deconstruction.state : ''}
+                          </p>
+                        ) : null}
+                        {npcSaleDetails ? (
+                          <p className="mt-1 text-rose-200">{npcSaleDetails}</p>
+                        ) : null}
                       </TooltipContent>
                     ) : null}
                   </Tooltip>
                   <ContextMenuContent className={itemMenuClass}>
-                    {isEquipment(entry.meta?.definition) && <ContextMenuItem onClick={() => onCommand(character.name, "equip", entry.item)}>
-                      <Swords className="mr-2 h-4 w-4" />
-                      Equip
-                    </ContextMenuItem>}
-                    {isUsable(entry.meta?.definition) && <ContextMenuItem onClick={() => onCommand(character.name, "use-item", entry.item, {slot: entry.slot})}>
-                      <FlaskConical className="mr-2 h-4 w-4" />{itemType === "elixir" ? "Use elixir" : "Use"}
-                    </ContextMenuItem>}
-                    {isEquipment(entry.meta?.definition) && (comparisonSlots.length > 1 ? (
-                      <ContextMenuSub>
-                        <ContextMenuSubTrigger>
-                          <SlidersHorizontal className="mr-2 h-4 w-4" />
-                          Compare with equipped
-                        </ContextMenuSubTrigger>
-                        <ContextMenuSubContent>
-                          {comparisonSlots.map((slot) => (
-                            <ContextMenuItem key={slot} onClick={() => onCompare(entry, slot)}>
-                              {slot === "mainhand"
-                                ? "Main hand"
-                                : slot === "offhand"
-                                  ? "Off hand"
-                                  : slot === "ring1"
-                                    ? "Ring 1"
-                                    : slot === "ring2"
-                                      ? "Ring 2"
-                                      : slot === "earring1"
-                                        ? "Earring 1"
-                                        : "Earring 2"}
-                              <span className="ml-auto pl-5 text-xs text-muted-foreground">
-                                {character.slots[slot]
-                                  ? String(
-                                      character.slots[slot].meta?.definition.name ||
-                                        character.slots[slot].item.name,
-                                    )
-                                  : "Empty"}
-                              </span>
-                            </ContextMenuItem>
-                          ))}
-                        </ContextMenuSubContent>
-                      </ContextMenuSub>
-                    ) : (
-                      <ContextMenuItem onClick={() => onCompare(entry)}>
-                        <SlidersHorizontal className="mr-2 h-4 w-4" />
-                        Compare with equipped
-                      </ContextMenuItem>
-                    ))}
-                    <ContextMenuSub>
-                      <ContextMenuSubTrigger>
-                        <Truck className="mr-2 h-4 w-4" />
-                        Deliver to…
-                      </ContextMenuSubTrigger>
-                      <ContextMenuSubContent>
-                        {characters
-                          .filter(
-                            (target) =>
-                              target.name !== character.name && target.seenAt > 0,
+                    {itemSelection.forEntry(entry).length > 1 ? (
+                      <BatchItemActions
+                        entries={itemSelection.forEntry(entry)}
+                        merchant={!!merchant}
+                        onError={onBatchError}
+                        onCommand={(type, item, extra) =>
+                          (onBatchCommand || onCommand)(
+                            character.name,
+                            type,
+                            item.item,
+                            extra,
                           )
-                          .map((target) =>
-                            character.name === merchant && isEquipment(entry.meta?.definition) ? (
-                              <ContextMenuSub key={target.name}>
-                                <ContextMenuSubTrigger>
-                                  {target.name}
-                                  {deliveryTarget === target.name ? " ✓" : ""}
-                                </ContextMenuSubTrigger>
-                                <ContextMenuSubContent>
-                                  <ContextMenuItem
-                                    onClick={() =>
-                                      onCommand(character.name, "give", entry.item, {
-                                        target: target.name,
-                                        slot: entry.slot,
-                                        equipOnDelivery: false,
-                                      })
-                                    }
-                                  >
-                                    Don&apos;t equip
-                                  </ContextMenuItem>
-                                  <ContextMenuItem
-                                    onClick={() =>
-                                      onCommand(character.name, "give", entry.item, {
-                                        target: target.name,
-                                        slot: entry.slot,
-                                        equipOnDelivery: true,
-                                      })
-                                    }
-                                  >
-                                    Equip
-                                  </ContextMenuItem>
-                                </ContextMenuSubContent>
-                              </ContextMenuSub>
-                            ) : (
-                              <ContextMenuItem
-                                key={target.name}
-                                onClick={() =>
-                                  onCommand(character.name, "give", entry.item, {
-                                    target: target.name,
-                                    slot: entry.slot,
-                                  })
-                                }
-                              >
-                                {target.name}
-                              </ContextMenuItem>
-                            ),
-                          )}
-                      </ContextMenuSubContent>
-                    </ContextMenuSub>
-                    {character.name === merchant && entry.meta?.definition.stat ? (
-                      <ContextMenuSub>
-                        <ContextMenuSubTrigger>
-                          <ScrollText className="mr-2 h-4 w-4" />
-                          {inventoryStatScrollMark
-                            ? `Stat scroll: ${inventoryStatScrollMark.statType.toUpperCase()}`
-                            : entry.item.stat_type
-                              ? `Change stat scroll · ${entry.item.stat_type.toUpperCase()}`
-                              : "Add stat scroll"}
-                        </ContextMenuSubTrigger>
-                        <ContextMenuSubContent>
-                          {STAT_SCROLLS.filter(
-                            (choice) =>
-                              choice.purchasable ||
-                              (statScrollInventory[choice.scroll] || 0) >=
-                                statScrollQuantity(entry.meta, entry.item),
-                          ).map((choice) => {
-                            const required = statScrollQuantity(entry.meta, entry.item);
-                            const owned = statScrollInventory[choice.scroll] || 0;
-                            return (
-                              <ContextMenuItem
-                                key={choice.stat}
-                                disabled={entry.item.stat_type === choice.stat}
-                                onClick={() =>
-                                  entry.item.stat_type !== choice.stat &&
-                                  onCommand(character.name, "stat-scroll-mark", entry.item, {
-                                    slot: entry.slot,
-                                    statType: choice.stat,
-                                  })
-                                }
-                              >
-                                <span>
-                                  {choice.label}
-                                  {entry.item.stat_type === choice.stat ? " · current" : ""}
-                                </span>
-                                <span className="ml-auto pl-5 font-mono text-black">
-                                  {choice.purchasable
-                                    ? `${primaryStatScrollCost(entry.meta, entry.item).toLocaleString()}g · ${required} scroll${required === 1 ? "" : "s"}`
-                                    : `${owned}/${required} owned`}
-                                </span>
-                              </ContextMenuItem>
-                            );
-                          })}
-                        </ContextMenuSubContent>
-                      </ContextMenuSub>
-                    ) : null}
-                    {exchangeable && <ContextMenuItem onClick={() => onCommand(character.name, "exchange", entry.item, {slot: entry.slot})}>Exchange</ContextMenuItem>}
-                    {!!merchant && <AutomaticItemActions section="exchange"
-                      entry={entry} bank={autoMarkMode === 'bank'} merchant={character.name === merchant}
-                      stand={!!autoStandMarked} npc={autoNpcSaleMarked} exchange={autoExchangeMarked}
-                      exchangeable={exchangeable} upgradeTiers={upgradeRuleTiers(autoUpgradeMarks[autoRuleKey])}
-                      compoundTier={autoCompoundMark?.targetTier} buyable={buyable}
-                      onCommand={(type, extra) => onCommand(character.name, type, entry.item, extra)}
-                      onStand={() => onAutoStand(entry)} onNpc={() => onAutoNpcSale(entry)} />}
-                    <ContextMenuItem
-                      disabled={bankMarked}
-                      onClick={() =>
-                        onCommand(character.name, "mark", entry.item, {
-                          slot: entry.slot,
-                        })
-                      }
-                    >
-                      <Landmark className="mr-2 h-4 w-4" />
-                      Mark for bank
-                    </ContextMenuItem>
-                    {!!merchant && <AutomaticItemActions section="bank"
-                      entry={entry} bank={autoMarkMode === 'bank'} merchant={character.name === merchant}
-                      stand={!!autoStandMarked} npc={autoNpcSaleMarked} exchange={autoExchangeMarked}
-                      exchangeable={exchangeable} upgradeTiers={upgradeRuleTiers(autoUpgradeMarks[autoRuleKey])}
-                      compoundTier={autoCompoundMark?.targetTier} buyable={buyable}
-                      onCommand={(type, extra) => onCommand(character.name, type, entry.item, extra)}
-                      onStand={() => onAutoStand(entry)} onNpc={() => onAutoNpcSale(entry)} />}
-                    {character.name === merchant ? (
-                      <>
-                        <ContextMenuItem
-                          disabled={standFull && !standMarked}
-                          onClick={() => { if (!standFull || standMarked) onStand(entry); }}
-                          className="bg-white text-black data-highlighted:bg-slate-100 data-disabled:bg-white data-disabled:text-slate-400"
-                        >
-                          <Store className="mr-2 h-4 w-4" />
-                          {standMarked ? "Edit stand listing" : "Mark for stand"}
-                        </ContextMenuItem>
-
-                      </>
-                    ) : null}
-
-
-                    {!!merchant && <AutomaticItemActions section="stand"
-                      entry={entry} bank={autoMarkMode === 'bank'} merchant={character.name === merchant}
-                      stand={!!autoStandMarked} npc={autoNpcSaleMarked} exchange={autoExchangeMarked}
-                      exchangeable={exchangeable} upgradeTiers={upgradeRuleTiers(autoUpgradeMarks[autoRuleKey])}
-                      compoundTier={autoCompoundMark?.targetTier} buyable={buyable}
-                      onCommand={(type, extra) => onCommand(character.name, type, entry.item, extra)}
-                      onStand={() => onAutoStand(entry)} onNpc={() => onAutoNpcSale(entry)} />}
-                    {merchant ? (
-                      <UpgradeActions
-                        showAutomatic={true}
-                        offeringSource={{slot:entry.slot}}
-                        item={entry.item}
-                        meta={entry.meta}
-                        mark={upgradeMark}
-                        autoTiers={upgradeRuleTiers(autoUpgradeMarks[autoRuleKey])}
-                        onMark={(tiers, remove) =>
-                          onCommand(character.name, "upgrade-mark", entry.item, {
-                            slot: entry.slot,
-                            tiers,
-                            remove,
-                          })
                         }
-                        onBuy={() => onCommand(character.name, "buy-copy", entry.item)}
-                        onAutoMark={(tiers, remove) =>
-                          onCommand(character.name, "auto-upgrade-mark", entry.item, {
-                            slot: entry.slot,
-                            tiers,
-                            remove,
-                          })
+                        onBank={(item) =>
+                          (onBatchCommand || onCommand)(
+                            character.name,
+                            'mark',
+                            item.item,
+                            { slot: item.slot },
+                          )
+                        }
+                        onMerchant={
+                          merchant
+                            ? (item) =>
+                                (onBatchCommand || onCommand)(
+                                  character.name,
+                                  'merchant-mark',
+                                  item.item,
+                                  { slot: item.slot },
+                                )
+                            : undefined
+                        }
+                        exchangeable={(item) =>
+                          !!merchant && Number(item.meta?.definition.e || 0) > 0
                         }
                       />
-                    ) : null}
-                    {!!merchant && compoundable && !compoundGroup ? (
-                      <ContextMenuItem
-                        onClick={() =>
-                          onCommand(character.name, "compound-mark", entry.item, {
-                            slot: entry.slot,
-                          })
-                        }
-                      >
-                        <Blender className="mr-2 h-4 w-4" />
-                        Mark for compounding
-                      </ContextMenuItem>
-                    ) : null}
-                    {!!merchant && <AutomaticItemActions section="compound"
-                      entry={entry} bank={autoMarkMode === 'bank'} merchant={character.name === merchant}
-                      stand={!!autoStandMarked} npc={autoNpcSaleMarked} exchange={autoExchangeMarked}
-                      exchangeable={exchangeable} upgradeTiers={upgradeRuleTiers(autoUpgradeMarks[autoRuleKey])}
-                      compoundTier={autoCompoundMark?.targetTier} buyable={buyable}
-                      onCommand={(type, extra) => onCommand(character.name, type, entry.item, extra)}
-                      onStand={() => onAutoStand(entry)} onNpc={() => onAutoNpcSale(entry)} />}
-                    {character.name !== merchant ? (
+                    ) : (
                       <>
+                        {isEquipment(entry.meta?.definition) && (
+                          <ContextMenuItem
+                            onClick={() =>
+                              onCommand(character.name, 'equip', entry.item)
+                            }
+                          >
+                            <Swords className="mr-2 h-4 w-4" />
+                            Equip
+                          </ContextMenuItem>
+                        )}
+                        {isUsable(entry.meta?.definition) && (
+                          <ContextMenuItem
+                            onClick={() =>
+                              onCommand(
+                                character.name,
+                                'use-item',
+                                entry.item,
+                                { slot: entry.slot },
+                              )
+                            }
+                          >
+                            <FlaskConical className="mr-2 h-4 w-4" />
+                            {itemType === 'elixir' ? 'Use elixir' : 'Use'}
+                          </ContextMenuItem>
+                        )}
+                        {isEquipment(entry.meta?.definition) &&
+                          (comparisonSlots.length > 1 ? (
+                            <ContextMenuSub>
+                              <ContextMenuSubTrigger>
+                                <SlidersHorizontal className="mr-2 h-4 w-4" />
+                                Compare with equipped
+                              </ContextMenuSubTrigger>
+                              <ContextMenuSubContent>
+                                {comparisonSlots.map((slot) => (
+                                  <ContextMenuItem
+                                    key={slot}
+                                    onClick={() => onCompare(entry, slot)}
+                                  >
+                                    {slot === 'mainhand'
+                                      ? 'Main hand'
+                                      : slot === 'offhand'
+                                        ? 'Off hand'
+                                        : slot === 'ring1'
+                                          ? 'Ring 1'
+                                          : slot === 'ring2'
+                                            ? 'Ring 2'
+                                            : slot === 'earring1'
+                                              ? 'Earring 1'
+                                              : 'Earring 2'}
+                                    <span className="ml-auto pl-5 text-xs text-muted-foreground">
+                                      {character.slots[slot]
+                                        ? String(
+                                            character.slots[slot].meta
+                                              ?.definition.name ||
+                                              character.slots[slot].item.name,
+                                          )
+                                        : 'Empty'}
+                                    </span>
+                                  </ContextMenuItem>
+                                ))}
+                              </ContextMenuSubContent>
+                            </ContextMenuSub>
+                          ) : (
+                            <ContextMenuItem onClick={() => onCompare(entry)}>
+                              <SlidersHorizontal className="mr-2 h-4 w-4" />
+                              Compare with equipped
+                            </ContextMenuItem>
+                          ))}
+                        <ContextMenuSub>
+                          <ContextMenuSubTrigger>
+                            <Truck className="mr-2 h-4 w-4" />
+                            Deliver to…
+                          </ContextMenuSubTrigger>
+                          <ContextMenuSubContent>
+                            {characters
+                              .filter(
+                                (target) =>
+                                  target.name !== character.name &&
+                                  target.seenAt > 0,
+                              )
+                              .map((target) =>
+                                character.name === merchant &&
+                                isEquipment(entry.meta?.definition) ? (
+                                  <ContextMenuSub key={target.name}>
+                                    <ContextMenuSubTrigger>
+                                      {target.name}
+                                      {deliveryTarget === target.name
+                                        ? ' ✓'
+                                        : ''}
+                                    </ContextMenuSubTrigger>
+                                    <ContextMenuSubContent>
+                                      <ContextMenuItem
+                                        onClick={() =>
+                                          onCommand(
+                                            character.name,
+                                            'give',
+                                            entry.item,
+                                            {
+                                              target: target.name,
+                                              slot: entry.slot,
+                                              equipOnDelivery: false,
+                                            },
+                                          )
+                                        }
+                                      >
+                                        Don&apos;t equip
+                                      </ContextMenuItem>
+                                      <ContextMenuItem
+                                        onClick={() =>
+                                          onCommand(
+                                            character.name,
+                                            'give',
+                                            entry.item,
+                                            {
+                                              target: target.name,
+                                              slot: entry.slot,
+                                              equipOnDelivery: true,
+                                            },
+                                          )
+                                        }
+                                      >
+                                        Equip
+                                      </ContextMenuItem>
+                                    </ContextMenuSubContent>
+                                  </ContextMenuSub>
+                                ) : (
+                                  <ContextMenuItem
+                                    key={target.name}
+                                    onClick={() =>
+                                      onCommand(
+                                        character.name,
+                                        'give',
+                                        entry.item,
+                                        {
+                                          target: target.name,
+                                          slot: entry.slot,
+                                        },
+                                      )
+                                    }
+                                  >
+                                    {target.name}
+                                  </ContextMenuItem>
+                                ),
+                              )}
+                          </ContextMenuSubContent>
+                        </ContextMenuSub>
+                        {character.name === merchant &&
+                        entry.meta?.definition.stat ? (
+                          <ContextMenuSub>
+                            <ContextMenuSubTrigger>
+                              <ScrollText className="mr-2 h-4 w-4" />
+                              {inventoryStatScrollMark
+                                ? `Stat scroll: ${inventoryStatScrollMark.statType.toUpperCase()}`
+                                : entry.item.stat_type
+                                  ? `Change stat scroll · ${entry.item.stat_type.toUpperCase()}`
+                                  : 'Add stat scroll'}
+                            </ContextMenuSubTrigger>
+                            <ContextMenuSubContent>
+                              {STAT_SCROLLS.filter(
+                                (choice) =>
+                                  choice.purchasable ||
+                                  (statScrollInventory[choice.scroll] || 0) >=
+                                    statScrollQuantity(entry.meta, entry.item),
+                              ).map((choice) => {
+                                const required = statScrollQuantity(
+                                  entry.meta,
+                                  entry.item,
+                                );
+                                const owned =
+                                  statScrollInventory[choice.scroll] || 0;
+                                return (
+                                  <ContextMenuItem
+                                    key={choice.stat}
+                                    disabled={
+                                      entry.item.stat_type === choice.stat
+                                    }
+                                    onClick={() =>
+                                      entry.item.stat_type !== choice.stat &&
+                                      onCommand(
+                                        character.name,
+                                        'stat-scroll-mark',
+                                        entry.item,
+                                        {
+                                          slot: entry.slot,
+                                          statType: choice.stat,
+                                        },
+                                      )
+                                    }
+                                  >
+                                    <span>
+                                      {choice.label}
+                                      {entry.item.stat_type === choice.stat
+                                        ? ' · current'
+                                        : ''}
+                                    </span>
+                                    <span className="ml-auto pl-5 font-mono text-black">
+                                      {choice.purchasable
+                                        ? `${primaryStatScrollCost(entry.meta, entry.item).toLocaleString()}g · ${required} scroll${required === 1 ? "" : "s"}`
+                                        : `${owned}/${required} owned`}
+                                    </span>
+                                  </ContextMenuItem>
+                                );
+                              })}
+                            </ContextMenuSubContent>
+                          </ContextMenuSub>
+                        ) : null}
+                        {exchangeable && (
+                          <ContextMenuItem
+                            onClick={() =>
+                              onCommand(
+                                character.name,
+                                'exchange',
+                                entry.item,
+                                { slot: entry.slot },
+                              )
+                            }
+                          >
+                            Exchange
+                          </ContextMenuItem>
+                        )}
+                        {!!merchant && (
+                          <AutomaticItemActions
+                            section="exchange"
+                            entry={entry}
+                            bank={autoMarkMode === 'bank'}
+                            merchant={character.name === merchant}
+                            stand={!!autoStandMarked}
+                            npc={autoNpcSaleMarked}
+                            exchange={autoExchangeMarked}
+                            exchangeable={exchangeable}
+                            upgradeTiers={upgradeRuleTiers(
+                              autoUpgradeMarks[autoRuleKey],
+                            )}
+                            compoundTier={autoCompoundMark?.targetTier}
+                            buyable={buyable}
+                            onCommand={(type, extra) =>
+                              onCommand(character.name, type, entry.item, extra)
+                            }
+                            onStand={() => onAutoStand(entry)}
+                            onNpc={() => onAutoNpcSale(entry)}
+                          />
+                        )}
                         <ContextMenuItem
-                          disabled={!!merchantMarkedItem}
+                          disabled={bankMarked}
                           onClick={() =>
-                            onCommand(character.name, "merchant-mark", entry.item, {
+                            onCommand(character.name, 'mark', entry.item, {
                               slot: entry.slot,
                             })
                           }
                         >
-                          <PackageOpen className="mr-2 h-4 w-4" />
-                          Mark for merchant
+                          <Landmark className="mr-2 h-4 w-4" />
+                          Mark for bank
                         </ContextMenuItem>
-                        <ContextMenuItem
-                          disabled={autoMarkMode === "merchant"}
-                          onClick={() =>
-                            onCommand(character.name, "auto-item-mark", entry.item, {
-                              mode: "merchant",
-                            })
-                          }
-                        >
-                          <AutoActionIcon><PackageOpen /></AutoActionIcon>
-                          Auto mark for merchant
-                        </ContextMenuItem>
-                      </>
-                    ) : null}
-                    {merchant || deconstructable && onDeconstruction ? <ContextMenuSeparator className="my-1 h-px bg-slate-600" /> : null}
-                    {deconstructable && onDeconstruction ? <>
-                      <ContextMenuItem className="text-orange-300" disabled={!!deconstruction} onClick={() => onDeconstruction(entry, false, false)}>
-                        <BrokenStickIcon className="mr-2 h-4 w-4" />
-                        Mark for deconstruction
-                      </ContextMenuItem>
-                      <ContextMenuItem className="text-orange-300" disabled={autoDeconstruct} onClick={() => onDeconstruction(entry, true, false)}>
-                        <AutoActionIcon><BrokenStickIcon /></AutoActionIcon>
-                        Auto mark for deconstruction
-                      </ContextMenuItem>
-                    </> : null}
-                    {merchant ? (
-                      <>
-                        <ContextMenuItem className="text-rose-300" onClick={() => onNpcSale(entry)}>
-                          <DollarSign className="mr-2 h-4 w-4" />
-                          Sell to NPC…
-                        </ContextMenuItem>
+                        {!!merchant && (
+                          <AutomaticItemActions
+                            section="bank"
+                            entry={entry}
+                            bank={autoMarkMode === 'bank'}
+                            merchant={character.name === merchant}
+                            stand={!!autoStandMarked}
+                            npc={autoNpcSaleMarked}
+                            exchange={autoExchangeMarked}
+                            exchangeable={exchangeable}
+                            upgradeTiers={upgradeRuleTiers(
+                              autoUpgradeMarks[autoRuleKey],
+                            )}
+                            compoundTier={autoCompoundMark?.targetTier}
+                            buyable={buyable}
+                            onCommand={(type, extra) =>
+                              onCommand(character.name, type, entry.item, extra)
+                            }
+                            onStand={() => onAutoStand(entry)}
+                            onNpc={() => onAutoNpcSale(entry)}
+                          />
+                        )}
+                        {character.name === merchant ? (
+                          <>
+                            <ContextMenuItem
+                              disabled={standFull && !standMarked}
+                              onClick={() => {
+                                if (!standFull || standMarked) onStand(entry);
+                              }}
+                              className="bg-white text-black data-highlighted:bg-slate-100 data-disabled:bg-white data-disabled:text-slate-400"
+                            >
+                              <Store className="mr-2 h-4 w-4" />
+                              {standMarked
+                                ? 'Edit stand listing'
+                                : 'Mark for stand'}
+                            </ContextMenuItem>
+                          </>
+                        ) : null}
 
+                        {!!merchant && (
+                          <AutomaticItemActions
+                            section="stand"
+                            entry={entry}
+                            bank={autoMarkMode === 'bank'}
+                            merchant={character.name === merchant}
+                            stand={!!autoStandMarked}
+                            npc={autoNpcSaleMarked}
+                            exchange={autoExchangeMarked}
+                            exchangeable={exchangeable}
+                            upgradeTiers={upgradeRuleTiers(
+                              autoUpgradeMarks[autoRuleKey],
+                            )}
+                            compoundTier={autoCompoundMark?.targetTier}
+                            buyable={buyable}
+                            onCommand={(type, extra) =>
+                              onCommand(character.name, type, entry.item, extra)
+                            }
+                            onStand={() => onAutoStand(entry)}
+                            onNpc={() => onAutoNpcSale(entry)}
+                          />
+                        )}
+                        {merchant ? (
+                          <UpgradeActions
+                            showAutomatic={true}
+                            offeringSource={{ slot: entry.slot }}
+                            item={entry.item}
+                            meta={entry.meta}
+                            mark={upgradeMark}
+                            autoTiers={upgradeRuleTiers(
+                              autoUpgradeMarks[autoRuleKey],
+                            )}
+                            onMark={(tiers, remove) =>
+                              onCommand(
+                                character.name,
+                                'upgrade-mark',
+                                entry.item,
+                                {
+                                  slot: entry.slot,
+                                  tiers,
+                                  remove,
+                                },
+                              )
+                            }
+                            onBuy={() =>
+                              onCommand(character.name, 'buy-copy', entry.item)
+                            }
+                            onAutoMark={(tiers, remove) =>
+                              onCommand(
+                                character.name,
+                                'auto-upgrade-mark',
+                                entry.item,
+                                {
+                                  slot: entry.slot,
+                                  tiers,
+                                  remove,
+                                },
+                              )
+                            }
+                          />
+                        ) : null}
+                        {!!merchant && compoundable && !compoundGroup ? (
+                          <ContextMenuItem
+                            onClick={() =>
+                              onCommand(
+                                character.name,
+                                'compound-mark',
+                                entry.item,
+                                {
+                                  slot: entry.slot,
+                                },
+                              )
+                            }
+                          >
+                            <Blender className="mr-2 h-4 w-4" />
+                            Mark for compounding
+                          </ContextMenuItem>
+                        ) : null}
+                        {!!merchant && (
+                          <AutomaticItemActions
+                            section="compound"
+                            entry={entry}
+                            bank={autoMarkMode === 'bank'}
+                            merchant={character.name === merchant}
+                            stand={!!autoStandMarked}
+                            npc={autoNpcSaleMarked}
+                            exchange={autoExchangeMarked}
+                            exchangeable={exchangeable}
+                            upgradeTiers={upgradeRuleTiers(
+                              autoUpgradeMarks[autoRuleKey],
+                            )}
+                            compoundTier={autoCompoundMark?.targetTier}
+                            buyable={buyable}
+                            onCommand={(type, extra) =>
+                              onCommand(character.name, type, entry.item, extra)
+                            }
+                            onStand={() => onAutoStand(entry)}
+                            onNpc={() => onAutoNpcSale(entry)}
+                          />
+                        )}
+                        {character.name !== merchant ? (
+                          <>
+                            <ContextMenuItem
+                              disabled={!!merchantMarkedItem}
+                              onClick={() =>
+                                onCommand(
+                                  character.name,
+                                  'merchant-mark',
+                                  entry.item,
+                                  {
+                                    slot: entry.slot,
+                                  },
+                                )
+                              }
+                            >
+                              <PackageOpen className="mr-2 h-4 w-4" />
+                              Mark for merchant
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              disabled={autoMarkMode === 'merchant'}
+                              onClick={() =>
+                                onCommand(
+                                  character.name,
+                                  'auto-item-mark',
+                                  entry.item,
+                                  {
+                                    mode: 'merchant',
+                                  },
+                                )
+                              }
+                            >
+                              <AutoActionIcon>
+                                <PackageOpen />
+                              </AutoActionIcon>
+                              Auto mark for merchant
+                            </ContextMenuItem>
+                          </>
+                        ) : null}
+                        {merchant || (deconstructable && onDeconstruction) ? (
+                          <ContextMenuSeparator className="my-1 h-px bg-slate-600" />
+                        ) : null}
+                        {deconstructable && onDeconstruction ? (
+                          <>
+                            <ContextMenuItem
+                              className="text-orange-300"
+                              disabled={!!deconstruction}
+                              onClick={() =>
+                                onDeconstruction(entry, false, false)
+                              }
+                            >
+                              <BrokenStickIcon className="mr-2 h-4 w-4" />
+                              Mark for deconstruction
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              className="text-orange-300"
+                              disabled={autoDeconstruct}
+                              onClick={() =>
+                                onDeconstruction(entry, true, false)
+                              }
+                            >
+                              <AutoActionIcon>
+                                <BrokenStickIcon />
+                              </AutoActionIcon>
+                              Auto mark for deconstruction
+                            </ContextMenuItem>
+                          </>
+                        ) : null}
+                        {merchant ? (
+                          <>
+                            <ContextMenuItem
+                              className="text-rose-300"
+                              onClick={() => onNpcSale(entry)}
+                            >
+                              <DollarSign className="mr-2 h-4 w-4" />
+                              Sell to NPC…
+                            </ContextMenuItem>
+                          </>
+                        ) : null}
+                        {!!merchant && (
+                          <AutomaticItemActions
+                            section="npc"
+                            entry={entry}
+                            bank={autoMarkMode === 'bank'}
+                            merchant={character.name === merchant}
+                            stand={!!autoStandMarked}
+                            npc={autoNpcSaleMarked}
+                            exchange={autoExchangeMarked}
+                            exchangeable={exchangeable}
+                            upgradeTiers={upgradeRuleTiers(
+                              autoUpgradeMarks[autoRuleKey],
+                            )}
+                            compoundTier={autoCompoundMark?.targetTier}
+                            buyable={buyable}
+                            onCommand={(type, extra) =>
+                              onCommand(character.name, type, entry.item, extra)
+                            }
+                            onStand={() => onAutoStand(entry)}
+                            onNpc={() => onAutoNpcSale(entry)}
+                          />
+                        )}
+                        {Boolean(
+                          bankMarked ||
+                          merchantMarkedItem ||
+                          autoMarkMode ||
+                          upgradeMark ||
+                          autoUpgradeMarks[autoRuleKey] ||
+                          inventoryStatScrollMark ||
+                          compoundGroup ||
+                          autoCompoundMark ||
+                          autoExchangeMarked ||
+                          merchantWeaponMarked ||
+                          npcSale ||
+                          autoNpcSaleMarked ||
+                          standMarked ||
+                          autoStandMarked ||
+                          deconstruction ||
+                          autoDeconstruct,
+                        ) && (
+                          <ClearItemMarks
+                            onClear={() =>
+                              onCommand(
+                                character.name,
+                                'clear-item-marks',
+                                entry.item,
+                                { slot: entry.slot },
+                              )
+                            }
+                          />
+                        )}
                       </>
-                    ) : null}
-                    {!!merchant && <AutomaticItemActions section="npc"
-                      entry={entry} bank={autoMarkMode === 'bank'} merchant={character.name === merchant}
-                      stand={!!autoStandMarked} npc={autoNpcSaleMarked} exchange={autoExchangeMarked}
-                      exchangeable={exchangeable} upgradeTiers={upgradeRuleTiers(autoUpgradeMarks[autoRuleKey])}
-                      compoundTier={autoCompoundMark?.targetTier} buyable={buyable}
-                      onCommand={(type, extra) => onCommand(character.name, type, entry.item, extra)}
-                      onStand={() => onAutoStand(entry)} onNpc={() => onAutoNpcSale(entry)} />}
-                    {Boolean(bankMarked || merchantMarkedItem || autoMarkMode || upgradeMark || autoUpgradeMarks[autoRuleKey] || inventoryStatScrollMark || compoundGroup || autoCompoundMark || autoExchangeMarked || merchantWeaponMarked || npcSale || autoNpcSaleMarked || standMarked || autoStandMarked || deconstruction || autoDeconstruct) && (
-                      <ClearItemMarks onClear={() => onCommand(character.name, "clear-item-marks", entry.item, { slot: entry.slot })} />
                     )}
                   </ContextMenuContent>
                 </ContextMenu>
@@ -1080,6 +1572,23 @@ export const InventoryPanel = memo(function InventoryPanel({
           </div>
         </>
       ) : null}
+      </div>
+      <Equipment
+        character={character}
+        upgradeMarks={upgradeMarks}
+        autoUpgradeMarks={autoUpgradeMarks}
+        statScrollMarks={statScrollMarks}
+        statScrollInventory={statScrollInventory}
+        onSelect={onSelect}
+        onUnequip={onUnequip}
+        onUpgrade={onEquipmentUpgrade}
+        onAutoUpgrade={onEquipmentAutoUpgrade}
+        onStatScroll={onEquipmentStatScroll}
+        hasAutomaticMarks={hasAutomaticMarks}
+        onClearMarks={onEquipmentClearMarks}
+        onBuy={onEquipmentBuy}
+      />
+      {restock}
       {character.name !== merchant && (
         <div className="mt-5 grid gap-2 border-t border-emerald-900 pt-4">
           <Button
@@ -1092,18 +1601,30 @@ export const InventoryPanel = memo(function InventoryPanel({
           </Button>
         </div>
       )}
-      <div className={`${character.name !== merchant ? "mt-2" : "mt-5"} grid gap-2`}>
+      <div
+        className={`${character.name !== merchant ? "mt-2" : "mt-5"} grid gap-2`}
+      >
         {automaticSection(
-              "npc",
-              "Auto NPC sales",
-              <DollarSign className="h-4 w-4" />,
-              "border-rose-800 text-rose-300",
-              [...Object.entries(autoNpcSales).filter(([, rule]) => character.name === merchant ? !rule.character : rule.character === character.name).map(([key, rule]) => ({
+          'npc',
+          'Auto NPC sales',
+          <DollarSign className="h-4 w-4" />,
+          'border-rose-800 text-rose-300',
+          [
+            ...Object.entries(autoNpcSales)
+              .filter(([, rule]) =>
+                character.name === merchant
+                  ? !rule.character
+                  : rule.character === character.name,
+              )
+              .map(([key, rule]) => ({
                 key,
                 item: rule.item,
-                onRemove: () => onRemoveAutomaticSale("npc", rule.item),
-              })), ...npcSaleMarks.map(mark => ({
-                key: mark.id, item: mark.item, detail: `${mark.character || merchant} · ${mark.quantity} × · ${mark.state || 'queued'}${mark.error ? ` · ${mark.error}` : ''}`,
+                onRemove: () => onRemoveAutomaticSale('npc', rule.item),
+              })),
+            ...npcSaleMarks.map((mark) => ({
+              key: mark.id,
+              item: mark.item,
+              detail: `${mark.character || merchant} · ${mark.quantity} × · ${mark.state || 'queued'}${mark.error ? ` · ${mark.error}` : ''}`,
                 disabled: mark.state === 'running', onRemove: () => onRemoveNpcSale?.(mark.id),
               }))],
             )}
@@ -1113,7 +1634,7 @@ export const InventoryPanel = memo(function InventoryPanel({
           [...Object.entries(autoDeconstruction).map(([key, rule]) => ({
             key, item: rule.item, detail: 'Automatic',
             onRemove: () => onDeconstruction?.({ slot: -1, item: rule.item }, true, true),
-          })), ...deconstructionMarks.filter(mark => mark.state !== 'complete').map(mark => ({
+          })), ...deconstructionMarks.filter((mark) => mark.state !== 'complete').map((mark) => ({
             key: mark.id, item: mark.item, detail: `${mark.owner} · ${mark.quantity} × · ${mark.state}${mark.error ? ` · ${mark.error}` : ''}`,
             disabled: mark.state === 'running',
             retry: mark.state === 'blocked' ? () => onRetryDeconstruction?.(mark.id) : undefined,
@@ -1131,14 +1652,14 @@ export const InventoryPanel = memo(function InventoryPanel({
                 key,
                 item: rule.item,
                 detail: `${rule.price.toLocaleString()}g`,
-                onRemove: () => onRemoveAutomaticSale("stand", rule.item),
+                onRemove: () => onRemoveAutomaticSale('stand', rule.item),
               })),
             )}
             {automaticSection(
-              "upgrade",
-              "Auto upgrades",
+              'upgrade',
+              'Auto upgrades',
               <Sparkles className="h-4 w-4" />,
-              "border-sky-800 text-sky-300",
+              'border-sky-800 text-sky-300',
               Object.entries(allAutoUpgradeMarks).flatMap(([owner, rules]) =>
                 Object.entries(rules).map(([ruleKey, rule]) => {
                   const item = automaticRuleItem(ruleKey);
@@ -1151,33 +1672,48 @@ export const InventoryPanel = memo(function InventoryPanel({
                     detail: owner === character.name ? undefined : owner,
                     edits: [
                       {
-                        id: "target",
+                        id: 'target',
                         value: tiers,
                         label: `${tiers} tier${tiers === 1 ? "" : "s"} → +${Number(item.level || 0) + tiers}`,
                         min: 1,
                         max: Math.max(1, 13 - Number(item.level || 0)),
                         onSave: (value: number) =>
-                          void onCommand(owner, "update-auto-upgrade-rule", item, {
-                            ruleKey,
-                            tiers: value,
-                          }),
+                          void onCommand(
+                            owner,
+                            'update-auto-upgrade-rule',
+                            item,
+                            {
+                              ruleKey,
+                              tiers: value,
+                            },
+                          ),
                       },
                       {
-                        id: "quantity",
+                        id: 'quantity',
                         value: quantity,
-                        label: quantity === -1 ? "Remaining ∞" : quantity === 0 ? "Completed" : `Remaining ${quantity}`,
+                        label:
+                          quantity === -1
+                            ? 'Remaining ∞'
+                            : quantity === 0
+                              ? 'Completed'
+                              : `Remaining ${quantity}`,
                         min: 1,
                         max: 9999,
                         allowUnlimited: true,
                         onSave: (value: number) =>
-                          void onCommand(owner, "update-auto-upgrade-rule", item, {
-                            ruleKey,
-                            quantity: value,
-                          }),
+                          void onCommand(
+                            owner,
+                            'update-auto-upgrade-rule',
+                            item,
+                            {
+                              ruleKey,
+                              quantity: value,
+                            },
+                          ),
                       },
                     ],
                     onRemove: () =>
-                      void onCommand(owner, "update-auto-upgrade-rule", item, {
+                      void onCommand(owner, 'update-auto-upgrade-rule', item, {
                         ruleKey,
                         remove: true,
                       }),
@@ -1187,10 +1723,10 @@ export const InventoryPanel = memo(function InventoryPanel({
             )}
             <UpgradeOfferingRules />
             {automaticSection(
-              "compound",
-              "Auto compounds",
+              'compound',
+              'Auto compounds',
               <Blender className="h-4 w-4" />,
-              "border-fuchsia-800 text-fuchsia-300",
+              'border-fuchsia-800 text-fuchsia-300',
               Object.entries(allAutoCompoundMarks).flatMap(([owner, rules]) =>
                 rules.map((rule) => ({
                   key: `${owner}:${rule.name}`,
@@ -1198,7 +1734,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                   detail: owner === character.name ? undefined : owner,
                   edits: [
                     {
-                      id: "target",
+                      id: 'target',
                       value: rule.targetTier,
                       label: `Target +${rule.targetTier}`,
                       min: 1,
@@ -1206,27 +1742,30 @@ export const InventoryPanel = memo(function InventoryPanel({
                       onSave: (value: number) =>
                         void onCommand(
                           owner,
-                          "auto-compound-mark",
+                          'auto-compound-mark',
                           { name: rule.name },
                           { targetTier: value },
                         ),
                     },
                     {
-                      id: "quantity",
+                      id: 'quantity',
                       value: Number.isSafeInteger(Number(rule.quantity))
                         ? Number(rule.quantity)
                         : -1,
                       label:
-                        Number(rule.quantity) === -1 || rule.quantity === undefined
-                          ? "Remaining ∞"
-                          : Number(rule.quantity) === 0 ? "Completed" : `Remaining ${rule.quantity}`,
+                        Number(rule.quantity) === -1 ||
+                        rule.quantity === undefined
+                          ? 'Remaining ∞'
+                          : Number(rule.quantity) === 0
+                            ? 'Completed'
+                            : `Remaining ${rule.quantity}`,
                       min: 1,
                       max: 9999,
                       allowUnlimited: true,
                       onSave: (value: number) =>
                         void onCommand(
                           owner,
-                          "auto-compound-mark",
+                          'auto-compound-mark',
                           { name: rule.name },
                           { targetTier: rule.targetTier, quantity: value },
                         ),
@@ -1235,7 +1774,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                   onRemove: () =>
                     void onCommand(
                       owner,
-                      "auto-compound-mark",
+                      'auto-compound-mark',
                       { name: rule.name },
                       { targetTier: rule.targetTier, remove: true },
                     ),
@@ -1246,57 +1785,67 @@ export const InventoryPanel = memo(function InventoryPanel({
         ) : null}
         {character.name === merchant
           ? automaticSection(
-              "merchant",
-              "Auto merchant marks",
+              'merchant',
+              'Auto merchant marks',
               <PackageOpen className="h-4 w-4" />,
-              "border-purple-800 text-purple-300",
+              'border-purple-800 text-purple-300',
               Object.entries(autoItemMarks)
-                .filter(([, mode]) => mode === "merchant")
+                .filter(([, mode]) => mode === 'merchant')
                 .map(([key]) => ({
                   key,
                   item: automaticRuleItem(key),
                   onRemove: () =>
-                    void onCommand(character.name, "remove-auto-item-mark", undefined, {
-                      mode: "merchant",
-                      ruleKey: key,
-                    }),
+                    void onCommand(
+                      character.name,
+                      'remove-auto-item-mark',
+                      undefined,
+                      {
+                        mode: 'merchant',
+                        ruleKey: key,
+                      },
+                    ),
                 })),
             )
           : null}
         {automaticSection(
-          "bank",
-          "Auto bank marks",
+          'bank',
+          'Auto bank marks',
           <Landmark className="h-4 w-4" />,
-          "border-amber-800 text-amber-300",
+          'border-amber-800 text-amber-300',
           Object.entries(autoItemMarks)
-            .filter(([, mode]) => mode === "bank")
+            .filter(([, mode]) => mode === 'bank')
             .map(([key]) => ({
               key,
               item: automaticRuleItem(key),
               onRemove: () =>
-                void onCommand(character.name, "remove-auto-item-mark", undefined, {
-                  mode: "bank",
-                  ruleKey: key,
-                }),
+                void onCommand(
+                  character.name,
+                  'remove-auto-item-mark',
+                  undefined,
+                  {
+                    mode: 'bank',
+                    ruleKey: key,
+                  },
+                ),
             })),
         )}
         {character.name === merchant ? (
           <>
-          <MerchantVisitControl characters={characters} merchant={merchant} />
-          <Button
-            variant="outline"
-            onClick={() => onCommand(character.name, "go-home")}
-            className="h-9 w-full justify-start border-cyan-700 bg-[#071719] text-xs text-cyan-100 hover:border-cyan-500 hover:bg-cyan-950 hover:text-white"
-          >
-            <HomeIcon className="mr-2 h-4 w-4" />
-            Go home
-          </Button>
+            <MerchantVisitControl characters={characters} merchant={merchant} />
+            <Button
+              variant="outline"
+              onClick={() => onCommand(character.name, 'go-home')}
+              className="h-9 w-full justify-start border-cyan-700 bg-[#071719] text-xs text-cyan-100 hover:border-cyan-500 hover:bg-cyan-950 hover:text-white"
+            >
+              <HomeIcon className="mr-2 h-4 w-4" />
+              Go home
+            </Button>
           </>
         ) : (
           <Button
             variant="outline"
             disabled={!leaderOnline}
-            onClick={() => onCommand(character.name, "return-leader")}
+            onClick={() => onCommand(character.name, 'return-leader')}
             className="mt-1 h-11 w-full justify-start border-emerald-800 bg-black text-sm text-emerald-300 hover:bg-emerald-950 hover:text-emerald-100"
           >
             <Radio className="mr-2 h-4 w-4" />

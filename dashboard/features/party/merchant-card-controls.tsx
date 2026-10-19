@@ -9,7 +9,9 @@ import {
   Gift,
   Hammer,
   HandCoins,
-  Landmark,
+  Store,
+  Pickaxe,
+  Fish,
   RefreshCw,
   ShoppingCart,
   SlidersHorizontal,
@@ -69,7 +71,7 @@ export const MerchantCardControls = memo(function MerchantCardControls({
   const inventory = useCharacterData(state.merchantCharacter || "", 'inventory');
   const merchantStatus = state.merchantCharacter ? state.characters[state.merchantCharacter] : null;
   const merchant = merchantStatus ? {...merchantStatus, ...inventory} : null;
-  const inventoryAtCapacity = Array.isArray(merchant?.items) && merchant.items.filter(entry => !entry).length <= 3;
+  const inventoryAtCapacity = Array.isArray(merchant?.items) && merchant.items.filter((entry) => !entry).length <= 3;
   const readiness = (mode: "fishing" | "mining") => {
     const remaining = Math.max(
       0,
@@ -103,32 +105,56 @@ export const MerchantCardControls = memo(function MerchantCardControls({
     );
   };
   const capacityReason = `Merchant capacity blocked (${merchant?.items?.filter(Boolean).length}/${merchant?.items?.length} slots occupied; three slots reserved)`;
-  const merchantJobs: {job: MerchantJob; status: string}[] = [
+  const merchantJobs: { job: MerchantJob; status: string }[] = [
     ...(state.merchantCurrent
       ? [
           {
             job: state.merchantCurrent,
-            status: state.merchantCurrent.commandReport?.state === "deferred"
-              ? `Waiting: ${state.merchantCurrent.commandReport.reason || "temporarily blocked"}`
-              : state.merchantCurrent.reason === "marked items" && state.merchantCurrent.phase === "processing"
-                ? "finishing collection"
-                : state.merchantCurrent.phase || "in progress",
+            status:
+              state.merchantCurrent.commandReport?.state === 'deferred'
+                ? `Waiting: ${state.merchantCurrent.commandReport.reason || "temporarily blocked"}`
+                : state.merchantCurrent.reason === 'marked items' &&
+                    state.merchantCurrent.phase === 'processing'
+                  ? 'finishing collection'
+                  : state.merchantCurrent.phase || 'in progress',
           },
         ]
       : []),
-    ...(state.merchantQueue || []).map((job) => ({ job, status: capacityBlocked(job) ? (job.reason === "fishing" || job.reason === "mining" ? "BLOCKED" : "blocked") : "queued" })),
-    ...(state.gatheringModes || []).filter((mode): mode is "fishing" | "mining" =>
-      (mode === "fishing" || mode === "mining") &&
-      Math.max(Number(merchant?.gatheringCooldowns?.[mode] || 0), Number(state.gatheringCooldowns?.[mode] || 0)) <= now &&
-      ![state.merchantCurrent, ...(state.merchantQueue || [])].some(job => job?.reason === mode)
-    ).map(mode => ({job: {reason: mode, target: state.merchantCharacter || ""} satisfies MerchantJob,
-      status: inventoryAtCapacity ? "BLOCKED" : "queued"})),
+    ...(state.merchantQueue || []).map((job) => ({
+      job,
+      status: capacityBlocked(job)
+        ? job.reason === 'fishing' || job.reason === 'mining'
+          ? 'BLOCKED'
+          : 'blocked'
+        : 'queued',
+    })),
+    ...(state.gatheringModes || [])
+      .filter(
+        (mode): mode is 'fishing' | 'mining' =>
+          (mode === 'fishing' || mode === 'mining') &&
+          Math.max(
+            Number(merchant?.gatheringCooldowns?.[mode] || 0),
+            Number(state.gatheringCooldowns?.[mode] || 0),
+          ) <= now &&
+          ![state.merchantCurrent, ...(state.merchantQueue || [])].some(
+            (job) => job?.reason === mode,
+          ),
+      )
+      .map((mode) => ({
+        job: {
+          reason: mode,
+          target: state.merchantCharacter || '',
+        } satisfies MerchantJob,
+        status: inventoryAtCapacity ? 'BLOCKED' : 'queued',
+      })),
   ];
   return (
     <section className="border-b border-amber-900/70 bg-amber-400/[0.03] p-4">
       <details className="group mb-3 rounded border border-amber-900/60 bg-black/20">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-amber-300">
-          <span>Merchant logistics · {state.merchantQueue?.length || 0} queued</span>
+          <span>
+            Merchant logistics · {state.merchantQueue?.length || 0} queued
+          </span>
           <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
         </summary>
         <div className="space-y-1 border-t border-amber-900/50 px-3 py-2 font-mono text-[10px]">
@@ -140,79 +166,138 @@ export const MerchantCardControls = memo(function MerchantCardControls({
               key={job.id || `${job.reason}-${index}`}
               className="flex min-w-0 items-center gap-3 text-left"
             >
-              {(status === "queued" || status === "blocked") && job.reason !== "fishing" && job.reason !== "mining" ? (
-                <MerchantCancelJobControl id={job.id} reason={routineFor(job)} label={jobLabel(job)} onCancel={onCancelJob} />
+              {(status === 'queued' || status === 'blocked') &&
+              job.reason !== 'fishing' &&
+              job.reason !== 'mining' ? (
+                <MerchantCancelJobControl
+                  id={job.id}
+                  reason={routineFor(job)}
+                  label={jobLabel(job)}
+                  onCancel={onCancelJob}
+                />
               ) : null}
-              <span title={`${jobLabel(job)}${job.target && job.reason !== "join giveaway" ? ` · ${job.target}` : ""}`}
+              <span
+                title={`${jobLabel(job)}${job.target && job.reason !== "join giveaway" ? ` · ${job.target}` : ''}`}
                 className={
-                  `min-w-0 flex-1 truncate text-left ${index === 0 && state.merchantCurrent ? "text-amber-200" : "text-emerald-100/70"}`
-                }
+                  `min-w-0 flex-1 truncate text-left ${index === 0 && state.merchantCurrent ? "text-amber-200" : "text-emerald-100/70"}`}
               >
                 <span className="mr-1 text-amber-300">
-                  P{job.priority ?? state.merchantRoutinePriorities?.[routineFor(job)] ?? 50}
+                  P
+                  {job.priority ??
+                    state.merchantRoutinePriorities?.[routineFor(job)] ??
+                    50}
                 </span>
                 {jobLabel(job)}
-                {job.target && job.reason !== "join giveaway" ? ` · ${job.target}` : ""}
+                {job.target && job.reason !== 'join giveaway'
+                  ? ` · ${job.target}`
+                  : ''}
               </span>
-              <span className={`max-w-32 shrink-0 truncate ${status.toLowerCase() === "blocked" ? "text-red-400" : "text-emerald-100/70"}`} title={status.toLowerCase() === "blocked" ? capacityReason : job.realmBlockedReason || job.pauseReason || status}>{status.toLowerCase() === "blocked" ? status : job.realmBlockedReason || (job.retryAt && job.retryAt > now ? `Retry at ${new Date(job.retryAt).toLocaleTimeString()}` : job.pauseReason || status)}</span>
-              {job.realmRetryExhausted && <button type="button"
-                className="rounded border border-amber-600 bg-zinc-950 px-2 py-1 text-amber-200 hover:border-amber-300 hover:bg-amber-950 hover:text-white"
-                onClick={() => action.mutate({ path: '/merchant/job/retry', body: { id: job.id } })}>Retry</button>}
+              <span
+                className={`max-w-32 shrink-0 truncate ${status.toLowerCase() === "blocked" ? "text-red-400" : "text-emerald-100/70"}`}
+                title={
+                  status.toLowerCase() === 'blocked'
+                    ? capacityReason
+                    : job.realmBlockedReason || job.pauseReason || status
+                }
+              >
+                {status.toLowerCase() === 'blocked'
+                  ? status
+                  : job.realmBlockedReason ||
+                    (job.retryAt && job.retryAt > now
+                      ? `Retry at ${new Date(job.retryAt).toLocaleTimeString()}`
+                      : job.pauseReason || status)}
+              </span>
+              {job.realmRetryExhausted && (
+                <button
+                  type="button"
+                  className="rounded border border-amber-600 bg-zinc-950 px-2 py-1 text-amber-200 hover:border-amber-300 hover:bg-amber-950 hover:text-white"
+                  onClick={() =>
+                    action.mutate({
+                      path: '/merchant/job/retry',
+                      body: { id: job.id },
+                    })
+                  }
+                >
+                  Retry
+                </button>
+              )}
             </div>
           ))}
-          {state.mluckSchedule && !merchantJobs.some(({ job }) =>
-            job.reason === "merchant luck" && job.target === state.mluckSchedule?.target
-          ) && (
-            <div className="flex min-w-0 items-center gap-3 text-left">
-              <span className="text-emerald-100/70">
-                Merchant&apos;s Luck upkeep · {state.mluckSchedule.target}
-              </span>
-              <span className="shrink-0 text-emerald-100/40">
-                {state.mluckSchedule.status === "scheduled"
-                  ? `dispatch in ${durationLabel(state.mluckSchedule.dispatchInMs)}`
-                  : state.mluckSchedule.status}
-              </span>
-            </div>
-          )}
+          {state.mluckSchedule &&
+            !merchantJobs.some(
+              ({ job }) =>
+                job.reason === 'merchant luck' &&
+                job.target === state.mluckSchedule?.target,
+            ) && (
+              <div className="flex min-w-0 items-center gap-3 text-left">
+                <span className="text-emerald-100/70">
+                  Merchant&apos;s Luck upkeep · {state.mluckSchedule.target}
+                </span>
+                <span className="shrink-0 text-emerald-100/40">
+                  {state.mluckSchedule.status === 'scheduled'
+                    ? `dispatch in ${durationLabel(state.mluckSchedule.dispatchInMs)}`
+                    : state.mluckSchedule.status}
+                </span>
+              </div>
+            )}
         </div>
       </details>
-      <details className="mb-3" onToggle={event => setActivityOpen(event.currentTarget.open)}>
-          <summary className="cursor-pointer font-mono text-[10px] uppercase text-amber-300">
-            Activity
-          </summary>
-          <div className="mt-2 flex items-center justify-end gap-2">
-            {cleanupResult ? (
-              <span className="mr-auto font-mono text-[9px] text-emerald-300">{cleanupResult}</span>
-            ) : null}
-            <button
-              type="button"
-              className="font-mono text-[9px] text-purple-300 hover:text-purple-200"
-              onClick={async () => {
-                try {
-                  const result = await action.mutateAsync({ path: '/merchant/stale-orders/clear', body: {} });
-                  setCleanupResult(`Removed ${Number(result.deliveriesRemoved) || 0} deliveries, ${Number(result.bankMarksRemoved) || 0} bank marks`);
-                } catch (error) { setCleanupResult(error instanceof Error ? error.message : 'Cleanup failed'); }
-
-              }}
-            >
-              Clear stale orders
-            </button>
-            <button
-              type="button"
-              className="font-mono text-[9px] text-rose-300 hover:text-rose-200"
-              onClick={async () => {
-                try {
-                  await action.mutateAsync({ path: '/merchant/activity/clear', body: {} });
-                  setCleanupResult('Activity history cleared');
-                } catch (error) { setCleanupResult(error instanceof Error ? error.message : 'Cleanup failed'); }
-
-              }}
-            >
-              Clear history
-            </button>
-          </div>
-          <MerchantActivityLog entries={state.merchantActivity || []} />
-        </details>
+      <details
+        className="mb-3"
+        onToggle={(event) => setActivityOpen(event.currentTarget.open)}
+      >
+        <summary className="cursor-pointer font-mono text-[10px] uppercase text-amber-300">
+          Activity
+        </summary>
+        <div className="mt-2 flex items-center justify-end gap-2">
+          {cleanupResult ? (
+            <span className="mr-auto font-mono text-[9px] text-emerald-300">
+              {cleanupResult}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="font-mono text-[9px] text-purple-300 hover:text-purple-200"
+            onClick={async () => {
+              try {
+                const result = await action.mutateAsync({
+                  path: '/merchant/stale-orders/clear',
+                  body: {},
+                });
+                setCleanupResult(
+                  `Removed ${Number(result.deliveriesRemoved) || 0} deliveries, ${Number(result.bankMarksRemoved) || 0} bank marks`,
+                );
+              } catch (error) {
+                setCleanupResult(
+                  error instanceof Error ? error.message : 'Cleanup failed',
+                );
+              }
+            }}
+          >
+            Clear stale orders
+          </button>
+          <button
+            type="button"
+            className="font-mono text-[9px] text-rose-300 hover:text-rose-200"
+            onClick={async () => {
+              try {
+                await action.mutateAsync({
+                  path: '/merchant/activity/clear',
+                  body: {},
+                });
+                setCleanupResult('Activity history cleared');
+              } catch (error) {
+                setCleanupResult(
+                  error instanceof Error ? error.message : 'Cleanup failed',
+                );
+              }
+            }}
+          >
+            Clear history
+          </button>
+        </div>
+        <MerchantActivityLog entries={state.merchantActivity || []} />
+      </details>
       <div className="grid grid-cols-2 gap-2">
         <Button
           variant="outline"
@@ -261,12 +346,12 @@ export const MerchantCardControls = memo(function MerchantCardControls({
           onClick={() => void onForceStand(state.merchantForceStand !== true)}
           className={
             state.merchantForceStand
-              ? "h-9 border-rose-300 bg-rose-600 text-xs font-semibold text-white hover:bg-rose-500"
-              : "h-9 border-amber-700 bg-[#07100f] text-xs text-amber-200 hover:bg-amber-950"
+              ? 'h-9 border-rose-300 bg-rose-600 text-xs font-semibold text-white hover:bg-rose-500'
+              : 'h-9 border-amber-700 bg-[#07100f] text-xs text-amber-200 hover:bg-amber-950'
           }
         >
-          <Landmark className="mr-1.5 h-3.5 w-3.5" />
-          Force stand · {state.merchantForceStand ? "On" : "Off"}
+          <Store className="mr-1.5 h-3.5 w-3.5" />
+          Force stand · {state.merchantForceStand ? 'On' : 'Off'}
         </Button>
         <Button
           variant="outline"
@@ -279,39 +364,53 @@ export const MerchantCardControls = memo(function MerchantCardControls({
 
         <Button
           variant="outline"
-          aria-pressed={state.gatheringModes?.includes("mining")}
-          onClick={() => void onGather("mining", !state.gatheringModes?.includes("mining"))}
+          aria-pressed={state.gatheringModes?.includes('mining')}
+          onClick={() =>
+            void onGather('mining', !state.gatheringModes?.includes('mining'))
+          }
           className={
-            state.gatheringModes?.includes("mining")
-              ? "h-9 border-emerald-300 bg-emerald-500 px-2 text-[11px] text-emerald-950 hover:bg-emerald-400"
-              : "h-9 border-emerald-700 bg-[#07100f] px-2 text-[11px] text-emerald-300 hover:bg-emerald-950"
+            state.gatheringModes?.includes('mining')
+              ? 'h-9 border-emerald-300 bg-emerald-500 px-2 text-[11px] text-emerald-950 hover:bg-emerald-400'
+              : 'h-9 border-emerald-700 bg-[#07100f] px-2 text-[11px] text-emerald-300 hover:bg-emerald-950'
           }
         >
           <span className="flex items-center justify-center gap-1 whitespace-nowrap">
-            <span>Mining · {state.gatheringModes?.includes("mining") ? "On" : "Off"} ·</span>
-            {state.gatheringNoTool?.mining && !state.gatheringModes?.includes("mining") ? (
+            <Pickaxe aria-hidden className="h-3.5 w-3.5" />
+            <span>
+              Mining · {state.gatheringModes?.includes('mining') ? 'On' : 'Off'}{' '}
+              ·
+            </span>
+            {state.gatheringNoTool?.mining &&
+            !state.gatheringModes?.includes('mining') ? (
               <span className="text-amber-200">No tool</span>
             ) : (
-              readiness("mining")
+              readiness('mining')
             )}
           </span>
         </Button>
         <Button
           variant="outline"
-          aria-pressed={state.gatheringModes?.includes("fishing")}
-          onClick={() => void onGather("fishing", !state.gatheringModes?.includes("fishing"))}
+          aria-pressed={state.gatheringModes?.includes('fishing')}
+          onClick={() =>
+            void onGather('fishing', !state.gatheringModes?.includes('fishing'))
+          }
           className={
-            state.gatheringModes?.includes("fishing")
-              ? "h-9 border-cyan-300 bg-cyan-400 px-2 text-[11px] text-cyan-950 hover:bg-cyan-300"
-              : "h-9 border-cyan-700 bg-[#07100f] px-2 text-[11px] text-cyan-300 hover:bg-cyan-950"
+            state.gatheringModes?.includes('fishing')
+              ? 'h-9 border-cyan-300 bg-cyan-400 px-2 text-[11px] text-cyan-950 hover:bg-cyan-300'
+              : 'h-9 border-cyan-700 bg-[#07100f] px-2 text-[11px] text-cyan-300 hover:bg-cyan-950'
           }
         >
           <span className="flex items-center justify-center gap-1 whitespace-nowrap">
-            <span>Fishing · {state.gatheringModes?.includes("fishing") ? "On" : "Off"} ·</span>
-            {state.gatheringNoTool?.fishing && !state.gatheringModes?.includes("fishing") ? (
+            <Fish aria-hidden className="h-3.5 w-3.5" />
+            <span>
+              Fishing ·{' '}
+              {state.gatheringModes?.includes('fishing') ? 'On' : 'Off'} ·
+            </span>
+            {state.gatheringNoTool?.fishing &&
+            !state.gatheringModes?.includes('fishing') ? (
               <span className="text-amber-200">No tool</span>
             ) : (
-              readiness("fishing")
+              readiness('fishing')
             )}
           </span>
         </Button>
@@ -323,9 +422,8 @@ export const MerchantCardControls = memo(function MerchantCardControls({
           <X className="mr-1.5 h-3.5 w-3.5" />
           Clear job queue
         </Button>
-        <MerchantCollectionSettings buyUpgradeBatchSize={state.buyUpgradeBatchSize} {...collectionSettings} merchantStandLocation={state.merchantStandLocation} bankSortState={state} deliveryTripsEnabled={state.merchantAutomations?.deliveries !== false} withdrawalTripsEnabled={state.merchantAutomations?.withdrawals !== false} />
+        <MerchantCollectionSettings toolCrafting={state.merchantAutomations} buyUpgradeBatchSize={state.buyUpgradeBatchSize} {...collectionSettings} merchantStandLocation={state.merchantStandLocation} bankSortState={state} deliveryTripsEnabled={state.merchantAutomations?.deliveries !== false} withdrawalTripsEnabled={state.merchantAutomations?.withdrawals !== false} />
       </div>
-
     </section>
   );
 });

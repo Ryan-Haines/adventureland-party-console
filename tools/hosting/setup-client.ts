@@ -89,11 +89,32 @@ action('checkHttps',async()=>{
  }catch(e){if(generation!==linkGeneration)return;status.style.color='#fca5a5';status.textContent='Could not verify HTTPS. If you already installed the certificate, try restarting your browser and the Adventure Land client. Open '+secureOrigin+'/setup in a new tab to see any certificate error, then retry this check.';return}
  await generateLoader();
 });
-action('pairButton',async()=>{await call('pair',{token:location.hash.slice(1)});history.replaceState(null,'','/setup');await refresh()});
+action('pairButton',async()=>{
+ const code=el('accessCode').value.trim(),token=location.hash.slice(1);
+ if(!code&&!token)throw Error('Enter the access code shown on a paired browser');
+ await call('pair',code?{code}:{token});el('accessCode').value='';history.replaceState(null,'','/setup');await refresh();
+});
+el('accessCode').onkeydown=e=>{if(e.key==='Enter')el('pairButton').click()};
 action('connect',async()=>{await call('session',{session:el('session').value,realm:el('realm').value});el('session').value='';sessionVisible(false);await refresh();el('success').hidden=false;el('success').textContent='Account connected. Choose how to run your characters below.'});
 action('copy',async()=>{try{await navigator.clipboard.writeText(el('code').value);if(!countingDown)el('linkStatus').textContent='Copied. Paste into CODE and click Engage.'}catch{el('code').focus();el('code').select();if(!countingDown)el('linkStatus').textContent='Code selected. Copy it and paste into CODE.'}});
 action('revoke',async()=>{if(confirm('Revoke private client tokens? Direct tokenless loaders are unaffected.')){await call('revoke',{});stopLinking();el('success').hidden=true;el('code').value='';el('copy').disabled=true;el('linkStatus').textContent='Client tokens revoked. Choose your setup again to create a new loader.'}});
-action('invite',async()=>{const r=await call('invite',{});el('invitation').textContent=location.origin+'/setup#'+r.token});
+// The link uses location.origin, the address this browser opened, so it stays right behind a proxy or public URL.
+let inviteTimer;
+function endInvitation(message){clearInterval(inviteTimer);el('invitation').hidden=true;el('accessCodeValue').textContent='';el('invitationLink').textContent='';el('invitationStatus').textContent=message}
+action('invite',async()=>{
+ const r=await call('invite',{});clearInterval(inviteTimer);
+ el('accessCodeValue').textContent=r.code;el('pairAddress').textContent=location.origin+'/setup';el('invitationLink').textContent=location.origin+'/setup#'+r.token;
+ el('invitation').hidden=false;el('invitationStatus').textContent='';
+ const deadline=Date.now()+r.expiresIn;let checks=0;
+ const tick=async()=>{
+  const left=Math.max(0,Math.ceil((deadline-Date.now())/1000));
+  el('accessCodeExpiry').textContent='(expires in '+Math.floor(left/60)+':'+String(left%60).padStart(2,'0')+')';
+  if(left===0)return endInvitation('The access code expired. Choose Pair another browser for a new one.');
+  // The server clears the code once a browser pairs with it, so the paired browser stops showing it.
+  if(++checks%3===0)try{const s=await call('state');if(s.accessCodeExpiresAt!==r.expiresAt)endInvitation('The access code was used or replaced. Choose Pair another browser for a new one.')}catch{}
+ };
+ void tick();inviteTimer=setInterval(tick,1000);
+});
 function resumeConnection(){if(document.visibilityState!=='hidden')void watchConnection(linkGeneration)}
 addEventListener('focus',resumeConnection);document.addEventListener('visibilitychange',resumeConnection);
 el('continue').onclick=stopLinking;addEventListener('pagehide',stopLinking);restorePreferences();

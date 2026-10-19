@@ -7,19 +7,18 @@ interface DropRate {
 }
 
 export function effectiveDropRate(drop: DropRate): number {
-  // Direct item sources retain the original count even when their chance was capped.
-  return drop.sourceType === "monster" && (drop.acquisitionPath?.length ?? 0) <= 1
-    ? drop.originRate ?? drop.rate
-    : drop.rate;
+  return (drop.sourceType === "monster" || drop.sourceType === "home") && (drop.acquisitionPath?.length ?? 0) <= 1
+    ? drop.originRate ?? drop.rate : drop.rate;
 }
 
 export function formatDropRate(drop: DropRate): string {
   const rate = Math.max(0, effectiveDropRate(drop));
   const quantity = Math.max(1, drop.quantity || 1);
-  const percent = (chance: number) => `${Number((chance * 100).toPrecision(6))}%`;
-  const count = (value: number) => value > 1 ? ` ×${value.toLocaleString()}` : "";
-  if (rate <= 1) return `${percent(rate)}${count(quantity)}`;
-  const guaranteed = Math.floor(rate);
-  const remainder = rate - guaranteed;
-  return `100%${count(guaranteed * quantity)}${remainder > 0 ? ` + ${percent(remainder)}${count(quantity)}` : ""}`;
+  const count = quantity > 1 ? ` ×${quantity.toLocaleString("en-US")}` : "";
+  if (rate <= 0) return `0/1${count}`;
+  if (rate >= 1) return `1/1${count}${rate > 1 ? ` (roll weight ×${Number(rate.toPrecision(6)).toLocaleString("en-US")})` : ""}`;
+  const denominator = 1 / rate;
+  const rounded = Number(denominator.toPrecision(6));
+  const approximate = Math.abs(rounded - denominator) > denominator * 1e-9;
+  return `${approximate ? "≈" : ""}1/${rounded.toLocaleString("en-US", {maximumFractionDigits: 6})}${count}`;
 }

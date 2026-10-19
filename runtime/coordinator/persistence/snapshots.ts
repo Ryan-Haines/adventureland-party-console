@@ -9,6 +9,7 @@ export const stateKeys = {
 } as const;
 
 export const rosterFields = [
+  "characterSnapshots",
   "characterAppearances",
   "headlessSlots",
   "nativeOwner",
@@ -35,6 +36,7 @@ export const selectionFields = [
 ] as const;
 
 export const settingsFields = [
+  "mailbox",
   "dailyDungeons",
   "merchantRules", "production", "upgradeOfferingRules", "upgradePreviewResults",
   "bankboiPrefix", "anniversaryAutoChat",

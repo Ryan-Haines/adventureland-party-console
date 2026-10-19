@@ -172,6 +172,8 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
         Number(state.goldTargets[String(state.merchantCharacter)]) || 0,
       ),
       gatheringModes: state.bankbois[name] ? [] : state.gatheringModes,
+      gatheringAutoCraft: {fishing: state.merchantAutomations?.['craft fishing tools'] === true,
+        mining: state.merchantAutomations?.['craft mining tools'] === true},
       bankboiStorage: !!state.bankbois[name],
       bankStaging: bankStagingReserved(state),
     };

@@ -111,6 +111,11 @@ test.describe('retired event exit ownership',()=>{
         E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:m.id,map:m.map,x:m.x,y:m.y,portal,scope:'retired exit ownership; native door spawn with collision-safe initial encounter'};
       }finally{G.monsters.mrpumpkin=original;}})()`);
       if(variant==='stale-peer'){
+        await expect.poll(async()=>{
+          const state=await live.state();
+          return fighters.every(name=>state.characters[name]?.dashboardRuntime===started.characters[name].dashboardRuntime&&
+            Date.now()-Number(state.characters[name]?.seenAt||0)<3000);
+        },{timeout:15_000,message:'Original browser runtimes must publish before status loss'}).toBe(true);
         priestSeenAtBeforeHold=Number((await live.state()).characters[P]?.seenAt);
         expect(priestSeenAtBeforeHold).toBeGreaterThan(0);
         holdUntil=Date.now()+20_000;
@@ -408,4 +413,85 @@ test('native event limits exhaust only the current instance and survive restart'
     await live.post('/formation',{character:W,eventSelections:[]});
     await live.admin(`output=(()=>{for(const type of ['mrgreen','mrpumpkin']){for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(m.type===type&&m.hp>1000000)remove_monster(m,{silent:true});delete E[type];}broadcast_e();return true;})()`);
   }
+});
+
+for(const event of ['mrgreen','mrpumpkin'])test(`native ${event} walk yields to a newly visible boss before the advertised spawn`,async({live},info)=>{
+ test.setTimeout(240_000);
+ const advertised={map:'halloween',x:-495,y:685},samples:any[]=[];
+ let initialBoss:any,baseline:any,seed:any,firstHit:any;
+ try{
+  await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
+  initialBoss=await live.admin(`output=(()=>{if(Object.values(instances.halloween.monsters).some(m=>m.type==='${event}'))throw Error('Existing event boss cannot be replaced');
+   const original=G.monsters['${event}'];try{G.monsters['${event}']={...original,hp:10000000,attack:1,speed:0,charge:0,range:1,aggro:0,rage:0,peaceful:true,spawns:[]};
+    const m=new_monster('halloween',{type:'${event}',count:1,boundary:[${advertised.x},${advertised.y},${advertised.x},${advertised.y}]},{temp:1});m.e2eMovingEventSighting=true;
+    E['${event}']={live:true,...${JSON.stringify(advertised)},hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:String(m.id),map:m.map,x:m.x,y:m.y};
+   }finally{G.monsters['${event}']=original;}})()`);
+  await live.post('/formation',{character:W,eventSelections:[event]});
+  await expect.poll(async()=>{
+   const state=await live.state(),native=await live.admin(`output=(()=>{const p=get_player('${W}');return {map:p.map,x:p.x,y:p.y,moving:!!p.moving};})()`),c=state.activeConvoy;
+   samples.push({at:Date.now(),stage:'before-native-displacement',native,convoy:c&&{id:c.id,phase:c.phase,event:c.walkingEvent},attendance:state.eventAttendance?.[W]?.[event]});if(samples.length>96)samples.shift();
+   if(c?.walkingEvent===event&&c.phase==='travel'&&native.map==='halloween'&&native.moving&&Math.hypot(native.x-advertised.x,native.y-advertised.y)>400){baseline={at:Date.now(),native,convoy:c};return true;}return false;
+  },{timeout:90_000,message:'The real event route must be walking toward the advertised spawn before introducing the boss'}).toBe(true);
+  // Keep the event genuinely live, then displace that same owned native boss
+  // only after real walking. All visibility packets and attacks remain native.
+  seed=await live.admin(`output=(()=>{const p=get_player('${W}'),m=instances.halloween.monsters[${JSON.stringify(initialBoss.id)}];
+   if(!m||!m.e2eMovingEventSighting)throw Error('Owned live boss missing before displacement');
+   const before={x:m.x,y:m.y};m.x=p.x;m.y=p.y;m.going_x=m.x;m.going_y=m.y;m.moving=false;m.abs=true;m.u=true;m.cid++;m.last_jump=new Date();
+   E['${event}']={live:true,...${JSON.stringify(advertised)},hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:String(m.id),map:m.map,x:m.x,y:m.y,before,at:Date.now()};})()`);
+  await expect.poll(async()=>{
+   const state=await live.state(),events=await live.clients[W].events(),native=await live.admin(`output=Object.fromEntries(${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return [name,{map:p.map,x:p.x,y:p.y,moving:!!p.moving}]}))`);
+   const hits=events.filter((packet:any)=>packet.event==='hit'&&String(packet.data?.id)===seed.id&&packet.data?.damage>0);
+   samples.push({at:Date.now(),convoy:state.activeConvoy&&{id:state.activeConvoy.id,phase:state.activeConvoy.phase},native,hits});
+   if(hits.length&&!firstHit)firstHit={at:Date.now(),native,hits};
+   return fighters.every(name=>hits.some((packet:any)=>packet.data.hid===name));
+  },{timeout:30_000,message:'Both native fighters must attack the encountered boss before finishing the obsolete advertised route'}).toBe(true);
+  expect(firstHit).toBeTruthy();expect(firstHit.native[W].map).toBe('halloween');
+  expect(Math.hypot(firstHit.native[W].x-advertised.x,firstHit.native[W].y-advertised.y)).toBeGreaterThan(250);
+ }finally{
+  await info.attach('native-event-en-route-sighting',{body:JSON.stringify({event,advertised,initialBoss,baseline,seed,firstHit,samples,final:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
+  await live.post('/formation',{character:W,eventSelections:[]}).catch(()=>{});
+  await live.admin(`output=(()=>{for(const m of Object.values(instances.halloween.monsters))if(m.type==='${event}'&&m.e2eMovingEventSighting)remove_monster(m,{silent:true});delete E['${event}'];broadcast_e();return true;})()`).catch(()=>{});
+ }
+});
+
+test.describe('farming focus changed during native event attendance',()=>{
+ test.use({initialPosition:{map:'main',x:0,y:0}});
+ test('new farming focus resumes after natural Halloween completion',async({live},info)=>{
+  test.setTimeout(480_000);
+  let seed:any,changedAt=0,endedAt=0,focusOwnership:any;const samples:any[]=[];
+  try{
+   await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
+   const catalog=(await live.state(true)).monsterChoices,oldFarm=catalog.find((choice:any)=>choice.id==='goo').locations.find((point:any)=>point.map==='main');
+   const selected=await live.post('/navigate-to-monster',{monsterId:'goo',location:oldFarm});
+   await expect.poll(async()=>{const s=await live.state();return !s.activeConvoy&&fighters.every(name=>s.characters[name]?.map==='main'&&Math.hypot(s.characters[name].x-selected.location.x,s.characters[name].y-selected.location.y)<250);},{timeout:90_000}).toBe(true);
+   seed=await live.admin(`output=(()=>{const original=G.monsters.mrpumpkin;try{G.monsters.mrpumpkin={...original,hp:10000000,attack:1,speed:0,charge:0,range:1,aggro:0,rage:0,peaceful:true,spawns:[]};
+    const m=new_monster('halloween',{type:'mrpumpkin',count:1,boundary:[-495,685,-495,685]},{temp:1});m.e2eChangedFarmEvent=true;E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:String(m.id),original};
+   }catch(error){G.monsters.mrpumpkin=original;throw error;}})()`);
+   await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
+   await expect.poll(async()=>{const s=await live.state(),events=await live.clients[W].events();return fighters.every(name=>s.characters[name]?.joinedEvent==='mrpumpkin'&&events.some((packet:any)=>packet.event==='hit'&&String(packet.data?.id)===seed.id&&packet.data?.hid===name&&packet.data?.damage>0));},{timeout:150_000}).toBe(true);
+   changedAt=Date.now();
+   const beforeFocus=await Promise.all(fighters.map(name=>live.clients[name].run('globalThis.__partyNavigationIntent && globalThis.__partyNavigationIntent.revision')));
+   // Same public action as MonsterFocusPicker, without an explicit travel override.
+   await live.post('/focus',{character:W,monsterFocus:['bee']});
+   await expect.poll(async()=>{const s=await live.state();return s.monsterFocus?.length===1&&s.monsterFocus[0]==='bee'&&fighters.every(name=>s.characters[name]?.joinedEvent==='mrpumpkin');},{timeout:30_000}).toBe(true);
+   const afterFocus=await Promise.all(fighters.map(name=>live.clients[name].run('globalThis.__partyNavigationIntent && globalThis.__partyNavigationIntent.revision')));
+   expect(afterFocus,'Changing the future farm must preserve the active event navigation ownership').toEqual(beforeFocus);
+   focusOwnership={beforeFocus,afterFocus};
+   const bees=await live.admin(`output=Object.values(instances.main.monsters).filter(m=>m.type==='bee').map(m=>String(m.id))`);
+   expect(bees.length).toBeGreaterThan(0);
+   // Declare the remaining boss HP; its real next native attack must end the encounter.
+   await live.admin(`output=(()=>{const m=instances.halloween.monsters[${JSON.stringify(seed.id)}];if(!m||!m.e2eChangedFarmEvent)throw Error('Owned boss missing');m.hp=1;return true;})()`);
+   await expect.poll(async()=>(await live.clients[W].events()).some((packet:any)=>packet.event==='death'&&String(packet.data?.id)===seed.id&&packet.at>=changedAt),{timeout:30_000,message:'The native boss must actually die before ending the declared announcement'}).toBe(true);
+   endedAt=Date.now();await live.admin(`output=(()=>{delete E.mrpumpkin;broadcast_e();return true;})()`);
+   await expect.poll(async()=>{
+    const s=await live.state(),events=await live.clients[W].events();samples.push({at:Date.now(),return:s.eventReturn,convoy:s.activeConvoy&&{id:s.activeConvoy.id,phase:s.activeConvoy.phase},focus:s.monsterFocus,characters:Object.fromEntries(fighters.map(name=>[name,{map:s.characters[name]?.map,x:s.characters[name]?.x,y:s.characters[name]?.y,event:s.characters[name]?.joinedEvent}]))});
+    if(samples.length>96)samples.shift();
+    return !s.eventReturn&&fighters.every(name=>s.characters[name]?.map==='main'&&!s.characters[name]?.joinedEvent&&events.some((packet:any)=>packet.at>=endedAt&&packet.event==='hit'&&bees.includes(String(packet.data?.id))&&packet.data?.hid===name&&packet.data?.damage>0));
+   },{timeout:240_000,message:'After the event, both native fighters must resume the newly selected bee focus instead of parking in town'}).toBe(true);
+  }finally{
+   await info.attach('native-event-farming-focus-change',{body:JSON.stringify({seed,changedAt,endedAt,focusOwnership,samples,state:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
+   await live.post('/formation',{character:W,eventSelections:[]}).catch(()=>{});
+   if(seed)await live.admin(`output=(()=>{const m=instances.halloween.monsters[${JSON.stringify(seed.id)}];if(m?.e2eChangedFarmEvent)remove_monster(m,{silent:true});G.monsters.mrpumpkin=${JSON.stringify(seed.original)};delete E.mrpumpkin;broadcast_e();return true;})()`).catch(()=>{});
+  }
+ });
 });

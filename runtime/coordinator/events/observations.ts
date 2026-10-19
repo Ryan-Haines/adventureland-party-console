@@ -79,6 +79,7 @@ interface EventObservationPorts {
   hasCommand(name: string): boolean;
   retireDeferredCommand?(name: string, cycleId: string): void;
   retireDeferredWalk?(name: string, cycleId: string): void;
+  finishDeferred?(name: string, cycleId: string, event: string): void;
   command(name: string, command: Record<string, unknown>): void;
   nextCommand(): number;
   releaseAnniversary?(cycle: AnniversaryReturnCycle): unknown;
@@ -476,15 +477,34 @@ export function createEventObservations(
     ports.retireDeferredWalk?.(name,cycleId);
     ports.retireDeferredCommand?.(name,cycleId);
   }
-  function resumeDeferred(body: EventReport): void {
-    const recovery = state.deferred[body.name];
-    if (!recovery) return;
+  function deferredAtTown(report: ReturnStatus | undefined): boolean {
+    return !!report && freshDeferredFighter(report) && !report.mapEvent && report.map==='main' &&
+      (report.in==null || report.in==='main') && Number.isFinite(report.x) && Number.isFinite(report.y) &&
+      Math.hypot(Number(report.x),Number(report.y))<=90;
+  }
+  function retireEmptyCheckpoint(body: EventReport, recovery: DeferredRecovery): boolean {
+    const report=ports.statuses()[body.name];
+    if(recovery.phase!=='returning-to-checkpoint' || recovery.checkpoint || body.joinedEvent ||
+        !deferredAtTown(report))return false;
+    // Hunt policy may remove the old waypoint after its command was issued.
+    // That retained command must not keep the retired return owner alive.
+    retireOldDeferredContinuation(body.name,recovery.cycleId);
+    if(state.deferred[body.name]!==recovery)return true;
+    ports.finishDeferred?.(body.name,recovery.cycleId,recovery.event);
+    delete state.deferred[body.name];
+    ports.persist();return true;
+  }
+  function skipDeferredResume(body: EventReport, recovery: DeferredRecovery): boolean {
     if(awaitingRetiredSameEvent(body.name,recovery)){
       retireOldDeferredContinuation(body.name,recovery.cycleId);
       awaitEventAdmission(recovery);
-      return;
+      return true;
     }
-    if (ports.hasCommand(body.name) || nextLiveEvent(body.name, recovery.event)) return;
+    return !!nextLiveEvent(body.name,recovery.event) || retireEmptyCheckpoint(body,recovery) || ports.hasCommand(body.name);
+  }
+  function resumeDeferred(body: EventReport): void {
+    const recovery = state.deferred[body.name];
+    if (!recovery || skipDeferredResume(body,recovery)) return;
     const atTown = body.map === "main" && Math.hypot(Number(body.x), Number(body.y)) <= 90;
     const revision = invalidateCheckpoint(recovery, body.name);
     if (atTown && !recovery.checkpoint) delete state.deferred[body.name];
