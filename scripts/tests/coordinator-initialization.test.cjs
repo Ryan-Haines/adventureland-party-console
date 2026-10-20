@@ -79,3 +79,32 @@ test('settings rewritten by a v1.4.0 build after a rollback win over older split
   assert.deepEqual(Object.keys(party.production.attempts),['a1']);assert.deepEqual(party.aldata.marketListings,[{item:'old'}]);
  }finally{store.close();}
 });
+
+// Achievement Hunt state: docs/efficiency.md (Achievement Hunt state), failure inventory items 2 and 3.
+const achievementProfile={achievementHunt:{monsters:['goo'],blacklistDeaths:true,deathThreshold:4,fillIdle:false,fillSelectedOnly:true,bossRecheckMinutes:10},
+ achievementBlacklist:{bat:{monsterId:'bat',at:5,reason:'4 deaths while farming for achievements'}},
+ achievementTarget:{id:'goo',step:1,milestone:1000,startedAt:7,deaths:2,counted:{W:3}},achievementPassive:{phoenix:null},
+ achievementMessage:'Farming Goo: 5 / 1,000 kills (step 2)'};
+test('a layout 2 journal takes Achievement Hunt state from its own document',t=>{
+ const store=journal(t,[
+  {[stateKeys.achievement]:{profiles:{W:achievementProfile}}},
+  {[stateKeys.settings]:{threshold:7,farmingProfiles:{W:{farmingPolicy:'achievements',monsterFocus:['goo']}},persistenceLayout:2}},
+ ]);
+ try{
+  const {party}=load(store),profile=party.farmingProfiles.W;
+  assert.equal(profile.farmingPolicy,'achievements');assert.deepEqual(profile.monsterFocus,['goo']);
+  for(const [field,value] of Object.entries(achievementProfile))assert.deepEqual(profile[field],value,field);
+ }finally{store.close();}
+});
+test('settings without the marker keep their own Achievement Hunt state over an older document',t=>{
+ const monolithic={threshold:7,farmingProfiles:{W:{farmingPolicy:'achievements',...achievementProfile}}};
+ for(const records of [[{[stateKeys.settings]:monolithic}],
+  [{[stateKeys.achievement]:{profiles:{W:{...achievementProfile,achievementHunt:{monsters:['stale']}}}}},{[stateKeys.settings]:monolithic}]]){
+  const store=journal(t,records);
+  try{
+   const {party}=load(store);
+   assert.deepEqual(party.farmingProfiles.W.achievementHunt,achievementProfile.achievementHunt);
+   assert.deepEqual(party.farmingProfiles.W.achievementBlacklist,achievementProfile.achievementBlacklist);
+  }finally{store.close();}
+ }
+});

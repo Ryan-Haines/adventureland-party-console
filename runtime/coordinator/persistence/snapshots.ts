@@ -10,11 +10,13 @@ export const stateKeys = {
   market: "party_dashboard_market_state_v1",
   /** Settings layout 2: the production receipts and attempt journals. */
   production: "party_dashboard_production_state_v1",
+  /** Settings layout 2: Achievement Hunt state, top level and per farming profile. */
+  achievement: "party_dashboard_achievement_state_v1",
 } as const;
 
 /**
- * A settings document carrying this marker gets its market and production
- * fields from their own keys. Without it, the settings document is the only
+ * A settings document carrying this marker gets its market, production and
+ * Achievement Hunt fields from their own keys. Without it, the settings document is the only
  * source: a v1.4.0 journal, or settings rewritten by a v1.4.0 build.
  */
 export const settingsLayout = { field: "persistenceLayout", split: 2 } as const;
@@ -110,6 +112,10 @@ export const settingsFields = [
   "huntBlacklist",
   "huntSettings",
   "huntFailures",
+  "achievementHunt",
+  "achievementBlacklist",
+  "achievementTarget",
+  "achievementPassive",
   "characterLocations",
   "navigationIntents",
   "townCycle",
@@ -187,9 +193,66 @@ export function marketSnapshot(aldata: SettingsInput["aldata"]) {
   };
 }
 
-/** Layout 2 settings: every settings field except the market cache and production. */
+/** Achievement Hunt settings fields that layout 2 saves under `stateKeys.achievement`. */
+export const achievementSettingsFields = [
+  "achievementHunt", "achievementBlacklist", "achievementTarget", "achievementPassive",
+] as const;
+/** The Achievement Hunt fields of each farming profile (hunt/scopes.ts), the status message included. */
+export const achievementProfileFields = [...achievementSettingsFields, "achievementMessage"] as const;
+
+/** Layout 2 settings: every settings field except the market cache, production and Achievement Hunt. */
 export const splitSettingsFields = settingsFields.filter(
-  (field) => !(productionSettingsFields as readonly string[]).includes(field));
+  (field) => !(productionSettingsFields as readonly string[]).includes(field) &&
+    !(achievementSettingsFields as readonly string[]).includes(field));
+
+type Profiles = Record<string, Record<string, unknown> | null | undefined>;
+const objectValue = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
+/** The Achievement Hunt document: the top-level fields and each profile's fields, by reference. */
+export function achievementSnapshot(state: Record<string, unknown>) {
+  const profiles: Record<string, Record<string, unknown>> = {};
+  const saved = objectValue(state.farmingProfiles) ? (state.farmingProfiles as Profiles) : {};
+  for (const [name, profile] of Object.entries(saved))
+    if (profile) profiles[name] = pickPresent(profile, achievementProfileFields);
+  return { ...selectSnapshot(state, achievementSettingsFields), profiles };
+}
+
+/** Shallow copies of the farming profiles without their Achievement Hunt fields. */
+export function profilesWithoutAchievement(profiles: unknown): unknown {
+  if (!objectValue(profiles)) return profiles;
+  const result: Profiles = {};
+  for (const [name, profile] of Object.entries(profiles as Profiles)) {
+    if (!objectValue(profile)) { result[name] = profile; continue; }
+    const copy = { ...profile };
+    for (const field of achievementProfileFields) delete copy[field];
+    result[name] = copy;
+  }
+  return result;
+}
+
+/**
+ * Puts a saved Achievement Hunt document back into layout 2 settings. Saved
+ * profiles merge only into profiles settings already has: profile() in
+ * hunt/scopes.ts builds a new profile from the character's focus and location.
+ */
+export function joinAchievementState(settings: Record<string, unknown>, saved: unknown): void {
+  if (!objectValue(saved)) return;
+  for (const field of achievementSettingsFields)
+    if (Object.hasOwn(saved, field)) settings[field] = saved[field];
+  const profiles = settings.farmingProfiles;
+  if (!objectValue(saved.profiles) || !objectValue(profiles)) return;
+  for (const [name, fields] of Object.entries(saved.profiles)) {
+    const profile = (profiles as Profiles)[name];
+    if (objectValue(profile) && objectValue(fields)) Object.assign(profile, fields);
+  }
+}
+
+function pickPresent(source: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const key of keys) if (Object.hasOwn(source, key)) result[key] = source[key];
+  return result;
+}
 
 /**
  * Settings fields whose frequent changes are liveness timestamps. A save whose

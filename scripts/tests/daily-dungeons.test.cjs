@@ -312,3 +312,21 @@ test('Cave command identity is an immutable primitive snapshot and retired runti
  assert.equal(runtime.commandIdentity().id,'owned');assert.equal(calls.length,before);
  current=false;assert.equal(runtime.commandIdentity(),undefined);
 });
+
+test('a vote that lands after the choice resolved no longer blocks later dungeon commands', () => {
+  const { createDungeonJournal } = require('../../runtime/characters/dungeon-journal.ts');
+  let stored = null;
+  const journal = createDungeonJournal(() => stored, (value) => { stored = value; });
+  const vote = { id: 'v1', run: 'r1', action: 'vote', choice: 'c1', option: 'fight' };
+  journal.save(vote, 'dispatched');
+  const gather = { id: 'g1', run: 'r1', action: 'gather' };
+  assert.equal(journal.blocked(gather), true);
+  // The other two votes resolved the choice, and the game never recorded this character's vote.
+  journal.reconcile({ run: 'r1', floor: 0, choice: { id: 'c1', resolved: true, votes: { A: 'fight', B: 'fight' } } }, 'Leader');
+  assert.equal(journal.blocked(gather), false);
+  journal.save({ ...vote, id: 'v2', choice: 'c2' }, 'dispatched');
+  journal.reconcile({ run: 'r1', floor: 0, choice: { id: 'c2', resolved: false, votes: {} } }, 'Leader');
+  assert.equal(journal.blocked(gather), true, 'an open, unrecorded vote still blocks');
+  journal.reconcile({ run: 'r1', floor: 0, choice: null }, 'Leader');
+  assert.equal(journal.blocked(gather), false, 'a choice that is gone settles the vote');
+});

@@ -4,7 +4,8 @@ import {validPassivePatch, migratePassiveSettings, committedPassiveRules, type P
 import { migrateRoutinePriorities } from '../merchant/routines.ts';
 import {validHuntSettings} from "../hunt/settings.ts";
 import {validMarketIgnoredItem} from "../../market-preferences.ts";
-import { stateKeys } from "./snapshots.ts";
+import {validAchievementHuntSettings} from "../hunt/achievement-settings.ts";
+import { stateKeys, settingsLayout, joinAchievementState } from "./snapshots.ts";
 import { validStandLocation } from '../merchant/stand-location.ts';
 
 type ObjectValue = Record<string, unknown>;
@@ -26,7 +27,7 @@ const upgradeRule = (value: unknown) =>
   positive(Number(value)) || (object(value) && positive(value.tiers));
 const compound = (value: unknown) => object(value) && text(value.id) && listOf(mark)(value.items);
 const autoCompound = (value: unknown) => item(value) && object(value) && positive(value.targetTier);
-const profileFields = ['huntBlacklist', 'huntFailures', 'huntSettings'] as const;
+const profileFields = ['huntBlacklist', 'huntFailures', 'huntSettings', 'achievementHunt', 'achievementBlacklist'] as const;
 function profilePreferences(value: unknown): unknown {
   if (!object(value)) return value;
   return Object.fromEntries(Object.entries(value).map(([name, profile]) => [name,
@@ -82,6 +83,8 @@ export const validators: Record<string, (value: unknown) => boolean> = {
   huntBlacklist: mapOf(object),
   huntSettings: validHuntSettings,
   huntFailures: mapOf(v => object(v) && [v.deaths, v.expirations].every(n => Number.isSafeInteger(n) && Number(n) >= 0)),
+  achievementHunt: validAchievementHuntSettings,
+  achievementBlacklist: mapOf(v => object(v) && text(v.monsterId)),
   restockPolicies: mapOf(
     (value) =>
       object(value) &&
@@ -162,7 +165,7 @@ function replayRecords(source: string): Map<string, ObjectValue> {
     lineNumber++;
     if (!line.trim()) continue;
     const [key, value] = parseRecord(line, lineNumber);
-    if (key !== stateKeys.settings && key !== stateKeys.selections) continue;
+    if (key !== stateKeys.settings && key !== stateKeys.selections && key !== stateKeys.achievement) continue;
     if (value === null) {
       records.delete(key);
       continue;
@@ -226,7 +229,10 @@ function importedSettings(source: string): ObjectValue {
     return parsed.settings;
   }
   const records = replayRecords(source);
-  return { ...records.get(stateKeys.settings), ...records.get(stateKeys.selections) };
+  const settings = { ...records.get(stateKeys.settings) };
+  // Layout 2 settings keep Achievement Hunt state in its own document (docs/efficiency.md).
+  if (settings[settingsLayout.field] === settingsLayout.split) joinAchievementState(settings, records.get(stateKeys.achievement));
+  return { ...settings, ...records.get(stateKeys.selections) };
 }
 
 export function parseDashboardImport(

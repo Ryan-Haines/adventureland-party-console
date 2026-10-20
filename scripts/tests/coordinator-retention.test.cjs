@@ -57,3 +57,20 @@ test('rare retry evidence keeps the newest rejections up to the limit',()=>{
  assert.equal(Object.keys(saved).length,RARE_RECORD_LIMIT);assert.ok(saved.new);
  assert.equal(evidence.eligible('new',sight('new',9_000),{map:'main'}),false);
 });
+
+// Achievement Hunt blacklist: docs/efficiency.md (Achievement Hunt state), failure inventory items 9-11.
+test('the Achievement Hunt blacklist keeps the newest 500 entries, when written and when loaded for every scope',()=>{
+ const {keepNewestAchievementBlacklist,ACHIEVEMENT_BLACKLIST_LIMIT}=require('../../runtime/coordinator/navigation/rare-retention.ts');
+ const {initialFarmingState}=require('../../runtime/coordinator/navigation/initial-farming.ts');
+ assert.equal(ACHIEVEMENT_BLACKLIST_LIMIT,500);
+ const entries=count=>Object.fromEntries(Array.from({length:count},(_,index)=>['m'+index,{monsterId:'m'+index,at:1000+index,reason:'6 deaths'}]));
+ const full=entries(500);keepNewestAchievementBlacklist(full);assert.equal(Object.keys(full).length,500,'500 entries stay as they are');
+ const over=entries(502);keepNewestAchievementBlacklist(over);
+ assert.equal(Object.keys(over).length,500);assert.equal(over.m0,undefined);assert.equal(over.m1,undefined);assert.ok(over.m501&&over.m2);
+ keepNewestAchievementBlacklist(undefined);keepNewestAchievementBlacklist(null);
+ const loaded=initialFarmingState({achievementBlacklist:entries(501),farmingProfiles:{W:{achievementBlacklist:entries(503)},P:{}}},()=>1);
+ assert.equal(Object.keys(loaded.achievementBlacklist).length,500);assert.equal(loaded.achievementBlacklist.m0,undefined);
+ assert.equal(Object.keys(loaded.farmingProfiles.W.achievementBlacklist).length,500);assert.ok(loaded.farmingProfiles.W.achievementBlacklist.m502);
+ assert.equal('achievementBlacklist' in loaded.farmingProfiles.P,false,'an absent profile blacklist stays absent');
+ assert.deepEqual(initialFarmingState({},()=>1).achievementBlacklist,{});
+});

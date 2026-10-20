@@ -89,6 +89,7 @@ export function receiveDeconstruction(
     mark.updatedAt = now;
   }
 }
+const SPACE_RETRY_MS = 120_000;
 export function createDeconstruction(state: DeconstructionState, ports: Ports) {
   // A lost acknowledgement must never replay a destructive operation.
   for (const mark of state.deconstructionMarks)
@@ -183,6 +184,7 @@ export function createDeconstruction(state: DeconstructionState, ports: Ports) {
     used: Set<number>,
   ) {
     recoverMissingAutomatic(mark, items, used);
+    recoverSpace(mark, items);
     if (held(mark)) return;
     if (conflictingAutomatic(mark)) {
       mark.state="blocked"; mark.error="Conflicting automatic rules"; release(mark); return;
@@ -222,6 +224,16 @@ export function createDeconstruction(state: DeconstructionState, ports: Ports) {
     if (!automaticRule(mark.owner, mark.item)) return;
     const entry = items.find(e => e?.item && !used.has(e.slot!) && sameMarkedItem(e.item, mark.item));
     if (!entry) return;
+    mark.state = mark.owner === state.merchantCharacter ? 'ready' : 'collecting';
+    delete mark.error;
+  }
+  // recoverSpace retries a mark that a full bag blocked once the bag has room for its
+  // results. It waits SPACE_RETRY_MS between tries, so a bag that refills can't loop the merchant.
+  function recoverSpace(mark: DeconstructionMark, items: (InventoryEntry | null)[]) {
+    if (mark.state !== 'blocked' || mark.storage || mark.error !== 'Insufficient inventory space for deconstruction results' ||
+        ports.now() - mark.updatedAt < SPACE_RETRY_MS) return;
+    const results = state.deconstructionCatalog[String(mark.item.name)]?.rewards?.length || 1;
+    if (items.filter((entry) => !entry?.item).length < results) return;
     mark.state = mark.owner === state.merchantCharacter ? 'ready' : 'collecting';
     delete mark.error;
   }

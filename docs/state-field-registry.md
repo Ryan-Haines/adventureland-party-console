@@ -248,9 +248,18 @@ read (why the whitelist carries them):
 - `upgrading`: the PWA and Android merchant activity flags.
 - `lastDeath`: the metrics collector's death count.
 - `monsterAchievementKills`: Android achievements and the metrics
-  account-wide achievement totals.
+  account-wide achievement totals. The dashboard's Achievement Hunt
+  settings read it too (`connected-character-card.tsx` passes
+  `char.monsterAchievementKills` to `achievement-hunt-settings.tsx`).
 
-Not sent in enforce mode (92 stored debug fields, still in the full request):
+Achievement Hunt adds one report field, `avoidSightings`: up to 8 visible
+bosses from the avoid list (`avoidSightings()` in `characters/shared.js`).
+Only the coordinator reads it (`hunt/achievement-hunt.ts`), from
+`state.statuses`, so the catalog marks it debug and no section sends it. The
+Achievement Hunt party fields travel in `section=config` (`configFields`,
+`telemetry/public-state.ts`), which has no field whitelist.
+
+Not sent in enforce mode (93 stored debug fields, still in the full request):
 the identity and protocol fields (`runtime`, `platform`, `clientVersion`,
 `codeHash`, ...), the combat queue (`combatTrace`, `groupedCombat`,
 `combatSelection`, `combat`, `threats`, the rare and loot reports), movement

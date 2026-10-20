@@ -154,7 +154,7 @@ export const characterFields = {
   gatheringCooldowns: lean("Fishing and mining cooldowns.", all),
   gatheringAccess: debug("Whether the character can fish and mine."),
   // Achievements and items
-  monsterAchievementKills: lean("Kill counts per monster toward achievements.", ["android", "metrics"], large("1.7 KB")),
+  monsterAchievementKills: lean("Kill counts per monster toward achievements.", ["dashboard", "android", "metrics"], large("1.7 KB")),
   monsterAchievements: lean("Achievement progress per monster.", all, large("4.3 KB")),
   tracktrix: lean("Tracktrix status and bonuses.", all),
   items: lean("Bag entries with item fingerprints and metadata.", [...all, "metrics"], large("117 to 273 KB")),
@@ -194,6 +194,7 @@ export const characterFields = {
   activeCombatTarget: debug("Combat target the runner owns."),
   engagedCombatTarget: debug("Combat target the character is engaged with."),
   threats: debug("Monsters targeting the character."),
+  avoidSightings: debug("Up to 8 visible bosses on the Achievement Hunt avoid list; achievement-hunt.ts reads them."),
   oneShotMonsterTypes: consumed("One-shot monster types learned; catalogs.ts merges them.", { size: "small" }),
   oneShotEpoch: consumed("Scatter epoch of oneShotMonsterTypes.", { size: "small" }),
   queueTiming: debug("Queue client timing."),

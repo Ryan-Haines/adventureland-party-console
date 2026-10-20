@@ -1,5 +1,5 @@
 import { createJsonStore, type KeyValueStorage } from "./json-store.ts";
-import { stateKeys, settingsLayout, marketSettingsFields, productionSettingsFields } from "./snapshots.ts";
+import { stateKeys, settingsLayout, marketSettingsFields, productionSettingsFields, joinAchievementState } from "./snapshots.ts";
 
 const snapshotSources = {
   persistedBankState: {
@@ -34,6 +34,7 @@ const splitSources = [
   { key: stateKeys.production, fields: productionSettingsFields,
     warning: "Ignoring invalid persisted Party Console production state" },
 ] as const;
+const achievementWarning = "Ignoring invalid persisted Achievement Hunt state";
 
 /** Load each saved document independently; retain legacy JSON values for initialization to interpret. */
 export function readInitialCoordinatorSnapshots(
@@ -41,7 +42,8 @@ export function readInitialCoordinatorSnapshots(
   warn: (details: { error: unknown }, message: string) => void,
 ): Record<SnapshotName, unknown> {
   const warnings = new Map(
-    [...Object.values(snapshotSources), ...splitSources].map((source) => [source.key as string, source.warning]),
+    [...Object.values(snapshotSources), ...splitSources, { key: stateKeys.achievement, warning: achievementWarning }]
+      .map((source) => [source.key as string, source.warning]),
   );
   const store = createJsonStore(storage, {
     invalid: (key, error) => warn({ error }, warnings.get(key)!),
@@ -59,8 +61,8 @@ export function readInitialCoordinatorSnapshots(
 }
 
 /**
- * Layout 2 (docs/efficiency.md, Persistence) keeps the market cache and
- * production under their own keys. Only a settings document with the layout
+ * Layout 2 (docs/efficiency.md, Persistence) keeps the market cache,
+ * production and Achievement Hunt state under their own keys. Only a settings document with the layout
  * marker takes them from there; settings saved by a v1.4.0 build, before or
  * after a rollback, carry these fields themselves.
  */
@@ -76,5 +78,6 @@ function joinSettings(settings: unknown, store: ReturnType<typeof createJsonStor
     for (const field of source.fields)
       if (Object.hasOwn(saved, field)) joined[field] = (saved as Record<string, unknown>)[field];
   }
+  joinAchievementState(joined, store.read({ key: stateKeys.achievement, decode: (value) => value, empty: () => ({}) }));
   return joined;
 }

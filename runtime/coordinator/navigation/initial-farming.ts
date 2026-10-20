@@ -1,10 +1,11 @@
-import { migratePassiveSettings, type PassiveSettings } from "./passive-settings.ts";
+import { migratePassiveSettings, type PassiveRule, type PassiveSettings } from "./passive-settings.ts";
 import type { HuntCycle, HuntTickState } from "../hunt/contracts.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
 import type { FarmAreaState } from "./farm-area-types.ts";
-import { keepNewestRare } from "./rare-retention.ts";
+import { keepNewestAchievementBlacklist, keepNewestRare } from "./rare-retention.ts";
 
 import {defaultHuntSettings, migrateHuntFailures, type HuntFailureState} from "../hunt/settings.ts";
+import {defaultAchievementHuntSettings, type AchievementBlacklistEntry, type AchievementHuntSettings, type AchievementTargetState} from "../hunt/achievement-settings.ts";
 interface SavedFarming extends HuntFailureState {
   farmingProfiles?: import("../hunt/scopes.ts").FarmingProfiles;
   monsterHunt?: HuntCycle | null;
@@ -18,12 +19,29 @@ interface SavedFarming extends HuntFailureState {
   rareRetryEvidence?: import('./rare-types.ts').Party['rareRetryEvidence'];
   farmAreaState?: FarmAreaState | null;
   huntBlacklist?: HuntTickState["huntBlacklist"] | null;
+  achievementHunt?: Partial<AchievementHuntSettings> | null;
+  achievementBlacklist?: Record<string, AchievementBlacklistEntry> | null;
+  achievementTarget?: AchievementTargetState | null;
+  achievementPassive?: Record<string, PassiveRule | null> | null;
+}
+
+/** Restore Achievement Hunt settings, blacklist, current target and the passive rules it replaced. */
+function initialAchievementHunt(saved: SavedFarming) {
+  return {
+    achievementHunt: {...defaultAchievementHuntSettings, ...saved.achievementHunt} as AchievementHuntSettings,
+    achievementBlacklist: saved.achievementBlacklist || {},
+    achievementTarget: saved.achievementTarget || null,
+    achievementMessage: "",
+    achievementPassive: saved.achievementPassive || null,
+  };
 }
 
 /** Farming profiles keep their own copy for each scope (hunt/scopes.ts). */
 function capRarePursuits(saved: SavedFarming): void {
-  for (const scope of [saved, ...Object.values(saved.farmingProfiles || {})])
+  for (const scope of [saved, ...Object.values(saved.farmingProfiles || {})]) {
     keepNewestRare((scope as SavedFarming | undefined)?.rarePursuitProgress, (entry) => entry.progress);
+    keepNewestAchievementBlacklist((scope as SavedFarming | undefined)?.achievementBlacklist);
+  }
 }
 
 /** Restore durable Hunt/rare intent while rebuilding scatter decisions from fresh character reports. */
@@ -44,6 +62,7 @@ export function initialFarmingState(saved: SavedFarming, now: () => number) {
     rarePursuitProgress: saved.rarePursuitProgress,
     farmAreaState: saved.farmAreaState || {},
     huntBlacklist: saved.huntBlacklist || {},
+    ...initialAchievementHunt(saved),
     monsterHunterLocation: null as ReturnLocation | null,
     scatterMonsterTypes: [] as string[],
     scatterEpoch: now(),

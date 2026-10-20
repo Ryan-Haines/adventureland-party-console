@@ -159,3 +159,14 @@ for(const metadataFailure of [false,true])test(metadataFailure ? 'loading import
  assert.equal(requests.at(-1).options.headers['X-State-Preview'],'hash');
  assert.ok(nodes(tree).some(n=>n.type==='output'));
 });
+
+// Achievement Hunt state: docs/efficiency.md (Achievement Hunt state), failure inventory item 7.
+test('JSONL import of a layout 2 journal keeps Achievement Hunt settings and blacklists',()=>{
+ const hunt={monsters:['goo'],blacklistDeaths:true,deathThreshold:6,fillIdle:true,fillSelectedOnly:true,bossRecheckMinutes:10};
+ const blacklist={bat:{monsterId:'bat',at:5,reason:'6 deaths while farming for achievements'}};
+ const data=[record(stateKeys.achievement,{achievementHunt:hunt,achievementBlacklist:blacklist,profiles:{W:{achievementHunt:hunt,achievementBlacklist:blacklist}}}),
+  source({threshold:2,farmingProfiles:{W:{farmingPolicy:'achievements'}},persistenceLayout:2})].join('\n');
+ const parsed=policy.parseDashboardImport(data,n=>n==='W');
+ assert.deepEqual(parsed.values.achievementHunt,hunt);assert.deepEqual(parsed.values.achievementBlacklist,blacklist);
+ assert.deepEqual(parsed.values.farmingProfiles.W.achievementHunt,hunt);assert.deepEqual(parsed.values.farmingProfiles.W.achievementBlacklist,blacklist);
+});

@@ -3,11 +3,11 @@ const {createCoordinatorPersistence}=require('../../runtime/coordinator/persiste
 test('settings persist selections, market and production before settings and exclude transient state and auth keys',()=>{
  const writes=[],state={monsterFocus:[],merchantCharacter:'M',commands:{secret:'runtime'},production:{attempts:{}},aldata:{key:'auth-secret',trades:[1]}};
  const writer=createCoordinatorPersistence(state,{set:(key,value)=>writes.push([key,JSON.parse(JSON.stringify(value))])});writer.settings();
- assert.deepEqual(writes.map(write=>write[0]),['party_dashboard_selections_state_v1','party_dashboard_market_state_v1','party_dashboard_production_state_v1','party_dashboard_settings_state_v1']);
+ assert.deepEqual(writes.map(write=>write[0]),['party_dashboard_selections_state_v1','party_dashboard_market_state_v1','party_dashboard_production_state_v1','party_dashboard_achievement_state_v1','party_dashboard_settings_state_v1']);
  assert.deepEqual(writes[0][1].monsterFocus,[]);assert.deepEqual(writes[1][1].aldataTrades,[1]);assert.deepEqual(writes[2][1],{production:{attempts:{}}});
- assert.equal(writes[3][1].aldataTrades,undefined);assert.equal(writes[3][1].production,undefined);assert.equal(writes[3][1].persistenceLayout,2);
- assert.equal(writes[3][1].merchantCharacter,'M');assert.equal(writes[3][1].commands,undefined);assert.equal(JSON.stringify(writes).includes('auth-secret'),false);
- state.monsterFocus=['bat'];writer.settings();assert.deepEqual(writes.find((write,index)=>index>3&&write[0]==='party_dashboard_selections_state_v1')[1].monsterFocus,['bat']);
+ assert.equal(writes[4][1].aldataTrades,undefined);assert.equal(writes[4][1].production,undefined);assert.equal(writes[4][1].persistenceLayout,2);
+ assert.equal(writes[4][1].merchantCharacter,'M');assert.equal(writes[4][1].commands,undefined);assert.equal(JSON.stringify(writes).includes('auth-secret'),false);
+ state.monsterFocus=['bat'];writer.settings();assert.deepEqual(writes.find((write,index)=>index>4&&write[0]==='party_dashboard_selections_state_v1')[1].monsterFocus,['bat']);
 });
 test('persistence writes separate roster, bank, capped history and authentication documents',()=>{
  const writes=[],state={headlessSlots:['F'],bankbois:{B:{}},merchantActivity:Array.from({length:501},(_,i)=>i),combatLogs:{F:Array.from({length:501},(_,i)=>i)},aldata:{key:'key',auth:'YES',requestTimes:[1]}};
@@ -112,6 +112,7 @@ function settingsFixture(t){
   farmAreaState:{quiet:{area:1},seen:{}},standPriceHistory:{coat:{seenAt:1,recent:10}}};
  const writer=createCoordinatorPersistence(state,store);
  const records=key=>fs.readFileSync(main,'utf8').split('\n').filter(line=>line.startsWith('{"party_dashboard_'+key+'_state_v1":')).map(line=>Object.values(JSON.parse(line))[0]);
+ records.journal=main;
  return {state,writer,records,store};
 }
 function liveness(state){
@@ -172,4 +173,69 @@ test('shutdown leaves a settings document a v1.4.0 build reads in full',t=>{
  assert.equal(settings.eventAttendance.F.mrpumpkin.lastLiveAt,Date.now(),'pending timestamps are saved');
  for(const key of ['settings','market','production'])assert.equal(JSON.stringify(records(key)).includes('auth-secret'),false);
  assert.equal(settings.commands,undefined);
+});
+
+// Achievement Hunt state: docs/efficiency.md (Achievement Hunt state), failure inventory items 1, 4, 5, 6 and 8.
+const achievementFields=['achievementHunt','achievementBlacklist','achievementTarget','achievementPassive'];
+function achievementProfile(message){
+ return {farmingPolicy:'achievements',monsterFocus:['goo'],eventSessions:{W:{lastLiveAt:1}},
+  achievementHunt:{monsters:['goo'],fillIdle:true},achievementBlacklist:{bat:{monsterId:'bat',at:5,reason:'6 deaths'}},
+  achievementTarget:{id:'goo',step:1,milestone:1000,startedAt:7,deaths:0,counted:{}},achievementPassive:{phoenix:null},achievementMessage:message};
+}
+function achievementFixture(t){
+ const fixture=settingsFixture(t),{state}=fixture;
+ state.farmingProfiles.W=achievementProfile('Farming Goo: 5 / 1,000 kills (step 2)');
+ // The scope accessors make these read the leader's profile (hunt/scopes.ts).
+ for(const field of achievementFields)state[field]=state.farmingProfiles.W[field];
+ return fixture;
+}
+test('Achievement Hunt state saves under its own key before settings, and settings leave it out',t=>{
+ const {state,writer,records}=achievementFixture(t);
+ writer.settings();
+ const saved=records('achievement').at(-1),settings=records('settings').at(-1);
+ assert.deepEqual(saved.profiles.W,Object.fromEntries([...achievementFields,'achievementMessage'].map(field=>[field,state.farmingProfiles.W[field]])));
+ for(const field of achievementFields)assert.deepEqual(saved[field],state[field],field);
+ for(const field of achievementFields)assert.equal(field in settings,false,field);
+ assert.deepEqual(Object.keys(settings.farmingProfiles.W).sort(),['eventSessions','farmingPolicy','monsterFocus']);
+ assert.equal('achievementMessage' in settings.farmingProfiles.W,false);
+ assert.ok(state.farmingProfiles.W.achievementHunt,'the live profile keeps its fields');
+ const lines=require('node:fs').readFileSync(records.journal,'utf8');
+ assert.ok(lines.lastIndexOf('party_dashboard_achievement_state_v1')<lines.lastIndexOf('party_dashboard_settings_state_v1'),'the Achievement Hunt document reaches the disk first');
+});
+test('an Achievement Hunt change saves within a second without rewriting settings',t=>{
+ const {state,writer,records}=achievementFixture(t);
+ writer.settings();const settings=records('settings').length,achievement=records('achievement').length;
+ state.farmingProfiles.W.achievementMessage='Waiting: W is dead';writer.scheduleSettings();t.mock.timers.tick(1000);
+ assert.equal(records('achievement').length,achievement+1);assert.equal(records('achievement').at(-1).profiles.W.achievementMessage,'Waiting: W is dead');
+ state.farmingProfiles.W.achievementBlacklist.goo={monsterId:'goo',at:9,reason:'6 deaths'};writer.scheduleSettings();t.mock.timers.tick(1000);
+ assert.equal(records('achievement').length,achievement+2);assert.ok(records('achievement').at(-1).profiles.W.achievementBlacklist.goo);
+ assert.equal(records('settings').length,settings,'settings carry no Achievement Hunt field');
+});
+test('liveness in a profile with Achievement Hunt fields still waits for the window',t=>{
+ const {state,writer,records}=achievementFixture(t);
+ writer.settings();const before=records('settings').length;
+ for(let second=1;second<=10;second++){state.farmingProfiles.W.eventSessions.W.lastLiveAt=Date.now();writer.scheduleSettings();t.mock.timers.tick(1000);}
+ assert.equal(records('settings').length,before);
+});
+test('shutdown saves every Achievement Hunt field inside settings for a build without the split',t=>{
+ const {state,writer,records}=achievementFixture(t);
+ writer.settings();writer.flush();
+ const settings=records('settings').at(-1);
+ for(const field of achievementFields)assert.deepEqual(settings[field],state[field],field);
+ assert.deepEqual(settings.farmingProfiles.W,JSON.parse(JSON.stringify(state.farmingProfiles.W)));
+});
+test('the Achievement Hunt document is written only when its content changes',()=>{
+ // docs/efficiency.md (Achievement Hunt state), failure inventory items 12-14, on a storage without its own comparison.
+ const writes=[];let fail=false;
+ const state={aldata:{},farmingProfiles:{W:achievementProfile('Farming Goo')}};
+ for(const field of achievementFields)state[field]=state.farmingProfiles.W[field];
+ const writer=createCoordinatorPersistence(state,{set(key,value){if(key!=='party_dashboard_achievement_state_v1')return;if(fail)throw Error('disk');writes.push(JSON.parse(JSON.stringify(value)));}});
+ writer.settings();writer.settings();writer.settings();
+ assert.equal(writes.length,1,'unchanged state appends nothing');
+ state.farmingProfiles.W.achievementTarget.deaths=1;writer.settings();
+ assert.equal(writes.length,2);assert.equal(writes[1].profiles.W.achievementTarget.deaths,1,'a change in place saves');
+ state.farmingProfiles.W.achievementMessage='Waiting: W is dead';fail=true;
+ assert.throws(()=>writer.settings(),/disk/);fail=false;writer.settings();
+ assert.equal(writes.length,3);assert.equal(writes[2].profiles.W.achievementMessage,'Waiting: W is dead','a failed write is retried');
+ writer.flush();assert.equal(writes.length,3,'shutdown keeps the unchanged document');
 });

@@ -87,6 +87,8 @@ export interface SharedCombat {
   returnAttacker?(target: Target): boolean;
   returnMovementTick?(): void;
   groupedMovement?(): boolean;
+  /** Walks away from an Achievement Hunt boss whose zone is 2 s or less away; true while it owns movement. */
+  bossRetreatTick?(target: Target | null): boolean;
   independentPullActive?(target: Target): boolean;
   groupedAttackAllowed?(target: Target): boolean;
   followLeaderIfFar(distance: number): Promise<unknown>;

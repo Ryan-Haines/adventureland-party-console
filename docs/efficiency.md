@@ -364,10 +364,9 @@ Two remain unbounded, and this change leaves them as they are:
   memory and in each status report, not in the journal. It needs a combat
   E2E before a cap, so it is out of scope for persistence.
 
-Fields that exist only on the user's fork (`achievementHunt`,
-`achievementBlacklist`, `achievementTarget`, `achievementPassive`, `bossChase`,
-`realmHopBlacklist`, `gearSets`) are not in v1.4.0, and this review leaves
-them out.
+Fields that exist only on the user's fork (`bossChase`, `realmHopBlacklist`,
+`gearSets`) are not in v1.4.0, and this review leaves them out. The
+Achievement Hunt fields have their own section below.
 
 Failure inventory:
 
@@ -383,6 +382,116 @@ Failure inventory:
 Tests: `scripts/tests/coordinator-retention.test.cjs` (1-6) and
 `e2e/console-persistence.spec.ts` (3, 4 and 6 through a saved journal and the
 real coordinator load).
+
+### Achievement Hunt state
+
+Four commits fit Achievement Hunt into P1, P3 and P5: the field registry
+entries, the split below, the blacklist cap and the saves by content.
+
+Achievement Hunt keeps five fields per farming scope (`hunt/scopes.ts`):
+`achievementHunt`, `achievementBlacklist`, `achievementTarget`,
+`achievementPassive` and `achievementMessage`. The scope accessors make the
+top-level fields read and write the leader's profile, so the settings document
+held each one twice: at the top level (`settingsFields`, except the message)
+and inside `farmingProfiles`. `farmingProfiles` is a liveness field, and the
+status message changes on every target, step and wait reason, so each change
+rewrote the whole settings document.
+
+Layout 2 saves them under `party_dashboard_achievement_state_v1`:
+
+| Key | Content | Saved when |
+|---|---|---|
+| `party_dashboard_achievement_state_v1` | the four top-level fields, and `profiles`: the five fields of each farming profile | before settings, on each settings save |
+| `party_dashboard_settings_state_v1` | as above, without the top-level fields and without the five fields inside each profile | as above |
+
+Migration and rollback follow the market and production documents:
+
+- Load (`initial-snapshots.ts`): only a settings document with
+  `persistenceLayout: 2` takes the fields from the Achievement Hunt document.
+  `joinAchievementState` (`snapshots.ts`) sets the top-level fields and merges
+  each saved profile's fields into the settings profile of the same name.
+- Shutdown (`flush()`) saves settings with every Achievement Hunt field inside
+  it, so an Achievement Hunt build without the split reads them after an
+  orderly stop.
+- A build without the split rewrites settings without the marker, and load
+  then ignores the older Achievement Hunt document.
+- Legacy JSONL import (`persistence/dashboard-import.ts`) replays the
+  Achievement Hunt document with settings and joins it the same way, so an
+  imported layout 2 journal keeps `achievementHunt` and `achievementBlacklist`.
+- After a crash, an Achievement Hunt build without the split reads settings
+  without the fields and starts with the defaults; the Achievement Hunt
+  document stays on disk for a build with the split.
+- A profile saved in the Achievement Hunt document but missing from settings
+  stays out: `profile()` in `hunt/scopes.ts` creates new profiles with the
+  character's focus and location, which a bare entry would skip. A crash
+  between the two writes is the only way to get there, and it loses at most
+  the one second the settings timer covers.
+
+Failure inventory:
+
+1. A running layout 2 settings record still carries an Achievement Hunt field,
+   at the top level or in a profile, so a message change rewrites settings.
+2. Load of a layout 2 journal loses a setting, blacklist entry, target,
+   passive rule or profile message.
+3. A v1.4.0-style monolithic settings document loses its Achievement Hunt
+   fields on load, or an older Achievement Hunt document overrides settings
+   written without the marker.
+4. Shutdown leaves settings without the Achievement Hunt fields, so an
+   Achievement Hunt build without the split loses them after a rollback.
+5. A change to Achievement Hunt state waits for the liveness window or never
+   saves.
+6. A liveness-only change appends settings sooner than the window because the
+   comparison sees the stripped and full profiles as different.
+7. Legacy JSONL import of a layout 2 journal loses `achievementHunt` or
+   `achievementBlacklist`.
+8. Settings carrying the marker reach the disk before their Achievement Hunt
+   document.
+
+Tests: `scripts/tests/coordinator-persistence-writer.test.cjs` (1, 4, 5, 6,
+8), `scripts/tests/coordinator-initialization.test.cjs` (2, 3),
+`scripts/tests/dashboard-state-import.test.cjs` (7) and
+`e2e/achievement-hunt.spec.ts` (1, 2, 4 and 5 through the real coordinator
+and dashboard).
+
+Retention (P5) of the Achievement Hunt collections:
+
+| Collection | Bound | Where |
+|---|---|---|
+| `achievementBlacklist` | one entry per monster id; the hunt adds its target (`recordDeaths`) and the route adds only known achievement monsters; the newest 500 by `at` | `keepNewestAchievementBlacklist` (`navigation/rare-retention.ts`), on each add (`hunt/achievement-hunt.ts`, `http/achievement-hunt.ts`) and at load for every scope (`navigation/initial-farming.ts`) |
+| `achievementHunt.monsters` | 500 ids | `validAchievementHuntSettings` (`hunt/achievement-settings.ts`) |
+| `achievementPassive` | one rule per rare monster the hunt switched on | game monster list |
+| `achievementTarget.counted`, `.savedPriorities` | one entry per party member, and per member and touched monster | party roster, game monster list; replaced with each target |
+| `profiles` in the Achievement Hunt document | one entry per farming profile | account roster |
+
+The 500 cap matches the monster limit of the settings validator. The game
+data has fewer monsters with achievements, so the cap only bounds a corrupt or
+hand-edited journal.
+
+Failure inventory, retention:
+
+9. The cap drops the newest entry, or any entry while a scope has 500 or fewer.
+10. Load keeps more than 500 entries in a scope.
+11. An absent blacklist becomes something other than an empty one at load.
+
+Tests: `scripts/tests/coordinator-retention.test.cjs` (9-11) and
+`scripts/tests/achievement-hunt.test.cjs` (9, on the hunt's own add).
+
+Saves by content (P1) of the Achievement Hunt document: the writer
+serializes it once per settings save and writes it only when the text differs
+from the last one it wrote. The journal's own comparison
+(`CoordinatorJsonlStore.set`) stays as a second guard, and a storage without
+one gets the same single record per change.
+
+Failure inventory, saves by content:
+
+12. Unchanged Achievement Hunt state appends a record on a storage without its
+    own comparison.
+13. A change after an unchanged save, including one made in place inside a
+    nested object, stays unsaved.
+14. A failed write counts as saved, so the next save skips the retry.
+
+Tests: `scripts/tests/coordinator-persistence-writer.test.cjs` (12-14) and
+`e2e/achievement-hunt.spec.ts` (12, through the real coordinator).
 
 ### Crash recovery (P6)
 

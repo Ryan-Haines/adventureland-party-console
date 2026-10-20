@@ -59,6 +59,7 @@ function createGameFixture(directory) {
       gold: 1000000, speed: 50, range: 100, attack: 100, frequency: 1,
       gameParty: ['W', 'P'], threats: [], conditions: [], slots: name === 'M' && process.env.E2E_MARKET_STAND === 'true' ? {trade1:{slot:1,item:{name:'sword',level:8,b:true,price:1000,q:3},meta:reportMeta('sword')}} : name === 'M' && process.env.E2E_STAND_BUY_ORDERS === 'true' ? Object.fromEntries(['spidersilk','bkey','helmet','stramulet'].map((id,index)=>['trade'+(index+1),{slot:index+1,item:{name:id,b:true,...(['helmet','stramulet'].includes(id)?{level:id==='stramulet'?2:0}:{}),price:1000,q:1},meta:reportMeta(id)}])) : {},
       monsterHunt: name === 'W' ? { id: 'goo', count: 10, remainingMs: 600000, server: 'USII' } : null,
+      ...(name === 'W' && process.env.E2E_ACHIEVEMENT_KILLS ? { monsterAchievementKills: JSON.parse(process.env.E2E_ACHIEVEMENT_KILLS), avoidSightings: [] } : {}),
       navigationState: 'idle', standOpen: name === 'M',
       items: Array.from({ length: 42 }, (_, slot) => (name === 'M' || name === 'W' && process.env.E2E_PLAYER_INVENTORY === 'true') && slot === 0
         ? { slot, item: { name: 'sword', level: 0 }, meta: reportMeta('sword') } : name === 'M' && slot === 1

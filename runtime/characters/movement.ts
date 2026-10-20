@@ -12,6 +12,7 @@ import { repairDoorApproaches, transporterApproach } from '../navigation/door-ap
 import { planReturnCandidates } from './return-planner.ts';
 import {createPlanningScheduleMetrics} from './planning-schedule-metrics.ts';
 import {repairWalkingEndpoint} from '../navigation/walking-endpoint.ts';
+import { createMoveBudget } from './move-budget.ts';
 interface SegmentRepair { plot: Step[]; index: number; target: Point; started: boolean; instance?: string | number; retainEndpoint?: boolean }
 interface Journey { terminalSettlement?: Record<string,unknown>; scheduling?: ReturnType<typeof createPlanningScheduleMetrics>; settlingAt?: number; repair?: SegmentRepair; repaired?: boolean; repairEndpoints?: string[]; firstIssue?: Issue; failureContext?: Record<string, unknown>; id: string; context: MovementContext; options: MovementOptions; native: boolean; pending: boolean; searches: number; retries: number; started: number; planningAt: number; fallback: boolean; plannerMs?: number; requestMs?: number; distance?: number; transitions?: number; importedEngine?: string }
 const failurePhases = new Map([
@@ -46,6 +47,11 @@ function finalApproach(plot: Step[], from: Point, to: Point, options?: MovementO
 export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   host.__partyMovement?.dispose();
   const native = host.__partyNativeMovement ||= { move: host.smart_move, stop: host.stop, start: host.start_pathfinding, next: host.continue_pathfinding, tick: host.smart_move_logic };
+  native.walk ||= host.move;
+  const budget = createMoveBudget({ native: native.walk, now: ports.now, cc: () => host.character.cc,
+    schedule: (run, ms) => setTimeout(run, ms), cancel: handle => clearTimeout(handle as ReturnType<typeof setTimeout>),
+    report: (event, message) => ports.diagnostic({ id: host.character.name + ':move-budget', ...event }, message) });
+  host.move = budget.move;
   const planner = createNativePlanner(host, native);
   const state: MoveState = { map: host.character.map, x: 0, y: 0, moving: false, searching: false, found: false, plot: [], use_town: true, try_exact_spot: false, edge: 20, on_done() {} };
   let version = Number(host.parent.__partyClientVersion || host.G.version), fingerprint = cachedGeometryFingerprint(host.G);
@@ -434,10 +440,10 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     transporterApproach(map: string, spawn: number) { const target=validation.game.maps[map]?.spawns[spawn];return target ? transporterApproach(validation,position(),{map,x:target[0],y:target[1],transport:true,s:spawn}) : undefined; },
     settleTerminal, cancel(reason: string, cause?: Record<string, unknown>) { finish(false, reason, cause); return native.stop('smart'); }, tick, planTick, gate, transition: executor.transition, townCasting: executor.townCasting, get identity() { return {version, fingerprint}; }, install: importRoute, last: () => last,
     combatHandoff() { finish(false, 'Combat handoff'); },
-    nativePlanning: planner.report,
+    nativePlanning: planner.report, moveBudget: budget.report,
     report: () => journey ? { id: journey.id, owner:journey.options.owner, engine: engine(journey), retries: journey.retries, fingerprint, version, remaining: state.plot.length, nativePlanning: planner.report(),planningSchedule:journey.scheduling?.report(),
       elapsedMs:ports.now()-journey.started,plannerMs:journey.plannerMs,requestMs:journey.requestMs,progress:executor.progress(),nativeCorrections:corrections.report() } : null,
-    dispose() { corrections.dispose(); finish(false, 'Runtime replaced'); disposed = true; gate.owner = null; if (host.smart_move_logic === scheduler) host.smart_move_logic = native.tick; host.smart_move = native.move; host.stop = native.stop; },
+    dispose() { corrections.dispose(); finish(false, 'Runtime replaced'); disposed = true; gate.owner = null; if (host.smart_move_logic === scheduler) host.smart_move_logic = native.tick; host.smart_move = native.move; host.stop = native.stop; budget.dispose(); host.move = native.walk!; },
   };
   host.__partyMovement = service;
   return service;

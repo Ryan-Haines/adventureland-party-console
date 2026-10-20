@@ -233,6 +233,8 @@ export function installRoleRunner(
       if (target) missingSince = 0;
       else if (!missingSince) missingSince = Date.now();
       attacks.wake();
+      // Leaving a boss's keep-out zone outranks every other combat movement (docs/achievement-hunt.md § Bosses).
+      if (!dungeon && sharedRoutine.bossRetreatTick?.(target)) return;
       if (!dungeon && sharedRoutine.groupedMovement?.()) return;
       if (!dungeon && (target || Date.now() - missingSince >= 750) && sharedRoutine.recoverFarmApproach && sharedRoutine.recoverFarmApproach(target)) return;
       if (dungeon && sharedRoutine.caveRecoveryMove?.()) return;

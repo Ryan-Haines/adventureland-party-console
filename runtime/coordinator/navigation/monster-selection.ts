@@ -41,11 +41,13 @@ export interface MonsterSelectionPorts {
 }
 
 export function createMonsterSelection(state: MonsterSelectionState, ports: MonsterSelectionPorts) {
-  function reset(id: string, location: ReturnLocation): void {
+  // keepPolicy: Achievement Hunt switches targets without resetting the
+  // player's Auto/Default/Scatter choice.
+  function reset(id: string, location: ReturnLocation, keepPolicy: boolean): void {
     ports.release();
     state.farmAreaState = { preferredLocation: location };
     ports.clearHunt();
-    state.farmingPolicy = "auto";
+    if (!keepPolicy) state.farmingPolicy = "auto";
     state.monsterFocus = [id];
     delete state.monsterFocusByCharacter[String(state.leader)];
     for (const name of Object.keys(state.followers))
@@ -55,14 +57,17 @@ export function createMonsterSelection(state: MonsterSelectionState, ports: Mons
     state.partyFarmingMode = "default";
     state.partyFarmingMonsterType = null;
     state.scatterBreakTarget = null;
+    // A mode's own switch keeps event state: Achievement Hunt switches on a timer, while members
+    // may still be finishing an event. A manual pick clears it.
+    if (keepPolicy) return;
     state.eventReturn = null;
     state.deferredEventReturns = {};
     state.eventSessions = {};
   }
-  function select(id: string, location: ReturnLocation, phoenixOrder: unknown): string[] | null {
+  function select(id: string, location: ReturnLocation, phoenixOrder: unknown, keepPolicy = false): string[] | null {
     const names = ports.members();
     const sessions = state.eventSessions;
-    reset(id, location);
+    reset(id, location, keepPolicy);
     ports.authorize(names, location, true);
     if (!ports.start(location, "the " + id + " spawn", names, "manual-monster-override"))
       return null;
