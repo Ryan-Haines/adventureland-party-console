@@ -127,6 +127,7 @@ export const BankSheet = memo(function BankSheet({
   onWithdraw,
 
   onWithdrawAll,
+  onUnmarkWithdrawAll,
 
   onCreateBankboi,
 
@@ -202,6 +203,7 @@ export const BankSheet = memo(function BankSheet({
   onWithdraw: (pack: string, entry: InventoryEntry) => void;
 
   onWithdrawAll: (pack: string, entry: InventoryEntry) => void;
+  onUnmarkWithdrawAll: (pack: string, entry: InventoryEntry) => void;
 
   onCreateBankboi: () => Promise<string>;
 
@@ -593,6 +595,9 @@ export const BankSheet = memo(function BankSheet({
 
                               <Landmark className="mr-2 h-4 w-4" />Mark all for withdrawal
 
+                            </ContextMenuItem>
+                            <ContextMenuItem disabled={!merchant} onClick={() => onUnmarkWithdrawAll(pack, entry)}>
+                              <Landmark className="mr-2 h-4 w-4" />Unmark all for withdrawal
                             </ContextMenuItem>
 
                             <ContextMenuItem
@@ -1064,6 +1069,9 @@ export const BankSheet = memo(function BankSheet({
 
                                     <Landmark className="mr-2 h-4 w-4" />Mark all for withdrawal
 
+                                  </ContextMenuItem>
+                                  <ContextMenuItem disabled={!merchant} onClick={() => onUnmarkWithdrawAll(`bankboi:${bankboi.name}`, entry)}>
+                                    <Landmark className="mr-2 h-4 w-4" />Unmark all for withdrawal
                                   </ContextMenuItem>
 
                                   <ContextMenuItem

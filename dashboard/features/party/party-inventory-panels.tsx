@@ -109,6 +109,11 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     withdraw(state.merchantCharacter, pack, entry), [withdraw, state.merchantCharacter]);
   const onWithdrawAll = useCallback((pack: string, entry: InventoryEntry) =>
     withdraw(state.merchantCharacter, pack, entry, true), [withdraw, state.merchantCharacter]);
+  const onUnmarkWithdrawAll = useCallback((pack: string, entry: InventoryEntry) => {
+    if (!state.merchantCharacter) return;
+    void post('/command', { character: state.merchantCharacter, type: 'withdraw', pack, slot: entry.slot, item: entry.item, unmarkAll: true })
+      .catch(error => setActionError(error instanceof Error ? error.message : 'Could not unmark withdrawals'));
+  }, [post, state.merchantCharacter, setActionError]);
   const onCreateBankboi = useCallback(async () => {
     const result = await post("/bankbois/create", {});
     return String((result.bankboi as { name?: string })?.name || "bankboi");
@@ -247,6 +252,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           onSelect={onBankSelect}
           onWithdraw={onWithdraw}
           onWithdrawAll={onWithdrawAll}
+          onUnmarkWithdrawAll={onUnmarkWithdrawAll}
           onCreateBankboi={onCreateBankboi}
           onDeleteBankboi={onDeleteBankboi}
           buyable={catalogBuyable}
