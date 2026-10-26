@@ -2471,13 +2471,14 @@
     if(pause&&pause.loadMode==='main'&&pause.phase!=='holding'&&character.ctype==='merchant')pause=null;
     if (pause && pause.mode === 'draining' && pause.id !== (root.__partyConsoleMaintenance || {}).id) {
       // Snapshot the current red-circle fight before enabling the acquisition gate.
+      // The console Pause (immediate) keeps only defence against attackers.
       var targets = {};
-      var markers = queueMarkers().filter(function(marker) { return marker.role === 'current' && marker.visible &&
+      var markers = pause.immediate ? [] : queueMarkers().filter(function(marker) { return marker.role === 'current' && marker.visible &&
         (root.partyRoleRunner && root.partyRoleRunner.hasStartedTarget && root.partyRoleRunner.hasStartedTarget(marker.id) || isAttackingPartyMember(get_entity(marker.id))); });
       markers.forEach(function(marker) {
         targets[consoleDrainKey(marker)] = true;
       });
-      var active = engagedCombatTarget();
+      var active = pause.immediate ? null : engagedCombatTarget();
       if (active && !markers.length && (root.partyRoleRunner && root.partyRoleRunner.hasStartedTarget && root.partyRoleRunner.hasStartedTarget(active.id) ||
           isAttackingPartyMember(get_entity(active.id)))) targets[consoleDrainKey(active)] = true;
       root.__partyConsoleDrainTargets = targets;
@@ -3434,7 +3435,12 @@
   function returnCombatActive() {
     if(character.rip || navigationIntent.cancelled || escapeOwns() || combatRecoveryActive())return false;
     return !!(convoyTraveling && convoyTraveling.continuousReturn === 1 || root.__partyAnniversaryStagingOperation && !root.__partyAnniversaryStagingOperation.cancelled ||
-      typeof root.__partyEventRecoveryCycleId === "string" && root.__partyEventRecoveryCycleId);
+      typeof root.__partyEventRecoveryCycleId === "string" && root.__partyEventRecoveryCycleId || typeof consolePauseHolds === "function" && consolePauseHolds());
+  }
+  // The console Pause reuses the return-trip defence: attack only what attacks the party.
+  function consolePauseHolds() {
+    var lease=root.__partyConsoleMaintenance;
+    return !!(lease && lease.mode==='draining' && lease.immediate);
   }
   function returnAttacker(target) {
     return !!(target && target.type==='monster' && target.visible!==false && !target.dead && target.hp>0 &&
@@ -14000,7 +14006,8 @@
 
   function isAttackingPartyMember(target) {
     var rule = target && passiveHunting.rules[target.mtype];
-    if (!target || target.type !== "monster" || isPassingEncounter(target) &&
+    // A paused character is not travelling, so a passing encounter that attacks it is a threat.
+    if (!target || target.type !== "monster" || isPassingEncounter(target) && !(typeof consolePauseHolds === "function" && consolePauseHolds()) &&
         (rule && rule.enabled && rule.keepMoving || !returnDepartureDefense() &&
         !(typeof convoyTraveling !== 'undefined' && convoyTraveling && convoyTraveling.continuousReturn === 1))) return false;
     target = get_entity(target.id) || target;
@@ -17477,7 +17484,12 @@
     // CODE replacement retires and replays travel ownership. A maintenance
     // movement hold must not prevent the very replacement it is waiting for.
     canReload: function () { return !consoleMaintenanceBusy(false); },
-    receiveConsoleMaintenance:receiveConsoleMaintenance,
+    // The loader polls the host, and a host image older than the console Pause
+    // answers null. Only the coordinator heartbeat, which owns the Pause, releases it.
+    receiveConsoleMaintenance:function(pause,serverNow){
+      if(!pause&&root.__partyConsoleMaintenance&&root.__partyConsoleMaintenance.userPause)return;
+      receiveConsoleMaintenance(pause,serverNow);
+    },
     merchantEventCombatActive: function () {
       return character.ctype === "merchant" && !!joinedEvent && eventSelected(joinedEvent) &&
         !eventReturnPending && !root.__merchantActiveJob;

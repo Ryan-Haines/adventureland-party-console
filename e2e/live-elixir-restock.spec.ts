@@ -45,9 +45,8 @@ for(const mode of ['stored','buy','craft'] as const) test(`elixir restock ${mode
     await page.goto(live.url);
     const card=page.locator('article').filter({has:page.getByRole('heading',{name:target,exact:true})});
     await expect(card.getByText(mode==='craft'?'Elixir of Fire Resistance':'Liquid Luck',{exact:true}).first()).toBeVisible();
-    await card.getByRole('button',{name:/^Active status/}).click();
-    const activeStatuses=card.locator('section').filter({has:page.getByRole('heading',{name:'Active status',exact:true})});
-    await expect(activeStatuses.getByRole('button',{name:mode==='craft'?/^Elixir of Fire Resistance/:/^Liquid Luck/})).toBeVisible();
+    // The status icon row in the card header replaces the Active status section (status-icon-row.tsx).
+    await expect(card.locator('[data-status-row]').getByRole('button',{name:mode==='craft'?/^Elixir of Fire Resistance/:/^Liquid Luck/})).toBeVisible();
     const equipped=card.getByLabel('Equipped elixir');
     await expect(equipped).toHaveCount(1);
     await expect(equipped).toContainText(/\d+[hms]/);

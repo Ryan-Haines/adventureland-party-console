@@ -1,14 +1,18 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { requestObject } from '../http/contracts.ts';
+import { userPauseLease } from './console-control.ts';
 /** Host-owned maintenance lease; never exported as a game preference. */
 export function consoleMaintenance(directory: string | undefined, now = Date.now) {
-  let lease: { id: string; expires: number; mode?: 'draining';loadMode?:'now'|'safe'|'main';phase?:string } | null = null, checked = 0;
+  let lease: { id: string; expires: number; mode?: 'draining';loadMode?:'now'|'safe'|'main';phase?:string;immediate?:true;userPause?:true } | null = null, checked = 0;
+  // A deploy lease takes precedence; the console Pause holds whenever none is active.
+  const userPause = userPauseLease(directory, now);
   const participants = new Set<string>();
   let capturedId:string|undefined,fightTargets:Array<{id:string;map:string;in?:string|number;server?:string}>=[];
   function capture(statuses:Record<string,unknown>,active:typeof lease){
     if(!active||capturedId===active.id)return;
     capturedId=active.id;fightTargets=[];
+    if(active.immediate)return;
     for(const raw of Object.values(statuses)){
       const report=requestObject(raw),target=requestObject(report.engagedCombatTarget);
       if(Number(report.seenAt)>now()-5000&&typeof target.id==='string'&&typeof target.map==='string')fightTargets.push({id:target.id,map:target.map,
@@ -21,6 +25,10 @@ export function consoleMaintenance(directory: string | undefined, now = Date.now
       ...(['now','safe','main'].includes(String(input.loadMode))?{loadMode:input.loadMode as 'now'|'safe'|'main'}:{}),
       ...(typeof input.phase==='string'?{phase:input.phase}:{})};
   }
+  function hostLease(directory:string):typeof lease {
+    try { return parseLease(requestObject(JSON.parse(readFileSync(path.join(directory, 'updates/pause.json'), 'utf8')))); }
+    catch { return null; }
+  }
   function waitingForMain(report:Record<string,unknown>,active:NonNullable<typeof lease>):boolean {
     return active.loadMode==='main' && (report.ctype||report.type)!=='merchant' && report.map!=='main';
   }
@@ -32,13 +40,9 @@ export function consoleMaintenance(directory: string | undefined, now = Date.now
     if (!directory) return null;
     if (now() - checked < 250) return lease;
     checked = now();
-    try {
-      const input = requestObject(JSON.parse(readFileSync(path.join(directory, 'updates/pause.json'), 'utf8')));
-      const parsed=parseLease(input);
-      if (!parsed) { lease = null; return null; }
-      if (parsed.id !== lease?.id) participants.clear();
-      return lease = parsed;
-    } catch { lease = null; return null; }
+    const parsed=hostLease(directory)||userPause();
+    if (parsed && parsed.id !== lease?.id) participants.clear();
+    return lease = parsed;
   }
   function status(statuses: Record<string, unknown>, expected: readonly (string | null)[] = [], blocked = false) {
     const active = current();

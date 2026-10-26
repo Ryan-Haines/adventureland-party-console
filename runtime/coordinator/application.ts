@@ -4,6 +4,7 @@ import { createDungeons } from './dungeons/service.ts';
 import { dungeonOwns } from '../dungeons/contracts.ts';
 import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
 import { consoleMaintenance } from './lifecycle/console-maintenance.ts';
+import { captureResumeRecord, createConsoleControl, restoreResumeRecord } from './lifecycle/console-control.ts';
 import { createUpgradePreviews } from './merchant/upgrade-preview.ts';
 import { merchantVisibility } from './merchant/visibility.ts';
 import { loadCoordinatorDependencies } from "./infrastructure/dependencies.ts";
@@ -345,7 +346,25 @@ export function startCoordinatorApplication(
       connectionCount: () => my_acc.response.characters.filter((entry) => !!entry.online).length,
       refresh: () => my_acc.updateInfo(),
     });
+    const freshReports = () => Object.fromEntries(Object.entries(party.statuses).filter(([, report]) =>
+      report && report.connected !== false && Date.now() - report.seenAt < 5000)) as unknown as Record<string, Record<string, unknown>>;
+    const consoleControl = createConsoleControl(process.env.AL_DATA_DIR, {
+      now: Date.now,
+      capture: () => captureResumeRecord(party as unknown as Parameters<typeof captureResumeRecord>[0], realmControlPayload().currentRealm, Date.now()),
+      restore: (record) => {
+        const lines = restoreResumeRecord(party as unknown as Parameters<typeof restoreResumeRecord>[0], record, { now: Date.now(),
+          liveEvent: (event) => Object.keys(party.statuses).some(name => liveEventFor(name, event)) });
+        if (lines.length) persistSettings();
+        return lines;
+      },
+      fresh: freshReports,
+      maintenance: () => consoleUpdate.status(party.statuses, [...party.headlessSlots, ...party.steamMembers],
+        !!party.steamSwitch && party.steamSwitch.phase !== 'complete'),
+      flush: () => { persistence.flush(); persistRosterState(); },
+      log: (message, level = 'info') => { console.log('Console control: ' + message); activity.merchant('Console: ' + message, level); },
+    });
     const shutdownCoordinator = coordinatorPolicies.createShutdown({
+      prepared: consoleControl.prepared,
       log: (message) => console.log(message),
       stopCharacters: () => characterManager.stopAll(),
       closeStorage: async () => { persistence.flush(); movementPlanner.dispose(); await metrics.close(); localStorage.close(); },
@@ -1087,6 +1106,7 @@ export function startCoordinatorApplication(
         merchantScheduling: merchantScheduling.observe,
         response: (name, mode) => {
           dungeons.reconcile();
+          consoleControl.observe();
           const maintenance = consoleUpdate.current(party.statuses);
           if (maintenance && maintenance.mode !== 'draining') return { serverNow: Date.now(), consoleMaintenance: maintenance };
           const lease = mode ? undefined : dashboardStream.lease(name);
@@ -1114,6 +1134,7 @@ export function startCoordinatorApplication(
       collectionNearby: merchantCollectionNearby,
       luckSchedule: mluckScheduleStatus,
       realmControl: realmControlPayload,
+      consoleControl: () => consoleControl.status(),
     });
     const publicStateRoute = publicOverview.route;
     const {
@@ -2334,6 +2355,23 @@ export function startCoordinatorApplication(
               maps: (router) => {
                 dungeons.install(router);
                 upgradePreviews.install(router);
+                router.get('/party-api/console-control', (_req, res) => res.json(consoleControl.status()));
+                // Pause, Play and the clean shutdown; console-control.ts documents the hold.
+                router.post('/party-api/console-control/:action', (req, res) => {
+                  const body = coordinatorPolicies.requestObject(req.body);
+                  try {
+                    switch (req.params.action) {
+                      case 'pause': consoleControl.pause(); break;
+                      case 'play': consoleControl.play(); break;
+                      case 'shutdown': consoleControl.requestShutdown(body.force === true); break;
+                      case 'cancel-shutdown': consoleControl.cancelShutdown(); break;
+                      case 'cancel-resume': consoleControl.cancelResume(); break;
+                      default: return res.status(404).json({ error: 'Unknown console control action' });
+                    }
+                    consoleControl.observe();
+                    return res.json(consoleControl.status());
+                  } catch (error) { return res.status(500).json({ error: String((error as Error).message || error) }); }
+                });
                 router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
                   [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete')));
                 const codeActivation = () => {

@@ -28,7 +28,8 @@ export function PartyViewSwitch({ model, view, navigate }: { model: PartyConsole
       {view === 'metrics' ? <button ref={back} className={arrow + ' md:pointer-events-auto md:sticky md:top-[50vh]'} onClick={() => navigate('characters')} aria-controls="party-character-view" aria-label="Back to characters" title="Back to characters"><ArrowLeft size={18} /><span className="md:sr-only">Back to characters</span></button> : <span />}
       {view === 'characters' && <button ref={forward} className={arrow + ' md:pointer-events-auto md:sticky md:top-[50vh]'} onClick={() => navigate('metrics')} aria-controls="party-metrics-view" aria-label="View metrics" title="View metrics"><span className="md:sr-only">View metrics</span><ArrowRight size={18} /></button>}
     </div>
-    <div className="overflow-hidden transition-[height] duration-250 motion-reduce:transition-none" style={{ height }}>
+    {/* overflow-clip, unlike overflow-hidden, is no scroll container, so the card name strips (card-name-strip.tsx) can stick inside it. */}
+    <div className="overflow-clip transition-[height] duration-250 motion-reduce:transition-none" style={{ height }}>
       <div className="grid items-start transition-transform duration-250 ease-in-out motion-reduce:transition-none" style={{ gridTemplateColumns: '100% 100%', transform: view === 'metrics' ? 'translateX(-100%)' : 'translateX(0)' }}>
         <div id="party-character-view" ref={characters} inert={view !== 'characters'} aria-hidden={view !== 'characters'} className="min-w-0"><PartyWorkspace model={model} /></div>
         <div id="party-metrics-view" ref={metrics} inert={view !== 'metrics'} aria-hidden={view !== 'metrics'} className="min-w-0">

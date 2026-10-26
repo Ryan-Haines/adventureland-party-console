@@ -148,4 +148,6 @@ export interface PublicStatePorts {
   luckSchedule(): unknown;
   bankbois(): unknown;
   realmControl(): unknown;
+  /** Pause, Play and clean shutdown state; lifecycle/console-control.ts. */
+  consoleControl?(): unknown;
 }

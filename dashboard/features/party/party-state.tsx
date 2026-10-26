@@ -82,6 +82,7 @@ export type PartyState = {
   appearanceChoices?: Record<string, AppearanceChoice[]>;
   steamSwitch?: SteamSwitch | null;
   realmControl?: RealmControl;
+  consoleControl?: import('./console-controls').ConsoleControlState | null;
   marked: Record<string, BankMark[]>;
   merchantMarked?: Record<string, BankMark[]>;
   autoItemMarks?: Record<string, Record<string, "bank" | "merchant">>;

@@ -33,7 +33,8 @@ export type LiveGame = {
   adminRealm(realm:'USI'|'USII', code:string):Promise<any>;
   holdMerchantStatus(hold:boolean,options?:{inventoryOnly?:boolean}):void;
   consoleDrainLease(id: string | null, expires?: number, options?:{loadMode?:'now'|'safe'|'main';phase?:string}): void;
-  restartCoordinator(): Promise<void>;
+  /** whileDown runs after the coordinator exits and before it starts again. */
+  restartCoordinator(whileDown?: () => Promise<void> | void): Promise<void>;
   restartCoordinatorIdentity(artifactId:string,hash:string):Promise<void>;
   deploymentPaths:{directory:string;apiUrl:string;codeRoots:string[]};
   restoreHistoricalSettings(restore: (settings: any) => any): Promise<void>;
@@ -222,7 +223,7 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           else rmSync(file,{force:true});
           exchanges.push({at:Date.now(),hostMaintenanceLease:id,expires});
         },
-        async restartCoordinator() { await stop(coordinator!, true); await start(); await publicRestartReady('explicit restart'); },
+        async restartCoordinator(whileDown) { await stop(coordinator!, true); await whileDown?.(); await start(); await publicRestartReady('explicit restart'); },
         deploymentPaths:{directory,apiUrl:`http://127.0.0.1:${port}`,codeRoots:[path.join(directory,'CODE/adventure_land')]},
         async restartCoordinatorIdentity(artifactId,hash){identityEnvironment={AL_CONSOLE_ARTIFACT_ID:artifactId,AL_CONSOLE_COORDINATOR_HASH:hash};await stop(coordinator!,true);await start();await publicRestartReady('identity restart');},
         async restoreHistoricalSettings(restore) {

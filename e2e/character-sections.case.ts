@@ -7,13 +7,16 @@ test('character sections collapse independently and retain inventory equipment r
   const card=(name:string)=>page.locator('article').filter({has:page.getByRole('heading',{name,exact:true})});
   const merchant=card('M'), warrior=card('W');
   const combat=warrior.getByRole('button',{name:'Combat log',exact:true});
-  const farming=warrior.getByRole('button',{name:/^Farming settings/}).first();
-  await expect(combat).toBeVisible();await expect(farming).toBeVisible();
-  const spacing=async()=>{const a=await combat.boundingBox(),b=await farming.boundingBox();return b!.y-(a!.y+a!.height);};
-  expect(await spacing()).toBeGreaterThanOrEqual(12);expect(await spacing()).toBeLessThanOrEqual(14);
+  await expect(combat).toBeVisible();
+  // The combat log is the card's last section, below the inventory panel's sections.
+  const last=async()=>warrior.evaluate(card=>{
+    const sections=[...card.querySelectorAll('button[aria-expanded]')].filter(button=>button.getBoundingClientRect().height>0);
+    return sections.sort((a,b)=>a.getBoundingClientRect().top-b.getBoundingClientRect().top).at(-1)?.textContent?.trim();
+  });
+  expect(await last()).toBe('Combat log');
   await page.setViewportSize({width:800,height:1000});
-  expect(await spacing()).toBeGreaterThanOrEqual(12);expect(await spacing()).toBeLessThanOrEqual(14);
-  await info.attach('combat-log-spacing',{body:await warrior.screenshot(),contentType:'image/png'});
+  expect(await last()).toBe('Combat log');
+  await info.attach('combat-log-last',{body:await warrior.screenshot(),contentType:'image/png'});
   await page.setViewportSize({width:1440,height:1000});
   const inventory=merchant.getByRole('button',{name:/^Inventory/});
   const equipped=merchant.getByRole('button',{name:'Equipped',exact:true});

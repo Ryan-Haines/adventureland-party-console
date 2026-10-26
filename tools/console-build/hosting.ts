@@ -14,6 +14,7 @@ import {buildCandidate} from './builder.ts';
 import {verifyManifest,type GameManifest,type CharacterClass} from '../game/manifest.ts';
 import {atomicJson,readJson} from '../build-store.ts';
 import {safeReload} from './safe-reload.ts';
+import {userPauseLease} from '../../runtime/coordinator/lifecycle/console-control.ts';
 
 interface ManagedOptions{dashboardPort:number;apiPort:number;coordinatorEnv?:NodeJS.ProcessEnv;coordinatorOnly?:boolean}
 interface CharacterReport{seenAt?:number;connected?:boolean;rip?:boolean;type?:string;ctype?:string;codeHash?:string;name?:string;map?:string;dungeon?:{cave?:{run?:string}|null};consoleMaintenance?:{id?:string;ready?:boolean}|null}
@@ -75,8 +76,11 @@ export async function createManagedConsole(root:string,services:Services,options
   let coordinatorCandidate:string|undefined;
   let captured:PublicState|undefined;
   let acknowledgeAfter=0;
-  const maintenance=safeReload(path.resolve(options.coordinatorEnv?.AL_DATA_DIR||process.env.AL_DATA_DIR||path.join(root,'.build/hosting-data')),
+  const dataDirectory=path.resolve(options.coordinatorEnv?.AL_DATA_DIR||process.env.AL_DATA_DIR||path.join(root,'.build/hosting-data'));
+  const maintenance=safeReload(dataDirectory,
     signal=>json<{id?:string|null;ready?:boolean}>(options.apiPort,'/party-api/console-maintenance',signal));
+  // The coordinator owns the console Pause file; loader replies keep holding it between deploys.
+  const userPause=userPauseLease(dataDirectory);
   async function runtimeState(signal:AbortSignal):Promise<PublicState>{
     const state=await json<PublicState>(options.apiPort,'/party-api/console-runtime',signal).catch(()=>json<PublicState>(options.apiPort,'/party-api/state?catalog=0',signal));
     return {characters:Object.fromEntries(Object.entries(state.characters||{}).map(([name,r])=>[name,{name,seenAt:r.seenAt,connected:r.connected,rip:r.rip,type:r.type,ctype:r.ctype,codeHash:r.codeHash,map:r.map,dungeon:r.dungeon,consoleMaintenance:r.consoleMaintenance}]))};
@@ -184,7 +188,7 @@ export async function createManagedConsole(root:string,services:Services,options
       if(pathname==='/party-api/console-deployment'){
         // activation tells loaders whether activation.json exists, so they stop polling it for a 404.
         const activation=await activationId(deployed);
-        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({serverNow:Date.now(),consoleMaintenance:maintenance.lease||null,activation}));return true;
+        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({serverNow:Date.now(),consoleMaintenance:maintenance.lease||userPause(),activation}));return true;
       }
       if(!pathname.startsWith('/CODE/adventure_land/'))return false;
       if(!['GET','HEAD'].includes(req.method||'')){res.writeHead(405);res.end();return true;}

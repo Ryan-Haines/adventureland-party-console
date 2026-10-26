@@ -26,6 +26,7 @@ import { giveawayDirectory } from "./giveaway-directory.ts";
 import { revisionSections, sendWithRevision } from "./section-revision.ts";
 import { randomUUID } from "node:crypto";
 import { requestObject } from "../http/contracts.ts";
+import { activityPhases } from "./activity-phases.ts";
 
 function catalogs(state: Readonly<PublicState>): Record<string, unknown> {
   return {
@@ -169,7 +170,12 @@ function fullPayload(
     bankboiTransaction: state.bankboiTransaction,
     bankboiCreateSingleFlight: true,
     realmControl: ports.realmControl(),
+    consoleControl: consoleControl(ports),
   };
+}
+
+function consoleControl(ports: PublicStatePorts): unknown {
+  return ports.consoleControl ? ports.consoleControl() : null;
 }
 
 function bankboiSummaries(value: unknown) {
@@ -209,6 +215,7 @@ function fastPayload(state: Readonly<PublicState>, ports: PublicStatePorts) {
     activeConvoy: state.activeConvoy,
     partyLocation: state.location,
     realmControl: ports.realmControl(),
+    consoleControl: consoleControl(ports),
     pendingCommands: pendingCommands(state.commands),
   };
 }
@@ -291,6 +298,7 @@ export function createPublicStateRoute(state: Readonly<PublicState>, ports: Publ
                 ]),
               ),
               referenceRevision: referenceRevision(),
+              activityPhases: activityPhases(state),
             }),
     };
     if (!section) return response.json(fullPayload(state, ports, request.query?.catalog === "0"));
