@@ -184,3 +184,12 @@ publication, expiry and explicitly seeded event execution. Debug worlds retain
 normal schedule automation; an explicit fixture opt-in can exercise scheduled
 starts. Preserve actual native ingredient drops, no early brewing, exact round
 ownership and successful brewing after the original cutoff.
+
+The next full console job exposed two observation races. Twenty local metrics
+repeats reproduced the CI mismatch: frame 44 appeared between reading the header
+and reading its ring keys. Compare both from one synchronous browser snapshot;
+retain exact ring equality, queued-frame identity and once-only delivery after
+reload. The exchange-preview slider also failed three of five local repeats.
+Target each keyboard action at the slider and await its actual value (0, 1, 2)
+before the next input, retaining the visible +2 preview and all merchant-rule
+replacement/persistence assertions. No collector or product UI behavior changes.

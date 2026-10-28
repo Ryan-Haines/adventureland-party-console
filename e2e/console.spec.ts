@@ -730,10 +730,12 @@ test('exchange reward tiles share merchant actions and replace previous rules', 
   await expect(page.getByRole('heading', { name: 'Exchange drops', exact: true })).toBeVisible();
   await coat.click();
   const levelPreview = page.getByRole('slider');
-  await levelPreview.focus();
-  await page.keyboard.press('Home');
-  await page.keyboard.press('ArrowRight');
-  await page.keyboard.press('ArrowRight');
+  await levelPreview.press('Home');
+  await expect(levelPreview).toHaveValue('0');
+  await levelPreview.press('ArrowRight');
+  await expect(levelPreview).toHaveValue('1');
+  await levelPreview.press('ArrowRight');
+  await expect(levelPreview).toHaveValue('2');
   await expect(page.getByText('+2', { exact: true })).toBeVisible();
   const exchangeSources = page.getByRole('heading', { name: 'Exchange reward', exact: true }).locator('..');
   const source = exchangeSources.getByRole('button', { name: /Raw Emerald/ });
