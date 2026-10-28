@@ -248,3 +248,24 @@ existing one-second pulse while that Cipher participation is active; serialize
 sends with event polling and respect inventory ownership. Retain the CI target
 coordinates in the E2E, exact delivered quantities, retained gathering choice,
 real hits beyond five minutes, zero early brews and the native cutoff/return.
+
+A subsequent native run exposed two fixture-boundary failures. Disabled
+Anniversary still left Hunt actively killing Goo, but ranged combat kept both
+fighters outside the spawn rectangle demanded by the setup assertion. The same
+failure reproduced locally. Use the neighboring Anniversary journeys' reversible
+ambient isolation and declare the native Goo encounter after arrival; retain the
+real kill, quest decrement, unchanged Hunt cycle and no Anniversary reward.
+
+The empty-hint navigation trace had already moved the Warrior away during native
+login, then an unrelated Boo Boo killed it. Isolate that map's ambient actors
+reversibly, use ordinary public travel to establish both actual starting positions,
+and only then time the unchanged 150-second catalog-reacquisition assertion.
+Preserve both native hit receipts, stale advertised coordinates and actual catalog
+arrival. The outer timeout includes the separate bounded setup journey.
+
+Hosted jobs also failed before scenarios started because the pinned image mirror
+returned registry quota errors. A declared single startup rejection reproduced
+this locally. Retry only recognized registry 429/toomanyrequests failures, at most
+three times with increasing jittered backoff. Keep original image digests, native
+health readiness and bootstrap checks. A real gameplay E2E after that injected
+startup failure verifies recovery; no test assertion failure is retried here.

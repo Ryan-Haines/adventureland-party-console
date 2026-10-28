@@ -65,6 +65,8 @@ for(const mode of ['resume','restart','hunt-off'] as const) test(`native anniver
 test('disabled anniversary selection leaves native Hunt fighting and creates no visit reward',async({live},info)=>{
   test.setTimeout(300_000);
   try {
+    const ambient=await isolateNativeMapAmbient(live,'main');
+    await info.attach('disabled-anniversary-native-ambient-input',{body:JSON.stringify(ambient),contentType:'application/json'});
     const hunt=await prepareHunt(live),before=await world(live);
     const seed=await beginAnniversary(live,M);
     await expect.poll(async()=>(await world(live)).anniversary?.live,{timeout:30_000}).toBe(true);
@@ -83,7 +85,7 @@ test('disabled anniversary selection leaves native Hunt fighting and creates no 
       points.sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y));
       for(const {x,y} of points){
         if(x<bounds[0]||x>bounds[2]||y<bounds[1]||y>bounds[3]||!can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))continue;
-        const m=new_monster(p.in,{type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
+        const m=new_monster(p.in,{__e2eAmbientExempt:true,type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
         return {id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,destination};}
       throw Error('No reachable native encounter inside disabled-Anniversary Goo mission');})()`);
     await info.attach('anniversary-disabled-native-encounter',{body:JSON.stringify(encounter),contentType:'application/json'});
@@ -96,7 +98,11 @@ test('disabled anniversary selection leaves native Hunt fighting and creates no 
     expect(quantity(after.players[W].items,'anniversarygift')).toBe(quantity(before.players[W].items,'anniversarygift'));
     expect(after.players[W].conditions.anniversary_kiss).toBeFalsy();
     await info.attach('anniversary-disabled-native-evidence',{body:JSON.stringify({seed,before,after,state}),contentType:'application/json'});
-  } finally {await cleanupEvents(live);}
+  } finally {
+    try {await cleanupEvents(live);} finally {
+      await info.attach('disabled-anniversary-native-ambient-restored',{body:JSON.stringify(await restoreNativeMapAmbient(live,true)),contentType:'application/json'});
+    }
+  }
 });
 
 for(const type of ['phoenix','goldenbat','cutebee','hen','rooster','tinyp']) test(`native ${type} interruption kills and loots before resuming the same Hunt`,async({live},info)=>{

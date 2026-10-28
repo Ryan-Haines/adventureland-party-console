@@ -1,3 +1,4 @@
+import {isolateNativeMapAmbient,restoreNativeMapAmbient} from './native-map-ambient-isolation';
 import {observeNativeStatus} from './native-status-observer';
 import { killNativeCharacter } from "./hunt-interruption-helpers";
 import {test,expect} from './live-fixtures';
@@ -12,16 +13,18 @@ test.describe('empty event sighting recovery',()=>{
  test('native Mr Green leaves an empty last-seen waypoint and reacquires its catalog spawn',async({live},info)=>{
   // Failure modes: repeatedly completing the empty hint; bouncing back after
   // catalog arrival; trusting stale coordinates over a real boss; lost ownership.
-  test.setTimeout(240_000);const hint={map:'spookytown',x:255,y:-1425},spawn=await nativeEventSpawn(live.admin,'mrgreen');
+  test.setTimeout(360_000);const hint={map:'spookytown',x:255,y:-1425},spawn=await nativeEventSpawn(live.admin,'mrgreen');
   let seed:any;const observations:any[]=[];
   try{
-   // This is an empty-hint navigation journey. The cemetery's respawning mummy
-   // pack otherwise keeps starting unrelated defense fights at the hint.
-   await live.admin(`output=(()=>{const original=G.monsters.mummy;
-     globalThis.__e2eEmptyHintMummies={original,actors:Object.values(instances.spookytown.monsters).filter(m=>m.type==='mummy').map(m=>({id:m.id,aggro:m.aggro,peaceful:m.peaceful}))};
-     G.monsters.mummy={...original,aggro:0,peaceful:true};
-     for(const m of Object.values(instances.spookytown.monsters))if(m.type==='mummy'){m.aggro=0;m.peaceful=true;m.target=null;}
-     return true;})()`);
+   // Native login can already have pulled the surrounding pack. This case
+   // exercises an empty advertised waypoint, not unrelated ambient combat or
+   // death recovery. Remove those actors reversibly, then reach the declared
+   // start through ordinary native navigation before timing reacquisition.
+   const ambient=await isolateNativeMapAmbient(live,'spookytown');
+   await info.attach('empty-hint-native-ambient-input',{body:JSON.stringify(ambient),contentType:'application/json'});
+   for(const character of fighters)await live.post('/command',{character,type:'character-travel',location:hint,label:'Empty-hint journey starting waypoint'});
+   await expect.poll(async()=>live.admin(`output=${JSON.stringify(fighters)}.every(name=>{const p=get_player(name);return p&&!p.rip&&p.map===${JSON.stringify(hint.map)}&&Math.hypot(p.x-(${hint.x}),p.y-(${hint.y}))<30;})`),
+     {timeout:90_000,message:'Both native fighters must reach the empty hint before catalog reacquisition starts'}).toBe(true);
    seed=await seedRecoveryGreen(live,spawn,hint);
    await expect.poll(()=>live.clients[W].run('parent.S.mrgreen && ({map:parent.S.mrgreen.map,x:parent.S.mrgreen.x,y:parent.S.mrgreen.y})'),{timeout:15_000}).toEqual(hint);
    await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
@@ -33,13 +36,12 @@ test.describe('empty event sighting recovery',()=>{
    expect(await live.clients[W].run('({map:parent.S.mrgreen.map,x:parent.S.mrgreen.x,y:parent.S.mrgreen.y})')).toEqual(hint);
    expect(Math.hypot(final.characters[W].x-hint.x,final.characters[W].y-hint.y)).toBeGreaterThan(500);
   }finally{
-   await info.attach('native-empty-last-seen-spawn-recovery',{body:JSON.stringify({hint,spawn,seed,observations,state:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
-   await live.post('/formation',{character:W,eventSelections:[]}).catch(()=>{});await clearRecoveryGreen(live,seed);
-   await live.admin(`output=(()=>{const saved=globalThis.__e2eEmptyHintMummies;if(!saved)return false;
-     G.monsters.mummy=saved.original;for(const m of Object.values(instances.spookytown.monsters))if(m.type==='mummy'){
-       const prior=saved.actors.find(a=>a.id===m.id)||saved.original;
-       for(const key of ['aggro','peaceful'])if(prior[key]===undefined)delete m[key];else m[key]=prior[key];}
-     delete globalThis.__e2eEmptyHintMummies;return true;})()`);
+   try{
+    await info.attach('native-empty-last-seen-spawn-recovery',{body:JSON.stringify({hint,spawn,seed,observations,state:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
+   }finally{
+    try{await live.post('/formation',{character:W,eventSelections:[]}).catch(()=>{});await clearRecoveryGreen(live,seed);}
+    finally{await info.attach('empty-hint-native-ambient-restored',{body:JSON.stringify(await restoreNativeMapAmbient(live,true)),contentType:'application/json'});}
+   }
   }
  });
 });
@@ -124,7 +126,7 @@ test('native event death during convoy admission returns after respawn',async({l
 });
 
 async function seedRecoveryGreen(live:import('./live-fixtures').LiveGame,spawn:{map:string;x:number;y:number},hint:{map:string;x:number;y:number}){
- return live.admin(`output=(()=>{const original=G.monsters.mrgreen;if(Object.values(instances).some(i=>Object.values(i.monsters||{}).some(m=>m.type==='mrgreen')))throw Error('Requires a clean native Mr Green encounter');try{G.monsters.mrgreen={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,rage:0,peaceful:true,spawns:[]};const p=${JSON.stringify(spawn)},m=new_monster(p.map,{type:'mrgreen',count:1,boundary:[p.x,p.y,p.x,p.y]},{temp:1});m.e2eRecoveryGreen=true;E.mrgreen={live:true,...${JSON.stringify(hint)},hp:m.hp,max_hp:m.max_hp};
+ return live.admin(`output=(()=>{const original=G.monsters.mrgreen;if(Object.values(instances).some(i=>Object.values(i.monsters||{}).some(m=>m.type==='mrgreen')))throw Error('Requires a clean native Mr Green encounter');try{G.monsters.mrgreen={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,rage:0,peaceful:true,spawns:[]};const p=${JSON.stringify(spawn)},m=new_monster(p.map,{__e2eAmbientExempt:true,type:'mrgreen',count:1,boundary:[p.x,p.y,p.x,p.y]},{temp:1});m.e2eRecoveryGreen=true;E.mrgreen={live:true,...${JSON.stringify(hint)},hp:m.hp,max_hp:m.max_hp};
   // Declared stale server_info coordinates only. Native entity visibility,
   // movement, attacks and death continue to report the real encounter.
   globalThis.__e2eRecoveryGreenNativeBroadcast=broadcast_e;
