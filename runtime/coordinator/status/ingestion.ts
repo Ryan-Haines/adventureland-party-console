@@ -109,6 +109,10 @@ export function createStatusIngestion<Report extends StatusReport>(
     if (rememberCharacterAppearance(state, body, receivedAt) || snapshotChanged) ports.persistRoster();
   }
 
+  function advanceCommandWatermark(body: Report): void {
+    if (Number.isSafeInteger(body.lastCommandId) && body.lastCommandId! >= 0 && body.lastCommandId! < Number.MAX_SAFE_INTEGER)
+      state.nextCommandId = Math.max(state.nextCommandId, body.lastCommandId! + 1);
+  }
   function handle(req: HttpRequest, res: HttpResponse): unknown {
     const receivedAt = ports.now();
     const sendJson = res.json.bind(res);
@@ -126,9 +130,7 @@ export function createStatusIngestion<Report extends StatusReport>(
     // Native CODE can outlive the coordinator. Historical Town restoration used
     // wall-clock IDs outside this sequence; never issue commands behind a live
     // client's applied watermark. Do this before any consumer can dispatch work.
-    if (Number.isSafeInteger(body.lastCommandId) && body.lastCommandId! >= 0 &&
-        body.lastCommandId! < Number.MAX_SAFE_INTEGER)
-      state.nextCommandId = Math.max(state.nextCommandId, body.lastCommandId! + 1);
+    advanceCommandWatermark(body);
     receiveLuckyEvidence(raw, raw.name);
     receiveRosterEvidence(raw, body, receivedAt);
     const learned = consume(body);

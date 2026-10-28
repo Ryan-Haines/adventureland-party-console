@@ -83,9 +83,12 @@ export function createCompoundCommands(state: CompoundState, ports: CompoundPort
         (entry.item.level || 0) === (item.level || 0),
     );
   }
+  function validBankSelection(body: Request, name: string): boolean {
+    return body.character === name && typeof body.pack === 'string' && /^items\d+$/.test(body.pack) && Number.isSafeInteger(body.slot);
+  }
   function bankManual(body: Request, item: Item): CommandOutcome {
     const name = state.merchantCharacter;
-    if (!name || body.character !== name || typeof body.pack !== 'string' || !/^items\d+$/.test(body.pack) || !Number.isSafeInteger(body.slot))
+    if (!name || !validBankSelection(body, name))
       return reply({error:'invalid native bank compound selection'},400);
     const groups = state.compounds[name] ||= [];
     if (groups.some(group=>group.items.some(mark=>mark.storage && mark.storage.pack===body.pack && mark.storage.slot===body.slot && JSON.stringify(mark.item)===JSON.stringify(item)))) return null;

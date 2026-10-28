@@ -37,6 +37,25 @@ export function createMailbox(inner:MailInbox,state:{mailbox?:MailboxState},port
       failures.set(key,{id,action,error:String(requestObject(error).message||error)});
     }
   }
+  function actionStillDue(mail: Record<string, unknown> | undefined, action: 'collect' | 'delete'): boolean {
+    if (!mail?.item) return false;
+    return action === 'delete' ? saved.settings.autoDelete && mail.taken === true : saved.settings.autoCollect && mail.taken === false;
+  }
+  function retireFailures(current: Record<string, unknown>[]): void {
+    for(const [key,failure] of failures){
+      if (!actionStillDue(current.find(mail=>mail.id===failure.id), failure.action)) {
+        failures.delete(key);retryAt.delete(key);
+      }
+    }
+  }
+  function collectionPhase(mail: Record<string, unknown>, phase: string): boolean {
+    return !mail.collection || mail.collection === phase;
+  }
+  async function automateMail(mail: Record<string, unknown>): Promise<void> {
+    if(typeof mail.id!=='string'||!mail.item||ports.collecting(mail.id))return;
+    if(saved.settings.autoCollect&&mail.taken===false&&collectionPhase(mail,'failed'))await automate(mail.id,'collect');
+    else if(saved.settings.autoDelete&&mail.taken===true&&collectionPhase(mail,'collected'))await automate(mail.id,'delete');
+  }
   async function refresh(){
     if(flight)return flight;
     flight=(async()=>{
@@ -45,18 +64,8 @@ export function createMailbox(inner:MailInbox,state:{mailbox?:MailboxState},port
       const ids=new Set(current.map(mail=>mail.id));
       for(const key of retryAt.keys())if(!ids.has(key.slice(key.indexOf(':')+1)))retryAt.delete(key);
       // Errors describe an action still due, independently of listing freshness.
-      for(const [key,failure] of failures){
-        const mail=current.find(mail=>mail.id===failure.id);
-        if(!mail?.item || failure.action==='delete'&&(!saved.settings.autoDelete||mail.taken!==true) ||
-          failure.action==='collect'&&(!saved.settings.autoCollect||mail.taken!==false)){
-          failures.delete(key);retryAt.delete(key);
-        }
-      }
-      for(const mail of current){
-        if(typeof mail.id!=='string'||!mail.item||ports.collecting(mail.id))continue;
-        if(saved.settings.autoCollect&&mail.taken===false&&(!mail.collection||mail.collection==='failed'))await automate(mail.id,'collect');
-        else if(saved.settings.autoDelete&&mail.taken===true&&(!mail.collection||mail.collection==='collected'))await automate(mail.id,'delete');
-      }
+      retireFailures(current);
+      for(const mail of current)await automateMail(mail);
       return snapshot();
     })();
     try{return await flight;}finally{flight=undefined;}

@@ -41,12 +41,15 @@ export function createReturnProgressRoute(state: ReturnProgressState, ports: {
   };
 }
 
+function validExitAttempts(attempts: number): boolean {
+  return Number.isInteger(attempts) && attempts >= 0 && attempts <= 3;
+}
 function updateExitProgress(progress: ReturnProgress, body: Record<string, unknown>): void {
   if (progress.kind !== "event" || typeof body.exitMap !== "string") return;
   if (progress.exitMap && progress.exitMap !== body.exitMap) return;
   progress.exitMap = body.exitMap;
   const attempts = Number(body.exitAttempts);
-  if (Number.isInteger(attempts) && attempts >= 0 && attempts <= 3)
+  if (validExitAttempts(attempts))
     progress.exitAttempts = Math.max(progress.exitAttempts || 0, attempts);
   if (body.blockedTownAttempted === true) progress.blockedTownAttempted = true;
   if (body.exitReconnectAttempted === true) progress.exitReconnectAttempted = true;

@@ -181,7 +181,7 @@ export function startCoordinatorApplication(
         // A metrics disk/startup failure must not stop character coordination.
         // Preserve the original history and expose an unavailable endpoint.
         log.warn({ error }, 'Metrics storage unavailable; party coordination continues');
-        return { close() {}, install(router: HttpRouter) {
+        return { close() { return Promise.resolve(); }, install(router: HttpRouter) {
           const unavailable: HttpHandler = (_request, response) => response.status(503).json({ error: 'Metrics storage unavailable' });
           router.get('/party-api/metrics', unavailable); router.post('/party-api/metrics', unavailable);
           router.post('/party-api/metrics/reset', unavailable);
