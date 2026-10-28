@@ -10457,7 +10457,13 @@
     if (root.__partyTracktrixMove) await root.__partyTracktrixMove;
     root.__partyInventoryCommands = (root.__partyInventoryCommands || 0) + 1;
     try { return await handleOwnedCommand(command); }
-    finally { root.__partyInventoryCommands -= 1; }
+    finally {
+      root.__partyInventoryCommands -= 1;
+      // Status and periodic gathering ticks can both land inside asynchronous
+      // command preflight. Wake on release as well, so matching timer phases
+      // cannot leave gathering idle after the inventory owner has finished.
+      wakeGatheringAfterStatus();
+    }
   }
 
   async function handleOwnedCommand(command) {

@@ -283,11 +283,18 @@ export function installDungeonRuntime(ports: Ports) {
     return true;
   }
   async function execute(c: CaveCommand) {
-    if (activeId || journal.get(c.id)) return;
+    const receipt = journal.get(c.id);
+    const pausedStairs = c.action === "stairs" && receipt?.status === "failed" &&
+      receipt.error === "cave_paused";
+    if (activeId || receipt && !pausedStairs) return;
     activeId = c.id;
     let dispatched = false;
     try {
       await stopping;
+      // A native conversation can pause the run between readiness and transport.
+      // Only its explicit rejection is retryable, once fresh party readiness
+      // returns. Revalidate the same run and door before another native request.
+      if (pausedStairs && !canMove()) return;
       if (!validate(c)) {
         journal.save(c, "complete");
         return;
@@ -322,8 +329,12 @@ export function installDungeonRuntime(ports: Ports) {
         error && typeof error === "object" && "reason" in error
           ? String(error.reason)
           : String(error);
-      // A rejected transport promise does not prove that the server rejected the action.
-      journal.save(c, dispatched ? "uncertain" : "failed", reason);
+      const pausedTransport = c.action === "stairs" && error && typeof error === "object" &&
+        "failed" in error && error.failed === true && "place" in error && error.place === "transport" &&
+        reason === "cave_paused";
+      // The server's pause gate rejects transport before it can execute. Lost
+      // replies, timeouts and other ambiguous failures still require reconciliation.
+      journal.save(c, dispatched && !pausedTransport ? "uncertain" : "failed", reason);
     } finally {
       if (activeId === c.id) activeId = undefined;
     }

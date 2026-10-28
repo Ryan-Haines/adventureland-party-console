@@ -289,3 +289,40 @@ to disappear and the native compound queue to clear before finalizing the
 receipt. Preserve the native response, original deadline, failure behavior and
 missed-response inventory fallback. The original exact inventory, success-count,
 quota and restart assertions pass with this declared publication delay.
+
+The following native shard exposed gathering starvation without a leaked owner:
+command preflight performs an asynchronous production inspection, while both
+periodic gathering and the post-status wake can repeatedly fall inside that
+inventory lock. Delivering only due gathering intervals at the pending-inspection
+boundary reproduced the exact 90-second post-Broom tool-equip failure: 50 timer
+collisions, no active attempt, and zero owners between commands. Wake gathering
+again when each command releases ownership. Keep the ordinary guards, handoff,
+cooldowns and native tool/weapon receipt assertions. The fixture changes only
+that timer delivery phase, leaving status, movement and native actions live.
+
+The Cave stairs failure preserved an explicit native transport rejection with
+`failed: true`, `place: transport`, and `reason: cave_paused`. The leader was
+already downstairs; the priest journaled the rejection as uncertain and remained
+upstairs after the pause ended. Freeze only the current priest transport through
+the native server pause gate, then unfreeze immediately after its real rejection;
+this reproduces the same split and unchanged stairs timeout locally. Classify
+only that definite rejection as failed and retry the same stairs command after
+fresh readiness and run/door validation. Preserve uncertain receipts for timeouts,
+lost replies and other ambiguous errors. Verify exactly one native next-floor
+arrival per member after the rejection.
+
+Pretravel ambient peace must be declared before native login. In the failed run,
+the Warrior had already died from ambient combat before the schedule was seeded.
+The shared fixture now applies the scenario's peaceful input to existing actors
+and native respawns on its declared maps before login, then restores the native
+constructor, definitions and actor properties after the owned clients stop.
+Retain native travel, scheduled admission, live Horseman combat, cancellation,
+Main evacuation, checkpoint return and restart assertions.
+
+The repaired collision scenario passes with the same injected timing in native
+and ChronAL runs; the complete accelerated equipment/cooldown group passes all
+seven cases. The native pause scenario passes twice under ChronAL and once under
+native time, retaining the full room, vote, displacement, exit and floor-arrival
+checks. Prelogin peace also passes both journeys twice natively and once under
+ChronAL. Preserve the associated manifests, native rejection receipts and timing
+observations when rerunning these cases.

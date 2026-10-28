@@ -40,7 +40,7 @@ export type LiveGame = {
   reconnectClient(name: string): Promise<void>;
 };
 
-export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primaryClass: 'warrior' | 'ranger' | 'mage'; extraFighter: 'mage' | null; merchantDefault: string | null; liveHeadless: boolean; recordNativeVideo: boolean; movementMode: 'alclient' | 'shadow'; staleWorkerRealm: string | null; initialPosition: {map: string; x: number; y: number} | null; initialPositions: Record<string,{map:string;x:number;y:number}> | null; initialEventSpawn: string | null; initialMonsterSpawn: string | null; initialConsoleHold: boolean; initialGatheringReady: boolean }>({
+export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primaryClass: 'warrior' | 'ranger' | 'mage'; extraFighter: 'mage' | null; merchantDefault: string | null; liveHeadless: boolean; recordNativeVideo: boolean; movementMode: 'alclient' | 'shadow'; staleWorkerRealm: string | null; initialPosition: {map: string; x: number; y: number} | null; initialPositions: Record<string,{map:string;x:number;y:number}> | null; initialEventSpawn: string | null; initialMonsterSpawn: string | null; initialConsoleHold: boolean; initialGatheringReady: boolean; initialPeacefulAmbientMaps: string[] }>({
   loadout: ['god', {option:true}],
   primaryClass: ['warrior', {option:true}],
   extraFighter: [null, {option:true}],
@@ -50,12 +50,13 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
   initialMonsterSpawn: [null, {option:true}],
   initialConsoleHold: [false, {option:true}],
   initialGatheringReady: [false, {option:true}],
+  initialPeacefulAmbientMaps: [[], {option:true}],
   initialEventSpawn: [null, {option:true}],
   liveHeadless: [false, {option:true}],
   recordNativeVideo: [process.env.E2E_NATIVE_VIDEO==='1', {option:true}],
   movementMode: ['alclient', {option:true}],
   staleWorkerRealm: [null, {option:true}],
-  live: [async ({ browser, context:dashboardContext, dashboard, loadout, primaryClass, extraFighter, merchantDefault, initialPosition, initialPositions, initialEventSpawn, initialMonsterSpawn, initialConsoleHold, initialGatheringReady, liveHeadless, recordNativeVideo, movementMode, staleWorkerRealm }, use, testInfo) => {
+  live: [async ({ browser, context:dashboardContext, dashboard, loadout, primaryClass, extraFighter, merchantDefault, initialPosition, initialPositions, initialEventSpawn, initialMonsterSpawn, initialConsoleHold, initialGatheringReady, initialPeacefulAmbientMaps, liveHeadless, recordNativeVideo, movementMode, staleWorkerRealm }, use, testInfo) => {
     const pools=JSON.parse(process.env.E2E_GAME_POOLS||'[]');
     const pool=pools[testInfo.parallelIndex];
     if(!pool)throw Error('Missing isolated game pool for parallel worker '+testInfo.parallelIndex);
@@ -169,7 +170,30 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
       });}
       finally{exchanges.push({at:Date.now(),coordinatorRestartReadiness:reason,observations});}
     }
+    let peacefulAmbientSeeded=false;
     try {
+      if(initialPeacefulAmbientMaps.length){
+        const seed=await game.admin(`output=(()=>{
+          if(Object.keys(players).length||Object.keys(dc_players).length)throw Error('Peaceful ambient input requires disconnected native clients');
+          const maps=data.maps;
+          for(const map of maps)if(!instances[map])throw Error('Unknown peaceful ambient map: '+map);
+          const saved=globalThis.__e2eInitialPeacefulAmbient={definitions:structuredClone(G.monsters),ambient:[],construct:new_monster};
+          const declare=m=>{
+            if(!m||!maps.includes(m.map))return m;
+            saved.ambient.push({map:m.in,id:m.id,aggro:m.aggro,peaceful:m.peaceful});
+            m.aggro=0;m.peaceful=true;
+            if(m.target)stop_pursuit(m,{stop:true,cause:'declared peaceful initial population'});
+            return m;
+          };
+          // Keep native respawns and unrelated maps intact; apply the same
+          // declared input to later actors in these two journey maps only.
+          new_monster=function(){return declare(saved.construct.apply(this,arguments));};
+          for(const map of maps)for(const m of Object.values(instances[map].monsters))declare(m);
+          return {at:Date.now(),maps,actors:saved.ambient.length,players:Object.keys(players).length};
+        })()`,{maps:initialPeacefulAmbientMaps});
+        peacefulAmbientSeeded=true;
+        await testInfo.attach('peaceful-ambient-before-native-login',{body:JSON.stringify(seed),contentType:'application/json'});
+      }
       await start();
       await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
       const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -481,6 +505,14 @@ export const test = base.extend<{ live: LiveGame; loadout: NativeLoadout; primar
           }));
           try { if (coordinator) await stop(coordinator, true); }
           finally {
+            if(peacefulAmbientSeeded)await game.admin(`output=(()=>{
+              const saved=globalThis.__e2eInitialPeacefulAmbient;
+              for(const [type,definition] of Object.entries(saved.definitions))G.monsters[type]=definition;
+              for(const previous of saved.ambient){const m=instances[previous.map].monsters[previous.id];if(m)for(const key of ['aggro','peaceful']){
+                if(previous[key]===undefined)delete m[key];else m[key]=previous[key];
+              }}
+              new_monster=saved.construct;delete globalThis.__e2eInitialPeacefulAmbient;return true;
+            })()`);
             if(observationClock.backend==='chronal-network'){
               const endpoint=new URL('/scope',process.env.E2E_CLOCK_BROKER);endpoint.searchParams.set('scope',directory);endpoint.searchParams.set('token',process.env.E2E_CLOCK_TOKEN||'');await fetch(endpoint);
             }

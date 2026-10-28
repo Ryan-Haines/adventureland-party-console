@@ -6,7 +6,7 @@ import {test,expect} from './live-fixtures';
 for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,()=>{
   const destination=event==='horseman'?{map:'halloween',x:-405,y:-1640}:{map:'spookytown',x:255,y:-1425};
   // Keep Graveyard's origin in the open cemetery, clear of the southern wall.
-  test.use({initialPosition:{...destination,y:destination.y+(event==='horseman'?500:275)}});
+  test.use({initialPeacefulAmbientMaps:['spookytown','halloween'],initialPosition:{...destination,y:destination.y+(event==='horseman'?500:275)}});
   test(`Event pretravel ${event} leaves two minutes early and ${event==='horseman'?'fights only after LIVE':'returns when cancelled'}`,async({live},info)=>{
     test.setTimeout(480_000);
     const fighters=['E2EWarrior','E2EPriest'];
@@ -17,23 +17,13 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
     // permissions, damage, event sessions, persistence and return handling.
     const seed=await live.admin(`output=(()=>{
       const event=${JSON.stringify(event)},at=Date.now()+150000;
-      // This journey measures scheduled travel/cancellation. Declare peaceful
-      // ambient populations before attendance so unrelated cemetery packs do
-      // not turn checkpoint-return coverage into an unbounded defense battle.
-      const definitions=structuredClone(G.monsters),ambient=[];
-      for(const type of Object.keys(G.monsters)){G.monsters[type].aggro=0;G.monsters[type].peaceful=true;}
-      for(const map of ['spookytown','halloween'])for(const m of Object.values(instances[map].monsters))ambient.push({map,id:m.id,aggro:m.aggro,peaceful:m.peaceful});
-      for(const map of ['spookytown','halloween'])for(const m of Object.values(instances[map].monsters)){
-        m.aggro=0;m.peaceful=true;
-        // Native disengagement also decrements the player's attacker counters.
-        // Clearing target alone leaves ghost attackers that reject Town/doors.
-        if(m.target)stop_pursuit(m,{stop:true,cause:'declared peaceful pretravel input'});
-      }
+      // Ambient isolation is declared before login: doing this here lets
+      // startup combat kill the leader before the schedule even exists.
       const attackers=${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return {name,count:p.targets,
         actual:Object.values(instances[p.in].monsters).filter(m=>m.target===name).length};});
       const occurrence={event,at,status:'scheduled',id:'e2e-pretravel-'+event};
       const original=broadcast_e;
-      globalThis.__e2ePretravel={occurrence,original,definitions,ambient};
+      globalThis.__e2ePretravel={occurrence,original};
       broadcast_e=function(dontSend){if(dontSend)return;const snapshot={...E,schedule:{...E.schedule,events:[occurrence],repeats:[]}};
         // A cancelled declared occurrence must not reveal an unrelated ambient live round.
         if(occurrence.status!=='live')delete snapshot[event];broadcast('server_info',snapshot);};
@@ -111,9 +101,6 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
     }finally{
       await info.attach('event-pretravel-native-evidence',{body:JSON.stringify({seed,checkpoint,observations,returnTrace:await live.admin('output=globalThis.__e2ePretravel.returnTrace||null'),state:await live.state()}),contentType:'application/json'});
       await live.admin(`output=(()=>{const owner=globalThis.__e2ePretravel;clearInterval(owner.returnTimer);
-        for(const [type,definition] of Object.entries(owner.definitions))G.monsters[type]=definition;
-        for(const saved of owner.ambient){const m=instances[saved.map].monsters[saved.id];if(m)for(const key of ['aggro','peaceful']){
-          if(saved[key]===undefined)delete m[key];else m[key]=saved[key];}}
         broadcast_e=owner.original;delete globalThis.__e2ePretravel;broadcast_e();return true;})()`);
     }
   });

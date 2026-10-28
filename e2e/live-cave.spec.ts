@@ -1113,7 +1113,32 @@ async ({ live, page }, info) => {
     const room={id:'e2e-farewell',floor:0,map:p.map,x:${stairs.x},y:${stairs.y},kind:'encounter',required:false,revealed:true,started:false,done:false,actors:[],enemies:[],encounter:source};
     run.cave.rooms.push(room);cave_activate(run,room);cave_publish(run,true);return {run:run.key,room:room.id,map:room.map,x:room.x,y:room.y};
   })()`);
+  // Failure inventory: a native conversation pause can begin after stairs
+  // readiness was observed. Reject exactly the priest's first real transport
+  // through the server's own pause gate, then unfreeze immediately after its
+  // native response. No receipt is synthesized and unrelated traffic stays live.
+  await live.admin(`output=(()=>{
+    const p=get_player('E2EPriest'),socket=p.socket;
+    const fault=globalThis.__e2eStairPause={to:${JSON.stringify(stairs.to)},socket,emit:socket.emit,attempts:0};
+    fault.gate=function(data){
+      if(fault.started||data.to!==fault.to)return;
+      fault.started={at:Date.now(),map:p.map,to:data.to};fault.attempts++;
+      const instance=fault.instance=instances[p.in];
+      if(!instance.frozen){freeze_instance(instance,Date.now());fault.owned=instance.frozen;}
+    };
+    socket.prependListener('transport',fault.gate);
+    socket.emit=function(event,data,...args){
+      const result=fault.emit.call(this,event,data,...args);
+      if(fault.started&&!fault.receipt&&event==='game_response'&&data?.place==='transport'&&data.reason==='cave_paused'){
+        fault.receipt={at:Date.now(),...data};socket.off('transport',fault.gate);socket.emit=fault.emit;
+        if(fault.owned&&fault.instance.frozen===fault.owned)unfreeze_instance(fault.instance,Date.now());
+      }
+      return result;
+    };
+    return true;
+  })()`);
   let answeredFarewell=false;
+  let pausedTransport:any=null;
   const stairReplies:{id:string;title:string;option:string;room:string;run:string}[]=[];
   const stairNativeChoices:any[]=[];
   const stairSamples:any[]=[];
@@ -1261,6 +1286,15 @@ async ({ live, page }, info) => {
       {timeout:300_000,message:'Manual stairs must continue after the farewell vote and transport both members'}).toBe(true);
   }finally{
     await stairContext.unroute('**/party-api/status',displaceCompletedStairs);
+    pausedTransport=await live.admin(`output=(()=>{
+      const fault=globalThis.__e2eStairPause;
+      fault.socket.off('transport',fault.gate);fault.socket.emit=fault.emit;
+      if(fault.owned&&fault.instance?.frozen===fault.owned)unfreeze_instance(fault.instance,Date.now());
+      delete globalThis.__e2eStairPause;
+      return {started:fault.started,receipt:fault.receipt,attempts:fault.attempts};
+    })()`);
+    await info.attach('native-stairs-pause-rejection',{body:JSON.stringify(pausedTransport),contentType:'application/json'});
+
     try{
       await info.attach('native-cave-stairs-readiness',{body:JSON.stringify({farewellDeclaration,stairDisplacement,nativeChoices:stairNativeChoices,samples:stairSamples,planning:await Promise.allSettled(stairPlanningReads),native:await Promise.allSettled(stairNativeReads),
         unavailable:['Coordinator status position/seenAt and CODE loading/socket ownership are not exposed by this dungeon response.']}),contentType:'application/json'});
@@ -1272,6 +1306,11 @@ async ({ live, page }, info) => {
     }
   }
   expect(answeredFarewell).toBe(true);
+  expect(pausedTransport.attempts).toBe(1);
+  expect(pausedTransport.receipt).toMatchObject({failed:true,reason:'cave_paused',place:'transport'});
+  await expect.poll(async()=>Promise.all(['E2EWarrior','E2EPriest'].map(async name=>
+    (await live.clients[name].events()).filter(entry=>entry.event==='new_map'&&entry.data?.name===stairs.to).length)),
+    {timeout:10_000,message:'Each participant must publish exactly one native arrival on the next floor'}).toEqual([1,1]);
   expect(stairDisplacement?.completed,'Native completed stairs must exercise actual displacement').toBe(true);
   expect(stairSamples.some(s=>s.members.some((m:any)=>m.expected?.independent===true)),
     'Displaced completion must receive a fresh independent movement command before stairs').toBe(true);
