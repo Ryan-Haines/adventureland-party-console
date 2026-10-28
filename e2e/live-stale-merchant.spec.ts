@@ -191,13 +191,27 @@ test.describe('stale merchant recovery', () => {
     // stale assigned work blocks the native ownership/login recovery path.
     const context = live.clients[merchant].page.context();
     let allowOneReport = false;
+    let reportInFlight = false;
+    const reportReceipts:{at:number;status:number}[]=[];
     await context.route('**/party-api/status', async route => {
       if (route.request().postDataJSON()?.name === merchant) {
-        if (allowOneReport) { allowOneReport = false; await route.fetch(); }
+        if (allowOneReport&&!reportInFlight) {
+          reportInFlight=true;
+          try{
+            const response=await route.fetch();
+            reportReceipts.push({at:Date.now(),status:response.status()});
+            // Restart may require protocol resync before accepting status.
+            // Deliver that handshake; drop only the accepted report's response.
+            if(response.status()===409)return await route.fulfill({response});
+            expect(response.ok()).toBe(true);
+            allowOneReport=false;
+          }finally{reportInFlight=false;}
+        }
         return route.abort('connectionfailed');
       }
       return route.fallback();
     });
+    try{
     await live.restoreHistoricalSettings(() => ({ merchantCurrent: {
       id: 'offline-exhausted', target: merchant, reason: 'manual bank exchange',
       phase: 'assigned', startedAt: Date.now() - 181_000, recoveryAttempts: 3,
@@ -207,6 +221,7 @@ test.describe('stale merchant recovery', () => {
     // to assign it, drop its response, then withhold every further worker report.
     allowOneReport = true;
     await expect.poll(async () => (await live.state()).merchantCurrent?.id, { timeout: 20_000 }).toBe('offline-exhausted');
+    expect(reportReceipts.filter(receipt=>receipt.status>=200&&receipt.status<300)).toHaveLength(1);
     const assigned = await live.state();
     await expect.poll(() => Date.now() - assigned.merchantCurrent.startedAt).toBeGreaterThan(7000);
     // Exercise the real roster action guard while the job still exists. This
@@ -224,5 +239,9 @@ test.describe('stale merchant recovery', () => {
     await context.unroute('**/party-api/status');
     await expect.poll(async () => (await live.clients[merchant].snapshot()).statusAt, { timeout: 30_000 }).toBeGreaterThan(Date.now() - 5000);
     await info.attach('offline-merchant-timeout-and-login', { body: JSON.stringify({ assigned, login, timedOut, recovered: await live.state() }), contentType: 'application/json' });
+    }finally{
+      await context.unroute('**/party-api/status');
+      await info.attach('offline-merchant-report-admission',{body:JSON.stringify(reportReceipts),contentType:'application/json'});
+    }
   });
 });

@@ -245,6 +245,9 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
   try {
   await live.clients[merchant].page.route('**/party-api/merchant/checkpoint',async route=>{
     const body=route.request().postDataJSON();
+    // Protection probes are not the fault target. Let the browser observe a
+    // real disconnect during restart instead of throwing from route.fetch.
+    if(!body.state||typeof body.state!=='object')return route.continue();
     if(held&&body.state&&typeof body.state==='object')await gate;
     const response=await route.fetch();
     if(body.state&&typeof body.state==='object') {

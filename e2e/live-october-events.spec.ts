@@ -22,7 +22,29 @@ test('October native door tour visits every door once and restores its farming c
   expect(receipts.doors).toEqual([...trickOrTreatRoute]);
   const followerReceipts=await live.clients.E2EPriest.run("get('party-october-E2EPriest')");
   expect(followerReceipts.doors).toEqual([...trickOrTreatRoute]);
-  await expect.poll(async()=>{const s=await live.state();return !s.eventSessions?.[name]&&!s.eventReturn&&s.characters[name]?.joinedEvent==null;},{timeout:120_000}).toBe(true);
+  const returnSamples:any[]=[];
+  const observeReturn=async()=>{
+    const s=await live.state();
+    returnSamples.push({at:Date.now(),recovery:s.eventReturn,convoy:s.activeConvoy,
+      characters:[name,'E2EPriest'].map(n=>({name:n,map:s.characters[n]?.map,x:s.characters[n]?.x,y:s.characters[n]?.y,
+        seenAt:s.characters[n]?.seenAt,joinedEvent:s.characters[n]?.joinedEvent,convoyNavigation:s.characters[n]?.convoyNavigation}))});
+    return s;
+  };
+  try{
+    // Exiting the final door's map and returning to the saved checkpoint are
+    // separate native journeys. Require the exit milestone before timing return.
+    await expect.poll(async()=>{
+      const s=await observeReturn();
+      const members=[name,'E2EPriest'].map(n=>s.characters[n]);
+      return members.every(c=>c&&c.joinedEvent==null)&&
+        (s.eventReturn?s.eventReturn.phase==='checkpoint'&&s.eventReturn.pending.length===0:
+          !s.activeConvoy&&members.every(c=>c.map===checkpoint.partyLocation.map&&Math.hypot(c.x-checkpoint.partyLocation.x,c.y-checkpoint.partyLocation.y)<100));
+    },{timeout:120_000,message:'Both door-tour participants must finish the event exit'}).toBe(true);
+    await expect.poll(async()=>{const s=await observeReturn();return !s.eventSessions?.[name]&&!s.eventReturn&&s.characters[name]?.joinedEvent==null;},
+      {timeout:120_000,message:'The dispatched checkpoint return must finish and clear recovery'}).toBe(true);
+  }finally{
+    await info.attach('october-door-return-milestones',{body:JSON.stringify(returnSamples),contentType:'application/json'});
+  }
   await expect.poll(async()=>{const actual=await live.clients[name].snapshot();return actual.map===checkpoint.partyLocation.map&&Math.hypot(actual.x-checkpoint.partyLocation.x,actual.y-checkpoint.partyLocation.y)<100;},{timeout:120_000}).toBe(true);
   const final=await live.clients[name].snapshot();
   await live.restartCoordinator();

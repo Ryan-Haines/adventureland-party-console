@@ -275,6 +275,11 @@ test.describe('retired event exit ownership',()=>{
           eventSelectionsByCharacter:{...settings.eventSelectionsByCharacter,[W]:['mrpumpkin']}};
       });
       if(variant==='stale-peer'){
+        await expect.poll(async()=>{
+          const s=await live.state(),warrior=s.characters[W];
+          return warrior?.dashboardRuntime===started.characters[W].dashboardRuntime&&warrior.seenAt>=retiredAt&&
+            Date.now()-warrior.seenAt<3000&&warrior.serverLiveEvents?.some((event:{name:string})=>event.name==='mrpumpkin');
+        },{timeout:30_000,message:'The restarted coordinator must receive the original Warrior runtime and LIVE feed before timing admission'}).toBe(true);
         await expect.poll(async()=>{const s=await live.state();return !s.deferredEventReturns[W]&&!!s.farmingProfiles[W].eventSessions[W];},{timeout:12_000}).toBe(true);
         const admission=await live.state();
         const priestSeenAt=Number(admission.characters[P]?.seenAt||priestSeenAtBeforeHold);

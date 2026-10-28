@@ -53,7 +53,9 @@ for(const mode of ['stored','buy','craft'] as const) test(`elixir restock ${mode
     await expect(equipped).toContainText(/\d+[hms]/);
     await info.attach('active-elixir-slot-and-status',{body:await card.screenshot(),contentType:'image/png'});
     if(mode==='buy') {
-      await live.admin(`output=(()=>{const p=get_player('${target}');if(p.items[20])throw Error('Potion fixture requires empty slot 20');p.items[20]={name:'hpot0',q:1};p.hp=Math.max(1,p.max_hp-300);cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
+      // This checks a potion's native consumption cost, not recovery priority.
+      // Full pools avoid automatic regeneration repeatedly taking its cooldown.
+      await live.admin(`output=(()=>{const p=get_player('${target}');if(p.items[20])throw Error('Potion fixture requires empty slot 20');p.items[20]={name:'hpot0',q:1};p.hp=p.max_hp;p.mp=p.max_mp;cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
       await expect.poll(async()=>(await live.clients[target].snapshot()).items[20]?.name).toBe('hpot0');
       await expect.poll(async()=>{
         const result=await live.clients[target].run(`(async()=>{if(!character.items[20])return {done:true};try{await consume(20);return {done:true};}catch(error){return {reason:error?.reason||error?.response||String(error)};}})()`);

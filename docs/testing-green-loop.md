@@ -126,3 +126,51 @@ to construction of one actor, restore the catalog immediately, and isolate the
 ambient pack with the existing no-respawn removal journal. Remove the owned actor
 in finally; retain exact ingredient totals, sustained hits, restart persistence,
 and cutoff assertions. The separate cutoff journey still requires native drops.
+
+Full validation at 3db06ad6 passed all 150 console/deployment/debug journeys and
+all 3,900 retained regressions, then exposed coordinator lint debt. Extract
+domain helpers without weakening lint limits: preserve validation contracts,
+native receipt ownership, event admission, metrics commit acknowledgements,
+rollup ordering, and bounded reset yields. Recheck lint, typecheck, the retained
+suite, and focused metrics/mail/NPC/stat/event E2Es before the next full dispatch.
+
+Its ChronAL elixir cost check also raced automatic regeneration after deliberately
+injuring the character. Native receipts showed repeated `not_ready` responses;
+three local baseline attempts reproduced one failure at the same assertion.
+The cost-only fixture now starts that step with full HP/MP. It still requires
+actual potion consumption, removal of the exact slot and the exact extra 20 gold
+consumption cost, alongside the original elixir purchase/use/restart checks.
+
+The native remote-event defense baseline passed twice locally, but CI captured
+an unrelated Goo kill before navigation and a transient defense/loot hold. Start
+the leader away from that ambient pack and require fresh same-realm reports of
+the exact seeded attacker AND its independently published LIVE event before
+navigation. Retain the strict never-defending assertion and capture both reports
+before cleanup. The corrected native journey passed twice.
+
+The native door tour recorded all seven receipts for both participants. Its
+combined exit/checkpoint wait expired while the party finished the last Town
+transition; persisted state collected afterward already had completed return
+progress and no recovery or convoy. Observe the exit-to-checkpoint milestone
+separately from completion of the dispatched checkpoint journey, each bounded
+by the existing two-minute deadline. Retain exact receipts, physical arrival,
+cleared recovery, restart persistence and timestamped milestone evidence.
+
+The offline-merchant CI trace returned 409 to the fixture's sole permitted status
+request: protocol resynchronization had not yet accepted a heartbeat. A local
+repeat reproduced the same missing assignment. Forward the resync response,
+then admit exactly one successful report, drop its response, and block further
+reports. Preserve stale-login admission, timeout, exhausted retry removal and
+subsequent native status recovery; retain timestamped admission receipts.
+
+The capped-upgrade restart fixture intercepted protection-only probes with
+route.fetch, so an expected restart connection reset escaped as a fixture error.
+Continue those probes through the browser normally. Only durable commerce
+progress belongs to the declared held-response fault; native retry behavior,
+exact base/scroll purchases, cap conservation and restart persistence remain.
+
+The native stale-peer retirement trace admitted the Warrior just after its
+12-second assertion expired. First require the restarted coordinator to receive
+the original Warrior runtime's fresh status and LIVE event feed, then retain the
+12-second admission bound. Keep the Priest's exact pre-fault timestamp, deferred
+ownership and connected native runtime checks unchanged.
