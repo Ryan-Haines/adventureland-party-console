@@ -3,6 +3,7 @@ import type { Hunt } from "../../hunt/policy.ts";
 import type { ReturnLocation } from "../events/return-types.ts";
 import type { StoredCombatLogEntry } from "../telemetry/combat-log.ts";
 import type { Death, Member } from "../../combat/grouped.ts";
+import type { SharedConvoy, SharedStatus } from "../navigation/shared-route-types.ts";
 
 export interface HuntEncounter {
   target: import("../../combat/grouped.ts").Target & { server: string };
@@ -74,7 +75,7 @@ export interface HuntCycle extends Hunt {
   deathObservations?: Record<string, { at: number; dead: boolean; countedAt: number }>;
   endReason?: string;
 }
-export interface HuntStatus {
+export interface HuntStatus extends Pick<SharedStatus, "combatSelection" | "convoyNavigation" | "moving" | "transporting"> {
   movementGeometry?: {version:number;fingerprint:string};
   anniversaryState?: { busy?: boolean };
   activeCombatTarget?: { id: string; map: string; in?: string | number; server: string };
@@ -114,7 +115,7 @@ export interface LootProgress {
   complete: boolean;
   error?: string;
 }
-interface HuntConvoyState {
+interface HuntConvoyState extends Pick<SharedConvoy, "runtimes" | "routeServer"> {
   epoch?: number;
   routeRecovery?: import('./route-recovery.ts').RouteRecoveryCommand;
   defenseReason?: string | null;

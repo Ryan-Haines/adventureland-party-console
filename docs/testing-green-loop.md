@@ -347,3 +347,48 @@ the expected Information line. Twenty local repetitions reproduced four failures
 Poll the exact complete line arrays for newly mounted cards, and await the staff's
 damage line before inspecting its ordering. Preserve every expected value, count,
 order and screenshot; this is test synchronization, not a product rendering change.
+
+Native Hunt recovery exposed leader displacement during the rendezvous settling
+wait. The initial origin check passed, but a later native position put the leader
+168 units away; the final check mislabeled this as a follower connection failure
+and exhausted the destination's native fallback budget. A local real 80-unit walk
+during that owned wait reproduced the same excluded recovery ledger. Recheck the
+leader's origin after settlement using the existing preparation-drift error, so
+the convoy prepares again without consuming another destination attempt. The E2E
+retains one real route stop, adds one real owned rendezvous walk, and still checks
+continuing native Hunt kills and the unchanged spent retry ledger. Restore the
+timer wrapper in cleanup; unrelated timers and status publication remain live.
+
+Repeated native Hunt recovery also reproduced a follower reload while the owned
+mission convoy was travelling. The fresh runtime acknowledged the failed convoy,
+but Hunt kept the old runtime identity and held forever. Retire that failed
+runtime-lost convoy only after every participant publishes a fresh, same-realm,
+stopped failure acknowledgment for the exact command, epoch, navigation revision
+and current runtime, with at least one changed runtime. Keep destination recovery
+budgets and newer navigation ownership intact. The existing reconnect E2E now
+waits for actual owned follower travel before reloading and retains native kills,
+exact per-owner Daisy rewards and coordinator restart coverage. All four recovery
+journeys passed three repetitions each with both native and ChronAL backends.
+
+The native equipment cycle completed its gameplay assertions but failed during
+interception cleanup: removing a route while its response handler awaited native
+fetch auto-continued the request, then the handler fulfilled it again. A real
+Chromium HTTP reproduction records two requests and `Route is already handled`
+with immediate removal, versus one request and no error when handlers drain.
+Wait for the page's sole interception to drain before restoring gathering timers;
+context fixture routes remain intact. Four repeated native cycles retain exact
+inventory counts, actual tool equip/restore, restart, and owned timer collisions.
+
+Native Hen return exposed a separate defense/loot deadlock: the coordinator had
+released a still-visible neutral Hen, but the client's captured defense list kept
+reporting combat pending forever. Before changing production, extend the retained
+departure-loot regression boundary with that observed state: the old client blocks
+all loot passes; the corrected client completes the same loot state machine.
+Only fresh control (within three seconds, at most 500 ms ahead) matching the local
+convoy ID/epoch may retire captured neutral ownership. Current party attackers
+still block, and missing/stale/other-epoch control stays conservative. Preserve
+native Hen damage, death, guaranteed-drop receipt, same-cycle return and subsequent
+Goo kills in repeated end-to-end runs; the isolated boundary replay is not a claim
+that the rare hosted timing was reproduced by those native runs. A diagnostic
+that disabled a Hen already attacking the party correctly remained in defense;
+its retained artifact documents why it does not reproduce the neutral case.

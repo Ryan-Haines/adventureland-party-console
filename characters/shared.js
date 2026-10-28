@@ -15023,6 +15023,14 @@
     if(!target || !target.visible || target.dead || target.hp === 0 || root.partyRoleRunner && root.partyRoleRunner.isKnownDead(target.id))return false;
     // Check ownership before scanning retained deaths for neutral farm monsters.
     var defense=typeof huntTravelDefense==='function' && huntTravelDefense() && (convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);});
+    // Defense captures its initial targets, but a neutral rare can subsequently
+    // lose selection while remaining visible. Only fresh control for this exact
+    // convoy may release that captured ownership; actual attackers still block.
+    if(defense && typeof huntTravelControl==='function') {
+      var control=huntTravelControl(), age=Date.now()+coordinatorClockOffset-(root.__partyHuntTravelAt||0);
+      if(control && age>=-500 && age<=3000)
+        defense=(control.committed||[]).concat(control.primary?[control.primary]:[]).some(function(t){return passingKey(t)===passingKey(target);});
+    }
     if(!defense && !isAttackingPartyMember(target))return false;
     var deaths = typeof groupedCombat !== 'undefined' && groupedCombat && groupedCombat.deaths || [];
     // departureTargetEngaged runs for every visible monster that attacks the
@@ -15512,6 +15520,10 @@
       await new Promise(function(resolve){setTimeout(resolve,80);});
     }
     if(!ownsConvoy())return;
+    // A delayed native position can move the leader while rendezvous settles.
+    // Reprepare from that origin; this is not a failed path to the destination.
+    if(character.name===command.leader && sharedConvoyDistance(sharedConvoyPoint(),rally)>1)
+      throw new Error("Leader moved from planning origin");
     if(sharedConvoyDistance(sharedConvoyPoint(),rally)>55 || !can_move_to(rally.x,rally.y))
       throw new Error("Follower cannot connect to leader origin");
   }

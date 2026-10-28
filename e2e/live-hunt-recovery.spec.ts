@@ -8,7 +8,30 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   await live.clients[W].run(`(()=>{
     const generation=globalThis.__partyRuntimeGeneration;
     const excludedConvoy=sharedRoutine.combatTraceSnapshot().convoy;
-    const fault=globalThis.__e2eFallbackStop={generation,issued:0,receipt:null};
+    const fault=globalThis.__e2eFallbackStop={generation,issued:0,receipt:null,timeout:setTimeout,drift:null};
+    // A native position update can arrive after the leader's initial origin
+    // check, while rendezvous waits for movement/cruise speed to settle. Deliver
+    // one real walk during that owned wait; leave status and other timers live.
+    fault.wrappedTimeout=function(callback,delay,...args){
+      const convoy=sharedRoutine.combatTraceSnapshot();
+      if(delay!==80||fault.drift||!fault.receipt||globalThis.__partyRuntimeGeneration!==generation||
+          convoy.convoy===fault.receipt.owner.convoyId||convoy.convoyPhase!=='rendezvous')
+        return fault.timeout.call(globalThis,callback,delay,...args);
+      const drift=fault.drift={convoy:convoy.convoy,epoch:convoy.convoyEpoch};
+      return fault.timeout.call(globalThis,async()=>{
+        const current=sharedRoutine.combatTraceSnapshot();
+        if(globalThis.__partyRuntimeGeneration!==generation||current.convoy!==drift.convoy||current.convoyEpoch!==drift.epoch){
+          drift.error='Rendezvous owner changed before native walk';return callback(...args);
+        }
+        drift.from={map:character.map,x:character.x,y:character.y};
+        const to={x:character.x,y:character.y+80};
+        if(!can_move_to(to.x,to.y)){drift.error='Native drift destination is unwalkable';return callback(...args);}
+        try{await xmove(to.x,to.y);drift.arrived={map:character.map,x:character.x,y:character.y};}
+        catch(error){drift.error=String(error);}
+        callback(...args);
+      },delay);
+    };
+    globalThis.setTimeout=fault.wrappedTimeout;
     fault.timer=setInterval(()=>{
       if(fault.issued || globalThis.__partyRuntimeGeneration!==generation)return;
       const service=globalThis.__partyMovement,journey=service?.report(),owner=journey?.owner;
@@ -47,9 +70,13 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   const finalState=await live.state(), finalHunt=profile(finalState).monsterHunt;
   expect(finalHunt.cycleId).toBe(recovering.cycleId);
   expect(finalHunt.routeRecovery,'Successful arrival must retain the spent retry budget').toEqual(recovering.routeRecovery);
+  const drift=await live.clients[W].run('globalThis.__e2eFallbackStop.drift');
+  expect(drift).toBeTruthy();expect(drift.error).toBeUndefined();
+  expect(drift.arrived.map).toBe(drift.from.map);
+  expect(Math.hypot(drift.arrived.x-drift.from.x,drift.arrived.y-drift.from.y)).toBeGreaterThan(55);
   await artifact(live,info,'native-fallback-arrival-and-continuing-kills',{interrupted,recovering,firstKills});
   }finally{
-    const fault=await live.clients[W].run(`(()=>{const fault=globalThis.__e2eFallbackStop;if(fault)clearInterval(fault.timer);return fault?{generation:fault.generation,issued:fault.issued,receipt:fault.receipt}:null;})()`);
+    const fault=await live.clients[W].run(`(()=>{const fault=globalThis.__e2eFallbackStop;if(fault){clearInterval(fault.timer);if(globalThis.setTimeout===fault.wrappedTimeout)globalThis.setTimeout=fault.timeout;}return fault?{generation:fault.generation,issued:fault.issued,receipt:fault.receipt,drift:fault.drift}:null;})()`);
     await info.attach('native-fallback-stop-ledger',{body:JSON.stringify(fault),contentType:'application/json'});
   }
 });
@@ -91,18 +118,28 @@ for (const fault of ['completion-request', 'completion-response', 'follower-reco
     await expect.poll(async () => profile(await live.state()).monsterHunt?.cycleId).toBeTruthy();
     const cycle = profile(await live.state()).monsterHunt.cycleId;
     if (fault === 'follower-reconnect') {
-      await expect.poll(async () => (await world(live))[W].quest?.c, { timeout: 120_000 }).toBeLessThan(questCount);
+      let travelling: unknown;
+      await expect.poll(async () => {
+        const state = await live.state(), hunt = profile(state).monsterHunt, convoy = profile(state).activeConvoy;
+        const member = state.characters[P], report = member?.convoyNavigation;
+        const owned = hunt?.cycleId === cycle && hunt.stage === 'mission-travel' && convoy?.id === hunt.convoyId &&
+          convoy.phase === 'travel' && member.moving && report?.phase === 'travelling' && report.id === convoy.id &&
+          report.epoch === convoy.epoch && report.runtimeId === member.combatSelection?.runtimeId;
+        if (owned) travelling = { at: Date.now(), convoy: convoy.id, epoch: convoy.epoch, report };
+        return !!owned;
+      }, {timeout:120_000,message:'Reconnect must interrupt the follower’s current native Hunt route'}).toBe(true);
       const beforeReconnect = await world(live);
       const previousRuntime = (await live.state()).characters[P]?.combatSelection?.runtimeId;
       expect(previousRuntime).toBeTruthy();
       expect(beforeReconnect[W].quest?.c, 'Disconnect must interrupt an unfinished native Hunt').toBeGreaterThan(0);
-      faults.push({ fault, beforeReconnect });
+      faults.push({ fault, beforeReconnect, travelling });
       await live.reconnectClient(P);
       expect((await live.clients[P].snapshot()).name).toBe(P);
       await expect.poll(async () => {
         const runtime = (await live.state()).characters[P]?.combatSelection?.runtimeId;
         return !!runtime && runtime !== previousRuntime;
       }, {timeout:30_000,message:'The coordinator must observe the reconnected follower runtime'}).toBe(true);
+      await expect.poll(async () => (await world(live))[W].quest?.c, { timeout: 120_000 }).toBeLessThan(questCount);
     } else await expect.poll(() => intercepted, { timeout: 120_000 }).toBe(true);
     await expect.poll(async () => {
       const current = await world(live);

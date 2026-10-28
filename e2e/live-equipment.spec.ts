@@ -202,7 +202,9 @@ test('manual merchant weapon remains selected through gathering and restart',asy
   await info.attach('manual-merchant-weapon-cycle',{body:JSON.stringify({seed,after,cargo,events:await live.clients[name].events()}),contentType:'application/json'});
   await info.attach('manual-merchant-weapon-inventory',{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
   } finally {
-    await live.clients[name].page.unroute('**/party-api/merchant/production',preflight);
+    // This page owns only this interception. Drain its active responses before
+    // removing it; unroute() can continue a request its handler will fulfill.
+    await live.clients[name].page.unrouteAll({behavior:'wait'});
     const timing=await live.clients[name].frame.evaluate(()=>{
       const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       const fault=root.__e2eGatheringPhase;fault.armed=false;root.setInterval=fault.original;
