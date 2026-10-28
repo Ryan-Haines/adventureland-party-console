@@ -237,14 +237,22 @@ test.describe('October Cipher gathering',()=>{
       const ingredients=${JSON.stringify(cipherIngredients)};
       for(let i=0;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]=i===1?null:{name:ingredients[i],q:3};}
       cache_player_items(p);resend(p,'reopen+cid');
-      G.monsters.arcticbee={...G.monsters.arcticbee,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
-      const m=new_monster(p.map,{type:'arcticbee',count:1,boundary:[p.x,p.y,p.x,p.y]},{temp:1});
+      // This journey needs one surviving gathering target and no Frost Scale
+      // drops. Retire the ambient pack with the reset journal's no-respawn path.
+      for(const ambient of Object.values(instances[p.in].monsters))
+        if(ambient.type==='arcticbee')remove_monster(ambient,{silent:true,nospawn:true});
+      const original=G.monsters.arcticbee;let m;
+      try{
+        G.monsters.arcticbee={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
+        m=new_monster(p.map,{type:'arcticbee',count:1,boundary:[p.x,p.y,p.x,p.y]},{temp:1});
+      }finally{G.monsters.arcticbee=original;}
       witch_cipher_start({id:'e2e-october-gathering'});
       // Declare a shorter native drop window up front; retain six minutes of
       // actual gathering and exercise the same published cutoff without a sleep.
       witch_cipher.gather_end=Date.now()+7*60_000;witch_cipher_publish();
       return {id:String(m.id),map:p.map,x:p.x,y:p.y,board:witch_cipher_public()};
     })()`);
+    try{
     await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:20,minClues:1,automatic:false}}}});
     await expect.poll(async()=>{const s=await live.state();return ['E2EWarrior','E2EPriest',merchant].every(n=>s.characters[n]?.joinedEvent==='witchcipher');},{timeout:60_000}).toBe(true);
     await expect.poll(async()=>{const hits=await live.clients[name].events();return hits.filter((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.id&&e.data?.hid===name&&e.data?.damage>0).length>=3;},{timeout:60_000}).toBe(true);
@@ -265,6 +273,7 @@ test.describe('October Cipher gathering',()=>{
     await expect.poll(async()=>{const s=await live.state();return [name,'E2EPriest',merchant].every(n=>s.characters[n]?.joinedEvent!=='witchcipher');},{timeout:120_000}).toBe(true);
     expect(await live.clients[merchant].run('character.witchcipher?.mixes??0')).toBe(0);
     await info.attach('october-native-gathering-and-transfer',{body:JSON.stringify({seed,plans,retained,remaining,merchant:await live.clients[merchant].snapshot(),events:await live.clients[name].events(),state:await live.state()}),contentType:'application/json'});
+    }finally{await live.admin(`output=(()=>{const m=instances[${JSON.stringify(seed.map)}]?.monsters[${JSON.stringify(seed.id)}];if(m)remove_monster(m,{silent:true});return true;})()`);}
   });
 });
 

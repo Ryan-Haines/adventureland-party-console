@@ -5379,7 +5379,11 @@
                 (route.x == null || Math.hypot(route.x-nextRoute.x,route.y-nextRoute.y)>160))) {
             if (route || moving) { await stop("smart"); if (!current()) throw new Error("interrupted"); await stop("move"); if (!current()) throw new Error("interrupted"); }
             phase="smart"; route=nextRoute; routeTargetMap=destination.map; routeAt=Date.now(); routePending=true;
-            Promise.resolve(smart_move(route)).catch((function(started){return function(error){
+            // Coarse endpoints may already be inside transporter range even
+            // when the exact approach crosses scenery. Tighten only a clear
+            // final connector if the ordinary 20-unit tolerance stopped short.
+            var preciseApproach = route.transporterPoint && Math.hypot(character.x-route.x,character.y-route.y) <= 20 && can_move_to(route.x,route.y);
+            Promise.resolve(smart_move(route, undefined, preciseApproach ? {arrivalTolerance:10} : undefined)).catch((function(started){return function(error){
               if(route===started) routeError=String(error && (error.reason || error.message) || error);
             };})(route)).finally((function(started){return function(){if(route===started)routePending=false;};})(route));
             moving=true;

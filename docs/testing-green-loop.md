@@ -96,3 +96,33 @@ The fresh full ChronAL run exposed ordinary respawning mummies at the stale
 Mr. Green hint. The empty-hint journey declares only that ambient pack peaceful
 and restores its catalog and actors afterward; real boss visibility, travel,
 attacks and both fighters' damage assertions remain required.
+
+## Transporter approach failure inventory
+
+The native elixir purchase succeeded, but its merchant stopped outside the
+Winterland transporter and exhausted rendezvous. A 60-unit approach with a
+20-unit walking tolerance can finish outside the 75-unit interaction range.
+Before changing movement, reproduce the Winter Inn exit with the existing
+native transporter/cargo journey and retain an isolated tolerance regression.
+Check real native transport range, collision clearance, exact cargo conservation,
+and the existing Desert route. Precision must apply only to transporter legs;
+ordinary recipient movement and manual cancellation retain their contracts.
+
+The isolated tolerance regression failed before the fix. A native Desert rerun
+then caught an unsafe assumption in the initial fix: globally precise arrival
+required a final connector across scenery although the coarse endpoint already
+allowed transport. Keep ordinary planning for the route and request precision
+only for a nearby, native collision-clear final connector still outside range.
+Retain the failing native trace and rerun Desert, Winter Inn exit and elixir buy.
+
+Horseman pretravel arrival is bounded by the declared native LIVE timestamp,
+not an unrelated fixed one-minute wait. The strict before-LIVE arrival and
+no-early-damage assertions remain unchanged.
+
+The ChronAL Cipher gathering trace also exposed a fixture leak: its temporary
+100-million-HP catalog override affected ambient respawns, so the party locked
+onto a different durable bee instead of the asserted target. Scope that override
+to construction of one actor, restore the catalog immediately, and isolate the
+ambient pack with the existing no-respawn removal journal. Remove the owned actor
+in finally; retain exact ingredient totals, sustained hits, restart persistence,
+and cutoff assertions. The separate cutoff journey still requires native drops.

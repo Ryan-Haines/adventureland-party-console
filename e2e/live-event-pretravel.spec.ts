@@ -47,11 +47,15 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
       expect(seed.at-observations[0].at).toBeGreaterThan(60000);
       expect(seed.at-observations[0].at).toBeLessThanOrEqual(120000);
       expect(observations[0].state.eventSchedules.find((entry:any)=>entry.id===event)?.next).toBe(seed.at);
+      // Preparation and native walking share the published pretravel window.
+      // A fixed one-minute wait can expire while travel still has time before LIVE.
+      const arrivalWindow=seed.at-await live.admin('output=Date.now()');
+      expect(arrivalWindow).toBeGreaterThan(0);
       await expect.poll(async()=>{
         const native=await live.admin(`output=({at:Date.now(),players:${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return {name,map:p.map,x:p.x,y:p.y}})})`);
         const ready=native.players.every((p:any)=>p.map===destination.map&&Math.hypot(p.x-destination.x,p.y-destination.y)<100);
         if(ready)observations.push({phase:'arrived-before-start',native});return ready;
-      },{timeout:60_000}).toBe(true);
+      },{timeout:arrivalWindow}).toBe(true);
       expect(observations.at(-1).native.at).toBeLessThan(seed.at);
       expect((await live.state()).eventReturn).toBeFalsy();
       // Native 'hit' also carries priest healing. Check outgoing damage during
