@@ -193,8 +193,8 @@ test("item details show stats as the game card beside a matching extras box", as
     });
     const winged = page.getByRole("dialog", { name: "Winged Boots +7", exact: true });
     const wingedCard = winged.getByRole("region", { name: "Item card", exact: true });
-    const lines = await wingedCard.locator("[data-line]").evaluateAll((nodes) => nodes.map((node) => node.textContent));
-    expect(lines).toEqual([statLine, "Armor: 17", "Resistance: 31", "Speed: +15", "A.Speed: 8", "Grade: High",
+    await expect.poll(() => wingedCard.locator("[data-line]").evaluateAll((nodes) => nodes.map((node) => node.textContent)))
+      .toEqual([statLine, "Armor: 17", "Resistance: 31", "Speed: +15", "A.Speed: 8", "Grade: High",
       "Set: Swift Judgement", "[i]: Upgradeable"]);
     const wingedExtras = winged.getByRole("region", { name: "Item extras", exact: true });
     await expect(wingedExtras.locator('[data-line="credit"]')).toHaveText("Credit: Pluet");
@@ -222,12 +222,12 @@ test("item details show stats as the game card beside a matching extras box", as
   });
   const staff = page.getByRole("dialog", { name: "Fire Staff +9", exact: true });
   const card = staff.getByRole("region", { name: "Item card", exact: true });
+  await expect(line(card, "attack")).toHaveText("Damage: 61");
   const order = await card.locator("[data-line]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-line")));
   expect(order.indexOf("lifesteal")).toBeLessThan(order.indexOf("crit"));
   expect(order.indexOf("crit")).toBeLessThan(order.indexOf("critdamage"));
   expect(order.indexOf("critdamage")).toBeLessThan(order.indexOf("attack"));
   expect(order.indexOf("attack")).toBeLessThan(order.indexOf("int"));
-  await expect(line(card, "attack")).toHaveText("Damage: 61");
   expect(await label(card, "attack")).toBe(rgb("#DB2900"));
   await expect(line(card, "critdamage")).toHaveText("Crit Damage: +5%");
   expect(await label(card, "critdamage")).toBe(rgb("#C2366A"));
@@ -333,9 +333,10 @@ test("item details show stats as the game card beside a matching extras box", as
         meta: { definition, compoundable: !!definition.compound, usage: { classes: [], hands: [] }, world, sprite: null } },
     });
     const dialog = page.getByRole("dialog", { name, exact: true });
-    const lines = await dialog.getByRole("region", { name: "Item card", exact: true }).locator("[data-line]")
-      .evaluateAll((nodes) => nodes.map((node) => node.textContent));
-    expect(lines).toEqual(expected);
+    // root.render schedules a commit; evaluateAll alone can snapshot zero nodes
+    // before the new dialog exists. Poll the complete, exact ordered line list.
+    await expect.poll(() => dialog.getByRole("region", { name: "Item card", exact: true }).locator("[data-line]")
+      .evaluateAll((nodes) => nodes.map((node) => node.textContent))).toEqual(expected);
     await expect(dialog.getByRole("region", { name: "Item extras", exact: true }).locator('[data-line="quantity"]')).toHaveText("Quantity: 5");
     if (name === "Tracktrix" || name === "HP Potion")
       await info.attach(`item-card-${name.replace(/\W+/g, "-").toLowerCase()}`, { body: await dialog.screenshot(), contentType: "image/png" });

@@ -340,3 +340,10 @@ floor zero with a permanent `Stairs are not ready for the party` receipt while
 the leader was on floor one. Defer both initial stairs dispatch and retries
 until fresh readiness returns, then validate the same run and target. Invalid
 doors/runs still fail; ambiguous dispatched actions still require reconciliation.
+
+The item-card E2E also sampled React's scheduled render too early: Tracktrix's
+ordered line snapshot was empty, although the failure snapshot already showed
+the expected Information line. Twenty local repetitions reproduced four failures.
+Poll the exact complete line arrays for newly mounted cards, and await the staff's
+damage line before inspecting its ordering. Preserve every expected value, count,
+order and screenshot; this is test synchronization, not a product rendering change.
