@@ -137,14 +137,19 @@ async function reset() {
     // Initial realm/account state, only after all previous clients disconnected.
     // Seasonal native timers otherwise create undeclared bosses after two minutes
     // and daily Cipher claims intentionally survive character record resets.
-    const seasonal=['mrgreen','mrpumpkin','slenderman'];
+    const seasonal=['mrgreen','mrpumpkin','slenderman','horseman'];
+    // Horseman journeys declare different HP and add waves. Keep the pristine
+    // native definitions before the first scenario, not the preceding fixture.
+    globalThis.__e2eHorsemanBaseline ||= Object.fromEntries(['horseman','jackowalker'].map(type=>[type,structuredClone(G.monsters[type])]));
+    for(const [type,definition] of Object.entries(globalThis.__e2eHorsemanBaseline))G.monsters[type]=structuredClone(definition);
     const seasonalRemoved=[];
     for(const instance of Object.values(instances))for(const monster of Object.values(instance.monsters||{}))
-      if(seasonal.includes(monster.type)){
+      if(seasonal.includes(monster.type)||monster.type==='jackowalker'){
         seasonalRemoved.push({id:String(monster.id),type:monster.type});
         remove_monster(monster,{silent:true});
       }
     for(const type of seasonal){timers[type]=new Date(Date.now()+86400000);delete E[type];}
+    events.horseman=false;
     witch_cipher_finish();
     delete witch_cipher_claims[data.owner];
     await db.collection('WitchCipher').deleteMany({owner:data.owner});

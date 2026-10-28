@@ -22,8 +22,12 @@ capacityTest('merchant gathering waits at capacity without resetting cooldowns',
   await standReady();
   const seed=await live.admin(`output=(()=>{const p=get_player('${name}');
     const stand=p.items.find(item=>item?.name==='stand0');if(!stand)throw new Error('Native merchant stand tool missing before capacity seed');
+    // Keep the initial potion supply: removing it admits native self-restock
+    // while this case is measuring the independent gathering capacity guard.
+    const potions=['hpot1','mpot1'].map(name=>p.items.find(item=>item?.name===name));
+    if(potions.some(item=>!item))throw new Error('Capacity fixture requires the initial native potion supply');
     for(let i=0;i<42;i++)p.items[i]=i<39?{name:'helmet',level:0}:null;
-    p.items[12]=stand;
+    p.items[0]=potions[0];p.items[1]=potions[1];p.items[12]=stand;
     p.items[10]={name:'rod',level:0};p.items[11]={name:'pickaxe',level:0};
     cache_player_items(p);resend(p,'reopen+cid');return {items:p.items,last:{fishing:p.last.fishing,mining:p.last.mining}};})()`);
   await expect.poll(async()=> (await live.state()).characters[name]?.items?.filter(Boolean).length).toBe(39);

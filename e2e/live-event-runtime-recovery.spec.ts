@@ -151,7 +151,15 @@ test('native fixed-end event timer survives clock resync and a limit added durin
   const seed=await live.admin(`output=(()=>{const original=G.monsters.mrpumpkin;try{
     G.monsters.mrpumpkin={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true,spawns:[]};
     const m=new_monster('halloween',{type:'mrpumpkin',count:1,boundary:[-495,685,-495,685]},{temp:1});
-    const end=Date.now()+3600000;E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,end,hp:m.hp,max_hp:m.max_hp};broadcast_e();return {id:String(m.id),end,original};
+    const end=Date.now()+3600000;E.mrpumpkin={live:true,map:m.map,x:m.x,y:m.y,end,hp:m.hp,max_hp:m.max_hp};
+    // The native event loop reconstructs Pumpkin's status without an end.
+    // Keep this case's declared fixed-end feed through every native publish;
+    // native boss presence, damage and position remain authoritative.
+    const originalBroadcast=broadcast_e;globalThis.__e2eFixedEnd={originalBroadcast};
+    broadcast_e=function(dontSend){const boss=get_monster('mrpumpkin');
+      if(boss&&String(boss.id)===String(m.id)&&E.mrpumpkin)E.mrpumpkin.end=end;
+      return originalBroadcast(dontSend);};
+    broadcast_e();return {id:String(m.id),end,original};
   }catch(error){G.monsters.mrpumpkin=original;throw error;}})()`);
   const samples:any[]=[];
   try{
@@ -176,7 +184,7 @@ test('native fixed-end event timer survives clock resync and a limit added durin
     try{await info.attach('fixed-end-event-timer',{body:JSON.stringify({seed,samples,state:await live.state(),events:await Promise.all(fighters.map(name=>live.clients[name].events()))}),contentType:'application/json'});
     }finally{try{await live.clients[W].run('parent.__e2eObserveMoves=false');}finally{
     await live.post('/formation',{character:W,eventSelections:[]});
-    await live.admin(`output=(()=>{for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(String(m.id)===${JSON.stringify(seed.id)})remove_monster(m,{silent:true});G.monsters.mrpumpkin=${JSON.stringify(seed.original)};delete E.mrpumpkin;broadcast_e();return true;})()`);
+    await live.admin(`output=(()=>{broadcast_e=globalThis.__e2eFixedEnd.originalBroadcast;delete globalThis.__e2eFixedEnd;for(const i of Object.values(instances))for(const m of Object.values(i.monsters||{}))if(String(m.id)===${JSON.stringify(seed.id)})remove_monster(m,{silent:true});G.monsters.mrpumpkin=${JSON.stringify(seed.original)};delete E.mrpumpkin;broadcast_e();return true;})()`);
     }}
   }
 });

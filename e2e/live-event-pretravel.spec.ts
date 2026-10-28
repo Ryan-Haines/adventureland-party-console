@@ -20,13 +20,16 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
       // This journey measures scheduled travel/cancellation. Declare peaceful
       // ambient populations before attendance so unrelated cemetery packs do
       // not turn checkpoint-return coverage into an unbounded defense battle.
+      const definitions=structuredClone(G.monsters),ambient=[];
       for(const type of Object.keys(G.monsters)){G.monsters[type].aggro=0;G.monsters[type].peaceful=true;}
+      for(const map of ['spookytown','halloween'])for(const m of Object.values(instances[map].monsters))ambient.push({map,id:m.id,aggro:m.aggro,peaceful:m.peaceful});
       for(const map of ['spookytown','halloween'])for(const m of Object.values(instances[map].monsters)){m.aggro=0;m.peaceful=true;m.target=null;}
       const occurrence={event,at,status:'scheduled',id:'e2e-pretravel-'+event};
       const original=broadcast_e;
-      globalThis.__e2ePretravel={occurrence,original};
+      globalThis.__e2ePretravel={occurrence,original,definitions,ambient};
       broadcast_e=function(dontSend){if(dontSend)return;const snapshot={...E,schedule:{...E.schedule,events:[occurrence],repeats:[]}};
-        if(occurrence.status==='scheduled')delete snapshot[event];broadcast('server_info',snapshot);};
+        // A cancelled declared occurrence must not reveal an unrelated ambient live round.
+        if(occurrence.status!=='live')delete snapshot[event];broadcast('server_info',snapshot);};
       broadcast_e();return {at,declaredAt:Date.now(),event};
     })()`);
     const observations:any[]=[];
@@ -69,6 +72,16 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
         await expect.poll(async()=>{const hits=await live.clients[fighters[0]].events();return fighters.every(name=>hits.some((e:any)=>e.event==='hit'&&String(e.data?.id)===monster.id&&e.data?.hid===name&&e.data?.damage>0));},{timeout:60_000}).toBe(true);
         observations.push({phase:'native-combat',monster,events:await live.clients[fighters[0]].events()});
       }else{
+        // Retain the actual native arrival before ordinary farming can move
+        // away between dashboard polls. A Main evacuation must precede it.
+        // Graveyard uses the established 180-unit checkpoint return radius.
+        await live.admin(`output=(()=>{const owner=globalThis.__e2ePretravel,point=${JSON.stringify(checkpoint.partyLocation)};
+          owner.returnTrace={exitedAt:null,arrival:null};owner.returnTimer=setInterval(()=>{
+            const p=get_player('${fighters[0]}'),trace=owner.returnTrace;if(!p)return;
+            if(p.map==='main'&&!trace.exitedAt)trace.exitedAt=Date.now();
+            if(trace.exitedAt&&!trace.arrival&&p.map===point.map&&Math.hypot(p.x-point.x,p.y-point.y)<180)
+              trace.arrival={at:Date.now(),map:p.map,x:p.x,y:p.y};
+          },50);return true;})()`);
         await live.admin("output=(()=>{globalThis.__e2ePretravel.occurrence.status='cancelled';broadcast_e();return true;})()");
         await expect.poll(async()=>{const s=await live.state();return s.eventReturn?.event===event&&fighters.every(name=>!s.characters[name]?.serverStagingEvents?.some((entry:any)=>entry.name===event));},{timeout:20_000}).toBe(true);
         // Native evacuation walks from Spooky Town through the forest to Main.
@@ -78,13 +91,18 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
         observations.push({phase:'cancelled-exit-acknowledged',state:await live.state()});
         // Observe arrival while return still owns movement. Once the return
         // retires, normal farming may already have moved away from this point.
-        await expect.poll(async()=>{const p=await live.clients[fighters[0]].snapshot();return p.map===checkpoint.partyLocation.map&&Math.hypot(p.x-checkpoint.partyLocation.x,p.y-checkpoint.partyLocation.y)<100;},{timeout:180_000}).toBe(true);
+        await expect.poll(async()=>{const p=await live.admin('output=globalThis.__e2ePretravel.returnTrace.arrival');return !!p&&p.map===checkpoint.partyLocation.map&&Math.hypot(p.x-checkpoint.partyLocation.x,p.y-checkpoint.partyLocation.y)<180;},{timeout:180_000}).toBe(true);
+        observations.push({phase:'native-checkpoint-arrival',trace:await live.admin('output=globalThis.__e2ePretravel.returnTrace')});
         await expect.poll(async()=>{const s=await live.state();return !s.eventReturn&&!s.eventSessions?.[fighters[0]]&&fighters.every(name=>!s.characters[name]?.joinedEvent);},{timeout:30_000}).toBe(true);
         observations.push({phase:'cancelled-return',state:await live.state()});
       }
     }finally{
-      await info.attach('event-pretravel-native-evidence',{body:JSON.stringify({seed,checkpoint,observations,state:await live.state()}),contentType:'application/json'});
-      await live.admin('output=(()=>{broadcast_e=globalThis.__e2ePretravel.original;delete globalThis.__e2ePretravel;broadcast_e();return true;})()');
+      await info.attach('event-pretravel-native-evidence',{body:JSON.stringify({seed,checkpoint,observations,returnTrace:await live.admin('output=globalThis.__e2ePretravel.returnTrace||null'),state:await live.state()}),contentType:'application/json'});
+      await live.admin(`output=(()=>{const owner=globalThis.__e2ePretravel;clearInterval(owner.returnTimer);
+        for(const [type,definition] of Object.entries(owner.definitions))G.monsters[type]=definition;
+        for(const saved of owner.ambient){const m=instances[saved.map].monsters[saved.id];if(m)for(const key of ['aggro','peaceful']){
+          if(saved[key]===undefined)delete m[key];else m[key]=saved[key];}}
+        broadcast_e=owner.original;delete globalThis.__e2ePretravel;broadcast_e();return true;})()`);
     }
   });
 });
