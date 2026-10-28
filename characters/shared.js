@@ -11045,7 +11045,8 @@
       try {
         await afterCombat(async function () {
           if (character.rip) await respawn();
-          await smart_move({ map: "main", x: 74, y: -34 });
+          // Native set_home changes this character's realm preference anywhere.
+          // An unrelated route outage must not prevent that confirmed mutation.
           var result = await set_home();
           if (result && (result.failed || result.success === false))
             throw new Error(result.reason || result.message || "Adventure Land rejected the home realm change");

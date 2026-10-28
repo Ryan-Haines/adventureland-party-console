@@ -392,3 +392,20 @@ Goo kills in repeated end-to-end runs; the isolated boundary replay is not a cla
 that the rare hosted timing was reproduced by those native runs. A diagnostic
 that disabled a Hen already attacking the party correctly remained in defense;
 its retained artifact documents why it does not reproduce the neutral case.
+
+A later full native run passed 267/268 gameplay cases and exposed a home-realm
+failure in the remaining case. `realm-set-home` unnecessarily planned a walk to
+Main (74,-34) before calling the native API; the Priest's planning request timed
+out and failed the account-wide operation. The pinned upstream `set_home` handler
+only checks the character and its 36-hour cooldown, then updates its home to the
+current realm. It has no map, position or NPC requirement. Remove that unrelated
+walk, retaining combat settlement, revival, native mutation and per-character /
+account roster confirmation. Do not retry the cooldown-limited mutation.
+
+The existing native/browser home E2E now rejects only the Priest's movement-plan
+request during its current setting-home operation. Both native and ChronAL red
+runs reproduce failed completion with that real request unavailable. With the
+fix, require no such route dependency, exact native homes including the merchant,
+the offline BankBoi's persisted database home, restored slots, and exactly one
+successful home mutation receipt for each native participant. Preserve the fault
+ledger and native receipts with the normal immutable E2E reports.
