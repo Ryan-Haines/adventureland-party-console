@@ -102,6 +102,11 @@ test('a missed fishing or mining channel is recast at once; a success waits for 
     await info.attach('gathering-cooldown-evidence', { body: JSON.stringify({ seed, hook, before, after: await stock(live), log: await rolls(live), server, recorded,
       activity: ((await live.state()).merchantActivity || []).filter((entry: any) => /fish|min|gather|caught|catch/i.test(entry.message || '')) }, null, 2), contentType: 'application/json' });
   } finally {
+    await info.attach('gathering-before-cleanup', {body:JSON.stringify({at:Date.now(),
+      server:await live.admin(`output=(()=>{const p=get_player('${name}');return {rolls:globalThis.__e2eGather,c:p.c,last:p.last,mp:p.mp};})()`),
+      client:await live.clients[name].run(`({c:character.c,mp:character.mp,nextSkill:parent.next_skill,session:globalThis.__merchantGatheringSession,
+        attempt:globalThis.__merchantGatheringAttempt,inventoryCommands:globalThis.__partyInventoryCommands,queue:sharedRoutine.queueReport()})`),
+      state:await live.state()}),contentType:'application/json'}).catch(()=>{});
     await live.admin(`output=(()=>{clearInterval(globalThis.__e2eGatherTimer);if(globalThis.__e2eOrigRandom)Math.random=globalThis.__e2eOrigRandom;globalThis.__e2eGather=null;
       const p=get_player('${name}');if(p&&p.c&&p.c.__e2eTarget)p.c=p.c.__e2eTarget;return true;})()`).catch(() => {});
     for (const mode of ['fishing', 'mining']) await live.post('/merchant/gather', { mode, enabled: false }).catch(() => {});

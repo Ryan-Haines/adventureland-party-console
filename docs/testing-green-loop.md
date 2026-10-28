@@ -269,3 +269,23 @@ this locally. Retry only recognized registry 429/toomanyrequests failures, at mo
 three times with increasing jittered backoff. Keep original image digests, native
 health readiness and bootstrap checks. A real gameplay E2E after that injected
 startup failure verifies recovery; no test assertion failure is retried here.
+
+The next native run exposed a race in the delayed Town-packet fixture, reproduced
+locally with an empty follower packet ledger. The leader crossed the transition
+barrier first; interrupting its cast immediately correctly revoked the follower
+before that follower could emit the packet the test needed to delay. Gate only
+the leader's native Town request until the follower's real request is captured,
+with a five-second fail-safe and timestamped release evidence. Leave coordinator
+requests flowing. Preserve the exact single delayed packet, owned native walking
+overlap, follower-only transport, party reunion and both real Daisy rewards.
+
+ChronAL then exposed a real finite-compound receipt race: the native success
+response arrived before the terminal inventory packet. The promise resolved
+while its source slot was still a placeholder, so production journaled failure,
+left the quota at one and dispatched another job. A scoped 750ms delay of that
+operation's terminal player frames reproduced the same failed quota assertion
+locally. Wait for every ingredient and scroll to change, all source placeholders
+to disappear and the native compound queue to clear before finalizing the
+receipt. Preserve the native response, original deadline, failure behavior and
+missed-response inventory fallback. The original exact inventory, success-count,
+quota and restart assertions pass with this declared publication delay.

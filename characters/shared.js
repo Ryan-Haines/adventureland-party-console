@@ -5079,27 +5079,27 @@
     var before = [first, second, third, scrollSlot].map(function (slot) {
       return JSON.stringify(fingerprint(character.items[slot]));
     });
-    var settled = false, result, failure = null;
+    var result, failure = null;
     await merchantMassBuff("massproduction");
     Promise.resolve(compound(first, second, third, scrollSlot)).then(function (value) {
-      settled = true;
       result = value;
     }).catch(function (error) {
-      settled = true;
       failure = error;
     });
     var deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       if (failure) throw failure;
-      if (settled) return result;
-      var changed = [first, second, third, scrollSlot].some(function (slot, index) {
+      var changed = [first, second, third, scrollSlot].every(function (slot, index) {
         return JSON.stringify(fingerprint(character.items[slot])) !== before[index];
       });
-      if (changed && !(character.q && character.q.compound)) {
-        // The authoritative inventory has completed the operation even when
-        // the client deferred promise missed its response event.
-        await new Promise(function (resolve) { setTimeout(resolve, 200); });
-        if (failure) throw failure;
+      var placeholders = [first, second, third].some(function (slot) {
+        return character.items[slot] && character.items[slot].name === "placeholder";
+      });
+      if (changed && !placeholders && !(character.q && character.q.compound)) {
+        // The game promise can resolve before its final inventory packet. Only
+        // the consumed inputs, settled queue and actual result can finalize the
+        // production journal and spend a finite quota. These also confirm an
+        // operation whose deferred promise missed its response event.
         return result;
       }
       await new Promise(function (resolve) { setTimeout(resolve, 100); });
