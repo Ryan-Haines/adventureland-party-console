@@ -15,6 +15,9 @@ Run 40635085488 exposed these fixture failure modes before the fixes below:
   Tests declaring an absent or future encounter then start with a live boss.
 - Witch's Cipher intentionally preserves account daily claims across rounds.
   Restoring character documents alone does not restore a fresh test account.
+- Cipher reused the event-boss spawn lookup for ordinary ingredient monsters.
+  Goo resolved to the instanced `dungeon0` template and never produced a reachable
+  farming route. Reuse the ordinary farming catalog's map/geometry restrictions.
 
 Reset only between disconnected scenarios. Declare the disposable realm's
 seasonal respawn timers outside the scenario window and clear previous encounter

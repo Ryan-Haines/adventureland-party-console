@@ -298,7 +298,7 @@ async ({ live, page }, info) => {
     await expect(card.locator('canvas')).toBeVisible();
     let mapScreenshot: Buffer = Buffer.alloc(0);
     let mapPixels = {floor:0,texture:0,actor:0,armor:0};
-    await expect.poll(async () => {
+    try { await expect.poll(async () => {
       mapScreenshot = await card.locator('canvas').screenshot();
       const { data, info: size } = await sharp(mapScreenshot).removeAlpha().raw().toBuffer({ resolveWithObject: true });
       mapPixels = {floor:0,texture:0,actor:0,armor:0};
@@ -309,16 +309,20 @@ async ({ live, page }, info) => {
           if(x && data[i-3]>=data[i-2] && data[i-2]>=data[i-1] &&
             Math.abs(r-data[i-3])+Math.abs(g-data[i-2])+Math.abs(b-data[i-1])>20)mapPixels.texture++;
         }
-        // This minimap follows its actor: native sprite feet are at its center.
-        if(Math.abs(x-size.width/2)<=12 && Math.abs(y-size.height/2)<=12) {
+        // The center anchors the feet, not the middle of the native sprite.
+        // Sample its body above the anchor instead of clipping the head/torso
+        // and spending half the region on the floor below its feet.
+        if(Math.abs(x-size.width/2)<=12 && y>=size.height/2-24 && y<=size.height/2+2) {
           if(r>180 && g>180 && b>140)mapPixels.actor++;
           if(g>r*1.05 && b>r*1.15)mapPixels.armor++;
         }
       }
       return mapPixels.floor>200 && mapPixels.texture>200 && mapPixels.actor>=1 && mapPixels.armor>8;
     }, { timeout: 20_000, message: name + ' cave map must render textured native floor and its centered actor' }).toBe(true);
+    } finally {
     await info.attach(name+'-cave-map-pixel-evidence',{body:JSON.stringify(mapPixels),contentType:'application/json'});
-    await info.attach(name + '-cave-map', { body: mapScreenshot, contentType: 'image/png' });
+    if(mapScreenshot.length)await info.attach(name + '-cave-map', { body: mapScreenshot, contentType: 'image/png' });
+    }
   }
   await expect.poll(async () => (await dungeon()).state.error || null, { timeout: 15_000 }).toBe(null);
   expect((await dungeon()).state.progress.enabled).toBe(false);

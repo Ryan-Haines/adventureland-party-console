@@ -1,3 +1,9 @@
+Cipher gathering chooses an ordinary farmable spawn using the same map and
+geometry restrictions as the farming catalog. Instanced templates such as
+`dungeon0` must never become a Goo gathering destination. Validate the native
+Cipher cutoff journey, including real ingredient drops and the subsequent brew.
+Stage the completed candidate without activating it.
+
 Automatic NPC bank stock is discovered during the merchant's own bank visit as
 well as while idle. When ordinary withdrawals are disabled, enabled Auto NPC
 sales own a separate bank-retrieval prerequisite with the same routine priority;

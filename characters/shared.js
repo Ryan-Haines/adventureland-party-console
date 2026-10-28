@@ -475,7 +475,10 @@
       walk: function (point, owns) { return sharedPartyWalk(point, 'event', travellingEventName || joinedEvent, null, owns); },
       knock: function (door) { return knock(door); }, info: function () { return witch_cipher_info(); },
       brew: function (mix) { return brew(mix); },
-      farmDestination: function (type) { return eventDestination(type, {}); },
+      farmDestination: function (type) {
+        var choice = monsterChoices(type)[0];
+        return choice && choice.locations[0] || null;
+      },
       witch: function () { var npc = ((G.maps.halloween || {}).npcs || []).find(function (entry) { return entry.id === 'witch'; });
         return npc ? { map: 'halloween', x: npc.position[0], y: npc.position[1] + 30 } : null; },
       transfer: async function () {
@@ -1957,8 +1960,8 @@
     }).sort(function (a, b) { return a.name.localeCompare(b.name); });
   }
 
-  function monsterChoices() {
-    return Object.keys(G.monsters).map(function (id) {
+  function monsterChoices(onlyType) {
+    return (onlyType ? G.monsters[onlyType] ? [onlyType] : [] : Object.keys(G.monsters)).map(function (id) {
       var locations = [], spawnRecords = [];
       Object.keys(G.maps).forEach(function (mapId) {
         var map = G.maps[mapId];
