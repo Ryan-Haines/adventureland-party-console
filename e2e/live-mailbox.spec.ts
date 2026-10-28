@@ -3,8 +3,10 @@ import {test,expect} from './live-fixtures';
 // Failure inventory: docs/testing-mailbox-enhancements.md. Only the initial
 // merchant inventory is declared; sending, pickup, native taken and deletion are real.
 for(const deleteDuringCollection of [false,true]) test(`mailbox automation collects native attachments before deletion and records confirmed sent mail (${deleteDuringCollection?'delete enabled during collection':'delete enabled afterward'})`,async({live},info)=>{
-  test.setTimeout(300000);const merchant='E2EMerchant',subject='ChronAL mailbox attachment proof',observations:any[]=[];
-  const read=async()=>live.admin(`output=(async()=>{const p=get_player('E2EMerchant'),mail=await db.collection('mail').find({'info.subject':'ChronAL mailbox attachment proof'}).toArray();
+  test.setTimeout(300000);const merchant='E2EMerchant',subject='ChronAL mailbox attachment proof '+info.testId,observations:any[]=[];
+  // Native deletion removes account ownership, retaining the underlying mail
+  // record. Check this account's inbox, scoped to this scenario's exact subject.
+  const read=async()=>live.admin(`output=(async()=>{const p=get_player('E2EMerchant'),mail=await db.collection('mail').find({owner:p.owner,'info.subject':${JSON.stringify(subject)}}).toArray();
     return {items:p.items.filter(i=>i&&i.name==='beewings').reduce((n,i)=>n+(i.q||1),0),mail:mail.map(m=>({id:m._id,taken:m.taken,item:m.info.item,to:m.to}))};})()`);
   try{
     await expect.poll(async()=>!!(await live.state(true)).merchantCatalog?.allItems?.find((i:any)=>i.id==='beewings'),{timeout:90000}).toBe(true);

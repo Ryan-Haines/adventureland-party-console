@@ -133,7 +133,22 @@ async function reset() {
   // Wait for upstream disconnection persistence before restoring initial records.
   await new Promise(resolve => setTimeout(resolve, 1000));
   const codeReset=await resetCodeInventory(manifest);
-  const worldReset=await Promise.all(realms.map(realm=>admin(`output=(()=>{
+  const worldReset=await Promise.all(realms.map(realm=>admin(`output=(async()=>{
+    // Initial realm/account state, only after all previous clients disconnected.
+    // Seasonal native timers otherwise create undeclared bosses after two minutes
+    // and daily Cipher claims intentionally survive character record resets.
+    const seasonal=['mrgreen','mrpumpkin','slenderman'];
+    const seasonalRemoved=[];
+    for(const instance of Object.values(instances))for(const monster of Object.values(instance.monsters||{}))
+      if(seasonal.includes(monster.type)){
+        seasonalRemoved.push({id:String(monster.id),type:monster.type});
+        remove_monster(monster,{silent:true});
+      }
+    for(const type of seasonal){timers[type]=new Date(Date.now()+86400000);delete E[type];}
+    witch_cipher_finish();
+    delete witch_cipher_claims[data.owner];
+    await db.collection('WitchCipher').deleteMany({owner:data.owner});
+    await db.collection('mail').updateMany({owner:data.owner},{$pull:{owner:data.owner}});
     if(!globalThis.__e2eAmbientRemovalJournal){
       const journal=globalThis.__e2eAmbientRemovalJournal={entries:new Map(),construct:new_monster,remove:remove_monster};
       remove_monster=function(monster,args){
@@ -156,8 +171,8 @@ async function reset() {
       restored.push({id,type:monster.type,map:monster.map,in:monster.in});
     }
     if(counts()!==before)throw Error('Native ambient restoration changed population accounting');
-    journal.entries.clear();return {realm:region+server_name,restored,present,populationAccountingPreserved:true};
-  })()`,{},realm)));
+    journal.entries.clear();return {realm:region+server_name,restored,present,seasonalRemoved,populationAccountingPreserved:true};
+  })()`,{owner:manifest.auth.split('-')[0]},realm)));
   await admin(`output=(async()=>{
     // Disconnected Cave runs retain a resumable visit. Retire only this
     // disposable account's runs through native teardown before restoring it.

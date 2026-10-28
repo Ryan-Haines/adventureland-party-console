@@ -68,7 +68,9 @@ test.describe('Franky personal defense and Cleave', () => {
 });
 
 test.describe('ordinary warrior Cleave', () => {
-  test.use({ loadout: 'combat-range', initialPosition: { map:'main', x:1260, y:-70 } });
+  // Town keeps the positive case outside the spider/phoenix spawn. Nearby
+  // unrelated monsters correctly veto Cleave through its collateral guard.
+  test.use({ loadout: 'combat-range', initialPosition: { map:'main', x:0, y:0 } });
   for (const mode of ['default','scatter']) test(`warrior Cleave hits two native attackers in ${mode} mode and skips one`, async ({ live }, info) => {
     test.setTimeout(240_000);
     // Failure inventory: the role never calls skill offense outside Franky;

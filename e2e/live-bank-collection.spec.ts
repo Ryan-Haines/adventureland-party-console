@@ -61,10 +61,10 @@ for(const scenario of ['toggle','already enabled','threshold'] as const){
     await expect.poll(async()=>(await live.state()).withdrawals?.[merchant]?.length).toBe(count);
     const pending=await live.state();
     if(scenario==='toggle'){
-      expect(pending.merchantQueue.some((job:any)=>['withdrawals','bank collection','manual bank exchange'].includes(job.reason))).toBe(false);
+      expect(pending.merchantQueue.some((job:any)=>job.reason==='auto npc withdrawals')).toBe(true);
       await live.post('/merchant/routine-priorities',{priorities:{},enabled:{withdrawals:true}});
     }
-    await expect.poll(async()=>(await live.state()).merchantQueue.some((job:any)=>job.reason===(scenario==='threshold'?'bank collection':'withdrawals'))).toBe(true);
+    await expect.poll(async()=>(await live.state()).merchantQueue.some((job:any)=>job.reason===(scenario==='threshold'?'auto npc withdrawals':'withdrawals'))).toBe(true);
     await info.attach('bank-marked-collection-queued',{body:JSON.stringify({scenario,pending,state:await live.state()}),contentType:'application/json'});
     await page.keyboard.press('Escape');
     await live.post('/merchant/force-stand',{enabled:false});
