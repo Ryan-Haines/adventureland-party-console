@@ -675,7 +675,7 @@
     ]
   },
   {
-    "file": "dashboard/features/party/restock-policy.tsx",
+    "file": "runtime/restock-policy.ts",
     "declarations": [
       {
         "name": "RestockPolicy",

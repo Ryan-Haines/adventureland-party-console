@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../../characters/shared.js'), 'utf8');
 function setup() {
   let casts = 0;
-  const c = vm.createContext({
+  const c = require('./helpers/shared-context.cjs').createSharedContext({
     character: { name: 'Warrior', ctype: 'warrior', map: 'main', in: 'main', x: 0, y: 0, mp: 120, max_mp: 1000, slots: { mainhand: { name: 'basher' } } },
     G: { skills: { stomp: { mp: 120, range: 400 } }, items: { basher: { wtype: 'basher' }, fireblade: { wtype: 'short_sword' } } }, farmingMode: 'default', unfinishedFight:()=>false,
     parent: { entities: { m: { type: 'monster', visible: true, target: 'Ally', x: 20, y: 0 } } },

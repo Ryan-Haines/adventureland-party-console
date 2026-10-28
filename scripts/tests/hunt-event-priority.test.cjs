@@ -5,7 +5,7 @@ const permissionCode = source.slice(source.indexOf('  async function eventTravel
 const pollCode = source.slice(source.indexOf('  async function joinCombatEvent('), source.indexOf('  function reunionRealm('));
 function fixture() {
   const actions = [];
-  const r = vm.createContext({ character: { name: 'Mage', ctype: 'mage', map: 'main' },
+  const r = vm.createContext({ lastDeathInfo:null,eventPrizeSpaceAvailable:()=>true,character: { name: 'Mage', ctype: 'mage', map: 'main' },
     eventSelected: () => true, eventSelectionRevision: 0, travellingEventName: null,
     huntTurnInPriority: false, convoyTraveling: null, runtimeCurrent: () => true, navigationIntent:{revision:0},
     request: async () => ({ allowed: true }), escapeOwns: () => false,
