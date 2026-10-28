@@ -349,12 +349,16 @@ test.describe('October Cipher complete stock at cutoff',()=>{
       witch_cipher_start({id:'e2e-cutoff-complete'});witch_cipher.gather_end=Date.now()+3*60_000;
       witch_cipher.secret=Array(5).fill('frostscale');
       witch_cipher.history=Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'embercoal':name),right:4}));witch_cipher_publish();
+      // Reproduce a realm-calendar collision on every date, not just 06:00.
+      // The disposable world's background schedule must not replace our round.
+      const collision={id:'e2e-ambient-calendar-cipher',event:'witchcipher',at:Date.now(),status:'scheduled',season:'halloween'};
+      event_schedule_state().state().occurrences.push(collision);
       global.e2eCipherReceipts=[];const original=witch_cipher_brew;
       witch_cipher_brew=async function(player,names){const at=Date.now(),result=await original(player,names);e2eCipherReceipts.push({at,player:player.name,mix:names.slice(),result});return result;};
-      return {board:witch_cipher_public()};
+      return {board:witch_cipher_public(),calendarCollision:collision};
     })()`);
     await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{minClues:5,automatic:true}}}});
-    await expect.poll(()=>live.clients[name].run(`get('party-october-${name}')?.gathering`),{timeout:60_000}).toMatchObject({mode:'gathering',ingredient:'verdantspore',monster:'goo'});
+    await expect.poll(()=>live.clients[name].run(`get('party-october-${name}')?.gathering`),{timeout:60_000}).toMatchObject({round:seed.board.id,mode:'gathering',ingredient:'verdantspore',monster:'goo'});
     await expect.poll(()=>live.clients[merchant].run("character.items.filter(item=>item?.name==='verdantspore').reduce((n,item)=>n+(item.q||1),0)"),{timeout:120_000}).toBeGreaterThan(0);
     const before=await live.admin('output={at:Date.now(),receipts:e2eCipherReceipts}');
     expect(before.at).toBeLessThan(seed.board.gather_end);expect(before.receipts).toEqual([]);
@@ -362,8 +366,16 @@ test.describe('October Cipher complete stock at cutoff',()=>{
     const receipts=await live.admin('output=e2eCipherReceipts');
     expect(receipts[0].at).toBeGreaterThanOrEqual(seed.board.gather_end);
     const journal=await live.clients[name].run(`get('party-october-${name}')`);
-    expect(journal.gathering).toMatchObject({mode:'brewing',reason:'gathering ended'});
-    await info.attach('october-native-cutoff-complete',{body:JSON.stringify({seed,before,receipts,journal,state:await live.state()}),contentType:'application/json'});
+    expect(journal.gathering).toMatchObject({round:seed.board.id,mode:'brewing',reason:'gathering ended'});
+    // Explicit calendar coverage still uses the native scheduler and publication.
+    // Only unrelated automatic starts are isolated by the default fixture.
+    try{
+      await live.admin('globalThis.__e2eAllowScheduledEvents=true;event_schedule_tick(Date.now());output=true');
+      await expect.poll(async()=>{
+        const s=await live.state();return s.eventSchedules.find((event:{id:string})=>event.id==='witchcipher')?.cipher?.board?.id;
+      },{timeout:30_000}).toBe(seed.calendarCollision.id);
+      await info.attach('october-native-cutoff-complete',{body:JSON.stringify({seed,before,receipts,journal,state:await live.state()}),contentType:'application/json'});
+    }finally{await live.admin('globalThis.__e2eAllowScheduledEvents=false;output=true');}
   });
 });
 

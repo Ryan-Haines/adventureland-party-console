@@ -174,3 +174,13 @@ The native stale-peer retirement trace admitted the Warrior just after its
 the original Warrior runtime's fresh status and LIVE event feed, then retain the
 12-second admission bound. Keep the Priest's exact pre-fault timestamp, deferred
 ownership and connected native runtime checks unchanged.
+
+A later full ChronAL shard and a local cutoff rerun reproduced a native realm
+calendar round replacing the fixture's manually seeded Cipher round at 06:00.
+The replacement discarded the declared clues and gathering deadline. Exercise
+that collision with a due native calendar entry on every date. Isolate automatic
+calendar starts in disposable gameplay resets while retaining native calendar
+publication, expiry and explicitly seeded event execution. Debug worlds retain
+normal schedule automation; an explicit fixture opt-in can exercise scheduled
+starts. Preserve actual native ingredient drops, no early brewing, exact round
+ownership and successful brewing after the original cutoff.

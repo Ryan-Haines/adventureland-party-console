@@ -137,6 +137,18 @@ async function reset() {
     // Initial realm/account state, only after all previous clients disconnected.
     // Seasonal native timers otherwise create undeclared bosses after two minutes
     // and daily Cipher claims intentionally survive character record resets.
+    const calendar=event_schedule_state();
+    if(globalThis.__e2eScheduleIsolation?.calendar!==calendar){
+      const tick=calendar.tick;
+      globalThis.__e2eScheduleIsolation={calendar,tick};
+      calendar.tick=function(at,options){
+        return tick.call(this,at,{...options,can_start:globalThis.__e2eAllowScheduledEvents&&options?.can_start!==false});
+      };
+    }
+    // Keep native publication, expiry and explicitly seeded rounds. Wall-clock
+    // calendar starts must not replace a scenario-owned encounter mid-assertion.
+    // Calendar journeys can opt in; interactive debug worlds remain native.
+    globalThis.__e2eAllowScheduledEvents=!data.isolateCalendar;
     const seasonal=['mrgreen','mrpumpkin','slenderman','horseman'];
     // Horseman journeys declare different HP and add waves. Keep the pristine
     // native definitions before the first scenario, not the preceding fixture.
@@ -176,8 +188,9 @@ async function reset() {
       restored.push({id,type:monster.type,map:monster.map,in:monster.in});
     }
     if(counts()!==before)throw Error('Native ambient restoration changed population accounting');
-    journal.entries.clear();return {realm:region+server_name,restored,present,seasonalRemoved,populationAccountingPreserved:true};
-  })()`,{owner:manifest.auth.split('-')[0]},realm)));
+    journal.entries.clear();return {realm:region+server_name,restored,present,seasonalRemoved,populationAccountingPreserved:true,
+      scheduledEventAutomation:globalThis.__e2eAllowScheduledEvents?'native':'explicit-fixture-opt-in'};
+  })()`,{owner:manifest.auth.split('-')[0],isolateCalendar:process.env.AL_DEBUG_INSTANCE!=='1'},realm)));
   await admin(`output=(async()=>{
     // Disconnected Cave runs retain a resumable visit. Retire only this
     // disposable account's runs through native teardown before restoring it.
