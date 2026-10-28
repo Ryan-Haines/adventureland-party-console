@@ -29,7 +29,7 @@ interface SalesState extends PlayerSaleState, CraftReservationState {
   autoStandMarks: Record<string, { price: unknown } | undefined>;
   npcSaleMarks: NpcSale[];
   standListings: AutomaticStandMark[];
-  merchantCurrent?: NonNullable<CraftReservationState["merchantCurrent"]> & { reason?: string } | null;
+  merchantCurrent?: NonNullable<CraftReservationState["merchantCurrent"]> & { reason?: string; target?: string | null } | null;
   merchantQueue: (NonNullable<CraftReservationState["merchantQueue"]>[number] & { reason?: string; target?: string | null })[];
 }
 interface SalesPorts {
@@ -160,7 +160,10 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
     return changed;
   }
   function bankStockReady(): boolean {
-    return !!state.merchantCharacter && !state.merchantCurrent;
+    // Discover NPC-sale prerequisites while unrelated party service is busy.
+    // Own-inventory jobs retain their bank/inventory snapshot boundary.
+    return !!state.merchantCharacter && (!state.merchantCurrent ||
+      state.merchantCurrent.target !== state.merchantCharacter);
   }
   function availableBankStock() {
     const pending = state.withdrawals?.[String(state.merchantCharacter)] || [];
@@ -171,6 +174,7 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
       entry?.item?.q === stock[index]?.item?.q ? entry : null);
   }
   function bankStandEntry(entry: (InventoryEntry & { craftLocation: string }) | null): entry is InventoryEntry & SaleEntry & { craftLocation: string } {
+    if (state.merchantCurrent) return false;
     if (!entry?.item || entry.item.l || !Number.isSafeInteger(entry.slot)) return false;
     return !state.autoNpcSales[automaticCommerceRuleKey(entry.item)] && !saleConflict(entry.item);
   }
@@ -260,7 +264,7 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
     if (collection) ports.queue([state.merchantCharacter], collection);
     else if (keptCopiesCarried(items)) ports.queue([state.merchantCharacter], "manual bank exchange");
   }
-  function reconcileMerchant(items: readonly (SaleEntry | null)[]): boolean {
+  function resizeKeptSales(): boolean {
     // Shared party rules can deliver a whole stack with an existing sale mark.
     // Clamp that intent too; new-mark allowances alone cannot protect the reserve.
     let resized = false;
@@ -285,6 +289,10 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
         return quantity > 0;
       });
     }
+    return resized;
+  }
+  function reconcileMerchant(items: readonly (SaleEntry | null)[]): boolean {
+    const resized = resizeKeptSales();
     // Banked sales also reserve capacity against opportunistic buys.
     const marks = markInventory(items), bankChanged = markBankStock();
     const changed = reconcileSales(items) || marks.changed || bankChanged || resized;

@@ -70,8 +70,10 @@ class ArtifactReporter {
         ? 'Virtual-clock native upstream server, maintained coordinator/planner and real character CODE; shared gameplay assertions, isolated in-memory database and declared initial loadout'
         : /debug-(instance|container)\.spec\.ts$/.test(test.location.file)
         ? 'Disposable Docker lifecycle through the real gateway; isolated native upstream server, god party and production coordinator'
-        : /live-franky\.spec\.ts$/.test(test.location.file)
+        : /live-franky\.spec\.ts$/.test(test.location.file) && /restored acknowledged Franky exit/.test(test.title)
         ? 'Native game clients, maintained runtime and upstream server; initial acknowledged event-return history is a sanitized production-state fixture, followed by real restart, travel and reward claim'
+        : /live-franky\.spec\.ts$/.test(test.location.file)
+        ? 'Native game clients, maintained runtime and upstream server; declared durable stationary enemies, native equipment and mana inputs; real target selection, skill receipts and damage'
         : /live-[a-z-]+\.spec\.ts$/.test(test.location.file)
         ? 'Native authenticated game clients and maintained runtime against disposable upstream game server and MongoDB; administrative scenario setup; '+(process.env.E2E_GAMEPLAY_BACKEND==='native'?'real-time parity backend':'shared ChronAL gameplay clock with real browser/network/deployment boundaries')
         : 'Real console/gateway/coordinator/storage; simulated external account and game observations',

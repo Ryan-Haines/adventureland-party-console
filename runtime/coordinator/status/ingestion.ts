@@ -9,12 +9,14 @@ import { createInventoryCarry } from "./inventory-carry.ts";
 
 export interface StatusReport {
   name: string;
+  lastCommandId?: number;
   runtime?: string;
   steamPrimary?: boolean;
   seenAt?: number;
 }
 
 interface IngestionState<Report extends StatusReport> extends AppearanceState, LuckySlotState {
+  nextCommandId: number;
   statuses: Record<string, Report | undefined>;
   headlessSlots: (string | null)[];
   steamMembers: string[];
@@ -121,6 +123,12 @@ export function createStatusIngestion<Report extends StatusReport>(
       return res.status(409).json({ error: "inventory revision unknown", code: "inventory-required" });
     // Report fields are decoded by their domain consumer; unrecognized fields remain available to the dashboard.
     const body = raw as unknown as Report;
+    // Native CODE can outlive the coordinator. Historical Town restoration used
+    // wall-clock IDs outside this sequence; never issue commands behind a live
+    // client's applied watermark. Do this before any consumer can dispatch work.
+    if (Number.isSafeInteger(body.lastCommandId) && body.lastCommandId! >= 0 &&
+        body.lastCommandId! < Number.MAX_SAFE_INTEGER)
+      state.nextCommandId = Math.max(state.nextCommandId, body.lastCommandId! + 1);
     receiveLuckyEvidence(raw, raw.name);
     receiveRosterEvidence(raw, body, receivedAt);
     const learned = consume(body);

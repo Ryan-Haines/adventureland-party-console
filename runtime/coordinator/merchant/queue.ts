@@ -45,7 +45,7 @@ interface QueuePorts {
 
 /** Owns deduplication, resource-block recovery, and priority promotion. */
 export function createMerchantQueue(state: QueueState, ports: QueuePorts) {
-  const migrated = mergePickupJobs(state.queue, ports.merchant()).map(job => ports.stamp(job));
+  const migrated = mergePickupJobs(state.queue, ports.merchant(), state.current).map(job => ports.stamp(job));
   state.queue.splice(0, state.queue.length, ...migrated);
   let lastStandAttempt: string | undefined;
   let changed = false;

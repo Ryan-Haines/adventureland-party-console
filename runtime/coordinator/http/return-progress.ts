@@ -1,7 +1,7 @@
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 export interface ReturnProgress {
   kind: string; cycleId: string; revision: number; phase: string;
-  exitMap?: string; exitAttempts?: number; blockedTownAttempted?: boolean;
+  exitMap?: string; exitAttempts?: number; blockedTownAttempted?: boolean; exitReconnectAttempted?: boolean;
 }
 export interface ReturnProgressState {
   returnProgress?: Record<string, ReturnProgress>;
@@ -49,4 +49,5 @@ function updateExitProgress(progress: ReturnProgress, body: Record<string, unkno
   if (Number.isInteger(attempts) && attempts >= 0 && attempts <= 3)
     progress.exitAttempts = Math.max(progress.exitAttempts || 0, attempts);
   if (body.blockedTownAttempted === true) progress.blockedTownAttempted = true;
+  if (body.exitReconnectAttempted === true) progress.exitReconnectAttempted = true;
 }

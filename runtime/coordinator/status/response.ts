@@ -118,7 +118,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
   function restoreTownCommand(name: string): void {
     const town = state.townCycle;
     if (town?.pending.includes(name) && !state.commands[name] && town.revisions?.[name] === ports.navigationRevision(name))
-      state.commands[name] = {id: ports.now(), type:"town-party", cycleId:town.id};
+      state.commands[name] = {id: state.nextCommandId++, type:"town-party", cycleId:town.id};
   }
   function commandFor(name: string) {
     retireTownCommand(name);

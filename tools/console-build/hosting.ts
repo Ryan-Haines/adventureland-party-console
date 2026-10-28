@@ -14,8 +14,9 @@ import {buildCandidate} from './builder.ts';
 import {verifyManifest,type GameManifest,type CharacterClass} from '../game/manifest.ts';
 import {atomicJson,readJson} from '../build-store.ts';
 import {safeReload} from './safe-reload.ts';
+import {deployStartupCandidate} from './startup.ts';
 
-interface ManagedOptions{dashboardPort:number;apiPort:number;coordinatorEnv?:NodeJS.ProcessEnv;coordinatorOnly?:boolean}
+interface ManagedOptions{dashboardPort:number;apiPort:number;coordinatorEnv?:NodeJS.ProcessEnv;coordinatorOnly?:boolean;startupCandidateId?:string}
 interface CharacterReport{seenAt?:number;connected?:boolean;rip?:boolean;type?:string;ctype?:string;codeHash?:string;name?:string;map?:string;dungeon?:{cave?:{run?:string}|null};consoleMaintenance?:{id?:string;ready?:boolean}|null}
 interface PublicState{characters?:Record<string,CharacterReport>}
 const fresh=(report:CharacterReport)=>report.connected!==false&&Number.isFinite(report.seenAt)&&Date.now()-Number(report.seenAt)<=5000&&Number(report.seenAt)<=Date.now()+1000;
@@ -168,7 +169,7 @@ export async function createManagedConsole(root:string,services:Services,options
   const controller=new ConsoleBuildController(store,driver);
   const refs=await store.references();
   let active=refs.active?await store.verify(refs.active):undefined;
-  if(!active)active=await buildCandidate(root,store);
+  if(!active)active=options.startupCandidateId?await store.verify(options.startupCandidateId):await buildCandidate(root,store);
   const bootstrap=active;
   await dashboard.listen(options.dashboardPort);
   try{await dashboard.activate(bootstrap,AbortSignal.timeout(120_000));}catch(error){await dashboard.stop();throw error;}
@@ -215,6 +216,7 @@ export async function createManagedConsole(root:string,services:Services,options
         await new Promise(resolve=>setTimeout(resolve,200));
       }
       await store.setReferences({...await store.references(),active:candidate.manifest.id});
+      await deployStartupCandidate(controller,options.startupCandidateId);
     },
     async stop(){controller.stopWaiting();await watcher.dispose();await services.stopService('console-coordinator');await dashboard.stop();await store.pin([]);},
   };

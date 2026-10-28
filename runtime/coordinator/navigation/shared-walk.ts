@@ -5,6 +5,8 @@ interface WalkRequest {
   name: string; token: string; runtimeId: string; revision: number; at: number; since: number;
   activity: string; key: string; destination: RoutePoint; parentId: number;
   parent?: SharedState["commands"][string]; complete?: boolean; failed?: string; convoyId?: string;
+  reentryDeathAt?: number;
+  observedDeathAt?: number;
 }
 interface WalkSession { requests: WalkRequest[]; convoy: SharedConvoy }
 const sessions = new WeakMap<SharedConvoy, WalkSession>();
@@ -50,7 +52,8 @@ function parse(body: Record<string, unknown>, now: number): WalkRequest | null {
   if (typeof body.token !== "string" || body.token.length > 300 || typeof body.key !== "string" || body.key.length > 200) return null;
   return { name: String(body.character), token: body.token, runtimeId: String(body.runtimeId),
     revision: Number(body.navigationRevision), activity: String(body.activity), key: body.key, at: now, since: now,
-    parentId: Number(body.parentCommandId) || 0, destination: p };
+    parentId: Number(body.parentCommandId) || 0, destination: p,
+    reentryDeathAt: Number.isFinite(body.reentryDeathAt) ? Number(body.reentryDeathAt) : undefined };
 }
 function sameWalk(a: WalkRequest, b: WalkRequest): boolean {
   if (a.activity !== b.activity || a.key !== b.key || a.destination.map !== b.destination.map ||
@@ -157,7 +160,13 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
   }
   function pending(r: WalkRequest): WalkRequest[] {
     return [...requests.values()].filter(other => !other.complete && !other.failed && !other.convoyId &&
-      sameWalk(r, other) && authorized(other) && ports.now() - other.at < 10000);
+      sameWalk(r, other) && authorized(other) && livingRequest(other) && ports.now() - other.at < 10000);
+  }
+  function livingRequest(r: WalkRequest): boolean {
+    const s = state.statuses[r.name];
+    // A pending token belongs to the life that requested it. Revival cannot
+    // make that token eligible again before the new recovery request arrives.
+    return !!s && !s.rip && s.hp !== 0 && s.lastDeath?.at === r.observedDeathAt;
   }
   function anchor(r: WalkRequest, waiting: WalkRequest[], name: string): void {
     if (!name || waiting.some(other => other.name === name) || state.commands[name]) return;
@@ -206,7 +215,8 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     return true;
   }
   function retainParents(c: SharedConvoy, waiting: WalkRequest[]): void {
-    c.walkingParents = Object.fromEntries(waiting.map(r => [r.name, { revision: r.revision, parentId: r.parentId, command: r.parent }]));
+    c.walkingParents = Object.fromEntries(waiting.map(r => [r.name, { revision: r.revision, parentId: r.parentId, command: r.parent,
+      requestedAt: r.since, observedDeathAt: r.observedDeathAt }]));
   }
   function recentExitPeerStatus(status: SharedStatus | undefined, server: string | undefined, now: number): status is SharedStatus {
     if(!status || status.rip || status.hp===0)return false;
@@ -297,6 +307,10 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     convoy.navigationExempt = returning;
     if (convoy.walkingActivity === "anniversary-staging" || halloweenExit(convoy, waiting)) convoy.continuousReturn = 1;
     convoy.combatHandoffAllowed = false;
+    // Setup can fail before begin() prepares a route. Retain admission owners
+    // so its hold and subsequent death recovery still have real identities.
+    convoy.routeServer = state.statuses[convoy.leader]?.server;
+    convoy.runtimes = Object.fromEntries(waiting.map(r => [r.name, characterRuntime(state.statuses[r.name]) || r.runtimeId]));
     for (const name of convoy.participants) state.commands[name]!.navigationExempt = convoy.navigationExempt;
     waiting.forEach(other => { other.convoyId = convoy.id; });
     retainParents(convoy, waiting);
@@ -332,6 +346,10 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
   }
   function cancel(r: WalkRequest): Record<string, unknown> {
     const prior = requests.get(r.name), c = state.activeConvoy, session = c && sessions.get(c);
+    if (prior?.token === r.token && !prior.convoyId) {
+      requests.delete(r.name);
+      return { ok: true, phase: "failed" };
+    }
     if (prior?.token === r.token && session?.requests.includes(prior)) {
       if (returnRetryPending(c!) || c!.geometryRepair?.phase === 'waiting') return {ok:true,phase:"waiting"};
       session.requests.forEach(entry => { entry.failed = "Walking workflow cancelled"; });
@@ -418,9 +436,11 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
       c.runtimes?.[r.name] === r.runtimeId && characterRuntime(s) === r.runtimeId && s.server === c.routeServer;
   }
   function deathInvalidatedPreparation(c: SharedConvoy, r: WalkRequest, s: SharedStatus): boolean {
-    const death = s.lastDeath, preparedAt = c.sharedPreparationStartedAt ?? c.sharedStartedAt;
+    const death = s.lastDeath, preparedAt = c.walkingParents?.[r.name]?.requestedAt ?? c.sharedPreparationStartedAt ?? c.sharedStartedAt;
     if (!death || typeof preparedAt !== 'number' || !Number.isFinite(preparedAt)) return false;
-    return Number.isFinite(death.at) && death.at > preparedAt && revivedReport(s, death.at) && deathBindsEvent(death, r, s);
+    return Number.isFinite(death.at) && death.at >= preparedAt && death.at !== c.walkingParents?.[r.name]?.observedDeathAt &&
+      r.reentryDeathAt === death.at &&
+      revivedReport(s, death.at) && deathBindsEvent(death, r, s);
   }
   function revivedReport(s: SharedStatus, deathAt: number): boolean {
     return !s.rip && Number(s.hp) > 0 && s.seenAt > deathAt &&
@@ -450,6 +470,19 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if(!c?.continuousReturn || c.walkingActivity!==r.activity || c.walkingParents?.[r.name]?.revision!==r.revision)return null;
     return {ok:true,phase:'travelling',convoyId:c.id,reason:c.failure};
   }
+  function independentEventReentry(r:WalkRequest):Record<string,unknown> | null {
+    const c=state.activeConvoy,s=state.statuses[r.name],death=s?.lastDeath;
+    if(r.activity!=='event'||r.parentId!==0||!s||!death||r.reentryDeathAt!==death.at||
+      !revivedReport(s,death.at)||!deathBindsEvent(death,r,s))return null;
+    // A late revived attendee must not recall or wait for an already travelling
+    // peer. Authorize only its own fresh request, never replace that peer's route.
+    if(!c||c.purpose!=='shared-walk'||c.walkingActivity!=='event'||c.walkingEvent!==r.key||
+      c.phase!=='travel'||c.nonPreemptible||c.participants.includes(r.name)||
+      c.routeServer!==s.server||state.commands[r.name]||!sameWalk(r,{...r,destination:c.location}))return null;
+    const waiting=requests.get(r.name);
+    if(waiting?.token===r.token&&!waiting.convoyId)requests.delete(r.name);
+    return {ok:true,phase:'independent',destination:r.destination,reentryDeathAt:death.at};
+  }
   function submit(body: Record<string, unknown>): Record<string, unknown> {
     const r = parse(body, ports.now());
     if (!r || !authorized(r)) return { error: "unauthorized walking leg" };
@@ -460,8 +493,11 @@ export function createSharedWalks(input: unknown, ports: WalkPorts) {
     if (failure) return failure;
     const retained = retainedReturn(r);
     if(retained)return retained;
+    const reentry=independentEventReentry(r);
+    if(reentry)return reentry;
     const previous = existing(r);
     if (previous) return previous;
+    r.observedDeathAt = state.statuses[r.name]?.lastDeath?.at;
     requests.set(r.name, r);
     tryStart(r);
     return { ok: true, phase: "waiting" };

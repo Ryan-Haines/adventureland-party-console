@@ -480,7 +480,7 @@ economic work. Screenshots, traces, state, native observations and source snapsh
 are retained under `.build/e2e-results`; the checksummed manifest and HTML report
 are under `.build/e2e-report`. This follow-up does not claim a full 67-case rerun.
 
-Use Node 24 (CI pins 24.14.0), Docker with Compose and a running Linux container
+Use Node 26 (CI pins 26.12.1), Docker with Compose and a running Linux container
 engine, then run from this checkout. The first game image build downloads the
 pinned upstream repositories and dependencies:
 

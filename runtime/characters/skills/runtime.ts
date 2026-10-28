@@ -51,7 +51,7 @@ export function installSkillRuntime(root: CombatRoot) {
       cooldown: id => id === 'invis' && !!shared.merchantVisibilityActive?.() || Number(host.next_skill?.[id]) > Date.now(),
       damageMultiplier: host.damage_multiplier || mitigation,
       incoming: t => projectiles.incoming(t.id, Date.now()),
-      range: (t, id) => skillRange(actor, t, skills[id]),
+      range: (t, id) => skillRange(actor, t, skills[id], id),
       allowed: (t, id) => authorized(result, t, id),
     };
     return result;
@@ -66,7 +66,7 @@ export function installSkillRuntime(root: CombatRoot) {
     return w.actor.hp - 2 * incomingDps({ ...w, context: added }, w.actor) > w.actor.max_hp * .3;
   }
   function targetAuthorized(t: Combatant, id: SkillId): boolean {
-    return !!shared.skillTargetAllowed?.(t as Target) && shared.rareAttackAllowed?.(t as Target, id) !== false;
+    return !!shared.skillTargetAllowed?.(t as Target, id) && shared.rareAttackAllowed?.(t as Target, id) !== false;
   }
   const returnExcluded = new Set<string>(['taunt','agitate','charge','dash','blink','scare','stomp','cleave','fanofknives']);
   function returnTargetBlocked(t:Combatant,id:SkillId):boolean {
@@ -77,17 +77,20 @@ export function installSkillRuntime(root: CombatRoot) {
     if(returnExcluded.has(d.skill))return true;
     return !!world().skills[d.skill]?.hostile && d.targets.some(t=>!shared.returnAttacker?.(t as Target));
   }
-  // Area effects and movement skills cannot honor strict boss-only, hold-position combat.
-  const frankyExcluded = new Set<string>(['agitate','charge','dash','blink','scare','stomp','cleave','fanofknives']);
+  // Cleave is the explicit area exception; single-target skills defend only
+  // against this member's mummies while Franky remains the default target.
+  const frankyExcluded = new Set<string>(['agitate','charge','dash','blink','scare','stomp','fanofknives']);
   function frankySkillBlocked(id: SkillId, targets: Combatant[]): boolean {
     if (!shared.frankyCombatActive?.()) return false;
     return frankyExcluded.has(id) || !!world().skills[id]?.hostile &&
-      targets.some(t => t.type !== 'monster' || t.mtype !== 'franky' || !shared.skillTargetAllowed?.(t as Target));
+      targets.some(t => t.type !== 'monster' ||
+        id !== 'cleave' && t.mtype !== 'franky' && !(t.mtype === 'mummy' && t.target === character.name) ||
+        !shared.skillTargetAllowed?.(t as Target, id));
   }
   function castSkill(d:SkillDecision):Promise<unknown> {
-    if (frankySkillBlocked(d.skill, d.targets)) return Promise.reject(new Error('Skill conflicts with Franky-only combat'));
+    if (frankySkillBlocked(d.skill, d.targets)) return Promise.reject(new Error('Skill conflicts with Franky combat policy'));
     if(returnCastBlocked(d))return Promise.reject(new Error('Skill conflicts with return movement or attacker-only policy'));
-    const argument=d.argument ?? (d.targets.length>1 || world().skills[d.skill]?.multi ? d.targets.map(t=>t.id) : d.targets[0]?.id || d.targets[0]?.name);
+    const argument=d.skill === 'cleave' ? undefined : d.argument ?? (d.targets.length>1 || world().skills[d.skill]?.multi ? d.targets.map(t=>t.id) : d.targets[0]?.id || d.targets[0]?.name);
     return host.use_skill(d.skill,argument);
   }
   const engine = createSkillEngine({
@@ -120,10 +123,10 @@ export function installSkillRuntime(root: CombatRoot) {
     },
   };
 }
-export function skillRange(actor: Actor, target: Combatant, s?: SkillDefinition): boolean {
+export function skillRange(actor: Actor, target: Combatant, s?: SkillDefinition, id?: SkillId): boolean {
   if (!s) return false;
   const base = s.use_range ? actor.range : s.range || actor.range;
   const range = base * (s.range_multiplier || 1) + (s.range_bonus || 0);
   const distanceTo = typeof distance === 'function' ? distance(actor, target) : Math.hypot(actor.x - target.x, actor.y - target.y);
-  return distanceTo <= range;
+  return id === 'cleave' ? distanceTo < range : distanceTo <= range;
 }

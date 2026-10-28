@@ -242,7 +242,7 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
     if (ports.returningHome() && !ports.ensureHome("resuming merchant work")) return false;
     // Preserve queued work until a fresh living merchant can execute it.
     if (!merchantAlive()) return false;
-    state.queue = mergePickupJobs(state.queue, ports.merchant()).map(job => ports.stamp(job));
+    state.queue = mergePickupJobs(state.queue, ports.merchant(), state.current).map(job => ports.stamp(job));
     state.queue = state.queue.flatMap(job => splitLegacyWork(job)).filter(hasQueuedWork).filter((job) => !ports.bankboi(job.target) && (buyUpgradeOrder(job) || ports.enabled?.(job) !== false) && !(job.reason === "join giveaway" && Number(job.expiresAt) < ports.now()));
     return !state.current && !!ports.merchant() && !ports.manualEquipmentPending() && !reserved();
   }

@@ -71,6 +71,7 @@ export const heartbeatStateFields = [
 ] as const;
 
 export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[number], unknown> {
+  nextCommandId: number;
   eventLimitsByCharacter?: import('../../../dashboard/lib/event-policy.ts').EventFormation['eventLimitsByCharacter'];
   eventSelectionsByCharacter?: Record<string, string[]>;
   dailyDungeons?: import("../../dungeons/contracts.ts").DungeonState;

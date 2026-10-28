@@ -64,6 +64,7 @@ export function installRoleRunner(
   });
   const recoverFromDeath = createDeathRecovery({
     isDead: () => !!character.rip,
+    needsEventReturn: () => sharedRoutine.eventRejoinRequired?.() === true,
     blocked: () => !!sharedRoutine.dungeonOwned?.() || !!sharedRoutine.escapeOwnsRevival?.(),
     respawn: () => sharedRoutine.dungeonOwned?.() || sharedRoutine.escapeOwnsRevival?.()
       ? Promise.reject(Error('Recovery owns revival')) : Promise.resolve(respawn()),
@@ -93,10 +94,9 @@ export function installRoleRunner(
   }
   function passingTarget(): Target | null {
     if (sharedRoutine.dungeonOwned?.()) return null;
+    if (sharedRoutine.frankyCombatActive?.()) return null;
     if (character.ctype === "merchant" || !active || character.rip || !resolvedRole().combat || ["pending","feed"].includes(sharedRoutine.getAbtestingMode())) return null;
-    const target = sharedRoutine.frankyCombatActive?.()
-      ? sharedRoutine.getWalkingPassiveTarget?.() || null
-      : sharedRoutine.getPassingTarget?.() || null;
+    const target = sharedRoutine.getPassingTarget?.() || null;
     return target && sharedRoutine.allowsPassingTarget(target) ? target : null;
   }
   function attackTarget(): Target | null {
@@ -175,8 +175,9 @@ export function installRoleRunner(
     if (!sharedRoutine.returnCombatActive?.() && !invalidated && current) {
       const priorityEvent = priorityEventTarget();
       const rare = sharedRoutine.dungeonOwned?.() ? null : sharedRoutine.getRareTarget?.();
-      const nominated = sharedRoutine.dungeonOwned?.() ? sharedRoutine.getDungeonTarget?.() : sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
-      if ((!priorityEvent || priorityEvent.id === selectedTarget) && (!rare || rare.id === selectedTarget) && (!(sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
+      const franky = !!sharedRoutine.frankyCombatActive?.();
+      const nominated = franky ? sharedRoutine.getEventTarget() : sharedRoutine.dungeonOwned?.() ? sharedRoutine.getDungeonTarget?.() : sharedRoutine.usesLeaderTarget?.() ? sharedRoutine.getGroupedTarget() : null;
+      if ((!priorityEvent || priorityEvent.id === selectedTarget) && (!rare || rare.id === selectedTarget) && (!(franky || sharedRoutine.dungeonOwned?.() || sharedRoutine.usesLeaderTarget?.()) || nominated?.id === selectedTarget)) return;
     }
     invalidated = false;
     selecting = true;
