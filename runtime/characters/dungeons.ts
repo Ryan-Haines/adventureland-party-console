@@ -291,10 +291,10 @@ export function installDungeonRuntime(ports: Ports) {
     let dispatched = false;
     try {
       await stopping;
-      // A native conversation can pause the run between readiness and transport.
-      // Only its explicit rejection is retryable, once fresh party readiness
-      // returns. Revalidate the same run and door before another native request.
-      if (pausedStairs && !canMove()) return;
+      // Party readiness can change after the coordinator issues stairs, before
+      // either the first dispatch or a retry. Keep that command pending instead
+      // of journaling a permanent failure for a temporary conversation pause.
+      if (c.action === "stairs" && !canMove()) return;
       if (!validate(c)) {
         journal.save(c, "complete");
         return;

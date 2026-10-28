@@ -326,3 +326,17 @@ native time, retaining the full room, vote, displacement, exit and floor-arrival
 checks. Prelogin peace also passes both journeys twice natively and once under
 ChronAL. Preserve the associated manifests, native rejection receipts and timing
 observations when rerunning these cases.
+
+A later hosted ChronAL run exposed the pause fixture's unexecuted cleanup branch:
+`unfreeze_instance` is not a native API. Use the verified
+`resume_frozen_instance` operation. The fixture now skips already-frozen
+transports, requires ownership of the injected freeze, and records that its
+response callback actually resumed that instance. This prevents naturally
+existing pauses from bypassing the fixture's cleanup coverage.
+
+The stronger local run also reproduced a separate pre-dispatch stairs race:
+readiness changed after the coordinator issued stairs, leaving one member on
+floor zero with a permanent `Stairs are not ready for the party` receipt while
+the leader was on floor one. Defer both initial stairs dispatch and retries
+until fresh readiness returns, then validate the same run and target. Invalid
+doors/runs still fail; ambiguous dispatched actions still require reconciliation.

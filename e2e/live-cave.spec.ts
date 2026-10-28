@@ -1121,17 +1121,18 @@ async ({ live, page }, info) => {
     const p=get_player('E2EPriest'),socket=p.socket;
     const fault=globalThis.__e2eStairPause={to:${JSON.stringify(stairs.to)},socket,emit:socket.emit,attempts:0};
     fault.gate=function(data){
-      if(fault.started||data.to!==fault.to)return;
+      const instance=instances[p.in];
+      if(fault.started||data.to!==fault.to||instance.frozen)return;
       fault.started={at:Date.now(),map:p.map,to:data.to};fault.attempts++;
-      const instance=fault.instance=instances[p.in];
-      if(!instance.frozen){freeze_instance(instance,Date.now());fault.owned=instance.frozen;}
+      fault.instance=instance;freeze_instance(instance,Date.now());fault.owned=instance.frozen;
     };
     socket.prependListener('transport',fault.gate);
     socket.emit=function(event,data,...args){
       const result=fault.emit.call(this,event,data,...args);
       if(fault.started&&!fault.receipt&&event==='game_response'&&data?.place==='transport'&&data.reason==='cave_paused'){
         fault.receipt={at:Date.now(),...data};socket.off('transport',fault.gate);socket.emit=fault.emit;
-        if(fault.owned&&fault.instance.frozen===fault.owned)unfreeze_instance(fault.instance,Date.now());
+        if(fault.owned&&fault.instance.frozen===fault.owned)resume_frozen_instance(fault.instance,Date.now());
+        fault.resumed=!fault.instance.frozen;
       }
       return result;
     };
@@ -1289,9 +1290,9 @@ async ({ live, page }, info) => {
     pausedTransport=await live.admin(`output=(()=>{
       const fault=globalThis.__e2eStairPause;
       fault.socket.off('transport',fault.gate);fault.socket.emit=fault.emit;
-      if(fault.owned&&fault.instance?.frozen===fault.owned)unfreeze_instance(fault.instance,Date.now());
+      if(fault.owned&&fault.instance?.frozen===fault.owned)resume_frozen_instance(fault.instance,Date.now());
       delete globalThis.__e2eStairPause;
-      return {started:fault.started,receipt:fault.receipt,attempts:fault.attempts};
+      return {started:fault.started,receipt:fault.receipt,attempts:fault.attempts,ownedPause:!!fault.owned,resumed:fault.resumed===true};
     })()`);
     await info.attach('native-stairs-pause-rejection',{body:JSON.stringify(pausedTransport),contentType:'application/json'});
 
@@ -1307,6 +1308,8 @@ async ({ live, page }, info) => {
   }
   expect(answeredFarewell).toBe(true);
   expect(pausedTransport.attempts).toBe(1);
+  expect(pausedTransport.ownedPause).toBe(true);
+  expect(pausedTransport.resumed).toBe(true);
   expect(pausedTransport.receipt).toMatchObject({failed:true,reason:'cave_paused',place:'transport'});
   await expect.poll(async()=>Promise.all(['E2EWarrior','E2EPriest'].map(async name=>
     (await live.clients[name].events()).filter(entry=>entry.event==='new_map'&&entry.data?.name===stairs.to).length)),
