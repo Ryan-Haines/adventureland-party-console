@@ -456,7 +456,7 @@
   var lastFarmingMonsterType = root.__partyLastFarmingMonsterType || null;
   var eventsEnabled = false;
   var enabledEventSelections = null;
-  var eventSettings = {}, cipherMerchant = null, cipherGathering = null, octoberController = null;
+  var eventSettings = {}, cipherMerchant = null, cipherGathering = null, octoberController = null, cipherTransferBusy = false;
   function octoberRuntime() {
     if (octoberController) return octoberController;
     octoberController = root.partyOctoberEvents.createOctoberRuntime({
@@ -482,17 +482,34 @@
       witch: function () { var npc = ((G.maps.halloween || {}).npcs || []).find(function (entry) { return entry.id === 'witch'; });
         return npc ? { map: 'halloween', x: npc.position[0], y: npc.position[1] + 30 } : null; },
       transfer: async function () {
-        if (!eventSelected('witchcipher') || !cipherMerchant || character.name === cipherMerchant || root.__merchantActiveJob || banking || upgrading) return;
+        if (cipherTransferBusy || !runtimeCurrent() || character.rip || !eventSelected('witchcipher') ||
+            !cipherMerchant || character.name === cipherMerchant || root.__merchantActiveJob ||
+            root.__partyInventoryCommands || banking || upgrading) return;
         var merchant = get_player(cipherMerchant);
         if (!merchant || merchant.rip || distance(character, merchant) > 350) return;
-        for (var slot = 0; slot < character.items.length; slot++) {
-          var item = character.items[slot];
-          if (item && !item.l && !item.b && root.partyOctoberEvents.cipherIngredients.indexOf(item.name) >= 0)
-            await send_item(cipherMerchant, slot, item.q || 1);
-        }
+        cipherTransferBusy = true;
+        try {
+          for (var slot = 0; slot < character.items.length; slot++) {
+            if (!runtimeCurrent() || !eventSelected('witchcipher') || character.rip) return;
+            var item = character.items[slot];
+            if (item && !item.l && !item.b && root.partyOctoberEvents.cipherIngredients.indexOf(item.name) >= 0)
+              await send_item(cipherMerchant, slot, item.q || 1);
+          }
+        } finally { cipherTransferBusy = false; }
       },
     });
     return octoberController;
+  }
+  function cipherTransferPulse() {
+    // Event travel is polled every ten seconds. A merchant can cross transfer
+    // range and settle on the opposite side of combat between those polls.
+    // Use the existing one-second pulse; serialize real native sends with the
+    // event poll and never move either participant or change combat ownership.
+    if (!runtimeCurrent() || joinedEvent !== 'witchcipher' || !octoberController ||
+        !octoberController.activity('witchcipher')) return;
+    octoberController.transfer().catch(function (error) {
+      game_log('Cipher ingredient transfer failed: ' + String(error.reason || error.message || error), 'red');
+    });
   }
   var pendingEventDisables = root.__partyPendingEventDisables || [];
   var travellingEventName = null, eventSelectionRevision = 0;
@@ -10256,6 +10273,11 @@
       return;
     }
     if (!enabled.length) { if (gatheringMode) setGathering(null); return; }
+    // A manual inventory command can be awaiting the old attempt's release.
+    // Rotating modes here would invalidate that handoff's generation and let
+    // another gathering attempt race the still-unexecuted equip. Explicit
+    // disabling remains immediate; ordinary rotation resumes after ownership.
+    if (root.__partyInventoryCommands && enabled.indexOf(gatheringMode) >= 0) return;
     var ready = enabled.filter(function (mode) {
       return syncGatheringCooldown(mode) <= Date.now() && !is_on_cooldown(mode);
     });
@@ -16228,7 +16250,9 @@
       return true;
     }
     if (character.ctype === "merchant") return false;
-    if ((partyConvoyActive || convoyTraveling) && !root.__partyConvoyDefense) {
+    // Defense releases movement for an actual combat target, not for searching
+    // the old farm area while selection or the native loot pass is pending.
+    if ((partyConvoyActive || convoyTraveling) && (!root.__partyConvoyDefense || !target)) {
       cancelFarmApproach("convoy owns movement"); return true;
     }
     if (!runtimeCurrent() || character.rip || root.sharedRoutine.isOccupied() || activeCombatEvent() || joinedEvent || navigationIntent.cancelled) {
@@ -17498,7 +17522,7 @@
     start: function () {
       if (timer) return;
       tick();
-      timer = setInterval(function(){ if (gameLogCapture) void gameLogCapture.pulse(); observeFarmArea(); tick(); }, 1000);
+      timer = setInterval(function(){ if (gameLogCapture) void gameLogCapture.pulse(); observeFarmArea(); cipherTransferPulse(); tick(); }, 1000);
       reconcileGameParty();
       root.__partyRosterTimer = setInterval(reconcileGameParty, 5000);
       pollEvents();

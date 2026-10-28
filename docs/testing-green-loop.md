@@ -193,3 +193,58 @@ reload. The exchange-preview slider also failed three of five local repeats.
 Target each keyboard action at the slider and await its actual value (0, 1, 2)
 before the next input, retaining the visible +2 preview and all merchant-rule
 replacement/persistence assertions. No collector or product UI behavior changes.
+
+The next ChronAL Hunt failure retained a defensive loot checkpoint near Main's
+hens while native movement packets showed empty-zone farm recovery carrying the
+leader back to Goo. Ordinary repetitions did not reproduce the selection gap;
+the retained farm-recovery harness reproduces it from the CI ownership state
+before the fix. Convoy defense permits approaching an actual selected target,
+but cannot release movement to an empty-zone search. Keep the native rare-kill,
+loot, retained quest and subsequent Goo-kill assertions, plus native movement
+ownership receipts. This narrow isolated regression supplements those E2Es; it
+does not substitute for their receipts.
+
+Graveyard pretravel reproduced a native evacuation failure locally. Its peaceful
+ambient fixture assigned monster.target directly, leaving nine recorded attackers
+and zero actual attackers. Native Town and doors correctly rejected that state.
+Use native stop_pursuit to declare disengagement and verify both the actual
+targets and native attacker counters are zero before scheduled attendance.
+Preserve the published deadline, native no-early-damage, restart, evacuation and
+physical checkpoint-return assertions.
+
+The elixir delivery failure reproduced with 42 attempts to approach the Winter
+Inn transporter at a point inside enclosed scenery. Native zero-length collision
+checks accepted that footprint, but neither planner could reach it. Prefer an
+approach connected to the actor or the transporter's native landing spawn.
+Two elixir deliveries and repeated Desert/Winter Inn cargo journeys passed;
+retain a strict absence of route-failed receipts during ordinary acquisition.
+
+The native inventory-decision trace selected initial Cipher stock of zero before
+the seeded item packet reached the browser. Publish the declared starting stock
+through the native client and coordinator before starting that round. Preserve
+exact affordable mixes, recipe shortage, unchanged daily tries and zero unwanted
+brew receipts. Do not discard a legitimate persisted gathering decision merely
+because inventory later changes.
+
+The stale-peer retirement fault remained active through extra native reads after
+Warrior admission, approaching the bridge's legitimate 20-second stale-CODE
+recovery deadline. Release it from the exact admission snapshot. Observe native
+frame readiness inside the existing bounded ownership poll; retain unchanged
+runtime identities, strict old-owner retirement and both participants' hits.
+
+The native equipment trace also allowed gathering mode rotation immediately when
+its cancelled cast released. That changed the generation awaited by a manual
+equip and rejected its handoff before execution. A retained gathering regression
+written before the fix reproduces the rejected command. Keep the current enabled
+mode while an inventory command owns the handoff, then resume ordinary rotation;
+explicit disabling and genuinely superseded generations remain fenced. Verify
+native Broom equip receipts, subsequent tool equip, restoration, item conservation,
+restart persistence and both opt-in tool-crafting journeys.
+
+The native Cipher gathering failure left the fighter and merchant on opposite
+combat sides, more than 350 units apart. The merchant crossed within transfer
+range while arriving, between ten-second event polls. Keep real transfers on the
+existing one-second pulse while that Cipher participation is active; serialize
+sends with event polling and respect inventory ownership. Retain the CI target
+coordinates in the E2E, exact delivered quantities, retained gathering choice,
+real hits beyond five minutes, zero early brews and the native cutoff/return.

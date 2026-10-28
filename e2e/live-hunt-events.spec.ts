@@ -199,6 +199,10 @@ for(const type of ['phoenix','goldenbat','cutebee','hen','rooster','tinyp']) tes
     }
     await expect.poll(async()=>(await world(live)).players[W].quest?.c,{timeout:Math.max(1,resumedDeadline-Date.now())}).toBeLessThan(afterRare.players[W].quest.c);
     await info.attach('native-rare-hunt-resumed',{body:JSON.stringify({hunt,spawn,before,afterRare,final:await world(live),state:await live.state()}),contentType:'application/json'});
+    const moves=(await live.clients[W].events()).filter((event:any)=>event.event==='move-issued');
+    expect(moves.filter((event:any)=>event.motion?.owner==='convoy:defending'&&
+      event.motion?.position?.movementOwner==='farm-recovery'&&!event.motion?.position?.target),
+    'Empty farming search must not move away while convoy defense owns the return').toEqual([]);
   } finally {
     try {
       const packets=(await live.clients[W].events()).filter((event:any)=>['move-issued','player','new_map','game_log'].includes(event.event)).slice(-400);

@@ -23,15 +23,23 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
       const definitions=structuredClone(G.monsters),ambient=[];
       for(const type of Object.keys(G.monsters)){G.monsters[type].aggro=0;G.monsters[type].peaceful=true;}
       for(const map of ['spookytown','halloween'])for(const m of Object.values(instances[map].monsters))ambient.push({map,id:m.id,aggro:m.aggro,peaceful:m.peaceful});
-      for(const map of ['spookytown','halloween'])for(const m of Object.values(instances[map].monsters)){m.aggro=0;m.peaceful=true;m.target=null;}
+      for(const map of ['spookytown','halloween'])for(const m of Object.values(instances[map].monsters)){
+        m.aggro=0;m.peaceful=true;
+        // Native disengagement also decrements the player's attacker counters.
+        // Clearing target alone leaves ghost attackers that reject Town/doors.
+        if(m.target)stop_pursuit(m,{stop:true,cause:'declared peaceful pretravel input'});
+      }
+      const attackers=${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return {name,count:p.targets,
+        actual:Object.values(instances[p.in].monsters).filter(m=>m.target===name).length};});
       const occurrence={event,at,status:'scheduled',id:'e2e-pretravel-'+event};
       const original=broadcast_e;
       globalThis.__e2ePretravel={occurrence,original,definitions,ambient};
       broadcast_e=function(dontSend){if(dontSend)return;const snapshot={...E,schedule:{...E.schedule,events:[occurrence],repeats:[]}};
         // A cancelled declared occurrence must not reveal an unrelated ambient live round.
         if(occurrence.status!=='live')delete snapshot[event];broadcast('server_info',snapshot);};
-      broadcast_e();return {at,declaredAt:Date.now(),event};
+      broadcast_e();return {at,declaredAt:Date.now(),event,attackers};
     })()`);
+    expect(seed.attackers.map((p:any)=>({count:p.count,actual:p.actual}))).toEqual(fighters.map(()=>({count:0,actual:0})));
     const observations:any[]=[];
     try{
       await live.post('/formation',{character:fighters[0],eventSelections:[event]});

@@ -280,8 +280,16 @@ test.describe('retired event exit ownership',()=>{
           return warrior?.dashboardRuntime===started.characters[W].dashboardRuntime&&warrior.seenAt>=retiredAt&&
             Date.now()-warrior.seenAt<3000&&warrior.serverLiveEvents?.some((event:{name:string})=>event.name==='mrpumpkin');
         },{timeout:30_000,message:'The restarted coordinator must receive the original Warrior runtime and LIVE feed before timing admission'}).toBe(true);
-        await expect.poll(async()=>{const s=await live.state();return !s.deferredEventReturns[W]&&!!s.farmingProfiles[W].eventSessions[W];},{timeout:12_000}).toBe(true);
-        const admission=await live.state();
+        let admission:any;
+        await expect.poll(async()=>{const s=await live.state();
+          if(s.deferredEventReturns[W]||!s.farmingProfiles[W].eventSessions[W])return false;
+          admission=s;
+          // End the status-loss fault at admission, before separate native
+          // observations. Leaving it active through those reads can cross the
+          // bridge's legitimate stale-CODE recovery deadline on a busy host.
+          holdingPriest=false;
+          return true;
+        },{timeout:12_000}).toBe(true);
         const priestSeenAt=Number(admission.characters[P]?.seenAt||priestSeenAtBeforeHold);
         expect(priestSeenAt).toBe(priestSeenAtBeforeHold);
         const priestNative=await live.clients[P].snapshot();
@@ -301,7 +309,7 @@ test.describe('retired event exit ownership',()=>{
             const runner=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as
               (Window & {character?:Pick<import('typed-adventureland').CharacterEntity,'name'>;__partyEventExitOwner?:{cycleId?:string;cancelled?:boolean;commandId?:number};
                 __partyEventRecoveryCycleId?:string|null;__partyRuntimeGeneration?:number})|null;
-            if(!runner||runner.character?.name!==expectedName)throw Error('Current native maincode identity mismatch: '+expectedName);
+            if(!runner||runner.character?.name!==expectedName)return null;
             const owner=runner.__partyEventExitOwner;
             return {name:runner.character.name,runtimeGeneration:runner.__partyRuntimeGeneration,
               owner:owner?{cycleId:owner.cycleId,cancelled:!!owner.cancelled,commandId:owner.commandId}:null,
@@ -311,9 +319,9 @@ test.describe('retired event exit ownership',()=>{
         const nativeObservedAt=Date.now(),s=await live.state(),stateObservedAt=Date.now();
         const checks=Object.fromEntries(fighters.map(name=>{
           const session=s.farmingProfiles[W].eventSessions[name];
-          return [name,{runtimeUnchanged:s.characters[name]?.dashboardRuntime===started.characters[name].dashboardRuntime,
-            selectionPublished:native[name].selectionPublished,selectionRetired:native[name].selectedCycle!==oldCycle,
-            ownerRetired:!native[name].owner||native[name].owner.cancelled||native[name].owner.cycleId!==oldCycle,
+          return [name,{nativeReady:!!native[name],runtimeUnchanged:s.characters[name]?.dashboardRuntime===started.characters[name].dashboardRuntime,
+            selectionPublished:!!native[name]?.selectionPublished,selectionRetired:!!native[name]&&native[name].selectedCycle!==oldCycle,
+            ownerRetired:!!native[name]&&(!native[name].owner||native[name].owner.cancelled||native[name].owner.cycleId!==oldCycle),
             admissionResumed:!deferred||!s.deferredEventReturns[name]&&!!session?.participants?.includes(name)}];
         }));
         if(exitOwnerSamples.length===64)exitOwnerSamples.shift();

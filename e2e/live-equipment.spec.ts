@@ -76,6 +76,18 @@ capacityTest('merchant gathering waits at capacity without resetting cooldowns',
 // Failure modes: an old weapon preference overrides manual Equip; gathering
 // retains obsolete displaced gear; restart forgets the new preference; any
 // swap loses the weapon or tool. Observe native tool equip and native restore.
+async function gatheringCommandSnapshot(live:import('./live-fixtures').LiveGame,name:string){
+  return live.clients[name].frame.evaluate(()=>{
+    const root=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+    const attempt=root?.__merchantGatheringAttempt;
+    return {at:Date.now(),runtime:root?.__partyRuntimeGeneration,lastCommand:root?.__partyLastCommand,
+      inventoryCommands:root?.__partyInventoryCommands,generation:root?.__merchantGatheringGeneration,
+      blocked:root?.__merchantGatheringBlockedReason,holdUntil:root?.__merchantLogisticsHoldUntil,
+      attempt:attempt&&{id:attempt.id,mode:attempt.mode,phase:attempt.phase,cancelled:attempt.cancelled,waitingCommand:attempt.waitingCommand},
+      session:root?.__merchantGatheringSession,status:root?.__partyStatusDiagnostics?.slice(-6)};
+  });
+}
+
 test('manual merchant weapon remains selected through gathering and restart',async({live,page},info)=>{
   test.setTimeout(300_000);
   const name='E2EMerchant';
@@ -133,10 +145,10 @@ test('manual merchant weapon remains selected through gathering and restart',asy
   const priorWeaponSequence=Math.max(0,...(await live.clients[name].events()).map(event=>event.sequence||0));
   const requestedAt=await live.clients[name].run('Date.now()');
   await page.getByRole('menuitem',{name:'Equip',exact:true}).click();
-  let weaponReceipts:any[]=[];
+  let weaponReceipts:any[]=[];const commandObservations:any[]=[];
   try{
-    await expect.poll(async()=>{weaponReceipts=(await live.clients[name].events()).filter((event:any)=>event.event==='player'&&event.at>=requestedAt&&event.sequence>priorWeaponSequence&&event.data?.slots?.mainhand).map((event:any)=>({sequence:event.sequence,at:event.at,mainhand:event.data.slots.mainhand}));return weaponReceipts.some(receipt=>receipt.mainhand.name==='broom'&&receipt.mainhand.level===6);},{timeout:30_000,message:'Native item packet must confirm the requested Broom equip'}).toBe(true);
-  }finally{await info.attach('native-manual-weapon-equip-receipts',{body:JSON.stringify({requestedAt,priorWeaponSequence,receipts:weaponReceipts.slice(-32)}),contentType:'application/json'});}
+    await expect.poll(async()=>{commandObservations.push(await gatheringCommandSnapshot(live,name));weaponReceipts=(await live.clients[name].events()).filter((event:any)=>event.event==='player'&&event.at>=requestedAt&&event.sequence>priorWeaponSequence&&event.data?.slots?.mainhand).map((event:any)=>({sequence:event.sequence,at:event.at,mainhand:event.data.slots.mainhand}));return weaponReceipts.some(receipt=>receipt.mainhand.name==='broom'&&receipt.mainhand.level===6);},{timeout:30_000,message:'Native item packet must confirm the requested Broom equip'}).toBe(true);
+  }finally{await info.attach('native-manual-weapon-equip-receipts',{body:JSON.stringify({requestedAt,priorWeaponSequence,receipts:weaponReceipts.slice(-32),commandObservations}),contentType:'application/json'});}
   await expect.poll(async()=> (await live.state()).merchantWeapon?.item,{timeout:10_000}).toMatchObject({name:'broom',level:6});
   const broomSequence=weaponReceipts.find(receipt=>receipt.mainhand.name==='broom'&&receipt.mainhand.level===6).sequence;
   await expect.poll(async()=>(await live.clients[name].events()).some((event:any)=>event.event==='player'&&event.sequence>broomSequence&&['rod','pickaxe'].includes(event.data?.slots?.mainhand?.name)),{timeout:90_000,message:'Native gathering tool equip must follow the actual Broom receipt'}).toBe(true);
@@ -265,6 +277,7 @@ for(const mode of ['fishing','mining'] as const) capacityTest(`missing ${mode} t
   await info.attach('native-replacement-tool-craft',{body:JSON.stringify({mode,tool,seed,before,after:await native(),responses,events:await live.clients[merchant].events(),state:await live.state()}),contentType:'application/json'});
  } finally {
   live.clients[merchant].page.off('response',observe);await Promise.all(pending);
+  await info.attach('gathering-tool-command-observations',{body:JSON.stringify({mode,responses,command:await gatheringCommandSnapshot(live,merchant),state:await live.state()}),contentType:'application/json'});
   await live.post('/merchant/gather',{mode,enabled:false}).catch(()=>{});
  }
 });

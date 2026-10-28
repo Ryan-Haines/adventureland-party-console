@@ -28,6 +28,13 @@ for(const mode of ['stored','buy','craft'] as const) test(`elixir restock ${mode
     }
     if(mode==='buy') {
       await expect.poll(async()=>(await live.clients[target].snapshot()).items.filter((i:any)=>i?.name===item).reduce((n:number,i:any)=>n+(i.q||1),0),{timeout:180000}).toBe(2);
+      // A point inside scenery can pass a zero-length native collision check
+      // while remaining unreachable. Retried jobs must not conceal that fault
+      // behind eventual delivery from the merchant's already purchased stock.
+      const navigation=(await live.state()).combatLogs?.[merchant]?.filter((entry:any)=>entry.type==='navigation')||[];
+      await info.attach('elixir-native-acquisition-navigation',{body:JSON.stringify(navigation),contentType:'application/json'});
+      expect(navigation.filter((entry:any)=>entry.details?.failureContext?.code==='route-failed'),
+        'Ordinary elixir acquisition must use a reachable Winter Inn return route').toEqual([]);
       const unconsumed=await live.admin(`output=!!get_player('${target}').slots.elixir`);
       expect(unconsumed).toBe(false);
       await live.post('/restock',policy(item,false,true,max));
