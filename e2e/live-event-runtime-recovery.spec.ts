@@ -15,6 +15,13 @@ test.describe('empty event sighting recovery',()=>{
   test.setTimeout(240_000);const hint={map:'spookytown',x:255,y:-1425},spawn=await nativeEventSpawn(live.admin,'mrgreen');
   let seed:any;const observations:any[]=[];
   try{
+   // This is an empty-hint navigation journey. The cemetery's respawning mummy
+   // pack otherwise keeps starting unrelated defense fights at the hint.
+   await live.admin(`output=(()=>{const original=G.monsters.mummy;
+     globalThis.__e2eEmptyHintMummies={original,actors:Object.values(instances.spookytown.monsters).filter(m=>m.type==='mummy').map(m=>({id:m.id,aggro:m.aggro,peaceful:m.peaceful}))};
+     G.monsters.mummy={...original,aggro:0,peaceful:true};
+     for(const m of Object.values(instances.spookytown.monsters))if(m.type==='mummy'){m.aggro=0;m.peaceful=true;m.target=null;}
+     return true;})()`);
    seed=await seedRecoveryGreen(live,spawn,hint);
    await expect.poll(()=>live.clients[W].run('parent.S.mrgreen && ({map:parent.S.mrgreen.map,x:parent.S.mrgreen.x,y:parent.S.mrgreen.y})'),{timeout:15_000}).toEqual(hint);
    await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
@@ -28,6 +35,11 @@ test.describe('empty event sighting recovery',()=>{
   }finally{
    await info.attach('native-empty-last-seen-spawn-recovery',{body:JSON.stringify({hint,spawn,seed,observations,state:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
    await live.post('/formation',{character:W,eventSelections:[]}).catch(()=>{});await clearRecoveryGreen(live,seed);
+   await live.admin(`output=(()=>{const saved=globalThis.__e2eEmptyHintMummies;if(!saved)return false;
+     G.monsters.mummy=saved.original;for(const m of Object.values(instances.spookytown.monsters))if(m.type==='mummy'){
+       const prior=saved.actors.find(a=>a.id===m.id)||saved.original;
+       for(const key of ['aggro','peaceful'])if(prior[key]===undefined)delete m[key];else m[key]=prior[key];}
+     delete globalThis.__e2eEmptyHintMummies;return true;})()`);
   }
  });
 });

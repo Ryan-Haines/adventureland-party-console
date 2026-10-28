@@ -70,3 +70,29 @@ actors and their initial native definitions only between disconnected scenarios.
 Hunt restart admission now waits for a fresh fighter report separately from HTTP
 readiness. The Graveyard pretravel broadcast also keeps an unrelated native live
 round hidden after the declared occurrence is cancelled.
+
+## Cave target-switch failure inventory
+
+Hosted run 40653621258 retained a planned Cave bat while the closer duelist
+created the first locked target pair. Both fighters acknowledged revocation,
+but the new pair blocked completion of the already-started switch. Reproduce
+this transition in the existing combat-queue regression before implementation.
+Check missing acknowledgements, an acknowledged switch, a vanished alternative,
+and attack evidence arriving with acknowledgement. Never authorize a new
+distance-based switch once a pair is already locked. Native Cave completion
+and actual duel damage/death remain the end-to-end gate.
+
+The existing queue regression reproduced both the frozen switch and a vanished
+alternative before the fix; pending/engaged attacks retained ownership. After
+the change, all 103 focused queue, successor and formation regressions pass.
+
+The same hosted run's stat-scroll delivery received a native `gold_received`
+receipt for 10,000,000 from the Warrior. Its conservation assertion now totals
+all three party balances plus the bank, retaining exact equality and the native
+scroll-consumption/application assertions. Internal delivery collection must not
+be mistaken for an NPC purchase or newly created gold.
+
+The fresh full ChronAL run exposed ordinary respawning mummies at the stale
+Mr. Green hint. The empty-hint journey declares only that ambient pack peaceful
+and restores its catalog and actors afterward; real boss visibility, travel,
+attacks and both fighters' damage assertions remain required.
