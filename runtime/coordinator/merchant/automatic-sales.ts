@@ -160,10 +160,9 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
     return changed;
   }
   function bankStockReady(): boolean {
-    // Discover NPC-sale prerequisites while unrelated party service is busy.
-    // Own-inventory jobs retain their bank/inventory snapshot boundary.
-    return !!state.merchantCharacter && (!state.merchantCurrent ||
-      state.merchantCurrent.target !== state.merchantCharacter);
+    // A bank report can arrive during the merchant's own visit. Reserve its
+    // sale stock now; the next job consumes these durable withdrawals.
+    return !!state.merchantCharacter;
   }
   function availableBankStock() {
     const pending = state.withdrawals?.[String(state.merchantCharacter)] || [];

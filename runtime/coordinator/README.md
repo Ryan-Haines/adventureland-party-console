@@ -1,3 +1,13 @@
+Automatic NPC bank stock is discovered during the merchant's own bank visit as
+well as while idle. When ordinary withdrawals are disabled, enabled Auto NPC
+sales own a separate bank-retrieval prerequisite with the same routine priority;
+it does not retrieve unrelated manual marks. Locked stock, kept copies and craft
+reservations retain their existing protections. Exchange progress promotes each
+received default-bank reward into a persisted shared Auto bank rule before
+acknowledging its checkpoint, preserving explicit processing/sale actions.
+Validate live-bank-npc-sales and live-exchange-reward-bank journeys. Stage the
+completed console artifact; activation remains explicitly requested.
+
 Event convoy admission drops cancelled pending tokens and excludes dead or
 subsequently revived owners of old requests. Admission records realm/runtime
 identities before route preparation, and death recovery compares the exact native

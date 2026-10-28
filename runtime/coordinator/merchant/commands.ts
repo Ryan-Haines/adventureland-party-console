@@ -1,6 +1,7 @@
 import { collectsPartyItems, normalizePickupJob } from './pickup-jobs.ts';
 import { scopeWork } from './command-scope.ts';
 import { ownCommandType } from "./command-kind.ts";
+import {requestObject} from '../http/contracts.ts';
 import type {
   CharacterWork,
   CommandInputs,
@@ -115,6 +116,9 @@ export function ownMerchantCommand(
     ...purchaseDetails(job, inputs),
     ...marketplaceDetails(job, inputs),
     ...merchantSupplies(inputs),
+    ...(job.reason === 'auto npc withdrawals' ? {
+      merchantWithdrawals: work.withdrawals.filter(mark => requestObject(mark).autoNpcRuleKey),
+    } : {}),
     ...reasonDetails[job.reason]?.(job, inputs),
     ...improvements(work, status, true, inputs.bankboiItems),
     ...sharedImprovements(job, inputs),
