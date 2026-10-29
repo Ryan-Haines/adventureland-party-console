@@ -10453,7 +10453,21 @@
       state: state, reason: reason || null, at: Date.now() + coordinatorClockOffset };
   }
 
-  async function handle(command) {
+  var pendingEquipmentCommands = Object.create(null);
+  function handle(command) {
+    if (!command || (command.type !== "equip" && command.type !== "unequip"))
+      return handleInventoryCommand(command);
+    // Repeated heartbeats may deliver the same command while its gathering
+    // handoff is pending. Only one owner may issue the native equipment action.
+    if (pendingEquipmentCommands[command.id]) return pendingEquipmentCommands[command.id];
+    var pending = handleInventoryCommand(command);
+    pendingEquipmentCommands[command.id] = pending;
+    var release = function () { delete pendingEquipmentCommands[command.id]; };
+    pending.then(release, release);
+    return pending;
+  }
+
+  async function handleInventoryCommand(command) {
     if (root.__partyTracktrixMove) await root.__partyTracktrixMove;
     root.__partyInventoryCommands = (root.__partyInventoryCommands || 0) + 1;
     try { return await handleOwnedCommand(command); }

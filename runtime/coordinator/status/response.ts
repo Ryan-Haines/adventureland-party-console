@@ -57,6 +57,9 @@ const navigationCommands = new Set([
   "event-resume-travel",
   "return-leader",
 ]);
+// Manual equipment can wait for a gathering handoff before the client accepts it.
+// Keep the dispatch guard occupied through that wait, without replaying consumables.
+const acceptanceRetainedCommands = new Set(["equip", "unequip"]);
 
 /** Long-running commands remain deliverable until their completion endpoint acknowledges them. */
 export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatResponsePorts) {
@@ -141,11 +144,21 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
     if (ports.escapeOwns(name) && state.escape?.stage !== "recovery-convoy") return null;
     restoreTownCommand(name);
     const command = state.commands[name] || null;
+    if (retireAcceptedEquipment(name, command)) return null;
     attachLuckySlot(name, command);
-    if (command && !retainedCommands.has(command.type)) delete state.commands[name];
+    if (!retainCommand(command)) delete state.commands[name];
     if (command && navigationCommands.has(command.type) && command.navigationRevision === undefined)
       command.navigationRevision = ports.navigationRevision(name);
     return command;
+  }
+  function retainCommand(command: HeartbeatState['commands'][string] | null): boolean {
+    return !command || retainedCommands.has(command.type) || acceptanceRetainedCommands.has(command.type);
+  }
+  function retireAcceptedEquipment(name: string, command: HeartbeatState['commands'][string] | null): boolean {
+    if (!command || !acceptanceRetainedCommands.has(command.type) ||
+        !(Number(state.statuses[name]?.lastCommandId) >= command.id)) return false;
+    delete state.commands[name];
+    return true;
   }
   function attachLuckySlot(name: string, command: HeartbeatState['commands'][string] | null): void {
     if (!command || name !== state.merchantCharacter) return;

@@ -24,3 +24,11 @@ exactly one inventory-command owner before restarting. Preserve ordinary browser
 transport failures and recovery; do not catch and discard interception errors.
 Seed availability before login here too: a response already in the browser can
 restore an old cooldown after a live reset. Disable modes before adding tools.
+A manual equipment command can be delivered while production preflight and the
+old gathering channel are still settling. Deleting it on response delivery lets
+an automatic gather command overtake it before the client accepts it. Reproduce
+with the real pending-production response held only across that owned channel
+boundary and observe the next genuine command. Retention must stop at client
+acceptance, must not issue duplicate native equips, must not block forever after
+acknowledgment, and must still allow a newer explicit user command to supersede
+an older one. Consumption commands must not acquire unsafe replay semantics.

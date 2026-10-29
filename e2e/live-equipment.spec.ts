@@ -88,7 +88,8 @@ async function gatheringCommandSnapshot(live:import('./live-fixtures').LiveGame,
   });
 }
 
-gatheringTest('manual merchant weapon remains selected through gathering and restart',async({live,page},info)=>{
+for(const delayedStop of [false,true]){
+gatheringTest('manual merchant weapon remains selected through gathering and restart'+(delayedStop?' across delayed native stop completion':''),async({live,page},info)=>{
   test.setTimeout(300_000);
   const name='E2EMerchant';
   for (const mode of ['fishing','mining'])
@@ -130,9 +131,37 @@ gatheringTest('manual merchant weapon remains selected through gathering and res
   // land inside asynchronous command preflight, so an available skill never
   // resumes after Equip. Deliver only due gathering intervals at that boundary;
   // native movement, status traffic, inventory packets and other timers stay live.
-  await live.clients[name].frame.evaluate(()=>{
+  await live.clients[name].frame.evaluate(delayedStop=>{
     const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-    const fault=root.__e2eGatheringPhase={armed:false,due:[] as Array<()=>void>,deliveries:[],original:root.setInterval};
+    const game=window as any,native=root.__partyNativeMovement;
+    const fault:any=root.__e2eGatheringPhase={armed:false,due:[] as Array<()=>void>,deliveries:[],original:root.setInterval,
+      originalAjax:root.$.ajax,originalStop:native.stop,statuses:[] as any[],equipment:[] as any[],handoff:null as any};
+    fault.observeEquip=(event:string,data:any)=>{if(event==='equip')fault.equipment.push({at:Date.now(),commandId:root.__partyLastCommand,
+      data:{...data},item:JSON.parse(JSON.stringify(root.character.items[data.num]||null))});};
+    game.socket.onAnyOutgoing(fault.observeEquip);
+    if(delayedStop){
+      root.$.ajax=function(options:any){const request=fault.originalAjax.apply(this,arguments);
+        if(String(options.url).endsWith('/status'))request.done((state:any)=>fault.statuses.push({at:Date.now(),
+          command:state.command&&{id:state.command.id,type:state.command.type},lastCommand:root.__partyLastCommand}));
+        return request;};
+      native.stop=async function(...args:any[]){
+        const attempt=root.__merchantGatheringAttempt;
+        if(fault.handoff||args[0]||attempt?.cancelled!=='command equip')return fault.originalStop.apply(this,args);
+        const handoff:any=fault.handoff={at:Date.now(),attempt:attempt.id,command:fault.statuses.at(-1)?.command};
+        const result=await fault.originalStop.apply(this,args);
+        await attempt.done;
+        handoff.channelReleasedAt=Date.now();
+        const deadline=Date.now()+8000;
+        while(Date.now()<deadline){
+          const successor=fault.statuses.find((entry:any)=>entry.at>handoff.channelReleasedAt&&entry.command);
+          if(successor&&(successor.command.type==='equip'||root.__partyLastCommand>=successor.command.id)){
+            handoff.successor=successor;handoff.completedAt=Date.now();return result;
+          }
+          await new Promise(resolve=>game.setTimeout(resolve,50));
+        }
+        throw Error('No genuine command arrived at the owned native stop boundary');
+      };
+    }
     root.setInterval=function(callback:any,delay:number,...args:any[]){
       const id=fault.original.call(root,()=>{
         if(fault.armed&&id===root.__merchantGatheringTimer)fault.due.push(()=>callback(...args));
@@ -140,8 +169,8 @@ gatheringTest('manual merchant weapon remains selected through gathering and res
       },delay);
       return id;
     };
-  });
-  let timing:Array<{at:number;owners:number}>=[];
+  },delayedStop);
+  let timing:Array<{at:number;owners:number}>=[],faultEvidence:any;
   const preflight=async(route:import('@playwright/test').Route)=>{
     const body=route.request().postDataJSON();
     if(body.character!==name||body.action!=='pending'){await route.continue();return;}
@@ -193,16 +222,25 @@ gatheringTest('manual merchant weapon remains selected through gathering and res
     // This page owns only this interception. Drain its active responses before
     // removing it; unroute() can continue a request its handler will fulfill.
     await live.clients[name].page.unrouteAll({behavior:'wait'});
-    timing=await live.clients[name].frame.evaluate(()=>{
+    faultEvidence=await live.clients[name].frame.evaluate(()=>{
       const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       const fault=root.__e2eGatheringPhase;fault.armed=false;root.setInterval=fault.original;
       for(const callback of fault.due.splice(0))callback();
-      delete root.__e2eGatheringPhase;return fault.deliveries;
+      const game=window as any;game.socket.offAnyOutgoing(fault.observeEquip);
+      root.$.ajax=fault.originalAjax;root.__partyNativeMovement.stop=fault.originalStop;
+      delete root.__e2eGatheringPhase;return {deliveries:fault.deliveries,handoff:fault.handoff,equipment:fault.equipment};
     });
+    timing=faultEvidence.deliveries;
+    await info.attach('manual-equipment-handoff',{body:JSON.stringify(faultEvidence),contentType:'application/json'});
     await info.attach('gathering-timer-preflight-collision',{body:JSON.stringify(timing),contentType:'application/json'});
   }
   expect(timing.length,'The fault must deliver due gathering timers during real command preflight').toBeGreaterThan(0);
   expect(timing.every(entry=>entry.owners===1),'Every injected timer must belong to the single active inventory command').toBe(true);
+  expect(faultEvidence.equipment.filter((entry:any)=>entry.item?.name==='broom'&&entry.item.level===6&&entry.data.slot===undefined),'Manual Equip must issue exactly one native Broom request').toHaveLength(1);
+  if(delayedStop){
+    expect(faultEvidence.handoff?.command?.type).toBe('equip');
+    expect(faultEvidence.handoff?.successor?.command).toEqual(faultEvidence.handoff.command);
+  }
   // The fault owns the equip/gathering collision only. Restart exercises genuine
   // browser transport recovery after all interception handlers have drained.
   await live.restartCoordinator();
@@ -213,6 +251,7 @@ gatheringTest('manual merchant weapon remains selected through gathering and res
   await info.attach('manual-merchant-weapon-cycle',{body:JSON.stringify({seed,after,cargo,events:await live.clients[name].events()}),contentType:'application/json'});
   await info.attach('manual-merchant-weapon-inventory',{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
 });
+}
 
 // Failure modes: orb eligibility hides Equip; menu/command changes the item;
 // native equip chooses another slot or silently ignores it; replacement destroys

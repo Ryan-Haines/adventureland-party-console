@@ -20,6 +20,8 @@ export interface HeartbeatStatus {
   x?: number;
   y?: number;
   seenAt?: number;
+  /** Latest coordinator command accepted by this client, before native completion. */
+  lastCommandId?: number;
   /** Hash of the compiled character artifact actually executing this heartbeat. */
   codeHash?: string | null;
   combat?: { kiting?: boolean };

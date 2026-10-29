@@ -448,3 +448,27 @@ fault to its owned equip/gathering operation, assert nonempty timer deliveries
 with exactly one inventory-command owner, then restart with ordinary transport.
 Use pre-login skill availability in this journey as well, disabling gathering
 before adding tools and removing its vulnerable live cooldown reset.
+
+The passive-healing Town case later failed despite a successful first native cast
+in 3.242 seconds. Its transport receipt was sequence 44 and the subsequent heal
+sequence 47, both stamped in the same ChronAL window. The inclusive timestamp
+filter misclassified post-arrival healing as channel interruption. Replay those
+retained native receipts locally: the old predicate finds one forbidden heal;
+the transport-sequence boundary finds none. End both heal and retry-request
+windows at the native transport sequence, retaining the original injury seed,
+actual arrival, no-retry assertion and cast-duration bound. Attach same-timestamp
+post-arrival heals separately so this distinction remains verifiable.
+
+The focused hosted weapon rerun exposed a real command-delivery race. Equip was
+removed from the coordinator queue when its response was sent, while the client
+still awaited gathering's native stop. An automatic gather command could then
+advance the client watermark, silently discarding the older manual Equip. Delay
+only completion of that operation's real stop promise until the next genuine
+status command arrives. The old code reproduces the missing native Broom receipt
+on both backends. Retain Equip/Unequip until the client reports acceptance, keeping
+the existing manual-equipment dispatch guard occupied, and share one handler for
+repeated deliveries of the same equipment command. Consumption commands retain
+their existing delivery semantics. The maintained delayed-stop journey requires
+the identical retained command, exactly one native Broom request, real tool
+resumption/restoration, unchanged item counts and restart persistence. Native
+completion remains a separate receipt assertion from command acceptance.
