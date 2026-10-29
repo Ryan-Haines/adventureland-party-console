@@ -2,8 +2,8 @@ import { test, expect } from './live-fixtures';
 
 // Failure modes: capacity still admits travel/tool swaps/casts; blocked work
 // advances a cooldown; one mode bypasses the reserve; freeing space never resumes.
-const capacityTest=test.extend({initialGatheringReady:true});
-capacityTest('merchant gathering waits at capacity without resetting cooldowns',async({live,page},info)=>{
+const gatheringTest=test.extend({initialGatheringReady:true});
+gatheringTest('merchant gathering waits at capacity without resetting cooldowns',async({live,page},info)=>{
   const name='E2EMerchant';
   for(const mode of ['fishing','mining'])await live.post('/merchant/gather',{mode,enabled:false});
   async function standReady(){await expect.poll(async()=>{
@@ -88,9 +88,33 @@ async function gatheringCommandSnapshot(live:import('./live-fixtures').LiveGame,
   });
 }
 
-test('manual merchant weapon remains selected through gathering and restart',async({live,page},info)=>{
+gatheringTest('manual merchant weapon remains selected through gathering and restart',async({live,page},info)=>{
   test.setTimeout(300_000);
   const name='E2EMerchant';
+  for (const mode of ['fishing','mining'])
+    await live.post('/merchant/gather',{mode,enabled:false});
+  await expect.poll(async()=> (await live.state()).gatheringModes,{timeout:30_000}).toEqual([]);
+  await expect.poll(()=>live.clients[name].frame.evaluate(()=>{
+    const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+    return !root.__merchantGatheringSession && !root.__merchantGatheringAttempt;
+  }),{timeout:30_000}).toBe(true);
+  // Declare availability before native login. Clearing a live cooldown races
+  // status replies already in the browser, which correctly preserve known
+  // cooldowns. Observe agreement without rewriting live skill state.
+  let availability:any;
+  await expect.poll(async()=>{
+    const [state,client,server]=await Promise.all([live.state(),live.clients[name].frame.evaluate(()=>{
+      const game=window as any,root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+      return {now:Date.now(),next:Object.fromEntries(['fishing','mining'].map(mode=>[mode,Number(new Date(game.next_skill[mode]||0))])),
+        recorded:{...root.__merchantGatheringCooldowns},session:!!root.__merchantGatheringSession,attempt:!!root.__merchantGatheringAttempt};
+    }),live.admin(`output=(()=>{const p=get_player('${name}');return {fishing:p.last.fishing,mining:p.last.mining};})()`)]);
+    availability={coordinator:state.gatheringCooldowns,client,server};
+    return !client.session&&!client.attempt&&['fishing','mining'].every(mode=>
+      Number(new Date(server[mode]))===0&&Number(client.next[mode])<=client.now&&
+      Number(client.recorded[mode]||0)===0&&Number(state.gatheringCooldowns[mode]||0)===0);
+  },{timeout:15000,message:'Native gathering availability must agree before the first cast'}).toBe(true);
+  await info.attach('native-gathering-initial-availability',{body:JSON.stringify(availability),contentType:'application/json'});
+
   const seed=await live.admin(`output=(()=>{const p=get_player('${name}');
     if(p.items[10]||p.items[11]||p.items[13])throw Error('Weapon fixture requires empty cells');
     p.items[10]={name:'broom',level:6};p.items[11]={name:'rod',level:0};p.items[13]={name:'pickaxe',level:0};
@@ -102,37 +126,6 @@ test('manual merchant weapon remains selected through gathering and restart',asy
   const old=await live.admin(`output=(()=>{const p=get_player('${name}');p.items[12]=p.slots.mainhand;p.slots.mainhand=null;cache_player_items(p);p.cslots.mainhand=null;resend(p,'reopen+cid');return p.items[12];})()`);
   await expect.poll(async()=> (await live.state()).characters[name]?.items?.some((entry:any)=>entry?.slot===12&&entry.item.name==='staff'),{timeout:30_000}).toBe(true);
   await live.post('/command',{type:'merchant-weapon',character:name,slot:12,item:old});
-  // Fixture failure modes: a retained session or its in-flight status response
-  // can restore a pre-reset cooldown; an active native skill can finish after
-  // the reset. Disable both modes through production actions and observe the
-  // old session/attempt retire before declaring skills available.
-  for (const mode of ['fishing','mining'])
-    await live.post('/merchant/gather',{mode,enabled:false});
-  await expect.poll(async()=> (await live.state()).gatheringModes,{timeout:30_000}).toEqual([]);
-  await expect.poll(()=>live.clients[name].frame.evaluate(()=>{
-    const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-    return !root.__merchantGatheringSession && !root.__merchantGatheringAttempt;
-  }),{timeout:30_000}).toBe(true);
-  // Declare available gathering skills at the fixture boundary. Native actions
-  // still choose/equip tools, cast and restore gear; no receipt is fabricated.
-  // Stop coordinator first so its saved cooldown cannot race this initial seed.
-  await live.restoreHistoricalSettings(async () => {
-    const server = await live.admin(`output=(()=>{const p=get_player('${name}');
-      const before={fishing:p.last.fishing,mining:p.last.mining};
-      p.last.fishing=p.last.mining=new Date(0);return {before,after:{fishing:p.last.fishing,mining:p.last.mining}};})()`);
-    const client = await live.clients[name].frame.evaluate(() => {
-      const game = window as any;
-      const root = (document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-      const before = {next: {fishing:game.next_skill.fishing,mining:game.next_skill.mining},recorded:{...root.__merchantGatheringCooldowns}};
-      for (const mode of ['fishing','mining']) {
-        game.next_skill[mode]=new Date(0);
-        root.__merchantGatheringCooldowns[mode]=0;
-      }
-      return {before,after:{next:{fishing:game.next_skill.fishing,mining:game.next_skill.mining},recorded:{...root.__merchantGatheringCooldowns}}};
-    });
-    await info.attach('declared-gathering-availability',{body:JSON.stringify({server,client}),contentType:'application/json'});
-    return {gatheringCooldowns:{fishing:0,mining:0}};
-  });
   // Failure inventory: the periodic gathering tick and the status wake both
   // land inside asynchronous command preflight, so an available skill never
   // resumes after Equip. Deliver only due gathering intervals at that boundary;
@@ -148,6 +141,7 @@ test('manual merchant weapon remains selected through gathering and restart',asy
       return id;
     };
   });
+  let timing:Array<{at:number;owners:number}>=[];
   const preflight=async(route:import('@playwright/test').Route)=>{
     const body=route.request().postDataJSON();
     if(body.character!==name||body.action!=='pending'){await route.continue();return;}
@@ -163,6 +157,7 @@ test('manual merchant weapon remains selected through gathering and restart',asy
     await route.fulfill({response});
   };
   await live.clients[name].page.route('**/party-api/merchant/production',preflight);
+  let after:any;
   try {
   await live.post('/merchant/gather',{mode:'fishing',enabled:true});
   await live.post('/merchant/gather',{mode:'mining',enabled:true});
@@ -193,19 +188,12 @@ test('manual merchant weapon remains selected through gathering and restart',asy
   await live.post('/merchant/gather',{mode:'fishing',enabled:false});
   await live.post('/merchant/gather',{mode:'mining',enabled:false});
   await expect.poll(()=>live.admin(`output=get_player('${name}')?.slots.mainhand`),{timeout:30_000}).toMatchObject({name:'broom',level:6});
-  const after=await live.state();expect(after.merchantWeapon.item).toMatchObject({name:'broom',level:6});
-  await live.restartCoordinator();
-  await expect.poll(async()=> (await live.state()).merchantWeapon?.item,{timeout:30_000}).toMatchObject({name:'broom',level:6});
-  const cargo=await live.admin(`output=(()=>{const p=get_player('${name}');return {items:p.items,slots:p.slots}})()`);
-  for(const item of ['staff','broom','rod','pickaxe'])expect([...cargo.items,...Object.values(cargo.slots)].filter((entry:any)=>entry?.name===item)).toHaveLength(1);
-  expect(cargo.slots.mainhand).toMatchObject({name:'broom',level:6});
-  await info.attach('manual-merchant-weapon-cycle',{body:JSON.stringify({seed,after,cargo,events:await live.clients[name].events()}),contentType:'application/json'});
-  await info.attach('manual-merchant-weapon-inventory',{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
+  after=await live.state();expect(after.merchantWeapon.item).toMatchObject({name:'broom',level:6});
   } finally {
     // This page owns only this interception. Drain its active responses before
     // removing it; unroute() can continue a request its handler will fulfill.
     await live.clients[name].page.unrouteAll({behavior:'wait'});
-    const timing=await live.clients[name].frame.evaluate(()=>{
+    timing=await live.clients[name].frame.evaluate(()=>{
       const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       const fault=root.__e2eGatheringPhase;fault.armed=false;root.setInterval=fault.original;
       for(const callback of fault.due.splice(0))callback();
@@ -213,6 +201,17 @@ test('manual merchant weapon remains selected through gathering and restart',asy
     });
     await info.attach('gathering-timer-preflight-collision',{body:JSON.stringify(timing),contentType:'application/json'});
   }
+  expect(timing.length,'The fault must deliver due gathering timers during real command preflight').toBeGreaterThan(0);
+  expect(timing.every(entry=>entry.owners===1),'Every injected timer must belong to the single active inventory command').toBe(true);
+  // The fault owns the equip/gathering collision only. Restart exercises genuine
+  // browser transport recovery after all interception handlers have drained.
+  await live.restartCoordinator();
+  await expect.poll(async()=> (await live.state()).merchantWeapon?.item,{timeout:30_000}).toMatchObject({name:'broom',level:6});
+  const cargo=await live.admin(`output=(()=>{const p=get_player('${name}');return {items:p.items,slots:p.slots}})()`);
+  for(const item of ['staff','broom','rod','pickaxe'])expect([...cargo.items,...Object.values(cargo.slots)].filter((entry:any)=>entry?.name===item)).toHaveLength(1);
+  expect(cargo.slots.mainhand).toMatchObject({name:'broom',level:6});
+  await info.attach('manual-merchant-weapon-cycle',{body:JSON.stringify({seed,after,cargo,events:await live.clients[name].events()}),contentType:'application/json'});
+  await info.attach('manual-merchant-weapon-inventory',{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
 });
 
 // Failure modes: orb eligibility hides Equip; menu/command changes the item;
@@ -260,7 +259,7 @@ test('gathering tool crafting settings are opt in and persist independently', as
   await info.attach('gathering-craft-settings',{body:JSON.stringify((await live.state()).merchantAutomations),contentType:'application/json'});
 });
 
-for(const mode of ['fishing','mining'] as const) capacityTest(`missing ${mode} tool crafts once only after opt in and available materials`,async({live},info)=>{
+for(const mode of ['fishing','mining'] as const) gatheringTest(`missing ${mode} tool crafts once only after opt in and available materials`,async({live},info)=>{
  test.setTimeout(420_000);
  const merchant='E2EMerchant',tool=mode==='fishing'?'rod':'pickaxe',responses:any[]=[],pending:Promise<void>[]=[];
  const native=()=>live.admin(`output=(async()=>{const p=get_player('${merchant}'),u=p.user||(await db.collection('user').findOne({_id:p.owner})).info;return {gold:p.gold+(Number(u.gold)||0),tools:p.items.filter(i=>i&&i.name==='${tool}').length+(p.slots.mainhand?.name==='${tool}'?1:0),bank:Object.entries(u).filter(([k,v])=>/^items[0-9]+$/.test(k)&&Array.isArray(v)).flatMap(([,v])=>v).filter(i=>i&&i.name==='${tool}').length};})()`);

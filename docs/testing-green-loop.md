@@ -425,6 +425,7 @@ fabricate character flags, routes, status or acknowledgments. Require the pendin
 native input and matching convoy/epoch in the ledger, and restore both diagnostic
 property observation and the timer wrapper. Keep the native kill progression and
 unchanged retry-budget assertions. This correction changes only the E2E fixture.
+
 The gathering cooldown journey exposed another fixture race: the server's two
 skill timestamps were zero, but the client and coordinator retained the exact
 cooldowns sent at login, and no declared native rolls occurred. Reproduce it by
@@ -436,3 +437,14 @@ option, then poll server, client and coordinator agreement without rewriting liv
 cooldowns. Retain all five outcomes, recast timing, catches, native reuse deadlines,
 no-recast window and restart persistence. The same delayed-response diagnostic
 and repeated native/ChronAL journeys validate the corrected setup.
+
+The next full validation exposed the weapon fixture's interception crossing its
+coordinator restart. All native equip, tool restoration, exact inventory and
+restart assertions completed, but route.fetch raised ECONNREFUSED during the
+intentional outage. A local Chromium/server replay reproduces that exception
+with retained interception and passes after draining/removing it before restart;
+the browser still observes the genuine outage and recovers afterward. Limit the
+fault to its owned equip/gathering operation, assert nonempty timer deliveries
+with exactly one inventory-command owner, then restart with ordinary transport.
+Use pre-login skill availability in this journey as well, disabling gathering
+before adding tools and removing its vulnerable live cooldown reset.
