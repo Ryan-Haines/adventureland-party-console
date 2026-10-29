@@ -147,3 +147,52 @@ for(const source of ['carried','native bank','optional absent','required absent'
     await info.attach('native-offering-stock-boundary',{body:JSON.stringify({source,native,observations,state:await live.state()}),contentType:'application/json'});
   }
 });
+
+
+
+
+test('BankBoi drains all seven reserve cells after a persisted movement timeout', async ({live}, info) => {
+  test.setTimeout(300_000);
+  // Failure inventory: an expired transport error permanently excludes the worker;
+  // retry ignores its cooldown; cargo is lost/duplicated; native completion arrives
+  // before queue cleanup or merchant restoration; restart replays completed cargo.
+  const merchant='E2EMerchant', storage='E2EBankBoi';
+  await live.post('/steam/action',{character:merchant,action:'logout'});
+  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
+  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
+  await live.post('/slots/1/spawn',{character:merchant});
+  await expect.poll(async()=> (await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
+  const bank=await live.admin(`output=(async()=>{
+    const p=get_player('${merchant}'),u=await db.collection('user').findOne({_id:p.owner});
+    u.info.items0=Array.from({length:42},()=>({name:'coat',level:0}));
+    u.info.items1=Array.from({length:42},(_,i)=>({name:i<35?'coat':'helmet',level:0}));
+    await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items0':u.info.items0,'info.items1':u.info.items1}});
+    const c=await db.collection('character').findOne({'info.name':'${storage}'});c.info.items=Array(42).fill(null);
+    await db.collection('character').replaceOne({_id:c._id},c);
+    return {gold:0,packs:Object.fromEntries(['items0','items1'].map(pack=>[pack,u.info[pack].map((item,slot)=>({slot,item}))]))};
+  })()`);
+  await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'error',error:'POST /movement-plan · timeout',retryAt:0,items:[]}}}));
+  await live.post('/bankboi/checkpoint',{character:merchant,bank});
+  const observations:any[]=[];
+  const native=()=>live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'}),u=await db.collection('user').findOne({_id:c.owner});return {items:c.info.items,bank:u?.info.items1};})()`);
+  try {
+    await expect.poll(async()=>{
+      const s=await live.state(),n=await native();
+      observations.push({at:Date.now(),queue:s.bankboiQueue,transaction:s.bankboiTransaction,workers:s.bankbois,native:n});
+      if(observations.length>128)observations.shift();
+      const worker=s.bankbois.find((w:any)=>w.name===storage);
+      return n.items.filter((i:any)=>i?.name==='helmet').length===7 &&
+        n.bank.slice(35,42).every((i:any)=>!i) && s.bankboiQueue.length===0 &&
+        !s.bankboiTransaction && worker?.state==='ready' &&
+        s.activeSlots.some((slot:any)=>slot.character===merchant);
+    },{timeout:180_000,intervals:[250,500]}).toBe(true);
+    await live.restartCoordinator();
+    await expect.poll(async()=>{
+      const s=await live.state(),n=await native();
+      return s.bankboiQueue.length===0 && !s.bankboiTransaction && n.items.filter((i:any)=>i?.name==='helmet').length===7;
+    }).toBe(true);
+  } finally {
+    await info.attach('bankboi-reserve-timeout-recovery',{body:JSON.stringify({observations,native:await native(),state:await live.state()}),contentType:'application/json'});
+  }
+});
+

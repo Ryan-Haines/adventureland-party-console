@@ -73,23 +73,34 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
       catch(error){fault.receipt.stopError=String(error);}
     },50);
   })()`);
-  // Hold only the first genuine fallback preparation response while a native
+  // Hold the leader's genuine fallback preparation responses while a native
   // eight-unit walk makes its origin stale. The early origin check must reprepare
   // before the separate settlement-time drift fault is admitted.
   let originDriftIssued=false;
+  let originOperation:{convoy:string;epoch:number;completion:Promise<unknown>}|undefined;
+  const preparationDeliveries:{name:string;at:number;id:number;convoy:string;epoch:number;fast:boolean;held:boolean;deliveredAt?:number}[]=[];
   await live.clients[W].page.route('**/party-api/status',async route=>{
+    const request=route.request().postDataJSON();
+    // Native companions share this page; only the leader owns this fault.
+    if(request.name!==W)return route.fallback();
     const response=await route.fetch(),state=await response.json(),command=state.command;
     if(!originDriftIssued&&command?.nativeFallback&&['prepare','shared-prepare'].includes(command.phase)){
       originDriftIssued=true;
-      await live.clients[W].run(`(async()=>{
+      originOperation={convoy:command.convoyId,epoch:command.epoch,completion:live.clients[W].run(`(async()=>{
         const fault=globalThis.__e2eFallbackStop;
         const from={map:character.map,x:character.x,y:character.y},to={x:character.x,y:character.y+8};
         if(!fault.receipt||!can_move_to(to.x,to.y))throw Error('Early origin drift requires the interrupted native route and a walkable destination');
         const drift=fault.preRendezvousDrift={command:${JSON.stringify(command)},from};
         await xmove(to.x,to.y);drift.arrived={map:character.map,x:character.x,y:character.y};
-      })()`);
+      })()`)};
     }
+    const matches=!!originOperation&&command?.convoyId===originOperation.convoy&&command?.epoch===originOperation.epoch&&['prepare','shared-prepare'].includes(command.phase);
+    const delivery:(typeof preparationDeliveries)[number]|undefined=command?.nativeFallback?{name:request.name,at:Date.now(),id:command.id,convoy:command.convoyId,epoch:command.epoch,
+      fast:!!(request.combatOnly||request.combatWait),held:matches}:undefined;
+    if(delivery)preparationDeliveries.push(delivery);
+    if(matches)await originOperation!.completion;
     await route.fulfill({response});
+    if(delivery)delivery.deliveredAt=Date.now();
   });
   try{
     await start(live);
@@ -113,6 +124,8 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   expect(finalHunt.routeRecovery,'Successful arrival must retain the spent retry budget').toEqual(recovering.routeRecovery);
   const {drift,boundary,boundaries,preRendezvousDrift}=await live.clients[W].run('({drift:globalThis.__e2eFallbackStop.drift,boundary:globalThis.__e2eFallbackStop.boundary,boundaries:globalThis.__e2eFallbackStop.boundaries,preRendezvousDrift:globalThis.__e2eFallbackStop.preRendezvousDrift})');
   expect(originDriftIssued).toBe(true);
+  expect(preparationDeliveries.filter(entry=>entry.held).map(entry=>entry.name)).toContain(W);
+  expect(preparationDeliveries.every(entry=>entry.name===W)).toBe(true);
   expect(preRendezvousDrift.arrived.map).toBe(preRendezvousDrift.from.map);
   expect(Math.hypot(preRendezvousDrift.arrived.x-preRendezvousDrift.from.x,preRendezvousDrift.arrived.y-preRendezvousDrift.from.y)).toBeGreaterThan(7);
   expect(boundaries.some((entry:any)=>entry.convoy===preRendezvousDrift.command.convoyId&&entry.epoch===preRendezvousDrift.command.epoch)).toBe(true);
@@ -129,6 +142,7 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
       if(fault.detailDescriptor)Object.defineProperty(globalThis,'__partyNavigationDetail',{...fault.detailDescriptor,value:fault.detailValue});
       else{delete globalThis.__partyNavigationDetail;globalThis.__partyNavigationDetail=fault.detailValue;}}
       return fault?{generation:fault.generation,issued:fault.issued,receipt:fault.receipt,drift:fault.drift,boundary:fault.boundary,boundaries:fault.boundaries,preRendezvousDrift:fault.preRendezvousDrift}:null;})()`);
+    await info.attach('native-fallback-preparation-deliveries',{body:JSON.stringify(preparationDeliveries),contentType:'application/json'});
     await info.attach('native-fallback-stop-ledger',{body:JSON.stringify(fault),contentType:'application/json'});
   }
 });

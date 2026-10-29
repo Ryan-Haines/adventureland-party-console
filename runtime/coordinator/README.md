@@ -590,6 +590,12 @@ merchant class leaves storage marked processing without starting native banking.
 Native stack filling still runs during unload, preserving stack caps and reserved
 stock. Validate `live-bankboi.spec.ts` and activate through the full restart.
 
+BankBoi movement-plan network failures and timeouts retain automatic retry
+eligibility after the persisted cooldown, including workers already saved in
+error state. Unknown game errors remain blocked. Validate the seven-cell reserve
+drain and restart journey in `live-bankboi-offerings.spec.ts`. Stage a completed
+immutable console candidate; activation remains explicit.
+
 Cave travel assembles participants at the leader before departure, shares the
 leader's validated native route, applies the slowest party speed through native
 cruise, and holds members that get ahead in walking progress. Interrupted routes

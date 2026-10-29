@@ -513,3 +513,13 @@ partial response in Chromium to reproduce the missing-row failure, then require
 a recovered, explicitly opened priest view and the original zero balances before
 advancing the clock. Preserve restart persistence, account ownership, duplicate
 door handling and the next-day unknown allowances.
+
+The Hunt origin-drift fixture also has a concurrent-delivery failure mode: native
+companions share one browser page, so the warrior page's route intercepts priest
+requests too. Starting the fault from the priest response lets the warrior start
+rendezvous before the intended early walk. Scope interception to the leader's
+request name, then retain a promise for the exact convoy/epoch preparation and
+await it for every matching delivery while unrelated traffic continues normally.
+Record request owner, kind and delivery times. Preserve the two distinct preparation
+owners, actual eight- and eighty-unit walks, continued kills and retry-budget
+assertions; do not fabricate commands or change production movement behavior.
