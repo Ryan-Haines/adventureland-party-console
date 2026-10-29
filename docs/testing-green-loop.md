@@ -425,3 +425,14 @@ fabricate character flags, routes, status or acknowledgments. Require the pendin
 native input and matching convoy/epoch in the ledger, and restore both diagnostic
 property observation and the timer wrapper. Keep the native kill progression and
 unchanged retry-budget assertions. This correction changes only the E2E fixture.
+The gathering cooldown journey exposed another fixture race: the server's two
+skill timestamps were zero, but the client and coordinator retained the exact
+cooldowns sent at login, and no declared native rolls occurred. Reproduce it by
+holding one genuine status response across the old live reset and then delivering
+it. The old journey again records zero of five rolls; its final cooldowns exactly
+match the held response. Stopping the coordinator cannot drain a response already
+in the browser. Seed availability before native login using the existing fixture
+option, then poll server, client and coordinator agreement without rewriting live
+cooldowns. Retain all five outcomes, recast timing, catches, native reuse deadlines,
+no-recast window and restart persistence. The same delayed-response diagnostic
+and repeated native/ChronAL journeys validate the corrected setup.
