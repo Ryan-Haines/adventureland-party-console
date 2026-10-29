@@ -779,7 +779,13 @@ export function createRareHunting(input: unknown, hooks: Hooks) {
     if (!combat.grouped()) return false;
     if (encounter && lostClaim(encounter))
       finish("Rare pursuit cancelled: claimed outside party", false, false);
-    if (encounter && released(encounter)) finish("Rare pursuit cancelled: selection released");
+    if (encounter && released(encounter)) {
+      // A late report from real travel can retire a newly selected rare before
+      // combat starts. Travel still wins, but is not evidence that this target
+      // is unreachable: allow the ordinary retry after the walk completes.
+      const travelling = combat.releasedForTravel(encounter.target, encounter.start);
+      finish(travelling ? "Rare pursuit yielded to travel" : "Rare pursuit cancelled: selection released", false, !travelling);
+    }
     acquireGrouped();
     if (encounter) {
       tickEncounter();

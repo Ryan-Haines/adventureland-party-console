@@ -1560,12 +1560,13 @@ test(`Cave assembly regroups displaced completed participants before departure (
     const assertOwnership=()=>{if(people.some(actor=>get_player(actor.name)!==actor||actor.map!==map||actor.in!==instance||actor.rip))throw Error('Native staging participants changed during search');};
     const yieldToNative=async()=>{
       maxWorkSliceMs=Math.max(maxWorkSliceMs,cpuNow()-sliceStarted);
-      await new Promise(resolve=>setImmediate(resolve));yields++;assertOwnership();sliceStarted=cpuNow();
+      await new Promise(resolve=>setImmediate(resolve));yields++;assertOwnership();enemies=currentEnemies();sliceStarted=cpuNow();
     };
     const timing=()=>({elapsedMs:cpuNow()-started,yields,maxWorkSliceMs:Math.max(maxWorkSliceMs,cpuNow()-sliceStarted)});
     const rooms=run.cave.rooms.filter(r=>r.map===p.map&&['farm','patrol','fight','boss','darkmage'].includes(r.kind)).map(r=>({id:r.id,kind:r.kind,x:r.x,y:r.y}));
     const encounters=run.cave.rooms.filter(r=>r.map===p.map&&r.encounter&&!r.voted&&!r.done).map(r=>({id:r.id,x:r.x,y:r.y,npc:r.npc?{id:r.npc.id,x:r.npc.x,y:r.npc.y}:null}));
-    const enemies=Array.from(run.cave.actors).filter(a=>!a.dead&&a.map===p.map&&['enemy','predator'].includes(a.zone_actor?.side)).map(a=>({id:a.id,x:a.x,y:a.y}));
+    const currentEnemies=()=>Array.from(run.cave.actors).filter(a=>!a.dead&&a.map===p.map&&['enemy','predator'].includes(a.zone_actor?.side)).map(a=>({id:a.id,x:a.x,y:a.y}));
+    let enemies=currentEnemies();
     const pathClear=(from,to,obstacles,minimum)=>{
       const samples=Math.max(1,Math.ceil(Math.hypot(to.x-from.x,to.y-from.y)/20));
       for(let j=0;j<=samples;j++)for(const r of obstacles)if(Math.hypot(from.x+(to.x-from.x)*j/samples-r.x,from.y+(to.y-from.y)*j/samples-r.y)<minimum)return false;
@@ -1602,15 +1603,37 @@ test(`Cave assembly regroups displaced completed participants before departure (
         seen.add(key);connected.push(next);
       }
     }
-    for(let index=0;index<connected.length;index++){
+    // Prefer a connected corridor away from entry activity; the native search
+    // and delivery share one turn, with current actors refreshed after every yield.
+    for(let index=connected.length-1;index>=0;index--){
       if(cpuNow()-sliceStarted>=8)await yieldToNative();
       const {x,y}=connected[index],target={map:p.map,x,y};
       if(!people.every(actor=>actor.map===p.map&&can_move({map:p.map,x,y,going_x:x,going_y:y,base:actor.base})))continue;
       const offset=displacement(target,160),displaced=displacement(target,85);
       if(offset&&displaced){
+        const seed={map:p.map,x,y,offset,displaced};
+        if(people.some(p=>!p||p.rip||p.map!==seed.map||p.in!==people[0].in))throw Error('Native staging participants unavailable');
+        const obstacles=[...run.cave.rooms.filter(r=>r.map===seed.map&&['farm','patrol','fight','boss','darkmage'].includes(r.kind)).map(r=>({...r,clearance:420})),
+          ...run.cave.rooms.filter(r=>r.map===seed.map&&r.encounter&&!r.voted&&!r.done).map(r=>({...r,clearance:300})),
+          ...Array.from(run.cave.actors).filter(a=>!a.dead&&a.map===seed.map&&['enemy','predator'].includes(a.zone_actor?.side)).map(a=>({x:a.x,y:a.y,clearance:300}))];
+        for(const target of [seed.offset,seed.displaced]){
+          if(!people.every(p=>can_move({map:seed.map,x:seed.x,y:seed.y,going_x:target.x,going_y:target.y,base:p.base})))throw Error('Native staging collision changed');
+          const samples=Math.max(1,Math.ceil(Math.hypot(target.x-seed.x,target.y-seed.y)/20));
+          for(let j=0;j<=samples;j++)if(obstacles.some(r=>Math.hypot(seed.x+(target.x-seed.x)*j/samples-r.x,seed.y+(target.y-seed.y)*j/samples-r.y)<r.clearance))throw Error('Native staging clearance changed');
+        }
+        const beforePositions=people.map(actor=>({name:actor.name,x:actor.x,y:actor.y}));
+        const delivery=people.map(p=>{const name=p.name;
+        if(p.map!==seed.map)throw Error('Native staging floor changed');
+        const context=()=>({map:p.map,in:p.in,generated:G.maps[p.map].generated,info:instances[p.in].info,duel:p.duel,team:p.team,action:p.c});
+        const before=JSON.parse(JSON.stringify(context()));
+        const instance=p.in;transport_player_to(p,instance,[seed.x,seed.y]);
+        if(p.in!==instance||p.map!==seed.map)throw Error('Initial native staging changed instance or floor');
+        const after=JSON.parse(JSON.stringify(context()));
+        if(JSON.stringify(before)!==JSON.stringify(after))throw Error('Initial native staging changed cave action context');
+        return {name,map:p.map,x:p.x,y:p.y,before,after};});
         const path=[];for(let cursor=index;cursor>=0;cursor=connected[cursor].parent)path.push({x:connected[cursor].x,y:connected[cursor].y});
-        return {found:true,...target,offset,displaced,rooms,encounters,enemies,nativeFloor,timing:timing(),connectivity:{seed:run.seed,floor:floor.level,tile,reachableCells:connected.length,path:path.reverse()},
-          before:people.map(actor=>({name:actor.name,x:actor.x,y:actor.y}))};
+        return {found:true,...target,offset,displaced,delivery,rooms,encounters,enemies,nativeFloor,timing:timing(),connectivity:{seed:run.seed,floor:floor.level,tile,reachableCells:connected.length,path:path.reverse()},
+          before:beforePositions};
       }
     }
     return {found:false,map:p.map,rooms,encounters,enemies,nativeFloor,timing:timing(),connectivity:{seed:run.seed,floor:floor.level,tile,reachableCells:connected.length},
@@ -1618,28 +1641,7 @@ test(`Cave assembly regroups displaced completed participants before departure (
   })()`);
   await info.attach('declared-native-cave-safe-staging',{body:JSON.stringify(staging),contentType:'application/json'});
   expect(staging.found,'The actual connected native floor must provide both required safe displacements').toBe(true);
-  const stagingDelivery=await live.admin(`output=(()=>{
-    const seed=${JSON.stringify({map:staging.map,x:staging.x,y:staging.y,offset:staging.offset,displaced:staging.displaced})};
-    const people=['E2EWarrior','E2EPriest'].map(name=>get_player(name));
-    if(people.some(p=>!p||p.rip||p.map!==seed.map||p.in!==people[0].in))throw Error('Native staging participants unavailable');
-    const run=generated_entry(people[0]).record;
-    const obstacles=[...run.cave.rooms.filter(r=>r.map===seed.map&&['farm','patrol','fight','boss','darkmage'].includes(r.kind)).map(r=>({...r,clearance:420})),
-      ...run.cave.rooms.filter(r=>r.map===seed.map&&r.encounter&&!r.voted&&!r.done).map(r=>({...r,clearance:300})),
-      ...Array.from(run.cave.actors).filter(a=>!a.dead&&a.map===seed.map&&['enemy','predator'].includes(a.zone_actor?.side)).map(a=>({x:a.x,y:a.y,clearance:300}))];
-    for(const target of [seed.offset,seed.displaced]){
-      if(!people.every(p=>can_move({map:seed.map,x:seed.x,y:seed.y,going_x:target.x,going_y:target.y,base:p.base})))throw Error('Native staging collision changed');
-      const samples=Math.max(1,Math.ceil(Math.hypot(target.x-seed.x,target.y-seed.y)/20));
-      for(let j=0;j<=samples;j++)if(obstacles.some(r=>Math.hypot(seed.x+(target.x-seed.x)*j/samples-r.x,seed.y+(target.y-seed.y)*j/samples-r.y)<r.clearance))throw Error('Native staging clearance changed');
-    }
-    return people.map(p=>{const name=p.name;
-    if(p.map!==${JSON.stringify(staging.map)})throw Error('Native staging floor changed');
-    const context=()=>({map:p.map,in:p.in,generated:G.maps[p.map].generated,info:instances[p.in].info,duel:p.duel,team:p.team,action:p.c});
-    const before=JSON.parse(JSON.stringify(context()));
-    const instance=p.in;transport_player_to(p,instance,[${staging.x},${staging.y}]);
-    if(p.in!==instance||p.map!==${JSON.stringify(staging.map)})throw Error('Initial native staging changed instance or floor');
-    const after=JSON.parse(JSON.stringify(context()));
-    if(JSON.stringify(before)!==JSON.stringify(after))throw Error('Initial native staging changed cave action context');
-    return {name,map:p.map,x:p.x,y:p.y,before,after};});})()`);
+  const stagingDelivery=staging.delivery;
   await info.attach('native-cave-staging-delivery-context',{body:JSON.stringify(stagingDelivery),contentType:'application/json'});
   await expect.poll(async()=>Promise.all(['E2EWarrior','E2EPriest'].map(name=>live.clients[name].run(
     `character.map===${JSON.stringify(staging.map)}&&Math.hypot(character.real_x-(${staging.x}),character.real_y-(${staging.y}))<5`))),

@@ -597,3 +597,24 @@ capacity observation window, require the actual native stand, released inventory
 commands/tidy work, no attempt or stand-operation block, and acknowledgement of
 the enabled gathering session. Preserve timestamped native/coordinator readiness
 observations and all exact capacity, cooldown and space-release assertions.
+
+A newly selected rare can be retired by a late, still-owned local travel report.
+The native mage/Phoenix failure selected its target and released it for travel
+250 ms later, then permanently rejected the unchanged reachable Phoenix as an
+unproductive selection. Match the exact target identity and retirement time to
+the current encounter: an explicit travel retirement yields with the existing
+three-second retry delay, without issuing return travel. Other selection loss,
+no-progress, and pursuit-deadline failures retain their retry-evidence guards.
+Validate actual mage damage with normal native range, inspect selection and
+travel-retirement logs, and retain the native hit receipts and position timeline.
+
+Cave assembly staging must use current patrol positions. Replaying native floor
+seed `ba10b77ec49d9c58e891b53d88ce3387` exposes both entry activity moving a
+participant away from its staging seed and a patrol crossing the corridor between
+search and delivery. A two-second diagnostic gap after the old search reproduces
+the hosted clearance failure. Refresh actors after each cooperative search yield,
+prefer a connected corridor away from entry activity, and perform final native
+clearance checks and initial placement in the same server turn. Preserve action,
+run, instance and floor context, both displacement distances, the exact single
+assembly repair and final real walking assertions. The same layout and diagnostic
+gap pass with atomic staging; both maintained layouts also pass under ChronAL.
