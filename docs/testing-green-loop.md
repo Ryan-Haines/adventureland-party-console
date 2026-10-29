@@ -504,3 +504,12 @@ three-minute cutoff assertion. Retain only matching incoming native transfers in
 a test-owned listener installed before publication. Attach its ledger even on
 failure and remove that exact listener in finally; do not enlarge global buffers,
 fabricate receipts, or weaken the inventory and successful-brew assertions.
+
+The allowance test can lose its open priest event popover during coordinator
+restart: the hosted trace contains a genuine startup core response with only W,
+followed by the complete W/P/M roster. A passing coordinator quota assertion does
+not prove that the priest card or its transient menu survived. Replay that exact
+partial response in Chromium to reproduce the missing-row failure, then require
+a recovered, explicitly opened priest view and the original zero balances before
+advancing the clock. Preserve restart persistence, account ownership, duplicate
+door handling and the next-day unknown allowances.
