@@ -497,3 +497,10 @@ require both the merchant's real item-received receipt and its inventory before
 finishing. Keep the actual successful native brew, persisted brewing plan and
 calendar-collision publication assertions. Do not move combatants or override
 transfer range merely to force early consolidation.
+
+Receipt observation can fail independently: the general client event ledger is
+capped at 2,000 entries, so a legitimate early transfer can be evicted before the
+three-minute cutoff assertion. Retain only matching incoming native transfers in
+a test-owned listener installed before publication. Attach its ledger even on
+failure and remove that exact listener in finally; do not enlarge global buffers,
+fabricate receipts, or weaken the inventory and successful-brew assertions.

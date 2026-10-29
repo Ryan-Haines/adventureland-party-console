@@ -358,6 +358,18 @@ test.describe('October Cipher complete stock at cutoff',()=>{
   test('October Cipher gathers through the cutoff then brews with all four ingredient types',async({live},info)=>{
     test.setTimeout(420_000);
     const name='E2EWarrior',merchant='E2EMerchant';
+    // Retain these native receipts independently of the rolling combat log.
+    await live.clients[merchant].frame.evaluate(()=>{
+      const game=window as any;
+      const ledger:any[]=[];
+      const listener=(data:any)=>{
+        if(data?.response==='item_received'&&data.item==='verdantspore'&&['E2EWarrior','E2EPriest'].includes(data.name)&&data.q>0)
+          ledger.push({at:Date.now(),data:JSON.parse(JSON.stringify(data))});
+      };
+      game.__e2eCipherTransfers={ledger,listener,socket:game.socket};
+      game.socket.on('game_response',listener);
+    });
+    try{
     await live.post('/formation',{leader:name});
     await live.post('/formation',{character:'E2EPriest',follow:true});
     const seed=await live.admin(`output=(()=>{
@@ -394,8 +406,7 @@ test.describe('October Cipher complete stock at cutoff',()=>{
     const receipts=await live.admin('output=e2eCipherReceipts');
     expect(receipts[0].at).toBeGreaterThanOrEqual(seed.board.gather_end);
     await expect.poll(()=>live.clients[merchant].run("character.items.filter(item=>item?.name==='verdantspore').reduce((n,item)=>n+(item.q||1),0)"),{timeout:120_000}).toBeGreaterThan(0);
-    const receivedSpores=async()=>(await live.clients[merchant].events()).filter(entry=>entry.event==='game_response'&&entry.at>=seed.board.start&&
-      entry.data?.response==='item_received'&&entry.data.item==='verdantspore'&&[name,'E2EPriest'].includes(entry.data.name)&&entry.data.q>0);
+    const receivedSpores=async()=>live.clients[merchant].frame.evaluate(start=>(window as any).__e2eCipherTransfers.ledger.filter((entry:{at:number})=>entry.at>=start),seed.board.start);
     await expect.poll(async()=>(await receivedSpores()).length,{timeout:30_000,message:'Native transfer receipts must confirm delivery of the gathered ingredient'}).toBeGreaterThan(0);
     const transferReceipts=await receivedSpores();
     const journal=await live.clients[name].run(`get('party-october-${name}')`);
@@ -409,6 +420,15 @@ test.describe('October Cipher complete stock at cutoff',()=>{
       },{timeout:30_000}).toBe(seed.calendarCollision.id);
       await info.attach('october-native-cutoff-complete',{body:JSON.stringify({seed,gatheringStock,before,receipts,transferReceipts,journal,state:await live.state()}),contentType:'application/json'});
     }finally{await live.admin('globalThis.__e2eAllowScheduledEvents=false;output=true');}
+    }finally{
+      const transfers=await live.clients[merchant].frame.evaluate(()=>{
+        const game=window as any,observer=game.__e2eCipherTransfers;
+        observer.socket.off('game_response',observer.listener);
+        delete game.__e2eCipherTransfers;
+        return observer.ledger;
+      });
+      await info.attach('october-retained-native-transfers',{body:JSON.stringify(transfers),contentType:'application/json'});
+    }
   });
 });
 
