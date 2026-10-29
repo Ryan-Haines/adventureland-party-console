@@ -629,3 +629,12 @@ covered pixels before and after capture. Preserve the existing texture threshold
 one-definition-per-subscriber count, hidden-tab stream cleanup and released-floor
 404 assertions. Attach the choice/rendering observations and final pixels so a
 dialogue interruption remains distinguishable from missing floor data or art.
+
+The retained Stomp fixture captures its ally timestamp before first-use shared
+context extraction and VM compilation. On a busy runner that setup can exceed
+the production five-second freshness limit, making the first fresh-ally assertion
+fail before any gameplay action. Use one fixed clock for this existing fixture
+and its party observation. A 5.5-second delay after context construction reproduces
+the old failure and passes with the fixture clock; keep all six existing cases,
+including explicit stale status, exact mana cost, the 60% HP boundary, weapon
+compatibility, cooldown/range checks and neutral-target protection unchanged.
