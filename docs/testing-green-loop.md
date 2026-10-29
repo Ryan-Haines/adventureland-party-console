@@ -563,3 +563,26 @@ Capture the single talk command from the action response and stop clicking once
 issued. Poll one fresh snapshot for that exact speaker/command's completion and
 its reopened shop. Preserve the actual purchase, native sold state, buyer receipt,
 three exhausted automatic repairs and the one-step manual Retry serial change.
+
+A required Cave encounter may finish between the completion journey selecting
+its destination and the coordinator receiving that move. The native server
+correctly rejects an already-completed room with `Destination unavailable`.
+Reproduce the boundary by delaying only that room's real move request after its
+native vote, until both participants report the room done. Retire the stale
+selection only after one fresh snapshot proves both living participants have
+completed the exact required room in the same run and floor, without a pending
+choice. Check that state before clicking as well as after the specific rejection;
+other destinations and errors retain their acceptance assertions. Preserve all
+native combat, votes, required-room completion, displaced stairs and next-floor
+arrival checks. Inspect the request/completion attachments as well as pass/fail:
+the ChronAL polling wrapper can retry a thrown callback that native polling
+surfaces immediately.
+
+Historical cleanout deduplication requires its automation to be enabled before
+the fixture restarts with seeded jobs. Otherwise a normal restart heartbeat can
+discard those disabled jobs before the test enables the routine. Persist the
+routine configuration first, keep the merchant forced to stand during restore,
+and retain the exact single-job/two-retry checks before releasing it. A native
+heartbeat between restore and the old enable call exercises the failing order;
+the subsequent bank withdrawals, NPC sale counts, reserve quantities and restart
+persistence still use genuine native outcomes.

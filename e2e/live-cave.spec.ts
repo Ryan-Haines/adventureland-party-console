@@ -130,6 +130,10 @@ async ({ live, page }, info) => {
     const expectedRun=point.map.slice(5,point.map.lastIndexOf('_')),expectedFloor=Number(point.map.split('_').at(-1));
     const requests:{request:import('@playwright/test').Request;response?:Promise<{status:number;body:any;request:any}>}[]=[],attempts:unknown[]=[];
     let consumed=0,acceptedState:any,deferred=false;
+    const completedRequiredRoom=(view:any)=>deferNativeChoice&&view.state.phase==='active'&&view.state.run===expectedRun&&
+      view.members.length===2&&view.members.every((m:any)=>m.fresh&&m.observation?.alive&&
+        m.observation.cave?.run===expectedRun&&m.observation.cave.floor===expectedFloor&&!m.observation.cave.paused&&
+        m.observation.cave.points.some((p:any)=>p.id===point.id&&p.map===point.map&&p.required&&p.done));
     const match=(request:import('@playwright/test').Request)=>request.method()==='POST'&&new URL(request.url()).pathname==='/party-api/daily-dungeons'&&
       request.postDataJSON()?.action==='move'&&request.postDataJSON()?.target===point.id;
     const requested=(request:import('@playwright/test').Request)=>{if(match(request))requests.push({request});};
@@ -140,6 +144,9 @@ async ({ live, page }, info) => {
     const identity=async()=>{
       const view=await dungeon();expect(view.state.phase).toBe('active');expect(view.state.run).toBe(expectedRun);
       expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===expectedRun&&m.observation.cave.floor===expectedFloor)).toBe(true);
+      if(completedRequiredRoom(view)){
+        deferred=true;attempts.push({submitted:false,completedRoom:point.id,view});return null;
+      }
       const paused=view.members.some((m:any)=>m.observation.cave.paused);
       if(paused&&deferNativeChoice&&requests.length===consumed){
         const nativeChoice=view.members.find((m:any)=>m.observation.cave.paused)?.observation.cave.choice;
@@ -182,6 +189,15 @@ async ({ live, page }, info) => {
         const result=await requests[consumed++].response!;
         expect(result.request.run).toBe(expectedRun);expect(result.request.target).toBe(point.id);
         attempts.push({submitted:true,status:result.status,error:result.body.error});
+        if(deferNativeChoice&&result.status===409&&result.body.error==='Destination unavailable'){
+          // Combat may finish after selection but before the move reaches the
+          // coordinator. Only both fresh native completion receipts retire it.
+          let completed:any;
+          await expect.poll(async()=>{
+            completed=await dungeon();return completedRequiredRoom(completed);
+          },{timeout:10_000,message:'Rejected required destination must have completed for both native participants'}).toBe(true);
+          deferred=true;attempts.push({submitted:true,completedRoom:point.id,view:completed});return true;
+        }
         if(result.status===409&&result.body.error==='Fresh matching dungeon run required'){if(!await identity())return true;return false;}
         expect(result.status,'Room selection must be accepted; unrelated errors are not retried').toBe(200);
         const accepted=result.body.state;expect(accepted.run).toBe(expectedRun);

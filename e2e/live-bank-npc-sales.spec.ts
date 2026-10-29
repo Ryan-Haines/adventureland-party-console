@@ -71,12 +71,14 @@ test('bank sale scheduling collapses cleanout retries and sells only excess rese
     await live.post('/merchant/force-stand',{enabled:true});
     await live.post('/merchant/auto-npc-sale',{item:{name:'helmet',level:0},keep:2});
     await live.post('/merchant/auto-npc-sale',{item:{name:'smoke'},keep:150});
+    // Persist the enabled routine before restoring its historical jobs. A
+    // restart heartbeat correctly removes jobs whose automation is disabled.
+    await live.post('/merchant/routine-priorities',{priorities:{'auto npc sales':98,'inventory cleanout':95,withdrawals:10},enabled:{'inventory cleanout':true,withdrawals:true,'auto npc sales':false}});
     // Historical input reproduces the accumulated queue, never native outcomes.
     await live.restoreHistoricalSettings(()=>({merchantQueue:Array.from({length:20},(_,i)=>({
       id:'historical-cleanout-'+i,target,reason:'inventory cleanout',queuedAt:Date.now()-20_000+i,
       rendezvousRetryCount:i%3,retryAt:Date.now()+60_000,
     }))}));
-    await live.post('/merchant/routine-priorities',{priorities:{'auto npc sales':98,'inventory cleanout':95,withdrawals:10},enabled:{'inventory cleanout':true,withdrawals:true,'auto npc sales':false}});
     await expect.poll(async()=>(await live.state()).merchantQueue.filter((job:any)=>job.reason==='inventory cleanout'&&job.target===target).length).toBe(1);
     const collapsed=await live.state();
     expect(collapsed.merchantQueue.find((job:any)=>job.reason==='inventory cleanout').rendezvousRetryCount).toBe(2);
