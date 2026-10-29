@@ -541,3 +541,25 @@ Equip response until the current native attempt finishes. Prepare the UI while g
 is disabled, then require a real native cast immediately before Equip and match
 the stopped attempt's ID. Preserve native equip counts, resumed tool use,
 restoration, item conservation and restart persistence.
+
+A delayed Anniversary preemption can outlive the convoy it cancelled. The hosted
+restart journey retained two priest failures whose native stop stacks pointed to
+preemptConvoyForAnniversary, exhausting the Hunt destination before restart.
+Record the genuine native smart-stop boundary, then delay only delivery of its
+already-completed allowed permission until a newer native Hunt command owns
+movement. The old implementation spends a recovery attempt; the guarded one
+retires the stale continuation. Fence both the second stop and the final convoy
+flag by runtime, navigation revision, command and convoy identity, and honor
+skipped/already-returning preemption replies. Keep the original restart journeys,
+native gifts, physical mission arrival, real kill and unchanged retry ledger.
+The regression owns a completed callback, leaving network timeouts and unrelated
+status or movement requests untouched, and restores its exact native/AJAX hooks.
+
+The Cave merchant test can overwrite its own successful talk by repeatedly
+selecting the room while waiting for the shop observation. The hosted evidence
+contains successive talk commands followed by a gather command after the shop
+reopened; replaying that extra native room selection reproduces the assertion.
+Capture the single talk command from the action response and stop clicking once
+issued. Poll one fresh snapshot for that exact speaker/command's completion and
+its reopened shop. Preserve the actual purchase, native sold state, buyer receipt,
+three exhausted automatic repairs and the one-step manual Retry serial change.

@@ -12039,14 +12039,25 @@
     }});
     // Do not wait for the next status heartbeat before allowing the kiss route.
     if (permission.huntTurnIn) { huntTurnInPriority = true; return; }
+    if (permission.skipped || permission.alreadyReturning) return false;
     if (!await eventTravelAllowed("anniversary")) return;
+    var preemptedConvoy = convoyTraveling, preemptedRevision = navigationIntent.revision,
+      preemptedCommand = lastCommand;
+    function ownsPreemption() {
+      return runtimeCurrent() && !anniversaryRoundAborted(event) &&
+        navigationIntent.revision === preemptedRevision && lastCommand === preemptedCommand &&
+        (!convoyTraveling || convoyTraveling === preemptedConvoy);
+    }
     if (convoyTraveling) { releaseConvoyCruise(convoyTraveling); convoyTraveling.cancelled = true; }
     followingLeader = false;
     if (typeof stop === "function") {
       try { await stop("smart"); } catch (_anniversaryPreemptSmart) { /* No smart route is active. */ }
-      if (!await eventTravelAllowed("anniversary")) return;
+      // Permission and native stop completion can outlive the cancelled route.
+      // A newer command owns its movement even if this old permission allowed us.
+      if (!ownsPreemption() || !await eventTravelAllowed("anniversary") || !ownsPreemption()) return false;
       try { await stop("move"); } catch (_anniversaryPreemptMove) { /* No direct move is active. */ }
     }
+    if (!ownsPreemption()) return false;
     partyConvoyActive = false;
   }
 
@@ -12174,7 +12185,7 @@
       !!(character.s && character.s.anniversary_kiss);
     if (anniversaryNeedsTravel && character.ctype !== "merchant" &&
         !anniversaryVisitAlreadyComplete && (partyConvoyActive || convoyTraveling)) {
-      try { await preemptConvoyForAnniversary(event); }
+      try { if (await preemptConvoyForAnniversary(event) === false) return; }
       catch (preemptError) {
         anniversaryStage = "waiting to interrupt farming travel for anniversary";
         return;

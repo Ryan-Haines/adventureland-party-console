@@ -2316,3 +2316,11 @@ look obsolete to surviving native CODE. Validate the restored-Town command-seque
 journey in live-navigation-supersession.spec.ts, including native arrival after
 coordinator restart and delayed completion publication. Stage the completed
 console artifact; coordinator activation remains an explicitly requested action.
+
+Anniversary preemption continuations own the command, navigation revision and
+convoy they cancelled. Recheck that identity after native stop and permission
+waits before stopping direct movement or clearing convoy activity; a newer Hunt
+or return command must remain untouched. Skipped and already-returning replies
+do not authorize a local stop. Validate live-hunt-anniversary-preemption and the
+original Anniversary restart/reward/return journeys on ChronAL and native.
+Build and stage character/coordinator assets together; activation remains explicit.
