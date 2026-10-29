@@ -586,3 +586,14 @@ and retain the exact single-job/two-retry checks before releasing it. A native
 heartbeat between restore and the old enable call exercises the failing order;
 the subsequent bank withdrawals, NPC sale counts, reserve quantities and restart
 persistence still use genuine native outcomes.
+
+An open native stand and an empty coordinator command queue do not prove that
+the client's stand reconciliation has finished. The gathering-capacity case can
+start its reporting window while that inventory command still owns the client;
+hosted receipts show a later close/reopen and eventually the correct capacity
+block, without a cast or cooldown change. Delay only delivery of an already
+completed, owned idle-status callback to reproduce the gap. Before the unchanged
+capacity observation window, require the actual native stand, released inventory
+commands/tidy work, no attempt or stand-operation block, and acknowledgement of
+the enabled gathering session. Preserve timestamped native/coordinator readiness
+observations and all exact capacity, cooldown and space-release assertions.

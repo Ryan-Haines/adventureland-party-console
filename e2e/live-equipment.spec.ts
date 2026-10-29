@@ -6,12 +6,29 @@ const gatheringTest=test.extend({initialGatheringReady:true});
 gatheringTest('merchant gathering waits at capacity without resetting cooldowns',async({live,page},info)=>{
   const name='E2EMerchant';
   for(const mode of ['fishing','mining'])await live.post('/merchant/gather',{mode,enabled:false});
-  async function standReady(){await expect.poll(async()=>{
-    const [state,response]=await Promise.all([live.state(),fetch(live.url+'/party-api/state?section=fast',{signal:AbortSignal.timeout(15_000)})]);
+  async function standReady(gatheringEnabled=false){
+    const observations:any[]=[];
+    try{await expect.poll(async()=>{
+    const [state,response,native]=await Promise.all([live.state(),fetch(live.url+'/party-api/state?section=fast',{signal:AbortSignal.timeout(15_000)}),
+      live.clients[name].frame.evaluate(()=>{
+        const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+        return {stand:!!root.character.stand,inventoryCommands:Number(root.__partyInventoryCommands)||0,
+          tidy:!!root.__merchantInventoryTidy,mode:root.__merchantGatheringSession?.mode,
+          blocked:root.__merchantGatheringBlockedReason,attempt:!!root.__merchantGatheringAttempt};
+      })]);
     expect(response.ok).toBe(true);
     const fast=await response.json();expect(fast.pendingCommands).toEqual(expect.any(Object));
-    return state.characters[name]?.standOpen && fast.pendingCommands[name]?.type!=='merchant-idle';
-  },{timeout:90_000,message:'Native stand return and reconciliation must finish before the capacity-only fixture'}).toBe(true);}
+    observations.push({at:Date.now(),seenAt:state.characters[name]?.seenAt,stand:state.characters[name]?.standOpen,
+      command:fast.pendingCommands[name],native});
+    if(observations.length>100)observations.shift();
+    // Queue removal and opening the native stand precede completion of the
+    // client's reconciliation. Wait for its inventory owner to release too.
+    return state.characters[name]?.standOpen && fast.pendingCommands[name]?.type!=='merchant-idle'&&
+      native.stand&&native.inventoryCommands===0&&!native.tidy&&!native.attempt&&
+      native.blocked!=='stand operation'&&(!gatheringEnabled||native.mode==='fishing');
+    },{timeout:90_000,message:'Native stand return and reconciliation must finish before the capacity-only fixture'}).toBe(true);
+    }finally{await info.attach('native-stand-readiness',{body:JSON.stringify({gatheringEnabled,observations}),contentType:'application/json'});}
+  }
   const standTool=await live.admin(`output=(()=>{const p=get_player('${name}');
     if(!G.items.stand0.stand)throw new Error('Native stand0 definition missing');
     p.items[12]={name:'stand0'};cache_player_items(p);resend(p,'reopen+cid');return p.items[12];})()`);
@@ -54,7 +71,7 @@ gatheringTest('merchant gathering waits at capacity without resetting cooldowns'
   // Enabling gathering can admit another stand reconciliation. Its completion
   // is separate from the dashboard's capacity decision. Observe that real
   // operation before starting the capacity-only observation window.
-  await standReady();
+  await standReady(true);
   await expect.poll(async()=>{
     const state=await live.state(),merchant=state.characters[name];
     expect(state.gatheringCooldowns).toEqual(before);
