@@ -485,3 +485,15 @@ it owns an actual wait, record each convoy/epoch boundary, and inject the late
 80-unit native walk once. Require both real walks, the final exact boundary owner,
 continued native kills and the unchanged retry ledger. Do not alter movement,
 coordinator reports or recovery budgets to make the fixture pass.
+
+The cutoff journey later timed out on merchant stock despite the fighters holding
+over 160 native Verdant Spores. Combat had settled both fighters more than 550
+units from the merchant, outside the 350-unit transfer guard. Gathering completion
+uses fresh shared party stock; collection can occur when everyone travels to the
+witch after cutoff. Replay the retained inventories to distinguish those two
+milestones, and validate the complete journey locally. Observe native party stock
+before cutoff, preserve zero early brews and the original cutoff bound, then
+require both the merchant's real item-received receipt and its inventory before
+finishing. Keep the actual successful native brew, persisted brewing plan and
+calendar-collision publication assertions. Do not move combatants or override
+transfer range merely to force early consolidation.
