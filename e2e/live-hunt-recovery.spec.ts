@@ -8,7 +8,7 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   await live.clients[W].run(`(()=>{
     const generation=globalThis.__partyRuntimeGeneration;
     const excludedConvoy=sharedRoutine.combatTraceSnapshot().convoy;
-    const fault=globalThis.__e2eFallbackStop={generation,issued:0,receipt:null,timeout:setTimeout,drift:null,boundary:null,
+    const fault=globalThis.__e2eFallbackStop={generation,issued:0,receipt:null,timeout:setTimeout,drift:null,boundary:null,boundaries:[],
       detailDescriptor:Object.getOwnPropertyDescriptor(globalThis,'__partyNavigationDetail'),detailValue:globalThis.__partyNavigationDetail};
     // An already stopped actor can skip settlement entirely. At this owned
     // rendezvous boundary, send a real zero-distance native move: the native
@@ -17,11 +17,15 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
     Object.defineProperty(globalThis,'__partyNavigationDetail',{configurable:true,enumerable:true,
       get(){return fault.detailValue;},set(value){
         fault.detailValue=value;
-        if(value!=='rendezvous'||fault.boundary||!fault.receipt||globalThis.__partyRuntimeGeneration!==generation)return;
+        if(value!=='rendezvous'||fault.drift||!fault.receipt||globalThis.__partyRuntimeGeneration!==generation)return;
         const convoy=sharedRoutine.combatTraceSnapshot();
         if(convoy.convoy===fault.receipt.owner.convoyId||convoy.convoyPhase!=='rendezvous'||convoy.cancelled)return;
+        // An early origin correction can reject this attempt before any wait.
+        // Keep the fault eligible for the next exact owner until the late walk runs.
+        if(fault.boundary?.convoy===convoy.convoy&&fault.boundary?.epoch===convoy.convoyEpoch)return;
         const boundary=fault.boundary={convoy:convoy.convoy,epoch:convoy.convoyEpoch,wasMoving:!!character.moving,
           from:{map:character.map,x:character.real_x,y:character.real_y}};
+        fault.boundaries.push(boundary);
         try{
           Promise.resolve(move(character.real_x,character.real_y)).then(result=>{boundary.result=result;},error=>{boundary.result={error:String(error?.reason||error)};});
           boundary.pending=!!character.moving;
@@ -33,7 +37,8 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
     fault.wrappedTimeout=function(callback,delay,...args){
       const convoy=sharedRoutine.combatTraceSnapshot();
       if(delay!==80||fault.drift||!fault.receipt||globalThis.__partyRuntimeGeneration!==generation||
-          convoy.convoy===fault.receipt.owner.convoyId||convoy.convoyPhase!=='rendezvous')
+          convoy.convoy===fault.receipt.owner.convoyId||convoy.convoyPhase!=='rendezvous'||
+          fault.boundary?.convoy!==convoy.convoy||fault.boundary?.epoch!==convoy.convoyEpoch)
         return fault.timeout.call(globalThis,callback,delay,...args);
       const drift=fault.drift={convoy:convoy.convoy,epoch:convoy.convoyEpoch};
       return fault.timeout.call(globalThis,async()=>{
@@ -68,6 +73,24 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
       catch(error){fault.receipt.stopError=String(error);}
     },50);
   })()`);
+  // Hold only the first genuine fallback preparation response while a native
+  // eight-unit walk makes its origin stale. The early origin check must reprepare
+  // before the separate settlement-time drift fault is admitted.
+  let originDriftIssued=false;
+  await live.clients[W].page.route('**/party-api/status',async route=>{
+    const response=await route.fetch(),state=await response.json(),command=state.command;
+    if(!originDriftIssued&&command?.nativeFallback&&['prepare','shared-prepare'].includes(command.phase)){
+      originDriftIssued=true;
+      await live.clients[W].run(`(async()=>{
+        const fault=globalThis.__e2eFallbackStop;
+        const from={map:character.map,x:character.x,y:character.y},to={x:character.x,y:character.y+8};
+        if(!fault.receipt||!can_move_to(to.x,to.y))throw Error('Early origin drift requires the interrupted native route and a walkable destination');
+        const drift=fault.preRendezvousDrift={command:${JSON.stringify(command)},from};
+        await xmove(to.x,to.y);drift.arrived={map:character.map,x:character.x,y:character.y};
+      })()`);
+    }
+    await route.fulfill({response});
+  });
   try{
     await start(live);
     await expect.poll(async()=>await live.clients[W].run('globalThis.__e2eFallbackStop?.issued===1'),
@@ -88,18 +111,24 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   const finalState=await live.state(), finalHunt=profile(finalState).monsterHunt;
   expect(finalHunt.cycleId).toBe(recovering.cycleId);
   expect(finalHunt.routeRecovery,'Successful arrival must retain the spent retry budget').toEqual(recovering.routeRecovery);
-  const {drift,boundary}=await live.clients[W].run('({drift:globalThis.__e2eFallbackStop.drift,boundary:globalThis.__e2eFallbackStop.boundary})');
+  const {drift,boundary,boundaries,preRendezvousDrift}=await live.clients[W].run('({drift:globalThis.__e2eFallbackStop.drift,boundary:globalThis.__e2eFallbackStop.boundary,boundaries:globalThis.__e2eFallbackStop.boundaries,preRendezvousDrift:globalThis.__e2eFallbackStop.preRendezvousDrift})');
+  expect(originDriftIssued).toBe(true);
+  expect(preRendezvousDrift.arrived.map).toBe(preRendezvousDrift.from.map);
+  expect(Math.hypot(preRendezvousDrift.arrived.x-preRendezvousDrift.from.x,preRendezvousDrift.arrived.y-preRendezvousDrift.from.y)).toBeGreaterThan(7);
+  expect(boundaries.some((entry:any)=>entry.convoy===preRendezvousDrift.command.convoyId&&entry.epoch===preRendezvousDrift.command.epoch)).toBe(true);
   expect(drift).toBeTruthy();expect(drift.error).toBeUndefined();
+  expect({convoy:drift.convoy,epoch:drift.epoch}).not.toEqual({convoy:preRendezvousDrift.command.convoyId,epoch:preRendezvousDrift.command.epoch});
   expect(boundary.pending).toBe(true);expect(boundary.error).toBeUndefined();
   expect({convoy:boundary.convoy,epoch:boundary.epoch}).toEqual({convoy:drift.convoy,epoch:drift.epoch});
   expect(drift.arrived.map).toBe(drift.from.map);
   expect(Math.hypot(drift.arrived.x-drift.from.x,drift.arrived.y-drift.from.y)).toBeGreaterThan(55);
   await artifact(live,info,'native-fallback-arrival-and-continuing-kills',{interrupted,recovering,firstKills});
   }finally{
+    await live.clients[W].page.unrouteAll({behavior:'wait'});
     const fault=await live.clients[W].run(`(()=>{const fault=globalThis.__e2eFallbackStop;if(fault){clearInterval(fault.timer);if(globalThis.setTimeout===fault.wrappedTimeout)globalThis.setTimeout=fault.timeout;
       if(fault.detailDescriptor)Object.defineProperty(globalThis,'__partyNavigationDetail',{...fault.detailDescriptor,value:fault.detailValue});
       else{delete globalThis.__partyNavigationDetail;globalThis.__partyNavigationDetail=fault.detailValue;}}
-      return fault?{generation:fault.generation,issued:fault.issued,receipt:fault.receipt,drift:fault.drift,boundary:fault.boundary}:null;})()`);
+      return fault?{generation:fault.generation,issued:fault.issued,receipt:fault.receipt,drift:fault.drift,boundary:fault.boundary,boundaries:fault.boundaries,preRendezvousDrift:fault.preRendezvousDrift}:null;})()`);
     await info.attach('native-fallback-stop-ledger',{body:JSON.stringify(fault),contentType:'application/json'});
   }
 });

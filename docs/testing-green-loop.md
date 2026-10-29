@@ -472,3 +472,16 @@ their existing delivery semantics. The maintained delayed-stop journey requires
 the identical retained command, exactly one native Broom request, real tool
 resumption/restoration, unchanged item counts and restart persistence. Native
 completion remains a separate receipt assertion from command acceptance.
+
+A later native fallback run completed arrival and continued killing with its
+retry budget intact, but recorded no injected settlement drift. The first fallback
+preparation was already stale at the initial origin check; it legitimately
+reprepared before reaching the 80 ms settlement wait. A one-shot fixture boundary
+therefore cannot establish that the intended late-drift fault ran. Reproduce the
+early correction by holding only the first genuine fallback preparation response
+while the native leader walks eight units, then deliver that unchanged response.
+Keep the settlement fixture eligible across rejected preparation attempts until
+it owns an actual wait, record each convoy/epoch boundary, and inject the late
+80-unit native walk once. Require both real walks, the final exact boundary owner,
+continued native kills and the unchanged retry ledger. Do not alter movement,
+coordinator reports or recovery budgets to make the fixture pass.
