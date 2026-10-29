@@ -337,6 +337,22 @@ not activate it.
 
 # Character coordinator
 
+Safe maintenance retires an unassigned worker only after its process is disabled
+and disconnected. A BankBoi handoff therefore replaces the merchant in the safety
+barrier without treating stale telemetry as proof of logout. New storage swaps
+pause during maintenance, and the host captures the fresh acknowledged roster
+after draining for CODE activation. Validate the safe-host slot-handoff ledger
+and native BankBoi maintenance journey. Stage the completed candidate; coordinator
+activation and host restart remain explicit separate actions.
+
+Automatic NPC-sale discovery includes saved BankBoi inventories after native bank
+stock, using the existing durable storage retrieval flow. Keep allowances, locked
+stock, whole-stack craft protection and withdrawal deduplication still apply.
+Automatic stand discovery retains its native-bank scope. Validate the automatic
+BankBoi NPC-sale journey in `live-bankboi-offerings.spec.ts`, including disabled
+ordinary withdrawals and restart persistence. Stage the completed console candidate;
+activation remains explicit.
+
 Pending inventory cleanouts collapse by recipient at startup and dispatch,
 including retries appended outside normal queue admission. Preserve the oldest
 queue age, latest retry eligibility and largest retry counters; an active

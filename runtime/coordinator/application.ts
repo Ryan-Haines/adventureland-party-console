@@ -302,7 +302,7 @@ export function startCoordinatorApplication(
       character_manage,
       {
         now: () => Date.now(),
-        plan: () => bankStackRouting.servicePlan(party),
+        plan: () => consoleUpdate.blocksMerchant() ? null : bankStackRouting.servicePlan(party),
         assignSlot: assignHeadlessSlot,
         stop: (block) => softkill_block(block),
         persistRoster: persistRosterState,
@@ -2335,7 +2335,8 @@ export function startCoordinatorApplication(
                 dungeons.install(router);
                 upgradePreviews.install(router);
                 router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
-                  [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete')));
+                  [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete',
+                  Object.entries(character_manage).filter(([, block]) => block.enabled === false && block.connected === false && !block.instance).map(([name]) => name))));
                 const codeActivation = () => {
                   try { return String(JSON.parse(fs_regular.readFileSync(__dirname + '/../CODE/adventure_land/activation.json', 'utf8')).id || '') || null; }
                   catch { return null; }

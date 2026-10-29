@@ -1,6 +1,7 @@
 import { itemRuleConflicts } from "../inventory/shared-rules.ts";
 import type { DeconstructionMark } from "./deconstruction.ts";
 import type { Item, InventoryEntry } from "../contracts/item.ts";
+import type { BankboiInventory } from '../inventory/bankboi-completion.ts';
 import { availableCraftStock, craftProtection, type CraftReservationState } from "./craft-reservations.ts";
 import { automaticCommerceRuleKey, sameMarkedItem } from "../inventory/item-identity.ts";
 import { reconcileNpcSales, type NpcSale } from "./npc-sales.ts";
@@ -19,6 +20,7 @@ interface SaleEntry {
   item: Item;
 }
 interface SalesState extends PlayerSaleState, CraftReservationState {
+  bankbois?: Record<string, Pick<BankboiInventory, 'name' | 'items'>>;
   bankSnapshot?: { packs?: Record<string, (InventoryEntry | null)[] | undefined> } | null;
   withdrawals?: Record<string, { pack?: string; slot?: number; item?: Item | null; standListingId?: string; autoNpcRuleKey?: string }[] | undefined>;
   itemCollectionThreshold?: number;
@@ -166,7 +168,9 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
   }
   function availableBankStock() {
     const pending = state.withdrawals?.[String(state.merchantCharacter)] || [];
-    const stock = Object.entries(state.bankSnapshot?.packs || {}).flatMap(([pack, entries]) =>
+    const packs = [...Object.entries(state.bankSnapshot?.packs || {}),
+      ...Object.values(state.bankbois || {}).map(worker => ['bankboi:' + worker.name, worker.items] as const)];
+    const stock = packs.flatMap(([pack, entries]) =>
       (entries || []).map(entry => entry && !pending.some(mark => mark.pack === pack && mark.slot === entry.slot && sameMarkedItem(mark.item,entry.item)) ? { ...entry, craftLocation: pack } : null));
     // Withdrawals move whole stacks; leave partially reserved stacks untouched.
     return availableCraftStock(stock, craftProtection(state)).map((entry, index) =>
@@ -174,6 +178,7 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
   }
   function bankStandEntry(entry: (InventoryEntry & { craftLocation: string }) | null): entry is InventoryEntry & SaleEntry & { craftLocation: string } {
     if (state.merchantCurrent) return false;
+    if (entry?.craftLocation.startsWith('bankboi:')) return false;
     if (!entry?.item || entry.item.l || !Number.isSafeInteger(entry.slot)) return false;
     return !state.autoNpcSales[automaticCommerceRuleKey(entry.item)] && !saleConflict(entry.item);
   }

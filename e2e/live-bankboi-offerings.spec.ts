@@ -2,6 +2,83 @@ import {test,expect} from './live-fixtures';
 
 const merchant='E2EMerchant',storage='E2EBankBoi';
 test.use({liveHeadless:true});
+
+test('safe maintenance waits for the active BankBoi instead of the stopped merchant',async({live},info)=>{
+  test.setTimeout(240_000);
+  // Failure inventory: recent merchant telemetry survives its native logout;
+  // maintenance waits forever for that old owner, misses the replacement, or
+  // admits another slot swap during the hold. Native worker lifecycle and
+  // client acknowledgements must prove the roster, rather than seeded receipts.
+  await live.post('/steam/action',{character:merchant,action:'logout'});
+  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
+  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
+  await live.post('/slots/1/spawn',{character:merchant});
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
+  // Keep remote storage away from the bank so the maintenance request can
+  // observe its real slot occupancy before the visit completes.
+  await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'});Object.assign(c.info,{map:'winterland',in:'winterland',x:0,y:0,items:[{name:'offeringp',q:1}]});await db.collection('character').replaceOne({_id:c._id},c);return true;})()`);
+  await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'ready',items:[{slot:0,item:{name:'offeringp',q:1}}]}}}));
+  await live.post('/command',{character:merchant,type:'withdraw',pack:'bankboi:'+storage,slot:0,item:{name:'offeringp',q:1}});
+  const samples:any[]=[];
+  try{
+    await expect.poll(async()=>(await live.state()).activeSlots.some((s:any)=>s.character===storage),{timeout:90_000}).toBe(true);
+    live.consoleDrainLease('bankboi-safe-handoff');
+    await expect.poll(async()=>{
+      const state=await live.state();
+      const maintenance=await fetch(live.deploymentPaths.apiUrl+'/party-api/console-maintenance').then(r=>r.json());
+      samples.push({at:Date.now(),maintenance,slots:state.activeSlots,transaction:state.bankboiTransaction,
+        merchant:state.characters[merchant]?.consoleMaintenance,storage:state.characters[storage]?.consoleMaintenance});
+      return maintenance.id==='bankboi-safe-handoff'&&maintenance.ready&&
+        state.activeSlots.some((s:any)=>s.character===storage)&&
+        state.characters[storage]?.consoleMaintenance?.ready===true;
+    },{timeout:30_000}).toBe(true);
+  }finally{
+    await info.attach('native-bankboi-safe-handoff',{body:JSON.stringify({samples,state:await live.state()}),contentType:'application/json'});
+    live.consoleDrainLease(null);
+  }
+});
+
+test('automatic NPC sales retrieve BankBoi stock and preserve kept and locked copies',async({live},info)=>{
+  test.setTimeout(300_000);
+  // Failure inventory: remote stock is never discovered; duplicate requests sell
+  // twice; keep/locked copies are retrieved; delivery is mistaken for sale; a
+  // restart recreates completed demand. Native storage, sales and persistence
+  // remain authoritative after the declared offline inventory input.
+  await live.post('/steam/action',{character:merchant,action:'logout'});
+  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
+  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
+  await live.post('/slots/1/spawn',{character:merchant});
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
+  const items=[...Array.from({length:5},()=>({name:'throwingstars',level:0})),{name:'helmet',level:0,l:'l'}];
+  await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'});c.info.items=${JSON.stringify(items)};await db.collection('character').replaceOne({_id:c._id},c);return true;})()`);
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{withdrawals:false,'auto npc sales':false}});
+  await live.post('/merchant/auto-npc-sale',{item:{name:'throwingstars',level:0},keep:2});
+  await live.post('/merchant/auto-npc-sale',{item:{name:'helmet',level:0},keep:0});
+  await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'ready',items:items.map((item,slot)=>({slot,item}))}}}));
+  const observations:any[]=[];
+  const native=()=>live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'}),u=await db.collection('user').findOne({_id:c.owner}),p=get_player('${merchant}');return {storage:c.info.items,bank:Object.entries(u.info).filter(([k,v])=>/^items\\d+$/.test(k)&&Array.isArray(v)).flatMap(([,v])=>v),merchant:p?.items||[]};})()`);
+  try{
+    await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto npc sales':true}});
+    await expect.poll(async()=>{
+      const s=await live.state(),n=await native();
+      observations.push({at:Date.now(),withdrawals:s.withdrawals[merchant],transaction:s.bankboiTransaction,current:s.merchantCurrent,native:n});
+      if(observations.length>128)observations.shift();
+      const all=[...n.storage,...n.bank,...n.merchant].filter(Boolean);
+      return all.filter((i:any)=>i.name==='throwingstars').length===2 &&
+        all.some((i:any)=>i.name==='helmet'&&i.l==='l') &&
+        !s.bankboiTransaction && !(s.withdrawals[merchant]||[]).length &&
+        s.merchantActivity.filter((a:any)=>a.message.includes('Sold')&&a.message.includes('throwingstars')).length===3;
+    },{timeout:180_000,intervals:[250,500]}).toBe(true);
+    await live.restartCoordinator();
+    await expect.poll(async()=>{
+      const s=await live.state(),n=await native();
+      return [...n.storage,...n.bank,...n.merchant].filter((i:any)=>i?.name==='throwingstars').length===2 &&
+        !s.bankboiTransaction && !(s.withdrawals[merchant]||[]).length;
+    }).toBe(true);
+  }finally{
+    await info.attach('automatic-bankboi-npc-sales',{body:JSON.stringify({observations,native:await native(),state:await live.state()}),contentType:'application/json'});
+  }
+});
 test('BankBoi compound inputs admit merchant work only after native bank delivery',async({live},info)=>{
   test.setTimeout(360_000);
   await live.post('/steam/action',{character:merchant,action:'logout'});

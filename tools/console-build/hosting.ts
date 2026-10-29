@@ -126,6 +126,28 @@ export async function createManagedConsole(root:string,services:Services,options
     async activateDashboard(directory,signal){await dashboard.activate(await resolve(directory),signal);await store.pin([...dashboard.pinnedBuilds,...(coordinatorCandidate?[coordinatorCandidate]:[])]);},
     async reloadCharacters(directory,signal){
       const frozen=!!captured;
+      // Coordinator replacement can resume a saved storage handoff before the
+      // new lease arrives. Reconcile that actual roster in immediate/startup
+      // loads too; the coordinator retires only positively stopped workers.
+      if(captured&&maintenance.lease){
+        while(true){
+          signal.throwIfAborted();
+          const current=await runtimeState(signal).catch(()=>undefined);
+          const safe=await json<{id?:string;participants?:string[]}>(options.apiPort,'/party-api/console-maintenance',signal).catch(()=>undefined);
+          if(!current||!safe){await new Promise(resolve=>setTimeout(resolve,200));continue;}
+          const names=safe.participants||Object.keys(captured.characters||{});
+          if(safe.id===maintenance.lease.id&&names.every(name=>{
+            const report=current.characters?.[name];
+            return !!report&&fresh(report)&&report.consoleMaintenance?.id===maintenance.lease!.id&&
+              (maintenance.lease!.loadMode==='now'||report.consoleMaintenance.ready===true);
+          })){
+            captured={characters:Object.fromEntries(names.map(name=>[name,current.characters![name]]))};
+            await atomicJson(path.join(store.directory,'activation-roster.json'),captured);
+            break;
+          }
+          await new Promise(resolve=>setTimeout(resolve,200));
+        }
+      }
       const state=captured||(coordinatorEnv?await runtimeState(signal):{});
       acknowledgeAfter=Date.now();
       const manifest=await publishCode(directory,deployed,signal,maintenance.lease?{id:maintenance.lease.id,maintenance:maintenance.lease}:undefined),expected:Record<string,string>={};
@@ -155,7 +177,25 @@ export async function createManagedConsole(root:string,services:Services,options
       operation.participants=Object.keys(captured.characters||{});
       await atomicJson(path.join(store.directory,'activation-roster.json'),captured);
     },
-    waitUntilSafe:(id:string,signal:AbortSignal,mode?:import('./contracts.ts').DeploymentMode)=>maintenance.waitUntilSafe(id,signal,mode),
+    async waitUntilSafe(id:string,signal:AbortSignal,mode?:import('./contracts.ts').DeploymentMode){
+      await maintenance.waitUntilSafe(id,signal,mode);
+      // A completed slot handoff may replace a client captured before draining.
+      // The coordinator certifies the current roster; freeze its fresh held clients
+      // for CODE readiness rather than waiting for an intentionally stopped worker.
+      const state=await runtimeState(signal);
+      const safe=await json<{id?:string;ready?:boolean;participants?:string[]}>(options.apiPort,'/party-api/console-maintenance',signal);
+      if(safe.id!==id||!safe.ready)throw Error('Console safety changed while capturing the activation roster');
+      const names=safe.participants||Object.keys(captured?.characters||{});
+      const characters:Record<string,CharacterReport>={};
+      for(const name of names){
+        const report=state.characters?.[name];
+        if(!report||!fresh(report)||report.consoleMaintenance?.id!==id||report.consoleMaintenance.ready!==true)
+          throw Error('Missing fresh safe acknowledgement while capturing '+name);
+        characters[name]=report;
+      }
+      captured={characters};
+      await atomicJson(path.join(store.directory,'activation-roster.json'),captured);
+    },
     async releaseSafeWait(id:string){
       await maintenance.releaseSafeWait(id);
       await dashboard.discardPrepared();
