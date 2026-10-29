@@ -618,3 +618,14 @@ clearance checks and initial placement in the same server turn. Preserve action,
 run, instance and floor context, both displacement distances, the exact single
 assembly repair and final real walking assertions. The same layout and diagnostic
 gap pass with atomic staging; both maintained layouts also pass under ChronAL.
+
+The headless Cave map can be fully drawn while a later native encounter dialogue
+makes the background cards inaccessible to role-based locators. Hosted screenshots
+show the textured follower floor behind the shop prompt, while the screenshot
+locator waits for that prompt to disappear. During map expansion and rendering,
+answer actual pending choices and wait for both exact native votes to resolve.
+Keep the screenshot locator attached across a newly opened dialogue, but reject
+covered pixels before and after capture. Preserve the existing texture thresholds,
+one-definition-per-subscriber count, hidden-tab stream cleanup and released-floor
+404 assertions. Attach the choice/rendering observations and final pixels so a
+dialogue interruption remains distinguishable from missing floor data or art.
