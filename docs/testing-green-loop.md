@@ -409,3 +409,19 @@ fix, require no such route dependency, exact native homes including the merchant
 the offline BankBoi's persisted database home, restored slots, and exactly one
 successful home mutation receipt for each native participant. Preserve the fault
 ledger and native receipts with the normal immutable E2E reports.
+
+The subsequent ChronAL full suite exposed an injection precondition, not a Hunt
+failure: fallback arrived, native kills continued and the retry ledger matched,
+but an already settled rendezvous never scheduled the 80 ms wait used by the
+late-position fixture. The final fault assertion correctly reported a null drift.
+A local stopped-actor/held-prepare replay also reproduced that missing injection;
+its diagnostic route-cleanup error is retained separately from the behavior.
+
+Make the maintained fixture establish its own real settling boundary. Observe
+only the exact new fallback's rendezvous phase, send one native zero-distance
+move (the upstream client marks that real input moving until physics settles),
+and then deliver the existing real 80-unit walk during the owned wait. Do not
+fabricate character flags, routes, status or acknowledgments. Require the pending
+native input and matching convoy/epoch in the ledger, and restore both diagnostic
+property observation and the timer wrapper. Keep the native kill progression and
+unchanged retry-budget assertions. This correction changes only the E2E fixture.

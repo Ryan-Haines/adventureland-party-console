@@ -8,7 +8,25 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   await live.clients[W].run(`(()=>{
     const generation=globalThis.__partyRuntimeGeneration;
     const excludedConvoy=sharedRoutine.combatTraceSnapshot().convoy;
-    const fault=globalThis.__e2eFallbackStop={generation,issued:0,receipt:null,timeout:setTimeout,drift:null};
+    const fault=globalThis.__e2eFallbackStop={generation,issued:0,receipt:null,timeout:setTimeout,drift:null,boundary:null,
+      detailDescriptor:Object.getOwnPropertyDescriptor(globalThis,'__partyNavigationDetail'),detailValue:globalThis.__partyNavigationDetail};
+    // An already stopped actor can skip settlement entirely. At this owned
+    // rendezvous boundary, send a real zero-distance native move: the native
+    // client marks it moving until physics settles, without changing position.
+    // This guarantees the wait exists; no character flag or report is fabricated.
+    Object.defineProperty(globalThis,'__partyNavigationDetail',{configurable:true,enumerable:true,
+      get(){return fault.detailValue;},set(value){
+        fault.detailValue=value;
+        if(value!=='rendezvous'||fault.boundary||!fault.receipt||globalThis.__partyRuntimeGeneration!==generation)return;
+        const convoy=sharedRoutine.combatTraceSnapshot();
+        if(convoy.convoy===fault.receipt.owner.convoyId||convoy.convoyPhase!=='rendezvous'||convoy.cancelled)return;
+        const boundary=fault.boundary={convoy:convoy.convoy,epoch:convoy.convoyEpoch,wasMoving:!!character.moving,
+          from:{map:character.map,x:character.real_x,y:character.real_y}};
+        try{
+          Promise.resolve(move(character.real_x,character.real_y)).then(result=>{boundary.result=result;},error=>{boundary.result={error:String(error?.reason||error)};});
+          boundary.pending=!!character.moving;
+        }catch(error){boundary.error=String(error);}
+      }});
     // A native position update can arrive after the leader's initial origin
     // check, while rendezvous waits for movement/cruise speed to settle. Deliver
     // one real walk during that owned wait; leave status and other timers live.
@@ -70,13 +88,18 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   const finalState=await live.state(), finalHunt=profile(finalState).monsterHunt;
   expect(finalHunt.cycleId).toBe(recovering.cycleId);
   expect(finalHunt.routeRecovery,'Successful arrival must retain the spent retry budget').toEqual(recovering.routeRecovery);
-  const drift=await live.clients[W].run('globalThis.__e2eFallbackStop.drift');
+  const {drift,boundary}=await live.clients[W].run('({drift:globalThis.__e2eFallbackStop.drift,boundary:globalThis.__e2eFallbackStop.boundary})');
   expect(drift).toBeTruthy();expect(drift.error).toBeUndefined();
+  expect(boundary.pending).toBe(true);expect(boundary.error).toBeUndefined();
+  expect({convoy:boundary.convoy,epoch:boundary.epoch}).toEqual({convoy:drift.convoy,epoch:drift.epoch});
   expect(drift.arrived.map).toBe(drift.from.map);
   expect(Math.hypot(drift.arrived.x-drift.from.x,drift.arrived.y-drift.from.y)).toBeGreaterThan(55);
   await artifact(live,info,'native-fallback-arrival-and-continuing-kills',{interrupted,recovering,firstKills});
   }finally{
-    const fault=await live.clients[W].run(`(()=>{const fault=globalThis.__e2eFallbackStop;if(fault){clearInterval(fault.timer);if(globalThis.setTimeout===fault.wrappedTimeout)globalThis.setTimeout=fault.timeout;}return fault?{generation:fault.generation,issued:fault.issued,receipt:fault.receipt,drift:fault.drift}:null;})()`);
+    const fault=await live.clients[W].run(`(()=>{const fault=globalThis.__e2eFallbackStop;if(fault){clearInterval(fault.timer);if(globalThis.setTimeout===fault.wrappedTimeout)globalThis.setTimeout=fault.timeout;
+      if(fault.detailDescriptor)Object.defineProperty(globalThis,'__partyNavigationDetail',{...fault.detailDescriptor,value:fault.detailValue});
+      else{delete globalThis.__partyNavigationDetail;globalThis.__partyNavigationDetail=fault.detailValue;}}
+      return fault?{generation:fault.generation,issued:fault.issued,receipt:fault.receipt,drift:fault.drift,boundary:fault.boundary}:null;})()`);
     await info.attach('native-fallback-stop-ledger',{body:JSON.stringify(fault),contentType:'application/json'});
   }
 });
