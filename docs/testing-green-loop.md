@@ -523,3 +523,12 @@ await it for every matching delivery while unrelated traffic continues normally.
 Record request owner, kind and delivery times. Preserve the two distinct preparation
 owners, actual eight- and eighty-unit walks, continued kills and retry-budget
 assertions; do not fabricate commands or change production movement behavior.
+
+A native shard failed before entering its stat-scroll test because the fixture
+released a probed port before starting the coordinator. Another listener can
+claim that port during browser/proxy setup. Reproduce this with a real owned HTTP
+listener occupying the probe address. The coordinator now binds port zero on
+initial startup, reports its actual bound port, and preserves that endpoint on
+restart. Verify the competing listener remains reachable, all native clients
+publish fresh status after restart, and headless storage still reconnects. Keep
+the original stat-scroll journey on both backends as well as the collision E2E.
