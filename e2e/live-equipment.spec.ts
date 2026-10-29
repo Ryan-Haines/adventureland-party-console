@@ -186,21 +186,34 @@ gatheringTest('manual merchant weapon remains selected through gathering and res
     await route.fulfill({response});
   };
   await live.clients[name].page.route('**/party-api/merchant/production',preflight);
-  let after:any;
+  let after:any,ownedAttempt:any;
   try {
-  await live.post('/merchant/gather',{mode:'fishing',enabled:true});
-  await live.post('/merchant/gather',{mode:'mining',enabled:true});
-  await expect.poll(async()=> (await live.state()).gatheringModes,{timeout:10_000}).toEqual(expect.arrayContaining(['fishing','mining']));
-  await expect.poll(()=>live.admin(`output=['rod','pickaxe'].includes(get_player('${name}')?.slots.mainhand?.name)`),{timeout:90_000}).toBe(true);
-  await live.clients[name].frame.evaluate(()=>{
-    const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-    root.__e2eGatheringPhase.armed=true;
-  });
+  // Dashboard setup must not consume the native cast we intend to interrupt.
   await page.goto(live.url);
   const merchant=page.locator('article').filter({has:page.getByRole('heading',{name,exact:true})});
   const inventory=merchant.getByRole('button',{name:/^Inventory/});
   if(await inventory.getAttribute('aria-expanded')!=='true')await inventory.click();
   await merchant.getByLabel('Broom',{exact:true}).click({button:'right'});
+  await live.post('/merchant/gather',{mode:'fishing',enabled:true});
+  await live.post('/merchant/gather',{mode:'mining',enabled:true});
+  await expect.poll(async()=> (await live.state()).gatheringModes,{timeout:10_000}).toEqual(expect.arrayContaining(['fishing','mining']));
+  await expect.poll(()=>live.admin(`output=['rod','pickaxe'].includes(get_player('${name}')?.slots.mainhand?.name)`),{timeout:90_000}).toBe(true);
+  if(delayedStop){
+    await expect.poll(async()=>{
+      ownedAttempt=await live.clients[name].frame.evaluate(()=>{
+        const game=window as any,root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+        const attempt=root.__merchantGatheringAttempt;
+        return attempt&&{id:attempt.id,phase:attempt.phase,cancelled:attempt.cancelled,mode:attempt.mode,
+          at:Date.now(),channel:game.character.c?.[attempt.mode]};
+      });
+      return !!ownedAttempt&&ownedAttempt.phase==='casting'&&!ownedAttempt.cancelled&&!!ownedAttempt.channel;
+    },{timeout:90_000,intervals:[25,50],message:'Equip must interrupt an owned real native gathering cast'}).toBe(true);
+    await info.attach('owned-native-gathering-cast',{body:JSON.stringify(ownedAttempt),contentType:'application/json'});
+  }
+  await live.clients[name].frame.evaluate(()=>{
+    const root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
+    root.__e2eGatheringPhase.armed=true;
+  });
   const priorWeaponSequence=Math.max(0,...(await live.clients[name].events()).map(event=>event.sequence||0));
   const requestedAt=await live.clients[name].run('Date.now()');
   await page.getByRole('menuitem',{name:'Equip',exact:true}).click();
@@ -238,6 +251,7 @@ gatheringTest('manual merchant weapon remains selected through gathering and res
   expect(timing.every(entry=>entry.owners===1),'Every injected timer must belong to the single active inventory command').toBe(true);
   expect(faultEvidence.equipment.filter((entry:any)=>entry.item?.name==='broom'&&entry.item.level===6&&entry.data.slot===undefined),'Manual Equip must issue exactly one native Broom request').toHaveLength(1);
   if(delayedStop){
+    expect(faultEvidence.handoff?.attempt).toBe(ownedAttempt.id);
     expect(faultEvidence.handoff?.command?.type).toBe('equip');
     expect(faultEvidence.handoff?.successor?.command).toEqual(faultEvidence.handoff.command);
   }

@@ -532,3 +532,12 @@ initial startup, reports its actual bound port, and preserves that endpoint on
 restart. Verify the competing listener remains reachable, all native clients
 publish fresh status after restart, and headless storage still reconnects. Keep
 the original stat-scroll journey on both backends as well as the collision E2E.
+
+The delayed-stop equipment fixture must still own an active gathering attempt
+when Equip arrives. Loading the dashboard after the tool equip can consume the
+remaining cast window; Equip then correctly succeeds without any native stop,
+leaving the fixture handoff empty. Reproduce that ordering by holding the real
+Equip response until the current native attempt finishes. Prepare the UI while gathering
+is disabled, then require a real native cast immediately before Equip and match
+the stopped attempt's ID. Preserve native equip counts, resumed tool use,
+restoration, item conservation and restart persistence.
