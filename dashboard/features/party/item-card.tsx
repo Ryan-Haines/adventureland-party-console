@@ -78,6 +78,7 @@ export function ItemCard({ meta, item, level, properties, setName, usable, skill
   const [informationOpen, setInformationOpen] = useState(false);
   const informationButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const keydown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== 'i' || event.ctrlKey || event.altKey || event.metaKey || event.repeat || event.defaultPrevented) return;
       if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;

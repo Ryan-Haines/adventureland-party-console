@@ -81,7 +81,14 @@ test('unavailable native Anniversary host releases merchant bank work then visit
     // Native initial stock, not a fabricated withdrawal/deposit result.
     await live.admin(`output=(()=>{const p=get_player('${M}');p.items[10]={name:'leather',q:3};cache_player_items(p);resend(p,'reopen+cid');return true})()`);
     await expect.poll(async()=>(await live.clients[M].snapshot()).items[10]?.q).toBe(3);
+    // The client bag update and coordinator inventory publication are separate
+    // milestones. An older report can otherwise retire the newly created mark.
+    await expect.poll(async()=>{
+      const entry=(await live.state()).characters[M].items.find((entry:any)=>entry?.slot===10);
+      return {name:entry?.item?.name,q:entry?.item?.q};
+    },{timeout:30_000}).toEqual({name:'leather',q:3});
     await live.post('/command',{character:M,type:'mark',slot:10,item:{name:'leather',q:3}});
+    await expect.poll(async()=>(await live.state()).marked[M].filter((mark:any)=>mark.slot===10&&mark.item?.name==='leather').length).toBe(1);
     await live.post('/command',{character:M,type:'bank'});
     await expect.poll(async()=>await live.admin(`output=get_player('${M}').items.some(i=>i&&i.name==='leather')`),{timeout:120_000}).toBe(false);
     const banked=await live.state();
