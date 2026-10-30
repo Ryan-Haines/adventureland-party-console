@@ -1391,6 +1391,11 @@ Bag compression runs before stand opening, so a missing stand item cannot block
 it. The native five-pile E2E enables automatic exchange explicitly, verifies the
 queued exchange does not reserve aggregate stock against compression, and checks
 bank publication, departure and persisted native quantities separately.
+Exchange reward history records quantities, so it does not reserve every copy
+against compression. Long exchange jobs recheck partial piles between confirmed
+native exchanges, before choosing the next input slot. A native delivery during
+an active resumed exchange is covered in `live-bank-collection.spec.ts`; preserve
+the owning job and exact combined native quantities throughout the merge.
 
 The separate `party-bank-stack-buffer:<character>` journal records temporary
 inventory slots and expected operation results before mutation. Unconfirmed

@@ -14,10 +14,22 @@ function plan(party, status, boundary) {
     if (typeof value.name === 'string') reserved.add(value.name);
     Object.values(value).forEach(reserve);
   }
+  function reserveJob(job) {
+    if (!job || typeof job !== 'object') return;
+    // Exchange rewards are quantity receipts, not slot-owned future inputs.
+    // They survive resume and must not reserve every copy of that item type.
+    if (job.reason === 'exchange' || job.type === 'merchant-exchange') {
+      const work = { ...job };
+      delete work.exchangeRewards;
+      reserve(work);
+    } else reserve(job);
+  }
   [party.marked?.[merchant], party.merchantMarked?.[merchant], party.upgrades?.[merchant],
     party.compounds?.[merchant], party.statScrolls?.[merchant], party.withdrawals?.[merchant],
     party.standListings, party.npcSaleMarks, (party.deconstructionMarks || []).filter(mark => mark.state !== "complete"), party.merchantDeliveries, party.merchantCargo,
-    party.merchantQueue, current, boundary?.command].forEach(reserve);
+    ].forEach(reserve);
+  (party.merchantQueue || []).forEach(reserveJob);
+  reserveJob(current); reserveJob(boundary?.command);
   const groups = new Map();
   for (const entry of status.items || []) {
     // Reports carry per-copy meta, so the stack size comes from merchantCatalog.

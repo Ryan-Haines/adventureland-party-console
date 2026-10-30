@@ -8403,6 +8403,10 @@
         }
         await smart_move(find_npc(line.reward ? itemDefinition.npc || line.id + "s" : exchangeNpc(line.id)));
         for (var count = 0; count < Math.max(1, Number(line.quantity) || 1); count += 1) {
+          // The preceding native exchange and its durable progress are settled.
+          // Long jobs must also compress stock received after admission.
+          await compressMerchantInventory(command);
+          if (bankStacks && bankStacks.pending()) await bankStacks.recover();
           var slot = character.items.findIndex(function (item) {
             return item && item.name === line.id && (Number(item.level) || 0) === (Number(line.level) || 0) &&
               !item.l && itemQuantity(item) >= required;
@@ -9508,6 +9512,17 @@
   }
 
   async function compressMerchantInventory(command) {
+    if (character.ctype !== "merchant" || Number(root.__merchantStackCheckAt) > Date.now()) return;
+    var partials = {};
+    var candidate = character.items.some(function(item) {
+      var limit = item && Number((G.items[item.name] || {}).s) || 1;
+      if (!item || item.l || item.b || limit <= 1 || !Number.isSafeInteger(item.q) || item.q <= 0 || item.q >= limit) return false;
+      var key = JSON.stringify([bankStackIdentity(item), !!item.v, !!item.acl, item.ps || []]);
+      if (partials[key]) return true;
+      partials[key] = true; return false;
+    });
+    if (!candidate) return;
+    root.__merchantStackCheckAt = Date.now() + 2000;
     // Replan every move from a freshly published inventory. A bounded pass can
     // fill targets and empty small piles without waiting for another stand visit.
     for (var pass = 0; pass < 84 && runtimeCurrent(); pass++) {

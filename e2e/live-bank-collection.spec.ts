@@ -114,3 +114,40 @@ test('merchant compresses five candy piles and bank sort consolidates compatible
     await info.attach('native-stack-compression',{body:JSON.stringify({observations,state:await live.state(),client:await live.clients[merchant].snapshot(),events:await live.clients[merchant].events()}),contentType:'application/json'});
   }
 });
+
+// A resumed exchange owns quantity receipts, not every slot of its rewards.
+// Real stock delivered after admission must compress before the long job ends.
+test('resumed exchange compresses newly delivered candy while reward receipts remain owned',async({live},info)=>{
+  test.setTimeout(300_000);
+  const merchant='E2EMerchant',sender='E2EPriest',observations:any[]=[];
+  await live.post('/merchant/force-stand',{enabled:true});
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'automatic exchange':true}});
+  await live.admin(`output=(()=>{const p=get_player('${merchant}'),s=get_player('${sender}');
+    [6450,31,9999,4083,15].forEach((q,i)=>p.items[20+i]={name:'candy0',q});p.items[26]={name:'gem0',q:100};s.items[20]={name:'candy0',q:9500};
+    for(const c of [p,s]){cache_player_items(c);resend(c,'reopen+cid');}return true;})()`);
+  await expect.poll(async()=>(await live.state()).characters[merchant].items.some((e:any)=>e?.item?.name==='gem0'&&e.item.q===100)).toBe(true);
+  const order=await live.post('/merchant/exchange-order',{exchanges:[{id:'gem0',level:0,quantity:100}]});
+  // Declared persisted recovery input, matching actual seeded owned stock.
+  await live.restoreHistoricalSettings(settings=>({merchantQueue:settings.merchantQueue.map((job:any)=>job.id===order.jobId?{...job,exchangeResume:true,exchangeRewards:[{name:'candy0',q:20578}]}:job)}));
+  try {
+    await expect.poll(async()=>{const c=await live.clients[merchant].snapshot();return c.items.filter((i:any)=>i?.name==='candy0').map((i:any)=>i.q).sort((a:number,b:number)=>b-a);},{timeout:60_000}).toEqual([9999,9999,580]);
+    await live.post('/merchant/force-stand',{enabled:false});
+    await expect.poll(async()=>{
+      const s=await live.state(),n=await live.admin(`output=get_player('${merchant}').items.filter(i=>i?.name==='gem0').reduce((n,i)=>n+i.q,0)`);
+      return s.merchantCurrent?.id===order.jobId&&n<100&&n>0;
+    },{timeout:90_000}).toBe(true);
+    const position=await live.clients[merchant].run(`({map:character.map,x:character.x,y:character.y})`);
+    await live.clients[sender].run(`smart_move(${JSON.stringify(position)})`);
+    await expect.poll(async()=>{const s=await live.clients[sender].snapshot(),m=await live.clients[merchant].snapshot();return s.map===m.map&&Math.hypot(s.x-m.x,s.y-m.y)<300;},{timeout:60_000}).toBe(true);
+    await live.clients[sender].run(`send_item('${merchant}',character.items.findIndex(i=>i?.name==='candy0'&&i.q===9500),9500)`);
+    await expect.poll(async()=>{
+      const s=await live.state(),c=s.characters[merchant],quantities=c.items.filter((e:any)=>e?.item?.name==='candy0').map((e:any)=>e.item.q).sort((a:number,b:number)=>b-a);
+      observations.push({at:Date.now(),job:s.merchantCurrent?.id,quantities,error:c.inventoryStackError});if(observations.length>160)observations.shift();
+      return {job:s.merchantCurrent?.id,quantities};
+    },{timeout:30_000}).toEqual({job:order.jobId,quantities:[9999,9999,9999,81]});
+    const native=await live.admin(`output=Object.fromEntries(['${merchant}','${sender}'].map(n=>[n,get_player(n).items.filter(i=>i?.name==='candy0').reduce((q,i)=>q+i.q,0)]))`);
+    expect(native).toEqual({[merchant]:30078,[sender]:0});
+  } finally {
+    await info.attach('native-active-exchange-stack-compression',{body:JSON.stringify({order,observations,state:await live.state(),merchant:await live.clients[merchant].snapshot(),sender:await live.clients[sender].snapshot(),events:await live.clients[merchant].events()}),contentType:'application/json'});
+  }
+});

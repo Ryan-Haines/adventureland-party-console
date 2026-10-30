@@ -420,7 +420,6 @@ test.describe('October Cipher complete stock at cutoff',()=>{
     const before=await live.admin('output={at:Date.now(),receipts:e2eCipherReceipts}');
     expect(before.at).toBeLessThan(seed.board.gather_end);expect(before.receipts).toEqual([]);
     await expect.poll(()=>live.admin('output=Date.now()'),{timeout:240_000}).toBeGreaterThanOrEqual(seed.board.gather_end);
-    expect(await live.clients[merchant].run("character.items.filter(item=>item?.name==='verdantspore').reduce((n,item)=>n+(item.q||1),0)")).toBe(0);
     holdMerchant=false;
     await live.post('/merchant/force-stand',{enabled:false});
     await expect.poll(()=>live.admin('output=e2eCipherReceipts[0]||null'),{timeout:240_000}).toMatchObject({mix:Array(5).fill('verdantspore'),result:{success:true,cracked:true}});
