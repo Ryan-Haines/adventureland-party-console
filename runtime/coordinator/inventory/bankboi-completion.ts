@@ -39,6 +39,7 @@ export interface StorageCompletionState {
   withdrawals: Record<string, StorageReference[] | undefined>;
   merchantCharacter: string | null;
   upgrades?: Record<string, unknown[] | undefined>;
+  compounds?: Record<string, {items:{item:Item;storage?:{pack:string;slot:number}}[]}[] | undefined>;
 }
 
 /** Retarget durable item references as storage moves between bank panes and BankBoi. */
@@ -61,6 +62,23 @@ export function createStorageReferenceUpdates(
           reference[slotKey] = move.slot;
         }
       }
+    // A manual selection can arrive after the worker captured its unload plan.
+    // Follow that exact source slot if it was unloaded before retrieval began.
+    for(const move of moves){
+      if(typeof move.sourceSlot!=='number'||typeof move.slot!=='number'||typeof move.pack!=='string')continue;
+      const pack='bankboi:'+character;
+      for(const group of state.compounds?.[String(state.merchantCharacter)]||[])for(const mark of group.items){
+        const source=mark.storage;
+        if(source?.pack===pack&&source.slot===move.sourceSlot&&identity(mark.item)===identity(move.item)){
+          source.pack=move.pack;source.slot=move.slot;
+        }
+      }
+      for(const request of state.withdrawals[String(state.merchantCharacter)]||[]){
+        if(request.improvement==='manual compounds'&&request.pack===pack&&request.slot===move.sourceSlot&&identity(request.item)===identity(move.item)){
+          request.pack=move.pack;request.slot=move.slot;
+        }
+      }
+    }
   }
   function validCraftDeposit(allocation: StorageAllocation, deposit: StorageDeposit): boolean {
     return /^items\d+$/.test(deposit.pack) && Number.isInteger(deposit.slot) &&
@@ -117,6 +135,12 @@ export function createStorageReferenceUpdates(
       moveReference(reference, deposit, "bankPack", "bankSlot"),
     );
     state.npcSaleMarks.forEach((reference) => moveReference(reference, deposit, "pack", "slot"));
+    for(const group of state.compounds?.[String(state.merchantCharacter)]||[])for(const mark of group.items){
+      const source=mark.storage;
+      if(source&&typeof deposit.slot==='number'&&source.pack===deposit.request.pack&&source.slot===deposit.request.slot&&identity(mark.item)===identity(deposit.item)){
+        source.pack=deposit.pack;source.slot=deposit.slot;
+      }
+    }
     for (const raw of state.upgrades?.[String(state.merchantCharacter)] || []) {
       const mark = requestObject(raw), storage = requestObject(mark.storage);
       if (mark.storage && storage.pack === deposit.request.pack && storage.slot === deposit.request.slot && identity(requestObject(mark.item)) === identity(deposit.item)) {

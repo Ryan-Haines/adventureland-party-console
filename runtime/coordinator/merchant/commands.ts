@@ -19,7 +19,9 @@ function merchantSupplies(inputs: CommandInputs) {
   return {
     merchantGoldTarget: goldTarget(work, 0),
     ...(inputs.craftProtection ? {craftProtection: inputs.craftProtection} : {}),
-    merchantWithdrawals: work.withdrawals,
+    // Reserved manual triplets are retrieved by prepareBankCompounds, which
+    // records their exact inventory destinations before production.
+    merchantWithdrawals: work.withdrawals.filter(mark => requestObject(mark).improvement !== 'manual compounds'),
     merchantBankMarked: work.marked,
     npcSales: inputs.npcSales,
   };

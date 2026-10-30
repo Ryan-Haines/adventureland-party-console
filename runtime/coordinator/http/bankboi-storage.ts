@@ -87,7 +87,7 @@ export function createBankboiStorageRoutes<Transaction extends { bankboi: string
     persistCraftDeposits(body.deposited);
   }
   function persistCraftDeposits(deposits: StorageDeposit[] = []): void {
-    if (deposits.some((deposit) => deposit.request?.craftJobId)) ports.persistJobs?.();
+    if (deposits.some((deposit) => deposit.request?.craftJobId || deposit.request?.improvement === 'manual compounds')) ports.persistJobs?.();
   }
   function ownsCompletion(transaction: Transaction | null, raw: Record<string, unknown>): boolean {
     return !!transaction && transaction.bankboi === raw.character &&
@@ -111,6 +111,7 @@ export function createBankboiStorageRoutes<Transaction extends { bankboi: string
     recordInventory(body, entry);
     const observed = observeBank(body);
     recordMoves(body, entry);
+    if(body.relocated?.length)ports.persistJobs?.();
     if (observed) ports.adopt();
     delete state.commands[body.character];
     ports.persist();

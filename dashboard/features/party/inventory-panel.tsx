@@ -26,6 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  ArrowRightLeft,
   Blender,
   Check,
   ChevronDown,
@@ -1261,6 +1262,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                               )
                             }
                           >
+                            <ArrowRightLeft />
                             Exchange
                           </ContextMenuItem>
                         )}

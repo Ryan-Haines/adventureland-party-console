@@ -467,6 +467,7 @@
       definitions: function () { return G.events || {}; },
       position: function () { return { map: character.map, x: character.real_x, y: character.real_y }; },
       doorStatus: function () { return character.trickortreat || null; },
+      inventorySpace: function () { return freeInventorySlots(); },
       stock: function () { var stock = {}; (character.items || []).forEach(function (item) {
         if (item && !item.l && !item.b && !item.giveaway) stock[item.name] = (stock[item.name] || 0) + (item.q || 1);
       }); return stock; },
@@ -4052,6 +4053,12 @@
       size: function() { return Number(character.isize) || character.items.length; },
       map: function() { return character.map; }, floor: function(pack) { return (definitions()[pack] || [character.map])[0]; },
       reachable: accessibleBankSortFloors, limit: function(item) { return Number((G.items[item.name] || {}).s) || 1; },
+      compatible: function(target, source) {
+        // Ask the native rule about a single transferable unit. Provenance-only
+        // titles (such as Cave-found) may stack; earned stat titles may not.
+        if (typeof can_stack !== "function") return bankStackIdentity(target) === bankStackIdentity(source) && !!target.v === !!source.v;
+        return can_stack(Object.assign({}, target, {q:1}), Object.assign({}, source, {q:1}));
+      },
       protection: async function() {
         var state = await bankSortCheckpoint("stack");
         if (!state.protection) throw new Error("Bank stack protection unavailable; coordinator update required");
@@ -8521,6 +8528,8 @@
       if (luckyUpgradeService && luckyUpgradeService.pending()) await luckyUpgradeService.recover();
       else if (character.ctype === "merchant" && root.localStorage.getItem("party-lucky-upgrade:" + character.name)) await merchantLuckyUpgrade().recover();
       if (command.type !== "merchant-upgrade-preview" && command.commerceProgressVersion !== 2 && freeInventorySlots() > 0) await merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
+      await compressMerchantInventory(command);
+      if (bankStacks && bankStacks.pending()) await bankStacks.recover();
       actionStarted = true;
       return await action();
     } catch (error) {
@@ -9456,14 +9465,16 @@
 
   async function consolidateMerchantInventory(command) {
     var merge = command.inventoryMerge;
-    if (!merge || character.ctype !== "merchant" || root.__merchantActiveJob || anniversaryBusy ||
+    var boundaryOwned = root.__merchantActiveJob && root.__merchantActiveJob.jobId === command.jobId && root.__merchantActiveJob.commandId === command.id;
+    if (!merge || character.ctype !== "merchant" || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy ||
         banking || gatheringActive || merchantAnniversaryWorkReserved() || !runtimeCurrent()) return;
     if (Date.now() < (Number(root.__merchantStackRetryAt) || 0)) return;
     try {
       var permission = await request("/merchant/stack-merge-permission", { method: "POST", body: {
         character: character.name, merge: merge,
+        jobId: command.jobId, commandId: command.id, command: boundaryOwned ? command : undefined,
       }});
-      if (!permission.allowed || !runtimeCurrent() || root.__merchantActiveJob || anniversaryBusy || banking || gatheringActive) return;
+      if (!permission.allowed || !runtimeCurrent() || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy || banking || gatheringActive) return;
     } catch (_mergePermissionError) { return; }
     var target = character.items[merge.to], source = character.items[merge.from];
     if (!target || !source || merge.to === merge.from || target.l || source.l || target.b || source.b ||
@@ -9472,18 +9483,22 @@
         bankStackIdentity(source) !== bankStackIdentity(merge.source) ||
         bankStackIdentity(target) !== bankStackIdentity(source) ||
         Number(target.q) !== Number(merge.target.q) || Number(source.q) !== Number(merge.source.q)) return;
-    var total = Number(target.q) + Number(source.q), limit = Number(G.items[target.name] && G.items[target.name].s) || 1;
+    var quantity = merge.quantity || Number(source.q);
+    var total = Number(target.q) + quantity, limit = Number(G.items[target.name] && G.items[target.name].s) || 1;
     if (!Number.isSafeInteger(total) || total > limit || limit <= 1) return;
     // The server swaps incompatible items instead of rejecting imove. Use the
     // live SDK rule too, so newly introduced restrictions cannot shuffle stacks.
-    if (typeof can_stack === "function" && !can_stack(target, source)) return;
+    if (typeof can_stack === "function" && !can_stack(target, Object.assign({}, source, {q:quantity}))) return;
     root.__merchantStackRetryAt = Date.now() + 10000;
     try {
-      await anniversaryWithTimeout(swap(merge.to, merge.from), 2000, "Inventory stack merge");
-      var deadline = Date.now() + 1500;
-      while (runtimeCurrent() && Date.now() < deadline &&
+      if (quantity < Number(source.q)) await bankStackService().mergeInventory(merge.to, merge.from, target, source, quantity);
+      else {
+        await anniversaryWithTimeout(swap(merge.to, merge.from), 2000, "Inventory stack merge");
+        var deadline = Date.now() + 1500;
+        while (runtimeCurrent() && Date.now() < deadline &&
           (character.items[merge.from] || Number((character.items[merge.to] || {}).q) !== total)) await sleep(100);
-      if (!character.items[merge.from] && Number((character.items[merge.to] || {}).q) === total) {
+      }
+      if (Number((character.items[merge.from] || {}).q || 0) === Number(source.q) - quantity && Number((character.items[merge.to] || {}).q) === total) {
         root.__merchantStackRetryAt = 0;
         root.__merchantStackError = null;
       } else root.__merchantStackError = "Inventory stack merge was not confirmed";
@@ -9492,8 +9507,25 @@
     }
   }
 
+  async function compressMerchantInventory(command) {
+    // Replan every move from a freshly published inventory. A bounded pass can
+    // fill targets and empty small piles without waiting for another stand visit.
+    for (var pass = 0; pass < 84 && runtimeCurrent(); pass++) {
+      if (Number(root.__merchantStackRetryAt) > Date.now()) return;
+      await request("/status", {method:"POST", body:snapshot()});
+      var next = await request("/merchant/stack-merge-permission", {method:"POST", body:{
+        character:character.name, next:true, jobId:command.jobId, commandId:command.id, command:command.jobId ? command : undefined,
+      }});
+      if (!next.merge) return;
+      await consolidateMerchantInventory(Object.assign({}, command, {inventoryMerge:next.merge}));
+      if (root.__merchantStackError) return;
+      if (Number((character.items[next.merge.to] || {}).q) === Number(next.merge.target.q)) return;
+    }
+  }
+
   async function merchantStandInventoryReady(command) {
     try {
+      if (bankStacks && bankStacks.pending()) await bankStacks.recover();
       if (root.__merchantInventoryTidy) await root.__merchantInventoryTidy;
       if (luckyUpgradeService && luckyUpgradeService.pending()) await luckyUpgradeService.recover();
       else if (character.ctype === "merchant" && root.localStorage.getItem("party-lucky-upgrade:" + character.name)) await merchantLuckyUpgrade().recover();
@@ -9621,6 +9653,7 @@
       }
       if (typeof nativeStandSync === "function") await nativeStandSync(command, false);
       await consolidateMerchantInventory(command);
+      await compressMerchantInventory(command);
       if (!command.inPlace && ownsIdle() && !root.__merchantActiveJob) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
         try { await root.__merchantInventoryTidy; }
@@ -10381,7 +10414,8 @@
     if (!owner || owner.cycleId === state.eventReturnCycleId) return;
     owner.cancelled = true;
     root.__partyEventExitOwner = null;
-    var ownsMovement = !convoyTraveling && !followingLeader && !forceTraveling && !townTraveling;
+    var ownsMovement = !convoyTraveling && !followingLeader && !forceTraveling && !townTraveling &&
+      !root.__merchantActiveJob && !merchantIdleActive && !banking && !stocking && !upgrading;
     eventReturnPending = false;
     departurePending = false;
     eventRecoveryRetryAt = 0;
@@ -12012,9 +12046,9 @@
   }
 
   async function eventTravelAllowed(eventName) {
+    if (!runtimeCurrent()) return false;
     if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
-    if (character.ctype === "merchant") return runtimeCurrent();
-    if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return false;
+    if (character.ctype !== "merchant" && (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible)) return false;
     try {
       var permission = await request("/hunt-event-permission", { method: "POST", body: { character: character.name, event: eventName || null } });
       if (permission.reason && permission.reason !== root.__partyEventPermissionReason)

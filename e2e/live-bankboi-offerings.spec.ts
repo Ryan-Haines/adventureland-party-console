@@ -3,6 +3,52 @@ import {test,expect} from './live-fixtures';
 const merchant='E2EMerchant',storage='E2EBankBoi';
 test.use({liveHeadless:true});
 
+test('manual BankBoi Lantern triplet survives delivery and restart before one native compound',async({live},info)=>{
+  test.setTimeout(300_000);
+  // Failure inventory: virtual packs are rejected; the wrong copy is selected;
+  // locked/reserved copies join the triplet; storage delivery loses group source
+  // slots; generic withdrawals steal inputs; restart replays or loses the group.
+  await live.post('/steam/action',{character:merchant,action:'logout'});
+  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
+  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
+  await live.post('/slots/1/spawn',{character:merchant});
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
+  await live.post('/merchant/force-stand',{enabled:true});
+  const items=[...Array.from({length:3},()=>({name:'lantern',level:2})),{name:'lantern',level:2,l:'l'}];
+  const bank=await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'});c.info.items=${JSON.stringify(items)};await db.collection('character').replaceOne({_id:c._id},c);
+    const items0=Array.from({length:42},()=>({name:'coat',level:0})),items1=Array.from({length:42},(_,i)=>i<35?{name:'coat',level:0}:null);
+    await db.collection('user').updateOne({_id:c.owner},{$set:{'info.items0':items0,'info.items1':items1}});
+    return {gold:0,packs:{items0:items0.map((item,slot)=>({slot,item})),items1:items1.map((item,slot)=>item?{slot,item}:null)}};})()`);
+  await live.post('/bankboi/checkpoint',{character:merchant,bank});
+  await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'ready',items:items.map((item,slot)=>({slot,item}))}}}));
+  await expect.poll(async()=>(await live.state(true)).merchantCatalog?.allItems?.some((e:any)=>e.id==='lantern'&&e.compoundable),{timeout:30_000}).toBe(true);
+  const samples:any[]=[];
+  const native=()=>live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'}),u=await db.collection('user').findOne({_id:c.owner}),p=get_player('${merchant}');return [...c.info.items,...Object.entries(u.info).filter(([k,v])=>/^items\\d+$/.test(k)&&Array.isArray(v)).flatMap(([,v])=>v),...(p?.items||[])].filter(i=>i?.name==='lantern');})()`);
+  try{
+    await live.post('/command',{character:merchant,type:'compound-mark',pack:'bankboi:'+storage,slot:1,item:{name:'lantern',level:2}});
+    await expect.poll(async()=>{
+      const s=await live.state(),groups=s.compounds[merchant]||[];
+      samples.push({at:Date.now(),groups,transaction:s.bankboiTransaction,withdrawals:s.withdrawals[merchant]});
+      return groups.length===1&&groups[0].items.length===3&&groups[0].items.every((m:any)=>/^items\d+$/.test(m.storage?.pack))&&!s.bankboiTransaction;
+    },{timeout:120_000}).toBe(true);
+    const delivered=(await live.state()).compounds[merchant];
+    expect(new Set(delivered[0].items.map((m:any)=>m.storage.pack+':'+m.storage.slot)).size).toBe(3);
+    expect(delivered[0].items.every((m:any)=>!m.item.l&&m.item.level===2)).toBe(true);
+    await live.restartCoordinator();
+    await expect.poll(async()=>(await live.state()).compounds[merchant]).toEqual(delivered);
+    await live.post('/merchant/force-stand',{enabled:false});
+    await expect.poll(async()=>{
+      const s=await live.state(),n=await native();
+      return (s.compounds[merchant]||[]).length===0&&
+        s.merchantActivity.filter((a:any)=>a.message==='Group 1 compounded'||a.message==='Group 1 compound failed').length===1&&
+        n.filter((i:any)=>i.level===2&&!i.l).length===0&&n.filter((i:any)=>i.l==='l').length===1&&
+        n.filter((i:any)=>i.level===3).length<=1;
+    },{timeout:120_000}).toBe(true);
+  }finally{
+    await info.attach('native-bankboi-manual-lantern-compound',{body:JSON.stringify({samples,native:await native(),state:await live.state()}),contentType:'application/json'});
+  }
+});
+
 test('safe maintenance waits for the active BankBoi instead of the stopped merchant',async({live},info)=>{
   test.setTimeout(240_000);
   // Failure inventory: recent merchant telemetry survives its native logout;

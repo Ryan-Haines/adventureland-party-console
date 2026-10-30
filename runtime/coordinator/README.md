@@ -337,6 +337,23 @@ not activate it.
 
 # Character coordinator
 
+Merchant event admission adopts deferred ownership through the coordinator while
+bypassing fighter Hunt travel gates and Hunt trip creation. Fresh Main arrival
+retires only the merchant's acknowledged return with an explicitly empty waypoint,
+or its empty deferred continuation; newer commands and event sessions survive.
+Validate full-inventory NPC sales after current/deferred returns during Hunt and
+the native Cipher-to-door-tour handoff in live-merchant-anniversary-availability.
+Full merchant inventories defer optional door-tour activity so NPC sales can
+free capacity first. Stage a completed character/coordinator candidate;
+activation remains explicit.
+
+Manual one-level compounds accept BankBoi sources. Reserve the selected triple,
+queue remote inputs through storage, and retarget each exact group source from
+the native deposit receipt before production. Persist these group moves with
+settings; generic bank errands leave their inputs for the compound preparation.
+Validate the native Lantern +2 delivery/restart journey and inventory Exchange
+icon browser journey. Stage a completed console candidate; activation is explicit.
+
 Safe maintenance retires an unassigned worker only after its process is disabled
 and disconnected. A BankBoi handoff therefore replaces the merchant in the safety
 barrier without treating stale telemetry as proof of logout. New storage swaps
@@ -1360,6 +1377,16 @@ items stay in place when sorting is off. Staging slots, queued withdrawals and
 craft ingredients are excluded. The existing bank-sort checkpoint accepts the
 `stack` action and returns current protected locations and item types without
 claiming or completing a cosmetic sort request.
+
+Merchant compression also runs at the start of owned work, protecting that
+command's inputs as well as queued reservations. Each bounded pass publishes
+fresh inventory and obtains a new merge permission; it fills partial stacks
+through the same confirmed split-buffer journal rather than requiring whole
+piles to fit. Bank consolidation consults native `can_stack` for provenance-only
+titles such as Cave-found, while locked stock remains excluded. Validate the
+five-pile candy and requested bank-sort journey in
+`e2e/live-bank-collection.spec.ts`, plus bank-sort and exchange-reward E2Es.
+Stage character and coordinator assets together; loading remains explicit.
 
 The separate `party-bank-stack-buffer:<character>` journal records temporary
 inventory slots and expected operation results before mutation. Unconfirmed

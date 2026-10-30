@@ -75,3 +75,27 @@ for(const scenario of ['toggle','already enabled','threshold'] as const){
     await info.attach('bank-marked-collection-dashboard',{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
   });
 }
+
+
+// Failure modes: idle-only admission starves behind collection; the first
+// over-limit pair hides small piles; partial fills lose stock; bank sorting
+// swaps incompatible properties or leaves compatible piles split.
+test('merchant compresses five candy piles and bank sort consolidates compatible silk',async({live},info)=>{
+  test.setTimeout(300_000);
+  const merchant='E2EMerchant';
+  await live.post('/merchant/force-stand',{enabled:true});
+  await live.post('/merchant/bank-sort',{mode:'request',enabled:true});
+  await live.admin(`output=(async()=>{const p=get_player('${merchant}');
+    [6450,31,9999,4083,15].forEach((q,i)=>{p.items[20+i]={name:'candy0',q};});
+    await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items0':[{name:'spidersilk',q:39},{name:'spidersilk',q:26,p:'cavefound'},{name:'spidersilk',q:7,p:'shiny'}]}});
+    cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
+  await expect.poll(async()=>{
+    const c=await live.clients[merchant].snapshot();return c.items.filter((i:any)=>i?.name==='candy0').map((i:any)=>i.q).sort((a:number,b:number)=>b-a);
+  },{timeout:90_000}).toEqual([9999,9999,580]);
+  await live.post('/merchant/force-stand',{enabled:false});
+  await live.post('/command',{character:merchant,type:'bank'});
+  await expect.poll(async()=>{
+    const s=await live.state();return s.bankSortRequest===null&&s.bank?.packs?.items0?.filter((e:any)=>e?.item?.name==='spidersilk').map((e:any)=>e.item).sort((a:any,b:any)=>(b.q||1)-(a.q||1));
+  },{timeout:180_000}).toEqual([{name:'spidersilk',q:65},{name:'spidersilk',q:7,p:'shiny'}]);
+  await info.attach('native-stack-compression',{body:JSON.stringify({state:await live.state(),client:await live.clients[merchant].snapshot(),events:await live.clients[merchant].events()}),contentType:'application/json'});
+});

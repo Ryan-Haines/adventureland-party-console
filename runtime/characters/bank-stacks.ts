@@ -13,6 +13,7 @@ export interface BankStackPorts {
   floor(pack: string): string;
   reachable(): string[];
   limit(item: StackItem): number;
+  compatible?(target: StackItem, source: StackItem): boolean;
   protection(): Promise<StackProtection>;
   current(): boolean;
   move(floor: string): Promise<unknown>;
@@ -195,7 +196,7 @@ export function createBankStacks(p: BankStackPorts) {
     let moved = 0, deferred = false;
     // Each successful iteration fills a target or empties a source.
     for (;;) {
-      const plan = nextStackMerge(await locations(), item => p.limit(item));
+      const plan = nextStackMerge(await locations(), item => p.limit(item), p.compatible);
       if (!plan) break;
       const { source, target, quantity } = plan;
       if (source.pack === target.pack && quantity === stackQuantity(source.item)) {
@@ -216,6 +217,28 @@ export function createBankStacks(p: BankStackPorts) {
     await travel(initialFloor);
     return { moved, deferred };
   }
+  async function mergeInventory(to: number, from: number, target: StackItem, source: StackItem, quantity: number) {
+    target = {...target}; source = {...source};
+    await recover();
+    if (!equal(p.items()[to], target) || !equal(p.items()[from], source) ||
+      to === from || stackIdentity(target) !== stackIdentity(source) || target.l || source.l || target.b || source.b ||
+      !!target.v !== !!source.v || !Number.isSafeInteger(quantity) || quantity <= 0 ||
+      quantity > stackQuantity(source) || stackQuantity(target) + quantity > p.limit(target))
+      throw Error('Inventory stack changed before merge');
+    let chunk = from;
+    if (quantity < stackQuantity(source)) {
+      chunk = empty()[0];
+      if (chunk === undefined) throw Error('Inventory stacking needs a free split buffer');
+      remember([{slot: chunk, identity: stackIdentity(source), source: from}]);
+      await operation(() => p.split(from, quantity), [
+        {inventory: from, item: {...source, q: stackQuantity(source) - quantity}},
+        {inventory: chunk, item: {...source, q: quantity}}]);
+    }
+    await operation(() => p.swap(to, chunk), [
+      {inventory: to, item: {...target, q: stackQuantity(target) + quantity}},
+      {inventory: chunk, item: null}]);
+    await recover();
+  }
   let flight: Promise<unknown> = Promise.resolve();
   function serial<T>(run: () => Promise<T>): Promise<T> {
     const next = flight.then(run, run);
@@ -223,6 +246,8 @@ export function createBankStacks(p: BankStackPorts) {
     return next;
   }
   return { fill: (slot: number) => serial(() => fill(slot)), compact: () => serial(compact),
+    mergeInventory: (to: number, from: number, target: StackItem, source: StackItem, quantity: number) =>
+      serial(() => mergeInventory(to, from, target, source, quantity)),
     recover: () => serial(recover), locations, pending: () => !!p.read() };
 }
 Object.assign(globalThis, { partyCreateBankStacks: createBankStacks });

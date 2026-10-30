@@ -831,7 +831,7 @@ export function startCoordinatorApplication(
       dispatch: dispatchMerchant,
       anniversary: merchantAnniversaryControl,
       bankboiBusy: () => bankboiService.busy(),
-      plan: (state, status) => merchantInventoryStacks.plan(state, status),
+      plan: (state, status, boundary) => merchantInventoryStacks.plan(state, status, boundary),
       identity: bankStackRouting.identity,
     });
     const {

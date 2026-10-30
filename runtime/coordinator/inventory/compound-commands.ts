@@ -21,6 +21,7 @@ interface Rule {
   quantity?: number;
 }
 interface CompoundState extends SharedScope {
+  withdrawals?: Record<string, {pack?:string;slot?:number;item?:Item|null;improvement?:string}[] | undefined>;
   merchantCharacter: string | null;
   compounds: Record<string, Group[] | undefined>;
   autoCompounds: Record<string, Rule[] | undefined>;
@@ -36,6 +37,7 @@ interface CompoundPorts {
   selectAction?(item: Item, name: string): void;
   queue?: (names:string[],reason:string) => void;
   persist(): void;
+  persistBank?(): void;
   schedule(name: string, status: CompoundState["statuses"][string]): void;
   log(message: string, level: string, details?: unknown): void;
 }
@@ -84,22 +86,29 @@ export function createCompoundCommands(state: CompoundState, ports: CompoundPort
     );
   }
   function validBankSelection(body: Request, name: string): boolean {
-    return body.character === name && typeof body.pack === 'string' && /^items\d+$/.test(body.pack) && Number.isSafeInteger(body.slot);
+    return body.character === name && typeof body.pack === 'string' && /^(?:items\d+|bankboi:[A-Za-z0-9_]+)$/.test(body.pack) && Number.isSafeInteger(body.slot);
   }
   function bankManual(body: Request, item: Item): CommandOutcome {
     const name = state.merchantCharacter;
     if (!name || !validBankSelection(body, name))
-      return reply({error:'invalid native bank compound selection'},400);
+      return reply({error:'invalid bank compound selection'},400);
     const groups = state.compounds[name] ||= [];
     if (groups.some(group=>group.items.some(mark=>mark.storage && mark.storage.pack===body.pack && mark.storage.slot===body.slot && JSON.stringify(mark.item)===JSON.stringify(item)))) return null;
     const reserved = new Set(groups.flatMap(group=>group.items.map(mark=>mark.storage ? mark.storage.pack+':'+mark.storage.slot : 'inventory:'+mark.slot)));
-    const matches = protectedMerchantStorageStock(state).filter(entry=>/^items\d+$/.test(entry.craftLocation) && entry.item && !entry.item.l && !entry.item.b && entry.item.name===item.name && (entry.item.level||0)===(item.level||0) && !reserved.has(entry.craftLocation+':'+entry.slot));
+    const pending=state.withdrawals?.[name]||[];
+    const matches = protectedMerchantStorageStock(state).filter(entry=>/^(?:items\d+|bankboi:[A-Za-z0-9_]+)$/.test(entry.craftLocation) && entry.item && !entry.item.l && !entry.item.b && entry.item.name===item.name && (entry.item.level||0)===(item.level||0) && !reserved.has(entry.craftLocation+':'+entry.slot) && !pending.some(mark=>mark.pack===entry.craftLocation&&mark.slot===entry.slot));
     const selected = matches.find(entry=>entry.craftLocation===body.pack && entry.slot===body.slot && JSON.stringify(entry.item)===JSON.stringify(item));
     if (!selected || matches.length<3 || entryMeta(state.merchantCatalog, selected)?.compoundable !== true)
       return reply({error:'Need three available matching compoundable bank items'},409);
     const triplet=[selected,...matches.filter(entry=>entry!==selected).slice(0,2)];
     const next=nextGroup(groups);
     groups.push({id:'group-'+next,name:'Group '+next,items:triplet.map((entry,index)=>({slot:-1-index,item:entry.item!,storage:{pack:entry.craftLocation,slot:entry.slot!}}))});
+    const remote=triplet.filter(entry=>entry.craftLocation.startsWith('bankboi:'));
+    if(remote.length){
+      const withdrawals=(state.withdrawals ||= {})[name] ||= [];
+      withdrawals.push(...remote.map(entry=>({pack:entry.craftLocation,slot:entry.slot,item:entry.item,improvement:'manual compounds'})));
+      ports.persistBank?.();
+    }
     ports.persist();ports.queue?.([name],'manual compounds');return null;
   }
   function manual(body: Request, item: Item): CommandOutcome {

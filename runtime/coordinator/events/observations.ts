@@ -579,6 +579,7 @@ export function createEventObservations(
   }
 
   function observe(body: EventReport): void {
+    retireMerchantTownReturn(body);
     const reports = Array.isArray(body.serverLiveEvents)
       ? body.serverLiveEvents.filter((entry) => entry && typeof entry.name === "string")
       : [];
@@ -593,6 +594,33 @@ export function createEventObservations(
     beginEndedReturn();
     deferStaleMembers();
     resumeDeferred(body);
+  }
+
+  function retireMerchantTownReturn(body: EventReport): void {
+    const name=body.name;
+    const report=ports.statuses()[name];
+    if(name!==ports.merchant()||!deferredAtTown(report))return;
+    const current=state.current,deferred=state.deferred[name];
+    const exiting=report?.eventRecovery;
+    if(exiting&&[current?.cycleId,deferred?.cycleId].includes(exiting.cycleId)&&
+        !['town-ready','deferred-town-ready','idle'].includes(exiting.phase))return;
+    if(current?.participants.includes(name)&&current.exited?.includes(name)&&!current.pending.includes(name)&&
+        current.waypoints?.[name]?.location===null){
+      retireOldDeferredContinuation(name,current.cycleId);
+      current.participants=current.participants.filter(member=>member!==name);
+      if(current.returnRoutes)delete current.returnRoutes[name];
+      if(state.sessions[name]?.event===current.event)delete state.sessions[name];
+      ports.persist();ports.finishIfReady();
+    }
+    if(deferred?.checkpoint===null){
+      // This merchant has no farming waypoint to resume. Main arrival completes
+      // only its old return; a newer event session/command keeps its ownership.
+      retireOldDeferredContinuation(name,deferred.cycleId);
+      ports.finishDeferred?.(name,deferred.cycleId,deferred.event);
+      if(state.sessions[name]?.event===deferred.event)delete state.sessions[name];
+      if(state.deferred[name]===deferred)delete state.deferred[name];
+      ports.persist();
+    }
   }
   return { observe, authorize };
 }
