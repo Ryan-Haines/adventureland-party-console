@@ -137,6 +137,8 @@ export function installRoleRunner(
     return exclusiveCombat() ? null : sharedRoutine.getPriorityEventTarget?.() || null;
   }
   function fallbackTarget() {
+    const drain = sharedRoutine.getConsoleDrainTarget?.();
+    if (drain) return drain;
     if (sharedRoutine.dungeonOwned?.()) return sharedRoutine.getDungeonTarget?.() || null;
     if(sharedRoutine.returnCombatActive?.())return sharedRoutine.returnDefenseTarget?.() || null;
     if (sharedRoutine.frankyCombatActive?.()) return sharedRoutine.getEventTarget();

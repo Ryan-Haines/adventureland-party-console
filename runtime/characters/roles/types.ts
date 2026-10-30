@@ -75,6 +75,7 @@ export interface SharedCombat {
   eventRejoinRequired?(): boolean;
   beginFarmReunion(): unknown;
   isOccupied(): boolean;
+  getConsoleDrainTarget?(): Target | null;
   getAbtestingMode(): string;
   targetRejectionReason(target: Target): string | null;
   setCombatTarget(target: Target | null): void;

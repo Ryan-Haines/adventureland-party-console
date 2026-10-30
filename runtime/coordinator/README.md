@@ -1400,6 +1400,12 @@ Manual inventory commands and outstanding production/lucky-slot recovery own
 their cells before optional compression. The isolated native lucky-slot journal
 fixture explicitly holds that inventory-command ownership while checking its
 original strict warning, swap and quantity results.
+Safe console draining retains its captured native combat targets independently
+of a newer Hunt/group selection. Eligible but unjoined interaction events cannot
+strand that existing fight while event polling is parked. Hunt reports the
+console-load hold explicitly and resumes its normal message after release.
+Validate both variants of the native fight/no-successor journey in
+`live-console-safe-reload.spec.ts`; retain real hits, death and ready reports.
 
 The separate `party-bank-stack-buffer:<character>` journal records temporary
 inventory slots and expected operation results before mutation. Unconfirmed

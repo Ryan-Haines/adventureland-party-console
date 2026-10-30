@@ -2448,9 +2448,21 @@
     return !consoleDraining() || !!(target && ((root.__partyConsoleDrainTargets || {})[consoleDrainKey(target)] || isAttackingPartyMember(target)));
   }
   function consoleDrainCombatActive() {
-    return consoleDraining() && Object.values(parent.entities || {}).some(function(target) {
-      return target && target.type === 'monster' && target.visible && !target.dead && target.hp > 0 && consoleDrainAllows(target);
-    });
+    return consoleDraining() && Object.values(parent.entities || {}).some(consoleDrainTargetValid);
+  }
+  function consoleDrainTargetValid(target) {
+    return !!(target && target.type === 'monster' && target.visible && !target.dead && target.hp > 0 &&
+      (!target.map || target.map === character.map) && (target.in == null || String(target.in) === String(character.in)) &&
+      consoleDrainAllows(target) && !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead && root.partyRoleRunner.isKnownDead(String(target.id))));
+  }
+  function consoleDrainTarget() {
+    if (!consoleDraining()) return null;
+    return Object.values(parent.entities || {}).filter(consoleDrainTargetValid).filter(function(target) {
+      return !isExternallyClaimedMonster(target) || isAttackingPartyMember(target);
+    }).sort(function(a,b) {
+      return Number(isAttackingPartyMember(b)) - Number(isAttackingPartyMember(a)) ||
+        Math.hypot(a.x-character.x,a.y-character.y) - Math.hypot(b.x-character.x,b.y-character.y);
+    })[0] || null;
   }
   function consoleMovementPaused() {
     // Finish already-owned inventory/merchant work before parking its route.
@@ -2902,7 +2914,7 @@
       luckySlotTracking: luckySlotTracking().report(),
       luckySlotCharacterId: luckySlotCharacterId,
       merchantEventReserved: merchantEventWorkReserved(),
-      upgradeInventoryBusy: !!(root.__partyInventoryCommands || root.__merchantInventoryTidy || root.__partyProductionWorking || root.__partyProductionRecovery || (luckyUpgradeService ? luckyUpgradeService.pending() :
+      upgradeInventoryBusy: !!(root.__merchantInventoryTidy || root.__partyProductionWorking || root.__partyProductionRecovery || (luckyUpgradeService ? luckyUpgradeService.pending() :
         root.localStorage.getItem("party-lucky-upgrade:" + character.name))),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
       escape: escapeLocal,
@@ -9471,14 +9483,14 @@
     var merge = command.inventoryMerge;
     var boundaryOwned = root.__merchantActiveJob && root.__merchantActiveJob.jobId === command.jobId && root.__merchantActiveJob.commandId === command.id;
     if (!merge || character.ctype !== "merchant" || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy ||
-        banking || gatheringActive || root.__partyInventoryCommands || merchantAnniversaryWorkReserved() || !runtimeCurrent()) return;
+        banking || gatheringActive || stackInventoryCommandBusy(command) || merchantAnniversaryWorkReserved() || !runtimeCurrent()) return;
     if (Date.now() < (Number(root.__merchantStackRetryAt) || 0)) return;
     try {
       var permission = await request("/merchant/stack-merge-permission", { method: "POST", body: {
         character: character.name, merge: merge,
         jobId: command.jobId, commandId: command.id, command: boundaryOwned ? command : undefined,
       }});
-      if (!permission.allowed || !runtimeCurrent() || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy || banking || gatheringActive || root.__partyInventoryCommands) return;
+      if (!permission.allowed || !runtimeCurrent() || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy || banking || gatheringActive || stackInventoryCommandBusy(command)) return;
     } catch (_mergePermissionError) { return; }
     var target = character.items[merge.to], source = character.items[merge.from];
     if (!target || !source || merge.to === merge.from || target.l || source.l || target.b || source.b ||
@@ -9512,7 +9524,7 @@
   }
 
   async function compressMerchantInventory(command) {
-    if (character.ctype !== "merchant" || root.__partyInventoryCommands || Number(root.__merchantStackCheckAt) > Date.now()) return;
+    if (character.ctype !== "merchant" || stackInventoryCommandBusy(command) || Number(root.__merchantStackCheckAt) > Date.now()) return;
     var partials = {};
     var candidate = character.items.some(function(item) {
       var limit = item && Number((G.items[item.name] || {}).s) || 1;
@@ -9536,6 +9548,13 @@
       if (root.__merchantStackError) return;
       if (Number((character.items[next.merge.to] || {}).q) === Number(next.merge.target.q)) return;
     }
+  }
+
+  function stackInventoryCommandBusy(command) {
+    var ownJob = root.__merchantActiveJob && root.__merchantActiveJob.jobId === command.jobId && root.__merchantActiveJob.commandId === command.id;
+    var ownIdle = typeof merchantIdleActive !== "undefined" && merchantIdleActive && command.type === "merchant-idle";
+    var ownsCommand = typeof lastCommand !== "undefined" && command.id === lastCommand && (ownJob || ownIdle);
+    return (Number(root.__partyInventoryCommands) || 0) > (ownsCommand ? 1 : 0);
   }
 
   async function merchantStandInventoryReady(command) {
@@ -14679,6 +14698,7 @@
   }
   function groupedAttackAllowed(target) {
     if (!consoleDrainAllows(target)) return false;
+    if (typeof consoleDraining === "function" && consoleDraining() && consoleDrainTargetValid(target)) return true;
     if (dungeonOwned()) return !!(character.cave && !character.cave.paused && dungeonTargetAllowed(target) && groupedFresh() &&
       groupedCombat.target?.id === target.id && groupedCombat.committed);
     if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
@@ -14949,6 +14969,8 @@
     if (typeof root !== "undefined" && root.partyRoleRunner && root.partyRoleRunner.isKnownDead && root.partyRoleRunner.isKnownDead(target.id)) return reject("confirmed death");
     if (typeof frankyCombatActive === "function" && frankyCombatActive()) return true;
     if (target.mtype === "fieldgen0") return reject("excluded monster");
+    if (typeof consoleDraining === "function" && consoleDraining() && consoleDrainTargetValid(target) &&
+        (!isExternallyClaimedMonster(target) || isAttackingPartyMember(target))) return true;
     // Acquisition nominates a new target; only actual combat requires the group selection lock.
     // An attack already pending or engaged must still finish before another hunt pull.
     if (huntTravel && typeof unfinishedFight === "function" && unfinishedFight()) return reject("unfinished group fight");
@@ -18230,6 +18252,7 @@
       return typeof rareActive === "function" && rareActive() ? "default" : farmingMode;
     },
     getEngagedTarget: engagedMonster,
+    getConsoleDrainTarget: consoleDrainTarget,
     getCloserHuntTarget: function(current) {
       if (!huntCombatTarget || !current || current.mtype!==huntCombatTarget || groupedFarming() ||
           activeCombatEvent() || joinedEvent || travelCombatActive() || isAttackingPartyMember(current)) return null;

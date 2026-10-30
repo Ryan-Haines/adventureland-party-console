@@ -104,6 +104,7 @@ export interface HuntStatus extends Pick<SharedStatus, "combatSelection" | "conv
   farmReunion?: unknown;
   convoyProtocol?: number;
   huntEventPending?: boolean;
+  consoleMaintenance?: { id?: string; mode?: string; ready?: boolean } | null;
   monsterHunt?: { id: string; count: number; remainingMs: number } | null;
 }
 export interface LootProgress {
