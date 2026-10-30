@@ -237,12 +237,19 @@ test.describe('October Graveyard targeting',()=>{
     await live.post('/formation',{leader:name});
     await live.post('/formation',{character:'E2EPriest',follow:true});
     const seed=await live.admin(`output=(()=>{
-      const result={};for(const [type,x] of [['zombie',235],['gargoyle',275]]){
+      // This exclusion journey needs exactly its two declared targets. Ambient
+      // Gargoyles otherwise keep Priest healing against unrelated attackers,
+      // preventing the required offensive hits on the declared Zombie.
+      const result={removed:[]};for(const m of Object.values(instances.spookytown.monsters)){
+        result.removed.push(String(m.id));remove_monster(m,{method:'disappear',nospawn:true});
+      }
+      for(const [type,x] of [['zombie',235],['gargoyle',275]]){
         G.monsters[type]={...G.monsters[type],hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
         const m=new_monster('spookytown',{type,count:1,boundary:[x,-1440,x,-1440]},{temp:1});result[type]=String(m.id);
       }
       E.graveyard={live:true,start:Date.now(),map:'spookytown',x:255,y:-1545,wave:1,left:2};broadcast_e();return result;
     })()`);
+    await info.attach('declared-graveyard-exclusion-targets',{body:JSON.stringify(seed),contentType:'application/json'});
     await live.post('/formation',{character:name,eventSelections:['graveyard'],eventLimits:{event:'graveyard',limits:{deathLimit:null,timeLimitMinutes:null,monsters:['zombie','ghoul']}}});
     await expect.poll(async()=>{const hits=await live.clients[name].events();return ['E2EWarrior','E2EPriest'].every(name=>hits.filter((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.zombie&&e.data?.hid===name&&e.data?.damage>0).length>=3);},{timeout:90_000}).toBe(true);
     const excluded=await live.admin(`output=(()=>{const m=instances.spookytown.monsters[${JSON.stringify(seed.gargoyle)}];return {hp:m.hp,max_hp:m.max_hp,target:m.target}})()`);
