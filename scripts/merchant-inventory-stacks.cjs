@@ -12,7 +12,6 @@ function plan(party, status, boundary) {
   function reserve(value) {
     if (!value || typeof value !== 'object') return;
     if (typeof value.name === 'string') reserved.add(value.name);
-    if (typeof value.id === 'string') reserved.add(value.id);
     Object.values(value).forEach(reserve);
   }
   [party.marked?.[merchant], party.merchantMarked?.[merchant], party.upgrades?.[merchant],

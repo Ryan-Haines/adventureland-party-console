@@ -85,6 +85,8 @@ test('merchant compresses five candy piles and bank sort consolidates compatible
   const merchant='E2EMerchant';
   await live.post('/merchant/force-stand',{enabled:true});
   await live.post('/merchant/bank-sort',{mode:'request',enabled:true});
+  await expect.poll(async()=>(await live.state(true)).merchantCatalog?.exchangeable?.some((e:any)=>e.id==='candy0'),{timeout:60_000}).toBe(true);
+  await live.post('/command',{character:merchant,type:'auto-exchange',slot:-1,item:{name:'candy0',level:0}});
   await live.admin(`output=(async()=>{const p=get_player('${merchant}');
     [6450,31,9999,4083,15].forEach((q,i)=>{p.items[20+i]={name:'candy0',q};});
     p.items[25]={name:'spidersilk',q:5,p:'cavefound'};
@@ -93,6 +95,9 @@ test('merchant compresses five candy piles and bank sort consolidates compatible
   await expect.poll(async()=>{
     const c=await live.clients[merchant].snapshot();return c.items.filter((i:any)=>i?.name==='candy0').map((i:any)=>i.q).sort((a:number,b:number)=>b-a);
   },{timeout:90_000}).toEqual([9999,9999,580]);
+  await expect.poll(async()=>(await live.state()).merchantQueue.some((job:any)=>job.reason==='exchange')).toBe(true);
+  const exchange=(await live.state()).merchantQueue.find((job:any)=>job.reason==='exchange');
+  await live.post('/merchant/job/cancel',{id:exchange.id});
   await live.post('/merchant/force-stand',{enabled:false});
   await live.post('/command',{character:merchant,type:'mark',slot:25,item:{name:'spidersilk',q:5,p:'cavefound'}});
   await live.post('/command',{character:merchant,type:'bank'});
