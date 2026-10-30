@@ -2,6 +2,7 @@
 import { Sprite } from "./sprite";
 
 export type MapEntity = {
+  layers?: import("../../../runtime/map-sprites").MapSpriteLayer[];
   id: string;
   name: string;
   type: string;

@@ -1,10 +1,13 @@
 import {test,expect} from './live-fixtures';
 import {W,P,M,world,quantity,prepareHunt,beginAnniversary,endAnniversary,spawnRare,cleanupEvents} from './game/hunt-events';
 import {killedByParty} from './hunt-interruption-helpers';
+import {isolateNativeMapAmbient,restoreNativeMapAmbient} from './native-map-ambient-isolation';
 
 for(const mode of ['resume','restart','hunt-off'] as const) test(`native anniversary visit ${mode} delivers real kiss rewards and event deselection returns to current Hunt policy`,async({live},info)=>{
   test.setTimeout(420_000);
   try {
+    const ambient=await isolateNativeMapAmbient(live,'main');
+    await info.attach('anniversary-native-ambient-input',{body:JSON.stringify(ambient),contentType:'application/json'});
     const hunt=await prepareHunt(live);
     await live.post('/formation',{character:W,eventSelections:['anniversary']});
     await live.post('/formation',{character:M,eventSelections:['anniversary']});
@@ -41,7 +44,7 @@ for(const mode of ['resume','restart','hunt-off'] as const) test(`native anniver
       const encounter=await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)}),destination=${JSON.stringify(destination)},bounds=destination.boundary;
         for(const [dx,dy] of [[35,0],[-35,0],[0,35],[0,-35]]){const x=p.x+dx,y=p.y+dy;
           if(x<bounds[0]||x>bounds[2]||y<bounds[1]||y>bounds[3]||!can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))continue;
-          const m=new_monster(p.in,{type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
+          const m=new_monster(p.in,{__e2eAmbientExempt:true,type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
           return {id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,destination};}
         throw Error('No reachable native encounter inside retained Goo mission');})()`);
       await info.attach('anniversary-resumed-native-encounter',{body:JSON.stringify({mode,encounter}),contentType:'application/json'});
@@ -51,12 +54,19 @@ for(const mode of ['resume','restart','hunt-off'] as const) test(`native anniver
     }
     expect(quantity((await world(live)).players[M].items,'anniversarygift')).toBe(quantity(before.players[M].items,'anniversarygift')+1);
     await info.attach('anniversary-native-hunt-result',{body:JSON.stringify({mode,hunt,before,afterGift,final:await world(live),state:await live.state()}),contentType:'application/json'});
-  } finally {await cleanupEvents(live);}
+  } finally {
+    try {await cleanupEvents(live);} finally {
+      const restored=await restoreNativeMapAmbient(live,true);
+      await info.attach('anniversary-native-ambient-restored',{body:JSON.stringify(restored),contentType:'application/json'});
+    }
+  }
 });
 
 test('disabled anniversary selection leaves native Hunt fighting and creates no visit reward',async({live},info)=>{
   test.setTimeout(300_000);
   try {
+    const ambient=await isolateNativeMapAmbient(live,'main');
+    await info.attach('disabled-anniversary-native-ambient-input',{body:JSON.stringify(ambient),contentType:'application/json'});
     const hunt=await prepareHunt(live),before=await world(live);
     const seed=await beginAnniversary(live,M);
     await expect.poll(async()=>(await world(live)).anniversary?.live,{timeout:30_000}).toBe(true);
@@ -67,11 +77,15 @@ test('disabled anniversary selection leaves native Hunt fighting and creates no 
         [W,P].every(name=>{const p=current.players[name];return p.map===mission.destination.map&&
           p.x>=bounds[0]&&p.x<=bounds[2]&&p.y>=bounds[1]&&p.y<=bounds[3];});
     },{timeout:90_000,message:'Disabled Anniversary must leave both native fighters at the current Hunt mission'}).toBe(true);
-    const mission=(await live.state()).monsterHunt.missions[(await live.state()).monsterHunt.currentIndex];
+    const missionState=await live.state(),mission=missionState.monsterHunt.missions[missionState.monsterHunt.currentIndex];
     const encounter=await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(W)}),destination=${JSON.stringify(mission.destination)},bounds=destination.boundary;
-      for(const [dx,dy] of [[35,0],[-35,0],[0,35],[0,-35]]){const x=p.x+dx,y=p.y+dy;
+      if(p.map!==destination.map)throw Error('Native Hunt actor left its declared mission map');
+      const points=[[35,0],[-35,0],[0,35],[0,-35]].map(([dx,dy])=>({x:p.x+dx,y:p.y+dy}));
+      for(let x=bounds[0];x<=bounds[2];x+=20)for(let y=bounds[1];y<=bounds[3];y+=20)points.push({x,y});
+      points.sort((a,b)=>Math.hypot(a.x-p.x,a.y-p.y)-Math.hypot(b.x-p.x,b.y-p.y));
+      for(const {x,y} of points){
         if(x<bounds[0]||x>bounds[2]||y<bounds[1]||y>bounds[3]||!can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))continue;
-        const m=new_monster(p.in,{type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
+        const m=new_monster(p.in,{__e2eAmbientExempt:true,type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
         return {id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,destination};}
       throw Error('No reachable native encounter inside disabled-Anniversary Goo mission');})()`);
     await info.attach('anniversary-disabled-native-encounter',{body:JSON.stringify(encounter),contentType:'application/json'});
@@ -84,7 +98,11 @@ test('disabled anniversary selection leaves native Hunt fighting and creates no 
     expect(quantity(after.players[W].items,'anniversarygift')).toBe(quantity(before.players[W].items,'anniversarygift'));
     expect(after.players[W].conditions.anniversary_kiss).toBeFalsy();
     await info.attach('anniversary-disabled-native-evidence',{body:JSON.stringify({seed,before,after,state}),contentType:'application/json'});
-  } finally {await cleanupEvents(live);}
+  } finally {
+    try {await cleanupEvents(live);} finally {
+      await info.attach('disabled-anniversary-native-ambient-restored',{body:JSON.stringify(await restoreNativeMapAmbient(live,true)),contentType:'application/json'});
+    }
+  }
 });
 
 for(const type of ['phoenix','goldenbat','cutebee','hen','rooster','tinyp']) test(`native ${type} interruption kills and loots before resuming the same Hunt`,async({live},info)=>{
@@ -187,6 +205,10 @@ for(const type of ['phoenix','goldenbat','cutebee','hen','rooster','tinyp']) tes
     }
     await expect.poll(async()=>(await world(live)).players[W].quest?.c,{timeout:Math.max(1,resumedDeadline-Date.now())}).toBeLessThan(afterRare.players[W].quest.c);
     await info.attach('native-rare-hunt-resumed',{body:JSON.stringify({hunt,spawn,before,afterRare,final:await world(live),state:await live.state()}),contentType:'application/json'});
+    const moves=(await live.clients[W].events()).filter((event:any)=>event.event==='move-issued');
+    expect(moves.filter((event:any)=>event.motion?.owner==='convoy:defending'&&
+      event.motion?.position?.movementOwner==='farm-recovery'&&!event.motion?.position?.target),
+    'Empty farming search must not move away while convoy defense owns the return').toEqual([]);
   } finally {
     try {
       const packets=(await live.clients[W].events()).filter((event:any)=>['move-issued','player','new_map','game_log'].includes(event.event)).slice(-400);

@@ -24,6 +24,8 @@ interface CombatLogPorts {
   owned(name: string): boolean;
   now(): number;
   persist(): void;
+  /** Saves at once, so a cleared log stays cleared after a crash. */
+  persistNow?(): void;
 }
 
 function logEntry(value: unknown, now: () => number): CombatLogEntry | null {
@@ -61,7 +63,7 @@ export function createCombatLogRoutes(
     const name = request.params.character;
     if (!ports.owned(name)) return response.status(400).json({ error: "unknown character" });
     logs[name] = [];
-    ports.persist();
+    (ports.persistNow || ports.persist)();
     return response.json({ ok: true });
   }
 

@@ -1,3 +1,4 @@
+import {waitForGameplay} from './network-clock';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
@@ -16,7 +17,7 @@ test('native browser CODE ignores manifest edits until explicit activation and s
   await page.route('**/CODE/adventure_land/activation.json*',route=>published?route.fulfill({json:published}):route.fulfill({status:404,body:'No explicit activation'}));
   await page.route(`**/CODE/adventure_land/${candidate.classes.warrior.file}*`,route=>route.fulfill({contentType:'application/javascript',body:bundle}));
   const before=(await live.state()).characters[W],runtime=before.dashboardRuntime;
-  await page.waitForTimeout(6500);
+  await waitForGameplay(6500);
   expect((await live.state()).characters[W].codeHash).toBe(original.sha256);
   expect((await live.state()).characters[W].dashboardRuntime).toBe(runtime);
   published={id:'explicit-native-forward',manifest:candidate};

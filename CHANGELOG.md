@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### 1.5 changes since v1.4.0
+
+Only changes verified against the v1.4.0 source are listed in this summary.
+
+#### New features
+
+- Automate Headless Horseman, Graveyard Rising, Trick or Treat, and shared Witch's Cipher gathering and brewing.
+- View seven-day event schedules, realm/local times, and Trick or Treat knock allowances and daily-reset countdowns.
+- Track persistent gold, kills, loot, ping, and drop-rate estimates in the new metrics dashboard.
+- Enable automatic mailbox collection/deletion, new-mail counters, and sent-mail history.
+- Inspect account characters and equipment without logging them in, including characters never loaded into the console.
+- Batch-select inventory, bank, and exchange-reward items for shared actions.
+- Start manual compound jobs from bank or BankBoi stock, with reserved source items.
+- Redesign item, character, monster, skill, and comparison cards with game-style colors and stat breakdowns.
+- Show separate home-server rewards, readable ratio/percentage odds, and event-only monster sources.
+- Automatically restock and consume selected elixirs, with optional purchasing or crafting when stock runs out.
+- Optionally craft replacement fishing poles and pickaxes when no tool remains in inventory or the bank.
+- Set keep quantities for automatic NPC sales so reserved storage stock is protected and only surplus is sold.
+- Pair another browser with a short, single-use access code.
+- Render native character sprites, cosmetics, weapons, and projectiles on headless maps, with native map actions.
+- Preview merchant donation XP and resulting level, or calculate the gold needed for a target level.
+- Reopen completed Cave merchant encounters to return to their shops and buy the offered item.
+- Show gold-find bonus in portrait stats; press I for item JSON and see each CX Jar's contents.
+- Resolve an unconfirmed WTB purchase as bought or not bought so the paused order can continue.
+
+#### Bugfixes
+
+- Compress compatible merchant and bank stacks fully, including partial fills and items received during auto-exchange.
+- Bank exchange rewards correctly when they merge into an existing carried stack.
+- Retrieve automatic NPC-sale stock from BankBoi storage and discover eligible stock during the merchant's bank visit.
+- Resume interrupted BankBoi storage work after movement/checkpoint transport failures without replaying completed transfers.
+- Keep manual upgrade selections tied to the correct unfinished item after inventory slots move.
+- Retrieve missing stat scrolls from the bank and confirm stat changes before delivering the item.
+- Retire completed merchant event returns on Main arrival and allow full-inventory event handoffs to resume queued work.
+- Resume an interrupted Hunt after CODE runtime replacement once the party reports fresh, safely stopped ownership.
+- Preserve the current fight during safe loading when Hunt/event selection changes, avoiding a stuck combat drain.
+- Detour planner edges that cross native collision geometry instead of routing characters through blocked corners.
+- Restore headless Cave floor graphics, clear finished-visit state, and preserve spent repair budgets when retrying.
+- Retry missed gathering channels correctly and restart gathering after inventory-command ownership is released.
+- Exclude exchange-derived items from direct monster drops and preserve distinct reward rolls and home-drop quantities.
+- Reduce redundant status traffic, headless rendering work, and persistence/log growth to keep long-running sessions responsive.
+
+### Earlier detailed history
+
+The historical entries below also include changes already shipped in 1.4.
+
 - Remove the arbitrary successor spawn-distance requirement from the queued Goo E2E test, retaining actual combat and fresh party confirmation checks. Allow 240 seconds for event-handoff checkpoint returns so communication safety holds can recover on slower CI runners.
 
 - Stabilize the roaming Goo E2E fixture by starting its declared native movement leg after all clients acknowledge target selection, preserving interception, damage and fresh whole-party confirmation checks.
@@ -694,6 +740,10 @@ from the commits merged into `main`.
   native acknowledgements and fresh character status confirm changes while the
   account database catches up; temporary merchants keep exclusive command
   ownership until their home change and logout finish (#52).
+- Pair another browser shows a short access code, such as `K7QM-4XRT`, next to
+  the pairing link. Type it into setup on the new browser. A code works once,
+  expires after 10 minutes, and five wrong guesses cancel it. Pairing with either
+  the code or the link retires the other.
 
 - Debug consoles can open and control their actual game browser through a private
   viewer on the same port, with Debug browser labels instead of Steam.

@@ -1,0 +1,362 @@
+{
+  "schema": 1,
+  "validatedAt": "2026-10-19T02:10:21.485Z",
+  "branch": "1.5-feature-branch",
+  "sourceHead": "7ca7b5e544a65239aa73c50f7cf875562e3c24ea",
+  "scope": "Focused browser/native validation; not a full-suite execution",
+  "issues": [
+    141,
+    122,
+    126,
+    128,
+    124,
+    125
+  ],
+  "sectionDefaults": {
+    "inventory": "open",
+    "equipped": "open",
+    "restock": "collapsed",
+    "combatLog": "collapsed",
+    "rememberedPerCharacter": true
+  },
+  "typecheck": "passed in pretest",
+  "selection": {
+    "totalScenarios": 338,
+    "gameplayChronALDefault": 227
+  },
+  "browser": {
+    "workers": 1,
+    "rendering": "hardware",
+    "verifiedRenderers": [
+      "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)"
+    ]
+  },
+  "focused": {
+    "unique": 26,
+    "passed": 26,
+    "evidenceFiles": 1328
+  },
+  "retained": {
+    "tests": 149,
+    "passed": 149,
+    "evidence": ".build/release-1.5-followup/retained-regressions-ready.tap",
+    "sha256": "bab36d5f8f820fd1fe27d755ba9fba47e1a7e9fa58968f8a5a13b0c5c84aa996"
+  },
+  "preservedContribution": {
+    "issue": 124,
+    "originalCommit": "bf5da1bb71818727224e3d9ca4956f30be79b4c6",
+    "adoptedCommit": "3d86eaa",
+    "author": "Thefonze74065"
+  },
+  "stagedCandidate": {
+    "id": "7881dbb8120d1ee8e8253f5c081aa13519d4ab9a2d8fc2787b61660539ffd04f",
+    "sourceHash": "66e01b4e71f01850c69aaf7dc6382774dc2625ca961ab8ac578d6c9501675179",
+    "completed": true,
+    "deepVerified": true,
+    "sourceMatches": true,
+    "verifiedAt": "2026-10-19T02:09:29.353Z",
+    "activeId": "6c564873449a2a5a5f25192627254f30cfc92c15d65c6ccc2ff29fb038097283",
+    "activated": false
+  },
+  "mapPublicationMeasurements": [
+    {
+      "archive": "integrated-second",
+      "bytes": 1078,
+      "captureTiming": {
+        "layers": 13,
+        "capturesPerSample": 1000,
+        "nativeMsPerCapture": [
+          0.005700000017881394,
+          0.004,
+          0.0035999999940395356,
+          0.002800000011920929,
+          0.002
+        ]
+      }
+    }
+  ],
+  "runs": [
+    {
+      "archive": "sections-first",
+      "command": [
+        "npx",
+        "playwright",
+        "test",
+        "--project=console",
+        "--workers=1",
+        "--grep",
+        "character sections collapse|player context marks keep|player and merchant inventory batches"
+      ],
+      "revision": "c13614a7ea4c3c23ac1f6df748228bdedb853f42",
+      "status": "passed",
+      "selected": 3,
+      "passed": 3,
+      "evidenceFiles": 34,
+      "manifestSha256": "939d515f94c205d8abf2844c97cef96251d6e6450af6d78648157f92c595c847",
+      "candidateId": "aa428d133cb15ab19d430e3f33ff16a55ceeebf9afbf749aacc1329735795ef7",
+      "sourceHash": "172b34b36af2a01cb5ee57ebf8dce412f419e460691156e417e32cc0fdab2eac",
+      "started": "2026-10-19T01:31:34.565Z",
+      "finished": "2026-10-19T01:31:50.863Z",
+      "backend": "chronal-network",
+      "clockRate": 4
+    },
+    {
+      "archive": "integrated-first",
+      "command": [
+        "npx",
+        "playwright",
+        "test",
+        "--project=console",
+        "--project=live",
+        "--workers=1",
+        "--grep",
+        "character sections collapse|mailbox settings persist|outbox shows durable|mailbox automation collects native|unconfirmed purchase|unconfirmed stand|WTB purchase|new farming focus resumes|walk yields to a newly visible boss|explicit monster travel|native event route retains ownership"
+      ],
+      "revision": "c6c22f222e63e55ed68b20a4e93dabb44c907a39",
+      "status": "failed",
+      "selected": 11,
+      "passed": 5,
+      "evidenceFiles": 383,
+      "manifestSha256": "0f571462bcf5a4eb116ebffef893f1984e0e9159f4902209f83baaff58fa1040",
+      "candidateId": "02749ffa72a54d6e78bb35affc674d6246ea2de9dec86a5eae6f1c9ddf6201d2",
+      "sourceHash": "4a550a5a2c12e86af93969959ff954aecf527ad4f8c50e52396f494ae4eb862d",
+      "started": "2026-10-19T01:36:53.503Z",
+      "finished": "2026-10-19T01:43:38.829Z",
+      "backend": "chronal-network",
+      "clockRate": 4
+    },
+    {
+      "archive": "corrected-first",
+      "command": [
+        "npx",
+        "playwright",
+        "test",
+        "--project=console",
+        "--project=live",
+        "--workers=1",
+        "--grep",
+        "character sections collapse|mailbox settings persist|walk yields to a newly visible boss|unconfirmed WTB resolution"
+      ],
+      "revision": "cbe6d878d9264b4f0c17dbb8a808ac96f8557532",
+      "status": "passed",
+      "selected": 5,
+      "passed": 5,
+      "evidenceFiles": 152,
+      "manifestSha256": "786ce1ec5c0130f4528339f636b654ab016a765e4c8ce34af32494d692aa348b",
+      "candidateId": "f867a300c7a6c91777b35696b878d6dff092be40dc0778abc792d554bbb2f7ee",
+      "sourceHash": "b8b3c36786e2f6e34c46302061182e87a43083167e1198481aa74c65946d3d8d",
+      "started": "2026-10-19T01:46:18.319Z",
+      "finished": "2026-10-19T01:47:37.790Z",
+      "backend": "chronal-network",
+      "clockRate": 4
+    },
+    {
+      "archive": "integrated-second",
+      "command": [
+        "npx",
+        "playwright",
+        "test",
+        "--project=console",
+        "--project=live",
+        "--workers=1",
+        "--grep",
+        "character sections collapse|mailbox settings persist|outbox shows durable|live maps draw native|map sprite publication|headless native HTML|headless server action|Steam Characters bar|Steam pointer toggle|Steam character controls|expanded character and Cave maps|fixed-origin map image proxy|player context marks keep|player and merchant inventory batches|mailbox automation collects native|unconfirmed WTB|new farming focus resumes|walk yields to a newly visible boss|explicit monster travel|native event route retains ownership|native UHills farming handoff"
+      ],
+      "revision": "8f0a151421603f6f8809242f4a2e690ae7841229",
+      "status": "failed",
+      "selected": 24,
+      "passed": 22,
+      "evidenceFiles": 588,
+      "manifestSha256": "256dff065febc86261b41ff828bb41eeabc9f74b2c0d995a574ae8246018494b",
+      "candidateId": "b21c82aa8827c55663b4672e359486b7f78ca9e508e752cda3bfdfb30a9dbec7",
+      "sourceHash": "3b1602c2782966e3156448e782d8a408c54f1d7d07b662ce063734778857114c",
+      "started": "2026-10-19T01:52:39.074Z",
+      "finished": "2026-10-19T02:00:42.931Z",
+      "backend": "chronal-network",
+      "clockRate": 4
+    },
+    {
+      "archive": "focused-final",
+      "command": [
+        "npx",
+        "playwright",
+        "test",
+        "--project=console",
+        "--project=live",
+        "--workers=1",
+        "--grep",
+        "character sections collapse|headless native HTML|doll markup remains inert|new farming focus resumes|native UHills farming handoff|empty saved hawk spawn"
+      ],
+      "revision": "7ca7b5e544a65239aa73c50f7cf875562e3c24ea",
+      "status": "passed",
+      "selected": 6,
+      "passed": 6,
+      "evidenceFiles": 171,
+      "manifestSha256": "140ed137f31c13afc0d3ddfa7f2d9560f754cd24199141c8d3da57e5f1d48eab",
+      "candidateId": "7881dbb8120d1ee8e8253f5c081aa13519d4ab9a2d8fc2787b61660539ffd04f",
+      "sourceHash": "66e01b4e71f01850c69aaf7dc6382774dc2625ca961ab8ac578d6c9501675179",
+      "started": "2026-10-19T02:04:50.273Z",
+      "finished": "2026-10-19T02:06:55.255Z",
+      "backend": "chronal-network",
+      "clockRate": 4
+    }
+  ],
+  "latestFocusedOutcomes": [
+    {
+      "title": " > console > console.spec.ts > character sections collapse independently and retain inventory equipment restock order",
+      "status": "passed",
+      "durationMs": 4724,
+      "archive": "focused-final"
+    },
+    {
+      "title": " > console > console.spec.ts > player and merchant inventory batches preserve owner and mixed upgrade levels",
+      "status": "passed",
+      "durationMs": 3986,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > player mark menu > player context marks keep bank and upgrade pairs before merchant delivery marks",
+      "status": "passed",
+      "durationMs": 2942,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > Mailbox enhancements > mailbox settings persist independently and delete only confirmed collected attachments",
+      "status": "passed",
+      "durationMs": 4493,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > Mailbox enhancements > outbox shows durable sent records and deletion does not remove another sent message",
+      "status": "passed",
+      "durationMs": 4171,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-event-runtime-recovery.spec.ts > visible event boss separated by native terrain > native event route retains ownership until the visible boss is attack reachable",
+      "status": "passed",
+      "durationMs": 3435,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-event-runtime-recovery.spec.ts > native mrgreen walk yields to a newly visible boss before the advertised spawn",
+      "status": "passed",
+      "durationMs": 6523,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-event-runtime-recovery.spec.ts > native mrpumpkin walk yields to a newly visible boss before the advertised spawn",
+      "status": "passed",
+      "durationMs": 6247,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-event-runtime-recovery.spec.ts > farming focus changed during native event attendance > new farming focus resumes after natural Halloween completion",
+      "status": "passed",
+      "durationMs": 51342,
+      "archive": "focused-final"
+    },
+    {
+      "title": " > live > live-hunt-manual-event-override.spec.ts > explicit monster travel skips only the current native event occurrence",
+      "status": "passed",
+      "durationMs": 43729,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-mailbox.spec.ts > mailbox automation collects native attachments before deletion and records confirmed sent mail",
+      "status": "passed",
+      "durationMs": 2725,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-wtb-unconfirmed-purchase.spec.ts > a stale unconfirmed WTB purchase is resolved as not bought from the dashboard",
+      "status": "passed",
+      "durationMs": 4880,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-wtb-unconfirmed-purchase.spec.ts > a stale unconfirmed WTB purchase is resolved as bought from the dashboard",
+      "status": "passed",
+      "durationMs": 4929,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-wtb-unconfirmed-purchase.spec.ts > unconfirmed WTB resolution refuses a still queued purchase job",
+      "status": "passed",
+      "durationMs": 1135,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > live maps draw native weapon cosmetic and projectile pixels without clipping or ghosts",
+      "status": "passed",
+      "durationMs": 3008,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > map sprite publication remains subscriber-only and bounds native renderer payloads",
+      "status": "passed",
+      "durationMs": 2518,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > headless native HTML dolls preserve large cosmetics and atlas clipping",
+      "status": "passed",
+      "durationMs": 2264,
+      "archive": "focused-final"
+    },
+    {
+      "title": " > console > console.spec.ts > headless server action projectiles render native atlas frames and retire on hit",
+      "status": "passed",
+      "durationMs": 3353,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > Steam Characters bar independently toggles native sounds and music",
+      "status": "passed",
+      "durationMs": 2555,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > Steam pointer toggle blocks movement surface clicks and preserves UI controls",
+      "status": "passed",
+      "durationMs": 2540,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > Steam character controls fit beside native score and keep a fixed minimize anchor",
+      "status": "passed",
+      "durationMs": 2758,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > declared map capture observations > expanded character and Cave maps capture real canvas pixels with map and camera-center footers",
+      "status": "passed",
+      "durationMs": 59181,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > console > console.spec.ts > fixed-origin map image proxy returns native Dreams tiles and rejects external origins",
+      "status": "passed",
+      "durationMs": 2566,
+      "archive": "integrated-second"
+    },
+    {
+      "title": " > live > live-farming-handoff.spec.ts > native UHills farming handoff reaches terrain-safe combat for both fighters",
+      "status": "passed",
+      "durationMs": 4403,
+      "archive": "focused-final"
+    },
+    {
+      "title": " > console > doll-markup.spec.ts > doll markup remains inert in portraits comparisons and map layer extraction",
+      "status": "passed",
+      "durationMs": 2651,
+      "archive": "focused-final"
+    },
+    {
+      "title": " > live > live-hunt-empty-spawn.spec.ts > empty saved hawk spawn recovers separated fighters and acquires on sight before the spawn center",
+      "status": "passed",
+      "durationMs": 8332,
+      "archive": "focused-final"
+    }
+  ]
+}

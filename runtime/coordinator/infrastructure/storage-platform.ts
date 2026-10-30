@@ -3,6 +3,7 @@ import type { BankboiInventory, StorageReference } from "../inventory/bankboi-co
 
 interface StorageRoutingState {
   merchantCharacter: string | null;
+  merchantCatalog?: unknown;
   bankSnapshot?: unknown;
   bankbois: Record<string, BankboiInventory>;
   withdrawals: Record<string, StorageReference[] | undefined>;
@@ -12,7 +13,7 @@ interface StorageRoutingState {
 /** Legacy routing accepts raw bank snapshots and preserves worker/item references. */
 export interface BankStackRoutingPlatform {
   identity(this: void, item: unknown): string;
-  homes(bank: unknown, workers: Record<string, BankboiInventory> | null | undefined): unknown;
+  homes(bank: unknown, workers: Record<string, BankboiInventory> | null | undefined, catalog?: unknown): unknown;
   storageSignature(
     state: { bankSnapshot?: unknown; withdrawals: unknown },
     worker: BankboiInventory,
@@ -27,6 +28,7 @@ export interface BankStackRoutingPlatform {
 
 interface MergeState {
   merchantCharacter: string | null;
+  merchantCatalog?: unknown;
   merchantCurrent?: unknown;
   bankboiTransaction?: unknown;
 }
@@ -34,6 +36,7 @@ interface MergeStatus {
   name?: string;
   items?: (InventoryEntry | null)[];
   inventoryStackRetryAt?: unknown;
+  upgradeInventoryBusy?: unknown;
   banking?: unknown;
   gatheringActive?: unknown;
   anniversaryState?: { busy?: unknown };
@@ -45,10 +48,12 @@ export interface InventoryStacksPlatform {
   plan(
     state: MergeState,
     status: MergeStatus | null | undefined,
+    boundary?: {jobId?: unknown; commandId?: unknown; command?: unknown},
   ): {
     from: number;
     to: number;
     source: Item;
     target: Item;
+    quantity: number;
   } | null;
 }

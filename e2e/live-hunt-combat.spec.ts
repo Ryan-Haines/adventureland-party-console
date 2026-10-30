@@ -1,4 +1,5 @@
 import {test,expect} from './live-fixtures';
+import {isolateNativeMapAmbient,restoreNativeMapAmbient} from './native-map-ambient-isolation';
 import {W,P,hunt,observed,prepareHunt,beginHunt,reward,spawnGoo,killedByParty,evidence,quantity,killNativeCharacter} from './hunt-interruption-helpers';
 
 test.describe('native Hunt travel combat and death ownership',()=>{
@@ -67,12 +68,18 @@ test.describe('native Hunt travel combat and death ownership',()=>{
   });
 
   test('stop-required passive Goo combat resumes the original armadillo Hunt after the actual kill',async({live},info)=>{
+    // Ambient Goos can win the enabled policy's target selection before the
+    // exact declared encounter. Preserve native armadillos and restore every
+    // removed Goo after this receipt/ownership boundary.
+    const ambient=await isolateNativeMapAmbient(live,'main',['goo']);
+    await info.attach('stop-required-declared-ambient-goos',{body:JSON.stringify(ambient),contentType:'application/json'});
+    try {
     const setup=await prepareHunt(live);
+    await live.post('/rare-hunting',{rules:{goo:{enabled:true,keepMoving:false,priority:100}},useFieldGenerators:false});
     await beginHunt(live,setup);
     await expect.poll(async()=>{const s=await live.state();return hunt(s)?.stage==='mission-travel'&&s.activeConvoy?.phase==='travel';},{timeout:90000,intervals:[100,250]}).toBe(true);
     // Initial encounter HP keeps the native fight observable across a coordinator sample.
-    const cycle=hunt(await live.state()).cycleId,encounter=await spawnGoo(live,W,5);
-    await live.post('/rare-hunting',{rules:{goo:{enabled:true,keepMoving:false,priority:100}},useFieldGenerators:false});
+    const cycle=hunt(await live.state()).cycleId,encounter=await spawnGoo(live,W,5,400);
     await expect.poll(async()=>{
       const s=await live.state(),c=s.activeConvoy;
       return c?.phase==='defending'&&c.huntTravel?.committed?.some((m:any)=>String(m.id)===String(encounter.id));
@@ -88,5 +95,9 @@ test.describe('native Hunt travel combat and death ownership',()=>{
     expect(resumed.cycleId).toBe(cycle);expect(resumed.target).toBe('armadillo');
     await reward(live,setup.before);
     await evidence(live,info,'passive-stop-native-kill-and-hunt-handback',{cycle,encounter,kill});
+    } finally {
+      const restored=await restoreNativeMapAmbient(live);
+      await info.attach('stop-required-native-ambient-restored',{body:JSON.stringify(restored),contentType:'application/json'});
+    }
   });
 });

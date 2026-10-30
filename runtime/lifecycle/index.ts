@@ -3,4 +3,6 @@ export { ReloadQueue } from "./reload-queue.ts";
 export { requestReload } from "./request-reload.ts";
 export { createRunnerHost } from "./runner-host.ts";
 export { installGameRendering } from '../characters/game-rendering.ts';
+export { installGameLogEcho } from '../characters/game-log-echo.ts';
 export { classScript, watchGenerations } from "./generations.ts";
+export { installCaveFloorHandshake } from "./cave-floor-handshake.ts";

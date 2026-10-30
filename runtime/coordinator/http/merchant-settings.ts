@@ -8,6 +8,7 @@ interface SettingsState {
   luckySlotResume?: Record<string, {slot: number; rolls: number}>;
   modes: string[];
   noTool: Record<string, boolean>;
+  automations?: Record<string, boolean>;
   activity: unknown[];
   luckySlotTracking?: LuckySlotHistory;
 }
@@ -99,6 +100,11 @@ export function createMerchantSettingsRoutes(state: SettingsState, ports: Settin
     const body = requestObject(request.body);
     if (!currentMerchant(body, response)) return;
     if (body.noTool === true && gatheringMode(body.mode)) {
+      // A bank lookup/report started before the user opted in can arrive later.
+      // The current setting owns replacement crafting; an old missing-tool
+      // observation must not switch that enabled mode off permanently.
+      if (state.automations?.[`craft ${body.mode} tools`] === true)
+        return response.json({ok: true, noTool: false});
       state.noTool[body.mode] = true;
       state.modes = state.modes.filter((mode) => mode !== body.mode);
       ports.command(state.merchant, {

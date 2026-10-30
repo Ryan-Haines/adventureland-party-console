@@ -1,3 +1,5 @@
+import { pruneLuckCasts } from "./luck.ts";
+
 interface SavedGathering {
   gatheringModes?: string[] | null;
   gatheringMode?: string | null;
@@ -7,7 +9,9 @@ interface SavedGathering {
 }
 
 /** Saved multi-mode choices, including an empty array, take precedence over legacy single-mode selection. */
-export function initialGatheringState(saved: SavedGathering) {
+export function initialGatheringState(saved: SavedGathering, now: () => number = Date.now) {
+  const mluckCastAt = { ...saved.mluckCastAt };
+  pruneLuckCasts(mluckCastAt, now());
   return {
     gatheringModes: Array.isArray(saved.gatheringModes)
       ? saved.gatheringModes
@@ -16,6 +20,6 @@ export function initialGatheringState(saved: SavedGathering) {
         : [],
     gatheringNoTool: saved.gatheringNoTool || {},
     gatheringCooldowns: saved.gatheringCooldowns || { fishing: 0, mining: 0 },
-    mluckCastAt: saved.mluckCastAt || {},
+    mluckCastAt,
   };
 }

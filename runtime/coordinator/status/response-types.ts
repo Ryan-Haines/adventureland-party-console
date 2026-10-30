@@ -20,6 +20,8 @@ export interface HeartbeatStatus {
   x?: number;
   y?: number;
   seenAt?: number;
+  /** Latest coordinator command accepted by this client, before native completion. */
+  lastCommandId?: number;
   /** Hash of the compiled character artifact actually executing this heartbeat. */
   codeHash?: string | null;
   combat?: { kiting?: boolean };
@@ -31,6 +33,7 @@ export interface HeartbeatStatus {
   threats?: EntityReference[];
   target?: EntityReference | null;
   serverLiveEvents?: { name: string }[];
+  eventSchedules?: {id:string; cipher?:{board?:{id?:string}|null;runtime?:{stock?:Record<string,number>;day?:{mixes_left?:number};journal?:{gathering?:import('../../events/october.ts').CipherGatheringPlan}}}}[];
   slendermanSighting?: SlendermanSighting | null;
 }
 export interface EntityReference {
@@ -40,6 +43,7 @@ export interface EntityReference {
 }
 
 export const heartbeatStateFields = [
+  "restockPolicies",
   "combatRecovery",
   "combatResetByCharacter",
   "threshold",
@@ -69,6 +73,9 @@ export const heartbeatStateFields = [
 ] as const;
 
 export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[number], unknown> {
+  nextCommandId: number;
+  eventLimitsByCharacter?: import('../../../dashboard/lib/event-policy.ts').EventFormation['eventLimitsByCharacter'];
+  eventSelectionsByCharacter?: Record<string, string[]>;
   dailyDungeons?: import("../../dungeons/contracts.ts").DungeonState;
   passiveHunting: import('../navigation/passive-settings.ts').PassiveSettings;
   eventSessions?: import('../merchant/event-control.ts').MerchantEventState['eventSessions'];
@@ -100,6 +107,7 @@ export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[num
   bankbois: Record<string, import("../inventory/bankboi-completion.ts").BankboiInventory>;
   goldTargets: Record<string, number>;
   gatheringModes: string[];
+  merchantAutomations?: Record<string, boolean>;
   partyFarmingMode: string;
   monsterLocationsVersion?: number;
   travelPlaces: unknown;

@@ -1,4 +1,11 @@
 import type { SpawnRecord } from "./monster-choice";
+import type { EventSource } from "./bestiary-monster";
+
+function eventSourceText(source: EventSource) {
+  if (source.role === "add") return `Spawns only during ${source.name}: raised by the boss at ${(source.at || []).map(at => `${Math.round(at * 100)}%`).join(" and ")} HP.`;
+  if (source.role === "wave") return `Spawns only during ${source.name} in its waves.`;
+  return `Spawns only during ${source.name} as its boss.`;
+}
 
 const reasons: Record<string, string> = {
   ignore: "Ignored map",
@@ -9,11 +16,13 @@ const reasons: Record<string, string> = {
   "invalid-geometry": "Spawn coordinates unavailable",
 };
 
-export function MonsterSpawns({ records }: { records?: SpawnRecord[] }) {
+export function MonsterSpawns({ records, eventSources }: { records?: SpawnRecord[]; eventSources?: EventSource[] }) {
   return (
     <section className="rounded border border-emerald-800 bg-[#081713] p-3 text-sm text-emerald-100">
       <h3 className="mb-2 font-semibold">Recorded spawn locations</h3>
-      {records === undefined ? <p>Waiting for refreshed spawn data.</p> : !records.length ? (
+      {eventSources?.length ? <ul className="space-y-1 text-amber-200">
+        {eventSources.map(source => <li key={`${source.id}:${source.role}`}>{eventSourceText(source)}</li>)}
+      </ul> : records === undefined ? <p>Waiting for refreshed spawn data.</p> : !records.length ? (
         <p>No static spawn recorded in game data.</p>
       ) : <ul className="space-y-2">
         {records.map((record, index) => (

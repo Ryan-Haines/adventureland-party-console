@@ -13,6 +13,7 @@ import { useCharacterData } from './dashboard-live';
 import { committedLiveRecord } from './live-metrics';
 import { MapCaptureButton, type MapCaptureState } from './map-capture-button';
 import {useSessionState} from './session-state';
+import { audited } from './field-read-audit';
 
 // Beyond the initial fallback, only `char.name` matters here: map/x/y come
 // from this component's own live `position` subscription below, so a fresh
@@ -22,7 +23,7 @@ import {useSessionState} from './session-state';
 export const CharacterMapSection = memo(function CharacterMapSection({ char: base }: { char: Char }) {
   const position = useCharacterData(base.name, 'position');
   useEffect(() => { committedLiveRecord(base.name, 'position'); }, [base.name, position]);
-  const char = { ...base, ...position };
+  const char = audited('merged', { ...base, ...position });
   const caveMap = /^zone_[a-f0-9]+_\d+$/.test(char.map);
   const mapLabel = caveMap ? 'Cave of Many Dreams' : char.map;
   const [open, setOpen] = useSessionState('map-open:'+base.name,false),

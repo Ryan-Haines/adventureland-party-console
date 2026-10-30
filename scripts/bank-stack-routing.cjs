@@ -1,15 +1,19 @@
 const {stackDepositPlan} = require('../runtime/bank-stacks.ts');
 const {bankStagingReserved} = require('../runtime/coordinator/inventory/reserved-cargo.ts');
+const {entryMeta} = require('../runtime/coordinator/inventory/catalog-meta.ts');
+const {retryableStorageError} = require('../runtime/coordinator/inventory/storage-retry.ts');
+// Reports carry per-copy meta, so the stack size comes from merchantCatalog.
+const stackLimit = (entry, catalog) => Number(entryMeta(catalog, entry)?.definition?.s) || 1;
 // A partial stack has one preferred home across physical and virtual panes.
 function identity(item) {
   return JSON.stringify(['name', 'level', 'p', 'stat_type', 'data', 'rid', 'b', 'm', 'l']
     .map(key => key === 'level' ? Number(item?.level) || 0 : item?.[key] ?? null));
 }
-function homes(bank, workers) {
+function homes(bank, workers, catalog) {
   const result = {};
   const staging = bankStagingReserved({bankbois:workers});
   const add = (entry, owner) => {
-    const limit = Number(entry?.meta?.definition?.s) || 1;
+    const limit = stackLimit(entry, catalog);
     if (!entry?.item || limit <= 1 || Number(entry.item.q || 1) >= limit) return;
     const key = identity(entry.item);
     if (!result[key]) result[key] = { owner, item: entry.item, limit, room: limit - Number(entry.item.q || 1) };
@@ -45,7 +49,7 @@ function unloadPlan(party, worker) {
   (worker.items || []).forEach((entry, slot) => {
     if (!entry?.item || withdrawals.some(request => request.pack === 'bankboi:' + worker.name &&
       identity(request.item) === identity(entry.item))) return;
-    const item = entry.item, limit = Number(entry.meta?.definition?.s) || 1;
+    const item = entry.item, limit = stackLimit(entry, party.merchantCatalog);
     const plan = stackDepositPlan(item, limit, slots);
     if (plan.remaining || !plan.moves.length) return;
     // Keep the public scheduling shape: one source entry, with capacity reserved
@@ -61,18 +65,12 @@ function unloadPlan(party, worker) {
 }
 // Checkpoint transport failures can resume through the existing durable bank
 // journal. Unknown operation/game errors still require review.
-function retryableStorageError(error) {
-  return /^(bank_unavailable|not_in_bank|interrupted)$/.test(error || '') ||
-    /^bank data did not load:/.test(error || '') ||
-    /Cannot read properties of undefined \(reading 'items1'\)/.test(error || '') ||
-    /^(GET|POST) \/(merchant\/bank-sort\/checkpoint|bankboi\/(checkpoint|complete)) · (network|timeout)(:.*)?$/.test(error || '');
-}
 function servicePlan(party, { includeCoolingDown = false } = {}) {
   // Checkpoints and merchant reservations must retain work while a worker retries.
   // Dispatch uses the default so it never starts a worker before its retry time.
   const merchant = party.merchantCharacter;
   const withdrawals = party.withdrawals[merchant] || [];
-  const routes = homes(party.bankSnapshot, party.bankbois);
+  const routes = homes(party.bankSnapshot, party.bankbois, party.merchantCatalog);
   const workers = Object.values(party.bankbois).sort((a, b) => Number(a.seenAt || 0) - Number(b.seenAt || 0));
   const available = entry => entry.state === 'ready' || entry.state === 'error' &&
     retryableStorageError(entry.error) &&

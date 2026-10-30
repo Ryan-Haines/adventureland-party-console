@@ -1,4 +1,4 @@
-import { watch, readFileSync } from "node:fs";
+import { watch, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { ChildProcess } from "node:child_process";
 import path from "node:path";
@@ -23,9 +23,31 @@ export function classScript(directory: string, className: string | undefined): s
   const entry = manifest.classes?.[className as CharacterClass];
   if (manifest.schema !== 1 || !entry || !/^generated\/[a-f0-9]{64}\/[a-z]+\.js$/.test(entry.file))
     throw new Error("Missing compiled class: " + className);
-  if (digest(readFileSync(path.join(directory, entry.file))) !== entry.sha256)
+  if (!verifiedClass(path.join(directory, entry.file), entry.sha256))
     throw new Error("Compiled class checksum mismatch: " + className);
   return "adventure_land/" + entry.file;
+}
+
+// The merchant's home check reaches classScript on every dispatch, through
+// ensureCharacterBlock and worker setup. classScript hashes a verified file again
+// only when its inode, size, mtime or ctime changes, which every rewrite does.
+// The cache holds at most 32 files; a full cache starts over.
+const verifiedClasses = new Map<string, string>();
+function verifiedClass(file: string, sha256: string): boolean {
+  let identity: string | undefined;
+  try {
+    const stat = statSync(file, { bigint: true });
+    identity = [stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs, sha256].join(":");
+  } catch {
+    // The read below throws the same error v1.4.0 reported for a missing file.
+  }
+  if (identity !== undefined && verifiedClasses.get(file) === identity) return true;
+  verifiedClasses.delete(file);
+  if (digest(readFileSync(file)) !== sha256) return false;
+  if (identity === undefined) return true;
+  if (verifiedClasses.size >= 32) verifiedClasses.clear();
+  verifiedClasses.set(file, identity);
+  return true;
 }
 interface Worker {
   name: string;

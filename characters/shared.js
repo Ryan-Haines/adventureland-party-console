@@ -383,12 +383,40 @@
   var convoyTraveling = null;
   var convoySignal = null;
   var convoyRuntimeId = Date.now() + "-" + Math.random().toString(36).slice(2);
+  var partyMetrics = root.installPartyMetrics({
+    now: function () { return Date.now() + coordinatorClockOffset; },
+    current: runtimeCurrent,
+    connected: function () { return !!character && (!parent.socket || parent.socket.connected !== false); },
+    name: function () { return character.name; },
+    own: ownActor,
+    ownedCharacter: function (name) {
+      var player = get_player(name);
+      return name === character.name ||
+        !!player && player.owner === character.owner ||
+        partyPositions.some(function (member) { return member.name === name; });
+    },
+    context: function () { return {
+      server: String(parent.server_region || '') + String(parent.server_identifier || '') || 'unknown',
+      map: character.map, instance: String(character.in || character.map), party: currentPartyList()
+    }; },
+    sample: function () {
+      var encouragementLuck = root.partyMetricsEncouragementLuck(character.encouragement, character.s);
+      return {
+        gold: Number(character.gold) || 0, luck: Number(character.luckm) || 1,
+        encouragementLuck: encouragementLuck === null ? undefined : encouragementLuck,
+        ping: typeof character.ping === 'number' && isFinite(character.ping) && character.ping >= 0 ? character.ping : null,
+        level: Number(character.level) || 1, xp: Number(character.xp) || 0, maxXp: Number(character.max_xp) || 0
+      };
+    },
+    storage: root.localStorage,
+    send: function (body) { return request('/metrics', { method: 'POST', body: body, timeout: 5000 }); }
+  });
   var dashboardSampler = root.createPartyDashboardSampler && root.createPartyDashboardSampler({
     now: function () { return Date.now() + coordinatorClockOffset; }, current: runtimeCurrent,
     name: function () { return character.name; }, runtime: function () { return convoyRuntimeId; },
     sample: function () {
       return { vitals: { hp: character.hp, mp: character.mp, max_hp: character.max_hp,
-        max_mp: character.max_mp, x: character.real_x === undefined ? character.x : character.real_x,
+        max_mp: character.max_mp, cc: Math.ceil(Number(character.cc) || 0), x: character.real_x === undefined ? character.x : character.real_x,
         y: character.real_y === undefined ? character.y : character.real_y, map: character.map,
         in: character.in, xp: character.xp || 0, max_xp: character.max_xp || 0, gold: character.gold,
         rip: !!character.rip, target: character.target || null, standOpen: !!character.stand, conditions: activeConditions(),
@@ -428,6 +456,62 @@
   var lastFarmingMonsterType = root.__partyLastFarmingMonsterType || null;
   var eventsEnabled = false;
   var enabledEventSelections = null;
+  var eventSettings = {}, cipherMerchant = null, cipherGathering = null, octoberController = null, cipherTransferBusy = false;
+  function octoberRuntime() {
+    if (octoberController) return octoberController;
+    octoberController = root.partyOctoberEvents.createOctoberRuntime({
+      now: function () { return Date.now() + eventClockOffset; }, realm: reunionRealm,
+      name: function () { return character.name; }, merchant: function () { return character.name === cipherMerchant; },
+      settings: function () { return eventSettings; }, status: nativeEventStatus,
+      gathering: function () { return cipherGathering; },
+      definitions: function () { return G.events || {}; },
+      position: function () { return { map: character.map, x: character.real_x, y: character.real_y }; },
+      doorStatus: function () { return character.trickortreat || null; },
+      inventorySpace: function () { return freeInventorySlots(); },
+      stock: function () { var stock = {}; (character.items || []).forEach(function (item) {
+        if (item && !item.l && !item.b && !item.giveaway) stock[item.name] = (stock[item.name] || 0) + (item.q || 1);
+      }); return stock; },
+      load: function () { return get('party-october-' + character.name); },
+      save: function (journal) { set('party-october-' + character.name, journal); },
+      walk: function (point, owns) { return sharedPartyWalk(point, 'event', travellingEventName || joinedEvent, null, owns); },
+      knock: function (door) { return knock(door); }, info: function () { return witch_cipher_info(); },
+      brew: function (mix) { return brew(mix); },
+      farmDestination: function (type) {
+        var choice = monsterChoices(type)[0];
+        return choice && choice.locations[0] || null;
+      },
+      witch: function () { var npc = ((G.maps.halloween || {}).npcs || []).find(function (entry) { return entry.id === 'witch'; });
+        return npc ? { map: 'halloween', x: npc.position[0], y: npc.position[1] + 30 } : null; },
+      transfer: async function () {
+        if (cipherTransferBusy || !runtimeCurrent() || character.rip || !eventSelected('witchcipher') ||
+            !cipherMerchant || character.name === cipherMerchant || root.__merchantActiveJob ||
+            root.__partyInventoryCommands || banking || upgrading) return;
+        var merchant = get_player(cipherMerchant);
+        if (!merchant || merchant.rip || distance(character, merchant) > 350) return;
+        cipherTransferBusy = true;
+        try {
+          for (var slot = 0; slot < character.items.length; slot++) {
+            if (!runtimeCurrent() || !eventSelected('witchcipher') || character.rip) return;
+            var item = character.items[slot];
+            if (item && !item.l && !item.b && root.partyOctoberEvents.cipherIngredients.indexOf(item.name) >= 0)
+              await send_item(cipherMerchant, slot, item.q || 1);
+          }
+        } finally { cipherTransferBusy = false; }
+      },
+    });
+    return octoberController;
+  }
+  function cipherTransferPulse() {
+    // Event travel is polled every ten seconds. A merchant can cross transfer
+    // range and settle on the opposite side of combat between those polls.
+    // Use the existing one-second pulse; serialize real native sends with the
+    // event poll and never move either participant or change combat ownership.
+    if (!runtimeCurrent() || joinedEvent !== 'witchcipher' || !octoberController ||
+        !octoberController.activity('witchcipher')) return;
+    octoberController.transfer().catch(function (error) {
+      game_log('Cipher ingredient transfer failed: ' + String(error.reason || error.message || error), 'red');
+    });
+  }
   var pendingEventDisables = root.__partyPendingEventDisables || [];
   var travellingEventName = null, eventSelectionRevision = 0;
   var eventClockOffset = 0, eventClockSyncedAt = 0, eventClockRequest = null;
@@ -449,21 +533,38 @@
     parent.socket.emit("test", {});
   }
   function eventScheduleSnapshot() {
-    var status = eventStatus(), names = supportedEventNames();
+    // Calendar epochs are absolute server timestamps. Clock correction belongs
+    // to countdowns and local deadlines, never to the displayed calendar minute.
+    var status = nativeEventStatus(), names = supportedEventNames();
     return names.map(function(id) {
       var value = status[id] || {};
-      var schedule = status.schedule || {}, kind = ["crabxx", "goobrawl", "abtesting"].indexOf(id) >= 0 ? "daily" : ["icegolem", "franky"].indexOf(id) >= 0 ? "nightly" : null;
-      var hours = kind === "daily" ? schedule.dailies : kind === "nightly" ? schedule.nightlies : null;
-      var slotAt = null, now = Date.now() + eventClockOffset, offset = Number(schedule.time_offset);
-      if (Array.isArray(hours) && Number.isFinite(offset)) hours.forEach(function(hour) {
-        var date = new Date(now); date.setUTCHours((Number(hour) - offset + 24) % 24, 0, 0, 0);
-        var next = date.getTime(); if (next <= now) next += 86400000;
-        if (!slotAt || next < slotAt) slotAt = next;
-      });
-      return { slotAt: slotAt || undefined, slotKind: kind || undefined, id: id, name: id === "anniversary" ? "Anniversary" : id === "snowman" ? "Snowman" :
+      var schedule = nativeEventStatus().schedule || {}, now = Date.now() + eventClockOffset;
+      var occurrence = root.partyOctoberEvents.nextPublishedEvent(schedule, id, now);
+      return { id: id, confirmed: !!occurrence, occurrences: (schedule.events || []).concat(schedule.repeats || []).filter(function (entry) { return entry.event === id && entry.status === 'scheduled' && entry.at > now; }),
+        // Native doors_left is capped by the account quota; it is not the
+        // account's independent balance. Keep the door history for projection.
+        trickOrTreat: id === 'trickortreat' && character.trickortreat && now % 86400000 >= 5000 ? {
+          day: new Date(now).toISOString().slice(0,10), doors: character.trickortreat.doors,
+          doorsLeft: character.trickortreat.doors_left,
+          characterLimit: ((G.events.trickortreat || {}).doors || []).length,
+          accountLimit: (G.events.trickortreat || {}).knocks
+        } : undefined,
+        cipher: id === 'witchcipher' ? { board: nativeEventStatus().witchcipher || null, runtime: octoberRuntime().snapshot(),
+          ingredients: root.partyOctoberEvents.cipherIngredients.map(function (name) { return { id: name, name: (G.items[name] || {}).name || name, sprite: spriteDefinition((G.items[name] || {}).skin || name) }; }),
+          gathering: (G.events.witchcipher || {}).ingredients, merchant: cipherMerchant,
+          stock: cipherGathering && cipherGathering.stock, gatheringPlan: cipherGathering && cipherGathering.plan,
+          sources: ((G.events.witchcipher || {}).ingredients || []).flatMap(function (entry) { return entry[1].map(function (id) {
+            var monster = G.monsters[id] || {};
+            return { ingredient: entry[0], id: id, name: monster.name || id, sprite: monsterSpriteDefinition(monster.skin),
+              rate: Math.min(1, Number((G.events.witchcipher || {}).loot) * Number(monster.hp) / 1000) };
+          }); }) } : undefined,
+        name: id === "anniversary" ? "Anniversary" : id === "snowman" ? "Snowman" :
         id === "mrgreen" ? "Mr. Green" : id === "mrpumpkin" ? "Mr. Pumpkin" : id === "slenderman" ? "Slenderman" : (G.events[id] || {}).name || id,
-        live: !!status[id] && value.live !== false && value.active !== false,
-        next: anniversaryEpoch(value.next || value.spawn) || undefined, expires: anniversaryEpoch(value.expires || value.end) || undefined };
+        live: id === 'trickortreat' ? !!status.halloween : !!status[id] && value.live !== false && value.active !== false,
+        next: occurrence ? occurrence.at : anniversaryEpoch(value.next || value.spawn) || undefined,
+        clockOffsetMs: eventClockOffset - coordinatorClockOffset,
+        realmOffsetHours: Number.isFinite(schedule.time_offset) ? schedule.time_offset : undefined,
+        expires: anniversaryEpoch(value.expires || value.end) || undefined };
     });
   }
   var eventTargetTypes = [];
@@ -553,6 +654,7 @@
   var realmPlayers = [];
   var gatheringMode = null;
   var gatheringModes = [];
+  var gatheringAutoCraft = {};
   if (root.__merchantGatheringTimer) clearInterval(root.__merchantGatheringTimer);
   root.__merchantGatheringTimer = null;
   root.__merchantGatheringGeneration = (Number(root.__merchantGatheringGeneration) || 0) + 1;
@@ -652,6 +754,7 @@
   var merchantCatalogVersion = "exchange-rewards-v4";
   var trackerDropData = typeof tracker !== "undefined" && tracker && Object.keys(tracker).length ? tracker : null;
   var trackerCatalogInitialized = !!trackerDropData;
+  var trackerTablesSignature = trackerCatalogSignature(trackerDropData);
   // The native game updates parent.tracker before calling render_tracker.
   // Silence automatic responses without hiding unrelated modals or blocking
   // deliberate clicks. Manual requests use the normal socket.emit entrypoint.
@@ -712,12 +815,14 @@
   };
   var trackerCatalogListener = function (data) {
     if (!data || typeof data !== "object") return;
+    var signature = trackerCatalogSignature(data);
+    var tablesChanged = signature !== trackerTablesSignature;
     trackerDropData = data;
+    trackerTablesSignature = signature;
     scheduleTrackerSnapshot(30000);
-    // Drop tables are account-wide and effectively static during a game-data
-    // version. Rebuild the large catalog only for the first live Tracktrix
-    // response; later polls merely refresh kill progress.
-    if (!trackerCatalogInitialized) {
+    // Kill counters change often; only actual discovery-table changes rebuild
+    // the catalogs, including home rewards learned after the initial response.
+    if (!trackerCatalogInitialized || tablesChanged) {
       trackerCatalogInitialized = true;
       itemWorldCache = {};
       itemDropCache = {};
@@ -811,8 +916,29 @@
     mapTelemetryEvents.push({ kind: kind, at: Date.now(), data: safeFields(data) });
     if (mapTelemetryEvents.length > 40) mapTelemetryEvents.splice(0, mapTelemetryEvents.length - 40);
   }
-  var mapActionListener = function (data) { rememberMapEvent("action", data); };
-  var mapHitListener = function (data) { rememberMapEvent("hit", data); };
+  var mapTelemetryProjectiles = {};
+  var mapActionListener = function (data) {
+    rememberMapEvent("action", data);
+    if (!mapTelemetryEnabled || !parent.no_graphics || !data || !root.projectPartyHeadlessAction) return;
+    var attacker = parent.get_entity && parent.get_entity(data.attacker);
+    if (!attacker || attacker.map && attacker.map !== character.map) return;
+    var target = parent.get_entity && parent.get_entity(data.target);
+    var origin = parent.projectile_origin && parent.projectile_origin(attacker, target || {x:data.x,y:data.y}, data.origin_offset || 0);
+    var projectile = G.projectiles && G.projectiles[data.projectile];
+    var animation = projectile && G.animations && G.animations[projectile.animation || projectile.ray];
+    if (!origin || !animation) return;
+    var end = {x:target && parent.get_x ? parent.get_x(target) : data.x,y:target && parent.get_y ? parent.get_y(target) - (parent.get_height ? parent.get_height(target)/2 : 0) : data.y};
+    var ray = !projectile.animation && !!projectile.ray;
+    if (ray) origin = {x:parent.get_x ? parent.get_x(attacker) : attacker.x,y:(parent.get_y ? parent.get_y(attacker) : attacker.y) - (parent.get_height ? parent.get_height(attacker)/2 : 0)};
+    var projection = root.projectPartyHeadlessAction(data, origin, end, animation, Date.now(), ray);
+    if (projection) {
+      var keys = Object.keys(mapTelemetryProjectiles);
+      if(keys.length>=64)delete mapTelemetryProjectiles[keys[0]];
+      projection.map = character.map;
+      mapTelemetryProjectiles[data.pid] = projection;
+    }
+  };
+  var mapHitListener = function (data) { rememberMapEvent("hit", data); if(data && mapTelemetryProjectiles[data.pid] && !mapTelemetryProjectiles[data.pid].ray) delete mapTelemetryProjectiles[data.pid]; };
 
   function inventoryTotals() {
     return (character.items || []).reduce(function (totals, item) {
@@ -872,7 +998,9 @@
       // fight or repeatedly replace our owned route with defense/loot holds.
       // Direct and unknown-target hits retain the conservative safety path.
       var victim=aggressor && aggressor.target && get_entity(aggressor.target);
-      if(data.splash===true && victim && victim.type==='character' && !victim.npc &&
+      var collateral=data.splash===true || data.unintentional===true &&
+        Array.isArray(data.stacked) && data.stacked.indexOf(String(data.id))>=0;
+      if(collateral && victim && victim.type==='character' && !victim.npc &&
         currentPartyList().indexOf(String(aggressor.target))<0)return;
       var passingRule=aggressor && passiveHunting.rules[aggressor.mtype];
       if(aggressor && aggressor.type==='monster' && (!isPassingEncounter(aggressor) || returnDepartureDefense() && !(passingRule && passingRule.enabled && passingRule.keepMoving)) && !joinedEvent && !eventTargetTypes.length) {
@@ -883,6 +1011,7 @@
     }
   }
   var combatHitListener = function (data) {
+    if (data) partyMetrics.hit(data, get_entity(data.id) || groupedCombat && groupedCombat.target && groupedCombat.target.id === String(data.id) && groupedCombat.target);
     escapeObserveHit(data);
     defendPartyHit(data);
     if(data && (data.kill || data.dead) && root.partyLootClient && currentPartyList().indexOf(String(data.hid||data.actor||''))>=0) {
@@ -989,6 +1118,7 @@
   };
   var combatKillCreditListener = function (data) {
     if (!data || !data.mtype) return;
+    partyMetrics.credit(data);
     observeFightPacket("kill_credit",data);
     var now = Date.now();
     recentOwnKills = recentOwnKills.filter(function (kill) { return now - kill.at < 3000; });
@@ -1042,6 +1172,7 @@
   };
   var dungeonOpenedChests = root.__partyDungeonOpenedChests = root.__partyDungeonOpenedChests || {run:null, ids:{}};
   var combatLootListener = function (data) {
+    if (data && Array.isArray(data.items)) partyMetrics.loot(data);
     if (data && data.cave && character.cave) {
       if (dungeonOpenedChests.run !== character.cave.run) dungeonOpenedChests = root.__partyDungeonOpenedChests = {run:character.cave.run, ids:{}};
       dungeonOpenedChests.ids[data.id] = true;
@@ -1059,6 +1190,17 @@
   };
   var combatResponseListener = function (data) {
     if (!data || data.failed) return;
+    partyMetrics.goldMovement(data);
+    if (data.success === true) {
+      var usedName = data.used && G.items[data.used] ? data.used :
+        data.response === 'elixir' && character.slots.elixir ? character.slots.elixir.name : null;
+      var usedDefinition = usedName && G.items[usedName];
+      if (usedDefinition && (usedDefinition.type === 'pot' || usedDefinition.type === 'elixir'))
+        partyMetrics.consumable(Number(usedDefinition.g) || 0);
+      if (data.response === 'buy_success' && G.items[data.name] &&
+          ['pot','elixir'].indexOf(G.items[data.name].type) >= 0)
+        partyMetrics.consumable(Number(data.cost) || 0, true);
+    }
     var skill = data.place === "skill" ? (data.skill || data.name) : data.place;
     if (skill && skill !== "attack" && G.skills && G.skills[skill]) {
       queueCombatEvent("skill", "Used " + (G.skills[skill].name || skill), { skill: skill }, "skill:" + skill);
@@ -1123,6 +1265,7 @@
     ["name", "level", "q", "p", "stat_type", "data", "price", "rid", "b", "m", "l", "v"].forEach(function (key) {
       if (item[key] != null) copy[key] = item[key];
     });
+    if (item.expires != null) copy.expires = typeof item.expires === 'number' ? item.expires : new Date(item.expires).getTime();
     return copy;
   }
 
@@ -1256,17 +1399,59 @@
       .filter(function (hands, index, all) { return hands && all.indexOf(hands) === index; }) };
   }
 
+  // Class-only and map-only bonuses sit in nested fields that safeItemDefinition
+  // drops, such as Scorpion Seal's warrior field or Graveglass's halloween field.
+  function itemBonuses(definition) {
+    var bonuses = [];
+    Object.keys(definition || {}).forEach(function (key) {
+      var value = definition[key];
+      var kind = G.classes && G.classes[key] ? "class" : G.maps && G.maps[key] ? "map" : null;
+      if (!kind || !value || typeof value !== "object" || Array.isArray(value)) return;
+      var stats = {};
+      Object.keys(value).forEach(function (stat) { if (typeof value[stat] === "number") stats[stat] = value[stat]; });
+      var name = kind === "map" ? G.maps[key].name || key : key.charAt(0).toUpperCase() + key.slice(1);
+      bonuses.push({ kind: kind, id: key, name: name, stats: stats });
+    });
+    return bonuses;
+  }
+
   function maximumItemLevel(definition) {
     return definition && definition.compound ? 7 : definition && definition.upgrade ? 13 : 0;
   }
 
+  function trackerCatalogSignature(data) {
+    if (!data) return "";
+    return JSON.stringify([data.drops || null, data.drops_home || null, data.monsters_home_server || null,
+      data.maps || null, data.tables || null]);
+  }
+
+  function nativeMonsterDropTables() {
+    return Object.assign({}, G.drops && G.drops.monsters || {}, trackerDropData && trackerDropData.drops || {});
+  }
+
+  function nativeHomeDropTables() {
+    return Object.assign({}, G.drops && G.drops.monsters_home_server || {},
+      trackerDropData && trackerDropData.monsters_home_server || {}, trackerDropData && trackerDropData.drops_home || {});
+  }
+
+  // Bounded read-only diagnostics for discovery publication and cache ownership.
+  root.__partyCatalogDiagnostic = function (monsterId, itemId) {
+    return { generation: catalogGeneration, known: catalogKnown, prepared: catalogPrepared, preparing: catalogPreparing,
+      trackerHome: nativeHomeDropTables()[monsterId], itemCached: !!itemWorldCache[itemId],
+      cachedSources: itemWorldCache[itemId] && itemWorldCache[itemId].drops.filter(function (source) { return source.monsterId === monsterId; }).slice(0, 24) };
+  };
+
+  function nativeLootTable(name) {
+    return trackerDropData && trackerDropData.tables && trackerDropData.tables[name] || G.drops && G.drops[name];
+  }
+
   function lootTableOutcome(tableName, itemName, seen) {
     var cacheKey = tableName + ":" + itemName;
-    if (lootOutcomeCache[cacheKey]) return lootOutcomeCache[cacheKey];
+    if (Object.prototype.hasOwnProperty.call(lootOutcomeCache, cacheKey)) return lootOutcomeCache[cacheKey];
     seen = seen || {};
-    if (seen[tableName] || !Array.isArray(G.drops && G.drops[tableName])) return null;
+    if (seen[tableName] || !Array.isArray(nativeLootTable(tableName))) return null;
     var nextSeen = Object.assign({}, seen); nextSeen[tableName] = true;
-    var table = G.drops[tableName], total = table.reduce(function (sum, drop) {
+    var table = nativeLootTable(tableName), total = table.reduce(function (sum, drop) {
       return sum + (Array.isArray(drop) ? Number(drop[0]) || 0 : 0);
     }, 0);
     if (total <= 0) return null;
@@ -1279,7 +1464,10 @@
       if (!paths || (result.paths || []).length < paths.length) paths = result.paths || [];
     });
     var outcome = probability > 0 ? { probability: Math.min(1, probability), paths: paths || [] } : null;
-    lootOutcomeCache[cacheKey] = outcome;
+    // A failed nested search may only have hit an ancestor cycle. Only a
+    // top-level miss proves this item is absent independently of that path.
+    // Reuse those misses across the many monster/map sources that open a table.
+    if (outcome || !Object.keys(seen).length) lootOutcomeCache[cacheKey] = outcome;
     return outcome;
   }
 
@@ -1291,7 +1479,7 @@
       return opened && { probability: opened.probability, paths: ["open " + drop[2]].concat(opened.paths || []) };
     }
     var exchangeCount = G.items && G.items[reward] && Number(G.items[reward].e);
-    if (exchangeCount > 0 && G.drops && Array.isArray(G.drops[reward])) {
+    if (exchangeCount > 0 && Array.isArray(nativeLootTable(reward))) {
       var exchanged = lootTableOutcome(reward, itemName, seen);
       // For multi-item exchanges this is the long-run rolls-per-drop rate. It
       // avoids claiming that one leather immediately opens a 40-leather table.
@@ -1313,14 +1501,13 @@
   function itemDropSources(itemName) {
     if (itemDropCache[itemName]) return itemDropCache[itemName];
     var drops = [];
-    var trackedMonsterDrops = trackerDropData && (trackerDropData.drops || trackerDropData.monsters);
-    var monsterDrops = trackedMonsterDrops && Object.keys(trackedMonsterDrops).length
-      ? trackedMonsterDrops : G.drops && G.drops.monsters || {};
+    var monsterDrops = nativeMonsterDropTables();
     var trackedMapDrops = trackerDropData && trackerDropData.maps;
     var mapDropsById = trackedMapDrops && Object.keys(trackedMapDrops).length
       ? trackedMapDrops : G.drops && G.drops.maps || {};
-    Object.keys(monsterDrops).forEach(function (monsterId) {
-      (monsterDrops[monsterId] || []).forEach(function (drop) {
+    function addMonsterSources(tables, sourceType) {
+    Object.keys(tables).forEach(function (monsterId) {
+      (Array.isArray(tables[monsterId]) ? tables[monsterId] : []).forEach(function (drop) {
         var outcome = resolvedDropOutcome(drop, itemName);
         if (!outcome) return;
         var monsterDefinition = G.monsters[monsterId] || {};
@@ -1331,9 +1518,25 @@
           sprite: monsterSpriteDefinition(monsterDefinition.skin),
           rate: outcome.rate, originRate: outcome.originRate, quantity: outcome.quantity, acquisitionPath: outcome.path,
           threat: (Number(monsterDefinition.attack) || 0) * (Number(monsterDefinition.frequency) || 0),
-          sourceType: "monster",
+          sourceType: sourceType,
           goldPerKill: goldValues.length ? Math.min.apply(Math, goldValues) : null });
       });
+    });
+    }
+    addMonsterSources(monsterDrops, "monster");
+    addMonsterSources(nativeHomeDropTables(), "home");
+    // These native drops exist only during the Cipher gathering window. Keep
+    // their acquisition condition visible even when Tracktrix was read outside it.
+    var cipherRules = G.events && G.events.witchcipher;
+    var ingredient = cipherRules && (cipherRules.ingredients || []).find(function(entry) { return entry[0] === itemName; });
+    if (ingredient) ingredient[1].forEach(function(monsterId) {
+      var definition = G.monsters[monsterId] || {};
+      var existing = drops.find(function(source) { return source.sourceType === 'monster' && source.monsterId === monsterId; });
+      if (existing) { existing.acquisitionPath = ['Witch\'s Cipher: gathering window only']; return; }
+      drops.push({monsterId:monsterId,monsterName:definition.name || monsterId,sprite:monsterSpriteDefinition(definition.skin),
+        sourceType:'monster',rate:Math.min(1,Number(cipherRules.loot) * Number(definition.hp) / 1000),
+        quantity:1,acquisitionPath:['Witch\'s Cipher: gathering window only'],
+        threat:(Number(definition.attack)||0)*(Number(definition.frequency)||0),goldPerKill:null});
     });
     Object.keys(mapDropsById).forEach(function (mapId) {
       if (mapId === "global" || mapId === "global_static" || !G.maps[mapId]) return;
@@ -1488,7 +1691,8 @@
         if (!Array.isArray(material) || material[1] !== itemName) return;
         uses.push({ id: craftedId, name: craftedDefinition.name || craftedId,
           quantity: Number(material[0]) || 0, level: Number(material[2]) || 0,
-          cost: Number(recipe.cost) || 0, sprite: spriteDefinition(craftedDefinition.skin || craftedId) });
+          cost: Number(recipe.cost) || 0, quest: recipe.quest || null,
+          sprite: spriteDefinition(craftedDefinition.skin || craftedId) });
       });
       return uses;
     }, []).sort(function (a, b) { return a.name.localeCompare(b.name); });
@@ -1535,13 +1739,20 @@
     return itemWorldCache[itemName];
   }
 
-  function itemDefinition(item) {
-    if (!item || !G.items[item.name]) return null;
-    var definition = G.items[item.name];
-    var skin = item.skin || definition.skin;
+  function itemSheetSprite(skin) {
     var position = G.positions[skin];
     var pack = position && G.imagesets[position[0] || "pack_20"];
-    var safeDefinition = safeItemDefinition(definition);
+    return pack && position ? {
+      url: "https://adventure.land" + pack.file,
+      tileSize: pack.size,
+      columns: pack.columns,
+      rows: pack.rows,
+      x: position[1],
+      y: position[2],
+    } : null;
+  }
+
+  function itemProperties(item) {
     var calculatedProperties = {};
     try {
       var calculated = item_properties(item) || {};
@@ -1556,26 +1767,42 @@
     } catch (_error) {
       // Base definitions still render if a legacy game build cannot calculate properties.
     }
+    return calculatedProperties;
+  }
+
+  function itemTitle(item) {
+    return item.p && G.titles && G.titles[item.p] ? safeFields(G.titles[item.p]) : null;
+  }
+
+  function itemDefinition(item) {
+    if (!item || !G.items[item.name]) return null;
+    var definition = G.items[item.name];
+    // merchantCatalog().allItems carries every per-type field below. Once a
+    // status response clears needsCatalog, the coordinator holds that catalog,
+    // so reports carry only what can differ between copies of one item.
+    if (catalogKnown) {
+      var perCopy = { properties: itemProperties(item) };
+      var title = itemTitle(item);
+      if (title) perCopy.title = title;
+      if (item.skin && item.skin !== definition.skin) perCopy.sprite = itemSheetSprite(item.skin);
+      return perCopy;
+    }
     return {
-      definition: safeDefinition,
+      definition: safeItemDefinition(definition),
       upgradeable: !!definition.upgrade,
       compoundable: !!definition.compound,
       buyable: !!itemSeller(item.name),
-      properties: calculatedProperties,
+      properties: itemProperties(item),
       scaling: safeFields(definition.upgrade || definition.compound || {}),
       maxLevel: maximumItemLevel(definition),
       usage: itemUsage(definition),
+      bonuses: itemBonuses(definition),
       // Live inventory/bank reports must never construct the entire drop graph.
       // Until background preparation finishes, the dashboard uses its catalog.
       world: itemWorldCache[item.name],
-      sprite: pack && position ? {
-        url: "https://adventure.land" + pack.file,
-        tileSize: pack.size,
-        columns: pack.columns,
-        rows: pack.rows,
-        x: position[1],
-        y: position[2],
-      } : null,
+      // The copy's title (docs/item-titles.md); the dashboard names it and adds its stats.
+      title: itemTitle(item),
+      sprite: itemSheetSprite(item.skin || definition.skin),
     };
   }
 
@@ -1622,7 +1849,7 @@
   }
 
   function activeConditions() {
-    return Object.keys(character.s || {}).map(function (id) {
+    var conditions = Object.keys(character.s || {}).map(function (id) {
       var live = character.s[id] || {};
       var definition = G.conditions[id] || G.skills[id] || {};
       var skin = live.skin || definition.skin;
@@ -1638,7 +1865,15 @@
         live: safeFields(live),
         sprite: skin ? spriteDefinition(skin) : null,
       };
-    }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+    });
+    var activeElixir = character.slots && character.slots.elixir;
+    if (activeElixir && G.items[activeElixir.name]) {
+      var elixirDefinition = G.items[activeElixir.name], expiry = new Date(activeElixir.expires).getTime();
+      conditions.push({id:'elixir:'+activeElixir.name,name:elixirDefinition.name || activeElixir.name,
+        explanation:elixirDefinition.explanation || '',remainingMs:isFinite(expiry)?Math.max(0,expiry-Date.now()):null,
+        stacks:null,source:character.name,definition:safeFields(elixirDefinition),live:{},sprite:spriteDefinition(elixirDefinition.skin)});
+    }
+    return conditions.sort(function (a, b) { return a.name.localeCompare(b.name); });
   }
 
   function monsterHuntStatus() {
@@ -1716,7 +1951,7 @@
       var item = G.items[name];
       if (item && item.type === "bank_key" && item.unlocks) floorKeys[item.unlocks] = {
         id: name, name: item.name || name,
-        sprite: itemDefinition({ name: name }) && itemDefinition({ name: name }).sprite,
+        sprite: itemSheetSprite(item.skin),
       };
     });
     return Object.keys(definitions).map(function (pack) {
@@ -1743,8 +1978,8 @@
     }).sort(function (a, b) { return a.name.localeCompare(b.name); });
   }
 
-  function monsterChoices() {
-    return Object.keys(G.monsters).map(function (id) {
+  function monsterChoices(onlyType) {
+    return (onlyType ? G.monsters[onlyType] ? [onlyType] : [] : Object.keys(G.monsters)).map(function (id) {
       var locations = [], spawnRecords = [];
       Object.keys(G.maps).forEach(function (mapId) {
         var map = G.maps[mapId];
@@ -1786,23 +2021,55 @@
     }).sort(function (a, b) { return a.name.localeCompare(b.name); });
   }
 
+  // The G.events that raise a monster, for a monster without an ordinary spawn:
+  // the event's boss (its sprite), the boss's HP-threshold adds
+  // (G.monsters[boss].spawns) and Graveyard Rising's waves.
+  function eventMonsterSources(ordinary) {
+    var sources = {};
+    function add(type, source) {
+      if (!G.monsters[type] || ordinary[type]) return;
+      (sources[type] = sources[type] || []).push(source);
+    }
+    Object.keys(G.events || {}).forEach(function (id) {
+      var definition = G.events[id] || {}, name = definition.name || id, boss = definition.sprite;
+      if (!G.monsters[boss]) return;
+      add(boss, { id: id, name: name, role: "boss" });
+      var thresholds = {};
+      (G.monsters[boss].spawns || []).forEach(function (spawn) {
+        if (typeof spawn[0] !== "string" || spawn[0].indexOf("hp:") !== 0) return;
+        (thresholds[spawn[1]] = thresholds[spawn[1]] || []).push(Number(spawn[0].slice(3)));
+      });
+      Object.keys(thresholds).forEach(function (type) { add(type, { id: id, name: name, role: "add", at: thresholds[type] }); });
+      (Array.isArray(definition.waves) ? definition.waves : []).reduce(function (types, wave) {
+        Object.keys(wave && wave[1] || {}).forEach(function (type) { if (types.indexOf(type) < 0) types.push(type); });
+        return types;
+      }, []).forEach(function (type) { add(type, { id: id, name: name, role: "wave" }); });
+    });
+    return sources;
+  }
+
   function bestiaryCatalog() {
-    var spawns = {};
-    monsterChoices().forEach(function (choice) { spawns[choice.id] = choice.spawnRecords; });
+    var spawns = {}, ordinary = {};
+    var monsterTables = nativeMonsterDropTables(), homeTables = nativeHomeDropTables();
+    monsterChoices().forEach(function (choice) { spawns[choice.id] = choice.spawnRecords; ordinary[choice.id] = choice.locations.length > 0; });
+    var eventSources = eventMonsterSources(ordinary);
     return Object.keys(G.monsters || {}).map(function (id) {
       var definition = G.monsters[id] || {};
-      var drops = (G.drops && G.drops.monsters && G.drops.monsters[id] || []).map(function (drop) {
+      function rewards(table) { return (Array.isArray(table) ? table : []).map(function (drop) {
         if (!Array.isArray(drop) || typeof drop[1] !== "string" || !G.items[drop[1]]) return null;
         var item = G.items[drop[1]] || {};
         return { rate: Number(drop[0]) || 0, id: drop[1], name: item.name || drop[1],
           quantity: Number(drop[2]) || 1, sprite: spriteDefinition(item.skin || drop[1]) };
-      }).filter(Boolean);
+      }).filter(Boolean); }
+      var drops = rewards(monsterTables[id]);
+      var homeRewards = rewards(homeTables[id]);
       return { id: id, name: definition.name || id, sprite: monsterSpriteDefinition(definition.skin),
         hp: Number(definition.hp) || 0,
         attack: Number(definition.attack) || 0, xp: Number(definition.xp) || 0,
         range: Number(definition.range) || 0,
         threat: (Number(definition.attack) || 0) * (Number(definition.frequency) || 0),
-        definition: catalogValue(definition), drops: drops, spawnRecords: spawns[id] };
+        definition: catalogValue(definition), drops: drops, homeRewards: homeRewards, spawnRecords: spawns[id],
+        eventSources: eventSources[id] };
     });
   }
 
@@ -1928,6 +2195,10 @@
           sprite: spriteDefinition(definition.skin || skillId), definition: catalogValue(definition) };
       }).sort(function (a, b) { return a.name.localeCompare(b.name); });
     classes.push({ id: "shared", name: "Shared / system", skills: shared });
+    classes.push({id:'conditions',name:'Conditions',skills:Object.keys(G.conditions || {}).map(function(id) {
+      var definition=G.conditions[id] || {};
+      return {id:id,name:definition.name || id,sprite:spriteDefinition(definition.skin || id),definition:catalogValue(definition)};
+    }).sort(function(a,b){return a.name.localeCompare(b.name);})});
     return classes;
   }
 
@@ -1964,13 +2235,14 @@
       var items = Object.keys(G.items || {});
       var index = 0;
       while (index < items.length) {
-        await new Promise(function (resolve) { setTimeout(resolve, 0); });
+        await new Promise(function (resolve) { setTimeout(resolve, 4); });
         if (!runtimeCurrent() || generation !== catalogGeneration) return;
-        // Bound work by elapsed time, not one timer per item. Hidden/loaded
-        // clients can delay each timer substantially even for already cached data.
-        var sliceStarted = Date.now();
+        // Bound both elapsed time and item count: virtual time is fixed while
+        // synchronous work runs. A positive timer also spreads batches across
+        // clock windows instead of draining the whole catalog at one timestamp.
+        var sliceStarted = Date.now(), sliceIndex = index;
         do { itemWorldInfo(items[index++]); }
-        while (index < items.length && Date.now() - sliceStarted < 8);
+        while (index < items.length && index - sliceIndex < 4 && Date.now() - sliceStarted < 8);
       }
       catalogPrepared = true;
     } catch (error) {
@@ -1994,7 +2266,7 @@
         meta: { definition: safeItemDefinition(definition), world: itemWorldInfo(id),
           upgradeable: !!definition.upgrade, compoundable: !!definition.compound,
           buyable: !!itemSeller(id), scaling: safeFields(definition.upgrade || definition.compound || {}),
-          maxLevel: maximumItemLevel(definition), usage: itemUsage(definition),
+          maxLevel: maximumItemLevel(definition), usage: itemUsage(definition), bonuses: itemBonuses(definition),
           sprite: spriteDefinition(definition.skin || id) } };
     }).sort(function (a, b) { return a.name.localeCompare(b.name); });
     var buyable = Object.keys(G.items || {}).map(function (id) {
@@ -2149,7 +2421,7 @@
     try {
       return dashboardDollHtml(renderSprite.call(parent, entity.skin, {
         cx: JSON.parse(JSON.stringify(entity.cx || {})), width: 27, height: 38,
-        scale: 1, j: Number(direction) || 0,
+        scale: 1, overflow: true, j: Number(direction) || 0,
       }));
     } catch (_error) { return null; }
   }
@@ -2176,9 +2448,21 @@
     return !consoleDraining() || !!(target && ((root.__partyConsoleDrainTargets || {})[consoleDrainKey(target)] || isAttackingPartyMember(target)));
   }
   function consoleDrainCombatActive() {
-    return consoleDraining() && Object.values(parent.entities || {}).some(function(target) {
-      return target && target.type === 'monster' && target.visible && !target.dead && target.hp > 0 && consoleDrainAllows(target);
-    });
+    return consoleDraining() && Object.values(parent.entities || {}).some(consoleDrainTargetValid);
+  }
+  function consoleDrainTargetValid(target) {
+    return !!(target && target.type === 'monster' && target.visible && !target.dead && target.hp > 0 &&
+      (!target.map || target.map === character.map) && (target.in == null || String(target.in) === String(character.in)) &&
+      consoleDrainAllows(target) && !(root.partyRoleRunner && root.partyRoleRunner.isKnownDead && root.partyRoleRunner.isKnownDead(String(target.id))));
+  }
+  function consoleDrainTarget() {
+    if (!consoleDraining()) return null;
+    return Object.values(parent.entities || {}).filter(consoleDrainTargetValid).filter(function(target) {
+      return !isExternallyClaimedMonster(target) || isAttackingPartyMember(target);
+    }).sort(function(a,b) {
+      return Number(isAttackingPartyMember(b)) - Number(isAttackingPartyMember(a)) ||
+        Math.hypot(a.x-character.x,a.y-character.y) - Math.hypot(b.x-character.x,b.y-character.y);
+    })[0] || null;
   }
   function consoleMovementPaused() {
     // Finish already-owned inventory/merchant work before parking its route.
@@ -2482,6 +2766,7 @@
         if (action === 'revival') return respawn();
         if (action === 'vote') return requestDungeon(action, { choice: fields.choice, option: fields.option });
         if (action === 'buy') return requestDungeon(action, { room: fields.room });
+        if (action === 'talk') return requestDungeon(action, { room: fields.room });
         throw new Error('Unsupported cave action');
       },
       keeper: function () {
@@ -2513,8 +2798,10 @@
       },
       move: function (point, command) {
         travelTrack = command.cruiseSpeed && !command.independent ? {id:command.id,distance:0,x:character.real_x,y:character.real_y,leader:character.name===cavePartyNames()[0],prepared:false} : null;
+        // Gathers plan the cross-map walk to Dorr and regrouping on large
+        // generated floors; live runs timed out at the default 30 s.
         var journey = movement.move(point, undefined, { native: true, shared:!!travelTrack, arrivalTolerance:command.action==='gather'?1:20, town: false, retainOnDirectStop: true,
-        awaitSharedRoute:!!travelTrack && !travelTrack.leader, nativePlanningTimeoutMs:travelTrack ? 90000 : 30000,
+        awaitSharedRoute:!!travelTrack && !travelTrack.leader, nativePlanningTimeoutMs:travelTrack || command.action==='gather' ? 90000 : 30000,
         nativePlanningProgressMs:travelTrack ? 240000 : undefined,
         repairSharedDrift:!!travelTrack,
         barrier: async function () {
@@ -2702,6 +2989,7 @@
       max_hp: character.max_hp,
       mp: character.mp,
       max_mp: character.max_mp,
+      cc: Math.ceil(Number(character.cc) || 0),
       gold: character.gold,
       gameParty: currentPartyList(),
       standOpen: !!character.stand,
@@ -2713,6 +3001,7 @@
       monsterAchievements: monsterAchievementProgress(),
       tracktrix: tracktrixBonuses(),
       donationXpPerGold: donationXpPerGold,
+      donationLevelXp: Object.keys(G.levels || {}).reduce(function(levels,key) { levels[Number(key)] = Number(G.levels[key]); return levels; }, []),
       inventoryStackRetryAt: Number(root.__merchantStackRetryAt) || 0,
       inventoryStackError: root.__merchantStackError || null,
       gatheringActive: gatheringActive,
@@ -2820,15 +3109,9 @@
       oneShotEpoch: scatterEpoch,
       threats: threats,
       conditions: activeConditions(),
-      items: character.items.map(inventoryOperationEntry),
-      slots: Object.keys(character.slots || {}).reduce(function (out, slot) {
-        var item = character.slots[slot];
-        if (item) out[slot] = { item: fingerprint(item), meta: itemDefinition(item) };
-        return out;
-      }, {}),
-      bank: bankSnapshot(),
       bankVaults: bankVaultCatalog(),
     };
+    attachStatusInventory(status);
     if (!catalogKnown && catalogPrepared) {
       status.merchantCatalogVersion = merchantCatalogVersion;
       status.travelPlaces = travelPlaces();
@@ -2936,6 +3219,49 @@
     convoySignal = Object.assign({}, signal, {localDeadline:received + Math.max(0, Number(signal.validUntil)-sentAt-network)});
   }
 
+  // Status reports omit items, slots and bank while they match the revision the
+  // coordinator acknowledged (docs/efficiency.md, Inventory deltas). The key is
+  // every input of the three builders, so a change rebuilds them once and the
+  // next report carries them.
+  var statusInventoryCache = null, statusInventoryAcknowledged = null, statusInventoryFullAt = 0, statusInventoryCount = 0;
+  var statusInventorySession = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  function statusInventory() {
+    var key = JSON.stringify([character.items, character.slots || null, character.bank || null,
+      activeUpgrade && [activeUpgrade.slot, activeUpgrade.item]]);
+    // Before the catalog acknowledgement itemDefinition reads the world cache, which fills in over time.
+    if (catalogKnown && statusInventoryCache && statusInventoryCache.key === key) return statusInventoryCache;
+    statusInventoryCache = { key: catalogKnown ? key : null, revision: statusInventorySession + "." + (++statusInventoryCount),
+      items: character.items.map(inventoryOperationEntry),
+      slots: Object.keys(character.slots || {}).reduce(function (out, slot) {
+        var item = character.slots[slot];
+        if (item) out[slot] = { item: fingerprint(item), meta: itemDefinition(item) };
+        return out;
+      }, {}),
+      bank: bankSnapshot() };
+    return statusInventoryCache;
+  }
+  function attachStatusInventory(status) {
+    var inventory = statusInventory();
+    status.inventoryRevision = inventory.revision;
+    // A full inventory goes out at least every 10 s, so a coordinator that lost it recovers without a
+    // refusal, and an observer of ordinary reports (live-catalog.spec.ts) sees three within 45 s.
+    if (inventory.revision === statusInventoryAcknowledged && Date.now() - statusInventoryFullAt < 10000) return status;
+    return withStatusInventory(status);
+  }
+  function withStatusInventory(status) {
+    var inventory = statusInventory();
+    status.inventoryRevision = inventory.revision;
+    status.items = inventory.items;
+    status.slots = inventory.slots;
+    status.bank = inventory.bank;
+    return status;
+  }
+  function acknowledgeStatusInventory(body, value) {
+    if (body.combatOnly || body.combatWait) return;
+    statusInventoryAcknowledged = value && typeof value.inventoryRevision === "string" ? value.inventoryRevision : null;
+    if (Array.isArray(body.items)) statusInventoryFullAt = Date.now();
+  }
+
   function request(path, options) {
     options = options || {};
     if (path === '/status' && options.body && options.body.groupedCombat) sampleTravelReport(options.body);
@@ -2959,6 +3285,7 @@
           (root.__partyTravelTransport || (root.__partyTravelTransport={})).barrier={at:Date.now(),durationMs:duration,processingMs:Math.max(0,(t.sentAt||0)-(t.receivedAt||0)),eventLoopMaxMs:t.eventLoopMaxMs,outcome:'success'};
         }
         if (path === '/status') {
+          if (options.body) acknowledgeStatusInventory(options.body, value);
           acceptTravelResponse(value, transportStart, !!(options.body && (options.body.combatOnly || options.body.combatWait)));
           // The ordinary status tick can still be awaiting this exit handler.
           // Fast heartbeat ownership must fence it at the transport boundary.
@@ -2970,6 +3297,13 @@
         resolve(value);
       }).fail(function (xhr, status, error) {
         var httpStatus = Number(xhr && xhr.status) || 0;
+        // A coordinator without this inventory revision (restart, another runtime) refuses the report unapplied.
+        if (path === '/status' && httpStatus === 409 && xhr.responseJSON && xhr.responseJSON.code === "inventory-required" &&
+            options.body && !Array.isArray(options.body.items)) {
+          statusInventoryAcknowledged = null;
+          resolve(request(path, Object.assign({}, options, { body: withStatusInventory(Object.assign({}, options.body)) })));
+          return;
+        }
         var kind = status === "timeout" ? "timeout" : status === "parsererror" ? "invalid-json" :
           status === "abort" ? "aborted" : httpStatus ? "http" : "network";
         rememberConvoyStatusRequest(convoyStatusStarted, kind);
@@ -3013,8 +3347,10 @@
       else history.failure = { at: now, kind: outcome, durationMs: Math.max(0, Math.round(now - started)) };
     } catch (_) {}
   }
-  function passingKey(target) {
-    return JSON.stringify([target.server || reunionRealm(), target.map || character.map,
+  // isPassingEncounter passes the realm it already read, so a key costs no
+  // second read of parent.server_region through the CODE facade.
+  function passingKey(target, realm) {
+    return JSON.stringify([target.server || (realm === undefined ? reunionRealm() : realm), target.map || character.map,
       String(target.in == null ? character.in || character.map : target.in), String(target.id)]);
   }
   function passingEncounterReport() {
@@ -3032,13 +3368,20 @@
     if (typeof passiveTravelInterruptible==='function' && passiveTravelInterruptible() && passiveStopRequired(target))return false;
     var rule=passiveHunting.rules[target.mtype];
     if (committedHuntEncounter(target) || typeof huntTravelDefense === "function" && huntTravelDefense() && !(rule && rule.enabled && rule.keepMoving)) return false;
-    var key = passingKey(target), now = Date.now() + coordinatorClockOffset;
+    var realm = reunionRealm(), key = passingKey(target, realm), now = Date.now() + coordinatorClockOffset;
     if (target.dead || target.hp === 0) return false;
     // Keep cache ownership inside this function: standalone runtime harnesses
     // install it without the surrounding script. Weak keys release replaced
     // coordinator lists; native deaths appended in place invalidate by length.
     var indexes = isPassingEncounter.indexes || (isPassingEncounter.indexes = new WeakMap());
-    var context = JSON.stringify([reunionRealm(), character.map, String(character.in || character.map)]);
+    // isPassingEncounter runs for every visible monster on each combat and
+    // travel check (docs/efficiency.md, CT8). It keeps the last context text
+    // and serializes again only when the realm, map or instance changes.
+    var place = isPassingEncounter.place, instance = String(character.in || character.map);
+    if (!place || place.realm !== realm || place.map !== character.map || place.instance !== instance)
+      place = isPassingEncounter.place = {realm:realm,map:character.map,instance:instance,
+        context:JSON.stringify([realm, character.map, instance])};
+    var context = place.context;
     function recent(list) {
       if (!list || !list.length) return false;
       var cached = indexes.get(list);
@@ -3404,11 +3747,14 @@
     }).finally(function () { rareLootPending = false; });
   }
 
+  var mapSpriteLayerBudget = 192, mapSpriteEntityBudget = 64;
   function mapEntity(entity, id) {
     if (!entity || entity.dead) return null;
     var type = entity.type || (entity.mtype ? "monster" : null);
     if (["character", "monster", "npc"].indexOf(type) < 0) return null;
     var skin = entity.skin || entity.mtype;
+    var layers = mapSpriteEntityBudget-- > 0 && mapSpriteLayerBudget > 0 && root.capturePartyMapLayers ? root.capturePartyMapLayers(entity).slice(0,mapSpriteLayerBudget) : [];
+    mapSpriteLayerBudget -= layers.length;
     return {
       id: String(entity.id || id), name: entity.name || entity.mtype || String(id),
       type: type, ctype: entity.ctype || null, mtype: entity.mtype || null,
@@ -3420,28 +3766,30 @@
       angle: Number(entity.angle) || 0, direction: Number(entity.direction) || 0,
       going_x: Number(entity.going_x) || 0, going_y: Number(entity.going_y) || 0,
       sprite: skin ? spriteDefinition(skin) : null,
-      dollHtml: type === "character" || entity.cx ? mapDollHtml(entity, entity.direction) : null,
+      layers: layers.length ? layers : undefined,
+      dollHtml: !layers.length && (type === "character" || entity.cx) ? mapDollHtml(entity, entity.direction) : null,
       stand: entity.stand || null,
       standSprite: entity.stand ? (spriteDefinition(typeof entity.stand === "string" ? entity.stand : "stand0") || spriteDefinition("stand0")) : null,
-      weapons: entity.cave ? ['mainhand','offhand'].map(function (hand) {
+      weapons: ['mainhand','offhand'].map(function (hand) {
         var item = entity.slots && entity.slots[hand], definition = item && G.items[item.name];
         return definition ? {hand:hand,name:item.name,sprite:spriteDefinition(definition.skin_c || definition.skin)} : null;
-      }).filter(Boolean) : undefined,
+      }).filter(Boolean),
     };
   }
 
-  var mapGeometrySent = {map: null, at: 0};
+  // The coordinator keeps a supplied floor for the run and answers
+  // {definition:"needed"} when it lacks one, so each floor is sent once.
+  var mapGeometrySent = {map: null, needed: false};
   function liveCaveMapDefinition() {
     if (!character.cave || !G.geometry || !G.geometry[character.map]) return undefined;
-    var now = Date.now();
-    if (mapGeometrySent.map === character.map && now - mapGeometrySent.at < 5000) return undefined;
+    if (mapGeometrySent.map === character.map && !mapGeometrySent.needed) return undefined;
     var geometry = G.geometry[character.map], tilesets = {};
     if (!geometry.tiles || !geometry.tiles.length || !(geometry.placements && geometry.placements.length || geometry.groups && geometry.groups.length)) return undefined;
     (geometry.tiles || []).forEach(function(tile) {
       var id = tile && tile[0], file = G.tilesets && G.tilesets[id] && G.tilesets[id].file;
       if (file) tilesets[id] = {file: /^https?:/.test(file) ? file : 'https://adventure.land' + file};
     });
-    mapGeometrySent = {map: character.map, at: now};
+    mapGeometrySent = {map: character.map, needed: false};
     return {name: character.map, min_x: geometry.min_x, min_y: geometry.min_y,
       max_x: geometry.max_x, max_y: geometry.max_y, default: geometry.default,
       tiles: geometry.tiles || [], placements: geometry.placements || [], groups: geometry.groups || [], tilesets: tilesets};
@@ -3449,20 +3797,25 @@
   function publishMapFrame() {
     if (!mapTelemetryEnabled || mapTelemetryBusy) return;
     mapTelemetryBusy = true;
+    mapSpriteLayerBudget = 192;
+    mapSpriteEntityBudget = 64;
     var self = mapEntity(character, character.name);
     if (self) { self.id = character.name; self.name = character.name; self.type = "character"; }
     var entities = Object.keys(parent.entities || {}).map(function (id) {
       return mapEntity(parent.entities[id], id);
     }).filter(Boolean);
     if (self && !entities.some(function (entry) { return entry.id === self.id; })) entities.push(self);
-    var events = mapTelemetryEvents.splice(0, mapTelemetryEvents.length);
+    var events = mapTelemetryEvents.splice(0, mapTelemetryEvents.length), frameMap = character.map;
     $.ajax({
       url: api + "/map-frame", method: "POST", contentType: "application/json",
-      data: JSON.stringify({ name: character.name, map: character.map, definition: liveCaveMapDefinition(), at: Date.now(),
+      data: JSON.stringify({ name: character.name, map: frameMap, definition: liveCaveMapDefinition(), at: Date.now(),
         x: Number(character.real_x !== undefined ? character.real_x : character.x) || 0,
         y: Number(character.real_y !== undefined ? character.real_y : character.y) || 0,
-        target: character.target || combatTargetId || null, eventCombat: eventTargetTypes.length>0, queue: queueMarkers(), queueRevision: groupedCombat && groupedCombat.queueRevision, grouped: groupedFarming(), entities: entities, events: events }),
-    }).always(function () { mapTelemetryBusy = false; });
+        projectilesAt: Date.now(), projectiles: Object.keys(mapTelemetryProjectiles).filter(function(id){var p=mapTelemetryProjectiles[id];if(p.expiresAt<=Date.now() || p.map!==character.map){delete mapTelemetryProjectiles[id];return false;}return true;}).slice(0,64).map(function(id){return mapTelemetryProjectiles[id];}), target: character.target || combatTargetId || null, eventCombat: eventTargetTypes.length>0, queue: queueMarkers(), queueRevision: groupedCombat && groupedCombat.queueRevision, grouped: groupedFarming(), entities: entities, visuals: root.capturePartyMapVisuals ? root.capturePartyMapVisuals(parent.map_animations || {},64) : [], events: events }),
+    }).always(function (reply, status) {
+      if (status === "success" && reply && reply.definition === "needed" && mapGeometrySent.map === frameMap) mapGeometrySent.needed = true;
+      mapTelemetryBusy = false;
+    });
   }
 
   async function stockUp() {
@@ -3712,6 +4065,12 @@
       size: function() { return Number(character.isize) || character.items.length; },
       map: function() { return character.map; }, floor: function(pack) { return (definitions()[pack] || [character.map])[0]; },
       reachable: accessibleBankSortFloors, limit: function(item) { return Number((G.items[item.name] || {}).s) || 1; },
+      compatible: function(target, source) {
+        // Ask the native rule about a single transferable unit. Provenance-only
+        // titles (such as Cave-found) may stack; earned stat titles may not.
+        if (typeof can_stack !== "function") return bankStackIdentity(target) === bankStackIdentity(source) && !!target.v === !!source.v;
+        return can_stack(Object.assign({}, target, {q:1}), Object.assign({}, source, {q:1}));
+      },
       protection: async function() {
         var state = await bankSortCheckpoint("stack");
         if (!state.protection) throw new Error("Bank stack protection unavailable; coordinator update required");
@@ -3932,16 +4291,49 @@
     root.__partyBankSortJournal = entries;
     root.__partyBankSortBuffers = entries.map(function(entry) { return entry.slot; });
   }
-  function rememberBankSortBuffers(slots, incoming) {
+  function rememberBankSortBuffers(slots, incoming, pending) {
     bankSortRecovered = true;
     saveBankSortBuffers(slots.map(function(slot, index) {
-      return { slot: slot, floor: character.map, identities: [character.items[slot], incoming[index]].filter(Boolean).map(bankStackIdentity) };
+      return { slot: slot, floor: character.map, identities: [character.items[slot], incoming[index]].filter(Boolean).map(bankStackIdentity), pending: pending };
     }));
+  }
+  function bankSortItemState(item) {
+    return item ? JSON.stringify([bankStackIdentity(item), Number(item.q) || 1]) : "null";
+  }
+  function bankSortStoredState(state) {
+    if (state === "null") return state;
+    // Native bank swap deletes m (merchant-luck attribution) and v. The
+    // identity already omits v. Normalize persisted pre-fix expectations too.
+    var value = JSON.parse(state), identity = JSON.parse(value[0]);
+    identity[7] = null;
+    return JSON.stringify([JSON.stringify(identity), value[1]]);
+  }
+  async function settleBankSortSwap(entry) {
+    if (!entry.pending) return;
+    var expected = entry.pending, deadline = Date.now() + 5000;
+    for (;;) {
+      if (!runtimeCurrent()) throw new Error("Bank sort runtime replaced while confirming swap");
+      if (character.map !== entry.floor || !character.bank || !Array.isArray(character.bank[expected.pack]))
+        throw new Error("Bank sort floor changed while confirming swap");
+      // Acknowledgement and reactive inventory publication are separate milestones.
+      // Read both sides together, preserving exact identity, lock and quantity.
+      var inventory = bankSortItemState(character.items[entry.slot]);
+      var bank = bankSortItemState(character.bank[expected.pack][expected.slot]);
+      if (inventory === expected.inventory && bank === bankSortStoredState(expected.bank)) {
+        delete entry.pending;
+        saveBankSortBuffers(bankSortBufferJournal());
+        return;
+      }
+      if (Date.now() >= deadline) throw new Error("Bank sort swap not confirmed; recovery pending");
+      await sleep(100);
+    }
   }
   async function cleanupBankSortBuffers() {
     var entries = bankSortBufferJournal();
     for (var i = 0; i < entries.length; i += 1) {
-      var entry = entries[i], item = character.items[entry.slot];
+      var entry = entries[i];
+      await settleBankSortSwap(entry);
+      var item = character.items[entry.slot];
       if (!item) continue;
       if (entry.identities.indexOf(bankStackIdentity(item)) < 0) continue;
       if (character.map !== entry.floor) await movement.move(entry.floor);
@@ -4042,7 +4434,7 @@
     if (!packs.length) throw new Error("Bank floor data unavailable during sorting");
 
     var inventorySlots = [];
-    for (var inventoryIndex = 0; inventoryIndex < character.items.length; inventoryIndex += 1) {
+    for (var inventoryIndex = 0; inventoryIndex < Math.min(character.items.length, character.isize || 42); inventoryIndex += 1) {
       if (!character.items[inventoryIndex]) inventorySlots.push(inventoryIndex);
     }
     if (!inventorySlots.length) {
@@ -4085,20 +4477,32 @@
           }
         }
         if (!swap) break;
-        rememberBankSortBuffers([bufferSlot], [character.bank[swap.pack][swap.slot]]);
-        parent.socket.emit("bank", { operation: "swap", pack: swap.pack, str: swap.slot, inv: bufferSlot });
+        var expected = { pack: swap.pack, slot: swap.slot,
+          inventory: bankSortItemState(character.bank[swap.pack][swap.slot]), bank: bankSortItemState(carried) };
+        rememberBankSortBuffers([bufferSlot], [character.bank[swap.pack][swap.slot]], expected);
+        try {
+          if (carried) await bank_store(bufferSlot, swap.pack, swap.slot);
+          else await bank_retrieve(swap.pack, swap.slot, bufferSlot);
+        } catch (swapError) {
+          // A native rejection with both original sides intact did not mutate
+          // storage. Keep uncertain/partially published operations journaled.
+          if (swapError && ["invalid", "no_item", "item_placeholder", "item_blocked", "inventory_full", "storage_full", "not_in_bank"].indexOf(swapError.reason) >= 0 &&
+              bankSortItemState(character.items[bufferSlot]) === expected.bank &&
+              bankSortItemState(character.bank[swap.pack][swap.slot]) === expected.inventory) {
+            delete bankSortBufferJournal()[0].pending;
+            saveBankSortBuffers(bankSortBufferJournal());
+          }
+          throw swapError;
+        }
         operations += 1;
-        await new Promise(function (resolve) { setTimeout(resolve, 220); });
+        await settleBankSortSwap(bankSortBufferJournal()[0]);
       }
       if (operations >= limit) failure = new Error("Bank sorting exceeded its safe operation limit");
     } finally {
-      // Never let a failed/incomplete sort walk away carrying an item that was
-      // pulled out of the bank solely for use as the sorting buffer.
-      if (character.items[bufferSlot]) {
-        try { await bankStoreFully(bufferSlot); }
-        catch (bufferError) { failure = failure || bufferError; }
-      }
-      if (!character.items[bufferSlot]) saveBankSortBuffers([]);
+      // Keep unresolved native operations journaled even if their item has not
+      // reached the reactive inventory yet; departure must await their cleanup.
+      try { await cleanupBankSortBuffers(); }
+      catch (bufferError) { failure = failure || bufferError; }
     }
     if (failure) throw failure;
     var stillMisplaced = packs.some(function (pack) {
@@ -4218,7 +4622,7 @@
       entry.operation = { type: pending.scroll.indexOf("cscroll") === 0 ? "compound" : "upgrade",
         fromLevel: Number(pending.level) || 0, toLevel: (Number(pending.level) || 0) + 1,
         chance: typeof pending.chance === "number" ? pending.chance : null,
-        sprite: (itemDefinition({ name: "placeholder" }) || {}).sprite || null };
+        sprite: G.items.placeholder ? itemSheetSprite(G.items.placeholder.skin) : null };
     }
     return entry;
   }
@@ -4694,27 +5098,27 @@
     var before = [first, second, third, scrollSlot].map(function (slot) {
       return JSON.stringify(fingerprint(character.items[slot]));
     });
-    var settled = false, result, failure = null;
+    var result, failure = null;
     await merchantMassBuff("massproduction");
     Promise.resolve(compound(first, second, third, scrollSlot)).then(function (value) {
-      settled = true;
       result = value;
     }).catch(function (error) {
-      settled = true;
       failure = error;
     });
     var deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       if (failure) throw failure;
-      if (settled) return result;
-      var changed = [first, second, third, scrollSlot].some(function (slot, index) {
+      var changed = [first, second, third, scrollSlot].every(function (slot, index) {
         return JSON.stringify(fingerprint(character.items[slot])) !== before[index];
       });
-      if (changed && !(character.q && character.q.compound)) {
-        // The authoritative inventory has completed the operation even when
-        // the client deferred promise missed its response event.
-        await new Promise(function (resolve) { setTimeout(resolve, 200); });
-        if (failure) throw failure;
+      var placeholders = [first, second, third].some(function (slot) {
+        return character.items[slot] && character.items[slot].name === "placeholder";
+      });
+      if (changed && !placeholders && !(character.q && character.q.compound)) {
+        // The game promise can resolve before its final inventory packet. Only
+        // the consumed inputs, settled queue and actual result can finalize the
+        // production journal and spend a finite quota. These also confirm an
+        // operation whose deferred promise missed its response event.
         return result;
       }
       await new Promise(function (resolve) { setTimeout(resolve, 100); });
@@ -5011,7 +5415,11 @@
                 (route.x == null || Math.hypot(route.x-nextRoute.x,route.y-nextRoute.y)>160))) {
             if (route || moving) { await stop("smart"); if (!current()) throw new Error("interrupted"); await stop("move"); if (!current()) throw new Error("interrupted"); }
             phase="smart"; route=nextRoute; routeTargetMap=destination.map; routeAt=Date.now(); routePending=true;
-            Promise.resolve(smart_move(route)).catch((function(started){return function(error){
+            // Coarse endpoints may already be inside transporter range even
+            // when the exact approach crosses scenery. Tighten only a clear
+            // final connector if the ordinary 20-unit tolerance stopped short.
+            var preciseApproach = route.transporterPoint && Math.hypot(character.x-route.x,character.y-route.y) <= 20 && can_move_to(route.x,route.y);
+            Promise.resolve(smart_move(route, undefined, preciseApproach ? {arrivalTolerance:10} : undefined)).catch((function(started){return function(error){
               if(route===started) routeError=String(error && (error.reason || error.message) || error);
             };})(route)).finally((function(started){return function(){if(route===started)routePending=false;};})(route));
             moving=true;
@@ -5874,7 +6282,12 @@
     }
     for (var i = 0; i < (command.upgrades || []).length; i += 1) {
       var mark = command.upgrades[i], slot = findUpgradeMarkSlot(mark, used);
-      if (slot < 0) continue;
+      if (slot < 0) {
+        if (mark.auto && mark.passId)
+          throw Error("Automatic upgrade survivor is ambiguous or missing: " + mark.item.name + "; preserved target +" +
+            ((Number(mark.item.level) || 0) + (Number(mark.tiers) || 1)));
+        continue;
+      }
       used[slot] = true;
       var targetLevel = Math.min(maximumItemLevel(G.items[mark.item.name]),
         (Number(mark.item.level) || 0) + (Number(mark.tiers) || 1));
@@ -5940,11 +6353,15 @@
       if (!group.items || group.items.length !== 3) continue;
       var slots = [], localUsed = {};
       group.items.forEach(function (mark) {
-        var slot = character.items.findIndex(function (item, index) { return !localUsed[index] && sameItem(item, mark.item); });
+        var slot = mark.storage ? (Number.isInteger(mark.slot) && !localUsed[mark.slot] && sameItemState(character.items[mark.slot],mark.item) ? mark.slot : -1)
+          : character.items.findIndex(function (item, index) { return !localUsed[index] && sameItem(item, mark.item); });
         if (slot >= 0) localUsed[slot] = true;
         slots.push(slot);
       });
-      if (slots.some(function (slot) { return slot < 0; })) continue;
+      if (slots.some(function (slot) { return slot < 0; })) {
+        if (group.items.some(function(mark){return mark.storage;})) throw Error('Reserved bank compound input moved before production');
+        continue;
+      }
       var cscroll = "cscroll" + item_grade(character.items[slots[0]]), cscrollSlot = findInventoryItemByName(cscroll);
       if (cscrollSlot < 0) {
         await ensureOwnedItemQuantity(cscroll, 1, command, activity);
@@ -6232,7 +6649,7 @@
     var needsBank = names.some(function (name) { return itemAvailability(name).onPlayer < needs[name]; });
     if (needsBank) await merchantVisitBank(command, activity);
     for (var n = 0; n < names.length; n += 1) {
-      await retrieveFromBankUntil(names[n], needs[n]);
+      await retrieveFromBankUntil(names[n], needs[names[n]]);
     }
     var purchasableStatScrolls = { strscroll: true, intscroll: true, dexscroll: true, vitscroll: true };
     for (var requiredIndex = 0; requiredIndex < names.length; requiredIndex += 1) {
@@ -6269,6 +6686,7 @@
   async function applyStatScrolls(command, activity) {
     var returns = [], resolved = [];
     command._statReturns = [];
+    command._statScrollsApplied = [];
     for (var i = 0; i < (command.statScrolls || []).length; i += 1) {
       var mark = command.statScrolls[i];
       // A partial name/level match can select an otherwise identical item that
@@ -6289,6 +6707,11 @@
       try {
         await smart_move(find_npc("newupgrade"));
         await upgrade(itemSlot, scrollSlot);
+        var appliedDeadline=Date.now()+2500;
+        while ((!character.items[itemSlot] || character.items[itemSlot].stat_type!==mark.statType) && Date.now()<appliedDeadline) await sleep(100);
+        if (!character.items[itemSlot] || character.items[itemSlot].stat_type!==mark.statType)
+          throw Error('Native stat-scroll outcome was not confirmed');
+        command._statScrollsApplied.push({mark:mark,slot:itemSlot,item:fingerprint(character.items[itemSlot])});
         if (character.items[itemSlot]) {
           var completed = fingerprint(character.items[itemSlot]);
           returns.push(completed);
@@ -6548,7 +6971,7 @@
         }
       }
       var deliveries = [];
-      var restockSupplies = ["hp", "mp"].map(function (kind) {
+      var restockSupplies = ["hp", "mp", "elixir"].map(function (kind) {
         var supply = command.restock && command.restock[kind];
         if (!supply || !supply.max) return null;
         return { kind: kind, supply: supply, have: statusQuantity(command.targetInventory, supply.item) };
@@ -6562,7 +6985,14 @@
           var restockEntry = restockSupplies[restockIndex];
           var supply = restockEntry.supply;
           var needed = Math.max(0, supply.max - restockEntry.have), seller = itemSeller(supply.item);
-          if (needed > 0 && seller) {
+          if (needed > 0 && restockEntry.kind === 'elixir') {
+            var elixirEntries = await restockElixirEntries(command, supply.item, needed);
+            for (var ei=0; ei<elixirEntries.length && needed>0; ei++) {
+              var elixirDelivery = Math.min(needed,Number(elixirEntries[ei].item.q)||1);
+              deliveries.push({name:supply.item,quantity:elixirDelivery,slot:elixirEntries[ei].slot});
+              needed-=elixirDelivery;
+            }
+          } else if (needed > 0 && seller) {
             var buyQuantity = Math.max(0, needed - inventoryQuantity(supply.item));
             if (character.gold >= G.items[supply.item].g * buyQuantity) {
               if (buyQuantity) {
@@ -6598,6 +7028,15 @@
         for (var d = 0; d < deliveries.length; d += 1) {
           if (deliveredRestocks[d]) continue;
           var deliverySlot = findInventoryItemByName(deliveries[d].name);
+          if (Number.isInteger(deliveries[d].slot)) {
+            // Travel/tidying can move a supplied copy. Refresh reservations before
+            // sending rather than trusting an old slot or taking another job's stock.
+            var supplyCheckpoint = await upgradeOfferingCheckpoint(command);
+            var supplied = availableOfferingEntries(supplyCheckpoint).find(function(entry) {
+              return !entry.pack && entry.item.name === deliveries[d].name && (Number(entry.item.q)||1) >= deliveries[d].quantity;
+            });
+            deliverySlot = supplied ? supplied.slot : -1;
+          }
           if (deliverySlot >= 0) await merchantSendItem(command.target, deliverySlot, deliveries[d].quantity);
           deliveredRestocks[d] = true;
         }
@@ -6834,6 +7273,29 @@
     return true;
   }
 
+  async function prepareBankCompounds(command, activity) {
+    var groups=(command.compounds||[]).filter(function(group){return (group.items||[]).some(function(mark){return mark.storage;});});
+    if (!groups.length) return;
+    await merchantVisitBank(command,activity);
+    for(var gi=0;gi<groups.length;gi++) for(var mi=0;mi<groups[gi].items.length;mi++) {
+      var mark=groups[gi].items[mi],source=mark.storage;
+      if(!source || mark.storageReceived) continue;
+      var bankItem=character.bank && character.bank[source.pack] && character.bank[source.pack][source.slot];
+      if(!bankItem || bankItem.l || !sameItemState(bankItem,mark.item)) throw Error('Reserved bank compound item changed');
+      var beforeSlots=character.items.map(function(item){return item ? JSON.stringify(fingerprint(item)) : null;});
+      var before=character.items.filter(function(item){return sameItemState(item,mark.item);}).length;
+      await bank_retrieve(source.pack,source.slot);
+      var deadline=Date.now()+2500;
+      while(character.items.filter(function(item){return sameItemState(item,mark.item);}).length<=before && Date.now()<deadline) await sleep(100);
+      if(character.items.filter(function(item){return sameItemState(item,mark.item);}).length<=before) throw Error('Bank compound withdrawal unconfirmed');
+      var receivedSlot=character.items.findIndex(function(item,index){return !beforeSlots[index] && sameItemState(item,mark.item);});
+      if(receivedSlot<0) throw Error('Bank compound destination was not uniquely observed');
+      mark.slot=receivedSlot;mark.storageReceived=true;
+      (command._merchantWithdrawalsCompleted ||= []).push({pack:source.pack,slot:source.slot,item:mark.item,inventorySlot:receivedSlot});
+    }
+    activity.push({level:'info',message:'Withdrew reserved bank compound triplets'});
+  }
+
   async function prepareBankUpgrades(command, activity) {
     if (!(command.bankUpgradeRules || []).length) return;
     await merchantVisitBank(command, activity);
@@ -6926,6 +7388,7 @@
         if (typeof statMark.slot === "string" && sameItemState(character.slots[statMark.slot], statMark.item))
           await unequip(statMark.slot);
       }
+      await prepareBankCompounds(command, activity);
       if ((command.bankUpgradeRules || []).length) await prepareBankUpgrades(command, activity);
       await preloadUpgradeOfferings(command, activity);
       await preloadStatScrolls(command, activity);
@@ -6973,6 +7436,7 @@
         upgradesResolved: (command.upgrades || []).length > 0,
         upgradeMarksResolved: (command.upgrades || []).filter(function(mark) { return (command._offeringWaits || []).indexOf(mark) < 0; }),
         statScrollsResolved: command._statScrollsResolved || [],
+        statScrollsApplied: command._statScrollsApplied || [],
         compoundsResolved: (command.compounds || []).length > 0,
         autoCompoundsResolved: command.sharedBankImprovements ? [] : command._autoCompoundsResolved || [],
         purchasesResolved: (command.purchases || []).length > 0,
@@ -6994,6 +7458,7 @@
         await request("/merchant/complete", { method: "POST", body: {
           jobId: command.jobId, success: false,
           error: String(error.reason || error.message || error),
+          statScrollsApplied: command._statScrollsApplied || [],
           merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
           merchantBanked: command._merchantBankedCompleted || [], activity: activity,
         }});
@@ -7089,6 +7554,10 @@
     }
     function matchingSlot(item) {
       if (!item) return -1;
+      // Inventory can move between paid cycles without a CODE restart. Remap
+      // the complete owned group before interpreting individual reservations.
+      // Pending native outcomes retain their separate receipt reconciliation.
+      if (!progress.pendingUpgrade) remapCommerceOwnedItems(progress);
       function reserved(slot) {
         return progress.batchItems.concat(progress.results).some(function (entry) { return entry.slot === slot && sameItem(character.items[slot], entry.item); });
       }
@@ -7837,6 +8306,17 @@
     return null;
   }
 
+  // The server clears the exchange placeholder before add_item, so a stackable
+  // reward merges into a carried stack and exchange() reports no slot (#28).
+  // Rewards are the slots that are new or grew since the operation began.
+  function exchangeGains(held) {
+    return character.items.map(function (item, slot) {
+      var before = held[slot];
+      return item && !item.l && item.name !== "placeholder" &&
+        (!sameItemState(item, before) || itemQuantity(item) > itemQuantity(before)) ? fingerprint(item) : null;
+    }).filter(Boolean);
+  }
+
   async function merchantExchange(command) {
     var activity = [], lines = [], rewards = (command.exchangeRewards || []).slice();
     (command.exchanges || []).forEach(function (line) {
@@ -7935,12 +8415,16 @@
         }
         await smart_move(find_npc(line.reward ? itemDefinition.npc || line.id + "s" : exchangeNpc(line.id)));
         for (var count = 0; count < Math.max(1, Number(line.quantity) || 1); count += 1) {
+          // The preceding native exchange and its durable progress are settled.
+          // Long jobs must also compress stock received after admission.
+          await compressMerchantInventory(command);
+          if (bankStacks && bankStacks.pending()) await bankStacks.recover();
           var slot = character.items.findIndex(function (item) {
             return item && item.name === line.id && (Number(item.level) || 0) === (Number(line.level) || 0) &&
               !item.l && itemQuantity(item) >= required;
           });
           if (slot < 0) throw new Error("Exchange stack changed for " + line.id);
-          var result;
+          var result, held = character.items.map(fingerprint);
           if (line.reward) {
             // Select the verified stack explicitly; exchange_buy() otherwise
             // chooses the first stack, which may be locked or too small.
@@ -7953,8 +8437,9 @@
             await verifyMerchantItemMarks();
             result = await exchange(slot);
           }
-          if (result && Number.isInteger(result.num) && character.items[result.num])
-            rewards.push(fingerprint(character.items[result.num]));
+          exchangeGains(held).forEach(function (gain) {
+            if (!rewards.some(function (reward) { return sameItem(gain, reward); })) rewards.push(gain);
+          });
           var remaining = lines.slice(lineIndex).map(function (pendingLine, index) {
             return { id: pendingLine.id, level: pendingLine.level,
               ...(pendingLine.reward ? {reward:pendingLine.reward} : {}),
@@ -8037,7 +8522,8 @@
     await heartbeat();
     var heartbeatTimer = setInterval(heartbeat, 5000), suspendedGathering = null, actionStarted = false;
     try {
-      if (["merchant-npc-sale", "merchant-deconstruct", "merchant-commerce", "merchant-upgrade-preview"].indexOf(command.type) >= 0) {
+      // Delivery owns movement too: retire an idle return or gathering path before starting it.
+      if (["merchant-service", "merchant-npc-sale", "merchant-deconstruct", "merchant-commerce", "merchant-upgrade-preview"].indexOf(command.type) >= 0) {
         suspendedGathering = gatheringMode;
         gatheringGeneration += 1; root.__merchantGatheringGeneration = gatheringGeneration;
         if (gatheringTimer) clearInterval(gatheringTimer);
@@ -8058,6 +8544,8 @@
       if (luckyUpgradeService && luckyUpgradeService.pending()) await luckyUpgradeService.recover();
       else if (character.ctype === "merchant" && root.localStorage.getItem("party-lucky-upgrade:" + character.name)) await merchantLuckyUpgrade().recover();
       if (command.type !== "merchant-upgrade-preview" && command.commerceProgressVersion !== 2 && freeInventorySlots() > 0) await merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
+      await compressMerchantInventory(command);
+      if (bankStacks && bankStacks.pending()) await bankStacks.recover();
       actionStarted = true;
       return await action();
     } catch (error) {
@@ -8640,9 +9128,32 @@
     }
   }
 
+  async function restockElixirEntries(command, name, required) {
+    var checkpoint = await upgradeOfferingCheckpoint(command);
+    function carried() { return availableOfferingEntries(checkpoint).filter(function(entry) { return !entry.pack && entry.item.name === name; }); }
+    function count() { return carried().reduce(function(total,entry) { return total + (Number(entry.item.q)||1); },0); }
+    if (count() < required) {
+      await merchantVisitBank(command, []);
+      checkpoint = await upgradeOfferingCheckpoint(command);
+      var bankEntries = availableOfferingEntries(checkpoint).filter(function(entry) {
+        var original = entry.pack && character.bank && character.bank[entry.pack] && character.bank[entry.pack][entry.slot];
+        return original && entry.item.name === name && (Number(original.q)||1) === (Number(entry.item.q)||1);
+      });
+      for (var index=0; index<bankEntries.length && count()<required; index++) {
+        await bankRetrieveConfirmed(bankEntries[index].pack, bankEntries[index].slot);
+        checkpoint = await upgradeOfferingCheckpoint(command);
+      }
+    }
+    return carried();
+  }
+
   async function merchantSelfRestock(command) {
     var activity = [];
     try {
+      var elixirSupply = command.restock && command.restock.elixir;
+      if (elixirSupply && elixirSupply.item && inventoryQuantity(elixirSupply.item) < elixirSupply.max) {
+        await restockElixirEntries(command, elixirSupply.item, elixirSupply.max);
+      }
       var supplies = [command.restock && command.restock.hp, command.restock && command.restock.mp]
         .filter(function (supply) { return supply && Number(supply.max) > 0; });
       var needs = supplies.map(function (supply) {
@@ -8970,14 +9481,16 @@
 
   async function consolidateMerchantInventory(command) {
     var merge = command.inventoryMerge;
-    if (!merge || character.ctype !== "merchant" || root.__merchantActiveJob || anniversaryBusy ||
-        banking || gatheringActive || merchantAnniversaryWorkReserved() || !runtimeCurrent()) return;
+    var boundaryOwned = root.__merchantActiveJob && root.__merchantActiveJob.jobId === command.jobId && root.__merchantActiveJob.commandId === command.id;
+    if (!merge || character.ctype !== "merchant" || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy ||
+        banking || gatheringActive || stackInventoryCommandBusy(command) || merchantAnniversaryWorkReserved() || !runtimeCurrent()) return;
     if (Date.now() < (Number(root.__merchantStackRetryAt) || 0)) return;
     try {
       var permission = await request("/merchant/stack-merge-permission", { method: "POST", body: {
         character: character.name, merge: merge,
+        jobId: command.jobId, commandId: command.id, command: boundaryOwned ? command : undefined,
       }});
-      if (!permission.allowed || !runtimeCurrent() || root.__merchantActiveJob || anniversaryBusy || banking || gatheringActive) return;
+      if (!permission.allowed || !runtimeCurrent() || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy || banking || gatheringActive || stackInventoryCommandBusy(command)) return;
     } catch (_mergePermissionError) { return; }
     var target = character.items[merge.to], source = character.items[merge.from];
     if (!target || !source || merge.to === merge.from || target.l || source.l || target.b || source.b ||
@@ -8986,18 +9499,22 @@
         bankStackIdentity(source) !== bankStackIdentity(merge.source) ||
         bankStackIdentity(target) !== bankStackIdentity(source) ||
         Number(target.q) !== Number(merge.target.q) || Number(source.q) !== Number(merge.source.q)) return;
-    var total = Number(target.q) + Number(source.q), limit = Number(G.items[target.name] && G.items[target.name].s) || 1;
+    var quantity = merge.quantity || Number(source.q);
+    var total = Number(target.q) + quantity, limit = Number(G.items[target.name] && G.items[target.name].s) || 1;
     if (!Number.isSafeInteger(total) || total > limit || limit <= 1) return;
     // The server swaps incompatible items instead of rejecting imove. Use the
     // live SDK rule too, so newly introduced restrictions cannot shuffle stacks.
-    if (typeof can_stack === "function" && !can_stack(target, source)) return;
+    if (typeof can_stack === "function" && !can_stack(target, Object.assign({}, source, {q:quantity}))) return;
     root.__merchantStackRetryAt = Date.now() + 10000;
     try {
-      await anniversaryWithTimeout(swap(merge.to, merge.from), 2000, "Inventory stack merge");
-      var deadline = Date.now() + 1500;
-      while (runtimeCurrent() && Date.now() < deadline &&
+      if (quantity < Number(source.q)) await bankStackService().mergeInventory(merge.to, merge.from, target, source, quantity);
+      else {
+        await anniversaryWithTimeout(swap(merge.to, merge.from), 2000, "Inventory stack merge");
+        var deadline = Date.now() + 1500;
+        while (runtimeCurrent() && Date.now() < deadline &&
           (character.items[merge.from] || Number((character.items[merge.to] || {}).q) !== total)) await sleep(100);
-      if (!character.items[merge.from] && Number((character.items[merge.to] || {}).q) === total) {
+      }
+      if (Number((character.items[merge.from] || {}).q || 0) === Number(source.q) - quantity && Number((character.items[merge.to] || {}).q) === total) {
         root.__merchantStackRetryAt = 0;
         root.__merchantStackError = null;
       } else root.__merchantStackError = "Inventory stack merge was not confirmed";
@@ -9006,8 +9523,43 @@
     }
   }
 
+  async function compressMerchantInventory(command) {
+    if (character.ctype !== "merchant" || stackInventoryCommandBusy(command) || Number(root.__merchantStackCheckAt) > Date.now()) return;
+    var partials = {};
+    var candidate = character.items.some(function(item) {
+      var limit = item && Number((G.items[item.name] || {}).s) || 1;
+      if (!item || item.l || item.b || limit <= 1 || !Number.isSafeInteger(item.q) || item.q <= 0 || item.q >= limit) return false;
+      var key = JSON.stringify([bankStackIdentity(item), !!item.v, !!item.acl, item.ps || []]);
+      if (partials[key]) return true;
+      partials[key] = true; return false;
+    });
+    if (!candidate) return;
+    root.__merchantStackCheckAt = Date.now() + 2000;
+    // Replan every move from a freshly published inventory. A bounded pass can
+    // fill targets and empty small piles without waiting for another stand visit.
+    for (var pass = 0; pass < 84 && runtimeCurrent(); pass++) {
+      if (Number(root.__merchantStackRetryAt) > Date.now()) return;
+      await request("/status", {method:"POST", body:snapshot()});
+      var next = await request("/merchant/stack-merge-permission", {method:"POST", body:{
+        character:character.name, next:true, jobId:command.jobId, commandId:command.id, command:command.jobId ? command : undefined,
+      }});
+      if (!next.merge) return;
+      await consolidateMerchantInventory(Object.assign({}, command, {inventoryMerge:next.merge}));
+      if (root.__merchantStackError) return;
+      if (Number((character.items[next.merge.to] || {}).q) === Number(next.merge.target.q)) return;
+    }
+  }
+
+  function stackInventoryCommandBusy(command) {
+    var ownJob = root.__merchantActiveJob && root.__merchantActiveJob.jobId === command.jobId && root.__merchantActiveJob.commandId === command.id;
+    var ownIdle = typeof merchantIdleActive !== "undefined" && merchantIdleActive && command.type === "merchant-idle";
+    var ownsCommand = typeof lastCommand !== "undefined" && command.id === lastCommand && (ownJob || ownIdle);
+    return (Number(root.__partyInventoryCommands) || 0) > (ownsCommand ? 1 : 0);
+  }
+
   async function merchantStandInventoryReady(command) {
     try {
+      if (bankStacks && bankStacks.pending()) await bankStacks.recover();
       if (root.__merchantInventoryTidy) await root.__merchantInventoryTidy;
       if (luckyUpgradeService && luckyUpgradeService.pending()) await luckyUpgradeService.recover();
       else if (character.ctype === "merchant" && root.localStorage.getItem("party-lucky-upgrade:" + character.name)) await merchantLuckyUpgrade().recover();
@@ -9087,6 +9639,12 @@
       if (!command.inPlace) await request("/merchant/idle-status", { method: "POST", body: {
         character: character.name, commandId: command.id, phase: "arrived",
       }});
+      var inventoryReady = await merchantStandInventoryReady(command);
+      // Bag compression is independent of owning/opening a merchant stand.
+      if (inventoryReady) {
+        await consolidateMerchantInventory(command);
+        await compressMerchantInventory(command);
+      }
       // Trade-slot mutations require the stand to be open, but they can be
       // reconciled in place while it remains open.
       if (!character.stand) {
@@ -9094,7 +9652,7 @@
         await new Promise(function (resolve) { setTimeout(resolve, 250); });
         if (!character.stand) throw new Error("Merchant stand did not open");
       }
-      if (!await merchantStandInventoryReady(command)) return { state: "deferred" };
+      if (!inventoryReady) return { state: "deferred" };
       if (typeof nativeStandSync === "function") await nativeStandSync(command, false);
       var desired = (command.listings || []).filter(function (entry) { return entry.state !== "paused"; }), consumedListings = {}, liveListings = [];
       for (var tradeIndex = 1; tradeIndex <= 16; tradeIndex += 1) {
@@ -9134,7 +9692,6 @@
         liveListings.push({ id: listing.id, tradeSlot: emptyTrade });
       }
       if (typeof nativeStandSync === "function") await nativeStandSync(command, false);
-      await consolidateMerchantInventory(command);
       if (!command.inPlace && ownsIdle() && !root.__merchantActiveJob) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
         try { await root.__merchantInventoryTidy; }
@@ -9245,6 +9802,24 @@
     return totals;
   }
 
+  /** Whether a finished channel succeeded. Current clients resolve the cast with `found`; older
+   *  ones resolve when the channel starts, so wait for it to end and read the game's cooldown,
+   *  which the server starts (skill_timeout) only on a success. */
+  async function gatheringOutcome(mode, result, castAt, current) {
+    if (result && typeof result.found === "boolean") return result.found;
+    var wait = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
+    var channelling = function () { return !!(character.c && character.c[mode]); };
+    var appear = Date.now() + 1500;
+    while (!channelling() && Date.now() < appear && serverCooldownUntil(mode) <= castAt) {
+      await wait(100); if (current && !current()) return false;
+    }
+    var end = castAt + (Number(G.skills[mode] && G.skills[mode].duration_max) || 15000) + 5000;
+    while (channelling() && Date.now() < end) { await wait(200); if (current && !current()) return false; }
+    var settle = Date.now() + 1500;
+    while (serverCooldownUntil(mode) <= Date.now() && Date.now() < settle) { await wait(100); if (current && !current()) return false; }
+    return serverCooldownUntil(mode) > Date.now();
+  }
+
   async function reportGatheringResult(mode, before, result, current) {
     var fishing = mode === "fishing";
     if (result && result.found === false) {
@@ -9318,12 +9893,23 @@
       session.baseline = gatheringBaseline();
       return true;
     }
-    await request("/merchant/gather-status", { method: "POST", body: {
+    if (gatheringAutoCraft[session.mode] === true) {
+      var toolOrder = await request('/merchant/order', {method:'POST', body:{
+        buys:[], crafts:[{id:session.tool,quantity:1,level:0}]
+      }});
+      gatheringRetryAt = Date.now() + 5000;
+      gatheringStatus('Crafting replacement ' + session.tool, 'info', {jobId:toolOrder.jobId});
+      return false;
+    }
+    var missingTool = await request("/merchant/gather-status", { method: "POST", body: {
       character: character.name, mode: session.mode, noTool: true,
       message: (session.mode === "fishing" ? "Fishing" : "Mining") + " off: no tool in inventory or bank",
       level: "info",
     }});
     if (current && !current()) return false;
+    // Settings may have enabled replacement crafting while this report was on
+    // the wire. Keep the current mode; the next fresh status supplies opt-in.
+    if (missingTool.noTool === false) return false;
     gatheringModes = gatheringModes.filter(function (mode) { return mode !== session.mode; });
     selectGatheringMode();
     return false;
@@ -9527,17 +10113,31 @@
 
   async function gatheringCommandHandoff(command) {
     var attempt = root.__merchantGatheringAttempt;
-    if (!attempt || command.type === "merchant-gather") return true;
+    if (command.type === "merchant-gather") return true;
+    var generation = root.__merchantGatheringGeneration;
     var override = !/^merchant-/.test(command.type) || merchantForceStand || merchantAnniversaryWorkReserved();
-    if (attempt.phase === "casting" && !override) {
+    if (attempt && attempt.phase === "casting" && !override) {
       attempt.waitingCommand = command.id;
       reportMerchantCommand(command, "deferred", "finishing " + attempt.mode + " cast");
       return false;
     }
-    attempt.cancelled = "command " + command.type;
-    root.__merchantLogisticsHoldUntil = Date.now() + 1000;
-    if (typeof stop === "function") await stop();
-    await attempt.done;
+    if (attempt) {
+      attempt.cancelled = "command " + command.type;
+      root.__merchantLogisticsHoldUntil = Date.now() + 1000;
+      if (typeof stop === "function") await stop();
+      await attempt.done;
+    }
+    if (generation !== root.__merchantGatheringGeneration) return false;
+    // A completed cast has already released its attempt. Its tool still needs
+    // restoring before non-suspending work (notably Ponty purchases) can start.
+    var session = gatheringSession;
+    if (/^merchant-/.test(command.type) && session && character.slots &&
+        character.slots.mainhand && character.slots.mainhand.name === session.tool) {
+      root.__merchantLogisticsHoldUntil = Date.now() + 5000;
+      return restoreGatheringEquipment(session, function () {
+        return generation === root.__merchantGatheringGeneration;
+      });
+    }
     return true;
   }
 
@@ -9549,6 +10149,10 @@
     if (busy) return "status update";
     if (banking) return "banking";
     if (root.__merchantActiveJob) return "merchant job";
+    // A manual equip waits for the old gathering attempt to stop. Do not let
+    // its completion immediately start another tool swap before that ordinary
+    // inventory command has actually finished.
+    if (root.__partyInventoryCommands) return "inventory command";
     if (Date.now() < (Number(root.__merchantLogisticsHoldUntil) || 0)) return "logistics handoff";
     if (anniversaryBusy || merchantAnniversaryWorkReserved()) return "anniversary reservation";
     if (Date.now() < gatheringRetryAt) return "retry delay";
@@ -9661,13 +10265,20 @@
         var beforeGathering = gatheringInventoryTotals();
         gatheringStatus(mode === "fishing" ? "Fishing…" : "Mining…", "info");
         attempt.phase = "casting";
+        var castAt = Date.now();
         var gatheringResult = await use_skill(mode);
         if (!current()) return;
-        await reportGatheringResult(mode, beforeGathering, gatheringResult, current);
+        var caught = await gatheringOutcome(mode, gatheringResult, castAt, current);
         if (!current()) return;
-        session.cooldownUntil = Date.now() + (Number(G.skills[mode] && G.skills[mode].reuse_cooldown) || 0);
+        await reportGatheringResult(mode, beforeGathering, { found: caught }, current);
+        if (!current()) return;
+        // The server starts the reuse cooldown (skill_timeout) only on a success; a miss
+        // costs MP only and can be cast again at once.
+        var serverCooldown = serverCooldownUntil(mode);
+        session.cooldownUntil = !caught ? 0 : serverCooldown > Date.now() ? serverCooldown :
+          Date.now() + (Number(G.skills[mode] && G.skills[mode].reuse_cooldown) || 0);
         gatheringCooldowns[mode] = session.cooldownUntil;
-        attempt.phase = "cooldown";
+        attempt.phase = caught ? "cooldown" : "recast";
         if (freeInventorySlots() < 3 && generation === root.__merchantGatheringGeneration) {
           await depositGatheringGains(session, current);
           if (current()) await smart_move(destination);
@@ -9733,6 +10344,11 @@
       return;
     }
     if (!enabled.length) { if (gatheringMode) setGathering(null); return; }
+    // A manual inventory command can be awaiting the old attempt's release.
+    // Rotating modes here would invalidate that handoff's generation and let
+    // another gathering attempt race the still-unexecuted equip. Explicit
+    // disabling remains immediate; ordinary rotation resumes after ownership.
+    if (root.__partyInventoryCommands && enabled.indexOf(gatheringMode) >= 0) return;
     var ready = enabled.filter(function (mode) {
       return syncGatheringCooldown(mode) <= Date.now() && !is_on_cooldown(mode);
     });
@@ -9836,7 +10452,8 @@
     if (!owner || owner.cycleId === state.eventReturnCycleId) return;
     owner.cancelled = true;
     root.__partyEventExitOwner = null;
-    var ownsMovement = !convoyTraveling && !followingLeader && !forceTraveling && !townTraveling;
+    var ownsMovement = !convoyTraveling && !followingLeader && !forceTraveling && !townTraveling &&
+      !root.__merchantActiveJob && !merchantIdleActive && !banking && !stocking && !upgrading;
     eventReturnPending = false;
     departurePending = false;
     eventRecoveryRetryAt = 0;
@@ -9908,11 +10525,31 @@
       state: state, reason: reason || null, at: Date.now() + coordinatorClockOffset };
   }
 
-  async function handle(command) {
+  var pendingEquipmentCommands = Object.create(null);
+  function handle(command) {
+    if (!command || (command.type !== "equip" && command.type !== "unequip"))
+      return handleInventoryCommand(command);
+    // Repeated heartbeats may deliver the same command while its gathering
+    // handoff is pending. Only one owner may issue the native equipment action.
+    if (pendingEquipmentCommands[command.id]) return pendingEquipmentCommands[command.id];
+    var pending = handleInventoryCommand(command);
+    pendingEquipmentCommands[command.id] = pending;
+    var release = function () { delete pendingEquipmentCommands[command.id]; };
+    pending.then(release, release);
+    return pending;
+  }
+
+  async function handleInventoryCommand(command) {
     if (root.__partyTracktrixMove) await root.__partyTracktrixMove;
     root.__partyInventoryCommands = (root.__partyInventoryCommands || 0) + 1;
     try { return await handleOwnedCommand(command); }
-    finally { root.__partyInventoryCommands -= 1; }
+    finally {
+      root.__partyInventoryCommands -= 1;
+      // Status and periodic gathering ticks can both land inside asynchronous
+      // command preflight. Wake on release as well, so matching timer phases
+      // cannot leave gathering idle after the inventory owner has finished.
+      wakeGatheringAfterStatus();
+    }
   }
 
   async function handleOwnedCommand(command) {
@@ -10494,7 +11131,8 @@
       try {
         await afterCombat(async function () {
           if (character.rip) await respawn();
-          await smart_move({ map: "main", x: 74, y: -34 });
+          // Native set_home changes this character's realm preference anywhere.
+          // An unrelated route outage must not prevent that confirmed mutation.
           var result = await set_home();
           if (result && (result.failed || result.success === false))
             throw new Error(result.reason || result.message || "Adventure Land rejected the home realm change");
@@ -10652,9 +11290,15 @@
       statusPhase = "snapshot";
       var statusSentAt = Date.now();
       var statusBody = snapshot();
+      var statusCatalogGeneration = catalogGeneration;
+      var statusCarriedCatalog = !!statusBody.merchantCatalog;
       statusPhase = "request status";
       var state = await request("/status", { method: "POST", body: statusBody });
       if (!runtimeCurrent()) return;
+      // A response accepting the coordinator's old catalog cannot acknowledge a
+      // newer local discovery that is still warming, or an in-flight newer table.
+      if (state.needsCatalog) catalogKnown = false;
+      else if (statusCarriedCatalog && statusCatalogGeneration === catalogGeneration) catalogKnown = true;
       receiveConsoleMaintenance(state.consoleMaintenance || null, state.serverNow);
       if(consoleMainTick()){
         root.__partyStatusSuccessAt=Date.now();if(dashboardSampler)dashboardSampler.renew(state.dashboardLease);
@@ -10671,6 +11315,7 @@
         return;
       }
       mapTelemetryEnabled = !!state.mapTelemetry;
+      if (!mapTelemetryEnabled) mapTelemetryProjectiles = {};
       dungeonRuntime().receive(state.dailyDungeon);
       if (root.installCaveRecovery) caveRecovery().receive(state.dailyDungeon && state.dailyDungeon.recovery);
       if (dungeonRuntime().owns()) {
@@ -10741,6 +11386,7 @@
       root.__partyRareControlAt = Math.max(Number(root.__partyRareControlAt || 0),Number(state.serverNow || 0));
       if (!rareControlState) cancelRarePath();
       mapTelemetryEnabled = !!state.mapTelemetry;
+      if (!mapTelemetryEnabled) mapTelemetryProjectiles = {};
       partyLocation = state.partyLocation || null;
       farmTravelPaused = !!state.farmTravelPaused;
       bankQueued = !!state.bankQueued;
@@ -10778,6 +11424,7 @@
       var previousSelections = enabledEventSelections;
       statusPhase = "apply event selections";
       enabledEventSelections = Array.isArray(state.eventSelections) ? state.eventSelections : null;
+      eventSettings = state.eventSettings || {}; cipherMerchant = state.cipherMerchant || null; cipherGathering = state.cipherGathering || null;
       eventsEnabled = !!state.eventsEnabled;
       root.__merchantCoordinatorEventRecovery = !!state.merchantEventRecoveryReserved;
       if (previousSelections && enabledEventSelections && previousSelections.join(",") !== enabledEventSelections.join(",")) {
@@ -10836,6 +11483,7 @@
       statusPhase = "apply merchant settings";
       bankboiStorage = state.bankboiStorage === true;
       bankStaging = state.bankStaging !== false;
+      gatheringAutoCraft = state.gatheringAutoCraft || {};
       var nextStandListings = state.standListings || gatheringStandListings;
       if (JSON.stringify(nextStandListings) !== JSON.stringify(gatheringStandListings) && gatheringSession)
         gatheringSession.atStandForCooldown = false;
@@ -10915,10 +11563,20 @@
       farmingMode = character.ctype !== "merchant" && state.partyFarmingMode === "scatter" ? "scatter" : "default";
       partyFarmingMonsterType = typeof state.partyFarmingMonsterType === "string" ? state.partyFarmingMonsterType : null;
       scatterBreakTarget = state.scatterBreakTarget && state.scatterBreakTarget.id ? state.scatterBreakTarget : null;
-      catalogKnown = !state.needsCatalog;
       void prepareCatalog();
       flushStatusDiagnostics();
       statusPhase = "dispatch command";
+      var elixirPolicy = state.restockPolicies && state.restockPolicies[character.name] && state.restockPolicies[character.name].elixir;
+      if (elixirPolicy && elixirPolicy.autoConsume !== false && elixirPolicy.item && !character.slots.elixir &&
+          (!state.command || state.command.type === "merchant-idle" && !merchantIdleActive) &&
+          !gatheringActive && !character.rip && !bankboiStorage && !banking && !stocking && !upgrading &&
+          !root.__merchantActiveJob && !root.__merchantInventoryTidy) {
+        var elixirSlot = character.items.findIndex(function (item) { return item && !item.l && !item.b &&
+          item.name === elixirPolicy.item && G.items[item.name] && G.items[item.name].type === 'elixir'; });
+        if (elixirSlot >= 0) {
+          try { await consume(elixirSlot); } catch (_elixirUseError) { /* Native failures retry on the next ordinary heartbeat. */ }
+        }
+      }
       handle(state.command).catch(function (error) {
         if (state.command && lastCommand === Number(state.command.id) &&
             (state.command.type === "town-party" || state.command.type === "event-return-town" ||
@@ -10973,13 +11631,14 @@
 
   function supportedEventNames() {
     var names = Object.keys(G.events || {});
-    ["snowman", "slenderman", "mrgreen", "mrpumpkin"].forEach(function (name) {
+    ["snowman", "slenderman", "mrgreen", "mrpumpkin", "horseman", "graveyard", "trickortreat", "witchcipher"].forEach(function (name) {
       if (names.indexOf(name) < 0) names.push(name);
     });
     return names;
   }
 
-  function halloweenEvent(name) { return ["slenderman", "mrgreen", "mrpumpkin"].indexOf(name) >= 0; }
+  function halloweenEvent(name) { return ["slenderman", "mrgreen", "mrpumpkin", "horseman"].indexOf(name) >= 0; }
+  function scheduledWalkEvent(name) { return ["mrgreen", "mrpumpkin", "horseman", "graveyard"].indexOf(name) >= 0; }
   function halloweenFeedCurrent() {
     // server_info is change-only, so age of the last announcement is not its
     // freshness. Admission uses this connection's snapshot and synced clock.
@@ -11009,23 +11668,29 @@
   }
   function halloweenAttendance(name, state) {
     if (!halloweenFeedCurrent()) return null;
-    if (!state) {
-      if (name === "slenderman") { slenderSearch.exhausted = false; slenderSearch.startedAt = 0; }
-      delete halloweenStages[name]; return null;
-    }
     if (name === "slenderman") {
-      if (state.live !== true) { slenderSearch.exhausted = false; slenderSearch.startedAt = 0; return null; }
+      if (!state || state.live !== true) { slenderSearch.exhausted = false; slenderSearch.startedAt = 0; return null; }
       if (freshSlendermanSighting()) { slenderSearch.exhausted = false; slenderSearch.startedAt = 0; }
       return slenderSearch.exhausted ? null : { staging: false };
     }
-    if (state.live === true) { delete halloweenStages[name]; return { staging: false }; }
-    var spawnAt = anniversaryEpoch(state.spawn), spawnId = state.nativeSpawnEpoch || spawnAt + eventClockOffset;
+    if (state && state.live === true) { delete halloweenStages[name]; return { staging: false }; }
+    var schedule = nativeEventStatus().schedule || {}, serverNow = Date.now() + eventClockOffset;
+    var occurrence = (schedule.events || []).concat(schedule.repeats || []).filter(function (entry) {
+      return entry.event === name && entry.status === 'scheduled' && Number.isFinite(entry.at) &&
+        entry.at >= serverNow - 120000 && entry.at <= serverNow + 120000;
+    }).sort(function (a, b) { return a.at - b.at; })[0];
+    // Old boss feeds have a precise native spawn Date. New October walk-to
+    // events publish their fixed location/time in the calendar before E exists.
+    var nativeSpawn = state && anniversaryEpoch(state.spawn);
+    var spawnAt = nativeSpawn || (occurrence ? occurrence.at - eventClockOffset : 0);
+    var spawnId = nativeSpawn ? state.nativeSpawnEpoch || spawnAt + eventClockOffset : occurrence && occurrence.at;
+    if (!spawnAt) { delete halloweenStages[name]; return null; }
     var now = Date.now(), prior = halloweenStages[name];
     if (prior && prior.spawnId !== spawnId && joinedEvent === name) {
       delete halloweenStages[name]; return null;
     }
     if (prior && prior.spawnId === spawnId) spawnAt = prior.spawnAt;
-    if (!spawnAt || now < spawnAt - 60000 || now > spawnAt + 120000) return null;
+    if (now < spawnAt - 120000 || now > spawnAt + 120000) return null;
     // The server timestamp is immutable for this announced round. Repeated
     // heartbeats never restart either the staging lead or the absent-spawn cap.
     halloweenStages[name] = { spawnAt: spawnAt, spawnId: spawnId };
@@ -11034,7 +11699,7 @@
 
   function rawServerStagingEvents() {
     var status = eventStatus();
-    return ["mrgreen", "mrpumpkin"].map(function (name) {
+    return ["mrgreen", "mrpumpkin", "horseman", "graveyard"].map(function (name) {
       if (!eventSelected(name)) return null;
       var attendance = halloweenAttendance(name, status[name]);
       return attendance && attendance.staging ? { name: name, spawnAt: attendance.spawnAt + coordinatorClockOffset, spawnId: attendance.spawnId } : null;
@@ -11046,14 +11711,18 @@
     // local deadline. Crab and other timestamp-only feeds use this fallback.
     var status = nativeEventStatus();
     return supportedEventNames().filter(function (name) {
+      // Computing October activity can select a persisted gathering plan. Do
+      // that only after opt-in, with the selected party's inventory authority.
+      if (name === 'trickortreat' || name === 'witchcipher') return eventSelected(name) && !!octoberRuntime().activity(name);
       var state = status && status[name];
       return eventIsSupported(name) && state && (halloweenEvent(name)
         ? halloweenFeedCurrent() && state.live === true : state.live !== false);
     }).map(function (name) {
       var state = status[name] || {};
+      if (name === 'trickortreat') return {name:name,id:'doors:'+new Date(Date.now()+eventClockOffset).toISOString().slice(0,10)};
       // Native IDs, round identities and fixed end epochs distinguish successive
       // instances even when the next feed arrives without a long absent interval.
-      var identity = state.id || state.event_id || state.round || state.end || state.expires;
+      var identity = state.id || state.event_id || state.round || state.start || state.end || state.expires;
       return { name: name, id: identity == null ? null : String(identity) };
     });
   }
@@ -11131,7 +11800,19 @@
       throw new Error("No verified event exit mechanism for " + map);
     var savedExit = returnPhaseRecord(command, "event");
     travel.instanceAttempts = Math.max(travel.instanceAttempts || 0, savedExit.exitAttempts || 0);
-    if (travel.instanceAttempts >= 3) throw new Error("Event exit blocked on " + map + " after three attempts");
+    if (travel.instanceAttempts >= 3) {
+      // Native A/B prize errors can strand an ended arena without an exit.
+      // Persist before reconnecting so CODE turnover cannot create a reload loop.
+      if (map === "abtesting" && !eventStatus().abtesting && halloweenFeedCurrent() &&
+          !savedExit.exitReconnectAttempted && typeof change_server === "function") {
+        await persistEventExitAttempt(command, current, { exitMap: map, exitReconnectAttempted: true });
+        if (!current()) return;
+        game_log("Ended A/B arena did not release us; reconnecting to the same realm", "#f0b429");
+        change_server(server.region, server.id);
+        throw new Error("Waiting for ended A/B arena reconnect");
+      }
+      throw new Error("Event exit blocked on " + map + " after three attempts");
+    }
     travel.instanceAttempts++;
     await persistEventExitAttempt(command, current, { exitMap: map, exitAttempts: travel.instanceAttempts });
     if (!current()) return;
@@ -11403,9 +12084,9 @@
   }
 
   async function eventTravelAllowed(eventName) {
+    if (!runtimeCurrent()) return false;
     if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
-    if (character.ctype === "merchant") return runtimeCurrent();
-    if (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible) return false;
+    if (character.ctype !== "merchant" && (huntTurnInPriority || convoyTraveling && convoyTraveling.nonPreemptible)) return false;
     try {
       var permission = await request("/hunt-event-permission", { method: "POST", body: { character: character.name, event: eventName || null } });
       if (permission.reason && permission.reason !== root.__partyEventPermissionReason)
@@ -11430,14 +12111,25 @@
     }});
     // Do not wait for the next status heartbeat before allowing the kiss route.
     if (permission.huntTurnIn) { huntTurnInPriority = true; return; }
+    if (permission.skipped || permission.alreadyReturning) return false;
     if (!await eventTravelAllowed("anniversary")) return;
+    var preemptedConvoy = convoyTraveling, preemptedRevision = navigationIntent.revision,
+      preemptedCommand = lastCommand;
+    function ownsPreemption() {
+      return runtimeCurrent() && !anniversaryRoundAborted(event) &&
+        navigationIntent.revision === preemptedRevision && lastCommand === preemptedCommand &&
+        (!convoyTraveling || convoyTraveling === preemptedConvoy);
+    }
     if (convoyTraveling) { releaseConvoyCruise(convoyTraveling); convoyTraveling.cancelled = true; }
     followingLeader = false;
     if (typeof stop === "function") {
       try { await stop("smart"); } catch (_anniversaryPreemptSmart) { /* No smart route is active. */ }
-      if (!await eventTravelAllowed("anniversary")) return;
+      // Permission and native stop completion can outlive the cancelled route.
+      // A newer command owns its movement even if this old permission allowed us.
+      if (!ownsPreemption() || !await eventTravelAllowed("anniversary") || !ownsPreemption()) return false;
       try { await stop("move"); } catch (_anniversaryPreemptMove) { /* No direct move is active. */ }
     }
+    if (!ownsPreemption()) return false;
     partyConvoyActive = false;
   }
 
@@ -11565,7 +12257,7 @@
       !!(character.s && character.s.anniversary_kiss);
     if (anniversaryNeedsTravel && character.ctype !== "merchant" &&
         !anniversaryVisitAlreadyComplete && (partyConvoyActive || convoyTraveling)) {
-      try { await preemptConvoyForAnniversary(event); }
+      try { if (await preemptConvoyForAnniversary(event) === false) return; }
       catch (preemptError) {
         anniversaryStage = "waiting to interrupt farming travel for anniversary";
         return;
@@ -12220,6 +12912,20 @@
   }
 
   function eventMonsterTypes(eventName) {
+    // activeCombatEvent derives this for every event on each target check, many
+    // times per combat tick. The list depends only on the game data, and a game
+    // update loads a new G object, so eventMonsterTypes caches it per G and
+    // event name. Callers get a copy.
+    var cache = eventMonsterTypes.cache;
+    if (!cache || cache.game !== G) cache = eventMonsterTypes.cache = { game: G, types: new Map() };
+    if (!cache.types.has(eventName)) cache.types.set(eventName, deriveEventMonsterTypes(eventName));
+    var types = cache.types.get(eventName).slice();
+    if (eventName === 'graveyard' && eventSettings.graveyard && Array.isArray(eventSettings.graveyard.monsters))
+      types = types.filter(function (type) { return eventSettings.graveyard.monsters.indexOf(type) >= 0; });
+    return types;
+  }
+
+  function deriveEventMonsterTypes(eventName) {
     var definition = G.events && G.events[eventName];
     var candidates = [];
     if (definition && definition.sprite) candidates.push(definition.sprite);
@@ -12227,6 +12933,8 @@
     // Goo Brawl starts with ordinary Brawl Goos and later spawns the Rainbow
     // Goo. Keep both eligible; nearestEventTarget applies its two-phase rule.
     if (eventName === "goobrawl") candidates = ["rgoo", "bgoo", "goo"].concat(candidates);
+    if (eventName === 'graveyard') candidates = ['zombie','ghoul','gargoyle'];
+    if (eventName === 'horseman') candidates = ['jackowalker','horseman'];
     if (eventName === "mrgreen" || eventName === "mrpumpkin") {
       (((G.monsters || {})[eventName] || {}).spawns || []).forEach(function (spawn) {
         if (typeof spawn[0] === "string" && spawn[0].indexOf("hp:") === 0) candidates.push(spawn[1]);
@@ -12240,14 +12948,14 @@
   function eventRequiresJoin(eventName) {
     // These native monsters have no socket join handler. Attendance travels
     // through ordinary maps instead of issuing an unsupported join action.
-    if (halloweenEvent(eventName)) return false;
+    if (halloweenEvent(eventName) || ['horseman','graveyard','trickortreat','witchcipher'].indexOf(eventName) >= 0) return false;
     return !!(G.events && G.events[eventName] && G.events[eventName].join);
   }
 
   function eventIsSupported(eventName) {
     // Snowman is a live, open-world boss. It appears in server.status like
     // instanced events do, but has no join action; travel to it normally.
-    return eventRequiresJoin(eventName) || eventName === "snowman" || halloweenEvent(eventName);
+    return eventRequiresJoin(eventName) || eventName === "snowman" || halloweenEvent(eventName) || ['horseman','graveyard','trickortreat','witchcipher'].indexOf(eventName) >= 0;
   }
 
   function eventMapName(eventName) {
@@ -12271,13 +12979,42 @@
   }
 
   function eventDestination(eventName, state) {
+    if(state&&state.live===false&&root.__partyEventDestinationRecovery?.event===eventName)root.__partyEventDestinationRecovery=null;
+    if (eventName === 'trickortreat' || eventName === 'witchcipher') return octoberRuntime().destination(eventName);
+    if (eventName === 'graveyard') return {map:'spookytown',x:255,y:-1425};
     if (halloweenEvent(eventName) && state && state.live === true) {
-      var actual = freshPartyEventDestination(eventName);
+      var boss = Object.values(parent.entities || {}).find(function (entry) {
+        return entry && entry.type === "monster" && entry.mtype === eventName && entry.visible !== false &&
+          !entry.dead && entry.hp > 0 && (!entry.map || entry.map === character.map) &&
+          (entry.in == null || String(entry.in) === String(character.in || character.map));
+      });
+      var actual = boss ? {map:character.map,in:character.in,x:boss.x,y:boss.y} : freshPartyEventDestination(eventName);
       if (actual) return actual;
     }
     if (state && state.map && Number.isFinite(Number(state.x)) && Number.isFinite(Number(state.y))) {
-      return { map: state.map, x: Number(state.x), y: Number(state.y) };
+      var hint = { map: state.map, x: Number(state.x), y: Number(state.y) };
+      if (state.live === true && ['mrgreen','mrpumpkin'].indexOf(eventName) >= 0) {
+        var signature = JSON.stringify([eventName,reunionRealm(),state.id || state.event_id || state.round || state.start || state.end || state.expires || null,
+          hint,Number(navigationIntent.revision),eventSelectionRevision]);
+        var recovered = root.__partyEventDestinationRecovery;
+        if (recovered && recovered.signature === signature) return recovered.destination;
+        if (character.map === hint.map && Math.hypot(character.x-hint.x,character.y-hint.y)<=100) {
+          var spawn = catalogEventDestination(eventName);
+          if (spawn && (spawn.map !== hint.map || Math.hypot(spawn.x-hint.x,spawn.y-hint.y)>100)) {
+            root.__partyEventDestinationRecovery = {event:eventName,signature:signature,destination:spawn};
+            root.partyEventSearch = {event:eventName,phase:'searching-spawn',lastSeen:hint,destination:spawn,at:Date.now()};
+            game_log("No " + eventName + " at the last-seen waypoint; checking its native spawn", "#c084fc");
+            return spawn;
+          }
+        }
+      }
+      return hint;
     }
+    return catalogEventDestination(eventName);
+  }
+
+  function catalogEventDestination(eventName) {
+    if (eventName === 'horseman') return {map:'halloween',x:-405,y:-1640};
     var mapName = eventMapName(eventName), map = G.maps && G.maps[mapName] || null;
     if (map) {
       var spawn = Array.isArray(map.spawns) && map.spawns[0] || [0, 0];
@@ -12307,12 +13044,23 @@
     return location || { map: character.map, x: Number(character.x) || 0, y: Number(character.y) || 0 };
   }
 
+  function eventPrizeSpaceAvailable(eventName) {
+    // Native A/B settlement's full-inventory branch can abort arena cleanup.
+    if (eventName !== "abtesting" || (character.items || []).some(function (item) { return !item; })) return true;
+    if (Date.now() - (root.__partyABInventoryWarningAt || 0) >= 30000) {
+      root.__partyABInventoryWarningAt = Date.now();
+      game_log("Waiting for an empty inventory slot before A/B Testing", "#f0b429");
+    }
+    return false;
+  }
+
   async function joinEventDestination(destination) {
     if (character.cave || root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return false;
     if (escapeOwns()) return;
     if (!destination || character.map === destination.map) return false;
     var map = G.maps && G.maps[destination.map], eventName = map && map.event;
     if (!eventName || !eventSelected(eventName) || !G.events || !G.events[eventName] || !G.events[eventName].join) return false;
+    if (!eventPrizeSpaceAvailable(eventName)) return false;
     await join(eventName);
     joinedEvent = eventName;
     root.__partyJoinedEvent = eventName;
@@ -12350,11 +13098,14 @@
       }
     }
     return supportedEventNames().map(function (name) {
+      if (name === 'trickortreat' || name === 'witchcipher') return eventSelected(name) && halloweenFeedCurrent() &&
+        !(manuallySuppressedEvent && manuallySuppressedEvent.name === name) ? octoberRuntime().activity(name) : null;
       var state = status && status[name];
       var types = eventMonsterTypes(name);
       var corroborated = partyEventHint === name || name === "goobrawl" && hasGoobrawlCombat();
       var kind = name === "abtesting" ? "pvp" : "monster";
-      var attendance = halloweenEvent(name) ? halloweenAttendance(name, state) : null;
+      var hasAttendance = halloweenEvent(name) || scheduledWalkEvent(name);
+      var attendance = hasAttendance ? halloweenAttendance(name, state) : null;
       if (manuallySuppressedEvent && manuallySuppressedEvent.name === name) return null;
       var anniversary = status && status.anniversary;
       var cycle = anniversaryPlan && anniversaryPlan.eventCycle;
@@ -12367,7 +13118,7 @@
       if (anniversaryPending && enabledEventSelections &&
           enabledEventSelections.indexOf("anniversary") < enabledEventSelections.indexOf(name)) return null;
       if (!eventSelected(name) || !eventIsSupported(name) || (kind === "monster" && !types.length) ||
-          (halloweenEvent(name) ? !attendance : !corroborated && (!state || state.live === false))) return null;
+          (hasAttendance ? !attendance : !corroborated && (!state || state.live === false))) return null;
       return { name: name, state: state || {}, types: types, kind: kind,
         staging: !!(attendance && attendance.staging), spawnAt: attendance && attendance.spawnAt };
     }).filter(Boolean).sort(function (a, b) {
@@ -12392,7 +13143,8 @@
   }
 
   function frankyTargetAllowed(target) {
-    return !!target && target.type === "monster" && target.mtype === "franky" &&
+    return !!target && target.type === "monster" &&
+      (target.mtype === "franky" || target.mtype === "mummy" && target.target === character.name) &&
       target.visible !== false && !target.dead && target.hp !== 0 &&
       (!target.map || target.map === character.map) && (target.in == null || target.in === character.in);
   }
@@ -12406,15 +13158,18 @@
 
   function eventCombatSighting(target) {
     if (!joinedEvent || eventTraveling || character.rip || character.transporting) return null;
+    var cipher = joinedEvent === 'witchcipher' && octoberRuntime().activity('witchcipher');
+    var gatheringTarget = cipher && cipher.kind === 'monster' && target && cipher.types.indexOf(target.mtype) >= 0;
     // Boss location ownership must not follow the temporary selected add.
-    if (!target || target.mtype !== joinedEvent) target = Object.values(parent.entities || {}).find(function (entry) {
+    // Cipher has ordinary gathering monsters instead of a namesake boss.
+    if (!gatheringTarget && (!target || target.mtype !== joinedEvent)) target = Object.values(parent.entities || {}).find(function (entry) {
       return entry && entry.type === "monster" && entry.mtype === joinedEvent && entry.visible !== false &&
         !entry.dead && entry.hp > 0 && (!entry.map || entry.map === character.map) &&
         (entry.in == null || entry.in === character.in);
     });
     if (!target || target.visible === false || target.dead || target.hp <= 0 ||
         !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
-    return {id:String(target.id),mtype:target.mtype,map:character.map,
+    return {id:String(target.id),mtype:target.mtype,event:joinedEvent,map:character.map,
       in:String(character.in || character.map),x:target.x,y:target.y,
       attackReachable:eventCombatReachable(target),observedAt:Date.now()+coordinatorClockOffset};
   }
@@ -12423,6 +13178,8 @@
     if (joinedEvent && !eventSelected(joinedEvent) || travellingEventName && !eventSelected(travellingEventName)) return null;
     if (typeof frankyCombatActive === "function" && frankyCombatActive()) {
       var bosses = Object.values(parent.entities || {}).filter(frankyTargetAllowed);
+      var mummies = bosses.filter(function (target) { return target.mtype === "mummy"; });
+      if (mummies.length) bosses = mummies;
       var retained = bosses.find(function (target) { return target.id === combatTargetId; });
       bosses.sort(function (a, b) {
         return Math.hypot(a.x - character.x, a.y - character.y) -
@@ -12434,7 +13191,7 @@
     // Special/cooperative event bosses are not always returned by the normal
     // path-checked monster selector even when their live entity is visible.
     // Inspect the entity table directly and preserve eventTargetTypes order so
-    // a declared boss (Franky, rgoo, etc.) outranks its spawned adds.
+    // each event's declared monster priority is retained.
     var targets = Object.keys(parent.entities || {}).map(function (id) {
       return parent.entities[id];
     }).filter(function (entity) {
@@ -12443,10 +13200,13 @@
         (character.map === "goobrawl" ? ["rgoo","bgoo","goo"] : eventTargetTypes).indexOf(entity.mtype) >= 0;
     });
     var currentMapEvent = G.maps && G.maps[character.map] && G.maps[character.map].event;
-    if (joinedEvent === "mrgreen" || joinedEvent === "mrpumpkin") {
+    if (joinedEvent === "mrgreen" || joinedEvent === "mrpumpkin" || joinedEvent === "horseman") {
       var boss = targets.find(function (entry) { return entry.mtype === joinedEvent; });
       var sight = boss || freshPartyEventDestination(joinedEvent);
       var adds = targets.filter(function (entry) {
+        // Horseman trash always takes priority, including a newly visible wave
+        // while the boss is already selected. No guessed HP threshold is needed.
+        if (joinedEvent === "horseman") return entry.mtype === "jackowalker";
         return entry.mtype !== joinedEvent && !isExternallyClaimedMonster(entry) &&
           (entry.master != null ? boss && String(entry.master) === String(boss.id) :
             sight && Math.hypot(entry.x - sight.x, entry.y - sight.y) <= 400);
@@ -12652,6 +13412,7 @@
   async function joinCombatEvent(event, destination, current) {
     if (!current()) return false;
     if (root.__partyEventRejoinRequired === event.name || joinedEvent !== event.name || character.map !== destination.map) {
+      if (!eventPrizeSpaceAvailable(event.name)) return false;
       await join(event.name);
       // A join reply can precede the map update. Do not clear death recovery or
       // fall back to a convoy while the teleport is still arriving.
@@ -12813,6 +13574,7 @@
           if (!eventMissingSince) eventMissingSince = Date.now();
           if (Date.now() - eventMissingSince < 10000) return;
           var endedEvent = joinedEvent;
+          if(root.__partyEventDestinationRecovery?.event===endedEvent)root.__partyEventDestinationRecovery=null;
           // Clear this before notifying so repeated polls cannot enqueue the
           // same recovery while the coordinator is responding.
           joinedEvent = null;
@@ -12835,13 +13597,18 @@
       }
       eventMissingSince = 0;
       eventTargetTypes = event.staging ? [] : event.types;
+      if (event.name === 'witchcipher') await octoberRuntime().transfer();
       if (G.maps && G.maps[character.map] && G.maps[character.map].event === event.name &&
           joinedEvent !== event.name) {
         joinedEvent = event.name;
         root.__partyJoinedEvent = event.name;
       }
       if (eventTraveling || banking || stocking || upgrading || departurePending || bankQueued) return;
+      // The death runner owns admission after respawn; a delayed pre-death poll
+      // must not steal that continuation when its permission request resolves.
+      if (root.__partyEventRejoinRequired) return;
       if (!await eventTravelAllowed(event.name)) return;
+      if (eventTraveling || root.__partyEventRejoinRequired) return;
       if (!event.staging && joinedEvent === event.name && eventCombatReachable(nearestEventTarget())) {
         joinedEvent = event.name;
         root.__partyJoinedEvent = event.name;
@@ -12851,12 +13618,15 @@
       travellingEventName = event.name;
       var travelSelectionRevision = eventSelectionRevision;
       var travelNavigationRevision = navigationIntent.revision;
+      var travelDeathAt = lastDeathInfo && lastDeathInfo.at;
       function currentEventTravel() {
         var live = activeCombatEvent();
         return runtimeCurrent() && !character.rip && !escapeOwns() && !navigationIntent.cancelled &&
+          (lastDeathInfo && lastDeathInfo.at) === travelDeathAt &&
           !eventReturnPending && !eventExitOwnsMovement() &&
           travelNavigationRevision === navigationIntent.revision && eventSelected(event.name) &&
-          travelSelectionRevision === eventSelectionRevision && live && live.name === event.name;
+          travelSelectionRevision === eventSelectionRevision && live && live.name === event.name &&
+          (event.name !== 'witchcipher' || live.types.join(',') === event.types.join(','));
       }
       try {
         var destination = eventDestination(event.name, event.state);
@@ -12873,6 +13643,7 @@
           root.__partyEventRejoinRequired = null;
           game_log("Traveling to " + ((G.events && G.events[event.name] && G.events[event.name].name) || event.name), "#c084fc");
         }
+        if (event.kind === 'interaction') { await octoberRuntime().run(event.name, currentEventTravel); return; }
         if (event.name === "slenderman") { await discoverSlenderman(event, currentEventTravel); return; }
         if (event.kind !== "pvp" && !eventCombatReachable(nearestEventTarget()) && await eventTravelAllowed(event.name) && currentEventTravel())
           await sharedPartyWalk(destination,"event",event.name,null,currentEventTravel);
@@ -13180,41 +13951,49 @@
   }
 
   async function rejoinActiveEventAfterRespawn() {
-    if (escapeOwns() || navigationIntent.cancelled) return { status: "cancelled" };
-    if (!eventsEnabled) return { status: "not-applicable" };
+    if (escapeOwns() || navigationIntent.cancelled) { root.__partyEventRejoinRequired=null; return { status: "cancelled" }; }
+    if (!eventsEnabled) { root.__partyEventRejoinRequired=null; return { status: "not-applicable" }; }
     var requiredEventName = root.__partyEventRejoinRequired;
     var event = activeCombatEvent();
-    if (!event && requiredEventName) return { status: "cancelled" };
+    if (!event && requiredEventName) { root.__partyEventRejoinRequired=null; return { status: "cancelled" }; }
     if (!event) return { status: "not-applicable" };
     var revision = Number(navigationIntent.revision), selection = eventSelectionRevision;
+    var reentryDeathAt = lastDeathInfo && lastDeathInfo.at;
+    root.__partyEventRejoinRequired=event.name;
+    function cancelled(phase,reason){
+      if(runtimeCurrent()&&(lastDeathInfo&&lastDeathInfo.at)===reentryDeathAt&&root.__partyEventRejoinRequired===event.name)root.__partyEventRejoinRequired=null;
+      return {status:'cancelled',phase:phase,reason:reason};
+    }
     function current() { var live = activeCombatEvent(); return runtimeCurrent() && !character.rip && !escapeOwns() && !navigationIntent.cancelled &&
+      (lastDeathInfo && lastDeathInfo.at) === reentryDeathAt &&
       Number(navigationIntent.revision) === revision && eventSelectionRevision === selection && eventSelected(event.name) &&
       live && live.name === event.name; }
-    if (!await eventTravelAllowed(event.name)) return { status: current() ? "retryable" : "cancelled", reason: "Waiting for event travel permission" };
+    if (!await eventTravelAllowed(event.name)) return current() ? { status:"retryable",reason:"Waiting for event travel permission" } : cancelled();
     if (eventTraveling) return { status: "retryable", reason: "Event travel already in progress" };
     eventTargetTypes = event.staging ? [] : event.types; eventMissingSince = 0;
     eventTraveling = true; travellingEventName = event.name;
     var phase = "event-reentry";
     try {
       if (typeof stop === "function") try { await stop("smart"); } catch (_) {}
-      if (!current()) return { status: "cancelled" };
+      if (!current()) return cancelled();
       var destination = eventDestination(event.name, event.state);
-      if (eventRequiresJoin(event.name) && !await joinCombatEvent(event, destination, current)) return { status: "cancelled" };
-      if (!current()) return { status: "cancelled" };
-      if (!await eventTravelAllowed(event.name)) return { status: current() ? "retryable" : "cancelled", reason: "Waiting for event travel permission" };
-      joinedEvent = event.name; root.__partyJoinedEvent = event.name; root.__partyEventRejoinRequired = null;
+      if (eventRequiresJoin(event.name) && !await joinCombatEvent(event, destination, current)) return cancelled();
+      if (!current()) return cancelled();
+      if (!await eventTravelAllowed(event.name)) return current() ? {status:'retryable',reason:'Waiting for event travel permission'} : cancelled();
+      joinedEvent = event.name; root.__partyJoinedEvent = event.name;
       if (event.name === "slenderman" && !nearestEventTarget()) {
         phase = "event-search"; await discoverSlenderman(event, current);
       } else if (!eventRequiresJoin(event.name) && !nearestEventTarget()) {
         phase = "event-travel";
-        await sharedPartyWalk(destination, "event", event.name, null, current);
+        await sharedPartyWalk(destination, "event", event.name, null, current, reentryDeathAt);
       }
-      if (!current()) return { status: "cancelled" };
+      if (!current()) return cancelled(phase);
+      root.__partyEventRejoinRequired=null;
       game_log("Recovered " + event.name + " participation after respawning", "#c084fc");
       return { status: "recovered", phase: phase };
     } catch (error) {
       var reason = String(error && (error.reason || error.message || error));
-      if (!current() || reason === "event_not_live") return { status: "cancelled", phase: phase, reason: reason };
+      if (!current() || reason === "event_not_live") return cancelled(phase,reason);
       return { status: "retryable", phase: phase, reason: reason };
     } finally { eventTraveling = false; travellingEventName = null; }
   }
@@ -13919,6 +14698,7 @@
   }
   function groupedAttackAllowed(target) {
     if (!consoleDrainAllows(target)) return false;
+    if (typeof consoleDraining === "function" && consoleDraining() && consoleDrainTargetValid(target)) return true;
     if (dungeonOwned()) return !!(character.cave && !character.cave.paused && dungeonTargetAllowed(target) && groupedFresh() &&
       groupedCombat.target?.id === target.id && groupedCombat.committed);
     if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
@@ -14153,13 +14933,26 @@
     }
   }
 
-  function isAllowedTarget(target, huntTravelCommand, diagnostic) {
+  function excludedGraveyardTarget(target) {
+    return target && ['zombie','ghoul','gargoyle'].indexOf(target.mtype) >= 0 && eventSelected('graveyard') &&
+      eventSettings.graveyard && Array.isArray(eventSettings.graveyard.monsters) && eventSettings.graveyard.monsters.indexOf(target.mtype) < 0 && !isAttackingPartyMember(target);
+  }
+  function graveyardAreaAttackAllowed(range) {
+    return !Object.values(parent.entities || {}).some(function(target) {
+      return target && target.type === 'monster' && !target.dead && target.visible !== false &&
+        excludedGraveyardTarget(target) && distance(character,target) <= range;
+    });
+  }
+  function isAllowedTarget(target, huntTravelCommand, diagnostic, skill) {
+    if (excludedGraveyardTarget(target)) {
+      if (diagnostic) diagnostic.reason = 'excluded Graveyard monster'; return false;
+    }
     if (!consoleDrainAllows(target)) { if (diagnostic) diagnostic.reason = 'waiting for safe console reload'; return false; }
     if (character.cave || typeof root !== "undefined" && root.__partyDungeonRuntime && root.__partyDungeonRuntime.owns()) return dungeonTargetAllowed(target);
     if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
     function reject(reason) { if (diagnostic) diagnostic.reason = reason; return false; }
     if (typeof frankyCombatActive === "function" && frankyCombatActive() && !frankyTargetAllowed(target))
-      return reject("Franky attendance only permits the Franky monster");
+      return reject("Franky attendance permits Franky and mummies targeting this character");
     var huntTravel = huntTravelCommand && huntTravelCommand.purpose === "monster-hunt" &&
       huntTravelCommand.combatHandoffAllowed === true && huntTravelCommand.huntTarget === (target && target.mtype);
     huntTravel = huntTravel || !!(huntTravelCommand && ['', 'party-travel', 'farm-relocation', 'manual-monster-override', 'empty-spawn-recovery'].indexOf(huntTravelCommand.purpose || '')>=0 && huntTravelCommand.combatHandoffAllowed === true);
@@ -14176,14 +14969,22 @@
     if (typeof root !== "undefined" && root.partyRoleRunner && root.partyRoleRunner.isKnownDead && root.partyRoleRunner.isKnownDead(target.id)) return reject("confirmed death");
     if (typeof frankyCombatActive === "function" && frankyCombatActive()) return true;
     if (target.mtype === "fieldgen0") return reject("excluded monster");
+    if (typeof consoleDraining === "function" && consoleDraining() && consoleDrainTargetValid(target) &&
+        (!isExternallyClaimedMonster(target) || isAttackingPartyMember(target))) return true;
     // Acquisition nominates a new target; only actual combat requires the group selection lock.
     // An attack already pending or engaged must still finish before another hunt pull.
     if (huntTravel && typeof unfinishedFight === "function" && unfinishedFight()) return reject("unfinished group fight");
-    if (!huntTravel && typeof leaderLockAllows === "function" && !leaderLockAllows(target)) return reject("group target lock");
+    // An area cast validates all its victims, including secondary attackers.
+    // The single-target selection lock must not veto those actual victims.
+    if (!huntTravel && skill !== 'cleave' && typeof leaderLockAllows === "function" && !leaderLockAllows(target)) return reject("group target lock");
     if (target.mtype === "tinyp" && (typeof rareTarget !== "function" || !rareTarget() || rareTarget().id !== target.id)) return reject("rare target policy");
     if (typeof rareTarget === "function" && rareTarget() && rareTarget().id === target.id) return true;
     if (target.type === "character") return validAbtestingOpponent(target);
     if (target.type !== "monster" || isExternallyClaimedMonster(target)) return reject("external claim or invalid entity");
+    // Farming never pulls an October event boss outside its own event
+    // (docs/testing-october-events.md). One attacking the party stays a defense target.
+    var bossEvent = target.mtype === "horseman" ? "horseman" : target.mtype === "gargoyle" ? "graveyard" : null;
+    if (bossEvent && joinedEvent !== bossEvent && !isAttackingPartyMember(target)) return reject("event boss outside its event");
     if (huntTravel && farmApproach.failed[target.id]>Date.now()) return reject("failed approach cooldown");
     if (typeof passiveRareCandidate === "function" && passiveRareCandidate(target)) return true;
     if (isAttackingPartyMember(target)) return true;
@@ -14321,12 +15122,39 @@
 
   function departureTargetEngaged(target) {
     if(!target || !target.visible || target.dead || target.hp === 0 || root.partyRoleRunner && root.partyRoleRunner.isKnownDead(target.id))return false;
+    // Check ownership before scanning retained deaths for neutral farm monsters.
+    var defense=typeof huntTravelDefense==='function' && huntTravelDefense() && (convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);});
+    // Defense captures its initial targets, but a neutral rare can subsequently
+    // lose selection while remaining visible. Only fresh control for this exact
+    // convoy may release that captured ownership; actual attackers still block.
+    if(defense && typeof huntTravelControl==='function') {
+      var control=huntTravelControl(), age=Date.now()+coordinatorClockOffset-(root.__partyHuntTravelAt||0);
+      if(control && age>=-500 && age<=3000)
+        defense=(control.committed||[]).concat(control.primary?[control.primary]:[]).some(function(t){return passingKey(t)===passingKey(target);});
+    }
+    if(!defense && !isAttackingPartyMember(target))return false;
     var deaths = typeof groupedCombat !== 'undefined' && groupedCombat && groupedCombat.deaths || [];
-    if(deaths.some(function(d){return String(d.id)===String(target.id) && d.map===character.map &&
-      String(d.in==null?d.map:d.in)===String(character.in==null?character.map:character.in) && d.server===reunionRealm();}))return false;
-    if(typeof huntTravelDefense==='function' && huntTravelDefense() && (convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return true;
-    if(isAttackingPartyMember(target))return true;
-    return false;
+    // departureTargetEngaged runs for every visible monster that attacks the
+    // party on each travel and target check, and the list holds up to 512
+    // tombstones (runtime/combat/queue.ts), so it indexes the ids that apply
+    // here once per list. The coordinator replaces the list or appends to it.
+    // A new list, a new length or another realm, map or instance rebuilds the
+    // index. The cache lives on the function, as in isPassingEncounter, so
+    // extracted test harnesses install it too.
+    var instance = String(character.in==null?character.map:character.in), realm = reunionRealm();
+    var context = realm + '|' + character.map + '|' + instance;
+    var indexes = departureTargetEngaged.deathIds || (departureTargetEngaged.deathIds = new WeakMap());
+    var index = indexes.get(deaths);
+    if(!index || index.length !== deaths.length || index.context !== context){
+      var ids = new Set();
+      deaths.forEach(function(d){
+        if(d.map===character.map && String(d.in==null?d.map:d.in)===instance && d.server===realm)ids.add(String(d.id));
+      });
+      index = {length:deaths.length,context:context,ids:ids};
+      indexes.set(deaths,index);
+    }
+    if(index.ids.has(String(target.id)))return false;
+    return true;
   }
   function departureCombatPending() {
     return Object.values(parent.entities||{}).some(function(e){return e && e.type==='monster' && departureTargetEngaged(e);});
@@ -14501,15 +15329,39 @@
     if(!points.length)throw new Error("No walkable entry point in selected farming zone");
     return points[0];
   }
-  async function sharedPartyWalk(destination, activity, key, parentCommand, current) {
+  async function independentEventWalk(destination, current) {
+    var revision=navigationIntent.revision,deathAt=lastDeathInfo&&lastDeathInfo.at;
+    var owner={cancelled:false};root.__partyIndependentEventWalk=owner;
+    function owns(){return runtimeCurrent()&&root.__partyIndependentEventWalk===owner&&
+      navigationIntent.revision===revision&&(lastDeathInfo&&lastDeathInfo.at)===deathAt&&
+      !character.rip&&!escapeOwns()&&(!current||current());}
+    try{
+      if(!owns())throw Error('Event catchup superseded');
+      await Promise.race([smart_move(destination),(async function(){
+        while(!owner.cancelled){
+          if(!owns())throw Error('Event catchup superseded');
+          if(eventCombatReachable(nearestEventTarget()))return;
+          await sleep(100);
+        }
+      })()]);
+    }finally{
+      owner.cancelled=true;
+      if(root.__partyIndependentEventWalk===owner){
+        root.__partyIndependentEventWalk=null;
+        if(runtimeCurrent()&&navigationIntent.revision===revision&&!eventExitOwnsMovement()&&!eventReturnPending&&!escapeOwns())
+          try{await stop('smart');}catch(_){}
+      }
+    }
+  }
+  async function sharedPartyWalk(destination, activity, key, parentCommand, current, reentryDeathAt) {
     if(character.name!==leader && !followLeader) {
-      if (activity !== "event" || key !== "slenderman" || !current) return smart_move(destination);
+      if (activity !== "event" || ['slenderman','trickortreat','witchcipher'].indexOf(key) < 0 || !current) return smart_move(destination);
       var independentRevision = navigationIntent.revision;
       var independent = { cancelled: false }, walking = smart_move(destination);
       try {
         await Promise.race([walking, (async function () {
           while (!independent.cancelled && runtimeCurrent() && current()) await sleep(100);
-          if (!independent.cancelled) throw new Error("Slenderman search destination superseded");
+          if (!independent.cancelled) throw new Error("Event destination superseded");
         })()]);
       } finally {
         independent.cancelled = true;
@@ -14520,15 +15372,17 @@
       }
       return;
     }
-    var revision=Number(navigationIntent.revision)||0,generation=runtimeGeneration;
+    var revision=Number(navigationIntent.revision)||0,generation=runtimeGeneration,deathAt=lastDeathInfo&&lastDeathInfo.at;
     var body={character:character.name,runtimeId:convoyRuntimeId,navigationRevision:revision,
       destination:destination,activity:activity,key:String(key||activity),parentCommandId:parentCommand?parentCommand.id:0};
+    if(Number.isFinite(reentryDeathAt))body.reentryDeathAt=reentryDeathAt;
     root.__partyWalkSequence=(Number(root.__partyWalkSequence)||0)+1;
     body.token=convoyRuntimeId+":"+root.__partyWalkSequence;
     var deadline=Date.now()+180000,completed=false,requestFailures=0;
     root.__partySharedWalking=body;
     try {
       while(runtimeCurrent() && runtimeGeneration===generation && Number(navigationIntent.revision)===revision) {
+        if((lastDeathInfo&&lastDeathInfo.at)!==deathAt)throw new Error('Shared walking interrupted by death');
         if(current && !current())throw new Error("Shared walking workflow changed");
         if(activity==="event") {
           var liveEvent=activeCombatEvent();
@@ -14543,6 +15397,11 @@
         try {result=await request("/shared-travel",{method:"POST",timeout:3000,body:body});requestFailures=0;}
         catch(error){if(++requestFailures>=3)throw error;await new Promise(function(resolve){setTimeout(resolve,500);});continue;}
         if(result.error)throw new Error(result.error);
+        if(result.phase==='independent'){
+          if(!runtimeCurrent()||runtimeGeneration!==generation||Number(navigationIntent.revision)!==revision||
+            (lastDeathInfo&&lastDeathInfo.at)!==deathAt||current&&!current())throw Error('Shared walking superseded');
+          await independentEventWalk(result.destination||destination,current);completed=true;return;
+        }
         if(result.phase==="complete"){completed=true;return;}
         if(result.phase==="failed")throw new Error(result.reason||"Shared walking failed");
         await new Promise(function(resolve){setTimeout(resolve,500);});
@@ -14650,7 +15509,9 @@
         navigationIntent.cancelled || convoy.navigationRevision!==navigationIntent.revision) return;
     if (parent.__partyGeometryReloaded===repair.id) return;
     parent.__partyGeometryReloaded=repair.id;
-    var url=(parent.__partyServer || 'http://127.0.0.1:924')+'/CODE/adventure_land/universal-loader.js?t=';
+    // A caracAL worker sets only its CODE window's __partyServer
+    // (runtime/lifecycle/runner-host.ts configureApiAddress), as api does.
+    var url=(typeof root !== 'undefined' && root.__partyServer || parent.__partyServer || 'http://127.0.0.1:924')+'/CODE/adventure_land/universal-loader.js?t=';
     var bootstrap="$.ajax({url:"+JSON.stringify(url)+"+Date.now(),dataType:'text',cache:false}).then(function(source){(0,eval)(source);});";
     game_log('Reloading runtime once to repair shared-route geometry', '#f0b429');
     parent.setTimeout(function(){
@@ -14760,6 +15621,10 @@
       await new Promise(function(resolve){setTimeout(resolve,80);});
     }
     if(!ownsConvoy())return;
+    // A delayed native position can move the leader while rendezvous settles.
+    // Reprepare from that origin; this is not a failed path to the destination.
+    if(character.name===command.leader && sharedConvoyDistance(sharedConvoyPoint(),rally)>1)
+      throw new Error("Leader moved from planning origin");
     if(sharedConvoyDistance(sharedConvoyPoint(),rally)>55 || !can_move_to(rally.x,rally.y))
       throw new Error("Follower cannot connect to leader origin");
   }
@@ -15435,6 +16300,7 @@
   }
 
   async function emergencyWarriorStomp() {
+    if (!graveyardAreaAttackAllowed(Number(G.skills.stomp && G.skills.stomp.range) || 400)) return false;
     if (typeof rareTarget === "function" && rareTarget() && rareTarget().mtype === "tinyp") return false;
     if (character.ctype !== "warrior" || farmingMode === "scatter") return false;
     var weapon = character.slots && character.slots.mainhand;
@@ -15503,7 +16369,9 @@
       return true;
     }
     if (character.ctype === "merchant") return false;
-    if ((partyConvoyActive || convoyTraveling) && !root.__partyConvoyDefense) {
+    // Defense releases movement for an actual combat target, not for searching
+    // the old farm area while selection or the native loot pass is pending.
+    if ((partyConvoyActive || convoyTraveling) && (!root.__partyConvoyDefense || !target)) {
       cancelFarmApproach("convoy owns movement"); return true;
     }
     if (!runtimeCurrent() || character.rip || root.sharedRoutine.isOccupied() || activeCombatEvent() || joinedEvent || navigationIntent.cancelled) {
@@ -16128,7 +16996,12 @@
       var e=observed && observed.visible?observed:t;
       var knownDead=root.partyRoleRunner && typeof root.partyRoleRunner.isKnownDead==='function' && root.partyRoleRunner.isKnownDead(t.id);
       var route=movement.report(),foreignOwned=route && route.owner && !independentApproachOwnsJourney();
-      var allowed=!!(!foreignOwned && !partyConvoyActive && !convoyTraveling && !root.sharedRoutine.isOccupied() && (coordinated || !groupedFarming()) && runtimeCurrent() && (!parent.socket || parent.socket.connected!==false) && !dungeonOwned() && !eventTraveling && character.ctype!=='merchant' &&
+      // A coordinator-owned farming encounter has released convoy walking to
+      // grouped combat. Its selected target still needs native range reports
+      // before either fighter can commit; unrelated convoy targets stay fenced.
+      var encounter=root.__partyFarmingEngagement;
+      var farmingHandoff=!!(coordinated && encounter && !encounter.finished && encounter.target && String(encounter.target.id)===String(t.id));
+      var allowed=!!(!foreignOwned && (!partyConvoyActive || farmingHandoff) && (!convoyTraveling || farmingHandoff && convoyTraveling.defensePaused) && !root.sharedRoutine.isOccupied() && (coordinated || !groupedFarming()) && runtimeCurrent() && (!parent.socket || parent.socket.connected!==false) && !dungeonOwned() && !eventTraveling && character.ctype!=='merchant' &&
         !navigationIntent.cancelled && !character.rip && !consoleMovementPaused() && !root.__partyMovementPaused &&
         !knownDead && (!observed || !observed.dead && !(Number(observed.hp)<=0)) && Number.isFinite(e.x) && Number.isFinite(e.y) &&
         (coordinated || e.visible && !e.dead && e.hp>0) && (!coordinated || t.map===character.map && t.in===character.in && t.server===reunionRealm()) &&
@@ -16657,7 +17530,7 @@
       resetCombatMovement();
       root.partyCombatPosition = { at: Date.now(), mode: target ? "franky-holding" : "franky-waiting",
         movementOwner: "combat", target: target && target.id || null,
-        reason: target ? "Franky is in attack range" : "Waiting for Franky" };
+        reason: target ? "Franky event target is in attack range" : "Waiting for Franky" };
       return true;
     }
     var destination = combatApproachPoint(target);
@@ -16668,13 +17541,13 @@
       var point = { x: character.x + Math.cos(angle + offsets[i]) * step,
         y: character.y + Math.sin(angle + offsets[i]) * step };
       // Only terrain constrains this approach. Adds and healer coverage must not
-      // cause a retreat or prevent closing on Franky.
+      // cause a retreat or prevent closing on the boss or personal attacker.
       if (typeof can_move_to === "function" && can_move_to(point.x, point.y))
         return sendCombatMove(target, point, "franky-approaching");
     }
     resetCombatMovement();
     root.partyCombatPosition = { at: Date.now(), mode: "blocked", movementOwner: "combat",
-      target: target.id, reason: "No terrain-clear approach to Franky" };
+      target: target.id, reason: "No terrain-clear approach to Franky event target" };
     return true;
   }
 
@@ -16768,7 +17641,7 @@
     start: function () {
       if (timer) return;
       tick();
-      timer = setInterval(function(){ if (gameLogCapture) void gameLogCapture.pulse(); observeFarmArea(); tick(); }, 1000);
+      timer = setInterval(function(){ if (gameLogCapture) void gameLogCapture.pulse(); observeFarmArea(); cipherTransferPulse(); tick(); }, 1000);
       reconcileGameParty();
       root.__partyRosterTimer = setInterval(reconcileGameParty, 5000);
       pollEvents();
@@ -16979,6 +17852,7 @@
     healPartyBelow: healPartyBelow,
     energizeLowestMana: energizeLowestMana,
     rejoinActiveEventAfterRespawn: rejoinActiveEventAfterRespawn,
+    eventRejoinRequired: function(){return !!root.__partyEventRejoinRequired;},
     beginFarmReunion: beginFarmReunion,
     getAbtestingMode: abtestingMode,
     isAbtestingPvp: isLiveAbtesting,
@@ -16986,6 +17860,7 @@
     dashToward: dashToward,
     isPartyHealthy: isPartyHealthy,
     emergencyWarriorStomp: emergencyWarriorStomp,
+    graveyardAreaAttackAllowed: graveyardAreaAttackAllowed,
     isCurrentPartyTarget: isCurrentPartyTarget,
     kiteIfNeeded: kiteIfNeeded,
     approachCombatTarget: approachCombatTarget,
@@ -17028,6 +17903,7 @@
     queueCoverageCost: function(p){var a=groupedCombat && groupedCombat.anchor;return a && a.map===character.map && a.in===character.in ? Math.max(0,Math.hypot(p.x-a.x,p.y-a.y)-groupedCombat.range) : 0;},
     queueRecoveryReason: function(reason){root.partyCombatPosition={at:Date.now(),mode:"fight-recovery",movementOwner:"group",reason:reason};},
     queueMarkers: queueMarkers,
+    convoyNavigationReport: convoyNavigationReport,
     combatTraceSnapshot: function(){var p=root.partyCombatPosition||{};return {
       mode:farmingMode,epoch:root.__partyCombatResetAt||0,queueRevision:groupedCombat&&groupedCombat.queueRevision,
       owner:p.movementOwner||null,reason:p.reason||p.mode,cell:[Math.round(character.x/8),Math.round(character.y/8)],
@@ -17149,9 +18025,16 @@
         mode: root.sharedRoutine.isOccupied() || isLiveAbtesting() ? "blocked" : eventCombat ? "event" : !character.cave && farmingMode === "scatter" ? "scatter" : "grouped",
         observedAt: parent.socket && parent.socket.connected ? Date.now() : 0 };
     },
-    skillTargetAllowed: function(target) {
+    skillTargetAllowed: function(target, skill) {
       if(typeof returnCombatActive==='function' && returnCombatActive())return returnAttacker(target);
-      if (!target || target.type !== "monster" || !isAllowedTarget(target) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
+      // Cleave cannot select individual victims. During active Franky combat it
+      // may hit nearby adds, while ordinary targeting still selects self-defense
+      // mummies first. Maintenance holds and activity ownership remain binding.
+      if (skill === 'cleave' && frankyCombatActive()) return !!target && target.type === 'monster' &&
+        target.visible !== false && !target.dead && target.hp > 0 &&
+        (!target.map || target.map === character.map) && (target.in == null || target.in === character.in) &&
+        consoleDrainAllows(target) && !root.sharedRoutine.isOccupied() && !isLiveAbtesting();
+      if (!target || target.type !== "monster" || !isAllowedTarget(target, undefined, undefined, skill) || root.sharedRoutine.isOccupied() || isLiveAbtesting()) return false;
       if(dungeonOwned()) return dungeonTargetAllowed(target);
       if(huntTravelDefense() && !isAttackingPartyMember(target) && !(convoyTraveling.defenseTargets||[]).some(function(t){return passingKey(t)===passingKey(target);}))return false;
       if (typeof frankyCombatActive === "function" && frankyCombatActive()) return frankyTargetAllowed(target);
@@ -17369,6 +18252,7 @@
       return typeof rareActive === "function" && rareActive() ? "default" : farmingMode;
     },
     getEngagedTarget: engagedMonster,
+    getConsoleDrainTarget: consoleDrainTarget,
     getCloserHuntTarget: function(current) {
       if (!huntCombatTarget || !current || current.mtype!==huntCombatTarget || groupedFarming() ||
           activeCombatEvent() || joinedEvent || travelCombatActive() || isAttackingPartyMember(current)) return null;
@@ -17384,7 +18268,7 @@
     },
     getRareTarget: rareTarget,
     getPriorityEventTarget: function () {
-      return joinedEvent === "mrgreen" || joinedEvent === "mrpumpkin" ? nearestEventTarget() : null;
+      return joinedEvent === "mrgreen" || joinedEvent === "mrpumpkin" || joinedEvent === "horseman" ? nearestEventTarget() : null;
     },
     getPassingTarget: passingTarget,
     convoyHoldDefenseTarget: convoyHoldDefenseTarget,

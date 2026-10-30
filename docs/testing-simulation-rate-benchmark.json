@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "scenario": "armadillo Hunt kills passing goos outbound and returning before claiming Daisy",
+  "sourceHash": "ae569fa8eb5d2cd79330a682b86f5ed7fc53861f106829860f28da731f535d53",
+  "candidate": "fb3b97d533080fb3b6182ff37538d0ba1d9fffc5c0e8e552a933c15469828a1d",
+  "workers": 1,
+  "windowMs": 250,
+  "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)",
+  "rates": [
+    {
+      "requestedRate": 4,
+      "repetitions": 3,
+      "medianBodySeconds": 28.674390499999998,
+      "achievedClockRate": 2.2185634672437904,
+      "browserMachinePercent": 4.156471079414499
+    },
+    {
+      "requestedRate": 8,
+      "repetitions": 6,
+      "medianBodySeconds": 22.4835031,
+      "achievedClockRate": 3.0848096194246915,
+      "browserMachinePercent": 4.494962404150693
+    },
+    {
+      "requestedRate": 16,
+      "repetitions": 6,
+      "medianBodySeconds": 23.5981746,
+      "achievedClockRate": 3.17351882331304,
+      "browserMachinePercent": 4.477194896491439
+    }
+  ],
+  "complete": true,
+  "stopReason": "confirmed plateau",
+  "bestRequestedRate": 8,
+  "plateauRequestedRate": 16,
+  "improvementFrom4Percent": 21.590301631694665,
+  "comparisonPath": ".build/e2e-rate-benchmarks/2026-10-18T17-56-46-190Z/comparison.json",
+  "comparisonSha256": "440e058f8cf642130c82966dcc58841f589c1cee2e69eab64789def8569443d6",
+  "archives": [
+    {
+      "tag": "rate-4",
+      "manifestSha256": "8360ef75d994665fc9bd2343bc4d4aa9415d6b3453a9d7fcbdd42bd735f08228"
+    },
+    {
+      "tag": "rate-8",
+      "manifestSha256": "cdbb4ced827c40a8f7c86e0845d5abe57612a4bc3f674b4daeae37a9a89fc9d8"
+    },
+    {
+      "tag": "rate-16",
+      "manifestSha256": "ecae538775a347a0c336c458baa160c05bd559712a210c05c27d4d56c41c66df"
+    },
+    {
+      "tag": "confirm-best-8-at-16",
+      "manifestSha256": "f62a7b53433544a66d44ca41af6c6acd20375262811c3e7fdac198e53389b24b"
+    },
+    {
+      "tag": "confirm-rate-16",
+      "manifestSha256": "a75bcf99b3d2283ed7564b43196b801c8ddb5474959376879d6b516597a702cd"
+    }
+  ],
+  "bottleneckObservation": {
+    "scope": "Last repetition participant lifetime, including setup; not assertion-body-only",
+    "rate8SlowestBrowserMeanAckMs": 70.47368421052632,
+    "rate16SlowestBrowserMeanAckMs": 71.78055555555555,
+    "rate8ServerMainMeanAckMs": 9.993456924754634,
+    "rate16ServerMainMeanAckMs": 9.620718462823726,
+    "interpretation": "Browser/CODE acknowledgement latency is consistent with the observed plateau; increasing requested rate alone does not remove this barrier."
+  }
+}

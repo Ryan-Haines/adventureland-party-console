@@ -1,4 +1,4 @@
-import { blocked, cost } from './eligibility.ts';
+import { blocked, cost, unrestrictedCleave } from './eligibility.ts';
 import { damage, usefulDamage, purifiable } from './damage.ts';
 import { decision, type Combatant, type SkillDecision, type SkillId, type SkillWorld } from './types.ts';
 
@@ -41,6 +41,14 @@ function markUseful(w: SkillWorld, target: Combatant, remaining: number): boolea
     remaining >= damage(w, 'attack', target) * Math.max(1, w.actor.frequency) * 3;
 }
 export function damageChoices(w: SkillWorld, target: Combatant): SkillDecision[] {
+  if (w.actor.ctype === 'warrior') {
+    // Cleave hits every nearby monster; never hide unauthorized collateral by
+    // filtering it out of the proposed cast. Range uses the native strict edge.
+    const targets = w.context.monsters.filter(t => !t.dead && !t.rip && t.hp > 0 && w.range(t, 'cleave'));
+    const cleave = decision('cleave', targets);
+    if (targets.length < 2 || w.context.mode !== 'scatter' && !unrestrictedCleave(w, cleave)) return [];
+    return blocked(w, cleave) ? [] : [cleave];
+  }
   const classes: Partial<Record<ActorClass, SkillId[]>> = {
     ranger: ['huntersmark', 'supershot'], rogue: ['mentalburst', 'quickstab', 'quickpunch'],
     paladin: ['purify', 'shield_slam', 'smash'],

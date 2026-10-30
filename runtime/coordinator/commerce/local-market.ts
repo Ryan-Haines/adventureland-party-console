@@ -19,13 +19,14 @@ interface LocalMarketPorts {
   log(message: string, level: string): void;
 }
 
-function lowestPrices(listings: (PublicListing | null)[]): Map<string, number> {
-  const current = new Map<string, number>();
+// Each item keeps its first listing at the lowest price, which supplies the level in history().
+function lowestListings(listings: (PublicListing | null)[]): Map<string, { price: number; listing: PublicListing }> {
+  const current = new Map<string, { price: number; listing: PublicListing }>();
   for (const listing of listings) {
     const id = listing?.item?.name,
       price = Number(listing?.price);
     if (!id || !Number.isFinite(price) || price < 1) continue;
-    if (!current.has(id) || price < current.get(id)!) current.set(id, price);
+    if (!current.has(id) || price < current.get(id)!.price) current.set(id, { price, listing: listing! });
   }
   return current;
 }
@@ -51,12 +52,9 @@ function nextPrice(
 export function createLocalMarket(state: LocalMarketState, ports: LocalMarketPorts) {
   function history(listings: (PublicListing | null)[]): boolean {
     let changed = false;
-    for (const [id, price] of lowestPrices(listings)) {
+    for (const [id, { price, listing }] of lowestListings(listings)) {
       const old = state.standPriceHistory[id];
-      const listing = listings.find(
-        (entry) => entry?.item?.name === id && Number(entry.price) === price,
-      );
-      const next = nextPrice(old, price, Number(listing?.item?.level) || 0, ports.now());
+      const next = nextPrice(old, price, Number(listing.item?.level) || 0, ports.now());
       if (!old || old.lowest !== next.lowest || old.recent !== next.recent) {
         state.standPriceHistory[id] = next;
         changed = true;

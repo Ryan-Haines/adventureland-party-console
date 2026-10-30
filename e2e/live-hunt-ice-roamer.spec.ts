@@ -1,3 +1,4 @@
+import { iceRoamer } from './gameplay-scenarios';
 import { test, expect } from './live-fixtures';
 import { warrior as W, priest as P, fighters, party, quests, start, world, tokens, artifact } from './game/hunt-lifecycle';
 import { spawnGoo } from './hunt-interruption-helpers';
@@ -43,19 +44,7 @@ test('a missing native sprite frame preserves actual convoy walking and draw sch
   await artifact(live,info,'native-render-fault-walking',{fault,destination,observations});
 });
 
-test('native Ice Roamer Hunt engages successive enemies and returns both real rewards', async ({live}, info) => {
-  test.setTimeout(480_000);
-  await party(live);
-  await quests(live,info,{[W]:{id:'iceroamer',count:3},[P]:{id:'iceroamer',count:3}});
-  const before = await world(live), destination = await start(live,W,'iceroamer');
-  expect(destination.map).toBe('winterland');
-  await expect.poll(async () => {
-    const current = await world(live);
-    return fighters.every(name => tokens(current[name]) === tokens(before[name])+1);
-  }, {timeout:360_000, message:'Three native Ice Roamer kills must progress to both Daisy rewards'}).toBe(true);
-  const events = await live.clients[W].events();
-  const kills = events.filter((entry:any) => entry.event==='hit' && entry.data?.kill && fighters.includes(entry.data?.hid));
-  expect(new Set(kills.map((entry:any)=>entry.data.id)).size).toBeGreaterThanOrEqual(3);
-  await live.post('/farming-mode',{character:W,mode:'default'});
-  await artifact(live,info,'native-ice-roamer-successors-and-rewards',{before,destination,kills});
+test('native Ice Roamer Hunt engages successive enemies and returns both real rewards', async ({ live }, info) => {
+  test.setTimeout(480000);
+    await iceRoamer(live, info);
 });

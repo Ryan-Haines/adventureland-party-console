@@ -10,6 +10,7 @@ export interface HttpRequest {
 export interface HttpResponse {
   status(code: number): HttpResponse;
   json(value: unknown): unknown;
+  send(body: string): unknown;
   end(): unknown;
   set(name: string, value: string): unknown;
   set(headers: Record<string, string>): unknown;

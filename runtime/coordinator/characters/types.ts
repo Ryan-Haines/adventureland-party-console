@@ -46,6 +46,7 @@ export interface WorkerArguments {
   cname: string;
   clid: number;
   typescript_file?: string | null;
+  full_cave_floors?: boolean;
 }
 
 export interface WorkerLog {

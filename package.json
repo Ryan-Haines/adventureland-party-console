@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "license": "MIT",
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=26.12.1"
   },
   "scripts": {
     "builds": "node tools/build-history.mts",
@@ -23,6 +23,13 @@
     "lint": "npm --prefix dashboard run lint && npm run lint:runtime",
     "lint:runtime": "oxlint --config runtime/.oxlintrc.json runtime tools",
     "format": "oxfmt runtime tools dashboard/features/party dashboard/hooks",
+    "sim:setup": "node tools/sim/setup.mts",
+    "sim": "node tools/sim/run.cjs",
+    "test:e2e:simulation": "npm run test:e2e -- --project=live",
+    "test:e2e:selection": "node tools/sim/check-selection.mts",
+    "test:e2e:benchmark": "node tools/sim/e2e-benchmark.mts",
+    "sim:verify": "node tools/sim/verify.cjs",
+    "sim:benchmark": "node tools/sim/benchmark.cjs",
     "benchmark:movement": "node tools/game/benchmark-pathfinder.mts",
     "pretest:unit": "npm run build:shared && node tools/build-runtime.mts && node tools/game/build.mts",
     "test:unit": "node --test --test-concurrency=2 scripts/tests/*.test.cjs",

@@ -1,3 +1,103 @@
+Cipher gathering chooses an ordinary farmable spawn using the same map and
+geometry restrictions as the farming catalog. Instanced templates such as
+`dungeon0` must never become a Goo gathering destination. Validate the native
+Cipher cutoff journey, including real ingredient drops and the subsequent brew.
+Stage the completed candidate without activating it.
+
+Automatic NPC bank stock is discovered during the merchant's own bank visit as
+well as while idle. When ordinary withdrawals are disabled, enabled Auto NPC
+sales own a separate bank-retrieval prerequisite with the same routine priority;
+it does not retrieve unrelated manual marks. Locked stock, kept copies and craft
+reservations retain their existing protections. Exchange progress promotes each
+received default-bank reward into a persisted shared Auto bank rule before
+acknowledging its checkpoint, preserving explicit processing/sale actions.
+Validate live-bank-npc-sales and live-exchange-reward-bank journeys. Stage the
+completed console artifact; activation remains explicitly requested.
+
+Event convoy admission drops cancelled pending tokens and excludes dead or
+subsequently revived owners of old requests. Admission records realm/runtime
+identities before route preparation, and death recovery compares the exact native
+death against the original walking request rather than a later preparation clock.
+An owned failed setup can retire after revival without bypassing exhausted budgets
+or newer navigation. Validate the native admission-death journey in
+docs/testing-event-convoy-death.md and adjacent moving-survivor/empty-hint journeys.
+Build and stage a completed immutable candidate; activation remains explicit.
+
+PR #151 integration adds native event-only Bestiary sources, older-client priority
+completion, and guards against unjoined Horseman/Gargoyle pulls while retaining
+self-defense and Graveyard exclusions. Moving bosses coalesce same-map, same-instance
+walking requests after a bounded rendezvous; Cipher and door legs keep exact
+destination matching and the existing Cipher gathering-combat exemption.
+Cave merchants can be reopened, completed visits discard interrupted state,
+manual Retry preserves all automatic repair budgets, and revival receipts stay
+within their run. The headless leader receives floor art; each subscriber receives
+it once per floor, with hidden-tab streaming stopped and inactive floor caches
+pruned. Native CODE loader support covers mixed AbortSignal realms and WebCrypto.
+See docs/pr-151-integration.md for exclusions and focused validation. Build and
+stage a completed candidate; activation and host/worker restart remain explicit.
+
+Empty Mr. Green/Pumpkin last-seen waypoints advance to native catalog spawns,
+retaining searched-hint identity while real sightings keep priority. Death
+identities fence old event walks across respawn; pending recovery owns reentry.
+A fresh owned late reentry may catch up independently beside a same-event convoy,
+preserving its participants and movement. Validate the native empty-hint and
+moving-survivor journeys in docs/testing-event-spawn-reacquisition.md. Stage a
+complete character/coordinator candidate; activation remains explicitly requested.
+
+Scheduled Horseman, Graveyard, Mr. Green and Mr. Pumpkin attendance starts two
+minutes before the published occurrence or precise native spawn timer. Staging
+keeps event combat disabled until LIVE, preserves the original deadline across
+restart, and exits if the occurrence disappears or is cancelled. Calendar labels
+preserve absolute epochs; clock drift adjusts countdowns only. Realm UTC offsets
+are fixed (US UTC−5), so realm midnight is 01:00 EDT or 00:00 EST. Validate
+live-event-pretravel.spec.ts and console-event-clock.spec.ts, plus native Halloween
+staging regressions. Stage a completed artifact; activation remains explicit.
+
+October events use the published native seven-day lineup, including repeating
+Graveyard occurrences. Headless Horseman and Graveyard attendance walk through
+ordinary maps. Graveyard species default to all selected; exclusions also gate
+ordinary target acquisition. Current attackers remain eligible for defense.
+
+Trick or Treat follows the collision-verified seven-door route documented in
+tools/game/plan-trick-or-treat.mts. Native character door history and the account
+quota complement the persisted daily journal. Witch's Cipher snapshots fresh usable
+party and merchant inventory at the start of each round. With all four types it
+visits the witch immediately; otherwise it fixes the lowest-stock ingredient and
+configured monster until the native twenty-minute gathering cutoff (ties follow
+ingredient order). A recipe shortage selects its missing ingredient for the
+remaining gathering window. At the cutoff it visits the witch only with all four
+types, otherwise resumes farming. Plans persist across restart and source-setting
+changes. The merchant receives ingredients and uses consistent minimax guesses,
+preferring abundant stock among equally informative affordable recipes. Leader
+selection also reserves the merchant for the
+account-wide event. The fit bitset covers omitted public clues; incomplete boards
+without it cannot spend automatic attempts. Manual requests bind to round and
+recipe identities. Uncertain brews reconcile the native account counter without
+replaying the attempt. Settings show native monster sprites and base ingredient
+drop rates, clickable ingredient details, and an inline board sampled every five
+seconds while open. Catalog validation now includes the Conditions group.
+Validate October console/native journeys and the retained Halloween UI journey;
+see docs/testing-october-events.md. Build all components into a completed immutable
+candidate and activate only through an explicitly requested console load.
+
+Planner workers load native collision from the installed game sources and detour
+same-map edges rejected by can_move, preserving the request's movement footprint
+and instance. Valid edges and map transitions remain intact. Retain collision
+sources across automatic worker recreation. Unresolved edges and unavailable
+native validation retain the existing bounded client repair as a backstop.
+Validate live-planner-corner.spec.ts plus transporter, Phoenix and supersession
+journeys; the corner E2E checks planned edges against native server collision and
+requires actual shared party arrival without repair. See e2e/planner-corner-failures.md.
+
+Shared event walking can supersede an unfinished farming convoy combat-handoff
+continuation at the same navigation revision. Require fresh authorized event
+requests from the participating runtimes, retain all other command ownership
+checks, and do not restore that obsolete farm continuation after event arrival.
+Newer navigation commands remain authoritative; delayed old completion receipts
+remain fenced by command identity. Validate the natural Halloween completion and
+changed farming-focus journey with a declared retry of one real farm handoff
+completion, plus manual event overrides and navigation supersession E2Es.
+
 Completed Cave destination movement is a historical receipt, not proof of current
 arrival. After every participant completes its move and is freshly ready, displaced
 actors receive independent native paths to the same destination, with three bounded
@@ -42,7 +142,8 @@ Validate the transaction, browser-recovery, Main and mixed-client E2E journeys i
 docs/testing-deployment-transaction.md. Build candidates without activating them.
 For an existing installation, activate the new candidate explicitly, then perform
 the supported explicit host restart to install the host implementation; a restart
-resumes the selected active artifact, not an undeployed newest candidate.
+selects the newest completed candidate at launch and deploys it through the normal
+readiness and rollback workflow. Builds completed after launch remain staged.
 
 Safe console loading uses an expiring host maintenance lease with mode `draining`.
 Normal combat heartbeats, attacks and healing continue for the captured current
@@ -224,7 +325,62 @@ items. Stand painting preserves existing prices or uses the catalog gold value.
 Validate the exchange console journey, preserving screenshots and saved rules.
 Activate with the supported coordinator/dashboard-only restart.
 
+## Winter Inn merchant purchases
+
+The named `wbartender` movement destination approaches Warin from the customer
+aisle, 50 pixels below his position. The ordinary 15-pixel NPC offset lands
+behind the closed counter: both ALClient and native planners reject that island.
+Validate `merchant buys one Liquid Luck` in `live-economy.spec.ts`, retaining the
+native inventory, exact gold delta and completed-job evidence. This character
+change needs an explicitly requested console load; a completed build alone does
+not activate it.
+
 # Character coordinator
+
+Merchant event admission adopts deferred ownership through the coordinator while
+bypassing fighter Hunt travel gates and Hunt trip creation. Fresh Main arrival
+retires only the merchant's acknowledged return with an explicitly empty waypoint,
+or its empty deferred continuation; newer commands and event sessions survive.
+Validate full-inventory NPC sales after current/deferred returns during Hunt and
+the native Cipher-to-door-tour handoff in live-merchant-anniversary-availability.
+Full merchant inventories defer optional door-tour activity so NPC sales can
+free capacity first. Stage a completed character/coordinator candidate;
+activation remains explicit.
+
+Manual one-level compounds accept BankBoi sources. Reserve the selected triple,
+queue remote inputs through storage, and retarget each exact group source from
+the native deposit receipt before production. Persist these group moves with
+settings; generic bank errands leave their inputs for the compound preparation.
+Validate the native Lantern +2 delivery/restart journey and inventory Exchange
+icon browser journey. Stage a completed console candidate; activation is explicit.
+
+Safe maintenance retires an unassigned worker only after its process is disabled
+and disconnected. A BankBoi handoff therefore replaces the merchant in the safety
+barrier without treating stale telemetry as proof of logout. New storage swaps
+pause during maintenance, and the host captures the fresh acknowledged roster
+after draining for CODE activation. Validate the safe-host slot-handoff ledger
+and native BankBoi maintenance journey. Stage the completed candidate; coordinator
+activation and host restart remain explicit separate actions.
+
+Automatic NPC-sale discovery includes saved BankBoi inventories after native bank
+stock, using the existing durable storage retrieval flow. Keep allowances, locked
+stock, whole-stack craft protection and withdrawal deduplication still apply.
+Automatic stand discovery retains its native-bank scope. Validate the automatic
+BankBoi NPC-sale journey in `live-bankboi-offerings.spec.ts`, including disabled
+ordinary withdrawals and restart persistence. Stage the completed console candidate;
+activation remains explicit.
+
+Pending inventory cleanouts collapse by recipient at startup and dispatch,
+including retries appended outside normal queue admission. Preserve the oldest
+queue age, latest retry eligibility and largest retry counters; an active
+cleanout keeps its command identity and owns any duplicate pending demand.
+Bank NPC-sale discovery also runs during unrelated party work. Its enabled
+withdrawal prerequisite inherits the higher of withdrawal and auto-sale priority;
+enable gates, collection thresholds, whole-stack withdrawal limits and account
+reserve allowances still apply. Own-inventory operations retain their existing
+snapshot boundary. Validate `bank sale scheduling` in `live-bank-npc-sales.spec.ts`
+and the retained bank-sale, keep-reserve and console bank journeys. Build a
+completed immutable candidate; activate only through an explicitly requested load.
 
 Pane 1's final seven bank cells are reserved for transfers only while a saved
 BankBoi exists, including an offline worker. Without BankBois, native sorting,
@@ -249,6 +405,12 @@ slots. Dispatcher admission and the native gathering loop preserve cooldowns
 while capacity blocks work; logistics shows enabled modes as red BLOCKED rows.
 Validate the capacity console and native gathering E2Es. Activate character and
 coordinator assets together through the supported full restart.
+
+The game starts the fishing/mining reuse cooldown only on a successful channel
+(10% fishing, 20% mining); a miss costs MP only. The merchant recasts after a
+miss and records the game's own cooldown (`next_skill`) after a success (#105).
+Validate `live-gathering-cooldown.spec.ts` (failure inventory
+`e2e/gathering-cooldown-failures.md`); activate through the full restart.
 
 Native splash packets from a visible monster fighting an identified outsider
 do not repeatedly stop owned party travel. Direct hits and unknown or party
@@ -392,6 +554,12 @@ the ordinary route installation checks. Stale reports still stop movement.
 Validate the native Boo Boo walking-return communication-hold case and retain
 its actual stop, fresh resume and Daisy reward evidence. This character change
 requires the supported full restart; a coordinator-only restart is insufficient.
+The Metrics workspace records durable kills, native damage, chest loot, gold and
+ping history independently of an open dashboard. See [Metrics](../../docs/metrics.md)
+for definitions, retention, reset semantics and estimator limits. Publish
+character, coordinator and dashboard assets together with the full supported
+restart below. A coordinator-only restart does not activate the collector.
+
 
 Merchant settings stores one Main-map stand location for parking, Town-return
 checks and marketplace fallbacks. A fresh settings store chooses integer X/Y
@@ -454,6 +622,12 @@ gate. BankBois cannot use the production endpoint; applying that gate to their
 merchant class leaves storage marked processing without starting native banking.
 Native stack filling still runs during unload, preserving stack caps and reserved
 stock. Validate `live-bankboi.spec.ts` and activate through the full restart.
+
+BankBoi movement-plan network failures and timeouts retain automatic retry
+eligibility after the persisted cooldown, including workers already saved in
+error state. Unknown game errors remain blocked. Validate the seven-cell reserve
+drain and restart journey in `live-bankboi-offerings.spec.ts`. Stage a completed
+immutable console candidate; activation remains explicit.
 
 Cave travel assembles participants at the leader before departure, shares the
 leader's validated native route, applies the slowest party speed through native
@@ -1166,6 +1340,14 @@ only quantity edits replace the remainder. Completed or replaced orders reject
 stale field edits. Validate with `native-stand.test.cjs`,
 `native-stand-client.test.cjs`, and `active-wtb-fields.test.cjs`.
 
+Cosmetic bank sorting confirms each native swap before selecting another mutation.
+The buffer journal records the expected bank and inventory identities and quantities
+before emission; native acknowledgement alone does not prove reactive publication.
+Unconfirmed swaps remain journaled, and departure waits for confirmed cleanup,
+including after cancellation or reload. Validate the native bank collection and NPC
+sale E2Es with ChronAL; they retain locked-stock conservation and exact sale counts.
+Build character and coordinator assets together and leave activation explicit.
+
 Bank sorting defaults to `bankSortMode: "automatic"`. Merchant settings can select
 `"request"`; the bank window then queues/cancels a durable, uniquely identified
 sort without dispatching travel. All cosmetic sorting callers in the shared
@@ -1178,6 +1360,15 @@ restarts recover it as retry. Automatic passes cache each floor's final contents
 for that visit. Normal deposit stacking and required banking transfers are not
 controlled by this setting.
 
+Sort swap confirmation models native deposits removing merchant-luck attribution
+(`m`). Persisted older expectations receive the same normalization during recovery;
+identity, quantity and lock checks remain exact. Definite native rejections may
+retire an unchanged pending swap, while transport uncertainty remains journaled.
+Empty overflow inventory cells are excluded from buffer selection. Validate the
+bank-popup native sorting journey in `live-bank-collection.spec.ts` (failure
+inventory: `e2e/bank-sort-failures.md`). Stage the completed console candidate;
+character assets require an explicitly requested load to activate this fix.
+
 Stack consolidation is independent of cosmetic sorting and runs during normal
 bank visits across accessible owned floors, using existing keys. Deposits fill
 compatible partial stacks before opening new stacks; partial transfers respect
@@ -1186,6 +1377,35 @@ items stay in place when sorting is off. Staging slots, queued withdrawals and
 craft ingredients are excluded. The existing bank-sort checkpoint accepts the
 `stack` action and returns current protected locations and item types without
 claiming or completing a cosmetic sort request.
+
+Merchant compression also runs at the start of owned work, protecting that
+command's inputs as well as queued reservations. Each bounded pass publishes
+fresh inventory and obtains a new merge permission; it fills partial stacks
+through the same confirmed split-buffer journal rather than requiring whole
+piles to fit. Bank consolidation consults native `can_stack` for provenance-only
+titles such as Cave-found, while locked stock remains excluded. Validate the
+five-pile candy and requested bank-sort journey in
+`e2e/live-bank-collection.spec.ts`, plus bank-sort and exchange-reward E2Es.
+Stage character and coordinator assets together; loading remains explicit.
+Bag compression runs before stand opening, so a missing stand item cannot block
+it. The native five-pile E2E enables automatic exchange explicitly, verifies the
+queued exchange does not reserve aggregate stock against compression, and checks
+bank publication, departure and persisted native quantities separately.
+Exchange reward history records quantities, so it does not reserve every copy
+against compression. Long exchange jobs recheck partial piles between confirmed
+native exchanges, before choosing the next input slot. A native delivery during
+an active resumed exchange is covered in `live-bank-collection.spec.ts`; preserve
+the owning job and exact combined native quantities throughout the merge.
+Manual inventory commands and outstanding production/lucky-slot recovery own
+their cells before optional compression. The isolated native lucky-slot journal
+fixture explicitly holds that inventory-command ownership while checking its
+original strict warning, swap and quantity results.
+Safe console draining retains its captured native combat targets independently
+of a newer Hunt/group selection. Eligible but unjoined interaction events cannot
+strand that existing fight while event polling is parked. Hunt reports the
+console-load hold explicitly and resumes its normal message after release.
+Validate both variants of the native fight/no-successor journey in
+`live-console-safe-reload.spec.ts`; retain real hits, death and ready reports.
 
 The separate `party-bank-stack-buffer:<character>` journal records temporary
 inventory slots and expected operation results before mutation. Unconfirmed
@@ -1349,6 +1569,14 @@ creating a capacity block. Validate with `merchant-upgrade-recovery.test.cjs`,
 and `upgrade-offerings-client.test.cjs`. Publish character and coordinator assets
 together through the supported full restart.
 
+Admitted automatic passes survive missing or ambiguous inventory observations.
+Relocation synchronizes slot/liveSlot, excludes completed duplicate stock and
+claims actual live positions. Each production admission checkpoints its actual
+input instead of restoring a stale command position. A missing admitted survivor
+cannot be reported as resolved. See
+[automatic upgrade recovery validation](../../docs/testing-auto-upgrade-continuation.md)
+for failure paths, native terminal-outcome coverage and intentional waits.
+
 Finite upgrade/compound quantities mean remaining successful target-level outputs,
 not desired stock. `inventory/production.ts` persists admission and completion
 receipts before acknowledging them. Character code journals each operation locally
@@ -1485,10 +1713,11 @@ require the full restart. An already exhausted return uses the existing
 `/party-api/monster-hunt/retry-return` action after fresh runtimes connect.
 
 For coordinator/dashboard-only changes, use `scripts/start-console.ps1 -CoordinatorOnly`.
-This restarts the selected active console artifact. The flag remains accepted for
-compatibility; restarting never selects a newly built candidate. Source/development
-launchers stage complete builds in the background. Use the refresh control beside
-Party Console to confirm deployment of the exact completed candidate when ready.
+Startup selects and deploys the newest completed console artifact. The flag remains
+accepted for compatibility. Source/development launchers stage complete builds in
+the background; builds completed after launch require the refresh control beside
+Party Console or the next startup. Startup recovers interrupted deployments first
+and retains normal readiness checks and rollback.
 
 Steam-to-headless releases also poll the authoritative account roster: a last
 primary may lose its bridge acknowledgement while disconnecting. Every released
@@ -1506,8 +1735,9 @@ Existing stopped Steam
 CODE must be Engaged once to load the updated bridge; subsequent transfers require
 only the Party Console button.
 
-The start script restarts the active artifact; an installation without an active
-artifact performs one initial verified build. Compilation occurs in private source
+The start script deploys the newest completed artifact available at launch; an
+installation without any completed artifact performs one initial verified build.
+Compilation occurs in private source
 snapshots with separate dependency caches. Deployment performs no compilation,
 waits for actual readiness and character CODE hashes, and restores the previous
 artifact on failure. Coordinator changes briefly reconnect headless characters;
@@ -2055,3 +2285,104 @@ full kept-item handoff receipt releases the merchant exchange, including after
 restart. Validate `live-exchange-collection.spec.ts`; see
 `docs/testing-party-exchange.md`. Coordinator/dashboard-only activation requires
 the explicitly requested supported CoordinatorOnly restart.
+
+A valid current convoy arrival received before the coordinator departure clock
+remains waiting and retryable. Zero-distance routes can finish on a client before
+that clock boundary; invalid owners still reject and early arrivals never complete.
+Validate the Halloween staging/restart/combat E2Es with ChronAL and native parity.
+Disposable application hosts can provide `plannerWorkerFile` independently of
+their isolated CODE directories; installed launchers retain the existing path.
+Build and stage the candidate; activation requires an explicit console load.
+
+When current Hunt policy clears an already-dispatched deferred checkpoint, a
+retained checkpoint command must not keep its return-cycle ownership alive.
+Fresh, alive native Main-town presence permits retirement of only that old
+cycle's command/walk and matching event trip. Other navigation remains owned.
+Validate the native Anniversary restart/return-to-Hunt journeys; preserve their
+physical arrival and reward checks. Build and stage; activate only by explicit load.
+
+Merchant bank manual compound marks bind three unlocked native bank sources, including different packs, before admission. The ordinary improvement command withdraws those sources and reports separate native withdrawal receipts; a failed later stage retains confirmed withdrawals for retry. Auto-compound uses the shared bank rules. Stat-scroll marks fence delivery payloads for the exact item regardless of priorities; native completion advances its retained delivery fingerprint. Replacement fishing and mining tools have separate default-off merchant settings; opted-in missing tools use the ordinary durable crafting order and material reservations. Validate the bank triplet, stat-bank/delivery, native gathering miss/hit and tool-setting journeys before staging a complete console artifact.
+
+Mailbox automation settings persist independently. Native attachment collection remains merchant-owned; auto-delete waits for account mail taken=true and no matching active collection job. Confirmed send completions produce local, durable outbox records; deleting a record cannot recall native mail. Opening the mailbox acknowledges incoming message IDs for its new-mail indicator. Validate mailbox-enhancements.case.ts and live-mailbox.spec.ts, retaining native inventory and mailbox receipts. Coordinator/dashboard changes require an explicitly requested supported coordinator-only activation; building alone does not activate them.
+
+Mailbox automation failures are isolated by message and action, with a thirty-second
+retry delay. One game API rejection cannot starve later eligible messages or turn
+a successful inbox listing into a stale-mail warning. Snapshots expose separate
+automation diagnostics; saving automation preferences succeeds even when a later
+automatic action is rejected. Only actual listing failures use the freshness
+warning. Native exceptions remain visible and retry without bypassing attachment
+collection guards. See docs/testing-mailbox-enhancements.md for failure coverage.
+
+Unconfirmed external stand purchases remain durable reservations until their owned
+job ends and a player explicitly resolves the outcome. The native-stand
+resolve-purchase action refuses current or queued jobs; bought uses the ordinary
+bid fulfillment path, not bought only releases the reservation. Repeated decisions
+cannot fill twice. The WTB row displays unresolved ledger entries independently of
+recomputed stand problems. Validate the native dashboard bought/not-bought,
+queued-job refusal and restart journeys in live-wtb-unconfirmed-purchase.spec.ts.
+Build a completed candidate after integrating the dashboard and coordinator; leave
+activation to an explicit console load.
+
+Replacing a farming focus schedules a normal revision-fenced farm relocation when
+the old catalog-tagged area contains none of the new selected species. Compatible
+focus additions and untagged manual waypoints retain their area. During event
+attendance, do not invalidate navigation revisions or replace the saved return
+checkpoint: pending relocation waits for native event/return ownership and combat
+to finish, then authorizes the newly selected catalog area. A later manual
+navigation revision supersedes the pending relocation. Validate the natural
+Halloween focus-change journey and retain its native Bee hits for both fighters.
+
+A farm-relocation convoy's unfinished farming engagement releases its selected
+coordinated target to independent approach, including native range confirmation.
+The coordinator convoy flag remains set until the encounter finishes; it must not
+suppress those readiness reports. Local convoy walking, foreign movement owners,
+unrelated targets and cancelled navigation remain exclusive. Validate the natural
+Halloween completion and changed Bee focus journey in
+`live-event-runtime-recovery.spec.ts`, retaining native damage from both fighters.
+
+Native explicitly unintentional stacked hits, like explosion splash, do not
+nominate an outside player's fight for convoy defense. A verified outside-party
+native target is required; direct hits, unknown targets and party attacks keep
+their conservative defense path. Validate both Targetron collateral journeys.
+sharedRoutine.convoyNavigationReport exposes the existing read-only current
+navigation ownership for diagnostics before the next full status publication.
+
+An older native missing-tool report must not disable gathering after automatic
+replacement crafting has been enabled. The coordinator checks the current
+per-tool opt-in and rejects that obsolete disabling effect; the client retains
+the mode until fresh settings arrive. Validate both native replacement-tool
+journeys, including an in-flight no-tool report crossing opt-in, unavailable
+materials, and exactly one actual craft. Build and stage character/coordinator
+assets together; activate only through an explicitly requested console load.
+New gathering attempts also wait for ordinary inventory commands to finish, so
+a manual Equip can complete after cancelling its old cast. Validate native hand
+receipts, subsequent gathering, exact item ownership and restart restoration.
+
+A/B Testing can remain stranded after native prize settlement when a full
+inventory reaches the upstream unbound `socket` branch before destroy_instance.
+Entry now waits for a free prize slot. After three failed instance exits, an
+ended A/B feed on a connected, clock-synchronized client permits one same-realm
+reconnect. The owned return-progress journal persists that attempt before
+navigation, fencing it by cycle and navigation revision and preventing reload
+loops across CODE or coordinator turnover. Main arrival and the return barrier
+still require ordinary fresh telemetry and completion acknowledgements.
+Validate the ended A/B native recovery journey in live-event-entry-failure.spec.ts.
+Publish character and coordinator assets together only through an explicitly
+requested console load; a staged build does not change the running party.
+
+Restored Town commands allocate IDs from the shared command sequence rather than
+wall-clock time. Full authenticated client reports advance that sequence past
+safe applied command watermarks before any consumer dispatches work. This repairs
+legacy Town IDs that otherwise make subsequent convoy and merchant hold commands
+look obsolete to surviving native CODE. Validate the restored-Town command-sequence
+journey in live-navigation-supersession.spec.ts, including native arrival after
+coordinator restart and delayed completion publication. Stage the completed
+console artifact; coordinator activation remains an explicitly requested action.
+
+Anniversary preemption continuations own the command, navigation revision and
+convoy they cancelled. Recheck that identity after native stop and permission
+waits before stopping direct movement or clearing convoy activity; a newer Hunt
+or return command must remain untouched. Skipped and already-returning replies
+do not authorize a local stop. Validate live-hunt-anniversary-preemption and the
+original Anniversary restart/reward/return journeys on ChronAL and native.
+Build and stage character/coordinator assets together; activation remains explicit.

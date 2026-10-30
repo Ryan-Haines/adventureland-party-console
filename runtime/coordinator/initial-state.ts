@@ -100,7 +100,7 @@ export function createInitialCoordinatorState<Merchant extends string | null = s
     ...initialMerchantRuntime<Merchant>(persistedSettings, ports.merchantDefault),
     ...initialCoordinatorHistory(persistedHistory, persistedSettings),
     ...initialMarketObservations(),
-    ...initialGatheringState(persistedSettings),
+    ...initialGatheringState(persistedSettings, ports.now),
     ...initialBankState(persistedBankState, ports.loadBankVaultDefinitions),
     ...initialCatalogs(),
     headlessSlots: initialHeadless,

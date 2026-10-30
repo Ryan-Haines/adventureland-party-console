@@ -1,17 +1,22 @@
 import { transportTiming, measureStatusStage } from '../telemetry/transport-timing.ts';
-import {rememberCharacterAppearance, type AppearanceState} from "./character-appearance.ts";
+import {
+  rememberCharacterSnapshot,
+  rememberCharacterAppearance, type AppearanceState} from "./character-appearance.ts";
 import { requestObject, type HttpRequest, type HttpResponse } from "../http/contracts.ts";
 import { createCombatIngestion, preserveNewerCombat } from "./combat-ingestion.ts";
 import { receiveLuckySlotTracking, type LuckySlotState } from "./lucky-slot-tracking.ts";
+import { createInventoryCarry } from "./inventory-carry.ts";
 
 export interface StatusReport {
   name: string;
+  lastCommandId?: number;
   runtime?: string;
   steamPrimary?: boolean;
   seenAt?: number;
 }
 
 interface IngestionState<Report extends StatusReport> extends AppearanceState, LuckySlotState {
+  nextCommandId: number;
   statuses: Record<string, Report | undefined>;
   headlessSlots: (string | null)[];
   steamMembers: string[];
@@ -56,6 +61,7 @@ export function createStatusIngestion<Report extends StatusReport>(
   ports: IngestionPorts<Report>,
 ) {
   const channel = createCombatIngestion(state.statuses, ports);
+  const inventory = createInventoryCarry();
   function nativeOwnership(body: Report): void {
     if (
       body.runtime !== "native" ||
@@ -98,19 +104,35 @@ export function createStatusIngestion<Report extends StatusReport>(
       measureStatusStage('persist', () => ports.persist());
   }
 
+  function receiveRosterEvidence(raw: Record<string, unknown>, body: Report, receivedAt: number): void {
+    const snapshotChanged = rememberCharacterSnapshot(state, raw, receivedAt);
+    if (rememberCharacterAppearance(state, body, receivedAt) || snapshotChanged) ports.persistRoster();
+  }
+
+  function advanceCommandWatermark(body: Report): void {
+    if (Number.isSafeInteger(body.lastCommandId) && body.lastCommandId! >= 0 && body.lastCommandId! < Number.MAX_SAFE_INTEGER)
+      state.nextCommandId = Math.max(state.nextCommandId, body.lastCommandId! + 1);
+  }
   function handle(req: HttpRequest, res: HttpResponse): unknown {
     const receivedAt = ports.now();
     const sendJson = res.json.bind(res);
-    res.json = value => measureStatusStage('serialize-response', () => sendJson({...requestObject(value), transportTiming: transportTiming(receivedAt, ports.now())}));
+    res.json = (value) => measureStatusStage('serialize-response', () => sendJson({...requestObject(value), transportTiming: transportTiming(receivedAt, ports.now())}));
     const raw = requestObject(req.body);
     if (typeof raw.name !== "string" || !ports.known(raw.name))
       return res.status(400).json({ error: "unknown character" });
     if (raw.combatWait === true || raw.combatOnly === true)
       return channel.handle(raw.name, raw, res);
+    // The character sends the full inventory again on this reply, in the same request() call.
+    if (!inventory.complete(raw.name, raw))
+      return res.status(409).json({ error: "inventory revision unknown", code: "inventory-required" });
     // Report fields are decoded by their domain consumer; unrecognized fields remain available to the dashboard.
     const body = raw as unknown as Report;
+    // Native CODE can outlive the coordinator. Historical Town restoration used
+    // wall-clock IDs outside this sequence; never issue commands behind a live
+    // client's applied watermark. Do this before any consumer can dispatch work.
+    advanceCommandWatermark(body);
     receiveLuckyEvidence(raw, raw.name);
-    if (rememberCharacterAppearance(state, body, ports.now())) ports.persistRoster();
+    receiveRosterEvidence(raw, body, receivedAt);
     const learned = consume(body);
     const previous = state.statuses[body.name];
     if (body.name === state.merchantCharacter) ports.merchant(body, previous);
@@ -121,7 +143,7 @@ export function createStatusIngestion<Report extends StatusReport>(
     measureStatusStage('publishMarket', () => ports.publishMarket(body.name));
     if (measureStatusStage('convoyStep', () => ports.convoyStep())) measureStatusStage('persist', () => ports.persist());
     measureStatusStage('merchantScheduling', () => ports.merchantScheduling(body, !!previous));
-    return res.json(measureStatusStage('response', () => ports.response(body.name)));
+    return res.json(inventory.acknowledge(body.name, measureStatusStage('response', () => ports.response(body.name))));
   }
   return { handle };
 }

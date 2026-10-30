@@ -1,3 +1,4 @@
+import { anySignal } from "./abort-signals.ts";
 /** A CODE generation may read game state, but loses all effects on retirement. */
 export class RetiredRunnerError extends Error {
   constructor() {
@@ -31,7 +32,7 @@ export class RunnerScope {
       const signal = init?.signal || (input instanceof Request ? input.signal : null);
       return fetcher(input, {
         ...init,
-        signal: AbortSignal.any([this.abort.signal, ...(signal ? [signal] : [])]),
+        signal: anySignal([this.abort.signal, ...(signal ? [signal] : [])]),
       });
     };
   }

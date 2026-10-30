@@ -7,6 +7,7 @@ function basherEquipped(): boolean {
 function canStomp(): boolean {
   const skill = G.skills.stomp;
   if (!basherEquipped() || !skill) return false;
+  if (sharedRoutine.graveyardAreaAttackAllowed?.(Number(skill.range) || 400) === false) return false;
   return character.max_mp > 0 && character.mp / character.max_mp >= 0.25 &&
     character.mp >= (skill.mp ?? 0) && !is_on_cooldown("stomp") && can_use("stomp");
 }

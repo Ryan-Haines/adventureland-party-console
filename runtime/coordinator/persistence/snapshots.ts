@@ -6,9 +6,21 @@ export const stateKeys = {
   history: "party_dashboard_history_state_v1",
   roster: "party_dashboard_roster_state_v1",
   aldata: "party_dashboard_aldata_state_v1",
+  /** Settings layout 2: the ALData market cache, saved on each refresh. */
+  market: "party_dashboard_market_state_v1",
+  /** Settings layout 2: the production receipts and attempt journals. */
+  production: "party_dashboard_production_state_v1",
 } as const;
 
+/**
+ * A settings document carrying this marker gets its market and production
+ * fields from their own keys. Without it, the settings document is the only
+ * source: a v1.4.0 journal, or settings rewritten by a v1.4.0 build.
+ */
+export const settingsLayout = { field: "persistenceLayout", split: 2 } as const;
+
 export const rosterFields = [
+  "characterSnapshots",
   "characterAppearances",
   "headlessSlots",
   "nativeOwner",
@@ -35,6 +47,7 @@ export const selectionFields = [
 ] as const;
 
 export const settingsFields = [
+  "mailbox",
   "dailyDungeons",
   "merchantRules", "production", "upgradeOfferingRules", "upgradePreviewResults",
   "bankboiPrefix", "anniversaryAutoChat",
@@ -155,6 +168,50 @@ export function settingsSnapshot<T extends SettingsInput>(state: T) {
     aldataMerchantsUpdatedAt: state.aldata.merchantsUpdatedAt,
     aldataTradesUpdatedAt: state.aldata.tradesUpdatedAt,
   };
+}
+
+/** Settings fields that layout 2 saves under their own key. */
+export const marketSettingsFields = [
+  "aldataMarketListings", "aldataMarketBuyOrders", "aldataTrades",
+  "aldataMerchantsUpdatedAt", "aldataTradesUpdatedAt",
+] as const;
+export const productionSettingsFields = ["production"] as const;
+
+export function marketSnapshot(aldata: SettingsInput["aldata"]) {
+  return {
+    aldataMarketListings: aldata.marketListings,
+    aldataMarketBuyOrders: aldata.marketBuyOrders,
+    aldataTrades: aldata.trades,
+    aldataMerchantsUpdatedAt: aldata.merchantsUpdatedAt,
+    aldataTradesUpdatedAt: aldata.tradesUpdatedAt,
+  };
+}
+
+/** Layout 2 settings: every settings field except the market cache and production. */
+export const splitSettingsFields = settingsFields.filter(
+  (field) => !(productionSettingsFields as readonly string[]).includes(field));
+
+/**
+ * Settings fields whose frequent changes are liveness timestamps. A save whose
+ * only changes are those values waits for `SETTINGS_LIVENESS_MS` (writer.ts).
+ */
+export const livenessFields = new Set<string>([
+  "eventAttendance", "eventSessions", "farmingProfiles", "farmAreaState", "standPriceHistory",
+]);
+const livenessKeys = new Set(["lastLiveAt", "lastObservedAt", "elapsedMs", "authorizedAt", "seenAt"]);
+
+/**
+ * JSON of a liveness field with its timestamps blanked. `quiet` keeps its area
+ * keys and drops their times. `seen` is the 15 s hit filter in
+ * scripts/farm-area-control.cjs and drops out.
+ */
+export function withoutLiveness(value: unknown): string | undefined {
+  return JSON.stringify(value, (key, entry: unknown) => {
+    if (typeof entry === "number" && livenessKeys.has(key)) return 0;
+    if (key === "seen") return undefined;
+    if (key === "quiet" && entry && typeof entry === "object") return Object.keys(entry);
+    return entry;
+  });
 }
 
 export function authSnapshot<T extends Record<(typeof authFields)[number], unknown>>(state: T) {

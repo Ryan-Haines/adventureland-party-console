@@ -10,8 +10,9 @@ export function createProjectileTracker(world: () => SkillWorld) {
   function prune(now: number) { for (const [id, p] of flights) if (p.until <= now) flights.delete(id); }
   return {
     action(data: Action) {
-      const w = world(); prune(w.now);
+      // incoming() prunes before it sums, so an unusable action skips world().
       if (!usable(data)) return;
+      const w = world(); prune(w.now);
       if (!w.context.allies.some(a => a.name === data.attacker || a.id === data.attacker)) return;
       const target = w.context.monsters.find(t => t.id === data.target);
       if (!target) return;

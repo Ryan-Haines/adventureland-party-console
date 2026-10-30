@@ -12,6 +12,7 @@ import {
   receivedLiveMessage,
   clearLiveMetrics,
 } from './live-metrics';
+import { audited } from './field-read-audit';
 
 export const liveConnectionKey = ['party', 'connection'] as const;
 export interface LiveConnection {
@@ -32,13 +33,14 @@ export function useCharacterData(
   name: string,
   kind: CharacterDomain,
 ) {
-  return useQuery({
+  const data = useQuery({
     queryKey: characterKey(name, kind),
     enabled: false,
     staleTime: Infinity,
     gcTime: 60000,
     queryFn: (): Partial<Char> => ({}),
   }).data;
+  return audited(kind, data);
 }
 export function DashboardLive() {
   const client = useQueryClient();

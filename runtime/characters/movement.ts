@@ -1,7 +1,7 @@
 import { observeMovementCorrections } from './movement-correction.ts';
 import { movementError, movementFailureCause, retryableMovementRequest } from './movement-error.ts';
 import { movementRelocation } from './movement-relocation.ts';
-import { isTransition, distance, geometryFingerprint, point, type Point, type PlanResult, type Issue, type Step } from '../navigation/contracts.ts';
+import { isTransition, distance, cachedGeometryFingerprint, point, type Point, type PlanResult, type Issue, type Step } from '../navigation/contracts.ts';
 import { validateRoute, stepIssue, type ValidationPorts } from '../navigation/validation.ts';
 import type { MovementHost, MoveState, MovementOptions, MovementPorts, MovementContext } from './movement-host.ts';
 import { createNativePlanner } from './native-planner.ts';
@@ -48,7 +48,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
   const native = host.__partyNativeMovement ||= { move: host.smart_move, stop: host.stop, start: host.start_pathfinding, next: host.continue_pathfinding, tick: host.smart_move_logic };
   const planner = createNativePlanner(host, native);
   const state: MoveState = { map: host.character.map, x: 0, y: 0, moving: false, searching: false, found: false, plot: [], use_town: true, try_exact_spot: false, edge: 20, on_done() {} };
-  let version = Number(host.parent.__partyClientVersion || host.G.version), fingerprint = geometryFingerprint(host.G);
+  let version = Number(host.parent.__partyClientVersion || host.G.version), fingerprint = cachedGeometryFingerprint(host.G);
   let report = movementDiagnostics(ports, host.character.name, version, fingerprint);
   const validation: ValidationPorts = {
     get game() { return host.G; },
@@ -395,7 +395,7 @@ export function installPartyMovement(host: MovementHost, ports: MovementPorts) {
     return new Promise((resolve, reject) => { state.on_done = (done, reason, failure) => { callback?.(done); if (done) resolve({ success: true }); else reject(Object.assign(movementError(failure || reason), {movementReported: true})); }; });
   }
   function refreshGeometry() {
-    const nextVersion = Number(host.parent.__partyClientVersion || host.G.version), nextFingerprint = geometryFingerprint(host.G);
+    const nextVersion = Number(host.parent.__partyClientVersion || host.G.version), nextFingerprint = cachedGeometryFingerprint(host.G);
     if (nextVersion === version && nextFingerprint === fingerprint) return;
     version = nextVersion; fingerprint = nextFingerprint;
     report = movementDiagnostics(ports, host.character.name, version, fingerprint);

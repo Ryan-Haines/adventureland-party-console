@@ -13,7 +13,9 @@ export interface InventoryEntry {
   [property: string]: unknown;
   slot?: number;
   item?: Item | null;
-  meta?: { upgradeable?: boolean; definition?: { type?: string; wtype?: string } };
+  // Per-copy meta once the coordinator holds merchantCatalog; read the
+  // per-type fields through inventory/catalog-meta.ts entryMeta().
+  meta?: import('../inventory/catalog-meta.ts').ItemMetaRecord | null;
 }
 
 export interface ItemMark extends Item {

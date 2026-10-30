@@ -241,3 +241,5 @@ export { reconcileCoordinatorCompoundMarks } from "./inventory/compound-marks.ts
 export { createInstalledCatalogValidation } from './status/catalog-validation.ts';
 export { createPlannerService } from './navigation/planner-service.ts';
 export { installMovementRoutes } from './http/movement.ts';
+
+export * from "./inventory/merchant-storage-stock.ts";

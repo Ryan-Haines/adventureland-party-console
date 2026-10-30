@@ -1,4 +1,5 @@
 import type { Sight, Point } from "./rare-types.ts";
+import { keepNewestRare } from "./rare-retention.ts";
 export interface Failed {
   sight: Sight;
   origin: Point;
@@ -15,11 +16,14 @@ function snapshot(sight: Sight, origin: Point): Failed {
 export function createRareRetryEvidence(saved: Record<string, Failed> = {}) {
   // Migrate existing receipts without clearing their rejection or retry evidence.
   for (const [id, entry] of Object.entries(saved)) saved[id] = snapshot(entry.sight, entry.origin);
+  keepNewestRare(saved, (entry) => entry.sight.seenAt);
   const failed = new Map<string, Failed>(Object.entries(saved));
   return {
     reject(id: string, sight: Sight, origin: Point) {
       saved[id] = snapshot(sight, origin);
       failed.set(id, saved[id]);
+      keepNewestRare(saved, (entry) => entry.sight.seenAt);
+      for (const key of failed.keys()) if (!saved[key]) failed.delete(key);
     },
     remove(id: string) {
       failed.delete(id); delete saved[id];

@@ -1,4 +1,4 @@
-import { classifyTravelDefense, normalTravel, type DefenseState } from "./travel-defense.ts";
+import { classifyTravelDefense, eventFightElsewhere, normalTravel, type DefenseState } from "./travel-defense.ts";
 import { returnWalking, type ReturnTownPolicy } from './return-town.ts';
 import { collectPassing, passingIdentity, type PassingEncounter } from '../../combat/passing.ts';
 import type { Member } from '../../combat/grouped.ts';
@@ -133,6 +133,8 @@ function casualty(p: Party, c: Convoy): boolean {
 }
 function localDefense(p: Party, c: Convoy): boolean {
   return c.participants.some(name => {
+    // A member's own defense against a live event boss a map away does not hold the leader.
+    if (eventFightElsewhere(p, name)) return false;
     const command = p.commands[name] as {id?:number;convoyId?:string;epoch?:number;navigationRevision?:number} | undefined;
     const s = p.statuses[name] as {convoyNavigation?: {id:string;epoch:number;commandId:number;navigationRevision:number;runtimeId:string;phase:string};combatSelection?:{runtimeId?:string}} | undefined;
     const n=s?.convoyNavigation;

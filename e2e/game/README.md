@@ -62,3 +62,16 @@ The boot harness transparently forwards container-local published ports 9003 and
 9004 to native listeners 7192 and 7193. Native cross-realm account confirmation
 uses advertised server addresses, so those addresses must work inside the
 container as well as from host browsers. No authentication responses are replaced.
+
+## Parallel worker failure inventory
+
+Before expanding concurrency, verify that every host guard, native browser proxy
+bypass, client URL, coordinator fetch and Docker game configuration accepts the
+same assigned loopback set. Each worker must own a distinct MongoDB/game stack,
+ChronAL broker/token, browser/coordinator workspace, and report attachments. Reject
+invalid offsets/counts before starting containers. A failed startup must wait for
+all started operations before removing only owned stacks. Concurrent diagnostic
+runs must select a different host offset and Compose prefix; never reset an active
+run's account or stop its containers. Exercise eight real gameplay repetitions
+with eight distinct pool/parallelIndex receipts, retained native assertions and
+verified report hashes; confirm all owned containers/workspaces are removed.

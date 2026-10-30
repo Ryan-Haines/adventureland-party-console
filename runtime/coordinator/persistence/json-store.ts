@@ -1,6 +1,9 @@
 export interface KeyValueStorage {
   get(key: string): unknown;
+  /** Copies or serializes `value` before it returns; callers keep mutating it. */
   set(key: string, value: unknown): void;
+  /** Saves text the caller produced with JSON.stringify, without a second stringify. */
+  setSerialized?(key: string, json: string): void;
 }
 
 export interface StoredState<T> {

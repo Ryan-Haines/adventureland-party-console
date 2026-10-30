@@ -14,6 +14,11 @@ export async function observeNativeStatus(clients:Record<string,LiveClient>,name
       const host=window as any,game=parent as any;
       const ledger=(game[key] ||= {name,samples:[],errors:[],counts:{},maxReportGap:null,lastReport:null});
       host.$(document).on('ajaxComplete.e2eEventStatus',(_event:any,xhr:any,settings:any)=>{
+        if(String(settings.url).endsWith('/convoy-complete')){
+          const completions=(ledger.completions ||= []);
+          completions.push({at:Date.now(),status:xhr.status,request:settings.data,response:xhr.responseJSON});
+          if(completions.length>32)completions.splice(16,1);
+        }
         if(!String(settings.url).endsWith('/status'))return;
         try{
           const request=typeof settings.data==='string'?JSON.parse(settings.data):{},value=xhr.responseJSON||{},owner=host.__partyEventExitOwner;

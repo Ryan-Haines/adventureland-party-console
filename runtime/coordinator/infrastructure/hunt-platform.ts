@@ -6,7 +6,10 @@ import type { createCoordinatorFarmNavigation } from "../navigation/farm-composi
 type FarmPorts = Parameters<typeof createCoordinatorFarmNavigation>[2];
 
 /** Shared area observations and ranking used by ordinary farming and Hunt travel. */
-export type FarmAreaControlPlatform = Pick<FarmPorts, "record" | "alternatives" | "fighting">;
+export type FarmAreaControlPlatform = Pick<FarmPorts, "record" | "alternatives" | "fighting"> & {
+  /** Applies record()'s expiry windows to a loaded snapshot. */
+  prune(state: object, now: number): void;
+};
 
 /** Hunt safety mutates the current mission and retains the existing resolver result. */
 export interface HuntSafetyPlatform {

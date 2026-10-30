@@ -7,9 +7,10 @@ export interface CurrentAttacker extends Target { target: string; server?: strin
 interface Observation {
   activeEvent?: string | null; joinedEvent?: string | null;
   seenAt?: number; map?: string; in?: string | number; server?: string; hp?: number; rip?: boolean;
+  serverLiveEvents?: { name?: string }[];
   groupedCombat?: { returnDefense?: boolean; passingEncounters?: PassingEncounter[]; currentAttackersAt?: number; currentAttackers?: CurrentAttacker[]; travelCommand?: { id: number; revision: number } | null };
 }
-export interface DefenseState { passiveHunting?: PassiveTravelSettings; statuses: Record<string, unknown>; groupedCombat?: unknown; activeConvoy?: HuntTravelConvoy & { returnTown?: { walking: boolean } } | null }
+export interface DefenseState { passiveHunting?: PassiveTravelSettings; statuses: Record<string, unknown>; groupedCombat?: unknown; activeConvoy?: HuntTravelConvoy & { participants?: string[]; returnTown?: { walking: boolean } } | null }
 export interface DefenseResult {
   state: "clear" | "defending" | "waiting-for-observations";
   attackers: CurrentAttacker[];
@@ -38,6 +39,31 @@ function current(t: CurrentAttacker, status: Observation, names: string[]): bool
     String(t.in ?? t.map) === String(status.in ?? status.map) &&
     (!t.server || t.server === status.server) && t.hp !== 0;
 }
+// A member fighting a live event boss a map away from the leader belongs to
+// that fight. Holding the convoy would stop a leader that cannot reach it
+// (live 2026-10-21 05:28Z: leader held in main while followers fought
+// Mr. Pumpkin in halloween).
+function liveEventAttacker(t: CurrentAttacker, status: Observation): boolean {
+  return !!t.mtype && !!status.serverLiveEvents?.some(event => event?.name === t.mtype);
+}
+function differentEventLocation(status: Observation, leader: Observation): boolean {
+  return status.map !== leader.map || String(status.in ?? status.map) !== String(leader.in ?? leader.map);
+}
+function eventBossElsewhere(t: CurrentAttacker, status: Observation, leader: Observation | undefined, now: number): boolean {
+  if (!leader || !fresh(leader.seenAt, now) || !leader.map || !status.map || !status.server || status.server !== leader.server || !liveEventAttacker(t, status)) return false;
+  return differentEventLocation(status, leader);
+}
+/** The member's only attackers are live event bosses, a map away from the leader. */
+export function eventFightElsewhere(party: DefenseState, name: string, now = Date.now()): boolean {
+  const status = party.statuses[name] as Observation | undefined, attackers = status?.groupedCombat?.currentAttackers;
+  if (!ready(status, now) || !attackers?.length) return false;
+  const leader = convoyLeader(party);
+  return attackers.every(t => current(t, status, party.activeConvoy?.participants || []) && eventBossElsewhere(t, status, leader, now));
+}
+function convoyLeader(party: DefenseState): Observation | undefined {
+  const name = (party.activeConvoy as { leader?: string } | null | undefined)?.leader;
+  return name ? party.statuses[name] as Observation | undefined : undefined;
+}
 function confirmedDeaths(party: DefenseState): Set<string> {
   const deaths = (party.groupedCombat as { deaths?: (Target & { server?: string })[] } | null)?.deaths || [];
   return new Set(deaths.map(identity));
@@ -55,11 +81,12 @@ function observeTravelAttackers(party: DefenseState, names: string[], now: numbe
   const waiting: string[] = [], found = new Map<string, CurrentAttacker>();
   const dead = confirmedDeaths(party);
   const passing = includePassingAttackers ? new Map<string,PassingEncounter>() : passingForDefense(party,names,now);
+  const leader = convoyLeader(party);
   for (const name of names) {
     const status = party.statuses[name] as Observation | undefined;
     if (!ready(status, now)) { waiting.push(name); continue; }
     for (const t of status.groupedCombat!.currentAttackers!) {
-      if (current(t, status, names)) {
+      if (current(t, status, names) && !eventBossElsewhere(t, status, leader, now)) {
         const attacker = { ...t, server: status.server };
         if (includeAttacker(party,passing,attacker,status.groupedCombat!.returnDefense) && !dead.has(identity(attacker))) found.set(identity(attacker), attacker);
       }

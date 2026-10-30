@@ -1,4 +1,4 @@
-import { validEventLimits, type EventLimits } from "../../../dashboard/lib/event-policy.ts";
+import { octoberEvents, validEventLimits, type EventLimits } from "../../../dashboard/lib/event-policy.ts";
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 
 interface FormationState {
@@ -41,12 +41,19 @@ export function createFormationRoute(state: FormationState, ports: FormationPort
     ];
     return null;
   }
+  /** A complete order, or the order of a client built before octoberEvents with them appended. */
+  function completeOrder(value: unknown): string[] | null {
+    if (!Array.isArray(value) || new Set(value).size !== value.length) return null;
+    const ids = value.filter((id): id is string => typeof id === "string" && ports.supported.includes(id));
+    const required = ports.supported.filter(id => !octoberEvents.includes(id));
+    if (ids.length !== value.length || required.some(id => !ids.includes(id))) return null;
+    return [...ids, ...ports.supported.filter(id => !ids.includes(id))];
+  }
   function priorities(name: string, value: unknown): FormationError | null {
-    if (!Array.isArray(value) || value.length !== ports.supported.length ||
-        new Set(value).size !== value.length || value.some(id => !ports.supported.includes(id)))
-      return { code: 400, error: "invalid event priorities" };
+    const order = completeOrder(value);
+    if (!order) return { code: 400, error: "invalid event priorities" };
     if (ports.inherited(name)) return { code: 409, error: "using leader events" };
-    state.eventPrioritiesByCharacter[name] = [...value] as string[];
+    state.eventPrioritiesByCharacter[name] = order;
     return null;
   }
   function limits(name: string, value: unknown): FormationError | null {
@@ -55,7 +62,7 @@ export function createFormationRoute(state: FormationState, ports: FormationPort
       return { code: 400, error: "invalid event limits" };
     if (ports.inherited(name)) return { code: 409, error: "using leader events" };
     const settings = state.eventLimitsByCharacter[name] ??= {};
-    settings[requestText(patch.event)] = { deathLimit: patch.limits.deathLimit, timeLimitMinutes: patch.limits.timeLimitMinutes };
+    settings[requestText(patch.event)] = structuredClone(patch.limits);
     return null;
   }
   function settings(name: string, body: Record<string, unknown>): FormationError | null {

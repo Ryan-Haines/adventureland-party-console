@@ -1,0 +1,73 @@
+{
+  "scope": "Focused actual Chromium/JSDOM transport comparison; not a full-suite benchmark",
+  "requestedRate": 16,
+  "originalHttpTimeoutMs": 1000,
+  "serverNativeDelayMs": 200,
+  "http": {
+    "nativeIo": {
+      "ok": true,
+      "value": {
+        "ok": true
+      },
+      "wallMs": 206.7000000178814,
+      "virtualMs": 207
+    },
+    "acceleratedIo": {
+      "ok": true,
+      "value": {
+        "ok": true
+      },
+      "wallMs": 215.09999999403954,
+      "virtualMs": 0
+    },
+    "nodeIo": {
+      "ok": true,
+      "value": {
+        "ok": true
+      },
+      "wallMs": 228.0693
+    },
+    "ioReceipts": [
+      {
+        "started": 1792412904747,
+        "finished": 1792412904950
+      },
+      {
+        "started": 1792412904957,
+        "finished": 1792412905168
+      },
+      {
+        "started": 1792412906206,
+        "finished": 1792412906413
+      }
+    ]
+  },
+  "delayedNativeImmediate": {
+    "before": {
+      "wallMs": 1944.8934000000008,
+      "virtualMs": 2002
+    },
+    "after": {
+      "wallMs": 393.32539999999995,
+      "virtualMs": 2002
+    },
+    "speedup": 4.944743970259742
+  },
+  "gameplayWait": {
+    "nativeWait": {
+      "wallMs": 2008.8999999761581,
+      "virtualMs": 2009
+    },
+    "acceleratedWait": {
+      "wallMs": 214.5,
+      "virtualMs": 2002
+    },
+    "speedup": 9.365501165390015
+  },
+  "longPoll": {
+    "ok": true,
+    "virtualMs": 1250,
+    "nativeIoActive": false
+  },
+  "evidenceDirectory": ".build/ci-recovery/native-io-final-green"
+}

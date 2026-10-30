@@ -1,3 +1,5 @@
+import {requestObject} from '../http/contracts.ts';
+import {createMailbox,type MailboxState} from './mailbox.ts';
 import { createMailApi } from "./mail-api.ts";
 import { createMailInboxRoutes } from "../http/mail-inbox.ts";
 import type { MailInbox } from "../http/mail-inbox.ts";
@@ -13,6 +15,7 @@ type MailFetch = (
   },
 ) => Promise<MailResponse>;
 interface MailState<Job> {
+  mailbox?:MailboxState;
   merchantCurrent?: Job | null;
   merchantQueue: (Job | null | undefined)[];
 }
@@ -20,6 +23,7 @@ interface MailAccount {
   response: { characters?: { name: string }[] | null };
 }
 interface MailStartupPorts<Job, Enqueue> {
+  persist():void;
   session: string | undefined;
   loadFetch: () => Promise<MailFetch>;
   timeout: (milliseconds: number) => AbortSignal;
@@ -60,13 +64,13 @@ export function startCoordinatorMail<Job, Enqueue>(
   ports: MailStartupPorts<Job, Enqueue>,
 ) {
   ports.retain(
-    ports.createInbox({
+    createMailbox(ports.createInbox({
       api: mailApi(ports),
       names: () => (account.response.characters || []).map((character) => character.name),
       jobs: () =>
         [state.merchantCurrent, ...state.merchantQueue].filter((job): job is Job => Boolean(job)),
       enqueue: ports.enqueue,
-    }),
+    }),state,{now:()=>Date.now(),persist:()=>ports.persist(),collecting:id=>[state.merchantCurrent,...state.merchantQueue].some(raw=>{const job=requestObject(raw);return job.reason==='collect mail'&&requestObject(job.mail).id===id;})}),
   );
   const refresh = () => {
     void ports

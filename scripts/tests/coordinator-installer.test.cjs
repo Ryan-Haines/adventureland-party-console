@@ -57,6 +57,9 @@ for (const legacy of [false, true]) test(`installer replaces ${legacy ? 'legacy 
     assert.equal(game_context.__partyClientVersion,99);assert.equal(game_context.__partyClientInstance,'instance');
 
     assert.ok(thread.includes('process.send({type: "client_update", event})'));
+    // The game log echo installer replaces caracAL's hook only when the bundle has it.
+    assert.equal(thread.split('installGameLogEcho?.(game_context, extensions.log, () => extensions.siblings))').length,2);
+    assert.match(thread,/installGameLogEcho\?\.\(game_context, extensions\.log, \(\) => extensions\.siblings\)\)\n  vm\.runInContext\(\n    `\n  \(function\(\) \{\n    const old_add_log = add_log;/);
     assert.doesNotMatch(thread, /get_(?:game|runner)_files\(\)/);
     assert.ok(thread.indexOf('game_context.is_electron = false;') < thread.indexOf('await ev_files(game_sources, game_context)'));
     assert.equal(thread.split('game_context.is_electron = false;').length, 2);

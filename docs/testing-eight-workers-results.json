@@ -1,0 +1,133 @@
+{
+  "command": "npm run test:e2e -- --project=live --workers=8 --repeat-each=8 --grep 'Loaded Die equips through the priest inventory menu'",
+  "environment": {
+    "E2E_GAME_POOL_OFFSET": 8,
+    "E2E_GAME_PROJECT_PREFIX": "al-e2e-eight-proof",
+    "E2E_BROWSER_RENDERING": "hardware",
+    "E2E_EXPECT_GPU": "NVIDIA GeForce RTX 5090",
+    "E2E_MEASURE_BROWSER_CPU": 1
+  },
+  "status": "passed",
+  "workers": 8,
+  "tests": 8,
+  "started": "2026-10-19T03:46:04.185Z",
+  "finished": "2026-10-19T03:47:33.774Z",
+  "durationsMs": [
+    11108,
+    12385,
+    11535,
+    12353,
+    12516,
+    13623,
+    12622,
+    14375
+  ],
+  "pools": [
+    {
+      "host": "127.0.0.15",
+      "project": "al-e2e-eight-proof-6",
+      "parallelIndex": 6
+    },
+    {
+      "host": "127.0.0.12",
+      "project": "al-e2e-eight-proof-3",
+      "parallelIndex": 3
+    },
+    {
+      "host": "127.0.0.11",
+      "project": "al-e2e-eight-proof-2",
+      "parallelIndex": 2
+    },
+    {
+      "host": "127.0.0.9",
+      "project": "al-e2e-eight-proof-0",
+      "parallelIndex": 0
+    },
+    {
+      "host": "127.0.0.10",
+      "project": "al-e2e-eight-proof-1",
+      "parallelIndex": 1
+    },
+    {
+      "host": "127.0.0.13",
+      "project": "al-e2e-eight-proof-4",
+      "parallelIndex": 4
+    },
+    {
+      "host": "127.0.0.16",
+      "project": "al-e2e-eight-proof-7",
+      "parallelIndex": 7
+    },
+    {
+      "host": "127.0.0.14",
+      "project": "al-e2e-eight-proof-5",
+      "parallelIndex": 5
+    }
+  ],
+  "cleanup": [
+    {
+      "workspace": ".build\\e2e\\live-4ea5372d-7a1d-4e8b-920d-cac1f41b1ddd",
+      "policy": "after-attachment-copy",
+      "retained": false,
+      "removed": true
+    },
+    {
+      "workspace": ".build\\e2e\\live-e26443ca-bd52-4393-843f-47215aa0272e",
+      "policy": "after-attachment-copy",
+      "retained": false,
+      "removed": true
+    },
+    {
+      "workspace": ".build\\e2e\\live-357e68f5-06c3-42c6-bc59-7d1f7a8724dc",
+      "policy": "after-attachment-copy",
+      "retained": false,
+      "removed": true
+    },
+    {
+      "workspace": ".build\\e2e\\live-dd0e7a85-ed86-4960-9ecb-720684191d03",
+      "policy": "after-attachment-copy",
+      "retained": false,
+      "removed": true
+    },
+    {
+      "workspace": ".build\\e2e\\live-6a52f377-4d32-4c36-abfb-267a075c5b4a",
+      "policy": "after-attachment-copy",
+      "retained": false,
+      "removed": true
+    },
+    {
+      "workspace": ".build\\e2e\\live-c50ec8ba-7799-45ad-a2ee-ddc015d1ffac",
+      "policy": "after-attachment-copy",
+      "retained": false,
+      "removed": true
+    },
+    {
+      "workspace": ".build\\e2e\\live-cf8439d8-12e9-4a5a-886a-0764a4d61b60",
+      "policy": "after-attachment-copy",
+      "retained": false,
+      "removed": true
+    },
+    {
+      "workspace": ".build\\e2e\\live-1f5cafe7-eae4-4195-8261-e172d9d918ff",
+      "policy": "after-attachment-copy",
+      "retained": false,
+      "removed": true
+    }
+  ],
+  "renderers": [
+    "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)"
+  ],
+  "backend": "chronal-network",
+  "manifestSha256": "1cb32916f3a3582a96777f034d0f99b04c39e77882f6aa564ed8da1fb7c315d3",
+  "fullSuiteRun": false,
+  "candidate": {
+    "id": "c415ad11ac9af6e4afecd31e3ca71fbf3b471d11f48eb0c8c613d019e202a84c",
+    "sourceHash": "eb03218561f34e02be58a791e605e403a4b5c8e070902fe81da0b00ca79dc44b",
+    "completed": true,
+    "deepVerified": true,
+    "activeId": "7881dbb8120d1ee8e8253f5c081aa13519d4ab9a2d8fc2787b61660539ffd04f",
+    "activated": false
+  },
+  "archive": ".build/eight-worker-validation/",
+  "evidenceFiles": 364
+}

@@ -5,6 +5,7 @@ import { useCharacterData } from './dashboard-live';
 import { CharacterStatsDialog } from './character-stats-dialog';
 import { CharacterPortrait } from './character-portrait';
 import { SpriteCrop } from './sprite-crop';
+import { audited } from './field-read-audit';
 
 // Keep this interaction below the console and card so opening stats does not
 // rerender the workspace or mount unrelated reference panels.
@@ -53,7 +54,7 @@ function ConnectedCharacterStats({
   const inventory = useCharacterData(character.name, 'inventory');
   return (
     <CharacterStatsDialog
-      character={{ ...character, ...inventory }}
+      character={audited('merged', { ...character, ...inventory })}
       onOpenChange={onOpenChange}
       returnFocus={returnFocus}
     />

@@ -5,6 +5,7 @@ import type { MerchantWork } from '../merchant/work.ts';
 import { requestObject, requestText } from "../http/contracts.ts";
 import type { Item, InventoryEntry, ItemMark } from "../contracts/item.ts";
 import type { CommandOutcome } from "../navigation/manual-commands.ts";
+import { entryMeta } from "./catalog-meta.ts";
 
 interface Entry extends InventoryEntry {
   slot: number;
@@ -67,7 +68,7 @@ function prospectiveExchange(state: MerchantItemState, body: Request): boolean {
 }
 export function createMerchantItemCommands(state: MerchantItemState, ports: Ports) {
   function weapon(body: Request, entry: Entry): CommandOutcome {
-    const definition = entry.meta?.definition || {};
+    const definition = entryMeta(state.merchantCatalog, entry)?.definition || {};
     if (!merchantWeaponCompatible(definition))
       return failure("select a normal merchant-compatible weapon");
     state.merchantWeapon = body.remove === true ? null : { item: requestObject(body.item) };

@@ -3,6 +3,7 @@ import { createCaveTravel } from './travel.ts';
 import { createPriestRecovery } from "./priest-recovery.ts";
 import type {
   CaveCommand,
+  CavePoint,
   DungeonParty,
   DungeonState,
   DungeonView,
@@ -85,6 +86,8 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
       stairContinuation: undefined,
       progress: {enabled:false, serial:0, message:'Choose a destination to begin travelling'},
       resuming: names.every((n) => !!observation(n)?.visit?.resume),
+      interruptedPhase: undefined,
+      interruptedCommands: undefined,
     });
     ports.cancel(names);
     issue(names, "gather", id, { target: { ...keeper, id: "dorr", label: "Dorr" } });
@@ -239,8 +242,7 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     if (!dungeonOwns(party, name)) return true;
     const d = state();
     if (canReleaseForEvent(d, event, eligible)) {
-      d.phase = "idle";
-      delete d.pendingEvent;
+      retire(d);
       ports.persist();
       return true;
     }
@@ -267,10 +269,16 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
       !d.participants.every((n) => fresh(n) && observation(n)?.cave === null)
     )
       throw Error("Exit the dungeon before resuming ordinary travel");
+    retire(d);
+    ports.persist();
+  }
+  // An idle party keeps no state from the finished visit. settings() would
+  // otherwise restore an older interrupted phase and its commands.
+  function retire(d: DungeonState) {
     d.phase = "idle";
     d.commands = {};
-    delete d.pendingEvent;
-    ports.persist();
+    for (const field of ["pendingEvent", "interruptedPhase", "interruptedCommands", "travel", "stairContinuation", "progress"] as const)
+      delete d[field];
   }
   function action(body: Record<string, unknown>) {
     reconcile();
@@ -306,7 +314,14 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
       return fresh(name) && receipt?.id === command.id && receipt.status === "failed";
     });
     if (!failed.length) throw Error("No confirmed pre-dispatch failure to retry");
-    if (d.travel) { travel.start(d.travel.target); return; }
+    if (d.travel) {
+      // Retry is one more attempt. It keeps the spent automatic repairs, so
+      // repeated presses do not each add three more assembly cycles.
+      const { repairs, assemblyRepairs, destinationRepairs } = d.travel;
+      travel.start(d.travel.target);
+      Object.assign(d.travel!, { repairs, assemblyRepairs, destinationRepairs });
+      return;
+    }
     for (const [name, command] of failed)
       issue([name], command.action, id, { ...command, id: undefined });
     d.error = undefined;
@@ -378,7 +393,8 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
   }
   function ensureSettled(d: DungeonState) {
     for (const [name, command] of Object.entries(d.commands)) {
-      if (["move", "gather"].includes(command.action)) continue;
+      // A talk only opens a dialogue; a failed or lost one blocks nothing.
+      if (["move", "gather", "talk"].includes(command.action)) continue;
       // Native resolution proves the vote is over even while its request
       // receipt is catching up. Reversible travel may begin after that vote.
       if (voteResolved(name, command)) continue;
@@ -397,12 +413,12 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     cave: NonNullable<import("../../dungeons/contracts.ts").CaveObservation["cave"]>,
   ) {
     const d = state();
-    const target = cave.points.find((p) => p.id === body.target);
-    if (!target || target.locked || target.done || cave.paused)
-      throw Error("Destination unavailable");
+    const target = destination(cave, body.target);
     if (target.exit) return exit(id);
     if (target.map !== party.statuses[d.participants[0]]?.map)
       throw Error('Waypoint is on a different floor. Use the stairs to reach that floor first.');
+    const speaker = merchantRoom(target) && shopHidden(target) && nearestSpeaker(target);
+    if (speaker) return talk(speaker, target, id);
     progress.set(false);
     d.progress!.target = target.id;
     d.progress!.message = "Travelling to " + target.label;
@@ -411,13 +427,48 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
     else delete d.stairContinuation;
     travel.start(target);
   }
+  function destination(cave: NonNullable<import("../../dungeons/contracts.ts").CaveObservation["cave"]>, id: unknown): CavePoint {
+    const target = cave.points.find((p) => p.id === id);
+    // A merchant room is done once its encounter resolves, while its single
+    // item can still be for sale (game 8fbc84d), so it stays a destination.
+    if (!target || target.locked || target.done && !merchantRoom(target) || cave.paused)
+      throw Error("Destination unavailable");
+    return target;
+  }
+  function merchantRoom(point: CavePoint): boolean {
+    return !!point.room && /^\d+:shop$/.test(point.room);
+  }
+  function shopHidden(point: CavePoint): boolean {
+    return !participantChoices().some((choice) => choice.shop?.room === point.room);
+  }
+  function participantChoices() {
+    return state().participants.flatMap((n) => fresh(n) && observation(n)?.cave?.run === state().run ? observation(n)?.cave?.choice || [] : []);
+  }
+  // The game shows the latest vote to everyone. cave_talk(room) reopens an
+  // earlier encounter, such as a merchant, for the one member who talks, and
+  // the server answers "distance" beyond 160 from its NPC.
+  function nearestSpeaker(point: CavePoint): string | undefined {
+    const near = state().participants
+      .map((name) => ({ name, s: party.statuses[name] }))
+      .filter(({ name, s }) => fresh(name) && observation(name)?.alive && s?.map === point.map)
+      .map(({ name, s }) => ({ name, gap: Math.hypot(Number(s!.x) - point.x, Number(s!.y) - point.y) }))
+      .filter(({ gap }) => gap <= 100)
+      .sort((a, b) => a.gap - b.gap);
+    return near[0]?.name;
+  }
+  function talk(name: string, point: CavePoint, id: string) {
+    const d = state();
+    progress.set(false);
+    d.error = undefined;
+    issue([name], "talk", id, { run: d.run, room: point.room });
+  }
   function choose(
     body: Record<string, unknown>,
     id: string,
     cave: NonNullable<import("../../dungeons/contracts.ts").CaveObservation["cave"]>,
   ) {
     const d = state(),
-      choice = cave.choice;
+      choice = currentChoice(body, cave);
     if (!choice || choice.id !== body.choice) throw Error("Choice is no longer current");
     if (body.action === "vote") {
       const option = choice.options.find((o) => o.id === body.option);
@@ -439,6 +490,11 @@ export function createDungeons(party: DungeonParty, ports: Ports) {
       return;
     }
     return buy(body, id, cave, choice);
+  }
+  // A talk can show a reopened shop to one member only.
+  function currentChoice(body: Record<string, unknown>, cave: NonNullable<import("../../dungeons/contracts.ts").CaveObservation["cave"]>) {
+    if (body.action !== "buy") return cave.choice;
+    return [cave.choice, ...participantChoices()].find((c) => c?.id === body.choice);
   }
   function confirmCost(option: { cost?: number; amber?: number }, body: Record<string, unknown>) {
     if ((option.cost || option.amber) && body.confirmed !== true)

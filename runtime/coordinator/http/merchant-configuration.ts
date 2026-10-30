@@ -55,6 +55,9 @@ export function createCoordinatorMerchantConfiguration(
       get noTool() {
         return state.gatheringNoTool;
       },
+      get automations() {
+        return state.merchantAutomations;
+      },
       get activity() {
         return state.merchantActivity;
       },

@@ -229,11 +229,7 @@ export class ConsoleBuildStore {
       await atomicJson(path.join(stage, 'manifest.json'), manifest);
       await atomicJson(path.join(stage, 'complete.json'), {id: manifest.id, manifestHash: createHash('sha256').update(JSON.stringify(manifest)).digest('hex')});
       await mkdir(path.join(this.directory, 'releases'), {recursive: true});
-      try { await rename(stage, this.release(manifest.id)); }
-      catch (error) {
-        if (!['EEXIST', 'ENOTEMPTY'].includes((error as NodeJS.ErrnoException).code || '')) throw error;
-        await this.verify(manifest.id);
-      }
+      await this.publishStage(stage,manifest.id);
       const refs = await this.references();
       const countsFile = path.join(this.directory, 'completion-counts.json');
       const counts = await readJson<{total: number; numbers: Record<string, number>}>(countsFile) || {total: 0, numbers: {}};
@@ -248,6 +244,19 @@ export class ConsoleBuildStore {
     });
   }
   references() { return readJson<References>(path.join(this.directory, 'references.json')).then(value => value || {}); }
+  private async publishStage(stage:string,id:string):Promise<void>{
+    // Retain the operation lock and verified stage through transient Windows
+    // sharing violations. Permanent/unrelated failures still leave it unpublished.
+    for(let attempt=0;;attempt++){
+      try{await rename(stage,this.release(id));return;}
+      catch(error){
+        const code=(error as NodeJS.ErrnoException).code;
+        if(['EEXIST','ENOTEMPTY'].includes(code||'')){await this.verify(id);return;}
+        if(!['EBUSY','EPERM'].includes(code||'')||attempt>=5)throw error;
+        await new Promise(resolve=>setTimeout(resolve,50*(attempt+1)));
+      }
+    }
+  }
   async setReferences(refs: References) {
     for (const id of Object.values(refs)) if (id) await this.metadata(id);
     await atomicJson(path.join(this.directory, 'references.json'), refs);

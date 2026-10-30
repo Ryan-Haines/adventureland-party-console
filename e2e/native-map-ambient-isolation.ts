@@ -1,16 +1,17 @@
 import type {LiveGame} from './live-fixtures';
 
 // Reversible declared world-input isolation; all construction remains native.
-export async function isolateNativeMapAmbient(live:LiveGame,map:string){
+export async function isolateNativeMapAmbient(live:LiveGame,map:string,types:string[]=[]){
  return live.admin(`output=(()=>{
   if(globalThis.__e2eAmbientIsolation)throw Error('Ambient isolation already owned');
-  const state={map:${JSON.stringify(map)},original:new_monster,objects:new Map(),created:[],respawns:[]};
-  const retain=m=>{if(!m||m.map!==state.map)return;state.objects.set(String(m.id),m);remove_monster(m,{method:'disappear',nospawn:true});};
-  state.wrapper=function(...args){const m=state.original.apply(this,args);if(!(args[2]?.temp&&args[1]?.__e2eAmbientExempt)&&m?.map===state.map){state.created.push({id:String(m.id),type:m.type,map:m.map,in:m.in});retain(m);}return m;};
+  const state={map:${JSON.stringify(map)},types:${JSON.stringify(types)},original:new_monster,objects:new Map(),created:[],respawns:[]};
+  const matches=m=>m?.map===state.map&&(!state.types.length||state.types.includes(m.type));
+  const retain=m=>{if(!matches(m))return;state.objects.set(String(m.id),m);remove_monster(m,{method:'disappear',nospawn:true});};
+  state.wrapper=function(...args){const m=state.original.apply(this,args);if(!(args[2]?.temp&&args[1]?.__e2eAmbientExempt)&&matches(m)){state.created.push({id:String(m.id),type:m.type,map:m.map,in:m.in});retain(m);}return m;};
   globalThis.__e2eAmbientIsolation=state;new_monster=state.wrapper;
   for(const m of Object.values(instances[state.map].monsters))retain(m);
-  for(let i=monster_respawns.length-1;i>=0;i--)if(monster_respawns[i][0]?.map===state.map)state.respawns.push(monster_respawns.splice(i,1)[0]);
-  return {map:state.map,retained:[...state.objects.values()].map(m=>({id:String(m.id),type:m.type,map:m.map,in:m.in})),queued:state.respawns.length};
+  for(let i=monster_respawns.length-1;i>=0;i--)if(matches(monster_respawns[i][0]))state.respawns.push(monster_respawns.splice(i,1)[0]);
+  return {map:state.map,types:state.types,retained:[...state.objects.values()].map(m=>({id:String(m.id),type:m.type,map:m.map,in:m.in})),queued:state.respawns.length};
  })()`);
 }
 export async function restoreNativeMapAmbient(live:LiveGame,allowAbsent=false){

@@ -1,6 +1,7 @@
+import {isLoopback} from './game/addresses.cjs';
 import type { BrowserContext, Page, Frame } from '@playwright/test';
 import {randomUUID} from 'node:crypto';
-import {installCompanionGraphicsDiagnostic} from './native-graphics-diagnostic.js';
+import {installCompanionGraphicsDiagnostic} from './native-graphics-diagnostic.ts';
 
 export interface LiveClientOptions {
   webUrl: string;
@@ -24,7 +25,7 @@ export interface LiveClient {
 /** Connect an unmodified upstream client and run the maintained production CODE loader. */
 export async function launchGameClient(context: BrowserContext, options: LiveClientOptions): Promise<LiveClient> {
   for (const address of [options.webUrl, options.coordinatorUrl]) {
-    if (!['127.0.0.1', 'localhost'].includes(new URL(address).hostname)) throw new Error('Live E2E requires loopback services');
+    if (!isLoopback(new URL(address).hostname)) throw new Error('Live E2E requires loopback services');
   }
   const page = options.primary?.page || await context.newPage();
   if(!options.primary)await installCompanionGraphicsDiagnostic(context,options,process.env.E2E_COMPANION_NO_GRAPHICS==='1');
@@ -54,7 +55,14 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
   await native.waitForFunction(name => {
     const game = window as any;
     return game.character?.name === name && game.socket?.connected && typeof game.start_runner === 'function';
-  }, options.name, { timeout: 90_000 });
+  }, options.name, { timeout: 90_000, polling: 100 }).catch(async error=>{
+    const observation=await native.evaluate(()=>{
+      const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+      return {at:Date.now(),url:location.href,visibility:document.visibilityState,name:game.character?.name,
+        connected:game.socket?.connected,startRunner:typeof game.start_runner,codeStatus:runner?.__partyStatusSuccessAt};
+    }).catch(String);
+    throw Error(String(error)+'\nNative readiness observation: '+JSON.stringify({expected:options.name,observation}));
+  });
   await installNativeObservers(native);
   await native.evaluate(({ coordinator, primary }) => {
     const game = window as any;
@@ -63,7 +71,14 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
   await native.waitForFunction(() => {
     const runner = (document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
     return runner?.__partyStatusSuccessAt > 0 && runner?.partyRoleRunner;
-  }, undefined, { timeout: 90_000 });
+  }, undefined, { timeout: 90_000, polling: 100 }).catch(async error=>{
+    const diagnostic=await native.evaluate(()=>{
+      const w=window as any,r=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
+      const clock=(c:any)=>c&&({now:c.now(),errors:c.errors,state:c.state,rate:c.rate});
+      return {gameClock:clock(w.__e2eChronalClock),codeClock:clock(r?.__e2eChronalClock),codeLocation:r?.location?.href,role:!!r?.partyRoleRunner,status:r?.__partyStatusSuccessAt};
+    }).catch(String);
+    throw Error(String(error)+'\nNative startup observations: '+JSON.stringify(diagnostic));
+  });
   const eventLedger:Array<{sequence:number;[key:string]:unknown}>=[];
   const eventKeys:string[]=[];
   const seenEvents=new Set<string>();
@@ -151,8 +166,12 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
           if(group?.independentApproach&&(observed[targetKey]||0)<3&&(Object.keys(observed).length<10||targetKey in observed)){
             observed[targetKey]=(observed[targetKey]||0)+1;
             game.__e2eIndependentObservedAttackCount=(game.__e2eIndependentObservedAttackCount||0)+1;
+            const codeAt=typeof runner?.Date?.now==='function'?runner.Date.now():undefined;
             independent={selection:group.selection,target:String(group.target?.id),committed:group.committed,confirmation:group.independentConfirmation,handoffTiming:group.handoffTiming,
-              serverAt:Date.now()+Number(runner?.sharedRoutine?.queueClockOffset?.()||0),
+              // The production readiness gate executes in CODE, not its game
+              // parent, which can occupy an adjacent acknowledged clock window.
+              gameAt:Date.now(),codeAt,
+              serverAt:codeAt===undefined?undefined:codeAt+Number(runner?.sharedRoutine?.queueClockOffset?.()||0),
               ready:group.independentReadiness&&Object.fromEntries(Object.entries(group.independentReadiness).map(([name,value]:[string,any])=>[name,
                 value&&{selection:value.selection,target:value.target,at:value.at,ready:value.ready,confirmation:value.confirmation}]))};
           }

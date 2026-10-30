@@ -1,3 +1,4 @@
+import {waitForGameplay} from './network-clock';
 import {test,expect} from './live-fixtures';
 
 for (const automatic of [false,true]) {
@@ -25,7 +26,7 @@ for (const automatic of [false,true]) {
     if(automatic){
       await expect(tile).toContainText('Auto exchange');
       await live.post('/merchant/force-stand',{enabled:false});
-      await page.waitForTimeout(10_000);
+      await waitForGameplay(10_000);
       expect((await live.clients[fighter].snapshot()).items[20]?.q).toBe(1);
       await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'automatic exchange':true}});
     }else{
@@ -57,10 +58,10 @@ for (const automatic of [false,true]) {
     await live.post('/merchant/force-stand',{enabled:false});
     if(automatic){
       await expect.poll(async()=>(await live.clients[merchant].snapshot()).items.filter((item:any)=>item?.name==='armorbox').length,{timeout:120_000}).toBe(1);
-      await page.waitForTimeout(10_000);
+      await waitForGameplay(10_000);
       expect((await live.clients[merchant].snapshot()).items.filter((item:any)=>item?.name==='armorbox')).toHaveLength(1);
     }else{
-      await page.waitForTimeout(10_000);
+      await waitForGameplay(10_000);
       expect((await live.clients[fighter].snapshot()).items[20]).toMatchObject({name:'armorbox',q:1});
     }
     expect((await live.clients[fighter].events()).filter((event:any)=>event.event==='game_response'&&event.data?.place==='exchange')).toHaveLength(0);

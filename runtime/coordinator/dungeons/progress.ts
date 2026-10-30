@@ -12,7 +12,7 @@ export function createCaveProgress(party: DungeonParty, ports: Ports) {
     return Object.entries(d.commands).every(([name, command]) => actionSettled(name,command));
   }
   function actionSettled(name: string, command: CaveCommand) {
-    if (['move','gather'].includes(command.action)) return true;
+    if (['move','gather','talk'].includes(command.action)) return true;
     if (command.action === 'vote' && observation(name)?.cave?.choice?.resolved) return true;
     const receipt = observation(name)?.action;
     return receipt?.id === command.id && receipt.status === 'complete';

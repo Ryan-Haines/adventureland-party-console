@@ -6,6 +6,7 @@ import type { CommandOutcome } from "../navigation/manual-commands.ts";
 import type { MerchantCommand } from "../merchant/work.ts";
 import { guardBankWithdrawal } from "./withdrawal-bank-guard.ts";
 import { merchantWeaponCompatible } from './merchant-item-commands.ts';
+import { entryMeta } from './catalog-meta.ts';
 
 interface Delivery extends DeliveryRequest {
   slot: number;
@@ -28,6 +29,7 @@ type TransferState = Parameters<typeof guardBankWithdrawal>[0] & {
   bankbois: Record<string, { name: string; items?: (InventoryEntry | null)[] }>;
   commands: Record<string, MerchantCommand | undefined>;
   upgrades: Record<string, import('./upgrade-marks.ts').UpgradeMark[] | undefined>;
+  merchantCatalog?: unknown;
 }
 interface TransferPorts {
   managed(name: unknown): boolean;
@@ -56,7 +58,8 @@ export function createTransferCommands(state: TransferState, ports: TransferPort
     // inventory position. An explicit slot, when supplied, still must match.
     const entry = state.statuses?.[name]?.items?.find(candidate => candidate?.item &&
       (body.slot === undefined || candidate.slot === body.slot) && ports.sameItem(candidate.item, item));
-    if (!entry?.meta?.definition || typeof entry.slot !== 'number' || !merchantWeaponCompatible(entry.meta.definition)) return;
+    const definition = entryMeta(state.merchantCatalog, entry)?.definition;
+    if (!entry || !definition || typeof entry.slot !== 'number' || !merchantWeaponCompatible(definition)) return;
     state.merchantWeapon = {item};
     ports.removeReservations(name, entry.slot, item);
     ports.persist();
@@ -141,7 +144,7 @@ export function createTransferCommands(state: TransferState, ports: TransferPort
   function validBankUpgrade(entry: InventoryEntry | null | undefined, item: Item, tiers: number): boolean {
     if (!entry?.item || !ports.sameItem(entry.item, item)) return false;
     if (!validUpgradeTiers(item, tiers)) return false;
-    return !!entry.meta?.upgradeable && !item.l && !item.b;
+    return !!entryMeta(state.merchantCatalog, entry)?.upgradeable && !item.l && !item.b;
   }
   function validUpgradeTiers(item: Item, tiers: number): boolean {
     return Number.isSafeInteger(tiers) && tiers >= 1 && tiers + (Number(item.level) || 0) <= 13;

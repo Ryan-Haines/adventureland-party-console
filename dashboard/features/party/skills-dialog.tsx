@@ -11,11 +11,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
 import { useState } from "react";
-import { DefinitionGrid } from "./definition-grid";
 import { ItemSprite } from "./item-sprite";
 import { SkillClass } from "./skill-class";
 import { SkillEntry } from "./skill-entry";
 import { skillRangeLabel } from "./skill-range-label";
+import { SkillCards } from "./skill-card";
 
 export function SkillsDialog({
   open,
@@ -49,9 +49,9 @@ export function SkillsDialog({
         style={{ width: "calc(100vw - 2rem)", maxWidth: "1500px" }}
       >
         <DialogHeader>
-          <DialogTitle>Class skills</DialogTitle>
+          <DialogTitle>Class skills and conditions</DialogTitle>
           <DialogDescription className="text-emerald-100/55">
-            Browse every class-bound skill and the shared game actions. Click any skill for its
+            Browse every class-bound skill, shared game action and condition. Click an entry for its
             complete definition.
           </DialogDescription>
         </DialogHeader>
@@ -142,9 +142,9 @@ export function SkillsDialog({
                     equipment. “Not specified” means the game definition does not supply a range.
                   </p>
                 </div>
-                <DefinitionGrid
-                  value={selected.definition}
-                  omit={["name", "skin", "explanation"]}
+                <SkillCards
+                  skill={selected}
+                  skillName={(id) => classes.flatMap((entry) => entry.skills).find((skill) => skill.id === id)?.name}
                 />
               </div>
             )}

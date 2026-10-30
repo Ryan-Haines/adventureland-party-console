@@ -1,0 +1,9 @@
+{
+  "revision": "0d8856111c945d5baacb2b0eeeb31a86cbe93a3b",
+  "scenario": "Halloween mrpumpkin stages from native timer, fights, recovers death and returns after deselection with a lost final native completion response",
+  "workers": 1,
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "assertions": "Identical native death, reentry, released pre-barrier, terminal settlement, ownership, one leave, one acknowledgement, peer completion and saved-checkpoint physical arrival",
+  "native": {"passed": true, "clockRate": 1, "scenarioWallSeconds": 217.44, "returnClockSeconds": 94.743, "verifiedEvidenceFiles": 53, "archive": ".build/ci-recovery/terminal-native"},
+  "chronal": {"passed": true, "clockRate": 4, "scenarioWallSeconds": 59.154, "returnClockSeconds": 71, "verifiedEvidenceFiles": 61, "archive": ".build/ci-recovery/terminal-chronal"}
+}

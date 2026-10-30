@@ -446,7 +446,7 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
               {autoNpcSaleItem?.character
                 ? `Matching items on ${autoNpcSaleItem.character} will be collected and sold by the merchant. This`
                 : 'Every future matching item received by the merchant will be queued for NPC sale. This'}
-              remains active until you clear the rule.
+              {' '}remains active until you clear the rule.
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
@@ -474,6 +474,26 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
                   property.
                 </p>
               </div>
+            ) : null}
+            {autoNpcSaleItem && !autoNpcSaleItem.character ? (
+              <label htmlFor="auto-npc-sale-keep" className="grid gap-1 text-sm text-orange-100">
+                <span>Number to keep reserved</span>
+                <input
+                  id="auto-npc-sale-keep"
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  placeholder="Sell every copy"
+                  value={model.autoNpcSaleKeep}
+                  onChange={(event) => model.setAutoNpcSaleKeep(event.target.value)}
+                  className="rounded border border-orange-800 bg-[#0b0603] px-2 py-1 font-mono text-orange-50 placeholder:text-orange-100/40"
+                />
+                <span className="text-xs text-orange-100/55">
+                  Copies to keep across the merchant&apos;s bag, bank and BankBois. Only the rest is sold;
+                  Enter 0 to sell every copy.
+                </span>
+              </label>
             ) : null}
           </div>
           {model.autoNpcSaleError && <p role="alert" className="text-sm text-rose-200">{model.autoNpcSaleError}</p>}

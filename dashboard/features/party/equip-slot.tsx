@@ -22,7 +22,8 @@ import { StatScrollMark } from "./stat-scroll-mark";
 import { UpgradeActions } from "./upgrade-actions";
 import { UpgradeMark } from "./upgrade-mark";
 import { upgradeRuleTiers } from "./upgrade-rule-tiers";
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
+import {formatDuration} from './format-duration';
 
 export const EquipSlot = memo(function EquipSlot({
   slot,
@@ -59,6 +60,13 @@ export const EquipSlot = memo(function EquipSlot({
   onStatScroll: (slot: string, item: Item, remove?: boolean) => void;
   onBuy: (item: Item) => void;
 }) {
+  const [now,setNow]=useState(Date.now);
+  const expiry=slot==='elixir' && equipped?.item.expires ? new Date(equipped.item.expires).getTime() : 0;
+  useEffect(()=>{
+    if (!expiry) return;
+    const timer=setInterval(()=>{if(!document.hidden)setNow(Date.now());},1000);
+    return ()=>clearInterval(timer);
+  },[expiry]);
   const banner = itemActionBanner([
     !!statScrollMark && {action:'stat',label:'Stat scroll'},
     !!mark && {action:'upgrade',automatic:!!mark.auto,label:`${mark.auto ? 'Auto' : '+'+(mark.item.level || 0)} → +${Number(mark.item.level || 0)+Number(mark.tiers || 1)}`},
@@ -68,8 +76,8 @@ export const EquipSlot = memo(function EquipSlot({
       <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded border border-emerald-950 bg-black">
         {equipped?.meta?.sprite && <SpriteCrop sprite={equipped.meta.sprite} size={40} />}
         {equipped && (
-          <span className="absolute bottom-0.5 right-0.5 z-10 min-w-4 rounded bg-black/85 px-1 text-center font-mono text-[10px] leading-4 text-emerald-300">
-            +{equipped.item.level || 0}
+          <span className="absolute bottom-0.5 right-0.5 z-10 min-w-4 whitespace-nowrap rounded bg-black/85 px-1 text-center font-mono text-[10px] leading-4 text-emerald-300">
+            {slot === 'elixir' ? expiry ? formatDuration(Math.ceil(Math.max(0,expiry-now)/1000)*1000).split(' ')[0] : 'Active' : `+${equipped.item.level || 0}`}
           </span>
         )}
         {equipped?.item.stat_type ? (
@@ -109,6 +117,8 @@ export const EquipSlot = memo(function EquipSlot({
   return (
     <ContextMenu>
       <ContextMenuTrigger
+        aria-label={slot === "elixir" ? "Equipped elixir" : undefined}
+        title={slot === "elixir" && expiry ? formatDuration(Math.ceil(Math.max(0,expiry-now)/1000)*1000) : undefined}
         onClick={() => onSelect({ slot: -1, item: equipped.item, meta: equipped.meta })}
         className={classes}
       >

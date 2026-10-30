@@ -1,4 +1,5 @@
 import { offeringStock } from '../inventory/offering-stock.ts';
+import { accountGoldSnapshot } from './account-gold.ts';
 import { characterConnections } from '../../roster/connection-status.ts';
 import { gameLogs } from "./game-logs.ts";
 import { requestText, type HttpRequest, type HttpResponse } from "../http/contracts.ts";
@@ -14,7 +15,15 @@ import {
   inventoryCharacters,
   pendingCommands,
 } from "./public-state-characters.ts";
+import {
+  compactBank,
+  compactBankbois,
+  fullMetaBank,
+  fullMetaBankbois,
+  fullMetaStatuses,
+} from "./item-meta-projection.ts";
 import { giveawayDirectory } from "./giveaway-directory.ts";
+import { revisionSections, sendWithRevision } from "./section-revision.ts";
 import { randomUUID } from "node:crypto";
 import { requestObject } from "../http/contracts.ts";
 
@@ -63,6 +72,7 @@ function giveawayPayload(
  * what the dashboard needs to poll quickly.
  */
 const configFields = [
+  "characterSnapshots",
   "characterAppearances", "merchantRules",
   "bankboiPrefix", "anniversaryAutoChat", "farmingProfiles",
   "passiveRareHunts", "passiveHunting", "phoenixRouteOrder",
@@ -130,10 +140,11 @@ function fullPayload(
           )
         : publicStateFields,
     ),
-    ...(dashboardCore ? {} : { characters: state.statuses }),
+    ...(dashboardCore ? {} : { characters: fullMetaStatuses(state.statuses, state.merchantCatalog) }),
     roster: ports.roster(),
     activeSlots: ports.slots(),
-    characterConnections: characterConnections(state, ports.now(), name =>
+    characterConnections: characterConnections(state, ports.now(),
+      (name) =>
       (state.statuses[name]?.runtime === 'native' || state.statuses[name]?.runtime === 'headless') &&
       state.statuses[name].seenAt > ports.now() - 5000),
     classChoices: ports.classes,
@@ -146,10 +157,14 @@ function fullPayload(
     merchantCurrent: ports.job(state.merchantCurrent),
     mluckSchedule: ports.luckSchedule(),
     aldata,
-    ...(dashboardCore ? {} : { bank: state.bankSnapshot, bankVaults: state.bankVaults || [] }),
+    ...(dashboardCore
+      ? {}
+      : { bank: fullMetaBank(state.bankSnapshot, state.merchantCatalog), bankVaults: state.bankVaults || [] }),
     ...catalog,
     ...(dashboardCore ? {} : { ponty: state.ponty }),
-    bankbois: dashboardCore ? bankboiSummaries(ports.bankbois()) : ports.bankbois(),
+    bankbois: dashboardCore
+      ? bankboiSummaries(ports.bankbois())
+      : fullMetaBankbois(ports.bankbois(), state.merchantCatalog),
     bankboiQueue: state.bankboiQueue,
     bankboiTransaction: state.bankboiTransaction,
     bankboiCreateSingleFlight: true,
@@ -236,14 +251,16 @@ export function createPublicStateRoute(state: Readonly<PublicState>, ports: Publ
     const section = requestText(request.query?.section || "");
     const sections: Record<string, () => unknown> = {
       fast: () => fastPayload(state, ports),
-      inventory: () => ({ characters: inventoryCharacters(state.statuses) }),
+      inventory: () => ({ characters: inventoryCharacters(state.statuses, state.merchantCatalog) }),
       logs: () => ({ gameLogs, combatLogs: state.combatLogs, merchantActivity: state.merchantActivity }),
       bank: () => ({
-        bank: state.bankSnapshot,
+        bank: compactBank(state.bankSnapshot, state.merchantCatalog),
         bankVaults: state.bankVaults || [],
         bankCurrent: state.bankCurrent,
         bankQueue: state.bankQueue,
-        ...(request.query?.dashboard === "1" ? { bankbois: ports.bankbois() } : {}),
+        ...(request.query?.dashboard === "1"
+          ? { bankbois: compactBankbois(ports.bankbois(), state.merchantCatalog) }
+          : {}),
       }),
       market: () => ({
         aldata: ports.aldata(),
@@ -260,6 +277,7 @@ export function createPublicStateRoute(state: Readonly<PublicState>, ports: Publ
               serverNow: ports.now(),
               accountId: accountId(state),
               bankGold: requestObject(state.bankSnapshot).gold ?? null,
+              accountGold: accountGoldSnapshot(state.bankSnapshot, ports.slots(), ports.bankbois(), state.statuses),
               characterDetails: diagnosticCharacters(dashboardCharacters(state, ports)),
               characters: Object.fromEntries(
                 Object.entries(dashboardCharacters(state, ports)).map(([name, status]) => [
@@ -275,11 +293,13 @@ export function createPublicStateRoute(state: Readonly<PublicState>, ports: Publ
               referenceRevision: referenceRevision(),
             }),
     };
-    return response.json(
-      Object.hasOwn(sections, section)
-        ? sections[section]()
-        : fullPayload(state, ports, request.query?.catalog === "0"),
-    );
+    if (!section) return response.json(fullPayload(state, ports, request.query?.catalog === "0"));
+    // An unknown section answers 400, so a typo never turns a small poll
+    // into the multi-megabyte full payload.
+    if (!Object.hasOwn(sections, section))
+      return response.status(400).json({ error: "Unknown state section", sections: Object.keys(sections) });
+    if (revisionSections.has(section)) return sendWithRevision(request, response, sections[section]());
+    return response.json(sections[section]());
   };
 }
 

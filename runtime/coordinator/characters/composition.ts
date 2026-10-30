@@ -31,6 +31,7 @@ type ManagerInput = Pick<
   | "fork"
   | "pipe"
   | "monitor"
+  | "fullCaveFloors"
 >;
 interface CharacterServicesInput extends ManagerInput {
   configuration: Configuration;
@@ -82,6 +83,7 @@ export function createCoordinatorCharacterServices(input: CharacterServicesInput
     fork: input.fork,
     pipe: input.pipe,
     monitor: input.monitor,
+    fullCaveFloors: input.fullCaveFloors,
   });
   const code = createCharacterCode({
     clock: input.clock,

@@ -7,7 +7,8 @@ const source = fs.readFileSync(path.join(__dirname, '../../characters/shared.js'
 const extract = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
 test('upgrade and compound placeholders expose real server chance, smoke and level transition', () => {
   const r = require('./helpers/shared-context.cjs').createSharedContext({ activeUpgrade: { slot: 0, item: { name: 'wshoes', level: 6, stat_type: 'int' } },
-    fingerprint: item => item && { ...item }, itemDefinition: item => ({ sprite: { name: item.name } }) });
+    fingerprint: item => item && { ...item }, itemDefinition: () => ({ properties: {} }),
+    G: { items: { placeholder: { skin: 'placeholder' } } }, itemSheetSprite: skin => ({ name: skin }) });
   vm.runInContext(extract('  function inventoryOperationEntry(', '  async function compoundConfirmed('), r);
   for (const [scroll, type] of [['scroll0', 'upgrade'], ['cscroll0', 'compound']]) {
     const entry = r.inventoryOperationEntry({ name: 'placeholder', p: { name: 'wshoes', level: 6, chance: 0.4215, scroll } }, 0);

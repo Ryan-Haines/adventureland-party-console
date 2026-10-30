@@ -7,6 +7,8 @@ export interface NpcSaleRule {
   item: Item;
   createdAt: number;
   character?: string;
+  /** #116: copies to keep across the merchant's bag, bank and BankBois; only the rest is sold. */
+  keep?: number;
 }
 export const npcSaleRuleKey = (item: Item, character?: string) =>
   character

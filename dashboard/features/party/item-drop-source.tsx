@@ -8,7 +8,7 @@ export type ItemDropSource = {
   quantity: number;
   goldPerKill?: number | null;
   threat?: number;
-  sourceType?: "monster" | "zone" | "world";
+  sourceType?: "monster" | "home" | "zone" | "world";
   mapId?: string;
   mapName?: string;
   baseRate?: number;

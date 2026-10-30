@@ -1,4 +1,5 @@
 import {test,expect} from './live-fixtures';
+import {gameplayTimers} from './network-clock';
 import {W,P,M} from './hunt-interruption-helpers';
 import {readFile,writeFile,mkdir,cp} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -13,6 +14,7 @@ test.use({liveHeadless:true,movementMode:'shadow',loadout:'god',initialPosition:
 test('one deployment barrier covers the native browser and real headless workers through coordinator restart',async({live},info)=>{
   test.setTimeout(360000);
   const names=[W,P,M],samples:any[]=[],hash=(text:string)=>createHash('sha256').update(text).digest('hex');
+  await writeFile(path.join(live.deploymentPaths.directory,'observe-console-maintenance'),'Observe real loader control receipts');
   await live.post('/merchant/force-stand',{enabled:true});await live.post('/focus',{monsterFocus:[],monsterPriorities:{}});
   for(const name of [P,M]){
     await live.post('/steam/action',{character:name,action:'logout'});
@@ -60,7 +62,7 @@ test('one deployment barrier covers the native browser and real headless workers
     return store.complete(path.dirname(directory),{schema:1,id,sourceHash:id,createdAt:new Date().toISOString(),components:{dashboard:hash('unchanged-dashboard'),coordinator:hash('coordinator-'+label),characters:manifest.generation},files});
   }
   const first=await stage('mixed-first',false),next=await stage('mixed-next',true);await store.setReferences({active:first.manifest.id,latest:next.manifest.id});
-  const drain=safeReload(live.deploymentPaths.directory,async(signal)=>{const response=await fetch(live.deploymentPaths.apiUrl+'/party-api/console-maintenance',{signal});return response.json();});
+  const drain=safeReload(live.deploymentPaths.directory,async(signal)=>{const response=await fetch(live.deploymentPaths.apiUrl+'/party-api/console-maintenance',{signal});return response.json();},{timers:gameplayTimers()});
   const driver=createDeploymentDriver({stopCoordinator:async()=>{},startCoordinator:async(directory)=>{const candidate=await store.verify(path.basename(path.dirname(directory)));await live.restartCoordinatorIdentity(candidate.manifest.id,candidate.manifest.components.coordinator);},
     activateDashboard:async()=>{throw Error('Gameplay-only deployment touched dashboard');},
     reloadCharacters:async(directory)=>{
@@ -79,9 +81,25 @@ test('one deployment barrier covers the native browser and real headless workers
     const final=await live.state();expect(final.characters[W].runtime).toBe('native');expect(final.characters[P].runtime).toBe('headless');expect(final.characters[M].runtime).toBe('headless');
     expect((await store.references()).active).toBe(next.manifest.id);expect(samples.some(sample=>names.every(name=>sample.reports[name].hold?.ready===true))).toBe(true);
     expect(final.characters[W].rip).toBe(false);
+    // Journal completion releases the host lease; client telemetry publishes
+    // that release separately. Do not issue the next journey into a held CODE
+    // generation and confuse its release with native planner readiness.
+    await expect.poll(async()=>{
+      const state=await live.state();
+      const released=Object.fromEntries(names.map(name=>[name,{runtime:state.characters[name]?.runtime,seenAt:state.characters[name]?.seenAt,maintenance:state.characters[name]?.consoleMaintenance}]));
+      samples.push({at:Date.now(),maintenanceRelease:released});
+      return names.every(name=>state.characters[name]?.seenAt&&Date.now()-state.characters[name].seenAt<3000&&!state.characters[name].consoleMaintenance);
+    },{timeout:60000,message:'Fresh native and headless reports must acknowledge maintenance release before the next journey'}).toBe(true);
     await expect.poll(()=>live.admin(`output=(()=>{const p=get_player('${P}');return !!p&&!p.moving;})()`),{timeout:10000,message:'Native headless movement must settle before declaring the post-retirement leg'}).toBe(true);
     const postRetirementDestination=await live.admin(`output=(()=>{const p=get_player('${P}');if(!p||p.moving)throw Error('Headless Priest is not settled');for(const [dx,dy] of [[75,0],[-75,0],[0,75],[0,-75]]){const point={map:p.map,x:p.x+dx,y:p.y+dy};if(can_move({...p,going_x:point.x,going_y:point.y})&&can_move({...p,x:point.x,y:point.y,going_x:point.x,going_y:point.y}))return point;}throw Error('No native post-retirement collision-clear endpoint');})()`);
     await nativeWalking(postRetirementDestination,'after CODE retirement');
     await info.attach('native-mixed-deployment-barrier',{body:JSON.stringify({operation,journal:await store.journal(),samples}),contentType:'application/json'});
-  }finally{await info.attach('native-headless-planner-code-retirement',{body:JSON.stringify({origin,destination,movementSamples,final:await live.state()}),contentType:'application/json'});await drain.releaseSafeWait((await store.journal())?.id||'');}
+  }finally{
+    const host={at:Date.now(),lease:drain.lease,
+      file:await readFile(path.join(live.deploymentPaths.directory,'updates/pause.json'),'utf8').then(JSON.parse).catch(error=>({error:String(error)})),
+      control:await fetch(live.deploymentPaths.apiUrl+'/party-api/console-deployment').then(response=>response.json())};
+    await info.attach('native-headless-planner-code-retirement',{body:JSON.stringify({origin,destination,movementSamples,samples,host,journal:await store.journal(),final:await live.state()}),contentType:'application/json'});
+    await info.attach('native-maintenance-control-receipts',{body:await readFile(path.join(live.deploymentPaths.directory,'console-maintenance-observations.jsonl'),'utf8').catch(String),contentType:'text/plain'});
+    await drain.releaseSafeWait((await store.journal())?.id||'');
+  }
 });

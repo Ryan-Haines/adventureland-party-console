@@ -1,5 +1,9 @@
 "use client";
 
+import { useItemSelection, BatchItemActions } from './item-selection';
+import { BankProductionActions } from './bank-production-actions';
+import type { MerchantExchangeItem } from './merchant-exchange-item';
+
 import { BankSortControl, type BankSortState } from "./bank-sort-control";
 import { automaticCommerceRuleKey } from "./automatic-commerce-rule-key";
 import { BankItemBanner, type BankItemRules } from './bank-item-banner';
@@ -148,6 +152,11 @@ export const BankSheet = memo(function BankSheet({
 
   onDeconstruction,
   onUpgrade,
+  onBatchCommand,
+  onBatchError,
+  onExchange,
+  onCompound,
+  exchangeCatalog = [],
   onClearMarks,
   onAutoStand,
   onAutoNpcSale,
@@ -225,6 +234,21 @@ export const BankSheet = memo(function BankSheet({
   onNpcSale: (pack: string, entry: InventoryEntry, all?: boolean) => void;
 
   onDeconstruction: (pack: string, entry: InventoryEntry, all: boolean, auto?: boolean) => void;
+  onBatchCommand: (
+    type: string,
+    pack: string,
+    entry: InventoryEntry,
+    extra?: Record<string, unknown>,
+  ) => Promise<unknown>;
+  onBatchError: (message: string) => void;
+  exchangeCatalog?: MerchantExchangeItem[];
+  onExchange: (pack: string, entry: InventoryEntry, auto: boolean) => void;
+  onCompound: (
+    pack: string,
+    entry: InventoryEntry,
+    tier: number,
+    auto: boolean,
+  ) => void;
   onUpgrade: (pack: string, entry: InventoryEntry, tiers: number, auto: boolean) => void;
   onClearMarks: (pack: string, entry: InventoryEntry) => void;
   onAutoStand: (entry: InventoryEntry) => void;
@@ -240,26 +264,103 @@ export const BankSheet = memo(function BankSheet({
 
 
 
+  const selectionEntries = [
+    ...Object.entries(bank?.packs || {}).flatMap(([pack, entries]) =>
+      entries.flatMap((entry) => (entry ? [{ ...entry, pack }] : [])),
+    ),
+    ...bankbois.flatMap((worker) =>
+      (worker.items ||
+    []).flatMap((entry) =>
+        entry ? [{ ...entry, pack: `bankboi:${worker.name}` }] : [],
+      ),
+    ),
+  ];
+  const selection = useItemSelection(
+    selectionEntries,
+    (entry) => `${entry.pack}:${entry.slot}`,
+  );
+  const selectable = (pack: string, entry: InventoryEntry) => ({
+    ...entry,
+    pack,
+  });
+  const exchangeable = (entry: InventoryEntry) =>
+    exchangeCatalog.some(
+      (choice) =>
+        !choice.reward &&
+        choice.id === entry.item.name &&
+        choice.level === (entry.item.level || 0),
+    );
+  const batch = (pack: string, entry: InventoryEntry) =>
+    selection.forEntry(selectable(pack, entry));
+  const production = (pack: string, entry: InventoryEntry) => (
+    <BankProductionActions
+      entry={{
+        ...entry,
+        meta:
+          entry.meta ||
+          catalog.find((item) => item.id === entry.item.name)?.meta,
+      }}
+      exchangeable={exchangeable(entry)}
+      onExchange={(auto) => onExchange(pack, entry, auto)}
+      onCompound={(tier, auto) => onCompound(pack, entry, tier, auto)}
+    />
+  );
+  const sourcePack = (
+    pack: string,
+    entry: InventoryEntry,
+    item: InventoryEntry,
+  ) => batch(pack, entry).find((e) => e === item)!.pack;
+  const batchMenu = (pack: string, entry: InventoryEntry) => (
+    <BatchItemActions
+      entries={batch(pack, entry)}
+      merchant={!!merchant}
+      onError={onBatchError}
+      onBank={(item) =>
+        !marked(sourcePack(pack, entry, item), item)
+          ? onBatchCommand('withdraw', sourcePack(pack, entry, item), item, {
+              markAll: false,
+            })
+          : undefined
+      }
+      onUpgrade={(item) =>
+        onBatchCommand('withdraw', sourcePack(pack, entry, item), item, {
+          markAll: false,
+          upgradeTiers: 1,
+        })
+      }
+      onCommand={(type, item, extra) =>
+        onBatchCommand(type, sourcePack(pack, entry, item), item, extra)
+      }
+      onExchange={(item) =>
+        onBatchCommand('exchange', sourcePack(pack, entry, item), item)
+      }
+      exchangeable={exchangeable}
+      onCompound={(item) =>
+        onBatchCommand('compound-mark', sourcePack(pack, entry, item), item)
+      }
+    />
+  );
   const [unlocking, setUnlocking] = useState<BankVault | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const query = search.trim().toLowerCase();
-  const matchesSearch = (entry: InventoryEntry) => !query ||
-    [entry.item.name, entry.meta?.definition.name].some(name =>
-      String(name || "").toLowerCase().includes(query),
+  const matchesSearch = (entry: InventoryEntry) =>
+    !query ||
+    [entry.item.name, entry.meta?.definition.name].some((name) =>
+      String(name || '')
+        .toLowerCase()
+        .includes(query),
     );
 
-  const [unlockKind, setUnlockKind] = useState<"key" | "gold">("gold");
+  const [unlockKind, setUnlockKind] = useState<'key' | 'gold'>('gold');
 
   const [bankboiBusy, setBankboiBusy] = useState(false);
 
   const [confirmFirstBankboi, setConfirmFirstBankboi] = useState(false);
 
   const [bankboiCreateResult, setBankboiCreateResult] = useState<{
-
     ok: boolean;
 
     message: string;
-
   } | null>(null);
 
   const [deleteBankboi, setDeleteBankboi] = useState<string | null>(null);
@@ -267,476 +368,415 @@ export const BankSheet = memo(function BankSheet({
   const creatingBankboi = useRef(false);
 
   const createBankboi = async () => {
+    if (creatingBankboi.current) return;
 
-                  if (creatingBankboi.current) return;
+    creatingBankboi.current = true;
 
-                  creatingBankboi.current = true;
+    setBankboiBusy(true);
 
-                  setBankboiBusy(true);
+    setBankboiCreateResult(null);
 
-                  setBankboiCreateResult(null);
+    try {
+      const name = await onCreateBankboi();
 
-                  try {
+      setConfirmFirstBankboi(false);
 
-                    const name = await onCreateBankboi();
+      setBankboiCreateResult({
+        ok: true,
 
-                    setConfirmFirstBankboi(false);
+        message: `${name} created · provisioning queued`,
+      });
+    } catch (error) {
+      setBankboiCreateResult({
+        ok: false,
 
-                    setBankboiCreateResult({
+        message:
+          error instanceof Error ? error.message : 'Bankboi creation failed',
+      });
+    } finally {
+      creatingBankboi.current = false;
 
-                      ok: true,
-
-                      message: `${name} created · provisioning queued`,
-
-                    });
-
-                  } catch (error) {
-
-                    setBankboiCreateResult({
-
-                      ok: false,
-
-                      message: error instanceof Error ? error.message : "Bankboi creation failed",
-
-                    });
-
-                  } finally {
-
-                    creatingBankboi.current = false;
-
-                    setBankboiBusy(false);
-
-                  }
-
-                };
+      setBankboiBusy(false);
+    }
+  };
 
   const standFull = standIsFull(standListings, standBids);
 
   const marked = (pack: string, entry: InventoryEntry) =>
-
     !!merchant &&
-
     (withdrawals[merchant] || []).some(
-
       (request) =>
-
-        request.pack === pack && request.slot === entry.slot && same(request.item, entry.item),
-
+        request.pack === pack &&
+        request.slot === entry.slot &&
+        same(request.item, entry.item),
     );
 
   const standMarked = (pack: string, entry: InventoryEntry) =>
-
     (standListings || []).some(
-
       (listing) =>
-
         listing.bankPack === pack &&
-
         listing.bankSlot === entry.slot &&
-
         same(listing.item, entry.item),
-
     );
 
   const npcMarked = (pack: string, entry: InventoryEntry) =>
-
     npcSaleMarks.some(
-
-      (mark) => !mark.auto && mark.pack === pack && mark.slot === entry.slot && same(mark.item, entry.item),
-
+      (mark) =>
+        !mark.auto &&
+        mark.pack === pack &&
+        mark.slot === entry.slot &&
+        same(mark.item, entry.item),
     );
 
   const unlockedPacks = new Set(Object.keys(bank?.packs || {}));
 
   const keyQuantity = (key: string) => {
-
     let quantity = (merchantState?.items || []).reduce(
-
-      (sum, entry) => sum + (entry?.item.name === key ? Number(entry.item.q || 1) : 0),
+      (sum, entry) =>
+        sum + (entry?.item.name === key ? Number(entry.item.q || 1) : 0),
 
       0,
-
     );
 
     Object.values(bank?.packs || {}).forEach((entries) =>
-
       entries.forEach((entry) => {
-
         if (entry?.item.name === key) quantity += Number(entry.item.q || 1);
-
       }),
-
     );
 
     return quantity;
-
   };
 
   const floorAccessible = (floor: string) =>
-
-    floor === "bank" ||
-
+    floor === 'bank' ||
     vaults.some(
-
-      (vault) => vault.floor === floor && vault.gold === 0 && unlockedPacks.has(vault.pack),
-
+      (vault) =>
+        vault.floor === floor &&
+        vault.gold === 0 &&
+        unlockedPacks.has(vault.pack),
     );
 
   const floorNames: Record<string, string> = {
+    bank: 'Main bank',
 
-    bank: "Main bank",
+    bank_b: 'Bank basement',
 
-    bank_b: "Bank basement",
-
-    bank_u: "Bank underground",
-
+    bank_u: 'Bank underground',
   };
 
   return (
-
     <>
-
       <Dialog open={open} onOpenChange={onOpenChange}>
-
         <DialogContent className="max-h-[90vh] w-[min(1500px,calc(100vw-2rem))] max-w-none overflow-y-auto border-emerald-900 bg-[#091614] text-emerald-50 sm:max-w-none">
-
           <DialogHeader>
-
             <DialogTitle className="text-emerald-50">Bank</DialogTitle>
 
-            <DialogDescription className="sr-only">Bank panes and overflow storage</DialogDescription>
+            <DialogDescription className="sr-only">
+              Bank panes and overflow storage
+            </DialogDescription>
 
-            {!bank && <p>No snapshot yet. Send a character to the bank once to load it.</p>}
-
+            {!bank && (
+              <p>
+                No snapshot yet. Send a character to the bank once to load it.
+              </p>
+            )}
           </DialogHeader>
           <Input
             type="search"
             aria-label="Search bank items"
             placeholder="Search by item name or ID…"
             value={search}
-            onChange={event => setSearch(event.target.value)}
+            onChange={(event) => setSearch(event.target.value)}
             className="border-emerald-700 bg-[#050b0a] text-emerald-50 placeholder:text-slate-400"
           />
           <BankSortControl state={bankSortState} />
 
-
-
           {bank && (
-
             <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-
               {Object.entries(bank.packs).map(([pack, items]) => (
-
                 <section key={pack}>
-
                   <div className="mb-2 flex items-center justify-between font-mono text-xs uppercase">
-
                     <h3 className="text-emerald-300">{pack}</h3>
 
                     {(() => {
-
                       const occupied = items.filter(Boolean).length;
 
-                      const usableItems = bankbois.length > 0 && pack === "items1" ? items.slice(0, 35) : items;
+                      const usableItems =
+                        bankbois.length > 0 && pack === 'items1'
+                          ? items.slice(0, 35)
+                          : items;
 
-                      const free = usableItems.length - usableItems.filter(Boolean).length;
+                      const free =
+                        usableItems.length - usableItems.filter(Boolean).length;
 
                       const color =
-
                         free < 5
-
-                          ? "text-rose-400"
-
+                          ? 'text-rose-400'
                           : free <= 10
-
-                            ? "text-orange-400"
-
-                            : "text-emerald-100/55";
+                            ? 'text-orange-400'
+                            : 'text-emerald-100/55';
 
                       return (
-
                         <span className={color} title={`${free} slots free`}>
-
                           {occupied}/{items.length}
-
                         </span>
-
                       );
-
                     })()}
-
                   </div>
 
                   <div className="grid grid-cols-7 gap-2">
-
                     {items.map((entry, i) => {
-
-                      const reserved = bankbois.length > 0 && pack === "items1" && i >= 35;
+                      const reserved =
+                        bankbois.length > 0 && pack === 'items1' && i >= 35;
 
                       return entry ? (
-
                         <ContextMenu key={i}>
-
                           <Tooltip>
-
                             <TooltipTrigger
-
                               render={
-
                                 <ContextMenuTrigger
+                                  render={<button type="button" />}
 
-                                  onClick={() => onSelect(pack, entry)}
+                                  onClick={(event) => {
+                                    if (
+                                      !selection.click(
+                                        event,
+                                        selectable(pack, entry),
+                                      )
+                                    )
+                                      onSelect(pack, entry);
+                                  }}
+                                  onContextMenu={() =>
+                                    selection.context(selectable(pack, entry))
+                                  }
+                                  aria-pressed={selection.has(
+                                    selectable(pack, entry),
+                                  )}
+                                  style={
+                                    selection.has(selectable(pack, entry))
+                                      ? {
+                                          outline: '3px solid #38bdf8',
+                                          outlineOffset: -3,
+                                        }
+                                      : undefined
+                                  }
 
                                   aria-label={String(
-
-                                    entry.meta?.definition.name || entry.item.name,
-
+                                    entry.meta?.definition.name ||
+                                      entry.item.name,
                                   )}
 
                                   className={`relative aspect-square overflow-hidden rounded border bg-black/35 transition-opacity hover:border-emerald-400 ${matchesSearch(entry) ? "opacity-100" : "opacity-25"} ${reserved ? "border-fuchsia-800" : marked(pack, entry) ? "border-amber-400" : "border-emerald-900"}`}
-
                                 />
-
                               }
-
                             >
-
-                              {entry.meta?.sprite && <ItemSprite sprite={entry.meta.sprite} />}{" "}
-
+                              {entry.meta?.sprite && (
+                                <ItemSprite sprite={entry.meta.sprite} />
+                              )}{' '}
                               {entry.item.level ? (
-
                                 <span className="absolute bottom-1 left-1 z-10 rounded bg-black/75 px-1 font-mono text-[10px] font-semibold text-emerald-300">
-
                                   +{entry.item.level}
-
                                 </span>
-
                               ) : null}
-
                               {entry.item.stat_type ? (
-
                                 <span
-
                                   className={`absolute left-1 top-1 z-10 rounded px-1 font-mono text-[9px] font-semibold uppercase ring-1 ${statBadgeClass(entry.item.stat_type)}`}
-
                                 >
-
                                   {entry.item.stat_type}
-
                                 </span>
-
                               ) : null}
-
                               {entry.item.q && entry.item.q > 1 ? (
-
                                 <span className="absolute bottom-1 right-1 z-10 rounded bg-black/70 px-1 text-[10px] text-amber-300">
-
                                   {entry.item.q}
-
                                 </span>
-
                               ) : null}
-
                               <MluckClover item={entry.item} />
-                              <BankItemBanner item={entry.item} rules={automaticRules} manualNpc={npcMarked(pack,entry)} />
-
+                              <BankItemBanner
+                                item={entry.item}
+                                rules={automaticRules}
+                                manualNpc={npcMarked(pack, entry)}
+                              />
                               {reserved ? (
-
                                 <span className="pointer-events-none absolute inset-x-[-20%] top-1/2 z-30 -rotate-45 border-y border-fuchsia-500/60 bg-black/80 py-0.5 text-center font-mono text-[8px] font-bold tracking-widest text-fuchsia-200">
-
                                   RESERVED
-
                                 </span>
-
                               ) : null}
-
-                              {standMarked(pack, entry) && !autoStandMarks[automaticCommerceRuleKey(entry.item)] ? (
-
+                              {standMarked(pack, entry) &&
+                              !autoStandMarks[
+                                automaticCommerceRuleKey(entry.item)
+                              ] ? (
                                 <span
-
                                   title="Configured for merchant stand"
 
                                   className="absolute right-1 top-1 z-20 grid h-5 w-5 place-items-center rounded-full bg-yellow-400 text-black shadow"
-
                                 >
-
                                   <DollarSign className="h-3.5 w-3.5" />
-
                                 </span>
-
                               ) : null}
-
                             </TooltipTrigger>
-
                           </Tooltip>
 
                           <ContextMenuContent className={itemMenuClass}>
-<ContextMenuItem
+                            {batch(pack, entry).length > 1 ? (
+                              batchMenu(pack, entry)
+                            ) : (
+                              <>
+                                {merchant && production(pack, entry)}
+                                <ContextMenuItem
+                                  disabled={!merchant}
 
-                              disabled={!merchant}
+                                  onClick={() => onWithdraw(pack, entry)}
+                                >
+                                  <Landmark className="mr-2 h-4 w-4" />
+                                  {marked(pack, entry)
+                                    ? 'Unmark withdrawal'
+                                    : 'Mark for withdrawal'}
+                                </ContextMenuItem>
 
-                              onClick={() => onWithdraw(pack, entry)}
+                                <ContextMenuItem
+                                  disabled={!merchant}
 
-                            >
+                                  onClick={() => onWithdrawAll(pack, entry)}
+                                >
+                                  <Landmark className="mr-2 h-4 w-4" />
+                                  Mark all for withdrawal
+                                </ContextMenuItem>
 
-                              <Landmark className="mr-2 h-4 w-4" />{marked(pack, entry) ? "Unmark withdrawal" : "Mark for withdrawal"}
+                                <ContextMenuItem
+                                  disabled={
+                                    standFull && !standMarked(pack, entry)
+                                  }
 
-                            </ContextMenuItem>
+                                  onClick={() =>
+                                    standMarked(pack, entry)
+                                      ? onUnstand(pack, entry)
+                                      : onStand(pack, entry)
+                                  }
 
-                            <ContextMenuItem
+                                  className="bg-white text-black data-highlighted:bg-slate-100 data-disabled:bg-white data-disabled:text-slate-400"
+                                >
+                                  <Store className="mr-2 h-4 w-4" />
+                                  {standMarked(pack, entry)
+                                    ? 'Unmark for stand'
+                                    : 'Mark for stand'}
+                                </ContextMenuItem>
 
-                              disabled={!merchant}
+                                <ContextMenuItem
+                                  disabled={!merchant || !!entry.item.l}
 
-                              onClick={() => onWithdrawAll(pack, entry)}
+                                  onClick={() => onAutoStand(entry)}
+                                >
+                                  <AutoActionIcon>
+                                    <Store />
+                                  </AutoActionIcon>
+                                  Auto mark for stand…
+                                </ContextMenuItem>
 
-                            >
+                                <BankUpgradeActions
+                                  entry={entry}
+                                  pack={pack}
+                                  catalog={catalog}
+                                  merchant={merchant}
+                                  onUpgrade={onUpgrade}
+                                />
+                                <ContextMenuSeparator className="my-1 h-px bg-slate-300" />
+                                <BankDeconstructionActions
+                                  entry={entry}
+                                  pack={pack}
+                                  merchant={merchant}
+                                  catalog={deconstructionCatalog}
+                                  onMark={onDeconstruction}
+                                />
 
-                              <Landmark className="mr-2 h-4 w-4" />Mark all for withdrawal
+                                <ContextMenuItem
+                                  className="text-rose-300"
 
-                            </ContextMenuItem>
+                                  onClick={() => onNpcSale(pack, entry)}
+                                >
+                                  <DollarSign className="mr-2 h-4 w-4" />
+                                  Sell to NPC…
+                                </ContextMenuItem>
 
-                            <ContextMenuItem
+                                <ContextMenuItem
+                                  className="text-rose-300"
+                                  disabled={!merchant || !!entry.item.l}
 
-                              disabled={standFull && !standMarked(pack, entry)}
+                                  onClick={() => onAutoNpcSale(entry)}
+                                >
+                                  <AutoActionIcon>
+                                    <DollarSign />
+                                  </AutoActionIcon>
+                                  Auto sell to NPC…
+                                </ContextMenuItem>
 
-                              onClick={() => standMarked(pack, entry) ? onUnstand(pack, entry) : onStand(pack, entry)}
-
-                              className="bg-white text-black data-highlighted:bg-slate-100 data-disabled:bg-white data-disabled:text-slate-400"
-
-                            >
-
-                              <Store className="mr-2 h-4 w-4" />{standMarked(pack, entry) ? "Unmark for stand" : "Mark for stand"}
-
-                            </ContextMenuItem>
-
-                            <ContextMenuItem disabled={!merchant || !!entry.item.l}
-
-                              onClick={() => onAutoStand(entry)}>
-
-                              <AutoActionIcon><Store /></AutoActionIcon>Auto mark for stand…
-
-                            </ContextMenuItem>
-
-
-
-                            <BankUpgradeActions entry={entry} pack={pack} catalog={catalog} merchant={merchant} onUpgrade={onUpgrade} />
-                            <ContextMenuSeparator className="my-1 h-px bg-slate-300" />
-                            <BankDeconstructionActions entry={entry} pack={pack} merchant={merchant} catalog={deconstructionCatalog} onMark={onDeconstruction} />
-
-                            <ContextMenuItem
-
-                              className="text-rose-300"
-
-                              onClick={() => onNpcSale(pack, entry)}
-
-                            >
-
-                              <DollarSign className="mr-2 h-4 w-4" />Sell to NPC…
-
-                            </ContextMenuItem>
-
-                            <ContextMenuItem className="text-rose-300" disabled={!merchant || !!entry.item.l}
-
-                              onClick={() => onAutoNpcSale(entry)}>
-
-                              <AutoActionIcon><DollarSign /></AutoActionIcon>Auto sell to NPC…
-
-                            </ContextMenuItem>
-
-                            <ClearItemMarks onClear={() => onClearMarks(pack, entry)} />
+                                <ClearItemMarks
+                                  onClear={() => onClearMarks(pack, entry)}
+                                />
+                              </>
+                            )}
                           </ContextMenuContent>
-
                         </ContextMenu>
-
                       ) : (
-
                         <div
-
                           key={i}
 
                           className={`relative aspect-square overflow-hidden rounded border border-dashed ${reserved ? "border-fuchsia-900 bg-fuchsia-950/10" : "border-emerald-950"}`}
-
                         >
-
                           {reserved ? (
-
                             <span className="absolute inset-x-[-20%] top-1/2 -rotate-45 border-y border-fuchsia-700/50 bg-black/70 py-0.5 text-center font-mono text-[8px] font-bold tracking-widest text-fuchsia-300/70">
-
                               RESERVED
-
                             </span>
-
                           ) : null}
-
                         </div>
-
                       );
-
                     })}
-
                   </div>
-
                 </section>
-
               ))}
-
             </div>
-
           )}
 
           {!!vaults.length && (
-
             <section className="mt-8 rounded-lg border border-amber-900/80 bg-black/20 p-4">
-
               <p className="font-mono text-xs uppercase tracking-wider text-amber-300">
-
                 Additional bank storage
-
               </p>
 
               <div className="mt-3 space-y-4">
+                {[...new Set(vaults.map((vault) => vault.floor))].map(
+                  (floor) => {
+                    const accessible = floorAccessible(floor);
 
-                {[...new Set(vaults.map((vault) => vault.floor))].map((floor) => {
+                    const floorVaults = vaults.filter(
+                      (vault) => vault.floor === floor,
+                    );
 
-                  const accessible = floorAccessible(floor);
+                    const key = floorVaults.find((vault) => vault.key)?.key;
 
-                  const floorVaults = vaults.filter((vault) => vault.floor === floor);
+                    const ownedKeys = key ? keyQuantity(key.id) : 0;
 
-                  const key = floorVaults.find((vault) => vault.key)?.key;
+                    const locked = floorVaults.filter(
+                      (vault) =>
+                        !unlockedPacks.has(vault.pack) && vault.gold > 0,
+                    );
 
-                  const ownedKeys = key ? keyQuantity(key.id) : 0;
+                    return (
+                      <div
+                        key={floor}
+                        className="rounded border border-amber-950/80 bg-black/20 p-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-amber-100">
+                              {floorNames[floor] || floor}
+                            </p>
 
-                  const locked = floorVaults.filter(
-
-                    (vault) => !unlockedPacks.has(vault.pack) && vault.gold > 0,
-
-                  );
-
-                  return (
-
-                    <div key={floor} className="rounded border border-amber-950/80 bg-black/20 p-3">
-
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-
-                        <div>
-
-                          <p className="text-sm font-semibold text-amber-100">
-
-                            {floorNames[floor] || floor}
-
-                          </p>
-
-                          <p
-
-                            className={`font-mono text-[10px] uppercase ${accessible ? "text-emerald-300" : "text-rose-300"}`}
-
-                          >
-
-                            {accessible
-
-                              ? "Accessible"
-
-                              : `Locked${key ? ` · requires ${key.name}` : ""}`}
+                            <p
+                              className={`font-mono text-[10px] uppercase ${accessible ? "text-emerald-300" : "text-rose-300"}`}
+                            >
+                              {accessible
+                                ? 'Accessible'
+                                : `Locked${key ? ` · requires ${key.name}` : ''}`}
 
                           </p>
 
@@ -811,202 +851,221 @@ export const BankSheet = memo(function BankSheet({
                                 className="max-w-full font-mono text-xs text-amber-300"
 
                                 title={`${vault.gold.toLocaleString()} gold`}
-
-                              >
-
-                                {abbreviatedGold(vault.gold)} gold
-
-                              </span>
-
-                            </Button>
-
-                          ))}
-
-                        </div>
-
-                      ) : accessible ? (
-
-                        <p className="mt-2 text-xs text-emerald-100/45">
-
-                          No purchasable locked vaults detected on this floor.
-
-                        </p>
-
-                      ) : (
-
-                        <p className="mt-2 text-xs text-rose-100/45">
-
-                          Vault purchases remain disabled until floor access is unlocked.
-
-                        </p>
-
-                      )}
-
-                    </div>
-
-                  );
-
-                })}
-
+                                >
+                                  {abbreviatedGold(vault.gold)} gold
+                                </span>
+                              </Button>
+                            ))}
+                          </div>
+                        ) : accessible ? (
+                          <p className="mt-2 text-xs text-emerald-100/45">
+                            No purchasable locked vaults detected on this floor.
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-xs text-rose-100/45">
+                            Vault purchases remain disabled until floor access
+                            is unlocked.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  },
+                )}
               </div>
-
             </section>
-
           )}
 
-          <Dialog open={confirmFirstBankboi} onOpenChange={(value) => { if (!bankboiBusy) setConfirmFirstBankboi(value); }}>
-
+          <Dialog
+            open={confirmFirstBankboi}
+            onOpenChange={(value) => {
+              if (!bankboiBusy) setConfirmFirstBankboi(value);
+            }}
+          >
             <DialogContent className="border border-cyan-700 bg-[#071315] text-slate-100">
+              <DialogHeader>
+                <DialogTitle>Create first BankBoi?</DialogTitle>
+                <DialogDescription className="text-slate-200">
+                  This will reserve the final 7 slots of bank pane 1 for BankBoi
+                  logistics. Items already in those slots will be moved into
+                  BankBoi storage.
+                </DialogDescription>
+              </DialogHeader>
 
-              <DialogHeader><DialogTitle>Create first BankBoi?</DialogTitle><DialogDescription className="text-slate-200">This will reserve the final 7 slots of bank pane 1 for BankBoi logistics. Items already in those slots will be moved into BankBoi storage.</DialogDescription></DialogHeader>
-
-              {bankboiCreateResult?.ok === false && <p role="alert" className="text-rose-200">{bankboiCreateResult.message}</p>}
+              {bankboiCreateResult?.ok === false && (
+                <p role="alert" className="text-rose-200">
+                  {bankboiCreateResult.message}
+                </p>
+              )}
 
               <DialogFooter className="bg-[#071315]">
+                <Button
+                  disabled={bankboiBusy}
+                  variant="outline"
+                  className="border-slate-600 bg-black text-white hover:bg-slate-800 hover:text-white"
+                  onClick={() => setConfirmFirstBankboi(false)}
+                >
+                  Cancel
+                </Button>
 
-                <Button disabled={bankboiBusy} variant="outline" className="border-slate-600 bg-black text-white hover:bg-slate-800 hover:text-white" onClick={() => setConfirmFirstBankboi(false)}>Cancel</Button>
-
-                <Button disabled={bankboiBusy} className="border border-cyan-500 bg-cyan-500 text-black hover:bg-cyan-400" onClick={() => void createBankboi()}>{bankboiBusy ? 'Creating…' : 'Create BankBoi'}</Button>
-
+                <Button
+                  disabled={bankboiBusy}
+                  className="border border-cyan-500 bg-cyan-500 text-black hover:bg-cyan-400"
+                  onClick={() => void createBankboi()}
+                >
+                  {bankboiBusy ? 'Creating…' : 'Create BankBoi'}
+                </Button>
               </DialogFooter>
-
             </DialogContent>
-
           </Dialog>
 
           <section className="mt-6">
-
             <div className="flex items-center justify-between gap-3">
-
               <div>
-
-                <p className="font-mono text-xs uppercase tracking-wider text-cyan-300">Bankbois</p>
-
-                <p className="mt-1 text-xs text-slate-400">
-
-                  Transparent overflow storage · {bankboiQueue.length} staged or waiting
-
+                <p className="font-mono text-xs uppercase tracking-wider text-cyan-300">
+                  Bankbois
                 </p>
 
+                <p className="mt-1 text-xs text-slate-400">
+                  Transparent overflow storage · {bankboiQueue.length} staged or
+                  waiting
+                </p>
               </div>
 
               <Button
-
                 disabled={bankboiBusy || !bankboiPrefix.trim()}
 
-                onClick={() => bankbois.length ? void createBankboi() : setConfirmFirstBankboi(true)}
+                onClick={() =>
+                  bankbois.length
+                    ? void createBankboi()
+                    : setConfirmFirstBankboi(true)
+                }
 
                 className="min-w-40 border border-cyan-500 bg-cyan-500 text-black hover:bg-cyan-400 disabled:border-cyan-900 disabled:bg-[#071315] disabled:text-cyan-300"
-
               >
+                <RefreshCw
+                  className={`mr-2 h-3.5 w-3.5 ${bankboiBusy ? "animate-spin" : ""}`}
+                />
 
-                <RefreshCw className={`mr-2 h-3.5 w-3.5 ${bankboiBusy ? "animate-spin" : ""}`} />
-
-                {bankboiBusy ? "Creating…" : "Create bankboi"}
-
+                {bankboiBusy ? 'Creating…' : 'Create bankboi'}
               </Button>
-
             </div>
 
-            {!bankboiPrefix.trim() && <p role="alert" className="mt-2 text-sm text-rose-400">Set bankboi name in settings first</p>}
+            {!bankboiPrefix.trim() && (
+              <p role="alert" className="mt-2 text-sm text-rose-400">
+                Set bankboi name in settings first
+              </p>
+            )}
 
             {bankboiCreateResult ? (
-
               <output
-
                 className={`mt-3 border px-3 py-2 text-xs ${bankboiCreateResult.ok ? "border-emerald-700 bg-emerald-950 text-emerald-200" : "border-rose-700 bg-rose-950 text-rose-100"}`}
-
               >
-
-                {bankboiCreateResult.ok ? "Success: " : "Failed: "}
+                {bankboiCreateResult.ok ? 'Success: ' : 'Failed: '}
 
                 {bankboiCreateResult.message}
-
               </output>
-
             ) : null}
 
             <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-
               {bankbois.length ? (
-
                 bankbois.map((bankboi) => {
-
                   const occupied = (bankboi.items || []).filter(Boolean).length;
 
                   return (
-
-                    <div key={bankboi.name} className="min-w-0 rounded border border-cyan-900 bg-[#071315] p-3">
-
+                    <div
+                      key={bankboi.name}
+                      className="min-w-0 rounded border border-cyan-900 bg-[#071315] p-3"
+                    >
                       <div className="mb-2 flex items-center justify-between">
-
                         <div>
-
-                          <span className="font-mono text-sm text-cyan-100">{bankboi.name}</span>
-
-                          <span className="ml-2 font-mono text-[10px] uppercase text-cyan-400">
-
-                            {bankboi.transaction
-
-                              ? `${bankboi.transaction.mode} · ${bankboi.transaction.phase}`
-
-                              : bankboi.state}
-
+                          <span className="font-mono text-sm text-cyan-100">
+                            {bankboi.name}
                           </span>
 
+                          <span className="ml-2 font-mono text-[10px] uppercase text-cyan-400">
+                            {bankboi.transaction
+                              ? `${bankboi.transaction.mode} · ${bankboi.transaction.phase}`
+                              : bankboi.state}
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-2">
-
-                          <span className="font-mono text-xs text-slate-400">{occupied}/42</span>
+                          <span className="font-mono text-xs text-slate-400">
+                            {occupied}/42
+                          </span>
 
                           <button
-
                             type="button"
 
                             onClick={() =>
-
                               deleteBankboi === bankboi.name
-
                                 ? void onDeleteBankboi(bankboi.name)
-
                                 : setDeleteBankboi(bankboi.name)
-
                             }
 
                             className={`h-7 border px-2 text-[10px] font-bold transition-colors disabled:border-slate-800 disabled:bg-black disabled:text-slate-700 ${deleteBankboi === bankboi.name ? "border-rose-200 bg-rose-600 text-white" : "border-rose-800 bg-black text-rose-300 hover:bg-rose-950"}`}
-
                           >
-
-                            {deleteBankboi === bankboi.name ? "Really? ×" : "Delete"}
-
+                            {deleteBankboi === bankboi.name
+                              ? 'Really? ×'
+                              : 'Delete'}
                           </button>
-
                         </div>
-
                       </div>
 
                       {bankboi.error ? (
-
-                        <p className="mb-2 text-xs text-rose-300">{bankboi.error}</p>
-
+                        <p className="mb-2 text-xs text-rose-300">
+                          {bankboi.error}
+                        </p>
                       ) : null}
 
                       <div className="grid grid-cols-7 gap-2">
+                        {Array.from(
+                          { length: 42 },
+                          (_, slot) => bankboi.items?.[slot] || null,
+                        ).map((entry, slot) =>
+                          entry ? (
+                            <ContextMenu key={slot}>
+                              <ContextMenuTrigger
+                                render={<button type="button" />}
 
-                        {Array.from({ length: 42 }, (_, slot) => bankboi.items?.[slot] || null).map(
+                                onClick={(event) => {
+                                  if (
+                                    !selection.click(
+                                      event,
+                                      selectable(
+                                        `bankboi:${bankboi.name}`,
+                                        entry,
+                                      ),
+                                    )
+                                  )
+                                    onSelect(`bankboi:${bankboi.name}`, entry);
+                                }}
+                                onContextMenu={() =>
+                                  selection.context(
+                                    selectable(
+                                      `bankboi:${bankboi.name}`,
+                                      entry,
+                                    ),
+                                  )
+                                }
+                                aria-pressed={selection.has(
+                                  selectable(`bankboi:${bankboi.name}`, entry),
+                                )}
+                                style={
+                                  selection.has(
+                                    selectable(
+                                      `bankboi:${bankboi.name}`,
+                                      entry,
+                                    ),
+                                  )
+                                    ? {
+                                        outline: '3px solid #38bdf8',
+                                        outlineOffset: -3,
+                                      }
+                                    : undefined
+                                }
 
-                          (entry, slot) =>
-
-                            entry ? (
-
-                              <ContextMenu key={slot}>
-
-                                <ContextMenuTrigger
-
-                                  onClick={() => onSelect(`bankboi:${bankboi.name}`, entry)}
-
-                                  className={`relative aspect-square overflow-hidden border bg-black/60 transition-opacity ${matchesSearch(entry) ? "opacity-100" : "opacity-25"} ${marked(`bankboi:${bankboi.name}`, entry) ? "border-amber-400" : "border-cyan-950"} hover:border-cyan-400`}
+                                className={`relative aspect-square overflow-hidden border bg-black/60 transition-opacity ${matchesSearch(entry) ? "opacity-100" : "opacity-25"} ${marked(`bankboi:${bankboi.name}`, entry) ? 'border-amber-400' : 'border-cyan-950'} hover:border-cyan-400`}
 
                                 >
 
@@ -1037,190 +1096,209 @@ export const BankSheet = memo(function BankSheet({
                                   ) : null}
 
                                   <MluckClover item={entry.item} />
-                              <BankItemBanner item={entry.item} rules={automaticRules} manualNpc={npcMarked(`bankboi:${bankboi.name}`,entry)} />
+                              <BankItemBanner item={entry.item} rules={automaticRules} manualNpc={npcMarked(`bankboi:${bankboi.name}`,
+                                    entry,
+                                  )}
+                                />
+                              </ContextMenuTrigger>
 
-                                </ContextMenuTrigger>
+                              <ContextMenuContent className={itemMenuClass}>
+                                {batch(`bankboi:${bankboi.name}`, entry)
+                                  .length > 1 ? (
+                                  batchMenu(`bankboi:${bankboi.name}`, entry)
+                                ) : (
+                                  <>
+                                    {merchant &&
+                                      production(
+                                        `bankboi:${bankboi.name}`,
+                                        entry,
+                                      )}
+                                    <ContextMenuItem
+                                      onClick={() =>
+                                        onWithdraw(
+                                          `bankboi:${bankboi.name}`,
+                                          entry,
+                                        )
+                                      }
+                                    >
+                                      <Landmark className="mr-2 h-4 w-4" />
+                                      {marked(`bankboi:${bankboi.name}`, entry)
+                                        ? 'Unmark withdrawal'
+                                        : 'Mark for withdrawal'}
+                                    </ContextMenuItem>
 
-                                <ContextMenuContent className={itemMenuClass}>
-<ContextMenuItem
+                                    <ContextMenuItem
+                                      onClick={() =>
+                                        onWithdrawAll(
+                                          `bankboi:${bankboi.name}`,
+                                          entry,
+                                        )
+                                      }
+                                    >
+                                      <Landmark className="mr-2 h-4 w-4" />
+                                      Mark all for withdrawal
+                                    </ContextMenuItem>
 
-                                    onClick={() => onWithdraw(`bankboi:${bankboi.name}`, entry)}
+                                    <ContextMenuItem
+                                      disabled={
+                                        standFull &&
+                                        !standMarked(
+                                          `bankboi:${bankboi.name}`,
+                                          entry,
+                                        )
+                                      }
 
-                                  >
+                                      onClick={() =>
+                                        standMarked(
+                                          `bankboi:${bankboi.name}`,
+                                          entry,
+                                        )
+                                          ? onUnstand(
+                                              `bankboi:${bankboi.name}`,
+                                              entry,
+                                            )
+                                          : onStand(
+                                              `bankboi:${bankboi.name}`,
+                                              entry,
+                                            )
+                                      }
 
-                                    <Landmark className="mr-2 h-4 w-4" />{marked(`bankboi:${bankboi.name}`, entry)
+                                      className="bg-white text-black data-highlighted:bg-slate-100 data-disabled:bg-white data-disabled:text-slate-400"
+                                    >
+                                      <Store className="mr-2 h-4 w-4" />
+                                      {standMarked(
+                                        `bankboi:${bankboi.name}`,
+                                        entry,
+                                      )
+                                        ? 'Unmark for stand'
+                                        : 'Mark for stand'}
+                                    </ContextMenuItem>
 
-                                      ? "Unmark withdrawal"
+                                    <ContextMenuItem
+                                      disabled={!merchant || !!entry.item.l}
 
-                                      : "Mark for withdrawal"}
+                                      onClick={() => onAutoStand(entry)}
+                                    >
+                                      <AutoActionIcon>
+                                        <Store />
+                                      </AutoActionIcon>
+                                      Auto mark for stand…
+                                    </ContextMenuItem>
 
-                                  </ContextMenuItem>
+                                    <BankUpgradeActions
+                                      entry={entry}
+                                      pack={`bankboi:${bankboi.name}`}
+                                      catalog={catalog}
+                                      merchant={merchant}
+                                      onUpgrade={onUpgrade}
+                                    />
+                                    <ContextMenuSeparator className="my-1 h-px bg-slate-300" />
+                                    <BankDeconstructionActions
+                                      entry={entry}
+                                      pack={`bankboi:${bankboi.name}`}
+                                      merchant={merchant}
+                                      catalog={deconstructionCatalog}
+                                      onMark={onDeconstruction}
+                                    />
 
-                                  <ContextMenuItem
+                                    <ContextMenuItem
+                                      className="text-rose-300"
 
-                                    onClick={() => onWithdrawAll(`bankboi:${bankboi.name}`, entry)}
+                                      onClick={() =>
+                                        onNpcSale(
+                                          `bankboi:${bankboi.name}`,
+                                          entry,
+                                        )
+                                      }
+                                    >
+                                      <DollarSign className="mr-2 h-4 w-4" />
+                                      Sell to NPC…
+                                    </ContextMenuItem>
 
-                                  >
+                                    <ContextMenuItem
+                                      className="text-rose-300"
+                                      disabled={!merchant || !!entry.item.l}
 
-                                    <Landmark className="mr-2 h-4 w-4" />Mark all for withdrawal
+                                      onClick={() => onAutoNpcSale(entry)}
+                                    >
+                                      <AutoActionIcon>
+                                        <DollarSign />
+                                      </AutoActionIcon>
+                                      Auto sell to NPC…
+                                    </ContextMenuItem>
 
-                                  </ContextMenuItem>
+                                    <ClearItemMarks
+                                      onClear={() =>
+                                        onClearMarks(
+                                          `bankboi:${bankboi.name}`,
+                                          entry,
+                                        )
+                                      }
+                                    />
+                                  </>
+                                )}
+                              </ContextMenuContent>
+                            </ContextMenu>
+                          ) : (
+                            <div
+                              key={slot}
 
-                                  <ContextMenuItem
-
-                                    disabled={
-
-                                      standFull && !standMarked(`bankboi:${bankboi.name}`, entry)
-
-                                    }
-
-                                    onClick={() => standMarked(`bankboi:${bankboi.name}`, entry) ? onUnstand(`bankboi:${bankboi.name}`, entry) : onStand(`bankboi:${bankboi.name}`, entry)}
-
-                                    className="bg-white text-black data-highlighted:bg-slate-100 data-disabled:bg-white data-disabled:text-slate-400"
-
-                                  >
-
-                                    <Store className="mr-2 h-4 w-4" />{standMarked(`bankboi:${bankboi.name}`, entry) ? "Unmark for stand" : "Mark for stand"}
-
-                                  </ContextMenuItem>
-
-                            <ContextMenuItem disabled={!merchant || !!entry.item.l}
-
-                              onClick={() => onAutoStand(entry)}>
-
-                              <AutoActionIcon><Store /></AutoActionIcon>Auto mark for stand…
-
-                            </ContextMenuItem>
-
-
-
-                                  <BankUpgradeActions entry={entry} pack={`bankboi:${bankboi.name}`} catalog={catalog} merchant={merchant} onUpgrade={onUpgrade} />
-                                  <ContextMenuSeparator className="my-1 h-px bg-slate-300" />
-                            <BankDeconstructionActions entry={entry} pack={`bankboi:${bankboi.name}`} merchant={merchant} catalog={deconstructionCatalog} onMark={onDeconstruction} />
-
-                                  <ContextMenuItem
-
-                                    className="text-rose-300"
-
-                                    onClick={() => onNpcSale(`bankboi:${bankboi.name}`, entry)}
-
-                                  >
-
-                                    <DollarSign className="mr-2 h-4 w-4" />Sell to NPC…
-
-                                  </ContextMenuItem>
-
-                            <ContextMenuItem className="text-rose-300" disabled={!merchant || !!entry.item.l}
-
-                              onClick={() => onAutoNpcSale(entry)}>
-
-                              <AutoActionIcon><DollarSign /></AutoActionIcon>Auto sell to NPC…
-
-                            </ContextMenuItem>
-
-                                  <ClearItemMarks onClear={() => onClearMarks(`bankboi:${bankboi.name}`, entry)} />
-                                </ContextMenuContent>
-
-                              </ContextMenu>
-
-                            ) : (
-
-                              <div
-
-                                key={slot}
-
-                                className="aspect-square border border-dashed border-cyan-950/70"
-
-                              />
-
-                            ),
-
+                              className="aspect-square border border-dashed border-cyan-950/70"
+                            />
+                          ),
                         )}
-
                       </div>
-
                     </div>
-
                   );
-
                 })
-
               ) : (
-
                 <p className="py-4 text-center text-xs text-slate-500">
-
-                  No BankBois yet. All bank slots are available for ordinary storage.
-
+                  No BankBois yet. All bank slots are available for ordinary
+                  storage.
                 </p>
-
               )}
-
             </div>
-
           </section>
-
         </DialogContent>
-
       </Dialog>
 
       <Dialog
-
         open={!!unlocking}
 
         onOpenChange={(open) => {
-
           if (!open) setUnlocking(null);
-
         }}
-
       >
-
         <DialogContent className="border-amber-800 bg-[#091614] text-emerald-50 sm:max-w-md">
-
           <DialogHeader>
-
             <DialogTitle>
-
-              {unlockKind === "key" ? "Unlock bank floor?" : "Unlock bank vault?"}
-
+              {unlockKind === 'key'
+                ? 'Unlock bank floor?'
+                : 'Unlock bank vault?'}
             </DialogTitle>
 
             <DialogDescription className="text-emerald-100/60">
-
               {unlocking
-
-                ? unlockKind === "key"
-
+                ? unlockKind === 'key'
                   ? `${merchant || "The merchant"} will retrieve and consume ${unlocking.key?.name || "the required key"} to unlock ${floorNames[unlocking.floor] || unlocking.floor}.`
-
                   : `${merchant || "The merchant"} will spend ${unlocking.gold.toLocaleString()} gold to permanently unlock ${unlocking.pack}.`
-
-                : ""}
-
+                : ''}
             </DialogDescription>
-
           </DialogHeader>
 
           <DialogFooter>
-
             <Button
-
               variant="outline"
 
               onClick={() => setUnlocking(null)}
 
               className="border-rose-600 bg-black text-rose-200 hover:bg-rose-950 hover:text-white"
-
             >
-
               Cancel
-
             </Button>
 
             <Button
-
               onClick={async () => {
-
                 if (!unlocking) return;
 
                 const vault = unlocking;
@@ -1228,25 +1306,15 @@ export const BankSheet = memo(function BankSheet({
                 setUnlocking(null);
 
                 await onUnlock(vault, unlockKind);
-
               }}
 
               className="bg-amber-400 text-amber-950 hover:bg-amber-300"
-
             >
-
               Confirm unlock
-
             </Button>
-
           </DialogFooter>
-
         </DialogContent>
-
       </Dialog>
-
     </>
-
   );
-
 });

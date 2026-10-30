@@ -10,7 +10,7 @@ import type { InventoryModel } from './character-card-model';
 import type { InventoryEntry } from './inventory-entry';
 import type { Item } from './item';
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { DeconstructionConfirmation, type DeconstructionSelection } from './deconstruction-confirmation';
 import { committedLiveRecord } from './live-metrics';
 import { usePanelModel } from './use-panel-model';
@@ -18,9 +18,11 @@ import { emptyArray, emptyRecord } from './empty-values';
 export const ConnectedInventory = memo(function ConnectedInventory({
   name,
   model: base,
+  restock,
 }: {
   name: string;
   model: InventoryModel;
+  restock?: ReactNode;
 }) {
   const model = usePanelModel(base, { inventory: true });
   const {
@@ -60,17 +62,17 @@ export const ConnectedInventory = memo(function ConnectedInventory({
     (entry: InventoryEntry, auto: boolean, remove: boolean, id?: string) => {
       if (!remove) { setDeconstructionSelection({ entry, auto }); return; }
       void post(auto ? '/deconstruction/auto' : '/deconstruction/mark', {
-        character: id ? deconstructionMarks.find(mark => mark.id === id)?.owner || name : name, slot: entry.slot, item: entry.item, remove, id,
+        character: id ? deconstructionMarks.find((mark) => mark.id === id)?.owner || name : name, slot: entry.slot, item: entry.item, remove, id,
       });
     },
     [post, deconstructionMarks, name],
   );
   const onRetryDeconstruction = useCallback(
-    (id: string) => void post('/deconstruction/mark', { character: deconstructionMarks.find(mark => mark.id === id)?.owner || name, id, retry: true }),
+    (id: string) => void post('/deconstruction/mark', { character: deconstructionMarks.find((mark) => mark.id === id)?.owner || name, id, retry: true }),
     [post, deconstructionMarks, name],
   );
   const onRemoveNpcSale = useCallback(
-    (id: string) => void post('/merchant/npc-sale', { character: npcSaleMarks.find(mark => mark.id === id)?.character || name, id, remove: true }),
+    (id: string) => void post('/merchant/npc-sale', { character: npcSaleMarks.find((mark) => mark.id === id)?.character || name, id, remove: true }),
     [post, npcSaleMarks, name],
   );
   const onStand = useCallback(
@@ -95,7 +97,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
     (entry: InventoryEntry) =>
       setNpcSaleItem({
         source: name === state.merchantCharacter ? 'merchant' : 'character',
-        character: name === state.merchantCharacter ? undefined : name,
+        character: state.merchantRules || name === state.merchantCharacter ? undefined : name,
         entry,
         quantity: String(entry.item.q || 1),
         acknowledged: false,
@@ -104,8 +106,8 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   );
   const onAutoNpcSale = useCallback(
     (entry: InventoryEntry) => setAutoNpcSaleItem({ ...entry,
-      character: name === state.merchantCharacter ? undefined : name }),
-    [name, state.merchantCharacter, setAutoNpcSaleItem],
+      character: state.merchantRules || name === state.merchantCharacter ? undefined : name }),
+    [name, state.merchantCharacter, state.merchantRules, setAutoNpcSaleItem],
   );
   const onAutoStand = useCallback(
     (entry: InventoryEntry) => {
@@ -167,11 +169,14 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   // Presence and inventory arrive independently, including after reconnects.
   // Missing inventory is still loading, not an empty bag.
   if (!char || !Array.isArray(char.items) || !char.slots) {
-    return <output className="block border-t border-emerald-900/70 bg-[#0b1916] p-5 text-emerald-100">Loading inventory…</output>;
+    return (
+      <output className="block border-t border-emerald-900/70 bg-[#0b1916] p-5 text-emerald-100">Loading inventory…</output>
+    );
   }
   return (
     <UpgradeOfferingProvider character={char.name} executor={state.merchantCharacter} stock={state.upgradeOfferingStock || emptyRecord()} rules={state.upgradeOfferingRules || emptyArray()} catalog={state.merchantCatalog?.allItems || emptyArray()} post={post}>
     <InventoryPanel
+      restock={restock}
       character={char}
       sharedRules={!!state.merchantRules}
       characters={chars}
@@ -209,6 +214,10 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       onAutoStand={onAutoStand}
       onClearAutomaticSales={onClearAutomaticSales}
       onRemoveAutomaticSale={onRemoveAutomaticSale}
+      onUpdateNpcReserve={(item, keep) => {
+        void post('/merchant/auto-npc-sale', { item, keep, action: 'set' })
+          .catch(error => model.setActionError(error instanceof Error ? error.message : 'Could not update NPC sale reserve'));
+      }}
       upgradeMarks={state.upgrades?.[char.name] || emptyArray()}
       statScrollMarks={state.statScrolls?.[char.name] || emptyArray()}
       statScrollInventory={statScrollInventory}
@@ -219,10 +228,16 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       onSelect={onSelect}
       onCompare={onCompare}
       onCommand={command}
-      onTravel={onTravel}
+        onBatchCommand={(character, type, item, extra) =>
+          post('/command', { character, type, item, ...extra })
+        }
+        onBatchError={setActionError}
+        onTravel={onTravel}
     />
-    <LuckySlotDialog character={name} tracking={luckyTracking} verified={state.luckyUpgradeSlots?.[name]} lockedSlot={state.luckySlotLocks?.[name]} resumingSlot={state.luckySlotResume?.[name]?.slot} onLock={slot => { void post("/merchant/config", {character: name, slot, action: state.luckySlotLocks?.[name] != null ? "unlock-lucky-slot" : "lock-lucky-slot"}); }} open={luckySlotOpen} onOpenChange={setLuckySlotOpen} />
-    {char.name === state.merchantCharacter && <SharedRuleConflicts state={state} onResolve={(id, owner) => post("/merchant/rule-conflict", {id,owner})} />}
+    <LuckySlotDialog character={name} tracking={luckyTracking} verified={state.luckyUpgradeSlots?.[name]} lockedSlot={state.luckySlotLocks?.[name]} resumingSlot={state.luckySlotResume?.[name]?.slot} onLock={(slot) => { void post("/merchant/config", {character: name, slot, action: state.luckySlotLocks?.[name] != null ? "unlock-lucky-slot" : "lock-lucky-slot"}); }} open={luckySlotOpen} onOpenChange={setLuckySlotOpen} />
+    {char.name === state.merchantCharacter && (
+        <SharedRuleConflicts state={state} onResolve={(id, owner) => post("/merchant/rule-conflict", {id,owner})} />
+      )}
     <DeconstructionConfirmation selection={deconstructionSelection} catalog={state.deconstructionCatalog || emptyRecord()}
       items={state.merchantCatalog?.allItems || emptyArray()} onClose={() => setDeconstructionSelection(null)}
       onConfirm={async ({ entry, auto }) => {

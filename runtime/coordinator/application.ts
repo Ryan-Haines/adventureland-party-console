@@ -1,3 +1,4 @@
+import {characterInspectionRoute} from "./characters/inspection.ts";
 import { observeEventAttendance, eventInstanceAllowed } from "./events/attendance-limits.ts";
 import { createDungeons } from './dungeons/service.ts';
 import { dungeonOwns } from '../dungeons/contracts.ts';
@@ -17,6 +18,17 @@ import { migrateSharedRules, installSharedRuleRoutes, sharedMember } from "./inv
 import { loadCoordinatorGeometry } from './navigation/planner-geometry.ts';
 import { initializeStandLocation, standLocationRoute } from './merchant/stand-location.ts';
 import { createRareRouteDistance } from './navigation/rare-route-distance.ts';
+import { createMetricsService } from './metrics/service.ts';
+import { accountGoldSnapshot } from './telemetry/account-gold.ts';
+/** A farm-area snapshot saved while record() was idle keeps expired hits. */
+function pruneSavedFarmAreas(
+  party: { farmAreaState?: object | null; farmingProfiles?: Record<string, { farmAreaState?: object | null } | null | undefined> },
+  control: Pick<import("./infrastructure/hunt-platform.ts").FarmAreaControlPlatform, "prune">,
+): void {
+  for (const scope of [party, ...Object.values(party.farmingProfiles || {})])
+    if (scope?.farmAreaState) control.prune(scope.farmAreaState, Date.now());
+}
+
 export function startCoordinatorApplication(
   platform: CoordinatorApplicationPlatform,
 ): Promise<void> {
@@ -106,18 +118,17 @@ export function startCoordinatorApplication(
     });
     let version = initialVersion;
     let clientRevision = await game_files.get_revision?.(version) || String(version);
-    const movementPlanner = coordinatorPolicies.createPlannerService((platform.codeDirectory || __dirname) + '/../../.build/runtime/movement-planner.cjs');
+    const movementPlanner = coordinatorPolicies.createPlannerService(platform.plannerWorkerFile || (platform.codeDirectory || __dirname) + '/../../.build/runtime/movement-planner.cjs');
     const movementFingerprints = new Map<number, string>();
     let canStand: (x: number, y: number) => boolean = () => false;
     async function prepareMovement(gameVersion: number) {
       try {
         const directory = './game_files/' + gameVersion + '/';
-        const geometry = loadCoordinatorGeometry(
-          fs_regular.readFileSync(directory + 'data.js', 'utf8'),
-          fs_regular.readFileSync(directory + 'old_common_functions.js', 'utf8'),
-        );
+        const data = fs_regular.readFileSync(directory + 'data.js', 'utf8');
+        const common = fs_regular.readFileSync(directory + 'old_common_functions.js', 'utf8');
+        const geometry = loadCoordinatorGeometry(data, common);
         canStand = (x, y) => geometry.canStand(x, y);
-        const prepared = movementPlanner.prepare(geometry.game, gameVersion);
+        const prepared = movementPlanner.prepare(geometry.game, gameVersion, {data, common});
         await prepared.ready;
         movementFingerprints.set(gameVersion, prepared.fingerprint);
         log.info({ version: gameVersion, fingerprint: prepared.fingerprint }, 'ALClient movement geometry ready');
@@ -159,6 +170,27 @@ export function startCoordinatorApplication(
         for (const name of names) delete party.commands[name];
       },
     });
+    const metrics = (() => {
+      try {
+        return createMetricsService(LOCALSTORAGE_PATH + '.metrics.jsonl', {
+          owned: name => !!ownedCharacter(name), now: Date.now,
+          accountGold: () => accountGoldSnapshot(party.bankSnapshot, slotPayload(), Object.values(party.bankbois), party.statuses).total,
+          warn: error => log.warn({ error }, 'Metrics retention failed'),
+        });
+      } catch (error) {
+        // A metrics disk/startup failure must not stop character coordination.
+        // Preserve the original history and expose an unavailable endpoint.
+        log.warn({ error }, 'Metrics storage unavailable; party coordination continues');
+        return { close() { return Promise.resolve(); }, install(router: HttpRouter) {
+          const unavailable: HttpHandler = (_request, response) => response.status(503).json({ error: 'Metrics storage unavailable' });
+          router.get('/party-api/metrics', unavailable); router.post('/party-api/metrics', unavailable);
+          router.post('/party-api/metrics/reset', unavailable);
+          router.get('/party-api/metrics/kills', unavailable);
+          router.get('/party-api/metrics/bars', unavailable);
+          router.get('/party-api/metrics/account-gold', unavailable);
+        } };
+      }
+    })();
     migrateSharedRules(party, Object.keys(character_manage).filter(name => !party.bankbois[name]));
     const farmingScopes = coordinatorPolicies.createFarmingScopes(party);
     const soloServices = new Map<string, ReturnType<typeof createSoloServices>>();
@@ -181,6 +213,7 @@ export function startCoordinatorApplication(
       persistHistory,
     });
     const persistence = coordinatorPolicies.createCoordinatorPersistence(party, localStorage);
+    pruneSavedFarmAreas(party, farmAreaControl);
     if (initializeStandLocation(party, Object.keys(persistedSettings).length === 0, canStand)) persistence.settings();
     const storageService = coordinatorPolicies.createCoordinatorStorageService(
       party,
@@ -234,6 +267,7 @@ export function startCoordinatorApplication(
           worker.stdout!.pipe(process.stdout);
           worker.stderr!.pipe(process.stderr);
         },
+        fullCaveFloors: name => party.leader === name,
         monitor: (name, block) =>
           bwi_instance.publisher
             ? monitoring_util.create_monitor_ui(
@@ -268,7 +302,7 @@ export function startCoordinatorApplication(
       character_manage,
       {
         now: () => Date.now(),
-        plan: () => bankStackRouting.servicePlan(party),
+        plan: () => consoleUpdate.blocksMerchant() ? null : bankStackRouting.servicePlan(party),
         assignSlot: assignHeadlessSlot,
         stop: (block) => softkill_block(block),
         persistRoster: persistRosterState,
@@ -314,7 +348,7 @@ export function startCoordinatorApplication(
     const shutdownCoordinator = coordinatorPolicies.createShutdown({
       log: (message) => console.log(message),
       stopCharacters: () => characterManager.stopAll(),
-      closeStorage: () => { persistence.flush(); movementPlanner.dispose(); localStorage.close(); },
+      closeStorage: async () => { persistence.flush(); movementPlanner.dispose(); await metrics.close(); localStorage.close(); },
       exit: () => process.exit(),
     });
     const { dispatcher: merchantDispatcher, idle: merchantIdle } =
@@ -482,6 +516,16 @@ export function startCoordinatorApplication(
       compounds: scheduleAutoCompound,
       exchanges: scheduleAutoExchange,
       policy: policyFor,
+      elixirReady: (name, rule, have) => {
+        const merchant=party.merchantCharacter;
+        if (!merchant || !party.statuses[merchant] || merchantOrderRoute.restockPending(rule.item)) return false;
+        const stock=coordinatorPolicies.protectedMerchantStorageStock(party).filter(entry=>entry.item?.name===rule.item && !entry.item.l && !entry.item.b &&
+          !entry.craftLocation.startsWith('bankboi:') && (name!==merchant || !entry.craftLocation.startsWith('inventory:')))
+          .reduce((sum,entry)=>sum+(Number(entry.item?.q)||1),0);
+        if (stock>0) return true;
+        if (rule.autoAcquire) merchantOrderRoute.restockSupply(rule.item,Math.max(1,rule.max-have));
+        return false;
+      },
       queue: queueMerchant,
       markedItem,
       sameItem: sameMarkedItem,
@@ -512,7 +556,7 @@ export function startCoordinatorApplication(
       rareEncounter: () => rareControl.encounter(),
       huntOwns: huntTurnInOwnsTravel,
       mapSubscriberCount,
-      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois),
+      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois, party.merchantCatalog),
       groupedCombat: groupedCombatSnapshot,
       selectedEvents: (state, name) => selectedEvents(state, name).filter(event => eventInstanceAllowed(party, name, event)),
       anniversary: publicAnniversaryState,
@@ -539,7 +583,7 @@ export function startCoordinatorApplication(
       bankPorts: bankObservationPorts,
     } = coordinatorPolicies.createCoordinatorStorageObservations(party, {
       now: () => Date.now(),
-      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois),
+      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois, party.merchantCatalog),
       persistBank: persistBankState,
       log: merchantLog,
       persist: persistSettings,
@@ -654,6 +698,7 @@ export function startCoordinatorApplication(
     } = coordinatorPolicies.createCoordinatorPartyConfiguration(party, character_manage, {
       dungeon: dungeons,
       changed: previous => coordinatorPolicies.reconcileFarmingMembership(party, farmingScopes, previous),
+      focusChanged: () => farmAreaNavigation.focusChanged(),
       now: () => Date.now(),
       owned: ownedCharacter,
       members: () => farmingNavigation.members(),
@@ -786,7 +831,7 @@ export function startCoordinatorApplication(
       dispatch: dispatchMerchant,
       anniversary: merchantAnniversaryControl,
       bankboiBusy: () => bankboiService.busy(),
-      plan: (state, status) => merchantInventoryStacks.plan(state, status),
+      plan: (state, status, boundary) => merchantInventoryStacks.plan(state, status, boundary),
       identity: bankStackRouting.identity,
     });
     const {
@@ -1002,6 +1047,7 @@ export function startCoordinatorApplication(
       now: Date.now, statuses: () => party.statuses,
       active: (name) => activeNames().includes(name) && Date.now() - Number(party.statuses[name]?.seenAt || 0) < 10000,
       every: (callback, ms) => setInterval(callback, ms), cancel: clearInterval,
+      catalog: () => party.merchantCatalog,
     });
     const statusIngestion = coordinatorPolicies.createCoordinatorStatusIngestion(
       party,
@@ -1099,7 +1145,9 @@ export function startCoordinatorApplication(
         owned: ownedCharacter,
         now: () => Date.now(),
         persistHistory,
+        persistHistoryNow: () => persistence.historyNow(),
         data: gameDataPorts,
+        activeMaps: () => Object.values(party.statuses).map((status) => status?.map),
         every: (callback, milliseconds) => setInterval(callback, milliseconds),
         cancel: (timer: ReturnType<typeof setInterval>) => clearInterval(timer),
       });
@@ -1161,7 +1209,11 @@ export function startCoordinatorApplication(
     // itinerary and should no longer appear as a separately prioritized job.
     delete party.merchantRoutinePriorities["merchant luck exchange"];
     function mapSubscriberCount(name: Parameters<typeof mapStreams.count>[0]) {
-      return mapStreams.count(name);
+      // A watched Cave floor also turns on the leader's telemetry while the
+      // coordinator lacks that floor; only the leader's worker receives full
+      // floors (runtime/lifecycle/cave-floor-handshake.ts).
+      const supplier = name === party.leader && mapStreams.floorWanted(party.statuses[name]?.map);
+      return mapStreams.count(name) + (supplier ? 1 : 0);
     }
 
     coordinatorPolicies.recoverMerchantQueue(party, () => Date.now(), stampMerchantJob);
@@ -1633,7 +1685,7 @@ export function startCoordinatorApplication(
     function stagingEventLive(name: string, event?: string): boolean {
       const report = party.statuses[name];
       if (!report) return false;
-      return ['mrgreen', 'mrpumpkin'].includes(event || '') && report.eventFeedConnected === true &&
+      return ['mrgreen', 'mrpumpkin', 'horseman', 'graveyard'].includes(event || '') && report.eventFeedConnected === true &&
         report.eventClockStale !== true && Array.isArray(report.serverStagingEvents) &&
         report.serverStagingEvents.some((entry: unknown) => stagingEventEligible(entry, event));
     }
@@ -1641,7 +1693,7 @@ export function startCoordinatorApplication(
     function stagingEventEligible(entry: unknown, event?: string): boolean {
       return !!entry && typeof entry === 'object' && 'name' in entry && entry.name === event &&
         'spawnAt' in entry && typeof entry.spawnAt === 'number' && Number.isFinite(entry.spawnAt) &&
-        entry.spawnAt - Date.now() <= 60000 && Date.now() - entry.spawnAt <= 120000;
+        entry.spawnAt - Date.now() <= 120000 && Date.now() - entry.spawnAt <= 120000;
     }
 
     function realmOwnsMerchant() {
@@ -1859,7 +1911,7 @@ export function startCoordinatorApplication(
       rareEncounter: () => rareControl.encounter(),
       huntOwns: huntTurnInOwnsTravel,
       mapSubscriberCount,
-      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois),
+      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois, party.merchantCatalog),
       groupedCombat: groupedCombatSnapshot,
       selectedEvents: (state, name) => selectedEvents(state, name).filter(event => eventInstanceAllowed(party, name, event)),
       anniversary: publicAnniversaryState,
@@ -1885,6 +1937,7 @@ export function startCoordinatorApplication(
         abort: finishAnniversaryAbort, begin: beginEventReturn, snapshot: publicAnniversaryState,
       });
       const focusRoute = coordinatorPolicies.createFocusRoute(party, {
+        focusChanged: () => farmAreaNavigation.focusChanged(),
         owned: ownedCharacter, members: () => [name], invalidate: (...args) => farmingNavigation.invalidate(...args), persist: persistSettings,
       });
     const {
@@ -2219,6 +2272,7 @@ export function startCoordinatorApplication(
             express_inst,
             {
               publicStateRoute,
+              readyRoute: (_request, response) => response.json({ ready: true }),
               dashboardImportRoutes,
               anniversaryVisitRoutes,
               anniversaryNavigationRoutes,
@@ -2281,13 +2335,26 @@ export function startCoordinatorApplication(
                 dungeons.install(router);
                 upgradePreviews.install(router);
                 router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
-                  [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete')));
-                router.get('/party-api/console-deployment',(_req,res)=>res.json({serverNow:Date.now(),consoleMaintenance:consoleUpdate.current()}));
+                  [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete',
+                  Object.entries(character_manage).filter(([, block]) => block.enabled === false && block.connected === false && !block.instance).map(([name]) => name))));
+                const codeActivation = () => {
+                  try { return String(JSON.parse(fs_regular.readFileSync(__dirname + '/../CODE/adventure_land/activation.json', 'utf8')).id || '') || null; }
+                  catch { return null; }
+                };
+                // activation tells loaders whether this CODE directory has an activation
+                // record, so they stop polling activation.json for a 404.
+                router.get('/party-api/console-deployment',(_req,res)=>res.json({serverNow:Date.now(),consoleMaintenance:consoleUpdate.current(),activation:codeActivation()}));
                 router.get('/party-api/console-runtime', (_req,res)=>res.json({characters:Object.fromEntries(Object.entries(party.statuses).map(([name,report])=>[name,{
                   name,seenAt:report.seenAt,connected:report.connected,ctype:report.ctype,type:report.type,codeHash:report.codeHash,rip:report.rip,
                   consoleMaintenance:report.consoleMaintenance,map:report.map,in:report.in,x:report.x,y:report.y,
                   dungeon:{cave:{run:coordinatorPolicies.requestObject(coordinatorPolicies.requestObject(report.dungeon).cave).run}},
                 }]))}));
+                router.get('/party-api/characters/:name/inspection', characterInspectionRoute({
+                  owned:name=>!!ownedCharacter(name), now:Date.now, version:()=>version, directory:__dirname,
+                  read:file=>fs_regular.readFileSync(file,'utf8'),
+                  catalog:()=>{const entries=coordinatorPolicies.requestObject(party.merchantCatalog).allItems;return Array.isArray(entries)?entries:[];},
+                  fetch:async name=>{const fetch=await platform.loadFetch();const response=await fetch('https://adventure.land/api/mainframe_get_character',{method:'POST',headers:{Cookie:'auth='+sess,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({character:name}).toString(),signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error('Could not read saved character from the game');return response.json();},
+                }));
                 coordinatorPolicies.installMovementRoutes(router, movementPlanner, ownedCharacter);
                 installProductionRoutes(router, party, () => persistence.settings(), merchantLog);
                 router.post('/party-api/market/ignored-items',marketIgnoredItemsRoute(party,persistSettings));
@@ -2303,7 +2370,7 @@ export function startCoordinatorApplication(
                 });
               },
               liveTelemetry: (router) => dashboardStream.install(router),
-              combatLogs: (router) => combatLogRoutes.install(router),
+              combatLogs: (router) => { combatLogRoutes.install(router); metrics.install(router); },
               roster: (express_inst) => {
                 const ownership = coordinatorPolicies.coordinatorOwnership(party);
                 installRosterRoutes(
@@ -2326,6 +2393,7 @@ export function startCoordinatorApplication(
               },
               startMail: () =>
                 coordinatorPolicies.startCoordinatorMail(party, my_acc, {
+                  persist: persistSettings,
                   session: sess,
                   loadFetch: () => platform.loadFetch(),
                   timeout: (milliseconds) => AbortSignal.timeout(milliseconds),

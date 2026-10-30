@@ -12,23 +12,23 @@ const cardActions = ['formation', 'logout', 'post', 'setFarmingPolicy', 'setSele
   'setGiveawayMerchant', 'setGiveawayOpen', 'findMonsterFor', 'setFocus', 'saveRestock',
   'moveSteamToHeadless', 'joinOrPromoteSteam', 'setAnniversaryOpen', 'setMonsterNavigateTarget',
   'setSelected', 'setSelectedBestiaryMonster', 'setActionError', 'clearCollectionErrors',
-  'editThreshold', 'save', 'editItemCollectionThreshold', 'saveItemCollectionThreshold'] as const;
+  'editThreshold', 'save', 'editItemCollectionThreshold', 'saveItemCollectionThreshold', 'setFarmingSettingsCharacter'] as const;
 type ActionKey = (typeof inventoryActions)[number] | (typeof cardActions)[number];
 const allActions = [...new Set<ActionKey>([...inventoryActions, ...cardActions])];
 export type InventoryModel = Pick<PartyConsoleModel, (typeof inventoryActions)[number] | 'state' | 'chars' | 'detailMeta'>;
 export type CharacterCardModel = Pick<PartyConsoleModel, (typeof cardActions)[number] |
   'state' | 'monsters' | 'monsterAchievements' | 'selectedFocus' | 'threshold' |
-  'itemCollectionThreshold' | 'thresholdError' | 'itemCollectionThresholdError'>;
+  'itemCollectionThreshold' | 'thresholdError' | 'itemCollectionThresholdError' | 'farmingSettingsCharacter'>;
 
 export function useCharacterCardModels(model: PartyConsoleModel) {
   const actions = useForwardingActions(model, allActions);
   const { state, chars, detailMeta, monsters, monsterAchievements, selectedFocus, threshold,
-    itemCollectionThreshold, thresholdError, itemCollectionThresholdError } = model;
+    itemCollectionThreshold, thresholdError, itemCollectionThresholdError, farmingSettingsCharacter } = model;
   const inventory: InventoryModel = useMemo(() => ({ ...actions, state, chars, detailMeta }),
     [actions, state, chars, detailMeta]);
   const card: CharacterCardModel = useMemo(() => ({ ...actions, state, monsters, monsterAchievements,
-    selectedFocus, threshold, itemCollectionThreshold, thresholdError, itemCollectionThresholdError }),
+    selectedFocus, threshold, itemCollectionThreshold, thresholdError, itemCollectionThresholdError, farmingSettingsCharacter }),
     [actions, state, monsters, monsterAchievements, selectedFocus, threshold,
-      itemCollectionThreshold, thresholdError, itemCollectionThresholdError]);
+      itemCollectionThreshold, thresholdError, itemCollectionThresholdError, farmingSettingsCharacter]);
   return { card, inventory };
 }

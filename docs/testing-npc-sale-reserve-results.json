@@ -1,0 +1,80 @@
+{
+  "issue": 116,
+  "branch": "1.5-feature-branch",
+  "typecheck": "passed",
+  "selection": {
+    "total": 367,
+    "chronalGameplay": 232
+  },
+  "coverage": "One browser scenario and five native scenarios passed across the initial run and corrected BankBoi rerun. No full-suite run claimed.",
+  "runs": [
+    {
+      "revision": "727b9793e5068d22c7261294bd6c97c6a9d6f269",
+      "total": 1,
+      "passed": 0,
+      "failed": [
+        {
+          "title": " > console > console.spec.ts > automatic NPC reserve controls > legacy zero reserve, cancel, validation and inline edits survive restart"
+        }
+      ],
+      "workers": 2,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-20T17:50:07.728Z",
+      "finished": "2026-10-20T17:52:13.421Z",
+      "seconds": 125.693,
+      "evidenceFiles": 15,
+      "removedWorkspaces": 1,
+      "archive": "issue116-ui-initial"
+    },
+    {
+      "revision": "727b9793e5068d22c7261294bd6c97c6a9d6f269",
+      "total": 1,
+      "passed": 1,
+      "failed": [],
+      "workers": 2,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-20T17:53:33.562Z",
+      "finished": "2026-10-20T17:53:40.210Z",
+      "seconds": 6.648,
+      "evidenceFiles": 16,
+      "removedWorkspaces": 1,
+      "archive": "issue116-ui-green"
+    },
+    {
+      "revision": "727b9793e5068d22c7261294bd6c97c6a9d6f269",
+      "total": 5,
+      "passed": 4,
+      "failed": [
+        {
+          "title": " > live > live-npc-sale-keep.spec.ts > an automatic NPC sale keeps the configured amount across bank and BankBoi stock"
+        }
+      ],
+      "workers": 2,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-20T17:54:49.063Z",
+      "finished": "2026-10-20T17:58:05.174Z",
+      "seconds": 196.111,
+      "evidenceFiles": 231,
+      "removedWorkspaces": 5,
+      "archive": "issue116-native-initial"
+    },
+    {
+      "revision": "727b9793e5068d22c7261294bd6c97c6a9d6f269",
+      "total": 1,
+      "passed": 1,
+      "failed": [],
+      "workers": 1,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-20T18:00:36.737Z",
+      "finished": "2026-10-20T18:01:30.935Z",
+      "seconds": 54.198,
+      "evidenceFiles": 53,
+      "removedWorkspaces": 1,
+      "archive": "issue116-bankboi-green"
+    }
+  ]
+}

@@ -24,7 +24,14 @@ test(`planned Main hawks recover ranged actors from disconnected approach ring p
   await isolateNativeMapAmbient(live,'main');
   for(const name of fighters)await live.clients[name].frame.evaluate(()=>{const p=window as any;p.__e2eObserveMoves=true;p.__e2eObservedMoveCount=0;p.__e2eIndependentObservedAttackCount=0;p.__e2eIndependentObservedTargets={};});
   await live.post('/formation',{leader:W});for(const name of [P,M])await live.post('/formation',{character:name,follow:true});
-  await live.post('/focus',{monsterFocus:[monster],monsterPriorities:{[monster]:999},monsterSearchRadius:600});
+  // A manual waypoint preserves this geometry when focus changes; a catalog
+  // farming waypoint would legitimately schedule an unrelated farm relocation.
+  await live.post('/travel',{map:'main',...leaderPoint});
+  await expect.poll(async()=>{
+    const state=await live.state();
+    return !state.activeConvoy&&fighters.every(name=>Math.hypot(state.characters[name]?.x-leaderPoint.x,state.characters[name]?.y-leaderPoint.y)<4);
+  },{timeout:45000,message:'The manual native geometry waypoint must be acknowledged before focus selection'}).toBe(true);
+  await live.post('/focus',{character:W,monsterFocus:[monster],monsterPriorities:{[monster]:999},monsterSearchRadius:600});
   await live.post('/farming-mode',{character:W,mode:'default'});
   await expect.poll(async()=>{
    const roles=await Promise.all(fighters.map(name=>live.clients[name].run(`(()=>{const s=globalThis.sharedRoutine,g=globalThis.__partyGroupedCombat,focus=s?.getMonsterFocus?.(),nomination=globalThis.__partyNomination?.focus;return {name:character.name,grouped:!!s?.usesGroupedCombat(),leader:s?.isLeader()===${name===W},groupLeader:g?.leader===${JSON.stringify(W)},members:${JSON.stringify(fighters)}.every(n=>g?.members?.includes(n)),independent:g?.independentApproach===true,focus,nomination,focusReady:!!focus?.includes(${JSON.stringify(monster)}),nominationReady:!nomination||nomination.includes(${JSON.stringify(monster)})};})()`)));

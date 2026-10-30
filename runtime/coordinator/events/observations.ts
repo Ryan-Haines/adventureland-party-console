@@ -79,6 +79,7 @@ interface EventObservationPorts {
   hasCommand(name: string): boolean;
   retireDeferredCommand?(name: string, cycleId: string): void;
   retireDeferredWalk?(name: string, cycleId: string): void;
+  finishDeferred?(name: string, cycleId: string, event: string): void;
   command(name: string, command: Record<string, unknown>): void;
   nextCommand(): number;
   releaseAnniversary?(cycle: AnniversaryReturnCycle): unknown;
@@ -155,9 +156,9 @@ export function createEventObservations(
       body.server.length>0 && body.server===status.server;
   }
   function validStaging(body: EventReport, report: StagingReport): boolean {
-    return (body.joinedEvent === report.name || authorizedPrejoinStaging(body,report.name)) && ["mrgreen", "mrpumpkin"].includes(report.name) &&
+    return (body.joinedEvent === report.name || authorizedPrejoinStaging(body,report.name)) && ["mrgreen", "mrpumpkin", "horseman", "graveyard"].includes(report.name) &&
       ports.enabled(body.name, report.name) && Number.isFinite(report.spawnAt) &&
-      report.spawnAt >= ports.now() - 120000 && report.spawnAt <= ports.now() + 60000;
+      report.spawnAt >= ports.now() - 120000 && report.spawnAt <= ports.now() + 120000;
   }
   function sameStagingRound(previous: EventSession | undefined, report: StagingReport): boolean {
     if (!previous) return true;
@@ -390,17 +391,26 @@ export function createEventObservations(
         .filter((entry) => entry?.event === session.event)
         .map((entry) => Number(entry.lastLiveAt) || 0),
     );
-    // Persisted staging owns its immutable deadline across coordinator restarts
-    // and temporary report gaps. A stale report must not retire it early.
+    // Persisted staging owns its immutable deadline across restarts/report
+    // gaps. A fresh connected feed can explicitly withdraw that announcement.
     const staging = Object.entries(state.sessions).some(([member, entry]) =>
       entry.event === session.event && !entry.wasLive && ports.enabled(member, entry.event) &&
-      Number.isFinite(entry.stagingSpawnAt) && ports.now() <= Number(entry.stagingSpawnAt) + 120000);
+      Number.isFinite(entry.stagingSpawnAt) && ports.now() <= Number(entry.stagingSpawnAt) + 120000 &&
+      stagingStillAnnounced(member, entry));
     return (
       !staging &&
       !rawLive(session.event) &&
       !(session.event === "goobrawl" && ports.goobrawlStillFighting()) &&
       ports.now() - latest >= 10000
     );
+  }
+
+  function stagingStillAnnounced(member: string, session: EventSession): boolean {
+    const report = ports.statuses()[member];
+    if (!report || ports.now() - Number(report.seenAt) > 15000 || !liveFeedReady(report) ||
+        !Array.isArray(report.serverStagingEvents)) return true;
+    return report.serverStagingEvents.some(entry => entry.name === session.event &&
+      (entry.spawnId ?? entry.spawnAt) === session.stagingSpawnId);
   }
 
   function beginEndedReturn(): void {
@@ -476,15 +486,34 @@ export function createEventObservations(
     ports.retireDeferredWalk?.(name,cycleId);
     ports.retireDeferredCommand?.(name,cycleId);
   }
-  function resumeDeferred(body: EventReport): void {
-    const recovery = state.deferred[body.name];
-    if (!recovery) return;
+  function deferredAtTown(report: ReturnStatus | undefined): boolean {
+    return !!report && freshDeferredFighter(report) && !report.mapEvent && report.map==='main' &&
+      (report.in==null || report.in==='main') && Number.isFinite(report.x) && Number.isFinite(report.y) &&
+      Math.hypot(Number(report.x),Number(report.y))<=90;
+  }
+  function retireEmptyCheckpoint(body: EventReport, recovery: DeferredRecovery): boolean {
+    const report=ports.statuses()[body.name];
+    if(recovery.phase!=='returning-to-checkpoint' || recovery.checkpoint || body.joinedEvent ||
+        !deferredAtTown(report))return false;
+    // Hunt policy may remove the old waypoint after its command was issued.
+    // That retained command must not keep the retired return owner alive.
+    retireOldDeferredContinuation(body.name,recovery.cycleId);
+    if(state.deferred[body.name]!==recovery)return true;
+    ports.finishDeferred?.(body.name,recovery.cycleId,recovery.event);
+    delete state.deferred[body.name];
+    ports.persist();return true;
+  }
+  function skipDeferredResume(body: EventReport, recovery: DeferredRecovery): boolean {
     if(awaitingRetiredSameEvent(body.name,recovery)){
       retireOldDeferredContinuation(body.name,recovery.cycleId);
       awaitEventAdmission(recovery);
-      return;
+      return true;
     }
-    if (ports.hasCommand(body.name) || nextLiveEvent(body.name, recovery.event)) return;
+    return !!nextLiveEvent(body.name,recovery.event) || retireEmptyCheckpoint(body,recovery) || ports.hasCommand(body.name);
+  }
+  function resumeDeferred(body: EventReport): void {
+    const recovery = state.deferred[body.name];
+    if (!recovery || skipDeferredResume(body,recovery)) return;
     const atTown = body.map === "main" && Math.hypot(Number(body.x), Number(body.y)) <= 90;
     const revision = invalidateCheckpoint(recovery, body.name);
     if (atTown && !recovery.checkpoint) delete state.deferred[body.name];
@@ -550,6 +579,7 @@ export function createEventObservations(
   }
 
   function observe(body: EventReport): void {
+    retireMerchantTownReturn(body);
     const reports = Array.isArray(body.serverLiveEvents)
       ? body.serverLiveEvents.filter((entry) => entry && typeof entry.name === "string")
       : [];
@@ -564,6 +594,42 @@ export function createEventObservations(
     beginEndedReturn();
     deferStaleMembers();
     resumeDeferred(body);
+  }
+
+  function retireMerchantTownReturn(body: EventReport): void {
+    const name=body.name;
+    const report=ports.statuses()[name];
+    if(name!==ports.merchant()||!deferredAtTown(report))return;
+    const current=state.current,deferred=state.deferred[name];
+    if(merchantReturnStillExiting(name))return;
+    if(emptyMerchantReturn(current,name))completeMerchantTownReturn(name,current);
+    if(deferred?.checkpoint===null)completeMerchantDeferredReturn(name,deferred);
+  }
+  function merchantReturnStillExiting(name: string): boolean {
+    const current=state.current,deferred=state.deferred[name];
+    const exiting=ports.statuses()[name]?.eventRecovery;
+    return !!(exiting&&[current?.cycleId,deferred?.cycleId].includes(exiting.cycleId)&&
+        !['town-ready','deferred-town-ready','idle'].includes(exiting.phase));
+  }
+  function emptyMerchantReturn(current: EventRecovery | null, name: string): current is EventRecovery {
+    return !!(current?.participants.includes(name)&&current.exited?.includes(name)&&!current.pending.includes(name)&&
+        current.waypoints?.[name]?.location===null);
+  }
+  function completeMerchantTownReturn(name: string, current: EventRecovery): void {
+      retireOldDeferredContinuation(name,current.cycleId);
+      current.participants=current.participants.filter(member=>member!==name);
+      if(current.returnRoutes)delete current.returnRoutes[name];
+      if(state.sessions[name]?.event===current.event)delete state.sessions[name];
+      ports.persist();ports.finishIfReady();
+  }
+  function completeMerchantDeferredReturn(name: string, deferred: DeferredRecovery): void {
+      // This merchant has no farming waypoint to resume. Main arrival completes
+      // only its old return; a newer event session/command keeps its ownership.
+      retireOldDeferredContinuation(name,deferred.cycleId);
+      ports.finishDeferred?.(name,deferred.cycleId,deferred.event);
+      if(state.sessions[name]?.event===deferred.event)delete state.sessions[name];
+      if(state.deferred[name]===deferred)delete state.deferred[name];
+      ports.persist();
   }
   return { observe, authorize };
 }

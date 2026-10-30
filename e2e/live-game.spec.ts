@@ -1,3 +1,5 @@
+import './chronal-clock-reconnect.case';
+import { gooHunt, convoy } from './gameplay-scenarios';
 import { test, expect } from './live-fixtures';
 import type { LiveGame } from './live-fixtures';
 import type { TestInfo } from '@playwright/test';
@@ -19,6 +21,12 @@ test('Steam-style CODE replacement retires old socket callbacks and pending hear
   // or a changed runner context. Preserve those actual boundaries on failure.
   const loaderObservations:unknown[]=[],deploymentResponses:unknown[]=[];
   const client=live.clients[W],game=client.frame;
+  const animationClock=await game.evaluate(()=>new Promise<{timestamp:number;now:number;backend:string}>(resolve=>requestAnimationFrame(timestamp=>resolve({timestamp,now:performance.now(),backend:(window as any).__e2eChronalClock?.backend||'native'}))));
+  await info.attach('native-animation-clock-domain',{body:JSON.stringify(animationClock),contentType:'application/json'});
+  expect(Number.isFinite(animationClock.timestamp)).toBe(true);
+  if(animationClock.backend==='chronal-network')expect(animationClock.timestamp).toBe(animationClock.now);
+  else expect(animationClock.timestamp).toBeLessThanOrEqual(animationClock.now);
+
   const before=await game.evaluate(()=>{
     const host=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
     host.__e2eRetiringRunner=runner;host.__e2eRetiringGame=host;
@@ -167,12 +175,7 @@ test.describe('real server, native clients, maintained character runtime', () =>
   });
 
   test('a two-character convoy reaches the destination through real movement', async ({ live }, info) => {
-    await party(live);
-    const before = await observed(live), destination = await point(live, W, 350);
-    await live.post('/travel', destination);
-    await arrived(live, [W, P], destination);
-    for (const name of [W, P]) expect(Math.hypot((await observed(live))[name].x-before[name].x, (await observed(live))[name].y-before[name].y)).toBeGreaterThan(100);
-    await evidence(live, info, 'convoy-arrival', { before, destination });
+    await convoy(live, info);
   });
 
   test('a newer manual order wins over an already moving character route', async ({ live }, info) => {
@@ -250,9 +253,11 @@ test.describe('real server, native clients, maintained character runtime', () =>
       const events=await live.clients[P].events();
       const receipt=events.find((event:any)=>event.event==='new_map'&&event.at>=seed.at&&event.data?.name===spawn.map&&event.data?.effect===1);
       expect(receipt,'The first real cast must produce a Town transport').toBeTruthy();
-      const channelHeals=events.filter((event:any)=>event.at>=seed.at&&event.at<=receipt.at&&event.event==='hit'&&event.data?.hid===P&&event.data?.source==='heal');
-      const starts=events.filter((event:any)=>event.at>=seed.at&&event.at<=receipt.at&&event.event==='game_response'&&event.data?.place==='town'&&event.data?.in_progress);
-      await info.attach('native-town-healing-channel',{body:JSON.stringify({seed,receipt,channelHeals,starts}),contentType:'application/json'});
+      // Native transport and a later heal can share one ChronAL window timestamp.
+      // End the channel at its transport receipt's sequence, not an inclusive time.
+      const channelHeals=events.filter((event:any)=>event.at>=seed.at&&event.sequence<receipt.sequence&&event.event==='hit'&&event.data?.hid===P&&event.data?.source==='heal');
+      const starts=events.filter((event:any)=>event.at>=seed.at&&event.sequence<receipt.sequence&&event.event==='game_response'&&event.data?.place==='town'&&event.data?.in_progress);
+      await info.attach('native-town-healing-channel',{body:JSON.stringify({seed,receipt,channelHeals,starts,postArrivalHeals:events.filter((event:any)=>event.sequence>receipt.sequence&&event.at===receipt.at&&event.event==='hit'&&event.data?.hid===P&&event.data?.source==='heal')}),contentType:'application/json'});
       expect(channelHeals,'Routine heals must not cancel Town channeling').toEqual([]);
       expect(starts.length,'No second Town request may be needed after the declared injury').toBeLessThanOrEqual(1);
       expect(receipt.at-seed.at,'The original three-second native cast must finish without a walking fallback').toBeLessThan(8000);
@@ -298,13 +303,8 @@ test.describe('real server, native clients, maintained character runtime', () =>
   });
 
   test('Hunt kills real monsters then returns to Daisy and receives a real token', async ({ live }, info) => {
-    await party(live);
-    await seedQuest(live, 2);
-    const before = await observed(live), tokens = quantity(before[W].items, 'monstertoken');
-    const backup = await startHunt(live);
-    await expect.poll(async () => quantity((await observed(live))[W].items, 'monstertoken'), { timeout: 180_000, intervals: [1000] }).toBeGreaterThan(tokens);
-    expect((await live.clients[W].events()).some((entry: any) => entry.event === 'hit' || entry.event === 'death')).toBe(true);
-    await evidence(live, info, 'hunt-kills-and-reward', { before, backup });
+    test.setTimeout(240_000);
+    await gooHunt(live, info);
   });
 
   test('a completed Hunt survives restart and claims its reward only once', async ({ live }, info) => {

@@ -1,0 +1,1628 @@
+{
+  "originalRun": {
+    "id": 39199505087,
+    "code": "b366c9949735d03f1ac987bac45d38b49dad7b03",
+    "total": 338,
+    "passed": 309,
+    "failed": 29
+  },
+  "classification": {
+    "originalRun": 39199505087,
+    "passed": 309,
+    "failed": 29,
+    "categories": {
+      "fixture: environment-dependent offline cache": 2,
+      "fixture: retired browser instrumentation": 22,
+      "fixture: bank slot publication": 1,
+      "fixture: timed fault expiry": 1,
+      "gameplay: paused convoy blocks farming readiness": 1,
+      "fixture: initial ChronAL handshake": 2
+    },
+    "rows": [
+      {
+        "title": " > console > console.spec.ts > never-loaded account character inspection > owned offline profiles load lazily without starting a character or exposing private account data",
+        "category": "fixture: environment-dependent offline cache"
+      },
+      {
+        "title": " > console > console.spec.ts > offline comparison picker > item comparison can select a never-loaded owned character from the roster",
+        "category": "fixture: environment-dependent offline cache"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > BankBoi compound inputs admit merchant work only after native bank delivery",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > BankBoi-only offering supplies manual native upgrade (none)",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > BankBoi-only offering supplies manual native upgrade (remote input)",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > BankBoi-only offering supplies manual native upgrade (handoff)",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > BankBoi-only offering supplies manual native upgrade (delivery)",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > BankBoi-only offering supplies required automatic native upgrade (none)",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > ordinary manual offering stock boundary: carried",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > ordinary manual offering stock boundary: native bank",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > BankBoi-only offering supplies required automatic native upgrade (handoff)",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > ordinary manual offering stock boundary: optional absent",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > BankBoi-only offering supplies required automatic native upgrade (delivery)",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > ordinary manual offering stock boundary: required absent",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-bankboi-offerings.spec.ts > ordinary manual offering stock boundary: protected",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-console-mixed-deployment.spec.ts > one deployment barrier covers the native browser and real headless workers through coordinator restart",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-economy.spec.ts > manual compound from native bank withdraws exactly its reserved triplet",
+        "category": "fixture: bank slot publication"
+      },
+      {
+        "title": " > live > live-event-runtime-recovery.spec.ts > retired event exit ownership > native event entry resumes after its old deferred return admits a temporarily stale peer",
+        "category": "fixture: timed fault expiry"
+      },
+      {
+        "title": " > live > live-event-runtime-recovery.spec.ts > farming focus changed during native event attendance > new farming focus resumes after natural Halloween completion",
+        "category": "gameplay: paused convoy blocks farming readiness"
+      },
+      {
+        "title": " > live > live-home-connect.spec.ts > headless spawn and restart use home realm despite stale worker configuration",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-home-realm.spec.ts > temporary native headless home change > offline merchant logs in to set home and returns offline without changing slots",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-home-realm.spec.ts > home realm change confirms every active character including merchant",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-hunt-lifecycle.spec.ts > native Hunt lifecycle > invalid backup and spawn preference mutations leave an active native Hunt intact",
+        "category": "fixture: initial ChronAL handshake"
+      },
+      {
+        "title": " > live > live-merchant-realm-recovery.spec.ts > merchant destination ownership > persisted third realm return exhausts after restart and explicit retry retains bank work",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-merchant-realm-recovery.spec.ts > merchant destination ownership > party realm transition keeps its own sixty second timeout during missing arrival reports",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-merchant-realm-recovery.spec.ts > merchant destination ownership > cross realm merchant collection reconnects before transferring real cargo",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-merchant-transporter-approach.spec.ts > native headless merchant approaches Desert transporter within range and collects real cargo",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-merchant-realm-recovery.spec.ts > merchant destination ownership > merchant reconnect completes bank work off its native home",
+        "category": "fixture: retired browser instrumentation"
+      },
+      {
+        "title": " > live > live-navigation-supersession.spec.ts > realm departure retires an old native convoy before destination arrival",
+        "category": "fixture: initial ChronAL handshake"
+      }
+    ]
+  },
+  "fullRun": {
+    "id": 39340661324,
+    "url": "https://github.com/Ryan-Haines/adventureland-party-console/actions/runs/39340661324",
+    "code": "11ba64a40e4e17a009a048e0e5c74f51b799fbd3",
+    "runner": "party-console-5090-manual",
+    "conclusion": "success",
+    "total": 340,
+    "passed": 340,
+    "failed": 0,
+    "workers": 8,
+    "backend": "chronal-network",
+    "requestedClockRate": 4,
+    "started": "2026-10-19T23:27:39.201Z",
+    "finished": "2026-10-20T00:17:42.968Z",
+    "testPhaseSeconds": 3003.767,
+    "jobSeconds": 3661,
+    "originalScenariosRetained": 338,
+    "evidenceFiles": 12031,
+    "manifestSha256": "68d20a6365795d06a6bc4395cef28752938bd76587020852d33764ad8faa7079",
+    "gpuMeasurements": 227,
+    "renderers": [
+      "ANGLE (NVIDIA, NVIDIA GeForce RTX 5090 (0x00002B85) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.16.1742)"
+    ],
+    "removedWorkspaces": 313,
+    "artifacts": [
+      {
+        "name": "self-hosted-e2e-39340661324-1",
+        "url": "https://api.github.com/repos/Ryan-Haines/adventureland-party-console/actions/artifacts/12230399354/zip",
+        "bytes": 2414516184
+      }
+    ],
+    "archive": ".build\\ci-recovery\\39340661324",
+    "dashboardCandidate": {
+      "id": "cec442f1b7d216a57092ec3744af3eddf9149df113bdb35de227e4e849c1d8b7",
+      "sourceHash": "8a8a08c7db433d65834e9f10ef427eb7e48299e46fd42def2018f69e3a68f4f1",
+      "dependencyId": "983da9a9bc94db75db3b67cb5b41bd32006133787871e65e9fd4016b3fc99d63"
+    }
+  },
+  "candidate": {
+    "id": "6d3a59acde2e60284986249c7f826b24e349aa7010e86da591d4ee38271ca687",
+    "sourceHash": "596277810faa673bbc46fd429484b15fd564ecf32af3f19b4197aea901526ecb",
+    "completed": true,
+    "deepVerified": true,
+    "activated": false,
+    "scope": "Root candidate completed before dispatch of the full run and before the subsequent drop UI follow-up. The actual runner artifact is fullRun.dashboardCandidate."
+  },
+  "intermediateRuns": [
+    {
+      "revision": "adaa5ce39cc21a4a7f66ab0d0be99861f7922864",
+      "status": "failed",
+      "selected": 339,
+      "workers": 8,
+      "passed": 318,
+      "files": 11991,
+      "evidenceHashVerified": true,
+      "verifierExit": "Expected nonzero: evidence intact but suite failed",
+      "failed": [
+        {
+          "title": " > debug > debug-instance.spec.ts > Settings launches a disposable god party, repeats Cave entry and destroys its stack",
+          "errors": [
+            {
+              "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+              "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+            }
+          ]
+        },
+        {
+          "title": " > console > console.spec.ts > merchant estimates stay responsive and require capped confirmation when unavailable",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m400\u001b[39m\nReceived: \u001b[31m503\u001b[39m",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m400\u001b[39m\nReceived: \u001b[31m503\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\console.spec.ts:255:28"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-economy.spec.ts > completed native upgrade receipt restores commerce after a lost completion response",
+          "errors": [
+            {
+              "message": "TypeError: Cannot read properties of undefined (reading 'attempt')",
+              "stack": "TypeError: Cannot read properties of undefined (reading 'attempt')\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-economy.spec.ts:108:20"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-console-mixed-deployment.spec.ts > one deployment barrier covers the native browser and real headless workers through coordinator restart",
+          "errors": [
+            {
+              "message": "Error: Actual headless native planning and physical arrival after CODE retirement: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Actual headless native planning and physical arrival after CODE retirement: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at nativeWalking (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-console-mixed-deployment.spec.ts:39:5)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-console-mixed-deployment.spec.ts:85:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-event-entry-failure.spec.ts > native event entry recovers Town unavailable once",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-entry-failure.spec.ts:54:81"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-cave.spec.ts > Cave completes native rooms and recovers displaced stairs after farewell",
+          "errors": [
+            {
+              "message": "Error: Manual stairs must continue after the farewell vote and transport both members: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Manual stairs must continue after the farewell vote and transport both members: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-cave.spec.ts:1244:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-event-return-handoff.spec.ts > active event return hands off when following a Pumpkin leader",
+          "errors": [
+            {
+              "message": "Error: After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-return-handoff.spec.ts:97:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-event-return-handoff.spec.ts > active event return hands off when restoring a held Green return",
+          "errors": [
+            {
+              "message": "Error: After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-return-handoff.spec.ts:97:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-event-runtime-recovery.spec.ts > retired event exit ownership > native event entry resumes after its old deferred return admits a temporarily stale peer",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-runtime-recovery.spec.ts:154:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-exchange-collection.spec.ts > party Auto exchange hands selected native stock to the merchant",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay clock stalled during observation window",
+              "stack": "Error: ChronAL gameplay clock stalled during observation window\n    at waitForGameplay (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:29:13)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-exchange-collection.spec.ts:29:7"
+            }
+          ]
+        },
+        {
+          "title": " > console > console.spec.ts > declared map capture observations > expanded character and Cave maps capture real canvas pixels with map and camera-center footers",
+          "errors": [
+            {
+              "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+              "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+            },
+            {
+              "message": "\u001b[31mTearing down \"context\" exceeded the test timeout of 120000ms.\u001b[39m",
+              "stack": "\u001b[31mTearing down \"context\" exceeded the test timeout of 120000ms.\u001b[39m"
+            },
+            {
+              "message": "Error: locator.click: Target page, context or browser has been closed",
+              "stack": "Error: locator.click: Target page, context or browser has been closed\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\console.spec.ts:1281:102"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-gathering-cooldown.spec.ts > a missed fishing or mining channel is recast at once; a success waits for the game cooldown",
+          "errors": [
+            {
+              "message": "Error: Both modes must recast after each miss until their declared hit: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m5\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+              "stack": "Error: Both modes must recast after each miss until their declared hit: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m5\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-gathering-cooldown.spec.ts:73:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-halloween.spec.ts > authorized pre-join native staging > Halloween future staging survives delayed genuine permission responses before both clients join",
+          "errors": [
+            {
+              "message": "Error: Eleven seconds of actual fresh pre-join native staging must retain authorized attendance: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Eleven seconds of actual fresh pre-join native staging must retain authorized attendance: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-halloween.spec.ts:295:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-halloween.spec.ts > mrpumpkin > Halloween mrpumpkin stages from native timer, fights, recovers death and returns after deselection with a lost final native completion response",
+          "errors": [
+            {
+              "message": "Error: The peer must genuinely finish through its matching barrier or independently acknowledged terminal settlement before Warrior completion: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: The peer must genuinely finish through its matching barrier or independently acknowledged terminal settlement before Warrior completion: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at Object.prove (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\native-terminal-settlement-fault.ts:203:7)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-halloween.spec.ts:397:104"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-cold-defense.spec.ts > a lost native Hunt preparation response recovers cold defense, loot and the original quest",
+          "errors": [
+            {
+              "message": "Error: route.fulfill: Route is already handled!",
+              "stack": "Error: route.fulfill: Route is already handled!\n    at intercept (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-cold-defense.spec.ts:48:17)"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-home-realm.spec.ts > temporary native headless home change > offline merchant logs in to set home and returns offline without changing slots",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"\u001b[7mcomplet\u001b[27me\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7msetting-hom\u001b[27me\"\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"\u001b[7mcomplet\u001b[27me\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7msetting-hom\u001b[27me\"\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-home-realm.spec.ts:96:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-home-realm.spec.ts > home realm change confirms every active character including merchant",
+          "errors": [
+            {
+              "message": "TimeoutError: locator.click: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('option', { name: /US I \\(/ })\u001b[22m\n",
+              "stack": "TimeoutError: locator.click: Timeout 20000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('option', { name: /US I \\(/ })\u001b[22m\n\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-home-realm.spec.ts:51:54"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-events.spec.ts > disabled anniversary selection leaves native Hunt fighting and creates no visit reward",
+          "errors": [
+            {
+              "message": "Error: Upstream eval failed: {\"e2eAdminOk\":false,\"error\":\"Error: No reachable native encounter inside disabled-Anniversary Goo mission\",\"stack\":\"Error: No reachable native encounter inside disabled-Anniversary Goo mission\\n    at eval (eval at <anonymous> (/game/node/server.js:759:3), <anonymous>:7:13)\\n    at eval (eval at <anonymous> (/game/node/server.js:759:3), <anonymous>:7:94)\\n    at /game/node/server.js:759:3\\n    at Layer.handle [as handle_request] (/game/node/node_modules/express/lib/router/layer.js:95:5)\\n    at next (/game/node/node_modules/express/lib/router/route.js:149:13)\\n    at Route.dispatch (/game/node/node_modules/express/lib/router/route.js:119:3)\\n    at Layer.handle [as handle_request] (/game/node/node_modules/express/lib/router/layer.js:95:5)\\n    at /game/node/node_modules/express/lib/router/index.js:284:15\\n    at Function.process_params (/game/node/node_modules/express/lib/router/index.js:346:12)\\n    at next (/game/node/node_modules/express/lib/router/index.js:280:10)\"}",
+              "stack": "Error: Upstream eval failed: {\"e2eAdminOk\":false,\"error\":\"Error: No reachable native encounter inside disabled-Anniversary Goo mission\",\"stack\":\"Error: No reachable native encounter inside disabled-Anniversary Goo mission\\n    at eval (eval at <anonymous> (/game/node/server.js:759:3), <anonymous>:7:13)\\n    at eval (eval at <anonymous> (/game/node/server.js:759:3), <anonymous>:7:94)\\n    at /game/node/server.js:759:3\\n    at Layer.handle [as handle_request] (/game/node/node_modules/express/lib/router/layer.js:95:5)\\n    at next (/game/node/node_modules/express/lib/router/route.js:149:13)\\n    at Route.dispatch (/game/node/node_modules/express/lib/router/route.js:119:3)\\n    at Layer.handle [as handle_request] (/game/node/node_modules/express/lib/router/layer.js:95:5)\\n    at /game/node/node_modules/express/lib/router/index.js:284:15\\n    at Function.process_params (/game/node/node_modules/express/lib/router/index.js:346:12)\\n    at next (/game/node/node_modules/express/lib/router/index.js:280:10)\"}\n    at Object.admin (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\game\\bootstrap.cjs:32:42)\n    at Object.admin (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-fixtures.ts:201:26)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-events.spec.ts:79:21"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-manual-event-override.spec.ts > explicit travel travel skips only the current native event occurrence",
+          "errors": [
+            {
+              "message": "Error: The initial follower route must encounter the declared transport failure\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveLength\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected length: \u001b[32m1\u001b[39m\nReceived length: \u001b[31m0\u001b[39m\nReceived array:  \u001b[31m[]\u001b[39m",
+              "stack": "Error: The initial follower route must encounter the declared transport failure\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveLength\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected length: \u001b[32m1\u001b[39m\nReceived length: \u001b[31m0\u001b[39m\nReceived array:  \u001b[31m[]\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-manual-event-override.spec.ts:132:105"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-lifecycle.spec.ts > native Hunt lifecycle > native Boo Boo walking-return cache > native Boo Boo walking return reuses its validated route after a communication hold",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-lifecycle.spec.ts:140:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-planned-terrain.spec.ts > blocked melee Phoenix recovery computes native hitbox-clear goals and reaches combat",
+          "errors": [
+            {
+              "message": "Error: The real warrior must compute nonempty recovery goals for its selected native Phoenix: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m",
+              "stack": "Error: The real warrior must compute nonempty recovery goals for its selected native Phoenix: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-planned-terrain.spec.ts:64:5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": {
+        "conclusion": "",
+        "headSha": "cfc61bd66809f72d08a945e1a1bfc4c5f00e7b47",
+        "status": "in_progress",
+        "url": "https://github.com/Ryan-Haines/adventureland-party-console/actions/runs/39212476266"
+      },
+      "revision": "cfc61bd66809f72d08a945e1a1bfc4c5f00e7b47",
+      "status": "failed",
+      "workers": 8,
+      "selected": 339,
+      "passed": 327,
+      "files": 12003,
+      "evidenceHashVerified": true,
+      "verifierExit": 1,
+      "failed": [
+        {
+          "title": " > live > live-console-mixed-deployment.spec.ts > one deployment barrier covers the native browser and real headless workers through coordinator restart",
+          "errors": [
+            {
+              "message": "Error: Fresh native and headless reports must acknowledge maintenance release before the next journey: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Fresh native and headless reports must acknowledge maintenance release before the next journey: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-console-mixed-deployment.spec.ts:86:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-economy.spec.ts > unavailable upgrade estimate enforces its gold cap across native purchases and restart",
+          "errors": [
+            {
+              "message": "TimeoutError: The operation was aborted due to timeout",
+              "stack": "TimeoutError: The operation was aborted due to timeout"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-economy.spec.ts > real merchant economy and durable work > failed delivery equip reconciles retained merchant stock across restart",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatchObject\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    Object {\u001b[22m\n\u001b[32m-     \"awaitingEquip\": true,\u001b[39m\n\u001b[32m-     \"id\": \"interrupted-delivery-equip\",\u001b[39m\n\u001b[31m+     \"id\": \"1c1662b6-06af-4248-aeb5-3bd56aa84568\",\u001b[39m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoMatchObject\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 1\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    Object {\u001b[22m\n\u001b[32m-     \"awaitingEquip\": true,\u001b[39m\n\u001b[32m-     \"id\": \"interrupted-delivery-equip\",\u001b[39m\n\u001b[31m+     \"id\": \"1c1662b6-06af-4248-aeb5-3bd56aa84568\",\u001b[39m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-economy.spec.ts:1017:66"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-event-entry-failure.spec.ts > native event entry recovers entry unavailable until exhausted",
+          "errors": [
+            {
+              "message": "Error: Exhausted entry must skip this occurrence and begin owned recovery: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Exhausted entry must skip this occurrence and begin owned recovery: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-entry-failure.spec.ts:74:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-home-realm.spec.ts > home realm change confirms every active character including merchant",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('option', { name: /US I \\(/ })\nExpected: visible\nTimeout: 1000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('option', { name: /US I \\(/ }) with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('option', { name: /US I \\(/ })\u001b[22m\n\n\nCall Log:\n- Timeout 20000ms exceeded while waiting on the predicate",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('option', { name: /US I \\(/ })\nExpected: visible\nTimeout: 1000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('option', { name: /US I \\(/ }) with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('option', { name: /US I \\(/ })\u001b[22m\n\n\nCall Log:\n- Timeout 20000ms exceeded while waiting on the predicate\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-home-realm.spec.ts:55:8"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-cold-defense.spec.ts > a lost native Hunt preparation response recovers cold defense, loot and the original quest",
+          "errors": [
+            {
+              "message": "Error: The latest full native request must prove no installed local convoy before defense\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveProperty\u001b[2m(\u001b[22m\u001b[32mpath\u001b[39m\u001b[2m, \u001b[22m\u001b[32mvalue\u001b[39m\u001b[2m)\u001b[22m\n\nExpected path: \u001b[32m\"convoyNavigation\"\u001b[39m\n\nExpected value: \u001b[32mnull\u001b[39m\nReceived value: \u001b[31m{\"commandId\": 1792396879015, \"communication\": null, \"defenseInterruption\": null, \"defenseTargets\": [], \"departedAt\": null, \"destinationSearches\": 0, \"encounterCatchup\": null, \"epoch\": 1792396878999, \"failure\": null, \"id\": \"convoy-1792396914997-1792396879006\", \"navigationRevision\": 3, \"phase\": \"held\", \"preparationMs\": null, \"rendezvousSearches\": 0, \"replanStarts\": 0, \"returnPlan\": null, \"reusedRoutes\": 0, \"routeImports\": 0, \"routeReady\": false, \"routeSource\": null, \"routeStarts\": 0, \"routeVersion\": 1, \"runtimeId\": \"1792396886497-50kl379y9tq\", \"townAttempt\": null, \"transitionMap\": null, \"waypointCount\": 0}\u001b[39m",
+              "stack": "Error: The latest full native request must prove no installed local convoy before defense\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveProperty\u001b[2m(\u001b[22m\u001b[32mpath\u001b[39m\u001b[2m, \u001b[22m\u001b[32mvalue\u001b[39m\u001b[2m)\u001b[22m\n\nExpected path: \u001b[32m\"convoyNavigation\"\u001b[39m\n\nExpected value: \u001b[32mnull\u001b[39m\nReceived value: \u001b[31m{\"commandId\": 1792396879015, \"communication\": null, \"defenseInterruption\": null, \"defenseTargets\": [], \"departedAt\": null, \"destinationSearches\": 0, \"encounterCatchup\": null, \"epoch\": 1792396878999, \"failure\": null, \"id\": \"convoy-1792396914997-1792396879006\", \"navigationRevision\": 3, \"phase\": \"held\", \"preparationMs\": null, \"rendezvousSearches\": 0, \"replanStarts\": 0, \"returnPlan\": null, \"reusedRoutes\": 0, \"routeImports\": 0, \"routeReady\": false, \"routeSource\": null, \"routeStarts\": 0, \"routeVersion\": 1, \"runtimeId\": \"1792396886497-50kl379y9tq\", \"townAttempt\": null, \"transitionMap\": null, \"waypointCount\": 0}\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-cold-defense.spec.ts:59:132"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-home-realm.spec.ts > temporary native headless home change > offline merchant logs in to set home and returns offline without changing slots",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"complete\"\u001b[39m\nReceived: \u001b[31m\"failed\"\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"complete\"\u001b[39m\nReceived: \u001b[31m\"failed\"\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-home-realm.spec.ts:101:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-halloween.spec.ts > mrpumpkin > Halloween mrpumpkin stages from native timer, fights, recovers death and returns after deselection with a lost final native completion response",
+          "errors": [
+            {
+              "message": "Error: The peer must genuinely finish through its matching barrier or independently acknowledged terminal settlement before Warrior completion: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: The peer must genuinely finish through its matching barrier or independently acknowledged terminal settlement before Warrior completion: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at Object.prove (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\native-terminal-settlement-fault.ts:203:7)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-halloween.spec.ts:397:104"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-hawk-approach.spec.ts > planned Main hawks recover ranged actors from disconnected approach ring points: direct alternate",
+          "errors": [
+            {
+              "message": "Error: Setup must not retain a movement journey that could bypass independent approach\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeUndefined\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m\"E2EPriest:1792397353440-gqq35m0wuft:1\"\u001b[39m",
+              "stack": "Error: Setup must not retain a movement journey that could bypass independent approach\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeUndefined\u001b[2m()\u001b[22m\n\nReceived: \u001b[31m\"E2EPriest:1792397353440-gqq35m0wuft:1\"\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-hawk-approach.spec.ts:68:177"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-lifecycle.spec.ts > native Hunt lifecycle > native Boo Boo walking-return cache > native Boo Boo walking return reuses its validated route after a communication hold",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-lifecycle.spec.ts:140:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-manual-event-override.spec.ts > explicit travel travel skips only the current native event occurrence",
+          "errors": [
+            {
+              "message": "Error: The initial follower route must encounter the declared transport failure\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveLength\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected length: \u001b[32m1\u001b[39m\nReceived length: \u001b[31m0\u001b[39m\nReceived array:  \u001b[31m[]\u001b[39m",
+              "stack": "Error: The initial follower route must encounter the declared transport failure\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveLength\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected length: \u001b[32m1\u001b[39m\nReceived length: \u001b[31m0\u001b[39m\nReceived array:  \u001b[31m[]\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-manual-event-override.spec.ts:131:105"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-round2-recovery.spec.ts > native collateral convoy defense > native Targetron splash does not stop an outsider convoy pass",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-round2-recovery.spec.ts:80:7"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": {
+        "conclusion": "",
+        "headSha": "8f4f7fc3ef45add84b82df7d0a9bf24155f56ac1",
+        "status": "in_progress",
+        "url": "https://github.com/Ryan-Haines/adventureland-party-console/actions/runs/39228381291"
+      },
+      "revision": "8f4f7fc3ef45add84b82df7d0a9bf24155f56ac1",
+      "status": "failed",
+      "workers": 8,
+      "selected": 340,
+      "passed": 330,
+      "files": 12016,
+      "evidenceHashVerified": true,
+      "verifierExit": 1,
+      "failed": [
+        {
+          "title": " > live > live-console-safe-reload.spec.ts > console reload resumes native farming and roaming defense in now mode",
+          "errors": [
+            {
+              "message": "Error: Configured farming resumes after actual CODE replacement: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Configured farming resumes after actual CODE replacement: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-console-safe-reload.spec.ts:161:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-console-mixed-deployment.spec.ts > one deployment barrier covers the native browser and real headless workers through coordinator restart",
+          "errors": [
+            {
+              "message": "Error: Fresh native and headless reports must acknowledge maintenance release before the next journey: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Fresh native and headless reports must acknowledge maintenance release before the next journey: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-console-mixed-deployment.spec.ts:86:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-event-entry-failure.spec.ts > native event entry recovers entry unavailable until exhausted",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m3\u001b[39m\nReceived: \u001b[31m4\u001b[39m",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m3\u001b[39m\nReceived: \u001b[31m4\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-entry-failure.spec.ts:67:24"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-exchange-reward-bank.spec.ts > exchange rewards that merge into carried stacks are banked by default",
+          "errors": [
+            {
+              "message": "Error: Live state failed: 503",
+              "stack": "Error: Live state failed: 503\n    at Object.state (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-fixtures.ts:180:35)\n    at bodyClockSnapshot (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-fixtures.ts:369:25)\n    at Object.base.extend.live.timeout (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-fixtures.ts:381:117)"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-halloween.spec.ts > mrpumpkin > Halloween mrpumpkin stages from native timer, fights, recovers death and returns after deselection with a lost final native completion response",
+          "errors": [
+            {
+              "message": "Error: Fault must deliver the genuinely released native final leave pre-barrier: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Fault must deliver the genuinely released native final leave pre-barrier: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at Object.prove (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\native-terminal-settlement-fault.ts:222:7)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-halloween.spec.ts:398:21"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-home-realm.spec.ts > home realm change confirms every active character including merchant",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('option', { name: /US I \\(/ })\nExpected: visible\nTimeout: 1000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('option', { name: /US I \\(/ }) with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('option', { name: /US I \\(/ })\u001b[22m\n\n\nCall Log:\n- Timeout 20000ms exceeded while waiting on the predicate",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('option', { name: /US I \\(/ })\nExpected: visible\nTimeout: 1000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('option', { name: /US I \\(/ }) with timeout 1000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('option', { name: /US I \\(/ })\u001b[22m\n\n\nCall Log:\n- Timeout 20000ms exceeded while waiting on the predicate\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-home-realm.spec.ts:55:8"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-lifecycle.spec.ts > native Hunt lifecycle > native Boo Boo walking-return cache > native Boo Boo walking return reuses its validated route after a communication hold",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-lifecycle.spec.ts:140:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-merchant-transporter-approach.spec.ts > native headless merchant approaches Desert transporter within range and collects real cargo",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m7\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m7\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at seedCargo (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\hunt-interruption-helpers.ts:188:3)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-merchant-transporter-approach.spec.ts:17:58"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-merchant-realm-recovery.spec.ts > merchant destination ownership > persisted third realm return exhausts after restart and explicit retry retains bank work",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-merchant-realm-recovery.spec.ts:127:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-merchant-realm-recovery.spec.ts > merchant destination ownership > cross realm merchant collection reconnects before transferring real cargo",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:69:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-merchant-realm-recovery.spec.ts:146:5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": {
+        "conclusion": "failure",
+        "headSha": "c691d60eb65965e3e013452adf3afefd76bd90ff",
+        "status": "completed",
+        "url": "https://github.com/Ryan-Haines/adventureland-party-console/actions/runs/39241223991"
+      },
+      "revision": "c691d60eb65965e3e013452adf3afefd76bd90ff",
+      "status": "failed",
+      "workers": 8,
+      "selected": 340,
+      "passed": 327,
+      "files": 11969,
+      "evidenceHashVerified": true,
+      "verifierExit": 1,
+      "failed": [
+        {
+          "title": " > live > live-bank-staging.spec.ts > bank uses all initial slots until the first offline BankBoi reserves its transfer row",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"sword\"\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"sword\"\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-bank-staging.spec.ts:17:3"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-console-mixed-deployment.spec.ts > one deployment barrier covers the native browser and real headless workers through coordinator restart",
+          "errors": [
+            {
+              "message": "Error: Actual headless native planning and physical arrival before CODE retirement (shared clock stalled at 1792409289376, virtual deadline 1792409349376): Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Actual headless native planning and physical arrival before CODE retirement (shared clock stalled at 1792409289376, virtual deadline 1792409349376): Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at nativeWalking (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-console-mixed-deployment.spec.ts:40:5)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-console-mixed-deployment.spec.ts:49:3"
+            }
+          ]
+        },
+        {
+          "title": " > console > console.spec.ts > Steam bridge reserves a free native CODE slot without overwriting saved code",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mfalse\u001b[39m\nReceived: \u001b[31mtrue\u001b[39m",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mfalse\u001b[39m\nReceived: \u001b[31mtrue\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\console.spec.ts:1568:60"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-equipment.spec.ts > manual merchant weapon remains selected through gathering and restart",
+          "errors": [
+            {
+              "message": "Error: Native item packet must confirm the requested Broom equip: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Native item packet must confirm the requested Broom equip: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-equipment.spec.ts:134:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-equipment.spec.ts > missing fishing tool crafts once only after opt in and available materials",
+          "errors": [
+            {
+              "message": "Error: Native crafting must produce its missing tool: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m",
+              "stack": "Error: Native crafting must produce its missing tool: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-equipment.spec.ts:229:3"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-event-return-handoff.spec.ts > active event return hands off when following a Pumpkin leader",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-return-handoff.spec.ts:55:9"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-event-return-handoff.spec.ts > active event return hands off when leaving Green",
+          "errors": [
+            {
+              "message": "Error: After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: After Pumpkin attendance, both fighters must actually return to their saved navigation checkpoint: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-return-handoff.spec.ts:97:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-halloween.spec.ts > mrpumpkin > Halloween mrpumpkin stages from native timer, fights, recovers death and returns after deselection with a lost final native completion response",
+          "errors": [
+            {
+              "message": "Error: Native death must preserve event reentry instead of losing the saved activity: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Native death must preserve event reentry instead of losing the saved activity: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-halloween.spec.ts:343:7"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-combat.spec.ts > native Hunt travel combat and death ownership > stop-required passive Goo combat resumes the original armadillo Hunt after the actual kill",
+          "errors": [
+            {
+              "message": "Error: The configured neutral Goo must actually stop the owned Hunt route: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: The configured neutral Goo must actually stop the owned Hunt route: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-combat.spec.ts:76:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-events.spec.ts > native tinyp interruption kills and loots before resuming the same Hunt",
+          "errors": [
+            {
+              "message": "Error: A native party hit receipt must prove damage to the spawned rare, including a killing blow: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: A native party hit receipt must prove damage to the spawned rare, including a killing blow: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-events.spec.ts:139:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-hunt-events.spec.ts > native rooster interruption kills and loots before resuming the same Hunt",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-hunt-events.spec.ts:147:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-merchant-config.spec.ts > fresh merchant login automatically enables merchant controls and persists through restart",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"E2EMerchant\"\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m\"E2EMerchant\"\u001b[39m\nReceived: \u001b[31mundefined\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-merchant-config.spec.ts:28:5"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-merchant-realm-recovery.spec.ts > merchant destination ownership > persisted third realm return exhausts after restart and explicit retry retains bank work",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired (shared clock stalled at 1792413743244, virtual deadline 1792413857244): Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired (shared clock stalled at 1792413743244, virtual deadline 1792413857244): Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-merchant-realm-recovery.spec.ts:127:5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "runId": 39252732969,
+      "revision": "580856b60086730ad1bb4a8d8d99bdd9c19a5a7b",
+      "partial": true,
+      "conclusion": "cancelled",
+      "fullSuiteGreen": false,
+      "selected": 340,
+      "recorded": 110,
+      "outcomeCounts": {
+        "passed": 102,
+        "failed": 1,
+        "interrupted": 7
+      },
+      "actualFailures": [
+        {
+          "title": " > console > lucky-slot-elimination.spec.ts > unlocked lucky inference overrides cursor and lapsing confidence resumes sequential discovery",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Next upgrade will test for lucky upgrade \u00c2\u00b7 slot 1. Click for options.', { exact: true })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByText('Next upgrade will test for lucky upgrade \u00c2\u00b7 slot 1. Click for options.', { exact: true }) with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Next upgrade will test for lucky upgrade \u00c2\u00b7 slot 1. Click for options.', { exact: true })\u001b[22m\n",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Next upgrade will test for lucky upgrade \u00c2\u00b7 slot 1. Click for options.', { exact: true })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByText('Next upgrade will test for lucky upgrade \u00c2\u00b7 slot 1. Click for options.', { exact: true }) with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Next upgrade will test for lucky upgrade \u00c2\u00b7 slot 1. Click for options.', { exact: true })\u001b[22m\n\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\lucky-slot-elimination.spec.ts:70:118"
+            }
+          ]
+        }
+      ],
+      "evidenceHashVerified": true,
+      "verifiedEvidenceFiles": 2391,
+      "diagnosticWorkspaceCleanup": [
+        {
+          "workspace": ".build\\e2e\\dashboard-bf9559f9-619e-4bbd-85e5-eb6a07e26da4",
+          "policy": "after-attachment-copy",
+          "retained": false,
+          "removed": true
+        },
+        {
+          "workspace": ".build\\e2e\\live-117dce5a-1ad8-4a8e-9292-75084bd229d0",
+          "policy": "after-attachment-copy",
+          "retained": false,
+          "removed": true
+        },
+        {
+          "workspace": ".build\\e2e\\live-e40aebf3-bffc-4a19-ba2c-ed0ff7e9090e",
+          "policy": "after-attachment-copy",
+          "retained": false,
+          "removed": true
+        },
+        {
+          "workspace": ".build\\e2e\\scenario-b993724c-d2de-442a-a3f2-993f7eaf6331",
+          "policy": "after-attachment-copy",
+          "retained": false,
+          "removed": true
+        }
+      ],
+      "omittedStaleReport": "Previous-run manifest was not finalized by cancelled Playwright; current reproduction and outcomes retained instead"
+    },
+    {
+      "runId": 39255854708,
+      "revision": "558bb4f06c067272af65b7928718e110092691f5",
+      "partial": true,
+      "conclusion": "cancelled",
+      "fullSuiteGreen": false,
+      "selected": 340,
+      "recorded": 195,
+      "outcomeCounts": {
+        "passed": 186,
+        "timedOut": 1,
+        "interrupted": 8
+      },
+      "actualFailures": [
+        {
+          "title": " > console > console.spec.ts > Hunt blacklist picker adds unseen monsters manually and survives restart",
+          "errors": [
+            {
+              "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+              "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+            },
+            {
+              "message": "Error: locator.click: Test timeout of 120000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Farming settings \u00c2\u00b7 W', exact: true }).getByRole('button', { name: 'Clear all', exact: true })\u001b[22m\n",
+              "stack": "Error: locator.click: Test timeout of 120000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Farming settings \u00c2\u00b7 W', exact: true }).getByRole('button', { name: 'Clear all', exact: true })\u001b[22m\n\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\console.spec.ts:483:68"
+            }
+          ]
+        }
+      ],
+      "evidenceHashVerified": true,
+      "verifiedEvidenceFiles": 6132,
+      "diagnosticWorkspaceCleanup": [],
+      "report": "Finalized cancelled report preserved"
+    },
+    {
+      "runId": 39261576761,
+      "revision": "637618f6de82fc7b599b59507caa486addefcb61",
+      "partial": true,
+      "conclusion": "cancelled",
+      "fullSuiteGreen": false,
+      "selected": 340,
+      "recorded": 193,
+      "outcomeCounts": {
+        "passed": 184,
+        "failed": 1,
+        "interrupted": 8
+      },
+      "actualFailures": [
+        {
+          "title": " > live > live-console-mixed-deployment.spec.ts > one deployment barrier covers the native browser and real headless workers through coordinator restart",
+          "errors": [
+            {
+              "message": "Error: Fresh native and headless reports must acknowledge maintenance release before the next journey (shared clock stalled at 1792418296296, virtual deadline 1792418355546): Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Fresh native and headless reports must acknowledge maintenance release before the next journey (shared clock stalled at 1792418296296, virtual deadline 1792418355546): Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-console-mixed-deployment.spec.ts:87:5"
+            }
+          ]
+        }
+      ],
+      "evidenceHashVerified": true,
+      "verifiedEvidenceFiles": 8424,
+      "diagnosticWorkspaceCleanup": [],
+      "report": "Finalized cancelled report preserved"
+    },
+    {
+      "runId": 39270495973,
+      "revision": "dd94668b5dc8aee8a26bf3e050627aa014a12e77",
+      "partial": true,
+      "conclusion": "cancelled",
+      "fullSuiteGreen": false,
+      "selected": 340,
+      "recorded": 147,
+      "outcomeCounts": {
+        "passed": 139,
+        "failed": 1,
+        "interrupted": 7
+      },
+      "actualFailures": [
+        {
+          "title": " > live > live-catalog.spec.ts > accepted native catalogs stop retransmitting on every character heartbeat",
+          "errors": [
+            {
+              "message": "Error: E2EMerchant no longer resends large catalogs\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 9\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"travelPlaces\",\u001b[39m\n\u001b[31m+   \"monsterChoices\",\u001b[39m\n\u001b[31m+   \"monsterHunterLocation\",\u001b[39m\n\u001b[31m+   \"bestiaryCatalog\",\u001b[39m\n\u001b[31m+   \"skillCatalog\",\u001b[39m\n\u001b[31m+   \"appearanceChoices\",\u001b[39m\n\u001b[31m+   \"merchantCatalog\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+              "stack": "Error: E2EMerchant no longer resends large catalogs\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 1\u001b[39m\n\u001b[31m+ Received  + 9\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"travelPlaces\",\u001b[39m\n\u001b[31m+   \"monsterChoices\",\u001b[39m\n\u001b[31m+   \"monsterHunterLocation\",\u001b[39m\n\u001b[31m+   \"bestiaryCatalog\",\u001b[39m\n\u001b[31m+   \"skillCatalog\",\u001b[39m\n\u001b[31m+   \"appearanceChoices\",\u001b[39m\n\u001b[31m+   \"merchantCatalog\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-catalog.spec.ts:52:111"
+            }
+          ]
+        }
+      ],
+      "evidenceHashVerified": true,
+      "verifiedEvidenceFiles": 3233,
+      "diagnosticWorkspaceCleanup": [
+        {
+          "workspace": ".build\\e2e\\dashboard-fb110bae-b489-4cfd-ac96-cfb222df0f4a",
+          "policy": "after-attachment-copy",
+          "retained": false,
+          "removed": true
+        },
+        {
+          "workspace": ".build\\e2e\\live-9fa27945-fbf5-4b31-91b1-7f97aa59dbfc",
+          "policy": "after-attachment-copy",
+          "retained": false,
+          "removed": true
+        }
+      ],
+      "report": "Stale previous-run report omitted"
+    },
+    {
+      "run": {
+        "conclusion": "",
+        "headSha": "1e12540ea9f1cc487cd4bc23f0eddb988077820e",
+        "status": "in_progress",
+        "url": "https://github.com/Ryan-Haines/adventureland-party-console/actions/runs/39275489670"
+      },
+      "revision": "1e12540ea9f1cc487cd4bc23f0eddb988077820e",
+      "status": "failed",
+      "workers": 8,
+      "selected": 340,
+      "passed": 339,
+      "files": 12027,
+      "evidenceHashVerified": true,
+      "verifierExit": 1,
+      "failed": [
+        {
+          "title": " > live > live-event-runtime-recovery.spec.ts > farming focus changed during native event attendance > new farming focus resumes after natural Halloween completion",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-event-runtime-recovery.spec.ts:476:4"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": {
+        "conclusion": "",
+        "headSha": "87a4d02ec68e98e0c0c410461848ff4898be01cb",
+        "status": "in_progress",
+        "url": "https://github.com/Ryan-Haines/adventureland-party-console/actions/runs/39325219009"
+      },
+      "revision": "87a4d02ec68e98e0c0c410461848ff4898be01cb",
+      "status": "failed",
+      "workers": 8,
+      "selected": 340,
+      "passed": 338,
+      "files": 12020,
+      "evidenceHashVerified": true,
+      "verifierExit": 1,
+      "failed": [
+        {
+          "title": " > console > console.spec.ts > offline account inspection exposes saved inventory and comparison without item actions",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Offline \u00c2\u00b7 saved observation')\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByText('Offline \u00c2\u00b7 saved observation') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Offline \u00c2\u00b7 saved observation')\u001b[22m\n",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('Offline \u00c2\u00b7 saved observation')\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByText('Offline \u00c2\u00b7 saved observation') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByText('Offline \u00c2\u00b7 saved observation')\u001b[22m\n\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\release-ui.case.ts:119:63"
+            },
+            {
+              "message": "Error: The browser must not crash during the journey\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 13\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"Error: No QueryClient set, use QueryClientProvider to set one\u001b[39m\n\u001b[31m+     at useQueryClient (<anonymous>:48522:24)\u001b[39m\n\u001b[31m+     at useBaseQuery (<anonymous>:49264:20)\u001b[39m\n\u001b[31m+     at useQuery (<anonymous>:49299:12)\u001b[39m\n\u001b[31m+     at useCharacterData (<anonymous>:49313:12)\u001b[39m\n\u001b[31m+     at OfflineCharacterView (<anonymous>:49329:23)\u001b[39m\n\u001b[31m+     at Object.react_stack_bottom_frame (<anonymous>:19772:22)\u001b[39m\n\u001b[31m+     at renderWithHooks (<anonymous>:6917:26)\u001b[39m\n\u001b[31m+     at updateFunctionComponent (<anonymous>:8738:23)\u001b[39m\n\u001b[31m+     at beginWork (<anonymous>:9788:22)\u001b[39m\n\u001b[31m+     at runWithFiberInDEV (<anonymous>:2260:74)\",\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+              "stack": "Error: The browser must not crash during the journey\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 13\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   \"Error: No QueryClient set, use QueryClientProvider to set one\u001b[39m\n\u001b[31m+     at useQueryClient (<anonymous>:48522:24)\u001b[39m\n\u001b[31m+     at useBaseQuery (<anonymous>:49264:20)\u001b[39m\n\u001b[31m+     at useQuery (<anonymous>:49299:12)\u001b[39m\n\u001b[31m+     at useCharacterData (<anonymous>:49313:12)\u001b[39m\n\u001b[31m+     at OfflineCharacterView (<anonymous>:49329:23)\u001b[39m\n\u001b[31m+     at Object.react_stack_bottom_frame (<anonymous>:19772:22)\u001b[39m\n\u001b[31m+     at renderWithHooks (<anonymous>:6917:26)\u001b[39m\n\u001b[31m+     at updateFunctionComponent (<anonymous>:8738:23)\u001b[39m\n\u001b[31m+     at beginWork (<anonymous>:9788:22)\u001b[39m\n\u001b[31m+     at runWithFiberInDEV (<anonymous>:2260:74)\",\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\console.spec.ts:890:67"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-cave.spec.ts > Cave completes native rooms and recovers displaced stairs after farewell",
+          "errors": [
+            {
+              "message": "Error: Manual stairs must continue after the farewell vote and transport both members: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: Manual stairs must continue after the farewell vote and transport both members: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\network-clock.ts:70:27)\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\live-cave.spec.ts:1250:5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": {
+        "conclusion": "",
+        "headSha": "c0ca14d9847b4a35e2247f5b84761d92bf14d47e",
+        "status": "in_progress",
+        "url": "https://github.com/Ryan-Haines/adventureland-party-console/actions/runs/39333470950"
+      },
+      "revision": "c0ca14d9847b4a35e2247f5b84761d92bf14d47e",
+      "status": "failed",
+      "workers": 8,
+      "selected": 340,
+      "passed": 338,
+      "files": 12026,
+      "evidenceHashVerified": true,
+      "verifierExit": 1,
+      "failed": [
+        {
+          "title": " > console > console.spec.ts > Hunt blacklist picker adds unseen monsters manually and survives restart",
+          "errors": [
+            {
+              "message": "Error: route.continue: Route is already handled!",
+              "stack": "Error: route.continue: Route is already handled!\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\fixtures.ts:189:25"
+            },
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).not.\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('dialog', { name: 'Clear Hunt blacklist?', exact: true })\nExpected: not visible\nReceived: visible\n\nCall log:\n\u001b[2m  - Expect \"not toBeVisible\" getByRole('dialog', { name: 'Clear Hunt blacklist?', exact: true }) with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Clear Hunt blacklist?', exact: true })\u001b[22m\n\u001b[2m    5 \u00c3\u2014 locator resolved to <div id=\"_r_4p_\" data-open=\"\" role=\"dialog\" tabindex=\"-1\" data-base-ui-focusable=\"\" data-slot=\"dialog-content\" aria-labelledby=\"base-ui-_r_8g_\" aria-describedby=\"base-ui-_r_8h_\" class=\"fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl p-4 text-sm ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 border\u00e2\u20ac\u00a6>\u00e2\u20ac\u00a6</div>\u001b[22m\n\u001b[2m      - unexpected value \"visible\"\u001b[22m\n\u001b[2m  - Test ended.\u001b[22m\n",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).not.\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('dialog', { name: 'Clear Hunt blacklist?', exact: true })\nExpected: not visible\nReceived: visible\n\nCall log:\n\u001b[2m  - Expect \"not toBeVisible\" getByRole('dialog', { name: 'Clear Hunt blacklist?', exact: true }) with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Clear Hunt blacklist?', exact: true })\u001b[22m\n\u001b[2m    5 \u00c3\u2014 locator resolved to <div id=\"_r_4p_\" data-open=\"\" role=\"dialog\" tabindex=\"-1\" data-base-ui-focusable=\"\" data-slot=\"dialog-content\" aria-labelledby=\"base-ui-_r_8g_\" aria-describedby=\"base-ui-_r_8h_\" class=\"fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl p-4 text-sm ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 border\u00e2\u20ac\u00a6>\u00e2\u20ac\u00a6</div>\u001b[22m\n\u001b[2m      - unexpected value \"visible\"\u001b[22m\n\u001b[2m  - Test ended.\u001b[22m\n\n    at C:\\al-ci\\adventureland-party-console\\adventureland-party-console\\e2e\\console.spec.ts:517:34"
+            }
+          ]
+        },
+        {
+          "title": " > live > live-game.spec.ts > ChronAL late joining actors preserve relative startup timers",
+          "errors": [
+            {
+              "message": "Error: Command failed: C:\\al-ci\\_tool\\node\\24.14.0\\x64\\node.exe --import data:text/javascript,const%20immediate%3DglobalThis.setImmediate%2Ctimeout%3DglobalThis.setTimeout%3BglobalThis.setImmediate%3D(fn%2C...args)%3D%3EglobalThis.__delayClockImmediate%3Fimmediate(()%3D%3Etimeout(fn%2C100%2C...args))%3Aimmediate(fn%2C...args)%3B --import file:///C:/al-ci/adventureland-party-console/adventureland-party-console/tools/sim/network-clock-preload.mjs -e const clock=globalThis.__e2eChronalClock,startupAt=Date.now(),timeouts=[],intervals=[];\n    setTimeout(()=>timeouts.push(Date.now()),5000);const timer=setInterval(()=>{intervals.push(Date.now());if(intervals.length===3)clearInterval(timer);},1000);\n    setTimeout(async()=>{\n      const {JSDOM}=require(\"C:\\\\al-ci\\\\adventureland-party-console\\\\adventureland-party-console\\\\.caracal\\\\node_modules\\\\jsdom\"),window=new JSDOM('<html></html>',{url:\"http://127.0.0.1:58228\"}).window;\n      require('node:vm').createContext(window);const $=require(\"C:\\\\al-ci\\\\adventureland-party-console\\\\adventureland-party-console\\\\.caracal\\\\node_modules\\\\jquery\")(window);\n      const began=clock.cpuNow(),io=await new Promise(resolve=>$.ajax({url:'/party-api/io-probe',timeout:1000}).done(value=>resolve({ok:true,value,wallMs:clock.cpuNow()-began})).fail((_xhr,status,error)=>resolve({ok:false,status,error:String(error),wallMs:clock.cpuNow()-began})));\n      window.close();globalThis.__delayClockImmediate=true;const turnBegan=clock.cpuNow(),turnAt=Date.now();\n      setTimeout(()=>{globalThis.__delayClockImmediate=false;console.log(JSON.stringify({startupAt,join:clock.join,timeouts,intervals,errors:clock.errors,io,nativeIo:clock.nativeIo,nativeTurn:{wallMs:clock.cpuNow()-turnBegan,virtualMs:Date.now()-turnAt}}));process.exit(0);},2000);\n    },6000);\n",
+              "stack": "Error: Command failed: C:\\al-ci\\_tool\\node\\24.14.0\\x64\\node.exe --import data:text/javascript,const%20immediate%3DglobalThis.setImmediate%2Ctimeout%3DglobalThis.setTimeout%3BglobalThis.setImmediate%3D(fn%2C...args)%3D%3EglobalThis.__delayClockImmediate%3Fimmediate(()%3D%3Etimeout(fn%2C100%2C...args))%3Aimmediate(fn%2C...args)%3B --import file:///C:/al-ci/adventureland-party-console/adventureland-party-console/tools/sim/network-clock-preload.mjs -e const clock=globalThis.__e2eChronalClock,startupAt=Date.now(),timeouts=[],intervals=[];\n    setTimeout(()=>timeouts.push(Date.now()),5000);const timer=setInterval(()=>{intervals.push(Date.now());if(intervals.length===3)clearInterval(timer);},1000);\n    setTimeout(async()=>{\n      const {JSDOM}=require(\"C:\\\\al-ci\\\\adventureland-party-console\\\\adventureland-party-console\\\\.caracal\\\\node_modules\\\\jsdom\"),window=new JSDOM('<html></html>',{url:\"http://127.0.0.1:58228\"}).window;\n      require('node:vm').createContext(window);const $=require(\"C:\\\\al-ci\\\\adventureland-party-console\\\\adventureland-party-console\\\\.caracal\\\\node_modules\\\\jquery\")(window);\n      const began=clock.cpuNow(),io=await new Promise(resolve=>$.ajax({url:'/party-api/io-probe',timeout:1000}).done(value=>resolve({ok:true,value,wallMs:clock.cpuNow()-began})).fail((_xhr,status,error)=>resolve({ok:false,status,error:String(error),wallMs:clock.cpuNow()-began})));\n      window.close();globalThis.__delayClockImmediate=true;const turnBegan=clock.cpuNow(),turnAt=Date.now();\n      setTimeout(()=>{globalThis.__delayClockImmediate=false;console.log(JSON.stringify({startupAt,join:clock.join,timeouts,intervals,errors:clock.errors,io,nativeIo:clock.nativeIo,nativeTurn:{wallMs:clock.cpuNow()-turnBegan,virtualMs:Date.now()-turnAt}}));process.exit(0);},2000);\n    },6000);\n"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "focusedValidation": {
+    "distinctScenarios": 42,
+    "followup": {
+      "evidenceFiles": 22,
+      "correction": "Broker uses independent native monotonic time, including when caller Date is displaced",
+      "archive": ".build/ci-recovery/broker-native-wall-green",
+      "passed": 2
+    },
+    "primary": {
+      "revision": "c691d60eb65965e3e013452adf3afefd76bd90ff",
+      "dirty": true,
+      "total": 38,
+      "passed": 37,
+      "failed": [
+        {
+          "title": " > live > live-game.spec.ts > ChronAL late joining actors preserve relative startup timers",
+          "errors": [
+            {
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at C:\\Users\\Breene26\\Documents\\gitea\\adventure_land\\e2e\\chronal-clock-reconnect.case.ts:156:89"
+            }
+          ]
+        }
+      ],
+      "workers": 8,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "verifiedEvidenceFiles": 1738,
+      "removedWorkspaces": 36,
+      "archive": ".build/ci-recovery/focused-native-io-v1",
+      "started": "2026-10-19T12:18:31.842Z",
+      "finished": "2026-10-19T12:26:07.132Z"
+    },
+    "kind": "Distinct scenarios validated across retained focused runs",
+    "additionalBrowserValidation": {
+      "assertions": "Exact slot-1 tooltip, inference lapse, durable restart and subsequent dialog retained",
+      "verifiedEvidenceFiles": 72,
+      "archive": ".build/ci-recovery/lucky-tooltip-green",
+      "cases": 2,
+      "passed": 6,
+      "repetitions": 3
+    },
+    "reconnectDialogValidation": {
+      "cases": 2,
+      "passed": 6,
+      "repetitions": 3,
+      "archive": ".build/ci-recovery/blacklist-dialog-green",
+      "verifiedEvidenceFiles": 81,
+      "assertions": "Open dialog owner, two empty reconnect core snapshots, fresh reports, exact blacklist, cancel/clear and restart/export/import",
+      "oldUiRedEvidenceFiles": 16
+    }
+  },
+  "catalogueValidation": {
+    "mixedEightWorkers": {
+      "revision": "637618f6de82fc7b599b59507caa486addefcb61",
+      "total": 8,
+      "passed": 8,
+      "workers": 8,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-19T14:29:50.038Z",
+      "finished": "2026-10-19T14:32:40.901Z",
+      "seconds": 170.863,
+      "evidenceFiles": 579,
+      "removedWorkspaces": 8,
+      "archive": "mixed-eight-batches-green"
+    },
+    "refresh": {
+      "revision": "637618f6de82fc7b599b59507caa486addefcb61",
+      "total": 6,
+      "passed": 6,
+      "workers": 2,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-19T14:34:46.855Z",
+      "finished": "2026-10-19T14:36:01.320Z",
+      "seconds": 74.465,
+      "evidenceFiles": 269,
+      "removedWorkspaces": 6,
+      "archive": "catalog-refresh-final-green"
+    },
+    "perClientAcknowledgement": {
+      "revision": "dd94668b5dc8aee8a26bf3e050627aa014a12e77",
+      "total": 8,
+      "passed": 8,
+      "workers": 8,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-19T15:08:02.163Z",
+      "finished": "2026-10-19T15:09:15.923Z",
+      "seconds": 73.76,
+      "evidenceFiles": 367,
+      "removedWorkspaces": 8,
+      "archive": "catalog-handshake-eight-green"
+    }
+  },
+  "eventHandoffValidation": {
+    "red": {
+      "revision": "1e12540ea9f1cc487cd4bc23f0eddb988077820e",
+      "total": 1,
+      "passed": 0,
+      "failed": [
+        {
+          "title": " > live > live-event-runtime-recovery.spec.ts > farming focus changed during native event attendance > new farming focus resumes after natural Halloween completion",
+          "errors": [
+            {
+              "message": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+              "stack": "Error: ChronAL gameplay poll expired: Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at Proxy.<anonymous> (C:\\Users\\Breene26\\Documents\\gitea\\adventure_land\\e2e\\network-clock.ts:70:27)\n    at C:\\Users\\Breene26\\Documents\\gitea\\adventure_land\\e2e\\live-event-runtime-recovery.spec.ts:492:4"
+            }
+          ]
+        }
+      ],
+      "workers": 1,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-19T15:56:27.327Z",
+      "finished": "2026-10-19T15:58:05.768Z",
+      "seconds": 98.441,
+      "evidenceFiles": 50,
+      "removedWorkspaces": 1,
+      "archive": "event-handoff-red"
+    },
+    "green": {
+      "revision": "1e12540ea9f1cc487cd4bc23f0eddb988077820e",
+      "total": 8,
+      "passed": 8,
+      "failed": [],
+      "workers": 8,
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "started": "2026-10-19T16:11:29.083Z",
+      "finished": "2026-10-19T16:14:15.047Z",
+      "seconds": 165.964,
+      "evidenceFiles": 381,
+      "removedWorkspaces": 8,
+      "archive": "event-handoff-green"
+    }
+  },
+  "settingsInspectionValidation": {
+    "revision": "1e12540ea9f1cc487cd4bc23f0eddb988077820e",
+    "total": 3,
+    "passed": 3,
+    "failed": [],
+    "workers": 2,
+    "backend": "chronal-network",
+    "clockRate": 4,
+    "started": "2026-10-19T21:07:50.507Z",
+    "finished": "2026-10-19T21:08:02.029Z",
+    "seconds": 11.522,
+    "evidenceFiles": 36,
+    "removedWorkspaces": 3,
+    "archive": "settings-sprites-final-green"
+  },
+  "githubServiceIncident": {
+    "run": 39275489670,
+    "localWorkerCompletedAt": "2026-10-19T15:57:23Z",
+    "localResult": "Failed",
+    "remoteStatusAfterLocalCompletion": "in_progress",
+    "runnerOnline": true,
+    "runnerBusy": false,
+    "incident": "https://www.githubstatus.com/incidents/8tzbpcnl75jp",
+    "incidentStartedAt": "2026-10-19T15:49:25.822Z",
+    "incidentDescription": "Degraded availability for GitHub Actions, GitHub Pages and Webhooks",
+    "interpretation": "The reported GitHub workflow-processing delay is consistent with the observed status lag; the local worker completed and uploaded its logs."
+  },
+  "observerClockDomain": [
+    {
+      "title": " > live > live-hunt-hawk-approach.spec.ts > planned Main hawks recover ranged actors from disconnected approach ring points: direct alternate",
+      "status": "passed",
+      "gameAt": 1792406702328,
+      "codeAt": 1792406702331,
+      "clockDifferenceMs": -3,
+      "coordinatorAt": 1792406702456,
+      "maximumReadinessAgeMs": 378,
+      "readinessAgesMs": {
+        "E2EBankBoi": 253,
+        "E2EPriest": 378,
+        "E2EWarrior": 378
+      }
+    },
+    {
+      "title": " > live > live-hunt-hawk-approach.spec.ts > planned Main hawks recover ranged actors from disconnected approach ring points: all blocked ring",
+      "status": "passed",
+      "gameAt": 1792406833470,
+      "codeAt": 1792406833222,
+      "clockDifferenceMs": 248,
+      "coordinatorAt": 1792406833222,
+      "maximumReadinessAgeMs": 752,
+      "readinessAgesMs": {
+        "E2EBankBoi": 627.5,
+        "E2EPriest": 752,
+        "E2EWarrior": 250
+      }
+    }
+  ],
+  "focusedPerformance": {
+    "nativeClockTransport": {
+      "scope": "Focused actual Chromium/JSDOM transport comparison; not a full-suite benchmark",
+      "requestedRate": 16,
+      "originalHttpTimeoutMs": 1000,
+      "serverNativeDelayMs": 200,
+      "http": {
+        "nativeIo": {
+          "ok": true,
+          "value": {
+            "ok": true
+          },
+          "wallMs": 206.7000000178814,
+          "virtualMs": 207
+        },
+        "acceleratedIo": {
+          "ok": true,
+          "value": {
+            "ok": true
+          },
+          "wallMs": 215.09999999403954,
+          "virtualMs": 0
+        },
+        "nodeIo": {
+          "ok": true,
+          "value": {
+            "ok": true
+          },
+          "wallMs": 228.0693
+        },
+        "ioReceipts": [
+          {
+            "started": 1792412904747,
+            "finished": 1792412904950
+          },
+          {
+            "started": 1792412904957,
+            "finished": 1792412905168
+          },
+          {
+            "started": 1792412906206,
+            "finished": 1792412906413
+          }
+        ]
+      },
+      "delayedNativeImmediate": {
+        "before": {
+          "wallMs": 1944.8934000000008,
+          "virtualMs": 2002
+        },
+        "after": {
+          "wallMs": 393.32539999999995,
+          "virtualMs": 2002
+        },
+        "speedup": 4.944743970259742
+      },
+      "gameplayWait": {
+        "nativeWait": {
+          "wallMs": 2008.8999999761581,
+          "virtualMs": 2009
+        },
+        "acceleratedWait": {
+          "wallMs": 214.5,
+          "virtualMs": 2002
+        },
+        "speedup": 9.365501165390015
+      },
+      "longPoll": {
+        "ok": true,
+        "virtualMs": 1250,
+        "nativeIoActive": false
+      },
+      "evidenceDirectory": ".build/ci-recovery/native-io-final-green"
+    },
+    "estimator": {
+      "method": "Same native estimator, deterministic seed and 60M-roll budget, targets 1/5/8/12; before/after on the same Windows host during the eight-worker run.",
+      "unchangedResults": true,
+      "before": [
+        {
+          "target": 1,
+          "wallMs": 14.012799999999999,
+          "cpu": {
+            "user": 0,
+            "system": 0
+          },
+          "result": {
+            "status": "available",
+            "attempts": 1,
+            "gold": 2000,
+            "scrolls": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "completed": 3000,
+            "rolls": 3000
+          }
+        },
+        {
+          "target": 5,
+          "wallMs": 19.021800000000006,
+          "cpu": {
+            "user": 0,
+            "system": 0
+          },
+          "result": {
+            "status": "available",
+            "attempts": 5,
+            "gold": 27000,
+            "scrolls": [
+              22,
+              0,
+              0,
+              0
+            ],
+            "completed": 3000,
+            "rolls": 33694
+          }
+        },
+        {
+          "target": 8,
+          "wallMs": 954.0976999999999,
+          "cpu": {
+            "user": 94000,
+            "system": 47000
+          },
+          "result": {
+            "status": "available",
+            "attempts": 348,
+            "gold": 2125000,
+            "scrolls": [
+              1777,
+              0,
+              0,
+              0
+            ],
+            "completed": 3000,
+            "rolls": 2387909
+          }
+        },
+        {
+          "target": 12,
+          "wallMs": 26949.923,
+          "cpu": {
+            "user": 3547000,
+            "system": 562000
+          },
+          "result": {
+            "status": "unavailable",
+            "completed": 2,
+            "rolls": 60000000
+          }
+        }
+      ],
+      "after": [
+        {
+          "target": 1,
+          "wallMs": 5.130599999999994,
+          "cpu": {
+            "user": 0,
+            "system": 0
+          },
+          "result": {
+            "status": "available",
+            "attempts": 1,
+            "gold": 2000,
+            "scrolls": [
+              1,
+              0,
+              0,
+              0
+            ],
+            "completed": 3000,
+            "rolls": 3000
+          }
+        },
+        {
+          "target": 5,
+          "wallMs": 5.100300000000004,
+          "cpu": {
+            "user": 0,
+            "system": 0
+          },
+          "result": {
+            "status": "available",
+            "attempts": 5,
+            "gold": 27000,
+            "scrolls": [
+              22,
+              0,
+              0,
+              0
+            ],
+            "completed": 3000,
+            "rolls": 33694
+          }
+        },
+        {
+          "target": 8,
+          "wallMs": 109.13450000000002,
+          "cpu": {
+            "user": 109000,
+            "system": 47000
+          },
+          "result": {
+            "status": "available",
+            "attempts": 348,
+            "gold": 2125000,
+            "scrolls": [
+              1777,
+              0,
+              0,
+              0
+            ],
+            "completed": 3000,
+            "rolls": 2387909
+          }
+        },
+        {
+          "target": 12,
+          "wallMs": 2417.1439,
+          "cpu": {
+            "user": 2422000,
+            "system": 63000
+          },
+          "result": {
+            "status": "unavailable",
+            "completed": 2,
+            "rolls": 60000000
+          }
+        }
+      ],
+      "speedup": 11.14949052060988
+    },
+    "sandboxEstimator": {
+      "rows": [
+        {
+          "mode": "before",
+          "wallMs": 79271.07549999999,
+          "cpu": {
+            "user": 74094000,
+            "system": 3594000
+          },
+          "result": {
+            "status": "unavailable",
+            "completed": 1,
+            "rolls": 60000000
+          }
+        },
+        {
+          "mode": "after",
+          "wallMs": 15676.806,
+          "cpu": {
+            "user": 14625000,
+            "system": 563000
+          },
+          "result": {
+            "status": "unavailable",
+            "completed": 1,
+            "rolls": 60000000
+          }
+        }
+      ],
+      "identicalResults": true,
+      "speedup": 5.056583305298285
+    },
+    "terminalParity": {
+      "revision": "0d8856111c945d5baacb2b0eeeb31a86cbe93a3b",
+      "scenario": "Halloween mrpumpkin stages from native timer, fights, recovers death and returns after deselection with a lost final native completion response",
+      "workers": 1,
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "assertions": "Identical native death, reentry, released pre-barrier, terminal settlement, ownership, one leave, one acknowledgement, peer completion and saved-checkpoint physical arrival",
+      "native": {
+        "passed": true,
+        "clockRate": 1,
+        "scenarioWallSeconds": 217.44,
+        "returnClockSeconds": 94.743,
+        "verifiedEvidenceFiles": 53,
+        "archive": ".build/ci-recovery/terminal-native"
+      },
+      "chronal": {
+        "passed": true,
+        "clockRate": 4,
+        "scenarioWallSeconds": 59.154,
+        "returnClockSeconds": 71,
+        "verifiedEvidenceFiles": 61,
+        "archive": ".build/ci-recovery/terminal-chronal"
+      }
+    },
+    "map": {
+      "beforeSeconds": 59.985,
+      "afterSeconds": [
+        4.024,
+        4.342
+      ],
+      "assertions": "Every RGBA byte, dimensions, footer text, tile color, popup metadata and saved PNGs retained",
+      "verifiedEvidenceFiles": 36
+    },
+    "clockTransport": {
+      "passed": 4,
+      "verifiedEvidenceFiles": 25,
+      "actualResetRecovery": true,
+      "permanentFailureRemainsFatal": true,
+      "lateBrowserTimersPreserved": true,
+      "nodeApplicationAwaitsAuthenticatedJoin": true
+    },
+    "browserStartup": {
+      "passed": 2,
+      "verifiedEvidenceFiles": 15,
+      "archive": ".build/ci-recovery/clock-startup-green",
+      "synchronousIframeAndExternalScriptDatesVerified": true,
+      "authenticatedStartupGate": true,
+      "relativeTimersAndCountsRetained": true
+    }
+  },
+  "settingsProviderValidation": {
+    "revision": "87a4d02ec68e98e0c0c410461848ff4898be01cb",
+    "total": 1,
+    "passed": 1,
+    "failed": [],
+    "workers": 1,
+    "backend": "chronal-network",
+    "clockRate": 4,
+    "started": "2026-10-19T21:26:48.365Z",
+    "finished": "2026-10-19T21:27:04.527Z",
+    "seconds": 16.162,
+    "evidenceFiles": 13,
+    "removedWorkspaces": 1,
+    "archive": "settings-offline-provider-green"
+  },
+  "caveDisplacementValidation": {
+    "revision": "ffb5e9499c545bf057a59776214685d86700300a",
+    "total": 1,
+    "passed": 1,
+    "failed": [],
+    "workers": 1,
+    "backend": "chronal-network",
+    "clockRate": 4,
+    "started": "2026-10-19T22:09:45.200Z",
+    "finished": "2026-10-19T22:13:11.735Z",
+    "seconds": 206.535,
+    "evidenceFiles": 71,
+    "removedWorkspaces": 1,
+    "archive": "cave-first-completion-green"
+  },
+  "huntReconnectValidation": {
+    "revision": "c0ca14d9847b4a35e2247f5b84761d92bf14d47e",
+    "total": 3,
+    "passed": 3,
+    "failed": [],
+    "workers": 1,
+    "backend": "chronal-network",
+    "clockRate": 4,
+    "started": "2026-10-19T22:36:51.528Z",
+    "finished": "2026-10-19T22:38:54.288Z",
+    "seconds": 122.76,
+    "evidenceFiles": 48,
+    "removedWorkspaces": 3,
+    "archive": "hunt-reconnect-route-green"
+  },
+  "lateStartupValidation": {
+    "revision": "21819eae132be89b048560ef03c7b2bae42857b5",
+    "total": 3,
+    "passed": 3,
+    "failed": [],
+    "workers": 1,
+    "backend": "chronal-network",
+    "clockRate": 4,
+    "started": "2026-10-19T22:51:14.753Z",
+    "finished": "2026-10-19T22:53:18.276Z",
+    "seconds": 123.523,
+    "evidenceFiles": 39,
+    "removedWorkspaces": 0,
+    "archive": "late-startup-scoped-delay-final-green"
+  },
+  "followupDropUiValidation": {
+    "revision": "11ba64a40e4e17a009a048e0e5c74f51b799fbd3",
+    "total": 1,
+    "passed": 1,
+    "failed": [],
+    "workers": 1,
+    "backend": "chronal-network",
+    "clockRate": 4,
+    "started": "2026-10-20T00:30:10.858Z",
+    "finished": "2026-10-20T00:30:16.734Z",
+    "seconds": 5.876,
+    "evidenceFiles": 18,
+    "removedWorkspaces": 1,
+    "archive": "direct-drop-ratios-complete-green",
+    "coveredByFullRun": false,
+    "scope": "Later direct-only drop filtering and responsive ratio cards. The maintained monster/item dialogs preserve distinct native/shared reward lines at 1440/640/390 px. Full run code remains fullRun.code.",
+    "typecheck": "npm run typecheck passed",
+    "candidate": {
+      "id": "3c8f69fd48a4c56137a3088e05684afcda079c4e73821bd3e9d331d7f99f2c77",
+      "sourceHash": "2c505891cc9cac99bbba924c28519f6ca8b174405c3d02a5229941b813256f53",
+      "completed": true,
+      "deepVerified": true,
+      "activeId": "6d3a59acde2e60284986249c7f826b24e349aa7010e86da591d4ee38271ca687",
+      "activated": false
+    }
+  }
+}

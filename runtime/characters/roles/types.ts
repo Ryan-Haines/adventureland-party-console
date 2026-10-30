@@ -20,7 +20,7 @@ export interface SharedCombat {
   merchantEventCombatActive?(): boolean;
   combatContext?(): import('../skills/types.ts').CombatContext;
   merchantVisibilityActive?(): boolean;
-  skillTargetAllowed?(target: Target): boolean;
+  skillTargetAllowed?(target: Target, skill?: import('../skills/types.ts').SkillId): boolean;
   skillSupport?(): Promise<boolean>;
   skillOffense?(target: Target): Promise<boolean>;
   absorbLeaderAggro?(): Promise<boolean>;
@@ -68,11 +68,14 @@ export interface SharedCombat {
   allowsTarget(target: Target): boolean;
   allowsPassingTarget(target: Target): boolean;
   emergencyWarriorStomp(): Promise<boolean>;
+  graveyardAreaAttackAllowed?(range: number): boolean;
   dashToward(target: Target): Promise<boolean>;
   isAttackingPartyMember(target: Target): boolean;
   rejoinActiveEventAfterRespawn(): Promise<import("./death-recovery.ts").EventRejoinOutcome>;
+  eventRejoinRequired?(): boolean;
   beginFarmReunion(): unknown;
   isOccupied(): boolean;
+  getConsoleDrainTarget?(): Target | null;
   getAbtestingMode(): string;
   targetRejectionReason(target: Target): string | null;
   setCombatTarget(target: Target | null): void;

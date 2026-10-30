@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { CatalogComparison, comparisonEntry, comparisonButtonClass, type CatalogComparisonEntry } from "./catalog-comparison";
 import { DeferredPanel } from "./deferred-panel";
 import type { MerchantCatalogItem } from "./merchant-catalog-item";
+import type { InventoryEntry } from "./inventory-entry";
 const EquipmentCatalogDialog = lazy(() =>
   import("./equipment-catalog-dialog").then((module) => ({
     default: module.EquipmentCatalogDialog,
@@ -14,6 +15,11 @@ const EquipmentCatalogDialog = lazy(() =>
 import type { PartyConsoleModel } from "./use-party-console";
 
 import { usePanelModel } from "./use-panel-model";
+// A catalog item can carry its sprite on the entry with none on its meta; the entry's
+// meta is what the item dialog and the comparison table draw from.
+const catalogEntry = (item: MerchantCatalogItem): InventoryEntry => ({
+  slot: -1, item: { name: item.id }, meta: item.meta && { ...item.meta, sprite: item.meta.sprite || item.sprite },
+});
 export function PartyEquipmentCatalogDialog({ model }: { model: PartyConsoleModel }) {
   return model.catalogOpen ? <PartyEquipmentCatalogDialogConnected base={model} /> : null;
 }
@@ -38,11 +44,7 @@ function PartyEquipmentCatalogDialogConnected({ base }: { base: PartyConsoleMode
     [finish, setCatalogOpen],
   );
   const onInspect = useCallback(
-    (item: { id: string; meta?: import("./item-meta").ItemMeta | null }) =>
-      setSelected({
-        character: "Equipment catalog",
-        entry: { slot: -1, item: { name: item.id }, meta: item.meta },
-      }),
+    (item: MerchantCatalogItem) => setSelected({ character: "Equipment catalog", entry: catalogEntry(item) }),
     [setSelected],
   );
   const catalogAllItems = useMemo(() => state.merchantCatalog?.allItems || emptyArray<MerchantCatalogItem>(), [state.merchantCatalog]);
@@ -55,7 +57,7 @@ function PartyEquipmentCatalogDialogConnected({ base }: { base: PartyConsoleMode
         comparisonSource={source}
         comparison={source && entries.length ? {
           selectedIds: entries.slice(1).map(({ entry }) => entry.item.name),
-          onAdd: (item) => setEntries((previous) => previous.length >= 4 || previous.slice(1).some(({ entry }) => entry.item.name === item.id) ? previous : [...previous, comparisonEntry({ slot: -1, item: { name: item.id }, meta: item.meta })]),
+          onAdd: (item) => setEntries((previous) => previous.length >= 4 || previous.slice(1).some(({ entry }) => entry.item.name === item.id) ? previous : [...previous, comparisonEntry(catalogEntry(item))]),
           controls: <div className="flex flex-wrap items-center gap-2 rounded border border-cyan-700 bg-[#10251f] p-3 text-sm">
             <span className="mr-auto">A: {String(source.meta?.definition.name || source.item.name)} +{entries[0].level}</span>
             <output>{entries.length - 1}/3 selected</output>

@@ -3,11 +3,12 @@ import type { Char } from './char';
 import { useCharacterData } from './dashboard-live';
 import { characterKey } from './dashboard-live';
 import { useQueries } from '@tanstack/react-query';
+import { audited } from './field-read-audit';
 
 export function SharedTracktrixBonuses({ names }: { names: string[] }) {
   const records = useQueries({ queries: names.map(name => ({ queryKey: characterKey(name, 'diagnostics'), enabled: false,
     staleTime: Infinity, queryFn: (): Partial<Char> => ({}) })) });
-  const data = records.slice().sort((a, b) => b.dataUpdatedAt - a.dataUpdatedAt).map(record => record.data?.tracktrix).find(value => value?.active && value.bonuses != null);
+  const data = records.slice().sort((a, b) => b.dataUpdatedAt - a.dataUpdatedAt).map(record => audited('diagnostics', record.data)?.tracktrix).find(value => value?.active && value.bonuses != null);
   return <TracktrixBonusList data={data && {...data, active: true}} title="Current bonuses for holding a tracktrix" theme="rose" />;
 }
 

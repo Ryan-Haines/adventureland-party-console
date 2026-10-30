@@ -10,7 +10,8 @@ import {
 import { MapPin } from "lucide-react";
 import { BestiaryDrops } from "./bestiary-drops";
 import { BestiaryMonster } from "./bestiary-monster";
-import { DefinitionGrid } from "./definition-grid";
+import { MonsterCards } from "./monster-card";
+import type { SkillClass } from "./skill-class";
 import { MerchantCatalogItem } from "./merchant-catalog-item";
 import { MonsterAchievementProgress } from "./monster-achievement-progress";
 import { SpriteCrop } from "./sprite-crop";
@@ -23,8 +24,15 @@ export function MonsterDetailsDialog({
   onOpenChange,
   onInspectDrop,
   onNavigate,
+  monsters = [],
+  skills = [],
+  onInspectMonster,
 }: {
   monster: BestiaryMonster | null;
+  // The bestiary and skill catalogs name a monster's spawns and skill abilities.
+  monsters?: BestiaryMonster[];
+  skills?: SkillClass[];
+  onInspectMonster?: (id: string) => void;
   catalog: MerchantCatalogItem[];
   achievement: { score: number; owner: string | null } | null;
   onOpenChange: (open: boolean) => void;
@@ -62,8 +70,13 @@ export function MonsterDetailsDialog({
               </div>
             </DialogHeader>
             <MonsterAchievementProgress monster={monster} achievement={achievement} />
-            <MonsterSpawns records={monster.spawnRecords} />
-            <DefinitionGrid value={monster.definition} omit={["name", "skin", "achievements"]} />
+            <MonsterSpawns records={monster.spawnRecords} eventSources={monster.eventSources} />
+            <MonsterCards
+              definition={monster.definition}
+              skillName={(id) => skills.flatMap((entry) => entry.skills).find((skill) => skill.id === id)?.name}
+              monsterName={(id) => monsters.find((entry) => entry.id === id)?.name}
+              onMonster={onInspectMonster}
+            />
             <section className="rounded border border-amber-900/80 bg-amber-950/10 p-4">
               <BestiaryDrops
                 monster={monster}

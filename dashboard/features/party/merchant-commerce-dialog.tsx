@@ -19,6 +19,7 @@ import { Tooltip as Preview } from '@base-ui/react/tooltip';
 import { PartyActionError } from './query-actions';
 import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ExchangeRewardTileData } from './exchange-reward-tile';
+import { formatDropRate } from './drop-rate';
 import { BankSnapshot } from './bank-snapshot';
 import { Bankboi } from './bankboi';
 import { Char } from './char';
@@ -974,7 +975,7 @@ export function MerchantCommerceDialog({
                         name: choice.name,
                         quantity: choice.rewardQuantity || 1,
                         sprite: choice.sprite,
-                        detail: '100%',
+                        detail: formatDropRate({ rate: 1, quantity: 1 }),
                         onInspect: () => {
                           const reward = catalog.allItems?.find(
                             (item) =>
@@ -1051,11 +1052,8 @@ export function MerchantCommerceDialog({
                           {result.name}
                           {result.quantity > 1 ? ` × ${result.quantity}` : ''}
                         </p>
-                        <p className="font-mono text-[10px] text-amber-300">
-                          {(result.chance * 100).toFixed(
-                            result.chance * 100 < 0.01 ? 4 : 2,
-                          )}
-                          %
+                        <p className="whitespace-pre font-mono text-[10px] text-amber-300">
+                          {formatDropRate({ rate: result.chance, quantity: 1 })}
                         </p>
                       </div>
                     </>
@@ -1070,7 +1068,7 @@ export function MerchantCommerceDialog({
                           quantity: result.quantity,
                           sprite: result.sprite,
                           kind: result.kind,
-                          detail: `${Number((result.chance * 100).toFixed(6))}%`,
+                          detail: formatDropRate({ rate: result.chance, quantity: 1 }),
                           onInspect: () => {
                             const nested = catalog.exchangeable?.find(
                               (choice) =>

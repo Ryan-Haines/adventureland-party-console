@@ -1,4 +1,5 @@
-import { acknowledgeDelivery } from './delivery-recovery.ts';
+import { acknowledgeDelivery, deliveryMatches, deliveryReady } from './delivery-recovery.ts';
+import { pruneLuckCasts } from "./luck.ts";
 import { requestObject, requestText } from "../http/contracts.ts";
 import { receiveBankDeconstruction } from "./bank-deconstruction.ts";
 import { receiveBankUpgrades } from '../inventory/bank-upgrade-receipts.ts';
@@ -43,6 +44,7 @@ export function createCompletionResults(state: CompletionState, ports: Completio
   function luck(body: CompletionReport): void {
     for (const recipient of body.mluckRecipients || [])
       if (typeof recipient === "string") state.mluckCastAt[recipient] = ports.now();
+    pruneLuckCasts(state.mluckCastAt, ports.now());
   }
   function upgrades(name: string | null, body: CompletionReport): void {
     if (body.upgradesResolved) {
@@ -50,6 +52,40 @@ export function createCompletionResults(state: CompletionState, ports: Completio
         ports.clearUpgrades(name, body.upgradeMarksResolved);
       else state.upgrades[String(name)] = [];
     }
+  }
+  type StatReceipt = NonNullable<CompletionReport['statScrollsApplied']>[number];
+  function appliedStatOriginal(receipt: StatReceipt): Record<string, unknown> | undefined {
+    const mark=requestObject(receipt.mark), original=requestObject(mark.item), actual=receipt.item;
+    if (mark.equipped || !Number.isSafeInteger(receipt.slot) || typeof mark.statType!=='string' || actual.stat_type!==mark.statType) return;
+    const previous:Item={...actual};
+    if(typeof original.stat_type==='string') previous.stat_type=original.stat_type;
+    else delete previous.stat_type;
+    if (deliveryMatches(previous,original) && deliveryMatches(original,previous)) return original;
+  }
+  function advanceStatDeliveries(receipt: StatReceipt, original: Record<string, unknown>, readyRecipients: Set<string>): void {
+    const mark=requestObject(receipt.mark);
+    // Only observed native mutation advances an item's reserved delivery identity.
+    for(const [recipient,deliveries] of Object.entries(state.merchantDeliveries)) for(const delivery of deliveries || []) {
+      if ((delivery.slot===mark.slot || delivery.slot===receipt.slot) && deliveryMatches(delivery.item,original) && deliveryMatches(original,delivery.item)) {
+        delivery.item={...receipt.item};delivery.slot=receipt.slot;
+        if(delivery.blocked==='Reserved delivery item missing') delete delivery.blocked;
+        if(deliveryReady(delivery)) readyRecipients.add(recipient);
+      }
+    }
+  }
+  function appliedStatReceipts(name: string | null, body: CompletionReport): void {
+    if (name !== state.merchantCharacter) return;
+    const readyRecipients=new Set<string>();
+    for (const receipt of body.statScrollsApplied || []) {
+      const original = appliedStatOriginal(receipt);
+      if (!original) continue;
+      advanceStatDeliveries(receipt, original, readyRecipients);
+      removeMatching(state.statScrolls[String(name)],[receipt.mark]);
+    }
+    // The dependency gate may have retired an empty delivery job. Native stat
+    // completion is the wakeup: an idle recipient need not publish a full new bag.
+    if(state.merchantAutomations?.deliveries!==false && readyRecipients.size)
+      ports.queue([...readyRecipients], 'deliveries');
   }
   function successfulImprovements(name: string | null, body: CompletionReport): void {
     upgrades(name, body);
@@ -101,6 +137,7 @@ export function createCompletionResults(state: CompletionState, ports: Completio
   function commerce(current: CompletionJob, body: CompletionReport): void {
     if (current.reason === "collect mail")
       ports.mailComplete(current.mail!.id, !!body.success, body.error);
+    if (current.reason === "send mail" && body.success === true) ports.mailSent?.(current.id, current.mail);
     search(body);
     for (const purchase of body.bidPurchases || [])
       ports.fulfill(purchase.item || { name: purchase.itemId, level: 0 }, purchase.quantity);
@@ -118,6 +155,7 @@ export function createCompletionResults(state: CompletionState, ports: Completio
   function resolve(current: CompletionJob, body: CompletionReport): void {
     const name = current.target;
     deconstructionReceipts(name, body);
+    appliedStatReceipts(name, body);
     commerce(current, body);
     cargo(body);
     if (body.success || realmFailure(body)) success(name, body);
@@ -142,6 +180,15 @@ export function createCompletionResults(state: CompletionState, ports: Completio
     receiveBankDeconstruction(state, name, body.confirmedWithdrawals, ports.now());
     receiveBankUpgrades(state, state.merchantCharacter, body.merchantWithdrawalsDelivered);
     receiveBankUpgrades(state, name, body.confirmedWithdrawals);
+    const receipts = Array.isArray(body.merchantWithdrawalsDelivered) ? body.merchantWithdrawalsDelivered : [];
+    for (const raw of state.compounds[String(state.merchantCharacter)] || []) {
+      const group=requestObject(raw);
+      for(const value of Array.isArray(group.items)?group.items:[]) {
+        const mark=requestObject(value),source=requestObject(mark.storage);
+        const received=receipts.map(value=>requestObject(value)).find(receipt=>receipt.pack===source.pack && receipt.slot===source.slot && deliveryMatches(requestObject(receipt.item),requestObject(mark.item)) && deliveryMatches(requestObject(mark.item),requestObject(receipt.item)));
+        if(mark.storage && received && Number.isSafeInteger(received.inventorySlot)) {mark.storageReceived=true;mark.slot=received.inventorySlot;}
+      }
+    }
   }
   function realmFailure(body: CompletionReport): boolean {
     return !body.success && requestText(body.error || "").startsWith("merchant job failed: wrong realm");

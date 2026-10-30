@@ -88,7 +88,7 @@ export interface CaveCommand {
   independent?: boolean;
   cruiseSpeed?: number;
   id: string;
-  action: "gather" | "enter" | "move" | "vote" | "buy" | "exit" | "revival" | "stairs";
+  action: "gather" | "enter" | "move" | "vote" | "buy" | "exit" | "revival" | "stairs" | "talk";
   run?: string;
   resume?: boolean;
   target?: CavePoint;

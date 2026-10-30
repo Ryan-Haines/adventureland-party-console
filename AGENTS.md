@@ -24,8 +24,13 @@
 
 # Testing
 
+- For rising game ping or runtime slowdown, read [performance investigation lessons](docs/performance-investigations.md). Verify local callback delay and growing history work before changing cooldown compensation.
+
+- Always run `npm run typecheck` after implementation changes and fix compiler errors before handing the work back. Leaving gameplay verification and E2E testing to the user does not skip this check.
 - Never write unit tests after you write code.
 - Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- All gameplay E2Es must use ChronAL virtual time by default so gameplay waits do not run at real-time speed. Preserve browser, deployment, persistence, and telemetry coverage and existing behavioral assertions when integrating ChronAL; migrating a subset or retaining scenario counts alone does not satisfy this requirement. Validate runtime improvements locally with comparable runs and retain repeatable timing artifacts. Keep the native backend available for explicit parity checks.
+- Remove owned per-scenario E2E workspaces after owned processes stop and report attachments finish copying. Preserve verifiable reports and timing evidence; retain writable workspaces only for explicit diagnostics or failed attachment copies. Do not accumulate copies of staged CODE/assets across completed tests.
 - If you must test a system in isolation, first write down all the ways it could fail, then write the code.
 - Treat native action completion, queue removal, client persistence, and coordinator/dashboard telemetry as separate asynchronous milestones. Completing one does not prove the others have arrived. Before asserting asynchronously published state, use a bounded poll for the exact expected values from one fresh snapshot; retain strict counts and ownership checks rather than adding sleeps, widening expectations, or blindly increasing timeouts.
 - When investigating timing failures, compare native receipts, client storage, and later coordinator observations before changing gameplay code. Preserve timestamped observations on failure so delayed publication can be distinguished from lost, duplicated, or misattributed results. Fixture fault injection must target the current operation and must not itself stall unrelated status or movement requests.

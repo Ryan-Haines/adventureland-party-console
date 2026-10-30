@@ -1,7 +1,7 @@
 interface ShutdownPorts {
   log(message: string): void;
   stopCharacters(): Promise<void>;
-  closeStorage(): void;
+  closeStorage(): void | Promise<void>;
   exit(): void;
 }
 
@@ -14,7 +14,7 @@ export function createShutdown(ports: ShutdownPorts) {
     ports.log(`Received ${signal} on master. Rounding up clients`);
     await ports.stopCharacters();
     ports.log("now truly exiting");
-    ports.closeStorage();
+    await ports.closeStorage();
     ports.exit();
   };
 }

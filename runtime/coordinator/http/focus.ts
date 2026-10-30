@@ -8,6 +8,7 @@ import {
 import { createFocusSelection, type FocusState } from "../navigation/focus.ts";
 
 interface FocusRoutePorts {
+  focusChanged?(): void;
   owned(name: string): unknown;
   members(): string[];
   invalidate(names: string[], reason: string, shared: boolean): void;
@@ -40,6 +41,7 @@ function validRadius(value: unknown): boolean {
 
 export function createFocusRoute(state: FocusState, ports: FocusRoutePorts) {
   const selection = createFocusSelection(state, {
+    focusChanged: () => ports.focusChanged?.(),
     members: () => ports.members(),
     invalidate: (...args) => ports.invalidate(...args),
   });

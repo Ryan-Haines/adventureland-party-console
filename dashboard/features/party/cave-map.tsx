@@ -16,6 +16,8 @@ import type { MapFrame } from './map-frame';
 import { MapCanvas } from './map-canvas';
 import { dungeonButton } from './dungeon-settings';
 import { MapCaptureButton, type MapCaptureState } from './map-capture-button';
+import type { MapDefinition } from './map-definition';
+import { useVisible } from './query-cache';
 
 export function CaveMap({
   view,
@@ -39,12 +41,15 @@ export function CaveMap({
     null,
   );
   const [frames, setFrames] = useState<Record<string, MapFrame>>({});
+  // Each stream delivers the floor definition once; later frames omit it.
+  const [definition, setDefinition] = useState<MapDefinition | null>(null);
+  const visible = useVisible();
   const [busy, setBusy] = useState(false);
   const [nativeSize, setNativeSize] = useState(false);
   const names = view.state.participants.join(',');
   const map = 'zone_' + cave.run + '_' + cave.floor;
   useEffect(() => {
-    if (!open) return;
+    if (!open || !visible) return;
     const streams = names.split(',').map((name) => {
       const stream = new EventSource(
         `${API}/map-stream/${encodeURIComponent(name)}`,
@@ -52,8 +57,10 @@ export function CaveMap({
       stream.onmessage = (event) => {
         try {
           const frame: MapFrame = JSON.parse(event.data);
-          if (frame.map === map)
-            setFrames((old) => ({ ...old, [name]: frame }));
+          if (frame.map !== map) return;
+          const supplied = frame.definition;
+          if (supplied?.name === map) setDefinition(supplied);
+          setFrames((old) => ({ ...old, [name]: frame }));
         } catch {
           /* next frame */
         }
@@ -61,8 +68,10 @@ export function CaveMap({
       return stream;
     });
     return () => streams.forEach((s) => s.close());
-  }, [open, names, map]);
-  const frame = frames[view.state.participants[0]]?.definition ? frames[view.state.participants[0]] : Object.values(frames).find((f) => f.definition?.name === map);
+  }, [open, visible, names, map]);
+  const currentFrames = Object.fromEntries(Object.entries(frames).filter(([, frame]) => frame.map === map));
+  const shown = definition?.name === map ? definition : null;
+  const frame = shown ? currentFrames[view.state.participants[0]] || Object.values(currentFrames)[0] : undefined;
   const pins = [
     ...cave.points
       .filter((p) => p.map === map && !p.exit)
@@ -72,7 +81,7 @@ export function CaveMap({
         label: p.label,
         color: p.done ? '#4ade80' : p.required ? '#fb923c' : '#facc15',
       })),
-    ...Object.values(frames).map((f) => ({
+    ...Object.values(currentFrames).map((f) => ({
       x: f.x,
       y: f.y,
       label: f.name,
@@ -101,7 +110,7 @@ export function CaveMap({
           </DialogHeader>
           <div className="h-[min(600px,calc(100vh-16rem))] overflow-hidden rounded border border-emerald-800 bg-[#07110f]">
             <MapCanvas
-              definition={frame?.definition || null}
+              definition={shown}
               frame={
                 frame
                   ? {

@@ -7,6 +7,6 @@ export type BestiaryDrop = {
   rate: number;
   quantity: number;
   sprite?: Sprite | null;
-  sourceType?: "monster" | "zone" | "world";
+  sourceType?: "monster" | "home" | "zone" | "world";
   mapName?: string;
 };

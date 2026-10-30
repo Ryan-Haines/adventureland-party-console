@@ -1,3 +1,4 @@
+import {waitForGameplay} from './network-clock';
 import {observeNativeNavigationHttp} from './native-navigation-http-observer';
 import {installTerminalSettlementFault} from './native-terminal-settlement-fault';
 import {observeNativeStatus} from './native-status-observer';
@@ -71,7 +72,9 @@ test.afterEach(async({live},info)=>{
     await info.attach('native-halloween-return-geometry',{body:JSON.stringify(geometry),contentType:'application/json'});
   }
   }finally{
-  const restored=await live.admin(`output=(()=>{const restored=[];for(const [type,entry] of Object.entries(globalThis.__e2eHalloweenCatalogs||{})){
+  const restored=await live.admin(`output=(()=>{
+    if(Object.hasOwn(globalThis,'__e2eSlenderWarpSeason')){events.halloween=globalThis.__e2eSlenderWarpSeason;delete globalThis.__e2eSlenderWarpSeason;}
+    const restored=[];for(const [type,entry] of Object.entries(globalThis.__e2eHalloweenCatalogs||{})){
     if(G.monsters[type]!==entry.configured)throw Error('Declared native catalog changed during encounter: '+type);
     G.monsters[type]=entry.original;
     restored.push({type,declaredCharge:entry.configured.charge,originalCharge:entry.original.charge,restoredOriginal:G.monsters[type]===entry.original});
@@ -351,11 +354,11 @@ for (const original of [{ id: 'mrgreen',terminalFault:false }, { id: 'mrpumpkin'
       await info.attach('native-halloween-death-and-reentry', { body: JSON.stringify({ death, native: await world(live, encounter.id), coordinator: await live.state() }), contentType: 'application/json' });
       const navigationHttp=encounter.id==='mrpumpkin'?observeNativeNavigationHttp(live.clients[W].page):null;
       const terminalFault=original.terminalFault?await installTerminalSettlementFault(live,live.clients[W].page):null;
-      try{
       const returnPhases:{deselectedAt:number;replacementRequestedAt?:number;replacementAcknowledgedAt?:number;recoveryStartedAt:number;recoveryDeadline:number;arrivalObservedAt?:number}={
         deselectedAt:Date.now(),recoveryStartedAt:Date.now(),recoveryDeadline:0};
       let returnDeadline = returnPhases.deselectedAt + (encounter.id === 'mrgreen' ? 240_000 : 180_000);
       returnPhases.recoveryDeadline=returnDeadline;
+      try{
       await live.post('/formation', { character: W, eventSelections: [] });
       if (encounter.id === 'mrgreen') {
         let before:any, after:any;
@@ -393,7 +396,13 @@ for (const original of [{ id: 'mrgreen',terminalFault:false }, { id: 'mrpumpkin'
           await info.attach('native-green-exit-code-turnover',{body:JSON.stringify({before,after,observations,phases:returnPhases,native:await world(live,encounter.id)}),contentType:'application/json'});
         }
       }
-      if(terminalFault)await info.attach('native-terminal-settlement-fault-proof',{body:JSON.stringify(await terminalFault.prove(returnDeadline)),contentType:'application/json'});
+      if(terminalFault){
+        const proof=await terminalFault.prove(returnDeadline);
+        const retired=await terminalFault.finish();
+        expect(retired.forwardingErrors,'Fault transport must drain cleanly before normal checkpoint travel').toEqual([]);
+        expect(retired.pendingHeld,'No completed fault may retain a native request during checkpoint travel').toBe(false);
+        await info.attach('native-terminal-settlement-fault-proof',{body:JSON.stringify(proof),contentType:'application/json'});
+      }
       await expect.poll(async () => {
         const native = await world(live, encounter.id);
         return fighters.every(name => native.players[name] && native.players[name].map === savedCheckpoint.location.map && Math.hypot(native.players[name].x - savedCheckpoint.location.x, native.players[name].y - savedCheckpoint.location.y) < 100);
@@ -408,8 +417,11 @@ for (const original of [{ id: 'mrgreen',terminalFault:false }, { id: 'mrpumpkin'
       }));
       await info.attach('halloween-saved-checkpoint-return', { body: JSON.stringify({savedCheckpoint,phases:returnPhases,nativeArrivalReceipts, native: await world(live, encounter.id), coordinator: await live.state() }), contentType: 'application/json' });
       }finally{
+        try{await info.attach('native-event-return-phase-timing',{body:JSON.stringify({phases:returnPhases,observedAt:Date.now(),native:await world(live,encounter.id)}),contentType:'application/json'});}
+        finally{
         try{if(terminalFault)await info.attach('native-terminal-settlement-fault-final',{body:JSON.stringify(await terminalFault.finish()),contentType:'application/json'});}
         finally{if(navigationHttp)await info.attach('native-pumpkin-return-http',{body:JSON.stringify(await navigationHttp.finish()),contentType:'application/json'});}
+        }
       }
     });
   });
@@ -419,6 +431,12 @@ test.describe('Slenderman', () => {
   test.use({ initialPosition: { map: 'halloween', x: 0, y: 0 } });
   test('Halloween Slenderman follows native map-only sightings, reacquires a warp and returns after native death', async ({ live }, info) => {
     test.setTimeout(600_000);
+    // This case declares one observed warp below. The seasonal random warp
+    // scheduler otherwise relocates Slender before the first selected attack,
+    // and repeatedly during reacquisition, making the declared journey vanish.
+    const warpSchedule=await live.admin(`output=(()=>{globalThis.__e2eSlenderWarpSeason=events.halloween;events.halloween=false;
+      return {autonomousSeasonalWarps:false,declaredWarps:1,nativeCombat:true};})()`);
+    await info.attach('declared-slenderman-warp-schedule',{body:JSON.stringify(warpSchedule),contentType:'application/json'});
     const seeded = await spawn(live, 'slenderman', 'halloween', 120, 0);
     await prepare(live, 'slenderman');
     await expect.poll(async () => (await world(live, 'slenderman')).boss?.hp, { timeout: 60_000 }).toBeLessThan(seeded.hp);
@@ -464,8 +482,18 @@ test.describe('Absent Halloween spawn', () => {
   test.use({ initialPosition: { map: 'halloween', x: -335, y: 685 } });
   test('Halloween staging abandons an absent native spawn after its fixed deadline and returns without reopening', async ({ live }, info) => {
     test.setTimeout(420_000);
+    // October's native season now runs automatically in the pinned server.
+    // Declare this encounter's absent spawn before admission; otherwise the
+    // unrelated season timer creates a real boss halfway through the timeout.
+    const timerSeed=await live.admin(`output=(()=>{if(get_monster('mrpumpkin'))throw Error('Absent-spawn fixture requires no boss');
+      globalThis.__e2eAbsentPumpkinTimer=timers.mrpumpkin;timers.mrpumpkin=new Date(Date.now()+3600000);
+      return {at:Date.now(),original:globalThis.__e2eAbsentPumpkinTimer,delayedUntil:timers.mrpumpkin};})()`);
+    await info.attach('absent-native-spawn-timer-declaration',{body:JSON.stringify(timerSeed),contentType:'application/json'});
+    try {
     const announcement = await announceSpawn(live, 'mrpumpkin', 15000);
-    await prepare(live, 'mrpumpkin');
+    const savedCheckpoint = await prepare(live, 'mrpumpkin');
+    expect(savedCheckpoint.location.map).toBe('halloween');
+    await info.attach('absent-native-spawn-saved-checkpoint',{body:JSON.stringify(savedCheckpoint),contentType:'application/json'});
     await expect.poll(async () => (await live.state()).characters[W]?.joinedEvent, { timeout: 30_000 }).toBe('mrpumpkin');
     await expect.poll(async () => {
       const state = await live.state();
@@ -477,11 +505,14 @@ test.describe('Absent Halloween spawn', () => {
     }, { timeout: 120_000, message: 'Both native Main exits must be explicitly acknowledged before checkpoint dispatch' }).toBe(true);
     await expect.poll(async () => {
       const native = await world(live, 'mrpumpkin'), state = await live.state();
-      return fighters.every(name => native.players[name] && native.players[name].map === 'halloween' && Math.hypot(native.players[name].x + 335, native.players[name].y - 685) < 100 && !state.characters[name]?.joinedEvent);
+      return fighters.every(name => native.players[name] && native.players[name].map === 'halloween' && Math.hypot(native.players[name].x - savedCheckpoint.location.x, native.players[name].y - savedCheckpoint.location.y) < 100 && !state.characters[name]?.joinedEvent);
     }, { timeout: 120_000 }).toBe(true);
     await live.admin('broadcast_e();output=true');
-    await live.clients[W].page.waitForTimeout(11000);
+    await waitForGameplay(11000);
     expect((await live.state()).characters[W]?.joinedEvent, 'Another native feed must not reopen the expired timer').toBeFalsy();
-    await info.attach('absent-native-spawn-bounded-return', { body: JSON.stringify({ announcement, native: await world(live, 'mrpumpkin'), coordinator: await live.state() }), contentType: 'application/json' });
+    await info.attach('absent-native-spawn-bounded-return', { body: JSON.stringify({ announcement, savedCheckpoint, native: await world(live, 'mrpumpkin'), coordinator: await live.state() }), contentType: 'application/json' });
+    } finally {
+      await live.admin("output=(()=>{timers.mrpumpkin=globalThis.__e2eAbsentPumpkinTimer;delete globalThis.__e2eAbsentPumpkinTimer;return true;})()");
+    }
   });
 });

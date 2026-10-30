@@ -4,6 +4,7 @@ import { ItemMeta } from "./item-meta";
 import { ITEM_PROPERTY_KEYS } from "./item-property-keys";
 import { STAT_SCROLL_BY_STAT } from "./stat-scroll-by-stat";
 import { STAT_SCROLLS } from "./stat-scrolls";
+import { titleBonus } from "./item-title";
 
 export function calculatedLevelProperties(meta: ItemMeta | undefined, item: Item, level: number) {
   const definition = meta?.definition || {};
@@ -12,6 +13,10 @@ export function calculatedLevelProperties(meta: ItemMeta | undefined, item: Item
   ITEM_PROPERTY_KEYS.forEach((key) => {
     const base = Number(definition[key]);
     if (Number.isFinite(base)) values[key] = base;
+  });
+  // The game applies a copy's title before its upgrade levels (docs/item-titles.md).
+  Object.entries(titleBonus(item, meta)).forEach(([key, amount]) => {
+    values[key] = (values[key] || 0) + amount;
   });
   for (let step = 1; step <= level; step += 1) {
     let multiplier = 1;

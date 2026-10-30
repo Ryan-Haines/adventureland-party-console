@@ -18,7 +18,7 @@ interface CommerceJob extends MerchantWork {
 interface MerchantOrderState {
   merchantCharacter: string | null;
   merchantCatalog: { buyable: OrderChoice[]; craftable: OrderChoice[] } | null;
-  statuses: Record<string, { items?: (MaterialEntry | null)[] } | undefined>;
+  statuses: Record<string, { seenAt?:number; items?: (MaterialEntry | null)[] } | undefined>;
   bankSnapshot: { packs?: Record<string, (MaterialEntry | null)[] | undefined> } | null;
   bankbois?: Record<string, { items?: (MaterialEntry | null)[] } | undefined>;
   withdrawals?: Record<string, StorageReference[] | undefined>;
@@ -167,9 +167,9 @@ export function createMerchantOrderRoute(state: MerchantOrderState, ports: Merch
       job.order = { ...order, buys: [] };
     }
   }
-  function enqueue(order: MaterialOrder, res: HttpResponse): unknown {
+  function enqueue(order: MaterialOrder) {
     const previous = duplicate(order);
-    if (previous) return res.json({ ok: true, jobId: previous.id, duplicate: true });
+    if (previous) return { ok: true, jobId: previous.id, duplicate: true };
     const job = {
       id: "merchant-" + ports.now() + "-" + ports.nextCommand(),
       target: state.merchantCharacter,
@@ -200,7 +200,7 @@ export function createMerchantOrderRoute(state: MerchantOrderState, ports: Merch
         );
     }
     ports.dispatch();
-    return res.json({ ok: true, jobId: job.id });
+    return { ok: true, jobId: job.id };
   }
 
   function orderLines(body: Record<string, unknown>, choices: ReturnType<typeof catalog>) {
@@ -259,7 +259,7 @@ export function createMerchantOrderRoute(state: MerchantOrderState, ports: Merch
           return { ...entry, required, available: required - entry.quantity };
         }),
       });
-    return enqueue(
+    return res.json(enqueue(
       {
         buys,
         crafts,
@@ -277,8 +277,39 @@ export function createMerchantOrderRoute(state: MerchantOrderState, ports: Merch
           quantity: entry.quantity,
         })),
       },
-      res,
-    );
+    ));
   }
-  return { handle };
+  const supplyPublications=new Map<string,{jobId:string;after?:number}>();
+  function restockPending(item:string):boolean {
+    const active=[state.merchantCurrent,...state.merchantQueue].find(job=>job?.reason==='merchant commerce' &&
+      [...(job.order?.buys || []),...(job.order?.crafts || [])].some(line=>line.id===item));
+    if (active) { supplyPublications.set(item,{jobId:active.id}); return true; }
+    const publication=supplyPublications.get(item);
+    if (!publication) return false;
+    // A completion receipt precedes the next ordinary inventory publication.
+    // Neither preempt production with its own output nor buy against that old snapshot.
+    publication.after ??= ports.now();
+    if ((state.statuses[String(state.merchantCharacter)]?.seenAt || 0) <= publication.after) return true;
+    supplyPublications.delete(item);
+    return false;
+  }
+  /** Automatic supply orders use the same durable material allocation and execution. */
+  function validSupplyQuantity(quantity: number): boolean {
+    return Number.isSafeInteger(quantity) && quantity >= 1;
+  }
+  function restockSupply(item: string, quantity: number): boolean {
+    if (!state.merchantCharacter || !validSupplyQuantity(quantity)) return false;
+    if (restockPending(item)) return true;
+    const choices=catalog(), buy=choices.buyable.some(choice=>choice.id===item), craft=choices.craftable.find(choice=>choice.id===item);
+    if (!buy && !craft || craftProtection(state).error) return false;
+    const buys:OrderLine[]=buy?[{id:item,quantity,level:0}]:[], crafts:OrderLine[]=buy?[]:[{id:item,quantity,level:0}];
+    const allocation=materials(crafts,choices.craftable), missing=allocation.missing();
+    if (missing.some(entry=>entry.level!==0 || !choices.buyable.some(choice=>choice.id===entry.id))) return false;
+    const queued=enqueue({buys,crafts,sources:allocation.sources,inventory:allocation.inventory,bank:allocation.bank,storage:allocation.storage,
+      requirements:allocation.totals,craftMaterials:crafts.map(line=>choices.craftable.find(choice=>choice.id===line.id)!.materials || []),
+      materialBuys:missing.map(entry=>({id:entry.id,level:0,quantity:entry.quantity}))});
+    supplyPublications.set(item,{jobId:queued.jobId});
+    return true;
+  }
+  return { handle, restockSupply, restockPending };
 }

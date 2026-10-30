@@ -21,6 +21,7 @@ function runtime(bank) {
     request: async (url, options) => calls.push({ url, body: options.body }),
   });
  require('./helpers/client-dependencies.cjs').merchantGuards(r,{});
+  vm.runInContext(source.slice(source.indexOf('  function fingerprint('), source.indexOf('  async function refreshPontyListings(')), r);
   vm.runInContext(source.slice(source.indexOf('  function findExchangeBankItem('),
     source.indexOf('  async function runMerchantJob(')), r);
   return { r, calls };

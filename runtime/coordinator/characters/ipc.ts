@@ -119,6 +119,7 @@ export function receiveWorkerMessage(
       synchronizeStorage(message, {
         local: ports.local,
         session: ports.session,
+        owner: name,
         reply: (reply) => sendWorker(block.instance, reply),
         broadcast: (value) => broadcast(value, ports),
       });

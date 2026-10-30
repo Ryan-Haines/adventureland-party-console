@@ -7,7 +7,7 @@ function installLongTasks({binding,key}:{binding:string;key:string}) {
   const observer=new PerformanceObserver(list=>{
     const name=game.character?.name;
     if(!['E2EWarrior','E2EPriest','E2EMerchant'].includes(name))return;
-    const rows=list.getEntries().map((entry:any)=>({name,at:performance.timeOrigin+entry.startTime,
+    const rows=list.getEntries().map((entry:any)=>({name,at:(game.__e2eChronalClock?.nativeTimeOrigin??performance.timeOrigin)+entry.startTime,gameplayObservedAt:Date.now(),
       startTime:entry.startTime,duration:entry.duration,context:game.sharedRoutine?'code':'native',
       path:location.pathname,generation:game.__e2eObserverGeneration||game.parent?.__e2eObserverGeneration,
       attribution:(entry.attribution||[]).slice(0,3).map((a:any)=>({name:a.name,containerType:a.containerType,containerName:a.containerName,containerId:a.containerId}))}));

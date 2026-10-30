@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { fetchFullState } from './state-route';
 
 // Failure inventory: closing the Bestiary drops diagnostic subscriptions; item
 // drilldowns recompute an empty score map; deeper trails and Back lose the owner.
@@ -9,7 +10,7 @@ test('Bestiary item drilldown retains Tracktrix scores through deeper trails', a
     trail:['Prat','Platinum Nugget','Targetron','Platinum Nugget','Targetron','Back','Back']}),contentType:'application/json'});
   await page.route('**/party-api/dashboard-stream', route => route.abort());
   await page.route('**/party-api/state*', async route => {
-    const response=await route.fetch(),state=await response.json();
+    const response=await fetchFullState(route),state=await response.json();
     const catalog=state.merchantCatalog;
     if(catalog) catalog.allItems=catalog.allItems.map((item:any)=>item.id==='platinumnugget'
       ? {...item,meta:{...item.meta,world:{...item.meta?.world,drops:[{monsterId:'targetron',monsterName:'Targetron',rate:0.1,quantity:1}]}}}:item);

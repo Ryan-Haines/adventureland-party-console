@@ -49,16 +49,53 @@ test('bank snapshots use cached world metadata and never calculate drop graphs',
   const context = vm.createContext({
     G: { items: { coat: { name: 'Coat', skin: 'coat' } }, positions: {}, imagesets: {} },
     character: { bank: { gold: 123, items0: [{ name: 'coat' }] } },
-    itemWorldCache: {}, fingerprint: item => ({ ...item }),
+    itemWorldCache: {}, fingerprint: item => ({ ...item }), catalogKnown: false,
     safeItemDefinition: value => value, item_properties: () => ({}), itemSeller: () => null,
-    safeFields: value => value, maximumItemLevel: () => 0, itemUsage: () => ({}),
+    safeFields: value => value, maximumItemLevel: () => 0, itemUsage: () => ({}), itemBonuses: () => [],
     itemWorldInfo: () => { throw Error('blocking world discovery in live report'); },
   });
-  vm.runInContext(['itemDefinition', 'bankSnapshot'].map(name => namedFunction(source, name)).join('\n'), context);
+  vm.runInContext(['itemSheetSprite', 'itemProperties', 'itemTitle', 'itemDefinition', 'bankSnapshot']
+    .map(name => namedFunction(source, name)).join('\n'), context);
   const first = context.bankSnapshot();
   assert.equal(first.packs.items0.length, 42);
   assert.equal(first.packs.items0[0].item.name, 'coat');
   assert.equal(first.packs.items0[0].meta.world, undefined);
   context.itemWorldCache.coat = cached;
   assert.equal(context.bankSnapshot().packs.items0[0].meta.world, cached);
+});
+
+// Failure inventory for per-copy reports: (1) a report sent after the
+// coordinator holds the catalog still carries the definition, world or usage
+// of every copy; (2) a report sent before that point drops static meta the
+// coordinator has no other source for; (3) a copy with its own skin loses its
+// sprite; (4) a level or stat change on one copy is lost; (5) a titled copy
+// loses its title (1.5, docs/item-titles.md).
+test('reports carry per-copy item meta once the coordinator holds the catalog', () => {
+  const source = fs.readFileSync('characters/shared.js', 'utf8');
+  const context = vm.createContext({
+    G: { items: { coat: { name: 'Coat', skin: 'coat', upgrade: { armor: 1 } } },
+      positions: { coat: ['pack_20', 1, 2], xmascoat: ['pack_20', 3, 4] },
+      imagesets: { pack_20: { file: '/pack.png', size: 20, columns: 10, rows: 10 } } },
+    itemWorldCache: { coat: { drops: [{ monsterId: 'bee' }] } }, catalogKnown: false,
+    safeItemDefinition: value => ({ ...value }), itemSeller: () => null,
+    item_properties: item => ({ armor: 10 + (item.level || 0), stat: item.stat_type ? 3 : 0 }),
+    safeFields: value => value, maximumItemLevel: () => 12, itemUsage: () => ({ classes: [], hands: [] }), itemBonuses: () => [],
+  });
+  vm.runInContext(['itemSheetSprite', 'itemProperties', 'itemTitle', 'itemDefinition']
+    .map(name => namedFunction(source, name)).join('\n'), context);
+  const full = context.itemDefinition({ name: 'coat', level: 2 });
+  assert.deepEqual(Object.keys(full).sort(), ['bonuses', 'buyable', 'compoundable', 'definition', 'maxLevel',
+    'properties', 'scaling', 'sprite', 'title', 'upgradeable', 'usage', 'world']);
+  assert.equal(full.sprite.x, 1);
+  context.catalogKnown = true;
+  assert.deepEqual(JSON.parse(JSON.stringify(context.itemDefinition({ name: 'coat', level: 2 }))),
+    { properties: { armor: 12 } });
+  assert.deepEqual(JSON.parse(JSON.stringify(context.itemDefinition({ name: 'coat', level: 5, stat_type: 'str' }))),
+    { properties: { armor: 15, stat: 3 } });
+  assert.equal(context.itemDefinition({ name: 'coat', skin: 'xmascoat' }).sprite.x, 3);
+  assert.equal(context.itemDefinition({ name: 'coat', skin: 'coat' }).sprite, undefined);
+  assert.equal(context.itemDefinition({ name: 'missing' }), null);
+  context.G.titles = { shiny: { luck: 5 } };
+  assert.deepEqual(JSON.parse(JSON.stringify(context.itemDefinition({ name: 'coat', level: 2, p: 'shiny' }))),
+    { properties: { armor: 12 }, title: { luck: 5 } });
 });

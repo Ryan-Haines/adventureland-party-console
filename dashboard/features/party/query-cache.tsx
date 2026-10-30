@@ -2,6 +2,7 @@
 import {
   QueryClient,
   QueryClientProvider,
+  replaceEqualDeep,
   useQueries,
   useQuery,
   useQueryClient,
@@ -85,11 +86,12 @@ export function authenticationLost(client: QueryClient) {
   if (typeof window !== 'undefined')
     window.dispatchEvent(new Event('party-auth-loss'));
 }
-export async function read<T>(
+async function respond(
   client: QueryClient,
   path: string,
-  signal?: AbortSignal,
-): Promise<T> {
+  signal: AbortSignal | undefined,
+  unchanged = false,
+): Promise<Response> {
   const response = await fetch(API + path, { cache: 'no-store', signal });
   if (
     response.status === 401 ||
@@ -99,12 +101,55 @@ export async function read<T>(
     authenticationLost(client);
     throw new ReadError(401, 'Session expired. Reconnect this browser.');
   }
-  if (!response.ok)
+  if (!response.ok && !(unchanged && response.status === 304))
     throw new ReadError(
       response.status,
       'Reconnecting — showing last received data',
     );
-  return response.json() as Promise<T>;
+  return response;
+}
+export async function read<T>(
+  client: QueryClient,
+  path: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  return (await respond(client, path, signal)).json() as Promise<T>;
+}
+// The coordinator answers 304 for these sections while their serialized body
+// is unchanged (runtime/coordinator/telemetry/section-revision.ts). Each
+// revision belongs to the cached data object it arrived with, so the dashboard
+// reads a section in full after setQueryData replaces its data or the cache
+// removes it.
+const revisionDomains = new Set<Domain>(['bank', 'logs', 'market']);
+const revisions = new WeakMap<object, string>();
+async function readRevision<T extends object>(
+  client: QueryClient,
+  domain: Domain,
+  path: string,
+  signal: AbortSignal,
+): Promise<T> {
+  const cached = client.getQueryData<T>(key(domain));
+  const revision = cached && revisions.get(cached);
+  const response = await respond(
+    client,
+    revision ? `${path}&revision=${encodeURIComponent(revision)}` : path,
+    signal,
+    true,
+  );
+  if (response.status === 304) {
+    if (cached && client.getQueryData(key(domain)) === cached) return cached;
+    return readRevision(client, domain, path, signal);
+  }
+  const result = (await response.json()) as T;
+  const tag = response.headers.get('ETag');
+  if (tag) revisions.set(result, tag.replace(/^"|"$/g, ''));
+  return result;
+}
+function shareRevision(previous: unknown, next: unknown): unknown {
+  const shared = replaceEqualDeep(previous, next);
+  const revision = next && typeof next === 'object' ? revisions.get(next) : undefined;
+  if (revision && shared && typeof shared === 'object') revisions.set(shared, revision);
+  return shared;
 }
 export function useVisible() {
   const [visible, setVisible] = useState(
@@ -118,6 +163,11 @@ export function useVisible() {
     return () => document.removeEventListener('visibilitychange', change);
   }, []);
   return visible;
+}
+/** True in a hidden browser tab. A render without a document never pauses. */
+export function useHidden() {
+  const visible = useVisible();
+  return typeof document !== 'undefined' && !visible;
 }
 export const policies = {
   core: [1000, 1000, 300000],
@@ -148,6 +198,7 @@ export function domainOptions(client: QueryClient, domain: Domain) {
     staleTime,
     gcTime,
     refetchInterval: interval || (false as false),
+    ...(revisionDomains.has(domain) ? { structuralSharing: shareRevision } : {}),
     queryFn: async ({
       signal,
     }: {
@@ -166,6 +217,13 @@ export function domainOptions(client: QueryClient, domain: Domain) {
         'connection',
       ])?.version;
       const sentAt = Date.now();
+      if (revisionDomains.has(domain))
+        return readRevision<Partial<PartyState>>(
+          client,
+          domain,
+          `/state?catalog=0&dashboard=1&section=${domain}`,
+          signal,
+        );
       const result = await read<
         Partial<PartyState> & {
           serverNow?: number;

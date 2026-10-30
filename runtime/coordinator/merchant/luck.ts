@@ -32,6 +32,15 @@ function remainingFromCast(
   return status && castAt ? Math.max(0, luckDurationMs - (now - castAt)) : 0;
 }
 
+/**
+ * A cast older than the luck duration gives the same remaining time as no
+ * cast, so pruneLuckCasts drops its entry. Keys are player names, which grow
+ * with every player the merchant meets.
+ */
+export function pruneLuckCasts(casts: Record<string, number>, now: number): void {
+  for (const [name, at] of Object.entries(casts)) if (!(now - Number(at) < luckDurationMs)) delete casts[name];
+}
+
 export function mluckRemaining(
   status: LuckStatus | undefined,
   merchant: string | null,

@@ -1,0 +1,32 @@
+{
+  "rows": [
+    {
+      "mode": "before",
+      "wallMs": 79271.07549999999,
+      "cpu": {
+        "user": 74094000,
+        "system": 3594000
+      },
+      "result": {
+        "status": "unavailable",
+        "completed": 1,
+        "rolls": 60000000
+      }
+    },
+    {
+      "mode": "after",
+      "wallMs": 15676.806,
+      "cpu": {
+        "user": 14625000,
+        "system": 563000
+      },
+      "result": {
+        "status": "unavailable",
+        "completed": 1,
+        "rolls": 60000000
+      }
+    }
+  ],
+  "identicalResults": true,
+  "speedup": 5.056583305298285
+}

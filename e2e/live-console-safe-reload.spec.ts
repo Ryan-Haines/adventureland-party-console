@@ -1,10 +1,15 @@
+import {waitForGameplay} from './network-clock';
 import {test,expect} from './live-fixtures';
 import {W,P,M,evidence} from './hunt-interruption-helpers';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
 
 test.use({loadout:'combat-range',initialPosition:{map:'main',x:1260,y:-70}});
-test('safe console reload finishes the native fight without acquiring the next target',async({live},info)=>{
+test.describe('native combat drain',()=>{
+// Hunt cancellation returns to the configured native Goo farm. Seed the fight
+// in that farm so the successor remains observable after the mode turnover.
+test.use({initialPosition:{map:'main',x:0,y:787}});
+for(const turnover of [false,true]) test('safe console reload finishes the native fight without acquiring the next target'+(turnover?' after Hunt and unjoined event selection turnover':''),async({live},info)=>{
   test.setTimeout(180000);
   // Failure inventory: docs/testing-safe-console-reload.md.
   await live.post('/merchant/force-stand',{enabled:true});
@@ -69,9 +74,16 @@ test('safe console reload finishes the native fight without acquiring the next t
     },{timeout:5000,
       message:'Fast combat responses must apply the hold while full status is delayed'}).toBe('native-safe-reload');
     holdFull=false;releases.splice(0).forEach(release=>release());
-    await live.clients[W].page.waitForTimeout(500);
+    await waitForGameplay(500);
     expect(await live.clients[W].run('globalThis.__partyConsoleMaintenance?.id')).toBe('native-safe-reload');
     await expect.poll(async()=>{const state=await live.state();return [W,P,M].every(name=>state.characters[name]?.consoleMaintenance?.id==='native-safe-reload');},{timeout:15000}).toBe(true);
+    if(turnover){
+      await live.admin(`output=(()=>{globalThis.__safeDrainPreviousHalloween={enabled:events.halloween,published:E.halloween};events.halloween=true;E.halloween=true;for(const name of ['${W}','${P}']){const p=get_player(name);p.p.trickortreat=null;p.trickortreat=trick_or_treat_status(p);resend(p,'u+reopen+cid');}broadcast_e();return true;})()`);
+      await live.post('/formation',{character:W,eventSelections:['trickortreat']});
+      await live.post('/farming-mode',{character:W,mode:'hunt'});
+      await expect.poll(async()=>{const s=await live.state();return {event:s.characters[W]?.activeEvent,joined:s.characters[W]?.joinedEvent||null};},{timeout:15000}).toEqual({event:'trickortreat',joined:null});
+      await expect.poll(async()=>(await live.state()).monsterHunt?.message,{timeout:15000}).toContain('console load');
+    }
     await expect.poll(async()=>hit(await live.clients[W].events(),seeded.first).length,{timeout:15000,
       message:'Native attacks must continue after the acquisition hold'}).toBeGreaterThan(before);
     await expect.poll(async()=>{
@@ -82,16 +94,21 @@ test('safe console reload finishes the native fight without acquiring the next t
     },{timeout:90000,intervals:[250,500]}).toBe(true);
     await expect.poll(async()=>{const state=await live.state();return [W,P,M].every(name=>state.characters[name]?.consoleMaintenance?.ready===true);},
       {timeout:15000,message:'Fresh participants must report the finished fight as safe'}).toBe(true);
-    await live.clients[W].page.waitForTimeout(1500);
+    await waitForGameplay(1500);
     expect(hit(await live.clients[W].events(),seeded.next),'The pending reload must not acquire the next monster').toHaveLength(0);
     expect(await live.clients[W].run('sharedRoutine.queueMarkers().filter(m=>m.role==="current"&&m.visible).length')).toBe(0);
-    expect(await live.clients[W].run(`sharedRoutine.queueMarkers().some(m=>m.id===${JSON.stringify(seeded.next)}&&m.role==='next'&&m.visible)`)).toBe(true);
+    if(!turnover)expect(await live.clients[W].run(`sharedRoutine.queueMarkers().some(m=>m.id===${JSON.stringify(seeded.next)}&&m.role==='next'&&m.visible)`)).toBe(true);
     await evidence(live,info,'safe-reload-native-combat-drain',{seeded,samples,firstHits:hit(await live.clients[W].events(),seeded.first),nextHits:hit(await live.clients[W].events(),seeded.next)});
     await info.attach('safe-reload-no-red-circle',{body:await live.clients[W].page.screenshot(),contentType:'image/png'});
+    if(turnover){
+      await live.post('/formation',{character:W,eventSelections:[]});
+      await live.post('/farming-mode',{character:W,mode:'default'});
+    }
     live.consoleDrainLease('native-safe-reload',Date.now()-1);
     await expect.poll(async()=>hit(await live.clients[W].events(),seeded.next).length,{timeout:30000,
       message:'An expired host hold must restore normal acquisition'}).toBeGreaterThan(0);
-  }finally{holdFull=false;releases.splice(0).forEach(release=>release());await live.clients[W].page.unrouteAll({behavior:'wait'});await evidence(live,info,'safe-reload-final-state',{seeded,samples});if(observerFrame&&!observerFrame.isDetached())await observerFrame.evaluate(()=>{const host=window as any;host.$(document).off('.safeDrainObservation');});live.consoleDrainLease(null);await live.admin(`output=(()=>{for(const id of ${JSON.stringify([seeded.first,seeded.next])}){const m=instances.main.monsters[id];if(m)remove_monster(m,{method:'disappear',nospawn:true});}return true;})()`);}
+  }finally{holdFull=false;releases.splice(0).forEach(release=>release());await live.clients[W].page.unrouteAll({behavior:'wait'});await evidence(live,info,'safe-reload-final-state',{seeded,samples});if(observerFrame&&!observerFrame.isDetached())await observerFrame.evaluate(()=>{const host=window as any;host.$(document).off('.safeDrainObservation');});live.consoleDrainLease(null);await live.admin(`output=(()=>{const previous=globalThis.__safeDrainPreviousHalloween;if(previous){events.halloween=previous.enabled;E.halloween=previous.published;delete globalThis.__safeDrainPreviousHalloween;broadcast_e();}for(const id of ${JSON.stringify([seeded.first,seeded.next])}){const m=instances.main.monsters[id];if(m)remove_monster(m,{method:'disappear',nospawn:true});}return true;})()`);}
+});
 });
 
 for(const mode of ['safe','now'] as const)test(`console reload resumes native farming and roaming defense in ${mode} mode`,async({live},info)=>{
@@ -128,7 +145,7 @@ for(const mode of ['safe','now'] as const)test(`console reload resumes native fa
       live.consoleDrainLease('reload-walk');
       await expect.poll(()=>live.clients[W].run('globalThis.__partyConsoleMaintenance?.id'),{timeout:10000}).toBe('reload-walk');
       await expect.poll(()=>live.admin(`output=!!get_player('${W}').moving`),{timeout:10000}).toBe(false);
-      await live.clients[W].page.waitForTimeout(3500);
+      await waitForGameplay(3500);
       expect(await live.clients[W].run('globalThis.__partyMovement.report()?.id')).toBe(journey);
       expect(await live.clients[W].run('sharedRoutine.canReload()')).toBe(true);
       samples.push({phase:'parked',journey,admission,position:await live.clients[W].snapshot()});
@@ -142,7 +159,7 @@ for(const mode of ['safe','now'] as const)test(`console reload resumes native fa
     if(mode==='safe'){
       live.consoleDrainLease('reload-combat');
       await expect.poll(async()=>{const s=await live.state();return s.characters[W]?.consoleMaintenance?.ready;},{timeout:15000}).toBe(true);
-      await live.clients[W].page.waitForTimeout(3200);
+      await waitForGameplay(3200);
       expect(await live.clients[W].run('sharedRoutine.canReload()')).toBe(true);
     }
     const runtime=(await live.state()).characters[W].dashboardRuntime;
@@ -165,6 +182,12 @@ for(const mode of ['safe','now'] as const)test(`console reload resumes native fa
     samples.push({phase:'resumed',mode,focus:(await live.state()).monsterFocus,position:await live.clients[W].snapshot()});
   }finally{
     live.consoleDrainLease(null);
+    samples.push({phase:'before-target-cleanup',at:Date.now(),native:await live.clients[W].run(`(()=>{
+      const ids=${JSON.stringify(seeded)},clock=globalThis.__e2eChronalClock;
+      return {at:Date.now(),runtime:globalThis.__partyRuntimeGeneration,clock:clock&&{now:clock.now(),join:clock.join,state:clock.state},
+        combat:globalThis.partyCombatState,trace:sharedRoutine.combatTraceSnapshot?.(),
+        targets:ids.map(id=>{const target=get_entity(id);return {id,target:target&&{id:target.id,map:target.map,x:target.x,y:target.y,hp:target.hp,visible:target.visible,target:target.target},canAttack:!!target&&can_attack(target)};})};
+    })()`).catch(String)});
     await evidence(live,info,'reload-activity-resumption-'+mode,{destination,samples,seeded});
     await live.admin(`output=(()=>{for(const id of ${JSON.stringify(seeded)}){const m=instances.main.monsters[id];if(m)remove_monster(m,{method:'disappear',nospawn:true});}return true;})()`);
   }

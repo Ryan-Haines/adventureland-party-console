@@ -7,6 +7,14 @@ import { itemMaximumLevel } from "./item-maximum-level";
 import { propertiesAtLevel } from "./properties-at-level";
 import { ITEM_DETAIL_PROPERTY_RANK } from "./item-detail-property-rank";
 import { STAT_SCROLLS } from "./stat-scrolls";
+import { itemCardLines, titleCase, WEAPON_TYPES } from "./item-card-lines";
+import { GAME_FONT } from "./item-card";
+import { GAIN, LOSS } from "./stat-colors";
+import { titledName } from "./item-title";
+
+const GRAY = "gray";
+// The game's card labels both the damage type and the weapon type "Type", so the table qualifies them.
+const TYPE_ROWS = [["type", "Item Type"], ["wtype", "Weapon Type"], ["damage_type", "Damage Type"], ["ability", "Ability"]] as const;
 
 export type CatalogComparisonEntry = { entry: InventoryEntry; level: number; stat: string };
 export const comparisonEntry = (entry: InventoryEntry): CatalogComparisonEntry => ({
@@ -25,6 +33,10 @@ export function CatalogComparison({ entries, onChange, onRemove }: {
     .filter((key) => !["level", "attr0", "attr1"].includes(key) && properties.some((props) => typeof props[key] === "number" && Number.isFinite(props[key]) && props[key] !== 0))
     .sort((a, b) => (ITEM_DETAIL_PROPERTY_RANK.get(a) ?? 999) - (ITEM_DETAIL_PROPERTY_RANK.get(b) ?? 999) || a.localeCompare(b));
   const format = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  // The item card's lines for each column, keyed by stat, give the rows their game names, colors and values.
+  const cards = entries.map(({ entry, level, stat }, index) => new Map(itemCardLines({
+    meta: entry.meta, item: { ...entry.item, level, stat_type: stat || undefined }, level, properties: properties[index], usable: true,
+  }).map((line) => [line.key, line])));
   return (
     <div className="min-h-0 overflow-auto rounded border border-cyan-800 bg-[#081510]">
       <table className="w-full border-collapse text-sm">
@@ -34,7 +46,7 @@ export function CatalogComparison({ entries, onChange, onRemove }: {
             <th scope="col" className="min-w-32 p-3 text-left">Stat</th>
             {entries.map((value, index) => {
               const { entry, level, stat } = value;
-              const name = String(entry.meta?.definition.name || entry.item.name);
+              const name = titledName(String(entry.meta?.definition.name || entry.item.name), entry.item, entry.meta);
               const label = String.fromCharCode(65 + index);
               return (
                 <th scope="col" key={index} className="min-w-52 border-l border-cyan-900 p-3 align-top text-left font-normal">
@@ -71,27 +83,46 @@ export function CatalogComparison({ entries, onChange, onRemove }: {
             })}
           </tr>
         </thead>
-        <tbody>
-          {["type", "wtype", "damage_type", "ability"].filter((key) => entries.some(({ entry }) => entry.meta?.definition[key])).map((key) => (
-            <tr key={key} className="border-t border-cyan-900">
-              <th scope="row" className="p-3 text-left font-normal capitalize text-slate-300">{key.replaceAll("_", " ")}</th>
-              {entries.map(({ entry }, index) => <td key={index} className="border-l border-cyan-900 p-3">{String(entry.meta?.definition[key] || "—")}
-                {key === "ability" && entry.meta?.definition.ability && ["attr0", "attr1"].map((attr) => typeof properties[index][attr] === "number" ? <span key={attr} className="ml-2 text-cyan-200">{attr === "attr0" ? "Value" : "Secondary value"}: {format(Number(properties[index][attr]))}</span> : null)}
-              </td>)}
+        {/* The item card's box (docs/catalog-comparison-card.md); one body keeps each stat on one row across columns. */}
+        <tbody className="border-[5px] border-[#808080] bg-black text-[13px] leading-5 text-[#E4E4E4]" style={{ fontFamily: GAME_FONT }}>
+          {TYPE_ROWS.filter(([key]) => entries.some(({ entry }) => entry.meta?.definition[key])).map(([key, label]) => (
+            <tr key={key} data-row={key}>
+              <th scope="row" className="px-3 py-1 text-left font-normal"><span data-label style={{ color: GRAY }}>{label}</span></th>
+              {entries.map(({ entry }, index) => {
+                const definition = entry.meta?.definition || {};
+                const lines = cards[index];
+                const typeLine = key === "damage_type" ? lines.get("damage_type") : key === "ability" ? lines.get("ability") : null;
+                const value = key === "type" ? titleCase(String(definition.type || ""))
+                  : key === "wtype" ? `T${Number(definition.tier) || 0} ${WEAPON_TYPES[String(definition.wtype)] || titleCase(String(definition.wtype || ""))}`
+                  : typeLine?.kind === "prop" ? typeLine.value : titleCase(String(definition[key] || ""));
+                const effect = key === "ability" ? lines.get("ability_text") || lines.get("ability_chance") : undefined;
+                return <td key={index} className="border-l border-[#333] px-3 py-1 align-top">
+                  {definition[key] ? <span data-value style={typeLine ? { color: typeLine.color } : undefined}>{value}</span> : "-"}
+                  {effect && <div style={{ color: effect.color }}>{effect.kind === "text" ? effect.text : `${effect.label}: ${effect.value}`}</div>}
+                </td>;
+              })}
             </tr>
           ))}
-          {keys.map((key) => <tr key={key} className="border-t border-cyan-900">
-            <th scope="row" className="p-3 text-left font-normal capitalize text-slate-300">{key.replaceAll("_", " ")}</th>
-            {properties.map((props, index) => {
-              const value = Number(props[key]) || 0;
-              const baseline = Number(properties[0][key]) || 0;
-              const delta = value - baseline;
-              return <td key={index} className="border-l border-cyan-900 p-3 font-mono">
-                {format(value)}
-                {index > 0 && <span className="ml-2 text-cyan-200">({delta > 0 ? "+" : ""}{format(delta)}{baseline !== 0 ? ` · ${delta > 0 ? "+" : ""}${format(delta / Math.abs(baseline) * 100)}%` : ""})</span>}
-              </td>;
-            })}
-          </tr>)}
+          {keys.map((key) => {
+            const named = cards.map((lines) => lines.get(key)).find((line) => line?.kind === "prop");
+            return <tr key={key} data-row={key}>
+              <th scope="row" className="px-3 py-1 text-left font-normal">
+                <span data-label style={{ color: named?.kind === "prop" ? named.color : GRAY }}>{named?.kind === "prop" ? named.label : titleCase(key)}</span>
+              </th>
+              {properties.map((props, index) => {
+                const value = Number(props[key]) || 0;
+                const baseline = Number(properties[0][key]) || 0;
+                const delta = value - baseline;
+                const line = cards[index].get(key);
+                return <td key={index} className="border-l border-[#333] px-3 py-1">
+                  <span data-value>{line?.kind === "prop" ? line.value : format(value)}</span>
+                  {index > 0 && delta !== 0 && <span data-change className="whitespace-nowrap" style={{ color: delta > 0 ? GAIN : LOSS }}>
+                    {" "}({delta > 0 ? "+" : ""}{format(delta)}{baseline !== 0 ? ` · ${delta > 0 ? "+" : ""}${format(delta / Math.abs(baseline) * 100)}%` : ""})
+                  </span>}
+                </td>;
+              })}
+            </tr>;
+          })}
         </tbody>
       </table>
     </div>

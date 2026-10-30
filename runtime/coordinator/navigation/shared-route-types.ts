@@ -23,9 +23,9 @@ export interface SharedReport {
   failure?: string; waypointCount?: number; departedAt?: number;
 }
 export interface SharedStatus extends RoutePoint {
-  // Local visible native boss, including during ranged add combat; not a global S hint.
+  // Local visible native boss or selected Cipher gathering target; not a global S hint.
   // Instance IDs are normalized because native payloads use either strings or numbers.
-  eventCombatSighting?: (RoutePoint & {id: string; mtype: string; observedAt: number; attackReachable?: boolean}) | null;
+  eventCombatSighting?: (RoutePoint & {id: string; mtype: string; event?: string; observedAt: number; attackReachable?: boolean}) | null;
   activeEvent?: string | null; joinedEvent?: string | null;
   lastDeath?: {at: number; eventTrip?: {event?: string; startedAt?: number}} | null;
   movementGeometry?: { version: number; fingerprint: string };
@@ -38,6 +38,8 @@ export interface SharedStatus extends RoutePoint {
   moving?: boolean; transporting?: boolean; speed?: number; convoyProtocol?: number; convoyNavigation?: SharedReport;
 }
 export interface SharedCommand {
+  /** Origin of an independent farming continuation after a convoy combat handoff. */
+  convoyHandoff?: string;
   /** Workflow parent retained by a shared event-return walking child. */
   cycleId?: string;
   jobId?: unknown;
@@ -93,7 +95,7 @@ export interface SharedConvoy extends PartyConvoy {
   walkingEvent?: string;
   routeServer?: string;
   retryExhausted?: boolean;
-  walkingParents?: Record<string, { revision: number; parentId: number; command?: SharedCommand }>;
+  walkingParents?: Record<string, { revision: number; parentId: number; command?: SharedCommand; requestedAt?: number; observedDeathAt?: number }>;
   returnRouting?: boolean; returnLegs?: { type: string; location: RoutePoint }[];
   legIndex?: number; townCompleted?: boolean; force?: boolean; nonPreemptible?: boolean;
   runtimes?: Record<string, string> | null; origins?: Record<string, RoutePoint>;

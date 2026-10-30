@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "ci": {
+    "run": "https://github.com/Ryan-Haines/adventureland-party-console/actions/runs/39161701420",
+    "job": 117776165661,
+    "error": "route.fetch ECONNRESET on checkpoint proxy call 41",
+    "nativeAdditionalResults": 4,
+    "scrollsConsumed": 10,
+    "coordinatorAdditionalResults": 3,
+    "coordinatorPendingFinalCheckpoint": true,
+    "underlyingResetCause": "Not established; unnecessary Playwright proxy removed after the one declared adoption interruption."
+  },
+  "reproduction": {
+    "report": ".build/merchant-checkpoint-focused/slot-repro-failed",
+    "error": "Owned upgrade item is ambiguous; order requires inventory review",
+    "moves": [
+      {
+        "from": 18,
+        "to": 26
+      },
+      {
+        "from": 19,
+        "to": 27
+      }
+    ],
+    "codeRestart": false
+  },
+  "runs": [
+    {
+      "name": "initial",
+      "status": "passed",
+      "evidenceFiles": 85,
+      "manifestSha256": "fefbaf651366a676bc5e9dd75a0b91a74f1aaf67487a2e72dde1b81bfcaa0019",
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "candidate": "c72b6ce26c28f737258d6e122d0442d7c43cbede28d6ae2f386e72a9bba5a256",
+      "sourceHash": "83853ebfb5c2f6490a5cabc6f47401e88ed11a676af280389ca0e2be4fce529a",
+      "tests": [
+        {
+          "title": " > live > live-economy.spec.ts > unlinked upgrade adopts compatible native intermediate without claiming existing results",
+          "status": "passed"
+        },
+        {
+          "title": " > live > live-economy.spec.ts > completed native upgrade receipt restores commerce after a lost completion response",
+          "status": "passed"
+        }
+      ],
+      "report": ".build/merchant-checkpoint-focused/initial/.build/e2e-report/manifest.json"
+    },
+    {
+      "name": "repeated",
+      "status": "passed",
+      "evidenceFiles": 127,
+      "manifestSha256": "fa68695638039b2647eefbbf2374d60c384f60cd80b363cb04acd661cd646930",
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "candidate": "abe33e7fc30b4a77d56bd23460085c31b8a686a8094d80bbb9245eb10cfb5b4a",
+      "sourceHash": "bbb9683f56979a106df83bae7f6d452343a7538dec12282e9df5fd03036bdf4d",
+      "tests": [
+        {
+          "title": " > live > live-economy.spec.ts > unlinked upgrade adopts compatible native intermediate without claiming existing results",
+          "status": "passed"
+        },
+        {
+          "title": " > live > live-economy.spec.ts > unlinked upgrade adopts compatible native intermediate without claiming existing results",
+          "status": "passed"
+        },
+        {
+          "title": " > live > live-economy.spec.ts > unlinked upgrade adopts compatible native intermediate without claiming existing results",
+          "status": "passed"
+        }
+      ],
+      "report": ".build/merchant-checkpoint-focused/repeated/.build/e2e-report/manifest.json"
+    },
+    {
+      "name": "final-chronal",
+      "status": "passed",
+      "evidenceFiles": 206,
+      "manifestSha256": "29d1a2eba72c589fe083fd799bafbfa03cf280ac7c7ee0b84e2b48dca53c4f9f",
+      "backend": "chronal-network",
+      "clockRate": 4,
+      "candidate": "d52cf5202471fd0a9c49d80df66631004c189b2f49add29695c7ca8b694f36fd",
+      "sourceHash": "ba44e570a9ce5827b78ab418ed3e67528d77b2948e8c0fafe704e4b23c0f9015",
+      "tests": [
+        {
+          "title": " > live > live-economy.spec.ts > unlinked upgrade adopts compatible native intermediate without claiming existing results",
+          "status": "passed"
+        },
+        {
+          "title": " > live > live-economy.spec.ts > completed native upgrade receipt restores commerce after a lost completion response",
+          "status": "passed"
+        },
+        {
+          "title": " > live > live-economy.spec.ts > restarted upgrade batch remaps compacted owned items",
+          "status": "passed"
+        },
+        {
+          "title": " > live > live-economy.spec.ts > restarted upgrade batch holds surplus identical cargo",
+          "status": "passed"
+        },
+        {
+          "title": " > live > live-economy.spec.ts > running upgrade batch remaps items moved after its first result",
+          "status": "passed"
+        }
+      ],
+      "report": ".build/merchant-checkpoint-focused/final-chronal/.build/e2e-report/manifest.json"
+    },
+    {
+      "name": "final-native",
+      "status": "passed",
+      "evidenceFiles": 42,
+      "manifestSha256": "34b761aa563821f7b5dd36c9158d4aabaee729131df97c4c3cca9b2e741e2250",
+      "backend": "native",
+      "clockRate": 1,
+      "candidate": "d52cf5202471fd0a9c49d80df66631004c189b2f49add29695c7ca8b694f36fd",
+      "sourceHash": "ba44e570a9ce5827b78ab418ed3e67528d77b2948e8c0fafe704e4b23c0f9015",
+      "tests": [
+        {
+          "title": " > live > live-economy.spec.ts > running upgrade batch remaps items moved after its first result",
+          "status": "passed"
+        }
+      ],
+      "report": ".build/merchant-checkpoint-focused/final-native/.build/e2e-report/manifest.json"
+    }
+  ]
+}

@@ -3,11 +3,19 @@
 interface Sprite {
   skin: string; stype: string; frames?: number; cskin?: string;
 }
+// Native skill-bar and progress tints (functions.js add_tint). Tint lists only
+// the fields tint_logic reads outside its DOM calls.
+interface Tint { type?: string; end?: Date; i?: number; mid?: Date; on_end?(): void }
 export interface GameRenderHost {
   textures: Record<string, unknown>;
   set_texture(this: void, sprite: Sprite, i: number, j?: number): void;
   console?: Pick<Console, 'warn'>;
   __partyTextureGuard?: GameRenderHost['set_texture'];
+  no_graphics?: unknown;
+  tints?: Tint[];
+  tint_logic?(this: void): void;
+  delete_indices?(this: void, list: unknown[], indices: number[]): void;
+  __partyHeadlessTints?: () => void;
 }
 const sheets = new Set(['full', 'wings', 'body', 'armor', 'skin', 'tail', 'character', 'upper']);
 const directional = new Set(['v_animation', 'head', 'hair', 'hat', 's_wings', 'face', 'makeup', 'beard']);
@@ -30,8 +38,45 @@ function supported(sprite: Sprite): boolean {
     layered.has(sprite.stype) || sprite.stype === 'emote';
 }
 
+const ending = new Set(['skill', 'progress', 'dissipate', 'brute', 'fill']);
+/** One headless tint_logic frame for one tint; true when the tint ended. */
+function tintFrame(tint: Tint, start: Date): boolean {
+  const over = ending.has(String(tint.type)) && tint.end !== undefined && start > tint.end;
+  if (over && tint.type === 'fill') {
+    tint.type = 'glow';
+    tint.on_end?.();
+  }
+  if (tint.type === 'dissipate') {
+    if (!over && tint.i === 19) tint.mid = new Date();
+    tint.i = Number(tint.i) + 1;
+  }
+  return over;
+}
+/**
+ * The game's 16 ms draw loop calls tint_logic, which restyles the skill bar
+ * and progress tints with jQuery on every frame: 2.1 s of the 9.5 s draw loop
+ * in a headless priest's 150 s farming profile (docs/efficiency.md, CT6). A
+ * headless client has no renderer and no viewer of that DOM, so headlessTints
+ * keeps only tint_logic's list work: it drops ended tints, turns an ended fill
+ * into glow before its on_end callback, and advances the dissipate counter.
+ */
+function headlessTints(game: GameRenderHost): void {
+  if (!game.no_graphics || typeof game.tint_logic !== 'function' || typeof game.delete_indices !== 'function' ||
+      game.tint_logic === game.__partyHeadlessTints) return;
+  const remove = game.delete_indices;
+  const logic = () => {
+    const tints = game.tints;
+    if (!Array.isArray(tints)) return;
+    const start = new Date(), ended: number[] = [];
+    for (let index = 0; index < tints.length; index++) if (tintFrame(tints[index], start)) ended.push(index);
+    remove(tints, ended);
+  };
+  game.tint_logic = game.__partyHeadlessTints = logic;
+}
+
 /** An unavailable cosmetic frame must not terminate native draw/physics scheduling. */
 export function installGameRendering(game: GameRenderHost): void {
+  headlessTints(game);
   if (typeof game.set_texture !== 'function' || game.set_texture === game.__partyTextureGuard) return;
   const original = game.set_texture, reported = new Set<string>();
   const guarded: GameRenderHost['set_texture'] = function(sprite, i, j) {

@@ -24,9 +24,16 @@ function record(state, reports, owned, areas, now) {
     const observed = report.farmAreaObservation;
     if (observed && now-observed.at<10000 && areas.some(a=>a.id===observed.id)) state.quiet[observed.id]=observed.at;
   }
-  for (const [key,at] of Object.entries(state.seen)) if(now-at>15000) delete state.seen[key];
-  for (const [key,value] of Object.entries(state.activity)) if ((value.until||0)<now && !value.hits.some(at=>now-at<10000)) delete state.activity[key];
-  for (const [key,at] of Object.entries(state.quiet)) if(now-at>COOLDOWN)delete state.quiet[key];
+  prune(state, now);
+}
+// record() ignores hits older than 10 s above, so it never reads their filter
+// entries, finished activity or quiet areas past the cooldown again. The
+// coordinator also prunes at load, because a snapshot saved while record() was
+// not running keeps them.
+function prune(state, now) {
+  for (const [key,at] of Object.entries(state.seen || {})) if(now-at>15000) delete state.seen[key];
+  for (const [key,value] of Object.entries(state.activity || {})) if ((value.until||0)<now && !(value.hits || []).some(at=>now-at<10000)) delete state.activity[key];
+  for (const [key,at] of Object.entries(state.quiet || {})) if(now-at>COOLDOWN)delete state.quiet[key];
 }
 function alternatives(state, areas, active, now, excluded = []) {
   return areas.filter(a => a.id !== active.id && !excluded.includes(a.id) &&
@@ -35,4 +42,4 @@ function alternatives(state, areas, active, now, excluded = []) {
       Number(!!state.quiet?.[b.id])-Number(!!state.quiet?.[a.id]) ||
       Math.hypot(a.x-active.x,a.y-active.y)-Math.hypot(b.x-active.x,b.y-active.y) || a.id.localeCompare(b.id));
 }
-module.exports = { fighting, record, alternatives, COOLDOWN };
+module.exports = { fighting, record, prune, alternatives, COOLDOWN };

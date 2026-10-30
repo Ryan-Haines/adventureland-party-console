@@ -1,3 +1,4 @@
+import {contains} from '../dashboard/lib/farming-zones';
 import {test,expect} from './live-fixtures';
 import {observeNativePlanner} from './native-planner-observation';
 
@@ -7,35 +8,30 @@ const W='E2EWarrior',P='E2EPriest',members=[W,P];
 test.use({initialConsoleHold:true,initialPositions:{[W]:{map:'halloween',x:0,y:0},[P]:{map:'halloween',x:1212,y:101}}});
 
 // Failure inventory and lifecycle declaration: docs/testing-manual-event-override.md.
-for(const entry of ['command','travel'] as const){
+for(const entry of ['command','travel','monster'] as const){
 test(`explicit ${entry} travel skips only the current native event occurrence`,async({live},info)=>{
   test.setTimeout(480_000);
   const samples:unknown[]=[],retirements:unknown[]=[];
   const world=()=>live.admin(`output=Object.fromEntries(${JSON.stringify(members)}.map(name=>{const p=get_player(name);return [name,{map:p.map,x:p.x,y:p.y,rip:!!p.rip,moving:!!p.moving}]}))`);
   const context=live.clients[P].page.context(),planningFaults:unknown[]=[],recoveryHolds:unknown[]=[],unmatchedPlans:unknown[]=[];
   const observer=observeNativePlanner(context);
+  const restoreObservation=await observer.install(live.clients[P]);
   let faultArmed=false;
   const interruptInitialPlan=async(route:import('@playwright/test').Route)=>{
     const request=route.request(),body=request.method()==='POST'?request.postDataJSON():null;
     if(faultArmed&&body?.character===P&&planningFaults.length===0){
       const started=Date.now();
-      // Initial assembly may not have emitted its first status packet yet.
-      // Read the current native CODE through its game DOM in ONE round trip;
-      // do not run the multi-step iframe reacquisition helper or wait for a tick.
-      const [sample,s]=await Promise.all([
-        live.clients[P].frame.evaluate(()=>{
-          const runner=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
-          return {movement:runner?.__partyMovement?.report?.(),trace:runner?.sharedRoutine?.combatTraceSnapshot?.(),
-            revision:runner?.__partyNavigationIntent?.revision,commandId:runner?.__partyLastCommand};
-        }),live.state()]);
+      // Ownership was observed synchronously at this real native ajax call.
+      // Never spend its two-second deadline reacquiring a CODE frame over CDP.
+      const [observed,s]=await Promise.all([observer.sample(body),live.state('fast')]);
+      const sample={movement:observed?.body.movement,navigation:observed?.body.convoyNavigation};
       const c=s.activeConvoy,expected=c?.expected?.[P],rally=c?.rally;
-      const owner={id:sample.trace?.convoy,epoch:sample.trace?.convoyEpoch,phase:sample.trace?.convoyPhase,
-        commandId:sample.commandId,navigationRevision:sample.revision,runtimeId:expected?.runtimeId};
+      const owner=sample.navigation;
       if(faultArmed&&planningFaults.length===0&&Date.now()-started<1500&&sample.movement?.id===body.id&&
         !sample.movement.done&&String(body.id).startsWith(P+':'+expected?.runtimeId+':')&&
         c?.phase==='assemble'&&c.purpose==='party-travel'&&!c.runtimes&&expected?.phase==='assemble'&&
         rally&&body.to?.map===rally.map&&body.to.x===rally.x&&body.to.y===rally.y&&
-        owner.phase==='assembling'&&owner.id===c.id&&owner.epoch===c.epoch&&
+        owner?.phase==='assembling'&&owner.id===c.id&&owner.epoch===c.epoch&&owner.runtimeId===expected.runtimeId&&
         owner.commandId===expected.commandId&&owner.navigationRevision===expected.revision){
         planningFaults.push({at:Date.now(),request:body,movement:sample.movement,owner,convoy:c,elapsedMs:Date.now()-started});
         await route.abort('connectionreset');return;
@@ -104,11 +100,12 @@ test(`explicit ${entry} travel skips only the current native event occurrence`,a
         s.eventAttendance?.[name]?.mrpumpkin?.id===null);
     },{timeout:120_000,message:'Both native actors must really attend the declared occurrence'}).toBe(true);
     await live.post('/formation',{character:P,follow:true});
-    const destination={map:'main',x:0,y:0};
+    const destination=entry==='monster' ? (await live.state(true)).monsterChoices.find((choice:any)=>choice.id==='goo').locations.find((location:any)=>location.map==='main') : {map:'main',x:0,y:0};
+    expect(destination).toBeTruthy();
     faultArmed=entry==='travel';
     const response=entry==='command'
       ?await live.post('/command',{character:W,type:'party-monster-travel',location:destination,label:'manual event override regression'})
-      :await live.post('/travel',destination);
+      :entry==='monster' ? await live.post('/navigate-to-monster',{monsterId:'goo',location:destination}) : await live.post('/travel',destination);
     const issuedAt=Date.now();
     await expect.poll(async()=>{
       const s=await live.state(),native=await world();
@@ -123,12 +120,17 @@ test(`explicit ${entry} travel skips only the current native event occurrence`,a
       samples.push({at:Date.now(),convoy:s.activeConvoy?.id,return:s.eventReturn,
         attendance:s.eventAttendance,characters:Object.fromEntries(members.map(name=>[name,{native:native[name],joined:s.characters[name]?.joinedEvent}]))});
       if(samples.length>64)samples.shift();
-      return members.every(name=>native[name].map==='main'&&!native[name].rip&&Math.hypot(native[name].x,native[name].y)<100)&&!s.activeConvoy;
+      return members.every(name=>native[name].map==='main'&&!native[name].rip&&(entry==='monster'?contains(destination,native[name],150,500):Math.hypot(native[name].x,native[name].y)<100))&&!s.activeConvoy;
     },{timeout:180_000,message:'Explicit travel must reach its native destination without an event rejoin stealing the route'}).toBe(true);
     expect(competingReturn,'No forced return may compete with explicit manual travel').toBe(false);
     if(entry==='travel'){
       expect(planningFaults,'The initial follower route must encounter the declared transport failure').toHaveLength(1);
       expect(recoveryHolds.length,'Both clients must freshly acknowledge the stopped recovery hold').toBeGreaterThan(0);
+    }
+    if(entry==='monster') {
+      await expect.poll(async()=>{const s=await live.state(),native=await world(),packets=await live.clients[W].events();
+        return !s.activeConvoy && members.every(name=>native[name].map==='main' && !native[name].rip && !s.characters[name]?.joinedEvent && packets.some((event:any)=>event.at>=issuedAt&&event.event==='hit'&&event.data?.hid===name&&event.data?.damage>0));
+      },{timeout:120_000,message:'Selecting a new farm during the event must resume actual native farming for both members'}).toBe(true);
     }
     const arrivedAt=Date.now();
     await live.restartCoordinator();
@@ -163,6 +165,7 @@ test(`explicit ${entry} travel skips only the current native event occurrence`,a
     faultArmed=false;
     if(entry==='travel')await context.unroute('**/party-api/movement-plan',interruptInitialPlan);
     observer.dispose();
+    await restoreObservation();
     await info.attach('native-manual-event-assembly-transport',{body:JSON.stringify({planningFaults,unmatchedPlans,requestFailures:observer.failures,recoveryHolds,samples}),contentType:'application/json'});
     try{await live.post('/formation',{character:W,eventSelections:[]});await live.post('/formation',{character:P,follow:false});await live.post('/formation',{character:P,eventSelections:[]});}
     finally{try{await retire();}finally{await live.admin(`output=(()=>{const owned=globalThis.__e2eManualEventCatalog;

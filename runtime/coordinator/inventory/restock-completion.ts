@@ -6,6 +6,7 @@ interface Supply {
 interface RestockPolicy {
   hp?: Supply | null;
   mp?: Supply | null;
+  elixir?: Supply | null;
 }
 
 function quantity(items: (InventoryEntry | null)[], name: string | undefined): number {
@@ -20,7 +21,7 @@ function quantity(items: (InventoryEntry | null)[], name: string | undefined): n
 export function restockInventorySatisfied(items: unknown, policy: () => RestockPolicy): boolean {
   if (!Array.isArray(items)) return false;
   const targets = policy();
-  return [targets.hp, targets.mp].every(
+  return [targets.hp, targets.mp, targets.elixir].every(
     (supply) =>
       !supply || Number(supply.max) <= 0 || quantity(items, supply.item) >= Number(supply.max),
   );

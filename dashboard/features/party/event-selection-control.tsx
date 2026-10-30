@@ -9,15 +9,29 @@ import { useClock } from "@/hooks/use-clock";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { eventDisplayNames, eventPolicy, selectedEvents, supportedEvents, eventPriorityOrder, eventLimits, type EventLimits } from "@/lib/event-policy";
 import { PartyState } from "./party-state";
+import type {CipherView} from './cipher-controls';
+import type {TrickOrTreatCounts} from '../../../runtime/coordinator/events/schedule-reports';
 
-export type EventSchedule = { id: string; name: string; live?: boolean; next?: number; expires?: number; stale?: boolean; slotAt?: number; slotKind?: string };
+export type EventSchedule = { id: string; name: string; live?: boolean; next?: number; expires?: number; stale?: boolean; slotAt?: number; slotKind?: string; clockOffsetMs?:number; realmOffsetHours?:number; confirmed?:boolean; occurrences?:{at:number;status:string}[]; cipher?:CipherView; trickOrTreat?:{characters:Record<string,TrickOrTreatCounts>} };
 export type EventSelectionState = Pick<PartyState, "leader" | "merchantCharacter" | "followers" |
   "eventAttendance" | "eventLimitsByCharacter" | "eventPrioritiesByCharacter" | "eventsByCharacter" | "eventSelectionsByCharacter" | "eventSchedules">;
-export function eventTimeLabel(next: number | undefined, now: number) {
+export function eventTimeLabel(next: number | undefined, now: number, clockOffsetMs = 0) {
   if (!next || !Number.isFinite(next)) return "Time not announced";
   const ms = next < 1e12 ? next * 1000 : next;
-  const remaining = Math.max(0, ms - now);
-  return `${new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(ms)} (${Math.floor(remaining / 60000)}m ${Math.floor(remaining / 1000) % 60}s)`;
+  const remaining = Math.max(0, ms - now - clockOffsetMs);
+  return `${new Intl.DateTimeFormat(undefined, { weekday:'short', hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(ms)} (${Math.floor(remaining / 60000)}m ${Math.floor(remaining / 1000) % 60}s)`;
+}
+function realmTimeLabel(next:number, offset:number) {
+  const ms=next<1e12?next*1000:next;
+  const time=new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(ms+offset*3600000);
+  return `Realm: ${time} (UTC${offset<0?'−':'+'}${Math.abs(offset)})`;
+}
+function dailyResetLabel(now:number, clockOffsetMs=0) {
+  const serverNow=now+clockOffsetMs;
+  const next=(Math.floor(serverNow/86400000)+1)*86400000;
+  const seconds=Math.floor((next-serverNow)/1000);
+  const local=new Intl.DateTimeFormat(undefined,{weekday:'short',hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(next);
+  return `${local} (${Math.floor(seconds/3600)}h ${Math.floor(seconds/60)%60}m ${seconds%60}s)`;
 }
 export const EventSelectionControl = memo(function EventSelectionControl({ state, name, onChange, onPriorityChange, onLimitsChange, onAnniversary }: {
   onLimitsChange: (event: string, limits: EventLimits) => Promise<unknown> | void; onPriorityChange: (events: string[]) => Promise<unknown> | void; state: EventSelectionState; name: string; merchant: boolean; onAnniversary: () => void; onChange: (events: string[]) => void;
@@ -72,6 +86,12 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
   };
   const cancelDrag = () => { setDraft(dragOrder.current); setDragged(null); setDragPosition(null); dragOrder.current = null; };
   const now = useClock(), policy = eventPolicy(state, name), selected = selectedEvents(state, name);
+  const cipherSource = name===state.merchantCharacter && state.leader && state.eventSelectionsByCharacter?.[state.leader]?.includes('witchcipher') ? state.leader : policy.source;
+  const saveCipher = async (limits:EventLimits, enable=false) => {
+    const response=await fetch('/party-api/formation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character:cipherSource,
+      ...(enable?{eventSelections:[...new Set([...selectedEvents(state,cipherSource),'witchcipher'])]}:{}),eventLimits:{event:'witchcipher',limits}})});
+    if(!response.ok)throw Error(await response.text());
+  };
   // Server schedules are observations, not the supported catalog: seasonal
   // bosses must remain selectable even when the current feed omits them.
   const schedules = new Map((state.eventSchedules ?? []).map(event => [event.id, event]));
@@ -107,6 +127,9 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
         onPointerCancel={cancelDrag}>
       {rows.map(event => {
         const supported = supportedEvents.includes(event.id), allowed = supported;
+        const reportedKnocks=event.trickOrTreat?.characters?.[name];
+        const knocks=reportedKnocks && !event.stale && now-reportedKnocks.observedAt<15000 &&
+          reportedKnocks.day===new Date(now+(event.clockOffsetMs||0)).toISOString().slice(0,10)?reportedKnocks:undefined;
         const ignored = [state.eventAttendance?.[name]?.[event.id], state.eventAttendance?.[policy.source]?.[event.id]]
           .find((entry,index) => entry?.ignored && !entry.ended && (index === 0 || entry.ignored !== 'manual travel'))?.ignored;
         return <div key={event.id} data-event={event.id} className={`flex items-center gap-2 rounded border bg-slate-950 px-2 py-2 text-emerald-50 ${dragged === event.id ? 'border-cyan-300 opacity-25' : 'border-emerald-900/70'}`}>
@@ -128,14 +151,29 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
           <span aria-label={`${event.name} priority`} className="w-8 shrink-0 text-center text-emerald-200">{supported ? order.length - order.indexOf(event.id) : 0}</span>
           <input type="checkbox" checked={allowed && selected.includes(event.id)} disabled={!allowed || policy.inherited}
             className="accent-emerald-500" onChange={e => onChange(e.target.checked ? [...selected, event.id] : selected.filter(id => id !== event.id))} />
-          <span>{event.name} — {!supported ? "Unsupported" : event.live ? "LIVE" : event.next ? eventTimeLabel(event.next, now) : event.slotAt ? `Next chance: ${eventTimeLabel(event.slotAt, now)}` : "Time not announced"}{event.stale ? " · timing stale" : ""}{ignored && <span className="block text-amber-200">Skipped this instance: {ignored}</span>}</span>
+          <span>{event.name} — {!supported ? "Unsupported" : event.live ? "LIVE" : event.next ? eventTimeLabel(event.next, now, event.clockOffsetMs) : "Time not announced"}
+            {event.id==='trickortreat'&&<>
+              {now>0&&<span className="block text-cyan-200">Next daily reset: {dailyResetLabel(now,event.clockOffsetMs)}</span>}
+              <span className="block text-emerald-200" title="Character: usable knocks remaining. Account: upper bound from observed door histories; the game does not expose a separate account counter. Other characters or realms may have spent more.">
+                Knocks left · Character: {knocks?.characterRemaining??'—'}/{reportedKnocks?.characterLimit??7} · Account: {knocks ? `${knocks.accountRemainingUpperBound>0?'up to ':''}${knocks.accountRemainingUpperBound}` : '—'}/{reportedKnocks?.accountLimit??14}
+              </span>
+              <span className="block text-slate-300">Once daily at 00:00 UTC · Available during Halloween</span>
+            </>}
+            {!!event.next&&event.realmOffsetHours!==undefined&&<span className="block text-slate-300">{realmTimeLabel(event.next,event.realmOffsetHours)}</span>}{event.confirmed&&<span className="block text-cyan-200">Realm schedule confirmed</span>}{event.stale ? " · timing stale" : ""}{ignored && <span className="block text-amber-200">Skipped this instance: {ignored}</span>}{!!event.occurrences?.length&&<details className="mt-1 text-slate-300"><summary className="cursor-pointer">Next seven days</summary>{event.occurrences.slice().sort((a,b)=>a.at-b.at).map((entry,i)=><div key={i}>{new Date(entry.at).toLocaleString()}</div>)}</details>}</span>
           <button type="button" aria-label={`${event.name} settings`} disabled={!supported} onClick={() => setSettings(event.id)} className="ml-auto rounded border border-slate-500 bg-slate-950 p-2 text-pink-200 hover:bg-slate-800"><Settings className="size-4" /></button>
         </div>;
       })}
       </div>
       {settings && <EventLimitsDialog key={settings} event={settings} label={eventDisplayNames[settings] ?? settings}
         limits={eventLimits(state, name)[settings] ?? {deathLimit:null,timeLimitMinutes:null}}
-        inherited={policy.inherited} onClose={() => setSettings(null)} onSave={onLimitsChange} onAnniversary={onAnniversary} />}
+        cipherView={schedules.get('witchcipher')?.cipher}
+        cipherOwner={cipherSource!==policy.source?cipherSource:undefined}
+        onManual={async (mix,limits)=>{
+          const event=schedules.get('witchcipher'),board=event?.cipher?.board;
+          if(!board?.live||!board.id||event?.stale)throw Error('Wait for a fresh live realm board');
+          await saveCipher({...limits,cipher:{...limits.cipher!,automatic:false,manual:{id:crypto.randomUUID(),round:board.id,cracks:board.cracks??0,mix}}},true);
+        }}
+        inherited={policy.inherited} onClose={() => setSettings(null)} onSave={(event,limits)=>event==='witchcipher'&&cipherSource!==policy.source?saveCipher(limits):onLimitsChange(event,limits)} onAnniversary={onAnniversary} />}
     </PopoverContent>
   </Popover></>;
 });

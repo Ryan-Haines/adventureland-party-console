@@ -1,4 +1,5 @@
 import {test,expect} from './fixtures';
+import { fetchFullState } from './state-route';
 import {automaticCommerceRuleKey} from '../runtime/coordinator/inventory/item-identity';
 
 test('bank tiles show every automatic action and distinguish manual NPC sales',async({page,app},info)=>{
@@ -8,7 +9,7 @@ test('bank tiles show every automatic action and distinguish manual NPC sales',a
   // Declared bank/rule read boundary: verify rendered tiles, not native receipts.
   await page.route('**/party-api/dashboard-stream',route=>route.abort());
   await page.route('**/party-api/state*',async route=>{
-    const response=await route.fetch(),state=await response.json();
+    const response=await fetchFullState(route),state=await response.json();
     await route.fulfill({response,json:{...state,bank:{gold:0,packs:{items0:entries}},
       autoItemMarks:{M:{'helmet@+0':'bank'}},autoNpcSales:{[automaticCommerceRuleKey(entries[1].item)]:{item:entries[1].item}},
       autoDeconstruction:{M:{[automaticCommerceRuleKey(entries[2].item)]:{item:entries[2].item}}},

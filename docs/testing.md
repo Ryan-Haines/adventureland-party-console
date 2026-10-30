@@ -48,6 +48,32 @@ Random layouts and the explicitly unavailable entry shop remain covered by the
 separate assembly scenarios. An optional shop without placement cannot exercise
 the required item-inspection assertions.
 
+## Headless Cave floors, merchant talk and event rendezvous
+
+The game strips tiles, placements and groups from every generated floor it sends
+to a socket whose handshake says `no_graphics=1`, which every caracAL worker does.
+`live-cave-headless.spec.ts` runs the leader and its follower as real headless
+workers (`liveHeadless`). Only the leader's worker sends `no_graphics=0`
+(`runtime/lifecycle/cave-floor-handshake.ts`), so the test checks the server's
+socket flags, the follower card's textured floor, one definition per stream
+subscriber, closed map streams in a hidden tab, and a released visit with no floor
+or interrupted state left. It attaches `headless-cave-floor-bytes` with the floor,
+stripped floor, frame and tile image sizes. Run it with
+`npm test -- -- --project=live --grep "headless party sees the Cave floor"`.
+
+`live-cave-talk.spec.ts` uses the seeded entry shop, replaces the current vote as a
+later encounter does, and checks that selecting the merchant room talks to it
+(`cave_talk`) and that the reopened shop sells. A waypoint inside solid rock then
+exhausts the three automatic repairs, and Retry must keep them spent.
+
+`live-event-rendezvous.spec.ts` targets only one member's `/party-api/shared-travel`
+requests: a moved destination and a member that never requests. Cipher and door
+legs retain exact destination matching. Existing owned failure recovery is retained.
+`live-convoy-event-defense.spec.ts` keeps a follower fighting a live Mr. Pumpkin in
+halloween while the leader starts a convoy in main. See `pr-151-integration.md`
+for retained behavior, exclusions, and validation.
+
+
 ## Town channel healing
 
 Run the native cases matching `Town executes a real cast|Halloween mrgreen stages`.
@@ -364,17 +390,16 @@ under `.build/e2e-report/` and `.build/e2e-results/`.
 `npm test` runs console and real-game E2E through the dashboard, hosting gateway,
 built coordinator, maintained character runtime and a disposable upstream game
 server backed by MongoDB. Use `npx playwright test --list` for the current scenario
-inventory, including six console journeys and the native-game suites. The inventory is not a passing
+inventory, including console, debug and gameplay suites. The inventory is not a passing
 result. Playwright starts its console services on ephemeral loopback ports and
-creates fresh coordinator data under `.build/e2e/`. The game uses fixed loopback
-ports 8083 and 9003 in the disposable Docker project `al-e2e-pr21`; run one native
-suite at a time. It does
-not attach to the running Party Console or read its credentials.
+creates fresh coordinator data under `.build/e2e/`. Up to four isolated game pools use
+ports 8083, 9003 and 9004 on loopback addresses 127.0.0.1 through 127.0.0.4, with
+Compose projects `al-e2e-pr21-0` through `al-e2e-pr21-3`. Run one suite command at
+a time. It does not attach to the running Party Console or read its credentials.
 The harness pins Express 4.18.3 to match the repository's pinned caracAL host;
 review that pin alongside future caracAL upgrades.
 
-The current inventory contains **75 scenarios: six console and 69 native-game
-journeys**. Earlier validation is split across separate runs below; those 63 historical scenario contracts have passing latest outcomes.
+The current inventory contains **286 scenarios: 78 console, two debug and 206 gameplay journeys**. The following 75-scenario and 63-scenario records are historical. Earlier validation is split across separate runs below; those 63 historical scenario contracts have passing latest outcomes.
 This is aggregate evidence from separate runs and source snapshots, not one
 clean 63-case execution at the final snapshot.
 
@@ -455,7 +480,7 @@ economic work. Screenshots, traces, state, native observations and source snapsh
 are retained under `.build/e2e-results`; the checksummed manifest and HTML report
 are under `.build/e2e-report`. This follow-up does not claim a full 67-case rerun.
 
-Use Node 24 (CI pins 24.14.0), Docker with Compose and a running Linux container
+Use Node 26 (CI pins 26.12.1), Docker with Compose and a running Linux container
 engine, then run from this checkout. The first game image build downloads the
 pinned upstream repositories and dependencies:
 
@@ -472,8 +497,9 @@ npm test
 On Linux, use `npx playwright install --with-deps chromium` to install browser
 system dependencies. `npm test` builds the shared and coordinator/character
 assets before executing the scenarios. These builds do not activate live code.
-The browser runs the maintained dashboard through its Vinext development server;
-the separate CI build checks production packaging.
+The browser serves the maintained dashboard from a verified immutable production
+candidate on isolated worker ports. Setup builds a matching candidate when needed
+and leaves the active Party Console unchanged.
 
 For one scenario after preparation:
 
@@ -481,8 +507,8 @@ For one scenario after preparation:
 npm run test:e2e -- --project=console --grep "account preference"
 ```
 
-Use `npm run test:e2e:console` for the five focused console scenarios without
-Docker, or `npm run test:e2e:live` for native gameplay only. Normal game runs
+Use `npm run test:e2e:console` for console coverage without
+Docker, or `npm run test:e2e:live` for gameplay only. Normal game runs
 collect server logs and remove the disposable containers/database at completion.
 
 The console scenarios cover invalid settings/retry, persisted preferences,
@@ -542,7 +568,7 @@ The game stack runs the actual [upstream server](https://github.com/kaansoral/ad
 and native browser clients. `e2e/game/Dockerfile` pins the game, common engine and
 configuration revisions; its Node base image and npm dependency locks are pinned
 as well. MongoDB and the backend are isolated in the Compose
-project `al-e2e-pr21`, with host ports bound to loopback. Accounts are created
+projects `al-e2e-pr21-0` through `al-e2e-pr21-3`, with separate loopback addresses. Accounts are created
 through normal registration APIs. Each scenario restores its starting character
 and bank state; maintained CODE then executes actual socket actions.
 Characters start at level 80 with test currency and the selected `god` or `fragile` loadout. The local
@@ -742,41 +768,17 @@ browser failure-mode documents under `e2e/` show this sequence for this migratio
 
 ## CI and runner budget
 
-Pull requests and pushes to `main` run the three **console E2Es**, evidence
-verification, retained isolated regressions with the strict TAP checker, coordinator
-lint and the production build. They do not start the native game stack. The
-existing **Validate and release** workflow keeps its release triggers and job
-dependencies; its validation step uses `npm run test:e2e:console`.
+Pull requests and pushes to `main` run the complete console, deployment, debug and ChronAL gameplay E2Es, evidence verification, retained isolated regressions with the strict TAP checker, coordinator lint and the production build. The **Validate and release** workflow runs console/debug validation separately from 16 ChronAL gameplay shards. Each gameplay shard owns a native Docker/MongoDB stack and uses real browser clients with accelerated gameplay time. Release versioning requires both jobs to pass.
 
-Native gameplay runs only when explicitly requested through the separate
-**Native game E2E (manual)** workflow:
+The **Native game E2E (manual)** workflow retains explicit real-time parity coverage:
 
 1. Open GitHub **Actions → Native game E2E (manual) → Run workflow**.
 2. Select the branch to test and start the run.
-3. Inspect all six `native-game` shards and download their `native-game-e2e-…-shard-…` artifacts.
+3. Inspect all 16 `native-game` shards and download their `native-game-e2e-…-shard-…` artifacts.
 
-For a focused diagnosis, supply a Playwright title regex in the optional `grep`
-input. That runs only matching scenarios on one runner. Leave it empty for the
-complete six-shard suite. Resolve focused failures before requesting another
-full validation; a focused passing result does not certify the full suite.
+For focused diagnosis, supply a Playwright title regex in the optional `grep` input. That runs matching scenarios on one runner. With no filter, three dedicated Cave allocations and 13 shards of the remaining gameplay cover the complete project. Each runner serializes its own disposable game with `--workers=1`; native jobs have a 180-minute limit. Fail-fast is disabled, and every shard verifies and uploads its evidence, including failure diagnostics. Failed or incomplete manifests fail verification. This manual workflow has read-only repository permissions and does not publish a release.
 
-Each shard installs the game/client dependencies, builds the maintained assets via
-`npm run test:e2e:live`, and runs one sixth of the complete `live` Playwright project
-on its own Ubuntu runner and native game stack. Test-level sharding distributes
-large spec files across runners; `--workers=1` still serializes access to each
-runner's disposable game. Each has a 180-minute limit;
-fail-fast is disabled so one failure does not cancel the other evidence. Each verifies
-the evidence even after a test failure, and always attempts to upload the report,
-traces and server log. Failed or incomplete manifests still fail verification.
-This workflow has read-only repository permissions and **does not publish a release**.
-
-The normal validation and manual gameplay jobs have separate runners, report
-directories and artifact names; both retain evidence for 14 days. Keeping native
-gameplay manual avoids spending its build/gameplay runner time on every PR update
-or `main` push. It also means normal PR validation does **not** certify native Hunt
-behavior: run the manual workflow, or run the native suite locally, for relevant
-changes and preserve its verified result. `npm test` still runs both projects
-locally; the CI split does not narrow that command.
+Both workflows retain evidence for 14 days. `npm test` runs all mixed projects locally with two isolated game pools by default (up to four when memory permits). `--project=live` retains every gameplay journey and uses ChronAL by default; set `E2E_GAMEPLAY_BACKEND=native` for real time. A focused passing result does not certify the full suite.
 
 ## Reusable native character loadouts
 
@@ -911,3 +913,11 @@ writes to occupied slots. The browser bridge must choose a free numbered slot
 and preserve unrelated cache and its original snapshot. Native 17665 documents
 numbered slots 1–100 in `/savecode` and `filename_to_cdata`; a missing `X.codes`
 inventory is unknown and must not be treated as an empty account.
+
+## ChronAL gameplay and local benchmark
+
+`npm test` uses ChronAL virtual time for the complete gameplay project, retaining real browsers, upstream game realms, MongoDB, native CODE, restarts, network faults and deployment assertions. Console and debug coverage remains selected. `E2E_GAMEPLAY_BACKEND=native` selects the real-time parity backend explicitly.
+
+Run `npm run test:e2e:benchmark` for the complete suite comparison and retained, verified artifacts, or add `-- --focused` for a shorter diagnostic comparison. Run `npm run test:e2e:selection` to audit every scenario identity. Selection counts alone do not certify execution or speed. See [ChronAL E2E setup and boundaries](testing-simulation.md) and the standalone [soak harness](../tools/sim/README.md).
+
+Fixtures remove their disposable `.build/e2e` UUID workspaces after stopping owned processes and copying log attachments into the report. Each scenario retains a `workspace-cleanup` receipt. Reports, benchmark archives and staged console artifacts remain available for verification. Set `E2E_KEEP_WORKSPACES=1` only when a diagnostic needs the writable workspace; failed attachment copies also retain it. Repeated benchmark archives require deliberate retention review after the accepted comparison is saved.

@@ -1,3 +1,4 @@
+import {gameHosts} from './game/addresses.cjs';
 import {createServer,type IncomingMessage} from 'node:http';
 import type {Socket} from 'node:net';
 
@@ -16,6 +17,6 @@ export async function nativeNetworkIsolation(blocked:string[]) {
   await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',()=>{server.removeListener('error',reject);resolve();});});
   const address=server.address();
   if(!address||typeof address==='string')throw Error('Native denial proxy did not bind');
-  return {proxy:{server:'http://127.0.0.1:'+address.port,bypass:'localhost,127.0.0.1,[::1]'},
+  return {proxy:{server:'http://127.0.0.1:'+address.port,bypass:['localhost',...gameHosts,'[::1]'].join(',')},
     close:async()=>{for(const socket of sockets)socket.destroy();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}};
 }

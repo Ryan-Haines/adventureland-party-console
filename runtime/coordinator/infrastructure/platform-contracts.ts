@@ -7,6 +7,7 @@ import type { CharacterBlock } from "../characters/types.ts";
 export interface CoordinatorFileStore {
   get(key: string): unknown;
   set(key: string, value: unknown): this;
+  setSerialized?(key: string, json: string): this;
   delete(key: string): boolean;
   entries(): IterableIterator<[string, unknown]>;
   close(): void;

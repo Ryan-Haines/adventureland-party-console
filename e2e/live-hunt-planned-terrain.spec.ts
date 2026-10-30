@@ -1,11 +1,15 @@
 import {test,expect} from './live-fixtures';
 import {W,P,evidence} from './hunt-interruption-helpers';
+import {isolateNativeMapAmbient,restoreNativeMapAmbient} from './native-map-ambient-isolation';
 
 test.use({loadout:'combat-range',initialPosition:{map:'main',x:349,y:1532}});
 
 test('blocked melee Phoenix recovery computes native hitbox-clear goals and reaches combat',async({live},info)=>{
   test.setTimeout(180000);
   // Failure inventory precedes implementation in testing-combat-recovery-goals.md.
+  const ambient=await isolateNativeMapAmbient(live,'main');
+  try{
+  await info.attach('planned-phoenix-declared-ambient-isolation',{body:JSON.stringify(ambient),contentType:'application/json'});
   await live.clients[W].frame.evaluate(()=>{const p=window as any;p.__e2eObserveMoves=true;p.__e2eObservedMoveCount=0;});
   await live.post('/merchant/force-stand',{enabled:true});
   await live.post('/formation',{leader:W});
@@ -37,7 +41,7 @@ test('blocked melee Phoenix recovery computes native hitbox-clear goals and reac
     // Preserve speed/HP catalog defaults: native transport omits values equal
     // to this catalog, but already-running clients still have the old defaults.
     G.monsters.phoenix={...original,stationary:true};
-    const m=new_monster('main',{type:'phoenix',count:1,position:[738,1702],radius:0},{temp:1});
+    const m=new_monster('main',{type:'phoenix',count:1,position:[738,1702],radius:0,__e2eAmbientExempt:true},{temp:1});
     m.speed=0;m.moving=false;m.hp=m.max_hp=10000000;m.abs=true;m.u=true;m.cid++;
     return {id:String(m.id),map:m.map,x:m.x,y:m.y,wire:monster_to_client(m)};
   }catch(error){G.monsters.phoenix=original;delete globalThis.__e2ePlannedPhoenixOriginal;throw error;}})()`);
@@ -110,5 +114,9 @@ test('blocked melee Phoenix recovery computes native hitbox-clear goals and reac
         if(globalThis.__e2ePlannedPhoenixOriginal)G.monsters.phoenix=globalThis.__e2ePlannedPhoenixOriginal;
         delete globalThis.__e2ePlannedPhoenixOriginal;return true;})()`);
     }
+  }
+  }finally{
+    const restored=await restoreNativeMapAmbient(live);
+    await info.attach('planned-phoenix-native-ambient-restored',{body:JSON.stringify(restored),contentType:'application/json'});
   }
 });

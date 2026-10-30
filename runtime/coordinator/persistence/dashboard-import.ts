@@ -85,6 +85,7 @@ export const validators: Record<string, (value: unknown) => boolean> = {
   restockPolicies: mapOf(
     (value) =>
       object(value) &&
+      (!value.elixir || object(value.elixir) && text(value.elixir.item) && number(value.elixir.min) && number(value.elixir.max) && boolean(value.elixir.autoConsume) && boolean(value.elixir.autoAcquire)) &&
       [value.hp, value.mp].every(
         (p) => object(p) && number(p.min) && number(p.max) && text(p.item),
       ),

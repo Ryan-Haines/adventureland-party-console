@@ -5,8 +5,13 @@ export function installQueueMarkers(root:any,shared:any){
   let graphics:any=null;
   const clear=()=>{if(graphics){graphics.destroy();graphics=null;}};
   function draw(){
+    // Headless caracAL clients set no_graphics, and the game then loads a stub
+    // PIXI whose Graphics draws nothing, so draw skips the queue computation
+    // there. draw checks on every frame, so a renderer that appears later
+    // starts drawing on its next frame.
+    if(host.no_graphics||!host.PIXI?.Graphics||!host.map||host.socket?.disconnected){clear();return;}
     const markers=shared.queueMarkers()||[];
-    if(!host.PIXI?.Graphics||!host.map||!markers.length||host.socket?.disconnected){clear();return;}
+    if(!markers.length){clear();return;}
     if(!graphics||graphics.destroyed||graphics.parent!==host.map){clear();graphics=new host.PIXI.Graphics();host.map.addChild(graphics);}
     graphics.clear();
     const scale=Math.abs(host.map.scale?.x)||1;

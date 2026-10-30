@@ -1,0 +1,161 @@
+{
+  "method": "Same native estimator, deterministic seed and 60M-roll budget, targets 1/5/8/12; before/after on the same Windows host during the eight-worker run.",
+  "unchangedResults": true,
+  "before": [
+    {
+      "target": 1,
+      "wallMs": 14.012799999999999,
+      "cpu": {
+        "user": 0,
+        "system": 0
+      },
+      "result": {
+        "status": "available",
+        "attempts": 1,
+        "gold": 2000,
+        "scrolls": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "completed": 3000,
+        "rolls": 3000
+      }
+    },
+    {
+      "target": 5,
+      "wallMs": 19.021800000000006,
+      "cpu": {
+        "user": 0,
+        "system": 0
+      },
+      "result": {
+        "status": "available",
+        "attempts": 5,
+        "gold": 27000,
+        "scrolls": [
+          22,
+          0,
+          0,
+          0
+        ],
+        "completed": 3000,
+        "rolls": 33694
+      }
+    },
+    {
+      "target": 8,
+      "wallMs": 954.0976999999999,
+      "cpu": {
+        "user": 94000,
+        "system": 47000
+      },
+      "result": {
+        "status": "available",
+        "attempts": 348,
+        "gold": 2125000,
+        "scrolls": [
+          1777,
+          0,
+          0,
+          0
+        ],
+        "completed": 3000,
+        "rolls": 2387909
+      }
+    },
+    {
+      "target": 12,
+      "wallMs": 26949.923,
+      "cpu": {
+        "user": 3547000,
+        "system": 562000
+      },
+      "result": {
+        "status": "unavailable",
+        "completed": 2,
+        "rolls": 60000000
+      }
+    }
+  ],
+  "after": [
+    {
+      "target": 1,
+      "wallMs": 5.130599999999994,
+      "cpu": {
+        "user": 0,
+        "system": 0
+      },
+      "result": {
+        "status": "available",
+        "attempts": 1,
+        "gold": 2000,
+        "scrolls": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "completed": 3000,
+        "rolls": 3000
+      }
+    },
+    {
+      "target": 5,
+      "wallMs": 5.100300000000004,
+      "cpu": {
+        "user": 0,
+        "system": 0
+      },
+      "result": {
+        "status": "available",
+        "attempts": 5,
+        "gold": 27000,
+        "scrolls": [
+          22,
+          0,
+          0,
+          0
+        ],
+        "completed": 3000,
+        "rolls": 33694
+      }
+    },
+    {
+      "target": 8,
+      "wallMs": 109.13450000000002,
+      "cpu": {
+        "user": 109000,
+        "system": 47000
+      },
+      "result": {
+        "status": "available",
+        "attempts": 348,
+        "gold": 2125000,
+        "scrolls": [
+          1777,
+          0,
+          0,
+          0
+        ],
+        "completed": 3000,
+        "rolls": 2387909
+      }
+    },
+    {
+      "target": 12,
+      "wallMs": 2417.1439,
+      "cpu": {
+        "user": 2422000,
+        "system": 63000
+      },
+      "result": {
+        "status": "unavailable",
+        "completed": 2,
+        "rolls": 60000000
+      }
+    }
+  ],
+  "speedup": 11.14949052060988
+}

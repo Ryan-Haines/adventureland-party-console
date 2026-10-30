@@ -1,3 +1,4 @@
+import type {RestockPolicy, ElixirPolicy} from "../../restock-policy.ts";
 import { admitMerchantInterruption, attachMerchantInterruption } from '../navigation/merchant-interruption.ts';
 import { upgradeOfferingReady } from '../inventory/offering-waits.ts';
 import { bankCollectionReason } from '../merchant/bank-collection.ts';
@@ -63,7 +64,8 @@ interface SchedulingPorts {
   giveaways(report: SchedulingReport): void;
   compounds(name: string, report: SchedulingReport | undefined): void;
   exchanges(report: SchedulingReport | undefined): void;
-  policy(name: string): { hp: SupplyRule; mp: SupplyRule };
+  policy(name: string): RestockPolicy;
+  elixirReady?(name:string, rule:ElixirPolicy, have:number):boolean;
   queue(names: string[], reason: string): void;
   markedItem(mark: ItemMark): Item | null | undefined;
   sameItem(left: Item | null | undefined, right: Item | null | undefined): boolean;
@@ -120,7 +122,8 @@ export function createMerchantScheduling(state: SchedulingState, ports: Scheduli
   function supplies(report: SchedulingReport): void {
     if (state.merchantAutomations.restock === false || !Array.isArray(report.items)) return;
     const policy = ports.policy(report.name);
-    if (needsSupply(policy.hp, report.items) || needsSupply(policy.mp, report.items))
+    if (needsSupply(policy.hp, report.items) || needsSupply(policy.mp, report.items) ||
+        policy.elixir && needsSupply(policy.elixir, report.items) && ports.elixirReady?.(report.name,policy.elixir,countItem(report.items,policy.elixir.item)))
       ports.queue([report.name], "restock");
   }
 

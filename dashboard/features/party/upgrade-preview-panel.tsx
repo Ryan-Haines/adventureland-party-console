@@ -6,6 +6,7 @@ import { useUpgradeOfferings, type OfferingSource } from './upgrade-offering-con
 import { upgradeOfferings } from '../../../runtime/upgrade-offerings';
 import { previewOptions, type UpgradePreviewResult } from '../../../runtime/upgrade-preview';
 import type { Item } from './item';
+import { useHidden } from './query-cache';
 
 export function UpgradePreviewPanel({ item, source }: { item: Item; source?: OfferingSource }) {
   const controls = useUpgradeOfferings();
@@ -14,10 +15,13 @@ export function UpgradePreviewPanel({ item, source }: { item: Item; source?: Off
   const [state, setState] = useState<{key:string; result?:UpgradePreviewResult; status?:string; error?:string}>();
   const body = JSON.stringify({ character:controls?.character, ...source, item });
   const key = `${body}:${controls?.executor}:${revision}`;
+  const hidden = useHidden();
   const unavailable = !controls?.executor ? 'No merchant configured'
     : !source || source.equipped || controls.character !== controls.executor ? 'Item not in merchant inventory' : '';
   useEffect(() => {
-    if (unavailable) return;
+    // Ticks only read the stored preview (refresh:false). A hidden tab stops
+    // them, and a tab that becomes visible reads at once.
+    if (unavailable || hidden) return;
     const controller = new AbortController();
     let polling = false;
     async function read(queue = false) {
@@ -42,7 +46,7 @@ export function UpgradePreviewPanel({ item, source }: { item: Item; source?: Off
     void read(queue);
     const timer = setInterval(() => void read(), 2000);
     return () => { clearInterval(timer); controller.abort(); };
-  }, [body, key, unavailable]);
+  }, [body, key, unavailable, hidden]);
   const current = state?.key === key ? state : undefined;
   return <section aria-label="Upgrade chances" className="w-64 max-w-full border-t border-slate-300 !bg-white p-3 text-sm !text-black sm:border-l sm:border-t-0">
     <p className="font-semibold">Next attempt: +{item.level || 0} → +{(item.level || 0)+1}</p>

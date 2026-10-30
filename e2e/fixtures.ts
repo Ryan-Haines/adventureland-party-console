@@ -1,4 +1,6 @@
+import {isLoopback} from './game/addresses.cjs';
 import { test as base, expect } from '@playwright/test';
+import {cleanupWorkspace} from './workspace';
 import { fork, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { appendFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
@@ -56,9 +58,14 @@ async function ready(process: ChildProcess, url: string, log: string) {
   }
   throw new Error(`E2E service failed readiness at ${url}\n${existsSync(log) ? readFileSync(log, 'utf8').slice(-12000) : 'No output'}`);
 }
-type App = { url: string; restartCoordinator(): Promise<void>; state(): Promise<any>; deliverStatus(report: unknown): Promise<unknown>; deliverMerchantCompletion(report: unknown): Promise<unknown> };
+type App = { url: string; journal: string; restartCoordinator(): Promise<void>; crashCoordinator(whileDown?: () => unknown): Promise<void>; state(): Promise<any>; deliverStatus(report: unknown): Promise<unknown>; deliverMerchantCompletion(report: unknown): Promise<unknown> };
 
-export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantConnected: boolean; merchantManaged: boolean; playerInventory: boolean; marketStand: boolean; bankboiOfferings: boolean; mapCapture: boolean; standBuyOrders: boolean }, { dashboard: { port: number; log: string } }>({
+export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantConnected: boolean; merchantManaged: boolean; playerInventory: boolean; marketStand: boolean; bankboiOfferings: boolean; mapCapture: boolean; standBuyOrders: boolean; mailbox:boolean; savedRecords: Record<string, unknown>[]; stateFields: string }, { dashboard: { port: number; log: string } }>({
+  // Journal records a scenario saved before this start, appended after the other seeds.
+  savedRecords: [[], {option:true}],
+  // PARTY_STATE_FIELDS for the coordinator (docs/state-field-registry.md, Rollout).
+  stateFields: ['', {option:true}],
+  mailbox: [false, {option:true}],
   standBuyOrders: [false, {option:true}],
   mapCapture: [false, {option:true}],
   bankboiOfferings: [false, {option:true}],
@@ -71,28 +78,39 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
     const directory = path.join(root, '.build/e2e', `dashboard-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
     const port = await unusedPort(), log = path.join(directory, 'dashboard.log');
-    const process = child(path.join(root, 'dashboard/node_modules/vinext/dist/cli.js'),
-      ['dev', '--hostname', '127.0.0.1', '--port', String(port)], path.join(root, 'dashboard'),
-      environment({ AL_DASHBOARD_PORT: String(port), AL_WATCH_POLL: '1' }), log);
+    const candidate=JSON.parse(globalThis.process.env.E2E_DASHBOARD_CANDIDATE||'null');
+    if(!candidate||!candidate.directory.startsWith(path.join(root,'.build/console/releases')+path.sep))throw Error('Verified E2E dashboard candidate required');
+    const process = child(path.join(candidate.directory,'tools/dashboard/node-server.mts'),
+      [String(port),path.join(candidate.directory,'dashboard/.build/container')],path.join(candidate.directory,'dashboard'),
+      environment({NODE_ENV:'production',AL_DASHBOARD_PORT:String(port)}),log);
+    let used=false;
     try {
       await ready(process, `http://127.0.0.1:${port}`, log);
       await use({ port, log });
-    } finally { await stop(process); }
+      used=true;
+    } finally { await stop(process);if(used)cleanupWorkspace(root,directory); }
   }, { scope: 'worker', timeout: 120_000 }],
-  app: async ({ dashboard, merchantDialogs, merchantConnected, merchantManaged, playerInventory, marketStand, bankboiOfferings, mapCapture, standBuyOrders }, use, testInfo) => {
+  app: async ({ dashboard, merchantDialogs, merchantConnected, merchantManaged, playerInventory, marketStand, bankboiOfferings, mapCapture, standBuyOrders, mailbox, savedRecords, stateFields }, use, testInfo) => {
     const directory = path.join(root, '.build/e2e', `scenario-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
+    if(mailbox){
+      const records=[1,2].map(n=>({id:'sent-fixture-'+n,recipient:'Recipient',subject:n===1?'Sent fixture one':'Sent fixture two',message:'Declared historical confirmed send',sent:'2026-10-18T12:00:00Z'}));
+      appendFileSync(path.join(directory,'state.jsonl'),JSON.stringify({party_dashboard_settings_state_v1:{mailbox:{settings:{autoCollect:false,autoDelete:false},seenIds:[],outbox:records}}})+'\n');
+      await testInfo.attach('declared-historical-sent-mail',{body:JSON.stringify(records),contentType:'application/json'});
+    }
     if(bankboiOfferings){
       // Declared historical account inventory, not a synthetic public stock map.
       const bankbois={E2EOfferingBank:{name:'E2EOfferingBank',state:'ready',items:['offeringp','offering','offeringx'].map((name,slot)=>({slot,item:{name,q:2}}))}};
       appendFileSync(path.join(directory,'state.jsonl'),JSON.stringify({party_dashboard_bank_state_v1:{bankbois}})+'\n');
       await testInfo.attach('declared-bankboi-offering-stock',{body:JSON.stringify(bankbois),contentType:'application/json'});
     }
+    for (const record of savedRecords) appendFileSync(path.join(directory, 'state.jsonl'), JSON.stringify(record) + '\n');
+    if (savedRecords.length) await testInfo.attach('declared-saved-records', { body: JSON.stringify(savedRecords), contentType: 'application/json' });
     const port = await unusedPort(), log = path.join(directory, 'coordinator.log');
     let coordinator: ChildProcess | undefined;
     async function start() {
       coordinator = child(path.join(root, 'e2e/coordinator.cjs'), [], root,
-        environment({ E2E_STAND_BUY_ORDERS: String(standBuyOrders), E2E_MAP_CAPTURE: String(mapCapture), E2E_MARKET_STAND: String(marketStand), E2E_COORDINATOR_PORT: String(port), E2E_DATA_DIR: directory, E2E_MERCHANT_DIALOGS: String(merchantDialogs), E2E_MERCHANT_CONNECTED: String(merchantConnected), E2E_MANAGED_MERCHANT: String(merchantManaged), E2E_PLAYER_INVENTORY: String(playerInventory) }), log);
+        environment({ E2E_MAILBOX:String(mailbox), E2E_STAND_BUY_ORDERS: String(standBuyOrders), E2E_MAP_CAPTURE: String(mapCapture), E2E_MARKET_STAND: String(marketStand), E2E_COORDINATOR_PORT: String(port), E2E_DATA_DIR: directory, E2E_MERCHANT_DIALOGS: String(merchantDialogs), E2E_MERCHANT_CONNECTED: String(merchantConnected), E2E_MANAGED_MERCHANT: String(merchantManaged), E2E_PLAYER_INVENTORY: String(playerInventory), ...(stateFields ? { PARTY_STATE_FIELDS: stateFields } : {}) }), log);
       const started = coordinator;
       await new Promise<void>((resolve, reject) => {
         const output = () => existsSync(log) ? readFileSync(log, 'utf8') : 'No coordinator output';
@@ -121,7 +139,14 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
       const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
       app = {
         url,
+        // The scenario's own journal, read only by assertions about saved state.
+        journal: path.join(directory, 'state.jsonl'),
         async restartCoordinator() { await stop(coordinator!, true); await start(); },
+        // SIGKILL runs no shutdown handler, so nothing pending reaches the journal.
+        async crashCoordinator(whileDown) {
+          const crashed = coordinator!, exited = new Promise<void>(resolve => crashed.once('exit', () => resolve()));
+          crashed.kill('SIGKILL'); await exited; await whileDown?.(); await start();
+        },
         // External game observations enter the coordinator's private status
         // boundary, just like the scenario's recurring fixture heartbeats.
         async deliverStatus(report: unknown) {
@@ -166,13 +191,22 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
       for (const file of [log, dashboard.log, path.join(directory, 'state.jsonl')]) {
         if (existsSync(file)) await testInfo.attach(path.basename(file), { path: file, contentType: 'text/plain' });
       }
+      await testInfo.attach('workspace-cleanup',{body:JSON.stringify(cleanupWorkspace(root,directory)),contentType:'application/json'});
     }
   },
   baseURL: async ({ app }, use) => { await use(app.url); },
-  context: async ({ context }, use) => {
+  context: async ({ context }, use, testInfo) => {
+    // Test-only read recording for the field registry (docs/state-field-registry.md).
+    // dashboard/features/party/field-read-audit.ts reports each first read per cache kind and field.
+    if (process.env.PARTY_FIELD_AUDIT === '1') {
+      const file = path.join(root, '.build/field-audit/reads.jsonl');
+      mkdirSync(path.dirname(file), { recursive: true });
+      await context.exposeBinding('__partyFieldAudit', (_source, record: object) =>
+        appendFileSync(file, JSON.stringify({ test: testInfo.titlePath.join(' > '), ...record }) + '\n'));
+    }
     await context.route('**/*', route => {
       const url = new URL(route.request().url());
-      return ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname) || ['data:', 'blob:'].includes(url.protocol)
+      return isLoopback(url.hostname) || ['data:', 'blob:'].includes(url.protocol)
         ? route.continue() : route.abort('blockedbyclient');
     });
     await use(context);

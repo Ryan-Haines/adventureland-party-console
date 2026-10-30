@@ -34,6 +34,8 @@ export interface CharacterManagerPorts {
   sessionToken: string | undefined;
   typeCode: boolean;
   minimap: boolean;
+  /** The party leader asks the game for full generated Cave floors; see runtime/lifecycle/cave-floor-handshake.ts. */
+  fullCaveFloors?(name: string): boolean;
   classIds: Readonly<Record<string, number>>;
   lifecycle(name: string, lifecycle: Lifecycle): void;
   resolveRealm(realm: string | undefined): Realm | undefined;
@@ -44,6 +46,11 @@ export interface CharacterManagerPorts {
   fork(): Worker;
   pipe(worker: Worker): void;
   monitor(name: string, block: CharacterBlock): { destroy(): void } | null;
+}
+
+// Present only for the leader, so other workers keep the original wire format.
+function caveFloorArguments(name: string, ports: CharacterManagerPorts): Pick<WorkerArguments, "full_cave_floors"> {
+  return ports.fullCaveFloors?.(name) ? { full_cave_floors: true } : {};
 }
 
 function argumentsFor(
@@ -65,6 +72,7 @@ function argumentsFor(
     enable_map: ports.minimap,
     cname: name,
     clid: ports.classIds[character.type] || -1,
+    ...caveFloorArguments(name, ports),
   };
   if (ports.typeCode) args.typescript_file = block.typescript;
   return args;

@@ -13,6 +13,7 @@ export const liveFields = [
   "mp",
   "max_hp",
   "max_mp",
+  "cc",
   "x",
   "y",
   "map",
@@ -42,18 +43,98 @@ interface Ports<Timer> {
   active(name: string): boolean;
   every(callback: () => void, ms: number): Timer;
   cancel(timer: Timer): void;
+  /** merchantCatalog, which supplies the per-type meta reports leave out. */
+  catalog?(): unknown;
 }
 function entries(value: unknown): RecordValue {
   return Object.fromEntries(
     Object.entries(requestObject(value)).filter(([key]) => key !== "__proto__"),
   );
 }
-function difference(before: RecordValue, after: RecordValue): RecordValue {
-  const result: RecordValue = {};
-  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
-    if (JSON.stringify(before[key]) !== JSON.stringify(after[key]))
-      result[key] = after[key] ?? null;
+// jsonEqual answers "is JSON.stringify(a) === JSON.stringify(b)" by walking
+// both values and stopping at the first difference. Status records and
+// samples come from parsed request JSON, which the walk covers. A toJSON
+// method, a non-plain object (Map, Date, boxed primitive), a bigint or a 65th
+// level sends the whole field to JSON.stringify, so a cycle repeated on both
+// sides still throws there. Identical references compare equal without a walk.
+const FALLBACK = Symbol("fallback");
+type Equal = boolean | typeof FALLBACK;
+const absent = (value: unknown) =>
+  value === undefined || typeof value === "function" || typeof value === "symbol";
+function plain(value: object): boolean {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null || Array.isArray(value);
+}
+// One JSON token kind per value: "absent" is what JSON.stringify drops from an
+// object or writes as null in an array.
+function kind(value: unknown): string {
+  if (value === null || typeof value === "number" && !Number.isFinite(value)) return "null";
+  if (absent(value)) return "absent";
+  return typeof value;
+}
+function arrayEqual(a: unknown[], b: unknown[], depth: number): Equal {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) {
+    const left = absent(a[index]) ? null : a[index], right = absent(b[index]) ? null : b[index];
+    const equal = valueEqual(left, right, depth + 1);
+    if (equal !== true) return equal;
   }
+  return true;
+}
+// A toJSON can drop its own key, so keys() hands the field to JSON.stringify
+// when any entry has one.
+function opaque(value: unknown): boolean {
+  return typeof value === "bigint" || typeof value === "object" && value !== null &&
+    (typeof (value as { toJSON?: unknown }).toJSON === "function" || !plain(value));
+}
+function keys(value: RecordValue): string[] | typeof FALLBACK {
+  const result: string[] = [];
+  for (const key of Object.keys(value)) {
+    const entry = value[key];
+    if (opaque(entry)) return FALLBACK;
+    if (!absent(entry)) result.push(key);
+  }
+  return result;
+}
+function objectEqual(a: RecordValue, b: RecordValue, depth: number): Equal {
+  const left = keys(a), right = keys(b);
+  if (left === FALLBACK || right === FALLBACK) return FALLBACK;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) return false;
+    const equal = valueEqual(a[left[index]], b[left[index]], depth + 1);
+    if (equal !== true) return equal;
+  }
+  return true;
+}
+function primitiveEqual(a: unknown, b: unknown): boolean {
+  const kindA = kind(a);
+  return kindA === kind(b) && (kindA === "null" || kindA === "absent");
+}
+function structureEqual(a: unknown, b: unknown, depth: number): Equal {
+  const objectA = typeof a === "object" && a !== null, objectB = typeof b === "object" && b !== null;
+  if (objectA !== objectB) return false;
+  if (!objectA) return primitiveEqual(a, b);
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  return Array.isArray(a) ? arrayEqual(a, b as unknown[], depth) : objectEqual(a as RecordValue, b as RecordValue, depth);
+}
+function valueEqual(a: unknown, b: unknown, depth: number): Equal {
+  if (a === b && typeof a !== "bigint") return true;
+  if (depth > 64 || opaque(a) || opaque(b)) return FALLBACK;
+  return structureEqual(a, b, depth);
+}
+function jsonEqual(a: unknown, b: unknown): boolean {
+  const equal = valueEqual(a, b, 0);
+  return equal === FALLBACK ? JSON.stringify(a) === JSON.stringify(b) : equal;
+}
+/** Fields whose JSON text changed, in the order of before's keys, then after's new keys. */
+export function difference(before: RecordValue, after: RecordValue): RecordValue {
+  const result: RecordValue = {};
+  for (const key of Object.keys(before))
+    if (!jsonEqual(before[key], after[key])) result[key] = after[key] ?? null;
+  for (const key of Object.keys(after))
+    if (!Object.prototype.propertyIsEnumerable.call(before, key) && !jsonEqual(undefined, after[key]))
+      result[key] = after[key] ?? null;
   return result;
 }
 function pickVitals(status: RecordValue): RecordValue {
@@ -73,16 +154,16 @@ function displayVitals(vitals: RecordValue): RecordValue {
     };
   }) };
 }
-function bag(status: PresentationStatus): RecordValue {
+function bag(status: PresentationStatus, catalog: unknown): RecordValue {
   return Object.fromEntries(
-    (status.items || []).map((value, index) => [String(index), compactEntry(value)]),
+    (status.items || []).map((value, index) => [String(index), compactEntry(value, catalog)]),
   );
 }
-function compactSlots(value: unknown): RecordValue {
+function compactSlots(value: unknown, catalog: unknown): RecordValue {
   return Object.fromEntries(
     Object.entries(entries(value)).map(([key, entry]) => [
       key,
-      entry ? compactEntry(requestObject(entry)) : null,
+      entry ? compactEntry(requestObject(entry), catalog) : null,
     ]),
   );
 }
@@ -92,6 +173,7 @@ export function createDashboardStream<Timer>(ports: Ports<Timer>) {
   const epoch = randomUUID();
   let sequence = 0;
   const records = new Map<string, LiveRecord>();
+  const joinedCatalogs = new Map<string, unknown>();
   const sessions = new Map<
     string,
     { runtime: string; generation: string; retired: Set<string>; sample: number }
@@ -185,13 +267,14 @@ export function createDashboardStream<Timer>(ports: Ports<Timer>) {
     if (!session) return;
     // Once fast telemetry is accepted, ordinary status owns diagnostics only.
     if (session.sample > 0) return;
+    joinedCatalogs.set(name, ports.catalog?.());
     publish(name, {
       generation: session.generation,
       sample: 0,
       sampledAt: ports.now(),
       vitals: pickVitals(status),
-      items: bag(status),
-      slots: compactSlots(status.slots),
+      items: bag(status, ports.catalog?.()),
+      slots: compactSlots(status.slots, ports.catalog?.()),
     });
   }
   function reconcile() {
@@ -249,8 +332,9 @@ export function createDashboardStream<Timer>(ports: Ports<Timer>) {
     if (!clients.size) return response.json({ accepted: false });
     const current = records.get(name)!;
     const data = requestObject(body.data);
-    const itemChanges = compactSlots(data.items),
-      slotChanges = compactSlots(data.slots);
+    const catalog = ports.catalog?.();
+    const itemChanges = compactSlots(data.items, catalog),
+      slotChanges = compactSlots(data.slots, catalog);
     if (Object.keys(itemChanges).length > 256 || Object.keys(slotChanges).length > 128)
       return response.status(400).json({ error: "oversized telemetry" });
     session.sample = Number(body.sample);
@@ -260,10 +344,16 @@ export function createDashboardStream<Timer>(ports: Ports<Timer>) {
       sample: session.sample,
       sampledAt: Number(body.sampledAt) || ports.now(),
       vitals: { ...current.vitals, ...displayVitals(entries(data.vitals)) },
-      items: { ...current.items, ...itemChanges },
-      slots: { ...current.slots, ...slotChanges },
+      // A record published before the catalog arrived gains its per-type
+      // meta here, because telemetry only resends the cells that changed.
+      items: { ...rejoined(name, current.items, catalog), ...itemChanges },
+      slots: { ...rejoined(name, current.slots, catalog), ...slotChanges },
     });
+    joinedCatalogs.set(name, catalog);
     return response.json({ accepted: true });
+  }
+  function rejoined(name: string, cells: RecordValue, catalog: unknown): RecordValue {
+    return joinedCatalogs.get(name) === catalog ? cells : compactSlots(cells, catalog);
   }
   function install(router: HttpRouter) {
     router.get("/party-api/dashboard-stream", stream);

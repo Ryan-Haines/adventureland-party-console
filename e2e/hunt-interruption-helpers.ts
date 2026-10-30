@@ -72,7 +72,7 @@ export async function spawnGoo(live:LiveGame,name=W,observableCombatSeconds=0,ah
       if(!Number.isFinite(ahead)||ahead<35)return null;
       const x=p.x+ahead*(p.going_x-p.x)/distance,y=p.y+ahead*(p.going_y-p.y)/distance;
       if(!can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))return null;
-      const m=new_monster(p.in,{type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
+      const m=new_monster(p.in,{type:'goo',__e2eAmbientExempt:true,position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;
       return {id:m.id,map:m.map,x:m.x,y:m.y,hp:m.hp,ahead,origin:{x:p.x,y:p.y},observableCombatSeconds:${observableCombatSeconds},source:'native waypoint'};})()`);
     if(direct)return direct;
   }
@@ -89,7 +89,7 @@ export async function spawnGoo(live:LiveGame,name=W,observableCombatSeconds=0,ah
   return live.admin(`output=(()=>{const p=get_player(${JSON.stringify(name)}),goal=${JSON.stringify(goal)},distance=goal?Math.hypot(goal.x-p.x,goal.y-p.y):0,ahead=${ahead}?Math.min(${ahead},distance-35):0;
     if(${ahead}&&(!p.moving||ahead<35))return null;
     const offsets=ahead?[[ahead*(goal.x-p.x)/distance,ahead*(goal.y-p.y)/distance]]:[[35,0],[-35,0],[0,35],[0,-35]];
-    for(const [dx,dy] of offsets){const x=p.x+dx,y=p.y+dy;if(can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base})){const m=new_monster(p.in,{type:'goo',position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;${observableCombatSeconds ? `m.hp=m.max_hp=Math.ceil(${JSON.stringify(fighters)}.map(get_player).reduce((sum,p)=>sum+Math.max(1,p.attack)*Math.max(0.1,p.frequency),0)*${observableCombatSeconds});` : ''}return {id:m.id,map:m.map,x:m.x,y:m.y,hp:m.hp,ahead,origin:{x:p.x,y:p.y},observableCombatSeconds:${observableCombatSeconds}};}}throw Error('No reachable encounter seed')})()`);
+    for(const [dx,dy] of offsets){const x=p.x+dx,y=p.y+dy;if(can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base})){const m=new_monster(p.in,{type:'goo',__e2eAmbientExempt:true,position:[x,y],radius:0,count:1},{temp:1});m.e2eHunt=true;${observableCombatSeconds ? `m.hp=m.max_hp=Math.ceil(${JSON.stringify(fighters)}.map(get_player).reduce((sum,p)=>sum+Math.max(1,p.attack)*Math.max(0.1,p.frequency),0)*${observableCombatSeconds});` : ''}return {id:m.id,map:m.map,x:m.x,y:m.y,hp:m.hp,ahead,origin:{x:p.x,y:p.y},observableCombatSeconds:${observableCombatSeconds}};}}throw Error('No reachable encounter seed')})()`);
   };
   if(!ahead)return seed();
   // A client walking sample can precede a Town step or the server's next move

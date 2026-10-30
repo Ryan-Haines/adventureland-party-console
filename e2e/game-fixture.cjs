@@ -47,6 +47,9 @@ function createGameFixture(directory) {
   const hunter = game.maps.main.npcs.find(npc => npc.id === 'monsterhunter');
   let sequence = 0;
   function reports(catalogs = false) {
+    // Like characters/shared.js itemDefinition: full meta until the coordinator
+    // holds the catalog, then per-copy meta only.
+    const reportMeta = id => catalogs ? itemMeta(id) : { properties: {} };
     const sample = ++sequence;
     return [['W', 'warrior'], ['P', 'priest'], ['M', 'merchant']].filter(([name]) => name !== 'M' || process.env.E2E_MERCHANT_CONNECTED !== 'false').map(([name, ctype]) => ({
       name, ctype, level: 80, runtime: 'native', steamPrimary: name === 'W',
@@ -54,15 +57,15 @@ function createGameFixture(directory) {
       statusSequence: sample, connected: true, map: 'main', in: 'main', server: 'USII',
       ...(name === 'W' && process.env.E2E_MAP_CAPTURE === 'true' ? {map:'zone_abc123_0',in:'zone_abc123_0',x:31,y:47} : {x:0,y:0}), moving: false, rip: false, hp: 1000, max_hp: 1000, mp: 1000, max_mp: 1000,
       gold: 1000000, speed: 50, range: 100, attack: 100, frequency: 1,
-      gameParty: ['W', 'P'], threats: [], conditions: [], slots: name === 'M' && process.env.E2E_MARKET_STAND === 'true' ? {trade1:{slot:1,item:{name:'sword',level:8,b:true,price:1000,q:3},meta:itemMeta('sword')}} : name === 'M' && process.env.E2E_STAND_BUY_ORDERS === 'true' ? Object.fromEntries(['spidersilk','bkey','helmet','stramulet'].map((id,index)=>['trade'+(index+1),{slot:index+1,item:{name:id,b:true,...(['helmet','stramulet'].includes(id)?{level:id==='stramulet'?2:0}:{}),price:1000,q:1},meta:itemMeta(id)}])) : {},
+      gameParty: ['W', 'P'], threats: [], conditions: [], slots: name === 'M' && process.env.E2E_MARKET_STAND === 'true' ? {trade1:{slot:1,item:{name:'sword',level:8,b:true,price:1000,q:3},meta:reportMeta('sword')}} : name === 'M' && process.env.E2E_STAND_BUY_ORDERS === 'true' ? Object.fromEntries(['spidersilk','bkey','helmet','stramulet'].map((id,index)=>['trade'+(index+1),{slot:index+1,item:{name:id,b:true,...(['helmet','stramulet'].includes(id)?{level:id==='stramulet'?2:0}:{}),price:1000,q:1},meta:reportMeta(id)}])) : {},
       monsterHunt: name === 'W' ? { id: 'goo', count: 10, remainingMs: 600000, server: 'USII' } : null,
       navigationState: 'idle', standOpen: name === 'M',
       items: Array.from({ length: 42 }, (_, slot) => (name === 'M' || name === 'W' && process.env.E2E_PLAYER_INVENTORY === 'true') && slot === 0
-        ? { slot, item: { name: 'sword', level: 0 }, meta: itemMeta('sword') } : name === 'M' && slot === 1
-        ? { slot, item: { name: 'gem0', q: 1 }, meta: itemMeta('gem0') } : name === 'M' && slot === 2
-        ? { slot, item: { name: 'coat', level: 0 }, meta: itemMeta('coat') } : null),
+        ? { slot, item: { name: 'sword', level: 0 }, meta: reportMeta('sword') } : name === 'M' && slot === 1
+        ? { slot, item: { name: 'gem0', q: 1 }, meta: reportMeta('gem0') } : name === 'M' && slot === 2
+        ? { slot, item: { name: 'coat', level: 0 }, meta: reportMeta('coat') } : null),
       ...(process.env.E2E_MERCHANT_DIALOGS === 'true' && name === 'M' ? {
-        bank: {gold:1000000,packs:{items0:[{slot:0,item:{name:'bkey'},meta:itemMeta('bkey')}]}},
+        bank: {gold:1000000,packs:{items0:[{slot:0,item:{name:'bkey'},meta:reportMeta('bkey')}]}},
         bankVaults: [
           {pack:'items0',floor:'bank',gold:0,shells:0,key:null},
           {pack:'items1',floor:'bank',gold:10000,shells:0,key:null},

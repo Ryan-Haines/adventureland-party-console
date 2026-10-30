@@ -3,11 +3,16 @@ import { DebugInstanceSettings } from './debug-instance';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { UpdateStatus } from '../../../tools/update/contracts';
+import { useHidden } from './query-cache';
 
 const colors = 'border border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white';
 export function useUpdates() {
   const [state, setState] = useState<UpdateStatus | null>(null), [error, setError] = useState('');
+  // The status only refreshes this view. A hidden tab stops polling, and a
+  // tab that becomes visible reads at once.
+  const hidden = useHidden();
   useEffect(() => {
+    if (hidden) return;
     let alive = true;
     const refresh = async () => {
       try {
@@ -19,7 +24,7 @@ export function useUpdates() {
     };
     void refresh(); const timer = setInterval(() => void refresh(), 3000);
     return () => { alive = false; clearInterval(timer); };
-  }, []);
+  }, [hidden]);
   async function action(name: string, value = {}) {
     try {
       setError('');

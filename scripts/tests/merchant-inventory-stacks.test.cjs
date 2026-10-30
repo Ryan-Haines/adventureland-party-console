@@ -17,7 +17,8 @@ test('stack limits, locks and different properties do not merge',()=>{
  for(const extra of [{l:'l'},{p:'shiny'},{level:1},{stat_type:'int'},{data:{key:1}}]) {
  const s={name:'M',items:[entry(0,'gem1',43),entry(1,'gem1',1,extra)]};assert.equal(plan({merchantCharacter:'M'},s),null);
  }
- assert.equal(plan({merchantCharacter:'M'},{name:'M',items:[entry(0,'gem1',9998),entry(1,'gem1',2)]}),null);
+ // Partial fills now belong to the native five-pile compression E2E; an
+ // over-limit whole pair is no longer expected to block consolidation.
 });
 test('active operations and failed-merge backoff defer consolidation',()=>{
  for(const flag of ['banking','gatheringActive','rip'])assert.equal(plan({merchantCharacter:'M'},{...status(),[flag]:true}),null);
@@ -80,4 +81,14 @@ test('permission endpoint checks current reservations rather than the old dispat
  let allowed;const check=()=>handler({body:{character:'M',merge}},{json:body=>{allowed=body.allowed;}});
  check();assert.equal(allowed,true);
  party.marked={M:[{slot:15,item:s.items[1].item}]};check();assert.equal(allowed,false);
+});
+
+// Failure inventory: a per-copy report carries no definition, so the stack
+// limit falls to 1 and the merchant never merges partial stacks.
+test('per-copy reports read the stack limit from the catalog',()=>{
+ const slim=(slot,name,q)=>({slot,item:{name,q},meta:{properties:{}}});
+ const s={name:'M',items:[slim(10,'gem1',43),slim(28,'gem1',1)]};
+ assert.equal(plan({merchantCharacter:'M'},s),null);
+ const merchantCatalog={allItems:[{id:'gem1',meta:{definition:{s:9999}}}]};
+ assert.deepEqual([plan({merchantCharacter:'M',merchantCatalog},s).to,plan({merchantCharacter:'M',merchantCatalog},s).from],[10,28]);
 });

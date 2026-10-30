@@ -284,3 +284,18 @@ for (const automatic of [false, true]) {
     assert.equal(calls.some(call => call[0] === 'retrieve'), false, 'deposits must not withdraw unrequested bank stock');
   });
 }
+
+// Failure inventory: per-copy bank and storage worker entries carry no
+// definition, so partial stacks lose their home and unload never tops them up.
+test('per-copy bank entries read the stack limit from the catalog', () => {
+  const routing = require('../bank-stack-routing.cjs');
+  const merchantCatalog = { allItems: [{ id: 'gem1', meta: { definition: { s: 9999 } } }] };
+  const slim = q => ({ item: { name: 'gem1', q }, meta: { properties: {} } });
+  const bank = { packs: { items0: [{ slot: 0, ...slim(40) }] } };
+  assert.deepEqual(routing.homes(bank, {}), {});
+  const homes = routing.homes(bank, {}, merchantCatalog);
+  assert.equal(homes[routing.identity(slim(1).item)].room, 9959);
+  const worker = { name: 'b', items: [{ slot: 0, ...slim(2) }] };
+  const party = { bankSnapshot: bank, withdrawals: {}, merchantCatalog };
+  assert.deepEqual(routing.unloadPlan(party, worker).map(move => [move.pack, move.bankSlot]), [['items0', 0]]);
+});

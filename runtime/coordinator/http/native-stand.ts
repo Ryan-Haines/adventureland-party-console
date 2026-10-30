@@ -43,6 +43,23 @@ export function createNativeStandRoute(state: State, ports: Ports) {
   function suspend(body: Record<string, unknown>): boolean {
     return ["stand bid purchases", "stand purchases", "ALData marketplace purchases", "Ponty purchases"].includes(state.merchantCurrent?.reason || "") || body.suspend === true;
   }
+  /**
+   * A purchase whose job ended without the merchant's `purchased` report blocks its item's
+   * WTB until someone decides the outcome: bought counts the reserved quantity as filled,
+   * not bought just releases it. A purchase whose job is still current or queued keeps
+   * its normal confirmation path.
+   */
+  function resolvePurchase(body: Record<string, unknown>, res: HttpResponse): unknown {
+    const pending = nativeLedger(state).purchases ||= {}, id = String(body.id), reservation = pending[id];
+    if (!reservation || typeof body.bought !== "boolean") return res.status(409).json({ error: "That purchase is no longer pending" });
+    if ([state.merchantCurrent, ...state.merchantQueue].some(job => job?.id === reservation.jobId))
+      return res.status(409).json({ error: "That purchase is still in progress" });
+    if (body.bought) ports.fulfill(reservation.item, reservation.quantity);
+    delete pending[id];
+    delete nativeLedger(state).problems[String(reservation.item.name)];
+    ports.persist(); ports.dispatch();
+    return res.json({ ok: true });
+  }
   function configure(body: Record<string, unknown>, res: HttpResponse): unknown {
     if (typeof body.enabled !== "boolean") return res.status(400).json({ error: "invalid automatic fill setting" });
     state.autoStandBuys = body.enabled; ports.persist(); return res.json({ ok: true });
@@ -61,6 +78,7 @@ export function createNativeStandRoute(state: State, ports: Ports) {
   return (req: HttpRequest, res: HttpResponse): unknown => {
     const body = requestObject(req.body);
     if (body.action === "configure") return configure(body, res);
+    if (body.action === "resolve-purchase") return resolvePurchase(body, res);
     if (body.character !== state.merchantCharacter) return res.status(409).json({ error: "merchant is no longer configured" });
     if (body.action === "purchased") return purchased(String(body.jobId), String(body.key), res);
     if (body.jobId && body.jobId !== state.merchantCurrent?.id) return res.status(409).json({ error: "purchase is no longer current" });

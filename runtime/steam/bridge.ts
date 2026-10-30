@@ -1,3 +1,4 @@
+import { anySignal } from "../lifecycle/abort-signals.ts";
 import { createSwitcher, type NativeAudioHost } from "./switcher.ts";
 import type { Handoff } from "../roster/handoff.ts";
 import { serverAddress, steamBootstrap, previousSteamBootstrap, steamBridgeVersion } from "./connection.ts";
@@ -143,7 +144,7 @@ export function installSteamBridge(host: NativeHost): void {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.any([lifecycle.signal, AbortSignal.timeout(10000)]),
+      signal: anySignal([lifecycle.signal, AbortSignal.timeout(10000)]),
     });
     const payload = (await response.json()) as BridgeReply & { error?: string };
     if (!response.ok) throw new Error(payload.error || "Steam bridge request failed");
@@ -157,7 +158,7 @@ export function installSteamBridge(host: NativeHost): void {
     if (!slot || !/^(?:[1-9]|[1-9][0-9]|100)$/.test(slot)) slot = null;
     if (slot && !bootstrapSaved) {
       const response = await host.fetch("/code.js?name=" + encodeURIComponent(slot), { cache: "no-store",
-        signal: AbortSignal.any([lifecycle.signal, AbortSignal.timeout(6000)]) });
+        signal: anySignal([lifecycle.signal, AbortSignal.timeout(6000)]) });
       if (!response.ok) throw new Error("Cannot verify managed bootstrap slot");
       const code = (await response.text()).trim();
       const legacy = `globalThis.__partyServer=${JSON.stringify(server)};parent.__partyServer=globalThis.__partyServer;$.getScript(${JSON.stringify(server + "/CODE/adventure_land/universal-loader.js")});`;
@@ -229,7 +230,7 @@ export function installSteamBridge(host: NativeHost): void {
       navigating = id;
       const realm = destinationRealm.replace(/^SR_/, "").match(/^(US|EU|ASIA)(I|II|III|IV|V|PVP)$/);
       if (!realm) throw new Error("Invalid Steam destination realm");
-      host.location.href =
+      const destination =
         "/character/" +
         encodeURIComponent(target) +
         "/in/" +
@@ -237,6 +238,9 @@ export function installSteamBridge(host: NativeHost): void {
         "/" +
         realm[2] +
         "/";
+      // The native socket connects after the document loads. A fresh bridge on
+      // that same document must let login finish instead of reloading it again.
+      if (host.location.pathname !== destination) host.location.href = destination;
   }
   function mayStartCompanion(operation: Handoff, name: string): boolean {
     const group = operation.multi!;

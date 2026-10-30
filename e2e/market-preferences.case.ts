@@ -1,6 +1,7 @@
 import type {Page} from '@playwright/test';
 
 import {test,expect} from './fixtures';
+import { fetchFullState } from './state-route';
 
 
 
@@ -8,7 +9,7 @@ async function marketFeed(page:Page,clock:{classifiedsStale:boolean;wtbDisplay?:
 
   await page.route('**/party-api/state*',async(route)=>{
 
-    const response=await route.fetch(),state=await response.json(),now=Date.now();
+    const response=await fetchFullState(route),state=await response.json(),now=Date.now();
 
     const entries=[0,8,1].map(level=>({key:'market-'+level,source:'aldata',seller:'Seller'+level,buyer:'Buyer'+level,slot:'trade1',
 

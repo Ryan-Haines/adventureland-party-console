@@ -14,6 +14,7 @@ export interface FocusState {
   scatterBreakTarget: unknown;
 }
 interface FocusPorts {
+  focusChanged?(): void;
   members(): string[];
   invalidate(names: string[], reason: string, shared: boolean): void;
 }
@@ -38,7 +39,7 @@ export function createFocusSelection(state: FocusState, ports: FocusPorts) {
     focus: string[],
     priorities: Record<string, number> | undefined,
     radius: unknown,
-  ): void {
+  ): boolean {
     const changed =
       JSON.stringify(state.monsterFocusByCharacter[name] || state.monsterFocus || []) !==
       JSON.stringify(focus);
@@ -56,6 +57,7 @@ export function createFocusSelection(state: FocusState, ports: FocusPorts) {
       state.monsterSearchRadiusByCharacter[name],
     );
     if (changed) resetScatter();
+    return changed;
   }
   function huntOwnsFocus(name: string | null): boolean {
     return !!(
@@ -65,21 +67,26 @@ export function createFocusSelection(state: FocusState, ports: FocusPorts) {
       (!name || state.monsterHunt.participants.includes(name))
     );
   }
+  function invalidateClearedFocus(name: string | null): void {
+    const shared = !name || name === state.leader;
+    ports.invalidate(shared ? ports.members() : [name!], "monster focus cleared", shared);
+  }
   function select(
     name: string | null,
     focus: string[],
     priorities: Record<string, number> | undefined,
     radius: unknown,
   ): void {
-    if (name) characterFocus(name, focus, priorities, radius);
+    let changed: boolean;
+    if (name) changed = characterFocus(name, focus, priorities, radius);
     else {
-      const changed = JSON.stringify(state.monsterFocus || []) !== JSON.stringify(focus);
+      changed = JSON.stringify(state.monsterFocus || []) !== JSON.stringify(focus);
       state.monsterFocus = focus;
       if (changed) resetScatter();
     }
+    if (changed && !huntOwnsFocus(name)) ports.focusChanged?.();
     if (!focus.length && !huntOwnsFocus(name)) {
-      const shared = !name || name === state.leader;
-      ports.invalidate(shared ? ports.members() : [name], "monster focus cleared", shared);
+      invalidateClearedFocus(name);
     }
   }
   return { select };

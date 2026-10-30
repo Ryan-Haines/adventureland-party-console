@@ -1,3 +1,4 @@
+import { anySignal } from "../lifecycle/abort-signals.ts";
 import { classArtifact, manifestClass, compileArtifact } from "./loader-artifact.ts";
 import type { GameManifest } from "../../tools/game/manifest.ts";
 import { initializeConnection, needsSteamBridge, steamBootstrap } from "../steam/connection.ts";
@@ -41,11 +42,17 @@ let lastSource: string | null = null;
 let loading = false;
 let bridgeLoading = false;
 let timer: ReturnType<typeof setInterval> | undefined;
+// The console-deployment reply names the host's activation record, or null
+// when there is none. Older hosts leave it out (undefined).
+let hostActivation: string | null | undefined;
+// When the last activation.json request failed; 0 once a record answers.
+let missingRecordAt = 0;
+const MISSING_RECORD_RECHECK_MS = 10_000;
 
 async function source(file: string): Promise<string> {
   const response = await fetch(baseUrl + file + "?t=" + Date.now(), {
     cache: "no-store",
-    signal: AbortSignal.any([abort.signal, AbortSignal.timeout(6000)]),
+    signal: anySignal([abort.signal, AbortSignal.timeout(6000)]),
   });
   if (!response.ok) throw new Error(`CODE ${file}: HTTP ${response.status}`);
   return response.text();
@@ -88,8 +95,14 @@ async function refresh(force = false): Promise<void> {
     // Subsequent generations require the host's explicit activation record.
     // Standalone startup can still load a manifest; periodic polling cannot.
     let activation: {id: string; manifest: GameManifest;maintenance?:LoaderMaintenance|null;serverNow?:number} | null = null;
-    try { activation = JSON.parse(await source("activation.json")); }
-    catch (error) { if (lastSource !== null) return; }
+    // While the host reports no record, refresh asks for activation.json every
+    // MISSING_RECORD_RECHECK_MS instead of every tick, and refreshControl asks at
+    // once when the host reports one. The record stays the contract, so a record
+    // the control reply does not name (live-console-explicit-activation.spec.ts
+    // serves one) is adopted within 10 s.
+    if (lastSource !== null && hostActivation === null && Date.now() - missingRecordAt < MISSING_RECORD_RECHECK_MS) return;
+    try { activation = JSON.parse(await source("activation.json")); missingRecordAt = 0; }
+    catch (error) { if (lastSource !== null) { missingRecordAt = Date.now(); return; } }
     if (activation && (typeof activation.id !== 'string' || !activation.id)) throw Error('Invalid CODE activation');
     if(activation?.maintenance&&(activation.serverNow||0)>=(gameHost.__partyConsoleMaintenanceAt||0)){
       gameHost.__partyConsoleMaintenance=activation.maintenance;gameHost.__partyConsoleMaintenanceAt=activation.serverNow;
@@ -122,13 +135,19 @@ function dispose(): void {
   if (root.parent === gameHost) root.sharedRoutine?.stop();
 }
 let controlLoading=false;
+function observeActivation(value:{activation?:string|null}):void{
+  const published=hostActivation===null&&typeof value.activation==='string';
+  hostActivation='activation' in value?value.activation??null:undefined;
+  if(published&&!deliberatelyStopped())void refresh();
+}
 async function refreshControl(){
   if(controlLoading||!current())return;controlLoading=true;
   try{
-    const response=await fetch(server+'/party-api/console-deployment',{cache:'no-store',signal:AbortSignal.any([abort.signal,AbortSignal.timeout(3000)])});
+    const response=await fetch(server+'/party-api/console-deployment',{cache:'no-store',signal:anySignal([abort.signal,AbortSignal.timeout(3000)])});
     if(!response.ok)return;
-    const value=await response.json() as {serverNow:number;consoleMaintenance:LoaderMaintenance|null};
+    const value=await response.json() as {serverNow:number;consoleMaintenance:LoaderMaintenance|null;activation?:string|null};
     if(!current()||value.serverNow<(gameHost.__partyConsoleMaintenanceAt||0))return;
+    observeActivation(value);
     gameHost.__partyConsoleMaintenance=value.consoleMaintenance;gameHost.__partyConsoleMaintenanceAt=value.serverNow;
     root.sharedRoutine?.receiveConsoleMaintenance?.(value.consoleMaintenance,value.serverNow);
     if(value.consoleMaintenance)root.__partyStatusSuccessAt=Date.now();

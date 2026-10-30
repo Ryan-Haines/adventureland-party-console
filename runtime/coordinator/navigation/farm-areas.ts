@@ -85,6 +85,7 @@ export function createFarmAreaNavigation(party: FarmNavigationState, ports: Farm
   ): void {
     const next = state.pending!;
     state.pending = null;
+    if (next.focusChange) state.preferredLocation = next.destination;
     if (hunt?.target) {
       hunt.travelCause = next.cause;
       const mission = hunt.missions[hunt.currentIndex];
@@ -269,5 +270,30 @@ export function createFarmAreaNavigation(party: FarmNavigationState, ports: Farm
     if (!active || !areas.length || !names.length) return;
     observe(state, hunt, names, ids, areas, active, now);
   }
-  return { tick };
+  function focusCompatible(previous: FarmNavigationState['location'], ids: string[]): boolean {
+    return !previous?.monsterIds?.length || !ids.length || ids.includes('all') || previous.monsterIds.some(id => ids.includes(id));
+  }
+  function focusMembersReady(names: string[]): boolean {
+    return !!names.length && !names.some(name => ports.intent(name).cancelled);
+  }
+  function focusChanged(): void {
+    if (party.farmingPolicy === 'hunt') return;
+    const state = party.farmAreaState ||= {};
+    if (state.pending?.focusChange) { state.pending = null; ports.persist(); }
+    const previous = party.location, ids = party.monsterFocus || [], names = ports.members();
+    // A custom waypoint has no catalog ownership. Compatible focus additions
+    // keep their chosen area; only a replaced farming species retires its pin.
+    if (!previous || focusCompatible(previous, ids) || !focusMembersReady(names)) return;
+    migrate(state);
+    const now = ports.now(), areas = ports.areas(ids);
+    const destination = ports.alternatives(state, areas, previous, now)[0];
+    if (!destination) return;
+    // Do not authorize movement here: event attendance and its return still own
+    // the same revisions. Ordinary pending relocation waits for those owners,
+    // combat and any later manual override before dispatching the new area.
+    state.pending = {...relocation(ports, names, destination, now, 'Moving to newly selected farming monsters'), focusChange: true};
+    state.message = 'Farming focus changed; waiting for current activity';
+    ports.persist();
+  }
+  return { tick, focusChanged };
 }

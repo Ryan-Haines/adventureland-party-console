@@ -8,7 +8,7 @@ import { EscapeControl } from "./escape-control";
 import { ConnectedFarmingAreaPicker as FarmingAreaPicker } from "./connected-farming-area-picker";
 import { MonsterFocusPicker } from "./monster-focus-picker";
 import type { PartyConsoleModel } from "./use-party-console";
-import { PartyItemDetails } from "./party-item-details";
+import { ItemInspectionProvider, PartyItemDetails } from "./party-item-details";
 import { PartyEquipmentCatalogDialog } from "./party-equipment-catalog-dialog";
 import { PartyWTBOrderDialog } from "./party-wtborder-dialog";
 import { PartyConditionDetails } from "./party-condition-details";
@@ -27,7 +27,7 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
   const { state, chars, formation, setPickerSlot, monsters, post, townParty, setMonsterNavigateTarget, huntSetup, huntSetupCharacter, monsterNavigateBusy, setHuntSetup, setMonsterNavigateBusy, monsterNavigateTarget, farmAreaRequest, setFarmAreaRequest, startFarmingArea, wtbItem } = model;
   const pending = pendingCharacters(model);
   return (
-    <>
+    <ItemInspectionProvider model={model}>
       <section className="px-5 py-7 md:px-10">
         <div className="mx-auto max-w-[1500px]">
         <DungeonPanel model={model} />
@@ -76,6 +76,18 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
             <EscapeControl />
           </RadioGroup>
         )}
+        </div>
+      </section>
+    </ItemInspectionProvider>
+  );
+}
+
+/** Dialogs stay outside the translating/clipped workspace. */
+export function PartyWorkspacePanels({ model }: { model: PartyConsoleModel }) {
+  const { state, monsters, post, setMonsterNavigateTarget, huntSetup, huntSetupCharacter, monsterNavigateBusy,
+    setHuntSetup, setMonsterNavigateBusy, monsterNavigateTarget, farmAreaRequest, setFarmAreaRequest, startFarmingArea, wtbItem } = model;
+  return (
+    <>
         <PartyItemDetails model={model} />
         {huntSetup !== null && (
           <FarmingAreaPicker
@@ -150,8 +162,6 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
         <PartyCreateCharacter model={model} />
         <PartyMerchantCommerceDialog model={model} />
         <PartySendMailDialog model={model} />
-        </div>
-      </section>
     </>
   );
 }

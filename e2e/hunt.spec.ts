@@ -1,10 +1,11 @@
 import { test, expect } from './fixtures';
+import { fetchFullState } from './state-route';
 
 test('passive level caps save and preferred spawns show their map area', async ({page,app},info) => {
   // Failure modes: legacy caps lack a default; zero/fractions save; positive caps
   // disappear after reload; spawn coordinates have no rendered map preview.
   await page.route('**/party-api/state*', async route => {
-    const response=await route.fetch(), state=await response.json();
+    const response=await fetchFullState(route), state=await response.json();
     const monsterChoices=(state.monsterChoices || []).map((monster:{id:string;locations?:unknown[]})=>monster.id==='goo' ? {...monster,locations:[...(monster.locations || []),{map:'main',mapName:'Mainland',x:350,y:100,boundary:[300,50,400,150]}]} : monster);
     await route.fulfill({response,json:{...state,monsterChoices}});
   });

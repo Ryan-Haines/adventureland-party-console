@@ -1,8 +1,17 @@
 diff --git a/account_info.js b/account_info.js
-index 567fa38..24c7138 100644
+index 567fa38..8a7c843 100644
 --- a/account_info.js
 +++ b/account_info.js
-@@ -12,15 +12,33 @@ class Info {
+@@ -5,25 +5,45 @@ class Info {
+   constructor() {}
+ 
+   async updateInfo() {
+-    console.log("updating account info");
++    // This poll runs every 6 s; log level debug shows each one.
++    console.debug("updating account info");
+     const raw = await fetch(
+       "https://adventure.land/api/servers_and_characters",
+       {
          method: "POST",
          headers: {
            Cookie: "auth=" + this.session,
@@ -17,6 +26,9 @@ index 567fa38..24c7138 100644
        throw new Error(`failed to update account info: ${raw.statusText}`);
      }
 -    const res = (await raw.json())[0];
+-    console.log(
+-      `found ${res.servers.length} servers and ${res.characters.length} characters`,
+-    );
 +    const payload = await raw.json();
 +    // Legacy responses were one-element arrays. The current JSON API returns
 +    // action information under `infs`.
@@ -36,9 +48,13 @@ index 567fa38..24c7138 100644
 +        (payload && (payload.reason || payload.message)) || "unexpected response";
 +      throw new Error(`failed to read account info: ${reason}`);
 +    }
-     console.log(
-       `found ${res.servers.length} servers and ${res.characters.length} characters`,
-     );
++    const found = `found ${res.servers.length} servers and ${res.characters.length} characters`;
++    if (found !== this.found) console.log(found);
++    else console.debug(found);
++    this.found = found;
+     this.listeners.forEach((func) => func(res));
+     return (this.response = res);
+   }
 diff --git a/game_files.js b/game_files.js
 index 4ff7825..5ea65df 100644
 --- a/game_files.js

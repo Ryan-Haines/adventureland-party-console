@@ -1,0 +1,68 @@
+{
+  "issue": 147,
+  "upstreamFix": "https://github.com/Thefonze74065/adventureland-party-console/commit/9120e685d5a913c96e5aaee43a3225318ed7fd09",
+  "adaptations": [
+    "Retain native collision sources across automatic planner worker recreation",
+    "Use shared Geometry contract and preserve explicit instance identity on inserted detours",
+    "Integrate contributor E2E into the current selection and check eight additional plans across three footprints"
+  ],
+  "controlLoader": {
+    "at": "2026-10-20T05:17:49.7205897Z",
+    "path": "C:\\Users\\Breene26\\Documents\\gitea\\adventure_land\\.build\\runtime\\movement-planner.cjs",
+    "sha256": "D803B4936E488FBF974EC54535CB24B484E3E3AB4C08478ADBCE2B5DCB4CBCC1",
+    "containsCornerFix": false
+  },
+  "red": {
+    "revision": "283c01a85e9fcd05e26142d1172d941e8fac7f4f",
+    "total": 1,
+    "passed": 0,
+    "failed": [
+      {
+        "title": " > live > live-planner-corner.spec.ts > planner corner edges > Routes from a town corner contain no edge the game rejects, and the party walks them unrepaired",
+        "errors": [
+          {
+            "message": "Error: The planned route must contain no edge the game rejects\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 13\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"from\": Array [\u001b[39m\n\u001b[31m+       135,\u001b[39m\n\u001b[31m+       72,\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"to\": Array [\u001b[39m\n\u001b[31m+       153,\u001b[39m\n\u001b[31m+       -51,\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"walkable\": false,\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m",
+            "stack": "Error: The planned route must contain no edge the game rejects\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 13\u001b[39m\n\n\u001b[32m- Array []\u001b[39m\n\u001b[31m+ Array [\u001b[39m\n\u001b[31m+   Object {\u001b[39m\n\u001b[31m+     \"from\": Array [\u001b[39m\n\u001b[31m+       135,\u001b[39m\n\u001b[31m+       72,\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"to\": Array [\u001b[39m\n\u001b[31m+       153,\u001b[39m\n\u001b[31m+       -51,\u001b[39m\n\u001b[31m+     ],\u001b[39m\n\u001b[31m+     \"walkable\": false,\u001b[39m\n\u001b[31m+   },\u001b[39m\n\u001b[31m+ ]\u001b[39m\n    at C:\\Users\\Breene26\\Documents\\gitea\\adventure_land\\e2e\\live-planner-corner.spec.ts:28:106"
+          }
+        ]
+      }
+    ],
+    "workers": 1,
+    "backend": "chronal-network",
+    "clockRate": 4,
+    "started": "2026-10-20T05:18:45.679Z",
+    "finished": "2026-10-20T05:19:05.491Z",
+    "seconds": 19.812,
+    "evidenceFiles": 48,
+    "removedWorkspaces": 1,
+    "archive": "issue147-corner-red"
+  },
+  "green": {
+    "revision": "283c01a85e9fcd05e26142d1172d941e8fac7f4f",
+    "total": 4,
+    "passed": 4,
+    "failed": [],
+    "workers": 1,
+    "backend": "chronal-network",
+    "clockRate": 4,
+    "started": "2026-10-20T05:22:03.992Z",
+    "finished": "2026-10-20T05:23:57.536Z",
+    "seconds": 113.544,
+    "evidenceFiles": 187,
+    "removedWorkspaces": 4,
+    "archive": "issue147-corner-green"
+  },
+  "typecheck": "npm run typecheck passed",
+  "selection": {
+    "total": 341,
+    "gameplayChronalDefault": 230
+  },
+  "candidate": {
+    "id": "61842c08d71ad13a150778a8166217042048595cdb87894d368c13cc892db04a",
+    "sourceHash": "382cce67290c060b297368759909dd2e0b2df9d563424a0d4c0e0d6a67854509",
+    "completed": true,
+    "deepVerified": true,
+    "activeId": "3c8f69fd48a4c56137a3088e05684afcda079c4e73821bd3e9d331d7f99f2c77",
+    "activated": false
+  }
+}

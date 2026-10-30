@@ -38,8 +38,13 @@ export function installCaveRecovery(p: Ports) {
   const ledger = p.read();
   function save(receipt: Receipt) {
     if (!assignment) return;
-    const next = { ...ledger, [assignment.id]: receipt };
+    // Assignment ids start with the run id. Receipts from earlier runs can
+    // never match again, so only the current run's receipts are kept.
+    const run = assignment.run + ":";
+    const next: RecoveryLedger = { [assignment.id]: receipt };
+    for (const [id, entry] of Object.entries(ledger)) if (id.startsWith(run) && id !== assignment.id) next[id] = entry;
     p.write(next); // Storage must succeed before any consumptive dispatch.
+    for (const id of Object.keys(ledger)) if (!(id in next)) delete ledger[id];
     Object.assign(ledger, next);
   }
   function sameFloorTarget() {

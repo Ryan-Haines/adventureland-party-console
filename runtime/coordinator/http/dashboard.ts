@@ -25,6 +25,7 @@ type DashboardHandlers<Handler> = AnniversaryAndCommerceHandlers<Handler> &
   MerchantControlsHandlers<Handler> &
   MerchantTransactionsHandlers<Handler> & {
     publicStateRoute: Handler;
+    readyRoute: Handler;
     dashboardImportRoutes: { metadata: Handler; exportState: Handler; preferences: Handler; preview: Handler; importState: Handler };
     characterCreationRoutes: { roster: Handler; bankboi: Handler };
     bankboiStorageRoutes: { checkpoint: Handler; complete: Handler };
@@ -42,7 +43,7 @@ interface DashboardPorts<Handler, Middleware, Router> {
   combatLogs: (router: Router) => void;
   startMail: () => {
     snapshot: Handler;
-    action: (name: "refresh" | "collect" | "delete") => Handler;
+    action: (name: "refresh" | "collect" | "delete" | "settings" | "seen" | "outbox-delete") => Handler;
   };
 }
 
@@ -61,6 +62,8 @@ export function installCoordinatorDashboard<
   router.use(ports.json({ limit: "32mb" }));
   router.use("/party-api", partyApiResponseHeaders);
   router.get("/party-api/state", handlers.publicStateRoute);
+  // The host health check asks this route, so it never builds the full state.
+  router.get("/party-api/ready", handlers.readyRoute);
   router.get("/party-api/dashboard-state/export", handlers.dashboardImportRoutes.exportState);
   router.post("/party-api/dashboard-preferences", handlers.dashboardImportRoutes.preferences);
   router.get("/party-api/dashboard-state", handlers.dashboardImportRoutes.metadata);
@@ -92,7 +95,7 @@ export function installCoordinatorDashboard<
   installMerchantControlsRoutes(router, handlers);
   const mail = ports.startMail();
   router.get("/party-api/mail", mail.snapshot);
-  for (const action of ["refresh", "collect", "delete"] as const)
+  for (const action of ["refresh", "collect", "delete", "settings", "seen", "outbox-delete"] as const)
     router.post("/party-api/mail/" + action, mail.action(action));
   installMerchantTransactionsRoutes(router, handlers);
 }

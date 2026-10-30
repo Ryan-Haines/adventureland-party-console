@@ -1,4 +1,5 @@
 import { createJsonStore, type KeyValueStorage } from "./json-store.ts";
+import { stateKeys, settingsLayout, marketSettingsFields, productionSettingsFields } from "./snapshots.ts";
 
 const snapshotSources = {
   persistedBankState: {
@@ -27,6 +28,12 @@ const snapshotSources = {
   },
 } as const;
 type SnapshotName = keyof typeof snapshotSources;
+const splitSources = [
+  { key: stateKeys.market, fields: marketSettingsFields,
+    warning: "Ignoring invalid persisted Party Console market cache" },
+  { key: stateKeys.production, fields: productionSettingsFields,
+    warning: "Ignoring invalid persisted Party Console production state" },
+] as const;
 
 /** Load each saved document independently; retain legacy JSON values for initialization to interpret. */
 export function readInitialCoordinatorSnapshots(
@@ -34,7 +41,7 @@ export function readInitialCoordinatorSnapshots(
   warn: (details: { error: unknown }, message: string) => void,
 ): Record<SnapshotName, unknown> {
   const warnings = new Map(
-    Object.values(snapshotSources).map((source) => [source.key as string, source.warning]),
+    [...Object.values(snapshotSources), ...splitSources].map((source) => [source.key as string, source.warning]),
   );
   const store = createJsonStore(storage, {
     invalid: (key, error) => warn({ error }, warnings.get(key)!),
@@ -47,5 +54,27 @@ export function readInitialCoordinatorSnapshots(
       empty: () => ({}),
     });
   }
+  result.persistedSettings = joinSettings(result.persistedSettings, store);
   return result;
+}
+
+/**
+ * Layout 2 (docs/efficiency.md, Persistence) keeps the market cache and
+ * production under their own keys. Only a settings document with the layout
+ * marker takes them from there; settings saved by a v1.4.0 build, before or
+ * after a rollback, carry these fields themselves.
+ */
+function joinSettings(settings: unknown, store: ReturnType<typeof createJsonStore>): unknown {
+  if (!settings || typeof settings !== "object") return settings;
+  const record = settings as Record<string, unknown>;
+  if (!Object.hasOwn(record, settingsLayout.field)) return settings;
+  const { [settingsLayout.field]: layout, ...joined } = record;
+  if (layout !== settingsLayout.split) return joined;
+  for (const source of splitSources) {
+    const saved = store.read({ key: source.key, decode: (value) => value, empty: () => ({}) });
+    if (!saved || typeof saved !== "object") continue;
+    for (const field of source.fields)
+      if (Object.hasOwn(saved, field)) joined[field] = (saved as Record<string, unknown>)[field];
+  }
+  return joined;
 }

@@ -5,9 +5,9 @@ import type { CompletionState, CompletionPorts } from "../merchant/completion-ty
 
 type DeliveryState = MailJobState & CompletionState & { nextCommandId: number };
 type DeliveryPorts = Omit<MailJobPorts, "nextCommand"> &
-  Omit<CompletionPorts, "nextCommand" | "mailComplete" | "fetchAuth"> & {
+  Omit<CompletionPorts, "nextCommand" | "mailComplete" | "mailSent" | "fetchAuth"> & {
     identity: (item: unknown) => string;
-    inbox: () => { complete: (...args: Parameters<CompletionPorts["mailComplete"]>) => void };
+    inbox: () => { sent?:(id:string,mail:unknown)=>void; complete: (...args: Parameters<CompletionPorts["mailComplete"]>) => void };
     fetchMarket: (path: string) => Promise<unknown>;
   };
 
@@ -21,6 +21,7 @@ export function createCoordinatorMerchantDeliveryActions(
   const send = createSendMailRoute(state, shared);
   const complete = createMerchantCompletionRoute(state, {
     ...shared,
+    mailSent: (id,mail) => ports.inbox().sent?.(id,mail),
     mailComplete: (id, success, error) => ports.inbox().complete(id, success, error),
     fetchAuth: (character, key) =>
       ports.fetchMarket(

@@ -10,6 +10,9 @@ import { PartyItemDetails } from './party-item-details';
 import { ItemSprite } from './item-sprite';
 import {CaveMap} from './cave-map';
 
+// A merchant room is done once its encounter resolves; its item can still be bought.
+const merchantRoom = (room?: string) => !!room && /^\d+:shop$/.test(room);
+
 export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
   const query = useDungeons(),
     now = useClock(),
@@ -27,8 +30,10 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
   const [itemInspection, setItemInspection] = useState<SelectedItem | null>(null);
   if (!view || ['idle', 'held'].includes(view.state.phase)) return null;
   const sameRun = view.members.filter(member => member.observation?.cave?.run === view.state.run);
-  const cave = sameRun.find(member => member.fresh)?.observation?.cave,
-    choice = cave?.choice;
+  const cave = sameRun.find(member => member.fresh)?.observation?.cave;
+  // Talking to a merchant reopens its shop for the one member who talked.
+  const reopened = requestedRoom ? sameRun.map(member => member.observation?.cave?.choice).find(c => c?.shop?.room === requestedRoom) : undefined;
+  const choice = cave ? reopened || cave.choice : undefined;
   const mapCave = cave || (view.state.phase === 'active' ? sameRun[0]?.observation?.cave : undefined);
   const mapActionsReady = !!mapCave && view.state.participants.every(name => {
     const member = view.members.find(candidate => candidate.name === name);
@@ -171,7 +176,7 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
               query.busy ||
               cave.paused ||
               p.locked ||
-              p.done ||
+              p.done && !merchantRoom(p.room) ||
               view.state.phase !== 'active'
             }
             onClick={() => {
@@ -182,14 +187,14 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
           >
             {p.label}
             {p.map !== 'zone_'+cave.run+'_'+cave.floor ? ' — different floor' : ''}
-            {p.locked ? ' — locked' : p.done ? ' — complete' : ''}
+            {p.locked ? ' — locked' : p.done && merchantRoom(p.room) ? ' - reopen shop' : p.done ? ' — complete' : ''}
           </button>
         ))}
       </div>
       {choice?.resolved && <button className={dungeonButton + ' mt-3'} onClick={() => setInspectedChoice(choice.id)}>
         View encounter — {choice.title}
       </button>}
-      {choice && (
+      {choice && cave && (
         <Dialog open={!choice.resolved || inspectedChoice === choice.id || !!(choice.shop?.nearby && requestedRoom === choice.shop.room)}
           onOpenChange={(open) => { if (!open && choice.resolved) { setInspectedChoice(null); setRequestedRoom(null); } }}>
         <DialogContent aria-label="Cave choice" showCloseButton={choice.resolved}

@@ -60,6 +60,24 @@ test('local stand matching respects bid priority and caps purchased quantities',
  assert.equal(state.standPriceHistory.wcap.lowestLevel,7);
 });
 
+test('stand price history takes each level from the first lowest listing in one pass over the listings',()=>{
+ // Failure lines: a later listing at the same lowest price supplies the level; an unpriced or
+ // zero-priced listing supplies a level; history reads the listings once per item (O(items x listings)).
+ const state={standPriceHistory:{},standBids:{},merchantAutomations:{'stand bid purchases':false},merchantCurrent:null,merchantQueue:[],merchantCharacter:'M'};
+ const service=createLocalMarket(state,{now:()=>100,nextCommand:()=>1,pending:()=>false,priority:()=>0,log(){}});
+ const listings=[{item:{name:'wcap',level:9},price:0},{item:{name:'wcap',level:2},price:'x'},{item:{name:'wcap',level:5},price:80},
+  {item:{name:'wcap',level:6},price:40},{item:{name:'wcap',level:7},price:40},null,{item:{name:'coat'},price:30}];
+ for(let index=0;index<200;index++)listings.push({item:{name:'item'+index,level:index%13},price:1000-index%7},{item:{name:'item'+index,level:12},price:2000});
+ let reads=0;
+ const counted=new Proxy(listings,{get(target,key,receiver){if(typeof key==='string'&&/^\d+$/.test(key))reads++;return Reflect.get(target,key,receiver);}});
+ assert.equal(service.observe(counted),true);
+ assert.ok(reads<=3*listings.length,'listing reads '+reads+' for '+listings.length+' listings');
+ assert.deepEqual(state.standPriceHistory.wcap,{lowest:40,lowestLevel:6,recent:40,recentLevel:6,seenAt:100});
+ assert.deepEqual(state.standPriceHistory.coat,{lowest:30,lowestLevel:0,recent:30,recentLevel:0,seenAt:100});
+ assert.equal(state.standPriceHistory.item13.lowestLevel,0);assert.equal(state.standPriceHistory.item13.lowest,994);
+ assert.equal(Object.keys(state.standPriceHistory).length,202);
+});
+
 test('published standing bids and sales retain levels without adding a zero level',()=>{
  const result=publishedMarketListings({nativeSlice:null,tradableNative:0,missing:[]},{wcap:{minimumQuality:8,quantity:1,price:500}},
   [{item:{name:'coat',level:0,p:'shiny'},price:20,quantity:1,state:'live'}]);

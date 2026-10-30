@@ -144,3 +144,22 @@ test('locked pair marker roles do not shift when current entity is absent',()=>{
  vm.runInContext(namedFunction(source,'queueMarkers'),c);
  const markers=Array.from(c.queueMarkers());assert.deepEqual(markers.map(t=>[t.id,t.role,t.visible]),[['A','current',false],['B','next',true],['C','third',true]]);
 });
+
+test('a no-graphics client skips marker computation and starts drawing when a renderer appears',()=>{
+ // Failure inventory: docs/efficiency.md, Character threads, CT1.
+ const keys=['parent','character','get_entity','setInterval','clearInterval'],saved=Object.fromEntries(keys.map(k=>[k,global[k]]));
+ let draw,computed=0,graphics=[];
+ class Graphics{constructor(){graphics.push(this);this.calls=[];}clear(){this.calls=[];}lineStyle(...a){this.calls.push(['style',...a]);}drawCircle(...a){this.calls.push(['circle',...a]);}destroy(){this.destroyed=true;}}
+ // Headless caracAL clients set no_graphics = "1" (.caracal/html_vars.js). The game
+ // then loads a stub pixi.min.js whose Graphics exists but draws nothing.
+ const host={no_graphics:'1',PIXI:{Graphics},map:{addChild(e){e.parent=this;}},socket:{disconnected:false}};
+ Object.assign(global,{parent:host,character:{map:'main',in:'main'},get_entity:()=>({visible:true,x:1,y:2}),setInterval:fn=>{draw=fn;return 1;},clearInterval(){}});
+ let api;try{
+  api=installQueueMarkers({},{queueMarkers:()=>{computed++;return [{id:'A',map:'main',in:'main',role:'current',visible:true}];}});
+  for(let i=0;i<20;i++)draw();
+  assert.equal(computed,0);assert.equal(graphics.length,0);
+  delete host.PIXI;host.no_graphics='';draw();assert.equal(computed,0);
+  host.PIXI={Graphics};draw();assert.equal(computed,1);assert.equal(graphics[0].calls.filter(c=>c[0]==='circle').length,1);
+  host.socket.disconnected=true;draw();assert.equal(computed,1);assert.equal(graphics[0].destroyed,true);
+ }finally{api?.stop();Object.assign(global,saved);}
+});

@@ -16,14 +16,21 @@ function gitRaw(...args) {
 }
 const git = (...args) => gitRaw(...args).trim();
 class ArtifactReporter {
-  onBegin(_config, suite) {
+  onBegin(config, suite) {
     this.started = new Date().toISOString(); this.tests = [];
+    const candidate=JSON.parse(process.env.E2E_DASHBOARD_CANDIDATE||'null');
     this.provenance = {
       revision: git('rev-parse', 'HEAD'), branch: git('branch', '--show-current'),
       dirty: git('status', '--porcelain').length > 0,
       node: process.version, platform: process.platform,
+      workers:config.workers,
+      dashboardCandidate:candidate?JSON.parse(fs.readFileSync(candidate.manifestPath,'utf8')):null,
+      gamePools:JSON.parse(process.env.E2E_GAME_POOLS||'[]').map(({host,project})=>({host,project})),
       playwright: require('@playwright/test/package.json').version,
-      locks: ['package-lock.json', 'dashboard/package-lock.json', 'e2e/game/backend-package-lock.json', 'e2e/game/server-package-lock.json'].map(file => ({ path: file, sha256: hash(path.join(root, file)) })),
+      gameplayBackend:process.env.E2E_GAMEPLAY_BACKEND==='native'?'native':'chronal-network',
+      gameplayClockWindowMs:process.env.E2E_GAMEPLAY_BACKEND==='native'?null:Number(process.env.E2E_CLOCK_WINDOW_MS||250),
+      gameplayClockRate:process.env.E2E_GAMEPLAY_BACKEND==='native'?1:Number(process.env.E2E_CLOCK_RATE||4),
+      locks: ['package-lock.json', 'dashboard/package-lock.json', 'e2e/game/backend-package-lock.json', 'e2e/game/server-package-lock.json', 'tools/sim/pins.json'].map(file => ({ path: file, sha256: hash(path.join(root, file)) })),
     };
     this.selectedTests = suite.allTests().map(test => test.titlePath().join(' > '));
     // Preserve uncommitted test work as well as the base revision for repeatability.
@@ -33,7 +40,7 @@ class ArtifactReporter {
     fs.writeFileSync(this.ledger, '', { flush: true });
     fs.writeFileSync(path.join(reproduction, 'run.json'), JSON.stringify({ started: this.started, ...this.provenance, selectedTests: this.selectedTests }, null, 2));
     fs.writeFileSync(path.join(reproduction, 'working-tree.patch'), gitRaw('diff', '--binary', 'HEAD'));
-    const untracked = git('ls-files', '--others', '--exclude-standard', '--', 'e2e', 'playwright.config.ts', '.github/workflows', 'docs/testing*.md', 'docs/testing*.json');
+    const untracked = git('ls-files', '--others', '--exclude-standard', '--', 'e2e', 'playwright.config.ts', '.github/workflows', 'docs/testing*.md', 'docs/testing*.json', 'tools/sim');
     for (const relative of untracked.split('\n').filter(Boolean)) {
       if (relative === 'unavailable') continue;
       const target = path.join(reproduction, 'untracked', relative);
@@ -59,12 +66,17 @@ class ArtifactReporter {
       return { name, path: file && path.relative(root, file), contentType };
     });
     const outcome = { title: test.titlePath().join(' > '), status: result.status,
-      boundary: /debug-(instance|container)\.spec\.ts$/.test(test.location.file)
+      expectedStatus: test.expectedStatus, location: path.relative(root,test.location.file).replaceAll('\\','/'),
+      boundary: /simulation-gameplay\.spec\.ts$/.test(test.location.file)
+        ? 'Virtual-clock native upstream server, maintained coordinator/planner and real character CODE; shared gameplay assertions, isolated in-memory database and declared initial loadout'
+        : /debug-(instance|container)\.spec\.ts$/.test(test.location.file)
         ? 'Disposable Docker lifecycle through the real gateway; isolated native upstream server, god party and production coordinator'
-        : /live-franky\.spec\.ts$/.test(test.location.file)
+        : /live-franky\.spec\.ts$/.test(test.location.file) && /restored acknowledged Franky exit/.test(test.title)
         ? 'Native game clients, maintained runtime and upstream server; initial acknowledged event-return history is a sanitized production-state fixture, followed by real restart, travel and reward claim'
+        : /live-franky\.spec\.ts$/.test(test.location.file)
+        ? 'Native game clients, maintained runtime and upstream server; declared durable stationary enemies, native equipment and mana inputs; real target selection, skill receipts and damage'
         : /live-[a-z-]+\.spec\.ts$/.test(test.location.file)
-        ? 'Native authenticated game clients and maintained runtime against disposable upstream game server and MongoDB; administrative scenario setup'
+        ? 'Native authenticated game clients and maintained runtime against disposable upstream game server and MongoDB; administrative scenario setup; '+(process.env.E2E_GAMEPLAY_BACKEND==='native'?'real-time parity backend':'shared ChronAL gameplay clock with real browser/network/deployment boundaries')
         : 'Real console/gateway/coordinator/storage; simulated external account and game observations',
       durationMs: result.duration, retry: result.retry,
       errors: result.errors.map(error => ({ message: error.message, stack: error.stack })),
@@ -75,11 +87,16 @@ class ArtifactReporter {
   }
   onEnd(result) {
     const artifacts = [];
-    const serverLog = path.join(root, '.build/e2e-live/server.log');
-    if (this.tests.some(test => test.boundary.startsWith('Native')) && fs.existsSync(serverLog)) {
-      const destination = path.join(root, '.build/e2e-results/upstream-server.log');
-      fs.mkdirSync(path.dirname(destination), { recursive: true });
-      fs.copyFileSync(serverLog, destination);
+    if(this.tests.some(test=>test.boundary.startsWith('Native'))){
+      const directory=path.join(root,'.build/e2e-live');
+      const projects=JSON.parse(process.env.E2E_GAME_POOLS||'[]');
+      for(const pool of projects){
+        const serverLog=path.join(directory,pool.project+'.log');
+        if(!fs.existsSync(serverLog))continue;
+        const destination=path.join(root,'.build/e2e-results',pool.project+'-upstream-server.log');
+        fs.mkdirSync(path.dirname(destination),{recursive:true});
+        fs.copyFileSync(serverLog,destination);
+      }
     }
     function walk(directory) {
       if (!fs.existsSync(directory)) return;
@@ -93,6 +110,7 @@ class ArtifactReporter {
     fs.mkdirSync(path.join(root, '.build/e2e-report'), { recursive: true });
     fs.writeFileSync(path.join(root, '.build/e2e-report/manifest.json'), JSON.stringify({
       schema: 1, started: this.started, finished: new Date().toISOString(), status: result.status,
+      gameplayBackend: process.env.E2E_GAMEPLAY_BACKEND==='native'?'native':'chronal',
       ...this.provenance,
       command: ['npx', 'playwright', ...process.argv.slice(2)],
       selectedTests: this.selectedTests,

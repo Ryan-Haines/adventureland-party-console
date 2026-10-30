@@ -4,6 +4,7 @@ import type { Char } from './char';
 import { occupiedStandSlots } from './stand-inspection';
 import type { StandListing } from './stand-listing';
 import type { PartyState } from './party-state';
+import { audited } from './field-read-audit';
 export function StandCount({ name, listings = [], nativeStand, bids }: { name: string; listings?: StandListing[]; nativeStand?: PartyState['nativeStand']; bids?: PartyState['standBids'] }) {
   const presence = useCharacterData(name,'presence');
   const query = useQuery({
@@ -11,5 +12,5 @@ export function StandCount({ name, listings = [], nativeStand, bids }: { name: s
     enabled: false,
     queryFn: (): Partial<Char> => ({}),
   });
-  return <>{occupiedStandSlots(listings,nativeStand,{...query.data,...presence},bids)}</>;
+  return <>{occupiedStandSlots(listings,nativeStand,audited('merged',{...audited('inventory',query.data),...presence}),bids)}</>;
 }

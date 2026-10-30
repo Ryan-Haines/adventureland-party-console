@@ -2,6 +2,8 @@
 
 export type DollLayer = {
   url: string;
+  outerWidth: number;
+  outerHeight: number;
   left: number;
   bottom: number;
   width: number;

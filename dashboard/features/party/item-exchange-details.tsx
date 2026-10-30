@@ -3,11 +3,9 @@ import { ItemSprite } from './item-sprite';
 import type { Sprite } from './sprite';
 import type { ReactNode } from 'react';
 import type { ExchangeRewardTileData } from './exchange-reward-tile';
+import { formatDropRate } from './drop-rate';
 
-const rewardPercentage = (chance: number) =>
-  chance > 0 && chance < 0.00000001
-    ? '<0.000001%'
-    : `${Number((chance * 100).toFixed(6))}%`;
+const rewardChance = (rate: number) => formatDropRate({ rate, quantity: 1 });
 
 export function ItemExchangeDetails({
   id,
@@ -39,12 +37,12 @@ export function ItemExchangeDetails({
   );
   // A table can award the same item in different quantities or through nested rolls.
   // Sum those mutually exclusive outcomes for the chance of receiving the item.
-  const sources = level === 0 ? exchanges.flatMap((entry) => {
+  const sources = exchanges.flatMap((entry) => {
     if (entry.reward) return [];
     const chance = entry.results.reduce((sum, result) =>
       sum + (result.id === id && result.kind === id ? result.chance : 0), 0);
     return chance > 0 ? [{ entry, chance }] : [];
-  }).sort((a, b) => b.chance - a.chance || a.entry.name.localeCompare(b.entry.name)) : [];
+  }).sort((a, b) => b.chance - a.chance || a.entry.name.localeCompare(b.entry.name));
   const row = (
     key: string,
     item: string,
@@ -72,7 +70,7 @@ export function ItemExchangeDetails({
         {quantity.toLocaleString()} × {name}
         {itemLevel ? ` +${itemLevel}` : ''}
       </span>
-      <span className="shrink-0 font-mono text-xs text-amber-300">
+      <span className="shrink-0 whitespace-pre font-mono text-xs text-amber-300">
         {detail}
       </span>
     </button>
@@ -102,7 +100,7 @@ export function ItemExchangeDetails({
       {!!rewards.length && (
         <section className="rounded border border-amber-900 bg-slate-950 p-4">
           <h3 className="font-mono text-xs uppercase tracking-wider text-amber-300">
-            {box ? 'Rewards' : 'Exchange reward'}
+            {box ? 'Rewards' : 'Exchange drops'}
           </h3>
           {rewards.map((entry) => (
             <div key={entry.key} className="mt-3">
@@ -119,7 +117,7 @@ export function ItemExchangeDetails({
                       entry.name,
                       entry.rewardQuantity || 1,
                       entry.sprite,
-                      '100%',
+                      rewardChance(1),
                       target(entry.reward).level,
                       true,
                       true,
@@ -131,7 +129,7 @@ export function ItemExchangeDetails({
                         result.name,
                         result.quantity,
                         result.sprite,
-                        rewardPercentage(result.chance),
+                        rewardChance(result.chance),
                         0,
                         !['empty', 'gold', 'shells', 'cx', 'cxbundle'].includes(
                           result.kind,
@@ -157,12 +155,12 @@ export function ItemExchangeDetails({
       )}
       {!!sources.length && (
         <section className="rounded border border-amber-900 bg-slate-950 p-4">
-          <h3 className="font-mono text-xs uppercase tracking-wider text-amber-300">Reward in</h3>
+          <h3 className="font-mono text-xs uppercase tracking-wider text-amber-300">Exchange reward</h3>
           <p className="mt-2 text-xs text-slate-300">Chance per exchange using the quantity shown</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {sources.map(({ entry, chance }) => row(
               entry.key, entry.id, entry.name, entry.required, entry.sprite,
-              rewardPercentage(chance), entry.level,
+              rewardChance(chance), entry.level,
             ))}
           </div>
         </section>

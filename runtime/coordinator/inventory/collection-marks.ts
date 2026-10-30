@@ -3,6 +3,8 @@ import { autoItemRuleMode, markedItem, sameMarkedItem } from "./item-identity.ts
 
 type Mode = "bank" | "merchant";
 type Inventory = readonly (InventoryEntry | null)[];
+/** Copies with no item rule that still belong in the bank (#116: kept NPC-sale stock). */
+type BankKept = (entry: InventoryEntry) => boolean;
 
 interface MarkState {
   bank: ItemMark[];
@@ -33,13 +35,17 @@ function retainMark(
   items: Inventory,
   rules: Readonly<Record<string, string>>,
   state: MarkState,
+  bankKept?: BankKept,
 ): boolean {
   const live = Number.isSafeInteger(mark.slot)
     ? items.find((entry) => entry?.slot === mark.slot)
     : null;
   if (!mark.auto) return retainManual(mark, items, live, state);
-  if (autoItemRuleMode(rules, mark.item) !== mode) return false;
-  return !!live && sameMarkedItem(live.item, mark.item);
+  if (!live || !sameMarkedItem(live.item, mark.item)) return false;
+  return entryMode(live, rules, bankKept) === mode;
+}
+function entryMode(entry: InventoryEntry, rules: Readonly<Record<string, string>>, bankKept?: BankKept): string | undefined {
+  return autoItemRuleMode(rules, entry.item) || (bankKept?.(entry) ? "bank" : undefined);
 }
 
 function pruneMarks(
@@ -47,9 +53,10 @@ function pruneMarks(
   items: Inventory,
   rules: Readonly<Record<string, string>>,
   state: MarkState,
+  bankKept?: BankKept,
 ): void {
   const before = state[mode];
-  state[mode] = before.filter((mark) => retainMark(mark, mode, items, rules, state));
+  state[mode] = before.filter((mark) => retainMark(mark, mode, items, rules, state, bankKept));
   if (state[mode].length !== before.length) state.changed = true;
 }
 
@@ -85,13 +92,14 @@ export function reconcileCollectionMarks(
   merchant: ItemMark[],
   rules: Readonly<Record<string, string>>,
   items: Inventory,
+  bankKept?: BankKept,
 ): MarkState {
   const state: MarkState = { bank, merchant, changed: false };
-  pruneMarks("bank", items, rules, state);
-  pruneMarks("merchant", items, rules, state);
+  pruneMarks("bank", items, rules, state, bankKept);
+  pruneMarks("merchant", items, rules, state, bankKept);
   for (const entry of items) {
     if (!entry?.item || !Number.isSafeInteger(entry.slot)) continue;
-    const mode = autoItemRuleMode(rules, entry.item);
+    const mode = entryMode(entry, rules, bankKept);
     if (mode === "bank" || mode === "merchant") assignMark(entry, mode, state);
   }
   return state;

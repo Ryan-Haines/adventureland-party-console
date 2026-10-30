@@ -5,6 +5,7 @@ import { characterKey } from './dashboard-live';
 import { abbreviatedGold } from './abbreviated-gold';
 import type { PartyState } from './party-state';
 import type { Char } from './char';
+import { audited } from './field-read-audit';
 
 export function partyGoldNames(
   state: Pick<PartyState, 'activeSlots' | 'bankbois'>,
@@ -23,6 +24,7 @@ export function partyGoldNames(
   ].filter((name) => !excluded.has(name));
 }
 const selectGold = (value: Partial<Char> | null) => value?.gold ?? null;
+const selectAuditedGold = (value: Partial<Char> | null) => selectGold(audited('vitals', value));
 export function goldTotals(
   bank: number | null | undefined,
   balances: (number | null | undefined)[],
@@ -44,10 +46,10 @@ export function PartyGold({ state }: { state: PartyState }) {
       enabled: false,
       staleTime: Infinity,
       queryFn: (): Partial<Char> => ({}),
-      select: selectGold,
+      select: selectAuditedGold,
     })),
   });
-  const { carried, total } = goldTotals(
+  const { carried, total } = state.accountGold ?? goldTotals(
     state.bankGold,
     balances.map((query) => query.data),
   );

@@ -66,7 +66,8 @@ test('the shared confirmed-death record excludes a cached monster whose old targ
  const {c,passive}=fixture();passive.target='P';
  c.groupedCombat.deaths=[{id:'bee',map:'main',in:'main',server:'USII',at:900}];
  assert.equal(c.currentTravelAttackers().length,0);assert.equal(c.departureCombatPending(),false);
- c.groupedCombat.deaths[0].in='other';assert.equal(c.currentTravelAttackers().length,1);
+ // Each coordinator response carries a new deaths list; departureTargetEngaged indexes it per list.
+ c.groupedCombat.deaths=[{...c.groupedCombat.deaths[0],in:'other'}];assert.equal(c.currentTravelAttackers().length,1);
 });
 
 test('continuous Hunt return reports passing attackers for the walking policy without granting normal combat ownership',()=>{

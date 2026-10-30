@@ -1,3 +1,6 @@
+// caracAL executes this module behind a contextified global proxy. Resolve
+// unchanged Math intrinsics once rather than crossing it for every random roll.
+const {max: mathMax, min: mathMin, floor: mathFloor, imul: mathImul, ceil: mathCeil} = Math;
 /** Catalog subset; unobservable server/player-wide grace is deliberately omitted. */
 export interface UpgradeChoice {
   id: string;
@@ -27,7 +30,7 @@ export function highestUpgradeLevel(choice: UpgradeChoice) {
   if (!choice.upgradeable) return 0;
   const chances =
     choice.upgradeChances ||
-    defaults[Math.max(0, Math.min(2, Math.floor(choice.upgradeGrade || 0)))]!;
+    defaults[mathMax(0, mathMin(2, mathFloor(choice.upgradeGrade || 0)))]!;
   let level = 0;
   while (level + 1 < chances.length && Number(chances[level + 1]) > 0) level++;
   return level;
@@ -57,6 +60,8 @@ let scheduler: Promise<unknown> = Promise.resolve();
 export function estimateUpgradeBatch(
   lines: EstimateLine[],
   signal?: AbortSignal,
+  yieldToIO: () => Promise<void> = () => new Promise<void>((resolve) =>
+    typeof setImmediate === "function" ? setImmediate(resolve) : setTimeout(resolve, 0)),
 ): Promise<UpgradeEstimate[]> {
   const sorted = lines
     .map((line, index) => ({
@@ -70,7 +75,7 @@ export function estimateUpgradeBatch(
     signal?.throwIfAborted();
     let results = cache.get(key);
     if (!results) {
-      const budget = { remaining: 60_000_000, signal };
+      const budget = { remaining: 60_000_000, signal, yieldToIO };
       results = [];
       for (const entry of sorted) {
         signal?.throwIfAborted();
@@ -104,7 +109,7 @@ async function simulate(
   choice: UpgradeChoice,
   quantity: number,
   target: number,
-  budget: { remaining: number; signal?: AbortSignal },
+  budget: { remaining: number; signal?: AbortSignal; yieldToIO(): Promise<void> },
 ): Promise<UpgradeEstimate> {
   if (!target || !choice.upgradeable)
     return {
@@ -120,12 +125,12 @@ async function simulate(
   const policy = simulationPolicy(choice, target);
   let seed = 2166136261;
   for (const char of `${choice.id}:${quantity}:${target}`)
-    seed = Math.imul(seed ^ char.charCodeAt(0), 16777619);
+    seed = mathImul(seed ^ char.charCodeAt(0), 16777619);
   function random() {
     seed += 0x6d2b79f5;
     let value = seed;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    value = mathImul(value ^ (value >>> 15), value | 1);
+    value ^= value + mathImul(value ^ (value >>> 7), value | 61);
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   }
   const runs: { attempts: number; gold: number; scrolls: number[] }[] = [];
@@ -137,7 +142,8 @@ async function simulate(
       successes = 0;
     while (successes < quantity) {
       attempts++;
-      const survived = await upgradeOne(policy, grace, scrolls, random, budget);
+      const attempt = upgradeOne(policy, grace, scrolls, random, budget);
+      const survived = attempt === null || typeof attempt === 'boolean' ? attempt : await attempt;
       if (survived === null) break simulation;
       if (survived) successes++;
     }
@@ -154,17 +160,20 @@ async function simulate(
   runs.sort((a, b) => a.gold - b.gold);
   return {
     status: "available",
-    ...runs[Math.ceil(runs.length * 0.9) - 1]!,
+    ...runs[mathCeil(runs.length * 0.9) - 1]!,
     completed: runs.length,
     rolls,
   };
 }
 function simulationPolicy(choice: UpgradeChoice, target: number) {
-  const grade = Math.max(0, Math.min(2, Math.floor(choice.upgradeGrade || 0)));
+  const grade = mathMax(0, mathMin(2, mathFloor(choice.upgradeGrade || 0)));
+  const igrace = [1, -1, -2][grade]!, chances = choice.upgradeChances || defaults[grade]!;
   return {
     target,
-    igrace: [1, -1, -2][grade]!,
-    chances: choice.upgradeChances || defaults[grade]!,
+    // Grace changes only in integer steps and its chance bonus saturates at 14.
+    // Evaluate the original formula once for each reachable input, exactly.
+    rollChances: Array.from({length:target+1}, (_, level) => level === 0 ? [] :
+      Array.from({length:15}, (_, grace) => rollChance(chances[level] || 0, level, grace, igrace))),
     grades: choice.grades || [9, 10, 11, 12],
     costs: choice.scrollCosts || [1000, 40000, 1600000, 64000000],
   };
@@ -174,11 +183,11 @@ function scrollGrade(level: number, grades: number[]) {
   if (level >= (grades[1] ?? 10)) return 2;
   return level >= (grades[0] ?? 9) ? 1 : 0;
 }
-function rollChance(base: number, level: number, grace: number[], igrace: number) {
-  const count = Math.max(0, Math.min(level + 1, Math.min(3, grace[level]! / 4.5) + igrace));
+function rollChance(base: number, level: number, grace: number, igrace: number) {
+  const count = mathMax(0, mathMin(level + 1, mathMin(3, grace / 4.5) + igrace));
   let bonus = (base * count) / level + count / 1000;
-  bonus = Math.max(0, bonus / 4.8 - 0.4 / (level - 0.999) ** 2);
-  return Math.min(base + bonus, Math.min(base + 0.24, base * 2));
+  bonus = mathMax(0, bonus / 4.8 - 0.4 / (level - 0.999) ** 2);
+  return mathMin(base + bonus, mathMin(base + 0.24, base * 2));
 }
 function failedGrace(grace: number[], level: number) {
   grace[level - 1]!++;
@@ -189,22 +198,28 @@ function failedGrace(grace: number[], level: number) {
     grace[level - 3]! += 2;
   }
 }
-async function upgradeOne(
+function upgradeOne(
   policy: ReturnType<typeof simulationPolicy>,
   grace: number[],
   scrolls: number[],
   random: () => number,
-  budget: { remaining: number; signal?: AbortSignal },
-): Promise<boolean | null> {
-  for (let level = 1; level <= policy.target; level++) {
+  budget: { remaining: number; signal?: AbortSignal; yieldToIO(): Promise<void> },
+  level = 1,
+  resumed = false,
+): boolean | null | Promise<boolean | null> {
+  for (; level <= policy.target; level++) {
     if (!budget.remaining) return null;
-    if (budget.remaining % 32768 === 0) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      budget.signal?.throwIfAborted();
+    if (!resumed && budget.remaining % 32768 === 0) {
+      return budget.yieldToIO().then(() => {
+        budget.signal?.throwIfAborted();
+        return upgradeOne(policy, grace, scrolls, random, budget, level, true);
+      });
     }
+    resumed = false;
     budget.remaining--;
     scrolls[scrollGrade(level - 1, policy.grades)]!++;
-    if (random() <= rollChance(policy.chances[level] || 0, level, grace, policy.igrace))
+    const graceCount = grace[level]!;
+    if (random() <= policy.rollChances[level]![graceCount >= 14 ? 14 : graceCount]!)
       grace[level] = 0;
     else {
       failedGrace(grace, level);

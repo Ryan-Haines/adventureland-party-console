@@ -27,6 +27,27 @@ test('storage initialization replies once and mutations broadcast',()=>{
  first.emit('message',{type:'stor',ident:'ls',op:'init'});assert.equal(second.sent.length,1);assert.deepEqual(first.sent.at(-1).data,{key:{nested:4}});
  first.emit('message',{type:'stor',ident:'ls',op:'del',data:['key']});assert.equal(f.local.size,0);
 });
+// Failure inventory: docs/efficiency.md, Persistence, P11. A unit test: which worker
+// receives a storage message is visible only inside the coordinator's IPC.
+test('metrics outbox keys reach only their owner while other keys still broadcast',()=>{
+ const f=fixture(),w=f.manager.start('W');f.blocks.P={enabled:true};const p=f.manager.start('P');
+ const header='party-metrics-v1:W',frame='party-metrics-v1:W:frame:7',other='party-metrics-v1:P:frame:3';
+ f.local.set(other,'{"sequence":3}');
+ w.emit('message',{type:'stor',ident:'ls',op:'set',data:{[frame]:'{"sequence":7}'}});
+ w.emit('message',{type:'stor',ident:'ls',op:'set',data:{[header]:'{"queue":[7]}'}});
+ assert.equal(f.local.get(frame),'{"sequence":7}');assert.equal(f.local.get(header),'{"queue":[7]}');
+ assert.equal(p.sent.length,0,'an outbox write reaches no other worker');assert.equal(w.sent.length,0);
+ w.emit('message',{type:'stor',ident:'ls',op:'set',data:{[frame]:'{"sequence":7}',cm_P_x:'[1]'}});
+ assert.deepEqual(p.sent.at(-1),{type:'stor',ident:'ls',op:'set',data:{cm_P_x:'[1]'}},'a mixed write broadcasts only its shared keys');
+ p.emit('message',{type:'stor',ident:'ls',op:'init'});
+ assert.deepEqual(p.sent.at(-1).data,{[other]:'{"sequence":3}',cm_P_x:'[1]'},"init leaves out other characters' outbox keys");
+ w.emit('message',{type:'stor',ident:'ls',op:'init'});
+ assert.deepEqual(w.sent.at(-1).data,{[frame]:'{"sequence":7}',[header]:'{"queue":[7]}',cm_P_x:'[1]'},"init returns the owner's outbox");
+ const sent=p.sent.length;w.emit('message',{type:'stor',ident:'ls',op:'del',data:[frame]});
+ assert.equal(f.local.has(frame),false);assert.equal(p.sent.length,sent,'an outbox removal reaches no other worker');
+ w.emit('message',{type:'stor',ident:'ss',op:'set',data:{[header]:'session'}});
+ assert.deepEqual(p.sent.at(-1),{type:'stor',ident:'ss',op:'set',data:{[header]:'session'}},'session storage keeps broadcasting every key');
+});
 test('CM routes local recipients directly and remote recipients through the sender',()=>{
  const f=fixture(),first=f.manager.start('W');f.blocks.P={enabled:true,connected:true};const second=f.manager.start('P');
  first.emit('message',{type:'cm',to:['P','Other'],data:{hello:true}});
