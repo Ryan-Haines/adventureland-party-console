@@ -121,7 +121,11 @@ test('resumed exchange compresses newly delivered candy while reward receipts re
   test.setTimeout(300_000);
   const merchant='E2EMerchant',sender='E2EPriest',observations:any[]=[];
   await live.post('/merchant/force-stand',{enabled:true});
-  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'automatic exchange':true}});
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'automatic exchange':false}});
+  await expect.poll(async()=>(await live.state(true)).merchantCatalog?.exchangeable?.some((e:any)=>e.id==='candy0'),{timeout:60_000}).toBe(true);
+  // Retain this reward for processing, matching the live Rare Candy rule. A
+  // default Auto bank mark would intentionally own its physical bag copies.
+  await live.post('/command',{character:merchant,type:'auto-exchange',slot:-1,item:{name:'candy0',level:0}});
   await live.admin(`output=(()=>{const p=get_player('${merchant}'),s=get_player('${sender}');
     [6450,31,9999,4083,15].forEach((q,i)=>p.items[20+i]={name:'candy0',q});p.items[26]={name:'gem0',q:100};s.items[20]={name:'candy0',q:9500};
     for(const c of [p,s]){cache_player_items(c);resend(c,'reopen+cid');}return true;})()`);
