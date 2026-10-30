@@ -9605,6 +9605,12 @@
       if (!command.inPlace) await request("/merchant/idle-status", { method: "POST", body: {
         character: character.name, commandId: command.id, phase: "arrived",
       }});
+      var inventoryReady = await merchantStandInventoryReady(command);
+      // Bag compression is independent of owning/opening a merchant stand.
+      if (inventoryReady) {
+        await consolidateMerchantInventory(command);
+        await compressMerchantInventory(command);
+      }
       // Trade-slot mutations require the stand to be open, but they can be
       // reconciled in place while it remains open.
       if (!character.stand) {
@@ -9612,7 +9618,7 @@
         await new Promise(function (resolve) { setTimeout(resolve, 250); });
         if (!character.stand) throw new Error("Merchant stand did not open");
       }
-      if (!await merchantStandInventoryReady(command)) return { state: "deferred" };
+      if (!inventoryReady) return { state: "deferred" };
       if (typeof nativeStandSync === "function") await nativeStandSync(command, false);
       var desired = (command.listings || []).filter(function (entry) { return entry.state !== "paused"; }), consumedListings = {}, liveListings = [];
       for (var tradeIndex = 1; tradeIndex <= 16; tradeIndex += 1) {
@@ -9652,8 +9658,6 @@
         liveListings.push({ id: listing.id, tradeSlot: emptyTrade });
       }
       if (typeof nativeStandSync === "function") await nativeStandSync(command, false);
-      await consolidateMerchantInventory(command);
-      await compressMerchantInventory(command);
       if (!command.inPlace && ownsIdle() && !root.__merchantActiveJob) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
         try { await root.__merchantInventoryTidy; }

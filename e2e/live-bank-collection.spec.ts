@@ -83,7 +83,10 @@ for(const scenario of ['toggle','already enabled','threshold'] as const){
 test('merchant compresses five candy piles and bank sort consolidates compatible silk',async({live},info)=>{
   test.setTimeout(300_000);
   const merchant='E2EMerchant';
+  const observations:any[]=[];
+  try {
   await live.post('/merchant/force-stand',{enabled:true});
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'automatic exchange':true}});
   await live.post('/merchant/bank-sort',{mode:'request',enabled:true});
   await expect.poll(async()=>(await live.state(true)).merchantCatalog?.exchangeable?.some((e:any)=>e.id==='candy0'),{timeout:60_000}).toBe(true);
   await live.post('/command',{character:merchant,type:'auto-exchange',slot:-1,item:{name:'candy0',level:0}});
@@ -93,7 +96,8 @@ test('merchant compresses five candy piles and bank sort consolidates compatible
     await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items0':[{name:'spidersilk',q:39},{name:'spidersilk',q:26,p:'cavefound'},{name:'spidersilk',q:7,p:'shiny'}]}});
     cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
   await expect.poll(async()=>{
-    const c=await live.clients[merchant].snapshot();return c.items.filter((i:any)=>i?.name==='candy0').map((i:any)=>i.q).sort((a:number,b:number)=>b-a);
+    const c=await live.clients[merchant].snapshot(),quantities=c.items.filter((i:any)=>i?.name==='candy0').map((i:any)=>i.q).sort((a:number,b:number)=>b-a);
+    observations.push({at:Date.now(),quantities});if(observations.length>160)observations.shift();return quantities;
   },{timeout:90_000}).toEqual([9999,9999,580]);
   await expect.poll(async()=>(await live.state()).merchantQueue.some((job:any)=>job.reason==='exchange')).toBe(true);
   const exchange=(await live.state()).merchantQueue.find((job:any)=>job.reason==='exchange');
@@ -104,5 +108,9 @@ test('merchant compresses five candy piles and bank sort consolidates compatible
   await expect.poll(async()=>{
     const s=await live.state();return s.bankSortRequest===null&&s.bank?.packs?.items0?.filter((e:any)=>e?.item?.name==='spidersilk').map((e:any)=>e.item).sort((a:any,b:any)=>(b.q||1)-(a.q||1));
   },{timeout:180_000}).toEqual([{name:'spidersilk',q:70},{name:'spidersilk',q:7,p:'shiny'}]);
-  await info.attach('native-stack-compression',{body:JSON.stringify({state:await live.state(),client:await live.clients[merchant].snapshot(),events:await live.clients[merchant].events()}),contentType:'application/json'});
+  await expect.poll(async()=>{const c=await live.clients[merchant].snapshot();return c.map==='main'&&!c.items.some((i:any)=>i?.name==='spidersilk');},{timeout:60_000}).toBe(true);
+  await expect.poll(async()=>live.admin(`output=(async()=>{const p=get_player('${merchant}'),u=await db.collection('user').findOne({_id:p.owner});return u.info.items0.filter(i=>i?.name==='spidersilk').sort((a,b)=>b.q-a.q);})()`)).toEqual([{name:'spidersilk',q:70},{name:'spidersilk',q:7,p:'shiny'}]);
+  } finally {
+    await info.attach('native-stack-compression',{body:JSON.stringify({observations,state:await live.state(),client:await live.clients[merchant].snapshot(),events:await live.clients[merchant].events()}),contentType:'application/json'});
+  }
 });

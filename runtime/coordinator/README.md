@@ -1387,6 +1387,10 @@ titles such as Cave-found, while locked stock remains excluded. Validate the
 five-pile candy and requested bank-sort journey in
 `e2e/live-bank-collection.spec.ts`, plus bank-sort and exchange-reward E2Es.
 Stage character and coordinator assets together; loading remains explicit.
+Bag compression runs before stand opening, so a missing stand item cannot block
+it. The native five-pile E2E enables automatic exchange explicitly, verifies the
+queued exchange does not reserve aggregate stock against compression, and checks
+bank publication, departure and persisted native quantities separately.
 
 The separate `party-bank-stack-buffer:<character>` journal records temporary
 inventory slots and expected operation results before mutation. Unconfirmed
