@@ -87,15 +87,17 @@ test('merchant compresses five candy piles and bank sort consolidates compatible
   await live.post('/merchant/bank-sort',{mode:'request',enabled:true});
   await live.admin(`output=(async()=>{const p=get_player('${merchant}');
     [6450,31,9999,4083,15].forEach((q,i)=>{p.items[20+i]={name:'candy0',q};});
+    p.items[25]={name:'spidersilk',q:5,p:'cavefound'};
     await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items0':[{name:'spidersilk',q:39},{name:'spidersilk',q:26,p:'cavefound'},{name:'spidersilk',q:7,p:'shiny'}]}});
     cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
   await expect.poll(async()=>{
     const c=await live.clients[merchant].snapshot();return c.items.filter((i:any)=>i?.name==='candy0').map((i:any)=>i.q).sort((a:number,b:number)=>b-a);
   },{timeout:90_000}).toEqual([9999,9999,580]);
   await live.post('/merchant/force-stand',{enabled:false});
+  await live.post('/command',{character:merchant,type:'mark',slot:25,item:{name:'spidersilk',q:5,p:'cavefound'}});
   await live.post('/command',{character:merchant,type:'bank'});
   await expect.poll(async()=>{
     const s=await live.state();return s.bankSortRequest===null&&s.bank?.packs?.items0?.filter((e:any)=>e?.item?.name==='spidersilk').map((e:any)=>e.item).sort((a:any,b:any)=>(b.q||1)-(a.q||1));
-  },{timeout:180_000}).toEqual([{name:'spidersilk',q:65},{name:'spidersilk',q:7,p:'shiny'}]);
+  },{timeout:180_000}).toEqual([{name:'spidersilk',q:70},{name:'spidersilk',q:7,p:'shiny'}]);
   await info.attach('native-stack-compression',{body:JSON.stringify({state:await live.state(),client:await live.clients[merchant].snapshot(),events:await live.clients[merchant].events()}),contentType:'application/json'});
 });

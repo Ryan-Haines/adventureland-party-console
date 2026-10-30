@@ -235,6 +235,8 @@ export function createBankStacks(p: BankStackPorts) {
         {inventory: from, item: {...source, q: stackQuantity(source) - quantity}},
         {inventory: chunk, item: {...source, q: quantity}}]);
     }
+    if (!equal(p.items()[to], target) || !equal(p.items()[chunk], {...source, q: quantity}))
+      throw Error('Inventory stack changed during split; recovery pending');
     await operation(() => p.swap(to, chunk), [
       {inventory: to, item: {...target, q: stackQuantity(target) + quantity}},
       {inventory: chunk, item: null}]);

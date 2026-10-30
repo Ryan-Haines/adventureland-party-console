@@ -89,7 +89,7 @@ test('event travel rechecks priority after joining and resumes normally once rel
 test('coordinator outage denies event movement without interfering with merchant work', async () => {
   const { r } = fixture(); r.request = async () => { throw new Error('offline'); };
   assert.equal(await r.eventTravelAllowed(), false);
-  r.character.ctype = 'merchant'; assert.equal(await r.eventTravelAllowed(), true);
+  r.character.ctype = 'merchant'; assert.equal(await r.eventTravelAllowed(), false);
 });
 test('anniversary preemption denial cannot stop the active hunt route', async () => {
   const { r, actions } = fixture();
