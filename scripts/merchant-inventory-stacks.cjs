@@ -27,7 +27,7 @@ function plan(party, status, boundary) {
         limit <= 1 || !Number.isSafeInteger(item.q) || item.q <= 0 || item.q >= limit) continue;
     // PvP-marked loot cannot stack with unmarked loot. Timestamp equality is
     // irrelevant: the game checks marker presence. Replan from each new report.
-    const key = JSON.stringify([identity(item), !!item.v]), previous = groups.get(key);
+    const key = JSON.stringify([identity(item), !!item.v, !!item.acl, item.ps || []]), previous = groups.get(key);
     if (previous) {
       const quantity = Math.min(item.q, limit - previous.item.q);
       // Partial fills need a native split buffer; whole merges do not.

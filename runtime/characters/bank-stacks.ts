@@ -170,7 +170,7 @@ export function createBankStacks(p: BankStackPorts) {
     while (p.items()[slot]) {
       const item = copy(p.items()[slot])!, limit = p.limit(item);
       const available = await locations();
-      const plan = stackDepositPlan(item, limit, available);
+      const plan = stackDepositPlan(item, limit, available, p.compatible);
       const target = plan.moves.find(move => move.item);
       if (!target) break;
       await travel(p.floor(target.pack));
@@ -179,7 +179,8 @@ export function createBankStacks(p: BankStackPorts) {
       // A whole-stack automatic deposit is safe only if the server cannot choose
       // a reserved or staging stack in this pack instead of our planned target.
       const pack = p.bank()[target.pack] as (StackItem | null)[];
-      const safe = pack.every((entry, index) => !entry || stackIdentity(entry) !== stackIdentity(item) ||
+      const safe = pack.every((entry, index) => !entry ||
+        !(p.compatible ? p.compatible(entry, item) : stackIdentity(entry) === stackIdentity(item)) ||
         available.some(l => l.pack === target.pack && l.slot === index));
       if (target.quantity === stackQuantity(item) && safe) {
         await permitted(target);
