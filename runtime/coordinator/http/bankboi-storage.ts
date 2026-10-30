@@ -115,10 +115,7 @@ export function createBankboiStorageRoutes<Transaction extends { bankboi: string
     if (observed) ports.adopt();
     delete state.commands[body.character];
     ports.persist();
-    if (receipt) {
-      completedReports.add(receipt);
-      if (completedReports.size > 32) completedReports.delete(completedReports.values().next().value!);
-    }
+    rememberCompletion(receipt);
     const response = res.json({ ok: true });
     ports
       .restore(transaction!)
@@ -130,6 +127,12 @@ export function createBankboiStorageRoutes<Transaction extends { bankboi: string
         ),
       );
     return response;
+  }
+  function rememberCompletion(receipt: string): void {
+    if (receipt) {
+      completedReports.add(receipt);
+      if (completedReports.size > 32) completedReports.delete(completedReports.values().next().value!);
+    }
   }
   return { checkpoint, complete };
 }

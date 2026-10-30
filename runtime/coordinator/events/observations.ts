@@ -601,18 +601,28 @@ export function createEventObservations(
     const report=ports.statuses()[name];
     if(name!==ports.merchant()||!deferredAtTown(report))return;
     const current=state.current,deferred=state.deferred[name];
-    const exiting=report?.eventRecovery;
-    if(exiting&&[current?.cycleId,deferred?.cycleId].includes(exiting.cycleId)&&
-        !['town-ready','deferred-town-ready','idle'].includes(exiting.phase))return;
-    if(current?.participants.includes(name)&&current.exited?.includes(name)&&!current.pending.includes(name)&&
-        current.waypoints?.[name]?.location===null){
+    if(merchantReturnStillExiting(name))return;
+    if(emptyMerchantReturn(current,name))completeMerchantTownReturn(name,current);
+    if(deferred?.checkpoint===null)completeMerchantDeferredReturn(name,deferred);
+  }
+  function merchantReturnStillExiting(name: string): boolean {
+    const current=state.current,deferred=state.deferred[name];
+    const exiting=ports.statuses()[name]?.eventRecovery;
+    return !!(exiting&&[current?.cycleId,deferred?.cycleId].includes(exiting.cycleId)&&
+        !['town-ready','deferred-town-ready','idle'].includes(exiting.phase));
+  }
+  function emptyMerchantReturn(current: EventRecovery | null, name: string): current is EventRecovery {
+    return !!(current?.participants.includes(name)&&current.exited?.includes(name)&&!current.pending.includes(name)&&
+        current.waypoints?.[name]?.location===null);
+  }
+  function completeMerchantTownReturn(name: string, current: EventRecovery): void {
       retireOldDeferredContinuation(name,current.cycleId);
       current.participants=current.participants.filter(member=>member!==name);
       if(current.returnRoutes)delete current.returnRoutes[name];
       if(state.sessions[name]?.event===current.event)delete state.sessions[name];
       ports.persist();ports.finishIfReady();
-    }
-    if(deferred?.checkpoint===null){
+  }
+  function completeMerchantDeferredReturn(name: string, deferred: DeferredRecovery): void {
       // This merchant has no farming waypoint to resume. Main arrival completes
       // only its old return; a newer event session/command keeps its ownership.
       retireOldDeferredContinuation(name,deferred.cycleId);
@@ -620,7 +630,6 @@ export function createEventObservations(
       if(state.sessions[name]?.event===deferred.event)delete state.sessions[name];
       if(state.deferred[name]===deferred)delete state.deferred[name];
       ports.persist();
-    }
   }
   return { observe, authorize };
 }
