@@ -7,7 +7,7 @@ function plan(party, status, boundary) {
   const ownsBoundary = current && typeof boundary?.jobId === 'string' && Number.isSafeInteger(boundary.commandId) &&
     boundary.jobId === current.id && boundary.commandId === current.commandId;
   if (!status || status.name !== merchant || current && !ownsBoundary || party.bankboiTransaction ||
-      Number(status.inventoryStackRetryAt || 0) > Date.now() || status.banking || status.gatheringActive || status.anniversaryState?.busy || status.rip) return null;
+      Number(status.inventoryStackRetryAt || 0) > Date.now() || status.upgradeInventoryBusy || status.banking || status.gatheringActive || status.anniversaryState?.busy || status.rip) return null;
   const reserved = new Set();
   function reserve(value) {
     if (!value || typeof value !== 'object') return;

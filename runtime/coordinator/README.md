@@ -1396,6 +1396,10 @@ against compression. Long exchange jobs recheck partial piles between confirmed
 native exchanges, before choosing the next input slot. A native delivery during
 an active resumed exchange is covered in `live-bank-collection.spec.ts`; preserve
 the owning job and exact combined native quantities throughout the merge.
+Manual inventory commands and outstanding production/lucky-slot recovery own
+their cells before optional compression. The isolated native lucky-slot journal
+fixture explicitly holds that inventory-command ownership while checking its
+original strict warning, swap and quantity results.
 
 The separate `party-bank-stack-buffer:<character>` journal records temporary
 inventory slots and expected operation results before mutation. Unconfirmed

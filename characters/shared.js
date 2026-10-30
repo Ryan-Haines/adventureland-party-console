@@ -2902,7 +2902,7 @@
       luckySlotTracking: luckySlotTracking().report(),
       luckySlotCharacterId: luckySlotCharacterId,
       merchantEventReserved: merchantEventWorkReserved(),
-      upgradeInventoryBusy: !!(root.__merchantInventoryTidy || root.__partyProductionWorking || root.__partyProductionRecovery || (luckyUpgradeService ? luckyUpgradeService.pending() :
+      upgradeInventoryBusy: !!(root.__partyInventoryCommands || root.__merchantInventoryTidy || root.__partyProductionWorking || root.__partyProductionRecovery || (luckyUpgradeService ? luckyUpgradeService.pending() :
         root.localStorage.getItem("party-lucky-upgrade:" + character.name))),
       steamPrimary: !parent.caracAL && !parent.no_html && !parent.is_bot,
       escape: escapeLocal,
@@ -9471,14 +9471,14 @@
     var merge = command.inventoryMerge;
     var boundaryOwned = root.__merchantActiveJob && root.__merchantActiveJob.jobId === command.jobId && root.__merchantActiveJob.commandId === command.id;
     if (!merge || character.ctype !== "merchant" || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy ||
-        banking || gatheringActive || merchantAnniversaryWorkReserved() || !runtimeCurrent()) return;
+        banking || gatheringActive || root.__partyInventoryCommands || merchantAnniversaryWorkReserved() || !runtimeCurrent()) return;
     if (Date.now() < (Number(root.__merchantStackRetryAt) || 0)) return;
     try {
       var permission = await request("/merchant/stack-merge-permission", { method: "POST", body: {
         character: character.name, merge: merge,
         jobId: command.jobId, commandId: command.id, command: boundaryOwned ? command : undefined,
       }});
-      if (!permission.allowed || !runtimeCurrent() || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy || banking || gatheringActive) return;
+      if (!permission.allowed || !runtimeCurrent() || root.__merchantActiveJob && !boundaryOwned || anniversaryBusy || banking || gatheringActive || root.__partyInventoryCommands) return;
     } catch (_mergePermissionError) { return; }
     var target = character.items[merge.to], source = character.items[merge.from];
     if (!target || !source || merge.to === merge.from || target.l || source.l || target.b || source.b ||
@@ -9512,7 +9512,7 @@
   }
 
   async function compressMerchantInventory(command) {
-    if (character.ctype !== "merchant" || Number(root.__merchantStackCheckAt) > Date.now()) return;
+    if (character.ctype !== "merchant" || root.__partyInventoryCommands || Number(root.__merchantStackCheckAt) > Date.now()) return;
     var partials = {};
     var candidate = character.items.some(function(item) {
       var limit = item && Number((G.items[item.name] || {}).s) || 1;

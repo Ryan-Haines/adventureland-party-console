@@ -7,6 +7,10 @@ test('lucky slot recovery retires ambiguous restoration and preserves provable n
   // Failure modes: ambiguous restoration blocks later work or swaps unrelated
   // stock; valid potion quantity recovery loses items; replay repeats a native
   // swap or reissues the completed upgrade.
+  // This isolated native journal owns its two cells against ordinary idle bag
+  // compression, just as a live inventory command owns them in production.
+  await live.clients[merchant].run(`globalThis.__partyInventoryCommands=(globalThis.__partyInventoryCommands||0)+1;true`);
+  try {
   await live.admin(`output=(()=>{const p=get_player('${merchant}');p.items[20]={name:'hpot1',q:4};p.items[21]={name:'helmet',level:1};cache_player_items(p);resend(p,'reopen+cid');return p.items.slice(20,22);})()`);
   await expect.poll(async()=>(await live.clients[merchant].snapshot()).items[20]?.q).toBe(4);
   const journal={from:20,to:21,item:{name:'helmet',level:0},displaced:{name:'hpot1',q:5},phase:'running'};
@@ -24,6 +28,9 @@ test('lucky slot recovery retires ambiguous restoration and preserves provable n
   expect(recovered.journal).toBeNull();
   expect(recovered.items).toEqual([{name:'helmet',level:1},{name:'hpot1',q:4}]);
   await info.attach('lucky-recovery-native-result',{body:JSON.stringify({recovered,events:await live.clients[merchant].events()}),contentType:'application/json'});
+  } finally {
+    await live.clients[merchant].run(`globalThis.__partyInventoryCommands=Math.max(0,(globalThis.__partyInventoryCommands||0)-1);true`);
+  }
 });
 
 test('Hunt blacklist full catalog scrolls and sprites select their own monster', async ({page,live},info) => {
