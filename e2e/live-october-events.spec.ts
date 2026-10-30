@@ -355,7 +355,7 @@ test.describe('October Cipher inventory decisions',()=>{
 });
 
 test.describe('October Cipher complete stock at cutoff',()=>{
-  test.use({initialPosition:null,initialMonsterSpawn:'goo',initialPositions:{E2EMerchant:{map:'halloween',x:858,y:-130}}});
+  test.use({initialPosition:null,initialMonsterSpawn:'goo',initialPositions:{E2EMerchant:{map:'main',x:80,y:-80}}});
   test('October Cipher gathers through the cutoff then brews with all four ingredient types',async({live},info)=>{
     test.setTimeout(420_000);
     const name='E2EWarrior',merchant='E2EMerchant';
@@ -386,9 +386,9 @@ test.describe('October Cipher complete stock at cutoff',()=>{
     // distance. Keep this recipient outside that pool until delivery is proven.
     await live.post('/formation',{character:merchant,follow:false});
     await expect.poll(()=>live.admin(`output=!!get_player('${merchant}').party`)).toBe(false);
-    await live.post('/merchant/stand-location',{map:'halloween',x:858,y:-130});
+    await live.post('/merchant/stand-location',{map:'main',x:80,y:-80});
     await live.post('/merchant/force-stand',{enabled:true});
-    await expect.poll(async()=>{const c=await live.clients[merchant].snapshot();return c.map==='halloween'&&Math.hypot(c.x-858,c.y+130)<=55;},{timeout:60_000}).toBe(true);
+    await expect.poll(async()=>{const c=await live.clients[merchant].snapshot();return c.map==='main'&&Math.hypot(c.x-80,c.y+80)<=35;},{timeout:60_000}).toBe(true);
     const seed=await live.admin(`output=(()=>{
       const p=get_player('${merchant}'),ingredients=${JSON.stringify(cipherIngredients)};
       for(let i=1;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:ingredients[i],q:25};}
@@ -409,8 +409,8 @@ test.describe('October Cipher complete stock at cutoff',()=>{
     })()`);
     await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{minClues:5,automatic:true}}}});
     await expect.poll(()=>live.clients[name].run(`get('party-october-${name}')?.gathering`),{timeout:60_000}).toMatchObject({round:seed.board.id,mode:'gathering',ingredient:'verdantspore',monster:'goo'});
-    // Gathering uses real fighter stock while the merchant waits at the witch,
-    // outside both the native loot party and the Goo map until cutoff.
+    // Gathering uses real fighter stock while the merchant waits at its stand,
+    // outside both the native loot party and the 400-unit loot radius.
     let gatheringStock:Record<string,Pick<import('typed-adventureland').CharacterEntity,'map'|'x'|'y'>&{stock:Record<string,number>}>={};
     await expect.poll(async()=>{
       gatheringStock=await live.admin(`output=Object.fromEntries(['E2EWarrior','E2EPriest','E2EMerchant'].map(name=>{const p=get_player(name);return [name,{map:p.map,x:p.x,y:p.y,stock:Object.fromEntries(${JSON.stringify(cipherIngredients)}.map(id=>[id,p.items.reduce((n,item)=>n+(item?.name===id?(item.q||1):0),0)]))}]}))`);
