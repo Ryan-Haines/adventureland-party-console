@@ -44,15 +44,25 @@ Assert the advertised coordinates stay stale while both real fighters reach and
 damage the native boss at its catalog spawn. Entity visibility, movement, damage
 and native attack receipts remain real.
 
-The catch-up scenario holds one initial walking token, leaving a live survivor
+The catch-up scenario holds the follower's ordinary pre-death event entry, leaving a live survivor
 convoy, and kills the late member through native Rime Shatter. After respawn it
 must physically move while the survivor still moves under the same convoy ID;
-both must subsequently damage the actual boss. Faults target only that walking
-token and the current reentry permission, never status or unrelated movement.
+both must subsequently damage the actual boss. Replacement pre-death walking
+tokens retain the same declared hold; native reentry with `reentryDeathAt`
+passes through. Faults target only that event entry and the current reentry
+permission, never status or unrelated movement.
 Retain `native-empty-last-seen-spawn-recovery`,
 `native-respawn-moving-event-catchup`, native death/attack and timing evidence,
 and workspace cleanup receipts. All gameplay waits use ChronAL. Stage a completed
 immutable character/coordinator artifact; activation remains explicit.
+
+Hosted run 40993907627 exposed setup turnover before the death assertion: both
+fighters had already reached the boss, with no active survivor convoy. Holding
+only the first token allowed replacement entry requests past the setup boundary.
+Keep bounded timestamped setup snapshots in `native-respawn-moving-event-catchup`
+so a missing moving-survivor precondition is distinguishable from failed native
+death/reentry. Retain the original time limits and exact movement, convoy and
+damage assertions.
 
 ## Recorded recovery evidence
 

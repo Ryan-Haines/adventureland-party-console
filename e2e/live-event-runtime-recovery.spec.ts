@@ -50,18 +50,20 @@ test('native respawned event follower starts catchup while the survivor convoy i
  // Failure modes: pre-death poll steals reentry; eventTraveling survives death;
  // a late rejoin waits for the survivor's arrival or cancels its current convoy.
  test.setTimeout(240_000);const spawn=await nativeEventSpawn(live.admin,'mrgreen');
- let seed:any,death:any,before:any,started:any,hold=false,initialToken:string|undefined;const held:any[]=[],samples:any[]=[],grants:any[]=[];
+  let seed:any,death:any,before:any,started:any,hold=false;const held:any[]=[],samples:any[]=[],grants:any[]=[],setup:any[]=[];
  const observe=async(response:Response)=>{if(!response.url().endsWith('/party-api/shared-travel'))return;try{const body=response.request().postDataJSON();if(body?.character===W&&body.reentryDeathAt){const result=await response.json();grants.push({at:Date.now(),body,result});}}catch{/* Retain actual successful authorization responses only. */}};
  live.clients[W].page.on('response',observe);
  const gate=async(route:Route)=>{const body=route.request().postDataJSON();if(hold&&body?.character===W&&body.event==='mrgreen'){held.push({at:Date.now(),body});await route.fulfill({status:200,json:{allowed:false,reason:'Declared current-operation event reentry hold'}});return;}await route.fallback();};
  await live.clients[W].page.context().route('**/party-api/hunt-event-permission',gate);
- const initialWalk=async(route:Route)=>{const body=route.request().postDataJSON();if(body?.character===W&&body.activity==='event'&&body.key==='mrgreen'&&!body.cancel){initialToken ||= body.token;if(body.token===initialToken){await route.fulfill({status:200,json:{ok:true,phase:'waiting'}});return;}}await route.fallback();};
+  // An ordinary entry can replace its walking token before native death. Hold
+  // that logical pre-death operation, then admit the exact native reentry.
+  const initialWalk=async(route:Route)=>{const body=route.request().postDataJSON();if(body?.character===W&&body.activity==='event'&&body.key==='mrgreen'&&!body.cancel&&!body.reentryDeathAt){await route.fulfill({status:200,json:{ok:true,phase:'waiting'}});return;}await route.fallback();};
  await live.clients[W].page.context().route('**/party-api/shared-travel',initialWalk);
  try{
   seed=await seedRecoveryGreen(live,spawn,spawn);
   await live.post('/formation',{leader:P});await live.post('/formation',{character:W,follow:true});
   await live.post('/formation',{character:P,eventSelections:['mrgreen']});
-  await expect.poll(async()=>{const s=await live.state(),c=s.activeConvoy;return c?.walkingEvent==='mrgreen'&&c.phase==='travel'&&c.participants.length===1&&c.participants[0]===P&&s.characters[P].moving&&s.characters[W].joinedEvent==='mrgreen';},{timeout:90_000}).toBe(true);
+   await expect.poll(async()=>{const s=await live.state(),c=s.activeConvoy;setup.push({at:Date.now(),convoy:c,characters:Object.fromEntries(fighters.map(n=>{const r=s.characters[n];return [n,{map:r.map,x:r.x,y:r.y,moving:r.moving,joinedEvent:r.joinedEvent,lastDeath:r.lastDeath}];}))});if(setup.length>160)setup.shift();return c?.walkingEvent==='mrgreen'&&c.phase==='travel'&&c.participants.length===1&&c.participants[0]===P&&s.characters[P].moving&&s.characters[W].joinedEvent==='mrgreen';},{timeout:90_000}).toBe(true);
   hold=true;
   death=await killNativeCharacter(live,W);
   await expect.poll(async()=>{const s=await live.state(),c=s.activeConvoy,w=s.characters[W],p=s.characters[P];if(c?.walkingEvent==='mrgreen'&&c.phase==='travel'&&c.participants.length===1&&c.participants[0]===P&&p.moving&&!w.rip&&w.map==='main'){before={at:Date.now(),convoyId:c.id,w,p};return true;}return false;},{timeout:90_000}).toBe(true);
@@ -75,7 +77,7 @@ test('native respawned event follower starts catchup while the survivor convoy i
   hold=false;await live.clients[W].page.context().unroute('**/party-api/hunt-event-permission',gate);
   await live.clients[W].page.context().unroute('**/party-api/shared-travel',initialWalk);
   live.clients[W].page.off('response',observe);
-  await info.attach('native-respawn-moving-event-catchup',{body:JSON.stringify({spawn,seed,death,before,started,held,samples,grants,state:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
+  await info.attach('native-respawn-moving-event-catchup',{body:JSON.stringify({spawn,seed,death,before,started,setup,held,samples,grants,state:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
   await live.post('/formation',{character:P,eventSelections:[]}).catch(()=>{});await clearRecoveryGreen(live,seed);
  }
 });
