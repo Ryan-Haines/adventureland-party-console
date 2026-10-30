@@ -338,8 +338,27 @@ test("item details show stats as the game card beside a matching extras box", as
     await expect.poll(() => dialog.getByRole("region", { name: "Item card", exact: true }).locator("[data-line]")
       .evaluateAll((nodes) => nodes.map((node) => node.textContent))).toEqual(expected);
     await expect(dialog.getByRole("region", { name: "Item extras", exact: true }).locator('[data-line="quantity"]')).toHaveText("Quantity: 5");
+    await page.keyboard.press('i');
+    const json=page.getByRole('dialog',{name:'Item information',exact:true});
+    await expect(json.getByRole('region',{name:'Item JSON',exact:true})).toContainText(JSON.stringify(name.toLowerCase()));
+    if(name==='Tracktrix')await info.attach('item-information-json',{body:await json.screenshot(),contentType:'image/png'});
+    await page.keyboard.press('Escape');
+    await expect(json).not.toBeVisible();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button',{name:'Item information (I)',exact:true}).click();
+    await expect(json).toBeVisible();
+    await json.getByRole('button',{name:'Close information',exact:true}).click();
+    await expect(json).not.toBeVisible();
+    await expect(dialog).toBeVisible();
     if (name === "Tracktrix" || name === "HP Potion")
       await info.attach(`item-card-${name.replace(/\W+/g, "-").toLowerCase()}`, { body: await dialog.screenshot(), contentType: "image/png" });
+  }
+
+  for(const contents of ['ikissyou','sinisterlaugh',undefined]){
+    await mount({character:'Bank',entry:{slot:25,item:{name:'cxjar',q:3,...(contents?{data:contents}:{})},meta:{definition:{name:'CX Jar',type:'jar',s:9999},properties:{},sprite:null}}});
+    const jar=page.getByRole('dialog',{name:'CX Jar',exact:true});
+    await expect(jar.locator('[data-line="filled_with"]')).toHaveText(`Filled with: ${contents||'nothing'}`);
+    await info.attach(`cxjar-${contents||'empty'}`,{body:await jar.screenshot(),contentType:'image/png'});
   }
 
   // 11: item state on a scrolled, locked, bound ring.
