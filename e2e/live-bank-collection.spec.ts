@@ -144,6 +144,18 @@ test('resumed exchange compresses newly delivered candy while reward receipts re
     await live.clients[sender].run(`smart_move(${JSON.stringify(position)})`);
     await expect.poll(async()=>{const s=await live.clients[sender].snapshot(),m=await live.clients[merchant].snapshot();return s.map===m.map&&Math.hypot(s.x-m.x,s.y-m.y)<300;},{timeout:60_000}).toBe(true);
     await live.clients[sender].run(`send_item('${merchant}',character.items.findIndex(i=>i?.name==='candy0'&&i.q===9500),9500)`);
+    // The executing command carries the proposed merge itself. Its source and
+    // target fingerprints must not become new reservations during permission.
+    await expect.poll(async()=>{
+      const s=await live.state(),job=s.merchantCurrent;
+      if(job?.id!==order.jobId)return false;
+      const boundary={character:merchant,jobId:job.id,commandId:job.commandId};
+      const next=await live.post('/merchant/stack-merge-permission',{...boundary,next:true});
+      if(!next.merge)return s.characters[merchant].items.filter((e:any)=>e?.item?.name==='candy0').length===4;
+      const permission=await live.post('/merchant/stack-merge-permission',{...boundary,merge:next.merge,
+        command:{type:'merchant-exchange',jobId:job.id,id:job.commandId,inventoryMerge:next.merge}});
+      return permission.allowed;
+    },{timeout:10_000}).toBe(true);
     await expect.poll(async()=>{
       const s=await live.state(),c=s.characters[merchant],quantities=c.items.filter((e:any)=>e?.item?.name==='candy0').map((e:any)=>e.item.q).sort((a:number,b:number)=>b-a);
       observations.push({at:Date.now(),job:s.merchantCurrent?.id,quantities,error:c.inventoryStackError});if(observations.length>160)observations.shift();

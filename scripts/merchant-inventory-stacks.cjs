@@ -29,7 +29,15 @@ function plan(party, status, boundary) {
     party.standListings, party.npcSaleMarks, (party.deconstructionMarks || []).filter(mark => mark.state !== "complete"), party.merchantDeliveries, party.merchantCargo,
     ].forEach(reserve);
   (party.merchantQueue || []).forEach(reserveJob);
-  reserveJob(current); reserveJob(boundary?.command);
+  reserveJob(current);
+  if (boundary?.command) {
+    // A merge proposal describes the very copies being authorized, not future
+    // work that owns them. Otherwise the second permission check vetoes every
+    // active-job merge by reserving its own source and target item names.
+    const command = { ...boundary.command };
+    delete command.inventoryMerge;
+    reserveJob(command);
+  }
   const groups = new Map();
   for (const entry of status.items || []) {
     // Reports carry per-copy meta, so the stack size comes from merchantCatalog.
