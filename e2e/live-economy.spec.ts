@@ -248,11 +248,22 @@ test('unavailable upgrade estimate enforces its gold cap across native purchases
     // Protection probes are not the fault target. Let the browser observe a
     // real disconnect during restart instead of throwing from route.fetch.
     if(!body.state||typeof body.state!=='object')return route.continue();
-    if(held&&body.state&&typeof body.state==='object')await gate;
+    if(held){
+      await gate;
+      checkpoints.push(body.state);
+      // Once the paid checkpoint is durable, retire the proxy on release.
+      // Browser transport owns disconnect/reconnect against the restarted host.
+      return route.continue();
+    }
     const response=await route.fetch();
     if(body.state&&typeof body.state==='object') {
       checkpoints.push(body.state);
-      if(response.ok()&&!held&&Number(body.state.spent)>0&&!body.state.pendingPurchase){held=true;await gate;}
+      if(response.ok()&&!held&&Number(body.state.spent)>0&&!body.state.pendingPurchase){
+        held=true;await gate;
+        // The coordinator persisted this exact purchase before restart. Lose
+        // only its acknowledgement; never replay the completed checkpoint.
+        return route.abort('failed');
+      }
     }
     await route.fulfill({response});
   });
