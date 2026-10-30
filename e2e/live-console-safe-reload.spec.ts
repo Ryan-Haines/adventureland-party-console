@@ -5,6 +5,10 @@ import {readFileSync} from 'node:fs';
 import path from 'node:path';
 
 test.use({loadout:'combat-range',initialPosition:{map:'main',x:1260,y:-70}});
+test.describe('native combat drain',()=>{
+// Hunt cancellation returns to the configured native Goo farm. Seed the fight
+// in that farm so the successor remains observable after the mode turnover.
+test.use({initialPosition:{map:'main',x:0,y:787}});
 for(const turnover of [false,true]) test('safe console reload finishes the native fight without acquiring the next target'+(turnover?' after Hunt and unjoined event selection turnover':''),async({live},info)=>{
   test.setTimeout(180000);
   // Failure inventory: docs/testing-safe-console-reload.md.
@@ -104,6 +108,7 @@ for(const turnover of [false,true]) test('safe console reload finishes the nativ
     await expect.poll(async()=>hit(await live.clients[W].events(),seeded.next).length,{timeout:30000,
       message:'An expired host hold must restore normal acquisition'}).toBeGreaterThan(0);
   }finally{holdFull=false;releases.splice(0).forEach(release=>release());await live.clients[W].page.unrouteAll({behavior:'wait'});await evidence(live,info,'safe-reload-final-state',{seeded,samples});if(observerFrame&&!observerFrame.isDetached())await observerFrame.evaluate(()=>{const host=window as any;host.$(document).off('.safeDrainObservation');});live.consoleDrainLease(null);await live.admin(`output=(()=>{const previous=globalThis.__safeDrainPreviousHalloween;if(previous){events.halloween=previous.enabled;E.halloween=previous.published;delete globalThis.__safeDrainPreviousHalloween;broadcast_e();}for(const id of ${JSON.stringify([seeded.first,seeded.next])}){const m=instances.main.monsters[id];if(m)remove_monster(m,{method:'disappear',nospawn:true});}return true;})()`);}
+});
 });
 
 for(const mode of ['safe','now'] as const)test(`console reload resumes native farming and roaming defense in ${mode} mode`,async({live},info)=>{
