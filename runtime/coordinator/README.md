@@ -2398,3 +2398,15 @@ Validate the Crab realm/restart journey in `console-coordinator.spec.ts`; it use
 real coordinator HTTP responses with declared external game observations. Hunt
 pause transitions also retain the responsible member/event/realm reports in the
 navigation log. Build and stage a completed candidate; activation remains explicit.
+
+## Console release and build refresh control
+
+The header has one refresh menu for published releases and completed local builds.
+Managed release download and restart use the existing updater; local load modes
+retain their deployment journal and safety barriers. Development checkouts remain
+on their branch. Completed candidates capture the release/branch display label;
+the header uses the active candidate's label rather than cached host metadata.
+Older candidates fall back to the updater label, which refreshes checkout metadata
+while running. Validate `console-build-release-menu`, `console-build-version-label`,
+and `console-build-artifact-header`, plus the existing deployment menu journey.
+Build and stage the completed candidate; activation remains explicit.

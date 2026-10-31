@@ -6,12 +6,15 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {deploymentPending,type CandidateSummary,type Component,type ConsoleBuildStatus,type DeploymentJournal,type DeploymentMode} from "../../../tools/console-build/contracts";
 
+import type {useUpdates} from './console-updates';
+import {newer} from '../../../tools/update/contracts';
+
 const secondary = "border border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white";
 type Selection = { manifest: CandidateSummary; changed: Component[] };
 const pendingKey='party-console-pending-deployment';
 function remember(operation:DeploymentJournal|null){try{if(operation)sessionStorage.setItem(pendingKey,JSON.stringify(operation));else sessionStorage.removeItem(pendingKey);}catch{}}
 
-export function ConsoleBuildControl({onActiveChange}:{onActiveChange?:(id:string|undefined)=>void} = {}) {
+export function ConsoleBuildControl({onActiveChange,onVersionChange,updates,onReleaseSettings}:{onActiveChange?:(id:string|undefined)=>void;onVersionChange?:(version:string|undefined)=>void;updates?:ReturnType<typeof useUpdates>;onReleaseSettings?:()=>void} = {}) {
   const [status, setStatus] = useState<ConsoleBuildStatus | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [menu, setMenu] = useState(false);
@@ -34,6 +37,7 @@ export function ConsoleBuildControl({onActiveChange}:{onActiveChange?:(id:string
         if (controller.signal.aborted) return;
         setStatus(value);
         onActiveChange?.(value.active);
+        onVersionChange?.(value.builds.find(build=>build.id===value.active)?.displayVersion);
         const navigation=performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming|undefined;
         dashboardHash.current ||= (window as Window & {__partyDashboardHash?:string}).__partyDashboardHash || navigation?.serverTiming?.find(timing=>timing.name==='party_dashboard')?.description || value.builds.find(build=>build.id===value.active)?.components.dashboard;
         if(value.operation&&deploymentPending(value.operation.phase))remember(value.operation);else remember(null);
@@ -63,7 +67,7 @@ export function ConsoleBuildControl({onActiveChange}:{onActiveChange?:(id:string
       clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [onActiveChange]);
+  }, [onActiveChange,onVersionChange]);
 
   async function deploy(mode: DeploymentMode = 'now', picked = selection) {
     if (!picked || submittingRef.current) return;
@@ -90,28 +94,42 @@ export function ConsoleBuildControl({onActiveChange}:{onActiveChange?:(id:string
     }
   }
 
-  if (!status) return null;
-  const candidate = status.builds.find(build => build.id === status.available);
-  const active = status.builds.find(build => build.id === status.active);
-  const operation = status.operation;
+  const buildStatus=status??{builds:[]};
+  const release=updates?.state;
+  const releaseBusy=!!release&&['checking','downloading','restarting'].includes(release.phase);
+  const releaseReady=!!release&&['ready','blocked'].includes(release.phase);
+  const candidate = buildStatus.builds.find(build => build.id === buildStatus.available);
+  const active = buildStatus.builds.find(build => build.id === buildStatus.active);
+  const activeVersion=active?.displayVersion?.match(/^(\d+\.\d+\.\d+)(?:$| \+ )/)?.[1];
+  const releaseVisible=!!release?.available&&(!activeVersion||newer(release.available,activeVersion));
+  const operation = buildStatus.operation;
   const busy = submitting || !!operation&&deploymentPending(operation.phase);
-  const buildCount = Math.max(1, status.pendingBuildCount ?? status.builds.filter(build => build.id !== status.active && (!active || build.createdAt > active.createdAt)).length);
+  const buildCount = Math.max(1, buildStatus.pendingBuildCount ?? buildStatus.builds.filter(build => build.id !== buildStatus.active && (!active || build.createdAt > active.createdAt)).length);
   return <>
-    {(candidate && candidate.id !== status.active || busy) && <Popover open={menu} onOpenChange={open => {
+    {(candidate && candidate.id !== buildStatus.active || busy || releaseVisible) && <Popover open={menu} onOpenChange={open => {
       setMenu(open);
       if (open && candidate) { setMenuSelection({manifest: candidate, changed: (Object.keys(candidate.components) as Component[]).filter(key => candidate.components[key] !== active?.components[key])}); }
     }}><PopoverTrigger render={<Button
-      size="icon" variant="outline" aria-busy={busy}
-      aria-label="Deploy new console build" title="New console build ready to deploy"
+      size="icon" variant="outline" aria-busy={busy||releaseBusy}
+      aria-label={releaseVisible?"Update Party Console":"Deploy new console build"} title={releaseVisible?`Release ${release?.available} available`:"New console build ready to deploy"}
       className="relative ml-3 border-emerald-500 bg-emerald-950 text-emerald-100 hover:bg-emerald-900 hover:text-white"
-      />}><RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} /><span aria-label={`${buildCount} completed builds since deployment`} className="pointer-events-none absolute bottom-0.5 left-0.5 z-10 min-w-3 rounded bg-black/85 px-0.5 text-center font-mono text-[10px] leading-3 text-emerald-300">{buildCount}</span></PopoverTrigger>
-      <PopoverContent align="start" className="w-48 border border-gray-300 bg-white p-1 text-black shadow-xl data-open:animate-none data-closed:animate-none" aria-label="Load console build">
+      />}><RefreshCw className={`size-4 ${busy||releaseBusy ? 'animate-spin' : ''}`} />{candidate&&<span aria-label={`${buildCount} completed builds since deployment`} className="pointer-events-none absolute bottom-0.5 left-0.5 z-10 min-w-3 rounded bg-black/85 px-0.5 text-center font-mono text-[10px] leading-3 text-emerald-300">{buildCount}</span>}</PopoverTrigger>
+      <PopoverContent align="start" className="w-64 border border-gray-300 bg-white p-1 text-black shadow-xl data-open:animate-none data-closed:animate-none" aria-label="Load console build">
+        {releaseVisible&&<div className="space-y-1 border-b border-gray-200 pb-2 mb-1">
+          <p className="px-2 py-1 text-xs font-semibold text-black">Latest release · {release?.available}</p>
+          {release?.managed?<Button className="w-full justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy||releaseBusy} onClick={()=>void updates?.action(releaseReady?'restart':'download')}>
+            {releaseBusy?release?.phase==='downloading'?'Downloading release…':release?.phase==='restarting'?'Restarting…':'Checking release…':releaseReady?`Restart on release ${release?.available}`:`Download release ${release?.available}`}
+          </Button>:<Button className="w-full justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" onClick={()=>{setMenu(false);onReleaseSettings?.();}}>View release update</Button>}
+          {releaseReady&&<p className="px-2 text-xs text-black">Downloaded. Restart when you are ready.</p>}
+          {(updates?.error||release?.error)&&<p role="alert" className="break-words px-2 text-xs text-red-700">{updates?.error||release?.error}</p>}
+        </div>}
+        {(candidate||busy)&&<p className="px-2 py-1 text-xs font-semibold text-black">Local build</p>}
         {busy&&operation&&<p className="px-2 py-1 text-xs text-black">{operation.phase.replaceAll('-',' ')} · {new Date(operation.phaseStartedAt||operation.startedAt).toLocaleTimeString()}</p>}
         {busy&&operation?.waiting?.length?<p className="px-2 py-1 text-xs text-black">Waiting: {operation.waiting.join(', ')}</p>:null}
         {operation?.error&&<p className="break-words px-2 py-1 text-xs text-red-700">{operation.error}</p>}
-        <Button className="justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy} onClick={() => { setSelection(menuSelection); setMenu(false); }}>Load now</Button>
-        <Button className="justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy||status.cave} onClick={() => void deploy('safe', menuSelection)}>Load when safe</Button>
-        <Button className="justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy||status.cave} onClick={() => void deploy('main', menuSelection)}>Load at Main</Button>
+        {candidate&&<Button className="justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy||releaseBusy} onClick={() => { setSelection(menuSelection); setMenu(false); }}>Load now</Button>}
+        {candidate&&<Button className="justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy||releaseBusy||buildStatus.cave} onClick={() => void deploy('safe', menuSelection)}>Load when safe</Button>}
+        {candidate&&<Button className="justify-start rounded-sm border-0 bg-white text-black hover:bg-gray-100 hover:text-black" disabled={busy||releaseBusy||buildStatus.cave} onClick={() => void deploy('main', menuSelection)}>Load at Main</Button>}
       </PopoverContent>
     </Popover>}
     <Dialog open={!!selection} onOpenChange={open => { if (!open && !submitting) setSelection(null); }}>

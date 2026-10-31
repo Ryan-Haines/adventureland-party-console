@@ -5,6 +5,8 @@ import {createServer} from 'node:net';
 import path from 'node:path';
 import {ConsoleBuildStore} from './store.ts';
 import type {Candidate, CandidateManifest} from './contracts.ts';
+import {consoleVersion} from '../update/version-label.ts';
+import type {Release} from '../update/contracts.ts';
 
 // Maintained debug hosting imports the native fixture client/bootstrap boundary.
 const roots = ['runtime', 'characters', 'dashboard', 'tools', 'scripts', 'patches', 'e2e', '.caracal'];
@@ -185,7 +187,10 @@ export async function buildCandidate(root:string,store:ConsoleBuildStore,signal?
   signal?.throwIfAborted();
   const files=await inventory(app,true),components=componentHashes(files,dependencyId);
   const id=digest(JSON.stringify({sourceHash,dependencyId,files,components}));
-  return await store.complete(stage,{schema:1,id,sourceHash,dependencyId,createdAt:new Date().toISOString(),components,files});
+  const release=await readFile(path.join(root,'release.json'),'utf8').then(value=>JSON.parse(value) as Release)
+    .catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return undefined;throw error;});
+  const {displayVersion}=await consoleVersion(root,release);
+  return await store.complete(stage,{schema:1,id,sourceHash,dependencyId,displayVersion,createdAt:new Date().toISOString(),components,files});
   }
   finally{await store.pinDependencies([]);}
   }finally{await removeOwnedStage(path.join(store.directory,'staging'),stage);}

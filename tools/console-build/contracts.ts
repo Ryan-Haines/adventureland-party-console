@@ -4,6 +4,8 @@ export interface CandidateManifest {
   id: string;
   createdAt: string;
   sourceHash: string;
+  /** Release base and source branch captured when this executable was built. */
+  displayVersion?: string;
   commit?: string;
   dirty?: boolean;
   dependencyId?: string;

@@ -4,6 +4,8 @@
 
 ### 1.6 (in development)
 
+- Combine release notifications and local build loading into one refresh menu, with direct release download/restart actions for managed installations.
+- Refresh the displayed release base and development branch while the console runs, instead of retaining the host's startup version label.
 - Fix cross-realm event hints that could keep Hunt paused after its local event ended. Event corroboration now requires a fresh, connected report from the same realm.
 - Record the event reports responsible when Hunt enters an event pause, making future recovery failures diagnosable.
 
