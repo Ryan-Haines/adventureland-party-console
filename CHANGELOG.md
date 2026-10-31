@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### 1.6 (in development)
+
+- Fix cross-realm event hints that could keep Hunt paused after its local event ended. Event corroboration now requires a fresh, connected report from the same realm.
+- Record the event reports responsible when Hunt enters an event pause, making future recovery failures diagnosable.
+
 ### 1.5 changes since v1.4.0
 
 Only changes verified against the v1.4.0 source are listed in this summary.

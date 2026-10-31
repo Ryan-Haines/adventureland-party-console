@@ -2386,3 +2386,15 @@ or return command must remain untouched. Skipped and already-returning replies
 do not authorize a local stop. Validate live-hunt-anniversary-preemption and the
 original Anniversary restart/reward/return journeys on ChronAL and native.
 Build and stage character/coordinator assets together; activation remains explicit.
+
+## Hunt event hint realm ownership
+
+Party event hints require a fresh (three-second), connected event-feed report on
+the recipient's own realm. A merchant visiting a live Crab on another realm must
+not corroborate a locally ended Crab: that hint otherwise reactivates the client's
+event selection and leaves Hunt at `paused-event`. Unknown realms do not admit
+hints. Same-realm corroboration and ordinary event exit barriers remain intact.
+Validate the Crab realm/restart journey in `console-coordinator.spec.ts`; it uses
+real coordinator HTTP responses with declared external game observations. Hunt
+pause transitions also retain the responsible member/event/realm reports in the
+navigation log. Build and stage a completed candidate; activation remains explicit.

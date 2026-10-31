@@ -2,6 +2,35 @@ import { test, expect } from './fixtures';
 
 // Coordinator hot paths through the real coordinator (docs/efficiency.md, Coordinator).
 
+test.describe('Hunt event realm ownership',()=>{
+  test.use({savedRecords:[{party_dashboard_settings_state_v1:{leader:'W',eventSelectionsByCharacter:{W:['crabxx'],M:['crabxx']}}}]});
+test('Crab event hints stay on their observed realm across coordinator restart',async({app},info)=>{
+  // Failure inventory: another realm's live Crab revives an ended local event;
+  // same-realm hints must survive, including after restart.
+  const base=(await app.state()).characters.W;
+  const reports:any[]=[];
+  const status=async(name:string,server:string|undefined,events:string[])=>{
+    const report={...base,name,ctype:name==='M'?'merchant':'warrior',server,
+      activeEvent:null,joinedEvent:null,serverLiveEvents:events.map(name=>({name})),
+      runtimeId:base.runtimeId,clientInstance:base.clientInstance};
+    for(const key of ['seenAt','inventorySeenAt','statusSequence'])delete report[key];
+    const response:any=await app.deliverStatus(report);reports.push({report,response});return response;
+  };
+  for(const restart of [false,true]){
+    if(restart)await app.restartCoordinator();
+    await status('M','USI',['crabxx']);
+    const foreign=await status('W','USII',[]);
+    expect(foreign.partyEventHint,'A live Crab on US I must not revive an ended US II event').toBeNull();
+    await status('M','USII',['crabxx']);
+    const local=await status('W','USII',[]);
+    expect(local.partyEventHint,'Fresh same-realm hints still support event admission').toBe('crabxx');
+    await status('M','USII',[]);
+    expect((await status('W','USII',[])).partyEventHint).toBeNull();
+  }
+  await info.attach('crab-realm-hint-restart-evidence',{body:JSON.stringify(reports),contentType:'application/json'});
+});
+});
+
 test.describe('interrupted automatic upgrade relocation',()=>{
   // Failure modes: stale liveSlot masks candidate slots; a completed duplicate
   // steals the pass; reconciliation deletes intent; restart loses relocation.

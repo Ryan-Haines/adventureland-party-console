@@ -169,11 +169,18 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
   }
 
   function liveEvent(name: string, names: string[]): string | null {
+    const realm = state.statuses[name]?.server;
+    if (!realm) return null;
+    const now = ports.now();
     const reporter = names
       .map((member) => state.statuses[member])
       .find(
         (status) =>
           status &&
+          status.server === realm &&
+          now - Number(status.seenAt) <= 3000 &&
+          Number(status.seenAt) <= now + 500 &&
+          status.eventFeedConnected !== false &&
           ports.enabled(status.name) &&
           Array.isArray(status.serverLiveEvents) &&
           status.serverLiveEvents.some((event) => ports.enabled(name, event.name)),
