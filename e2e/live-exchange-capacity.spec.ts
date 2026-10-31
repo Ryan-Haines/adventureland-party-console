@@ -41,8 +41,13 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
       const blocked=await live.state(),physical=await native();
       const pending=blocked.merchantQueue.filter((job:any)=>job.reason==='exchange');
       expect(pending).toHaveLength(1);expect(pending[0].exchanges).toEqual([{id:'candy0',level:0,quantity:4}]);
+      expect(typeof pending[0].exchangeCapacitySignature).toBe('string');
       expect(physical).toMatchObject({candy:4,jacko:2,bankJacko:before.bankJacko,exchanges:before.exchanges+2,locked:39});
       await live.restartCoordinator();
+      await expect.poll(async()=>{
+        const s=await live.state(),job=s.merchantQueue.find((entry:any)=>entry.reason==='exchange');
+        return s.merchantCurrent?.reason!=='exchange'&&job?.exchangeCapacitySignature===pending[0].exchangeCapacitySignature;
+      },{timeout:30_000,message:'The capacity fence must remain on the same unfinished order after restart'}).toBe(true);
       const unchanged=await native();expect(unchanged.exchanges).toBe(physical.exchanges);
       await info.attach('protected-exchange-capacity-block',{body:JSON.stringify({blocked,physical,unchanged}),contentType:'application/json'});
       await live.admin(`output=(()=>{const p=get_player('${merchant}');for(let i=3;i<7;i++){if(p.items[i]?.name!=='helmet'||!p.items[i].l)throw Error('Owned fixture filler changed');p.items[i]=null;}cache_player_items(p);resend(p,'reopen+cid');return true})()`);

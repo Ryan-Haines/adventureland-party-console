@@ -69,6 +69,8 @@ export function coordinatorMerchantTransferBlocked(
   state: InventoryCapacity,
   job: PrioritizedJob | null | undefined,
 ): boolean {
+  if (job?.reason === 'exchange' && job.exchangeCapacitySignature !== undefined &&
+      job.exchangeCapacitySignature === coordinatorMerchantCapacitySignature(state, job.target || null)) return true;
   if (
     !job ||
     job.target === state.merchantCharacter ||

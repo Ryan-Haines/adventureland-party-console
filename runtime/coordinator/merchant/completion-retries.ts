@@ -190,6 +190,8 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
     if (!decision.retry) return;
     const retry: CompletionJob = {
       ...job,
+      ...(job.reason === 'exchange' && state.merchantJobBlocks[String(job.target)+'\nexchange']?.capacitySignature !== undefined
+        ? {exchangeCapacitySignature:state.merchantJobBlocks[String(job.target)+'\nexchange'].capacitySignature} : {}),
       id: retryIdentity(job,decision),
       resumedFrom: job.id,
       retryCount: (Number(job.retryCount) || 0) + retryIncrement(decision),
