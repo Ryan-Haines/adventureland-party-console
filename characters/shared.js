@@ -8561,7 +8561,7 @@
     var heartbeatTimer = setInterval(heartbeat, 5000), suspendedGathering = null, actionStarted = false;
     try {
       // Delivery owns movement too: retire an idle return or gathering path before starting it.
-      if (["merchant-service", "merchant-npc-sale", "merchant-deconstruct", "merchant-commerce", "merchant-upgrade-preview"].indexOf(command.type) >= 0) {
+      if (["merchant-service", "merchant-npc-sale", "merchant-deconstruct", "merchant-commerce", "merchant-exchange", "merchant-upgrade-preview"].indexOf(command.type) >= 0) {
         suspendedGathering = gatheringMode;
         gatheringGeneration += 1; root.__merchantGatheringGeneration = gatheringGeneration;
         if (gatheringTimer) clearInterval(gatheringTimer);

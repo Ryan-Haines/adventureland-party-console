@@ -14,6 +14,7 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
     if(p.isize!==42)throw Error('Scenario requires the reported 42-slot inventory');
     globalThis.__capacityCandyDrops=D.drops.candy0;D.drops.candy0=[[1,'jacko',1]];
     p.items=Array(42).fill(null);for(let i=0;i<39;i++)p.items[i]={name:'helmet',level:0,l:'l'};
+    p.items[0]={name:'stand0',l:'l'};p.items[1]={name:'hpot1',q:9999,l:'l'};p.items[2]={name:'mpot1',q:9999,l:'l'};
     p.items[39]={name:'candy0',q:6};cache_player_items(p);resend(p,'reopen+cid');
     return {items:p.items,exchanges:p.p.stats.exchanges.candy0||0,table:D.drops.candy0};})()`);
   const native=()=>live.admin(`output=(async()=>{const p=get_player('${merchant}'),u=p.user||(await db.collection('user').findOne({_id:p.owner})).info;
@@ -44,7 +45,7 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
       await live.restartCoordinator();
       const unchanged=await native();expect(unchanged.exchanges).toBe(physical.exchanges);
       await info.attach('protected-exchange-capacity-block',{body:JSON.stringify({blocked,physical,unchanged}),contentType:'application/json'});
-      await live.admin(`output=(()=>{const p=get_player('${merchant}');for(let i=0;i<4;i++){if(p.items[i]?.name!=='helmet'||!p.items[i].l)throw Error('Owned fixture filler changed');p.items[i]=null;}cache_player_items(p);resend(p,'reopen+cid');return true})()`);
+      await live.admin(`output=(()=>{const p=get_player('${merchant}');for(let i=3;i<7;i++){if(p.items[i]?.name!=='helmet'||!p.items[i].l)throw Error('Owned fixture filler changed');p.items[i]=null;}cache_player_items(p);resend(p,'reopen+cid');return true})()`);
     }else{
       await expect.poll(()=>checkpoints.filter(c=>c.body.remaining?.[0]?.quantity===4).length,{timeout:180_000,message:'Capacity banking must checkpoint the same four remaining candies before leaving the NPC'}).toBeGreaterThanOrEqual(2);
       await live.restartCoordinator();
