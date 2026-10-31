@@ -21,7 +21,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: public-release-${{ github.ref }}-${{ inputs.self_hosted && 'local' || 'hosted' }}
+  group: public-release-${{ github.ref }}-${{ inputs.self_hosted && 'local' || 'hosted' }}${{ github.event_name == 'workflow_dispatch' && !inputs.self_hosted && inputs.local_grep && format('-focused-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   checks:
