@@ -8586,7 +8586,8 @@
       // Recover native journals first, but don't make sales/banking/exchanges
       // tidy the lucky layout. They must be able to free a packed inventory.
       // Recheck production admission locally: loot can arrive after dispatch.
-      if (command.type === "merchant-self-improve") {
+      if (command.type === "merchant-self-improve" &&
+          ["upgrades", "statScrolls", "compounds", "autoCompounds", "bankUpgradeRules"].some(function (key) { return (command[key] || []).length > 0; })) {
         if (freeInventorySlots() < 2) throw new Error("inventory_full");
         await merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
       }
@@ -9736,7 +9737,7 @@
         liveListings.push({ id: listing.id, tradeSlot: emptyTrade });
       }
       if (typeof nativeStandSync === "function") await nativeStandSync(command, false);
-      if (!command.inPlace && ownsIdle() && !root.__merchantActiveJob) {
+      if (!command.inPlace && ownsIdle() && !root.__merchantActiveJob && freeInventorySlots() >= 2) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
         try { await root.__merchantInventoryTidy; }
         catch (tidyError) {
@@ -11630,7 +11631,7 @@
         }
         if (!error.movementReported) game_log("Party command failed: " + (error.reason || error.message || error), "red");
       });
-      if (character.ctype === "merchant" && !state.command && !root.__merchantActiveJob && !root.__merchantInventoryTidy &&
+      if (character.ctype === "merchant" && freeInventorySlots() >= 2 && !state.command && !root.__merchantActiveJob && !root.__merchantInventoryTidy &&
           !merchantEventWorkReserved() &&
           !banking && !upgrading && !stocking && !gatheringActive && !merchantIdleActive && !anniversaryBusy && !character.rip) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot).catch(function (error) {
