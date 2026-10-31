@@ -71,13 +71,19 @@ export function coordinatorMerchantTransferBlocked(
 ): boolean {
   if (job?.reason === 'exchange' && job.exchangeCapacitySignature !== undefined &&
       job.exchangeCapacitySignature === coordinatorMerchantCapacitySignature(state, job.target || null)) return true;
+  const items = state.statuses[String(state.merchantCharacter)]?.items;
+  // Improvement staging needs both the lucky cell and a separate movement
+  // buffer. Leave freeing work eligible even when its configured priority is
+  // lower: it is a dependency, not another production attempt.
+  if (job?.target === state.merchantCharacter &&
+      ['upgrades and compounds','manual upgrades','auto upgrade','manual compounds','auto compound'].includes(job.reason) &&
+      Array.isArray(items) && items.filter(entry => !entry).length < 2) return true;
   if (
     !job ||
     job.target === state.merchantCharacter ||
     !["marked items", "inventory cleanout", "exchange pickup"].includes(job.reason)
   )
     return false;
-  const items = state.statuses[String(state.merchantCharacter)]?.items;
   return Array.isArray(items) && items.filter((entry) => !entry).length <= 3;
 }
 

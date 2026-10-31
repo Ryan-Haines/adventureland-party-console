@@ -2413,6 +2413,14 @@ Build and stage the completed candidate; activation remains explicit.
 
 ## Exchange inventory capacity
 
+Merchant-owned upgrades and compounds require two empty cells at admission:
+the lucky cell and a separate layout buffer. Sales and bank deposits remain
+eligible regardless of that production reserve. Native journal recovery still
+precedes all work; optional lucky tidying belongs only to improvement jobs.
+The client repeats the space check after compression and before production
+staging, because inventory may change after coordinator dispatch. Validate the
+one-empty-lucky-slot sale-before-upgrade journey in live-exchange-capacity.
+
 Exchange consumption checkpoints precede each capacity bank trip. A bulk input
 needs an empty native split cell; a complete one-exchange stack can consume its
 own cell. Route all unlocked, unblocked matching reward copies through fresh

@@ -1,6 +1,45 @@
 import {test,expect} from './live-fixtures';
+import {automaticCommerceRuleKey} from '../runtime/coordinator/inventory/item-identity';
 
 const merchant='E2EMerchant';
+test('merchant capacity sells before higher priority upgrades when only the lucky slot is empty',async({live},info)=>{
+  // Failure inventory: optional lucky tidying blocks the sale that frees its
+  // buffer; higher priority upgrades starve cleanup; full-bag native purchases;
+  // dropped upgrade intent or replay after cleanup. Native sale/upgrade receipts
+  // and fresh coordinator observations are separate completion milestones.
+  test.setTimeout(300_000);
+  await live.post('/merchant/force-stand',{enabled:true});
+  await live.admin(`output=(()=>{const p=get_player('${merchant}');p.items=Array.from({length:42},()=>({name:'helmet',level:0,l:'l'}));
+    p.items[0]={name:'stand0',l:'l'};p.items[1]={name:'hpot1',q:9999,l:'l'};p.items[2]={name:'mpot1',q:9999,l:'l'};
+    p.items[5]={name:'coat',level:0};p.items[6]={name:'broom',level:0};p.items[7]=null;
+    p.items[20]={name:'scroll0',q:100,l:'l'};p.items[41]={name:'tracker',l:'l'};
+    cache_player_items(p);resend(p,'reopen+cid');return true})()`);
+  await expect.poll(async()=>(await live.clients[merchant].snapshot()).items.filter((i:any)=>!i).length).toBe(1);
+  await live.restoreHistoricalSettings(()=>({luckySlotLocks:{[merchant]:7},
+    autoUpgradeMarks:{[merchant]:{'broom@+0':{tiers:1,quantity:1}}},
+    autoNpcSales:{[automaticCommerceRuleKey({name:'coat',level:0})]:{item:{name:'coat',level:0},keep:0,createdAt:Date.now()}}}));
+  await live.post('/merchant/routine-priorities',{priorities:{'auto upgrade':100,'auto npc sales':1},enabled:{'auto upgrade':true,'auto npc sales':true,'inventory cleanout':false}});
+  const before=await live.state();
+  await live.post('/merchant/force-stand',{enabled:false});
+  try{
+    await expect.poll(async()=>{
+      const s=await live.state(),items=(await live.clients[merchant].snapshot()).items;
+      return !items.some((i:any)=>i?.name==='coat') && !(s.upgrades[merchant]||[]).length &&
+        ![s.merchantCurrent,...s.merchantQueue].some((j:any)=>j&&['auto upgrade','auto npc sales'].includes(j.reason)) &&
+        !s.characters[merchant]?.items.some((entry:any)=>entry?.item?.name==='coat');
+    },{timeout:240_000}).toBe(true);
+    const events=await live.clients[merchant].events(),after=await live.state();
+    expect(events.filter((e:any)=>e.event==='game_response'&&['upgrade_success','upgrade_fail'].includes(e.data?.response))).toHaveLength(1);
+    const dispatches=after.merchantActivity.filter((e:any)=>/Merchant dispatched/.test(e.message));
+    const sale=dispatches.findIndex((e:any)=>/sell.*NPC/.test(e.message));
+    const upgrade=dispatches.findIndex((e:any)=>/automatic upgrades/.test(e.message));
+    expect(sale).toBeGreaterThanOrEqual(0);expect(upgrade).toBeGreaterThan(sale);
+    expect(after.merchantActivity.filter((e:any)=>/no spare slot|cant_space|inventory_full|Couldn't use lucky slot/.test(JSON.stringify(e)))).toHaveLength(0);
+  }finally{
+    await info.attach('merchant-capacity-sale-before-production',{body:JSON.stringify({before,after:await live.state(),items:(await live.clients[merchant].snapshot()).items,events:await live.clients[merchant].events()}),contentType:'application/json'});
+  }
+});
+
 for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRewards?'preserves protected rewards and resumes after space changes':'banks rewards mid-order and resumes across restart'}`,async({live},info)=>{
   // Failure inventory: split into a full bag; rewards banked only at order end;
   // duplicate/lost consumption after restart; banked protected gear; dropped
