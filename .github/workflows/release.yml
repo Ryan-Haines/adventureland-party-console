@@ -294,6 +294,9 @@ jobs:
             RELEASE_COMMIT=${{ github.sha }}
   docker-smoke:
     needs: docker
+    permissions:
+      contents: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
