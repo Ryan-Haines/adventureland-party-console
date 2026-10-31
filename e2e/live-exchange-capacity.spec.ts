@@ -94,7 +94,17 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
       await live.admin(`output=(()=>{const p=get_player('${merchant}');for(let i=3;i<7;i++){if(p.items[i]?.name!=='helmet'||!p.items[i].l)throw Error('Owned fixture filler changed');p.items[i]=null;}cache_player_items(p);resend(p,'reopen+cid');return true})()`);
     }else{
       await expect.poll(()=>checkpoints.filter(c=>c.body.remaining?.[0]?.quantity===4).length,{timeout:180_000,message:'Capacity banking must checkpoint the same four remaining candies before leaving the NPC'}).toBeGreaterThanOrEqual(2);
+      const previous=checkpoints[0].body;
+      expect(Number.isSafeInteger(previous.commandId)).toBe(true);
       await live.restartCoordinator();
+      await expect.poll(async()=>{
+        const current=(await live.state()).merchantCurrent;
+        return current?.reason==='exchange'&&current.commandId!==previous.commandId;
+      },{timeout:30_000}).toBe(true);
+      // A recovered order retains its job ID but has a new worker command.
+      // Delayed reports from the old worker must not fail or rewind it.
+      await expect(live.post('/merchant/complete',{jobId:previous.jobId,commandId:previous.commandId,success:false,error:'Unattributed movement stop'})).rejects.toThrow(/409/);
+      await expect(live.post('/merchant/exchange-progress',previous)).rejects.toThrow(/409/);
     }
     await expect.poll(async()=>{
       const s=await live.state(),n=await native();

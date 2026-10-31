@@ -2429,6 +2429,10 @@ Only a definitely rejected split can retry once after banking; uncertain exchang
 receipts must not be replayed. A bank or inventory capacity failure preserves
 the unfinished exchange behind the ordinary resource signature block, allowing
 other merchant work and resuming after resources change.
+Exchange reports include the worker command ID as well as the durable job ID.
+A replaced worker cannot rewind progress or fail the resumed order, and retires
+quietly when its old bank walk is interrupted. Validate rejected stale progress
+and completion reports during the capacity-bank restart journey.
 Validate live-exchange-capacity on ChronAL, plus merged/default/chained exchange
 reward routing. The manual release workflow's local_grep input also selects one
 focused hosted ChronAL allocation without console validation or publication;

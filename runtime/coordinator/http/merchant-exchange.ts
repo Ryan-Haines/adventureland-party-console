@@ -6,6 +6,7 @@ import {createOfferingSupplyRoute} from '../inventory/offering-supply.ts';
 import {autoItemRuleKey} from '../inventory/item-identity.ts';
 import {ruleOwner} from '../inventory/shared-rules.ts';
 import type {UpgradeOffering} from '../../upgrade-offerings.ts';
+import {currentMerchantReport} from '../merchant/commerce-progress.ts';
 
 interface ExchangeChoice {
   id: string;
@@ -56,7 +57,7 @@ function normalizeExchange(raw: unknown, choices: ExchangeChoice[]): ExchangeLin
 export function createMerchantExchangeRoutes(state: ExchangeState, ports: ExchangePorts) {
   function current(body: Record<string, unknown>): MerchantWork | null {
     const job = state.merchantCurrent;
-    return job && job.id === body.jobId && job.reason === "exchange" ? job : null;
+    return currentMerchantReport(job,body) && job.reason === "exchange" ? job : null;
   }
 
   function progress(req: HttpRequest, res: HttpResponse): unknown {

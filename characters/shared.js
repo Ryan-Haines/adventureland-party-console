@@ -8319,6 +8319,9 @@
 
   async function merchantExchange(command) {
     var activity = [], lines = [], rewards = (command.exchangeRewards || []).slice();
+    function ownsExchange() {
+      return runtimeCurrent() && root.__merchantActiveJob && root.__merchantActiveJob.commandId === command.id;
+    }
     (command.exchanges || []).forEach(function (line) {
       var existing = lines.find(function (candidate) { return candidate.id === line.id &&
         candidate.reward === line.reward &&
@@ -8344,6 +8347,7 @@
       return npc;
     }
     async function splitExact(slot, quantity, remaining) {
+      if (!ownsExchange()) throw Error('interrupted');
       var item = character.items[slot], available = itemQuantity(item);
       if (available <= quantity) return slot;
       var before = character.items.map(function (entry) { return JSON.stringify(fingerprint(entry)); });
@@ -8385,9 +8389,10 @@
     async function bankExchangeRewards(remaining) {
       // Persist unfinished consumption before movement; recovery resumes this
       // order rather than discovering a new automatic order from its leftovers.
-      await request('/merchant/exchange-progress',{method:'POST',body:{jobId:command.jobId,remaining:remaining,rewards:rewards}});
+      await request('/merchant/exchange-progress',{method:'POST',body:{jobId:command.jobId,commandId:command.id,remaining:remaining,rewards:rewards}});
       await merchantVisitBank(command, activity);
-      var routing = await request('/merchant/exchange-progress',{method:'POST',body:{jobId:command.jobId,remaining:remaining,rewards:rewards}});
+      if (!ownsExchange()) throw Error('interrupted');
+      var routing = await request('/merchant/exchange-progress',{method:'POST',body:{jobId:command.jobId,commandId:command.id,remaining:remaining,rewards:rewards}});
       var actions = routing.rewardActions || [], banked = 0;
       for (var rewardIndex=0;rewardIndex<rewards.length;rewardIndex+=1) {
         if (!actions[rewardIndex] || actions[rewardIndex].action !== 'bank') continue;
@@ -8401,6 +8406,7 @@
           var stock=character.items.map(function (entry,index) { return entry ? {item:entry,slot:index,craftLocation:'inventory:'+character.name} : null; });
           var available=globalThis.partyAvailableCraftStock(stock,checkpoint.craftProtection);
           if (!available[slot] || itemQuantity(available[slot].item)<itemQuantity(item)) continue;
+          if (!ownsExchange()) throw Error('interrupted');
           await bankStoreFully(slot);banked+=1;
         }
       }
@@ -8449,7 +8455,7 @@
         var missing = needed - exactInventoryQuantity(retrieveLine.id, retrieveLine.level);
         if (missing > 0) {
           var supply = await request("/merchant/exchange-supply", { method: "POST", body: {
-            jobId: command.jobId, shortages: [{ id: retrieveLine.id, level: retrieveLine.level, quantity: missing }],
+            jobId: command.jobId, commandId: command.id, shortages: [{ id: retrieveLine.id, level: retrieveLine.level, quantity: missing }],
           }});
           if (supply && supply.pending) throw new Error("bankboi_pending");
           throw new Error("Not enough " + (definition.name || retrieveLine.id) + " to exchange");
@@ -8471,6 +8477,7 @@
           // Long jobs must also compress stock received after admission.
           await compressMerchantInventory(command);
           if (bankStacks && bankStacks.pending()) await bankStacks.recover();
+          if (!ownsExchange()) throw Error('interrupted');
           var slot = exchangeSlot(line.id,Number(line.level)||0,required);
           if (slot < 0) throw new Error('Exchange stack changed for ' + line.id);
           if (!freeInventorySlots() && (line.reward || itemQuantity(character.items[slot])>required)) {
@@ -8481,6 +8488,7 @@
           slot = exchangeSlot(line.id,Number(line.level)||0,required);
           if (slot < 0) throw new Error("Exchange stack changed for " + line.id);
           var result, held = character.items.map(fingerprint);
+          if (!ownsExchange()) throw Error('interrupted');
           if (line.reward) {
             // Select the verified stack explicitly; exchange_buy() otherwise
             // chooses the first stack, which may be locked or too small.
@@ -8494,6 +8502,7 @@
             if (['bank','bank_b','bank_u'].indexOf(character.map)>=0) await smart_move(find_npc(exchangeNpc(line.id)));
             await merchantMassBuff("massexchange");
             await verifyMerchantItemMarks();
+            if (!ownsExchange()) throw Error('interrupted');
             result = await exchange(slot);
           }
           exchangeGains(held).forEach(function (gain) {
@@ -8501,7 +8510,7 @@
           });
           var remaining = remainingLines(lineIndex,count+1);
           await request("/merchant/exchange-progress", { method: "POST", body: {
-            jobId: command.jobId, remaining: remaining, rewards: rewards,
+            jobId: command.jobId, commandId: command.id, remaining: remaining, rewards: rewards,
           }});
           activity.push({ level: "success", message: "Exchanged " + required + " × " +
             (itemDefinition.name || line.id) + (line.reward ? " for " + line.reward : result && result.reward ? " and received " + result.reward : "") });
@@ -8509,14 +8518,17 @@
       }
       await bankExchangeRewards([]);
       await request("/merchant/complete", { method: "POST", body: {
-        jobId: command.jobId, success: true, autoExchangesResolved: command.autoExchangeKeys || [],
+        jobId: command.jobId, commandId: command.id, success: true, autoExchangesResolved: command.autoExchangeKeys || [],
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [], activity: activity,
       }});
     } catch (error) {
+      // Recovery can interrupt this worker's bank walk while dispatching a new
+      // command for the same durable order. Its stop is not the new job's failure.
+      if (!ownsExchange()) return;
       var capacity = /^(cant_space|inventory_full|no_space|bank_full)$/.test(String(error.reason || error.message || error));
       try { await request("/merchant/complete", { method: "POST", body: {
-        jobId: command.jobId, success: false, error: String(error.reason || error.message || error),
+        jobId: command.jobId, commandId: command.id, success: false, error: String(error.reason || error.message || error),
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [],
         activity: activity.concat([{ level: capacity || String(error.reason || error.message || error) === "bankboi_pending" ? "info" : "error",
