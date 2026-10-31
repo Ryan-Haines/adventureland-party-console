@@ -15,7 +15,7 @@ on:
         options: [console, live, debug, all]
         default: all
       local_grep:
-        description: 'Optional local title filter; clear to run the complete selected project'
+        description: 'Optional title filter: selected local project or focused hosted ChronAL gameplay'
         type: string
         default: ''
 permissions:
@@ -41,7 +41,7 @@ jobs:
       - run: npm --prefix .caracal ci
       - run: npm run typecheck
   validate:
-    if: github.event_name != 'pull_request' && !inputs.self_hosted
+    if: github.event_name != 'pull_request' && !inputs.self_hosted && !inputs.local_grep
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -90,7 +90,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
+        shard: ${{ fromJSON(inputs.local_grep != '' && inputs.local_grep != null && '[1]' || '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -108,7 +108,14 @@ jobs:
           path: .build/sim/chronal
           key: simulation-${{ runner.os }}-node24-${{ hashFiles('tools/sim/pins.json', 'package-lock.json') }}
       - name: Complete ChronAL gameplay allocation
-        run: npm run test:e2e:live -- --workers=1 --shard=${{ matrix.shard }}/16
+        env:
+          E2E_GREP: ${{ inputs.local_grep }}
+        run: |
+          if [ -n "$E2E_GREP" ]; then
+            npm run test:e2e:live -- --workers=1 --grep "$E2E_GREP"
+          else
+            npm run test:e2e:live -- --workers=1 --shard=${{ matrix.shard }}/16
+          fi
       - name: Verify gameplay evidence
         if: always()
         run: npm run test:e2e:verify
