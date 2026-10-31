@@ -29,10 +29,12 @@ test('merchant capacity sells before higher priority upgrades when only the luck
         !s.characters[merchant]?.items.some((entry:any)=>entry?.item?.name==='coat');
     },{timeout:240_000}).toBe(true);
     const events=await live.clients[merchant].events(),after=await live.state();
-    expect(events.filter((e:any)=>e.event==='game_response'&&['upgrade_success','upgrade_fail'].includes(e.data?.response))).toHaveLength(1);
-    const dispatches=after.merchantActivity.filter((e:any)=>/Merchant dispatched/.test(e.message));
-    const sale=dispatches.findIndex((e:any)=>/sell.*NPC/.test(e.message));
-    const upgrade=dispatches.findIndex((e:any)=>/automatic upgrades/.test(e.message));
+    const upgrades=events.filter((e:any)=>e.event==='game_response'&&['upgrade_success','upgrade_fail'].includes(e.data?.response));
+    const sales=events.filter((e:any)=>e.event==='game_response'&&e.data?.place==='sell'&&e.data?.item?.name==='coat'&&e.data?.success);
+    expect(upgrades).toHaveLength(1);expect(sales).toHaveLength(1);
+    expect(sales[0].data.gold).toBeGreaterThan(0);expect(sales[0].sequence).toBeLessThan(upgrades[0].sequence);
+    const sale=after.merchantActivity.findIndex((e:any)=>/^Sold 1 × coat to NPC for [\d,]+ gold$/.test(e.message));
+    const upgrade=after.merchantActivity.findIndex((e:any)=>e.message==='Merchant dispatched for automatic upgrades');
     expect(sale).toBeGreaterThanOrEqual(0);expect(upgrade).toBeGreaterThan(sale);
     expect(after.merchantActivity.filter((e:any)=>/no spare slot|cant_space|inventory_full|Couldn't use lucky slot/.test(JSON.stringify(e)))).toHaveLength(0);
   }finally{
