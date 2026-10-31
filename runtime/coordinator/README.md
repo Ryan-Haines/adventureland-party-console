@@ -2410,3 +2410,19 @@ Older candidates fall back to the updater label, which refreshes checkout metada
 while running. Validate `console-build-release-menu`, `console-build-version-label`,
 and `console-build-artifact-header`, plus the existing deployment menu journey.
 Build and stage the completed candidate; activation remains explicit.
+
+## Exchange inventory capacity
+
+Exchange consumption checkpoints precede each capacity bank trip. A bulk input
+needs an empty native split cell; a complete one-exchange stack can consume its
+own cell. Route all unlocked, unblocked matching reward copies through fresh
+reward rules and craft/delivery protection, retaining outstanding input stock.
+Only a definitely rejected split can retry once after banking; uncertain exchange
+receipts must not be replayed. A bank or inventory capacity failure preserves
+the unfinished exchange behind the ordinary resource signature block, allowing
+other merchant work and resuming after resources change.
+Validate live-exchange-capacity on ChronAL, plus merged/default/chained exchange
+reward routing. The manual release workflow's local_grep input also selects one
+focused hosted ChronAL allocation without console validation or publication;
+blank retains the existing complete manual run. Stage a completed immutable
+candidate; activation remains explicitly requested.

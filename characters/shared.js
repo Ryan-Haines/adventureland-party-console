@@ -8343,19 +8343,71 @@
       });
       return npc;
     }
-    async function splitExact(slot, quantity) {
+    async function splitExact(slot, quantity, remaining) {
       var item = character.items[slot], available = itemQuantity(item);
       if (available <= quantity) return slot;
       var before = character.items.map(function (entry) { return JSON.stringify(fingerprint(entry)); });
-      await split(slot, quantity);
-      await new Promise(function (resolve) { setTimeout(resolve, 250); });
-      var result = character.items.findIndex(function (entry, index) {
-        return index !== slot && before[index] !== JSON.stringify(fingerprint(entry)) &&
-          sameItem(entry, item) && itemQuantity(entry) === quantity;
-      });
-      if (result < 0) throw new Error("Could not split exchange quantity for " + item.name);
-      return result;
+      try { await split(slot, quantity); }
+      catch (error) {
+        // Native split rejects before consuming anything. One capacity recovery
+        // is safe here; an uncertain exchange receipt is never replayed.
+        if (!/^(cant_space|inventory_full|no_space)$/.test(String(error.reason || error.message || error))) throw error;
+        await bankExchangeRewards(remaining);
+        if (!freeInventorySlots()) throw new Error('inventory_full');
+        slot = exchangeSlot(item.name, Number(item.level) || 0, quantity);
+        if (slot < 0) throw new Error('Exchange stack changed for ' + item.name);
+        item = character.items[slot];
+        if (itemQuantity(item) <= quantity) return slot;
+        before = character.items.map(function (entry) { return JSON.stringify(fingerprint(entry)); });
+        await split(slot, quantity);
+      }
+      var deadline = Date.now() + 2500;
+      while (true) {
+        var result = character.items.findIndex(function (entry, index) {
+          return index !== slot && before[index] !== JSON.stringify(fingerprint(entry)) &&
+            sameItem(entry, item) && itemQuantity(entry) === quantity;
+        });
+        if (result >= 0) return result;
+        if (Date.now() >= deadline) throw new Error('Could not split exchange quantity for ' + item.name);
+        await sleep(50);
+      }
     }
+    function exchangeSlot(id, level, required) {
+      return character.items.findIndex(function (item) {
+        return item && item.name === id && (Number(item.level) || 0) === level && !item.l && !item.b && itemQuantity(item) >= required;
+      });
+    }
+    function remainingLines(lineIndex, consumed) {
+      return lines.slice(lineIndex).map(function (line, index) {
+        return {id:line.id,level:line.level,...(line.reward ? {reward:line.reward} : {}),quantity:line.quantity-(index===0?consumed:0)};
+      }).filter(function (line) { return line.quantity > 0; });
+    }
+    async function bankExchangeRewards(remaining) {
+      // Persist unfinished consumption before movement; recovery resumes this
+      // order rather than discovering a new automatic order from its leftovers.
+      await request('/merchant/exchange-progress',{method:'POST',body:{jobId:command.jobId,remaining:remaining,rewards:rewards}});
+      await merchantVisitBank(command, activity);
+      var routing = await request('/merchant/exchange-progress',{method:'POST',body:{jobId:command.jobId,remaining:remaining,rewards:rewards}});
+      var actions = routing.rewardActions || [], banked = 0;
+      for (var rewardIndex=0;rewardIndex<rewards.length;rewardIndex+=1) {
+        if (!actions[rewardIndex] || actions[rewardIndex].action !== 'bank') continue;
+        // A reward may share the input identity. Never deposit remaining inputs.
+        if (remaining.some(function (line) { return rewards[rewardIndex].name===line.id && (Number(rewards[rewardIndex].level)||0)===(Number(line.level)||0); })) continue;
+        for (var slot=0;slot<character.items.length;slot+=1) {
+          var item=character.items[slot];
+          if (!item || item.l || item.b || !sameItem(item,rewards[rewardIndex])) continue;
+          var checkpoint=await request('/merchant/checkpoint',{method:'POST',body:{jobId:command.jobId,commandId:command.id,protectionOnly:true}});
+          if (!checkpoint?.craftProtection || checkpoint.craftProtection.error) throw Error('Craft reservations unavailable; exchange banking deferred');
+          var stock=character.items.map(function (entry,index) { return entry ? {item:entry,slot:index,craftLocation:'inventory:'+character.name} : null; });
+          var available=globalThis.partyAvailableCraftStock(stock,checkpoint.craftProtection);
+          if (!available[slot] || itemQuantity(available[slot].item)<itemQuantity(item)) continue;
+          await bankStoreFully(slot);banked+=1;
+        }
+      }
+      activity.push({level:'info',message:remaining.length?'Banked exchange rewards to free inventory':'Exchange rewards routed through merchant rules',details:{banked:banked,actions:actions,remaining:remaining}});
+      return banked;
+    }
+
     function exactInventoryQuantity(itemId, level) {
       return character.items.reduce(function (sum, item) {
         return sum + (item && item.name === itemId && (Number(item.level) || 0) === (Number(level) || 0)
@@ -8419,10 +8471,14 @@
           // Long jobs must also compress stock received after admission.
           await compressMerchantInventory(command);
           if (bankStacks && bankStacks.pending()) await bankStacks.recover();
-          var slot = character.items.findIndex(function (item) {
-            return item && item.name === line.id && (Number(item.level) || 0) === (Number(line.level) || 0) &&
-              !item.l && itemQuantity(item) >= required;
-          });
+          var slot = exchangeSlot(line.id,Number(line.level)||0,required);
+          if (slot < 0) throw new Error('Exchange stack changed for ' + line.id);
+          if (!freeInventorySlots() && (line.reward || itemQuantity(character.items[slot])>required)) {
+            await bankExchangeRewards(remainingLines(lineIndex,count));
+            if (!freeInventorySlots()) throw new Error('inventory_full');
+            await smart_move(find_npc(line.reward ? itemDefinition.npc || line.id + 's' : exchangeNpc(line.id)));
+          }
+          slot = exchangeSlot(line.id,Number(line.level)||0,required);
           if (slot < 0) throw new Error("Exchange stack changed for " + line.id);
           var result, held = character.items.map(fingerprint);
           if (line.reward) {
@@ -8432,7 +8488,10 @@
             parent.socket.emit("exchange_buy", {num:slot, name:line.reward, q:character.items[slot].q});
             result = await purchase;
           } else {
-            slot = await splitExact(slot, required);
+            slot = await splitExact(slot, required, remainingLines(lineIndex,count));
+            held = character.items.map(fingerprint);
+            // A rejected split may have made a recovery bank visit.
+            if (['bank','bank_b','bank_u'].indexOf(character.map)>=0) await smart_move(find_npc(exchangeNpc(line.id)));
             await merchantMassBuff("massexchange");
             await verifyMerchantItemMarks();
             result = await exchange(slot);
@@ -8440,11 +8499,7 @@
           exchangeGains(held).forEach(function (gain) {
             if (!rewards.some(function (reward) { return sameItem(gain, reward); })) rewards.push(gain);
           });
-          var remaining = lines.slice(lineIndex).map(function (pendingLine, index) {
-            return { id: pendingLine.id, level: pendingLine.level,
-              ...(pendingLine.reward ? {reward:pendingLine.reward} : {}),
-              quantity: pendingLine.quantity - (index === 0 ? count + 1 : 0) };
-          }).filter(function (pendingLine) { return pendingLine.quantity > 0; });
+          var remaining = remainingLines(lineIndex,count+1);
           await request("/merchant/exchange-progress", { method: "POST", body: {
             jobId: command.jobId, remaining: remaining, rewards: rewards,
           }});
@@ -8452,37 +8507,20 @@
             (itemDefinition.name || line.id) + (line.reward ? " for " + line.reward : result && result.reward ? " and received " + result.reward : "") });
         }
       }
-      await merchantVisitBank(command, activity);
-      // Read current shared rules after the exchange and bank travel. A reward
-      // with a processing/sale rule stays carried for the normal merchant queue.
-      var routing = await request("/merchant/exchange-progress", { method: "POST", body: {
-        jobId: command.jobId, remaining: [], rewards: rewards,
-      }});
-      var rewardActions = routing.rewardActions || [];
-      var bankedRewards = 0;
-      for (var rewardIndex = 0; rewardIndex < rewards.length; rewardIndex += 1) {
-        var rewardSlot = findItem(rewards[rewardIndex]);
-        if (rewardSlot >= 0 && rewardActions[rewardIndex] && rewardActions[rewardIndex].action === "bank") {
-          await verifyMerchantItemMarks();
-          await bankStoreFully(rewardSlot);
-          bankedRewards += 1;
-        }
-      }
-      activity.push({ level: "success", message: "Exchange rewards routed through merchant rules", details: {
-        banked: bankedRewards, actions: rewardActions,
-      } });
+      await bankExchangeRewards([]);
       await request("/merchant/complete", { method: "POST", body: {
         jobId: command.jobId, success: true, autoExchangesResolved: command.autoExchangeKeys || [],
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [], activity: activity,
       }});
     } catch (error) {
+      var capacity = /^(cant_space|inventory_full|no_space|bank_full)$/.test(String(error.reason || error.message || error));
       try { await request("/merchant/complete", { method: "POST", body: {
         jobId: command.jobId, success: false, error: String(error.reason || error.message || error),
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [],
-        activity: activity.concat([{ level: String(error.reason || error.message || error) === "bankboi_pending" ? "info" : "error",
-          message: String(error.reason || error.message || error) === "bankboi_pending" ? "Exchange waiting for BankBoi materials" : "Exchange failed",
+        activity: activity.concat([{ level: capacity || String(error.reason || error.message || error) === "bankboi_pending" ? "info" : "error",
+          message: capacity ? "Exchange paused for inventory capacity" : String(error.reason || error.message || error) === "bankboi_pending" ? "Exchange waiting for BankBoi materials" : "Exchange failed",
           details: String(error.reason || error.message || error) }]),
       }}); } catch (_completeError) {}
       throw error;
