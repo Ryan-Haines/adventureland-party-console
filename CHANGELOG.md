@@ -4,6 +4,7 @@
 
 ### 1.6 (in development)
 
+- Manage auto-exchange rules in the merchant card, including item details, individual removal, and clear-all without needing carried stock. (#155)
 - Exchange orders bank eligible rewards when inventory fills, retain unfinished quantities across capacity blocks/restarts, and deposit every matching reward copy.
 - Combine release notifications and local build loading into one refresh menu, with direct release download/restart actions for managed installations.
 - Refresh the displayed release base and development branch while the console runs, instead of retaining the host's startup version label.
