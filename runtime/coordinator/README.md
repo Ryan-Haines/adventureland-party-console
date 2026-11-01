@@ -2413,6 +2413,14 @@ Build and stage the completed candidate; activation remains explicit.
 
 ## Exchange inventory capacity
 
+Manual upgrade requests may use an equivalent unfinished inventory copy after
+relocation. Each batch consumes a distinct copy per mark, retains the original
+target level, and excludes locked, blocked or differing stat/special variants.
+Automatic continuation and pending native receipt recovery retain their existing
+identity fences. Manual ambiguity blocks are in-memory and clear on ordinary
+candidate activation. Validate the displaced-identical manual batch journey in
+live-manual-upgrade, including unrelated gear, native scroll counts and restart.
+
 Merchant-owned upgrades and compounds require two empty cells at admission:
 the lucky cell and a separate layout buffer. Sales and bank deposits remain
 eligible regardless of that production reserve. Native journal recovery still

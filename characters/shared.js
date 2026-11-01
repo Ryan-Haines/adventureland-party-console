@@ -6136,10 +6136,24 @@
     var start = Number(mark.item.level) || 0;
     var target = Math.min(maximumItemLevel(G.items[mark.item.name]), start + (Number(mark.tiers) || 1));
     var slot = Number.isInteger(mark.liveSlot) ? mark.liveSlot : mark.slot, item = Number.isInteger(slot) && character.items[slot];
+    if (!mark.auto) {
+      // A manual request owns a quantity and target, not the physical copy's
+      // former cell. Equivalent unfinished copies can satisfy distinct marks.
+      // Preserve stat/special properties and never borrow protected stock.
+      function equivalent(candidate, index) {
+        return candidate && !used[index] && !candidate.l && !candidate.b &&
+          (Number(candidate.level) || 0) >= start && (Number(candidate.level) || 0) <= target &&
+          sameItemState(Object.assign({}, candidate, {level:start}), Object.assign({}, mark.item, {level:start}));
+      }
+      if (equivalent(item, slot)) return slot;
+      return character.items.findIndex(function (candidate, index) {
+        return equivalent(candidate, index) && (Number(candidate.level) || 0) < target;
+      });
+    }
     if (item && !used[slot] && (Number(item.level) || 0) >= start &&
         (Number(item.level) || 0) <= target &&
         sameItem(Object.assign({}, item, { level: mark.item.level }), mark.item)) return slot;
-    if (mark.auto && mark.passId || !mark.auto && mark.requestId) {
+    if (mark.passId) {
       var survivors = [];
       character.items.forEach(function (candidate, index) {
         if (!used[index] && candidate && (Number(candidate.level) || 0) >= start &&

@@ -4,6 +4,7 @@
 
 ### 1.6 (in development)
 
+- Resume displaced manual upgrades using interchangeable matching copies instead of blocking the whole batch when several identical items exist; preserve targets and protected variants.
 - Let merchant sales and banking free packed inventories before upgrades; check production space before starting and avoid unnecessary lucky-slot tidying in cleanup jobs.
 - Fence exchange checkpoints and completion by worker command so an interrupted pre-restart bank trip cannot fail or rewind a resumed order.
 - Manage auto-exchange rules in the merchant card, including item details, individual removal, and clear-all without needing carried stock. (#155)
