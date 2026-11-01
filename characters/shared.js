@@ -6145,10 +6145,11 @@
           (Number(candidate.level) || 0) >= start && (Number(candidate.level) || 0) <= target &&
           sameItemState(Object.assign({}, candidate, {level:start}), Object.assign({}, mark.item, {level:start}));
       }
-      if (equivalent(item, slot)) return slot;
-      return character.items.findIndex(function (candidate, index) {
+      if (equivalent(item, slot) && (Number(item.level) || 0) < target) return slot;
+      var unfinished = character.items.findIndex(function (candidate, index) {
         return equivalent(candidate, index) && (Number(candidate.level) || 0) < target;
       });
+      return unfinished >= 0 ? unfinished : equivalent(item, slot) ? slot : -1;
     }
     if (item && !used[slot] && (Number(item.level) || 0) >= start &&
         (Number(item.level) || 0) <= target &&
