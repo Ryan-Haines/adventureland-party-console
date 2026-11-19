@@ -9,6 +9,8 @@ for (const legacy of [false, true]) test(`installer replaces ${legacy ? 'legacy 
   const root = path.resolve(__dirname, '../..');
   const fixtureRoot = path.join(root, '.build');
   const target = await fs.mkdtemp(path.join(fixtureRoot, 'coordinator-installer-test-'));
+  // The row removes its install target, as the upgrade-runner row below does.
+  try {
   const files = ['src/CharacterThread.js', 'standalones/CharacterCoordinator.js', 'game_files.js','src/ConfigUtil.js'];
   const originals = new Map();
   for (const file of files) {
@@ -30,7 +32,7 @@ for (const legacy of [false, true]) test(`installer replaces ${legacy ? 'legacy 
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.equal(await fs.readFile(path.join(target, files[1]), 'utf8'), expected);
     assert.equal(await fs.readFile(path.join(target, 'game_files.js'), 'utf8'),
-      'module.exports = require(process.env.AL_CONSOLE_ARTIFACT ? require("node:path").join(process.env.AL_CONSOLE_ARTIFACT, "scripts/client-files.cjs") : "../scripts/client-files.cjs");\n');
+      'module.exports = require(process.env.AL_CONSOLE_ARTIFACT ? require("node:path").join(process.env.AL_CONSOLE_ARTIFACT, "runtime/lifecycle/coordinator/client-files.cjs") : "../runtime/lifecycle/coordinator/client-files.cjs");\n');
     const thread = await fs.readFile(path.join(target, files[0]), 'utf8');
     const storage = new Map(), session = new Map();
     const context = {JSDOM:require('../../.caracal/node_modules/jsdom').JSDOM,
@@ -68,4 +70,33 @@ for (const legacy of [false, true]) test(`installer replaces ${legacy ? 'legacy 
     assert.equal(await fs.readFile(path.join(root, '.caracal', file), 'utf8'), originals.get(file),
       'isolated installation must not change the live caracAL checkout');
   }
+  } finally { await fs.rm(target, {recursive: true, force: true}); }
+});
+
+// The runner transform (tools/caracal/upgrade-runner.mts) on caracAL's own runner at the revision
+// setup.mts pins, read from the caracAL checkout's history, so every anchor the transform replaces
+// is checked against that revision, not against a working tree an earlier install already
+// transformed.
+test('upgrade-runner transforms the pinned caracAL runner, and a second run leaves it as it is', async () => {
+  const root = path.resolve(__dirname, '../..');
+  const revision = (await fs.readFile(path.join(root, 'tools/caracal/setup.mts'), 'utf8')).match(/const revision = "([0-9a-f]{40})"/)[1];
+  const pinned = spawnSync('git', ['-C', path.join(root, '.caracal'), 'show', revision + ':src/CharacterThread.js'], {encoding: 'utf8', windowsHide: true});
+  assert.equal(pinned.status, 0, pinned.stderr);
+  await fs.mkdir(path.join(root, '.build'), {recursive: true});
+  const target = await fs.mkdtemp(path.join(root, '.build', 'upgrade-runner-test-'));
+  try {
+    const file = path.join(target, 'src/CharacterThread.js');
+    await fs.mkdir(path.dirname(file), {recursive: true});
+    await fs.writeFile(file, pinned.stdout);
+    const upgrade = () => spawnSync(process.execPath, ['tools/caracal/upgrade-runner.mts', target], {cwd: root, encoding: 'utf8', windowsHide: true});
+    let result = upgrade();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const once = await fs.readFile(file, 'utf8');
+    assert.match(once, /createRunnerHost/);
+    assert.match(once, /installGameLogEcho/);
+    assert.doesNotMatch(once, /make_runner/, "the runner host replaces caracAL's make_runner");
+    result = upgrade();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(await fs.readFile(file, 'utf8'), once, 'a second run changes nothing');
+  } finally { await fs.rm(target, {recursive: true, force: true}); }
 });

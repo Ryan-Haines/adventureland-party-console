@@ -1,13 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Access } from "./access.ts";
 import { body, json, text } from "./http.ts";
-import { steamBootstrap } from "../../runtime/steam/connection.ts";
-import { validBrowser } from "./authorize.ts";
+import { steamBootstrap } from "../../runtime/lifecycle/roster/connection.ts";
 import { setupAddress } from "./address.ts";
 import type { LocalTLS } from './tls.ts';
 import { trustHelper } from './trust.ts';
 import { requestOrigin } from './request-origin.ts';
 import { transfer } from './setup-transfer.ts';
+import { bareOrigin, partyCookie, publicPort } from './defaults.ts';
 export interface Options {
   builds?: { route(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> };
   code?:{route(req:IncomingMessage,res:ServerResponse,pathname:string):Promise<boolean>};
@@ -19,6 +19,8 @@ export interface Options {
   access: Access;
   configured(): boolean;
   healthy?(): Promise<boolean>;
+  /** The coordinator's failed start, which /health serves for the updater. */
+  startFailed?(): Promise<string | null>;
   configure?(session: string, realm: string): Promise<void>;
   dashboardPort: number;
   apiPort?: number;
@@ -27,16 +29,7 @@ export interface Options {
 export const loaderCode = steamBootstrap;
 async function steamLoader(options: Options, input: Record<string, unknown>) {
   if (options.steam && input.placement !== undefined) await options.steam.preferences.save(input);
-  const address = new URL(text(input.origin));
-  if (
-    !["http:", "https:"].includes(address.protocol) ||
-    address.username ||
-    address.password ||
-    address.pathname !== "/" ||
-    address.search ||
-    address.hash
-  )
-    throw new Error("Enter the server origin, without a path");
+  const address = bareOrigin(text(input.origin), "Enter the server origin, without a path");
   const suffix = options.access.required ? "/bridge/" + await options.access.steam() : "";
   return { code: loaderCode(address.origin + suffix) };
 }
@@ -48,19 +41,15 @@ export async function pair(req: IncomingMessage, res: ServerResponse, options: O
   browserCookie(req, res, credential);
   json(res, 200, { ok: true });
 }
+// The cookie is Secure only for an HTTPS requesting origin: LAN HTTP works beside a public HTTPS URL.
 function browserCookie(req: IncomingMessage, res: ServerResponse, credential: string) {
-  // Use the validated requesting origin: LAN HTTP must still work alongside a public HTTPS URL.
-  const secure = req.headers.origin?.startsWith("https:") ? "; Secure" : "";
-  res.setHeader(
-    "Set-Cookie",
-    `party=${credential}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000${secure}`,
-  );
+  partyCookie(res, credential, !!req.headers.origin?.startsWith("https:"));
 }
 async function setupState(req: IncomingMessage, options: Options) {
   const secure = options.tls?.trusted(req);
   const origin = options.publicUrl || (secure ? requestOrigin(req, options) : undefined);
-  const tls = options.tls ? { tls: await options.tls.status(), secure, httpPort: Number(process.env.AL_HTTP_PUBLIC_PORT || process.env.AL_PORT || 3010) } : {};
-  return { configured: options.configured(), requirePairing: options.access.required, ...(options.access.required && validBrowser(req, options) ? { accessCodeExpiresAt: options.access.accessCodeExpiry } : {}), canConfigureAccount: !!options.configure, serverAddress: setupAddress(req, origin), steamPreferences: await options.steam?.preferences.read(), ...await options.realms, ...tls };
+  const tls = options.tls ? { tls: await options.tls.status(), secure, httpPort: Number(process.env.AL_HTTP_PUBLIC_PORT || publicPort()) } : {};
+  return { configured: options.configured(), requirePairing: options.access.required, ...(options.access.required ? { accessCodeExpiresAt: options.access.accessCodeExpiry } : {}), canConfigureAccount: !!options.configure, serverAddress: setupAddress(req, origin), steamPreferences: await options.steam?.preferences.read(), ...await options.realms, ...tls };
 }
 async function readSetup(
   req: IncomingMessage,
@@ -83,6 +72,7 @@ async function readSetup(
   }
   return false;
 }
+// authorize.ts authorizeBrowser is the one pairing gate: an unpaired browser never reaches setupRoute.
 export async function setupRoute(req: IncomingMessage, res: ServerResponse, pathname: string, options: Options) {
   if (await readSetup(req, res, pathname, options)) return;
   if (req.method !== "POST") {
@@ -90,9 +80,6 @@ export async function setupRoute(req: IncomingMessage, res: ServerResponse, path
     return;
   }
   const input = await body(req);
-  if (options.access.required && !validBrowser(req, options)) {
-    json(res, 401, { error: "Pair this browser before changing setup" }); return;
-  }
   const handlers: Record<string, () => Promise<unknown>> = {
     '/setup/client': async () => {
       if (!options.steam) throw Error('Local Steam launcher is unavailable.');

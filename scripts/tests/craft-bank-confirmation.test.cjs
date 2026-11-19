@@ -1,9 +1,10 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createMerchantOrderRoute}=require('../../runtime/coordinator/http/merchant-order.ts');
+const {createMerchantOrderRoute}=require('../../runtime/items/coordinator/routes/production.ts');
 function fixture(){
  const state={merchantCharacter:'M',merchantCatalog:{buyable:[{id:'fur'}],craftable:[{id:'orb',materials:[{id:'fur',quantity:2,level:0}]}]},statuses:{M:{items:[]}},bankSnapshot:null,merchantCurrent:null,merchantQueue:[],
  autoItemMarks:{M:{fur:'bank','fur@+0':'bank','fur@+1':'bank','orb@+0':'bank'},P:{fur:'bank'}},marked:{M:[{auto:true,item:{name:'fur'}},{auto:false,item:{name:'fur'}}]}};
- const effects=[];const route=createMerchantOrderRoute(state,{now:()=>1,nextCommand:()=>1,activeNames:()=>['M'],log(){},persist(){effects.push('persist')},dispatch(){effects.push('dispatch')}});
+ const effects=[];const route=createMerchantOrderRoute(state,withDoor(state,{now:()=>1,nextCommand:()=>1,activeNames:()=>['M'],log(){},persist(){effects.push('persist')},dispatch(){effects.push('dispatch')}}));
  const post=async(confirmed=false)=>{const r={status(n){this.code=n;return this},json(body){this.body=body;return this}};await route.handle({body:{crafts:[{id:'orb',quantity:1}],removeAutoBankMark:confirmed}},r);return r};return {state,effects,post};
 }
 test('crafting keeps automatic bank rules and concrete marks, including requests from older clients',async()=>{

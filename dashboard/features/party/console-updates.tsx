@@ -1,37 +1,35 @@
 "use client";
 import { DebugInstanceSettings } from './debug-instance';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { hostAction } from './query-actions';
 import { Button } from '@/components/ui/button';
 import type { UpdateStatus } from '../../../tools/update/contracts';
-import { useHidden } from './query-cache';
+import { polls, useHidden } from './query-cache';
 
 const colors = 'border border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white';
+// One query serves the header's indicator and the settings section, at the status owner's `dashboardPolls`
+// updates row. A hidden tab stops polling, and a tab that becomes visible reads at once.
 export function useUpdates() {
-  const [state, setState] = useState<UpdateStatus | null>(null), [error, setError] = useState('');
-  // The status only refreshes this view. A hidden tab stops polling, and a
-  // tab that becomes visible reads at once.
+  // An action's refusal shows until the next action, or until the next status read answers, as
+  // b9b5c91e's refresh cleared it.
+  const [actionError, setError] = useState({ message: '', at: 0 });
   const hidden = useHidden();
-  useEffect(() => {
-    if (hidden) return;
-    let alive = true;
-    const refresh = async () => {
-      try {
-        const response = await fetch('/console-update');
-        if (!response.ok) throw new Error('Update service is starting or unavailable.');
-        const value = await response.json() as UpdateStatus;
-        if (alive) { setState(value); setError(''); }
-      } catch (e) { if (alive) setError((e as Error).message); }
-    };
-    void refresh(); const timer = setInterval(() => void refresh(), 3000);
-    return () => { alive = false; clearInterval(timer); };
-  }, [hidden]);
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: ['console-update'],
+    queryFn: async ({ signal }) => await hostAction<UpdateStatus>(client, '/console-update', {}, { method: 'GET', signal }),
+    enabled: !hidden,
+    refetchInterval: polls.updates!.interval,
+    retry: false,
+  });
+  const shownAction = actionError.at > query.dataUpdatedAt ? actionError.message : '';
+  const state = query.data ?? null, error = shownAction || (query.isError ? 'Update service is starting or unavailable.' : '');
   async function action(name: string, value = {}) {
     try {
-      setError('');
-      const response = await fetch(`/console-update/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
-      const reply = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(reply.error || 'Update request failed');
-    } catch (e) { setError((e as Error).message); }
+      setError({ message: '', at: 0 });
+      await hostAction(client, `/console-update/${name}`, value);
+    } catch (e) { setError({ message: (e as Error).message, at: Date.now() }); }
   }
   return { state, error, action };
 }
@@ -40,17 +38,25 @@ export function ConsoleUpdateIndicator({ open }: { open(): void }) {
   if (!state?.available) return null;
   return <button type="button" title="New version available" aria-label="New version available" onClick={() => {
     open();
-    let attempts = 0;
-    const timer = setInterval(() => {
-      const target = document.getElementById('console-updates');
-      if (target || ++attempts > 20) { clearInterval(timer); target?.scrollIntoView({ behavior: 'smooth', block: 'end' }); target?.focus({ preventScroll: true }); }
-    }, 50);
+    // The settings dialog mounts the updates section after this press; it scrolls into view the moment
+    // it exists, and the dialog closing first ends the wait.
+    const show = (target: HTMLElement) => { target.scrollIntoView({ behavior: 'smooth', block: 'end' }); target.focus({ preventScroll: true }); };
+    const mounted = document.getElementById('console-updates');
+    if (mounted) return show(mounted);
+    let opened = false;
+    const watch = new MutationObserver(() => {
+      const target = document.getElementById('console-updates'), dialog = !!document.querySelector('[role="dialog"]');
+      if (target) { watch.disconnect(); show(target); }
+      else if (opened && !dialog) watch.disconnect();
+      opened ||= dialog;
+    });
+    watch.observe(document.body, { childList: true, subtree: true });
   }} className="ml-3 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-emerald-300 bg-emerald-700 text-base font-bold text-white hover:bg-emerald-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-200">!</button>;
 }
 export function ConsoleUpdateSettings() {
   const { state, error, action } = useUpdates();
   const busy = !!state && ['checking', 'downloading', 'restarting'].includes(state.phase);
-  return <section id="console-updates" tabIndex={-1} className="space-y-3 rounded border border-slate-600 bg-slate-950 p-4 text-sm text-slate-100">
+  return <section data-area="console-updates" id="console-updates" tabIndex={-1} className="space-y-3 rounded border border-slate-600 bg-slate-950 p-4 text-sm text-slate-100">
     <h3 className="font-semibold">Adventureland Party Console</h3>
     <p>Installed version: <span className="font-mono">{state?.current || 'Checking…'}</span></p>
     {state?.available && <p className="text-emerald-200">New release available: {state.available} {state.notes && <a href={state.notes} target="_blank" rel="noreferrer" className="underline">Release notes</a>}</p>}

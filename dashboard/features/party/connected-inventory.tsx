@@ -1,20 +1,19 @@
 'use client';
+import { aggregateSlotTracking, commerceRuleKey, defaultStandPrice, luckySlotAnswer } from '../../../runtime/items/api.ts';
 import { UpgradeOfferingProvider } from './upgrade-offering-controls';
 import { SharedRuleConflicts } from './shared-rule-conflicts';
-import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
 import { InventoryPanel } from './inventory-panel';
-import { aggregateSlotTracking } from '../../../runtime/lucky-slot-tracking';
+import { standDraft, standIsFull } from './stand-capacity';
 import { LuckySlotDialog } from './lucky-slot-tracker';
-import { same } from './same';
 import type { InventoryModel } from './character-card-model';
 import type { InventoryEntry } from './inventory-entry';
 import type { Item } from './item';
 
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { DeconstructionConfirmation, type DeconstructionSelection } from './deconstruction-confirmation';
-import { committedLiveRecord } from './live-metrics';
 import { usePanelModel } from './use-panel-model';
 import { emptyArray, emptyRecord } from './empty-values';
+// A stand listing's starting price: the item's catalog gold value, at least 1.
 export const ConnectedInventory = memo(function ConnectedInventory({
   name,
   model: base,
@@ -41,11 +40,9 @@ export const ConnectedInventory = memo(function ConnectedInventory({
     setGearComparison,
     sendCharacter,
     post,
+    send,
   } = model;
   const char = state.characters[name];
-  useEffect(() => {
-    committedLiveRecord(name, 'inventory');
-  }, [name, char?.items, char?.slots]);
   const ruleName = state.merchantRules ? String(state.merchantCharacter) : name;
   const marked = state.marked[name] || emptyArray();
   const [deconstructionSelection, setDeconstructionSelection] = useState<DeconstructionSelection | null>(null);
@@ -54,6 +51,8 @@ export const ConnectedInventory = memo(function ConnectedInventory({
     () => aggregateSlotTracking(state.luckySlotTracking?.[name], char?.luckySlotTracking),
     [state.luckySlotTracking, name, char?.luckySlotTracking],
   );
+  const lucky = useMemo(() => luckySlotAnswer(state, name),
+    [state.luckySlotLocks?.[name], state.luckySlotResume?.[name], state.luckyUpgradeSlots?.[name], name]);
   const onLuckySlot = useCallback(() => setLuckySlotOpen(true), []);
   const deconstructionMarks = state.deconstructionMarks || emptyArray();
   const standListings = state.standListings || emptyArray();
@@ -61,37 +60,27 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   const onDeconstruction = useCallback(
     (entry: InventoryEntry, auto: boolean, remove: boolean, id?: string) => {
       if (!remove) { setDeconstructionSelection({ entry, auto }); return; }
-      void post(auto ? '/deconstruction/auto' : '/deconstruction/mark', {
+      send(auto ? '/deconstruction/auto' : '/deconstruction/mark', {
         character: id ? deconstructionMarks.find((mark) => mark.id === id)?.owner || name : name, slot: entry.slot, item: entry.item, remove, id,
       });
     },
-    [post, deconstructionMarks, name],
+    [send, deconstructionMarks, name],
   );
   const onRetryDeconstruction = useCallback(
-    (id: string) => void post('/deconstruction/mark', { character: deconstructionMarks.find((mark) => mark.id === id)?.owner || name, id, retry: true }),
-    [post, deconstructionMarks, name],
+    (id: string) => send('/deconstruction/mark', { character: deconstructionMarks.find((mark) => mark.id === id)?.owner || name, id, retry: true }),
+    [send, deconstructionMarks, name],
   );
   const onRemoveNpcSale = useCallback(
-    (id: string) => void post('/merchant/npc-sale', { character: npcSaleMarks.find((mark) => mark.id === id)?.character || name, id, remove: true }),
-    [post, npcSaleMarks, name],
+    (id: string) => send('/merchant/npc-sale', { character: npcSaleMarks.find((mark) => mark.id === id)?.character || name, id, remove: true }),
+    [send, npcSaleMarks, name],
   );
   const onStand = useCallback(
     (entry: InventoryEntry) => {
-      const existing = standListings.find(
-        (mark) => mark.slot === entry.slot && same(mark.item, entry.item),
-      );
-      if (!existing && standListings.length >= 16)
-        return setActionError('Merchant stand is full (16/16)');
-      const value = { defaultPrice: Math.max(1, Number(entry.meta?.definition.g) || 1) };
-      setStandItem({
-        entry,
-        defaultPrice: value.defaultPrice,
-        markAll: false,
-        price: String(existing?.price || value.defaultPrice),
-        quantity: String(existing?.quantity || entry.item.q || 1),
-      });
+      const press = standDraft({ standSlots: state.standSlots, standListings }, entry);
+      if ('refused' in press) return setActionError(press.refused);
+      setStandItem(press.draft);
     },
-    [standListings, setActionError, setStandItem],
+    [state.standSlots, standListings, setActionError, setStandItem],
   );
   const onNpcSale = useCallback(
     (entry: InventoryEntry) =>
@@ -102,7 +91,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
         quantity: String(entry.item.q || 1),
         acknowledged: false,
       }),
-    [name, state.merchantCharacter, setNpcSaleItem],
+    [name, state.merchantCharacter, state.merchantRules, setNpcSaleItem],
   );
   const onAutoNpcSale = useCallback(
     (entry: InventoryEntry) => setAutoNpcSaleItem({ ...entry,
@@ -111,14 +100,14 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   );
   const onAutoStand = useCallback(
     (entry: InventoryEntry) => {
-      const value = { defaultPrice: Math.max(1, Number(entry.meta?.definition.g) || 1) };
-      const existing = state.autoStandMarks?.[automaticCommerceRuleKey(entry.item)];
+      const price = defaultStandPrice(entry.meta?.definition);
+      const existing = state.autoStandMarks?.[commerceRuleKey(entry.item)];
       setStandItem({
         entry,
-        defaultPrice: value.defaultPrice,
+        defaultPrice: price,
         markAll: false,
         auto: true,
-        price: String(existing?.price || value.defaultPrice),
+        price: String(existing?.price || price),
         quantity: String(entry.item.q || 1),
       });
     },
@@ -127,17 +116,18 @@ export const ConnectedInventory = memo(function ConnectedInventory({
   const onClearAutomaticSales = useCallback(
     (kind: 'npc' | 'stand') => {
       if (kind === 'npc' && name !== state.merchantCharacter)
-        void post('/merchant/auto-npc-sale', { character: name, action: 'clear-all' });
+        send('/merchant/auto-npc-sale', { character: name, action: 'clear-all' });
       else void clearAutomaticSales(kind);
     },
-    [name, state.merchantCharacter, post, clearAutomaticSales],
+    [name, state.merchantCharacter, send, clearAutomaticSales],
   );
+  // A character's NPC rule removes for its owner: the rule's own name from the merchant's list.
   const onRemoveAutomaticSale = useCallback(
-    (kind: 'npc' | 'stand', item: Item) =>
-      kind === 'npc' && name !== state.merchantCharacter
-        ? void post('/merchant/auto-npc-sale', { character: name, item, action: 'remove' })
+    (kind: 'npc' | 'stand', item: Item, owner = name !== state.merchantCharacter ? name : undefined) =>
+      kind === 'npc' && owner
+        ? send('/merchant/auto-npc-sale', { character: owner, item, action: 'remove' })
         : void removeAutomaticSale(kind, item),
-    [name, state.merchantCharacter, post, removeAutomaticSale],
+    [name, state.merchantCharacter, send, removeAutomaticSale],
   );
   const onSelect = useCallback(
     (entry: InventoryEntry) =>
@@ -183,9 +173,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       leader={state.leader}
       merchant={state.merchantCharacter}
       merchantWeapon={state.merchantWeapon}
-      luckyUpgradeSlot={state.luckySlotLocks?.[name] ?? state.luckySlotResume?.[name]?.slot ?? state.luckyUpgradeSlots?.[name]}
-      luckySlotLocked={state.luckySlotLocks?.[name] != null}
-      luckySlotResuming={state.luckySlotLocks?.[name] == null && state.luckySlotResume?.[name] != null}
+      luckySlot={lucky}
       luckySlotTracking={luckyTracking}
       onLuckySlot={onLuckySlot}
       marked={marked}
@@ -195,7 +183,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       allAutoUpgradeMarks={state.autoUpgradeMarks || emptyRecord()}
       merchantDeliveries={state.merchantDeliveries || emptyRecord()}
       standListings={standListings}
-      standBids={state.standBids || emptyRecord()}
+      standFull={standIsFull(state)}
       autoNpcSales={state.autoNpcSales || emptyRecord()}
       npcSaleMarks={npcSaleMarks}
       deconstructionMarks={deconstructionMarks}
@@ -215,8 +203,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       onClearAutomaticSales={onClearAutomaticSales}
       onRemoveAutomaticSale={onRemoveAutomaticSale}
       onUpdateNpcReserve={(item, keep) => {
-        void post('/merchant/auto-npc-sale', { item, keep, action: 'set' })
-          .catch(error => model.setActionError(error instanceof Error ? error.message : 'Could not update NPC sale reserve'));
+        send('/merchant/auto-npc-sale', { item, keep, action: 'set' });
       }}
       upgradeMarks={state.upgrades?.[char.name] || emptyArray()}
       statScrollMarks={state.statScrolls?.[char.name] || emptyArray()}
@@ -234,9 +221,9 @@ export const ConnectedInventory = memo(function ConnectedInventory({
         onBatchError={setActionError}
         onTravel={onTravel}
     />
-    <LuckySlotDialog character={name} tracking={luckyTracking} verified={state.luckyUpgradeSlots?.[name]} lockedSlot={state.luckySlotLocks?.[name]} resumingSlot={state.luckySlotResume?.[name]?.slot} onLock={(slot) => { void post("/merchant/config", {character: name, slot, action: state.luckySlotLocks?.[name] != null ? "unlock-lucky-slot" : "lock-lucky-slot"}); }} open={luckySlotOpen} onOpenChange={setLuckySlotOpen} />
+    <LuckySlotDialog character={name} tracking={luckyTracking} lucky={lucky} onLock={(slot) => { send("/merchant/config", {character: name, slot, action: lucky.locked != null ? "unlock-lucky-slot" : "lock-lucky-slot"}); }} open={luckySlotOpen} onOpenChange={setLuckySlotOpen} />
     {char.name === state.merchantCharacter && (
-        <SharedRuleConflicts state={state} onResolve={(id, owner) => post("/merchant/rule-conflict", {id,owner})} />
+        <SharedRuleConflicts state={state} onResolve={(id, owner) => send("/merchant/rule-conflict", {id,owner})} />
       )}
     <DeconstructionConfirmation selection={deconstructionSelection} catalog={state.deconstructionCatalog || emptyRecord()}
       items={state.merchantCatalog?.allItems || emptyArray()} onClose={() => setDeconstructionSelection(null)}

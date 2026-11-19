@@ -3,10 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { withBuildLock, readJson } from './build-store.ts';
 import { gameStore, gameHistory, rememberCurrent, rollbackGame, resumeGame, cleanGame } from './game/history.ts';
 import { ConsoleBuildStore } from './console-build/store.ts';
+import { DEFAULT_PUBLIC_PORT, publicPort } from './hosting/defaults.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const [action = 'list', stream = 'console', id] = process.argv.slice(2).filter(argument => !argument.startsWith('--'));
-const port = Number(process.env.AL_DASHBOARD_PUBLIC_PORT || 3010);
+const port = Number(process.env.AL_DASHBOARD_PUBLIC_PORT || DEFAULT_PUBLIC_PORT);
 async function dashboard(body?: unknown) {
   const response = await fetch(`http://127.0.0.1:${port}/__dashboard/builds`, {
     method: body ? 'POST' : 'GET', headers: {'Content-Type': 'application/json', Origin: `http://127.0.0.1:${port}`},
@@ -41,7 +42,7 @@ async function consoleBuilds() {
     const selected = action === 'resume' ? refs.latest : id;
     if (!selected) throw new Error('Provide the full completed candidate ID from list');
     await store.verify(selected);
-    const origin = process.env.AL_CONSOLE_URL || `http://127.0.0.1:${Number(process.env.AL_PORT) || 3010}`;
+    const origin = process.env.AL_CONSOLE_URL || `http://127.0.0.1:${publicPort()}`;
     const credential = process.env.AL_CONSOLE_BROWSER_TOKEN;
     const response = await fetch(new URL('/console-build', origin), {
       method: 'POST', headers: {'Content-Type': 'application/json', Origin: origin, ...(credential ? {Cookie: `party=${credential}`} : {})},

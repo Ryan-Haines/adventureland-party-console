@@ -1,4 +1,4 @@
-const {createAnniversaryNavigationRoutes}=require('../../../runtime/coordinator/http/anniversary-navigation.ts');
+const {createAnniversaryNavigationRoutes}=require('../../../runtime/events/coordinator/routes.ts');
 function navigationRoutes(context){
  const {party,farmingNavigation:nav}=context;
  return createAnniversaryNavigationRoutes(party.anniversary,{

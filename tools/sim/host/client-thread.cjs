@@ -16,7 +16,9 @@ const { bootCharacter } = require("./character.cjs");
 const { clientTransport } = require("./transport.cjs");
 const { clockedLifecycle } = require("./clocked-require.cjs");
 
-process.on("unhandledRejection", () => {}); // browsers only log these
+// A browser logs an unhandled rejection and goes on; the thread does the same through `log` below,
+// which exists once this file's synchronous setup ends and before Node reports any rejection.
+process.on("unhandledRejection", (reason) => log("error", `[sim client] unhandled rejection: ${reason?.stack || reason}`));
 for (const [k, fd] of [
   ["log", 1],
   ["info", 1],

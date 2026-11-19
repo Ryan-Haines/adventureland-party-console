@@ -73,3 +73,33 @@ test('map consumers share reads, release closed observers, pause hidden tabs and
     if (tree) await act(async () => tree.unmount()); client.clear(); global.document = previousDocument; global.fetch = previousFetch;
   }
 });
+
+// 12-3 cause 3: a failed reference read reruns on the next core answer, once; a second failure
+// under the same reference revision waits for the revision to change.
+test('a failed reference read retries on the next core answer and then waits', async () => {
+  const { useQuery } = dashboardRequire('@tanstack/react-query');
+  const { useReferenceRetry, key } = load('query-cache.tsx');
+  const client = createDashboardClient();
+  let reads = 0, tree;
+  function Reader() {
+    const query = useQuery({ queryKey: ['party', 'reference', 'r1', 'map'], retry: false,
+      queryFn: async () => { reads++; throw new Error('not ready'); } });
+    useReferenceRetry(query);
+    return null;
+  }
+  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+  try {
+    await act(async () => { tree = create(React.createElement(QueryClientProvider, { client }, React.createElement(Reader))); });
+    await settle();
+    assert.equal(reads, 1);
+    await act(async () => { client.setQueryData(key('core'), { referenceRevision: 'r1' }); });
+    await settle();
+    assert.equal(reads, 2, 'the core answer reruns the failed read');
+    await act(async () => { client.setQueryData(key('core'), { referenceRevision: 'r1', at: 2 }); });
+    await settle();
+    assert.equal(reads, 2, 'a second failure waits for the revision');
+  } finally {
+    await act(async () => tree?.unmount());
+    client.clear();
+  }
+});

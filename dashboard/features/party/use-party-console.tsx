@@ -1,35 +1,31 @@
 "use client";
-import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
+import { ALDATA_AUTH_MAIL, commerceRuleKey, itemValue, pontyPrice } from '../../../runtime/items/api.ts';
 import type { WTBOptions } from "./wtb-preferences";
-import { levelPriceHistory } from "./level-price-history";
-import { orderCharacters } from "./character-order";
+import { orderCharacters } from "../../../runtime/lifecycle/api.ts";
 import { aggregateMonsterAchievements } from "./monster-achievements";
 import { canRouteToMonster, FOLLOWER_ROUTE_MESSAGE } from "@/lib/party-routing";
-import { type FarmingArea } from "@/lib/farming-areas";
+import { type FarmingArea } from "../../../runtime/hunting/api.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ALDataBuyOrder } from "./aldata-buy-order";
 import { ALDataListing } from "./aldata-listing";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { useDomain, domainOptions, key, read, useVisible } from "./query-cache";
-import { usePartyAction, type ActionPath } from "./query-actions";
-import { API } from "./api";
+import { useDomain, domainOptions, key, polls, read, useVisible } from "./query-cache";
+import { characterNameAllowed } from "../../../runtime/lifecycle/api.ts";
+import { PartyActionError, performAction, usePartyAction, type ActionPath } from "./query-actions";
 import { BestiaryMonster } from "./bestiary-monster";
 import { Char } from "./char";
 import { Condition } from "./condition";
-import { FarmingPolicy } from "./farming-policy";
+import type { SlotChoice } from "./farming-mode-control";
 import { InventoryEntry } from "./inventory-entry";
 import { Item } from "./item";
 import { ItemMeta } from "./item-meta";
 import { Location } from "./location";
 import { ModelContext } from "./model-context";
-import { npcSaleValue } from "./npc-sale-value";
 import { PartyState } from "./party-state";
 import { PontyListing } from "./ponty-listing";
-import { pontyPrice } from "./ponty-price";
 import { RestockPolicy } from "./restock-policy";
 import { SelectedItem } from "./selected-item";
 import { StandListing } from "./stand-listing";
-import { STAT_SCROLLS } from "./stat-scrolls";
 import { auditedCharacters } from "./field-read-audit";
 import { joinItemMeta } from "./item-catalog-meta";
 
@@ -83,6 +79,8 @@ export function usePartyConsole() {
     [wtbItem, setWtbItem] = useState<{
       item: Item;
       meta?: ItemMeta | null;
+      // The price of the listing the request came from, which the dialog opens with.
+      price?: number;
     } | null>(null),
     [standItem, setStandItemState] = useState<{
       id?: string;
@@ -121,9 +119,14 @@ export function usePartyConsole() {
     [creating, setCreating] = useState(false),
     [actionError, setActionError] = useState<string | null>(null);
   const [realmError, setRealmError] = useState<string | null>(null);
-  const setRealmDestination: typeof setRealmDestinationState = (value) => { setRealmError(null); setRealmDestinationState(value); };
+  // A destination on your realm blacklist answers `needsConfirmation`; the dialog shows the
+  // coordinator's words and a box you tick, and the order goes again with `confirm: true`.
+  const [realmBlacklisted, setRealmBlacklisted] = useState<string | null>(null),
+    [realmBlacklistConfirmed, setRealmBlacklistConfirmed] = useState(false);
+  const clearRealm = () => { setRealmError(null); setRealmBlacklisted(null); setRealmBlacklistConfirmed(false); };
+  const setRealmDestination: typeof setRealmDestinationState = (value) => { clearRealm(); setRealmDestinationState(value); };
   const setRealmSetHome: typeof setRealmSetHomeState = (value) => { setRealmError(null); setRealmSetHomeState(value); };
-  const setRealmConfirmOpen: typeof setRealmConfirmOpenState = (value) => { setRealmError(null); setRealmConfirmOpenState(value); };
+  const setRealmConfirmOpen: typeof setRealmConfirmOpenState = (value) => { clearRealm(); setRealmConfirmOpenState(value); };
   const [createError, setCreateError] = useState<string | null>(null);
   const setNewName: typeof setNewNameState = (value) => { setCreateError(null); setNewNameState(value); };
   const setNewClass: typeof setNewClassState = (value) => { setCreateError(null); setNewClassState(value); };
@@ -156,6 +159,11 @@ export function usePartyConsole() {
   const client = useQueryClient();
   const { mutateAsync } = usePartyAction();
   const post = useCallback((path: ActionPath, body: unknown) => mutateAsync({ path, body }), [mutateAsync]);
+  // A request whose caller reads no answer: its refusal shows in the shared action error, as issue #14
+  // shows every action's failure (a caller that awaits `post` shows its own).
+  const send = useCallback((path: ActionPath, body: unknown) => {
+    post(path, body).catch((error: unknown) => setActionError(error instanceof Error ? error.message : String(error)));
+  }, [post]);
   const coreQuery = useDomain("core");
   const configQuery = useDomain("config");
   const catalogQuery = useDomain("catalog");
@@ -186,8 +194,6 @@ export function usePartyConsole() {
   async function refreshMarket() {
     await client.invalidateQueries({ queryKey: key("market") });
   }
-  const connectionNotice = coreQuery.isError
-    ? "Reconnecting - showing last received data" : coreQuery.data ? "Live" : "Connecting...";
   const visible = useVisible();
   useQueries({ queries: [{
     queryKey: ['party', 'aldata-auth'], queryFn: async ({ signal }: { signal: AbortSignal }) => {
@@ -196,17 +202,16 @@ export function usePartyConsole() {
       if (result.auth === 'CORRECT') setALDataAuthPending(false);
       return result;
     },
-    enabled: visible, refetchInterval: 15000, staleTime: 0, gcTime: 60000,
+    enabled: visible, refetchInterval: polls.aldataAuth!.interval, staleTime: 0, gcTime: polls.aldataAuth!.gc,
   }].filter(() => aldataAuthPending) });
   async function aldataAction(action: "generate" | "reveal" | "send" | "check" | "refresh") {
     setALDataBusy(true);
     setActionError(null);
     try {
       if (action === "send") {
-        const response = await fetch(`${API}/aldata/key`);
-        const result = await response.json() as { key?: string };
-        if (!response.ok || !result.key) throw new Error("Generate an ALData key first");
-        setMailDraft({ recipient: "earthiverse", subject: "aldata_auth", message: result.key });
+        const result = await performAction<{ key?: string }>(client, "/aldata/key", null, { method: "GET" });
+        if (!result.key) throw new Error("Generate an ALData key first");
+        setMailDraft({ ...ALDATA_AUTH_MAIL, message: result.key });
         setSettingsOpen(false); setMailOpen(true);
         return;
       }
@@ -217,13 +222,9 @@ export function usePartyConsole() {
               ? "/aldata/auth"
               : "/aldata/refresh";
       const method = action === "reveal" || action === "check" ? "GET" : "POST";
-      const response = await fetch(`${API}${endpoint}`, {
-        method,
-        headers: { "Content-Type": "application/json" },
+      const body = await performAction(client, endpoint, {}, { method }).catch((failure: unknown) => {
+        throw failure instanceof PartyActionError && failure.details.error ? failure : new Error("ALData request failed");
       });
-      const body = (await response.json()) as Record<string, unknown>;
-      if (!response.ok)
-        throw new Error(typeof body.error === "string" ? body.error : "ALData request failed");
       if (typeof body.key === "string") setALDataKey(body.key);
       if (action === "generate") setALDataKeyVisible(true);
       if (action === "check") {
@@ -240,6 +241,9 @@ export function usePartyConsole() {
       setALDataBusy(false);
     }
   }
+  // The agent tools register once per `post`; `execute` reads the characters current when it runs.
+  const toolCharacters = useRef(state.characters);
+  toolCharacters.current = state.characters;
   useEffect(() => {
     const context = (document as Document & { modelContext?: ModelContext }).modelContext;
     if (!context?.registerTool) return;
@@ -282,7 +286,7 @@ export function usePartyConsole() {
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute: async (input) => {
             const name = (input as { character?: unknown }).character;
-            if (typeof name !== "string" || !state.characters[name])
+            if (typeof name !== "string" || !toolCharacters.current[name])
               throw Error("Unknown character");
             await post("/command", { character: name, type: "bank" });
             return { character: name, queued: true };
@@ -292,7 +296,7 @@ export function usePartyConsole() {
       ),
     );
     return () => lifecycle.abort();
-  }, [state.characters, post]);
+  }, [post]);
   async function switchRealm() {
     setRealmError(null);
     if (!realmDestination) return;
@@ -301,10 +305,12 @@ export function usePartyConsole() {
       await post("/realm/switch", {
         realm: realmDestination,
         setHome: realmSetHome,
+        ...(realmBlacklistConfirmed ? { confirm: true } : {}),
       });
       setRealmConfirmOpen(false);
     } catch (error) {
-      setRealmError(error instanceof Error ? error.message : "Realm switch failed");
+      if (error instanceof PartyActionError && error.details.needsConfirmation === true) setRealmBlacklisted(error.message);
+      else setRealmError(error instanceof Error ? error.message : "Realm switch failed");
     } finally {
       setRealmBusy(false);
     }
@@ -359,8 +365,8 @@ export function usePartyConsole() {
   }
   async function createCharacter() {
     setCreateError(null);
-    if (!/^[A-Za-z0-9_]{4,12}$/.test(newName))
-      return setCreateError("Name must be 4-12 letters, numbers, or underscores");
+    if (!characterNameAllowed(newName))
+      return setCreateError("Name must be 4-12 letters, numbers, or underscores, not only numbers");
     setCreating(true);
     try {
       await post("/roster/create", {
@@ -463,26 +469,16 @@ export function usePartyConsole() {
       setActionError(error instanceof Error ? error.message : "Formation update failed");
     }
   }
-  async function setFarmingPolicy(mode: FarmingPolicy, character = state.leader || "") {
-    const profile = state.farmingProfiles?.[character];
+  // A mode button sends its slot's field only.
+  // A Hunt with no backup farm or focus opens the Hunt setup on the route's `backup_required`
+  // answer, with the focus it carries (hunting/coordinator/routes.ts).
+  async function setFarmingSlot(choice: SlotChoice, character = state.leader || "") {
     setHuntSetupCharacter(character);
-    const selected = profile?.monsterFocus || state.monsterFocusByCharacter?.[character] || (character === state.leader ? state.monsterFocus : []);
-    const focus = (Array.isArray(selected) ? selected : []).filter(
-      (id) => id !== "all",
-    );
-    const backup =
-      profile?.farmingPolicy === "hunt"
-        ? profile.monsterHunt?.returnLocation || profile.location
-        : state.characterLocations?.[character] || profile?.location || (character === state.leader ? state.partyLocation : null);
-    if (mode === "hunt" && (!backup || !focus.length)) {
-      setHuntSetup(focus);
-      return;
-    }
     try {
-      await post("/farming-mode", { mode, character });
+      await post("/farming-mode", { ...choice, character });
     } catch (error) {
-      if (mode === "hunt" && error instanceof Error && /backup farming/i.test(error.message))
-        setHuntSetup(focus);
+      if (error instanceof PartyActionError && error.details.code === "backup_required")
+        setHuntSetup(Array.isArray(error.details.focus) ? error.details.focus.filter((id): id is string => typeof id === "string") : []);
       else setActionError(error instanceof Error ? error.message : "Farming mode update failed");
     }
   }
@@ -661,7 +657,7 @@ export function usePartyConsole() {
     }
   }
   const savedAutoNpcSaleKeep = autoNpcSaleItem && !autoNpcSaleItem.character
-    ? state.autoNpcSales?.[automaticCommerceRuleKey(autoNpcSaleItem.item)]?.keep : undefined;
+    ? state.autoNpcSales?.[commerceRuleKey(autoNpcSaleItem.item)]?.keep : undefined;
   const autoNpcSaleKeep = autoNpcSaleKeepInput ?? (savedAutoNpcSaleKeep === undefined ? "0" : String(savedAutoNpcSaleKeep));
   async function confirmAutoNpcSale() {
     setAutoNpcSaleError(null);
@@ -819,39 +815,13 @@ export function usePartyConsole() {
   const selectedFocus = useMemo(() => Array.isArray(state.monsterFocus)
     ? state.monsterFocus
     : [state.monsterFocus || "goo"], [state.monsterFocus]);
-  const occupiedStandSlots = Object.entries(
-    state.merchantCharacter ? state.characters[state.merchantCharacter]?.slots || {} : {},
-  ).filter(([slot, entry]) => slot.startsWith("trade") && !!entry).length;
   const detailMeta = useCallback((item: Item, live?: ItemMeta | null): ItemMeta | null | undefined =>
     joinItemMeta(state.merchantCatalog, item.name, live), [state.merchantCatalog]);
-  const statScrollInventory = useMemo(() => {
-    const quantities: Record<string, number> = {};
-    const add = (item?: Item | null) => {
-      if (item && STAT_SCROLLS.some((entry) => entry.scroll === item.name))
-        quantities[item.name] = (quantities[item.name] || 0) + Math.max(1, Number(item.q) || 1);
-    };
-    const merchantStatus = state.merchantCharacter
-      ? state.characters[state.merchantCharacter]
-      : undefined;
-    (merchantStatus?.items || []).forEach((entry) => add(entry?.item));
-    Object.values(state.bank?.packs || {}).forEach((pack) =>
-      pack.forEach((entry) => add(entry?.item)),
-    );
-    return quantities;
-  }, [state.bank, state.characters, state.merchantCharacter]);
-  const standObserved = standItem
-    ? levelPriceHistory(
-        state.standPriceHistory?.[standItem.entry.item.name],
-        Number(standItem.entry.item.level) || 0,
-      )
-    : undefined;
-  const standMarketReference = standObserved?.marketLow || standObserved?.lowest || 0;
   const standPricingMeta = standItem
     ? detailMeta(standItem.entry.item, standItem.entry.meta)
     : undefined;
-  const standNpcSale = standItem ? npcSaleValue(standItem.entry.item, standPricingMeta) : 0;
-  const standPontyPrice = standItem ? pontyPrice(standItem.entry.item, standPricingMeta) : 0;
-  const standMarketCount = 0;
+  const standNpcSale = standItem ? Math.round(itemValue(standItem.entry.item, standPricingMeta ?? undefined) ?? 0) : 0;
+  const standPontyPrice = standItem ? pontyPrice(standItem.entry.item, standPricingMeta ?? undefined) ?? 0 : 0;
   const applyStandPrice = (value: number) =>
     setStandItem(
       (old) =>
@@ -875,7 +845,6 @@ export function usePartyConsole() {
     aldataAuthStatus,
     setTravelError,
     clearCollectionErrors: () => { setThresholdError(null); setItemCollectionThresholdError(null); },
-    connectionNotice,
     coordinatorLoading: !coreQuery.data && !coreQuery.isError,
     coordinatorUnavailable: coreQuery.isError,
     setAnniversaryOpen,
@@ -886,7 +855,6 @@ export function usePartyConsole() {
     setBestiaryOpen,
     setSkillsOpen,
     setStandOpen,
-    occupiedStandSlots,
     setMarketOpen,
     setBankOpen,
     setSettingsOpen,
@@ -902,7 +870,8 @@ export function usePartyConsole() {
     logout,
     monsters,
     post,
-    setFarmingPolicy,
+    send,
+    setFarmingSlot,
     setSelectedCondition,
     command,
     bankParty,
@@ -927,7 +896,6 @@ export function usePartyConsole() {
     setAutoNpcSaleKeep,
     clearAutomaticSales,
     removeAutomaticSale,
-    statScrollInventory,
     setSelected,
     detailMeta,
     setGearComparison,
@@ -1009,6 +977,9 @@ export function usePartyConsole() {
     realmConfirmOpen,
     realmBusy,
     realmSetHome,
+    realmBlacklisted,
+    realmBlacklistConfirmed,
+    setRealmBlacklistConfirmed,
     switchRealm,
     bestiaryOpen,
     setSelectedBestiaryMonster,
@@ -1029,12 +1000,9 @@ export function usePartyConsole() {
     giveawayMerchant,
     joinGiveaway,
     standItem,
-    standMarketCount,
     applyStandPrice,
     standNpcSale,
     standPontyPrice,
-    standMarketReference,
-    standObserved,
     saveStandListing,
     autoNpcSaleItem,
     confirmAutoNpcSale,

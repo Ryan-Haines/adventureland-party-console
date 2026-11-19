@@ -187,7 +187,6 @@ The initial pass removed 20 complete suites and 64 source test declarations and 
 | `coordinator-initial-merchant-runtime.test.cjs` | 2 declaration(s) — entire file | Default-value and object identity snapshots; restart queue/ownership and no-merchant suites remain. |
 | `coordinator-activity-service.test.cjs` | 2 declaration(s) — entire file | Mock persistence call counts and array identity; retained history/telemetry domain behavior remains. |
 | `coordinator-party-configuration.test.cjs` | 2 declaration(s) — entire file | Mock navigation forwarding, authorization order and exact counter wiring; party/focus action and ownership suites remain. |
-| `merchant-job-label.test.cjs` | 5 declaration(s) — entire file | Parameterized labels mirror a display dictionary; merchant execution and projection tests cover behavior. |
 | `duration-format.test.cjs` | 1 declaration(s) — entire file | Formatting examples without a workflow failure; browser item presentation is the appropriate boundary. |
 | `item-action-banner.test.cjs` | 3 declaration(s) — entire file | Label/style token precedence mirrors the renderer; actual inventory menu journey exercises visible controls. |
 | `dashboard-card-optimizations.test.cjs` | 1 declaration(s) — entire file | Exact React render counts couple tests to optimization details; real browser journeys exercise freshness and interaction. |

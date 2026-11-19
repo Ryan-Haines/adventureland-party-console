@@ -3,7 +3,7 @@
 // registry's shadow rollout (docs/state-field-registry.md). It is off unless
 // localStorage 'party-field-audit' is '1' or the E2E fixture installs
 // window.__partyFieldAudit; when off, audited() returns its input unchanged.
-import { characterFields, sectionFields, streamFields as liveFields } from '../../../runtime/coordinator/telemetry/character-fields.ts';
+import { characterFields, sectionFields, streamFields as liveFields } from '../../../runtime/status/api.ts';
 
 export type AuditKind = 'vitals' | 'position' | 'inventory' | 'diagnostics' | 'presence' | 'core' | 'merged';
 export interface FieldAuditRecord {
@@ -19,7 +19,7 @@ declare global {
 }
 
 const everyLean = new Set<string>([...Object.values(sectionFields).flat(), ...liveFields]);
-/** Fields each cache kind can hold once PARTY_STATE_FIELDS=enforce (query-cache.tsx, dashboard-live.tsx). */
+/** Fields each cache kind can hold under table F's whitelists (query-cache.tsx, dashboard-live.tsx). */
 const sources: Record<AuditKind, Set<string>> = {
   vitals: new Set([...sectionFields.fast, ...liveFields]),
   position: new Set([...sectionFields.fast, ...liveFields]),

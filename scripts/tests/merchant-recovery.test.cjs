@@ -2,17 +2,19 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {createMerchantHomeRecovery,merchantRoutineNeedsHome}=require('../../runtime/coordinator/merchant/home-recovery.ts');
+const {createMerchantRealmOwner:createMerchantHomeRecovery}=require('../../runtime/merchant-realm/coordinator/owner.ts');
+const {merchantKind}=require('../../runtime/merchant-jobs/rules.ts');
+const {merchantSlotCommand}=require('../../runtime/merchant-jobs/coordinator/api.ts');
 
 function runtime() {
   const party = { merchantCharacter: 'M', activeRealm: 'SR_USII', statuses: { M: { server: 'USIII' } }, commands: {} };
   const block = { realm: 'SR_USIII' }, logs = [], restarts = [];
   let now = Date.now();
   const r = vm.createContext({ party, ensureCharacterBlock: () => block, merchantLog: message => logs.push(message),
-    realmLabel: value => value, persistSettings() {}, setTimeout: fn => restarts.push(fn), softkill_block() {} });
+    realmLabel: value => value, persistSettings() {}, softkill_block: worker => restarts.push(worker) });
   const recovery=createMerchantHomeRecovery(party,{now:()=>now,block:r.ensureCharacterBlock,
-    realmLabel:r.realmLabel,log:r.merchantLog,persist:r.persistSettings,restart:(block,delay)=>r.setTimeout(()=>r.softkill_block(block),delay)});
-  Object.assign(r,{ensureMerchantHome:recovery.ensureHome,recoverStalledMerchantSale:recovery.recoverStalledSale,merchantRoutineNeedsHome});
+    realmLabel:r.realmLabel,log:r.merchantLog,persist:r.persistSettings,restart:block=>r.softkill_block(block)});
+  Object.assign(r,{ensureMerchantHome:recovery.ensureHome,recoverStalledMerchantSale:recovery.recoverStalledSale});
   return { r, party, block, logs, restarts, setNow:value=>{now=value;} };
 }
 
@@ -26,14 +28,16 @@ test('local work waits for actual home arrival and restarts only once', () => {
   party.statuses.M.seenAt = party.merchantRealmRequests.M.requestedAt + 1;
   setNow(party.statuses.M.seenAt);
   assert.equal(r.ensureMerchantHome('compounding'), true);
-  assert.equal(party.merchantHomeReturnAt, 0);
-  assert.equal(r.merchantRoutineNeedsHome('upgrades and compounds'), true);
-  assert.equal(r.merchantRoutineNeedsHome('ALData marketplace sales'), false);
+  // The kind record's realm answers what merchantRoutineNeedsHome's list answered.
+  assert.equal(merchantKind('upgrades and compounds').realm, 'home');
+  assert.equal(merchantKind('ALData marketplace sales').realm, 'listing');
 });
 
-test('stalled WTB is stopped even with fresh heartbeats and is never requeued', () => {
+// The merchant job owner's recovery asks this once the lifecycle owner's roster holds the merchant
+// offline; the sale never replays.
+test("an offline merchant's WTB sale ends without a requeue", () => {
   const { r, party, block, logs } = runtime();
-  party.merchantCurrent = { id: 'sale', reason: 'ALData marketplace sales', startedAt: Date.now() - 181000,
+  party.merchantCurrent = { id: 'sale', reason: 'ALData marketplace sales', startedAt: Date.now(),
     heartbeatAt: Date.now(), buyOrder: { buyer: 'Buyer', item: { name: 'leather' } } };
   party.commands.M = {};
   assert.equal(r.recoverStalledMerchantSale(), true);
@@ -43,59 +47,34 @@ test('stalled WTB is stopped even with fresh heartbeats and is never requeued', 
   assert.match(logs[0], /Buyer/);
 });
 
-test('fresh WTB and long compounding jobs are not stopped by WTB deadline', () => {
+// The stalled sale ends through the merchant job owner's one job end, so an equip, unequip or
+// use-item held for the sale's next stop reaches the slot.
+test('the WTB sale end releases a manual command held for it', () => {
   const { r, party } = runtime();
-  party.merchantCurrent = { reason: 'ALData marketplace sales', startedAt: Date.now() };
-  assert.equal(r.recoverStalledMerchantSale(), false);
+  party.merchantCurrent = { id: 'sale', reason: 'ALData marketplace sales', startedAt: Date.now() };
+  const command = { id: 7, type: 'equip' };
+  assert.equal(merchantSlotCommand(party, 'manual:equip', command), 'held');
+  assert.equal(r.recoverStalledMerchantSale(), true);
+  assert.equal(party.commands.M, command);
+});
+
+test('the WTB sale end leaves every other job', () => {
+  const { r, party } = runtime();
   party.merchantCurrent = { reason: 'upgrades and compounds', startedAt: Date.now() - 999999 };
   assert.equal(r.recoverStalledMerchantSale(), false);
 });
 
 test('home restart preserves sixty second arrival window and requires fresh matching worker realm',()=>{
-  let now=20000;const delays=[],block={realm:'SR_USIII'};
+  let now=20000;const restarts=[],block={realm:'SR_USIII'};
   const state={merchantCharacter:'M',activeRealm:'SR_USII',statuses:{M:{server:'SR_USII'}},commands:{M:{}}};
   const service=createMerchantHomeRecovery(state,{now:()=>now,block:()=>block,realmLabel:x=>x,
-    log(){},persist(){},restart:(_block,delay)=>delays.push(delay)});
-  assert.equal(service.ensureHome('bank'),false);assert.deepEqual(delays,[150]);assert.equal(state.commands.M,undefined);
-  state.statuses.M.server='USIII';now=35000;service.ensureHome('bank');assert.deepEqual(delays,[150]);
-  now=79999;service.ensureHome('bank');assert.deepEqual(delays,[150]);
-  now++;service.ensureHome('bank');assert.deepEqual(delays,[150,150]);
+    log(){},persist(){},restart:()=>restarts.push(now)});
+  assert.equal(service.ensureHome('bank'),false);assert.deepEqual(restarts,[20000]);assert.equal(state.commands.M,undefined);
+  state.statuses.M.server='USIII';now=35000;service.ensureHome('bank');assert.deepEqual(restarts,[20000]);
+  now=79999;service.ensureHome('bank');assert.deepEqual(restarts,[20000]);
+  now++;service.ensureHome('bank');assert.deepEqual(restarts,[20000,80000]);
   state.statuses.M.server='SR_USII';state.statuses.M.seenAt=++now;
-  assert.equal(service.ensureHome('bank'),true);assert.equal(state.merchantHomeReturnAt,0);
-});
-
-test('WTB recovery honors the exact deadline and the original missing-start fallback',()=>{
-  const delays=[],block={},state={merchantCharacter:'M',activeRealm:'SR_USII',statuses:{},commands:{},merchantCurrent:{reason:'ALData marketplace sales'}};
-  const service=createMerchantHomeRecovery(state,{now:()=>200000,block:()=>block,realmLabel:x=>x,
-    log(){},persist(){},restart:(_block,delay)=>delays.push(delay)});
-  assert.equal(service.recoverStalledSale(),false);
-  state.merchantCurrent.startedAt=20001;assert.equal(service.recoverStalledSale(),false);
-  state.merchantCurrent.startedAt=20000;assert.equal(service.recoverStalledSale(),true);
-  assert.deepEqual(delays,[100]);assert.equal(state.merchantCurrent,null);
-});
-
-test('location refresh follows a matching moved seller once, rejecting cancelled jobs', async () => {
-  const { r, party } = runtime();
-  const listing = { key: 'listing', seller: 'Seller', serverRegion: 'US', serverIdentifier: 'III',
-    map: 'main', x: 0, y: 0, item: { name: 'gloves', level: 0 }, price: 100 };
-  party.merchantCurrent = { id: 'job', reason: 'ALData marketplace purchases', listings: [listing] };
-  let fetched = 0;
-  r.aldataFetch = async () => { fetched++; return [{ id: 'Seller', serverRegion: 'US', serverIdentifier: 'III', map: 'main', x: 100, y: 0 }]; };
-  r.normalizeALDataMerchants = records => records.map(record => ({ ...listing, ...record }));
-  const {createMarketplaceLocationRoute}=require('../../runtime/coordinator/http/marketplace-location.ts');
-  const handler=createMarketplaceLocationRoute(party,{
-    fetch:r.aldataFetch,normalize:r.normalizeALDataMerchants,persist:r.persistSettings,log:r.merchantLog,
-  });
-  let result, status = 200;
-  const res = { json: value => { result = value; }, status: value => { status = value; return res; } };
-  await handler({ body: { jobId: 'job', listingKey: 'listing' } }, res);
-  assert.equal(result.location.x, 100);
-  await handler({ body: { jobId: 'job', listingKey: 'listing' } }, res);
-  assert.equal(result.location, null);
-  assert.equal(fetched, 1);
-  party.merchantCurrent = null;
-  await handler({ body: { jobId: 'job', listingKey: 'listing' } }, res);
-  assert.equal(status, 409);
+  assert.equal(service.ensureHome('bank'),true);
 });
 
 test('activity log keeps the visible entry anchored when newer entries arrive', () => {
@@ -118,11 +97,14 @@ test('activity log keeps the visible entry anchored when newer entries arrive', 
   assert.equal(component.getSnapshotBeforeUpdate(), null);
 });
 
+// The realm owner's one path (3.10 rule 5): a Steam merchant's move is its native-realm-switch
+// command, a headless one the worker restart; both count as a move here.
 function homeReportGap(runtime='headless') {
  let now=10000;const restarts=[];
  const block={realm:'SR_USI',connected:true,instance:{exitCode:null,killed:false}};
- const state={merchantCharacter:'M',activeRealm:'SR_USI',steamMembers:runtime==='native'?['M']:[],
-  statuses:{M:{server:'USI',seenAt:6000,hp:100,rip:false,runtime,travelSample:{connected:true}}},commands:{M:{id:1,type:'merchant-gather'}}};
+ const commands=new Proxy({M:{id:1,type:'merchant-gather'}},{set(target,key,value){if(value?.type==='native-realm-switch')restarts.push(now);target[key]=value;return true;}});
+ const state={merchantCharacter:'M',activeRealm:'SR_USI',steamMembers:runtime==='native'?['M']:[],nextCommandId:2,
+  statuses:{M:{server:'USI',seenAt:6000,hp:100,rip:false,runtime,travelSample:{connected:true}}},commands};
  const recovery=createMerchantHomeRecovery(state,{now:()=>now,block:()=>block,realmLabel:x=>x,log(){},persist(){},restart:()=>restarts.push(now)});
  return {state,block,restarts,recovery,setNow:value=>{now=value;}};
 }
@@ -152,4 +134,24 @@ for(const fault of ['wrong realm','offline worker','exited worker','offline nati
  if(fault==='missing report')delete f.state.statuses.M.seenAt;
  if(fault==='future report')f.state.statuses.M.seenAt=20000;
  assert.equal(f.recovery.ensureHome('idle'),false);assert.deepEqual(f.restarts,[10000]);
+});
+
+// The runner tells a hot reload's redelivery from the coordinator's reissue by the command id
+// alone, at any heartbeat age, and leaves the expiry's report to the coordinator.
+test('a redelivered job command runs nothing and a reissued one replaces the holder with no bound',async()=>{
+  const {installRunner}=require('./helpers/merchant-runner.cjs');
+  const {boundsPending,boundsSent}=require('../../runtime/status/api.ts');
+  require('./helpers/run-scope.cjs').processScope();
+  const context={root:{},character:{name:'M'},request:async()=>({}),freeInventorySlots:()=>0,recoverLuckyUpgrade:async()=>{},tidyLuckySlot:async()=>{}};
+  const runner=installRunner(context),old=Date.now()-3_600_000;
+  boundsSent(boundsPending().length);
+  context.root.__merchantHolder={kind:'job',jobId:'j',commandId:7,owner:'reloaded',label:'sale',startedAt:old};
+  const ran=[];
+  await runner.runJob({jobId:'j',id:7},'sale',async()=>{ran.push(7);});
+  assert.deepEqual(ran,[],'an hour old holder of the same command keeps its job');
+  assert.equal(context.root.__merchantHolder.owner,'reloaded');
+  context.root.__merchantHolder.startedAt=Date.now();
+  await runner.runJob({jobId:'j',id:8},'sale',async()=>{ran.push(runner.job().commandId);});
+  assert.deepEqual(ran,[8],'a new command id for the job takes over from a fresh holder');
+  assert.deepEqual(boundsPending().map(firing=>firing.bound),[]);
 });

@@ -9,9 +9,13 @@ const {once}=require('node:events');
 
 test('shared Node production launcher serves HTML, assets, and request bodies', {timeout:20000}, async()=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'party-node-dashboard-'));
- const reservation=net.createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');
- const port=reservation.address().port;await new Promise(r=>reservation.close(r));
- let child,exited,logs='';
+ // The launcher needs a port number up front, so the test frees a probed port and hands it over. Another
+ // process can take it before the child binds; the child then exits with EADDRINUSE and the test probes again.
+ const freePort=async()=>{
+  const reservation=net.createServer();reservation.listen(0,'127.0.0.1');await once(reservation,'listening');
+  const free=reservation.address().port;await new Promise(r=>reservation.close(r));return free;
+ };
+ let child,exited,logs='',port,origin;
  try {
   await fs.mkdir(path.join(directory,'server'));await fs.mkdir(path.join(directory,'client','_next','static'),{recursive:true});
   await fs.writeFile(path.join(directory,'package.json'),' {"type":"module"}');
@@ -20,14 +24,17 @@ test('shared Node production launcher serves HTML, assets, and request bodies', 
    if(request.method==='POST')return new Response(await request.text());
    return new Response('<html><body>Party Console<script src="/_next/static/asset.js"></script></body></html>',{headers:{'content-type':'text/html'}});
   }`);
-  child=spawn(process.execPath,[path.resolve('tools/dashboard/node-server.mts'),String(port),directory],{windowsHide:true,stdio:['ignore','pipe','pipe']});
-  exited=once(child,'exit');child.stdout.on('data',data=>logs+=data);child.stderr.on('data',data=>logs+=data);
-  const origin='http://127.0.0.1:'+port;
   let ready=false;
-  for(let i=0;i<100;i++) {
-   if(child.exitCode!==null)throw Error(logs);
-   try {if((await fetch(origin,{signal:AbortSignal.timeout(500)})).ok){ready=true;break;}}catch{}
-   await new Promise(r=>setTimeout(r,50));
+  for(let attempt=0;attempt<3&&!ready;attempt++) {
+   port=await freePort();logs='';
+   child=spawn(process.execPath,[path.resolve('tools/dashboard/node-server.mts'),String(port),directory],{windowsHide:true,stdio:['ignore','pipe','pipe']});
+   exited=once(child,'exit');child.stdout.on('data',data=>logs+=data);child.stderr.on('data',data=>logs+=data);
+   origin='http://127.0.0.1:'+port;
+   for(let i=0;i<100;i++) {
+    if(child.exitCode!==null){if(/EADDRINUSE/.test(logs))break;throw Error(logs);}
+    try {if((await fetch(origin,{signal:AbortSignal.timeout(500)})).ok){ready=true;break;}}catch{}
+    await new Promise(r=>setTimeout(r,50));
+   }
   }
   assert.ok(ready,logs);
   assert.match(await (await fetch(origin)).text(),/<html>/);

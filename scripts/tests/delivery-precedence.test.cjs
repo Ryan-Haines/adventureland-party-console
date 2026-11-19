@@ -1,9 +1,10 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {craftProtection,availableCraftStock}=require('../../runtime/coordinator/merchant/craft-reservations.ts');
-const {compoundStorageLeftovers}=require('../../runtime/compound-storage.ts');
-const {storeCompoundLeftovers}=require('../../runtime/characters/compound-storage.ts');
-const {createMerchantCompletionRoute}=require('../../runtime/coordinator/http/merchant-completion.ts');
-const {createInventoryReceiptRoutes}=require('../../runtime/coordinator/http/inventory-receipts.ts');
+const {craftProtection}=require('../../runtime/items/coordinator/production.ts');
+const {availableCraftStock}=require('../../runtime/items/rules.ts');
+const {compoundStorageLeftovers}=require('../../runtime/items/rules.ts');
+const {storeCompoundLeftovers}=require('../../runtime/items/character/bank.ts');
+const {createMerchantCompletionRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
+const {createInventoryReceiptRoutes}=require('../../runtime/items/coordinator/routes/inventory.ts');
 const {fixture}=require('./helpers/coordinator-completion.cjs');
 const item={name:'intearring',level:2},rule={name:'intearring',targetTier:3,quantity:-1};
 const stock=(n,owner='M')=>Array.from({length:n},(_,slot)=>({slot,item:{...item},craftLocation:'inventory:'+owner}));
@@ -48,4 +49,26 @@ test('delivery receipt preserves active travel and durably queues equipment',()=
  const travel=f.state.commands.F,mark={...f.state.merchantDeliveries.F[0]};
  createMerchantCompletionRoute(f.state,f.ports)({body:{jobId:'job',success:true,merchantDeliveriesDelivered:[mark]}},f.response);
  assert.equal(f.state.commands.F,travel);assert.equal(f.state.merchantDeliveries.F[0].awaitingEquip,true);
+});
+
+// E08-10c: the handoff's pre-send recheck reads the copy's one fate. This row
+// checks the fate the recheck reads; the handoff's send on that fate runs in automatic-collection-client.
+test('E08-10c: an item with a compound rule still has a fate that reaches the merchant (MJ90)',()=>{
+  const state=({merchantCharacter:'M',statuses:{F:{items:Array(42).fill(null)}},marked:{},merchantMarked:{},upgrades:{},compounds:{},statScrolls:{},merchantQueue:[],merchantCurrent:null,orders:[],restockPolicies:{F:{hp:{item:'hpot1',min:0,max:0},mp:{item:'mpot1',min:0,max:0}}},autoCompounds:{F:[{name:'ringsj',quantity:-1,targetTier:3}]},autoItemMarks:{F:{'ringsj@+0':'merchant'}}});
+  state.statuses.F.items[5]={slot:5,item:{name:'ringsj',level:0}};
+  const fate=require('../../runtime/items/coordinator/fates.ts').itemFate(state,'F',5);
+  assert.equal(fate.row,'F5');
+  assert.equal(require('../../runtime/items/rules.ts').fateReachesMerchant(fate),true);
+});
+// The items owner's identity rule resolves which copy a mark with no slot names, so a
+// delivery's hold on the first matching copy leaves the mark's banked second copy riding the errand.
+test('items.fate: a mark with no slot answers the copy it names that I1 banks', () => {
+  const state = ({ merchantCharacter: 'M', statuses: { F: { items: Array(42).fill(null) } }, marked: { F: [{ name: 'ringsj', level: 0 }] }, merchantMarked: {},
+    merchantDeliveries: { F: [{ slot: 0, item: { name: 'ringsj', level: 0 } }] }, upgrades: {}, compounds: {}, statScrolls: {}, merchantQueue: [], merchantCurrent: null, orders: [],
+    restockPolicies: { F: { hp: { item: 'hpot1', min: 0, max: 0 }, mp: { item: 'mpot1', min: 0, max: 0 } } }, autoCompounds: {}, autoItemMarks: {} });
+  state.statuses.F.items[0] = { slot: 0, item: { name: 'ringsj', level: 0 } };
+  state.statuses.F.items[1] = { slot: 1, item: { name: 'ringsj', level: 0 } };
+  const { itemFate } = require('../../runtime/items/coordinator/fates.ts');
+  assert.deepEqual([itemFate(state, 'F', 0).fate, itemFate(state, 'F', 0).by], ['held', 'delivery']);
+  assert.equal(itemFate(state, 'F', state.marked.F[0]).fate, 'bank');
 });

@@ -18,8 +18,8 @@ function PartyWTBOrderDialogConnected({ base }: { base: PartyConsoleModel }) {
       }}
       catalog={state.merchantCatalog?.allItems || []}
       buyable={state.merchantCatalog?.buyable || []}
-      history={wtbItem ? state.standPriceHistory?.[wtbItem.item.name] : undefined}
-      existing={wtbItem ? state.standBids?.[wtbItem.item.name] : undefined}
+      history={state.standPriceHistory?.[wtbItem.item.name]}
+      existing={state.standBids?.[wtbItem.item.name]}
       onSave={async (itemId, price, quantity, level, priorityOverride, options) => {
         await saveStandBid(itemId, price, quantity, level, false, priorityOverride, options);
         setWtbItem(null);

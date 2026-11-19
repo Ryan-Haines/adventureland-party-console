@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createInventoryReceiptRoutes}=require('../../runtime/coordinator/http/inventory-receipts.ts');
+const {createInventoryReceiptRoutes}=require('../../runtime/items/coordinator/routes/inventory.ts');
 function fixture(){
  const item={name:'ring',level:2};
  const state={commands:{F:{type:'bank'}},statScrolls:{F:[item,item]},withdrawals:{F:[item,item]},

@@ -6,8 +6,19 @@ import type { IncomingMessage } from 'node:http';
 import path from 'node:path';
 import { caddyPath } from './install-caddy.mts';
 import { Services } from './services.ts';
+import { bounded, type HostBound } from './http.ts';
+import { DEFAULT_HTTPS_PORT, publicPort } from './defaults.ts';
 import { caddyConfig, certificateProbes, httpsOrigin, tlsHost } from './tls-config.ts';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// The HTTPS setup's bounds against a Caddy process that accepts and never answers: the certificate
+// handshake probe and the admin API read, the configuration reload, and the new certificate, which
+// Caddy issues with no event, so its readiness is asked each CERTIFICATE_POLL_MS until
+// CERTIFICATE_READY. The gateway serves at most MAX_HOSTS HTTPS addresses (a size limit).
+const PROBE: HostBound = { name: 'httpsProbeMs', ms: 1500 };
+const RELOAD: HostBound = { name: 'httpsReloadMs', ms: 10000 };
+const CERTIFICATE_READY: HostBound = { name: 'httpsCertificateMs', ms: 2000 };
+const CERTIFICATE_POLL_MS = 200;
+const MAX_HOSTS = 20;
 export class LocalTLS {
  readonly secret = randomBytes(32).toString('hex');
  readonly port: number;
@@ -20,10 +31,10 @@ export class LocalTLS {
  private data: string;
  private root: string;
  private upstream: number;
- constructor(root: string, data: string, upstream = Number(process.env.AL_PORT || 3010)) {
+ constructor(root: string, data: string, upstream = publicPort()) {
   this.root = root; this.upstream = upstream;
   this.data = path.join(data, 'tls');
-  this.port = Number(process.env.AL_HTTPS_PORT || 3443);
+  this.port = Number(process.env.AL_HTTPS_PORT || DEFAULT_HTTPS_PORT);
   this.publicPort = Number(process.env.AL_HTTPS_PUBLIC_PORT || this.port);
   if (![this.port, this.publicPort].every(p => Number.isInteger(p) && p > 0 && p < 65536)) throw new Error('Invalid HTTPS port');
  }
@@ -52,14 +63,17 @@ export class LocalTLS {
    const socket = connect({ host: probe.host, port: this.port, servername: probe.servername, ca,
     checkServerIdentity: (_name, cert) => checkServerIdentity(probe.identity, cert),
    }, () => { socket.destroy(); resolve(); });
-   socket.setTimeout(1500, () => socket.destroy(Error('HTTPS certificate handshake timed out')));
+   socket.setTimeout(PROBE.ms, () => {
+    console.warn(`[bound] ${PROBE.name} (${PROBE.ms} ms) ended an HTTPS certificate handshake`);
+    socket.destroy(Error('HTTPS certificate handshake timed out'));
+   });
    socket.once('error', reject);
   });
  }
  async status() {
   try {
    if (this.error) throw Error(this.error);
-   const response = await fetch(`http://127.0.0.1:${this.admin}/config/`, { headers: { Origin: `http://127.0.0.1:${this.admin}` }, signal: AbortSignal.timeout(1500) });
+   const response = await bounded(PROBE, 'the HTTPS admin read', signal => fetch(`http://127.0.0.1:${this.admin}/config/`, { headers: { Origin: `http://127.0.0.1:${this.admin}` }, signal }));
    if (!response.ok) throw Error('HTTPS service not responding');
    const ca = await this.certificate();
    await Promise.all(certificateProbes(this.hosts).map(probe => this.handshake(probe, ca)));
@@ -72,20 +86,22 @@ export class LocalTLS {
   this.busy = true;
   try {
    const host = await tlsHost(origin);
-   if (!(await this.status()).ready) throw Error((await this.status()).error);
+   const status = await this.status();
+   if (!status.ready) throw Error(status.error);
    if (this.hosts.at(-1) !== host) {
-    if (!this.hosts.includes(host) && this.hosts.length >= 20) throw Error('Too many configured HTTPS addresses');
+    if (!this.hosts.includes(host) && this.hosts.length >= MAX_HOSTS) throw Error('Too many configured HTTPS addresses');
     const previous = this.hosts; this.hosts = [...previous.filter(value => value !== host), host];
-    const response = await fetch(`http://127.0.0.1:${this.admin}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${this.admin}` }, body: JSON.stringify(this.config()), signal: AbortSignal.timeout(10000) });
+    const response = await bounded(RELOAD, 'the HTTPS configuration reload', signal => fetch(`http://127.0.0.1:${this.admin}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${this.admin}` }, body: JSON.stringify(this.config()), signal }));
     if (!response.ok) { this.hosts = previous; throw Error('HTTPS configuration failed; check server logs for port conflicts'); }
     await writeFile(path.join(this.data, 'hosts.json'), JSON.stringify(this.hosts), { mode: 0o600 });
     await writeFile(path.join(this.data, 'caddy.json.tmp'), JSON.stringify(this.config()), { mode: 0o600 });
     await rename(path.join(this.data, 'caddy.json.tmp'), path.join(this.data, 'caddy.json'));
    }
-   for (let attempt = 0; attempt < 10; attempt++) {
-    const status = await this.status(); if (status.ready) return { ...status, origin: httpsOrigin(host, this.publicPort) }; await delay(200);
+   for (const until = Date.now() + CERTIFICATE_READY.ms; Date.now() < until; await delay(CERTIFICATE_POLL_MS)) {
+    const status = await this.status(); if (status.ready) return { ...status, origin: httpsOrigin(host, this.publicPort) };
    }
-   throw Error('HTTPS certificate is not ready; retry shortly');
+   console.warn(`[bound] ${CERTIFICATE_READY.name} (${CERTIFICATE_READY.ms} ms) ended the HTTPS certificate wait`);
+   throw Error(`HTTPS certificate is not ready after ${CERTIFICATE_READY.ms} ms; retry shortly`);
   } finally { this.busy = false; }
  }
 }

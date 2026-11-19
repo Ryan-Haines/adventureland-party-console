@@ -11,7 +11,11 @@ const vm = require('node:vm');
 // 4. the poll interval, the response or the listeners change (realm switch,
 //    roster and sibling updates read them every 6 s);
 // 5. a failed poll stops logging its warning.
-const source = fs.readFileSync(path.join(__dirname, '../../.caracal/account_info.js'), 'utf8');
+// Setup: a caracAL install in .caracal with patches/caracal-current-api.patch applied; the file is
+// gitignored, so a tree without the install fails here with a named message.
+const accountInfoPath = path.join(__dirname, '../../.caracal/account_info.js');
+if (!fs.existsSync(accountInfoPath)) throw new Error('account-info-log needs the patched caracAL install at .caracal (tools/caracal/setup.mts applies patches/caracal-current-api.patch)');
+const source = fs.readFileSync(accountInfoPath, 'utf8');
 function load(responses) {
   const logs = [], timers = [];
   const logger = { log: (...args) => logs.push(['info', args.join(' ')]), debug: (...args) => logs.push(['debug', args.join(' ')]),

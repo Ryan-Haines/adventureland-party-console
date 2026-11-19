@@ -18,7 +18,7 @@ const reasons: Record<string, string> = {
 
 export function MonsterSpawns({ records, eventSources }: { records?: SpawnRecord[]; eventSources?: EventSource[] }) {
   return (
-    <section className="rounded border border-emerald-800 bg-[#081713] p-3 text-sm text-emerald-100">
+    <section data-area="monster-spawns" className="rounded border border-emerald-800 bg-[#081713] p-3 text-sm text-emerald-100">
       <h3 className="mb-2 font-semibold">Recorded spawn locations</h3>
       {eventSources?.length ? <ul className="space-y-1 text-amber-200">
         {eventSources.map(source => <li key={`${source.id}:${source.role}`}>{eventSourceText(source)}</li>)}

@@ -39,7 +39,7 @@ export function RosterPicker({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="border border-emerald-800 bg-[#0b1916] text-emerald-50 sm:max-w-md">
+      <DialogContent data-area="roster-picker" className="border border-emerald-800 bg-[#0b1916] text-emerald-50 sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
             {slot === 0 ? "Switch Steam character" : "Choose a roster member"}

@@ -1,5 +1,6 @@
 import { test, expect } from './live-fixtures';
 import { killNativeCharacter } from './hunt-interruption-helpers';
+import { groupOf } from './task-records';
 
 const W = 'E2EWarrior', P = 'E2EPriest', members = [W, P];
 
@@ -53,28 +54,19 @@ test('disabling inherited Franky interrupts native boss combat and evacuates bot
   await expect.poll(async () => (await live.state(true)).monsterChoices?.some((choice: any) => choice.id === 'goo')).toBe(true);
   const goo = (await live.state(true)).monsterChoices.find((choice: any) => choice.id === 'goo');
   await live.post('/farming-mode', { character: W, mode: 'hunt', backup: { monsterFocus: ['goo'], location: goo.locations.find((location: any) => location.map === 'main') } });
-  await expect.poll(async () => (await live.state()).monsterHunt?.stage, { timeout: 15_000 }).toBe('paused-event');
-  // One lost permission response after native death must retain the recovery
-  // intent. Normal polling also uses this route, so fault only after death.
-  let denied = false, holdPermission = true;
-  const context = live.clients[W].page.context();
-  const permission = '**/hunt-event-permission';
-  await context.route(permission, async route => {
-    if (holdPermission) { denied = true; await route.abort('failed'); }
-    else await route.continue();
-  });
+  // The task owner suspends the Hunt under the attendance task (01 design 2.2); the Hunt keeps its stage.
+  await expect.poll(async () => groupOf(await live.tasks(), W)?.live?.kind, { timeout: 15_000 }).toBe('event-attendance');
+  // The coordinator admits the event on each report (the events owner's ingest), so the native death
+  // leaves no request to lose: the respawn rejoins on the admission its next reply carries.
   const death = await killNativeCharacter(live, W);
-  await expect.poll(async () => (await live.state()).characters[W]?.combat?.runner?.recovery?.lastError,
-    { timeout: 90_000, message: 'A lost permission reply must publish retryable event recovery' }).toBe('Waiting for event travel permission');
-  holdPermission = false;
   await expect.poll(async () => {
     const server = await world(), state = await live.state();
-    return denied && !server.players[W].rip && server.players[W].map === 'level2w' &&
-      state.characters[W]?.joinedEvent === 'franky' && state.monsterHunt?.stage === 'paused-event' &&
-      !state.monsterHunt?.turnIn;
+    return !server.players[W].rip && server.players[W].map === 'level2w' &&
+      // The hand-in that came due yields while the party attends; no Daisy walk runs.
+      state.characters[W]?.joinedEvent === 'franky' && groupOf(await live.tasks(), W)?.live?.kind === 'event-attendance' &&
+      state.activeConvoy?.purpose !== 'monster-hunt';
   }, { timeout: 120_000, message: 'Native respawn must rejoin the living boss without a Daisy return or manual retry' }).toBe(true);
-  await context.unroute(permission);
-  await info.attach('hunt-event-native-death-reentry', { body: JSON.stringify({ death, denied, server: await world(), coordinator: await live.state() }), contentType: 'application/json' });
+  await info.attach('hunt-event-native-death-reentry', { body: JSON.stringify({ death, server: await world(), coordinator: await live.state() }), contentType: 'application/json' });
   await live.post('/farming-mode', { character: W, mode: 'default' });
   await expect.poll(async()=>members.includes((await world()).bossTarget),
     {timeout:30_000,message:'A real living Franky must target a party member before evacuation'}).toBe(true);

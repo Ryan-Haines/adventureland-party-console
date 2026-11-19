@@ -3,10 +3,10 @@ import { useMemo } from 'react';
 import type { PartyConsoleModel } from './use-party-console';
 import { useForwardingActions } from './use-forwarding-actions';
 
-const inventoryActions = ['command', 'post', 'setActionError', 'setStandItem', 'setNpcSaleItem',
+const inventoryActions = ['command', 'post', 'send', 'setActionError', 'setStandItem', 'setNpcSaleItem',
   'setAutoNpcSaleItem', 'clearAutomaticSales', 'removeAutomaticSale', 'setSelected',
   'setGearComparison', 'sendCharacter'] as const;
-const cardActions = ['formation', 'logout', 'post', 'setFarmingPolicy', 'setSelectedCondition',
+const cardActions = ['formation', 'logout', 'post', 'setFarmingSlot', 'setSelectedCondition',
   'command', 'bankParty', 'clearMerchantWork', 'setForceStand', 'cancelMerchantJob',
   'setRoutinesOpen', 'gather', 'refresh', 'setCommerceMode', 'setDonationOpen', 'setGiveawayRealm',
   'setGiveawayMerchant', 'setGiveawayOpen', 'findMonsterFor', 'setFocus', 'saveRestock',

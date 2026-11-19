@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const stream = require('../../runtime/coordinator/telemetry/dashboard-stream.ts');
+const stream = require('../../runtime/status/coordinator/streams.ts');
 const { httpFixture } = require('./helpers/coordinator-http.cjs');
-const { compactEntry } = require('../../runtime/coordinator/telemetry/public-state-characters.ts');
+const { compactEntry } = require('../../runtime/status/coordinator/state.ts');
 
 // Failure inventory: docs/efficiency.md, Character threads follow-ups, H3.
 // The stream's field rule before H3: a field changed when its JSON text changed.
@@ -72,11 +72,11 @@ test('a random walk over nested inventory-shaped records matches the reference',
 
 function fixture(items) {
   const http = httpFixture();
-  const statuses = { A: { name: 'A', dashboardRuntime: 'r1', hp: 100, mp: 50, x: 1, y: 2, map: 'main',
+  const statuses = { A: { name: 'A', dashboardRuntime: 'r1', seenAt: 1000, hp: 100, mp: 50, x: 1, y: 2, map: 'main',
     conditions: [{ id: 'buff', remainingMs: 9950 }],
     items: Array.from({ length: items }, (_, slot) => ({ slot, item: { name: 'coat', level: slot % 7, q: 1 }, meta: { sprite: 'coat', definition: { name: 'Coat' } } })),
     slots: { mainhand: { slot: 'mainhand', item: { name: 'blade', level: 8 }, meta: { sprite: 'blade' } } } } };
-  const live = stream.createDashboardStream({ now: () => 1000, statuses: () => statuses, active: name => !!statuses[name],
+  const live = stream.createDashboardStream({ now: () => 1000, statuses: () => statuses,
     every: () => ({}), cancel: () => {} });
   live.install(http.router);
   return { http, live, statuses };

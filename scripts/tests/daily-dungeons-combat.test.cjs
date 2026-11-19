@@ -1,19 +1,28 @@
+const { targetingContext } = require('./helpers/targeting-module.cjs');
+// Sliced shared.js functions run with the shared movement harness (fixtures/movement-owner-callers.cjs).
+const {productionFunctions} = require('./helpers/production-functions.cjs');
+const {drivePositions,positionsOf} = require('./helpers/targeting-module.cjs');
+const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs');
+const { installCaveClient } = require('../../runtime/hunting/character/cave.ts');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
-const source = fs.readFileSync('characters/shared.js', 'utf8');
 function fixture() {
   const actor = {name:'W',ctype:'warrior',map:'cave',in:'run',hp:100,max_hp:100,real_x:0,real_y:0,cave:{run:'run',paused:false}};
   const priest = {...actor,name:'P',ctype:'priest',hp:40};
   const enemies = {a:{id:'a',type:'monster',visible:true,hp:100,map:'cave',in:'run',target:'P'},
     b:{id:'b',type:'monster',visible:true,hp:100,map:'cave',in:'run',target:'W'}};
-  const c = vm.createContext({dungeonOpenedChests:{},can_move_to:()=>true,character:actor,root:{},parent:{entities:enemies,chests:{}},
+  // The hunting owner's Cave client (hunting/character/cave.ts) over the context's character, frame, party and
+  // queue, as shared.js installs it; a row asks it no other port.
+  const cave = installCaveClient(new Proxy({ character: () => c.character, frame: () => c.parent, player: name => c.get_player(name),
+    members: () => c.currentPartyList(), current: () => true, queue: () => c.groupedCombat, withTimeout: promise => promise },
+  { get: (own, key) => key in own ? own[key] : () => { throw Error('The Cave client asked ' + String(key)); } }));
+  const c = targetingContext(createMovementContext({can_move_to:()=>true,character:actor,root:{},parent:{entities:enemies,chests:{}},
     currentPartyList:()=>['W','P'],get_player:name=>name==='W'?actor:priest,get_entity:id=>enemies[id],
-    groupedFresh:()=>true,groupedCombat:{target:{id:'a'}},monsterPriority:()=>50,runtimeCurrent:()=>true,distance:()=>50,
-    anniversaryWithTimeout:p=>p,loot:async()=>{}});
-  vm.runInContext(source.slice(source.indexOf('  function dungeonOwned()'),source.indexOf('  function dungeonRuntime()')),c);
-  return {c,actor,priest,enemies};
+    groupedFresh:()=>true,groupedCombat:{target:{id:'a'}},monsterPriority:()=>50,runtimeCurrent:()=>true,distance:()=>50}), undefined,
+  { hunting: { cave }, tasks: { partyList: () => c.currentPartyList() } });
+  return {c,actor,priest,enemies,cave};
 }
 test('cave focus follows the shared queue and proactively admits visible enemy sides',()=>{
   const {c,actor,enemies}=fixture();
@@ -32,29 +41,33 @@ test('cave focus follows the shared queue and proactively admits visible enemy s
 });
 
 test('cave looting opens only this instance, stops during votes and death',async()=>{
-  const {c,actor}=fixture(); const opened=[]; c.parent.open_chest=async id=>opened.push(id);
+  const {c,actor,cave}=fixture(); const opened=[]; c.parent.open_chest=async id=>opened.push(id);
   c.parent.chests={yes:{map:'cave',in:'run',x:10,y:0},wrong:{map:'cave',in:'other',x:10,y:0}};
-  await c.lootDungeonChests(); assert.deepEqual(opened,['yes']);
-  actor.cave.paused=true;await c.lootDungeonChests();
-  actor.cave.paused=false;actor.rip=true;await c.lootDungeonChests();
+  await cave.loot(); assert.deepEqual(opened,['yes']);
+  actor.cave.paused=true;await cave.loot();
+  actor.cave.paused=false;actor.rip=true;await cave.loot();
   assert.deepEqual(opened,['yes']);
 });
 test('normal priest healing in cave uses live injured allies instead of pre-entry status',async()=>{
-  const {c,actor,priest}=fixture(); actor.ctype='priest';actor.mp=100;
-  c.partyPositions=[{...priest,map:'main',hp:100}];c.healingBusy=false;
-  c.sameEventTeamMember=()=>true;c.isLiveAbtesting=()=>false;
-  c.G={skills:{partyheal:{mp:100},heal:{mp:1}}};c.can_heal=()=>true;
-  let healed;c.heal=async member=>{healed=member.name;};
-  c.setTimeout=setTimeout;c.clearTimeout=clearTimeout;
-  vm.runInContext(source.slice(source.indexOf('  async function healPartyBelow('),source.indexOf('  async function energizeLowestMana(')),c);
-  assert.equal(await c.healPartyBelow(.9),true);assert.equal(healed,'P');
+  // The survival owner's heal choice (needs.ts) reads its members through the character half's
+  // `members` port, which shared.js answers with the Cave's live members inside a Cave (S-07s6).
+  const {c,actor,priest,cave}=fixture(); actor.ctype='priest';actor.mp=100;actor.heal=10;actor.level=80;
+  drivePositions(c,[{...priest,map:'main',hp:100}]);
+  const {createNeeds}=require('../../runtime/characters/survival/needs.ts'),g=globalThis;
+  Object.assign(g,{character:actor,get_player:c.get_player,is_on_cooldown:()=>false,can_use:()=>true,is_in_range:()=>true,
+    G:{skills:{partyheal:{mp:400,levels:[[60,800]]},heal:{class:['priest']}},items:{}}});
+  const needs=createNeeds({members:()=>actor.cave?cave.partyMembers():positionsOf(c),escapeStage:()=>null,sameTeam:()=>true,townCasting:()=>false,partyhealAllowed:()=>true,isLeader:()=>false,
+    partyAttacker:()=>null,fighting:()=>false,lines:()=>({hp:50,mp:20}),state:()=>({}),kiting:()=>false,roster:()=>['W','P']});
+  const asks=needs.heal({character:actor,roleLoop:true,pulse:false,healFirstBelow:80})||[];
+  assert.deepEqual(asks.map(a=>[a.skill,a.targets.map(t=>t.name).join()]),[['heal','P']]);
 });
 
 test('solo cave defense includes self and confirmed kills cannot keep the old focus',()=>{
-  const {c,enemies}=fixture();c.currentPartyList=()=>[];c.groupedCombat.target.id='b';
+  const {c,cave}=fixture();c.currentPartyList=()=>[];c.groupedCombat.target.id='b';
   assert.equal(c.getDungeonTarget().id,'b');
-  assert.equal(c.cavePartyMembers().length,1);
-  c.root.partyRoleRunner={isKnownDead:id=>id==='b'};
+  assert.equal(cave.partyMembers().length,1);
+  // A confirmed death is in the module's killed list (install.ts `killed`).
+  c.targeting.state.killed.set('b',Date.now());
   assert.equal(c.getDungeonTarget(),null);
 });
 
@@ -74,7 +87,7 @@ for(const [reason,change] of [
   ['stale group',c=>c.groupedFresh=()=>false],
   ['wrong cave scope',c=>c.groupedCombat.caveScope='different:0'],
   ['dead enemy',(c,e)=>e.dead=true],
-  ['known native death',c=>c.root.partyRoleRunner={isKnownDead:()=>true}],
+  ['known native death',c=>c.targeting.state.killed.set('wall',Date.now())],
   ['invisible enemy',(c,e)=>e.visible=false],
   ['wrong map',(c,e)=>e.map='other'],
   ['wrong instance',(c,e)=>e.in='other'],
@@ -89,15 +102,15 @@ for(const [reason,change] of [
 test('cave queue survives farming reset and acknowledges before saved leader initialization',()=>{
   const now=Date.now();
   const next={caveScope:'run:0',leader:'W',members:['W','P'],seenAt:now,key:JSON.stringify(['runtime']),resetAt:0,target:null};
-  const c=vm.createContext({character:{name:'P',cave:{run:'run',floor:0}},leader:null,
-    root:{__partyCombatResetAt:now},groupedCombat:null,convoyRuntimeId:'runtime',coordinatorClockOffset:0,Date});
-  vm.runInContext(source.slice(source.indexOf('  function acceptQueue('),source.indexOf('  function queueCandidates(')),c);
-  vm.runInContext(source.slice(source.indexOf('  function groupedFresh('),source.indexOf('  function reportFightDeath(')),c);
+  const c=targetingContext(createMovementContext({character:{name:'P',cave:{run:'run',floor:0}},leader:null,
+    root:{__partyCombatResetAt:now},groupedCombat:null,convoyRuntimeId:'runtime',coordinatorClockOffset:0,Date}));
+  vm.runInContext(productionFunctions(['acceptQueue']),c);
+  vm.runInContext(productionFunctions(['groupedFresh']),c);
   c.acceptQueue(next);assert.equal(c.groupedCombat,next);assert.equal(c.groupedFresh(),true);
   c.character.cave.floor=1;assert.equal(c.groupedFresh(),false);
 });
 test('cave healing roster uses captured participants when native party list is empty',()=>{
-  const {c,actor}=fixture();actor.cave.floor=0;
+  const {c,actor,cave}=fixture();actor.cave.floor=0;
   c.groupedCombat={caveScope:'run:0',members:['W','P']};c.currentPartyList=()=>[];
-  assert.equal(c.cavePartyMembers().length,2);
+  assert.equal(cave.partyMembers().length,2);
 });

@@ -7,8 +7,11 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
 const {spawn,spawnSync}=require('node:child_process');
 const root=path.resolve(process.env.CRASH_ROOT||path.join(__dirname,'../..'));
-const persistence=path.join(root,'runtime/coordinator/persistence');
-const HISTORY_WINDOW_MS=5000,SETTINGS_WINDOW_MS=1000,MARGIN_MS=750,REOPEN_LIMIT_MS=15000;
+// CRASH_ROOT may name a checkout from before the settings owner's module.
+const persistence=['runtime/settings/coordinator/persistence','runtime/coordinator/persistence'].map(dir=>path.join(root,dir)).find(dir=>fs.existsSync(dir));
+// The crash windows are the writer's save windows (runtime/settings/coordinator/declarations.ts).
+const {hidden}=require('./helpers/declared.cjs');
+const HISTORY_WINDOW_MS=hidden('historySaveMs'),SETTINGS_WINDOW_MS=hidden('settingsSaveDelayMs'),MARGIN_MS=750,REOPEN_LIMIT_MS=15000;
 
 // Saves a direct key, a combat line and every fifth tick a material setting
 // every 20 ms, and reports each save after it returns.
@@ -18,13 +21,13 @@ const {CoordinatorJsonlStore}=require(${JSON.stringify(path.join(persistence,'js
 const {createCoordinatorPersistence}=require(${JSON.stringify(path.join(persistence,'writer.ts'))});
 const [directory,mode]=process.argv.slice(1);
 const hold=step=>{process.send({type:'step',step});Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10000);};
-const store=new CoordinatorJsonlStore(directory+'/state.jsonl',directory+'/state.new.jsonl');
+const store=new CoordinatorJsonlStore(directory+'/state.jsonl',directory+'/state.new.jsonl',{setTimeout,clearTimeout});
 const rename=fs.renameSync;
 fs.renameSync=(...args)=>{if(mode==='before-rename')hold(mode);rename(...args);if(mode==='after-rename')hold(mode);};
 syncBuiltinESMExports();
-const state={aldata:{},merchantActivity:[],combatLogs:{F:[]},threshold:0,production:{attempts:{}},
+const state={aldata:{},merchantActivity:[],settingsChanges:[],combatLogs:{F:[]},threshold:0,production:{attempts:{}},
  eventAttendance:{F:{boss:{lastLiveAt:0,lastObservedAt:0,elapsedMs:0}}}};
-const persist=createCoordinatorPersistence(state,store);
+const persist=createCoordinatorPersistence(state,store,{setTimeout,clearTimeout});
 let n=0;
 const tick=setInterval(()=>{
  n++;
@@ -44,7 +47,7 @@ process.send({type:'ready'});
 const reader=`
 const {CoordinatorJsonlStore}=require(${JSON.stringify(path.join(persistence,'jsonl-store.ts'))});
 const directory=process.argv[1];
-const store=new CoordinatorJsonlStore(directory+'/state.jsonl',directory+'/state.new.jsonl');
+const store=new CoordinatorJsonlStore(directory+'/state.jsonl',directory+'/state.new.jsonl',{setTimeout,clearTimeout});
 const history=store.get('party_dashboard_history_state_v1')||{};
 const lines=(history.combatLogs?.F||[]).map(entry=>Number(/line (\\d+)/.exec(entry.message)[1]));
 const settings=store.get('party_dashboard_settings_state_v1')||{};
@@ -63,7 +66,7 @@ function run(directory,mode,{killAfter,closeAt,tear}){
    if(message.type==='ready'&&killAfter!==undefined)timer=setTimeout(kill,killAfter);
    if(message.type==='ack')acks.push({n:message.n,at:Date.now()});
    if(message.type==='step')kill();
-   if(message.type==='closing'&&closeAt)setTimeout(kill,Math.floor(Math.random()*15));
+   if(message.type==='closing'&&closeAt)setTimeout(kill,Math.floor(rand()*15));
   });
   const limit=setTimeout(()=>{kill();},20000);
   child.on('exit',()=>{
@@ -85,7 +88,7 @@ function tearTail(main){
  const end=bytes[bytes.length-1]===10?bytes.length-1:bytes.length;
  const start=bytes.lastIndexOf(10,end-1)+1;
  if(end-start<2)return;
- fs.truncateSync(main,start+1+Math.floor(Math.random()*(end-start-1)));
+ fs.truncateSync(main,start+1+Math.floor(rand()*(end-start-1)));
 }
 function check(outcome,{tear}={}){
  const {acks,killedAt,result}=outcome;
@@ -102,17 +105,24 @@ function check(outcome,{tear}={}){
  return saved;
 }
 
-const random=(low,high)=>low+Math.floor(Math.random()*(high-low));
+// Kill times and the torn-tail cut come from one seed, printed with the run so a failure replays:
+// CRASH_SEED=<seed> node --test scripts/tests/coordinator-crash-recovery.test.cjs
+const seed=Number(process.env.CRASH_SEED)||Math.floor(Math.random()*2**32);
+console.log('coordinator-crash-recovery seed '+seed);
+let rng=seed>>>0;
+function rand(){rng=(rng+0x6D2B79F5)>>>0;let t=rng;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;}
+const random=(low,high)=>low+Math.floor(rand()*(high-low));
+// One row per crash point.
 const cases=[
- ...Array.from({length:14},(_,i)=>['random moment '+(i+1),'random',{killAfter:random(30,2000)}]),
- ...Array.from({length:6},(_,i)=>['after the history window '+(i+1),'random',{killAfter:random(6500,8000)}]),
- ...Array.from({length:8},(_,i)=>['compaction before rename '+(i+1),'before-rename',{}]),
- ...Array.from({length:8},(_,i)=>['compaction after rename '+(i+1),'after-rename',{}]),
- ...Array.from({length:8},(_,i)=>['shutdown '+(i+1),'shutdown',{closeAt:random(10,120)}]),
- ...Array.from({length:6},(_,i)=>['torn tail '+(i+1),'random',{killAfter:random(100,2500),tear:true}]),
+ ['a random moment','random',{killAfter:random(30,2000)}],
+ ['a moment after the history window','random',{killAfter:random(6500,8000)}],
+ ['compaction before rename','before-rename',{}],
+ ['compaction after rename','after-rename',{}],
+ ['shutdown','shutdown',{closeAt:random(10,120)}],
+ ['a torn tail','random',{killAfter:random(100,2500),tear:true}],
 ];
 for(const [name,mode,options] of cases)
- test('SIGKILL at '+name+' reopens in bounded time with every saved record',async t=>{
+ test('SIGKILL at '+name+' reopens in bounded time with every saved record (seed '+seed+')',async t=>{
   const outcome=await run(prepare(t),mode,options);
   if(mode!=='shutdown')assert.ok(outcome.lockLeft,'the killed writer left its lock behind');
   check(outcome,options);

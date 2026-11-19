@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import {
   Dialog,
   DialogContent,
@@ -18,7 +19,6 @@ import {
 } from "@/components/ui/select";
 import { useState } from "react";
 import { BestiaryMonster } from "./bestiary-monster";
-import { MerchantCatalogItem } from "./merchant-catalog-item";
 import { SpriteCrop } from "./sprite-crop";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SharedTracktrixBonuses } from './tracktrix-bonuses';
@@ -51,8 +51,6 @@ export function BestiaryDialog({
   characterNames?: string[];
   onOpenChange: (open: boolean) => void;
   monsters: BestiaryMonster[];
-  catalog: MerchantCatalogItem[];
-  onInspectDrop: (itemId: string, monsterName: string) => void;
   onInspectMonster: (monster: BestiaryMonster) => void;
   achievements: Record<string, { score: number; owner: string | null }> | null;
 }) {
@@ -90,7 +88,7 @@ export function BestiaryDialog({
     });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent data-area="bestiary"
         className="flex max-h-[92vh] flex-col border-rose-900 bg-[#0b1916] text-emerald-50"
         style={{ width: "calc(100vw - 2rem)", maxWidth: "1500px" }}
       >
@@ -101,7 +99,7 @@ export function BestiaryDialog({
               <PopoverTrigger render={<button type="button" aria-label="Current Tracktrix bonuses" title="Current Tracktrix bonuses" className="rounded border border-rose-700 bg-black p-1 text-rose-200 hover:border-rose-400 hover:bg-rose-950 hover:text-white" />}>
                 <Info aria-hidden="true" className="h-3.5 w-3.5" />
               </PopoverTrigger>
-              <PopoverContent className="max-h-[70vh] w-80 overflow-y-auto border border-rose-800 bg-[#1c1014] text-rose-50">
+              <PopoverContent data-area="bestiary-tracktrix" className="max-h-[70vh] w-80 overflow-y-auto border border-rose-800 bg-[#1c1014] text-rose-50">
                 <SharedTracktrixBonuses names={characterNames} />
               </PopoverContent>
             </Popover>
@@ -221,6 +219,7 @@ export function BestiaryDialog({
             })}
           </div>
         </div>
+        <AddonSlot name="dialog-section" part="bestiary" />
       </DialogContent>
     </Dialog>
   );

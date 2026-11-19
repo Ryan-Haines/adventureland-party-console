@@ -24,7 +24,7 @@ gatheringTest('a missed fishing or mining channel is recast at once; a success w
   await expect.poll(async () => (await live.state()).gatheringModes, { timeout: 30_000 }).toEqual([]);
   await expect.poll(() => live.clients[name].frame.evaluate(() => {
     const root = (document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-    return !root.__merchantGatheringSession && !root.__merchantGatheringAttempt;
+    return !root.__merchantGatheringSession && !(root.__merchantHolder&&root.__merchantHolder.kind==='gathering');
   }), { timeout: 30_000 }).toBe(true);
 
   // Declared fixture: the last twelve cells hold a rod, a pickaxe and ten free cells
@@ -47,7 +47,7 @@ gatheringTest('a missed fishing or mining channel is recast at once; a success w
     const [state,client,server]=await Promise.all([live.state(),live.clients[name].frame.evaluate(()=>{
       const game=window as any,root=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       return {now:Date.now(),next:Object.fromEntries(['fishing','mining'].map(mode=>[mode,Number(new Date(game.next_skill[mode]||0))])),
-        recorded:{...root.__merchantGatheringCooldowns},session:!!root.__merchantGatheringSession,attempt:!!root.__merchantGatheringAttempt};
+        recorded:{...root.__merchantGatheringCooldowns},session:!!root.__merchantGatheringSession,attempt:!!(root.__merchantHolder&&root.__merchantHolder.kind==='gathering')};
     }),live.admin(`output=(()=>{const p=get_player('${name}');return {fishing:p.last.fishing,mining:p.last.mining};})()`)]);
     availability={coordinator:state.gatheringCooldowns,client,server};
     return !client.session&&!client.attempt&&['fishing','mining'].every(mode=>
@@ -57,6 +57,8 @@ gatheringTest('a missed fishing or mining channel is recast at once; a success w
   await info.attach('native-gathering-initial-availability',{body:JSON.stringify(availability),contentType:'application/json'});
 
   // Declared outcomes of the server's gathering rolls, in order per mode.
+  live.undo('the gathering roll hook', () => live.admin(`output=(()=>{clearInterval(globalThis.__e2eGatherTimer);if(globalThis.__e2eOrigRandom)Math.random=globalThis.__e2eOrigRandom;globalThis.__e2eGather=null;
+      const p=get_player('${name}');if(p&&p.c&&p.c.__e2eTarget)p.c=p.c.__e2eTarget;return true;})()`));
   const hook = await live.admin(`output=(()=>{const p=get_player('${name}');
     globalThis.__e2eGather={armed:null,outcomes:{fishing:['miss','miss','hit'],mining:['miss','hit']},log:[]};
     if(!globalThis.__e2eOrigRandom)globalThis.__e2eOrigRandom=Math.random;
@@ -75,6 +77,7 @@ gatheringTest('a missed fishing or mining channel is recast at once; a success w
   const before = await stock(live);
 
   try {
+    live.undo('the merchant gathering modes', async () => { for (const mode of ['fishing', 'mining']) await live.post('/merchant/gather', { mode, enabled: false }); });
     for (const mode of ['fishing', 'mining']) await live.post('/merchant/gather', { mode, enabled: true });
 
     // 1. Every declared roll happens, misses first: a miss is followed by another real cast.
@@ -94,10 +97,12 @@ gatheringTest('a missed fishing or mining channel is recast at once; a success w
 
     // 3. After the hits, the recorded cooldowns are the game's, and no mode casts again.
     const server = await live.admin(`output=(()=>{const p=get_player('${name}');return {fishing:new Date(p.last.fishing).getTime(),mining:new Date(p.last.mining).getTime()};})()`);
+    // The success cooldown is the game's G.skills[mode].reuse_cooldown, the value the merchant's
+    // gathering reads (runtime/merchant-jobs/character/gathering.ts).
+    const reuse = await live.admin(`output={fishing:G.skills.fishing.reuse_cooldown,mining:G.skills.mining.reuse_cooldown}`) as Record<'fishing' | 'mining', number>;
     await expect.poll(async () => {
       const recorded = (await live.state()).gatheringCooldowns;
-      return ['fishing', 'mining'].every(mode => Math.abs(recorded[mode] - (server[mode as 'fishing' | 'mining'] +
-        (mode === 'fishing' ? 2_880_000 : 7_440_000))) < 15_000);
+      return (['fishing', 'mining'] as const).every(mode => Math.abs(recorded[mode] - (server[mode] + reuse[mode])) < 15_000);
     }, { timeout: 30_000, message: 'Recorded cooldowns follow the game after a success' }).toBe(true);
     const settled = (await rolls(live)).length;
     await waitForGameplay(60_000);
@@ -113,10 +118,7 @@ gatheringTest('a missed fishing or mining channel is recast at once; a success w
     await info.attach('gathering-before-cleanup', {body:JSON.stringify({at:Date.now(),
       server:await live.admin(`output=(()=>{const p=get_player('${name}');return {rolls:globalThis.__e2eGather,c:p.c,last:p.last,mp:p.mp};})()`),
       client:await live.clients[name].run(`({c:character.c,mp:character.mp,nextSkill:parent.next_skill,session:globalThis.__merchantGatheringSession,
-        attempt:globalThis.__merchantGatheringAttempt,inventoryCommands:globalThis.__partyInventoryCommands,queue:sharedRoutine.queueReport()})`),
+        holder:globalThis.__merchantHolder,inventoryCommands:globalThis.partyItems?.bag?.facts().inventoryCommands,queue:sharedRoutine.targeting.queueReport()})`),
       state:await live.state()}),contentType:'application/json'}).catch(()=>{});
-    await live.admin(`output=(()=>{clearInterval(globalThis.__e2eGatherTimer);if(globalThis.__e2eOrigRandom)Math.random=globalThis.__e2eOrigRandom;globalThis.__e2eGather=null;
-      const p=get_player('${name}');if(p&&p.c&&p.c.__e2eTarget)p.c=p.c.__e2eTarget;return true;})()`).catch(() => {});
-    for (const mode of ['fishing', 'mining']) await live.post('/merchant/gather', { mode, enabled: false }).catch(() => {});
   }
 });

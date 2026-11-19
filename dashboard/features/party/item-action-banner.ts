@@ -1,6 +1,6 @@
-export type ItemActionBanner = { label: string; colors: string; border: string; title?: string };
+type ItemActionBanner = { label: string; colors: string; border: string; title?: string };
 type Action = 'conflict' | 'upgrade' | 'compound' | 'npc' | 'stand' | 'exchange' | 'deconstruction' | 'delivery' | 'bank' | 'merchant' | 'weapon' | 'stat';
-export type BannerCandidate = { action: Action; label: string; automatic?: boolean; title?: string };
+type BannerCandidate = { action: Action; label: string; automatic?: boolean; title?: string };
 const palette: Record<Action, [string, string]> = {
   conflict: ['bg-red-950 text-red-100', 'border-red-400'],
   upgrade: ['bg-violet-950 text-violet-200', 'border-violet-400'],
@@ -19,7 +19,9 @@ function priority(candidate: BannerCandidate): number {
   const fixed: Partial<Record<Action, number>> = { conflict: 0, delivery: 3, bank: 4, merchant: 5, weapon: 6 };
   return fixed[candidate.action] ?? (candidate.automatic ? 2 : 1);
 }
-/** Collection/storage are supporting intents, never additional banners. */
+// One banner per tile, the first in priority order. Two automatic rules of processing, NPC sale,
+// stand and deconstruction on one item add a "Rule conflict" banner ahead of them, and the
+// merchant's own card drops its merchant mark.
 export function itemActionBanner(candidates: (BannerCandidate | false | null | undefined)[], merchant: boolean): ItemActionBanner | null {
   const actions = candidates.filter((value): value is BannerCandidate => !!value && !(merchant && value.action === 'merchant'));
   const automatic = new Set(actions.filter(value => value.automatic).map(value =>

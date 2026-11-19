@@ -1,155 +1,35 @@
+const {productionFunctions} = require('./helpers/production-functions.cjs');
+const {drivePositions,positionsOf} = require('./helpers/targeting-module.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const source = fs.readFileSync('characters/shared.js', 'utf8');
-function runtime() {
-  let now = 100000;
-  const calls = [];
-  const r = vm.createContext({ root: {}, dungeonOwned: () => false, escapeOwns: () => false, reunion: null, reunionWorking: false, reunionMageOffer: null,
-    previousReunionCm: null, previousMagiport: null, Date: { now: () => now }, coordinatorClockOffset: 0,
-    character: { name: 'R', ctype: 'warrior', map: 'main', x: 0, y: 0, mp: 2000, max_mp: 3000, c: {} },
-    parent: { server_region: 'US', server_identifier: 'II' },
-    G: { maps: { main: {}, winterland: {}, bank: {}, arena: { event: 'test' } }, skills: { blink: { mp: 1600 }, magiport: { mp: 900 } } },
-    partyLocation: { map: 'winterland', x: 20, y: -1109 }, desiredPartyMembers: ['R', 'M'], leader: 'M',
-    farmingTravelToken: null, farmingMode:'default', farmingEntryPoint: location=>location,
-    partyPositions: [{ name: 'M', ctype: 'mage', map: 'winterland', x: 20, y: -1109,
-      server: 'USII', seenAt: now, hp: 100 }], navigationIntent: { revision: 1 },
-    runtimeCurrent: () => true, activeCombatEvent: () => null, engagedMonster: () => null, combatRecoveryActive: () => false,
-    is_transporting: () => false, is_on_cooldown: () => false, can_use: () => true, can_move_to: () => true,
-    banking: false, bankQueued: false, stocking: false, upgrading: false, forceTraveling: false,
-    townTraveling: false, partyTownActive: false, partyConvoyActive: false, convoyTraveling: null,
-    anniversaryBusy: false, anniversaryStaging: false, eventTraveling: false,
-    kiteState: {}, eventRecoveryState: {}, stop: async () => calls.push('stop'), game_log() {},
-    send_cm: async (name, data) => calls.push({ name, data }),
-    use_skill: async (skill, target) => calls.push({ skill, target }),
-    accept_magiport: async name => calls.push({ accepted: name }),
-    sleep: async ms => { now += ms; }, anniversaryWithTimeout: async promise => promise,
-    smart_move: async destination => { calls.push({ destination }); r.character.map = destination.map; },
-    sharedPartyWalk: async destination => { calls.push({ destination, shared:true }); r.character.map = destination.map; },
-    request: async () => {},
-  });
-  vm.runInContext(source.slice(source.indexOf('  function reunionRealm()'), source.indexOf('  async function rejoinActiveEventAfterRespawn()')), r);
-  return { r, calls, advance: ms => { now += ms; } };
-}
-test('Magiport permits 10% remaining; Blink requires 30%', () => {
-  const { r } = runtime();
-  r.character.mp = 1200;
-  assert.equal(r.reunionManaAllowed('magiport', .1), true);
-  r.character.mp--;
-  assert.equal(r.reunionManaAllowed('magiport', .1), false);
-  r.character.mp = 2500;
-  assert.equal(r.reunionManaAllowed('blink', .3), true);
-  r.character.mp--;
-  assert.equal(r.reunionManaAllowed('blink', .3), false);
-});
+const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs');
+const {runtime}=require('./fixtures/farm-reunion-scenario.cjs');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+// The delayed respawn fallback reads who holds the character from the owner's report and
+// the rank table (rules.ts `farmWalkHeld`), not the movers' flags, which these rows leave
+// unset. A walk at or above the farm walk keeps the character; the death recovery's own hold
+// and a lower walk give it to the reunion.
+scenarioTable('the delayed respawn fallback yields to a walk at or above the farm walk and takes over from a lower one', runtime, [
+ ...[
+  ['a party walk at the farm tier',{kind:'group-walk',owner:'walk:party:c1:1:1',tier:'farming',journey:true},true],
+  ['a shared Hunt walk',{kind:'task-walk',owner:'lone-walk:hunt',tier:'farming',journey:true},true],
+  ["the event return's hold",{kind:'task-walk',owner:'event-return:cycle-1',tier:'event-return',journey:false},true],
+  ["the death recovery's own hold",{kind:'death-recovery',owner:'death:R:0',journey:false},false],
+  ['a follow walk',{kind:'follow',owner:'follow:M',journey:true},false],
+ ].map(([label,held,keeps])=>[`${keeps?'preserves':'takes over from'} ${label}`,({r,calls})=>{
+  r.lastDeathInfo=null;
+  r.movement={live:()=>held};
+  r.beginFarmReunion();assert.equal(calls.includes('stop'),!keeps);assert.equal(!!r.reunion,!keeps);
+ }]),
+]);
 
-test('late convoy member hands off within waypoint hunt radius without walking to waypoint', async () => {
-  const { r, calls } = runtime();
-  const target = { id: 'm' };
-  r.farmingTravelTarget = () => target;
-  r.character.map = 'winterland'; r.character.x = 300;
-  r.beginFarmReunion({ id: 5, convoyHandoff: 'c', location: r.partyLocation });
-  r.reunion.moving = true; r.reunionWorking = true;
-  await r.farmReunionTick();
-  assert.equal(r.reunion, null); assert.equal(r.combatTargetId, 'm');
-  assert.equal(calls.some(call => call.destination), false);
-});
-test('one fresh survivor qualifies, wrong realms and stale status do not', () => {
-  const { r, advance } = runtime();
-  assert.equal(r.reunionMembers().length, 1);
-  r.partyPositions[0].server = 'USIII';
-  assert.equal(r.reunionMembers().length, 0);
-  r.partyPositions[0].server = 'USII'; advance(10001);
-  assert.equal(r.reunionMembers().length, 0);
-});
-test('recipient arms before accepting only its authorized mage', async () => {
-  const { r, calls } = runtime();
-  r.beginFarmReunion(); await r.farmReunionTick();
-  assert.equal(r.reunion.phase, 'requesting-magiport');
-  r.root.on_magiport('M'); await Promise.resolve();
-  assert.equal(calls.some(call => call.accepted), false);
-  await r.reunionCm('M', { type: 'farm-reunion', action: 'offer', id: r.reunion.id, realm: 'USII' });
-  assert.equal(r.reunion.phase, 'accepting-magiport');
-  r.root.on_magiport('stranger'); r.root.on_magiport('M');
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(calls.filter(call => call.accepted).length, 1);
-});
-test('expired Magiport falls back to cross-map travel, without requesting again', async () => {
-  const { r, calls, advance } = runtime();
-  r.beginFarmReunion(); await r.farmReunionTick(); advance(10001);
-  r.partyPositions[0].seenAt += 10001;
-  await r.farmReunionTick();
-  assert.equal(calls.filter(call => call.data?.action === 'request').length, 1);
-  assert.equal(calls.some(call => call.destination?.map === 'winterland'), true);
-});
-test('manual navigation change cancels pending recovery and rejects late invitations', async () => {
-  const { r, calls } = runtime();
-  r.beginFarmReunion(); await r.farmReunionTick(); r.navigationIntent.revision++;
-  await r.farmReunionTick(); r.root.on_magiport('M');
-  assert.equal(r.reunion, null);
-  assert.equal(calls.some(call => call.accepted), false);
-});
-test('convoy or anniversary ownership prevents reunion travel', async () => {
-  const { r, calls } = runtime();
-  r.beginFarmReunion(); r.partyConvoyActive = true; await r.farmReunionTick();
-  assert.equal(calls.some(call => call.destination || call.data), false);
-  assert.equal(r.reunion.phase, 'waiting-for-movement-owner');
-});
-for(const owner of ['partyConvoyActive','convoyTraveling','shared-walk'])test('delayed respawn fallback preserves '+owner,()=>{
- const {r,calls}=runtime();if(owner==='shared-walk')r.root.__partySharedWalking={activity:'hunt'};else r[owner]=owner==='partyConvoyActive'?true:{id:'new-owned-hunt',phase:'preparing-route'};
- r.beginFarmReunion();assert.equal(calls.includes('stop'),false);assert.equal(r.reunion,null);
-});
-test('mage never Blinks across maps and walks when mana is insufficient', async () => {
-  const { r, calls } = runtime();
-  r.character.ctype = 'mage'; r.character.mp = 0; r.partyPositions[0].ctype = 'warrior';
-  r.beginFarmReunion(); await r.farmReunionTick(); await r.farmReunionTick();
-  assert.equal(calls.some(call => call.skill === 'blink'), false);
-  assert.equal(calls.filter(call => call.destination).length, 2);
-});
-
-test('mage casts once only after ready and rechecks its own navigation revision', async () => {
-  const { r, calls } = runtime();
-  Object.assign(r.character, { ctype: 'mage', map: 'winterland', x: 20, y: -1109 });
-  Object.assign(r.partyPositions[0], { ctype: 'warrior', map: 'main', x: 0, y: 0 });
-  const message = { type: 'farm-reunion', action: 'request', id: 'recovery', realm: 'USII', revision: 1 };
-  await r.reunionCm('M', message);
-  assert.equal(calls.some(call => call.skill), false);
-  await r.reunionCm('M', { ...message, action: 'ready' });
-  await r.reunionCm('M', { ...message, action: 'ready' });
-  assert.equal(calls.filter(call => call.skill === 'magiport').length, 1);
-  r.reunionMageOffer.cast = false; r.navigationIntent.revision++;
-  await r.reunionCm('M', { ...message, action: 'ready' });
-  assert.equal(calls.filter(call => call.skill === 'magiport').length, 1);
-});
-
-test('failed travel is cancelled and has a ten-second retry delay', async () => {
-  const { r, calls } = runtime();
-  r.partyPositions[0].ctype = 'warrior';
-  r.smart_move = async () => { throw Error('route failed'); };
-  r.beginFarmReunion(); await r.farmReunionTick();
-  assert.equal(r.reunion.retryAt, 110000);
-  assert.equal(r.reunion.lastError, 'route failed');
-  assert.equal(calls.at(-1), 'stop');
-});
-
-
-test('a nearby party member around a corner still requires navigation', async () => {
-  const { r, calls } = runtime();
-  r.character.map = 'winterland'; r.character.x = 20; r.character.y = -1100;
-  r.can_move_to = () => false;
-  r.beginFarmReunion();
-  await r.farmReunionTick();
-  assert.ok(r.reunion);
-  assert.ok(calls.some(call => call.destination));
-});
-
-for (const outcome of ['success', 'failure', 'manual move', 'cleared focus', 'new command', 'convoy continuation']) {
-  test('handoff recovery: ' + outcome, async () => {
-    const { r } = runtime();
+scenarioTable('handoff recovery keeps the reunion after a success or failure and drops it for a newer intent', runtime,
+ ['success', 'failure', 'manual move', 'cleared focus', 'new command', 'convoy continuation'].map(outcome=>[outcome, async ({ r }) => {
     r.lastCommand = 10;
     r.afterCombat = async action => action();
-    vm.runInContext(source.slice(source.indexOf('  async function withMerchantHandoffRecovery('), source.indexOf('  async function merchantHandoff(')), r);
+    require('./helpers/merchant-visits.cjs').installVisits(r);
     const command = { id: 10, convoyContinuation: outcome === 'convoy continuation' ? {convoyId:'return'} : null };
     const action = async () => {
       // These retained recovery scenarios model a handoff that approached the merchant.
@@ -162,79 +42,169 @@ for (const outcome of ['success', 'failure', 'manual move', 'cleared focus', 'ne
     const promise = r.withMerchantHandoffRecovery(command, action);
     if (outcome === 'failure') await assert.rejects(promise, /reachable/); else await promise;
     assert.equal(!!r.reunion, outcome === 'success' || outcome === 'failure');
-  });
-}
+ }]));
 
-test('mage Blinks toward direct underground entrance before crossing maps', async () => {
- const {r,calls}=runtime();r.partyPositions[0].ctype='warrior';r.character.ctype='mage';r.character.mp=3000;r.character.max_mp=3000;
- r.G.maps.main.doors=[[1000,0,40,40,'winterland',0,0]];
- r.can_move=()=>true;r.beginFarmReunion();await r.farmReunionTick();
- const blink=calls.find(c=>c.skill==='blink'),travel=calls.find(c=>c.destination);
- assert.ok(blink);assert.ok(Math.abs(blink.target[0]-1000)<=40);assert.equal(travel.destination.map,'winterland');
-});
-test('same-map Blink checks the landing tile rather than requiring a straight walking path', async () => {
- const {r,calls}=runtime();r.partyPositions[0].ctype='warrior';r.character.ctype='mage';r.character.map='winterland';r.character.mp=3000;r.character.max_mp=3000;
- r.can_move_to=()=>false;r.can_move=()=>true;r.beginFarmReunion();await r.farmReunionTick();
- assert.ok(calls.some(c=>c.skill==='blink'));
+// A monster on another party member holds the reunion through targeting's
+// attacker rule, which the crossings harness hands the reunion as shared.js does
+// (helpers/crossings.cjs).
+test('a monster attacking a party member blocks the farm reunion',()=>{
+ const {r}=runtime();
+ r.lastCommand=1;r.character.map='winterland';
+ assert.equal(r.reunionBlocked(),false);
+ r.parent.entities={m1:{id:'m1',type:'monster',mtype:'bee',visible:true,dead:false,target:'M',x:0,y:0}};
+ assert.equal(r.reunionBlocked(),true);
 });
 
-
-test('full-party wipe uses saved waypoint when there is no survivor near farm',async()=>{
- const {r,calls}=runtime();r.partyPositions=[];r.beginFarmReunion();await r.farmReunionTick();
- assert.ok(calls.some(c=>c.destination?.map==='winterland'));assert.notEqual(r.reunion.phase,'waiting-for-party-near-farm');
+// The shared harness's free character records a loop's error, as the owner does, so a row whose loop
+// fails shows it (fixtures/movement-owner-callers.cjs `every`).
+test('a free character records the error its loop throws',async()=>{
+ const context=createMovementContext({});
+ const endFailing=context.movement.every('reunion:probe',()=>{throw Error('reunion tick failed');});
+ await new Promise(resolve=>{const end=context.movement.every('reunion:after',()=>{end();resolve();});});
+ endFailing();
+ assert.deepEqual(context.movement.records(),[{decision:'loop-error',owner:'reunion:probe',code:'reunion tick failed'}]);
 });
-test('already-respawned runtime automatically recovers authorized displacement',async()=>{
- const {r,calls}=runtime();r.partyPositions=[];assert.equal(r.reunion,null);await r.farmReunionTick();
+
+scenarioTable('a farm reunion yields to a holder, climbs the round of a failed walk and accepts only the Magiport it asked for', runtime, [
+ // Another live walk at a rank the farm walk does not take over holds the reunion, in place of the
+ // walk flags (`partyConvoyActive` and the rest) the tick read before.
+ ['a live party walk at the farm tier holds the reunion before it travels', async ({ r, calls })=>{
+  r.beginFarmReunion(); r.movement.live = () => ({ kind: 'group-walk', owner: 'walk:party:c1:1:1', tier: 'farming', journey: true });
+  await r.farmReunionTick();
+  assert.equal(calls.some(call => call.destination || call.data), false);
+  assert.equal(r.reunion.phase, 'waiting-for-movement-owner');
+ }],
+ ['failed travel is stopped and climbs the task round when it ends, with no retry delay', async ({ r, calls })=>{
+  positionsOf(r)[0].ctype = 'warrior';
+  r.smart_move = async () => { throw Error('route failed'); };
+  r.beginFarmReunion(); await r.farmReunionTick();
+  assert.ok(!r.reunion.retryAt);
+  assert.equal(r.reunion.phase, 'retry-wait');
+  assert.equal(r.reunion.lastError, 'route failed');
+  assert.equal(calls.at(-1), 'stop');
+ }],
+ ['recipient arms before accepting only its authorized mage', async ({ r, calls })=>{
+  r.beginFarmReunion(); await r.farmReunionTick();
+  assert.equal(r.reunion.phase, 'requesting-magiport');
+  r.root.on_magiport('M'); await Promise.resolve();
+  assert.equal(calls.some(call => call.accepted), false);
+  await r.reunionCm('M', { type: 'farm-reunion', action: 'offer', id: r.reunion.id, realm: 'USII' });
+  assert.equal(r.reunion.phase, 'accepting-magiport');
+  r.root.on_magiport('stranger'); r.root.on_magiport('M');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.filter(call => call.accepted).length, 1);
+ }],
+]);
+
+scenarioTable('the reunion tick reaches the nearest survivor by Blink, a shared walk or a route', runtime, [
+ ['already-respawned runtime automatically recovers authorized displacement', async ({r,calls})=>{
+ drivePositions(r,[]);assert.equal(r.reunion,null);await r.farmReunionTick();
  assert.ok(r.reunion);assert.ok(calls.some(c=>c.destination?.map==='winterland'));
-});
-for(const owner of ['cancelled','town','event','convoy'])test(owner+' prevents automatic respawn travel',async()=>{
- const {r,calls}=runtime();r.partyPositions=[];
- if(owner==='cancelled')r.navigationIntent.cancelled=true;if(owner==='town')r.partyTownActive=true;
- if(owner==='event')r.eventTraveling=true;if(owner==='convoy')r.partyConvoyActive=true;
- await r.farmReunionTick();assert.equal(r.reunion,null);assert.equal(calls.length,0);
+ }],
+]);
+
+// returns.ts `dispatch` sends `event-resume-travel` to a returning member whose saved spot is not
+// the leader's, and the return ends (`event.returned`) once that member stands there. Observed live
+// on the fixture add-on's Dreams return (live-events-hooks.spec.ts): the leader's manual move had
+// saved its spot where Dreams stood, the priest's command threw "Waiting for event exit to release
+// movement" on every delivery, and the return never ended.
+test("the event return's own resume command walks its member to the saved spot", async () => {
+ const task = { kind: 'event-return', owner: 'event-return:cycle-1', tier: 'event-return', reunion: 'command' };
+ const { r, calls } = runtime();
+ r.receiveTask({ task });
+ const command = { id: 5, type: 'event-resume-travel', cycleId: 'cycle-1', navigationRevision: 1, location: { ...r.partyLocation } };
+ r.beginFarmReunion(command);
+ assert.equal(r.reunion?.command, command);
+ await r.farmReunionTick();
+ assert.ok(calls.some(call => call.destination?.map === 'winterland'));
+ // The return's task starts no reunion without its command.
+ const own = runtime().r;
+ own.receiveTask({ task });
+ own.beginFarmReunion();
+ assert.equal(own.reunion, null);
 });
 
+// Observed live on the same Dreams return a run later: the priest stood in Town under the return's
+// standing hold (status `movementLive` {owner 'event-return:<cycle>', tier 'event-return', journey
+// false}) with its reunion at 'waiting-for-movement-owner' until the test's 300 s poll expired.
+// Another return's hold and the return's own journey still hold the reunion.
+scenarioTable("the event return's resume command walks out of that return's standing hold", runtime, [
+ ['own standing hold', { kind: 'task-walk', owner: 'event-return:cycle-1', tier: 'event-return', journey: false }, true],
+ ["another return's standing hold", { kind: 'task-walk', owner: 'event-return:cycle-0', tier: 'event-return', journey: false }, false],
+ ["the return's own journey", { kind: 'task-walk', owner: 'event-return:cycle-1', tier: 'event-return', journey: true }, false],
+].map(([label, held, walks]) => [label, async ({ r, calls }) => {
+  r.receiveTask({ task: { kind: 'event-return', owner: 'event-return:cycle-1', tier: 'event-return', reunion: 'command' } });
+  r.beginFarmReunion({ id: 5, type: 'event-resume-travel', cycleId: 'cycle-1', navigationRevision: 1, location: { ...r.partyLocation } });
+  r.movement.live = () => held;
+  await r.farmReunionTick();
+  assert.equal(calls.some(call => call.destination?.map === 'winterland'), walks);
+  assert.equal(r.reunion.phase === 'waiting-for-movement-owner', !walks);
+}]));
 
-test('attacked reunion yields travel ownership so defensive combat and healing can run',async()=>{
- const {r,calls}=runtime();r.beginFarmReunion();r.reunion.moving=true;
- r.parent.entities={boar:{id:'boar',type:'monster',visible:true,target:'R'}};
- await r.farmReunionTick();assert.equal(r.reunionBlocked(),true);
- assert.equal(r.reunion.phase,'waiting-for-movement-owner');assert.equal(r.reunion.moving,false);
- assert.ok(calls.includes('stop'));r.parent.entities={};assert.equal(r.reunionBlocked(),false);
- await r.farmReunionTick();assert.notEqual(r.reunion.phase,'waiting-for-movement-owner');
+// The movement harness builds its pieces where a test asks for them. A context the test creates
+// itself holds no movement name, though this file loads the scenarios, the slice loaders and the
+// harness (red while walk-state.cjs and movement-owner-callers.cjs replaced vm.createContext).
+scenarioTable('a context holds movement names only once its test asks for the harness', () => null, [
+ ['a bare context reads no walk state and no movement service', () => {
+  const c = vm.createContext({});
+  assert.equal(vm.runInContext("typeof walkState + ' ' + typeof movement", c), 'undefined undefined');
+ }],
+ ['a movement context reads its own variables as walk state and the free character as its service', () => {
+  const c = createMovementContext({ navigationIntent: { revision: 4 } });
+  assert.equal(c.walkState.intent.revision, 4);
+  assert.equal(c.movement.hold(), 'granted');
+ }],
+]);
+
+// B123: the reunion counts a member at the spot by the spot's farm area. v1.5.0
+// counted one within 800 of the spot, so a member farming 900 out in a wide area
+// was missed and one 100 out on the far side of a wall was counted.
+test('B123: the reunion counts the members inside the spot\'s farm area, at any distance', () => {
+ const { r } = runtime();
+ r.desiredPartyMembers = ['R', 'M', 'P'];
+ const spot = r.partyLocation, seenAt = r.Date.now();
+ drivePositions(r, [{ name: 'M', ctype: 'mage', map: spot.map, x: spot.x + 900, y: spot.y, server: 'USII', seenAt, hp: 100 },
+  { name: 'P', ctype: 'priest', map: spot.map, x: spot.x + 100, y: spot.y, server: 'USII', seenAt, hp: 100 }]);
+ r.inFarmArea = member => member.name === 'M';
+ assert.deepEqual(r.reunionMembers().map(member => member.name), ['M']);
 });
 
-test('reaching the live teammate releases reunion before an old smart route finishes',async()=>{
- const {r,calls}=runtime();r.beginFarmReunion();r.character.map='winterland';r.character.x=20;r.character.y=-1100;
- r.reunion.moving=true;r.reunionWorking=true;r.reunion.destination={map:'winterland',x:1000,y:1000};
- await r.farmReunionTick();assert.equal(r.reunion,null);assert.ok(calls.includes('stop'));assert.equal(calls.some(c=>c.destination),false);
-});
-test('arrival can complete during retry delay instead of suppressing combat for ten seconds',async()=>{
- const {r,calls}=runtime();r.beginFarmReunion();r.character.map='winterland';r.character.x=20;r.character.y=-1100;
- r.reunion.retryAt=999999;r.reunion.phase='retry-wait';await r.farmReunionTick();assert.equal(r.reunion,null);assert.equal(calls.some(c=>c.destination),false);
-});
+// Observed live on the Hunt row where the priest dies at Mr. Green and the event ends before it
+// respawns: the respawned priest stood under the event return, and when the return handed it to
+// the party walk, the reunion took the gap between two legs of that walk for the old death and
+// the walk's next leg waited behind it. A member still dead when the return ends keeps its death.
+scenarioTable("a death the event return covers starts no reunion after the return", runtime, [
+ ['alive under the return', false, false],
+ ['dead until the return ends', true, true],
+].map(([label, deadThrough, starts]) => [label, async ({ r }) => {
+  r.character.map = 'winterland'; r.character.x = 400; r.character.y = -1109;
+  r.lastDeathInfo = { at: 90000 };
+  r.character.rip = deadThrough;
+  r.receiveTask({ task: { kind: 'event-return', owner: 'event-return:cycle-1', tier: 'event-return', reunion: 'command' } });
+  await r.farmReunionTick();
+  assert.equal(r.reunion, null);
+  r.character.rip = false;
+  r.receiveTask({ task: { kind: 'farming', owner: 'farm:party:M', tier: 'farming', reunion: 'alone' } });
+  await r.farmReunionTick();
+  assert.equal(!!r.reunion, starts);
+}]));
 
-test('early Hunt handoff rejoins the current leader without returning to the obsolete encounter point',async()=>{
- const {r,calls}=runtime();r.character.map='winterland';r.character.x=20;r.character.y=-1100;
- r.farmingTravelTarget=()=>null;let acknowledged=0;r.request=async()=>{acknowledged++;};
- r.beginFarmReunion({id:12,convoyHandoff:'old',location:{map:'winterland',x:900,y:900}});
- r.reunion.moving=true;r.reunionWorking=true;
- await r.farmReunionTick();assert.equal(r.reunion,null);assert.equal(acknowledged,1);assert.equal(calls.some(c=>c.destination),false);
-});
-
-
-test('ended Goobrawl exit owns movement despite a restored remote farming waypoint',async()=>{
- const {r,calls}=runtime();r.character.map='goobrawl';r.eventReturnPending=true;
- r.beginFarmReunion();await r.farmReunionTick();
- assert.equal(r.reunion,null);assert.equal(r.reunionBlocked(),true);assert.equal(calls.length,0);
- // A stale in-flight farming continuation cannot stop the transporter approach.
- const old={revision:1,moving:true,phase:'walking'};r.reunion=old;
- r.root.__partySharedWalking={activity:'event-return',key:'return-cycle'};
- await r.farmReunionTick();assert.equal(old.cancelled,true);assert.equal(r.reunion,null);assert.equal(calls.length,0);
- assert.equal(r.root.__partySharedWalking.activity,'event-return');
- // The shared exit retains ownership even between command retries.
- r.eventReturnPending=false;r.beginFarmReunion();await r.farmReunionTick();assert.equal(calls.length,0);
- // Verified exit and released event walk permit the existing checkpoint recovery.
- r.root.__partySharedWalking=null;r.character.map='main';
- r.beginFarmReunion();assert.ok(r.reunion);assert.equal(r.reunionBlocked(),false);
-});
+// Observed live on the goo walk from Town: the warrior engaged a goo inside the area from 21 to 36
+// north of it (its attack range reaches in), the walk was released, and the priest's handoff
+// reunion stood at the release point for minutes, phase 'travelling', waiting on a shared walk the
+// fighting warrior never joined. Inside the area the member still counts at any distance.
+scenarioTable('a combat handoff reunion rejoins the leader fighting within the search radius of the area', runtime, [
+ ['the leader 36 north of the area', { x: 30, y: 666 }, true],
+ ['the leader beyond the search radius', { x: 30, y: 200 }, false],
+].map(([label, at, rejoins]) => [label, async ({ r, calls }) => {
+  const spot = { map: 'main', x: -32, y: 787, shapes: [{ boundary: [-282, 702, 218, 872] }] };
+  r.partyLocation = spot; r.farmRadius = 400;
+  r.character.map = 'main'; r.character.x = -25; r.character.y = 552;
+  drivePositions(r, [{ name: 'M', ctype: 'warrior', map: 'main', ...at, server: 'USII', seenAt: r.Date.now(), hp: 100 }]);
+  r.farmingTravelTarget = () => null;
+  const posts = []; r.request = async (path, options) => { posts.push([path, options.body]); return { ok: true }; };
+  r.beginFarmReunion({ id: 7, type: 'event-resume-travel', convoyHandoff: 'convoy-1', navigationRevision: 1, location: { ...spot } });
+  await r.farmReunionTick();
+  assert.equal(posts.some(([path]) => path === '/event-resume-complete'), rejoins);
+  assert.equal(calls.some(call => call.shared), !rejoins);
+}]));

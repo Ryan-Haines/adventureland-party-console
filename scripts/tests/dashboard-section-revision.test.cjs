@@ -18,9 +18,9 @@ function server(sections) {
     const parsed = new URL(url, 'http://dashboard');
     const section = parsed.searchParams.get('section'), current = sections[section];
     requests.push({ section, revision: parsed.searchParams.get('revision') });
-    if (current.status && current.status !== 200) return { ok: false, status: current.status, redirected: false, headers: new Headers(), json: async () => ({}) };
-    if (parsed.searchParams.get('revision') === current.revision) return { ok: false, status: 304, redirected: false, headers: new Headers({ ETag: `"${current.revision}"` }), json: async () => { throw new Error('304 has no body'); } };
-    return { ok: true, status: 200, redirected: false, headers: new Headers({ ETag: `"${current.revision}"` }), json: async () => JSON.parse(JSON.stringify(current.body)) };
+    if (current.status && current.status !== 200) return { ok: false, status: current.status, redirected: false, headers: new Headers(), json: async () => ({}), text: async () => '{}' };
+    if (parsed.searchParams.get('revision') === current.revision) return { ok: false, status: 304, redirected: false, headers: new Headers({ ETag: `"${current.revision}"` }), json: async () => { throw new Error('304 has no body'); }, text: async () => '' };
+    return { ok: true, status: 200, redirected: false, headers: new Headers({ ETag: `"${current.revision}"` }), json: async () => JSON.parse(JSON.stringify(current.body)), text: async () => JSON.stringify(current.body) };
   };
   return { requests, fetch };
 }
@@ -77,7 +77,7 @@ test('a mutation still refetches an active bank query at once, and a changed ban
   const fake = server(sections);
   const observer = new QueryObserver(client, { ...domainOptions(client, 'bank'), refetchInterval: false });
   const stop = observer.subscribe(() => {});
-  await withFetch(async (url, init) => String(url).includes('/state?') ? fake.fetch(url, init) : { ok: true, status: 200, json: async () => ({}) }, async () => {
+  await withFetch(async (url, init) => String(url).includes('/state?') ? fake.fetch(url, init) : { ok: true, status: 200, json: async () => ({}), text: async () => '{}' }, async () => {
     await observer.refetch();
     sections.bank = { revision: 'r2', body: { bank: { gold: 2 } } };
     await performAction(client, '/bank/unlock', {});

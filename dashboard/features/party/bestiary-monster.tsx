@@ -16,7 +16,7 @@ export type BestiaryMonster = {
   drops: BestiaryDrop[];
   homeRewards?: BestiaryDrop[];
   spawnRecords?: SpawnRecord[];
-  // Present only for a monster without an ordinary spawn (characters/shared.js eventMonsterSources).
+  // Present only for a monster without an ordinary spawn (runtime/status/character/report.ts eventMonsterSources).
   eventSources?: EventSource[];
 };
 

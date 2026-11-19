@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["**/*.ts", "**/*.mts"]
+  "include": ["**/*.ts", "**/*.mts", "../runtime/hooks/**/*.mts"]
 }

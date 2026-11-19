@@ -14,5 +14,7 @@ export type ItemDropSource = {
   baseRate?: number;
   originRate?: number;
   acquisitionPath?: string[];
+  // The event whose window the drop exists only in (items/character/bag.ts `eventWindow`).
+  eventWindow?: string;
   sprite?: Sprite | null;
 };

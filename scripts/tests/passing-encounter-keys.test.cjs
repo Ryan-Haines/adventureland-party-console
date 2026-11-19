@@ -1,25 +1,31 @@
+const { targetingContext } = require('./helpers/targeting-module.cjs');
+const {productionFunction} = require('./helpers/production-functions.cjs');
+// The realm read is the reunion crossings' (crossings.ts `reunionRealm`), which the harness
+// installs on the context.
+const {installCrossings} = require('./helpers/crossings.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { namedFunction } = require('./helpers/named-function.cjs');
-
 // Failure inventory: docs/efficiency.md, Character threads follow-ups, CT8.
 // A unit test: realm reads through the CODE facade are not visible outside the
 // character thread. The passing journeys cover the encounter decisions.
-const source = fs.readFileSync('characters/shared.js', 'utf8');
 function fixture() {
   const reads = { realm: 0 };
-  const parent = {};
+  // A realm change comes with a new socket (game.js `init_socket`, then its `welcome` sets the realm).
+  const parent = { socket: {} }, walks = {};
   let region = 'US', identifier = 'I';
   Object.defineProperty(parent, 'server_region', { get: () => { reads.realm++; return region; } });
   Object.defineProperty(parent, 'server_identifier', { get: () => identifier });
-  const context = vm.createContext({ String, Number, JSON, Date, Map, WeakMap, Object, parent,
+  const context = targetingContext({ String, Number, JSON, Date, Map, WeakMap, Object, parent,
     character: { map: 'main', in: 'main' }, coordinatorClockOffset: 0, passiveHunting: { rules: {} },
     fightDeaths: [], groupedCombat: { deaths: [], passingEncounters: [] }, peerPassingEncounters: [], passingEncounters: {},
-    committedHuntEncounter: () => false, huntTravelDefense: () => false, passiveTravelInterruptible: () => false, passiveStopRequired: () => false });
-  for (const name of ['reunionRealm', 'passingKey', 'isPassingEncounter']) vm.runInContext(namedFunction(source, name), context);
-  return { context, reads, realm: (r, i) => { region = r; identifier = i; } };
+    committedHuntEncounter: () => false, huntTravelDefense: () => false, passiveTravelInterruptible: () => false, passiveStopRequired: () => false,
+    root: {} }, undefined, { walks });
+  // Movement's walks door answers the realm from the crossings, as shared.js's `movementParts` does.
+  walks.reunionRealm = installCrossings(context).reunionRealm;
+  for (const name of ['passingKey', 'isPassingEncounter']) vm.runInContext(productionFunction(name), context);
+  return { context, reads, realm: (r, i) => { region = r; identifier = i; parent.socket = {}; } };
 }
 // The key's definition: a JSON array of realm, map, instance and id.
 const expectedKey = (target, character, realm) => JSON.stringify([target.server || realm, target.map || character.map,
@@ -59,7 +65,9 @@ test('encounter answers follow deaths, reservations, local encounters, realm, ma
   assert.equal(context.isPassingEncounter(null), false);
 });
 
-test('one encounter check reads the realm through the facade once', () => {
+// The realm stays with its socket (crossings.ts `reunionRealm`), so checks on one socket read it
+// through the facade no more.
+test('encounter checks on one socket read the realm through the facade no more', () => {
   const { context, reads } = fixture();
   const now = Date.now();
   const entry = id => ({ id, server: 'USI', map: 'main', in: 'main', at: now });
@@ -70,5 +78,5 @@ test('one encounter check reads the realm through the facade once', () => {
   context.isPassingEncounter({ id: 'warm', type: 'monster', hp: 1 });
   reads.realm = 0;
   for (let i = 0; i < 20; i++) context.isPassingEncounter({ id: 'm' + i, type: 'monster', hp: 1 });
-  assert.equal(reads.realm, 20);
+  assert.equal(reads.realm, 0);
 });

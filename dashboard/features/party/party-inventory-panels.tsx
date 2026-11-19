@@ -1,6 +1,11 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
+import { commerceRuleKey, defaultStandPrice, markMatches } from '../../../runtime/items/api.ts';
+import { standDraft, standIsFull } from './stand-capacity';
 import { HostingSettings } from "./hosting-settings";
-import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
+import { AddonSettings } from '../../../runtime/hooks/dashboard/settings-page';
+import { PinTopBarSetting } from './pin-top-bar';
+import { AppKeysSettings } from './app-keys-settings';
 import { ConsoleUpdateSettings } from './console-updates';
 import { AccountSettings } from "./account-settings";
 import { lazy, useCallback, useState } from "react";
@@ -29,8 +34,6 @@ import { Copy, Eye, EyeOff, RefreshCw, UserPlus } from "lucide-react";
 const BankSheet = lazy(() =>
   import("./bank-sheet").then((module) => ({ default: module.BankSheet })),
 );
-import { same } from "./same";
-import { bankSaleCopies } from "./bank-sale-copies";
 const StandSheet = lazy(() =>
   import("./stand-sheet").then((module) => ({ default: module.StandSheet })),
 );
@@ -59,7 +62,14 @@ export function PartyInventoryPanels({ model }: { model: PartyConsoleModel }) {
 }
 function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
   const [deconstructionSelection, setDeconstructionSelection] = useState<DeconstructionSelection | null>(null);
-  const model = usePanelModel(base, { inventory: true, vitals: true, bank: base.bankOpen, market: base.marketOpen || base.standOpen });
+  // The browser gives the Clipboard API only to a secure origin, so on a console
+  // reached by its LAN address over plain HTTP the Copy key control selects the key for Ctrl+C instead.
+  const [secureOrigin] = useState(() => typeof window !== 'undefined' && window.isSecureContext);
+  const [copyNote, setCopyNote] = useState(false);
+  // Live WTB, a tab of the Market dialog, and the stand count the bank stock as owned, so the
+  // bank section loads while either is open.
+  const market = base.marketOpen || base.standOpen;
+  const model = usePanelModel(base, { inventory: true, vitals: true, bank: base.bankOpen || market, market });
   const { setStandItem, setNpcSaleItem, setAutoNpcSaleItem, removeStandListing, saveStandBid, buyALDataListing,
     buyPontyListing, sellALDataOrder } = useForwardingActions(base, forwardedActions);
   const {
@@ -141,7 +151,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
         (mark) =>
           mark.bankPack === pack &&
           mark.bankSlot === entry.slot &&
-          same(mark.item, entry.item),
+          markMatches(mark.item, entry.item),
       );
       if (listing)
         void removeStandListing(listing).catch((error: unknown) =>
@@ -155,7 +165,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     [standListings, removeStandListing, setActionError],
   );
   const onBankStand = useCallback(
-    (pack: string, entry: InventoryEntry, all = false) => {
+    (pack: string, entry: InventoryEntry) => {
       const knownMeta = catalogAllItems.find(
         (item) => item.id === entry.item.name,
       )?.meta;
@@ -169,53 +179,22 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
             }
           : entry.meta,
       };
-      const existing = standListings.find(
-        (mark) =>
-          mark.bankPack === pack &&
-          mark.bankSlot === entry.slot &&
-          same(mark.item, entry.item),
-      );
-      if (!existing && standListings.length >= 16)
-        return setActionError('Merchant stand is full (16/16)');
-      const value = {
-        defaultPrice: Math.max(1, Number(valuedEntry.meta?.definition.g) || 1),
-      };
-      setStandItem({
-        id: existing?.id,
-        entry: valuedEntry,
-        bankPack: pack,
-        defaultPrice: value.defaultPrice,
-        markAll: all,
-        price: String(existing?.price || value.defaultPrice),
-        quantity: String(existing?.quantity || entry.item.q || 1),
-      });
+      const press = standDraft({ standSlots: state.standSlots, standListings }, valuedEntry, pack);
+      if ('refused' in press) return setActionError(press.refused);
+      setStandItem(press.draft);
     },
-    [catalogAllItems, standListings, setActionError, setStandItem],
+    [catalogAllItems, standListings, state.standSlots, setActionError, setStandItem],
   );
   const onBankNpcSale = useCallback(
-    (pack: string, entry: InventoryEntry, all = false) => {
-      const targets = all
-        ? bankSaleCopies(state.bank, state.bankbois || [], entry)
-        : undefined;
-      if (targets && !targets.length)
-        return setActionError('No unlocked matching bank items available');
+    (pack: string, entry: InventoryEntry) =>
       setNpcSaleItem({
         source: 'bank',
         pack,
         entry,
-        targets,
-        quantity: String(
-          targets
-            ? targets.reduce(
-                (sum, target) => sum + Number(target.entry.item.q || 1),
-                0,
-              )
-            : entry.item.q || 1,
-        ),
+        quantity: String(entry.item.q || 1),
         acknowledged: false,
-      });
-    },
-    [state.bank, state.bankbois, setActionError, setNpcSaleItem],
+      }),
+    [setNpcSaleItem],
   );
   const onBankDeconstruction = useCallback(
     (pack: string, entry: InventoryEntry, all: boolean, auto = false) =>
@@ -245,10 +224,8 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
   const onBankAutoStand = useCallback(
     (entry: InventoryEntry) => {
       const valued = { ...entry, meta: detailMeta(entry.item, entry.meta) };
-      const rule = autoStandMarks[automaticCommerceRuleKey(entry.item)];
-      const price =
-        Number(rule?.price) ||
-        Math.max(1, Number(valued.meta?.definition.g) || 1);
+      const rule = autoStandMarks[commerceRuleKey(entry.item)];
+      const price = Number(rule?.price) || defaultStandPrice(valued.meta?.definition);
       setStandItem({
         entry: valued,
         price: String(price),
@@ -309,14 +286,11 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
         (item) => item.id === listing.item.name,
       )?.meta;
       const entry = { slot: listing.slot, item: listing.item, meta: knownMeta };
-      const value = {
-        defaultPrice: Math.max(1, Number(entry.meta?.definition.g) || 1),
-      };
       setStandItem({
         id: listing.id,
         entry,
         bankPack: listing.bankPack,
-        defaultPrice: value.defaultPrice,
+        defaultPrice: defaultStandPrice(entry.meta?.definition),
         price: String(listing.price),
         quantity: String(listing.quantity),
         markAll: false,
@@ -325,7 +299,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     [catalogAllItems, setStandItem],
   );
   const onEditBuy = useCallback(
-    (item: Item, meta?: ItemMeta | null) => setWtbItem({ item, meta }),
+    (item: Item, meta?: ItemMeta | null, price?: number) => setWtbItem({ item, meta, price }),
     [setWtbItem],
   );
   const onListForWTB = useCallback(
@@ -343,17 +317,14 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
         (mark) =>
           mark.bankPack === bankPack &&
           mark.slot === entry.slot &&
-          same(mark.item, entry.item),
+          markMatches(mark.item, entry.item),
       );
-      const value = {
-        defaultPrice: Math.max(1, Number(valuedEntry.meta?.definition.g) || 1),
-      };
       setStandItem({
         id: existing?.id,
         entry: valuedEntry,
         bankPack,
         markAll: false,
-        defaultPrice: value.defaultPrice,
+        defaultPrice: defaultStandPrice(valuedEntry.meta?.definition),
         price: String(price),
         quantity: String(
           Math.max(1, Math.min(quantity, Number(entry.item.q || 1))),
@@ -400,9 +371,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           onWithdrawAll={onWithdrawAll}
           onCreateBankboi={onCreateBankboi}
           onDeleteBankboi={onDeleteBankboi}
-          buyable={catalogBuyable}
           catalog={catalogAllItems}
-          priceHistory={standPriceHistory}
           autoStandMarks={autoStandMarks}
           automaticRules={{
             merchantCharacter: state.merchantCharacter,
@@ -416,7 +385,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
             autoExchanges: state.autoExchanges,
           }}
           standListings={standListings}
-          standBids={standBids}
+          standFull={standIsFull(state)}
           onUnstand={onUnstand}
           onStand={onBankStand}
           onNpcSale={onBankNpcSale}
@@ -519,12 +488,14 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           onOpenChange={setStandOpen}
           marketOpen={marketOpen}
           onMarketOpenChange={setMarketOpen}
+          stand={state.standSlots}
           merchant={
             state.merchantCharacter
               ? state.characters[state.merchantCharacter]
               : undefined
           }
           bank={state.bank}
+          ownedStock={state.ownedStock}
           bankGold={state.bankGold}
           listings={standListings}
           catalog={catalogAllItems}
@@ -545,9 +516,6 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           aldata={state.aldata}
           onALDataSetup={onALDataSetup}
           ponty={state.ponty}
-          automaticWTBEnabled={
-            state.merchantAutomations?.['stand bid purchases'] !== false
-          }
           onBuyALData={buyALDataListing}
           onBuyPonty={buyPontyListing}
           onSellALData={sellALDataOrder}
@@ -555,7 +523,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
         />
       </DeferredPanel>
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-h-[85dvh] overflow-y-auto border-slate-700 bg-[#0b1916] text-emerald-50 sm:max-w-xl">
+        <DialogContent data-area="interface-settings" className="max-h-[85dvh] overflow-y-auto border-slate-700 bg-[#0b1916] text-emerald-50 sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Interface settings</DialogTitle>
             <DialogDescription>
@@ -748,6 +716,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
             </div>
             <div className="mt-4 flex gap-2">
               <Input
+                id="aldata-key"
                 readOnly
                 type={aldataKeyVisible ? 'text' : 'password'}
                 value={aldataKey}
@@ -778,13 +747,23 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
                 size="icon"
                 variant="outline"
                 disabled={!aldataKey}
-                onClick={() => void navigator.clipboard.writeText(aldataKey)}
+                onClick={() => {
+                  // With no clipboard, or a refused write, the key shows selected with the note.
+                  const select = () => {
+                    setALDataKeyVisible(true);
+                    setCopyNote(true);
+                    requestAnimationFrame(() => (document.getElementById('aldata-key') as HTMLInputElement | null)?.select());
+                  };
+                  if (secureOrigin) navigator.clipboard.writeText(aldataKey).catch(select);
+                  else select();
+                }}
                 aria-label="Copy key"
                 className="border-slate-500 bg-black text-slate-100 hover:bg-slate-800 hover:text-white"
               >
                 <Copy className="h-4 w-4" />
               </Button>
             </div>
+            {copyNote ? <p role="status" className="mt-1 text-xs text-slate-300">The key is selected: press Ctrl+C to copy it. The browser did not copy it to the clipboard.</p> : null}
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <Button
                 disabled={aldataBusy}
@@ -813,8 +792,12 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
               <p className="mt-2 text-xs text-rose-300">{state.aldata.error}</p>
             ) : null}
           </div>
+          <PinTopBarSetting />
+          <AppKeysSettings />
+          <AddonSettings />
           <HostingSettings />
           <ConsoleUpdateSettings />
+          <AddonSlot name="dialog-section" part="interface-settings" />
         </DialogContent>
       </Dialog>
       <Dialog
@@ -823,7 +806,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           if (!realmBusy) setRealmConfirmOpen(open);
         }}
       >
-        <DialogContent className="border-violet-700 bg-[#080b10] text-slate-100 sm:max-w-lg">
+        <DialogContent data-area="realm-confirm" className="border-violet-700 bg-[#080b10] text-slate-100 sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {realmSetHome ? 'Change home realm?' : 'Switch realm?'}
@@ -880,6 +863,18 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
               </span>
             </label>
           ) : null}
+          {model.realmBlacklisted && (
+            <label className="flex items-start gap-3 rounded border border-amber-600 bg-amber-950/30 p-3 text-sm text-amber-100">
+              <Checkbox
+                checked={model.realmBlacklistConfirmed}
+                onCheckedChange={(checked) => model.setRealmBlacklistConfirmed(checked === true)}
+                className="border-amber-400 bg-black data-checked:bg-amber-600"
+              />
+              <span>
+                <strong>{model.realmBlacklisted}.</strong> Tick to send this order anyway; it confirms this one order only.
+              </span>
+            </label>
+          )}
           {model.realmError && (
             <p role="alert" className="text-sm text-rose-200">
               {model.realmError}
@@ -897,7 +892,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
             </Button>
             <Button
               type="button"
-              disabled={realmBusy}
+              disabled={realmBusy || (!!model.realmBlacklisted && !model.realmBlacklistConfirmed)}
               onClick={() => void switchRealm()}
               className="bg-violet-600 text-white hover:bg-violet-500"
             >

@@ -1,64 +1,56 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const { namedFunction } = require('./helpers/named-function.cjs');
-const source = fs.readFileSync('characters/shared.js', 'utf8');
-const prepare = namedFunction(source, 'prepareCatalog');
+const { statusReport } = require('./helpers/status-report.cjs');
 
+// The warm-up yields one item per slice through the status owner's run scope (report.ts `prepareCatalog`); each
+// `step` runs the next yield. Real timer throughput and publication are verified by live-catalog.spec.ts.
 function fixture() {
   const timers = [], warmed = [], errors = [];
-  const context = vm.createContext({
-    // Retained invalidation/retry fixture: each metadata lookup costs 10 ms,
-    // so preparation spans multiple cooperative slices. Real timer throughput
-    // and publication are verified by live-catalog.spec.ts.
-    Date: { now: () => warmed.length * 10 },
-    G: { items: { coat: {}, staff: {}, potion: {} } },
-    catalogPreparing: false, catalogPrepared: false, catalogKnown: false, catalogGeneration: 0,
-    runtimeCurrent: () => true, itemWorldInfo: id => warmed.push(id),
-    setTimeout: callback => timers.push(callback), game_log: message => errors.push(message),
-  });
-  vm.runInContext(prepare, context);
+  const c = { character: {}, G: { items: { coat: {}, staff: {}, potion: {} } }, root: {}, current: () => true,
+    sleep: () => new Promise(resolve => timers.push(resolve)), log: message => errors.push(message),
+    itemReads: { itemWorldInfo: id => c.warm(id) }, warm: id => warmed.push(id) };
+  const report = statusReport(c);
+  const state = () => c.root.__partyCatalogDiagnostic('goo', 'coat');
   const step = async () => { timers.shift()(); await Promise.resolve(); await Promise.resolve(); };
-  return { context, warmed, errors, timers, step };
+  return { c, report, state, warmed, errors, timers, step };
 }
 
 test('expensive catalog work yields between slices, does not duplicate, and becomes ready only when complete', async () => {
-  const f = fixture(), pending = f.context.prepareCatalog();
-  await f.context.prepareCatalog();
+  const f = fixture(), pending = f.report.prepareCatalog();
+  await f.report.prepareCatalog();
   assert.equal(f.timers.length, 1);
   assert.deepEqual(f.warmed, []);
   for (const id of ['coat', 'staff', 'potion']) {
-    assert.equal(f.context.catalogPrepared, false);
+    assert.equal(f.state().prepared, false);
     await f.step();
     assert.equal(f.warmed.at(-1), id);
   }
   await pending;
-  assert.equal(f.context.catalogPrepared, true);
-  assert.equal(f.context.catalogPreparing, false);
-  await f.context.prepareCatalog();
+  assert.equal(f.state().prepared, true);
+  assert.equal(f.state().preparing, false);
+  await f.report.prepareCatalog();
   assert.equal(f.timers.length, 0);
 });
 
 test('Tracktrix invalidation and retired code cannot publish stale preparation', async () => {
-  for (const invalidate of [c => c.catalogGeneration++, c => c.runtimeCurrent = () => false]) {
-    const f = fixture(), pending = f.context.prepareCatalog();
-    await f.step(); invalidate(f.context); await f.step(); await pending;
-    assert.equal(f.context.catalogPrepared, false);
-    assert.equal(f.context.catalogPreparing, false);
+  for (const invalidate of [f => f.report.stopCatalog(), f => { f.c.current = () => false; }]) {
+    const f = fixture(), pending = f.report.prepareCatalog();
+    await f.step(); invalidate(f); await f.step(); await pending;
+    assert.equal(f.state().prepared, false);
+    assert.equal(f.state().preparing, false);
     assert.deepEqual(f.warmed, ['coat']);
   }
 });
 
 test('known server catalogs still warm local item metadata asynchronously; failures can retry', async () => {
-  const f = fixture(); f.context.catalogKnown = true;
-  f.context.itemWorldInfo = () => { throw Error('bad catalog'); };
-  const pending = f.context.prepareCatalog(); assert.equal(f.timers.length, 1);
+  const f = fixture(); f.report.catalogReply({ needsCatalog: false });
+  f.c.warm = () => { throw Error('bad catalog'); };
+  const pending = f.report.prepareCatalog(); assert.equal(f.timers.length, 1);
   assert.equal(f.warmed.length, 0); await f.step(); await pending;
-  assert.equal(f.context.catalogPreparing, false); assert.equal(f.context.catalogPrepared, false);
+  assert.equal(f.state().preparing, false); assert.equal(f.state().prepared, false);
   assert.match(f.errors[0], /bad catalog/);
-  f.context.itemWorldInfo = id => f.warmed.push(id);
-  const retry = f.context.prepareCatalog();
+  f.c.warm = id => f.warmed.push(id);
+  const retry = f.report.prepareCatalog();
   for (let i = 0; i < 3; i++) await f.step();
-  await retry; assert.equal(f.context.catalogPrepared, true);
+  await retry; assert.equal(f.state().prepared, true);
 });

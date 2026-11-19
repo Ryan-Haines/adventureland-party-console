@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { assertUnmodified, readJson } from '../update/files.ts';
+import { assertUnmodified } from '../update/files.ts';
+import { requiredJson } from '../build-store.ts';
 import type { Release } from '../update/contracts.ts';
 import { delay } from '../update/transaction.ts';
-import { run } from '../update/process.ts';
 import { verifyHTTPS } from '../hosting/verify-https.mts';
+import { stopTree } from '../hosting/process-tree.ts';
 import { verifyFirstRun, verifyDashboardBuild } from './verify-startup.ts';
 const home = path.resolve(process.argv[2]), root = path.join(home, 'app');
-await assertUnmodified(root, (await readJson<Release>(path.join(root, 'release.json'))).files);
+await assertUnmodified(root, (await requiredJson<Release>(path.join(root, 'release.json'))).files);
 const child = spawn(process.execPath, [path.join(root, 'tools/update/agent.mts')], {
   cwd: root, windowsHide: true, stdio: 'inherit', env: { ...process.env, AL_INSTALL_HOME: home, AL_DATA_DIR: path.join(home, 'data'), AL_PORT: '13010', AL_HTTPS_PORT: '13443', AL_INTERNAL_DASHBOARD_PORT: '13303' },
 });
@@ -25,7 +26,7 @@ try {
   if (!update.managed) throw new Error('Packaged updater is not connected');
   console.log('Clean package startup passed; no game credentials used.');
 } finally {
-  if (child.pid) await run('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], home);
+  if (child.pid) await stopTree(child.pid);
 }
 // Vinext keeps background cache timers after its HTTP server closes.
 // Let pending native handle closures settle before exiting on Windows.

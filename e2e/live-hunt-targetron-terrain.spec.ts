@@ -1,5 +1,5 @@
 import {test,expect} from './live-fixtures';
-import {W,P,evidence} from './hunt-interruption-helpers';
+import {W,P,evidence,clearMap,nativeHit,approachOwned} from './hunt-interruption-helpers';
 
 test.use({loadout:'combat-range',initialPosition:{map:'uhills',x:-573,y:-80}});
 
@@ -10,11 +10,11 @@ test('warrior recovers a blocked Targetron approach in the reported UHills layou
   await live.post('/formation',{leader:W});
   await live.post('/focus',{monsterFocus:[]});
   // Isolate the declared terrain encounter from randomized roaming spawns.
-  await live.admin(`output=(()=>{for(const m of Object.values(instances.uhills.monsters))remove_monster(m,{method:'disappear',nospawn:true});for(let i=monster_respawns.length-1;i>=0;i--)if(monster_respawns[i][0]?.map==='uhills')monster_respawns.splice(i,1);return true;})()`);
+  await clearMap(live,'uhills');
   const setupOwnership:any[]=[];
   try{
     await expect.poll(async()=>{
-      const actors=await Promise.all([W,P].map(name=>live.clients[name].run(`(()=>{const r=globalThis,s=r.sharedRoutine,g=r.__partyGroupedCombat;return {name:character.name,focus:s?.getMonsterFocus?.(),target:g?.target?.id||null,independent:r.partyQueueClient?.independent?.report?.()||null};})()`)));
+      const actors=await Promise.all([W,P].map(name=>live.clients[name].run(`(()=>{const r=globalThis,s=r.sharedRoutine,g=r.__partyGroupedCombat;return {name:character.name,focus:r.partyHunting?.farm.focus().slice(),target:g?.target?.id||null,independent:r.partyQueueClient?.independent?.report?.()||null};})()`)));
       setupOwnership.push({at:Date.now(),actors});if(setupOwnership.length>32)setupOwnership.splice(4,1);
       return actors.every(actor=>Array.isArray(actor.focus)&&actor.focus.length===0&&!actor.target&&!actor.independent);
     },{timeout:15000,message:'Native CODE must retire ambient targeting before the declared Priest placement'}).toBe(true);
@@ -74,21 +74,21 @@ test('warrior recovers a blocked Targetron approach in the reported UHills layou
         approachStatus:globalThis.partyQueueClient?.formation?.approachStatus?.(),enemies:Object.values(parent.entities).filter(e=>e.type==='monster'&&e.visible).map(e=>({id:e.id,x:e.x,y:e.y,target:e.target,mtype:e.mtype})),distance:t?distance(character,t):null,positioning:globalThis.partyCombatPosition||null,
         segmentClear:(()=>{const d=globalThis.partyCombatPosition?.destination;return d?
           can_move({map:character.map,x:character.real_x,y:character.real_y,going_x:d.x,going_y:d.y,base:character.base}):null;})()};})()`));
-      return (await live.clients[W].events()).some((event:any)=>event.event==='hit'&&String(event.data?.id)===seed.id&&event.data?.hid===W&&event.data?.source!=='taunt'&&event.data?.damage>1);
+      return (await live.clients[W].events()).some((event:any)=>nativeHit(event,W,seed.id));
     },{timeout:60000,intervals:[100,250],message:'The warrior must recover around native UHills terrain and damage Targetron'}).toBe(true);
     const nativeMoves=await live.clients[W].events();
-    const firstOwnedDamage=nativeMoves.find(event=>event.event==='hit'&&String(event.data?.id)===seed.id&&event.data?.hid===W&&event.data?.source!=='taunt'&&event.data?.damage>1);
+    const firstOwnedDamage=nativeMoves.find(event=>nativeHit(event,W,seed.id));
     expect(firstOwnedDamage,'Owned route evidence must precede actual native damage').toBeTruthy();
     const combatMoves=nativeMoves.filter(event=>{const p=event.motion?.position,r=event.motion?.independentRoute,d=event.data;
       return event.event==='move-issued'&&event.at<=firstOwnedDamage!.at&&p?.target===seed.id&&
-        (p.movementOwner==='combat'||p.mode==='independent-approach'&&p.movementOwner==='combat-approach'&&p.approachId&&r?.id===p.approachId&&r.target===seed.id)&&
+        (p.movementOwner==='combat'||approachOwned(p)&&r?.id===p.approachId&&r.target===seed.id)&&
         Number.isFinite(d?.x)&&Number.isFinite(d?.y)&&Number.isFinite(d?.going_x)&&Number.isFinite(d?.going_y)&&Math.hypot(d.going_x-d.x,d.going_y-d.y)>1;
     });
     await info.attach('native-owned-combat-route',{body:JSON.stringify({target:seed.id,firstDamage:firstOwnedDamage,combatMoves}),contentType:'application/json'});
     expect(combatMoves.length,'Actual native packets must show matching owned combat movement').toBeGreaterThan(0);
     expect(combatMoves.every(event=>event.motion?.clear===true),'Every observed native combat segment must clear terrain').toBe(true);
     const dx=seed.x-geometry.origin.x,dy=seed.y-geometry.origin.y,length=Math.hypot(dx,dy);
-    const nativeEvents=await live.clients[W].events(),firstDamage=nativeEvents.find(event=>event.event==='hit'&&String(event.data?.id)===seed.id&&event.data?.hid===W&&event.data?.source!=='taunt'&&event.data?.damage>1);
+    const nativeEvents=await live.clients[W].events(),firstDamage=nativeEvents.find(event=>nativeHit(event,W,seed.id));
     expect(firstDamage,'The native bend window must end at the actual first attack damage receipt').toBeTruthy();
     const capture=await live.clients[W].frame.evaluate(()=>(window as any).__e2eTargetronPositions);
     expect(capture.overflow,'Native position capture must remain complete').toBe(false);
@@ -122,7 +122,7 @@ test.describe('selected UHills handoff',()=>{
   test('selected UHills robot engages while the healer rounds its approach',async({live},info)=>{
     test.setTimeout(180000);
     await live.post('/merchant/force-stand',{enabled:true});
-    await live.admin(`output=(()=>{for(const m of Object.values(instances.uhills.monsters))remove_monster(m,{method:'disappear',nospawn:true});for(let i=monster_respawns.length-1;i>=0;i--)if(monster_respawns[i][0]?.map==='uhills')monster_respawns.splice(i,1);return true;})()`);
+    await clearMap(live,'uhills');
     await live.admin(`output=(()=>{const p=get_player('${P}');p.slots.mainhand={name:'firestaff',level:8};p.slots.offhand=null;p.slots.shoes={name:'shoes',level:0};cache_player_items(p);calculate_player_stats(p);resend(p,'reopen+cid');return {range:p.range,speed:p.speed};})()`);
     const geometry=await live.clients[W].run(`(()=>{const closest=(x,y)=>{const points=[];for(let dx=-96;dx<=96;dx+=8)for(let dy=-96;dy<=96;dy+=8){const p={x:x+dx,y:y+dy};if(can_move({map:character.map,x:p.x,y:p.y,going_x:p.x,going_y:p.y,base:character.base}))points.push(p);}return points.sort((a,b)=>Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y))[0];};return {priest:closest(-331,-484),target:closest(-648,-209),alternate:closest(-816,-320)};})()`);
     await info.attach('selected-uhills-native-geometry',{body:JSON.stringify(geometry),contentType:'application/json'});
@@ -137,8 +137,8 @@ test.describe('selected UHills handoff',()=>{
     const samples:any[]=[];
     try{
       await expect.poll(async()=>{
-        for(const name of [W,P])samples.push(await live.clients[name].run('({name:character.name,at:Date.now(),x:character.real_x,y:character.real_y,positioning:globalThis.partyCombatPosition,group:globalThis.sharedRoutine.getGroupedCombat?.()})'));
-        return (await live.clients[W].events()).some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.primary&&e.data?.hid===W&&e.data?.damage>1&&e.data?.source!=='taunt');
+        for(const name of [W,P])samples.push(await live.clients[name].run('({name:character.name,at:Date.now(),x:character.real_x,y:character.real_y,positioning:globalThis.partyCombatPosition,group:globalThis.sharedRoutine.targeting.queue()})'));
+        return (await live.clients[W].events()).some((e:any)=>nativeHit(e,W,seed.primary));
       },{timeout:35000,intervals:[100,250],message:'The selected robot must receive a native warrior attack without exhausted recovery'}).toBe(true);
       expect((await live.clients[W].events()).some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.alternate&&e.data?.hid===W)).toBe(false);
     }finally{

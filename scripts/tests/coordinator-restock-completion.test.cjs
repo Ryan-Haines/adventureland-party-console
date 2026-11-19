@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {restockInventorySatisfied}=require('../../runtime/coordinator/inventory/restock-completion.ts');
+const {restockInventorySatisfied}=require('../../runtime/items/coordinator/needs.ts');
 test('restock completion totals matching stacks against both maxima',()=>{
  const items=[null,{item:{name:'hp',q:2}},{item:{name:'hp',q:3}},{item:{name:'mp',q:4}},{item:{name:'other',q:999}}];
  assert.equal(restockInventorySatisfied(items,()=>({hp:{item:'hp',max:5},mp:{item:'mp',max:4}})),true);

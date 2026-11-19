@@ -1,41 +1,54 @@
+// The buy-and-level rows run the items owner's merchantCommerce
+// (runtime/items/character/production.ts) on the items harness with a one-line order. The fixture
+// character is no merchant, so upgradeConfirmed calls the game's upgrade directly, with no production
+// journal or lucky swap; `upgrade` is that call.
+const { productionHarness } = require('./helpers/items-character.cjs');
+const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs');
 const test = require('node:test'), assert = require('node:assert/strict');
-const fs = require('node:fs'), vm = require('node:vm');
-const {namedFunction} = require('./helpers/named-function.cjs');
-const source = fs.readFileSync('characters/shared.js', 'utf8');
-const lineSource = namedFunction(source, 'merchantBuyUpgradeLine');
-const {createMerchantProgressRoutes} = require('../../runtime/coordinator/http/merchant-progress.ts');
-const {createCompletionRetries} = require('../../runtime/coordinator/merchant/completion-retries.ts');
-const {currentMerchantReport} = require('../../runtime/coordinator/merchant/commerce-progress.ts');
-const {craftProtection, availableCraftStock} = require('../../runtime/coordinator/merchant/craft-reservations.ts');
+const {createMerchantProgressRoutes} = require('../../runtime/merchant-jobs/coordinator/routes.ts');
+const {createCompletionRetries} = require('../../runtime/merchant-jobs/coordinator/endings.ts');
+const {currentMerchantReport} = require('../../runtime/merchant-jobs/coordinator/endings.ts');
+const {COMMERCE_PROGRESS_VERSION} = require('../../runtime/merchant-jobs/rules.ts');
+const {craftProtection} = require('../../runtime/items/coordinator/production.ts');
+const {availableCraftStock, PROTECTED_FREE_SLOTS_DEFAULT} = require('../../runtime/items/rules.ts');
+const {publishTasks} = require('../../runtime/tasks/api.ts');
+const {publishEventAnswers} = require('../../runtime/events/api.ts');
+const {itemsDoor} = require('./helpers/coordinator-merchant.cjs');
 
 function worker(poofs = 0) {
-  let failures = poofs, buys = 0, upgrades = 0, checkpointHook = () => {}, upgradeHook = () => {};
-  const items = Array(42).fill(null), calls = [], command = {id:1,jobId:'fixture-commerce',_commerceState: {}};
+  let failures = poofs, buys = 0, upgrades = 0, checkpointHook = () => {};
+  const items = Array(42).fill(null), calls = [], activity = [];
   const purchase = {id: 'coat', level: 3, quantity: 1, attempts: 1000, budget: 100000};
-  const copy = value => JSON.parse(JSON.stringify(value));
-  const context = vm.createContext({character: {name:'M',items}, G: {items: {coat: {g: 10, upgrade: true}, scroll0: {g: 1, s: 9999}}},
-    root:{__merchantActiveJob:{commandId:command.id}},runtimeCurrent:()=>true,
-    request:async()=>({commerceAdoptionProtection:{requirements:[]}}),partyAvailableCraftStock:availableCraftStock,
-    fingerprint: item => item ? {...item} : null,
-    sameItem: (item, ref) => !!item && item.name === ref.name && (item.level || 0) === (ref.level || 0),
-    findItem: ref => items.findIndex(item => item && item.name === ref.name && (item.level || 0) === (ref.level || 0)),
-    item_grade: () => 0, itemSeller: name => name === 'coat' ? 'armors' : 'scrolls',
-    findInventoryItemByName: name => items.findIndex(item => item?.name === name),
-    buyConfirmed: async (name, quantity) => { buys++; calls.push(['buy', name, quantity]);
-      if (name === 'coat') items[items.indexOf(null)] = {name, level: 0};
-      else {const existing = items.find(item => item?.name === name); if (existing) existing.q += quantity;
-        else items[items.indexOf(null)] = {name, q: quantity};}
-    },
-    upgradeConfirmed: async (slot, scroll) => {upgrades++; items[scroll].q--; if (!items[scroll].q) items[scroll] = null;
-      if (failures-- > 0) {items[slot] = null; throw {reason: 'upgrade_destroyed', confirmedDestroyed:true};}
-      items[slot].level++; upgradeHook(items[slot]);
-    },
-  });
-  vm.runInContext(['sameItemState', 'remapCommerceOwnedItems', 'verifyCommerceResults'].map(name => namedFunction(source, name)).join('\n') + '\n' + lineSource, context);
-  const services = {fund: async () => {}, move: async name => calls.push(['move',name]), activity: async () => {},
-    checkpoint: async (progress, boundary) => {command._commerceState = copy(progress); checkpointHook(command._commerceState, boundary);}};
-  return {context,items, calls, command, purchase, services, run: () => context.merchantBuyUpgradeLine(command,purchase,0,services),
-    checkpoint: fn => checkpointHook = fn, upgrade: fn => upgradeHook = fn, counts: () => ({buys,upgrades})};
+  const command = {id: 1, jobId: 'fixture-commerce', commerceProgressVersion: COMMERCE_PROGRESS_VERSION, order: {buys: [purchase]}};
+  const G = {items: {coat: {g: 10, upgrade: true}, scroll0: {g: 1, s: 9999}}, skills: {},
+    npcs: {armors: {items: ['coat']}, scrolls: {items: ['scroll0', 'scroll1']}}};
+  const w = {items, calls, activity, command, purchase, G, grade: () => 0, move: async name => calls.push(['move', name]),
+    // The game's upgrade: a poof empties the cell and the game confirms the destruction.
+    upgrade: async (slot, scroll) => {
+      items[scroll].q--; if (!items[scroll].q) items[scroll] = null;
+      if (failures-- > 0) {items[slot] = null; throw {reason: 'upgrade_destroyed', confirmedDestroyed: true};}
+      items[slot].level++;
+    }};
+  const h = productionHarness({character: {name: 'M', items, gold: 1e9, bank: {gold: 0}}, G, bank: {findBankItem: () => null},
+    reads: {merchantCatalog: () => ({buyable: [], craftable: []})},
+    ports: {job: () => ({commandId: command.id}), grade: item => w.grade(item), move: name => w.move(name),
+      protectedSlots: () => PROTECTED_FREE_SLOTS_DEFAULT, upgrade: (slot, scroll) => { upgrades++; return w.upgrade(slot, scroll); },
+      buyConfirmed: async (name, quantity) => { buys++; calls.push(['buy', name, quantity]);
+        if (name === 'coat') items[items.indexOf(null)] = {name, level: 0};
+        else {const existing = items.find(item => item?.name === name); if (existing) existing.q += quantity;
+          else items[items.indexOf(null)] = {name, q: quantity};}
+      },
+      // Each checkpoint lands in the local journal before its request, so a hook that throws is a
+      // lost reply after the save.
+      request: async (path, {body}) => {
+        if (path === '/merchant/checkpoint') {checkpointHook(body.state, body.cycleBoundary); return {yield: false};}
+        if (path === '/merchant/activity') activity.push(body);
+        calls.push([path, JSON.parse(JSON.stringify(body))]);
+        return {};
+      }}});
+  return Object.assign(w, {h, stored: h.stored, run: () => h.production.merchantCommerce(command),
+    checkpoint: fn => checkpointHook = fn, counts: () => ({buys, upgrades}),
+    poofs: () => activity.filter(entry => /poof/.test(entry.message)).length});
 }
 
 test('300 poofs yield between item cycles and resume with cumulative spending and attempts', async () => {
@@ -62,10 +75,15 @@ test('confirmed survivor resumes after reload without a new item or another cycl
 });
 
 test('lost final-upgrade response is reconciled once and cannot duplicate a result', async () => {
-  const w=worker(); w.upgrade(item=>{if(item.level===3) throw Error('connection lost');});
+  // The game applies the final upgrade after its reply was lost, so the bag shows +3 only once the
+  // line has thrown.
+  const w=worker(), upgrade=w.upgrade;
+  w.upgrade=async(slot,scroll)=>{if(w.items[slot].level<2)return upgrade(slot,scroll);
+    setImmediate(()=>upgrade(slot,scroll));throw Error('connection lost');};
   await assert.rejects(w.run(),/connection lost/);
   assert.equal(w.command._commerceState.pendingUpgrade.level,3);
-  w.upgrade(()=>{}); await w.run(); assert.equal(w.counts().upgrades,3);
+  await new Promise(resolve=>setImmediate(resolve));
+  await w.run(); assert.equal(w.counts().upgrades,3);
   assert.equal(w.command._commerceState.results.length,1);
 });
 
@@ -87,10 +105,16 @@ test('attempt and gold allowances cannot reset across repeated yields', async ()
   }
 });
 
+// The merchant's event reservation asks the tasks owner's live task and the events owner's deferred returns
+// (merchant-jobs/coordinator/event-hold.ts); neither holds one here. A queued job's readiness asks
+// the items owner's items.needs over the same state.
 function progressFixture() {
+  publishTasks({groupOf: name => 'party:' + name, live: () => null});
+  publishEventAnswers({deferredReturn: () => false});
   let event=false; const state={merchantCharacter:'M',merchantCurrent:{id:'j',commandId:7,commerceProgressVersion:2,
     reason:'merchant commerce',target:'M',priority:50},merchantQueue:[],statuses:{},gatheringModes:[],gatheringCooldowns:{},commands:{M:{id:7}}};
-  const routes=createMerchantProgressRoutes(state,{now:()=>1000,priority:j=>j.priority||0,routinePriority:()=>0,
+  itemsDoor(state);
+  const routes=createMerchantProgressRoutes(state,{offline:()=>false,now:()=>1000,priority:j=>j.priority||0,routinePriority:()=>0,
     stamp:j=>j,persist(){},log(){},dispatch(){},anniversaryReserved:()=>event,capacityBlocked:j=>j.full===true,collectionReady:()=>true});
   function invoke(body,handler=routes.checkpoint){let code=200,value;const res={status:c=>{code=c;return res;},json:v=>value=v};handler({body},res);return{code,value};}
   return{state,invoke,routes,event:()=>event=true};
@@ -131,19 +155,24 @@ test('queued order reservations protect survivors and completed results but rele
 
 test('buy command releases an idle stand operation and closes the stand before starting',async()=>{
   const calls=[],root={localStorage:{getItem:()=>null}},command={id:8,jobId:'buy',type:'merchant-commerce',commerceProgressVersion:2};
-  const c=vm.createContext({root,merchantRuntimeId:'runtime',character:{ctype:'merchant',stand:true},
-    merchantIdleActive:true,gatheringActive:false,gatheringMode:'fishing',gatheringGeneration:1,
-    gatheringTimer:null,merchantIdlePending:{id:7},luckyUpgradeSlot:null,luckyUpgradeService:null,
+  const c=createMovementContext({root,character:{ctype:'merchant',stand:true},
+    luckyUpgradeSlot:null,luckyUpgradeService:null,
     request:async(path,{body})=>{calls.push([path,body]);},setInterval:()=>1,clearInterval(){},
-    stop:async()=>{calls.push('stop');c.merchantIdleActive=false;},
-    close_stand:async()=>{calls.push('close');c.character.stand=false;},recoverProductionJournal:async()=>calls.push('recover'),
-    bankStacks:null,compressMerchantInventory:async()=>{},
-    freeInventorySlots:()=>42,merchantLuckyUpgrade:()=>({tidy:()=>assert.fail('must not relocate a pending upgrade outcome')}),
-    setGathering:mode=>calls.push(mode),game_log(){},setTimeout:fn=>fn()});
-  vm.runInContext(namedFunction(source,'runMerchantJob'),c);
-  await c.runMerchantJob(command,'buy',async()=>{assert.equal(c.character.stand,false);assert.equal(c.merchantIdleActive,false);calls.push('action');});
+    stop:async()=>{calls.push('stop');root.__merchantHolder=null;released();},
+    partyItems:{stand:{close:async()=>{calls.push('close');c.character.stand=false;}}},recoverProductionJournal:async()=>calls.push('recover'),
+    freeInventorySlots:()=>42,tidyLuckySlot:()=>assert.fail('must not relocate a pending upgrade outcome'),
+    game_log(){},setTimeout:fn=>fn()});
+  // The stand return walking home is the runner's holder `idle`: the buy command meets it, the
+  // walk stops and the holder lets go, and the take closes the stand before the job runs.
+  // The lucky recovery is the items owner's, with no lucky journal saved.
+  let released;
+  root.__merchantHolder={kind:'idle',commandId:7,owner:'old',startedAt:0,phase:'return',cancelled:null,pending:null,done:new Promise(resolve=>{released=resolve;})};
+  c.recoverLuckyUpgrade=productionHarness({character:c.character}).production.recoverLucky;
+  require('./helpers/merchant-runner.cjs').installRunner(c,{sleep:async()=>{}});
+  assert.equal(await c.merchantRunner.accept(command),true);
+  await c.merchantRunner.runJob(command,'buy',async()=>{assert.equal(c.character.stand,false);calls.push('action');});
   assert.ok(calls.indexOf('stop')<calls.indexOf('close'));assert.ok(calls.indexOf('close')<calls.indexOf('action'));
-  assert.equal(calls[0][1].commandId,8);assert.equal(root.__merchantActiveJob,null);
+  assert.equal(calls.find(Array.isArray)[1].commandId,8);assert.equal(root.__merchantHolder,null);
 });
 
 test('movement checkpoint resets only the movement failure streak and preserves financial counters',()=>{
@@ -158,42 +187,41 @@ test('results remain owned across lines and unrelated target-level items do not 
  assert.equal(w.calls.filter(c=>c[0]==='buy'&&c[1]==='coat').length,1);
  assert.equal(w.command._commerceState.results.length,1);
  assert.notEqual(w.command._commerceState.results[0].slot,8);
- const first=w.command._commerceState.results[0];w.command._commerceState.buyIndex=1;
- // The helper is asked for line zero again: it must create a new line without losing the first receipt.
+ const first=w.command._commerceState.results[0];
+ // A second line of the same item starts from the first line's closing checkpoint and keeps its receipt.
+ w.command.order.buys.push({...w.purchase});w.command.resumeState=w.command._commerceState;
  await w.run();assert.equal(w.command._commerceState.results.length,2);
  assert.equal(w.command._commerceState.results[0].slot,first.slot);
 });
 
 test('commerce executor uses named NPC routes and reports a resumable movement failure with saved allowances',async()=>{
- const w=worker(),storage=new Map(),reports=[],moves=[];
- Object.assign(w.context.character,{name:'M',map:'main',x:1000,y:1000,gold:100000});
- Object.assign(w.context,{
-   root:{__merchantActiveJob:{jobId:'j',commandId:7},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}},
-   merchantCatalog:()=>({buyable:[{id:'coat',cost:10},{id:'scroll0',cost:1}],craftable:[]}),
-   find_npc:()=>({map:'main',x:0,y:0}),
-   smart_move:async destination=>{moves.push(destination);if(destination==='newupgrade')throw Object.assign(Error('ALClient found no route'),{partyRequest:{path:'/movement-plan',status:503}});},
-   request:async(path,{body})=>{reports.push([path,JSON.parse(JSON.stringify(body))]);return {yield:false};},
- });
- vm.runInContext(namedFunction(source,'merchantCommerce'),w.context);
- await assert.rejects(w.context.merchantCommerce({id:7,jobId:'j',commerceOrderId:'order',commerceProgressVersion:2,
-   order:{buys:[w.purchase]},resumeState:{phase:'leveling',buyIndex:0,attempts:0,spent:0}}),/no route/);
+ const w=worker(),moves=[];
+ w.move=async destination=>{moves.push(destination);if(destination==='newupgrade')throw Object.assign(Error('ALClient found no route'),{partyRequest:{path:'/movement-plan',status:503}});};
+ Object.assign(w.command,{commerceOrderId:'order',resumeState:{phase:'leveling',buyIndex:0,attempts:0,spent:0}});
+ await assert.rejects(w.run(),/no route/);
  assert.ok(moves.every(destination=>typeof destination==='string'));assert.ok(moves.includes('armors'));
- const completion=reports.findLast(([path])=>path==='/merchant/complete')[1];
- assert.equal(completion.failureKind,'commerce_movement');assert.equal(completion.commandId,7);
- const saved=JSON.parse(storage.get('party-commerce:order'));
+ const completion=w.calls.findLast(([path])=>path==='/merchant/complete')[1];
+ assert.equal(completion.failureKind,'commerce_movement');assert.equal(completion.commandId,1);
+ const saved=w.stored['party-commerce:order'];
  assert.equal(saved.attempts,1);assert.equal(saved.spent,13);assert.equal(saved.activeItem.name,'coat');
  assert.equal(completion.activity.at(-1).message,'Merchant order paused; progress preserved');
 });
 
+// A complete production journal settles on recovery and writes its receipt into the commerce journal
+// it names, once: the receipt bumps the sequence, so a late replay of the same journal finds none.
 test('production receipt survives a lost completion response and records poof before another routine reuses the slot',async()=>{
- const storage=new Map([['commerce',JSON.stringify({sequence:4,pendingUpgrade:{level:3},spent:19,attempts:2})]]);
- const c=vm.createContext({root:{localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}}});
- vm.runInContext(namedFunction(source,'rememberCommerceProduction'),c);
- c.rememberCommerceProduction({commerce:{key:'commerce',sequence:4},outcomeItem:null,destroyed:true});
- const saved=JSON.parse(storage.get('commerce'));
- assert.deepEqual(saved,{sequence:5,pendingUpgrade:{level:3,outcome:{item:null,destroyed:true}},spent:19,attempts:2});
- c.rememberCommerceProduction({commerce:{key:'commerce',sequence:4},outcomeItem:{name:'coat',level:3}});
- assert.equal(JSON.parse(storage.get('commerce')).pendingUpgrade.outcome.item,null,'late replay cannot replace the receipt');
+ const h=productionHarness({character:{name:'M',items:[]}});
+ h.stored.commerce={sequence:4,pendingUpgrade:{level:3},spent:19,attempts:2};
+ const journal=outcomeItem=>({id:'a',phase:'complete',item:{name:'coat',level:2},slots:[0],commerce:{key:'commerce',sequence:4},
+  outcomeItem,destroyed:!outcomeItem,success:!!outcomeItem});
+ h.stored['party-production']=journal(null);
+ await h.production.recover();
+ assert.deepEqual(h.stored.commerce,{sequence:5,pendingUpgrade:{level:3,outcome:{item:null,destroyed:true}},spent:19,attempts:2});
+ h.stored['party-production']=journal({name:'coat',level:3});
+ const late=productionHarness({character:{name:'M',items:[]}});
+ Object.assign(late.stored,h.stored);
+ await late.production.recover();
+ assert.equal(late.stored.commerce.pendingUpgrade.outcome.item,null,'late replay cannot replace the receipt');
 });
 
 test('an uncertain scroll purchase protects its quantity baseline while queued',()=>{
@@ -202,54 +230,28 @@ test('an uncertain scroll purchase protects its quantity baseline while queued',
  assert.deepEqual(availableCraftStock(items,craftProtection(state)),[null]);
 });
 
-test('live regression: survivor moves after checkpoint and completes without another purchase',async()=>{
- const w=worker();let moved=false;
- w.checkpoint(p=>{
-  if(!moved&&p.activeItem?.level===2&&p.pendingUpgrade?.level===3){
-   moved=true;w.items[15]=w.items[p.activeSlot];w.items[p.activeSlot]=null;
-  }
- });
- await w.run();
- assert.equal(moved,true);assert.equal(w.counts().upgrades,3);
- assert.equal(w.calls.filter(c=>c[0]==='buy'&&c[1]==='coat').length,1);
- assert.equal(w.items[15].level,3);
-});
-
 test('empty original slot and arbitrary upgrade error cannot report poof or buy again',async()=>{
- const w=worker();let poofs=0;
- w.services.activity=async e=>{if(/poof/.test(e.message))poofs++;};
- w.context.upgradeConfirmed=async slot=>{
+ const w=worker();
+ w.upgrade=async slot=>{
   w.items[15]=w.items[slot];w.items[slot]=null;
-  throw Object.assign(Error('item or scroll unavailable'),{code:'lucky_slot_unavailable'});
+  throw Object.assign(Error('item or scroll unavailable'),{code:'lucky_unavailable'});
  };
  await assert.rejects(w.run(),/unavailable/);
  assert.equal(w.calls.filter(c=>c[0]==='buy'&&c[1]==='coat').length,1);
- assert.equal(w.items[15].level,0);assert.equal(poofs,0);
+ assert.equal(w.items[15].level,0);assert.equal(w.poofs(),0);
  assert.ok(w.command._commerceState.activeItem);
  assert.ok(w.command._commerceState.pendingUpgrade);
 });
 
 test('legacy inferred destruction is not a confirmed destruction receipt',async()=>{
- const w=worker();let poofs=0;
- w.services.activity=async e=>{if(/poof/.test(e.message))poofs++;};
- w.context.upgradeConfirmed=async slot=>{w.items[slot]=null;throw {reason:'upgrade_destroyed'};};
- await assert.rejects(w.run(),e=>e.reason==='upgrade_destroyed');
- assert.equal(w.calls.filter(c=>c[0]==='buy'&&c[1]==='coat').length,1);assert.equal(poofs,0);
-});
-
-test('ambiguous relocated survivors block rather than choosing an unrelated item',async()=>{
  const w=worker();
- w.checkpoint(p=>{
-  if(p.activeItem?.level===2&&p.pendingUpgrade?.level===3){
-   w.items[15]=w.items[p.activeSlot];w.items[16]={...w.items[15]};w.items[p.activeSlot]=null;
-  }
- });
- await assert.rejects(w.run(),/ambiguous/);
- assert.equal(w.calls.filter(c=>c[0]==='buy'&&c[1]==='coat').length,1);
+ w.upgrade=async slot=>{w.items[slot]=null;throw {reason:'upgrade_destroyed'};};
+ await assert.rejects(w.run(),e=>e.reason==='upgrade_destroyed');
+ assert.equal(w.calls.filter(c=>c[0]==='buy'&&c[1]==='coat').length,1);assert.equal(w.poofs(),0);
 });
 
 test('legacy empty outcome after restart requires review and cannot purchase another base',async()=>{
- const w=worker();w.command._commerceState={phase:'leveling',buyIndex:0,attempts:1,spent:13,
+ const w=worker();w.command.resumeState={phase:'leveling',buyIndex:0,attempts:1,spent:13,
   activeItem:{name:'coat',level:2},activeSlot:5,cycleActive:true,results:[],
   pendingUpgrade:{level:3,outcome:{item:null}}};
  await assert.rejects(w.run(),/uncertain/);
@@ -259,8 +261,8 @@ test('legacy empty outcome after restart requires review and cannot purchase ano
 
 test('batch buys starting-tier scrolls together and finishes all items after early success', async () => {
   const w = worker(); w.command.buyUpgradeBatchSize = 10;
-  w.context.item_grade = item => (item.level || 0) >= 2 ? 1 : 0;
-  w.context.G.items.scroll1 = {g: 5, s: 9999};
+  w.grade = item => (item.level || 0) >= 2 ? 1 : 0;
+  w.G.items.scroll1 = {g: 5, s: 9999};
   await w.run();
   assert.equal(w.items.filter(i => i?.name === 'coat' && i.level === 3).length, 10);
   assert.deepEqual(w.calls.filter(c => c[0] === 'buy' && c[1] === 'scroll0'), [['buy','scroll0',20]]);
@@ -283,7 +285,7 @@ test('interrupted batch purchase resumes without duplicate purchases or attempts
 
 test('uncertain batch upgrade cannot steal another purchased base or buy replacements', async () => {
   const w = worker(); w.command.buyUpgradeBatchSize = 3;
-  w.context.upgradeConfirmed = async slot => { w.items[slot] = null; throw Error('connection lost'); };
+  w.upgrade = async slot => { w.items[slot] = null; throw Error('connection lost'); };
   await assert.rejects(w.run(), /connection lost/);
   await assert.rejects(w.run(), /missing without confirmed destruction/);
   assert.equal(w.calls.filter(c => c[0] === 'buy' && c[1] === 'coat').length, 3);
@@ -307,4 +309,41 @@ test('queued batches reserve every purchased base during a yield', () => {
   }}]});
   assert.equal(protection.deliveries.length,2);
   assert.deepEqual(protection.deliveries.map(i=>i.slot),[4,5]);
+});
+
+// While a commerce order holds the bag as `purchasing`, the Tracktrix pin and the bank sort
+// move no copy, and a pending lucky recovery waits for the release. Red on an earlier build: each
+// moved a batch's copy, and the remap chain chased it.
+test('the pin, the sort and the lucky recovery wait for a purchase that holds the bag',async()=>{
+ const {bankHarness,bankSortFloor}=require('./helpers/items-character.cjs');
+ const items=[{name:'tracker'},{name:'staff',level:2},null,null];
+ const pin=bankHarness({character:{name:'Merchant',ctype:'merchant',items,isize:4},ports:{isTracker:item=>item?.name==='tracker',othersBusy:()=>false,
+  swap:async()=>{throw Error('the pin moved a batch copy');}}});
+ pin.bag.take('purchasing');
+ await pin.bank.keepTracktrixLast();
+ assert.equal(items[0].name,'tracker');
+ const sort=bankSortFloor({vault:Object.assign(Array(42).fill(null),[{name:'poison',q:5},{name:'helmet',level:0}]),
+  G:{items:{helmet:{type:'helmet',g:100},poison:{type:'material',g:10,s:9999}},skills:{}}});
+ sort.bag.take('purchasing');
+ await sort.bank.sortCurrentBankFloor([]);
+ assert.deepEqual(sort.swaps,[]);
+ const {productionHarness}=require('./helpers/items-character.cjs');
+ const lucky=productionHarness({character:{name:'Merchant',ctype:'merchant',items:[{name:'staff',level:2}],q:{}}});
+ lucky.stored['party-lucky-upgrade']={slot:0};
+ lucky.bag.take('purchasing');
+ let settled=false;
+ const recovery=lucky.production.recoverLucky().then(()=>{settled=true;},()=>{settled=true;});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(settled,false,'the lucky recovery waits for the purchase');
+ lucky.bag.release('purchasing');
+ await recovery;
+});
+// The merchant job owner's ending table books an anniversary hold by its code, whatever text it
+// carries.
+test('an anniversary hold books J4 row 3 by its code, not its text',()=>{
+ const state={merchantQueue:[],merchantJobBlocks:{},statuses:{M:{}},merchantCharacter:'M',npcSaleMarks:[],commands:{}};
+ const retries=createCompletionRetries(state,{now:()=>0,nextCommand:()=>1,stamp:j=>j,log(){}});
+ const job={id:'j',target:'M',reason:'merchant commerce'};
+ assert.equal(retries.decide(job,{success:false,error:'Service paused for anniversary',code:'merchant_anniversary_reserved'}).row.ending,'merchant_anniversary_reserved');
+ assert.notEqual(retries.decide(job,{success:false,error:'merchant_anniversary_reserved'}).row?.ending,'merchant_anniversary_reserved','the text alone books nothing');
 });

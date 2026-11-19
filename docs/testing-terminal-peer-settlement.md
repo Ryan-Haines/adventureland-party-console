@@ -1,5 +1,7 @@
 # Terminal settlement and a return-leg peer
 
+Removed path: the movement rewrite removed the Hunt return's plan-return phase and its return legs (`returnLeg`, `returnLegs`, `leg-arrived`) as unreachable code, since every Hunt return is a continuous return and finishes through /convoy-complete. The return-leg reproduction below describes code that no longer exists; the continuous-return reproduction and the terminal settlement receipt stay.
+
 ## Failure inventory before the reproduction
 
 An existing owned terminal settlement can complete a native-acknowledged final transition without another movement action or a fresh walking lease. A shared returnLeg then publishes leg-arrived and waits for convoy release, instead of sending /convoy-complete. A peer still waits on the post-transition movement barrier. If the settled actor never sends completed:true, its local native completion must not strand the peer forever.

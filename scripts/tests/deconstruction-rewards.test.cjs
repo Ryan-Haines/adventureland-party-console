@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {buildDeconstructionCatalog} = require('../../runtime/coordinator/merchant/deconstruction.ts');
-const {deconstructionRewards} = require('../../dashboard/features/party/deconstruction.ts');
+const {buildDeconstructionCatalog} = require('../../runtime/items/coordinator/market.ts');
+const {deconstructionRewards} = require('../../runtime/items/rules.ts');
 
 test('dismantle rewards distinguish quantities from probabilities and retain independent bonus rolls', () => {
   const catalog = buildDeconstructionCatalog({dismantle: {

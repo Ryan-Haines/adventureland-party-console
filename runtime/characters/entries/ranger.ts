@@ -1,4 +1,4 @@
 import "../common.ts";
-import { role } from "../classes/ranger.ts";
-import { installRoleRunner } from "../roles/runner.ts";
+import { ranger as role } from "../turns/api.ts";
+import { installRoleRunner } from "../../lifecycle/character/roles.ts";
 installRoleRunner(role).start();

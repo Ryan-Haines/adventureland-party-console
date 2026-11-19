@@ -39,11 +39,15 @@ async function main() {
   const wasm = await fs.readFile(
     path.join(__dirname, "node_modules/alpathfinder/alpathfinder_bg.wasm"),
   );
+  // The provenance names the alpathfinder the benchmark's package.json installed, not a copy of its pin.
+  const installed = JSON.parse(
+    await fs.readFile(path.join(__dirname, "node_modules/alpathfinder/package.json"), "utf8"),
+  );
   hashes.wasm = crypto.createHash("sha256").update(wasm).digest("hex");
   await fs.writeFile(path.join(directory, "alpathfinder_bg.wasm"), wasm);
   await fs.writeFile(
     path.join(directory, "provenance.json"),
-    JSON.stringify({ revision, hashes, alpathfinder: "0.6.0" }, null, 2),
+    JSON.stringify({ revision, hashes, alpathfinder: installed.version }, null, 2),
   );
   console.log(`Prepared ALClient ${revision}; benchmark dependencies remain isolated.`);
 }

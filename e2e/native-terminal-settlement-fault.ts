@@ -2,6 +2,14 @@ import type {Page,Route,Response,Request} from '@playwright/test';
 import {expect} from './network-clock';
 import type {LiveGame} from './live-fixtures';
 const W='E2EWarrior',P='E2EPriest';
+// stoppedAt holds when the native character is alive with a finite hp, standing still on the
+// destination's map and instance, within 1 of its point.
+function stoppedAt(native:any,destination:{map:string;in?:string;x:number;y:number}){
+  return !!native && !native.rip && Number.isFinite(native.hp) && native.hp>0 && !native.moving &&
+    Number.isFinite(native.x) && Number.isFinite(native.y) && native.map===destination.map &&
+    String(native.in??native.map)===String(destination.in??destination.map) &&
+    Math.hypot(native.x-destination.x,native.y-destination.y)<=1;
+}
 /** Declared one-shot transport failure; native sockets, ACKs, coordinates and routes remain untouched. */
 export async function installTerminalSettlementFault(live:LiveGame,page:Page){
   const startedAt=Date.now(),forceNaturalSettlement=process.env.E2E_TERMINAL_FAULT_NATURAL==='1';
@@ -31,10 +39,7 @@ export async function installTerminalSettlementFault(live:LiveGame,page:Page){
     if(sample.active || value?.done!==true || !proof?.acknowledged || proof.journeyId!==nativeIssued?.report?.id || value.id!==proof.journeyId ||
       !same(proof) || proof.step!==owner?.step || !['map','in','x','y','method'].every(key=>proof.destination?.[key]===owner?.destination?.[key]) ||
       !['version','fingerprint'].every(key=>proof.geometry?.[key]===geometry?.[key]) || sample.paused || !sample.ack ||
-      !native || native.rip || !Number.isFinite(native.hp) || !(native.hp>0) || native.moving ||
-      !Number.isFinite(native.x) || !Number.isFinite(native.y) || native.map!==owner.destination.map ||
-      String(native.in??native.map)!==String(owner.destination.in??owner.destination.map) ||
-      Math.hypot(native.x-owner.destination.x,native.y-owner.destination.y)>1)return;
+      !stoppedAt(native,owner.destination))return;
     return value;
   }
   async function armNaturalSettlement(sample:any){
@@ -104,9 +109,7 @@ export async function installTerminalSettlementFault(live:LiveGame,page:Page){
       const native=sample.native,current=sample.active;
       if(!preBarrierReleased || !owner || !pendingBarrierHolds.size || !current || current.id!==nativeIssued.report.id || current.progress?.phase!=='barrier' ||
         !['convoyId','epoch','commandId','navigationRevision','routeVersion'].every(key=>current.owner?.[key]===owner[key]) ||
-        sample.remaining!==1 || sample.paused || !native || native.rip || !(native.hp>0) || native.moving ||
-        !Number.isFinite(native.x)||!Number.isFinite(native.y)||native.map!=='main' || String(native.in??native.map)!=='main' ||
-        Math.hypot(native.x-owner.destination.x,native.y-owner.destination.y)>1 || !sample.ack)return false;
+        sample.remaining!==1 || sample.paused || !stoppedAt(native,{...owner.destination,map:'main',in:'main'}) || !sample.ack)return false;
       if(forceNaturalSettlement){
         if(!controlLossPrologueAt){
           if(!await enableStatusLoss())return false;
@@ -193,12 +196,12 @@ export async function installTerminalSettlementFault(live:LiveGame,page:Page){
           preBarrierReleased=true;
           ledger.push({at:Date.now(),action:'genuine-final-pre-barrier-released-response-delivered',began:candidate.began,owner,response:{status:res.status(),ready:true}});
         }
-      },()=>{});return;
+      },error=>{ledger.push({at:Date.now(),action:'pre-barrier-response-unread',error:String(error)});});return;
     }
     if(value?.character!==P||value.completed!==true)return;
     void res.json().then(result=>{if(!closed&&res.ok()&&result.ready===true){
       peerReceipts.push({at:Date.now(),request:value,response:result});if(peerReceipts.length>32)peerReceipts.shift();acceptPeerReceipt();
-    }},()=>{});
+    }},error=>{ledger.push({at:Date.now(),action:'peer-barrier-response-unread',error:String(error)});});
   };
   async function independentlySettledPeer(){
     if(!receipt)return false;
@@ -216,10 +219,7 @@ export async function installTerminalSettlementFault(live:LiveGame,page:Page){
       proof.commandId!==expected.commandId || proof.navigationRevision!==expected.revision || proof.runtimeId!==expected.runtimeId ||
       proof.step!==owner.step || !['map','in','x','y','method'].every(key=>proof.destination?.[key]===owner.destination[key]) ||
       !['version','fingerprint'].every(key=>proof.geometry?.[key]===geometry?.[key]) || proof.server!==receipt.terminalSettlement.server ||
-      !native || native.rip || !Number.isFinite(native.hp) || !(native.hp>0) || native.moving || native.map!==owner.destination.map ||
-      !Number.isFinite(native.x) || !Number.isFinite(native.y) ||
-      String(native.in??native.map)!==String(owner.destination.in??owner.destination.map) ||
-      Math.hypot(native.x-owner.destination.x,native.y-owner.destination.y)>1)return false;
+      !stoppedAt(native,owner.destination))return false;
     peerReleased={at:Date.now(),proofPath:'peer-independently-settled',coordinator:{convoyId:convoy.id,epoch:convoy.epoch,routeVersion:convoy.routeVersion,routeServer:convoy.routeServer,location:convoy.location,expected,completed:convoy.completed},actual};
     ledger.push({action:'actual-peer-independently-settled',...peerReleased});if(faultArmedAt)releaseCompletion?.();return true;
   }

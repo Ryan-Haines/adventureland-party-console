@@ -25,14 +25,14 @@ From the game's `js/html.js` (`render_item`) and `js/old_common_functions.js`
   Lucky adds 2 luck.
 
 The game applies the title before the upgrade levels, so a shiny item's extra
-stat follows its stat scroll. `calculatedLevelProperties` does the same, and
+stat follows its stat scroll. `itemProperties` (dashboard/lib/game-formulas.ts) does the same, and
 every card and comparison reads its stats from there. A live copy's reported
 `item_properties` already include the title; the console's level preview
 adds the difference between two calculated levels, so the title counts once.
 
 `characters/shared.js` reports `G.titles[p]` on the copy's meta as
 `meta.title`, and the coordinator keeps it in the inventory stream
-(`public-state-characters.ts`). Legacy items' `def.legacy` stats are not
+(`runtime/status/coordinator/state.ts`). Legacy items' `def.legacy` stats are not
 covered: the reported definition drops nested objects.
 
 ## Failure inventory

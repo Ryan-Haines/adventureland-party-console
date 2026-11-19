@@ -1,12 +1,24 @@
 "use client";
+import { defaultSearchRadius, type FarmingArea } from '../../../runtime/hunting/api.ts';
 import {drawMapProjectile} from "./draw-map-projectile";
-import {drawMapSprites} from "./draw-map-sprites";
-import {markerStyle} from "../../../runtime/combat/marker-style";
-import { type FarmingArea } from "@/lib/farming-areas";
+import {drawMapSprites, endMapSpriteFrame} from "./draw-map-sprites";
+import {markerRadius, markerStyle} from "../../../runtime/status/character/marker-style";
 import { useEffect, useRef, type RefObject } from "react";
 import { cachedMapImage } from "./cached-map-image";
 import { croppedTile } from "./cropped-tile";
 import { dollLayers } from "./doll-layers";
+import { HIT_RING_MS } from "./map-render-buffer";
+
+// The map's animation picks are display picks: the game's client runs these on its own clock and
+// the frame carries no duration for them.
+// A new frame's camera and entities blend in from the last frame over FRAME_BLEND_MS.
+const FRAME_BLEND_MS = 100;
+// An attacker leans toward its target for LUNGE_OUT_MS, then eases back until LUNGE_MS.
+const LUNGE_OUT_MS = 120, LUNGE_MS = 220;
+// A walking sprite changes its step frame every WALK_FRAME_MS.
+const WALK_FRAME_MS = 160;
+// Projectiles and visuals draw for PROJECTILE_SHOW_MS after the frame that carried them.
+const PROJECTILE_SHOW_MS = 1000;
 import { MapDefinition } from "./map-definition";
 import { MapFrame } from "./map-frame";
 import { drawDreamsGate } from './dreams-gate';
@@ -135,7 +147,7 @@ export function MapCanvas({
           }
         }
       }
-      const alpha = Math.min(1, Math.max(0, (performance.now() - p.receivedAt) / 100));
+      const alpha = Math.min(1, Math.max(0, (performance.now() - p.receivedAt) / FRAME_BLEND_MS));
       const old = p.previous && p.previous.map === p.frame.map ? p.previous : p.frame;
       if (p.fullMap) p.scale = Math.min(rect.width/(p.definition.max_x-p.definition.min_x+100),rect.height/(p.definition.max_y-p.definition.min_y+100));
       const cameraX = p.fullMap ? (p.definition.min_x+p.definition.max_x)/2 : old.x + (p.frame.x - old.x) * alpha;
@@ -205,11 +217,12 @@ export function MapCanvas({
             const eventMarker=p.frame!.eventCombat || (p.frame!.queue||[]).some(t=>t.state==='event'||t.state==='scatter');
             const rank=p.frame!.grouped || eventMarker ? (p.frame!.queue||[]).findIndex(t=>t.id===entity.id&&t.map===p.frame!.map&&t.visible!==false) : -1;
             if (rank>=0 || !p.frame!.grouped && !eventMarker && (targeted || threatening)) {
-              const style=rank>=0 ? markerStyle(p.frame!.queue![rank],rank) : {css:"#ef4444",double:false};
+              const style=rank>=0 ? markerStyle(p.frame!.queue![rank],rank) : markerStyle({role:"current"});
               ctx.strokeStyle = style.css;
               ctx.lineWidth = 3 / p.scale;
               ctx.beginPath();
-              const radius=rank>=0 ? p.frame!.queue![rank].radius||18 : 18;
+              // The frame's entity carries no awidth, so a ring with no queue radius takes markerRadius's floor.
+              const radius=(rank>=0 && p.frame!.queue![rank].radius) || markerRadius({});
               ctx.arc(x, y, radius, 0, Math.PI * 2);
               if(style.double){ctx.moveTo(x+radius+6/p.scale,y);ctx.arc(x,y,radius+6/p.scale,0,Math.PI*2);}
               ctx.stroke();
@@ -221,20 +234,20 @@ export function MapCanvas({
                 (event) =>
                   event.kind === "action" &&
                   String(event.data.actor || event.data.attacker || "") === entity.id &&
-                  Date.now() - event.at < 220,
+                  Date.now() - event.at < LUNGE_MS,
               );
-            const attackAge = recentAttack ? Date.now() - recentAttack.at : 999;
+            const attackAge = recentAttack ? Date.now() - recentAttack.at : null;
             const attackTarget =
               recentAttack &&
               p.frame!.entities.find(
                 (candidate) => candidate.id === String(recentAttack.data.target || ""),
               );
             const attackAmount =
-              attackAge < 120
-                ? (1 - attackAge / 120) * 7
-                : attackAge < 220
-                  ? ((attackAge - 120) / 100) * 3
-                  : 0;
+              attackAge === null
+                ? 0
+                : attackAge < LUNGE_OUT_MS
+                  ? (1 - attackAge / LUNGE_OUT_MS) * 7
+                  : ((attackAge - LUNGE_OUT_MS) / (LUNGE_MS - LUNGE_OUT_MS)) * 3;
             const attackLength = attackTarget
               ? Math.hypot(attackTarget.x - x, attackTarget.y - y) || 1
               : 1;
@@ -277,7 +290,7 @@ export function MapCanvas({
                   sh = image.naturalHeight / sprite.rows;
                 const dw = sw / Math.max(1, sprite.tileSize),
                   dh = sh / Math.max(1, sprite.tileSize);
-                const walkFrame = entity.moving ? (Math.floor(Date.now() / 160) % 2 ? -1 : 1) : 0;
+                const walkFrame = entity.moving ? (Math.floor(Date.now() / WALK_FRAME_MS) % 2 ? -1 : 1) : 0;
                 const sourceX = Math.max(0, Math.min(sprite.columns - 1, sprite.x + walkFrame));
                 const sourceY = Math.max(
                   0,
@@ -389,9 +402,10 @@ export function MapCanvas({
         });
       });
       const projectileNow=(p.frame.projectilesAt || p.frame.at)+performance.now()-p.receivedAt;
-      for(const projectile of (performance.now()-p.receivedAt<1000 ? p.frame.projectiles || [] : []).slice(0,64)){layers.push({y:projectile.y,draw:()=>drawMapProjectile(ctx,projectile,projectileNow)});}
-      if(performance.now()-p.receivedAt<1000){const previousVisuals=new Map((old.visuals || []).map(visual=>[visual.id,visual]));for(const visual of (p.frame.visuals || []).slice(0,64)){const prior=previousVisuals.get(visual.id)||visual;layers.push({y:visual.y,draw:()=>{ctx.save();ctx.translate(prior.x+(visual.x-prior.x)*alpha,prior.y+(visual.y-prior.y)*alpha);drawMapSprites(ctx,visual.layers);ctx.restore();}});}}
+      for(const projectile of (performance.now()-p.receivedAt<PROJECTILE_SHOW_MS ? p.frame.projectiles || [] : [])){layers.push({y:projectile.y,draw:()=>drawMapProjectile(ctx,projectile,projectileNow)});}
+      if(performance.now()-p.receivedAt<PROJECTILE_SHOW_MS){const previousVisuals=new Map((old.visuals || []).map(visual=>[visual.id,visual]));for(const visual of p.frame.visuals || []){const prior=previousVisuals.get(visual.id)||visual;layers.push({y:visual.y,draw:()=>{ctx.save();ctx.translate(prior.x+(visual.x-prior.x)*alpha,prior.y+(visual.y-prior.y)*alpha);drawMapSprites(ctx,visual.layers);ctx.restore();}});}}
       layers.sort((a, b) => a.y - b.y).forEach((layer) => layer.draw());
+      endMapSpriteFrame(ctx);
       // The game's normal camera never exposes space beyond GEO bounds, and
       // some maps include black boundary artwork there. Our centered minimap
       // can see farther than the game camera, so deliberately replace every
@@ -443,13 +457,13 @@ export function MapCanvas({
       if (p.detailed)
         (p.frame.events || []).forEach((event) => {
           const age = Date.now() - event.at;
-          if (age > 1100) return;
+          if (age > HIT_RING_MS) return;
           const data = event.data,
             target = p.frame!.entities.find(
               (entity) => entity.id === String(data.target || data.id || ""),
             );
           if (!target) return;
-          const fade = 1 - age / 1100;
+          const fade = 1 - age / HIT_RING_MS;
           ctx.globalAlpha = fade;
           ctx.strokeStyle = event.kind === "hit" ? "#fbbf24" : "#a78bfa";
           ctx.lineWidth = 3;
@@ -478,7 +492,7 @@ export function MapCanvas({
         ctx.lineWidth = 2 / p.scale;
         ctx.setLineDash([6 / p.scale, 4 / p.scale]);
         ctx.beginPath();
-        ctx.arc(p.area.x, p.area.y, p.huntRadius || 400, 0, Math.PI * 2);
+        ctx.arc(p.area.x, p.area.y, p.huntRadius || defaultSearchRadius, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = "#ffffff";
@@ -495,10 +509,9 @@ export function MapCanvas({
         ctx.font = `${12/p.scale}px sans-serif`; ctx.textAlign='center';
         const half=ctx.measureText(pin.label).width/2;
         let y=pin.y-10/p.scale;
-        for(let attempt=0;attempt<8;attempt++) {
-          if(!labels.some(box=>pin.x+half>box.left&&pin.x-half<box.right&&y>box.top&&y-14/p.scale<box.bottom))break;
-          y-=15/p.scale;
-        }
+        // A label moves up until it overlaps no earlier label; each step clears it past more of the
+        // finite earlier labels, so the loop ends.
+        while(labels.some(box=>pin.x+half>box.left&&pin.x-half<box.right&&y>box.top&&y-14/p.scale<box.bottom)) y-=15/p.scale;
         labels.push({left:pin.x-half,right:pin.x+half,top:y-14/p.scale,bottom:y});
         ctx.strokeText(pin.label,pin.x,y); ctx.fillText(pin.label,pin.x,y);
       }

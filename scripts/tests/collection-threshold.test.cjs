@@ -3,23 +3,34 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = require('./helpers/coordinator-source.cjs').coordinatorSource();
+const {coordinatorReadyFacts}=require('../../runtime/merchant-jobs/coordinator/dispatch.ts'),{coordinatorCollectionReady}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
+const {coordinatorMerchantTransferBlocked}=require('../../runtime/merchant-jobs/rules.ts');
+const {partyHooks}=require('../../runtime/hooks/index.ts');
+// The slices read application.ts's imports from their doors (helpers/coordinator-source.cjs).
+const {withCoordinatorImports}=require('./helpers/coordinator-source.cjs');
+const {createCoordinatorPublicOverview}=require('../../runtime/status/coordinator/api.ts');
+// The pick reads the dispatch pass's facts; the other owners' answers hold nothing here.
+partyHooks().publish({name:'core:collection-threshold-reads',folder:'core',author:'test',summary:'Nothing holds a job.',
+ hooks:{'cave.state':()=>({owned:false}),'items.needs':()=>({gold:0,withdrawals:[],slots:0,postage:0})}});
+const pick=(r,party)=>r.pickJobByPriority(coordinatorReadyFacts(party,{now:Date.now,capacityBlocked:job=>coordinatorMerchantTransferBlocked(party,job),
+ collectionReady:job=>coordinatorCollectionReady(party,job,Date.now)}));
 function fixture(count=2) {
  const target={name:'Q',map:'main',in:'main',server:'USII',x:0,y:0,seenAt:Date.now(),items:Array.from({length:count},(_,slot)=>({slot,item:{name:'item'+slot}}))};
  const party={itemCollectionThreshold:5,merchantCharacter:'M',statuses:{Q:target,M:{...target,name:'M',x:1000,items:Array(42).fill(null)}},marked:{Q:target.items.slice()},merchantMarked:{},merchantQueue:[],merchantRoutinePriorities:{'party collection':90},standBids:{},bankbois:{},merchantJobBlocks:{},nextCommandId:1};
- const r=vm.createContext({party,coordinatorPolicies:require('../../runtime/coordinator/index.ts'),persistSettings(){},dispatchMerchant(){},merchantLog(){}});
- vm.runInContext(source.slice(source.indexOf('  function markedItem('),source.indexOf('  function autoItemRuleKey(')),r);
+ const r=vm.createContext(withCoordinatorImports({party,persistSettings(){},dispatchMerchant(){},merchantLog(){}}));
+ vm.runInContext(source.slice(source.indexOf('  function markedItem('),source.indexOf('  function ruleKey(')),r);
  vm.runInContext(source.slice(source.indexOf('  function merchantRoutinePriority('),source.indexOf('  function scheduleNearbyGiveaways(')),r);
  vm.runInContext(require('./helpers/named-function.cjs').namedFunction(source, 'publicMerchantJob'),r);
  require('./helpers/coordinator-merchant.cjs').merchantQueueRuntime(r);
- r.publicOverview=r.coordinatorPolicies.createCoordinatorPublicOverview(party,{
+ r.publicOverview=createCoordinatorPublicOverview(party,{
   ...require('./helpers/coordinator-public-state.cjs').publicStateRuntime().ports,
   stamp:job=>r.stampMerchantJob(job),collectionSlots:name=>r.collectionSlotCount(name),collectionNearby:name=>r.merchantCollectionNearby(name),
  });
  return {r,party,target,job:{target:'Q',reason:'marked items',clusterExpanded:true,retryCount:2}};
 }
 test('two marked slots cannot start a remote trip or retry; five can',()=>{
- const {r,party,job}=fixture(); party.merchantQueue=[job]; assert.equal(r.pickJobByPriority(),null);
- const full=fixture(5); full.party.merchantQueue=[full.job]; assert.equal(full.r.pickJobByPriority().target,'Q');
+ const {r,party,job}=fixture(); party.merchantQueue=[job]; assert.equal(pick(r,party),null);
+ const full=fixture(5); full.party.merchantQueue=[full.job]; assert.equal(pick(full.r,full.party).target,'Q');
 });
 test('below-threshold pickup requires fresh nearby positions in the same realm and instance',()=>{
  const {r,party,job}=fixture();const m=party.statuses.M;m.x=200;assert.equal(r.markedCollectionReady(job),true);
@@ -31,23 +42,23 @@ test('counts slots once and rejects stale marks and quantities as slot counts',(
 });
 test('manual visits replace deferred automatic collection and bypass the threshold',()=>{
  const {r,party,job}=fixture();party.merchantQueue=[job];r.queueMerchant(['Q'],'manual visit');
- assert.equal(r.pickJobByPriority().reason,'manual visit');
+ assert.equal(pick(r,party).reason,'manual visit');
 });
 test('nearby collection label identifies below-threshold jobs without changing internal reason',()=>{
  const {r,job}=fixture();const output=r.publicMerchantJob(job);assert.equal(output.collectionLabel,'nearby collection');assert.equal(output.reason,'marked items');assert.equal(output.collectionSlots,2);
 });
 test('deferred pickup does not block other eligible jobs',()=>{
- const {r,party,job}=fixture();party.merchantQueue=[job,{target:'M',reason:'upgrades and compounds'}];assert.equal(r.pickJobByPriority().target,'M');
+ const {r,party,job}=fixture();party.merchantQueue=[job,{target:'M',reason:'upgrades and compounds'}];assert.equal(pick(r,party).target,'M');
 });
 
 for (const reason of ['npc sale pickup','auto npc sale pickup']) test(reason+' shares collection threshold at enqueue, selection and retry',()=>{
- const {coordinatorCollectionReady,pruneIneligibleCollections}=require('../../runtime/coordinator/merchant/queue-selection.ts');
+ const {coordinatorCollectionReady,pruneIneligibleCollections}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
  const {party,r,target}=fixture(1),job={target:'Q',reason,retryCount:2};
  party.merchantMarked.Q=[{...target.items[0],npcSaleId:'sale'}];party.marked.Q=[];
  party.npcSaleMarks=[{id:'sale',source:'character',character:'Q',auto:reason==='auto npc sale pickup',state:'collecting'}];
  r.queueMerchant(['Q'],reason);assert.equal(party.merchantQueue.length,0);
- party.merchantQueue=[job];assert.equal(r.pickJobByPriority(),null);
- assert.equal(pruneIneligibleCollections(party,Date.now),true);assert.equal(party.merchantQueue.length,0);
+ party.merchantQueue=[job];assert.equal(pick(r,party),null);
+ assert.equal(pruneIneligibleCollections(party,Date.now,{}),true);assert.equal(party.merchantQueue.length,0);
  assert.equal(party.merchantMarked.Q.length,1);
  party.statuses.M.x=200;assert.equal(coordinatorCollectionReady(party,job,Date.now),true);
  party.statuses.M.x=201;assert.equal(coordinatorCollectionReady(party,job,Date.now),false);

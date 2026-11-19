@@ -19,10 +19,21 @@ for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i]!.repla
 const root = path.resolve(args.get('root') || path.join(import.meta.dirname, '..'));
 const scenario = args.get('scenario') || 'farming';
 const seconds = Number(args.get('seconds') || 600);
-const persistence = path.join(root, 'runtime/coordinator/persistence');
+// The settings owner's module holds the persistence from its rework; an
+// older checkout under --root keeps it in runtime/coordinator/.
+const moved = fs.existsSync(path.join(root, 'runtime/settings/coordinator'));
+const persistence = path.join(root, moved ? 'runtime/settings/coordinator/persistence' : 'runtime/coordinator/persistence');
 const { CoordinatorJsonlStore } = await import(pathToFileURL(path.join(persistence, 'jsonl-store.ts')).href);
 const { createCoordinatorPersistence } = await import(pathToFileURL(path.join(persistence, 'writer.ts')).href);
-const { settingsFields } = await import(pathToFileURL(path.join(persistence, 'snapshots.ts')).href);
+// The settings document's fields come from the declaration table from the settings owner step 2a on; an older
+// checkout under --root keeps them in snapshots.ts.
+const table = path.join(root, moved ? 'runtime/settings/coordinator/table.ts' : 'runtime/coordinator/settings/table.ts');
+const declared = fs.existsSync(table) ? (await import(pathToFileURL(table).href)).coordinatorSettings() : null;
+const { settingsFields } = declared ? declared.lists : await import(pathToFileURL(path.join(persistence, 'snapshots.ts')).href);
+// The history records the table declares start at their defaults, as a fresh install loads them
+// (the audit lines `settingsChanges`). An older checkout declares none.
+const historyDefaults: Record<string, unknown> = declared ? Object.fromEntries([...declared.table.fields.values()]
+  .filter((d: any) => d.setting.document === 'history').map((d: any) => [d.field, structuredClone(d.setting.default)])) : {};
 
 let seed = 7;
 const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
@@ -34,7 +45,7 @@ const start = 1_790_000_000_000;
 // settings 1.23 MB (market 0.62 MB, production 0.33 MB, anniversary 0.13 MB),
 // bank 4.3 MB, roster 6 KB, selections 4.6 KB.
 function combatEntry(at: number) { return { at, type: 'info', message: 'killed a Tiny Crab ' + text(330), details: null }; }
-const state: Record<string, any> = Object.fromEntries(settingsFields.map((field: string) => [field, null]));
+const state: Record<string, any> = { ...Object.fromEntries(settingsFields.map((field: string) => [field, null])), ...historyDefaults };
 Object.assign(state, {
   merchantActivity: Array.from({ length: 500 }, (_, i) => ({ at: start + i, level: 'info', message: text(400) })),
   combatLogs: Object.fromEntries(fighters.map(name => [name, Array.from({ length: 500 }, (_, i) => combatEntry(start + i))])),
@@ -97,8 +108,8 @@ const scheduled = globalThis.setTimeout;
   try { callback(); } finally { timerMs.push(performance.now() - began); }
 }, delay);
 
-const store = new CoordinatorJsonlStore(path.join(directory, 'garage.jsonl'), path.join(directory, 'garage.new.jsonl'));
-const writer = createCoordinatorPersistence(state, store);
+const store = new CoordinatorJsonlStore(path.join(directory, 'garage.jsonl'), path.join(directory, 'garage.new.jsonl'), { setTimeout, clearTimeout });
+const writer = createCoordinatorPersistence(state, store, { setTimeout, clearTimeout });
 writer.roster(); writer.bank(); writer.settings(); writer.history(); writer.flush?.();
 store.refactor();
 for (const key of Object.keys(counters) as (keyof typeof counters)[]) counters[key] = 0;

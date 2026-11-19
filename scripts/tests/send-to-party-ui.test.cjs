@@ -1,18 +1,11 @@
-const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),Module=require('node:module');
-const {buildSync}=require('esbuild'),React=require('../../dashboard/node_modules/react');
+const test=require('node:test'),assert=require('node:assert/strict'),load=require('./helpers/dashboard-query-module.cjs');
+const React=require('../../dashboard/node_modules/react');
 const {create,act}=require('../../dashboard/node_modules/react-test-renderer');
-const filename=path.resolve('dashboard/features/party/send-to-party-control.tsx');
-const bundle=buildSync({entryPoints:[filename],bundle:true,packages:'external',external:['@/components/ui/dialog','@/hooks/use-clock','./query-actions'],platform:'node',format:'cjs',write:false});
-const compiled=new Module(filename,module);compiled.filename=filename;compiled.paths=Module._nodeModulePaths(path.dirname(filename));
 let calls=[],finish;
 const action={isPending:false,error:null,reset(){},mutateAsync(value){calls.push(value);return new Promise(resolve=>{finish=resolve})}};
-compiled.require=function(id){
- if(id==='@/components/ui/dialog')return Object.fromEntries(['Dialog','DialogContent','DialogHeader','DialogTitle'].map(name=>[name,props=>React.createElement('section',props)]));
- if(id==='@/hooks/use-clock')return {useClock:()=>100000};
- if(id==='./query-actions')return {usePartyAction:()=>action};
- return Module.prototype.require.call(this,id);
-};
-compiled._compile(bundle.outputFiles[0].text,filename);
+const compiled={exports:load('send-to-party-control.tsx',{
+ '@/components/ui/dialog':Object.fromEntries(['Dialog','DialogContent','DialogHeader','DialogTitle'].map(name=>[name,props=>React.createElement('section',props)])),
+ '@/hooks/use-clock':{useClock:()=>100000},'./query-actions':{usePartyAction:()=>action}})};
 global.IS_REACT_ACT_ENVIRONMENT=true;
 test('one group sends all members directly; independent groups require a choice',async()=>{
  let tree;const sent=[];

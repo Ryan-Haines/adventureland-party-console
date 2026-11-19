@@ -54,7 +54,7 @@ The game strips tiles, placements and groups from every generated floor it sends
 to a socket whose handshake says `no_graphics=1`, which every caracAL worker does.
 `live-cave-headless.spec.ts` runs the leader and its follower as real headless
 workers (`liveHeadless`). Only the leader's worker sends `no_graphics=0`
-(`runtime/lifecycle/cave-floor-handshake.ts`), so the test checks the server's
+(`runtime/lifecycle/character/host.ts`), so the test checks the server's
 socket flags, the follower card's textured floor, one definition per stream
 subscriber, closed map streams in a hidden tab, and a released visit with no floor
 or interrupted state left. It attaches `headless-cave-floor-bytes` with the floor,
@@ -64,9 +64,10 @@ stripped floor, frame and tile image sizes. Run it with
 `live-cave-talk.spec.ts` uses the seeded entry shop, replaces the current vote as a
 later encounter does, and checks that selecting the merchant room talks to it
 (`cave_talk`) and that the reopened shop sells. A waypoint inside solid rock then
-exhausts the three automatic repairs, and Retry must keep them spent.
+makes the automatic repairs climb the Cave ladder past three with no cap, and Retry
+must keep at least the repair count it found.
 
-`live-event-rendezvous.spec.ts` targets only one member's `/party-api/shared-travel`
+The rendezvous rows (`e2e/event-checkpoint-rows.ts`) target only one member's `/party-api/shared-travel`
 requests: a moved destination and a member that never requests. Cipher and door
 legs retain exact destination matching. Existing owned failure recovery is retained.
 `live-convoy-event-defense.spec.ts` keeps a follower fighting a live Mr. Pumpkin in

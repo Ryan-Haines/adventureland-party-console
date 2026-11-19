@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +22,8 @@ import { useState } from "react";
 import { Location } from "./location";
 import { Place } from "./place";
 
+// The draft's start spot: main's spawn point.
+const start = { map: "main", x: "-174", y: "121" };
 export function CharacterTravelDialog({
   character,
   places,
@@ -37,24 +40,19 @@ export function CharacterTravelDialog({
   onTravel: (character: string, location: Location, label: string) => Promise<void>;
 }) {
   const [destination, setDestination] = useState(""),
-    [travelMap, setTravelMap] = useState("main"),
-    [travelX, setTravelX] = useState("-174"),
-    [travelY, setTravelY] = useState("121");
-  const draftIdentity1 = [character];
-  const [previousDraftIdentity1, setDraftIdentity1] = useState<readonly unknown[] | null>(null);
-  if (
-    !previousDraftIdentity1 ||
-    draftIdentity1.some((value, index) => !Object.is(value, previousDraftIdentity1[index]))
-  ) {
-    setDraftIdentity1(draftIdentity1);
-    (() => {
-      if (character) {
-        setDestination("");
-        setTravelMap("main");
-        setTravelX("-174");
-        setTravelY("121");
-      }
-    })();
+    [travelMap, setTravelMap] = useState(start.map),
+    [travelX, setTravelX] = useState(start.x),
+    [travelY, setTravelY] = useState(start.y);
+  // A new character starts the draft again from the start spot.
+  const [draftFor, setDraftFor] = useState(character);
+  if (draftFor !== character) {
+    setDraftFor(character);
+    if (character) {
+      setDestination("");
+      setTravelMap(start.map);
+      setTravelX(start.x);
+      setTravelY(start.y);
+    }
   }
   const selectPlace = (id: string | null) => {
     setError(null);
@@ -88,7 +86,7 @@ export function CharacterTravelDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="border border-cyan-800 bg-[#0b1916] text-emerald-50 sm:max-w-lg">
+      <DialogContent data-area="travel" className="border border-cyan-800 bg-[#0b1916] text-emerald-50 sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Send {character} to…</DialogTitle>
           <DialogDescription className="text-emerald-100/55">
@@ -153,6 +151,7 @@ export function CharacterTravelDialog({
           </div>
         </div>
         {error && <p role="alert" className="text-sm text-rose-200">{error}</p>}
+        <AddonSlot name="dialog-section" part="travel" subject={character} />
         <DialogFooter>
           <Button
             variant="outline"

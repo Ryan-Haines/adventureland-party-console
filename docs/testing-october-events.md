@@ -71,8 +71,10 @@ while their client connection and synchronized clock are fresh.
 Clock/pretravel follow-up: run `npm test -- -- --project=console --project=live
 --grep "Event clock|Event pretravel|Halloween future staging survives|Halloween staging abandons"
 --workers=2`. The clock cases render US realm midnight as 01:00 EDT and 00:00
-EST, retaining readable screenshots. Gameplay requires native departure between
-60 and 120 seconds before the declared occurrence, actual early arrival, exact
+EST, retaining readable screenshots. Gameplay requires native departure at the
+group's planned walk plus one report interval before the declared occurrence (the events owner's
+`due` from movement's `walks.estimate`; 120 seconds before an estimate answers), actual
+early arrival, exact
 published epochs in coordinator telemetry, persistence across restart, combat
 only after LIVE, and checkpoint return on cancellation. Existing Halloween cases
 retain delayed authorization and the bounded absent-spawn deadline. Native
@@ -82,8 +84,10 @@ so the Graveyard journey starts in the open cemetery at (255, −1150).
 The US realm uses fixed UTC−5. Calendar epochs must not be shifted by the client
 clock correction: a positive subsecond offset otherwise displays 01:00 as 00:59.
 Apply correction only to countdowns and local admission deadlines. Horseman,
-Graveyard, Mr. Green and Mr. Pumpkin depart two minutes before their known start;
-instances that require a native join remain subject to native availability.
+Graveyard, Mr. Green and Mr. Pumpkin depart at their group's lead before their known
+start (the planned walk plus one report interval); the Cipher merchant leaves for the
+Witch at its own walk's lead before `gather_end`. Instances that require a native join
+remain subject to native availability.
 
 Run `npm test -- -- --project=console --project=live --grep "October|Halloween events stay opt-in" --workers=2`.
 The cases cover persistent settings, native door receipts and checkpoint return,
@@ -115,7 +119,7 @@ the fixture's ordinary external-network block remains intact.
 
 ## Event priorities from an older client
 
-`priorities` in `runtime/coordinator/http/formation.ts` accepts only a list as
+`priorities` in `runtime/settings/coordinator/routes/formation.ts` accepts only a list as
 long as `supportedEvents`. The October rows raised that to 14 ids, so a client
 that predates them (the PWA, a script, `e2e/live-event-runtime-recovery.spec.ts`
 at lines 284 and 380) posts the ten older ids and gets

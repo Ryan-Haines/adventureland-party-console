@@ -139,7 +139,7 @@ ALData provides public market and Ponty listings without a key. Authentication l
 
 - **Dashboard:** `dashboard/`.
 - **Character logic:** `runtime/characters/`; legacy shared routines are in `characters/shared.js`.
-- **Generated role compatibility bundle:** `characters/roles.js` is built from `runtime/characters/roles/compat.ts`; edit the TypeScript source. `characters/shared.js` is still maintained source used by current character builds.
+- **Generated caracAL entry:** `characters/party-member.js` is built from `runtime/characters/legacy-entry.ts`, which installs the owners of `runtime/characters/owners.ts` and then the class's role runner; edit the TypeScript source. `characters/shared.js` is still maintained source used by current character builds.
 - **Coordinator:** `runtime/coordinator/`. Read its [README](runtime/coordinator/README.md) before changing behavior.
 
 For Windows development, start with `.\scripts\start-console.ps1 -DevDashboard`. Dashboard edits reload automatically; character edits rebuild and publish automatically. Edit source files, not generated bundles.
@@ -161,6 +161,10 @@ For the production container, rebuild and restart after changes:
 ```sh
 docker compose up -d --build
 ```
+
+## Add-ons
+
+An add-on is a folder under `runtime/addons/`; [the add-on guide](runtime/addons/README.md) explains how to build one with the hooks, and removing an add-on is deleting its folder.
 
 ## Moving dashboard state
 

@@ -1,4 +1,5 @@
 "use client";
+import { AddonDialogs, AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { RosterControls } from "./roster-controls";
 import { Button } from "@/components/ui/button";
 import { RadioGroup } from "@/components/ui/radio-group";
@@ -21,14 +22,16 @@ import { PartySendMailDialog } from "./party-send-mail-dialog";
 import { ConnectedCharacterCard } from "./connected-character-card";
 import { useCharacterCardModels } from './character-card-model';
 import { PendingCharacterCards, pendingCharacters } from './pending-character-cards';
+import { defaultSearchRadius } from '../../../runtime/hunting/api.ts';
+import { RECONNECTING_NOTICE } from './query-cache';
 
 export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
   const cardModels = useCharacterCardModels(model);
-  const { state, chars, formation, setPickerSlot, monsters, post, townParty, setMonsterNavigateTarget, huntSetup, huntSetupCharacter, monsterNavigateBusy, setHuntSetup, setMonsterNavigateBusy, monsterNavigateTarget, farmAreaRequest, setFarmAreaRequest, startFarmingArea, wtbItem } = model;
+  const { state, chars, formation, setPickerSlot, townParty } = model;
   const pending = pendingCharacters(model);
   return (
     <ItemInspectionProvider model={model}>
-      <section className="px-5 py-7 md:px-10">
+      <section data-area="workspace" className="px-5 py-7 md:px-10">
         <div className="mx-auto max-w-[1500px]">
         <DungeonPanel model={model} />
         {!chars.length && !pending.length && <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><RosterControls
@@ -38,7 +41,7 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
         /></div>}
         {!chars.length && !pending.length ? (
           <div className="grid min-h-64 place-items-center border border-dashed border-emerald-900 bg-[#071315] text-emerald-100">
-            {model.coordinatorLoading ? 'Party Console is loading…' : model.coordinatorUnavailable ? 'Reconnecting to Party Console…' : <p>No characters connected yet. Load a character or <button type="button" className="rounded border border-cyan-700 bg-[#071315] px-2 text-cyan-200 hover:bg-cyan-950 hover:text-cyan-100" onClick={() => window.location.assign('/setup')}>open setup</button> to link Steam.</p>}
+            {model.coordinatorLoading ? 'Party Console is loading…' : model.coordinatorUnavailable ? RECONNECTING_NOTICE : <p>No characters connected yet. Load a character or <button type="button" className="rounded border border-cyan-700 bg-[#071315] px-2 text-cyan-200 hover:bg-cyan-950 hover:text-cyan-100" onClick={() => window.location.assign('/setup')}>open setup</button> to link Steam.</p>}
           </div>
         ) : (
           <RadioGroup
@@ -73,6 +76,7 @@ export function PartyWorkspace({ model }: { model: PartyConsoleModel }) {
               <MapPin className="mr-2 h-5 w-5" />
               Send party to town
             </Button>
+            <AddonSlot name="page-section" part="party-actions" state={state} />
             <EscapeControl />
           </RadioGroup>
         )}
@@ -94,7 +98,7 @@ export function PartyWorkspacePanels({ model }: { model: PartyConsoleModel }) {
             catalog={monsters}
             ids={huntSetup}
             character={state.characters[huntSetupCharacter || state.leader || ""]}
-            radius={state.monsterSearchRadiusByCharacter?.[huntSetupCharacter || state.leader || ""] || 400}
+            radius={state.monsterSearchRadiusByCharacter?.[huntSetupCharacter || state.leader || ""] || defaultSearchRadius}
             override={false}
             busy={monsterNavigateBusy}
             onClose={() => setHuntSetup(null)}
@@ -102,8 +106,6 @@ export function PartyWorkspacePanels({ model }: { model: PartyConsoleModel }) {
               <MonsterFocusPicker
                 monsters={monsters}
                 selected={huntSetup}
-                priorities={{}}
-                onPriorityChange={() => {}}
                 onChange={(ids) => setHuntSetup(ids.filter((id) => id !== "all"))}
               />
             }
@@ -143,7 +145,7 @@ export function PartyWorkspacePanels({ model }: { model: PartyConsoleModel }) {
             radius={
               state.monsterSearchRadiusByCharacter?.[
                 state.leader || farmAreaRequest?.character || ""
-              ] || 400
+              ] || defaultSearchRadius
             }
             override={!!monsterNavigateTarget}
             busy={monsterNavigateBusy}
@@ -162,6 +164,8 @@ export function PartyWorkspacePanels({ model }: { model: PartyConsoleModel }) {
         <PartyCreateCharacter model={model} />
         <PartyMerchantCommerceDialog model={model} />
         <PartySendMailDialog model={model} />
+        {/* The add-on dialogs a piece opened (slots.tsx AddonDialogs). */}
+        <AddonDialogs />
     </>
   );
 }

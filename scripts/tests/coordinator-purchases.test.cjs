@@ -1,14 +1,15 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createCoordinatorPurchases}=require('../../runtime/coordinator/commerce/purchase-composition.ts');
+const {createCoordinatorPurchases}=require('../../runtime/items/coordinator/market.ts');
 function fixture(){
  const listing={item:{name:'helmet',level:7},price:10,unitPrice:10,quantity:1,seenAt:100000,serverIdentifier:'II'};
  const state={standPriceHistory:{},standBids:{helmet:{price:20,quantity:2,minimumQuality:7}},merchantAutomations:{},merchantCurrent:null,
   merchantQueue:[],merchantCharacter:'M',nextCommandId:40,ponty:{updatedAt:100000,listings:[listing]},aldata:{marketListings:[]},activeRealm:'SR_USII',statuses:{M:{server:'USII'}}};
  const calls=[];
- const service=createCoordinatorPurchases(state,{now:()=>100000,priority:job=>{calls.push(['priority',job]);return 50;},
+ const service=createCoordinatorPurchases(state,withDoor(state,{now:()=>100000,priority:job=>{calls.push(['priority',job]);return 50;},
   publish:()=>calls.push('publish'),log:()=>calls.push('log'),prioritized:()=>Object.entries(state.standBids),
   planPonty:(...args)=>{calls.push(['plan',...args]);return args[0];},stamp:job=>({...job,priority:50}),persist:()=>calls.push('persist'),
-  dispatch:()=>calls.push('dispatch'),blacklisted:()=>false});
+  dispatch:()=>calls.push('dispatch'),blacklisted:()=>false}));
  return {state,listing,calls,service};
 }
 

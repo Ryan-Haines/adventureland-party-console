@@ -7,42 +7,23 @@ const path = require('node:path');
 const req = createRequire(path.resolve('dashboard/package.json'));
 const { QueryClient, QueryClientProvider } = req('@tanstack/react-query');
 const load = require('./helpers/dashboard-query-module.cjs');
-const { PartyGold, goldTotals, partyGoldNames } = load('party-gold.tsx');
-const { DashboardHealth } = load('dashboard-health.tsx');
-const { characterKey, liveConnectionKey } = load('dashboard-live.tsx');
+const { PartyGold } = load('party-gold.tsx');
 const { drawDue, prepareMap, visibleTiles, receiveMapFrame } = load('map-render-buffer.ts');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-test('gold preserves unknown and zero, deduplicates active membership and excludes BankBois', () => {
-  assert.deepEqual(goldTotals(0, [0, 0]), { carried: 0, total: 0 });
-  assert.deepEqual(goldTotals(null, [2]), { carried: 2, total: null });
-  assert.deepEqual(goldTotals(2, [undefined]), { carried: null, total: null });
-  assert.deepEqual(goldTotals(5, [2, 3]), { carried: 5, total: 10 });
-  const activeSlots = ['A', 'A', 'Merchant', 'Bank', 'Offline'].map(character => ({ character, state: character === 'Offline' ? 'offline' : 'online' }));
-  assert.deepEqual(partyGoldNames({ activeSlots, bankbois: [{ name: 'Bank' }] }), ['A', 'Merchant']);
-});
-
-test('gold only commits for balances or membership; healthy connection renders nothing and failures remain visible', async () => {
+// The header shows the coordinator's account gold and marks the offline share.
+test('gold shows the coordinator total and marks the offline share', async () => {
   const client = new QueryClient();
-  client.setQueryData(characterKey('A', 'vitals'), { gold: 10, hp: 100 });
-  client.setQueryData(liveConnectionKey, { healthy: true });
-  let commits = 0, tree;
-  const state = { bankGold: 20, activeSlots: [{ character: 'A', state: 'online' }] };
-  const render = state => React.createElement(QueryClientProvider, { client },
-    React.createElement(React.Profiler, { id: 'gold', onRender: () => commits++ }, React.createElement(PartyGold, { state })),
-    React.createElement(DashboardHealth));
+  let tree;
+  const render = accountGold => React.createElement(QueryClientProvider, { client },
+    React.createElement(PartyGold, { state: { bankGold: 20, accountGold } }));
   try {
-    await act(async () => { tree = create(render(state)); });
-    assert.equal(tree.root.findAllByType('output').length, 0);
-    const before = commits;
-    await act(async () => { client.setQueryData(characterKey('A', 'vitals'), { gold: 10, hp: 50 }); await new Promise(r => setTimeout(r, 10)); });
-    assert.equal(commits, before);
-    await act(async () => { client.setQueryData(characterKey('A', 'vitals'), { gold: 15, hp: 50 }); await new Promise(r => setTimeout(r, 10)); });
+    await act(async () => { tree = create(render({ carried: 15, offline: 5, total: 35 })); });
     assert.match(JSON.stringify(tree.toJSON()), /combined: 35/);
-    await act(async () => tree.update(render({ ...state, activeSlots: [] })));
-    assert.match(JSON.stringify(tree.toJSON()), /combined: 20/);
-    await act(async () => { client.setQueryData(liveConnectionKey, { healthy: false }); await new Promise(r => setTimeout(r, 10)); });
-    assert.match(tree.root.findByType('output').children.join(''), /Connecting/);
+    assert.match(JSON.stringify(tree.toJSON()), /of which offline: 5/);
+    assert.match(JSON.stringify(tree.toJSON()), /5 offline/);
+    await act(async () => tree.update(render({ carried: null, offline: null, total: null })));
+    assert.match(JSON.stringify(tree.toJSON()), /combined: unknown/);
   } finally { if (tree) await act(async () => tree.unmount()); client.clear(); }
 });
 
@@ -65,6 +46,11 @@ test('map buffer resets interpolation and old events at map boundaries; tile wor
   assert.equal(buffer.previous.map, 'main');
   receiveMapFrame(buffer, { map: 'cave', events: [] }, 200, 1200);
   assert.equal(buffer.previous, null); assert.deepEqual(buffer.frame.events, []);
+  // A ring lasts as long as the game client's damage text, ten 100 ms fade steps (js/functions.js
+  // `d_text`); the ring used to outlast the text by 100 ms.
+  receiveMapFrame(buffer, { map: 'cave', events: [{ at: 2000 }, { at: 2001 }] }, 300, 2001);
+  receiveMapFrame(buffer, { map: 'cave', events: [] }, 400, 3000);
+  assert.deepEqual(buffer.frame.events, [{ at: 2001 }]);
   const definition = { tiles: [['tile', 0, 0, 10, 20]], placements: [[0, -100000, -100000, 100000, 100000]], groups: [[[0, 0, 40]]] };
   const prepared = prepareMap(definition);
   assert.equal(prepared.groups[0].y, 60);
@@ -155,4 +141,47 @@ test('Steam monitor joins, promotes, ignores primary, cancels, rejects changed c
     assert.match(tree.root.findByProps({ role: 'alert' }).children.join(''), /failed request/);
     await act(async () => tree.unmount()); client.clear();
   }
+});
+
+// DF19: the decided dashboard items whose dialog is this file's: A81, A83, A87, A88 and A74's
+// label. The gold test is above; the Tracktrix bonuses test is tracktrix-bonuses.test.cjs.
+test('DF19: the decided items A81, A83, A87, A88 and A74 hold', async () => {
+  const fs = require('node:fs'), ts = req('typescript');
+  const read = name => fs.readFileSync(path.join('dashboard/features/party', name), 'utf8');
+  // A81: the Hunt setup's focus picker offers no priority boxes; priorities are set in the card's picker.
+  const workspace = ts.createSourceFile('w.tsx', read('party-workspace.tsx'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const pickers = [];
+  ts.forEachChild(workspace, function visit(node) {
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(workspace) === 'MonsterFocusPicker')
+      pickers.push(node.attributes.properties.map(p => p.name?.getText(workspace)));
+    ts.forEachChild(node, visit);
+  });
+  assert.ok(pickers.length > 0);
+  for (const props of pickers) assert.ok(!props.includes('priorities') && !props.includes('onPriorityChange'), String(props));
+  // A83: the merchant card lists every character's NPC sale rule with its owner's name, and its
+  // removal names that owner.
+  const panel = read('inventory-panel.tsx');
+  assert.match(panel, /\.map\(\(\[key, rule\]\) => rule\.character \? \{\s*key,\s*item: rule\.item,\s*detail: rule\.character,\s*onRemove: \(\) => onRemoveAutomaticSale\('npc', rule\.item, rule\.character\),/);
+  assert.doesNotMatch(panel, /\? !rule\.character/);
+  assert.match(read('connected-inventory.tsx'), /send\('\/merchant\/auto-npc-sale', \{ character: owner, item, action: 'remove' \}\)/);
+  // A87: Kills starts off in a new browser, and each browser keeps the choice.
+  const { defaultLogFilters } = require('../../runtime/status/game-log.ts');
+  assert.equal(defaultLogFilters.kills, false);
+  const sidebar = read('log-sidebar.tsx');
+  // The sidebar keeps its filters through the stored-JSON hook, which reads and writes this browser's
+  // localStorage and survives a refused write.
+  assert.match(sidebar, /useStoredJson<Record<string,boolean>>\('party-log-filters',/);
+  const stored = fs.readFileSync('dashboard/hooks/use-stored-boolean.ts', 'utf8');
+  assert.match(stored, /text = localStorage\.getItem\(key\);/);
+  assert.match(stored, /try \{\s*localStorage\.setItem\(key, text\);\s*\} catch \{/);
+  // A74: the game tab says its lines live in memory.
+  assert.match(sidebar, /kept in memory; cleared on a console restart/);
+  // A88: the header shows Live, or the failed read's notice, from the core poll.
+  const { ConnectionLine } = load('party-header.tsx');
+  const { RECONNECTING_NOTICE } = load('query-cache.tsx');
+  const text = props => { let tree; act(() => { tree = create(React.createElement(ConnectionLine, props)); }); const out = tree.toJSON().children.join(''); tree.unmount(); return out; };
+  assert.equal(text({ loading: false, unavailable: false }), 'Live');
+  assert.equal(text({ loading: false, unavailable: true }), RECONNECTING_NOTICE);
+  assert.equal(text({ loading: true, unavailable: false }), 'Connecting...');
+  assert.match(read('party-header.tsx'), /<ConnectionLine loading=\{model\.coordinatorLoading\} unavailable=\{model\.coordinatorUnavailable\} \/>/);
 });

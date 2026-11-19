@@ -38,7 +38,7 @@ const carried = async (page: Page) => Number(/carried: ([\d,]+)/.exec(await page
 async function updateLatency(page: Page, app: { url: string; state(): Promise<any>; deliverStatus(report: unknown): Promise<unknown> }, samples: number) {
   const values: number[] = [];
   let missed = 0;
-  // PartyGold (party-gold.tsx) sums the gold of the active slots; change one of them.
+  // PartyGold (party-gold.tsx) shows the coordinator's account gold over the active slots; change one of them.
   const slots = (await (await fetch(`${app.url}/party-api/state?section=core&dashboard=1`)).json()).activeSlots || [];
   const name = slots.find((slot: { character?: string; state: string }) => slot.character && !['empty', 'offline', 'failed'].includes(slot.state)).character;
   await expect.poll(() => carried(page)).toBeGreaterThan(0);

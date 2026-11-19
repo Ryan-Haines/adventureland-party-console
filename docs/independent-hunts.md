@@ -19,7 +19,7 @@ Follower mode buttons save the personal mode used when Follow is disabled; they 
 
 ## Runtime and API ownership
 
-`hunt/scopes.ts` provides stable owner-specific views. Shared observations, command IDs and
+`runtime/tasks/coordinator/groups.ts` (`createFarmingScopes`) provides stable owner-specific views. Shared observations, command IDs and
 per-character navigation revisions remain authoritative; Hunt cycles, convoys, blacklists,
 scatter state and ordinary event returns are independent. Legacy global fields alias the main
 leader's profile. `farmingProfiles` is persisted and returned by the dashboard state API.
@@ -27,7 +27,9 @@ leader's profile. `farmingProfiles` is persisted and returned by the dashboard s
 Farming-mode, Hunt settings and blacklist requests accept `character`. Omitted addressing
 retains the main-group API. Follower Hunt settings and blacklist mutations return 409; mode changes save personal preferences only (and require a valid personal backup location for Hunt); workflow acknowledgements resolve
 the effective owner and retain existing command/cycle/route identity checks. Successful edits
-include `farmingOwner`, `savedFarmingPolicy`, and `effectiveFarmingPolicy`.
+include `farmingOwner`, `savedFarmingPolicy`, and `effectiveFarmingPolicy`; the two modes are
+the single mode each scope derives from its combat mode and target mode, which the dashboard's one
+mode selector shows.
 
 ## Validation
 

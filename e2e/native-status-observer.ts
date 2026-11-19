@@ -21,14 +21,13 @@ export async function observeNativeStatus(clients:Record<string,LiveClient>,name
         }
         if(!String(settings.url).endsWith('/status'))return;
         try{
-          const request=typeof settings.data==='string'?JSON.parse(settings.data):{},value=xhr.responseJSON||{},owner=host.__partyEventExitOwner;
+          const request=typeof settings.data==='string'?JSON.parse(settings.data):{},value=xhr.responseJSON||{},exit=host.__partyEventExit?.report(),owner=exit?.exit;
           const kind=request.combatWait?'wait':request.combatOnly?'report':'full';
           ledger.counts[kind]=(ledger.counts[kind]||0)+1;
           const sample={at:Date.now(),status:xhr.status,kind,
             sequence:request.travelSample?.sequence,runtime:request.travelSample?.runtimeId,
             receipt:value.combatReportReceipt?{sequence:value.combatReportReceipt.sequence,receivedAt:value.combatReportReceipt.receivedAt,evaluatedAt:value.combatReportReceipt.evaluatedAt}:undefined,serverNow:value.serverNow,sentAt:value.transportTiming?.sentAt,
-            eventReturnCycleId:value.eventReturnCycleId,selectedCycle:host.__partyEventRecoveryCycleId,
-            ownerAt:host.__partyEventRecoveryOwnerAt,generation:host.__partyRuntimeGeneration,
+            eventReturnCycleId:value.eventReturnCycleId,selectedCycle:exit?.cycleId,generation:host.__partyRuntimeGeneration,
             owner:owner?{cycleId:owner.cycleId,commandId:owner.commandId,cancelled:!!owner.cancelled}:null};
           ledger.samples.push(sample);
           if(ledger.samples.length>96)ledger.samples.splice(32,1);

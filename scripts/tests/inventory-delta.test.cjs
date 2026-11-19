@@ -1,6 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createCoordinatorStatusIngestion}=require('../../runtime/coordinator/status/composition.ts');
-const {createMerchantScheduling}=require('../../runtime/coordinator/status/merchant-scheduling.ts');
+const {createStatusIntake}=require('../../runtime/status/coordinator/intake.ts');
+const {createMerchantScheduling}=require('../../runtime/merchant-jobs/coordinator/sources.ts');
+const {consumeBankReport}=require('../../runtime/items/coordinator/storage.ts');
 
 // Failure inventory for status reports that omit unchanged inventory:
 // (1) a loot pickup, equip or bank deposit reaches the coordinator a report
@@ -24,15 +25,17 @@ const bank={gold:5,packs:{items0:[{slot:0,item:{name:'bkey'},meta:{properties:{}
 function fixture(extra={}){
  const state={statuses:{},headlessSlots:[],steamMembers:[],steamSwitch:null,nativeOwner:null,merchantCharacter:'M',leader:'F',
   monsterHunt:{phase:'before'},aldata:{auth:'NO'},scatterMonsterTypes:[],scatterEpoch:1,scatterBreakTarget:null,
-  partyFarmingMode:'default',partyFarmingMonsterType:null,farmingPolicy:'automatic'};
- const seen=[],calls=[],workers={M:{},F:{}},bankState={snapshot:null,observer:null};let now=1000;
+  partyFarmingMode:'default',partyFarmingMonsterType:null,combatMode:'auto'};
+ const seen=[],calls=[],workers={M:{},F:{}},bankState={bankSnapshot:null,bankObserver:null};let now=1000;
  const observe=(port)=>(body)=>{seen.push({port,name:body.name,items:body.items,slots:body.slots,bank:'bank' in body?body.bank:'absent'});calls.push(port);};
- const service=createCoordinatorStatusIngestion(state,workers,{
-  now:()=>now,owned:()=>true,persistRoster(){},itemKey:item=>item.name,observePonty(){},bankState,
-  bankPorts:{now:()=>now,adoptReservedCargo(){},persist:()=>calls.push('bank-persist')},
+ const service=createStatusIntake(state,workers,{
+  now:()=>now,owned:()=>true,persistRoster(){},
+  // The items owner's report answers: items.observe stores the bank snapshot through storage.ts as owner.ts does,
+  // on the fixture's clock; no row reports lucky evidence or reads the market.
+  items:{lucky(){},marketReport(){},observe:(name,report)=>consumeBankReport(report,bankState,{now:()=>now,adoptReservedCargo(){},persist:()=>calls.push('bank-persist')})},
   merchant:observe('merchant'),groupedCombat(){},rareReport(){},rareTick(){},bankboi:observe('bankboi'),anniversary(){},
-  huntTick(){},farmAreaTick(){},persist(){},abtesting(){},activeNames:()=>Object.keys(state.statuses),events:observe('events'),publish(){},
-  convoyStep:()=>false,merchantScheduling:observe('merchantScheduling'),response:name=>({name,command:null}),...extra,
+  taskTick(){},hunting:{reportTick:(name,taskTick)=>taskTick(),oneShots:()=>[],scatterReport(){}},persist(){},abtesting(){},activeNames:()=>Object.keys(state.statuses),events:observe('events'),publish(){},
+  convoyStep:()=>false,merchantScheduling:observe('merchantScheduling'),reply:{read:name=>({name,command:null}),send:name=>({name,command:null})},...extra,
  });
  function invoke(body){const res={code:200,status(code){this.code=code;return this;},json(value){this.body=value;return this;}};
   service.handle({body:JSON.parse(JSON.stringify(body))},res);return res;}
@@ -57,8 +60,8 @@ test('an unchanged report keeps items, slots and bank for every consumer and in 
  assert.deepEqual(t.state.statuses.M.slots,first.slots);
  assert.equal(t.state.statuses.M.hp,90);
  assert.equal(t.state.statuses.M.inventorySeenAt,2000,'delivery recovery reads an unchanged inventory as current');
- assert.equal(t.bankState.observer,'M','the bank observer stays the reporting merchant');
- assert.deepEqual(t.bankState.snapshot.packs,bank.packs);
+ assert.equal(t.bankState.bankObserver,'M','the bank observer stays the reporting merchant');
+ assert.deepEqual(t.bankState.bankSnapshot.packs,bank.packs);
  assert.equal(t.calls.filter(call=>call==='bank-persist').length,1,'an unchanged bank is not stored again');
 });
 
@@ -122,12 +125,13 @@ test('merchant collection queues marked items once across unchanged reports and 
  let scheduling;
  const t=fixture({merchantScheduling:(body,previous)=>scheduling.observe(body,previous)});
  schedule.statuses=t.state.statuses;
+ require('./helpers/coordinator-merchant.cjs').itemsDoor(schedule);
  const noop=()=>false;
- scheduling=createMerchantScheduling(schedule,{reconcileItems:noop,reconcileUpgrades:noop,reconcileSales:noop,luck(){},recovery(){},standMarket:noop,giveaways(){},compounds(){},exchanges(){},
+ scheduling=createMerchantScheduling(schedule,{reconcileReport:noop,luck(){},recovery(){},standMarket:noop,giveaways(){},compounds(){},exchanges(){},
   policy:()=>({hp:{item:'hpot0',min:0,max:0},mp:{item:'mpot0',min:0,max:0}}),queue:(names,reason)=>queued.push(names.join()+':'+reason),
   markedItem:mark=>mark.item,sameItem:(left,right)=>!!left&&!!right&&left.name===right.name&&left.level===right.level,
-  collectionSlots:name=>(t.state.statuses[name]?.items||[]).filter(Boolean).length,standSync(){},dispatch(){},idle(){},bankboi(){},
-  clearCommand(){},dispatchBank(){},activeGold:()=>[],persist(){},now:()=>1000});
+  collectionSlots:name=>(t.state.statuses[name]?.items||[]).filter(Boolean).length,standSync(){},dispatch(){},idle(){},addonProposes:()=>false,expire(){},
+  clearOwnedCommand(){},dispatchBank(){},activeNames:()=>[],persist(){},now:()=>1000});
  t.invoke(full('M','m.1',{items:Array(10).fill(null)}));
  t.invoke(full('F','a.1'));
  for(let i=0;i<5;i++)t.invoke(delta('F','a.1'));
@@ -141,22 +145,20 @@ test('merchant collection queues marked items once across unchanged reports and 
 
 // Character side of the same inventory: items, slots and bank leave the
 // report only while the coordinator acknowledged the current revision.
-const fs=require('node:fs'),vm=require('node:vm');
-const {namedFunction}=require('./helpers/named-function.cjs');
+const vm=require('node:vm');
+const {createBagReads}=require('../../runtime/items/character/bag.ts');
+const {planted}=require('./helpers/items-character.cjs');
+const {productionFunction}=require('./helpers/production-functions.cjs');
+// The status inventory is bag.ts's (createBagReads) over the context's character, upgrade and catalog
+// flag; shared.js's request runs over it as shared.js binds it.
 function client(){
- const source=fs.readFileSync('characters/shared.js','utf8');
  const requests=[];let clock=100000;
  const context=vm.createContext({
   JSON,Math,Object,Array,String,Number,Error,Promise,
   Date:{now:()=>clock},
   character:{items:[{name:'coat',level:1},null],slots:{mainhand:{name:'sword',level:0}},bank:null},
-  activeUpgrade:null,catalogKnown:true,statusInventoryCache:null,statusInventoryAcknowledged:null,
-  statusInventoryFullAt:0,statusInventoryCount:0,statusInventorySession:'s',
-  inventoryOperationEntry:(item,slot)=>item?{slot,item:{...item},meta:{properties:{}}}:null,
-  fingerprint:item=>({...item}),itemDefinition:()=>({properties:{}}),
-  bankSnapshot:()=>context.character.bank?{gold:context.character.bank.gold,packs:{items0:context.character.bank.items0.map((item,slot)=>item?{slot,item:{...item}}:null)}}:null,
-  api:'http://coordinator',root:{},sampleTravelReport(){},convoyDiagnosticClock:()=>0,acceptTravelResponse(){},
-  applyEventReturnOwner:()=>Promise.resolve(),rememberConvoyStatusRequest(){},diagnosticText:value=>String(value),
+  activeUpgrade:null,catalogKnown:true,
+  api:'http://coordinator',root:{partyStatus:{diagnosticText:value=>String(value)}},travelRequest:()=>({succeeded(){},failed(){}}),
   $:{ajax(options){
    const body=JSON.parse(options.data);requests.push(body);
    const handlers={};
@@ -166,8 +168,10 @@ function client(){
   }},
   reply:body=>({status:200,body:{inventoryRevision:body.inventoryRevision}}),queueMicrotask,
  });
- vm.runInContext(['statusInventory','attachStatusInventory','acknowledgeStatusInventory','withStatusInventory','request']
-  .map(name=>namedFunction(source,name)).join('\n'),context);
+ const reads=createBagReads(planted({character:()=>context.character,now:()=>clock,G:()=>({items:{}}),bankPacks:()=>({}),
+  activeUpgrade:()=>context.activeUpgrade,catalogKnown:()=>context.catalogKnown,itemProperties:()=>({}),calculateItemProperties:null}));
+ for(const name of ['attachStatusInventory','acknowledgeStatusInventory','statusInventoryResend'])context[name]=reads[name];
+ vm.runInContext(productionFunction('request'),context);
  const send=async()=>{const body=context.attachStatusInventory({name:'P'});await context.request('/status',{method:'POST',body});return requests.at(-1);};
  return {context,requests,send,time:value=>{clock=value;}};
 }
@@ -201,13 +205,49 @@ test('a coordinator that never acknowledges a revision receives every inventory'
  for(let i=0;i<3;i++)assert.ok((await c.send()).items);
 });
 
-test('inventory is sent at least every 10 seconds and always before the catalog acknowledgement',async()=>{
+test('an acknowledged inventory stays out of reports at any age and is always sent before the catalog acknowledgement',async()=>{
  const c=client();await c.send();
  c.time(109999);assert.equal('items' in await c.send(),false);
- c.time(110000);assert.ok((await c.send()).items,'heartbeat');
- assert.equal('items' in await c.send(),false);
+ c.time(110000);assert.equal('items' in await c.send(),false,'no timer resends an acknowledged inventory');
  c.context.catalogKnown=false;
  assert.ok((await c.send()).items);assert.ok((await c.send()).items);
+});
+
+test('with no gap only revisions go out after the first full report',async()=>{
+ const c=client();
+ const first=await c.send();assert.ok(first.items);
+ for(let i=1;i<=60;i++){c.time(110000+i*7);const body=await c.send();
+  assert.equal('items' in body||'slots' in body||'bank' in body,false,'report '+i);
+  assert.equal(body.inventoryRevision,first.inventoryRevision);}
+});
+
+test('a missed full report or a lost acknowledgement sends the full inventory on the next exchange',async()=>{
+ const c=client();await c.send();
+ c.context.character.items[1]={name:'gem0',q:1};
+ c.context.reply=()=>({status:0,body:null});
+ await assert.rejects(c.send(),/network/,'the full report carrying the pickup never arrives');
+ c.context.reply=body=>({status:200,body:{inventoryRevision:body.inventoryRevision}});
+ const next=await c.send();
+ assert.equal(next.items[1].item.name,'gem0','the next report carries the pickup');
+ assert.equal('items' in await c.send(),false);
+ c.context.reply=()=>({status:200,body:{inventoryRevision:'s.0'}});
+ await c.send();
+ c.context.reply=body=>({status:200,body:{inventoryRevision:body.inventoryRevision}});
+ assert.ok((await c.send()).items,'a reply naming another revision sends the inventory again');
+ c.context.reply=()=>({status:200,body:{}});
+ await c.send();
+ c.context.reply=body=>({status:200,body:{inventoryRevision:body.inventoryRevision}});
+ assert.ok((await c.send()).items,'a restarted coordinator that holds none receives it on the next report');
+});
+
+test('a reload sends the full inventory in its first report',async()=>{
+ const before=client();const first=await before.send();
+ assert.equal('items' in await before.send(),false);
+ const reloaded=client();
+ const body=await reloaded.send();
+ assert.ok(body.items,'the first report after a reload carries the inventory');
+ assert.notEqual(body.inventoryRevision,first.inventoryRevision,'a reload names a new revision');
+ assert.equal('items' in await reloaded.send(),false);
 });
 
 test('a refused report is sent again with inventory in the same request',async()=>{
@@ -229,9 +269,8 @@ test('a refused report is sent again with inventory in the same request',async()
 // in place a snapshot that another character or the storage worker replaced;
 // (3) the observer stays the other character after the carried bank's report;
 // (4) consumeBankReport adopts reserved cargo on a report that changed nothing.
-const {consumeBankReport}=require('../../runtime/coordinator/status/bank.ts');
 test('a carried bank skips the comparison only while it produced the current snapshot',()=>{
- const state={snapshot:null,observer:null},effects=[];
+ const state={bankSnapshot:null,bankObserver:null},effects=[];
  const ports={now:()=>100,adoptReservedCargo:()=>effects.push('adopt'),persist:()=>effects.push('persist')};
  const carried={gold:5,packs:{items0:[null]}};
  let reads=0;
@@ -241,16 +280,16 @@ test('a carried bank skips the comparison only while it produced the current sna
  reads=0;
  for(let i=0;i<5;i++){const body={name:'M',bank:counted};consumeBankReport(body,state,ports);assert.equal('bank' in body,false);}
  assert.equal(reads,0,'an unchanged carried bank is not serialized again');
- assert.equal(state.observer,'M');assert.equal(effects.length,2);
+ assert.equal(state.bankObserver,'M');assert.equal(effects.length,2);
  consumeBankReport({name:'P',bank:{gold:6,packs:{items0:[null]}}},state,ports);
- assert.equal(state.observer,'P');assert.equal(state.snapshot.gold,6);
+ assert.equal(state.bankObserver,'P');assert.equal(state.bankSnapshot.gold,6);
  consumeBankReport({name:'M',bank:counted},state,ports);
- assert.equal(state.observer,'M','the carried bank is compared again after another observer');
- assert.equal(state.snapshot.gold,5);
- state.snapshot={gold:9,packs:{},character:'BankBoi',seenAt:1};
+ assert.equal(state.bankObserver,'M','the carried bank is compared again after another observer');
+ assert.equal(state.bankSnapshot.gold,5);
+ state.bankSnapshot={gold:9,packs:{},character:'BankBoi',seenAt:1};
  consumeBankReport({name:'M',bank:counted},state,ports);
- assert.equal(state.snapshot.gold,5,'a snapshot the storage worker replaced is compared again');
+ assert.equal(state.bankSnapshot.gold,5,'a snapshot the storage worker replaced is compared again');
  const changed={gold:7,packs:{items0:[null]}};
  consumeBankReport({name:'M',bank:changed},state,ports);
- assert.equal(state.snapshot.gold,7);
+ assert.equal(state.bankSnapshot.gold,7);
 });

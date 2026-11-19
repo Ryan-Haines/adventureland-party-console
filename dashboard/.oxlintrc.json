@@ -29,11 +29,7 @@
     "build/**",
     "dist/**",
     "coverage/**",
-    "next-env.d.ts",
-    "lib/account-inventory.cjs",
-    "lib/event-policy.cjs",
-    "lib/compound-cost.cjs",
-    "lib/farming-areas.cjs"
+    "next-env.d.ts"
   ],
   "rules": {
     "jsx-a11y/label-has-associated-control": [
@@ -43,7 +39,6 @@
           "Input",
           "SelectTrigger",
           "Checkbox",
-          "PriorityOverrideInput",
           "WTBPriorityInput"
         ],
         "depth": 3

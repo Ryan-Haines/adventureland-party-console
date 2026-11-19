@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 const { JSDOM } = require('../../.caracal/node_modules/jsdom');
-const { createRunnerHost } = require('../../runtime/lifecycle/runner-host.ts');
+const { createRunnerHost } = require('../../runtime/lifecycle/character/host.ts');
 
 test('real JSDOM CODE replacement keeps the game context and retires old windows', async () => {
   const oldApiPort = process.env.AL_INTERNAL_API_PORT;
@@ -15,7 +15,8 @@ test('real JSDOM CODE replacement keeps the game context and retires old windows
   const upper = { caracAL: {}, effects: [], busy: false, record(value) { this.effects.push(value); } };
   const windows = [], messages = [];
   let handshakes = 0;
-  await fs.writeFile(codeFile, 'parent.record("first"); globalThis.sharedRoutine={isOccupied:()=>parent.busy,stop:()=>{}};');
+  // The real install publishes the drain's canReload on sharedRoutine (characters/shared.js).
+  await fs.writeFile(codeFile, 'parent.record("first"); globalThis.sharedRoutine={canReload:()=>!parent.busy,stop:()=>{}};');
   const host = createRunnerHost({ upper, codeFile, runnerFiles: [],
     createContext(parent) {
       const window = new JSDOM('', { url: 'https://adventure.land/' }).window;

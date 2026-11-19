@@ -24,9 +24,9 @@ their checksummed artifacts. No claim is made that those journeys inject #27.
 
 Barrier rejection codes remain attached to request errors. A superseded 409 or
 locally replaced barrier owner cancels only the old movement and retires its
-convoy coroutine without sending `/convoy-failed`. A matching before-departure
-409 returns a wait to the executor, which polls again without repeating an
-already completed transition. Missing/expired leases retain communication
+convoy coroutine without sending `/convoy-failed`. The before-departure 409 is
+gone: a walk is in its travel phase before any member departs,
+so no barrier request can arrive before departure. Missing/expired leases retain communication
 recovery; invalid or unrecognized rejections retain failure handling.
 
 Repeat the retained checks with `node --test scripts/tests/barrier-communication.test.cjs

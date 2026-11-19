@@ -1,6 +1,11 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const {reconcileCoordinatorCollectionMarks: collect, reconcileCoordinatorUpgradeMarks: upgrade,
-  clearCoordinatorResolvedUpgrades: clear} = require('../../runtime/coordinator/inventory/mark-reconciliation.ts');
+const {reconcileCoordinatorCollectionMarks} = require('../../runtime/items/coordinator/fates.ts');
+// The mark pass reads the stored report (intake stores it before the pass) and the
+// fate rows' records; a fixture with none of a record starts it empty.
+const collect = (state, name, status) => reconcileCoordinatorCollectionMarks(Object.assign(state, {upgrades: {}, compounds: {}, statScrolls: {},
+  autoCompounds: {}, ...state, statuses: {...state.statuses, [name]: status}}), name, status);
+const {reconcileCoordinatorUpgradeMarks: upgrade, clearCoordinatorResolvedUpgrades: clear, rememberUpgradeContinuation: remember,
+  recordOfferingWait: wait} = require('../../runtime/items/coordinator/production.ts');
 
 test('collection reconciliation writes both destinations and retains relocated manual intent', () => {
   const manual = {slot: 0, item: {name: 'ring', level: 1}}, automatic = {slot: 1, item: {name: 'leather'}, auto: true};
@@ -69,6 +74,22 @@ test('missing or invalid inventory cannot erase unfinished upgrades', () => {
     assert.equal(upgrade(state, 'M', status), false); assert.deepEqual(state.upgrades.M, [automatic, manual]);
     clear(state, 'New', []); assert.deepEqual(state.upgrades.New, []);
   }
+});
+// An admitted pass ends only on its native receipt, and each write of its cell sets slot and
+// liveSlot together.
+test('an admitted automatic pass survives a read with no copy and its writes sync slot and liveSlot', () => {
+  const admitted = {slot: 1, item: {name: 'helmet', level: 0}, tiers: 3, auto: true, passId: 'p1'};
+  const unadmitted = {slot: 2, item: {name: 'helmet', level: 0}, tiers: 3, auto: true};
+  const state = {upgrades: {M: [admitted, unadmitted]}, autoUpgradeMarks: {M: {'helmet@+0': 3}}};
+  upgrade(state, 'M', {items: []});
+  assert.deepEqual(state.upgrades.M, [admitted]);
+  state.merchantCharacter = 'M';
+  remember(state, {kind: 'upgrade', item: {name: 'helmet', level: 1},
+    automatic: {family: 'upgrade', key: 'helmet@+0', mark: {...admitted, slot: 5, liveSlot: 1}}});
+  assert.equal(state.upgrades.M[0].slot, 5); assert.equal(state.upgrades.M[0].liveSlot, 5);
+  state.upgradeOfferingRules = [{id: 'r', name: 'helmet', floor: 0, ceiling: 3, offering: 'offeringp'}];
+  wait(state, {owner: 'M', mark: state.upgrades.M[0], offering: 'offeringp', level: 1, liveSlot: 7});
+  assert.equal(state.upgrades.M[0].slot, 7); assert.equal(state.upgrades.M[0].liveSlot, 7);
 });
 test('equipped upgrade marks survive bag reconciliation and resolve only the completed pass', () => {
   const equipped = {slot: 'mainhand', item: {name: 'sword', level: 5}, tiers: 3, equipped: true};

@@ -1,30 +1,30 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { hostAction } from "./query-actions";
 import { Button } from "@/components/ui/button";
 
 export function HostingSettings() {
   const [required, setRequired] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const client = useQueryClient();
+  // The pairing host's read goes through the action client, so a lost session ends the session.
   useEffect(() => {
     let active = true;
-    fetch("/setup/state").then(async response => {
-      if (!response.ok) throw new Error("Choose Load setup to pair this browser.");
-      const state = await response.json() as { requirePairing: boolean; error?: string };
-      if (active) setRequired(state.requirePairing);
-    }).catch(error => { if (active) setError(error.message); });
+    hostAction<{ requirePairing: boolean }>(client, "/setup/state", {}, { method: "GET" })
+      .then(state => { if (active) setRequired(state.requirePairing); })
+      .catch((failure: Error) => { if (active) setError(failure.message); });
     return () => { active = false; };
-  }, []);
+  }, [client]);
   async function change(requirePairing: boolean) {
     setBusy(true); setError("");
     try {
-      const response = await fetch("/setup/pairing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requirePairing }) });
-      const result = await response.json() as { requirePairing: boolean; error?: string };
-      if (!response.ok) throw new Error(result.error);
+      const result = await hostAction(client, "/setup/pairing", { requirePairing }) as { requirePairing: boolean };
       setRequired(result.requirePairing);
     } catch (error) { setError((error as Error).message); }
     finally { setBusy(false); }
   }
-  return <section className="space-y-3 rounded border border-slate-600 bg-slate-950 p-4 text-sm text-slate-100">
+  return <section data-area="hosting" className="space-y-3 rounded border border-slate-600 bg-slate-950 p-4 text-sm text-slate-100">
     <label className="flex items-center gap-3 font-semibold">
       <input type="checkbox" className="size-4 accent-violet-500" checked={required === true} disabled={busy || required === null} onChange={event => void change(event.target.checked)} />
       Require secure pairing

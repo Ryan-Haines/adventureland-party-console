@@ -1,6 +1,6 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const {coordinatorHuntParticipants, cancelCoordinatorHuntConvoy, clearCoordinatorHunt,
-  coordinatorHuntDestination, coordinatorHuntThreat} = require('../../runtime/coordinator/hunt/controls.ts');
+const {cancelCoordinatorHuntConvoy, clearCoordinatorHunt, coordinatorHuntDestination} = require('../../runtime/hunting/coordinator/hunt.ts');
+const {coordinatorHuntParticipants} = require('../../runtime/tasks/coordinator/groups.ts');
 
 test('Hunt participants require a fresh combat leader and keep only its active same-realm followers', () => {
   const member = {seenAt: 90000, server: 'II', ctype: 'warrior'};
@@ -22,33 +22,37 @@ test('Hunt cancellation scopes cleanup to convoy participants; clearing also rem
   const manual = {purpose: 'manual'}, hunt = {purpose: 'monster-hunt'};
   const state = {activeConvoy: {purpose: 'monster-hunt', participants: ['A', 'B', 'Missing']},
     commands: {A: hunt, B: manual, C: hunt}, monsterHunt: {cycleId: 'cycle', participants: ['A','B','C']}};
-  cancelCoordinatorHuntConvoy(state);
+  // Movement's cancel of the group's walk.
+  const cancel = () => { state.activeConvoy = null; };
+  cancelCoordinatorHuntConvoy(state, cancel);
   assert.equal(state.activeConvoy, null); assert.deepEqual(state.commands, {B: manual, C: hunt});
   assert.equal(state.monsterHunt.cycleId, 'cycle');
   const eventConvoy = state.activeConvoy = {purpose: 'event-return', participants: ['B']};
-  clearCoordinatorHunt(state);
+  clearCoordinatorHunt(state, cancel);
   assert.equal(state.activeConvoy, eventConvoy); assert.equal(state.monsterHunt, null);
   assert.deepEqual(state.commands, {B: manual}); assert.equal(state.commands.B, manual);
 });
 
-test('Hunt destinations preserve zone identity, coercion and stable ties while excluding cross-map distance', () => {
-  const state = {leader: 'W', statuses: {W: {map: 'main', x: '10', y: '0'}}, monsterChoices: [{id: 'rat', locations: [{}]}]};
-  const foreign = {map: 'cave', x: 10, y: 0}, far = {map: 'main', x: 100, y: 0};
-  const first = {map: 'main', x: '9', y: 0}, tied = {map: 'main', x: 11, y: 0};
-  assert.equal(coordinatorHuntDestination(state, 'rat', (choices, focus) => {
-    assert.equal(choices, state.monsterChoices); assert.deepEqual(focus, ['rat']);
-    return [foreign, far, first, tied];
-  }), first);
+test("Hunt destinations take the nearest spawn on the leader's map, ties in catalog order", () => {
+  const spawn = ({map, x, y}) => ({map, x, y});
+  const locations = [{map: 'cave', x: 10, y: 0}, {map: 'main', x: 100, y: 0}, {map: 'main', x: 9, y: 0}, {map: 'main', x: 11, y: 0}];
+  const state = {leader: 'W', statuses: {W: {map: 'main', x: 10, y: 0}}, monsterChoices: [{id: 'rat', locations}]};
+  assert.deepEqual(spawn(coordinatorHuntDestination(state, 'rat')), locations[2]);
   state.statuses = {W: {map: 'elsewhere', x: 0, y: 0}};
-  assert.equal(coordinatorHuntDestination(state, 'rat', () => [foreign, first]), foreign);
-  assert.equal(coordinatorHuntDestination(state, 'rat', () => []), undefined);
+  assert.deepEqual(spawn(coordinatorHuntDestination(state, 'rat')), locations[0], "no spawn on the leader's map: catalog order");
   state.monsterChoices[0].locations = [];
-  assert.equal(coordinatorHuntDestination(state, 'rat', () => assert.fail('no valid locations')), null);
+  assert.equal(coordinatorHuntDestination(state, 'rat'), null);
 });
 
-test('Hunt threat lookup retains numeric coercion and zero fallback', () => {
-  const catalog = [{id: 'rat', threat: '2.5', hp: '800'}, {id: 'bad', threat: 'unknown', hp: null}];
-  assert.deepEqual(coordinatorHuntThreat(catalog, 'rat'), {threat: 2.5, hp: 800});
-  assert.deepEqual(coordinatorHuntThreat(catalog, 'bad'), {threat: 0, hp: 0});
-  assert.deepEqual(coordinatorHuntThreat(undefined, 'rat'), {threat: 0, hp: 0});
+// While the deploy lease names a participant the Hunt takes no step and says why; the release
+// half runs in the end run's live rows.
+test('a planted lease naming the priest holds the Hunt with its label',()=>{
+ const {createHunt}=require('../../runtime/hunting/coordinator/hunt.ts');
+ const {huntMessage}=require('../../runtime/hunting/coordinator/record.ts');
+ const lease=['P'];
+ const s={targetMode:'hunt',leader:'W',followers:{P:true},statuses:{},commands:{},
+  monsterHunt:{cycleId:'c',stage:'farming',participants:['W','P'],missions:[],currentIndex:-1,target:'bee',startedAt:1}};
+ const hunt=createHunt(s,{now:()=>5000,persist(){},cancelConvoy(){},navigation:{intent:()=>({revision:0})},drain:()=>({participants:lease})});
+ hunt.tick();
+ assert.deepEqual([s.monsterHunt.stage,huntMessage(s.monsterHunt)],['farming','Waiting for safe console load; finishing current combat']);
 });

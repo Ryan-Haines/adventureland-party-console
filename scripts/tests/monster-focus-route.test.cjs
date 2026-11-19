@@ -77,7 +77,6 @@ function setup() {
   };
   return {
     context, props, writes, routes,
-    flushTimer() { const callbacks = [...timers.values()]; timers.clear(); callbacks.forEach(fn => fn()); },
     completeSave() { completeSave(); },
   };
 }
@@ -93,9 +92,11 @@ test('Find uses the displayed Goo draft after clearing imported Phoenix, before 
     route(); assert.deepEqual(Array.from(h.routes.at(-1).ids), []);
     await renderer.act(async () => root.root.findAllByType('Checkbox')[2].props.onCheckedChange(true));
     route(); assert.deepEqual(Array.from(h.routes.at(-1).ids), ['goo']);
-    assert.equal(h.writes.length, 0, 'route opens before the debounce fires');
-    await renderer.act(async () => h.flushTimer());
-    assert.deepEqual(h.writes, [['goo']]);
+    // Each press goes straight into the ordered write chain (no 180 ms wait), so the Goo tick
+    // waits for the Clear's save.
+    assert.deepEqual(h.writes, [[]]);
+    await renderer.act(async () => h.completeSave());
+    assert.deepEqual(h.writes, [[], ['goo']]);
     h.props.selected = ['phoenix']; // A poll still contains the imported selection while saving.
     await renderer.act(async () => root.update(render()));
     route(); assert.deepEqual(Array.from(h.routes.at(-1).ids), ['goo']);

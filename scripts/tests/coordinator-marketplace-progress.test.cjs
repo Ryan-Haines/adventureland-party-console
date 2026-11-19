@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createMarketplaceProgressRoutes}=require('../../runtime/coordinator/http/marketplace-progress.ts');
+const {createMarketplaceProgressRoutes}=require('../../runtime/items/coordinator/routes/market.ts');
 function fixture(blacklistingEnabled=true){
  const listing={key:'a',item:{name:'cap',level:8},quantity:1,price:100,seller:'Seller',serverRegion:'US',serverIdentifier:'II'};
  const state={merchantCharacter:'M',merchantCurrent:{id:'job',target:'M',reason:'ALData marketplace purchases',listings:[listing]},merchantQueue:[],commands:{M:{}},standBids:{cap:{quantity:4}}};
@@ -40,4 +40,31 @@ test('disabling automatic blacklisting skips an unavailable seller without addin
  const t=fixture(false);const result=t.send('aldata',{success:false,failureCode:'seller_not_visible'});
  assert.equal(result.code,200);assert.equal(result.body.cancelSeller.seller,'Seller');
  assert.equal(t.calls.some(call=>call[0]==='blacklist'),false);
+});
+
+test('a report for a job that is no longer current answers 409 and changes nothing',()=>{
+ const t=fixture();
+ for(const route of ['aldata','ponty'])assert.equal(t.send(route,{jobId:'cancelled'}).code,409,route);
+ t.state.merchantCurrent={...t.state.merchantCurrent,id:'next'};
+ assert.equal(t.send('aldata',{success:true,quantity:1}).code,409);
+ assert.equal(t.state.standBids.cap.quantity,4);assert.equal(t.calls.length,0);
+});
+
+test('an unknown ALData listing key answers 400 without fulfilling or completing anything',()=>{
+ const t=fixture(),response=t.send('aldata',{success:true,quantity:1,listingKey:'missing'});
+ assert.equal(response.code,400);assert.equal(t.state.standBids.cap.quantity,4);
+ assert.equal(t.state.merchantCurrent.completedListingKeys,undefined);assert.equal(t.calls.length,0);
+});
+
+test('a failed Ponty listing is dismissed and completed without fulfilling the bid',()=>{
+ const t=fixture();t.state.merchantCurrent.reason='Ponty purchases';
+ assert.equal(t.send('ponty',{success:false,error:'sold out'}).code,200);
+ assert.deepEqual(t.calls.filter(call=>call[0]!=='persist'),[['dismiss','a']]);
+ assert.equal(t.state.standBids.cap.quantity,4);assert.deepEqual(t.state.merchantCurrent.completedListingKeys,['a']);
+});
+
+test('a stand that is not open cancels that seller like a seller who is not visible',()=>{
+ const t=fixture(),same={...t.listing,key:'b'};t.state.merchantCurrent.listings.push(same);
+ const result=t.send('aldata',{success:false,failureCode:'stand_not_open'}).body;
+ assert.equal(result.cancelSeller.seller,'Seller');assert.deepEqual(t.state.merchantCurrent.completedListingKeys,['a','b']);
 });

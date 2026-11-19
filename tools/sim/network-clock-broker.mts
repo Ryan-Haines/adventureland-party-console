@@ -25,7 +25,7 @@ function clockRequest(raw: string | undefined) {
 export async function startNetworkClock(rate: number) {
   if (!Number.isFinite(rate) || rate <= 1 || rate > 1024) throw Error("ChronAL clock rate must be greater than 1 and at most 1024; use E2E_GAMEPLAY_BACKEND=native for real time");
   const windowMs=Number(process.env.E2E_CLOCK_WINDOW_MS||250);
-  if(!Number.isInteger(windowMs)||windowMs<25||windowMs>250)throw Error('ChronAL network window must be 25–250 ms');
+  if(!Number.isInteger(windowMs)||windowMs<25||windowMs>250)throw Error('ChronAL network window must be 25 to 250 ms');
   const epoch = wallNow(),
     token = randomUUID(),
     members = new Map<string, { now: number; scope: string; label: string; sent: number; count: number; total: number; max: number; nativeIo?:boolean; timing?: {count:number;receiveMs:number;workMs:number;returnMs:number} }>();

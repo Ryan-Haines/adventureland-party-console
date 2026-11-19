@@ -1,5 +1,7 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test = require('node:test'), assert = require('node:assert/strict');
-const {createCoordinatorMerchantAutomation} = require('../../runtime/coordinator/merchant/automation-composition.ts');
+const {createCoordinatorMerchantAutomation} = require('../../runtime/merchant-jobs/coordinator/sources.ts');
+const {createMerchantRealmOwner} = require('../../runtime/merchant-realm/coordinator/owner.ts');
 
 function fixture() {
   const state = {merchantCharacter: 'M', nextCommandId: 40, activeRealm: 'SR_USII', merchantAutomations: {},
@@ -7,15 +9,16 @@ function fixture() {
     autoNpcSales: {}, autoStandMarks: {}, npcSaleMarks: [], standListings: []};
   const calls = [], timers = [], block = {realm: 'SR_EUI'};
   let now = 100000;
-  const service = createCoordinatorMerchantAutomation(state, {
-    now: () => now, stamp: job => ({...job, priority: 50}), log: () => calls.push('log'),
+  const service = createCoordinatorMerchantAutomation(state, withDoor(state,{
+    now: () => now, realmRefuses: () => false, stamp: job => ({...job, priority: 50}), log: () => calls.push('log'),
     persist: () => calls.push('persist'), queue: () => calls.push('queue'), publish: () => calls.push('publish'),
     syncStand: () => false, idle: () => calls.push('idle'), dispatch: () => calls.push('dispatch'),
     names: () => Object.keys(state.statuses), strong: () => false, remaining: () => 0, lead: () => 30000,
-    block: () => block, realmLabel: realm => realm, stop: async value => calls.push(value),
-    later: (callback, delay) => timers.push({callback, delay}),
-  });
-  return {state, calls, timers, block, service, setNow: value => { now = value; }};
+  }));
+  // The home return is the realm owner's; its headless restart stops the worker at the write.
+  const home = createMerchantRealmOwner(state, {now: () => now, block: () => block, realmLabel: realm => realm,
+    log: () => calls.push('log'), persist: () => calls.push('persist'), restart: value => calls.push(value)});
+  return {state, calls, timers, block, service: {...service, home}, setNow: value => { now = value; }};
 }
 
 test('automatic schedulers share the current command counter and replacement collections', () => {
@@ -39,10 +42,9 @@ test('home recovery persists realm reassignment before a deferred restart and wa
   const t = fixture(); t.state.statuses.M = {server: 'EUI'}; t.state.commands.M = {id: 1};
   assert.equal(t.service.home.ensureHome('exchange'), false);
   assert.equal(t.block.realm, 'SR_USII'); assert.equal(t.state.commands.M, undefined);
-  assert.deepEqual(t.calls, ['log', 'persist']); assert.equal(t.timers[0].delay, 150);
-  assert.equal(t.service.home.ensureHome('exchange'), false); assert.equal(t.timers.length, 1);
-  await t.timers[0].callback(); assert.equal(t.calls.at(-1), t.block);
+  assert.deepEqual(t.calls, ['log', 'persist', t.block]);
+  assert.equal(t.service.home.ensureHome('exchange'), false); assert.equal(t.calls.filter(call => call === t.block).length, 1);
   t.setNow(100001);
   t.state.statuses = {M: {server: 'USII', seenAt:100001}};
-  assert.equal(t.service.home.ensureHome('exchange'), true); assert.equal(t.state.merchantHomeReturnAt, 0);
+  assert.equal(t.service.home.ensureHome('exchange'), true); assert.equal(t.state.merchantRealmRequests.M, undefined);
 });

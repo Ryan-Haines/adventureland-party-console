@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createInventoryReservations}=require('../../runtime/coordinator/inventory/reservations.ts');
+const {createInventoryReservations}=require('../../runtime/items/coordinator/fates.ts');
 test('outgoing slots release reservations but preserve equipped upgrades and partial compounds',()=>{
   const item={name:'ring',q:2}, other={name:'ring',q:3};
   const partial={id:'partial',items:[{slot:1,item},{slot:2,item}]};

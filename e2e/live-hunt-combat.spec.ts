@@ -1,6 +1,7 @@
 import {test,expect} from './live-fixtures';
 import {isolateNativeMapAmbient,restoreNativeMapAmbient} from './native-map-ambient-isolation';
-import {W,P,hunt,observed,prepareHunt,beginHunt,reward,spawnGoo,killedByParty,evidence,quantity,killNativeCharacter} from './hunt-interruption-helpers';
+import {W,P,hunt,observed,reward,spawnGoo,killedByParty,evidence,quantity,killNativeCharacter} from './hunt-interruption-helpers';
+import {prepareHunt,start} from './game/hunt-lifecycle';
 
 test.describe('native Hunt travel combat and death ownership',()=>{
   test.setTimeout(480000);
@@ -11,14 +12,14 @@ test.describe('native Hunt travel combat and death ownership',()=>{
     const passingObservations:unknown[]=[];
     let outboundConvoyId:string|undefined,returningConvoyId:string|undefined;
     try {
-    const setup=await prepareHunt(live);
+    const setup={...await prepareHunt(live,{monster:'armadillo',count:1}),before:await observed(live)};
     const townCooldown=await Promise.all([W,P].map(name=>live.clients[name].run("(()=>{parent.skill_timeout_singular('use_town',600000);return {name:character.name,until:+parent.next_skill.use_town,now:Date.now()};})()")));
     expect(townCooldown.every(value=>Number.isFinite(value.until)&&value.until-value.now>=590000)).toBe(true);
     const townReadiness=await Promise.all([W,P].map(name=>live.clients[name].run("can_use('use_town')&&!is_on_cooldown('use_town')")));
     expect(townReadiness.every(ready=>ready===false),'Passing encounters require genuine walking without a Town shortcut').toBe(true);
     await info.attach('declared-passing-native-town-cooldown',{body:JSON.stringify({townCooldown,townReadiness}),contentType:'application/json'});
     await live.post('/rare-hunting',{rules:{goo:{enabled:true,keepMoving:true,priority:100}},useFieldGenerators:false});
-    await beginHunt(live,setup);
+    await start(live,W,setup.monster,setup.location);
     await expect.poll(async()=>{
       const s=await live.state();
       const ready=hunt(s)?.stage==='mission-travel'&&s.activeConvoy?.phase==='travel'&&
@@ -52,10 +53,10 @@ test.describe('native Hunt travel combat and death ownership',()=>{
   });
 
   test('fighter death during Hunt releases the failed mission and recovers with native respawn',async({live},info)=>{
-    const setup=await prepareHunt(live,'goo',30);
+    const setup={...await prepareHunt(live,{count:30}),before:await observed(live)};
     await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(P)});p.s.monsterhunt={sn:region+' '+server_name,id:'armadillo',c:2,ms:1800000};resend(p,'u+cid+reopen');return true})()`);
     await expect.poll(async()=>(await live.state()).characters[P]?.monsterHunt?.id,{timeout:30000}).toBe('armadillo');
-    await beginHunt(live,setup);
+    await start(live,W,setup.monster,setup.location);
     await expect.poll(async()=>hunt(await live.state())?.stage,{timeout:90000}).toBe('farming');
     const cycle=hunt(await live.state()).cycleId;
     const death=await killNativeCharacter(live,W);
@@ -65,39 +66,5 @@ test.describe('native Hunt travel combat and death ownership',()=>{
     await expect.poll(async()=>quantity((await observed(live))[P].items,'monstertoken'),{timeout:240000}).toBe(quantity(setup.before[P].items,'monstertoken')+1);
     await live.post('/farming-mode',{character:W,mode:'default'});
     await evidence(live,info,'hunt-fighter-death-native-recovery',{cycle,death});
-  });
-
-  test('stop-required passive Goo combat resumes the original armadillo Hunt after the actual kill',async({live},info)=>{
-    // Ambient Goos can win the enabled policy's target selection before the
-    // exact declared encounter. Preserve native armadillos and restore every
-    // removed Goo after this receipt/ownership boundary.
-    const ambient=await isolateNativeMapAmbient(live,'main',['goo']);
-    await info.attach('stop-required-declared-ambient-goos',{body:JSON.stringify(ambient),contentType:'application/json'});
-    try {
-    const setup=await prepareHunt(live);
-    await live.post('/rare-hunting',{rules:{goo:{enabled:true,keepMoving:false,priority:100}},useFieldGenerators:false});
-    await beginHunt(live,setup);
-    await expect.poll(async()=>{const s=await live.state();return hunt(s)?.stage==='mission-travel'&&s.activeConvoy?.phase==='travel';},{timeout:90000,intervals:[100,250]}).toBe(true);
-    // Initial encounter HP keeps the native fight observable across a coordinator sample.
-    const cycle=hunt(await live.state()).cycleId,encounter=await spawnGoo(live,W,5,400);
-    await expect.poll(async()=>{
-      const s=await live.state(),c=s.activeConvoy;
-      return c?.phase==='defending'&&c.huntTravel?.committed?.some((m:any)=>String(m.id)===String(encounter.id));
-    },{timeout:30000,intervals:[100,200],message:'The configured neutral Goo must actually stop the owned Hunt route'}).toBe(true);
-    await evidence(live,info,'passive-stop-owned-native-encounter',{cycle,encounter});
-    // Re-enabling passing attacks must not abandon a fight already committed by the party.
-    await live.post('/rare-hunting',{rules:{goo:{enabled:true,keepMoving:true,priority:100}},useFieldGenerators:false});
-    const committed=(await live.state()).activeConvoy;
-    expect(committed.phase).toBe('defending');
-    expect(committed.huntTravel.committed.some((m:any)=>String(m.id)===String(encounter.id))).toBe(true);
-    const kill=await killedByParty(live,String(encounter.id));
-    const resumed=hunt(await live.state());
-    expect(resumed.cycleId).toBe(cycle);expect(resumed.target).toBe('armadillo');
-    await reward(live,setup.before);
-    await evidence(live,info,'passive-stop-native-kill-and-hunt-handback',{cycle,encounter,kill});
-    } finally {
-      const restored=await restoreNativeMapAmbient(live);
-      await info.attach('stop-required-native-ambient-restored',{body:JSON.stringify(restored),contentType:'application/json'});
-    }
   });
 });

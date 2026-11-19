@@ -1,13 +1,14 @@
+// The repair runs on the walk client (walk-client.ts `createWalkClient`), its ports read from the context.
+const {walkClient} = require('./helpers/walk-reports.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
-const source=fs.readFileSync('characters/shared.js','utf8');
-const code=source.slice(source.indexOf('  function reloadConvoyGeometry('),source.indexOf('  function sharedConvoyDistance('));
 function fixture(headless=false){
  const calls=[],timers=[],signal={id:'c',epoch:2,commandId:9,geometryReload:{id:'repair',runtimeId:'old',deadline:2000}};
+ // The repair waits on movement's run scope handle, whose frame is the CODE frame: the context's timer.
  const context=vm.createContext({Date:{now:()=>1000},coordinatorClockOffset:0,convoyRuntimeId:'old',navigationIntent:{revision:4},
- convoyTraveling:{id:'c',epoch:2,commandId:9,phase:'held',navigationRevision:4},runtimeCurrent:()=>true,game_log(){},
- parent:{caracAL:headless,setTimeout:fn=>timers.push(fn),start_runner:(...args)=>calls.push(args)},
+ groupWalk:{travel:{id:'c',epoch:2,commandId:9,phase:'held',navigationRevision:4}},runtimeCurrent:()=>true,game_log(){},setTimeout:fn=>timers.push(fn),
+ parent:{caracAL:headless,start_runner:(...args)=>calls.push(args)},
  $:{ajax:options=>{calls.push(options);return {then:fn=>fn('globalThis.installed=true;')};}}});
- vm.runInContext(code,context);return {context,signal,calls,timers};
+ walkClient(context);return {context,signal,calls,timers};
 }
 for(const headless of [false,true])test('geometry reload runs once in '+(headless?'headless':'browser')+' runtime',()=>{
  const f=fixture(headless);f.context.reloadConvoyGeometry(f.signal);f.context.reloadConvoyGeometry(f.signal);
@@ -28,6 +29,6 @@ for(const field of ['id','epoch','commandId','runtimeId','deadline','revision','
  if(field==='deadline')f.signal.geometryReload.deadline=900;
  if(field==='revision')c.navigationIntent.revision++;
  if(field==='cancelled')c.navigationIntent.cancelled=true;
- if(field==='phase')c.convoyTraveling.phase='travelling';
+ if(field==='phase')c.groupWalk.travel.phase='travelling';
  c.reloadConvoyGeometry(f.signal);assert.equal(f.timers.length,0);
 });

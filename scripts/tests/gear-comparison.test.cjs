@@ -1,25 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const ts = require('../../dashboard/node_modules/typescript');
+const path = require('node:path');
+const Module = require('node:module');
+const { buildSync } = require('esbuild');
 
-// Exercise the projection used by the dialog, including its stat and set deltas.
-// Fixture boundary: the projection now consumes complete actual loadout totals;
-// omitting those inputs throws before the frequency/speed assertions can run.
-const source = require('./helpers/dashboard-source.cjs')();
-const projection = ts.transpileModule(source.slice(source.indexOf('  const strArmor ='),
-  source.indexOf('  const currentPreview = project(')), {
-  compilerOptions: { target: ts.ScriptTarget.ES2022 },
-}).outputText;
+// Exercise the projection the dialog uses, including its stat and set deltas. P: the projection is
+// dashboard/lib/gear-projection.ts, loaded whole as the dialog imports it, with the game's stat
+// lines from dashboard/lib/game-formulas.ts.
+const file = path.resolve(__dirname, '../../dashboard/lib/gear-projection.ts');
+const { gearProjection } = (() => {
+  const loaded = new Module(file, module);
+  loaded.filename = file; loaded.paths = Module._nodeModulePaths(path.dirname(file));
+  loaded._compile(buildSync({ entryPoints: [file], bundle: true, packages: 'external', platform: 'node', format: 'cjs', write: false })
+    .outputFiles[0].text, file);
+  return loaded.exports;
+})();
+// One equipped entry carries the planted totals.
+const equipment = properties => [['ring1', { meta: { properties } }]];
 function frequency(oldProps, newProps, oldSets = {}, newSets = {}) {
-  const context = vm.createContext({
-    character: { ctype: 'mage', primaryStat: 'int', level: 70, frequency: 1.485,
-      str: 19, int: 198, dex: 22, vit: 32, max_hp: 3956, max_mp: 4000 },
-    actualEquipment: [], actualTotals: oldProps, actualSets: { totals: oldSets },
-    prop: (properties, key) => Number(properties[key] || 0), newProps, newSets,
-  });
-  return vm.runInContext(projection + '\nproject(newProps, newSets).frequency', context);
+  const character = { ctype: 'mage', primaryStat: 'int', level: 70, frequency: 1.485,
+    str: 19, int: 198, dex: 22, vit: 32, max_hp: 3956, max_mp: 4000 };
+  return gearProjection(character, equipment(oldProps), oldSets)(equipment(newProps), newSets).frequency;
 }
 test('Winged Boots +0 adds 0.03 attacks/sec while removing 12 INT', () => {
   const result = frequency({ int: 12 }, { frequency: 3 });
@@ -30,10 +31,8 @@ test('unchanged gear preserves reported attack speed', () => {
   assert.equal(frequency({ frequency: 3 }, { frequency: 3 }), 1.485);
 });
 test('merchant gear comparison projects DEX from unrestricted speed, not stand speed 10',()=>{
- const context=vm.createContext({character:{ctype:'merchant',speed:10,unrestrictedSpeed:75,standOpen:true,level:46,str:6,dex:99},
-   actualEquipment:[],actualTotals:{dex:4},actualSets:{totals:{}},prop:(p,k)=>Number(p[k]||0)});
- const speed=vm.runInContext(projection+'\nproject({dex:36},{}).speed',context);
- assert.equal(speed,76);
+ const character={ctype:'merchant',speed:10,unrestrictedSpeed:75,standOpen:true,level:46,str:6,dex:99};
+ assert.equal(gearProjection(character,equipment({dex:4}),{})(equipment({dex:36}),{}).speed,76);
 });
 test('removing frequency gear subtracts its converted bonus', () => {
   assert.ok(Math.abs(frequency({ frequency: 3 }, {}) - 1.455) < 1e-12);

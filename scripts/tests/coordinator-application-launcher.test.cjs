@@ -1,15 +1,12 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {isCoordinatorApplicationLauncher}=require('../../tools/caracal/coordinator-launcher.mts');
 const source=fs.readFileSync('tools/caracal/CharacterCoordinator.cjs','utf8');
-const {runLauncher}=require('./helpers/coordinator-host.cjs');
+const {runLauncher,heartbeat}=require('./helpers/coordinator-host.cjs');
 
 for(const directory of ['C:\\Games\\Adventure Land\\.caracal\\standalones','/app/.caracal/standalones']) {
   test('launcher starts the real bundle and serves a heartbeat: '+directory,async()=>{
     const host=await runLauncher(directory,1900000000000);
-    let response;
-    host.handlers.get('/party-api/status')({body:{name:'P',ctype:'priest',map:'main',x:0,y:0,
-      server:'USII',gold:0,items:Array(42).fill(null),hp:100,max_hp:100}},
-      {status(code){assert.equal(code,200);return this;},json(value){response=value;}});
+    const response=heartbeat(host);
     assert.equal(response.merchantCharacter,'GoldMajesty');
     assert.equal(response.partyPositions[0].name,'P');
     assert.ok(host.routes.some(route=>route[1]==='/party-api/merchant/complete'));
@@ -34,4 +31,15 @@ test('launcher recognition does not mistake legacy imports or comments for the a
   assert.equal(isCoordinatorApplicationLauncher(source),true);
   assert.equal(isCoordinatorApplicationLauncher('const x = require("../../.build/runtime/coordinator-application.cjs");'),false);
   assert.equal(isCoordinatorApplicationLauncher('coordinatorPolicies.createCoordinatorHunt(party, {});'),false);
+});
+
+// The coordinator bundle holds one copy of movement's defense.ts. start.ts takes the convoy
+// defense step from movement's door, as every other caller does, so the bundle requires no second
+// build of defense.ts (scripts/convoy-defense.cjs) at run time.
+test('the coordinator bundle evaluates defense.ts once',()=>{
+  const {buildSync}=require('esbuild');
+  const built=buildSync({entryPoints:['runtime/coordinator/application.ts'],bundle:true,write:false,format:'cjs',platform:'node',
+    target:'node22',external:['alpathfinder','bot-web-interface','express','../monitoring_util','../src/*'],logLevel:'silent'}).outputFiles[0].text;
+  assert.equal(built.split('function travelObservationIssue(').length-1,1);
+  assert.doesNotMatch(built,/convoy-defense\.cjs/);
 });

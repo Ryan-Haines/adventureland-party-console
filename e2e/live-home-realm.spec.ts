@@ -1,4 +1,4 @@
-import { test, expect, type LiveGame } from './live-fixtures';
+import { test, expect, type LiveGame, headlessMerchant, logoutNative } from './live-fixtures';
 
 test.use({ liveHeadless:true });
 
@@ -12,7 +12,7 @@ async function freshParticipants(live: LiveGame, names: string[]) {
 // See home-realm-failures.md. Native server/client assertions preserve the
 // endpoint contract; no fabricated home-success receipt or realm response.
 test('home realm change confirms every active character including merchant', async ({ page, live }, info) => {
-  test.setTimeout(240_000);
+  test.setTimeout(420_000);
   page.setDefaultTimeout(20_000);
   const pageErrors: string[] = [];
   const reads:Array<{at:number;url:string;status?:number;failure?:string}>=[];
@@ -26,11 +26,7 @@ test('home realm change confirms every active character including merchant', asy
   try {
     // Native admission permits only one merchant. A managed merchant can be
     // paused and restored while the offline storage merchant changes its home.
-    await live.post('/steam/action', {character:'E2EMerchant',action:'logout'});
-    await expect.poll(async () => (await live.state()).activeSlots.some((slot:any)=>slot.character==='E2EMerchant'), {timeout:90_000}).toBe(false);
-    await expect.poll(async () => live.admin("output=!!get_player('E2EMerchant')"), {timeout:30_000}).toBe(false);
-    await expect.poll(async () => {const operation=(await live.state()).steamSwitch;return !operation || operation.phase==='complete';}, {timeout:90_000}).toBe(true);
-    await live.post('/slots/1/spawn', {character:'E2EMerchant'});
+    await headlessMerchant(live);
     await expect.poll(async () => (await live.state()).characters.E2EMerchant?.runtime, {timeout:90_000}).toBe('headless');
     const seeded = await live.admin(`output=(async()=>{let matched=0;for(const name of ${JSON.stringify(accountNames)}) {
       const p=get_player(name); if(p){p.p.home='USII'; delete p.p.dt.last_homeset;}
@@ -40,7 +36,9 @@ test('home realm change confirms every active character including merchant', asy
     expect(seeded).toBe(accountNames.length);
     // The server seed changes native player/DB state, but existing clients retain
     // their previous home until a real login sends a fresh character snapshot.
-    await live.reconnectClient('E2EWarrior');
+    // That login reports home US II while the party stands on US I, so the Steam
+    // restore asks Switch or Stay; the row stays, and the home change below moves it.
+    await live.reconnectClient('E2EWarrior', { realmChoice: 'stay' });
     await live.restartCoordinator();
     await expect.poll(async () => (await live.state()).realmControl?.homeRealm, {timeout:30_000}).toBe('SR_USII');
     await freshParticipants(live, names);
@@ -87,8 +85,26 @@ test('home realm change confirms every active character including merchant', asy
     await expect(modal).toContainText('This will change for all characters in the account including characters not currently logged in.');
     await expect(modal.getByRole('button', {name:'Cancel',exact:true})).toBeVisible();
     await info.attach('account-home-confirmation', {body:await page.screenshot(),contentType:'image/png'});
+    // Set home goes from where the character stands, so the
+    // merchant makes no walk before `set_home`. The headless merchant stands on its home realm, US II,
+    // while the party is on US I, so the change can move it between realms by a fresh login, which is
+    // no walk. Its walk record is its own reports up to its confirmed home: two reports in a row on
+    // one realm and map stand on one spot.
+    const walk: {at:number;server?:string;map?:string;x:number;y:number;confirmed:boolean}[] = [];
+    const sample = async () => {
+      const state = await live.state(), merchant = state.characters.E2EMerchant;
+      const entry = state.realmControl?.operation?.characters?.find((character:any)=>character.name==='E2EMerchant');
+      walk.push({at:Date.now(),server:merchant?.server,map:merchant?.map,x:Math.round(Number(merchant?.x)),y:Math.round(Number(merchant?.y)),confirmed:!!entry?.homeConfirmed});
+      return state.realmControl?.operation?.phase;
+    };
+    await sample();
     await modal.getByRole('button', {name:'Change home realm',exact:true}).click();
-    await expect.poll(async () => (await live.state()).realmControl?.operation?.phase, {timeout:120_000}).toBe('complete');
+    await expect.poll(sample, {timeout:120_000, intervals:[250]}).toBe('complete');
+    await info.attach('merchant-walk-before-set-home', {body:JSON.stringify(walk),contentType:'application/json'});
+    const beforeHome = walk.slice(0, Math.max(1, walk.findIndex(entry=>entry.confirmed)));
+    const steps = beforeHome.slice(1).filter((entry, index) => entry.server && entry.server === beforeHome[index]!.server &&
+      entry.map === beforeHome[index]!.map && Math.hypot(entry.x - beforeHome[index]!.x, entry.y - beforeHome[index]!.y) > 10);
+    expect(steps, 'The merchant walks nowhere before its set_home').toEqual([]);
     const state = await live.state();
     expect(state.realmControl.operation.characters.filter((entry:any)=>entry.homeConfirmed).map((entry:any)=>entry.name).sort()).toEqual([...accountNames].sort());
     const native = await live.admin(`output=Object.fromEntries(${JSON.stringify(names)}.map(name=>[name,get_player(name).p.home]))`);
@@ -108,6 +124,20 @@ test('home realm change confirms every active character including merchant', asy
       .toEqual(['E2EWarrior','E2EPriest'].map(() => [{home:'USI',success:true,response:'home_set',place:'set_home'}]));
     await info.attach('native-home-mutation-receipts', {body:JSON.stringify(await homeReceipts()),contentType:'application/json'});
     await info.attach('native-account-home-realms', {body:JSON.stringify({native,database,state:state.realmControl}),contentType:'application/json'});
+    // A set home the game refuses sets the party's realm
+    // back. The game refuses `set_home` for 36 h after the last one (server.js `sh_time`), so the
+    // merchant's refusal is the game's, not planted in the console.
+    await live.admin(`output=(async()=>{const p=get_player('E2EMerchant');p.p.dt.last_homeset=new Date();
+      await db.collection('character').updateOne({'info.name':'E2EMerchant'},{$set:{'info.p.dt.last_homeset':new Date()}});return true})()`);
+    const refused = await live.post('/realm/switch', {realm:'SR_USII',setHome:true});
+    await expect.poll(async () => {
+      const operation = (await live.state()).realmControl?.operation;
+      return operation?.id === refused.operation.id && ['failed', 'complete'].includes(operation.phase) ? operation.phase : null;
+    }, {timeout:180_000}).toBe('failed');
+    const failed = await live.state();
+    expect(failed.realmControl.activeRealm).toBe('SR_USI');
+    expect(await live.admin(`output=get_player('E2EMerchant').p.home`)).toBe('USI');
+    await info.attach('failed-set-home-rolls-back', {body:JSON.stringify(failed.realmControl),contentType:'application/json'});
   } catch (error) {
     await info.attach('home-realm-dashboard-readiness',{body:JSON.stringify({reads,browser:await page.evaluate(()=>{
       const clock=(window as any).__e2eChronalClock;
@@ -131,9 +161,7 @@ test.describe('temporary native headless home change', () => {
   test('offline merchant logs in to set home and returns offline without changing slots', async ({ page, live }, info) => {
     test.setTimeout(240_000);
     try {
-      await live.post('/steam/action', {character:'E2EMerchant',action:'logout'});
-      await expect.poll(async () => (await live.state()).activeSlots.some((slot:any) => slot.character === 'E2EMerchant'), {timeout:90_000}).toBe(false);
-      await expect.poll(async () => await live.admin("output=!!get_player('E2EMerchant')"), {timeout:30_000}).toBe(false);
+      await logoutNative(live,'E2EMerchant');
       const seeded = await live.admin("output=db.collection('character').updateOne({'info.name':'E2EMerchant'},{$set:{'info.p.home':'USII'},$unset:{'info.p.dt.last_homeset':''}})");
       expect(seeded.matchedCount).toBe(1);
       await live.restartCoordinator();

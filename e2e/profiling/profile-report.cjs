@@ -21,7 +21,7 @@ function category(frame) {
     if (frame.functionName === '(program)') return 'native, unattributed';
     return 'native builtins';
   }
-  if (/\/[a-f0-9]{64}\/\w+\.js$/.test(url)) return 'console CODE (shared.js, roles.js)';
+  if (/\/[a-f0-9]{64}\/\w+\.js$/.test(url)) return 'console CODE (the class bundles)';
   if (/^evalmachine/.test(url)) return 'game client and game CODE runner';
   if (/\.build\/runtime\//.test(url)) return 'console runtime (lifecycle.cjs)';
   if (/node_modules\/(jsdom|webidl-conversions|whatwg-url|tr46|nwsapi|parse5|whatwg-mimetype|whatwg-encoding|symbol-tree|xml-name-validator|is-potential-custom-element-name)\//.test(url)) return 'jsdom and its WebIDL helpers';

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createMerchantQueue } = require('../../runtime/coordinator/merchant/queue.ts');
-const { evaluateAutoCompounds, planAutoExchanges } = require('../../runtime/coordinator/merchant/automatic-improvements.ts');
+const {createMerchantQueue} = require('../../runtime/merchant-jobs/coordinator/owner.ts');
+const { compoundRunnable, planAutoExchanges } = require('../../runtime/items/coordinator/production.ts');
 
 function fixture() {
   const state = { queue: [], current: null, blocks: {} }, effects = [];
@@ -16,7 +16,7 @@ function fixture() {
   return {state, ports, effects, service: createMerchantQueue(state, ports)};
 }
 test('ambiguous upgrade blocks ignore unrelated potion changes but release on relevant inventory changes',()=>{
- const {upgradeRecoverySignature}=require('../../runtime/coordinator/merchant/upgrade-recovery.ts');
+ const {upgradeRecoverySignature}=require('../../runtime/items/coordinator/production.ts');
  const marks=[{requestId:'one',item:{name:'sword',level:0},tiers:1}],items=[{slot:1,item:{name:'sword',level:0}},{slot:2,item:{name:'mpot1',q:10}}];
  const f=fixture();f.ports.upgradeRecoverySignature=()=>upgradeRecoverySignature(marks,items);
  f.state.blocks['M\nmanual upgrades']={upgradeRecoverySignature:f.ports.upgradeRecoverySignature()};
@@ -90,12 +90,9 @@ test('delivery jobs deduplicate independently of other visits and active deliver
 
 test('compound targets count new production and require three unlocked ingredients at one level', () => {
   const item = (name, level, locked) => ({item: {name, level, l: locked}});
-  const result = evaluateAutoCompounds([{name:'ring', targetTier:2, quantity:1}, {name:'amulet', targetTier:2}],
-    [item('ring',2), item('amulet',1), item('amulet',1), item('amulet',1)]);
-  assert.equal(result.runnable, true);
-  assert.deepEqual(result.remaining.map(rule => rule.name), ['ring','amulet']);
-  assert.deepEqual(result.completed, []);
-  assert.equal(evaluateAutoCompounds([{name:'ring',targetTier:2}], [item('ring',1),item('ring',1),item('ring',1,true)]).runnable,false);
+  assert.equal(compoundRunnable([{name:'ring', targetTier:2, quantity:1}, {name:'amulet', targetTier:2}],
+    [item('ring',2), item('amulet',1), item('amulet',1), item('amulet',1)]), true);
+  assert.equal(compoundRunnable([{name:'ring',targetTier:2}], [item('ring',1),item('ring',1),item('ring',1,true)]),false);
 });
 
 test('automatic exchanges preserve levels and count whole quantities across supplied inventories', () => {
@@ -103,4 +100,50 @@ test('automatic exchanges preserve levels and count whole quantities across supp
     [{id:'leather',required:20},{id:'sword',level:1,required:3}],
     [{item:{name:'leather',q:19}},{item:{name:'leather',q:22}},{item:{name:'sword',level:0,q:99}}]);
   assert.deepEqual(result, {lines:[{id:'leather',level:0,quantity:2}],keys:['leather']});
+});
+
+// (e2e/merchant-sale-scheduling-failures.md item 1): a saved cleanout beside the running cleanout of
+// its recipient leaves on the restart's migration and every pass; another recipient's cleanout and a
+// party collection at the running recipient stay, and the running job is untouched.
+test('a running cleanout owns the queued cleanout of its recipient', () => {
+  const { mergePickupJobs } = require('../../runtime/merchant-jobs/rules.ts');
+  const current = Object.freeze({ id: 'run', target: 'F', reason: 'inventory cleanout', commandId: 7 });
+  const queue = [{ id: 'a', target: 'F', reason: 'inventory cleanout', queuedAt: 5 }, { id: 'b', target: 'G', reason: 'inventory cleanout', queuedAt: 6 },
+    { id: 'c', target: 'F', reason: 'marked items', queuedAt: 7 }];
+  assert.deepEqual(mergePickupJobs(queue, 'M', current).map(job => job.id), ['b', 'c']);
+  assert.deepEqual(mergePickupJobs(queue, 'M', { ...current, reason: 'marked items' }).map(job => job.id), ['a', 'b', 'c']);
+  const f = fixture(); f.state.current = { ...current }; f.state.queue.push({ id: 'a', target: 'F', reason: 'inventory cleanout', queuedAt: 5 });
+  createMerchantQueue(f.state, f.ports);
+  assert.deepEqual([f.state.queue.length, f.state.current.commandId], [0, 7]);
+});
+
+// Section 4's `jobs.enqueue` (part 9): every source's one door. A marked ask keeps the queue's merge
+// and refusals; a carried ask is its own job, the pickup group excepted; the door spends no command
+// id the ask names and sends one `merchant.job.queued` per job it adds.
+test('jobs.enqueue: answers queued, merged and refused by J5, keeps carried work apart and merges cleanouts at the door', () => {
+  const { merchantRecords } = require('../../runtime/merchant-jobs/coordinator/records.ts');
+  const f = fixture();
+  f.ports.enabled = reason => reason !== 'deliveries';
+  f.ports.merchant = () => 'Door';
+  assert.equal(f.service.enqueue({ reason: 'party collection', target: 'F' }), 'queued');
+  assert.equal(f.service.enqueue({ reason: 'marked items', target: 'F' }), 'merged:1');
+  assert.equal(f.state.queue[0].reason, 'marked items', 'a member visit takes the higher routine');
+  assert.equal(f.service.enqueue({ reason: 'manual upgrades', target: 'B' }), 'refused:bankboi');
+  assert.equal(f.service.enqueue({ reason: 'deliveries', target: 'G' }), 'refused:routine off');
+  assert.equal(f.service.enqueue({ reason: 'manual upgrades', target: null }), 'refused:no target');
+  f.state.current = { id: 'run', target: 'H', reason: 'party collection' };
+  assert.equal(f.service.enqueue({ reason: 'party collection', target: 'H' }), 'merged:run');
+  f.state.current = null;
+  assert.equal(f.service.enqueue({ reason: 'stand purchases', target: 'Door', fields: { listings: [1] } }), 'queued');
+  assert.equal(f.service.enqueue({ reason: 'stand purchases', target: 'Door', fields: { id: 'own', listings: [2] } }), 'queued');
+  assert.deepEqual(f.state.queue.filter(job => job.reason === 'stand purchases').map(job => [job.id, job.listings[0]]), [['2', 1], ['own', 2]]);
+  assert.equal(f.service.enqueue({ reason: 'inventory cleanout', target: 'G', fields: { retryAt: 10, queuedAt: 5, retryCount: 1 } }), 'queued');
+  assert.equal(f.service.enqueue({ reason: 'inventory cleanout', target: 'G', fields: { retryAt: 30, queuedAt: 9, retryCount: 3, ladderDue: 'job-interrupted' } }), 'merged:3');
+  const cleanout = f.state.queue.find(job => job.reason === 'inventory cleanout');
+  // The merge keeps the earlier place in line, the later retry time and the higher count.
+  assert.deepEqual([cleanout.queuedAt, cleanout.retryAt, cleanout.retryCount, cleanout.ladderDue], [5, 30, 3, 'job-interrupted']);
+  f.state.current = { id: 'clean', target: 'K', reason: 'inventory cleanout' };
+  assert.equal(f.service.enqueue({ reason: 'inventory cleanout', target: 'K', fields: {} }), 'merged:clean');
+  assert.equal(f.state.queue.length, 4);
+  assert.deepEqual(merchantRecords('Door').filter(entry => entry.decision === 'queued').map(entry => entry.owner), ['job:1', 'job:2', 'job:own', 'job:3']);
 });

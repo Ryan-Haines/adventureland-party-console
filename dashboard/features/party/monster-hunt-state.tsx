@@ -1,19 +1,6 @@
-"use client";
-import { Location } from "./location";
+import type { HuntCycle } from '../../../runtime/hunting/api.ts';
 
-export type MonsterHuntState = {
-  backup?: {members:Record<string,{target:string|null;remainingMs:number;ready:boolean;fresh:boolean}>};
-  batchPickup?: boolean;
-  returnLocation?: Location | null;
-  cycleId: string;
-  stage: string;
-  participants: string[];
-  owner?: string;
-  turnIn?: { owner: string; phase: "returning" | "claiming" | "complete" };
-  target?: string | null;
-  message?: string;
-  returnRetries?: number;
-  returnDisableTown?: boolean;
-  currentIndex?: number;
-  missions?: { target: string; owners: string[]; skipped?: boolean }[];
-};
+// The Hunt record the dashboard reads: the hunting owner's HuntCycle as the state route carries it, cut to the
+// fields the Hunt panel and the farming controls read.
+export type MonsterHuntState = Pick<HuntCycle, 'backup' | 'batchPickup' | 'returnLocation' | 'cycleId' | 'stage' | 'participants'
+  | 'owner' | 'turnIn' | 'target' | 'currentIndex' | 'missions'>;

@@ -84,44 +84,81 @@ The retained VM bank fixture must expose the same native bank receipt APIs used 
 
 A storage-echo scenario requested a +3 helmet with the normal 90% attempt allowance, but native +2/+3 base chances are 98%/95%. A legitimate failed native roll exhausts that unrelated budget and prevents the journal scenario from reaching its assertions. The initial manual-offering proposal was invalidated by focused native consumption evidence: purchase orders do not use that policy. Declare an initial ten-cycle purchase/scroll allowance before the exact queued job is admitted, matching the existing production-journal echo fixture. Preserve native random draws, definitions, costs, retry purchases, receipts, reconnect and all result/ownership assertions; do not fabricate success or widen completion timeouts.
 
+## Arrival acknowledgement at the departure clock boundary
+
 Arrival acknowledgement clock boundary: a valid current zero-distance route can report arrival just before the coordinator departure clock. Rejecting it as stale parks the current client forever. Invalid ownership must still reject; valid early completion must wait without completing, changing commands, or discarding receipts. Validate existing native Halloween staging/restart/combat journeys on both clocks.
+
+## Scenario-local CODE directories lose the planner worker
 
 Scenario-local CODE directories must retain the real coordinator planner worker. Resolving its bundle through the new writable scenario directory loses the worker and silently switches every route to native fallback. Pass the maintained built worker explicitly through the application platform, keeping all writable CODE and persistence paths isolated. Native fallback and planner behavioral assertions must remain available.
 
+## Departure fault injection busy-waits on virtual Date
+
 Departure fault injection must not busy-wait on virtual Date: that freezes the frame and the shared clock barrier. Delay only delivery of the targeted real scheduled status response across its actual departure deadline, using virtual timers. Keep its native payload, exactly three distinct epochs, before/after timestamps, zero route retries, actual arrival and runtime-generation assertions. Restore the transport wrapper in finally; unrelated status/movement responses remain unheld.
+
+## Shared-pool world isolation of terrain fixtures
 
 Shared-pool world isolation: declared terrain fixtures remove native ambient monsters with nospawn:true and leave live/count accounting unchanged. Later Hunt tests can have zero Goos despite nine native population counters. Journal only original native map-pack actors before such removals, clear entries on genuine ordinary native removal, and restore missing actors only between disconnected scenarios through the original native constructor/last_state. Existing restored live IDs must not duplicate; temporary/owned encounter actors must never be resurrected. Verify registry identity and unchanged population counts, retain reset receipts, and run terrain followed by original ambient Hunt journeys.
 
+## Purchase-order upgrades leave manual-upgrade offerings
+
 The focused storage-echo run reached all original results but proved that purchase-order upgrades do not consume manual-upgrade offerings: all four remained. Remove that ineffective fixture input. Use the existing production-echo scenario's declared initial queued-order allowance: hold dispatch, verify exact unadmitted job identity, declare ten native purchase/scroll cycles before admission, then release. Native failures, retry purchases, costs, RNG, upgrade receipts, storage echoes, reconnect, and exact final +3/+1 counts stay real. Do not change production purchase policy or loosen completion bounds.
+
+## Timing provenance accepts source edits during a measured run
 
 Timing provenance must reject maintained source edits during a measured backend run. Matching selections and staged CODE alone cannot certify the coordinator/fixture source actually used. Compare the prepared source fingerprint, each backend candidate fingerprint and the current fingerprint after completion; preserve the archived evidence on rejection.
 
-Delayed departure response release must recheck its coordinator-clock deadline after waking. Full-run evidence captured three genuine epochs, but a real queueClockOffset resynchronization during the second hold moved its estimated coordinator time backward: endedAt was 891.5 ms before departAt. A one-shot timer therefore produced only two genuinely late signals. Reschedule only that epoch's delayed callback until its current estimated coordinator time reaches departAt+2000; retain bounded wake/offset observations, all three strict deadline checks, unchanged120-second admission bound, zero physical retries, and actual arrival. Do not change gameplay clock synchronization or increase the test timeout.
+## Delayed departure release misses its deadline after waking
 
-Anniversary restart/Hunt handoff exposed an obsolete deferred checkpoint owner: native and later coordinator snapshots agreed Priest stayed at Main0,0 while Warrior killed66Goos. The completed Anniversary cycle retained Priest deferred phase returning-to-checkpoint, checkpoint:null, and its old event-resume-travel command; status continued publishing the old cycle, so client return-defense blocked reunion. Before command admission short-circuits reconciliation, retire only this empty checkpoint continuation after one fresh alive non-event native Main-town observation. Scope command/walk retirement to the exact old cycle and preserve unrelated/newer owners. End only the matching Hunt event trip, then clear deferred metadata and persist. Do not fabricate a checkpoint arrival, advance Native gameplay, broaden region assertions, or widen the90-second return bound.
+Delayed departure response release must recheck its coordinator-clock deadline after waking. Full-run evidence captured three genuine epochs, but a real queueClockOffset resynchronization during the second hold moved its estimated coordinator time backward: endedAt was 891.5 ms before departAt. A one-shot timer therefore produced only two genuinely late signals. Reschedule only that epoch's delayed callback until its current estimated coordinator time reaches departAt+2000; retain bounded wake/offset observations, all three strict deadline checks, unchanged 120-second admission bound, zero physical retries, and actual arrival. Do not change gameplay clock synchronization or increase the test timeout. Superseded 2026-11-04: the walk departs at once, so the injector holds one member's first travel reply instead (docs/testing-native-departure-faults.md).
+
+## Anniversary restart and Hunt handoff: obsolete deferred checkpoint owner
+
+Anniversary restart/Hunt handoff exposed an obsolete deferred checkpoint owner: native and later coordinator snapshots agreed Priest stayed at Main0,0 while Warrior killed 66 Goos. The completed Anniversary cycle retained Priest deferred phase returning-to-checkpoint, checkpoint:null, and its old event-resume-travel command; status continued publishing the old cycle, so client return-defense blocked reunion. Before command admission short-circuits reconciliation, retire only this empty checkpoint continuation after one fresh alive non-event native Main-town observation. Scope command/walk retirement to the exact old cycle and preserve unrelated/newer owners. End only the matching Hunt event trip, then clear deferred metadata and persist. Do not fabricate a checkpoint arrival, advance Native gameplay, broaden region assertions, or widen the 90-second return bound.
+
+## Catalog picker click ends before its HTTP mutation
 
 The full catalog picker completed its browser click while its real HTTP mutation was still busy, then the gameplay-clock poll expired with no persisted blacklist entry. Browser transport completion and coordinator publication are separate milestones. Observe the exact native POST /hunt-blacklist response for action:add, monsterId:goo, character:E2EWarrior before polling the unchanged exact fresh profile reason. Retain native wall and gameplay timestamps, status, body and request failure observations, including on failure. Preserve real sprite/text clicks, scrolling, all catalog checks and the original gameplay publication bound; do not synthesize the action or add sleeps.
 
+## Anniversary restart repeats fail strict physical arrival
+
 After the stale-owner fix, four concurrent Anniversary restart repeats produced two passes and two strict physical-arrival failures with deferredEventReturns:{}, null commandObservation, returnDefense:false and real native movement. Both failures had Warrior around Main y606-637 fighting ambient Goos while Priest approached at y276-328. The existing test declares its own real Goo encounter only after both fighters reach y702-872; unrelated ambient combat races that precondition. Declare reversible Main ambient isolation for the three visit/return modes before prepareHunt, exempt only the already-declared temporary next encounter, and restore native actors/population accounting in finally. Keep both-fighter physical region, exact same Hunt cycle, real kiss/reward and real subsequent kill/quest assertions unchanged. Repeat all modes and preserve isolation/restoration receipts; other ambient-Hunt scenarios remain intact.
+
+## Pinned-upstream Cave publication defect
 
 Full paired attempt exposed a verified pinned-upstream Cave publication defect, not slow combat: both native actors reached the Lockbreaker and native floor0 required rooms all completed, while both clients kept its prior done:false/remainingMs payload for372000ms. Disposable server logs repeatedly report cave_option_unavailable -> cave_snapshot -> cave_publish TypeError reading follow. A resolved farewell vote retains its NPC object after native departure clears zone_actor; the upstream optional check guards npc but not zone_actor. Apply only the missing optional guard in e2e/game/configure.cjs before owned server processes start, identically on native and ChronAL. Require exactly one expected upstream occurrence (or verified already-patched form), fail on drift, retain native room/vote/action behavior and all existing assertions/budgets, and do not edit the pinned checkout or installed game. Validate the original full Cave completion/farewell journey repeatedly and include matching setup on both complete benchmark backends.
 
-Native full parity found an absent-spawn fixture coordinate mismatch: prepare() saved the fresh accepted checkpoint (-286.30,739.41), but its return assertion still used the bootstrap seed (-335,685). Both actual native fighters returned within45units of the accepted checkpoint, all event ownership retired, yet remained >100from the seed. Retain and attach the actual prepare() checkpoint receipt; keep the explicit Halloween map, same100-unit radius, both actual players and nojoinedEvent predicate, original expiry/return bounds, and repeated-feed non-reopening assertion. Validate both clocks repeatedly; do not change gameplay or widen distance/time bounds.
+## Absent-spawn fixture coordinate mismatch
+
+Native full parity found an absent-spawn fixture coordinate mismatch: prepare() saved the fresh accepted checkpoint (-286.30,739.41), but its return assertion still used the bootstrap seed (-335,685). Both actual native fighters returned within 45 units of the accepted checkpoint, all event ownership retired, yet remained >100from the seed. Retain and attach the actual prepare() checkpoint receipt; keep the explicit Halloween map, same100-unit radius, both actual players and nojoinedEvent predicate, original expiry/return bounds, and repeated-feed non-reopening assertion. Validate both clocks repeatedly; do not change gameplay or widen distance/time bounds.
+
+## Boo Boo return-cache fixture waits on both quests
 
 Native full parity also found the Boo Boo return-cache fixture awaiting both one-kill quests before a communication fault, while Warrior completed and claimed its real reward and Priest still needed one kill. Native initial snapshot had party:null for both, Warrior144000XP and Priest0; party() only posts coordinator formation, which does not prove native membership. Upstream native quest credit follows the actual server party. Before seeding these one-kill quests, poll one fresh native snapshot for the exact two-member party and both native player.party owners, and retain the accepted snapshot even on failure. Do not add sleeps, seed completions, widen the300-second real-kill bound, or change the subsequent shared return route/cache/fault/reward checks. Preserve first32 and latest32 preparation observations so a future failure retains initial native/coordinator quest transitions. Validate this admission hypothesis in repeated real-game journeys on both clocks before changing gameplay.
 
+## Lucky-restoration fixture restart race
+
 Native parity exposed a lucky-restoration fixture restart race: start_runner only creates the replacement frame; immediately stopping its coordinator refused that frame's universal-loader request before runtime admission. A later runtime publication timeout was masked by cross-origin cleanup. Require the replacement runtime to publish before deliberately restarting its CODE host, retain the original post-coordinator-restart runtime assertion, and capture cleanup failures without preventing evidence collection. Keep all native inventory, lucky-roll, storage, ownership and restart assertions and deadlines.
+
+## Compound collection fixture dispatches before the inventory report
 
 The finite compound collection fixture observed twelve native rings in the owner browser but enabled dispatch without waiting for the coordinator's inventory and derived twelve merchant marks. A native run completed gold service while all twelve rings remained marked and untransferred. Before enabling collection and processing, require one fresh coordinator snapshot with all twelve exact native slots and all twelve matching marks; retain bounded observations and actual handoff request/response receipts. Treat this as an admission hypothesis until repeated native/ChronAL validation. Do not fabricate transfers, alter compound odds, loosen strict ingredient/result counts, increase the collection deadline, or change gameplay without receipt evidence.
 
+## Stale-peer event admission overlaps a coordinator restart
+
 Stale-peer event admission fault overlapped the historical-state coordinator restart. The retained native browser stayed connected but its status requests were aborted through restart/download downtime until Steam's unchanged20-second recovery legitimately replaced CODE. The original strict unchanged-runtime and later follower admission assertions then failed. Restore historical deferred owners with event selection initially empty, wait for both original browser runtimes to publish on the restarted coordinator, then begin the target Priest-only status-loss fault, prove actual telemetry staleness, and select the event through the real formation endpoint. Release only after Warrior admission with Priest still deferred. Preserve both original runtime identities, the stale thresholds, original20-second fault lease, exact saved waypoints, all ownership checks, actual native hits by both fighters and existing deadlines. Do not disable Steam recovery, refresh health fields, replay/synthesize acknowledgements, or change gameplay to accommodate fixture transport downtime.
 
+## Workspace retention of completed e2e directories
+
 Workspace retention: repeated runs left thousands of completed .build/e2e UUID directories after Playwright had copied their log attachments. Native workspaces also duplicate staged CODE/assets, so retained workspaces consumed hundreds of GiB even though logs were a small fraction. Remove only each fixture's own direct UUID child after owned processes stop and awaited attachment copies complete. Resolve and validate the exact absolute target under .build/e2e before recursive removal; reject links/outside paths. Never delete candidate releases, reports or benchmark evidence. Retain a workspace when attachment copying fails and support explicit E2E_KEEP_WORKSPACES=1 diagnostics. Emit a cleanup receipt into test artifacts, verify removed paths and retained log hashes with real console/gameplay E2Es, and keep an explicit audited/approved plan for historical bulk cleanup.
+
+## Stale-peer restore starts a return-to-town convoy
 
 Stale-peer follow-up supersedes the delayed-selection hypothesis above: enabling no event during restore can start a new shared return-to-town convoy, which the subsequent missing-peer fault stalls before admission. Preserve the original atomic restoration of deferred owners and selected event instead. The fixture launcher currently re-downloads native client assets and recopies all staged CODE on every coordinator restart, unnecessarily consuming the unchanged20-second browser recovery window under virtual time. Cache only the scenario's verified native assets after their first real download, validate every cached file hash and pool/version/headless identity on restart, retain a fresh real account/realm API query each time, and initialize that scenario's writable CODE only once. Preserve activation updates and isolated directories, reject cache corruption, retain native-wall preparation/cache receipts, and validate original stale-peer admission plus browser/headless deployment and rollback on both backends. Do not relax runtime identity, stale thresholds, fault lease, native hits, waypoint checks or deadlines.
 
 
-Hardware rendering validation plan (before implementation)
+## Hardware rendering validation plan (before implementation)
+
 - Preserve the running full benchmark's sources, browser flags, worker allocation, reports, pools and processes. Apply maintained changes only after that command ends. Do not start another full suite for this rendering change.
 - Headless Chromium can silently fall back to SwiftShader even when a physical NVIDIA adapter is listed. Require the actual GL renderer to name NVIDIA GeForce RTX 5090 for local hardware validation, reject software backends, and retain GPU feature status and driver identities. A separate same-binary --enable-gpu probe already reported RTX5090/D3D11 successfully.
 - Keep an explicit software mode for CI hosts without GPUs and focused parity; compare identical existing real-game assertions using one worker, ChronAL on both runs, same repetitions, candidate and recording settings.
@@ -131,75 +168,103 @@ Hardware rendering validation plan (before implementation)
 - After the full benchmark ends and changes are applied, typecheck and run the existing armadillo passing-Goo Hunt focused case repeatedly on software and hardware. Verify evidence hashes, exact case identities, actual RTX5090 renderer, stable process accounting and CPU reduction. Complete and verify a matching immutable console candidate without activating it.
 
 
-CI bootstrap failure modes and validation plan, before implementation:
+## CI bootstrap failure modes and validation plan, before implementation
+
 - Whole verified candidate manifests exceed Linux's per-environment-entry limit and break every inherited subprocess, not just ChronAL install. Export only directory + immutable manifest path before spawning anything. Do not merely move the oversized assignment later.
 - Dashboard serving still requires the verified candidate app directory. Keep its scoped-path validation and preserve global setup verification/source matching.
 - Reports and benchmark provenance still require the complete manifest, including all file hashes. Read it from the immutable verified artifact; missing/corrupt files must not silently remove provenance.
 - A warm ChronAL cache can conceal the cold setup spawn, and Windows does not reproduce Linux's limit. Validate actual compact metadata inherited by Node24.14 Linux child processes, including a read of the complete real manifest; retain the preceding E2BIG reproduction as negative evidence.
-- Nested npm test scripts discard project-selection flags in current CI validate job, duplicating the full gameplay suite instead of console/debug only. Use the direct test:e2e script, and validate actual discovery/invocation without dropping browser or deployment scenarios. Gameplay remains on all16 dedicated shards.
+- Nested npm test scripts discard project-selection flags in current CI validate job, so the full gameplay suite runs twice where only console/debug should. Use the direct test:e2e script, and validate actual discovery/invocation without dropping browser or deployment scenarios. Gameplay remains on all 16 dedicated shards.
 - Run a focused existing console E2E and an existing ChronAL real-game/CODE-restart E2E with one worker, verify complete report metadata/evidence, and finish a matching immutable console candidate without activation. Push to the existing PR branch and inspect CI startup/results.
 
 
-Before implementing the focused rate sweep:
-- Requested rate is only a ceiling; preserve the250ms shared barrier window, real browser/HTTP/SocketIO/storage, original gameplay assertions and virtual deadlines. Raise only the administrative rate limit, keeping the default4.
+## Before implementing the focused rate sweep
+
+- Requested rate is only a ceiling; preserve the 250 ms shared barrier window, real browser/HTTP/SocketIO/storage, original gameplay assertions and virtual deadlines. Raise only the administrative rate limit, keeping the default 4.
 - Wall clock measurements must use native monotonic clocks. Record virtual time advanced during the same assertion-body interval, not cumulative pool lifetime or setup gaps.
 - Keep identical final sources, candidate, one worker, RTX5090 hardware renderer, selected existing armadillo passing-Goo Hunt, recording settings, and three repetitions per requested rate.
 - Real RNG, native I/O and host load can produce noisy timing. Rank median assertion-body native wall seconds, record achieved virtual rate and browser CPU, and repeat the current best and first plateau candidate before stopping; treat differences within3% as noise rather than a dependable win.
 - Stop escalation on correctness/ownership/persistence/clock failures; preserve complete evidence rather than increasing timeouts or weakening expectations. Do not treat a faster failing case as a performance improvement.
 - Archive and hash-verify every report before another run overwrites standard report/results directories. Require identical selected scenario titles, all passed, complete CPU accounting, and actualNVIDIA5090 identity.
-- The requested sequence is4,8,16,32,64,128,...; stop at the first confirmed plateau. Do not start another full suite or change the default based on one scenario. Complete a matching immutable candidate and stage only.
+- The requested sequence is 4, 8, 16,32,64,128,...; stop at the first confirmed plateau. Do not start another full suite or change the default based on one scenario. Complete a matching immutable candidate and stage only.
+
+## Rate sweep: a background console build replaces references.latest
 
 Rate-sweep follow-up: a concurrent background console build can replace references.latest with a second artifact from the same maintained sources while the comparison runs. Its dashboard component can differ. Keep the strict candidate-identity comparison and pin the first verified candidate explicitly for subsequent runs; reject a pinned artifact whose source hash differs. Do not accept cross-artifact timing samples or activate the candidate. Restart the focused sweep after this wiring change; preserve the rejected comparison evidence.
 
-Rate-validator follow-up: the server/client preload independently validates requested rates. Its old8x guard rejected16x during Docker startup before gameplay. Align both validators, and preflight real broker/preload WebSocket joins at16,32,64,128 before spending another full focused baseline. Preserve finite/range checks, shared epochs, bounded windows, actor cleanup and the4x default. Treat this rejected startup as configuration failure, not a performance plateau.
+## Rate validator: the preload rejects requested rates
+
+Rate-validator follow-up: the server/client preload independently validates requested rates. Its old 8x guard rejected16x during Docker startup before gameplay. Align both validators, and preflight real broker/preload WebSocket joins at16,32,64,128 before spending another full focused baseline. Preserve finite/range checks, shared epochs, bounded windows, actor cleanup and the4x default. Treat this rejected startup as configuration failure, not a performance plateau.
+
+## Native measurement: the clock receipt lacks a native now()
 
 Native measurement compatibility: the native clock receipt must expose a native now() when optional browser timing is enabled. Otherwise diagnostics can throw before existing native parity assertions run. Add the method only to the native branch after the frozen rate sweep, then run the existing CODE replacement E2E with native timing and CPU evidence. Preserve the measured ChronAL branch and archived candidate identity.
 
-Browser acknowledgement optimization failure inventory (before implementation):
-- Promise chains, queueMicrotask and MutationObserver delivery must finish between virtual timer callbacks. Keep a native task checkpoint per timer; do not substitute a fixed number of Promise awaits, batch timers, drop participants or widen the250ms network window.
+## Browser acknowledgement optimization failure inventory (before implementation)
+
+- Promise chains, queueMicrotask and MutationObserver delivery must finish between virtual timer callbacks. Keep a native task checkpoint per timer; do not substitute a fixed number of Promise awaits, batch timers, drop participants or widen the 250 ms network window.
 - Browser scheduling APIs can have different priorities and background throttling. Compare scheduler.postTask against MessageChannel with the same sources, candidate, requested rate, rendering, one worker and original existing gameplay assertions; keep the old scheduler available for paired measurements.
 - Measure native task wait and clock window duration separately from virtual time; counters must use captured native performance and avoid instrumenting gameplay clocks. Capture all game and CODE frame metrics, including errors and pending work, as report attachments.
 - Faster acknowledgements can expose native persistence, deployment, CODE replacement and telemetry races. Preserve fresh bounded polls, exact counts, ownership and existing assertions; validate focused CODE replacement and deployment coverage as well as the combat benchmark before accepting a scheduler change.
 - MessageChannel queues must be FIFO, exception-safe and captured before timer installation. Preserve fallback behavior when scheduler is unavailable. No full-suite run or live console activation. Finish a matching immutable artifact.
 
+## MessageChannel screening overflows the CODE stack
+
 MessageChannel screening failed: original assertions caught CODE stack overflow and native timing worsened. Do not accept its gameplay-completed receipt or elapsed time as a win. Preserve failed evidence, retain the scheduler default and split acknowledgements into receipt, processing and return native timestamps. Only compare clocks on the same host; label network components approximate if native wall-clock skew is possible. Collect before/after body snapshots separately from participant-lifetime startup outliers.
 
-Browser control-bridge failure inventory (before implementation):
+## Browser control-bridge failure inventory (before implementation)
+
 - The bridge replaces only ChronAL control transport, never application HTTP/Socket.IO or rendering. Keep one broker member per document/CODE frame and unchanged250ms barrier.
 - Bind bridge IDs to the calling Frame. Retire prior documents on navigation/detach and close owned sockets on context shutdown. Reject overlapping pulls, closed sockets, unexpected queued windows or protocol errors rather than skipping participants or acknowledging work early.
 - Acknowledgement must follow the same inclusive ChronAL run and every native microtask checkpoint. Deliver the next window through an awaited Playwright binding; retain original WebSocket mode for identical-build comparison.
 - Pending binding promises must reject on transport failure and must not leave unhandled rejections on document retirement. Preserve browser clock error attachments and startup/epoch assertions.
 
+## Playwright bridge screening raises body time and latency
+
 The Playwright bridge screening passed strict gameplay but increased body time and both inbound and return latency. Reject it; restore WebSocket control and remove unused bridge implementation. Next diagnostic: sample the owned native game renderer with CDP Profiler during one unchanged gameplay body, retain the cpuprofile attachment, and stop/detach profiling before frame teardown. Profiling overhead means this run diagnoses CPU cost rather than serving as an accepted timing comparison.
 
-CPU-profile finding and reentrancy fix inventory (before implementation):
+## CPU-profile finding and reentrancy fix inventory (before implementation)
+
 - The owned renderer profile contains repeated recursive tick -> preparePassing -> passing.prepare -> reserve -> beginPassingAttack -> flush -> tick stacks during native Socket.IO delivery. Guard synchronous queue-client tick reentry, not admission checks or attack eligibility.
 - flush must still invalidate the signature and mark dirty. An active outer tick must send the current reservation; when an HTTP report is already busy, retain dirty until its existing completion sends a fresh report. Preserve epoch, scope, token, exact admission, persistence and ownership checks.
 - Leave the ordinary transport, native rendering, per-timer checkpoints, all participants and250ms windows unchanged. Remove the rejected selectable task queue and unused bridge implementation.
 - Measure three unprofiled baseline repetitions before the guard change, then three comparable repetitions after it with unchanged diagnostics, hardware, rate and assertions. Sources/CODE necessarily differ only for the targeted fix. Repeat higher rates until plateau. Verify existing stop-required/death/CODE replacement and deployment cases, plus an explicit native parity case.
 
-CI repeated shard16 failures investigation (before fixes):
+## CI repeated shard16 failures investigation (before fixes)
+
 - Actual receipts show virtual progress, not a dead clock: mage sampled33 virtual seconds before a90s native watchdog fired; offline merchant poll ended before its200s virtual deadline (only~169s since assignment). Software-rendered CI can legitimately run below1x. Preserve virtual observation/poll deadlines and assertions; detect an actual lack of clock progress with a bounded native watchdog, leaving Playwright overall native test limits intact. Do not blindly enlarge assertion timeouts, reduce samples or remove participants.
 - Validate both exact existing failed scenarios with software rendering and retain report/clock evidence. An isolated progress/no-progress check may exercise the existing wait functions with a controlled observer clock; record slow positive advancement and true stall behavior separately.
 - Live FPS investigation: no E2E containers or Playwright browsers remain. Active Steam GPU process consumes~5cores and has GPU recent-crash count1; renderer~0.31core. Do not kill game, change rendering settings, deploy candidates or reload CODE to diagnose. Capture actual native frame cadence, WebGL renderer and absent/present ChronAL markers through a bounded read-only diagnostic.
 
+## Shard10: the saved-spawn monster arrives before the recovery decision
+
 Additional shard10 failure: the saved-spawn test introduced its monster before the targetless recovery decision. The first absence check could succeed before native visibility publication; combat was engaged ~1.75 virtual seconds after release, and the correct visible-focused-monster guard suppresses empty-spawn recovery. Introduce the declared native encounter only after observing the automatic empty-spawn convoy. Keep that exact automatic-purpose assertion, real movement, before-center handoff, cohort readiness, actual damage and ownership assertions; do not call the recovery endpoint or fabricate a route.
+
+## Delayed encounter: the original point is already visible
 
 The first delayed-encounter run correctly caught that the original point is already in native visibility once the convoy has assembled. Preserve initial invisibility as a stronger species-wide empty-map assertion before release (no visible living bigbird for any fighter), then introduce the same declared bird only after observing automatic recovery. Do not demand an introduced encounter remain invisible after the party has already moved into its visibility range. Keep all subsequent actual attacks, strict readiness/confirmation and before-center handoff checks.
 
-CI shard3 unlinked commerce investigation (before implementation):
+## CI shard3 unlinked commerce investigation (before implementation)
+
 - CI native inventory has ten consumed scrolls and four new +3 helmets; coordinator progress has three new results and awaits the final completion checkpoint. The sole reported error is Playwright route.fetch ECONNRESET during a later checkpoint, not a failed upgrade assertion or coordinator crash. Preserve all ownership, spending, attempts, remapping and final result-count assertions.
 - The fault injector must forward and hold only the first adoption checkpoint. Observe all request states independently; continue subsequent requests through the real browser transport rather than unnecessarily proxying them through Playwright's separate HTTP client. Do not retry paid actions, swallow route errors, change deadlines or force queue completion. Retain timestamped checkpoint observations and forward/hold/release evidence.
 - Run the existing unlinked adoption scenario repeatedly and the adjacent lost-completion receipt recovery case with ChronAL and software rendering; verify report attachments and staged immutable artifact. A passing focused run does not establish the cause of unrelated live merchant symptoms.
 
-Live merchant slot-change regression inventory (before implementation):
+## Live merchant slot-change regression inventory (before implementation)
+
 - No current live order exists to inspect; do not alter live economy or claim the user's historical stall is proven. Reproduce a paid three-item batch whose two remaining base items move after the first confirmed result, without restarting CODE/coordinator. Initial remapping alone may leave both stale reservations and falsely report ambiguity despite an exact owned count.
 - Inject only actual native inventory relocation at that current order's persisted first-result checkpoint; wait for the browser to observe both destinations before releasing it. Preserve three distinct native successes, exact output count, scroll consumption, unchanged unrelated items and completed queue. Capture relocation, timestamped checkpoints and final state even on failure.
 - If reproduced, remap the whole owned group immediately before non-pending active-item lookup; never remap a pending native outcome as though it were an unchanged input. Preserve exact-count ambiguity rejection for surplus identical cargo and verify the existing surplus/restart cases.
 
+## Merchant release 1.5: crafting replacement tools
+
 Merchant release 1.5: crafting replacement tools must require independent persisted opt-in, check carried/equipped/native bank before reserving materials, use the existing deduplicated commerce order, and defer gathering while the order owns inventory. Missing non-purchasable materials must report a bounded retry without spending or disabling user intent. Bank manual compound must reserve exact three unlocked matching sources, wait for withdrawals, and preserve other reserved cargo. Stat-before-delivery must fence all visit commands and preserve the delivery ID through native mutation.
+
+## Release 1.5 event target changes (#125, #126)
 
 Release 1.5 event target changes (#125/#126): selecting a new native monster area during Halloween must invalidate only the old occurrence and complete real travel plus native farming hits, rather than parking at Main 0,0. During owned event walking a newly visible reachable boss must yield navigation before the stale advertised endpoint; boss sightings across terrain must retain the path until physically reachable. Verify actual native hits and timestamped convoy ownership, not changed target variables.
 Release 1.5 #125 native reproduction: after /focus changes Goo to Bee during Pumpkin combat, the real native boss dies and event return completes, but both actors remain inside old shaped Goo bounds. The old location retains monsterIds ['goo']; farm area diagnostics relabel it ['bee'] without relocating because shaped locations bypass catalog resolution. Schedule a revision-fenced pending relocation for incompatible tagged farming areas on focus change. Preserve active event commands, return checkpoints and native navigation revisions until their normal handoff completes; discard a pending relocation if later manual navigation supersedes its captured revision. Compatible focus expansions and untagged custom waypoints must retain their manually selected area.
+
+## Release 1.5 #125: post-relocation native failure
 
 Release 1.5 #125 post-relocation native failure: the selected Bee location and return ownership are correct, but the farm-relocation convoy pauses for a coordinated farming engagement and neither actor publishes independentReady. The client unconditionally rejects partyConvoyActive even after this explicit combat handoff, whereas nomination and formation already permit the matching engagement. Allow independent approach only for the current unfinished coordinated engagement target; preserve local convoy walking, foreign movement ownership, cancelled navigation, unrelated targets and every native range/confirmation gate. Retain the existing both-actor native Bee damage regression, with no timeout or loadout changes.

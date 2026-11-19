@@ -2,13 +2,14 @@
 import {useState,type ReactNode} from 'react';
 import {ChevronDown,ChevronRight,X} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {marketItemKey,type MarketIgnoredItem,type MarketItemIdentity} from '../../../runtime/market-preferences';
+import {marketItemKey} from '../../../runtime/items/api.ts';
+import type {MarketIgnoredItem,MarketItemIdentity} from '../../../runtime/items/api.ts';
 
 export function MarketSettingsSection({title,count,clearLabel='Clear all',clearAriaLabel,disabled,onClear,children}:{
   title:string;count:number;clearLabel?:string;clearAriaLabel?:string;disabled:boolean;onClear:()=>void;children:ReactNode;
 }){
   const [open,setOpen]=useState(false);
-  return <section className="rounded border border-slate-600 bg-black p-3">
+  return <section data-area="market-preferences" className="rounded border border-slate-600 bg-black p-3">
     <div className="flex items-center justify-between gap-3">
       <Button aria-label={title} aria-expanded={open} onClick={()=>setOpen(value=>!value)}
         className="min-w-0 justify-start border border-slate-700 bg-slate-950 text-slate-100 hover:border-slate-500 hover:bg-slate-900 hover:text-white">

@@ -20,7 +20,7 @@ test('Steam desktop preserves bridge recovery and finishes a released primary lo
   let steam:LocalSteam|undefined;
   const packets:Record<string,unknown>[]=[];
   try {
-    const bundle=await build({entryPoints:['runtime/steam/entry.ts'],bundle:true,write:false,platform:'browser',format:'iife'});
+    const bundle=await build({entryPoints:['runtime/lifecycle/roster/entry.ts'],bundle:true,write:false,platform:'browser',format:'iife'});
     const source='window.installations=(window.installations||0)+1;\n'+bundle.outputFiles[0].text;
     const hash=createHash('sha256').update(source).digest('hex');
     const store=new ConsoleBuildStore(directory), stage=path.join(directory,'stage');

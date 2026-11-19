@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('../../node_modules/typescript');
-const { needsCatalog } = require('../../runtime/coordinator/status/response-party.ts');
+const { needsCatalog } = require('../../runtime/status/coordinator/reply.ts');
+const { CATALOG_VERSIONS } = require('../../runtime/status/rules.ts');
 
 function render(records) {
   const source = fs.readFileSync('dashboard/features/party/monster-spawns.tsx', 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export function', 'function');
@@ -27,11 +28,11 @@ test('spawn display distinguishes loading, missing records, ordinary routes and 
   const nodes = node => node && typeof node === 'object' ? [node, ...node.children.flatMap(nodes)] : [];
   assert.ok(nodes(tree).every(node => node.type !== 'button' && !node.props?.onClick));
 });
-test('spawn version 2 triggers refresh and version 3 satisfies catalog discovery', () => {
+test('an older spawn version triggers refresh and the current one satisfies catalog discovery', () => {
   const state = Object.fromEntries(['travelPlaces','monsterChoices','monsterHunterLocation','bestiaryCatalog','skillCatalog','appearanceChoices','merchantCatalog'].map(key => [key, []]));
-  state.merchantCatalogVersion = 'exchange-rewards-v4';
-  state.monsterLocationsVersion = 2;
+  state.merchantCatalogVersion = CATALOG_VERSIONS.merchant;
+  state.monsterLocationsVersion = CATALOG_VERSIONS.monsterLocations - 1;
   assert.equal(needsCatalog(state), true);
-  state.monsterLocationsVersion = 3;
+  state.monsterLocationsVersion = CATALOG_VERSIONS.monsterLocations;
   assert.equal(needsCatalog(state), false);
 });

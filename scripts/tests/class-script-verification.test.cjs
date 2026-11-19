@@ -5,7 +5,7 @@ const os=require('node:os');
 const path=require('node:path');
 const {createHash}=require('node:crypto');
 const {syncBuiltinESMExports}=require('node:module');
-const {classScript}=require('../../runtime/lifecycle/generations.ts');
+const {classScript}=require('../../runtime/lifecycle/coordinator/code.ts');
 
 // classScript runs on every merchant dispatch (merchant home check -> ensureCharacterBlock -> worker setup).
 // Failure lines:

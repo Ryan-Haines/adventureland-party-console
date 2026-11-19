@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { atomicJson, readJson, directoryNames, inspectRemoval, applyRemovals, RETAIN_BUILDS, withBuildLock } from '../build-store.ts';
-import { verifyManifest, type GameManifest } from './manifest.ts';
+import { classes, verifyManifest, type GameManifest } from './manifest.ts';
 
 interface Version { id: string; createdAt: string; manifest: GameManifest }
 export const gameStore = (root: string) => path.join(root, '.build/game');
@@ -50,7 +50,7 @@ async function obsoleteFiles(directory: string, protectedFiles: Set<string>) {
     // Delete only known bundle files; never recursively delete an unknown hash folder.
     for (const name of await directoryNames(path.join(directory, 'generated', hash))) {
       const relative = `generated/${hash}/${name}`;
-      if (!/^(warrior|paladin|rogue|ranger|mage|priest|merchant)\.js$/.test(name) || protectedFiles.has(relative)) continue;
+      if (!classes.some(each => name === `${each}.js`) || protectedFiles.has(relative)) continue;
       removals.push(await inspectRemoval(directory, relative));
     }
   }

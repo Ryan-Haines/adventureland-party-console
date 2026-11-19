@@ -11,6 +11,8 @@ import {
 import type { ActiveSlot } from './active-slot';
 import { useDebugBrowser, debugGameUrl } from './debug-browser';
 
+// The fallback words of a failed request name the action the player confirmed.
+const actionNames = { logout: 'Log out', headless: 'Go headless', steam: 'Steam' } as const;
 export const CharacterSessionControls = memo(function CharacterSessionControls({
   name,
   slot,
@@ -148,7 +150,7 @@ export const CharacterSessionControls = memo(function CharacterSessionControls({
           if (!open && !busy) setConfirmation(null);
         }}
       >
-        <DialogContent
+        <DialogContent data-area="session-controls"
           showCloseButton={false}
           initialFocus={cancel}
           className="border border-emerald-700 bg-[#07100f] text-emerald-50"
@@ -209,7 +211,7 @@ export const CharacterSessionControls = memo(function CharacterSessionControls({
                   setError(
                     error instanceof Error
                       ? error.message
-                      : 'Steam request failed',
+                      : `${actionNames[confirmation.action]} request failed`,
                   );
                 } finally {
                   submitting.current = false;

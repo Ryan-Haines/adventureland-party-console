@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createCoordinatorTelemetry}=require('../../runtime/coordinator/telemetry/composition.ts');
+const {createCoordinatorTelemetry}=require('../../runtime/status/coordinator/streams.ts');
 const {httpFixture}=require('./helpers/coordinator-http.cjs');
 function fixture(){
  const http=httpFixture(),logs={},calls=[],timers=[];let owned=false,fail=true;
@@ -19,7 +19,7 @@ test('telemetry loads map data lazily, retries failed reads and caches successfu
  assert.throws(get,/cache unavailable/);t.readable();const first=get();assert.equal(first.body.name,'main');
  assert.equal(get().body,first.body);
  assert.deepEqual(t.calls,[['read','host/../game_files/123/data.js'],['read','host/../game_files/123/data.js'],['evaluate','source','game_files/123/data.js']]);
- assert.equal(first.headers['Cache-Control'],'public, max-age=3600');
+ assert.equal(first.headers['Cache-Control'],'no-cache');
 });
 
 test('map and combat routes share current ownership and preserve subscription cleanup and log identity',()=>{
@@ -29,7 +29,7 @@ test('map and combat routes share current ownership and preserve subscription cl
  t.own();assert.equal(t.http.invoke('POST','/party-api/combat-log',event).response.code,200);
  assert.deepEqual(t.logs.P,[{at:1000,type:'event',message:'hello',details:null}]);
  const stream=t.http.invoke('GET','/party-api/map-stream/:character',undefined,{character:'P'});
- assert.equal(t.service.maps.count('P'),1);assert.equal(t.timers[0].ms,15000);
+ assert.equal(t.service.maps.count('P'),1);assert.equal(t.timers[0].ms,5000);
  stream.request.close();assert.equal(t.service.maps.count('P'),0);assert.equal(t.calls.at(-1),t.timers[0]);
  assert.equal(t.calls.filter(call=>call==='persist').length,1);
 });

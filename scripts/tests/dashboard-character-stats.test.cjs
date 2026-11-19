@@ -1,32 +1,17 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const Module = require('node:module');
-const { buildSync } = require('esbuild');
 const React = require('../../dashboard/node_modules/react');
 const { create, act } = require('../../dashboard/node_modules/react-test-renderer');
-const dashboardRequire = Module.createRequire(path.resolve('dashboard/package.json'));
-const { QueryClientProvider } = dashboardRequire('@tanstack/react-query');
 const load = require('./helpers/dashboard-query-module.cjs');
+const { QueryClientProvider } = load.dashboardRequire('@tanstack/react-query');
 const { createDashboardClient } = load('query-cache.tsx');
 const { characterKey } = load('dashboard-live.tsx');
 
 // Exercise the real trigger and query subscription, replacing only the portal
 // (react-test-renderer has no browser DOM).
-const filename = path.resolve('dashboard/features/party/character-stats-trigger.tsx');
-const bundle = buildSync({ entryPoints: [filename], bundle: true, packages: 'external',
-  external: ['./character-stats-dialog'], platform: 'node', format: 'cjs', write: false });
-const compiled = new Module(filename, module);
-compiled.filename = filename;
-compiled.paths = Module._nodeModulePaths(path.dirname(filename));
-compiled.require = function (id) {
-  if (id === './character-stats-dialog') return {
-    CharacterStatsDialog: props => React.createElement('stats-dialog', props),
-  };
-  return Module.prototype.require.call(this, id);
-};
-compiled._compile(bundle.outputFiles[0].text, filename);
-const { CharacterStatsTrigger } = compiled.exports;
+const { CharacterStatsTrigger } = load('character-stats-trigger.tsx', {
+  './character-stats-dialog': { CharacterStatsDialog: props => React.createElement('stats-dialog', props) },
+});
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
 test('doll opens locally without workspace renders or requests; equipment stays live and observers close', async () => {

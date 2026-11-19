@@ -1,46 +1,57 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChevronDown, ChevronRight, Maximize2 } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useMapLarge, useMapOpen, useStripShown } from "./map-dock-state";
 import { API } from "./api";
 import { Char } from "./char";
 import { MapCanvas } from "./map-canvas";
 import { useMapDefinition, useVisible } from "./query-cache";
 import type { MapDefinition } from "./map-definition";
 import { MapFrame } from "./map-frame";
-import { receiveMapFrame, type MapRenderBuffer } from "./map-render-buffer";
+import { mapFrameFailure, receiveMapFrame, type MapRenderBuffer } from "./map-render-buffer";
 import { useCharacterData } from './dashboard-live';
-import { committedLiveRecord } from './live-metrics';
 import { MapCaptureButton, type MapCaptureState } from './map-capture-button';
-import {useSessionState} from './session-state';
 import { audited } from './field-read-audit';
+import { caveMap } from '../../../runtime/lifecycle/api.ts';
 
 // Beyond the initial fallback, only `char.name` matters here: map/x/y come
 // from this component's own live `position` subscription below, so a fresh
 // `char` object on every vitals-driven parent render (map/x/y get overwritten
-// anyway once position data arrives) would otherwise force this fairly
-// expensive live-map component to re-render for data it never actually uses.
-export const CharacterMapSection = memo(function CharacterMapSection({ char: base }: { char: Char }) {
+// once position data arrives) would re-render this live map for data it does
+// not use.
+// `dock` mounts this same map in the card's name strip (card-name-strip.tsx):
+// the location row sits in the strip line and the map body renders into the
+// strip's dock element. Both rows share one open state (map-dock-state.ts),
+// and the body shows in only one of them. The strip closes it on Escape
+// through the same toggle button.
+export const CharacterMapSection = memo(function CharacterMapSection({ char: base, dock }: { char: Char; dock?: HTMLElement | null }) {
+  const docked = dock !== undefined;
+  const portal = (body: ReactNode) => dock ? createPortal(body, dock) : body;
   const position = useCharacterData(base.name, 'position');
-  useEffect(() => { committedLiveRecord(base.name, 'position'); }, [base.name, position]);
   const char = audited('merged', { ...base, ...position });
-  const caveMap = /^zone_[a-f0-9]+_\d+$/.test(char.map);
-  const mapLabel = caveMap ? 'Cave of Many Dreams' : char.map;
-  const [open, setOpen] = useSessionState('map-open:'+base.name,false),
-    [large, setLarge] = useSessionState('map-large:'+base.name,false);
+  const cave = caveMap(char.map);
+  const mapLabel = cave ? 'Cave of Many Dreams' : char.map;
+  const [open, setOpen] = useMapOpen(base.name);
+  const stripShown = useStripShown(base.name);
+  const here = docked ? stripShown && !!dock : !stripShown;
+  const [large, setLarge] = useMapLarge(base.name);
   const [streamDefinition, setStreamDefinition] = useState<MapDefinition | null>(null);
-  const definitionQuery = useMapDefinition(char.map, open && !caveMap);
-  const definition = caveMap ? (streamDefinition?.name === char.map ? streamDefinition : null) : definitionQuery.data || null;
+  const definitionQuery = useMapDefinition(char.map, open && !cave);
+  const definition = cave ? (streamDefinition?.name === char.map ? streamDefinition : null) : definitionQuery.data || null;
   const visible = useVisible();
   const buffer = useRef<MapRenderBuffer>({ frame: null, previous: null, receivedAt: 0 });
   const capture = useRef<MapCaptureState | null>(null);
   const [streamState, setStreamState] = useState("loading");
   useEffect(() => {
-    if (!open || !visible) return;
+    if (!open || !here || !visible) return;
     Object.assign(buffer.current, { frame: null, previous: null, receivedAt: 0 });
     const stream = new EventSource(`${API}/map-stream/${encodeURIComponent(char.name)}`);
     stream.onopen = () => setStreamState("live");
     stream.onerror = () => setStreamState("reconnecting");
+    const failed = mapFrameFailure(char.name);
     stream.onmessage = (message) => {
       try {
         const next: MapFrame = JSON.parse(message.data),
@@ -51,19 +62,19 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
           setStreamDefinition(previous => previous?.name === supplied.name ? previous : supplied);
         }
         receiveMapFrame(buffer.current, next, performance.now(), now);
-      } catch {
-        /* retry on next frame */
+      } catch (error) {
+        failed(error);
       }
     };
     return () => stream.close();
-  }, [open, visible, char.name, char.map]);
+  }, [open, here, visible, char.name, char.map]);
   return (
-    <div className="mt-1">
-      <div className="flex items-center gap-1 font-mono text-xs text-cyan-200/65">
+    <div className={docked ? "flex min-w-0" : "mt-1"}>
+      <div className={`flex items-center gap-1 font-mono text-xs text-cyan-200/65${docked ? " min-w-0" : ""}`}>
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="rounded p-0.5 hover:bg-cyan-300/10"
+          className="shrink-0 rounded p-0.5 hover:bg-cyan-300/10"
           aria-label={open ? "Collapse live map" : "Expand live map"}
         >
           {open ? (
@@ -72,23 +83,24 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
             <ChevronRight className="h-3.5 w-3.5" />
           )}
         </button>
-        <span>
+        <span className={docked ? "truncate" : undefined}>
           {mapLabel} [{Math.round(char.x)}, {Math.round(char.y)}]
         </span>
       </div>
-      {open ? (
-        <div className="relative mt-2 aspect-[4/3] overflow-hidden rounded-md border border-emerald-800/80 bg-[#07110f]">
-          <MapCanvas
+      {open && here ? portal(
+        <div className={docked ? "relative h-full overflow-hidden border-b border-emerald-800/80 bg-[#07110f]" : "relative mt-2 aspect-[4/3] overflow-hidden rounded-md border border-emerald-800/80 bg-[#07110f]"}>
+          <AddonSlot name="map-layer" part="card" map={char.map} character={char.name} pins={[]}>{pins => <MapCanvas
             definition={definition}
             frame={null}
             previous={null}
             receivedAt={0}
             buffer={buffer}
             fps={20}
-            active={open && visible && !large}
+            active={open && here && visible && !large}
             scale={1 / 3}
             detailed={false}
-          />
+            pins={pins}
+          />}</AddonSlot>
           <button
             type="button"
             onClick={() => setLarge(true)}
@@ -104,8 +116,9 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
           ) : null}
         </div>
       ) : null}
-      <Dialog open={large} onOpenChange={setLarge}>
-        <DialogContent className="w-[min(804px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-2 border-emerald-700 bg-[#081713] p-0 text-emerald-50 sm:max-w-none [&_[data-slot=dialog-close]]:right-3 [&_[data-slot=dialog-close]]:top-3 [&_[data-slot=dialog-close]]:text-emerald-100 [&_[data-slot=dialog-close]]:hover:bg-emerald-900">
+      {/* Only the copy that holds the map body opens the native-size dialog and runs its stream. */}
+      <Dialog open={large && here} onOpenChange={setLarge}>
+        <DialogContent data-area="native-map" className="w-[min(804px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden border-2 border-emerald-700 bg-[#081713] p-0 text-emerald-50 sm:max-w-none [&_[data-slot=dialog-close]]:right-3 [&_[data-slot=dialog-close]]:top-3 [&_[data-slot=dialog-close]]:text-emerald-100 [&_[data-slot=dialog-close]]:hover:bg-emerald-900">
           <DialogHeader className="border-b border-emerald-800 px-5 py-3">
             <div className="flex items-center gap-3 pr-8">
               <DialogTitle className="text-emerald-50">
@@ -115,7 +128,7 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
             </div>
           </DialogHeader>
           <div className="h-[min(600px,calc(100vh-8rem))] w-full overflow-hidden bg-[#07110f]">
-            <MapCanvas
+            <AddonSlot name="map-layer" part="native" map={char.map} character={char.name} pins={[]}>{pins => <MapCanvas
               definition={definition}
               frame={null}
               previous={null}
@@ -126,10 +139,11 @@ export const CharacterMapSection = memo(function CharacterMapSection({ char: bas
               scale={1}
               detailed
               capture={capture}
-            />
+              pins={pins}
+            />}</AddonSlot>
           </div>
         </DialogContent>
       </Dialog>
     </div>
   );
-}, (previous, next) => previous.char.name === next.char.name);
+}, (previous, next) => previous.char.name === next.char.name && previous.dock === next.dock);

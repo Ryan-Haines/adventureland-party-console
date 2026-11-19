@@ -1,20 +1,33 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {estimateUpgrade}=require('../../runtime/coordinator/merchant/upgrade-estimate.ts');
-const {createMerchantOrderRoute}=require('../../runtime/coordinator/http/merchant-order.ts');
+const {estimateUpgradeBatch}=require('../../runtime/items/rules.ts');
+const {createMerchantOrderRoute}=require('../../runtime/items/coordinator/routes/production.ts');
 // Numeric references use the native server grace expressions and native design/upgrades tables, independently of the shared estimator.
 const fixtures=require('./fixtures/upgrade-estimates.json');
 for(const example of fixtures)test(`upgrade estimate preserves deterministic budget for ${example.quantity} items to +${example.target}`,async()=>{
- const result=await estimateUpgrade(example.choice,example.quantity,example.target);
+ const [result]=await estimateUpgradeBatch([{choice:example.choice,quantity:example.quantity,target:example.target}],undefined,()=>new Promise(resolve=>setImmediate(resolve)));
  assert.equal(result.status,"available");
  assert.deepEqual({attempts:result.attempts,budget:result.gold,scrolls:result.scrolls},example.result);
+});
+// The estimate's caps count through the caller's `cut`: a batch counts its event loop yields once, and
+// the cached repeat of that batch runs no roll and counts nothing.
+test('an upgrade estimate counts its yields under ESTIMATE_YIELD_ROLLS once per batch',async()=>{
+ const example=fixtures.reduce((most,entry)=>entry.target>most.target?entry:most),cuts=[];
+ const cut=(cap,owner,count)=>cuts.push([cap,owner,count]),line=[{choice:example.choice,quantity:example.quantity+1,target:example.target}];
+ const [result]=await estimateUpgradeBatch(line,undefined,()=>new Promise(resolve=>setImmediate(resolve)),cut);
+ assert.ok(result.rolls>=32768,'the batch rolls past one yield');
+ assert.deepEqual(cuts.map(([cap,owner])=>[cap,owner]),[['ESTIMATE_YIELD_ROLLS','10']]);
+ assert.ok(cuts[0][2]>=1);
+ await estimateUpgradeBatch(line,undefined,()=>new Promise(resolve=>setImmediate(resolve)),cut);
+ assert.equal(cuts.length,1,'a cached batch counts nothing');
 });
 function fixture(){
  const state={merchantCharacter:'M',merchantCatalog:{buyable:[{id:'leather',cost:1},{id:'wcap',cost:100,upgradeable:true}],craftable:[{id:'coat',cost:0,materials:[{id:'leather',quantity:6}]}]},
   statuses:{M:{items:[{slot:0,item:{name:'leather',q:1}}]},P:{items:[{slot:2,item:{name:'leather',q:1}}]}},bankSnapshot:{packs:{items1:[{slot:3,item:{name:'leather',q:2}}]}},merchantCurrent:null,merchantQueue:[]};
- const effects=[],route=createMerchantOrderRoute(state,{now:()=>100,nextCommand:()=>1,activeNames:()=>['M','P'],log:()=>effects.push('log'),persist:()=>effects.push('persist'),dispatch:()=>effects.push('dispatch')});
+ const effects=[],route=createMerchantOrderRoute(state,withDoor(state,{now:()=>100,nextCommand:()=>1,activeNames:()=>['M','P'],log:()=>effects.push('log'),persist:()=>effects.push('persist'),dispatch:()=>effects.push('dispatch')}));
  async function post(body){const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;return this;}};await route.handle({body},res);return res;}
- return {state,effects,post};
+ return {state,effects,post,route};
 }
 test('commerce allocates inventory before purchasing missing base materials and deduplicates the same order',async()=>{
  const f=fixture(),body={crafts:[{id:'coat',quantity:1}]};assert.equal((await f.post(body)).code,200);
@@ -47,4 +60,24 @@ test('craft allocations record held ingredients and later orders cannot claim th
  f.state.bankSnapshot.packs.items1.push(...[3,4,5].map(slot=>({slot,item:{name:'ring',level:0}})));
  assert.equal((await f.post({crafts:[{id:'second',quantity:1}]})).code,200);
  assert.deepEqual(f.state.merchantQueue[1].order.bank.map(mark=>mark.slot),[3,4,5]);
+});
+// The restock supply builds its order through the order route's one builder, and refuses a craft
+// whose missing material it cannot buy.
+test('the restock supply queues the order route builds and refuses an unbuyable material',async()=>{
+ const f=fixture();assert.equal(f.route.restockSupply('coat',1),true);
+ const order=f.state.merchantQueue[0].order;assert.deepEqual(order.materialBuys,[{id:'leather',level:0,quantity:2}]);
+ assert.deepEqual(order.craftMaterials,[[{id:'leather',quantity:6}]]);assert.equal(f.route.restockPending('coat'),true);
+ const g=fixture();g.state.merchantCatalog.craftable[0].materials[0].level=1;
+ assert.equal(g.route.restockSupply('coat',1),false);assert.equal(g.state.merchantQueue.length,0);
+});
+// The order's estimate yields through the port the root fills from the items owner's run scope, so
+// production.ts needs no Node timer and the run's stop holds the yield like every other wait.
+test('the order estimate yields to I/O through the route port',async()=>{
+ const state={merchantCharacter:'M',merchantCatalog:{buyable:[{id:'wcap',cost:100,upgradeable:true}],craftable:[]},statuses:{M:{items:[]}},bankSnapshot:{packs:{}},merchantCurrent:null,merchantQueue:[]};
+ let yields=0;
+ const route=createMerchantOrderRoute(state,withDoor(state,{now:()=>100,nextCommand:()=>1,activeNames:()=>['M'],log(){},persist(){},dispatch(){},
+  yieldToIO:()=>{yields+=1;return new Promise(resolve=>setImmediate(resolve));}}));
+ const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;return this;}};
+ await route.handle({body:{buys:[{id:'wcap',quantity:2,level:8}]}},res);
+ assert.equal(res.code,200);assert.ok(yields>0,'the estimate yielded through the port');
 });

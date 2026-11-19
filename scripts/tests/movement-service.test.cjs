@@ -1,689 +1,522 @@
 const test=require('node:test'), assert=require('node:assert/strict'), path=require('node:path');
-const {installPartyMovement}=require('../../runtime/characters/movement.ts');
-const {validateRoute}=require('../../runtime/navigation/validation.ts');
-const {geometryFingerprint}=require('../../runtime/navigation/contracts.ts');
-const {createPlannerService}=require('../../runtime/coordinator/navigation/planner-service.ts');
+const {validateRoute}=require('../../runtime/movement/geometry/validation.ts');
+const {geometryFingerprint,cachedGeometryFingerprint}=require('../../runtime/movement/geometry/contracts.ts');
+const {createPlannerService}=require('../../runtime/movement/coordinator/planner-service.ts');
+const {testScope}=require('./helpers/run-scope.cjs');
 const {createNative}=require('../../tools/game/pathfinder-benchmark/native.cjs');
-const settle=()=>new Promise(resolve=>setImmediate(resolve));
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {settle,fixture,reachedWalkFixture,correctionFixture}=require('./fixtures/movement-service-scenario.cjs');
+// The owner's questions go to a planted call budget on the realm's registry.
+const {plantCalls,withMargin}=require('./helpers/planted-calls.cjs');
+plantCalls();
 
-test('a Cave follower waits without searching, then validates and executes the shared route',async()=>{
- const r=fixture(), p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true});
- await r.ticks(5);assert.equal(r.searches,0);assert.equal(r.service.state.found,false);
- assert.throws(()=>r.service.install([{map:'main',x:100,y:0}],{version:0,fingerprint:'wrong'}),/geometry mismatch/);
- r.service.install([{map:'main',x:100,y:0}],r.service.identity,'cave-convoy');
- await r.ticks(8);await p;assert.equal(r.c.real_x,100);assert.equal(r.searches,0);r.dispose();
-});
-
-test('a Cave search uses its declared longer budget while preserving a finite deadline',async()=>{
- const r=fixture();r.host.__partyNativeMovement.start=()=>{r.host.smart.searching=true;};
- const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,nativePlanningTimeoutMs:90000});
- const failed=assert.rejects(p,/90 seconds/);
- await r.ticks(1);r.setNow(32000);await r.ticks(1);assert.equal(r.service.state.moving,true);
- r.setNow(92000);await r.ticks(1);await failed;r.dispose();
-});
-
-test('route import refreshes and normalizes the game version, retaining strict fingerprint validation',()=>{
- const r=fixture();r.host.parent.__partyClientVersion='17139';
- assert.throws(()=>r.service.install([],{version:17139,fingerprint:'incorrect'}),/expected.*incorrect.*actual.*17139/);
- assert.equal(r.service.identity.version,17139);
- r.host.parent.__partyClientVersion='17140';
- assert.throws(()=>r.service.install([],{version:17139,fingerprint:r.service.identity.fingerprint}),/game geometry mismatch/);
- assert.equal(r.service.identity.version,17140);r.dispose();
-});
-test('diagnostics snapshot coordinates and deduplicate independently of mutable movement state',()=>{
- const {movementDiagnostics}=require('../../runtime/characters/movement-diagnostics.ts');
- let now=1000;const logs=[];
- const report=movementDiagnostics({now:()=>now,diagnostic:(data,message)=>logs.push({data,message})},'Test',16846,'geometry');
- const destination={map:'main',x:100,y:0,moving:true,plot:[{map:'main',x:100,y:0}]};
- const issue={reason:'collisions detected',from:{map:'main',x:0,y:0},to:{map:'main',x:50,y:0}};
- report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
- destination.moving=false;destination.plot=[];
- report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
- assert.equal(logs.length,1);assert.deepEqual(logs[0].data.destination,{map:'main',x:100,y:0});
- now+=10001;report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
- assert.equal(logs[1].data.count,3);assert.match(logs[1].message,/Similar messages: 3 \(not route attempts\)/);
- destination.x=200;issue.to.x=80;
- assert.equal(logs[0].data.destination.x,100);assert.equal(logs[0].data.issue.to.x,50);
-});
-function fixture(options={}) {
- let now=1000, revision=1, runtime='test', searches=0, request;
- const calls=[], logs=[], c={name:'Test',map:'main',in:'main',x:0,y:0,real_x:0,real_y:0,speed:60,base:{h:8,v:7,vn:2},items:[],moving:false};
- const G={version:16846,geometry:{},maps:{main:{spawns:[[0,0]],doors:[],npcs:[]},bank:{spawns:[[0,0]],doors:[],npcs:[]},...options.maps},npcs:{transporter:{places:{}}}};
- const host={character:c,G,smart:{moving:false,plot:[]},parent:{socket:options.socket||{emit:(...a)=>calls.push(a)},push_deferred:()=>Promise.resolve()},
-  smart_move:()=>{host.smart.moving=true;host.smart.found=false;host.smart.searching=false;return Promise.resolve();},
-  stop:async()=>{host.smart.moving=false;},smart_move_logic(){},start_pathfinding:()=>{searches++;host.smart.found=true;host.smart.plot=options.nativePlot||[{map:'main',x:100,y:0}];},continue_pathfinding(){},
-  move:async(x,y)=>{calls.push(['move',x,y]);if(!options.stall)Object.assign(c,{x,y,real_x:x,real_y:y});},use:async()=>{calls.push(['town']);Object.assign(c,{x:0,y:0,real_x:0,real_y:0});},
-  can_use:()=>true,can_walk:()=>true,is_transporting:()=>false,can_move:p=>!(options.collision&&p.going_x===50),
-  is_door_close:()=>true,can_use_door:()=>true,find_npc:()=>null,game_log(){} };
- const ports={now:()=>now,context:()=>({runtime,revision,current:true,paused:false}),
-  request:async(_,o)=>{request=o.body;if(options.pending)return new Promise(resolve=>{fixture.resolve=resolve;});if(options.offline)throw Error(options.planError || 'offline');return {...request,plot:options.plot||[{map:'main',x:100,y:0}]};},
-  diagnostic:(e,m)=>logs.push({...e,message:m})};
- const service=installPartyMovement(host,ports);
- return {service,host,c,calls,logs,ports,get request(){return request;},get searches(){return searches;},setNow:t=>now=t,supersede:()=>revision++,reload:()=>runtime='new',
-  async ticks(count=8){for(let i=0;i<count;i++){host.smart_move_logic();await settle();}},dispose:()=>service.dispose()};
-}
-
-test('interrupted walking reissues its owned segment once and finishes',async()=>{
- const opts={stall:true},r=fixture(opts),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});
- await r.ticks();assert.equal(r.calls.filter(c=>c[0]==='move').length,1);
- opts.stall=false;r.setNow(1300);await r.ticks();await p;
- assert.equal(r.calls.filter(c=>c[0]==='move').length,2);assert.equal(r.c.real_x,100);r.dispose();
-});
-test('a reissued walk retains its original no-progress deadline and reports the failed segment',async()=>{
- const r=fixture({stall:true}),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});
- const rejected=assert.rejects(p,/Stalled walking movement/);await r.ticks();
- r.setNow(1400);await r.ticks();r.setNow(4500);await r.ticks();
- assert.equal(r.calls.filter(c=>c[0]==='move').length,2);
- r.setNow(6100);await r.ticks();await rejected;
- assert.equal(r.service.last().progress.noProgressMs,5100);assert.equal(r.service.last().progress.reissued,true);
- assert.equal(r.service.last().progress.destination.x,100);r.dispose();
-});
-for(const mode of ['collision','locked','superseded'])test('stopped segment retry respects '+mode,async()=>{
- const r=fixture({stall:true}),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});
- const rejected=assert.rejects(p);await r.ticks();
- if(mode==='collision')r.host.can_move=()=>false;
- if(mode==='locked')r.host.can_walk=()=>false;
- if(mode==='superseded')r.supersede();
- r.setNow(1400);await r.ticks();
- assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===100).length,1);
- r.dispose();await rejected;
-});
-
-test('combat handoff records an intentional travel pause without reporting a navigation failure',async()=>{
- const r=fixture({pending:true}),journey=r.service.move({map:'main',x:100,y:0});
- const rejected=assert.rejects(journey,/Combat handoff/);r.service.combatHandoff();await rejected;
- assert.equal(r.service.last().reason,'Combat handoff');
- assert.ok(r.logs.some(log=>log.phase==='Travel paused for combat'));
- assert.ok(!r.logs.some(log=>log.phase==='Movement failed'));r.dispose();
-});
-test('ALClient planning executes validated segments, uses actual speed and permits town',async()=>{
- const r=fixture();const p=r.service.move({map:'main',x:100,y:0});await r.ticks();await p;
- assert.equal(r.request.town,true);assert.equal(r.request.speed,60);assert.equal(r.searches,0);assert.equal(r.c.x,100);r.dispose();
-});
-
-// Healing protection must start at send, survive delayed acknowledgement, and
-// end on actual arrival/rejection/cancellation. Waiting to depart or waiting for
-// peers after arrival must not suppress healing.
-test('Town healing protection covers only the sent, unresolved cast',async()=>{
- const r=fixture(),{createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
- let ready=false,acknowledge,now=1000; r.host.town=()=>new Promise(resolve=>{acknowledge=resolve;});
- Object.assign(r.c,{x:200,real_x:200});
- const e=createMovementExecutor(r.host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},
-  {game:r.host.G,walk:()=>true,door:()=>true},()=>now);
- const options={barrier:async(_s,_i,done)=>!done&&ready};
- e.tick(options);await settle();assert.equal(e.townCasting(),false);
- ready=true;now+=500;e.tick(options);await settle();e.tick(options);
- assert.equal(e.townCasting(),true);
- acknowledge();await settle();assert.equal(e.townCasting(),true);
- Object.assign(r.c,{x:0,real_x:0});e.tick(options);
- assert.equal(e.transition(),'town');assert.equal(e.townCasting(),false);
- e.cancel();assert.equal(e.townCasting(),false);r.dispose();
-});
-
-test('Town arrival waits past the cast deadline for a follower without recasting or failing',async()=>{
- let follower=false;
- const r=fixture({plot:[{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}]});
- const p=r.service.move({map:'main',x:100,y:0},undefined,{barrier:async(_s,_i,completed)=>!completed||follower});
- await r.ticks(3);r.setNow(1400);await r.ticks(6);
- assert.equal(r.service.transition(),'town');
- r.setNow(15000);await r.ticks(5);assert.equal(r.service.state.moving,true);
- follower=true;r.setNow(15500);await r.ticks(12);await p;
- assert.equal(r.calls.filter(c=>c[0]==='town').length,1);
- assert.equal(r.c.real_x,100);r.dispose();
-});
-
-test('Hunt Town reports actual casts and settled arrivals before the follower arrival barrier',async()=>{
- const r=fixture({plot:[{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}]}),outcomes=[];
- let follower=false;
- const p=r.service.move({map:'main',x:100,y:0},undefined,{townAttempt:s=>outcomes.push(s),barrier:async(_s,_i,done)=>!done||follower});
- await r.ticks(3);r.setNow(1400);await r.ticks(6);
- assert.equal(outcomes[0],'casting');assert.ok(outcomes.includes('complete'));
- assert.equal(outcomes.includes('interrupted'),false);assert.equal(r.service.state.moving,true);
- follower=true;r.setNow(1800);await r.ticks(12);await p;r.dispose();
-});
-
-test('Town cooldown waits do not count as interrupted casts and become map-local walking fallback',()=>{
- const r=fixture(),outcomes=[],{createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
- let now=1000;r.host.can_use=()=>false;
- const e=createMovementExecutor(r.host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},
-  {game:r.host.G,walk:()=>true,door:()=>true},()=>now);
- const options={townAttempt:s=>outcomes.push(s),barrier:async()=>false};
- e.tick(options);assert.deepEqual(outcomes,[]);now+=5000;
- assert.throws(()=>e.tick(options),/Town unavailable/);assert.deepEqual(outcomes,['unavailable']);
- assert.equal(r.calls.length,0);r.dispose();
-});
-
-test('Town cast rejection reports interruption but cooldown rejection does not',async()=>{
- for(const reason of ['interrupted','cooldown']) {
-  const r=fixture(),outcomes=[],{createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
-  r.host.use=async()=>{throw {reason};};
-  const e=createMovementExecutor(r.host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},
-   {game:r.host.G,walk:()=>true,door:()=>true},()=>1000);
-  const options={townAttempt:s=>outcomes.push(s)};
-  e.tick(options);await settle();assert.throws(()=>e.tick(options));
-  assert.equal(e.townCasting(),false);
-  assert.deepEqual(outcomes,['casting',reason==='cooldown'?'unavailable':'interrupted']);r.dispose();
- }
-});
-test('planner transport errors do not silently switch to native pathfinding',async()=>{
- const r=fixture({offline:true}),p=r.service.move({map:'main',x:100,y:0}),failed=assert.rejects(p,/offline/);
- await r.ticks();await failed;assert.equal(r.searches,0);r.dispose();
-});
-
-for(const reason of ['ALClient found no route','Native-only movement mode enabled','Planner worker exited'])
-test('movement HTTP planner rejection starts native fallback: '+reason,async()=>{
- const {installMovementRoutes}=require('../../runtime/coordinator/http/movement.ts');
- let handler, responseStatus, responseBody;
- installMovementRoutes({post:(_path,callback)=>handler=callback},{mode:'alclient',plan:async()=>{throw Error(reason);}},()=>true);
- const r=fixture();
- r.ports.request=async(_path,{body})=>{
-  responseStatus=200;
-  await handler({body},{status(code){responseStatus=code;return this;},json(value){responseBody=value;}});
-  if(responseStatus>=400)throw Object.assign(Error(responseBody.error),{partyRequest:{kind:'http',status:responseStatus}});
-  return responseBody;
- };
- const p=r.service.move({map:'main',x:100,y:0});
- const outcome=p.then(()=>null,error=>error);
- await r.ticks(12);
- assert.equal(await outcome,null);
- assert.equal(responseStatus,200);assert.equal(responseBody.mode,'alclient');
- assert.equal(r.searches,1);assert.equal(r.c.real_x,100);
- assert.ok(r.logs.some(log=>log.phase==='Trying native pathfinding' && log.issue.reason===reason));
- assert.equal(r.logs.at(-1).phase,'Native fallback succeeded');r.dispose();
-});
-
-for(const request of [{kind:'network',status:0},{kind:'timeout',status:0},{kind:'http',status:503}])
-test('movement communication hold remains distinct from route failure: '+request.kind,async()=>{
- const r=fixture(),error=Object.assign(Error('Coordinator unavailable'),{partyRequest:request});
- r.ports.request=async()=>{throw error;};
- const p=r.service.move({map:'main',x:100,y:0});
- const rejected=assert.rejects(p,e=>e===error && e.movementReported===true);
- await r.ticks();await rejected;
- assert.equal(r.searches,0);assert.equal(r.service.last().failureContext.code,'convoy-communication-hold');
- assert.equal(r.logs.at(-1).phase,'Movement paused: coordinator communication unavailable');r.dispose();
-});
-test('planning-origin drift retries ALClient without native fallback',async()=>{
- const r=fixture({pending:true}),p=r.service.move({map:'main',x:100,y:0});
- await r.ticks(1);const first=r.request;Object.assign(r.c,{x:10,real_x:10});
- fixture.resolve({...first,plot:[{map:'main',x:100,y:0}]});await settle();await r.ticks(1);
- assert.equal(r.request.from.x,10);assert.equal(r.searches,0);
- fixture.resolve({...r.request,plot:[{map:'main',x:100,y:0}]});await r.ticks();await p;r.dispose();
-});
-
-test('precision arrival completes coarse ALClient and native endpoints without leaking tolerance',async()=>{
- for(const offline of [false,true]) {
-  const plot=[{map:'main',x:85,y:0}],r=fixture({offline,planError:'Path not found',plot,nativePlot:plot});
-  const p=r.service.move({map:'main',x:100,y:0},undefined,{arrivalTolerance:1});
-  await r.ticks(14);await p;
-  assert.equal(r.c.x,100);assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===100));
-  const next=r.service.move({map:'main',x:100,y:0});
-  assert.equal(r.service.state.edge,20);await r.ticks(14);await next;r.dispose();
- }
-});
-
-test('precision arrival rejects a blocked connector in both planners',async()=>{
- const plot=[{map:'main',x:40,y:0}],r=fixture({collision:true,plot,nativePlot:plot});
- const p=r.service.move({map:'main',x:50,y:0},undefined,{arrivalTolerance:1});
- const failed=assert.rejects(p,/Native route rejected: collisions/);
- await r.ticks(14);await failed;assert.equal(r.calls.length,0);r.dispose();
-});
-
-for(const native of [false,true])test('blocked final waypoint within tolerance is trimmed for '+(native?'native':'ALClient'),async()=>{
- const plot=[{map:'main',x:40,y:0},{map:'main',x:50,y:0}];
- const r=fixture({collision:true,plot,nativePlot:plot});
- const p=r.service.move({map:'main',x:50,y:0},undefined,{native});
- await r.ticks(14);await p;
- assert.equal(r.c.x,40);assert.equal(r.calls.some(c=>c[0]==='move'&&c[1]===50),false);
- assert.equal(r.searches,native?1:0);assert.equal(r.logs.some(l=>l.phase==='ALClient route rejected'),false);
- assert.equal(plot.length,2,'planner result is not mutated');r.dispose();
-});
-
-for(const options of [{arrivalTolerance:1},{shared:true},{}])test('blocked endpoint cannot bypass precision, shared, or distance requirements '+JSON.stringify(options),async()=>{
- const previous=Object.keys(options).length?40:20;
- const plot=[{map:'main',x:previous,y:0},{map:'main',x:50,y:0}],r=fixture({collision:true,plot,nativePlot:plot});
- const p=r.service.move({map:'main',x:50,y:0},undefined,options),failed=assert.rejects(p,/collisions/);
- await r.ticks(14);await failed;assert.equal(r.calls.length,0);r.dispose();
-});
-
-test('endpoint trim never removes a final transition or conceals an earlier collision',async()=>{
- for(const plot of [
-  [{map:'main',x:40,y:0},{map:'main',x:50,y:0,town:true}],
-  [{map:'main',x:50,y:0},{map:'main',x:40,y:0},{map:'main',x:50,y:0}],
- ]) {
-  const r=fixture({collision:true,plot,nativePlot:plot});
-  const p=r.service.move({map:'main',x:50,y:0}),failed=assert.rejects(p,/Native route rejected/);
-  await r.ticks(14);await failed;assert.equal(r.calls.length,0);r.dispose();
- }
-});
-
-test('cancellation prevents dispatching the precision final approach',async()=>{
- const r=fixture({plot:[{map:'main',x:85,y:0}]});
- const p=r.service.move({map:'main',x:100,y:0},undefined,{arrivalTolerance:1}),failed=assert.rejects(p);
- await r.ticks(2);await r.service.stop('smart');await r.ticks(8);await failed;
- assert.equal(r.calls.some(c=>c[0]==='move'&&c[1]===100),false);r.dispose();
-});
-test('collision produces actionable coordinates and native fallback outcome',async()=>{
- const r=fixture({collision:true,plot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}]});
- const p=r.service.move({map:'main',x:100,y:0});await r.ticks(12);await p;
- assert.equal(r.searches,2);assert.equal(r.calls.some(c=>c[1]===50),false);
- assert.match(r.logs.find(l=>l.phase==='Trying native pathfinding').message,/collisions detected between main \(0, 0\) and main \(50, 0\).*falling back to native smart_move/);
- assert.equal(r.logs.at(-1).phase,'Native fallback succeeded');r.dispose();
-});
-test('late plan cannot restart cancelled or superseded navigation',async()=>{
- for(const change of ['stop','supersede','reload']){
-  const r=fixture({pending:true}),p=r.service.move({map:'main',x:100,y:0});const failed=assert.rejects(p);
-  await r.ticks(1);const request=r.request;if(change==='stop')await r.service.stop('smart');else r[change]();
-  fixture.resolve({...request,plot:[{map:'main',x:100,y:0}]});await r.ticks();await failed;
-  assert.equal(r.calls.length,0);r.dispose();
- }
-});
-test('native fallback also rejects collisions and exposes terminal failure',async()=>{
- const r=fixture({offline:true,planError:'Path not found',collision:true,nativePlot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}]});
- const p=r.service.move({map:'main',x:100,y:0}),failed=assert.rejects(p,e=>/Native route rejected/.test(e.message) && e.movementReported===true);
- await r.ticks();await failed;assert.equal(r.calls.length,0);assert.equal(r.logs.at(-1).phase,'Movement failed');
- assert.match(r.service.last().failureContext.firstIssue.reason,/Path not found/);
- assert.equal(r.service.last().failureContext.code,'route-failed');r.dispose();
-});
-test('execution stalls have exactly two bounded native recovery attempts',async()=>{
- const r=fixture({stall:true}),p=r.service.move({map:'main',x:100,y:0}),failed=assert.rejects(p,/Stalled/);
- await r.ticks();for(let i=1;i<=3;i++){r.setNow(1000+6000*i);await r.ticks();}
- await failed;assert.equal(r.searches,2);assert.equal(r.service.report(),null);r.dispose();
-});
-test('shared route execution fails to coordinator without independent follower replanning',async()=>{
- const r=fixture({stall:true}),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true}),failed=assert.rejects(p,/Stalled/);
- await r.ticks();r.setNow(7000);await r.ticks();await failed;assert.equal(r.searches,0);r.dispose();
-});
-test('town prohibition rejects a town edge even if planner returns one',async()=>{
- const r=fixture({plot:[{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}]});
- const p=r.service.move({map:'main',x:100,y:0},undefined,{town:false});await r.ticks(12);await p;
- assert.equal(r.request.town,false);assert.equal(r.calls.some(c=>c[0]==='town'),false);assert.match(r.logs[0].message,/town warp prohibited/);r.dispose();
-});
-test('real pinned planner worker uses native collision validation and geometry identity',async()=>{
- const {version,directory}=require('./helpers/installed-game.cjs');const n=createNative(directory,'native-visible');
- const service=createPlannerService(path.resolve('.build/runtime/movement-planner.cjs'));
- try {
-  const prepared=service.prepare(n.game,version);await prepared.ready;
-  const from={map:'main',x:0,y:0},to={map:'halloween',x:0,y:0};
-  const result=await service.plan({id:'probe',from,to,speed:60,town:true,version,fingerprint:prepared.fingerprint});
-  assert.ok(result.plot.some(p=>p.town));assert.ok(result.ms<2000);
-  const ports={game:n.game,walk:(a,b)=>n.canWalk(a,b),door:(p,d)=>n.context.is_door_close(p.map,d,p.x,p.y)&&n.context.can_use_door(p.map,d,p.x,p.y),hasKey:()=>false};
-  assert.equal(validateRoute(ports,from,to,result.plot,true),null);
-  await assert.rejects(service.plan({id:'wrong',from,to,speed:60,town:true,version:version+1,fingerprint:prepared.fingerprint}),/compatible/);
-  assert.equal(geometryFingerprint(n.game),prepared.fingerprint);
- } finally{service.dispose();}
-});
-test('geometry identity ignores renderer decoration but detects same-version collision changes',()=>{
- const r=fixture(),before=geometryFingerprint(r.host.G);
+// The console's kept goals (design "Corrections from " item 26): the native footprint check
+// runs on every installed route, and resumes are bound to the navigation revision.
+scenarioTable('every installed route is validated against game collision, transitions and instances before a move', fixture, [
+ ['a route that collides, takes a wrong transition or ends in another instance is refused before any move', async ()=>{
+  // Collision: both planners return a colliding route, so neither is walked.
+  const collides=fixture({offline:true,planError:'Path not found',collision:true,nativePlot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}]});
+  const failed=assert.rejects(collides.service.move({map:'main',x:100,y:0}),e=>/Native route rejected/.test(e.message));
+  await collides.ticks();await failed;
+  assert.equal(collides.calls.length,0);collides.dispose();
+  // Transition: a leave is valid only from an instance map to Main's spawn, with no other metadata.
+  const t=fixture();t.host.G.maps.cyberland={spawns:[[0,0]]};t.host.G.maps.jail={spawns:[[0,0]]};
+  const ports={game:t.host.G,walk:()=>true,door:()=>true,hasKey:()=>false},to={map:'main',x:0,y:0,method:'leave'};
+  for(const map of ['cyberland','jail'])assert.equal(validateRoute(ports,{map,x:3,y:3},to,[to],true),null);
+  for(const bad of [{...to,town:true},{...to,transport:true,s:0},{...to,map:'bank'},{...to,x:50}])assert.ok(validateRoute(ports,{map:'cyberland',x:0,y:0},bad,[bad],true));
+  assert.ok(validateRoute(ports,{map:'main',x:0,y:0},to,[to],true));t.dispose();
+  // Instance: a destination in another instance of the same map is never arrival.
+  const i=fixture();
+  await assert.rejects(i.service.move({map:'main',in:'other',x:0,y:0}),/another instance/);assert.equal(i.calls.length,0);i.dispose();
+ }],
+ ['geometry identity ignores renderer decoration but detects same-version collision changes', r=>{
+ const before=geometryFingerprint(r.host.G);
  r.host.G.geometry.main={x_lines:[],y_lines:[],data:{tiles:[1,2],placements:[5]}};
  r.host.G.maps.main.npcs=[{id:'npc',position:[1,2],color:'white',sprite:{}}];
  r.host.G.maps.main.data=r.host.G.geometry.main;
  assert.equal(geometryFingerprint(r.host.G),before);
  r.host.G.geometry.main.x_lines.push([50,-10,10]);assert.notEqual(geometryFingerprint(r.host.G),before);r.dispose();
-});
-test('another instance cannot be mistaken for arrival on the same map',async()=>{
- const r=fixture();await assert.rejects(r.service.move({map:'main',in:'other',x:0,y:0}),/another instance/);assert.equal(r.calls.length,0);r.dispose();
-});
-test('town stays pending until game acknowledgement, even when starting at the town spawn',async()=>{
- const r=fixture({plot:[{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}]});let acknowledge;
- r.host.town=()=>new Promise(resolve=>{acknowledge=resolve;});const p=r.service.move({map:'main',x:100,y:0});
- await r.ticks();assert.equal(r.c.x,0);assert.equal(r.service.state.plot[0].town,true);
- acknowledge({success:true});await r.ticks();await p;assert.equal(r.c.x,100);r.dispose();
-});
-test('observed scattered town arrival reconnects to the route through a validated walking segment',async()=>{
- const r=fixture({plot:[{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}]});
- r.host.town=async()=>{Object.assign(r.c,{x:-30,y:-23,real_x:-30,real_y:-23});return {success:true};};
- const p=r.service.move({map:'main',x:100,y:0});await r.ticks(15);await p;
- assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===0&&c[2]===0));assert.equal(r.searches,0);assert.equal(r.c.x,100);r.dispose();
-});
-for(const arrivalFirst of [false,true]) test('leave waits for both acknowledgment and arrival, once only; arrivalFirst='+arrivalFirst,async()=>{
- const r=fixture({plot:[{map:'main',x:0,y:0,method:'leave'}]});
- r.host.G.maps.cyberland={spawns:[[0,0]]};Object.assign(r.c,{map:'cyberland',in:'cyberland'});
- let acknowledge;r.host.parent.push_deferred=key=>{assert.equal(key,'leave');return new Promise(resolve=>acknowledge=resolve);};
- const p=r.service.move({map:'main',x:0,y:0});await r.ticks(4);
- assert.equal(r.calls.filter(c=>c[0]==='leave').length,1);
- if(arrivalFirst)Object.assign(r.c,{map:'main',in:'main',real_x:5,x:5});else acknowledge();
- await r.ticks(3);assert.equal(r.service.state.moving,true);
- if(arrivalFirst)acknowledge();else Object.assign(r.c,{map:'main',in:'main',real_x:5,x:5});
- await r.ticks(8);await p;assert.equal(r.c.real_x,0);assert.equal(r.searches,0);assert.equal(r.service.last().transitions,1);r.dispose();
-});
-test('leave rejection replans ALClient without native fallback',async()=>{
- const r=fixture({plot:[{map:'main',x:0,y:0,method:'leave'}]});r.host.G.maps.cyberland={spawns:[[0,0]]};Object.assign(r.c,{map:'cyberland',in:'cyberland'});
- r.host.parent.push_deferred=()=>Promise.reject(Error('cant_escape'));
- const p=r.service.move({map:'main',x:0,y:0}),failed=assert.rejects(p,/Leave transition failed/);
- await r.ticks(25);await failed;assert.equal(r.request.avoidLeave,true);assert.equal(r.searches,0);r.dispose();
-});
-test('leave validator rejects arbitrary exits and conflicting metadata',()=>{
- const r=fixture();r.host.G.maps.cyberland={spawns:[[0,0]]};r.host.G.maps.jail={spawns:[[0,0]]};
- const ports={game:r.host.G,walk:()=>true,door:()=>true,hasKey:()=>false},to={map:'main',x:0,y:0,method:'leave'};
- for(const map of ['cyberland','jail'])assert.equal(validateRoute(ports,{map,x:3,y:3},to,[to],true),null);
- for(const bad of [{...to,town:true},{...to,transport:true,s:0},{...to,map:'bank'},{...to,x:50}])assert.ok(validateRoute(ports,{map:'cyberland',x:0,y:0},bad,[bad],true));
- assert.ok(validateRoute(ports,{map:'main',x:0,y:0},to,[to],true));r.dispose();
-});
-test('leave timeout requests ALClient recovery and cancellation ignores a late acknowledgment',async()=>{
- const r=fixture({plot:[{map:'main',x:0,y:0,method:'leave'}]});r.host.G.maps.cyberland={spawns:[[0,0]]};Object.assign(r.c,{map:'cyberland',in:'cyberland'});
- let acknowledge;r.host.parent.push_deferred=()=>new Promise(resolve=>acknowledge=resolve);
- const p=r.service.move({map:'main',x:0,y:0}),failed=assert.rejects(p,/Unattributed movement stop/i);await r.ticks(4);
- r.setNow(15000);await r.ticks(3);assert.equal(r.request.avoidLeave,true);assert.equal(r.searches,0);
- await r.service.stop();acknowledge();await r.ticks(2);await failed;assert.equal(r.service.state.moving,false);r.dispose();
-});
-
-for(const method of ['town','door','transport','leave'])test('pending loot holds '+method+' before the party transition barrier',async()=>{
- const f=fixture();let collected=false;f.ports.transitionReady=()=>collected;
- let step={map:'main',x:0,y:0,town:true};
- if(method!=='town') {
-  step={map:'bank',x:0,y:0,transport:true,s:0};
-  if(method==='door')f.host.G.maps.main.doors=[[0,0,20,20,'bank',0,0]];
-  if(method==='transport') {f.host.G.maps.main.npcs=[{id:'transporter',position:[0,0]}];f.host.G.npcs.transporter.places.bank=0;}
-  if(method==='leave') {step={map:'main',x:0,y:0,method:'leave'};f.c.map='jail';f.c.in='jail';f.host.G.maps.jail={spawns:[[0,0]],doors:[]};}
+ }],
+ // Issue #16: a planned route's blocked last waypoint inside the edge is trimmed, so the walk
+ // does not stall on it; a precise, shared or distant endpoint and a final transition keep it
+ // and are refused, and the trim never hides an earlier collision.
+ ['a blocked final waypoint inside the edge is trimmed, and nothing else is', async ()=>{
+  for(const native of [false,true]){
+   const plot=[{map:'main',x:40,y:0},{map:'main',x:50,y:0}],r=fixture({collision:true,plot,nativePlot:plot});
+   const p=r.service.move({map:'main',x:50,y:0},undefined,{native});await r.ticks(14);await p;
+   assert.equal(r.calls.some(c=>c[0]==='move'&&c[1]===50),false,'trimmed for '+(native?'native':'ALClient'));
+   assert.equal(plot.length,2,'the planner result is not changed');r.dispose();
+  }
+  for(const options of [{arrivalTolerance:1},{shared:true},{}]){
+   const previous=Object.keys(options).length?40:20;
+   const plot=[{map:'main',x:previous,y:0},{map:'main',x:50,y:0}],r=fixture({collision:true,plot,nativePlot:plot});
+   const failed=assert.rejects(r.service.move({map:'main',x:50,y:0},undefined,options),/collisions/);
+   await r.ticks(14);await failed;assert.equal(r.calls.length,0,JSON.stringify(options));r.dispose();
+  }
+  for(const plot of [[{map:'main',x:40,y:0},{map:'main',x:50,y:0,town:true}],[{map:'main',x:50,y:0},{map:'main',x:40,y:0},{map:'main',x:50,y:0}]]){
+   const r=fixture({collision:true,plot,nativePlot:plot}),failed=assert.rejects(r.service.move({map:'main',x:50,y:0}),/Native route rejected/);
+   await r.ticks(14);await failed;assert.equal(r.calls.length,0);r.dispose();
+  }
+ }],
+ // The walking repairs on plain geometry ports: walls are boxes 10 wide and 40 tall, and a leg
+ // walks when no point of it, sampled each unit, stands inside one.
+ ['every broken future-map walking edge gets a connector, and an endpoint attachment reaches the exact owned goal and refuses a foreign, long or unsafe leg', ()=>{
+  const {repairWalkingInteriors}=require('../../runtime/movement/geometry/walking-interior.ts');
+  const walls=[50,150,250,350];
+  const inside=p=>walls.some(x=>Math.abs(p.x-x)<=5&&Math.abs(p.y)<=20);
+  const walk=(a,b)=>{const n=Math.ceil(Math.hypot(b.x-a.x,b.y-a.y));for(let i=0;i<=n;i++){const t=n?i/n:0;if(inside({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}))return false;}return true;};
+  const ports={game:{maps:{main:{spawns:[[0,0]]},bank:{spawns:[[0,0]]}},npcs:{},geometry:{}},walk,door:()=>true,hasKey:()=>false};
+  // The plot crosses into Main, then walks four legs that each cross one wall.
+  const plot=[{map:'main',x:0,y:0,transport:true,s:0},{map:'main',x:10,y:0},...[100,200,300,400].map(x=>({map:'main',x,y:0}))];
+  const repaired=repairWalkingInteriors(ports,{map:'bank',x:0,y:0},plot);
+  const walking=repaired.slice(1);
+  for(let i=1;i<walking.length;i++)assert.ok(walk(walking[i-1],walking[i]),`leg ${i} walks`);
+  assert.deepEqual(walking.at(-1),{map:'main',x:400,y:0});
+  // An endpoint attachment reaches the exact owned goal and refuses a foreign, long or unsafe leg.
+  const {repairWalkingEndpoint}=require('../../runtime/movement/geometry/walking-endpoint.ts');
+  const me={map:'main',in:'main',x:0,y:0},goal={map:'main',x:100,y:0},route=[{map:'main',x:40,y:0},goal];
+  const attached=repairWalkingEndpoint(ports,me,goal,route);
+  assert.ok(attached.length>route.length);assert.deepEqual(attached.at(-1),goal);
+  for(let i=1;i<attached.length;i++)assert.ok(walk(attached[i-1],attached[i]),`endpoint leg ${i} walks`);
+  const foreign={...goal,in:'other'};
+  assert.deepEqual(repairWalkingEndpoint(ports,me,foreign,[route[0],foreign]),[route[0],foreign]);
+  const far={map:'main',x:340,y:0},long=[{map:'main',x:40,y:0},far];
+  assert.deepEqual(repairWalkingEndpoint(ports,me,far,long),long);
+  const walled={...ports,walk:(a,b)=>walk(a,b)&&Math.hypot(b.x-100,b.y)>12===Math.hypot(a.x-100,a.y)>12};
+  assert.deepEqual(repairWalkingEndpoint(walled,me,goal,route),route);
+ }],
+ ['late plan cannot restart cancelled or superseded navigation', async ()=>{
+ for(const change of ['stop','supersede','reload']){
+  const r=fixture({pending:true}),p=r.service.move({map:'main',x:100,y:0});const failed=assert.rejects(p);
+  await r.ticks(1);const request=r.request;if(change==='stop')await r.service.stop('smart');else r[change]();
+  fixture.resolve({...request,plot:[{map:'main',x:100,y:0}]});await r.ticks();await failed;
+  assert.equal(r.calls.length,0,change);r.dispose();
  }
- let barriers=0;
- // Use the real executor directly to isolate transition dispatch from route search.
- const {createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
- const state={plot:[step],use_town:true};
- const validation={game:f.host.G,walk:()=>true,door:()=>true,hasKey:()=>true};
- let now=1000;const executor=createMovementExecutor(f.host,state,validation,()=>now,()=>true,()=>collected);
- const options={barrier:async()=>{barriers++;return true;}};
- executor.tick(options);await settle();assert.equal(barriers,0);assert.equal(f.calls.length,0);assert.equal(executor.progress().phase,'pending loot');
- now+=500;executor.tick(options);assert.equal(f.calls.length,0);
- collected=true;executor.tick(options);await settle();executor.tick(options);await settle();
- assert.equal(barriers,1);assert.ok(f.calls.some(c=>c[0]===(method==='town'?'town':method==='leave'?'leave':'transport')));
- await f.service.stop();
-});
+ }],
+]);
 
-test('uncollectable transition loot reports a bounded failure and cancellation clears the hold',()=>{
- const f=fixture(),{createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');let now=1000;
- const executor=createMovementExecutor(f.host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},
-  {game:f.host.G,walk:()=>true,door:()=>true},()=>now,()=>true,()=>false);
- executor.tick({});now+=30000;assert.throws(()=>executor.tick({}),/Pending nearby loot/);
- executor.cancel();assert.equal(executor.progress().phase,'idle');f.dispose();
-});
 
-test('combat pause stops issued travel once and resumes the retained route',async()=>{
- const r=fixture({stall:true});const pending=r.service.move({map:'main',x:100,y:0});
- const rejected=assert.rejects(pending);await r.ticks();
- const context=r.ports.context;r.ports.context=()=>({...context(),paused:true});
- await r.ticks();assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===0).length,1);
- await r.ticks();assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===0).length,1);
- r.ports.context=context;await r.ticks();
- assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===100).length,2);
- r.dispose();await rejected;
-});
-
-test('a blocked ALClient walking segment uses one validated native connector and keeps the rest of the route',async()=>{
- const r=fixture({plot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}],nativePlot:[{map:'main',x:0,y:10},{map:'main',x:50,y:10},{map:'main',x:50,y:0}]});
- r.host.can_move=p=>!(p.x===0 && p.y===0 && p.going_x===50 && p.going_y===0);
- const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});await r.ticks(30);await p;
- assert.equal(r.searches,1);assert.equal(r.c.real_x,100);assert.ok(r.logs.some(l=>l.phase==='Walking segment repaired'));
- assert.equal(r.logs.some(l=>l.phase==='ALClient route rejected'),false);r.dispose();
-});
-test('repair timeout is three seconds, then the single full native attempt retains its thirty-second bound',async()=>{
- const r=fixture({collision:true,plot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}]});
- r.host.__partyNativeMovement.start=()=>{r.host.smart.searching=true;};
- const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});const failed=assert.rejects(p,/30 seconds/);
- await r.ticks(3);r.setNow(4000);await r.ticks(1);r.setNow(4001);await r.ticks(2);
- assert.equal(r.service.state.moving,true);r.setNow(34001);await r.ticks(1);await failed;
- assert.match(r.service.last().failureContext.repairFailure,/3 seconds/);assert.equal(r.service.last().searches,3);r.dispose();
-});
-test('post-relocation ALClient rejection cannot start another native search or segment repair',async()=>{
- const r=fixture({collision:true,plot:[{map:'main',x:50,y:0},{map:'main',x:100,y:0}]});
- const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true,owner:{convoyId:'C',epoch:4,commandId:9,recoveryStage:'post-relocation'}});
- const failed=assert.rejects(p,/ALClient retry failed after relocation/);await r.ticks();await failed;
- assert.equal(r.searches,0);assert.equal(r.service.last().failureContext.convoyId,'C');r.dispose();
-});
-test('owned cancellation retains actor, cause, journey and command context without duplicate reason text',async()=>{
- const r=fixture({pending:true});const p=r.service.move({map:'main',x:100,y:0},undefined,{owner:{convoyId:'C',epoch:2,commandId:7}});
- const failed=assert.rejects(p,/regroup/);await r.ticks(1);
- await r.service.cancel('Coordinator requested regroup',{code:'regroup',character:'Leader'});await failed;
- const last=r.service.last();assert.equal(last.failureContext.commandId,7);assert.equal(last.failureContext.code,'regroup');
- assert.equal(last.failureContext.character,'Leader');assert.equal(last.failureContext.journeyId,last.id);
- const message=r.logs.at(-1).message;assert.equal((message.match(/Coordinator requested regroup/g)||[]).length,1);r.dispose();
-});
-test('barrier timeout retains request metadata through executor and movement promise',async()=>{
- const r=fixture(),error=Object.assign(new Error('POST /movement-barrier timeout'),{partyRequest:{path:'/movement-barrier',kind:'timeout',status:0}});
- const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true,barrier:async()=>{throw error;}});
- const rejected=assert.rejects(p,e=>e===error && e.partyRequest.kind==='timeout');
- r.service.install([{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:0}],r.service.identity);
- await r.ticks();await r.ticks();await rejected;assert.equal(r.service.last().failureContext.partyRequest.path,'/movement-barrier');r.dispose();
-});
-
-function reachedWalkFixture(plot) {
- const {createMovementExecutor}=require('../../runtime/characters/movement-executor.ts');
- let now=1000,transporting=false;const calls=[];
- const character={map:'main',in:'main',real_x:177,real_y:460,moving:false};
- const host={character,move:(x,y)=>{calls.push([x,y]);character.moving=true;return Promise.resolve();},
-  can_walk:()=>true,is_transporting:()=>transporting,can_use:()=>true,
-  town:()=>{calls.push('town');return new Promise(()=>{});}};
- const state={plot,use_town:true};
- const executor=createMovementExecutor(host,state,{game:{maps:{main:{spawns:[[177,460]]},bank:{}}},walk:()=>true},()=>now);
- return {executor,host,state,calls,character,setNow:value=>now=value,setTransporting:value=>transporting=value};
-}
-for(const duplicates of [1,3])test('reached walking points never issue a zero-distance game move: '+duplicates,()=>{
- const r=reachedWalkFixture([...Array.from({length:duplicates},()=>({map:'main',x:177,y:460})),{map:'main',x:222,y:430}]);
- r.executor.tick({});assert.deepEqual(r.calls,[[222,430]]);assert.equal(r.state.plot.length,1);
- Object.assign(r.character,{real_x:222,real_y:430,moving:false});r.setNow(6100);r.executor.tick({});
- assert.equal(r.executor.tick({}),true);
-});
-test('entire reached route finishes without a move including the one-unit boundary',()=>{
- const r=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:178,y:460}]);
- assert.equal(r.executor.tick({}),true);assert.deepEqual(r.calls,[]);
-});
-test('outside arrival tolerance still issues a walk',()=>{
- const r=reachedWalkFixture([{map:'main',x:178.01,y:460}]);r.executor.tick({});assert.equal(r.calls.length,1);
-});
-for(const blocked of ['moving','transporting','unable'])test('reached walk cannot advance while '+blocked,()=>{
- const r=reachedWalkFixture([{map:'main',x:177,y:460}]);
- if(blocked==='moving')r.character.moving=true;
- if(blocked==='transporting')r.setTransporting(true);
- if(blocked==='unable')r.host.can_walk=()=>false;
- assert.equal(r.executor.tick({}),false);assert.equal(r.state.plot.length,1);assert.deepEqual(r.calls,[]);
-});
-for(const point of [{map:'bank',x:177,y:460},{map:'main',in:'other',x:177,y:460}])test('other map or instance is not consumed: '+JSON.stringify(point),()=>{
- const r=reachedWalkFixture([point]);try{r.executor.tick({});}catch(error){assert.match(error.message,/collisions/);}
- assert.equal(r.state.plot.length,1);
-});
-test('skipped walk preserves transition barrier index and pending acknowledgement',async()=>{
- const r=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:177,y:460,town:true}]),barriers=[];
- const options={barrier:async(step,index,completed)=>{barriers.push({index,completed});return true;}};
- r.executor.tick(options);await settle();r.executor.tick(options);await settle();r.executor.tick(options);
- assert.deepEqual(r.calls,['town']);assert.deepEqual(barriers,[{index:0,completed:false}]);
- assert.equal(r.state.plot.length,1);assert.equal(r.state.plot[0].town,true);
-});
-
-test('Cave shared walking repairs one collision-checked connector after actual position drift',async()=>{
- const r=fixture({nativePlot:[{map:'main',x:0,y:20},{map:'main',x:50,y:20},{map:'main',x:50,y:0}]});
- r.host.can_move=p=>!(p.y===10 && p.going_x===50 && p.going_y===0);
- const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true});p.catch(()=>{});
- r.service.install([{map:'main',x:50,y:0},{map:'main',x:100,y:0}],r.service.identity,'cave-convoy');
- Object.assign(r.c,{y:10,real_y:10});await r.ticks(30);await p;
- assert.equal(r.searches,1);assert.equal(r.c.real_x,100);assert.equal(r.c.real_y,0);
- assert.ok(r.logs.some(l=>l.phase==='Walking segment repaired'));r.dispose();
-});
-test('shared Cave connector rejection cannot fall back to a new destination or cross maps',async()=>{
- const r=fixture({nativePlot:[{map:'bank',x:50,y:0}]});
- r.host.can_move=p=>!(p.y===10 && p.going_x===50 && p.going_y===0);
- const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true});
- const failed=assert.rejects(p,/Shared connector repair failed/);
- r.service.install([{map:'main',x:50,y:0},{map:'main',x:100,y:0}],r.service.identity,'cave-convoy');
- Object.assign(r.c,{y:10,real_y:10});await r.ticks(12);await failed;assert.equal(r.searches,1);assert.equal(r.c.real_x,0);r.dispose();
-});
-test('ordinary shared journeys still reject drifting unsafe connectors without independent planning',async()=>{
- const r=fixture();r.host.can_move=p=>!(p.y===10 && p.going_x===50 && p.going_y===0);
- const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true});const failed=assert.rejects(p,/collisions detected/);
- r.service.install([{map:'main',x:50,y:0},{map:'main',x:100,y:0}],r.service.identity);
- Object.assign(r.c,{y:10,real_y:10});await r.ticks(8);await failed;assert.equal(r.searches,0);r.dispose();
-});
-test('Cave connector repair stops on instance changes and superseded runtime ownership',async()=>{
- for(const change of [r=>r.c.in='other',r=>r.supersede()]){
-  const r=fixture({nativePlot:[{map:'main',x:0,y:20},{map:'main',x:50,y:20},{map:'main',x:50,y:0}]});
-  r.host.can_move=p=>!(p.y===10&&p.going_x===50&&p.going_y===0);
-  const p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true});const failed=assert.rejects(p);
-  r.service.install([{map:'main',x:50,y:0},{map:'main',x:100,y:0}],r.service.identity);
-  Object.assign(r.c,{y:10,real_y:10});change(r);await r.ticks(8);await failed;assert.equal(r.searches,0);r.dispose();
+scenarioTable('the owner decides inside the service: re-aim, idle aggro, cost, typed commands, currency, planned routes', fixture, [
+ // (e2e/movement-owner-failures.md): the owner's own rules on the service, for the cases a
+ // run cannot set up on demand.
+ ['an idle block refuses a single candidate only while the character fights', r=>{
+ r.host.parent.entities={idle:{type:'monster',id:'idle',x:100,y:10,aggro:1,range:20,visible:true}};
+ assert.equal(r.service.stepAllows({x:100,y:20}),true,'standing still fights nothing, so the step may enter the block');
+ r.setNow(1001);r.host.parent.entities.hit={type:'monster',id:'hit',x:-60,y:0,target:'Test',range:20,visible:true};
+ assert.equal(r.service.stepAllows({x:100,y:20}),false,'a fighting character keeps out of the idle block');
+ assert.equal(r.service.stepAllows({x:0,y:-40}),true,'a step outside every block passes');
+ r.dispose();
+ }],
+ // Step 10 (e2e/movement-owner-failures.md "Step 10" item 2): every console caller names its
+ // requester, so a call with none is the player's typed command. It ranks as `manual`: it
+ // replaces a lower journey, a stop of its own journey is the holder's, and a stop of a higher
+ // row's journey is refused.
+ ['a call with no requester ranks as the player\'s typed command', async r=>{
+ const follow=r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'follow',owner:'follow'}});follow.catch(()=>{});await r.ticks(2);
+ const typed=r.service.move({map:'main',x:50,y:0});typed.catch(()=>{});await r.ticks(1);
+ assert.equal(r.service.live().kind,'manual');
+ assert.ok(r.service.records().some(e=>e.decision==='ended'&&e.owner==='follow'&&e.code==='replaced:manual'));
+ await r.host.stop();assert.equal(r.service.live(),null);
+ assert.ok(r.service.records().some(e=>e.decision==='ended'&&e.owner==='manual'&&e.code==='released'));
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'cave',owner:'cave:1'}}).catch(()=>{});await r.ticks(1);
+ assert.deepEqual(await r.host.stop(),{success:false,refused:true});assert.equal(r.service.live().owner,'cave:1');
+ // Step 11: every typed call is counted by its site, the move and each of the two stops, so a
+ // console caller that lost its requester shows in the owner report beyond the ring's bound.
+ const typedSites=r.service.ownerReport().typed;
+ assert.equal(Object.values(typedSites).reduce((a,b)=>a+b,0),3);assert.ok(Object.keys(typedSites).every(site=>site.length>0));
+ // A stop superseded by a navigation revision names its cause, so it is no typed call.
+ await r.host.stop('smart',undefined,{superseded:'navigation-revision'});
+ assert.equal(Object.values(r.service.ownerReport().typed).reduce((a,b)=>a+b,0),3);
+ r.dispose();
+ }, {stall:true}],
+ ['a waiting walk whose currency test fails ends stale instead of resuming', async r=>{
+ let current=true;
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'manual',owner:'manual'}}).catch(()=>{});await r.ticks(2);
+ const waited=r.service.move({map:'main',x:50,y:0},undefined,{request:{kind:'group-walk',owner:'walk:party:c:1:0',tier:'farming',current:()=>current}});
+ const ended=assert.rejects(waited,e=>e.code==='stale');
+ current=false;r.setNow(1100);r.service.audit();await ended;
+ assert.equal(r.service.live()?.owner,'manual');assert.ok(r.service.records().some(e=>e.decision==='expired'&&e.code==='stale'&&e.owner==='walk:party:c:1:0'));
+ r.dispose();
+ }, {stall:true}],
+ ['a leader\'s own planned shared route goes around an idle pack, an imported one stays as published', async ()=>{
+ const blocked=[{map:'main',x:200,y:0}];
+ const r=fixture({stall:true,plot:blocked});
+ r.host.parent.entities={idle:{type:'monster',id:'idle',x:100,y:0,aggro:1,range:20,visible:true}};
+ r.service.move({map:'main',x:200,y:0},undefined,{shared:true,request:{kind:'group-walk',owner:'walk:party:c:1:0',tier:'farming'}}).catch(()=>{});await r.ticks(3);
+ assert.ok(r.service.report().routeAggro.detours>=1,'the leader plans the detour');assert.ok(r.service.state.plot.length>1);
+ const imported=[{map:'main',x:0,y:0},{map:'main',x:200,y:0}];
+ r.service.install(imported.slice(),r.service.identity,'shared');
+ assert.deepEqual(r.service.state.plot.map(p=>[p.x,p.y]),[[0,0],[200,0]],'an imported shared route is the plot every member walks');
+ r.dispose();
+ }],
+ // Step 12 (e2e/movement-owner-failures.md "Step 12" items 2 and 3): a requester's crossing
+ // with no journey goes through the rank table, and the owner sends it.
+ ['step 12 items 2 and 3: a crossing ranks as its requester\'s hold, and a Town cast counts until its answer', async r=>{
+ r.service.hold({kind:'escape',owner:'escape:1',deadline:5000});
+ await assert.rejects(r.service.transport({kind:'errand',owner:'errand',deadline:5000},'bank',0),e=>e.refused===true);
+ assert.equal(r.calls.filter(c=>c[0]==='transport').length,0,'a refused crossing sends nothing');
+ r.service.release('escape:1');
+ await r.service.transport({kind:'errand',owner:'errand',deadline:5000},'bank',0);
+ assert.deepEqual(r.calls.find(c=>c[0]==='transport'),['transport',{to:'bank',s:0}]);
+ assert.equal(r.service.live(),null,'the hold taken for the crossing ends with the answer');
+ let answer;r.host.town=()=>new Promise(resolve=>{answer=resolve;});
+ const town=r.service.town({kind:'town',owner:'town:1',deadline:5000});
+ assert.equal(r.service.townCasting(),true,'a sent cast counts before the server answers');
+ answer();await town;assert.equal(r.service.townCasting(),false);
+ // A journey the requester starts before the answer outlives the hold its crossing took.
+ let late;r.host.town=()=>new Promise(resolve=>{late=resolve;});
+ const cast=r.service.town({kind:'errand',owner:'errand',deadline:5000});
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'errand',owner:'errand'}}).catch(()=>{});await r.ticks(1);
+ late();await cast;assert.equal(r.service.live()?.owner,'errand','the journey of the errand keeps walking');assert.equal(r.service.live()?.journey,true);
+ r.dispose();
+ }],
+ // Rows 02-06, 06-41 and 07-25 of the removed numbers audit (bigcheck/bounds.md): a transport, leave or
+ // Town reply the network lost ends the crossing timed out at its kept bound, which tells the status
+ // owner's bound record, and a Town cast stops counting. Each bound is v1.5.0's value
+ // (rules.ts `MOVEMENT_PICKS`); the end run measures it.
+ ['a crossing whose reply never comes ends timed out at its bound and tells the bound record', async r=>{
+ const {boundsPending,boundsSent}=require('../../runtime/status/api.ts');
+ const picks=require('../../runtime/movement/rules.ts').MOVEMENT_PICKS;
+ const names=['crossingTransportBoundMs','crossingLeaveBoundMs','crossingTownBoundMs'],saved=names.map(name=>picks[name]);
+ for(const name of names)picks[name]=5;
+ boundsSent(boundsPending().length);
+ try{
+  r.host.parent.push_deferred=()=>new Promise(()=>{});r.host.town=()=>new Promise(()=>{});
+  await assert.rejects(r.service.transport({kind:'errand',owner:'errand',deadline:5000},'bank',0),/timed out/);
+  await assert.rejects(r.service.leave({kind:'errand',owner:'errand',deadline:5000}),/timed out/);
+  const town=r.service.town({kind:'town',owner:'town:1',deadline:5000});
+  assert.equal(r.service.townCasting(),true);
+  await assert.rejects(town,/timed out/);
+  assert.equal(r.service.townCasting(),false,'a lost Town reply stops counting as a cast');
+  assert.deepEqual(boundsPending().map(f=>[f.bound,f.owner]),[['crossingTransportBoundMs','02'],['crossingLeaveBoundMs','02'],['crossingTownBoundMs','02']]);
+ }finally{
+  boundsSent(boundsPending().length);
+  names.forEach((name,i)=>{picks[name]=saved[i];});
+  r.dispose();
  }
+ }],
+ ['a requester loop runs on the owner\'s tick, one run at a time, and ends with the owner', async r=>{
+ let runs=0,finish;r.service.every('loop',()=>{runs++;return new Promise(resolve=>{finish=resolve;});});
+ const tick=async()=>{r.host.smart_move_logic();await settle();};
+ await tick();await tick();
+ assert.equal(runs,1,'a run that has not settled holds the next');
+ finish();await settle();await tick();assert.equal(runs,2);
+ r.dispose();finish();await settle();await tick();
+ assert.equal(runs,2,'a disposed owner drives no loop');
+ }],
+ // The game asks the code
+ // page's on_map_click before a click walks; the owner ranks the click as the player's command.
+ ['step 12 items 9 to 12: a click pauses a lower journey, holds off lower requests and steps, and hands back after its countdown', async r=>{
+ const follow=r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'follow',owner:'follow'}});follow.catch(()=>{});await r.ticks(3);
+ const journeyId=r.service.report().id;
+ r.c.moving=true;r.host.on_map_click(40,60);await settle();
+ assert.deepEqual(r.service.clicking(),{walking:true,remainingMs:null,label:'Your click'});
+ assert.ok(r.service.records().some(e=>e.decision==='paused'&&e.journeyId===journeyId&&e.cause==='click'));
+ await assert.rejects(r.service.move({map:'main',x:0,y:80},undefined,{request:{kind:'approach',owner:'approach:1'}}),e=>e.code==='refused');
+ assert.equal(r.service.step({x:20,y:0},'test').reason,'click','combat steps do not fight the click');
+ assert.equal(r.service.hold({kind:'follow',owner:'follow:hold',deadline:5000}),'refused');
+ r.c.moving=false;r.service.audit();
+ assert.deepEqual(r.service.clicking(),{walking:false,remainingMs:5000,label:'Your click - taking over in 5 s'},'the countdown starts when the click walk ends');
+ r.setNow(3000);r.c.moving=true;r.host.on_map_click(60,60);await settle();r.c.moving=false;r.service.audit();
+ assert.equal(r.service.clicking().remainingMs,5000,'a new click starts the countdown again');
+ r.setNow(7999);r.service.audit();assert.ok(r.service.clicking(),'the click holds until its countdown ends');
+ r.setNow(8000);r.service.audit();assert.equal(r.service.clicking(),null);
+ assert.ok(r.service.records().some(e=>e.decision==='resumed'&&e.journeyId===journeyId&&e.cause==='click'),'the paused journey resumes by itself');
+ assert.equal(r.service.report().id,journeyId);
+ // A row above the player's commands keeps the character (the Cave; escape and death recovery
+ // give way to the player): the click changes nothing.
+ r.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'cave',owner:'cave:1'}}).catch(()=>{});await r.ticks(2);
+ r.c.moving=true;r.host.on_map_click(10,10);await settle();
+ assert.equal(r.service.clicking(),null);assert.ok(r.service.records().some(e=>e.decision==='refused'&&e.code==='click'));
+ // A newer command of the player's own replaces the click at once.
+ r.service.release('cave:1');r.host.on_map_click(10,10);await settle();assert.ok(r.service.clicking());
+ r.service.move({map:'main',x:0,y:0},undefined,{request:{kind:'manual',owner:'manual'}}).catch(()=>{});
+ assert.equal(r.service.clicking(),null);
+ r.dispose();
+ }, {stall:true}],
+ // User decision 2026-10-29 (e2e/movement-owner-failures.md "Step 12" item 17): a click breaks a
+ // Town channel, so it outranks the console's Town; the cast's hold ends `interrupted:click`.
+ ['a click interrupts a Town hold, which waits for the hand-back and then holds again', async r=>{
+ assert.equal(r.service.hold({kind:'town',owner:'town:7',deadline:9000}),'granted');
+ r.c.moving=true;r.host.on_map_click(40,60);await settle();
+ assert.equal(r.service.endCode('town:7'),'interrupted:click');
+ assert.equal(r.service.clicking().town,'town:7','the card can say Town comes again');
+ assert.equal(r.service.hold({kind:'town',owner:'town:7',deadline:9000}),'refused','Town waits for the click');
+ r.c.moving=false;r.service.audit();r.setNow(1000+5000);r.service.audit();
+ assert.equal(r.service.clicking(),null);
+ assert.equal(r.service.hold({kind:'town',owner:'town:7',deadline:20000}),'granted','the same identity holds again after the hand-back');
+ r.service.release('town:7');
+ // The cast after the click ends by its own release, so the Town requester stops casting.
+ assert.equal(r.service.endCode('town:7'),'released','the last end is the release of the cast after it, not the click');
+ r.dispose();
+ }],
+]);
+
+
+// and: every end goes through finish, which names it in the ring and clears the slot.
+test('combat handoff, cancel and dispose each end the journey once with a named end',async()=>{
+ const handoff=fixture({pending:true}),journey=handoff.service.move({map:'main',x:100,y:0});
+ const rejected=assert.rejects(journey,/Combat handoff/);handoff.service.combatHandoff();await rejected;
+ assert.equal(handoff.service.last().reason,'Combat handoff');assert.equal(handoff.service.live(),null);
+ assert.ok(handoff.logs.some(log=>log.phase==='Travel paused for combat'));
+ assert.ok(!handoff.logs.some(log=>log.phase==='Movement failed'));handoff.dispose();
+ const cancel=fixture({pending:true}),walking=cancel.service.move({map:'main',x:100,y:0});const cancelled=assert.rejects(walking);
+ await cancel.ticks(1);cancel.service.cancel('Individual combat approach cancelled',{code:'combat-approach-cancelled'});await cancelled;
+ assert.equal(cancel.service.last().done,false);assert.equal(cancel.service.last().failureContext.code,'combat-approach-cancelled');
+ assert.equal(cancel.logs.at(-1).phase,'Movement cancelled');cancel.dispose();
+ const disposed=fixture({stall:true}),moving=disposed.service.move({map:'main',x:100,y:0},undefined,{request:{kind:'follow',owner:'follow'}});
+ const replaced=assert.rejects(moving);await disposed.ticks(2);disposed.dispose();await replaced;
+ const ends=disposed.service.records().filter(e=>e.decision==='ended'&&e.owner==='follow');
+ assert.deepEqual(ends.map(e=>e.code),['runtime-replaced'],'one named end per journey');
+ // Step 13: a journey its holder releases right after its first move went out stops at a point
+ // the server takes. The game's move() records where a move began (from_x, from_y), and the
+ // server drops a move to the point it still holds, so the stop names a point off it.
+ const released=fixture({stall:true}),c=released.c,move=released.host.move;
+ released.host.move=(x,y)=>{c.from_x=c.real_x;c.from_y=c.real_y;return move(x,y);};
+ const request={kind:'approach',owner:'approach:combat-approach:1'},walk=released.service.move({map:'main',x:100,y:0},undefined,{request});walk.catch(()=>{});
+ await released.ticks(2);assert.ok(released.calls.some(m=>m[0]==='move'&&m[1]!==c.real_x),'the walk sent its move');
+ released.service.release(request.owner);
+ const stop=released.calls.filter(m=>m[0]==='move').at(-1);
+ assert.ok(stop[1]!==c.real_x||stop[2]!==c.real_y,'the stop names a point the server takes');assert.ok(Math.hypot(stop[1]-c.real_x,stop[2]-c.real_y)<1);released.dispose();
 });
 
-function successiveCaveRepairFixture(count){
- const options={},r=fixture(options),plot=Array.from({length:count},(_,i)=>({map:'main',x:(i+1)*50,y:0}));
- const promise=r.service.move(plot.at(-1),undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true});promise.catch(()=>{});
- r.service.install(plot,r.service.identity,'cave-convoy');
- r.host.can_move=p=>!(p.x===r.c.real_x&&p.y===0&&p.going_y===0&&p.x!==p.going_x);
- return Object.assign(r,{promise,async advance(){const issue=r.logs.filter(l=>l.phase==='Repairing rejected walking segment').at(-1)?.issue;if(issue)options.nativePlot=[{map:'main',x:r.c.real_x,y:20},{map:'main',x:issue.to.x,y:20},{map:'main',x:issue.to.x,y:0}];await r.ticks(1);}});
+// The walking try (R2F3), with the call budget's margin at 200 ms: a step that stops short goes
+// again one round trip later and the try ends one round trip after that; a walk the client shows
+// moving is never cut on its position alone; two reports that show it moving with no 2-unit
+// progress end it.
+scenarioTable("the walking try ends on the game's own movement, never on a fixed time (R2F3)", fixture, [
+ ['a step that stops short goes again one round trip later, and the try ends one round trip after that', r=>withMargin(200,async()=>{
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});
+ const rejected=assert.rejects(p,/Stalled walking movement/);await r.ticks();
+ r.setNow(1150);await r.ticks();assert.equal(r.calls.filter(c=>c[0]==='move').length,1,'no re-send inside one round trip');
+ r.setNow(1250);await r.ticks();assert.equal(r.calls.filter(c=>c[0]==='move').length,2,'the re-send after one round trip');
+ r.setNow(1400);await r.ticks();assert.equal(r.service.report()?.progress.reissued,true,"the try runs on inside the re-send's round trip");
+ r.setNow(1500);await r.ticks();await rejected;
+ assert.equal(r.service.last().progress.destination.x,100);r.dispose();
+ }), {stall:true}],
+ // B107: a combat step pauses the journey, so the try does not send the travel step
+ // again while the character stands after the combat step. re-sent the segment 250 ms after the
+ // character stopped, under the combat step (shared.js:17152).
+ ['B107: a combat step pauses the walk, so the stopped travel step is not sent again under it', r=>withMargin(200,async()=>{
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p.catch(()=>{});await r.ticks();
+ const moves=()=>r.calls.filter(c=>c[0]==='move').length;
+ assert.equal(moves(),1,'the travel step');
+ assert.equal(r.service.step({x:0,y:60},'combat').status,'sent');
+ r.setNow(1500);await r.ticks();
+ assert.equal(moves(),2,'the combat step, and no travel re-send under it');
+ r.dispose();
+ }), {stall:true}],
+ // An add-on's zone refusal names the add-on and its reason in the step's reason, so the player
+ // reads who refused the step.
+ ['a step that ends inside an add-on zone is refused with the add-on and its reason', r=>{
+ const {partyHooks}=require('../../runtime/hooks/index.ts');
+ partyHooks().register({name:'zone-fixture',folder:'addons',author:'test',summary:'Refuses every step while the row enables it.',
+ hooks:{'step.safety':()=>'inside the fixture zone'}});
+ partyHooks().configure({'zone-fixture':{enabled:true}});
+ // The zones' view asks the events owner which event the character joined.
+ const facts=globalThis.__partyEventFacts;globalThis.__partyEventFacts={joinedEventName:()=>null};
+ let step;try{step=r.service.step({x:20,y:0},'test');}finally{globalThis.__partyEventFacts=facts;partyHooks().configure({'zone-fixture':{enabled:false}});}
+ assert.equal(step.status,'refused');
+ assert.equal(step.reason,'unsafe:zone zone-fixture: inside the fixture zone');
+ r.dispose();
+ }],
+ ['a walk the client shows moving is never cut on its position alone', r=>withMargin(200,async()=>{
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p.catch(()=>{});await r.ticks();
+ r.c.moving=true;for(const at of [2000,8000,20000]){r.setNow(at);await r.ticks();}
+ assert.equal(r.service.report()?.progress.phase,'walking');r.dispose();
+ }), {stall:true}],
+ ['two reports that show it moving with no 2-unit progress end the try', r=>withMargin(200,async()=>{
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});
+ const rejected=assert.rejects(p,/Stalled walking movement \(moving without progress/);await r.ticks();
+ r.c.moving=true;r.service.reported();r.c.real_x+=1;r.setNow(2000);r.service.reported();await r.ticks();await rejected;r.dispose();
+ }), {stall:true}],
+ // A step that stopped short and is no longer walkable from where the character
+ // stands cannot be sent again, so its try ends on that reason.
+ ['a step no longer walkable from where it stopped ends the try at once', ()=>withMargin(200,async()=>{
+ const options={stall:true,plot:[{map:'main',x:50,y:0}]},r=fixture(options);
+ const p=r.service.move({map:'main',x:50,y:0},undefined,{shared:true});
+ const rejected=assert.rejects(p,/collision/i);await r.ticks();
+ assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===50).length,1,'the step went once');
+ options.collision=true;r.setNow(1250);await r.ticks();await rejected;
+ assert.equal(r.calls.filter(c=>c[0]==='move'&&c[1]===50).length,1,'no re-send of a step that is not walkable');r.dispose();
+ })],
+ // The journey's own round on the one climber, with no count.
+ ['a journey that fails tries the other route once, then ends for its requester to climb', r=>withMargin(200,async()=>{
+ const p=r.service.move({map:'main',x:100,y:0});
+ const rejected=assert.rejects(p,/Stalled walking movement/);
+ for(let at=1000;at<=3000;at+=150){r.setNow(at);await r.ticks(2);}
+ await rejected;
+ assert.equal(r.searches,1,'one native plan after the first failure, none after the second');
+ assert.equal(r.service.last().rung,'end');r.dispose();
+ }), {stall:true}],
+]);
+
+// A shared request names its own planning budget within the planner's bounds, and
+// movement names no Cave.
+scenarioTable('a shared request carries its own planning budget', fixture, [
+ ['a shared request plans with its own 60 s budget and goes on while its search advances', async r=>{
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true,native:true,nativePlanningTimeoutMs:60000,nativePlanningWhileAdvancing:true});
+ await r.ticks(12);await p;assert.equal(r.service.last().done,true);r.dispose();
+ }],
+ // The sight search, repair and crossing picks are rules.ts `MOVEMENT_PICKS`, so a reply that names
+ // one changes nothing; the planning budget stays delivered.
+ ["the sight search reads its named picks and a reply cannot replace them", r=>{
+ const {movementSavedFields}=require('../../runtime/movement/saved-fields.ts');
+ r.service.settingsReply({movementPlanningMs:500,movementSightSearchMs:4000,movementSightSteps:2});
+ assert.deepEqual(r.service.sightSearch(),{ms:8000,steps:6});
+ for(const name of ['movementRepairMs','movementSightSearchMs','movementSightSteps','crossingTransportBoundMs','crossingLeaveBoundMs','crossingTownBoundMs'])
+  assert.equal(movementSavedFields.settings[name],undefined,name+' is no saved setting');
+ r.dispose();
+ }],
+]);
+
+scenarioTable('reached walking points finish without a zero-distance move and keep the transition barrier', reachedWalkFixture, [
+ // A reached point within the one-unit boundary is consumed with no move; one past it still walks.
+ ['entire reached route finishes without a move including the one-unit boundary', ()=>{
+ const reached=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:178,y:460}]);
+ assert.equal(reached.executor.tick({}),true);assert.deepEqual(reached.calls,[]);
+ const outside=reachedWalkFixture([{map:'main',x:178.01,y:460}]);
+ outside.executor.tick({});assert.equal(outside.calls.length,1);
+ }],
+]);
+
+// The server scatters a Town landing around the spawn. The arrival connector's walk to the exact
+// spawn outlasts a round trip; the live Town connector rows ended it with "Failed town warp".
+test('a scattered Town landing walks its connector past a round trip and arrives', async()=>{
+ const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
+ let now=1000;const calls=[];
+ const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
+ const host={character,move:(x,y)=>{calls.push(['move',x,y]);character.moving=true;return Promise.resolve();},
+  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>{calls.push('town');return Promise.resolve({success:true});}};
+ const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
+  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
+  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>100});
+ assert.equal(executor.tick({}),false);await settle();
+ Object.assign(character,{x:1.5,y:41.5,real_x:1.5,real_y:41.5});now+=50;
+ assert.equal(executor.tick({}),false);assert.deepEqual(calls,['town',['move',0,0]]);
+ now+=500;assert.equal(executor.tick({}),false,'the connector still walks after five round trips');
+ Object.assign(character,{x:0,y:0,real_x:0,real_y:0,moving:false});now+=50;executor.tick({});now+=50;
+ assert.equal(executor.tick({}),true);assert.deepEqual(executor.remaining(),[]);
+});
+// A lost connector move is sent again no sooner than v1.5.0's 1000 ms after its last send with no
+// progress, so the walk request rate stays at v1.5.0's (the round2 connector rows'
+// 950 ms floor). The connector is a walk: once the resend's round trip passes with the client
+// standing, the crossing fails, as the round2 "all submission loss" row expects (red before: the
+// connector was sent again every second with no end).
+test('a lost arrival connector is sent again no faster than once per second, and a lost resend fails the crossing', async()=>{
+ const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
+ let now=1000;const moves=[];
+ const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
+ const host={character,move:()=>{moves.push(now);return new Promise(()=>{});},
+  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>Promise.resolve({success:true})};
+ const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
+  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
+  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>100});
+ executor.tick({});await settle();
+ Object.assign(character,{x:1.5,y:41.5,real_x:1.5,real_y:41.5});
+ let failure=null;
+ for(let i=0;i<30&&!failure;i++){now+=100;try{assert.equal(executor.tick({}),false);}catch(error){failure=error;}}
+ assert.equal(moves.length,2,'the first send and one resend');
+ assert.ok(moves[1]-moves[0]>=1000,`the resend came ${moves[1]-moves[0]} ms after the first send`);
+ assert.match(String(failure?.message),/Failed town warp/);
+ assert.ok(now-moves[1]>100&&now-moves[1]<=200,'the crossing fails one round trip after the resend');
+});
+// The live round2 "all submission loss" row measured a round trip above the 1000 ms spacing; the
+// connector was sent 27 times in 35 s with no end.
+test('a lost connector resend fails the crossing when the round trip outlasts the resend spacing', async()=>{
+ const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
+ let now=1000;const moves=[];
+ const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
+ const host={character,move:()=>{moves.push(now);return new Promise(()=>{});},
+  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>Promise.resolve({success:true})};
+ const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
+  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
+  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>1200});
+ executor.tick({});await settle();
+ Object.assign(character,{x:1.5,y:41.5,real_x:1.5,real_y:41.5});
+ let failure=null;
+ for(let i=0;i<60&&!failure;i++){now+=100;try{assert.equal(executor.tick({}),false);}catch(error){failure=error;}}
+ assert.equal(moves.length,2,'the first send and one resend');
+ assert.ok(moves[1]-moves[0]>=1200,`the resend came ${moves[1]-moves[0]} ms after the first send`);
+ assert.match(String(failure?.message),/Failed town warp/);
+ assert.ok(now-moves[1]>1200&&now-moves[1]<=1300,'the crossing fails one round trip after the resend');
+});
+// A connector whose resend walks makes progress and arrives: the first send was the only loss.
+test('a connector whose first send is lost walks on its resend and arrives', async()=>{
+ const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
+ let now=1000;const moves=[];
+ const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
+ const host={character,move:()=>{moves.push(now);if(moves.length===1)return new Promise(()=>{});character.moving=true;return Promise.resolve();},
+  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>Promise.resolve({success:true})};
+ const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
+  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
+  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>100});
+ executor.tick({});await settle();
+ Object.assign(character,{x:1.5,y:41.5,real_x:1.5,real_y:41.5});
+ for(let i=0;i<15;i++){now+=100;assert.equal(executor.tick({}),false);}
+ assert.equal(moves.length,2);
+ Object.assign(character,{x:1,y:20,real_x:1,real_y:20});now+=500;assert.equal(executor.tick({}),false,'the walking connector goes on');
+ Object.assign(character,{x:0,y:0,real_x:0,real_y:0,moving:false});now+=50;executor.tick({});now+=50;
+ assert.equal(executor.tick({}),true);
+});
+
+// The `ready` check on the character: the executor's loot and Town waits
+// last while the gate's chests or attackers' HP fall, not 30 s or 5 s.
+function departureExecutor(step,reads){
+ const f=fixture(),{createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
+ const {departureGate}=require('../../runtime/movement/character/walk-client.ts');
+ const r={now:1000,chests:[],attackers:[],pending:false,barriers:[],town:[],...reads};
+ const gate=departureGate({chests:()=>r.chests,attackers:()=>r.attackers,windowMs:()=>2000,now:()=>r.now},{ask:()=>r.pending});
+ r.executor=createMovementExecutor(f.host,{plot:[step],use_town:true},{game:f.host.G,walk:()=>true,door:()=>true},()=>r.now,gate,
+  {band:()=>'job',stopTown:()=>Promise.resolve(f.host.stop('town')),standStill:()=>Promise.resolve(),roundTrip:()=>0});
+ r.options={barrier:(step,index,completed,lootLeft)=>{r.barriers.push(lootLeft);return new Promise(()=>{});},
+  townAttempt:state=>r.town.push(state)};
+ r.f=f;return r;
 }
-test('Cave shared drift repairs three successive distinct retained endpoints',async()=>{
- const r=successiveCaveRepairFixture(3);for(let i=0;i<70;i++)await r.advance();await r.promise;
- assert.equal(r.searches,3);assert.equal(r.c.real_x,150);r.dispose();
-});
-test('Cave shared drift refuses a fourth retained endpoint and destination fallback',async()=>{
- const r=successiveCaveRepairFixture(4),failed=assert.rejects(r.promise,/collisions detected/);for(let i=0;i<80;i++)await r.advance();await failed;
- assert.equal(r.searches,3);assert.equal(r.c.real_x,150);r.dispose();
-});
-test('Cave shared drift cannot repeatedly repair the same retained endpoint',async()=>{
- const r=successiveCaveRepairFixture(2),failed=assert.rejects(r.promise,/collisions detected/);
- for(let i=0;i<12&&!r.logs.some(l=>l.phase==='Walking segment repaired');i++)await r.advance();
- r.service.state.plot=[{map:'main',x:50,y:0},{map:'main',x:100,y:0}];Object.assign(r.c,{x:0,real_x:0,y:0,real_y:0});
- for(let i=0;i<12;i++)await r.advance();await failed;
- assert.equal(r.logs.filter(l=>l.phase==='Walking segment repaired').length,1);r.dispose();
-});
+scenarioTable('a departure wait lasts while its fight or loot falls and ends when they stop', ()=>undefined, [
+ ['falling loot holds a map change past 30 s; loot that stops falling is left and the barrier says so', ()=>{
+ const r=departureExecutor({map:'main',x:0,y:0,town:true},{chests:[1,2,3]});
+ r.executor.tick(r.options);
+ for(let i=0;i<2;i++){r.now+=20000;r.chests=r.chests.slice(1);assert.equal(r.executor.tick(r.options),false);}
+ assert.deepEqual(r.barriers,[],'still waiting for the last chest after 40 s');
+ r.now+=1999;r.executor.tick(r.options);assert.deepEqual(r.barriers,[],'within the window');
+ r.now+=1;r.executor.tick(r.options);assert.deepEqual(r.barriers,[true],'the chest is left and the barrier carries it');
+ r.executor.cancel();assert.equal(r.executor.progress().phase,'idle');r.f.dispose();
+ }],
+ ['a falling departure fight holds a Town cast past 5 s; a fight that stops falling ends the try', ()=>{
+ const r=departureExecutor({map:'main',x:0,y:0,town:true},{pending:true,attackers:[{hp:900},{hp:400}]});
+ r.executor.tick(r.options);
+ for(const hp of [800,500,200]){r.now+=3000;r.attackers=[{hp},{hp:400}];assert.equal(r.executor.tick(r.options),false);}
+ assert.deepEqual(r.town,[],'still waiting after 9 s');
+ r.attackers=[{hp:200},{hp:400},{hp:5000}];r.now+=1000;assert.equal(r.executor.tick(r.options),false,'a new attacker is no fall');
+ r.now+=1000;assert.throws(()=>r.executor.tick(r.options),/Town unavailable: the departure fight and loot stopped falling/);
+ assert.deepEqual(r.town,['unavailable']);r.f.dispose();
+ }],
+]);
 
-async function pausedLongCaveEdge(nativePlot){
- const options={stall:true,nativePlot},r=fixture(options);
- r.promise=r.service.move({map:'main',x:1000,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true,retainOnDirectStop:true});r.promise.catch(()=>{});
- r.service.install([{map:'main',x:1000,y:0}],r.service.identity,'cave-convoy');await r.ticks(2);
- await r.host.stop('move');Object.assign(r.c,{x:100,real_x:100,y:30,real_y:30});options.stall=false;
- r.host.can_move=p=>!(p.y===30&&p.going_x===1000&&p.going_y===0);
- return r;
-}
-test('Cave paused long walking edge repairs to a nearby original-edge projection',async()=>{
- const r=await pausedLongCaveEdge([{map:'main',x:100,y:20},{map:'main',x:100,y:0}]);await r.ticks(30);await r.promise;
- assert.equal(r.searches,1);assert.equal(r.c.real_x,1000);assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===100&&c[2]===0));r.dispose();
-});
-test('Cave local join explicitly executes a safe exact projection after a coarse native endpoint',async()=>{
- const r=await pausedLongCaveEdge([{map:'main',x:100,y:10}]);await r.ticks(30);await r.promise;
- assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===100&&c[2]===0));assert.equal(r.c.real_x,1000);r.dispose();
-});
-test('Cave local join rejects an unsafe coarse native gap without destination fallback',async()=>{
- const r=await pausedLongCaveEdge([{map:'main',x:100,y:10}]);r.host.can_move=p=>!(p.y===10&&p.going_y===0)&&!(p.y===30&&p.going_x===1000);
- const failed=assert.rejects(r.promise,/Repair did not validate/);await r.ticks(12);await failed;assert.equal(r.searches,1);assert.equal(r.c.real_x,100);r.dispose();
-});
-test('Cave local join cannot reuse a stale issued walking edge for a far retained endpoint',async()=>{
- const r=await pausedLongCaveEdge([{map:'main',x:100,y:0}]);r.service.state.plot=[{map:'main',x:500,y:0},{map:'main',x:1000,y:0}];r.host.can_move=p=>!(p.y===30&&p.going_x===500);
- const failed=assert.rejects(r.promise,/collisions detected/);await r.ticks(12);await failed;assert.equal(r.searches,0);r.dispose();
-});
-
-async function pausedCaveCorner(invalidate=false){
- const options={nativePlot:[{map:'main',x:42,y:20},{map:'main',x:100,y:20},{map:'main',x:100,y:0}]},r=fixture(options);
- r.promise=r.service.move({map:'main',x:1000,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true,retainOnDirectStop:true});r.promise.catch(()=>{});
- r.service.install([{map:'main',x:100,y:0},{map:'main',x:1000,y:0}],r.service.identity,'cave-convoy');
- await r.ticks(1);assert.equal(r.c.real_x,100);
- if(invalidate)r.host.can_move=p=>!(p.x===100&&p.going_x===1000);
- await r.ticks(1);assert.equal(r.service.state.plot[0].x,1000);
- await r.host.stop('move');Object.assign(r.c,{x:42,real_x:42});
- const valid=r.host.can_move;r.host.can_move=p=>valid(p)&&!(p.x===42&&p.y===0&&p.going_x>=500&&p.going_y===0);
- return r;
-}
-test('Cave paused between confirmed corner consumption and next dispatch retains a local join',async()=>{
- const r=await pausedCaveCorner();await r.ticks(30);await r.promise;
- assert.equal(r.searches,1);assert.equal(r.c.real_x,1000);assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===100&&c[2]===0));r.dispose();
-});
-test('Cave consumed corner cannot repair a replaced retained endpoint',async()=>{
- const r=await pausedCaveCorner();r.service.state.plot=[{map:'main',x:500,y:0},{map:'main',x:1000,y:0}];
- const failed=assert.rejects(r.promise,/collisions detected/);await r.ticks(12);await failed;assert.equal(r.searches,0);r.dispose();
-});
-test('Cave consumed corner cannot cache an invalid next walking edge',async()=>{
- const r=await pausedCaveCorner(true),failed=assert.rejects(r.promise,/collisions detected/);await r.ticks(12);await failed;assert.equal(r.searches,0);r.dispose();
-});
-test('consumed walking corner does not cache a future native transition',()=>{
- const r=reachedWalkFixture([{map:'main',x:177,y:460},{map:'main',x:177,y:460,town:true}]);r.executor.tick({});
- assert.equal(r.executor.walkingEdge(),undefined);assert.deepEqual(r.calls,['town']);
-});
-
-test('Cave follower retains its wait while a progressing leader searches beyond90s',async()=>{
- const r=fixture(),p=r.service.move({map:'main',x:100,y:0},undefined,{native:true,shared:true,awaitSharedRoute:true,nativePlanningTimeoutMs:90000,nativePlanningProgressMs:240000});
- p.catch(()=>{});await r.ticks(1);r.setNow(200000);await r.ticks(1);
- assert.equal(r.service.state.moving,true);assert.equal(r.searches,0);
- r.service.install([{map:'main',x:100,y:0}],r.service.identity,'cave-convoy');await r.ticks(8);await p;r.dispose();
-});
-
-
-test('Cave combat drift joins a nearby clear forward segment without backtracking or new search',async()=>{
- const options={stall:true},r=fixture(options);
- const promise=r.service.move({map:'main',x:400,y:200},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true,retainOnDirectStop:true});promise.catch(()=>{});
- r.service.install([{map:'main',x:100,y:0},{map:'main',x:100,y:200},{map:'main',x:400,y:200}],r.service.identity,'cave-convoy');await r.ticks(1);
- await r.host.stop('move');Object.assign(r.c,{x:220,real_x:220,y:210,real_y:210});
- r.host.can_move=p=>!(p.x===220&&p.y===210&&p.going_x===100);
- options.stall=false;await r.ticks(30);await promise;
- assert.equal(r.searches,0);assert.equal(r.c.real_x,400);assert.equal(r.c.real_y,200);
- assert.ok(r.calls.some(c=>c[0]==='move'&&c[1]===220&&c[2]===200));r.dispose();
-});
-
-test('Cave forward rejoin cannot skip a native transition to a nearby later segment',async()=>{
- const options={stall:true},r=fixture(options);
- const promise=r.service.move({map:'main',x:400,y:200},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true,retainOnDirectStop:true});const failed=assert.rejects(promise,/collisions detected/);
- r.service.install([{map:'main',x:100,y:0},{map:'main',x:0,y:0,town:true},{map:'main',x:100,y:200},{map:'main',x:400,y:200}],r.service.identity,'cave-convoy');await r.ticks(1);
- await r.host.stop('move');Object.assign(r.c,{x:220,real_x:220,y:210,real_y:210});
- r.host.can_move=p=>!(p.x===220&&p.y===210&&p.going_x===100);
- options.stall=false;await r.ticks(10);await failed;assert.equal(r.searches,0);assert.equal(r.c.real_x,220);r.dispose();
-});
-
-
-test('Cave forward rejoin rejects an obstructed local connector',async()=>{
- const options={stall:true},r=fixture(options);
- const promise=r.service.move({map:'main',x:400,y:200},undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true,retainOnDirectStop:true});const failed=assert.rejects(promise,/collisions detected/);
- r.service.install([{map:'main',x:100,y:0},{map:'main',x:100,y:200},{map:'main',x:400,y:200}],r.service.identity,'cave-convoy');await r.ticks(1);
- await r.host.stop('move');Object.assign(r.c,{x:220,real_x:220,y:210,real_y:210});
- r.host.can_move=p=>!(p.x===220&&p.y===210);
- options.stall=false;await r.ticks(10);await failed;assert.equal(r.searches,0);assert.equal(r.c.real_x,220);r.dispose();
-});
-
-
-test('captured native Cave geometry rejoins combat displacement without stale-corner collision',async()=>{
- const observed=require('./fixtures/cave-combat-forward-rejoin.json');
- const {directory}=require('./helpers/installed-game.cjs'),n=createNative(directory);
- n.game.geometry[observed.map]=observed.geometry;n.game.maps[observed.map]=observed.mapData;
- const options={stall:true},r=fixture(options);r.host.G=n.game;r.c.base=observed.base;
- Object.assign(r.c,{map:observed.map,in:observed.map,x:observed.from.x,y:observed.from.y,real_x:observed.from.x,real_y:observed.from.y});
- r.host.can_move=input=>n.context.can_move(input);
- const destination=observed.path.at(-1),promise=r.service.move(destination,undefined,{native:true,shared:true,awaitSharedRoute:true,repairSharedDrift:true,retainOnDirectStop:true});promise.catch(()=>{});
- r.service.install(observed.path,r.service.identity,'captured-cave-convoy');await r.ticks(1);await r.host.stop('move');
- Object.assign(r.c,{x:observed.displaced.x,y:observed.displaced.y,real_x:observed.displaced.x,real_y:observed.displaced.y});
- assert.equal(n.canWalk({...observed.displaced,map:observed.map},{...observed.from,map:observed.map}),false);
- options.stall=false;await r.ticks(40);await promise;
- assert.equal(r.searches,0);assert.equal(r.c.real_x,destination.x);assert.equal(r.c.real_y,destination.y);
- assert.ok(r.logs.some(entry=>entry.phase==='Rejoined forward walking segment'));r.dispose();
-});
-
-
-test('owned acknowledged terminal leave can retire without a fresh barrier or any further movement',async()=>{
- const owner={convoyId:'return',epoch:3,commandId:7,navigationRevision:1};
- const r=fixture();r.c.hp=100;r.host.G.maps.cyberland={spawns:[[0,0]]};r.c.map=r.c.in='cyberland';
- const original=r.ports.context;r.ports.context=()=>({...original(),server:'USI'});
- let completedBarrier=false;
- r.host.parent.push_deferred=()=>{Object.assign(r.c,{map:'main',in:'main',real_x:0,real_y:0});return Promise.resolve();};
- const p=r.service.move({map:'main',in:'main',x:0,y:0},undefined,{shared:true,awaitSharedRoute:true,owner,
-   barrier:async(_step,_index,completed)=>{completedBarrier ||= completed;return !completed;}});
- r.service.install([{map:'main',in:'main',x:0,y:0,method:'leave'}],r.service.identity);
- await r.ticks(5);r.setNow(1500);await r.ticks(5);assert.equal(completedBarrier,true);
- const id=r.service.report().id,calls=r.calls.length;
- assert.equal(r.service.settleTerminal(id,{...owner,commandId:8}),false);
- r.c.in='foreign';assert.equal(r.service.settleTerminal(id,owner),false);r.c.in='main';
- r.c.rip=true;assert.equal(r.service.settleTerminal(id,owner),false);r.c.rip=false;
- r.c.moving=true;assert.equal(r.service.settleTerminal(id,owner),false);r.c.moving=false;
- r.ports.context=()=>({...original(),server:'EU'});assert.equal(r.service.settleTerminal(id,owner),false);
- r.ports.context=()=>({...original(),server:'USI'});
- assert.equal(r.service.settleTerminal(id,owner),true);await p;
- assert.equal(r.calls.length,calls,'settling must send no move, transport, or warp');
- assert.equal(r.service.last().done,true);r.dispose();
-});
-
-
-
-
-test('terminal acknowledgement refuses unacknowledged, intermediate, displaced, and superseded owned journeys',async()=>{
+scenarioTable('an exhausted owned route waits for settlement and keeps its declared tolerance', fixture, [
+ // A journey completes only standing still within its own tolerance, and an owned terminal
+ // acknowledgement retires only its own settled journey.
+ ['exhausted owned route waits for physical settlement without spending recovery retries', async ()=>{
+ const r=fixture();
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{arrivalTolerance:1});let completed=false;p.then(()=>completed=true);p.catch(()=>{});
+ r.service.install([{map:'main',x:100,y:0}],r.service.identity);r.service.state.plot.length=0;r.c.moving=true;r.c.real_x=30;
+ await r.ticks(20);assert.equal(completed,false);assert.equal(r.service.report().rung,'replan','settling spends no rung of the journey round');
+ r.c.real_x=100;r.c.moving=false;await r.ticks();await p;assert.equal(r.service.last().done,true);r.dispose();
+ const declared=fixture();
+ declared.c.in='generated-owner';const q=declared.service.move({map:'main',x:100,y:0},undefined,{arrivalTolerance:40});
+ declared.c.real_x=70;declared.service.install([],declared.service.identity);await declared.ticks();await q;
+ assert.equal(declared.service.last().done,true);assert.equal(declared.service.last().rung,'replan');declared.dispose();
+ }],
+ ['terminal acknowledgement refuses unacknowledged, intermediate, displaced, and superseded owned journeys', async ()=>{
  for(const mode of ['unacknowledged','intermediate','displaced','superseded','runtime','paused']){
   const owner={convoyId:'return',epoch:3,commandId:7,navigationRevision:1},r=fixture();
   r.c.hp=100;r.host.G.maps.cyberland={spawns:[[0,0]]};r.c.map=r.c.in='cyberland';
   const original=r.ports.context;r.ports.context=()=>({...original(),server:'USI'});
+  // An unacknowledged leave is one the game still shows in transport (transition row): the try
+  // waits on it, so its journey stays live for the acknowledgement to refuse.
   r.host.parent.push_deferred=()=>{Object.assign(r.c,{map:'main',in:'main',real_x:0,real_y:0});
+    if(mode==='unacknowledged')r.host.is_transporting=()=>true;
     return mode==='unacknowledged'?new Promise(()=>{}):Promise.resolve();};
   const p=r.service.move({map:'main',in:'main',x:mode==='intermediate'?100:0,y:0},undefined,
     {shared:true,awaitSharedRoute:true,owner,barrier:async(_s,_i,completed)=>!completed});
@@ -698,237 +531,199 @@ test('terminal acknowledgement refuses unacknowledged, intermediate, displaced, 
   assert.equal(r.service.settleTerminal(id,owner),false,mode);assert.equal(r.calls.length,calls,mode);
   assert.equal(r.service.state.moving,true,mode);r.dispose();
  }
-});
+ }],
+]);
 
-for(const native of [false,true])test('exhausted owned route recovers actual displaced destination '+native,async()=>{
- const r=fixture(),p=r.service.move({map:'main',x:100,y:0},undefined,{native,arrivalTolerance:1});
- p.catch(()=>{});r.service.install([{map:'main',x:100,y:0}],r.service.identity);
- r.c.x=r.c.real_x=30;r.service.state.plot.length=0;
- await r.ticks(10);await p;assert.equal(r.c.real_x,100);assert.equal(r.service.last().done,true);assert.equal(r.service.last().retries,1);r.dispose();
-});
-test('exhausted owned route waits for physical settlement without spending recovery retries',async()=>{
- const r=fixture(),p=r.service.move({map:'main',x:100,y:0},undefined,{arrivalTolerance:1});let completed=false;p.then(()=>completed=true);p.catch(()=>{});
- r.service.install([{map:'main',x:100,y:0}],r.service.identity);r.service.state.plot.length=0;r.c.moving=true;r.c.real_x=30;
- await r.ticks(20);assert.equal(completed,false);assert.equal(r.service.report().retries,0);
- r.c.real_x=100;r.c.moving=false;await r.ticks();await p;assert.equal(r.service.last().done,true);r.dispose();
-});
-for(const context of ['map','instance'])test('exhausted owned route rejects foreign '+context+' without issuing recovery movement',async()=>{
- const r=fixture(),p=r.service.move({map:'main',x:100,y:0},undefined,{arrivalTolerance:1});const rejected=assert.rejects(p,/completion.*(map|instance)/i);
- r.service.install([{map:'main',x:100,y:0}],r.service.identity);r.service.state.plot.length=0;r.c.real_x=100;
- if(context==='map')r.c.map='bank';else r.c.in='foreign';
- await r.ticks();await rejected;assert.equal(r.calls.filter(x=>x[0]==='move').length,0);r.dispose();
-});
-test('exhausted owned route preserves declared arrival tolerance and inferred same-map instance',async()=>{
- const r=fixture();r.c.in='generated-owner';const p=r.service.move({map:'main',x:100,y:0},undefined,{arrivalTolerance:40});
- r.c.real_x=70;r.service.install([],r.service.identity);await r.ticks();await p;
- assert.equal(r.service.last().done,true);assert.equal(r.service.last().retries,0);r.dispose();
-});
-
-for(const mode of ['valid','stale','moving','dead','instance','position','command','revision','runtime','route','cancelled','missing','unreleased','walking-tail','missing-realm','empty-journey'])for(const continuous of [false,true])test('native acknowledged terminal settlement cannot strand a fresh peer completion barrier; mode='+mode+' continuous='+continuous,async()=>{
- const {movementBarrier}=require('../../runtime/coordinator/navigation/movement-barrier.ts');
- const {publishSharedRoute}=require('../../runtime/coordinator/navigation/shared-route-store.ts');
- const {sharedCommand}=require('../../runtime/coordinator/navigation/shared-navigation.ts');
- const {routeOwner}=require('../../runtime/coordinator/navigation/shared-route-store.ts');
- const {createConvoyAcknowledgementRoutes}=require('../../runtime/coordinator/http/convoy-acknowledgements.ts');
- const names=['W','P'],actors=Object.fromEntries(names.map(n=>[n,fixture({maps:{cyberland:{spawns:[[0,0]]}}})]));let now=1000;
- const step={map:'main',in:'main',x:0,y:0,method:'leave'},plot=[step];
- const c={id:'return',epoch:3,routeProtocol:4,routeVersion:1,phase:'shared-prepare',
-  purpose:'shared-walk-return',continuousReturn:continuous?1:undefined,returnLegs:continuous?undefined:[{type:'walk',location:step}],leader:'W',participants:names,completed:[],runtimes:{W:'test',P:'test'},
-  location:step,rally:{map:'cyberland',in:'cyberland',x:0,y:0}};
- const state={activeConvoy:c,commands:{},statuses:{},navigationIntents:{W:{revision:1},P:{revision:1}},nextCommandId:7,eventReturn:null,combatLogs:{}},http=[];
- function identity(n){return {character:n,convoyId:c.id,epoch:c.epoch,commandId:n==='W'?7:8,navigationRevision:1,runtimeId:'test',routeVersion:1};}
- function sync(){for(const n of names){const r=actors[n];r.setNow(now);Object.assign(state.statuses[n],{seenAt:now,map:r.c.map,in:r.c.in,x:r.c.real_x,y:r.c.real_y,moving:r.c.moving,transporting:false});}}
- for(const n of names){const r=actors[n];r.c.name=n;r.c.hp=100;r.c.map=r.c.in='cyberland';r.host.G.maps.cyberland={spawns:[[0,0]]};
-  const context=r.ports.context;r.ports.context=()=>({...context(),server:'USI'});
-  state.statuses[n]={seenAt:now,map:'cyberland',in:'cyberland',x:0,y:0,hp:100,moving:false,transporting:false,server:'USI',
-   convoyNavigation:{id:c.id,epoch:c.epoch,commandId:identity(n).commandId,navigationRevision:1,runtimeId:'test',routeVersion:1,phase:'walking'}};
-  r.host.parent.push_deferred=()=>{Object.assign(r.c,{map:'main',in:'main',real_x:0,real_y:0});sync();return Promise.resolve();};
- }
- for(const n of names){state.commands[n]=sharedCommand(state,c,'shared-prepare',n);assert.equal(state.commands[n].returnLeg,!continuous);}
- assert.equal(publishSharedRoute(state,{...identity('W'),route:{version:1,geometry:actors.W.service.identity,origin:c.rally,destination:step,plot,source:'search'}},now),null);c.phase='travel';c.departAt=now;
- function applyNegative(){if(!state.statuses.W.movement)return;
-  const w=state.statuses.W;
-  if(mode==='stale')w.seenAt=now-3001;
-  if(mode==='moving')w.moving=true;
-  if(mode==='dead')w.rip=true;
-  if(mode==='instance')w.in='foreign';
-  if(mode==='position')w.x=20;
-  if(mode==='command')state.commands.W.id=70;
-  if(mode==='revision')state.navigationIntents.W.revision=2;
-  if(mode==='runtime')w.convoyNavigation.runtimeId='new';
-  if(mode==='route')w.convoyNavigation.routeVersion=2;
-  if(mode==='cancelled')state.navigationIntents.W.cancelled=true;
-  if(mode==='missing')w.movement={done:true};
-  if(mode==='missing-realm'){delete w.server;delete w.movement.terminalSettlement.server;}
-  if(mode==='empty-journey'){w.movement.id='';w.movement.terminalSettlement.journeyId='';}
-  if(mode==='walking-tail'&&!state.replaced){state.replaced=true;
-    const r=require('../../runtime/coordinator/navigation/shared-route-store.ts').sharedRoute(c);
-    r.plot.push({map:'main',in:'main',x:20,y:0});r.destination={map:'main',in:'main',x:20,y:0};}
-
-  if(mode==='unreleased'&&!state.replaced){state.replaced=true;state.activeConvoy={...c,phase:'shared-prepare'};publishSharedRoute(state,{...identity('W'),route:{version:1,geometry:actors.W.service.identity,origin:c.rally,destination:step,plot,source:'search'}},now);state.activeConvoy.phase='travel';}
- }
- const promises={};
- for(const n of names){const r=actors[n],owner={convoyId:c.id,epoch:c.epoch,commandId:identity(n).commandId,navigationRevision:1,routeVersion:1};
-  promises[n]=r.service.move(step,undefined,{shared:true,awaitSharedRoute:true,owner,barrier:async(destination,index,completed)=>{
-   sync();applyNegative();const body={...identity(n),step:index,destination,completed,ready:true},result=movementBarrier(state,body,now);http.push({actor:n,completed,result});return !!result.ready;}});
-  promises[n].catch(()=>{});r.service.install(plot,r.service.identity);
- }
- await actors.W.ticks(1);await actors.P.ticks(1);now+=500;sync();await actors.W.ticks(1);await actors.W.ticks(1);await actors.P.ticks(1);
- assert.equal(actors.W.c.map,'main');assert.equal(actors.P.c.map,'main');
- const owner={convoyId:c.id,epoch:c.epoch,commandId:7,navigationRevision:1,routeVersion:1};
- assert.equal(actors.W.service.settleTerminal(actors.W.service.report().id,owner),true);await promises.W;
- state.statuses.W.convoyNavigation.phase=continuous?'arrived':'leg-arrived';state.statuses.W.movement=actors.W.service.last();
- if(continuous){let result;const res={status(){return this;},json(value){result=value;return value;}};
-  const ack=createConvoyAcknowledgementRoutes(state,{now:()=>now,owned:()=>true,valid:body=>routeOwner(state,body,now),nextCommand:()=>state.nextCommandId++,persist(){},history(){},hold(){},error(){}});
-  ack.complete({body:identity('W')},res);assert.deepEqual(result,{ok:false,waiting:true},'actual convoy completion waits for the stranded peer');
- }
- assert.equal(http.some(x=>x.actor==='W'&&x.completed),false,'owned final settlement did not emit a completion POST');
- for(let i=0;i<8;i++){now+=500;sync();
-  await actors.P.ticks(2);
- }
- assert.equal(actors.W.service.last().done,true);assert.deepEqual(c.completed,[]);
- assert.ok(http.some(x=>x.actor==='P'&&x.completed),'peer sent real completion requests');
- for(const r of Object.values(actors))assert.equal(r.calls.filter(call=>call[0]==='leave').length,1,'no native transition is replayed');
- const done=actors.P.service.last()?.done;for(const r of Object.values(actors))r.dispose();
- assert.equal(done===true,mode==='valid','the acknowledged settled peer must not leave the other actor waiting forever; receipts='+JSON.stringify(http));
-});
-
-
-for(const mode of ['network','timeout','server','superseded','aborted-server','forbidden','unclassified'])test('terminal native ACK distinguishes completion barrier failure provenance: '+mode,async()=>{
- const owner={convoyId:'return',epoch:3,commandId:7,navigationRevision:1,routeVersion:2};
- const r=fixture();r.c.hp=100;r.host.G.maps.cyberland={spawns:[[0,0]]};r.c.map=r.c.in='cyberland';
- const original=r.ports.context;r.ports.context=()=>({...original(),server:'USI'});
- r.host.parent.push_deferred=()=>{Object.assign(r.c,{map:'main',in:'main',real_x:0,real_y:0});return Promise.resolve();};
- let rejectCompletion;const pending=new Promise((_,reject)=>{rejectCompletion=reject;});let completionIssued=false;
- const p=r.service.move({map:'main',in:'main',x:0,y:0},undefined,{shared:true,awaitSharedRoute:true,owner,
-  barrier:async(_step,_index,completed)=>{if(!completed)return true;completionIssued=true;return pending;}});p.catch(()=>{});
- r.service.install([{map:'main',in:'main',x:0,y:0,method:'leave'}],r.service.identity);await r.ticks(5);r.setNow(1500);await r.ticks(5);
- assert.equal(completionIssued,true);const id=r.service.report().id,calls=r.calls.length;
- const metadata={network:{kind:'network',status:0},timeout:{kind:'timeout',status:0},server:{kind:'http',status:503},
-  superseded:{kind:'aborted',status:409,code:'superseded'},'aborted-server':{kind:'aborted',status:503},forbidden:{kind:'http',status:403}}[mode];
- rejectCompletion(Object.assign(Error('Actual completion request failed'),metadata?{partyRequest:{path:'/movement-barrier',method:'POST',...metadata}}:{}));await settle();
- const accepted=['network','timeout','server'].includes(mode);
- assert.equal(r.service.settleTerminal(id,owner),accepted,'only retryable completion transport may acknowledge already executed native action');
- assert.equal(r.calls.length,calls,'terminal acknowledgement must not send another action');
- if(accepted){await p;assert.equal(r.service.last().terminalSettlement.acknowledged,true);}r.dispose();
-});
-
-test('a rejected native leave never becomes a terminal receipt even with retryable-looking metadata',async()=>{
- const owner={convoyId:'return',epoch:3,commandId:7,navigationRevision:1,routeVersion:2},r=fixture();r.c.hp=100;
- r.host.G.maps.cyberland={spawns:[[0,0]]};r.c.map=r.c.in='cyberland';const original=r.ports.context;r.ports.context=()=>({...original(),server:'USI'});
- r.host.parent.push_deferred=()=>{Object.assign(r.c,{map:'main',in:'main',real_x:0,real_y:0});return Promise.reject(Object.assign(Error('Native leave rejected'),{partyRequest:{path:'/movement-barrier',kind:'network',status:0}}));};
- const p=r.service.move({map:'main',in:'main',x:0,y:0},undefined,{shared:true,awaitSharedRoute:true,owner,barrier:async()=>true});p.catch(()=>{});
- r.service.install([{map:'main',in:'main',x:0,y:0,method:'leave'}],r.service.identity);await r.ticks(5);
- assert.equal(r.service.settleTerminal(r.service.report()?.id||r.service.last()?.id,owner),false);assert.equal(r.service.last()?.terminalSettlement,undefined);r.dispose();
-});
-
-for(const mode of ['pre-transition','connector'])test('terminal settlement preserves rejected '+mode+' action safety',async()=>{
- const owner={convoyId:'return',epoch:3,commandId:7,navigationRevision:1,routeVersion:2},r=fixture();r.c.hp=100;
- r.host.G.maps.cyberland={spawns:[[0,0]]};r.c.map=r.c.in='cyberland';const original=r.ports.context;r.ports.context=()=>({...original(),server:'USI'});
- r.host.parent.push_deferred=()=>{Object.assign(r.c,{map:'main',in:'main',real_x:5,real_y:0});return Promise.resolve();};
- if(mode==='connector')r.host.move=async()=>{throw Error('Native connector failed');};
- const p=r.service.move({map:'main',in:'main',x:0,y:0},undefined,{shared:true,awaitSharedRoute:true,owner,
-  barrier:async()=>{if(mode==='pre-transition')throw Object.assign(Error('Preparation transport failed'),{partyRequest:{path:'/movement-barrier',kind:'network',status:0}});return true;}});p.catch(()=>{});
- r.service.install([{map:'main',in:'main',x:0,y:0,method:'leave'}],r.service.identity);await r.ticks(8);
- assert.equal(r.service.settleTerminal(r.service.report()?.id||r.service.last()?.id,owner),false);
- assert.equal(r.service.last()?.terminalSettlement,undefined);
- if(mode==='pre-transition')assert.equal(r.calls.some(call=>call[0]==='leave'),false);r.dispose();
-});
-
-
-test('completion transport rejection cannot overwrite a preceding native connector failure',async()=>{
- const owner={convoyId:'return',epoch:3,commandId:7,navigationRevision:1,routeVersion:2},r=fixture();r.c.hp=100;
- r.host.G.maps.cyberland={spawns:[[0,0]]};r.c.map=r.c.in='cyberland';const original=r.ports.context;r.ports.context=()=>({...original(),server:'USI'});
- let rejectConnector,rejectCompletion,completionIssued=false;
- const connector=new Promise((_,reject)=>{rejectConnector=reject;}),completion=new Promise((_,reject)=>{rejectCompletion=reject;});
- r.host.parent.push_deferred=()=>{Object.assign(r.c,{map:'main',in:'main',real_x:5,real_y:0});return Promise.resolve();};
- r.host.move=async(x,y)=>{Object.assign(r.c,{real_x:x,real_y:y});return connector;};
- const p=r.service.move({map:'main',in:'main',x:0,y:0},undefined,{shared:true,awaitSharedRoute:true,owner,
-  barrier:async(_s,_i,done)=>{if(!done)return true;completionIssued=true;return completion;}});p.catch(()=>{});
- r.service.install([{map:'main',in:'main',x:0,y:0,method:'leave'}],r.service.identity);await r.ticks(5);r.setNow(1500);await r.ticks(5);
- assert.equal(completionIssued,true);const id=r.service.report().id;
- rejectConnector(Error('Native connector rejected'));await settle();
- rejectCompletion(Object.assign(Error('Control response lost'),{partyRequest:{path:'/movement-barrier',kind:'network',status:0}}));await settle();
- assert.equal(r.service.settleTerminal(id,owner),false);r.dispose();
-});
-
-
-test('only opted-in verified ALClient no-route rejects a combat goal without native search',async()=>{
- for(const variant of ['verified','legacy','wrong-id','wrong-version','wrong-fingerprint','shadow','no-opt-in']){
-  const r=fixture({pending:true});let outcome;
-  const walking=r.service.move({map:'main',x:100,y:0},undefined,variant==='no-opt-in'?{}:{rejectUnreachableGoal:true});
-  void walking.then(()=>outcome='arrived',()=>outcome='rejected');await r.ticks(1);
-  const result={...r.request,plot:[],ms:1,error:'ALClient found no route',failure:'unreachable',mode:'alclient'};
-  if(variant==='legacy')delete result.failure;
-  if(variant==='wrong-id')result.id='old';
-  if(variant==='wrong-version')result.version++;
-  if(variant==='wrong-fingerprint')result.fingerprint='foreign';
-  if(variant==='shadow')result.mode='shadow';
-  fixture.resolve(result);await r.ticks(10);
-  assert.equal(outcome,variant==='verified'?'rejected':'arrived',variant);
-  assert.equal(r.searches,variant==='verified'?0:1,variant);r.dispose();
- }
-});
-test('a retired classified no-route response cannot retire a newer owned journey',async()=>{
- const r=fixture({pending:true});const old=r.service.move({map:'main',x:100,y:0},undefined,{rejectUnreachableGoal:true});
- const rejected=assert.rejects(old);await r.ticks(1);const reply=fixture.resolve,request={...r.request};
- const next=r.service.move({map:'main',x:100,y:0},undefined,{native:true,owner:{recoveryStage:'new'}});
- reply({...request,plot:[],ms:1,error:'ALClient found no route',failure:'unreachable',mode:'alclient'});
- await r.ticks(10);await rejected;await next;assert.equal(r.c.real_x,100);assert.equal(r.searches,1);r.dispose();
-});
-
-
-test('an intentional approach handoff cancels ownership without reporting a failed path or success',async()=>{
- const r=fixture({pending:true}),walking=r.service.move({map:'main',x:100,y:0});const rejected=assert.rejects(walking);
- await r.ticks(1);r.service.cancel('Individual combat approach cancelled',{code:'combat-approach-cancelled'});await rejected;
- assert.equal(r.service.last().done,false);assert.equal(r.service.last().failureContext.code,'combat-approach-cancelled');assert.equal(r.logs.at(-1).phase,'Movement cancelled');r.dispose();
-});
-
-// Retained pinned native functions execute before the maintained CODE listener.
-function correctionFixture(options={}) {
- const {EventEmitter}=require('node:events'),vm=require('node:vm');
- const socket=new EventEmitter();let actor;
- const native=require('./fixtures/native-correction-contract.json');
- const context=vm.createContext({socket, get character(){return actor;}, can_move:()=>options.accept!==false,
-  add_log(){},phrase:{html:s=>s},console:{log(){}},sqrt:Math.sqrt,sq:x=>x*x,Place:'game'});
- vm.runInContext(native.velocity+';'+native.correction,context);
- const r=fixture({stall:true,socket,...options});actor=r.c;
- Object.assign(actor,{from_x:0,from_y:0,going_x:100,going_y:0,vx:60,vy:0,ref_speed:60});
- return {...r,socket};
-}
-test('accepted native correction stops the current owned walk before its old velocity drifts',async()=>{
- const r=correctionFixture(),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p.catch(()=>{});
+scenarioTable('an accepted server correction pauses only the live owned walking step', correctionFixture, [
+ ['accepted native correction stops the current owned walk before its old velocity drifts', async r=>{
+ const p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p.catch(()=>{});
  await r.ticks();const id=r.service.report().id, before=r.calls.length;
  r.socket.emit('correction',{x:10,y:20});
  assert.deepEqual(r.calls.slice(before),[['move',10,20]]);
  assert.equal(r.service.report().id,id);assert.equal(r.service.report().progress.phase,'idle');
  assert.equal(r.service.state.plot.length,1);r.dispose();await assert.rejects(p);
-});
-test('native correction listener is scoped to its live owned walking journey',async()=>{
- for(const scenario of ['rejected','nonfinite','revision','runtime','idle']) {
-  const r=correctionFixture({accept:scenario!=='rejected'}),p=scenario==='idle'?null:r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p?.catch(()=>{});
-  await r.ticks();if(scenario==='revision')r.supersede();if(scenario==='runtime')r.reload();const n=r.calls.length;
-  r.socket.emit('correction',scenario==='nonfinite'?{x:NaN,y:0}:{x:10,y:20});
-  assert.equal(r.calls.length,n,scenario);r.dispose();if(p)await assert.rejects(p);
- }
-});
-test('disposing a movement runtime removes only its own correction listener',()=>{
- const r=correctionFixture();assert.equal(r.socket.listenerCount('correction'),2);
- r.dispose();assert.equal(r.socket.listenerCount('correction'),1);
-});
-test('pinned correction retains the old velocity when unchanged native speed accepts a new origin',()=>{
- const r=correctionFixture();r.c.moving=true;r.socket.emit('correction',{x:10,y:20});
- assert.equal(r.c.real_x,10);assert.equal(r.c.real_y,20);assert.equal(r.c.vx,60);assert.equal(r.c.vy,0);r.dispose();
+ }],
+]);
+
+test('real pinned planner worker uses native collision validation and geometry identity',async()=>{
+ const {version,directory}=require('./helpers/installed-game.cjs');const n=createNative(directory,'native-visible');
+ const service=createPlannerService(path.resolve('.build/runtime/movement-planner.cjs'),testScope('02','act'));
+ try {
+  const prepared=service.prepare(n.game,version);await prepared.ready;
+  const from={map:'main',x:0,y:0},to={map:'halloween',x:0,y:0};
+  const result=await service.plan({id:'probe',from,to,speed:60,town:true,version,fingerprint:prepared.fingerprint});
+  assert.ok(result.plot.some(p=>p.town));assert.ok(result.ms<2000);
+  const ports={game:n.game,walk:(a,b)=>n.canWalk(a,b),door:(p,d)=>n.context.is_door_close(p.map,d,p.x,p.y)&&n.context.can_use_door(p.map,d,p.x,p.y),hasKey:()=>false};
+  assert.equal(validateRoute(ports,from,to,result.plot,true),null);
+  await assert.rejects(service.plan({id:'wrong',from,to,speed:60,town:true,version:version+1,fingerprint:prepared.fingerprint}),/compatible/);
+  assert.equal(geometryFingerprint(n.game),prepared.fingerprint);
+ } finally{service.dispose();}
 });
 
-test('correction never interferes with a native transition or foreign segment map',async()=>{
- for(const transition of [true,false]) {
-  const r=correctionFixture({plot:transition?[{map:'bank',x:0,y:0,town:true}]:undefined}),p=r.service.move({map:transition?'bank':'main',x:transition?0:100,y:0},undefined,{shared:true});p.catch(()=>{});
-  await r.ticks();if(!transition)r.c.map='bank';const n=r.calls.length;
-  r.socket.emit('correction',{x:10,y:20});assert.equal(r.calls.length,n);r.dispose();await assert.rejects(p);
- }
+// No plan request starts a worker. A worker that retires on a
+// failure starts one replacement at once; a replacement that fails before its first answer starts
+// none, and the geometry's next delivery prepares it again. The fake worker exits on the request
+// `exit` and never answers `hang`; its setup cannot share the real worker's.
+function retiringPlanner() {
+ // The planner reads its budgets as hidden settings; the row holds a party state with its own.
+ const {hiddenSettings,holdHiddenSettings}=require('../../runtime/settings/coordinator/table.ts');
+ const budget=values=>holdHiddenSettings({...hiddenSettings({}),...values});
+ const worker=new URL('data:text/javascript,'+encodeURIComponent("import {parentPort} from 'node:worker_threads';"+
+  "parentPort.postMessage({ready:true});parentPort.on('message',m=>m.id==='exit'?process.exit(0):m.id==='hang'?0:parentPort.postMessage({id:m.id,plot:[],ms:0}));"));
+ const service=createPlannerService(worker,testScope('02','act')),game={maps:{},geometry:{},npcs:{transporter:{places:{}}}};
+ const r={service,game,prepared:service.prepare(game,1),budget,
+  ask:id=>({id,from:{map:'main',x:0,y:0},to:{map:'main',x:10,y:0},speed:60,version:1,fingerprint:r.prepared.fingerprint})};
+ return r;
+}
+scenarioTable('a retired planner worker is replaced once at its retirement, never per plan request', retiringPlanner, [
+ ['a worker that exits or times out on a plan starts one replacement at once, which plans the next request', async r=>{
+  try {
+   await r.prepared.ready;
+   await assert.rejects(r.service.plan(r.ask('exit')),/Planner worker exited/);
+   assert.deepEqual((await r.service.plan(r.ask('a'))).plot,[]);
+   r.budget({movementAlclientPlanMs:50});
+   await assert.rejects(r.service.plan(r.ask('hang')),/ALClient planning timed out/);
+   assert.deepEqual((await r.service.plan(r.ask('b'))).plot,[]);
+  } finally{r.budget({movementAlclientPlanMs:2000});r.service.dispose();}
+ }],
+ ['a replacement that fails before its first answer starts none; requests fail until the geometry is delivered again', async r=>{
+  try {
+   await r.prepared.ready;
+   await assert.rejects(r.service.plan(r.ask('exit')),/Planner worker exited/);
+   await assert.rejects(r.service.plan(r.ask('exit')),/Planner worker exited/);
+   for(const id of ['a','b','c'])await assert.rejects(r.service.plan(r.ask(id)),/No compatible game geometry prepared: .*; prepared none$/);
+   r.prepared=r.service.prepare(r.game,1);await r.prepared.ready;
+   assert.deepEqual((await r.service.plan(r.ask('d'))).plot,[]);
+  } finally{r.service.dispose();}
+ }],
+]);
+
+scenarioTable('the movement records, geometry identity and journey lines are built apart from the service', ()=>undefined, [
+['diagnostics snapshot coordinates and deduplicate independently of mutable movement state', _ => {
+ const {movementDiagnostics}=require('../../runtime/movement/character/records.ts');
+ let now=1000;const logs=[],colours=[];
+ const report=movementDiagnostics({game_log:(message,colour)=>colours.push(colour)},{now:()=>now,events:(type,message,data,key)=>logs.push({type,data,message,key})},'Test',16846,'geometry');
+ const destination={map:'main',x:100,y:0,moving:true,plot:[{map:'main',x:100,y:0}]};
+ const issue={reason:'collisions detected',from:{map:'main',x:0,y:0},to:{map:'main',x:50,y:0}};
+ report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
+ destination.moving=false;destination.plot=[];
+ report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
+ assert.equal(logs.length,1);assert.deepEqual(logs[0].data.destination,{map:'main',x:100,y:0});
+ // `diagnostic`: the game log in the phase's colour, the navigation events under its key.
+ assert.deepEqual([colours,logs[0].type,logs[0].key],[['#fbbf24'],'navigation','movement:runtime:1:Route rejected:1000']);
+ report('runtime:2',destination,'Movement failed');report('runtime:3',destination,'Native fallback succeeded');
+ assert.deepEqual(colours.slice(1),['red','#94a3b8']);logs.splice(1);
+ // Class D: a line is written once while its journey lives, whatever was written between, so
+ // lines that alternate are each written once, and the journey's end writes each repeat count.
+ const rejected=()=>report('runtime:1',destination,'Route rejected',issue,'falling back to native smart_move');
+ const repaired=()=>report('runtime:1',destination,'Route repaired');
+ repaired();rejected();repaired();
+ assert.deepEqual(logs.map(l=>l.data.phase),['Route rejected','Route repaired']);
+ report.end('runtime:1');
+ assert.deepEqual(logs.slice(2).map(l=>[l.data.phase,l.data.count]),[['Route rejected',3],['Route repaired',2]]);
+ assert.match(logs[2].message,/Similar messages: 3 \(not route attempts\)/);
+ // The journey's end drops its lines, so the next journey writes the same content again.
+ report('runtime:1',destination,'Route repaired');assert.equal(logs.length,5);
+ destination.x=200;issue.to.x=80;
+ assert.equal(logs[0].data.destination.x,100);assert.equal(logs[0].data.issue.to.x,50);
+}],
+// The row v1.5.0's cut of geometry-identity-cache.test.cjs planned. The cache keeps
+// its identity while the inputs are the same objects; a renderer field changes nothing, and a
+// replaced collision line or a new door gives a new identity.
+['movement reuses its geometry identity until collision or transition data changes', _ => {
+ const g={maps:{main:{spawns:[[0,0]],doors:[],npcs:[]}},geometry:{main:{x_lines:[[0,0,10]],y_lines:[]}},npcs:{transporter:{places:{}}}};
+ const first=cachedGeometryFingerprint(g);
+ assert.equal(first,geometryFingerprint(g));
+ g.maps.main.data={rendered:true};
+ assert.equal(cachedGeometryFingerprint(g),first,'a renderer field keeps the identity');
+ g.geometry.main={x_lines:[[0,0,20]],y_lines:[]};
+ const moved=cachedGeometryFingerprint(g);
+ assert.notEqual(moved,first,'a replaced collision line gives a new identity');
+ g.maps.main.doors.push([10,10,20,20,'bank',0,0]);
+ assert.notEqual(cachedGeometryFingerprint(g),moved,'a new door gives a new identity');
+}],
+// B106: the "Movement replaced" line names the destination that replaced the
+// journey. v1.5.0 wrote the line before the new destination, so it named only the
+// replaced journey's; the new one sat in the failure context alone.
+['B106: the replaced journey\'s line names the destination that replaced it', _ => {
+ const {movementDiagnostics}=require('../../runtime/movement/character/records.ts');
+ const lines=[];
+ const report=movementDiagnostics({game_log:message=>lines.push(message)},{now:()=>0,events(){}},'Test',16846,'geometry');
+ const context={code:'destination-replaced',replacement:{map:'main',x:-200,y:40}};
+ report('runtime:1',{map:'main',x:100,y:0},'Movement failed',undefined,'Movement replaced by a new destination',context);
+ assert.match(lines[0],/Destination: main \(100, 0\)\. Replaced by: main \(-200, 40\)\./);
+ report('runtime:2',{map:'main',x:100,y:0},'Movement failed',undefined,'Movement replaced by a new destination',{...context,replacement:'bank'});
+ assert.match(lines[1],/Replaced by: bank\./);
+}],
+// B126: a shared walk repairs its drift while each repair finds it closer to its goal.
+// v1.5.0 let a shared walk repair three endpoints, then failed it. Combat pushes this
+// walk off its route four times, each farther along (helpers/shared-drift.cjs).
+['B126: a shared walk pushed off its route four times rejoins it each time and arrives', async _ => {
+ const {sharedDrift}=require('./helpers/shared-drift.cjs');
+ const d=sharedDrift({drifts:[1,3,5,7]});
+ try {
+  assert.deepEqual(await d.walk(),{outcome:'arrived',at:{x:2400,y:0},rejoins:4});
+ } finally { d.dispose(); }
+}],
+]);
+
+// Sparkbot follow row (live run on 1166d93dc): the follower's return-leader walk went to the spot it
+// stood on, and the drain's park held the journey before its first tick consumed the reached
+// point. The walk never ended and the follower's travel token kept its targeting off. A journey
+// whose goal is where the character stands has arrived, paused or not.
+test('a journey to the spot the character stands on ends arrived while the drain parks movement',async()=>{
+ const r=fixture();
+ r.ports.pauses.drainPark=()=>true;
+ const p=r.service.move({map:'main',x:0,y:0});let done=false;p.then(()=>done=true,()=>{});
+ // The route was planned before the park: its two walking points are the spot it stands on.
+ r.service.install([{map:'main',x:0,y:0},{map:'main',x:0,y:0}],r.service.identity);
+ await r.ticks();
+ assert.equal(done,true,'the walk ends at once');
+ assert.equal(r.service.last().done,true);
+ assert.deepEqual(r.calls.filter(c=>c[0]==='move'),[],'no move is sent');
+ r.dispose();
 });
-test('correction listener never throws a rejected supported stop into native event delivery',async()=>{
- const r=correctionFixture(),p=r.service.move({map:'main',x:100,y:0},undefined,{shared:true});p.catch(()=>{});await r.ticks();
- const move=r.host.move;r.host.move=()=>{throw Error('native stop unavailable');};assert.doesNotThrow(()=>r.socket.emit('correction',{x:10,y:20}));r.host.move=move;r.dispose();await assert.rejects(p);
+
+// Halloween Mr. Green return (live run on a4884e05f): the game answers a Town cast only when the
+// cast ends (js/runner_functions.js town(): new_map with effect 1, a failure or its own 10 s
+// timeout), and on a busy realm the cast showed on the character 3 s after the send. The executor
+// failed the warp after one round trip with no answer ("Failed town warp") and stopped the cast.
+// A transition waits on its own answer while the game has not given one.
+test('a Town warp whose answer is still pending is not failed by the round trip', async()=>{
+ const {createMovementExecutor}=require('../../runtime/movement/character/executor.ts');
+ let now=1000,answer;const calls=[];
+ const character={map:'main',in:'main',real_x:200,real_y:-120,x:200,y:-120,moving:false};
+ const host={character,move:(x,y)=>{calls.push(['move',x,y]);return Promise.resolve();},
+  can_walk:()=>true,is_transporting:()=>false,can_use:()=>true,town:()=>{calls.push('town');return new Promise(resolve=>{answer=resolve;});}};
+ const executor=createMovementExecutor(host,{plot:[{map:'main',x:0,y:0,town:true}],use_town:true},{game:{maps:{main:{spawns:[[0,0]]}}},walk:()=>true},
+  ()=>now,{townReady:()=>true,transitionReady:()=>true,judge:()=>()=>'clear'},
+  {band:()=>'job',stopTown:()=>Promise.resolve(),standStill:()=>Promise.resolve(),roundTrip:()=>100});
+ assert.equal(executor.tick({}),false);await settle();
+ for(let i=0;i<30;i++){now+=100;assert.equal(executor.tick({}),false,'the cast is still the game\'s');await settle();}
+ assert.deepEqual(calls,['town'],'one cast, no stop and no second send');
+ Object.assign(character,{x:0,y:0,real_x:0,real_y:0});answer({success:true});await settle();
+ now+=50;executor.tick({});now+=50;
+ assert.equal(executor.tick({}),true,'the answered warp arrives');
+});
+
+// A stop the call budget holds stays the owner's unsent decision until the budget lets it go, with
+// no cap of its own. A closed connection sends no more call cost, so the decision ends when the
+// socket it was decided on disconnects or the game replaces it, through the named bound, and the
+// next pass sends nothing for it. Isolated: a live run cannot drop the socket inside one hold.
+test('a stop the budget holds ends when its connection closes or its socket is replaced, through its bound',async()=>{
+ const {partyHooks}=require('../../runtime/hooks/index.ts');
+ const {boundsPending}=require('../../runtime/status/api.ts');
+ const fired=()=>boundsPending().filter(f=>f.bound==='unsentDisconnected'&&f.owner==='02').length,before=fired();
+ const band=answer=>partyHooks().publish({name:'core:planted-calls',folder:'core',author:'test',summary:'A planted call budget.',hooks:{'calls.band':()=>answer}});
+ try{
+  for(const close of [r=>{r.host.parent.socket.connected=false;},r=>{r.host.parent.socket={emit(){},connected:true};}]){
+   const r=fixture();r.host.parent.socket.connected=true;band('not-now');
+   let ended=false;const stopped=r.host.stop('move').then(()=>{ended=true;});
+   await r.ticks(2);assert.equal(ended,false,'the stop went while the budget held it');
+   close(r);
+   await r.ticks(2);await Promise.race([stopped,new Promise(resolve=>setImmediate(resolve))]);assert.equal(ended,true,'the held stop outlived its connection');
+   r.dispose();
+  }
+  assert.equal(fired(),before+2,'the closed connection did not tell the bound record');
+ }finally{band('send');}
 });

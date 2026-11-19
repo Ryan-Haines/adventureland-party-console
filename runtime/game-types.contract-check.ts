@@ -1,7 +1,7 @@
 import type { ItemInfo } from 'typed-adventureland';
-import type { Character as MovementCharacter } from './characters/movement-host.ts';
+import type { Character as MovementCharacter } from './protocol/records.ts';
 import type { Item } from './coordinator/contracts/item.ts';
-import type { GameData, Geometry, Point } from './navigation/contracts.ts';
+import type { GameData, Geometry, Point } from './movement/api/character.ts';
 
 type Assert<T extends true> = T;
 type Accepts<Contract, Input> = Input extends Contract ? true : false;

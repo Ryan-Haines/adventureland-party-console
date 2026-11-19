@@ -1,13 +1,14 @@
 import { randomBytes, randomInt, createHash, timingSafeEqual } from "node:crypto";
 import { readFile, writeFile, rename } from "node:fs/promises";
+import { lifecycleSavedFields } from '../../runtime/lifecycle/fields.ts';
 export const token = () => randomBytes(32).toString("hex");
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const sameHash = (a: string, b: string) => timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
 // The alphabet leaves out 0/O and 1/I/L so a code survives being read off another screen.
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const CODE_LENGTH = 8;
-export const ACCESS_CODE_TTL_MS = 10 * 60_000;
-export const ACCESS_CODE_ATTEMPTS = 5;
+export const ACCESS_CODE_TTL_MS = lifecycleSavedFields.settings.accessCodeMs.default;
+export const ACCESS_CODE_ATTEMPTS = lifecycleSavedFields.settings.accessCodeAttempts.default;
 /** Accepts the code as typed: any case, with or without the dash and spaces. */
 export const accessCodeValue = (value: string) => value.toUpperCase().replace(/[\s-]/g, "");
 interface Credentials {

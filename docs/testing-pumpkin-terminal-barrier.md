@@ -1,5 +1,7 @@
 # Pumpkin terminal return barrier observations
 
+Removed path: the movement rewrite removed the Hunt return's plan-return phase and its return legs (`returnLeg`, `returnLegs`, `leg-arrived`) as unreachable code, since every Hunt return is a continuous return and finishes through /convoy-complete. The return-leg hypothesis below names code that no longer exists.
+
 ## Failure inventory before observation code
 
 Run 38452758672 shard 10, artifact 11844339685, Pumpkin physically reached Main within 24 seconds but failed its unchanged 180-second saved-checkpoint return. Native Priest observed Main new_map at +23.172 seconds and actual leave success at +23.457. Warrior movement completed at +23.5. Priest remained at Main (0,0) on its acknowledged terminal leave barrier for 166 seconds until the shared walk rendezvous timed out. No CODE replacement occurs in this case.

@@ -1,86 +1,108 @@
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const ts=require('../../node_modules/typescript');
-const {farmingAreas,defaultPhoenixOrder}=require('../../.build/shared/farming-areas.cjs');
-function harness(file,name,extra={}) {
-  const source=fs.readFileSync(`dashboard/features/party/${file}.tsx`,'utf8');
-  // Some components are exported as `const X = memo(function X(...) {...})`
-  // instead of a bare `export function`; strip the memo() wrapper (both the
-  // leading call and its matching trailing paren) so the extracted body is
-  // still a plain top-level function declaration the vm context can see.
-  const memoMarker=`export const ${name} = memo(function ${name}(`;
-  const body=source.includes(memoMarker)
-    ? source.slice(source.indexOf(memoMarker)).replace(`export const ${name} = memo(`,'').replace(/\}\);\s*$/,'}')
-    : source.slice(source.indexOf(`export function ${name}(`)).replace('export function','function');
-  const code=ts.transpileModule(body,{compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText;
-  let cursor=0;const state=[];
-  const c=vm.createContext({ React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})},
-    useState:initial=>{const i=cursor++;if(!(i in state))state[i]=typeof initial==='function'?initial():initial;
-      return[state[i],v=>state[i]=typeof v==='function'?v(state[i]):v];},useId:()=> 'follow-description',useMemo:fn=>fn(),useEffect(){},useRef:v=>({current:v}),
-    farmingAreas,defaultPhoenixOrder,...extra });
-  for(const n of ['Button','Checkbox','Input','Dialog','DialogContent','DialogDescription','DialogFooter','DialogHeader','DialogTitle',
-    'HuntBlacklistPicker','HuntSpawnSettings','HuntSettingsControl','FarmingAreaPreview','Maximize2','ItemSprite','Popover','PopoverContent','PopoverTrigger','SpriteCrop','X','ChevronDown','ChevronRight','Settings'])c[n]=n;
-  vm.runInContext(code,c);
-  return {render:props=>{cursor=0;return c[name](props);}};
+const {test}=require('node:test'),assert=require('node:assert/strict'),load=require('./helpers/dashboard-query-module.cjs');
+const React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
+const {farmingAreas,defaultPhoenixOrder,defaultHuntSettings}=require('../../runtime/hunting/api.ts');
+global.IS_REACT_ACT_ENVIRONMENT=true;
+// The real components render through react-test-renderer. The ui kit, the icons and the leaf
+// views each component draws render as tags named after their export.
+const tags=new Proxy({},{get:(_,key)=>String(key)});
+const stubs={'@/components/ui/*':tags,'lucide-react':tags,'./sprite-crop':tags,'./sprite':tags,'./farming-area-preview':tags,
+  './monster-spawns':tags,'./passive-hunting-menu':tags};
+const {FarmingAreaPicker}=load('farming-area-picker.tsx',stubs),{MonsterFocusPicker}=load('monster-focus-picker.tsx',stubs);
+const {FarmingModeControl}=load('farming-mode-control.tsx',stubs),{HuntSettingsControl,RelocationControl}=load('hunt-settings-control.tsx',stubs);
+const text=n=>typeof n==='string'?n:(n.children||[]).map(text).join('');
+async function mount(Component,props){
+  let view;await act(async()=>{view=create(React.createElement(Component,props));});
+  return {root:()=>view.root,unmount:()=>act(async()=>view.unmount())};
 }
-const nodes=t=>t&&typeof t==='object'?[t,...(t.children||[]).flatMap(nodes)]:[];
+const badge=button=>button.find(n=>n.type==='span'&&n.props.className?.includes('absolute')).props.children;
+const start=view=>view.root().find(n=>n.type==='Button'&&text(n).includes('Start Phoenix patrol'));
 
-test('Phoenix picker preselects screenshot order and preserves a valid saved custom order',()=>{
+test('Phoenix picker preselects screenshot order and preserves a valid saved custom order',async()=>{
   const boxes=[['main',708,-300,1668,-86],['main',378,1686,904,1920],['main',-1358,-118,-1010,1680],['halloween',-166,453,182,808],['cave',-375,-1287,14,-1041]];
   const catalog=[{id:'phoenix',locations:boxes.map(([map,...boundary])=>({map,boundary,x:(boundary[0]+boundary[2])/2,y:(boundary[1]+boundary[3])/2}))}];
   const areas=farmingAreas(catalog,['phoenix']);
   for(const saved of [[],[areas[0].id],areas.map(a=>a.id).reverse()]) {
-    const tree=harness('farming-area-picker','FarmingAreaPicker').render({catalog,ids:['phoenix'],radius:400,phoenixRouteOrder:saved});
-    const buttons=nodes(tree).filter(n=>n.type==='button');
-    const expected=saved.length===5?saved:defaultPhoenixOrder(areas);
-    buttons.forEach((b,i)=>assert.equal(nodes(b).find(n=>n.type==='span'&&n.props.className?.includes('absolute')).children[0],expected.indexOf(areas[i].id)+1));
-    assert.equal(nodes(tree).find(n=>n.type==='Button'&&n.children.includes('Start Phoenix patrol')).props.disabled,false);
+    const view=await mount(FarmingAreaPicker,{catalog,ids:['phoenix'],radius:400,phoenixRouteOrder:saved,override:false,busy:false,onClose(){},onStart:async()=>{}});
+    try {
+      const expected=saved.length===5?saved:defaultPhoenixOrder(areas);
+      view.root().findAllByType('button').forEach((b,i)=>assert.equal(badge(b),expected.indexOf(areas[i].id)+1));
+      assert.equal(start(view).props.disabled,false);
+    } finally { await view.unmount(); }
   }
 });
 test('Phoenix picker numbers click order, renumbers removal, requires all five and saves exact order',async()=>{
   const locations=Array.from({length:5},(_,i)=>({map:`map${i}`,x:0,y:0,boundary:[-20,-20,20,20]}));
   const catalog=[{id:'phoenix',name:'Phoenix',locations}];let saved;
-  const props={catalog,ids:['phoenix'],radius:400,override:true,busy:false,onStart:async(...args)=>saved=args};
-  const h=harness('farming-area-picker','FarmingAreaPicker');let tree=h.render(props);
-  const buttons=()=>nodes(tree).filter(n=>n.type==='button');
-  const start=()=>nodes(tree).find(n=>n.type==='Button'&&n.children.includes('Start Phoenix patrol'));
-  assert.equal(start().props.disabled,true);
-  for(const i of [2,0,4,1,3]){buttons()[i].props.onClick();tree=h.render(props);}
-  assert.equal(start().props.disabled,false);
-  const badge=i=>nodes(buttons()[i]).find(n=>n.type==='span'&&n.props.className?.includes('absolute')).children[0];
-  assert.equal(badge(2),1);assert.equal(badge(3),5);
-  buttons()[0].props.onClick();tree=h.render(props);assert.equal(start().props.disabled,true);assert.equal(badge(4),2);
-  buttons()[0].props.onClick();tree=h.render(props);await start().props.onClick();
-  const all=farmingAreas(catalog,['phoenix']);assert.deepEqual(Array.from(saved[1]),[2,4,1,3,0].map(i=>all[i].id));
-  assert.equal(saved[0].id,all[2].id);
+  const view=await mount(FarmingAreaPicker,{catalog,ids:['phoenix'],radius:400,override:true,busy:false,onClose(){},onStart:async(...args)=>saved=args});
+  try {
+    const buttons=()=>view.root().findAllByType('button');
+    const click=i=>act(async()=>buttons()[i].props.onClick());
+    // The default order holds every region, so the player clears it to pick their own.
+    await act(async()=>view.root().find(n=>n.type==='Button'&&text(n).startsWith('Clear order')).props.onClick());
+    assert.equal(start(view).props.disabled,true);
+    for(const i of [2,0,4,1,3])await click(i);
+    assert.equal(start(view).props.disabled,false);
+    assert.equal(badge(buttons()[2]),1);assert.equal(badge(buttons()[3]),5);
+    await click(0);assert.equal(start(view).props.disabled,true);assert.equal(badge(buttons()[4]),2);
+    await click(0);await act(async()=>start(view).props.onClick());
+    const all=farmingAreas(catalog,['phoenix']);assert.deepEqual(Array.from(saved[1]),[2,4,1,3,0].map(i=>all[i].id));
+    assert.equal(saved[0].id,all[2].id);
+  } finally { await view.unmount(); }
 });
-test('Fairy stays searchable but only exposes an explanation, never a focus toggle',()=>{
-  let changes=0;const props={monsters:[{id:'tinyp',name:'Fairy'}],selected:[],priorities:{},onChange:()=>changes++,onPriorityChange(){}};
-  const h=harness('monster-focus-picker','MonsterFocusPicker');let tree=h.render(props);
-  const button=nodes(tree).find(n=>n.type==='button'&&n.props['aria-disabled']==='true');assert.ok(button);
-  button.props.onClick();tree=h.render(props);assert.equal(changes,0);
-  assert.ok(nodes(tree).some(n=>n.props.role==='status'&&n.children.join('').includes('Passively hunt fairy')));
+test('Fairy stays searchable but only exposes an explanation, never a focus toggle',async()=>{
+  let changes=0;
+  const view=await mount(MonsterFocusPicker,{monsters:[{id:'tinyp',name:'Fairy'}],selected:[],priorities:{},onChange:()=>changes++,onPriorityChange(){}});
+  try {
+    const button=view.root().find(n=>n.type==='button'&&n.props['aria-disabled']==='true');
+    await act(async()=>button.props.onClick());assert.equal(changes,0);
+    assert.ok(view.root().findAll(n=>n.props.role==='status').some(n=>text(n).includes('Passively hunt fairy')));
+  } finally { await view.unmount(); }
 });
 test('passive menu forwards independent rule patches without replacing other settings',async()=>{
-  const writes=[];const h=harness('farming-mode-control','FarmingModeControl',{
-    PassiveHuntingMenu:'PassiveHuntingMenu',migratePassiveSettings:require('../../runtime/coordinator/navigation/passive-settings.ts').migratePassiveSettings});
-  const tree=h.render({policy:'auto',effectiveMode:'default',blacklist:{},catalog:[],passiveRareHunts:{tinyp:false,phoenix:true},
-    onRareChange:async patch=>writes.push(patch)});
-  const menu=nodes(tree).find(n=>n.type==='PassiveHuntingMenu');assert.ok(menu);
-  assert.equal(menu.props.settings.rules.phoenix.enabled,true);
-  const patch={rules:{tinyp:{enabled:true}}};await menu.props.onSave(patch);
-  assert.deepEqual(writes,[patch]);assert.equal(menu.props.settings.rules.phoenix.enabled,true);
+  const writes=[];
+  const view=await mount(FarmingModeControl,{policy:'auto',effectiveMode:'default',blacklist:{},catalog:[],passiveRareHunts:{tinyp:false,phoenix:true},
+    combatEntries:[],targetEntries:[],combatMode:'default',targetMode:'default',settingsOpen:true,onSettingsOpenChange(){},onSelect(){},
+    onClearBlacklist:async()=>{},onRareChange:async patch=>writes.push(patch)});
+  try {
+    const menu=view.root().findByType('PassiveHuntingMenu');
+    assert.equal(menu.props.settings.rules.phoenix.enabled,true);
+    const patch={rules:{tinyp:{enabled:true}}};await act(async()=>menu.props.onSave(patch));
+    assert.deepEqual(writes,[patch]);assert.equal(view.root().findByType('PassiveHuntingMenu').props.settings.rules.phoenix.enabled,true);
+  } finally { await view.unmount(); }
 });
 
+// Moved relocation to its own control, so the hunt settings hold the two blacklist rules.
 test('Hunt settings default enabled, save thresholds, reject invalid values and preserve disabled thresholds',async()=>{
- const defaults=require('../../runtime/coordinator/hunt/settings.ts').defaultHuntSettings;
- const h=harness('hunt-settings-control','HuntSettingsControl',{defaultHuntSettings:defaults});
- const saved=[], props={value:{...defaults},onSave:async patch=>{saved.push(patch);Object.assign(props.value,patch);}};
- let tree=h.render(props), checks=nodes(tree).filter(n=>n.type==='Checkbox');assert.equal(checks.length,3);assert.ok(checks.every(n=>n.props.checked));
- let input=nodes(tree).find(n=>n.props['aria-label']==='Deaths before blacklisting');assert.equal(input.props.value,'1');input.props.onChange({target:{value:'3'}});
- tree=h.render(props);input=nodes(tree).find(n=>n.props['aria-label']==='Deaths before blacklisting');input.props.onBlur();await new Promise(setImmediate);assert.equal(saved.at(-1).deathThreshold,3);
- tree=h.render(props);checks=nodes(tree).filter(n=>n.type==='Checkbox');checks[1].props.onCheckedChange(false);await new Promise(setImmediate);
- tree=h.render(props);input=nodes(tree).find(n=>n.props['aria-label']==='Deaths before blacklisting');assert.equal(input.props.disabled,true);assert.equal(input.props.value,'3');
- checks=nodes(tree).filter(n=>n.type==='Checkbox');checks[1].props.onCheckedChange(true);await new Promise(setImmediate);tree=h.render(props);
- input=nodes(tree).find(n=>n.props['aria-label']==='Deaths before blacklisting');input.props.onChange({target:{value:'0'}});tree=h.render(props);
- const before=saved.length;nodes(tree).find(n=>n.props['aria-label']==='Deaths before blacklisting').props.onBlur();assert.equal(saved.length,before);assert.ok(nodes(h.render(props)).some(n=>n.props.role==='alert'));
+  const saved=[],props={value:{...defaultHuntSettings},onSave:async patch=>{saved.push(patch);Object.assign(props.value,patch);}};
+  let view;await act(async()=>{view=create(React.createElement(HuntSettingsControl,props));});
+  const rerender=()=>act(async()=>view.update(React.createElement(HuntSettingsControl,{...props,value:{...props.value}})));
+  const checks=()=>view.root.findAllByType('Checkbox'),input=()=>view.root.findByProps({'aria-label':'Deaths before blacklisting'});
+  try {
+    assert.equal(checks().length,2);assert.ok(checks().every(n=>n.props.checked));
+    assert.equal(input().props.value,'1');
+    await act(async()=>input().props.onChange({target:{value:'3'}}));
+    await act(async()=>input().props.onBlur());assert.equal(saved.at(-1).deathThreshold,3);await rerender();
+    await act(async()=>checks()[0].props.onCheckedChange(false));await rerender();
+    assert.equal(input().props.disabled,true);assert.equal(input().props.value,'3');
+    await act(async()=>checks()[0].props.onCheckedChange(true));await rerender();
+    await act(async()=>input().props.onChange({target:{value:'0'}}));
+    const before=saved.length;await act(async()=>input().props.onBlur());assert.equal(saved.length,before);
+    assert.ok(view.root.findAll(n=>n.props.role==='alert').length>0);
+  } finally { await act(async()=>view.unmount()); }
+});
+
+test('the relocation switch is on unless saved false, saves its change and shows a refused save',async()=>{
+  const saved=[];let refuse=false;
+  const onSave=async on=>{saved.push(on);if(refuse)throw new Error('Writer refused the change');};
+  let view;await act(async()=>{view=create(React.createElement(RelocationControl,{value:undefined,onSave}));});
+  const box=()=>view.root.findByType('Checkbox'),rerender=value=>act(async()=>view.update(React.createElement(RelocationControl,{value,onSave})));
+  try {
+    assert.equal(box().props.checked,true,'an unsaved switch is on');
+    await rerender(false);assert.equal(box().props.checked,false);
+    await rerender(true);assert.equal(box().props.checked,true);
+    await act(async()=>box().props.onCheckedChange(false));assert.deepEqual(saved,[false]);
+    assert.equal(view.root.findAll(n=>n.props.role==='alert').length,0);
+    refuse=true;await act(async()=>box().props.onCheckedChange(true));
+    assert.match(text(view.root.findByProps({role:'alert'})),/Writer refused the change/);
+  } finally { await act(async()=>view.unmount()); }
 });

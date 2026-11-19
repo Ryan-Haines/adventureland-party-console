@@ -126,7 +126,9 @@ for(const automatic of [false,true]) test(`offering supply authorizes ${automati
   expect((await supply({...body,mark:{...mark,tiers:3}})).status()).toBe(409);
   expect((await supply({...body,offering:'offeringx'})).status()).toBe(409);
   const pending=await app.state();expect(pending.withdrawals.M).toHaveLength(1);
-  await app.deliverMerchantCompletion({jobId:job.id,commandId:job.commandId,success:false,error:'bankboi_pending'});
+  // The order runner yields to the BankBoi with the uncertain-upgrade failure code (runtime/items/character/production.ts), and
+  // the row reads the code, not the text (ec58740c9).
+  await app.deliverMerchantCompletion({jobId:job.id,commandId:job.commandId,success:false,code:'bankboi_pending',error:'bankboi_pending'});
   await app.restartCoordinator();
   const recovered=await app.state();
   expect(recovered.withdrawals.M).toHaveLength(1);

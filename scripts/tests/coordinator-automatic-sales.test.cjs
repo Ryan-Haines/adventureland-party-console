@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {createAutomaticMerchantSales} = require('../../runtime/coordinator/merchant/automatic-sales.ts');
-const {automaticCommerceRuleKey} = require('../../runtime/coordinator/inventory/item-identity.ts');
+const {createAutomaticMerchantSales} = require('../../runtime/items/coordinator/market.ts');
+const {commerceRuleKey} = require('../../runtime/items/identity.ts');
 
 function fixture() {
   const state = {merchantCharacter:'M', autoNpcSales:{}, autoStandMarks:{}, npcSaleMarks:[],
@@ -16,24 +16,30 @@ function fixture() {
   return {state,calls,service};
 }
 const item = {name:'leather',q:20};
-const key = automaticCommerceRuleKey(item);
+const key = commerceRuleKey(item);
 const status = {name:'M',items:[{slot:3,item}]};
 
-// Failure inventory: e2e/automatic-bank-routing-failures.md.
+// (465), failure inventory e2e/automatic-bank-routing-failures.md items 1 to 3: Auto NPC finds bank
+// stock during the merchant's own bank visit and owns its retrieval with withdrawals and party
+// collection off; a second report adds no second mark. Its job is queued during the visit, as queued it
+// (decisions.md answer 4); the merchant job owner's enqueue merges a repeat, which this fixture's queue
+// does not.
 test('Auto NPC discovers bank stock during an owned bank visit and owns retrieval independently',()=>{
- const f=fixture();f.state.autoNpcSales[key]={item};
+ const f=fixture();f.state.autoNpcSales[key]={item};f.state.itemCollectionThreshold=10;
  f.state.merchantAutomations={'auto npc sales':true,withdrawals:false,'party collection':false};
  f.state.merchantCurrent={id:'bank',target:'M',reason:'manual bank exchange'};
  f.state.bankSnapshot={packs:{items0:[{slot:0,item}]}};
- f.service.reconcile({name:'M',items:[]});
+ // The build's report carries every bag cell; its free cells are the marking room.
+ const empty={name:'M',items:Array(42).fill(null)};
+ f.service.reconcile(empty);
  assert.equal(f.state.withdrawals.M.length,1);
  assert.ok(f.state.merchantQueue.some(job=>job.reason==='auto npc withdrawals'));
- f.service.reconcile({name:'M',items:[]});
+ f.service.reconcile(empty);
  assert.equal(f.state.withdrawals.M.length,1);
 });
 
 test('a displaced sale reclaims an automatic buy slot while two explicit orders remain',()=>{
- const {nativeAllocation,createNativeStand}=require('../../runtime/coordinator/commerce/native-stand.ts');
+ const {nativeAllocation,createNativeStand}=require('../../runtime/items/coordinator/market.ts');
  const f=fixture();f.state.autoStandBuys=true;
  f.state.standBids={a:{useStandSlot:true,quantity:1,price:10},b:{useStandSlot:true,quantity:1,price:10},c:{quantity:1,price:10,priorityOverride:90},d:{quantity:1,price:10,priorityOverride:80}};
  f.state.standListings=Array.from({length:12},(_,i)=>({id:String(i),item:{name:'sale'+i},state:'live',tradeSlot:'trade'+(i+1)}));
@@ -63,9 +69,9 @@ test('displaced sales wait for physical stock and never displace explicit buy re
 });
 
 test('banked auto-stand pants reserve four soft buy slots and queue one bounded withdrawal batch',()=>{
- const {nativeAllocation,createNativeStand}=require('../../runtime/coordinator/commerce/native-stand.ts');
+ const {nativeAllocation,createNativeStand}=require('../../runtime/items/coordinator/market.ts');
  const f=fixture(), pants={name:'frankypants',level:0};
- f.state.autoStandBuys=true;f.state.autoStandMarks[automaticCommerceRuleKey(pants)]={price:936000};
+ f.state.autoStandBuys=true;f.state.autoStandMarks[commerceRuleKey(pants)]={price:936000};
  f.state.standBids=Object.fromEntries(['a','b','c','d','e','f'].map((id,i)=>[id,{price:10,quantity:2,useStandSlot:i<2}]));
  f.state.standListings=Array.from({length:10},(_,i)=>({id:'sale'+i,item:{name:'coat'},state:'live',tradeSlot:'trade'+(i+1)}));
  f.state.bankSnapshot={packs:{items0:Array.from({length:12},(_,slot)=>({slot,item:pants}))}};
@@ -91,7 +97,7 @@ test('banked auto-stand pants reserve four soft buy slots and queue one bounded 
 });
 
 test('bank auto-stand protects locked, conflicting, and crafting stock and waits for active withdrawals',()=>{
- const f=fixture(), pants={name:'frankypants',level:0},key=automaticCommerceRuleKey(pants);
+ const f=fixture(), pants={name:'frankypants',level:0},key=commerceRuleKey(pants);
  f.state.autoStandMarks[key]={price:936000};
  f.state.bankSnapshot={packs:{items0:[{slot:0,item:{...pants,l:'l'}},{slot:1,item:pants}]}};
  f.state.withdrawals={M:[{pack:'items0',slot:1,item:pants}]};
@@ -143,4 +149,71 @@ test('inventory sorting relocates existing sale intent without duplicating a que
   f.state.merchantCurrent={reason:'npc sales'};f.state.merchantQueue=[];f.calls.length=0;
   f.service.reconcile({name:'M',items:[{slot:7,item}]});assert.deepEqual(f.calls,['persist']);
   assert.equal(f.state.npcSaleMarks[0].state,'running');
+});
+
+// The bank's NPC sale stock is marked from the one bank snapshot and fetched by its own `auto
+// npc withdrawals` job while no visit is planned, with ordinary withdrawals off; a stand's stock
+// is not counted as bank stock.
+test('NPC sale stock in the bank is fetched with ordinary withdrawals off, and a stand\'s stock is not counted',()=>{
+  const f=fixture();f.state.autoNpcSales[key]=true;f.state.merchantAutomations={withdrawals:false};
+  f.state.bankSnapshot={packs:{items0:[{slot:0,item:{name:'leather',q:20}}]}};f.state.withdrawals={};
+  // The stand holds the bank's whole quantity, so the withdrawal shows the stand copy is not counted.
+  f.state.standListings=[{id:'s',item:{name:'leather',q:20},state:'listed'}];
+  f.service.reconcile({name:'M',items:Array(42).fill(null)});
+  assert.deepEqual(f.state.withdrawals.M.map(mark=>[mark.pack,mark.slot,mark.autoNpcRuleKey]),[['items0',0,key]]);
+  assert.ok(f.state.merchantQueue.some(job=>job.reason==='auto npc withdrawals'));
+  // The merchant job owner's readiness reads the same answer, so the queued job is ready and
+  // not pruned.
+  const {bankCollectionReason}=require('../../runtime/items/coordinator/fates.ts');
+  assert.equal(bankCollectionReason(f.state),'auto npc withdrawals');
+});
+
+// A rule write the settings writer refuses changes nothing; an accepted one discards the
+// rule's automatic marks and their withdrawals.
+test('automatic sale rule writes discard their records only on an accepted write', () => {
+  const {createAutomaticSaleWrites} = require('../../runtime/items/coordinator/market.ts');
+  const item = {name:'ring', level:0}, key = commerceRuleKey(item);
+  const state = {merchantCharacter:'M', merchantRules:true, statuses:{M:{}}, autoNpcSales:{[key]:{item, keep:0}}, autoStandMarks:{},
+    npcSaleMarks:[{auto:true, autoRuleKey:key, item}], standListings:[{id:'l', auto:true, autoRuleKey:key, item}],
+    withdrawals:{M:[{pack:'items0', slot:1, item, standListingId:'l'}]}};
+  let ok = false;
+  const writes = createAutomaticSaleWrites(state, {write:()=>ok ? {ok:true} : {ok:false, error:'refused'}, now:()=>1, key:commerceRuleKey,
+    reconcile(){}, persist(){}, publish(){}, syncStand:()=>true, idle(){}});
+  assert.equal(writes.npc({item, action:'remove'}).status, 400);
+  assert.equal(writes.stand({item, action:'clear-all'}).status, 400);
+  assert.equal(state.npcSaleMarks.length, 1); assert.equal(state.standListings.length, 1); assert.equal(state.withdrawals.M.length, 1);
+  ok = true;
+  writes.npc({item, action:'remove'}); writes.stand({item, action:'clear-all'});
+  assert.deepEqual([state.npcSaleMarks.length, state.standListings.length, state.withdrawals.M.length], [0, 0, 0]);
+});
+
+// IT row for: bank stock for an automatic NPC sale is marked while a merchant job runs, and a
+// BankBoi bag counts for NPC sales but never for a stand listing.
+test('bank NPC sale stock counts BankBoi bags and is marked during a job; stands take neither',()=>{
+ const f=fixture(),gem={name:'gem0',q:1},coat={name:'coat',level:0};
+ f.state.autoNpcSales[commerceRuleKey(gem)]={item:gem};f.state.autoStandMarks[commerceRuleKey(coat)]={price:5};
+ f.state.merchantCurrent={id:'j',reason:'craft'};f.state.statuses={M:{items:Array(42).fill(null)}};
+ f.state.bankSnapshot={packs:{items0:[{slot:0,item:gem},{slot:1,item:coat}]}};
+ f.state.bankbois={B:{name:'B',items:[{slot:0,item:gem},{slot:1,item:coat}]}};
+ f.service.reconcile({name:'M',items:Array(42).fill(null)});
+ const pending=f.state.withdrawals.M||[];
+ assert.deepEqual(pending.filter(w=>w.autoNpcRuleKey).map(w=>w.pack).sort(),['bankboi:B','items0']);
+ assert.equal(pending.some(w=>w.standListingId),false);assert.equal(f.state.standListings.length,0);
+});
+
+// The bank NPC marking stops when each marked stack has a free bag cell past the lucky hold and the
+// protected free slots; the live row e2e/live-bank-npc-sales.spec.ts "caps ten stacks" plants this bag.
+test('bank NPC sale marking stops at the bag cells past the protected free slots',()=>{
+ const helmet={name:'helmet',level:0},helmetKey=commerceRuleKey(helmet);
+ const marked=empty=>{
+  const f=fixture();f.state.autoNpcSales[helmetKey]={item:helmet};f.state.protectedFreeSlots=3;
+  f.state.merchantAutomations={'auto npc sales':true};
+  f.state.bankSnapshot={packs:{items0:Array.from({length:12},(_,slot)=>({slot,item:{...helmet}}))}};
+  const items=Array.from({length:42},(_,slot)=>slot<42-empty?{slot,item:{name:'coat',level:0,l:'l'}}:null);
+  f.state.statuses={M:{name:'M',items}};
+  f.service.reconcile({name:'M',items});
+  return f.state.withdrawals.M.length;
+ };
+ assert.equal(marked(13),10);
+ assert.equal(marked(42),12);
 });

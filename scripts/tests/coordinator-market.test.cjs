@@ -1,11 +1,12 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {normalizeMarketSales,normalizeMarketBids}=require('../../runtime/coordinator/commerce/market-normalization.ts');
-const {observeMarketPrices,observeMarketTrades}=require('../../runtime/coordinator/commerce/price-history.ts');
-const {merchantBlocked,recordMerchantFailure}=require('../../runtime/coordinator/commerce/merchant-blacklist.ts');
-const {createALDataService}=require('../../runtime/coordinator/commerce/aldata-service.ts');
-const {createLocalMarket}=require('../../runtime/coordinator/commerce/local-market.ts');
-const {publishedMarketListings}=require('../../runtime/coordinator/commerce/public-listings.ts');
+const {normalizeMarketSales,normalizeMarketBids}=require('../../runtime/items/coordinator/market.ts');
+const {observeMarketPrices,observeMarketTrades}=require('../../runtime/items/coordinator/market.ts');
+const {merchantBlocked,recordMerchantFailure}=require('../../runtime/items/coordinator/market.ts');
+const {createALDataService}=require('../../runtime/items/coordinator/market.ts');
+const {createLocalMarket}=require('../../runtime/items/coordinator/market.ts');
+const {publishedMarketListings}=require('../../runtime/items/coordinator/market.ts');
 const merchant=slots=>({id:'Seller',serverRegion:'US',serverIdentifier:'II',lastSeen:'2026-09-12T12:00:00Z',slots});
 test('market normalization preserves item level and separates sales from buy orders',()=>{
  const reports=[merchant({trade1:{name:'wcap',level:7,price:100,q:2},trade2:{name:'wcap',level:8,price:500,b:true},trade3:{name:'coat',price:0}})];
@@ -23,7 +24,7 @@ test('normalized market coordinates are numeric while map metadata remains untou
 });
 test('history distinguishes historical low, fresh low, recent listing and highest WTB levels',()=>{
  const history={wcap:{lowest:50,lowestLevel:3},coat:{marketLow:1,marketLowLevel:1,highestPublicWTB:100}};
- observeMarketPrices(history,[{item:{name:'wcap',level:8},price:500,seenAt:999999},{item:{name:'wcap',level:7},price:100,seenAt:999998}],false,1000000);
+ observeMarketPrices(history,[{item:{name:'wcap',level:8},price:500,seenAt:999999},{item:{name:'wcap',level:7},price:100,seenAt:999998}]);
  assert.equal(history.wcap.lowestLevel,3);assert.equal(history.wcap.marketLowLevel,7);assert.equal(history.wcap.recentLevel,8);assert.equal(history.coat.marketLow,undefined);
  observeMarketTrades(history,[{listings:[{name:'wcap',level:8,wtb:{price:900}},{name:'wcap',level:7,wtb:{price:200}}]}]);
  assert.equal(history.wcap.highestPublicWTB,900);assert.equal(history.wcap.highestPublicWTBLevel,8);assert.equal(history.coat.highestPublicWTB,undefined);
@@ -54,7 +55,7 @@ test('market failures release the refresh latch; authenticated publication sends
 
 test('local stand matching respects bid priority and caps purchased quantities',()=>{
  const state={standPriceHistory:{},standBids:{wcap:{quantity:2,price:500,minimumQuality:8},coat:{quantity:1,price:100}},merchantAutomations:{},merchantCurrent:null,merchantQueue:[],merchantCharacter:'M'};
- const service=createLocalMarket(state,{now:()=>100,nextCommand:()=>1,pending:()=>false,priority:id=>id==='wcap'?90:10,log(){}});
+ const service=createLocalMarket(state,withDoor(state,{now:()=>100,nextCommand:()=>1,pending:()=>false,priority:id=>id==='wcap'?90:10,log(){}}));
  const listings=[{item:{name:'coat'},price:10,quantity:1},{item:{name:'wcap',level:7},price:50,quantity:1},{item:{name:'wcap',level:8},price:200,quantity:10}];
  assert.equal(service.observe(listings),true);assert.equal(state.merchantQueue[0].bidItemId,'wcap');assert.equal(state.merchantQueue[0].listings[0].buyQuantity,2);
  assert.equal(state.standPriceHistory.wcap.lowestLevel,7);
@@ -64,7 +65,7 @@ test('stand price history takes each level from the first lowest listing in one 
  // Failure lines: a later listing at the same lowest price supplies the level; an unpriced or
  // zero-priced listing supplies a level; history reads the listings once per item (O(items x listings)).
  const state={standPriceHistory:{},standBids:{},merchantAutomations:{'stand bid purchases':false},merchantCurrent:null,merchantQueue:[],merchantCharacter:'M'};
- const service=createLocalMarket(state,{now:()=>100,nextCommand:()=>1,pending:()=>false,priority:()=>0,log(){}});
+ const service=createLocalMarket(state,withDoor(state,{now:()=>100,nextCommand:()=>1,pending:()=>false,priority:()=>0,log(){}}));
  const listings=[{item:{name:'wcap',level:9},price:0},{item:{name:'wcap',level:2},price:'x'},{item:{name:'wcap',level:5},price:80},
   {item:{name:'wcap',level:6},price:40},{item:{name:'wcap',level:7},price:40},null,{item:{name:'coat'},price:30}];
  for(let index=0;index<200;index++)listings.push({item:{name:'item'+index,level:index%13},price:1000-index%7},{item:{name:'item'+index,level:12},price:2000});
@@ -76,10 +77,42 @@ test('stand price history takes each level from the first lowest listing in one 
  assert.deepEqual(state.standPriceHistory.coat,{lowest:30,lowestLevel:0,recent:30,recentLevel:0,seenAt:100});
  assert.equal(state.standPriceHistory.item13.lowestLevel,0);assert.equal(state.standPriceHistory.item13.lowest,994);
  assert.equal(Object.keys(state.standPriceHistory).length,202);
+ // The feeds' history rule: a saved entry with a recent price and no lowest takes the price as its lowest.
+ state.standPriceHistory={coat:{recent:30}};service.observe([{item:{name:'coat',level:1},price:50}]);
+ assert.equal(state.standPriceHistory.coat.lowest,50);assert.equal(state.standPriceHistory.coat.lowestLevel,1);
 });
 
 test('published standing bids and sales retain levels without adding a zero level',()=>{
  const result=publishedMarketListings({nativeSlice:null,tradableNative:0,missing:[]},{wcap:{minimumQuality:8,quantity:1,price:500}},
   [{item:{name:'coat',level:0,p:'shiny'},price:20,quantity:1,state:'live'}]);
  assert.equal(result[0].level,8);assert.equal(result[0].wtb.price,500);assert.equal(result[1].level,undefined);assert.equal(result[1].p,'shiny');
+});
+
+// ALData's `/merchants` reply lists every merchant seen in the past week, so a merchant counts
+// while its `lastSeen` is within its measured gap of the newest sighting. A merchant with no
+// measured gap counts, so the first fetches after a start show every listed seller.
+test('currentMerchants drops a merchant whose lastSeen stopped advancing past its measured gap, and counts it again once it is unmeasured',()=>{
+ const {currentMerchants}=require('../../runtime/items/coordinator/market.ts');
+ const at=seconds=>new Date(Date.UTC(2026,0,1,0,0,seconds)).toISOString();
+ const sightings=new Map(),reply=(a,b)=>[{id:'A',serverRegion:'US',serverIdentifier:'I',lastSeen:at(a)},...(b==null?[]:[{id:'B',serverRegion:'US',serverIdentifier:'I',lastSeen:at(b)}])];
+ const names=list=>currentMerchants(sightings,list).map(merchant=>merchant.id);
+ assert.deepEqual(names(reply(0,0)),['A','B'],'the first sighting counts every listed seller');
+ assert.deepEqual(names(reply(10,10)),['A','B'],'one advance measures no gap yet');
+ assert.deepEqual(names(reply(20,20)),['A','B'],'two advances in a row measure a gap of 10 s');
+ assert.deepEqual(names(reply(35,20)),['A'],'B stopped while the newest sighting moved past its gap');
+ assert.deepEqual(names(reply(45,null)),['A'],'a merchant the reply no longer lists loses its sighting');
+ assert.deepEqual(names(reply(55,20)),['A','B'],'a merchant that comes back is unmeasured and counts again');
+});
+
+// Each feed refreshes on an ask once its interval has passed since its last attempt, a failed
+// one included; the first ask refreshes at once.
+test('createFeedCadence is due at the first ask and again an interval after the last attempt, failed or not',async()=>{
+ const {createFeedCadence}=require('../../runtime/items/coordinator/market.ts');
+ let now=1000;const cadence=createFeedCadence(()=>now,10_000),runs=[];
+ assert.equal(cadence.due(),true,'the first ask refreshes at once');
+ await cadence.run(async()=>{runs.push(now);});
+ now+=9_999;assert.equal(cadence.due(),false);now+=1;assert.equal(cadence.due(),true);
+ await assert.rejects(cadence.run(async()=>{throw Error('feed down');}),/feed down/);
+ assert.equal(cadence.due(),false,'a failed attempt still starts the interval');
+ now+=10_000;assert.equal(cadence.due(),true);assert.deepEqual(runs,[1000]);
 });

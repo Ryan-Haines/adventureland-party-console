@@ -4,12 +4,11 @@ const crypto = require("node:crypto");
 const assert = require("node:assert/strict");
 const { createNative } = require("./native.cjs");
 const { validate } = require("./validate.cjs");
-const engines = ["native-visible", "native-hidden", "alclient"];
 function checkCounts(data) {
   let expected = 0;
   for (const route of data.metadata.routes) {
-    const count = data.metadata.measurementsByRoute?.[route.id] || data.metadata.passes;
-    for (const engine of engines) {
+    const count = (data.metadata.measurementsByRoute?.[route.id] || data.metadata).passes;
+    for (const engine of data.metadata.engines) {
       const rows = data.results.filter((r) => r.route === route.id && r.engine === engine);
       assert.equal(rows.length, count, `${route.id}/${engine} count`);
       assert.deepEqual(

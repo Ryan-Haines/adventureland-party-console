@@ -2,7 +2,8 @@
 import { verifyCodeParity } from "./e2e-code-parity.mts";
 import {sourceFingerprint} from '../console-build/builder.ts';
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdirSync, writeFileSync, cpSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { npmCli as npm, runDirectory, archiveReport } from "./benchmark-run.mts";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,15 +34,7 @@ function scenarioIdentity(title:string){
   return parts.slice(1).join(' > ');
 }
 const grep = expected.map((title) => title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-const npm =
-  process.env.npm_execpath ||
-  path.join(path.dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
-const out = path.join(
-  root,
-  ".build/e2e-benchmarks",
-  new Date().toISOString().replace(/[:.]/g, "-"),
-);
-mkdirSync(out, { recursive: true });
+const out = runDirectory(root, "e2e-benchmarks");
 // Both measured runs use prepared dependencies and Docker layers. Otherwise a
 // cold debug image build would be mistaken for a gameplay clock improvement.
 const preparationStarted = performance.now();
@@ -93,11 +86,7 @@ for (const backend of ["accelerated", "native"]) {
   );
   const wallMs = performance.now() - started;
   const archive = path.join(out, backend);
-  mkdirSync(path.join(archive, ".build"), { recursive: true });
-  for (const directory of ["e2e-report", "e2e-results"])
-    cpSync(path.join(root, ".build", directory), path.join(archive, ".build", directory), {
-      recursive: true,
-    });
+  archiveReport(root, archive);
   const manifest = JSON.parse(
     readFileSync(path.join(archive, ".build/e2e-report/manifest.json"), "utf8"),
   ) as { tests: Outcome[]; workers:number; dashboardCandidate:{sourceHash:string;components:unknown}; gamePools:unknown };

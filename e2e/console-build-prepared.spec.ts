@@ -5,15 +5,13 @@ import {spawn} from 'node:child_process';
 import path from 'node:path';
 import {ConsoleBuildController} from '../tools/console-build/controller';
 import {ConsoleBuildStore} from '../tools/console-build/store';
+import {stage} from './console-build-helpers';
 import {safeReload} from '../tools/console-build/safe-reload';
 import {readJson} from '../tools/build-store';
 
 test('candidate preparation keeps gameplay unpaused and failure preserves the selected build',async({},info)=>{
   const root=info.outputPath('host'),store=new ConsoleBuildStore(root),pause=path.join(root,'updates/pause.json');
-  async function stage(label:string){const id=createHash('sha256').update(label).digest('hex'),dir=path.join(root,label);
-    await mkdir(path.join(dir,'app'),{recursive:true});await writeFile(path.join(dir,'app/item.txt'),label);
-    return store.complete(dir,{schema:1,id,sourceHash:id,createdAt:new Date().toISOString(),components:{dashboard:id,coordinator:id,characters:id},files:{'item.txt':id}});}
-  const a=await stage('old'),b=await stage('new');await store.setReferences({active:a.manifest.id,latest:b.manifest.id});
+  const a=await stage(store,'old'),b=await stage(store,'new');await store.setReferences({active:a.manifest.id,latest:b.manifest.id});
   const drain=safeReload(root,async()=>({id:(await readJson<{id:string}>(pause))?.id,ready:true}),{clearMs:100,pollMs:25});
   let finish!:()=>void,preparing=false,fail=false,activations=0;
   const controller=new ConsoleBuildController(store,{

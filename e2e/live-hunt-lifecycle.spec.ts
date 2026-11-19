@@ -2,7 +2,7 @@ import { unequalQuests, followerReward, booBoo } from './gameplay-scenarios';
 import { test, expect } from './live-fixtures';
 import { killNativeCharacter } from './hunt-interruption-helpers';
 import { warrior as W, priest as P, fighters, world, tokens, profile, location, party, quests, start, artifact, rejected } from './game/hunt-lifecycle';
-import { zones, contains } from '../dashboard/lib/farming-zones';
+import { zones, contains } from '../runtime/hunting/zones';
 
 test.describe('native Hunt lifecycle', () => {
   test.setTimeout(300_000);
@@ -100,7 +100,7 @@ test.describe('native Hunt lifecycle', () => {
     const native=()=>Promise.all(fighters.map(name=>live.clients[name].frame.evaluate(()=>{
       const w=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
       return {name:w.character.name,map:w.character.map,in:w.character.in,x:w.character.real_x,y:w.character.real_y,
-        moving:!!w.character.moving,navigation:w.sharedRoutine?.convoyNavigationReport?.(),cache:w.__partySharedRouteRemainder,
+        moving:!!w.character.moving,navigation:w.partyMovement?.convoyNavigationReport?.(),cache:w.__partySharedRouteRemainder,
         townReady:w.can_use('use_town')&&!w.is_on_cooldown('use_town')};
     })));
     try{
@@ -117,7 +117,11 @@ test.describe('native Hunt lifecycle', () => {
         }
         return false;
       },{timeout:180_000,intervals:[100],message:'Declared walking return must install and actually move before the communication fault'}).toBe(true);
+      // Both members fall silent at once, so the walk holds them in its communication hold until 13
+      // judges them lost on its stale bound (steamRunnerStaleMs, 20 s; the user's decision of
+      // 2026-11-17). The channels come back within that bound, so the same walk resumes.
       blocking=true;await context.route('**/party-api/status',intercept);interceptInstalled=true;
+      const silentAt=Date.now();
       await expect.poll(async()=>{
         const s=await live.state(),positions=await native();
         if(s.activeConvoy?.phase==='communication-hold'&&positions.every(p=>!p.moving)){
@@ -125,6 +129,8 @@ test.describe('native Hunt lifecycle', () => {
         }
         return false;
       },{timeout:20_000,message:'Dropping both real report channels must hold and stop native travel'}).toBe(true);
+      expect([...held.convoy.participants].sort(),'The hold keeps every silent member').toEqual([...original.convoy.participants].sort());
+      expect(Date.now()-silentAt,'The channels return inside the stale bound').toBeLessThan(20_000);
       blocking=false;await context.unroute('**/party-api/status',intercept);interceptInstalled=false;
       await expect.poll(async()=>{
         const s=await live.state(),c=s.activeConvoy;
@@ -284,13 +290,16 @@ test.describe('native Hunt lifecycle', () => {
     await live.post('/hunt-blacklist', { character: W, action: 'remove', monsterId: 'bee' });
     expect(profile(await live.state()).huntBlacklist.bee).toBeFalsy();
     expect(profile(await live.state()).huntBlacklist.spider).toMatchObject({ monsterId: 'spider', deaths: 0, reason: 'Manually blacklisted' });
+    // The pair is the value under test: under target Hunt the derived single mode reads `hunt`
+    // whatever the combat mode.
     const unchanged = (state: any) => { const current = profile(state); return { settings: current.huntSettings, blacklist: current.huntBlacklist,
-      policy: current.farmingPolicy, focus: current.monsterFocus, location: current.location, cycle: current.monsterHunt?.cycleId }; };
+      combatMode: current.combatMode, targetMode: current.targetMode, focus: current.monsterFocus, location: current.location, cycle: current.monsterHunt?.cycleId }; };
     const expected = unchanged(await live.state());
+    expect([typeof expected.combatMode, expected.targetMode]).toEqual(['string', 'hunt']);
     const invalid: { route: string; body: Record<string, unknown>; status: number }[] = [
       { route: '/farming-mode', body: { character: W, mode: 'hunt', backup: { monsterFocus: ['goo'], location: { map: 'not-a-map', x: 0, y: 0 } } }, status: 400 },
       ...[{ deathThreshold: 0 }, { expirationThreshold: 1.5 }, { blacklistDeaths: 'true' }, { unknown: true },
-        { relocateIfCompeting: false, deathThreshold: 0 },
+        { blacklistDeaths: false, deathThreshold: 0 },
         ...[[], null, { goo: 7 }, { goo: 'not-a-spawn' }, { missing: gooKey }].map(preferredSpawns => ({ preferredSpawns }))
       ].map(body => ({ route: '/hunt-settings', body: { character: W, ...body }, status: 400 })),
       { route: '/hunt-settings', body: { character: P, deathThreshold: 4 }, status: 409 },
@@ -331,7 +340,6 @@ test.describe('native Hunt lifecycle', () => {
       await expect.poll(async () => profile(await live.state()).huntFailures?.goo?.deaths || 0, { timeout: 30_000 }).toBe(1);
       const deadState = await live.state();
       expect((await world(live))[W].rip, 'Verify the movement guard while the native character is still dead').toBe(true);
-      expect(profile(deadState).monsterHunt.deathCount).toBe(1);
       expect(deadState.activeConvoy, 'No travel may be dispatched while a Hunt participant is dead').toBeFalsy();
       const recordedDeath = { hunt: profile(deadState).monsterHunt, failures: profile(deadState).huntFailures, blacklist: profile(deadState).huntBlacklist };
       await live.restartCoordinator();

@@ -1,8 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { installGameLogEcho } = require('../../runtime/characters/game-log-echo.ts');
-const { installHostGameLogs } = require('../../runtime/characters/game-logs.ts');
+const { installGameLogEcho, installHostGameLogs } = require('../../runtime/status/character/telemetry.ts');
 
 // L1 failure modes (docs/efficiency.md § Requests and logs):
 // 1. every caracAL thread prints a party kill or find that a sibling thread also receives;

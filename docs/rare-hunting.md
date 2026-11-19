@@ -12,9 +12,15 @@ identities are reported by realm/map/instance/ID so their retaliation does not
 acquire defense or queue ownership; unrelated threats still do. Healing, attack
 restrictions and emergency recovery retain precedence. Turning this option off
 uses the ordinary encounter behavior below. Explicit farming and Phoenix patrol
-remain separate. Rare sightings can interrupt normal
-farming, scatter, farming travel, and Monster Hunt. Event work, Daisy reward
-claims, Town, and emergency recovery retain ownership. A completed encounter
+remain separate. Which trips a rare interrupts is the task table's rare row
+(`runtime/tasks/rules.ts`): the
+rare task ranks against the group's live task, so a rare interrupts farming and Monster
+Hunt mission travel and may join a rare's own walk; a trip the player started by hand, an
+event walk, a return and a death recovery walk finish first. Each rare's "May interrupt Hunt" switch (`interruptsHunt`,
+default on) in the passive hunting menu covers the whole Hunt task: off, the rare never takes
+the party from Hunt mission travel or from farming the Hunt target. Backup
+farming while Hunts expire is ordinary farming. Event work, Daisy
+reward claims, Town, and emergency recovery retain ownership. A completed encounter
 resumes the saved task only while its navigation revisions remain current.
 Only confirmed party engagement followed by that target's death starts looting;
 witnessing another player's kill is insufficient. Loot acknowledgement must match
@@ -43,13 +49,19 @@ While patrol acquisition is authorized, fresh Phoenix observations are also fed
 directly into the grouped candidate list, even if convoy travel suppresses client
 nominations. Patrol Phoenix priority is 100.5: above other priority-100 passive
 rares, below Fairy at 101. Already-engaged fights and protected activities retain
-ownership. All interrupted rare pursuits retry after three seconds.
+ownership. All interrupted rare pursuits retry after three seconds. A rare walk that
+fails climbs the movement owner's task round (`taskRound` in
+`runtime/protocol/ladder.ts`) while the rare control lives: the route again,
+the other route, the nearest exit (never Town), then the next report. Each rung keeps
+the 30-second rare route bound as its deadline, and the climb ends with the control.
 The encounter allows up to ten seconds for normal grouped-combat selection to
 take ownership; stale sightings still expire normally. Protected activities keep
 their movement priority, and attack range/readiness checks remain authoritative.
 
 All patrol scan legs, including short approaches, belong to the convoy. Client
-patrol controls never launch an independent smart move. Assembly acknowledgements
+patrol controls never launch an independent smart move. The whole party searches
+together: from game data 18183 the party convoy reaches the Phoenix sooner after a
+kill in every one of its five regions than a split search with its regroup (by calculation). Assembly acknowledgements
 must show stopped characters before capturing the planning origin. ALClient remains
 the primary planner; regrouping, cancellation, origin drift, and transport errors
 do not authorize native pathfinding. Geometry/pathfinding failures may use native
@@ -68,11 +80,12 @@ coverage points; unfinished regions are reported and skipped. Failure in all
 regions pauses travel until the user restarts. Scan convoys carry exact points:
 ordinary farming-area resolution must not attach shapes or substitute a farming
 entry point. All convoy members acknowledge arrival before scan advancement.
-The leader handles approaches within 180 units, with a 30-second no-progress
-watchdog covering convoy/local handoff and repeatedly completed ineffective trips.
-Runtime loss or temporary unavailability retries the same point after five
-seconds without consuming geometry fallback attempts. Fallback coordinates are
-clamped to the spawn boundary rather than sending the party outside the region.
+A scan stop is reached by movement's arrival reading, and a leg ends on its
+walk's own progress end. A failed leg climbs the party's farming ladder
+: a coverage sample no stop has walked to replaces the failed stop, then
+the party regroups at the same stop, then the safe point starts the region's
+scan over, and the wait rung counts the region incomplete and goes on. A lost or
+reconnecting runtime holds the scan until every party runtime reports again.
 
 After a confirmed Phoenix death and required loot collection, choose from the
 leader's current position: stay in the current spawn region, or compare planned
@@ -81,7 +94,10 @@ Route distance includes walking distance and 400 equivalent units per map
 transition; ties follow the saved order. Failed plans are excluded; if none can
 be planned, pause with a visible reason. Position within a region is not assumed
 to cover it: reposition to its observation point even after a long, drifting fight.
-Wait until death + 35 seconds, counting loot and travel time. Sightings can
+Wait until the Phoenix's death plus the game's respawn time
+(`G.monsters.phoenix.respawn`) and the server's 0.9 s jitter, counting loot and
+travel time. With no respawn time in game data the patrol holds its respawn
+stage and reports the missing data through the bound record. Sightings can
 interrupt the wait immediately. At the deadline, scan with fresh coverage, then
 continue with that region's successor in the saved order. Region and deadline
 persist through restart; disappearance never starts a confirmed-death timer.
@@ -90,13 +106,20 @@ adds up to 0.9 seconds and samples uniformly from the five boundaries (20% each)
 
 Every owned runtime reports rare sightings, field generators, and observed kills
 through ordinary status telemetry, even with no map viewer open. The coordinator
-scopes sightings by realm/map/instance and selects one shared encounter. Passive
-unengaged encounters end when no fresh sighting remains (three seconds). Engaged
-encounters retain combat/defense ownership; independent pursuit limits include 30 seconds without a new HP
-low after combat starts, or five minutes total. Abandoned entity IDs have a three-second retry delay across all rare hunts,
-including Fairy, Phoenix, Golden Bat, Cute Bee, Hen, and Rooster. Old attack
-reports remain filtered separately for two minutes; fresh attempts are allowed
-after the three-second delay. Confirmed deaths retain their dead-ID records.
+scopes sightings by realm/map/instance and selects one shared encounter. A
+sighting inside a member's view that its observation does not list is gone, and
+sightings of a place no member's fresh report stands on go. The rare is
+unseen once the members whose view covers its last spot have each sent one
+observation after its last sighting without it, and lost once every member has
+. Before combat the walk toward the rare ends with no progress on
+movement's verdicts; in combat the rare's HP is the progress, and no new low for
+30 s (the kept bound `RARE_PROGRESS_BOUND_MS`) after the fight's start, its last
+low or the party's last fight against other attackers ends the encounter. No
+total pursuit limit applies. An ended encounter cools its rare until a
+newer sighting shows what the end read changed. A rejected rare stays
+rejected until it attacks a member or dies; the record keeps the
+newest 100 rejections by sighting time, as b9b5c91e did, and reports each one it
+drops. A kill counts until the monster's respawn time has passed.
 
 Fairy is searchable but cannot be selected as an active farming focus. It is
 skill-immune: Burst, Controlled Burst, Curse, Taunt, and Stomp are not used in its
@@ -104,7 +127,9 @@ encounter. Ordinary attacks, including warrior attacks, can trigger escape.
 If a participating fighter carries `fieldgen0`, the nearest carrier approaches
 within 200 units and consumes one through `equip(slot)`, which creates the field
 at the carrier's position. Offensive attacks wait for confirmation of a field
-within 300 units, or a bounded deployment failure. One generator maximum is
+within 300 units: the report that carries the deployment stamps it, and the
+deployer's next report confirms the field or shows the generator spent or
+refused. One generator maximum is
 consumed per encounter. Existing nearby fields are reused. There are no automatic
 purchases or storage withdrawals. Without a confirmed field the agreed fallback
 is ordinary attacks and bounded pursuit, with no guarantee of success.
@@ -114,29 +139,13 @@ Settings use `POST /party-api/rare-hunting` with partial boolean keys `tinyp`,
 `monsterId: "phoenix"` and `phoenixRouteOrder: string[]`; the server validates all
 five catalog region IDs. `POST /party-api/phoenix-stop` cancels the patrol.
 Dashboard state exposes `passiveRareHunts`, `phoenixRouteOrder`, and `rareHuntState`;
-character status responses include a revision-bound `rareControl`. A saved return
+character status responses include a revision-bound `rareControl`. The patrol's
 checkpoint survives coordinator restart, while encounter locks and scan coverage
 are rebuilt rather than trusting old sightings.
 
-Primary implementation: `runtime/coordinator/navigation/rare-hunting.ts` and
-`phoenix-patrol.ts`, with client observation/targeting in `characters/shared.js`.
-`scripts/rare-hunting.cjs` is a compatibility export of the generated TS bundle.
-Run
-`npm test` and `npm run build` to validate; use the existing publication/reload
-workflow to activate a built generation.
+Primary implementation: `runtime/hunting/coordinator/rares.ts` (sightings, the passive rules, the encounter, the Phoenix patrol and the rare's state for the reply), with the character's observation and control in `runtime/hunting/character/rares.ts`. An encounter ends with an end code from `runtime/hunting/rules.ts` (`released`, `no-progress` and `time-limit` reject the rare until new evidence; `killed`, `died`, `disabled`, `claimed` and `interrupted` do not), and the encounter writes nothing of the Hunt record, the combat mode or the scatter break: the tasks owner's rare row takes the group and the combat mode answer's rare row answers grouped. The patrol settles at a stop on the leader's next report after the walk ended, and retries a walk lost to a runtime reload on every member's next report. An add-on may order the regions through `rare.search`. The party death recovery's escape ends the encounter (`survival.recoveryPhase`), and a Hunt under the recovery resumes when the tasks owner resumes its task. Run `npm test` and `npm run build` to validate; use the existing publication/reload workflow to activate a built generation.
 
-Farming returns are tracked by `scripts/rare-farming-return.cjs` using the durable
-`rareHuntReturn` checkpoint. Low health, stale heartbeats, events, and temporary
-travel ownership pause the return without deleting it. Failed or lost return
-convoys retry at most once every five seconds; offline members retain their
-obligation until they reconnect. Completion requires fresh, living members in
-the saved farm area (or within 180 units for a point destination). Explicit new
-leader navigation supersedes the old return. An active Monster Hunt receives
-ownership back at the same cycle, mission index, owners, and pinned destination,
-without rebuilding quests. An active Phoenix
-patrol resumes its scan rather than returning to ordinary farming. The dashboard
-reports waiting, returning, and resumed states instead of leaving a stale
-cancellation message after recovery.
+The encounter is the tasks owner's `rare` task: it ends the walk under way and suspends the farming or Hunt task, and commits nothing into the walk. After the encounter the tasks owner resumes that task, which walks the party back to its spot: farming through its empty spawn return (`runtime/hunting/coordinator/farm.ts` `returnToSpawn`), a Hunt through its mission travel or its arrival recovery. Grouped combat's queue facts reach the encounter through the targeting owner's `targeting.groupView`, and its queue reads the rare's rejections from `farming.focus`'s `rare.rejected`, so the encounter writes nothing of the targeting record. An active Phoenix patrol resumes its scan rather than returning to ordinary farming.
 
 Ordinary empty-spawn recovery cannot take movement ownership from an active
 Phoenix patrol or rare encounter, including client-reload gaps. Anniversary

@@ -1,9 +1,9 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const {routineFor,migrateRoutinePriorities,splitLegacyWork,routineEnabled}=require('../../runtime/coordinator/merchant/routines.ts');
-const {merchantJobPriority}=require('../../runtime/coordinator/merchant/priority.ts');
-const {scopeWork}=require('../../runtime/coordinator/merchant/command-scope.ts');
-const {batchMarketplaceVisits}=require('../../runtime/coordinator/merchant/marketplace-batch.ts');
-const {createAutomaticMerchantSales}=require('../../runtime/coordinator/merchant/automatic-sales.ts');
+const {routineFor,migrateRoutinePriorities,splitLegacyWork,routineEnabled}=require('../../runtime/merchant-jobs/rules.ts');
+const {merchantJobPriority}=require('../../runtime/merchant-jobs/rules.ts');
+const {scopeWork}=require('../../runtime/merchant-jobs/coordinator/commands.ts');
+const {batchMarketplaceVisits}=require('../../runtime/items/coordinator/market.ts');
+const {createAutomaticMerchantSales}=require('../../runtime/items/coordinator/market.ts');
 
 test('automatic upgrades have independent priorities and carry no manual or stat-scroll work',()=>{
  const saved=migrateRoutinePriorities({'manual upgrades':91});
@@ -56,4 +56,20 @@ test('disabled automatic NPC sales preserve rules and marks while manual work re
  const calls=[];const service=createAutomaticMerchantSales(state,{now:()=>1,nextCommand:()=>1,queue:(names,reason)=>calls.push(reason),publish(){},syncStand:()=>true,idle(){},persist(){}});
  service.reconcile({name:'M',items:[{slot:0,item:{name:'cap'}},{slot:1,item:{name:'coat'}}]});
  assert.deepEqual(calls,['npc sales']);assert.equal(state.npcSaleMarks.length,2);assert.equal(state.autoNpcSales.cap,true);
+});
+
+test('the card line and the queue rows name a job from one table', () => {
+  const {merchantLine, routineLabel} = require('../../runtime/merchant-jobs/rules.ts');
+  assert.equal(routineLabel('party collection'), 'Item collection');
+  assert.equal(merchantLine({reason: 'bank collection', operationStage: 'retrieving'}, false).label,
+    'Merchant job - Item collection - taking items from the bank');
+});
+
+test('the dialog reads the typed clamp and the drag renumbering from 08', () => {
+  const {typedRoutinePriority, movedRoutinePriorities} = require('../../runtime/merchant-jobs/rules.ts');
+  assert.equal(typedRoutinePriority('250'), 100);
+  assert.equal(typedRoutinePriority('x'), 0);
+  assert.deepEqual(movedRoutinePriorities({fishing: 60, mining: 50}, ['mining', 'fishing'], 0), {fishing: 60, mining: 61});
+  assert.deepEqual(movedRoutinePriorities({fishing: 1, mining: 0}, ['fishing', 'mining', 'restock'], 2),
+    {fishing: 100, mining: 99, restock: 98}, 'a chain under the floor renumbers from the top down');
 });

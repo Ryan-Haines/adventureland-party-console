@@ -1,10 +1,14 @@
+const {installVisits} = require('./helpers/merchant-visits.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createLuckyUpgrade}=require('../../runtime/characters/lucky-upgrade.ts');
+const {createLuckyUpgrade}=require('../../runtime/items/character/production.ts');
+const {settles}=require('../../runtime/items/character/bag.ts');
 function fixture(options={}) {
  const items=Array(42).fill(null);items[2]={name:'sword',level:3,rid:'exact'};items[4]={name:'scroll0',q:2};items[7]=options.occupant||null;
  let journal=null,now=0,busy=false,current=true;const swaps=[],logs=[],calls=[];
  const ports={item:i=>items[i],busy:()=>busy,read:()=>journal,write:j=>{journal=j&&structuredClone(j);},now:()=>now,current:()=>current,
-  sleep:async ms=>{now+=ms;},log:s=>logs.push(s),swap:async(a,b)=>{swaps.push([a,b]);if(options.reject)throw Error('imove rejected');if(!options.stall)[items[a],items[b]]=[items[b],items[a]];}};
+  sleep:async ms=>{now+=ms;},log:s=>logs.push(s),size:()=>items.length,
+  // The bag's own settle wait over the fixture clock, one 100 ms round trip as the call budget's margin.
+  settles:check=>settles({margin:()=>100,sleep:ms=>ports.sleep(ms),now:()=>now},check),swap:async(a,b)=>{swaps.push([a,b]);if(options.reject)throw Error('imove rejected');if(!options.stall)[items[a],items[b]]=[items[b],items[a]];}};
  const service=createLuckyUpgrade(ports);
  const action=async(slot,scroll)=>{calls.push([slot,scroll]);if(options.pending){busy=true;throw Error('timed out');}
   if(items[scroll].q>1)items[scroll].q--;else items[scroll]=null;
@@ -138,18 +142,22 @@ test('tidy keeps the reserved lucky slot empty at 39 occupied slots',async()=>{
  assert.equal(f.items[7],null);assert.equal(f.items.filter(Boolean).length,39);assert.equal(f.items[40],null);assert.equal(f.items[41],null);
 });
 for (const temporary of [false,true]) test('handoff clears server-assigned lucky slot before returning: temporary='+temporary,async()=>{
- const source=require('node:fs').readFileSync('characters/shared.js','utf8');
- const start=source.indexOf('    async function collectFromTarget(useTemporaryReserve)');
- const end=source.indexOf('\n    try {',start);
  const f=fixture();f.items.fill(null);for(let i=0;i<15;i++)if(i!==7)f.items[i]={name:'item'+i};
- let merged=false,capacity;
- const context=require('node:vm').createContext({command:{jobId:'test',target:'fighter'},Date,
-  setTimeout:fn=>fn(),waitForPlayer:async()=>{},freeInventorySlots:()=>f.items.filter(i=>!i).length,
-  requestMerchantHandoff:async(_url,options)=>{capacity=options.body.capacity;f.items[7]={name:'received'};},
-  request:async()=>({handoff:{kept:[{item:{name:'received'}}]}}),mergeHandoff:()=>{merged=true;},
-  merchantLuckyUpgrade:()=>f.service,luckyUpgradeSlot:7});
- require('node:vm').runInContext(source.slice(start,end),context);
- await context.collectFromTarget(temporary);
+ // The service visit's collection (visits.ts merchantService): a delivery the member has
+ // no room for collects first with the swap reserve; the receipt clears the lucky slot.
+ const capacities=[];
+ const context={character:{name:'M',ctype:'merchant',items:f.items,gold:0},sleep:async()=>{},waitForPlayer:async()=>{},meet:async()=>{},
+  get_player:name=>({name}),sameItem:(a,b)=>a?.name===b?.name,findItem:wanted=>f.items.findIndex(i=>i&&i.name===wanted.name),
+  freeInventorySlots:()=>f.items.filter(i=>!i).length,game_log(){},
+  request:async(url,options)=>{if(url==='/merchant/handoff'){capacities.push(options.body.capacity);if(capacities.length===1)f.items[7]={name:'received'};return {};}
+   return url.startsWith('/merchant/job/')?{handoff:{kept:[{item:{name:'received'}}]}}:{};}};
+ let refused=temporary;
+ installVisits(context,{root:()=>({localStorage:{getItem:()=>null,setItem(){}}}),preloadStatScrolls:async()=>{},statusQuantity:()=>0,
+  visitBank:async()=>{},findBankItem:()=>null,sortBankFloor:async()=>{},tidyLuckySlot:()=>f.service.tidy(7),
+  luck:()=>({castsLuck:()=>false}),collectAfter(){},
+  merchantSendItem:async()=>{if(refused){refused=false;throw {reason:'send_no_space'};}}});
+ await context.merchantService({id:1,jobId:'test',target:'fighter',collectionOnly:true,withdrawals:temporary?[{item:{name:'item12'}}]:[]});
+ const capacity=capacities[0],merged=capacities.length>0;
  assert.equal(capacity,28-(temporary?1:3));assert.equal(merged,true);
  assert.equal(f.items[7],null);assert.equal(f.items.filter(Boolean).length,15);
  assert.ok(f.items.some(i=>i?.name==='received'));

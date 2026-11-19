@@ -22,8 +22,8 @@ test('blocked melee Phoenix recovery computes native hitbox-clear goals and reac
   const formation:any[]=[];
   await expect.poll(async()=>{
     const current=await Promise.all([W,P].map(name=>live.clients[name].run(`(()=>{
-      const peer=get_player(${JSON.stringify(name===W?P:W)}),routine=globalThis.sharedRoutine;
-      return {name:character.name,grouped:!!routine?.usesGroupedCombat?.(),members:routine?.queueMembers?.(),
+      const peer=get_player(${JSON.stringify(name===W?P:W)});
+      return {name:character.name,grouped:!!globalThis.partyHunting?.farm.grouped(),members:globalThis.partyTasks?.partyList(),
         alive:character.hp>0&&!character.rip,map:character.map,in:character.in,
         peer:peer&&{name:peer.name,map:peer.map,in:peer.in,hp:peer.hp,rip:peer.rip,visible:peer.visible}};
     })()`)));
@@ -66,7 +66,7 @@ test('blocked melee Phoenix recovery computes native hitbox-clear goals and reac
     },{timeout:30000,message:'The real client must observe the declared stationary native Phoenix fixture'}).toBe(true);
     geometry={...geometry,currentBlocked:geometry.blocked,original:originalGeometry,formation};
     await expect.poll(async()=>{
-      const sample=await live.clients[W].run(`(()=>{const t=parent.entities[${JSON.stringify(seed.id)}],ports=globalThis.sharedRoutine?.terrainRecoveryPorts?.();
+      const sample=await live.clients[W].run(`(()=>{const t=parent.entities[${JSON.stringify(seed.id)}],ports=globalThis.partyMovement?.terrainRecoveryPorts?.();
         const context=ports?.context(),goals=t&&context?.target?.includes(${JSON.stringify(seed.id)})?ports.goals():[];return {
         at:Date.now(),x:character.real_x,y:character.real_y,target:t&&{x:t.x,y:t.y,hp:t.hp},
         position:globalThis.partyCombatPosition||null,recovery:globalThis.partyQueueClient?.formation?.report()||null,

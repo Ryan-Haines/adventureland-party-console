@@ -71,8 +71,9 @@ Kills and DPS have separate searchable monster filters. DPS also filters skills
 and groups bars by character or skill. Items acquired has a searchable item filter
 and rate units. Gold shows cumulative net gold gained with a character selector.
 Loot breakdown shows all acquired items as horizontal bars, with scrolling when
-needed. It defaults to today in America/Toronto and offers yesterday, a selected
-day or an inclusive date range. Calendar boundaries follow EST/EDT automatically.
+needed. It defaults to today and offers yesterday, a selected day or an inclusive
+date range. Kills, damage, items and loot all count calendar days from the browser's
+midnight, daylight saving included, and each view says so.
 It ignores the shared time range and temporary item resets so selected days keep
 their complete loot totals. Its reset button restores today's date filter.
 There is no Damage breakdown graph. Ping shows a time series.
@@ -232,10 +233,14 @@ index, maintained through ingestion, expiry and resets.
 
 ## Maintained source
 
-- `runtime/characters/metrics.ts`: capture, outbox and retry lifecycle.
-- `runtime/metrics/`: shared protocol and boundary parsers.
-- `runtime/coordinator/metrics/service.ts`: ingestion, deduplication, storage,
-  retention and queries.
+- `runtime/status/character/telemetry.ts`: capture, outbox and retry lifecycle.
+- `runtime/status/api.ts` (the wire shapes) and `runtime/status/rules.ts` (the
+  reset kinds, the outbox keys and the frame parsers): the shared protocol, which
+  the characters, the coordinator and the dashboard load without coordinator code.
+- `runtime/status/coordinator/metrics/service.ts`: ingestion, deduplication by
+  each event's id, storage in the coordinator's journal store
+  (`runtime/settings/coordinator/persistence/jsonl-store.ts`), retention and
+  queries; a retention pass that writes again ends a storage outage.
 - `dashboard/features/party/party-view-switch.tsx`: workspace navigation.
 - `dashboard/features/party/metrics-*.tsx` and `metrics-series.ts`: graphs,
   filtering and projections.
@@ -244,7 +249,7 @@ index, maintained through ingestion, expiry and resets.
 - `dashboard/features/party/metrics-measurements.tsx`: DPS and acquisition bars.
 - `dashboard/features/party/metrics-gold.tsx`: per-character balance baselines
   and cumulative net gold gains.
-- `runtime/metrics/luck.ts`: native Encouragement parsing and the independent
+- `runtime/status/rules.ts` `encouragementLuck`, `projectDirectDrop`: native Encouragement parsing and the independent
   ordinary/bonus drop model.
 
 Later additions can extend acquisition sources and transaction attribution,
@@ -259,4 +264,4 @@ Retried acknowledged frames must survive coordinator restart exactly once. Compa
 
 The metrics journal now queues ordered asynchronous appends and compacts one record at a time with asynchronous file writes; coordinator combat callbacks no longer synchronously rewrite retained history. Delivery acknowledgements wait for their queued writes, and graceful shutdown drains them. Receipt identities and totals remain one record, preserving retry deduplication. Startup still replays the journal before accepting metrics.
 
-Character retries persist each immutable frame once in a bounded 1,024-slot ring and rewrite a small header containing at most 720 retained sequence numbers. The collector removes a frame's ring key once the frame leaves the queue, and installation removes every ring key the restored header does not list, so the store holds only unconfirmed frames. In a headless worker the coordinator keeps the outbox keys in its journal and sends them only to the owning character's worker (`runtime/coordinator/characters/storage.ts`); the game's `local_cm_logic` walks every localStorage key every 16 ms. Existing full-frame journals migrate on their next persistence. Native startup ping samples are gaps for the first ten seconds of each observed connection. Assigned offline characters retain their last known carried gold in account totals; an unknown balance yields a gap rather than fabricated zero.
+Character retries persist each immutable frame once in a bounded 1,024-slot ring and rewrite a small header containing at most 720 retained sequence numbers. The collector removes a frame's ring key once the frame leaves the queue, and installation removes every ring key the restored header does not list, so the store holds only unconfirmed frames. In a headless worker the coordinator keeps the outbox keys in its journal and sends them only to the owning character's worker (`runtime/settings/coordinator/persistence/worker-storage.ts`); the game's `local_cm_logic` walks every localStorage key every 16 ms. Existing full-frame journals migrate on their next persistence. Native startup ping samples are gaps for the first ten seconds of each observed connection. Assigned offline characters retain their last known carried gold in account totals; an unknown balance yields a gap, not a zero.

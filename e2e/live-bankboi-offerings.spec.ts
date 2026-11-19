@@ -1,4 +1,4 @@
-import {test,expect} from './live-fixtures';
+import {test,expect,headlessMerchant} from './live-fixtures';
 
 const merchant='E2EMerchant',storage='E2EBankBoi';
 test.use({liveHeadless:true});
@@ -8,10 +8,7 @@ test('manual BankBoi Lantern triplet survives delivery and restart before one na
   // Failure inventory: virtual packs are rejected; the wrong copy is selected;
   // locked/reserved copies join the triplet; storage delivery loses group source
   // slots; generic withdrawals steal inputs; restart replays or loses the group.
-  await live.post('/steam/action',{character:merchant,action:'logout'});
-  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
-  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
-  await live.post('/slots/1/spawn',{character:merchant});
+  await headlessMerchant(live,merchant);
   await expect.poll(async()=>(await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
   await live.post('/merchant/force-stand',{enabled:true});
   const items=[...Array.from({length:3},()=>({name:'lantern',level:2})),{name:'lantern',level:2,l:'l'}];
@@ -55,10 +52,7 @@ test('safe maintenance waits for the active BankBoi instead of the stopped merch
   // maintenance waits forever for that old owner, misses the replacement, or
   // admits another slot swap during the hold. Native worker lifecycle and
   // client acknowledgements must prove the roster, rather than seeded receipts.
-  await live.post('/steam/action',{character:merchant,action:'logout'});
-  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
-  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
-  await live.post('/slots/1/spawn',{character:merchant});
+  await headlessMerchant(live,merchant);
   await expect.poll(async()=>(await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
   // Keep remote storage away from the bank so the maintenance request can
   // observe its real slot occupancy before the visit completes.
@@ -90,10 +84,7 @@ test('automatic NPC sales retrieve BankBoi stock and preserve kept and locked co
   // twice; keep/locked copies are retrieved; delivery is mistaken for sale; a
   // restart recreates completed demand. Native storage, sales and persistence
   // remain authoritative after the declared offline inventory input.
-  await live.post('/steam/action',{character:merchant,action:'logout'});
-  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
-  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
-  await live.post('/slots/1/spawn',{character:merchant});
+  await headlessMerchant(live,merchant);
   await expect.poll(async()=>(await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
   const items=[...Array.from({length:5},()=>({name:'throwingstars',level:0})),{name:'helmet',level:0,l:'l'}];
   await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'});c.info.items=${JSON.stringify(items)};await db.collection('character').replaceOne({_id:c._id},c);return true;})()`);
@@ -127,10 +118,7 @@ test('automatic NPC sales retrieve BankBoi stock and preserve kept and locked co
 });
 test('BankBoi compound inputs admit merchant work only after native bank delivery',async({live},info)=>{
   test.setTimeout(360_000);
-  await live.post('/steam/action',{character:merchant,action:'logout'});
-  await expect.poll(async()=>!(await live.state()).activeSlots.some((slot:any)=>slot.character===merchant),{timeout:90_000}).toBe(true);
-  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
-  await live.post('/slots/1/spawn',{character:merchant});
+  await headlessMerchant(live,merchant);
   await expect.poll(async()=>{const c=(await live.state()).characters[merchant];return c?.runtime==='headless'&&Date.now()-c.seenAt<3000;},{timeout:90_000}).toBe(true);
   await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'});
     c.info.items=[{name:'stramulet',level:0},{name:'stramulet',level:0},{name:'stramulet',level:0}];
@@ -165,11 +153,7 @@ test('BankBoi compound inputs admit merchant work only after native bank deliver
 });
 for(const automatic of [false,true]) for(const interruption of (automatic?['none','handoff','delivery']:['none','handoff','delivery','remote input'])) test(`BankBoi-only offering supplies ${automatic?'required automatic':'manual'} native upgrade (${interruption})`,async({live},info)=>{
   test.setTimeout(360_000);
-  await live.post('/steam/action',{character:merchant,action:'logout'});
-  await expect.poll(async()=> (await live.state()).activeSlots.some((slot:any)=>slot.character===merchant),{timeout:90_000}).toBe(false);
-  await expect.poll(async()=>{const operation=(await live.state()).steamSwitch;return !operation||operation.phase==='complete';},{timeout:90_000}).toBe(true);
-  await expect.poll(()=>live.admin(`output=!!get_player('${merchant}')`),{timeout:30_000}).toBe(false);
-  await live.post('/slots/1/spawn',{character:merchant});
+  await headlessMerchant(live,merchant);
   await expect.poll(async()=>{
     const report=(await live.state()).characters[merchant];
     return report?.runtime==='headless' && Date.now()-report.seenAt<=3000;
@@ -231,10 +215,7 @@ for(const automatic of [false,true]) for(const interruption of (automatic?['none
 
 for(const source of ['carried','native bank','optional absent','required absent','protected']) test(`ordinary manual offering stock boundary: ${source}`,async({live},info)=>{
   test.setTimeout(240_000);
-  await live.post('/steam/action',{character:merchant,action:'logout'});
-  await expect.poll(async()=>!(await live.state()).activeSlots.some((slot:any)=>slot.character===merchant),{timeout:90_000}).toBe(true);
-  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
-  await live.post('/slots/1/spawn',{character:merchant});
+  await headlessMerchant(live,merchant);
   await expect.poll(async()=>{const c=(await live.state()).characters[merchant];return c?.runtime==='headless'&&Date.now()-c.seenAt<3000;},{timeout:90_000}).toBe(true);
   await live.admin(`output=(async()=>{const p=get_player('${merchant}');p.items[20]={name:'helmet',level:0};p.items[22]={name:'scroll0',q:10};
     ${source==='carried'?"p.items[24]={name:'offeringp',q:2};":source==='protected'?"p.items[24]={name:'offeringp',q:2,l:'l'};":source==='native bank'?"const bank=await db.collection('user').findOne({_id:p.owner});bank.info.items0[0]={name:'offeringp',q:2};await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items0':bank.info.items0}});if(p.user)p.user.items0=bank.info.items0;":''}
@@ -280,10 +261,7 @@ test('BankBoi drains all seven reserve cells after a persisted movement timeout'
   // retry ignores its cooldown; cargo is lost/duplicated; native completion arrives
   // before queue cleanup or merchant restoration; restart replays completed cargo.
   const merchant='E2EMerchant', storage='E2EBankBoi';
-  await live.post('/steam/action',{character:merchant,action:'logout'});
-  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
-  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
-  await live.post('/slots/1/spawn',{character:merchant});
+  await headlessMerchant(live,merchant);
   await expect.poll(async()=> (await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
   const bank=await live.admin(`output=(async()=>{
     const p=get_player('${merchant}'),u=await db.collection('user').findOne({_id:p.owner});

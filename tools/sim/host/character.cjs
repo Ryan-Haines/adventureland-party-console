@@ -1,7 +1,7 @@
 "use strict";
 // One character, as caracAL's src/CharacterThread.js runs it once the coordinator sends process_args: a game client
 // (here a ChronAL client) with the caracAL extensions, IPC-backed storage, and the CODE run by the repository's own
-// runner host (runtime/lifecycle/runner-host.ts), unmodified. Shared by single-thread and threaded simulations.
+// runner host (runtime/lifecycle/character/host.ts), unmodified. Shared by single-thread and threaded simulations.
 
 /** Web Storage whose writes are reported to the coordinator, as caracAL's ipcStorage does. */
 function ipcStorage(ident, send) {
@@ -109,19 +109,6 @@ function bootCharacter(o) {
   game.api_call = (method, a, r) =>
     method === "servers_and_characters" ? undefined : api(method, a, r);
 
-  const ledger = [];
-  for (const event of [
-    "hit",
-    "death",
-    "new_map",
-    "game_response",
-    "chest_opened",
-    "disappearing_text",
-  ])
-    game.socket.on(event, (data) => {
-      ledger.push({ at: env.clock.now, event, data });
-    });
-  game.__simEvents = ledger;
   const handlers = [];
   let runnerHost = null;
   const runnerFiles = chronal.RUNNER_FILES.filter((file) => !/jquery/.test(file));
@@ -167,7 +154,7 @@ function bootCharacter(o) {
       },
       runnerFiles,
       codeFile: "./CODE/" + (args.script_file || "adventure_land/party-member.js"),
-      codeDependencies: ["farming-zones.js", "shared.js", "profiles.js", "roles.js"].map(
+      codeDependencies: ["farming-zones.js", "shared.js", "profiles.js"].map(
         (file) => "./CODE/adventure_land/" + file,
       ),
       connected: () =>
@@ -223,4 +210,4 @@ function bootCharacter(o) {
   };
 }
 
-module.exports = { bootCharacter, ipcStorage };
+module.exports = { bootCharacter };

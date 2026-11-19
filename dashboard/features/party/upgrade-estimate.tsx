@@ -4,10 +4,10 @@ import {
   estimateUpgradeBatch,
   type UpgradeChoice,
   type UpgradeEstimate,
-} from '../../../runtime/upgrade-estimate.ts';
-export { highestUpgradeLevel } from '../../../runtime/upgrade-estimate.ts';
-export type { UpgradeEstimate } from '../../../runtime/upgrade-estimate.ts';
-export type EstimateState = UpgradeEstimate | { status: 'pending' };
+} from '../../../runtime/items/api.ts';
+import { countCap } from './cap-counts';
+// A failed estimate stays unavailable and keeps the failure's message for the price details.
+export type EstimateState = (UpgradeEstimate & { error?: string }) | { status: 'pending' };
 export function useUpgradeEstimates(
   lines: {
     item: UpgradeChoice;
@@ -52,6 +52,8 @@ export function useUpgradeEstimates(
         target: line.target,
       })),
       abort.signal,
+      () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+      countCap,
     )
       .then((results) => {
         if (current) {
@@ -61,13 +63,14 @@ export function useUpgradeEstimates(
           setStored({ signature, values: { ...values } });
         }
       })
-      .catch(() => {
+      .catch((failure: unknown) => {
         if (current) {
           for (const line of lines)
             values[line.key] = {
               status: 'unavailable',
               completed: 0,
               rolls: 0,
+              error: failure instanceof Error ? failure.message : String(failure),
             };
           setStored({ signature, values: { ...values } });
         }

@@ -1,14 +1,15 @@
 "use client";
+import { comparisonSlotLabel } from './comparison-slot-label';
+import { comparisonSlotsFor } from './comparison-slots-for';
+import { commerceRuleKey, deconstructable, exchangeKey, luckySlotSearch, npcSaleRuleKey, ruleKey, ruleMode, STACK_SIZE_MAX, COMPOUND_TARGET_MAX, UPGRADE_LEVEL_MAX, validLuckySlot, type DeconstructionCatalog, type LuckySlotAnswer, type LuckySlotTracking, markMatches } from '../../../runtime/items/api.ts';
 import {useStoredBoolean} from '@/hooks/use-stored-boolean';
 import {CharacterSectionToggle} from './character-section-toggle';
 import { useItemSelection, BatchItemActions } from './item-selection';
-import { AutomaticItemActions } from './automatic-item-actions';
+import { AutomaticItemActions, type AutomaticItemActionsProps } from './automatic-item-actions';
 import { itemActionBanner } from "./item-action-banner";
-import { standIsFull } from "./stand-capacity";
-import type { StandBid } from "./stand-bid";
 import { isEquipment, isUsable } from "./item-actions";
 import { itemMenuClass } from "./item-menu-style";
-import { canDeconstruct, type DeconstructionMark, type DeconstructionCatalog } from "./deconstruction";
+import type { DeconstructionMark } from "../../../runtime/items/api.ts";
 import { MerchantVisitControl } from "./merchant-visit-control";
 import { Button } from "@/components/ui/button";
 import { AutoActionIcon } from "./auto-action-icon";
@@ -26,10 +27,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  ArrowRightLeft,
   Blender,
   Check,
-  ChevronDown,
   ChevronRight,
   DollarSign,
   Home as HomeIcon,
@@ -46,18 +45,17 @@ import {
   FlaskConical,
   Truck,
   X,
+  ArrowRightLeft,
 } from "lucide-react";
 import { memo, useCallback, useId, useState, type ReactNode } from "react";
 import { AutoCompoundMark } from "./auto-compound-mark";
 import { ClearItemMarks } from "./clear-item-marks";
 import { AutoUpgradeMarks } from "./auto-upgrade-marks";
-import { automaticCommerceRuleKey } from "./automatic-commerce-rule-key";
 import { BankMark } from "./bank-mark";
 import { Char } from "./char";
 import { compactInventory } from "./compact-inventory";
-import { LuckySlotOutline, physicalInventory, validLuckySlot } from "./lucky-upgrade-slot";
+import { LuckySlotOutline, physicalInventory } from "./lucky-upgrade-slot";
 import { LuckySlotMenu, type LuckySlotMenuSelection } from "./lucky-slot-menu";
-import { luckySlotSearch, type LuckySlotTracking } from "../../../runtime/lucky-slot-tracking";
 import { CompoundGroup } from "./compound-group";
 import { Equipment } from "./equipment";
 import { InventoryEntry } from "./inventory-entry";
@@ -65,17 +63,15 @@ import { Item } from "./item";
 import type { NpcSaleMark } from "./npc-sale-mark";
 import { itemLevelLabelClass } from "./item-level-label-class";
 import { ItemOperationOverlay } from "./item-operation-overlay";
-import { ItemSprite } from "./item-sprite";
+import { SpriteCrop } from "./sprite-crop";
 import { MerchantBuyItem } from "./merchant-buy-item";
 import { MerchantCatalogItem } from "./merchant-catalog-item";
 import { MluckClover } from "./mluck-clover";
-import { primaryStatScrollCost } from "./primary-stat-scroll-cost";
-import { same } from "./same";
 import { StandListing } from "./stand-listing";
 import { StandPriceHistory } from "./stand-price-history";
-import { statBadgeClass } from "./stat-badge-class";
+import { statBadgeClass, statBadgeStyle } from "./stat-badge-class";
 import { StatScrollMark } from "./stat-scroll-mark";
-import { statScrollQuantity } from "./stat-scroll-quantity";
+import { catalogPrice, statScrollCost, statScrollCount } from "@/lib/game-formulas";
 import { STAT_SCROLLS } from "./stat-scrolls";
 import { SuggestedPriceDetails } from "./suggested-price-details";
 import { UpgradeOfferingRules } from './upgrade-offering-controls';
@@ -83,6 +79,7 @@ import { UpgradeActions } from "./upgrade-actions";
 import { UpgradeMark } from "./upgrade-mark";
 import { upgradeRuleQuantity } from "./upgrade-rule-quantity";
 import { upgradeRuleTiers } from "./upgrade-rule-tiers";
+import { AddonSlot, OverlaidBy } from "../../../runtime/hooks/dashboard/slots";
 
 export const InventoryPanel = memo(function InventoryPanel({
   character,
@@ -92,11 +89,9 @@ export const InventoryPanel = memo(function InventoryPanel({
   leader,
   merchant,
   merchantWeapon,
-  luckyUpgradeSlot,
+  luckySlot,
   luckySlotTracking,
   onLuckySlot,
-  luckySlotLocked,
-  luckySlotResuming,
   marked,
   merchantMarked,
   autoItemMarks,
@@ -104,7 +99,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   allAutoUpgradeMarks,
   merchantDeliveries,
   standListings,
-  standBids = {},
+  standFull,
   autoNpcSales,
   npcSaleMarks = [],
   deconstructionMarks = [],
@@ -145,11 +140,9 @@ export const InventoryPanel = memo(function InventoryPanel({
   leader?: string | null;
   merchant?: string | null;
   merchantWeapon?: { item: Item } | null;
-  luckyUpgradeSlot?: number | null;
+  luckySlot?: LuckySlotAnswer;
   luckySlotTracking?: LuckySlotTracking;
   onLuckySlot?: () => void;
-  luckySlotLocked?: boolean;
-  luckySlotResuming?: boolean;
   marked: BankMark[];
   merchantMarked: BankMark[];
   autoItemMarks: Record<string, "bank" | "merchant">;
@@ -157,9 +150,10 @@ export const InventoryPanel = memo(function InventoryPanel({
   allAutoUpgradeMarks: Record<string, AutoUpgradeMarks>;
   merchantDeliveries: Record<string, BankMark[]>;
   standListings: StandListing[];
-  standBids?: Record<string, StandBid>;
+  // The items owner's stand count says the merchant's stand is full (stand-capacity.ts).
+  standFull: boolean;
   npcSaleMarks?: NpcSaleMark[];
-  deconstructionMarks?: DeconstructionMark[];
+  deconstructionMarks?: DeconstructionMark<Item>[];
   autoDeconstruction?: Record<string, { item: Item }>;
   deconstructionCatalog?: DeconstructionCatalog;
   onDeconstruction?: (entry: InventoryEntry, auto: boolean, remove: boolean, id?: string) => void;
@@ -225,7 +219,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   onAutoNpcSale: (entry: InventoryEntry) => void;
   onAutoStand: (entry: InventoryEntry) => void;
   onClearAutomaticSales: (kind: "npc" | "stand") => void;
-  onRemoveAutomaticSale: (kind: "npc" | "stand", item: Item) => void;
+  onRemoveAutomaticSale: (kind: "npc" | "stand", item: Item, owner?: string) => void;
   onUpdateNpcReserve: (item: Item, keep: number) => void;
 }) {
   const leaderOnline =
@@ -239,10 +233,11 @@ export const InventoryPanel = memo(function InventoryPanel({
     (entry) => String(entry.slot),
   );
   const [luckySlotMenu, setLuckySlotMenu] = useState<LuckySlotMenuSelection | null>(null);
+  const luckyUpgradeSlot = luckySlot?.slot;
   const nextUpgradeSlot = validLuckySlot(luckyUpgradeSlot) ? luckyUpgradeSlot :
     luckySlotSearch(luckySlotTracking || {version: 1, slots: {}}).nextSlot;
-  const luckySlotLabel = luckySlotLocked ? "Locked lucky upgrade position" :
-    validLuckySlot(luckyUpgradeSlot) && !luckySlotResuming ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
+  const luckySlotLabel = luckySlot?.locked != null ? "Locked lucky upgrade position" :
+    validLuckySlot(luckyUpgradeSlot) && !luckySlot?.resuming ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
   type AutomaticSection =
     | "npc" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction";
   const [openAutomaticSections, setOpenAutomaticSections] = useState<
@@ -255,9 +250,11 @@ export const InventoryPanel = memo(function InventoryPanel({
   const occupiedSlots = character.items.filter(Boolean).length;
   const totalSlots = character.inventorySize || character.items.length;
   const freeSlots = Math.max(0, totalSlots - occupiedSlots);
-  const standFull = standIsFull(standListings, standBids);
   const capacityColor =
     freeSlots < 5 ? "text-rose-400" : freeSlots <= 10 ? "text-orange-400" : "text-emerald-100/55";
+  // The merchant exchanges an item whose definition carries an exchange count (G.items e).
+  const exchangeableEntry = (entry: InventoryEntry) =>
+    !!merchant && Number(entry.meta?.definition.e || 0) > 0;
   const automaticRuleItem = (key: string): Item => {
     const match = /^(.*)@\+(\d+)$/.exec(key);
     return {
@@ -265,6 +262,15 @@ export const InventoryPanel = memo(function InventoryPanel({
       level: match ? Number(match[2]) : 0,
     };
   };
+  const autoItemMarkRows = (markMode: 'bank' | 'merchant') =>
+    Object.entries(autoItemMarks)
+      .filter(([, mode]) => mode === markMode)
+      .map(([key]) => ({
+        key,
+        item: automaticRuleItem(key),
+        onRemove: () =>
+          void onCommand(character.name, 'remove-auto-item-mark', undefined, { mode: markMode, ruleKey: key }),
+      }));
   const toggleAutomaticSection = (section: AutomaticSection) =>
     setOpenAutomaticSections((current) => ({
       ...current,
@@ -307,7 +313,7 @@ export const InventoryPanel = memo(function InventoryPanel({
     const open = openAutomaticSections[section] === true;
     const clearArmed = pendingAutomaticClear === section;
     return (
-      <section className={`-mx-5 border-y ${color}`}>
+      <section data-area="inventory-rules" className={`-mx-5 border-y ${color}`}>
         <div className="flex h-10 w-full items-stretch bg-black">
           <button
             type="button"
@@ -396,7 +402,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                           }
                         >
                           {definition?.sprite ? (
-                            <ItemSprite sprite={definition.sprite} />
+                            <SpriteCrop sprite={definition.sprite} />
                           ) : (
                             <PackageOpen className="m-auto h-5 w-5 text-slate-400" />
                           )}
@@ -569,30 +575,20 @@ export const InventoryPanel = memo(function InventoryPanel({
       }),
     [onCommand, character.name],
   );
-  const onEquipmentStatScroll = useCallback(
-    (slot: string, item: Item, remove?: boolean) =>
-      onCommand(character.name, 'stat-scroll-mark', item, { slot, remove }),
-    [onCommand, character.name],
-  );
   const hasAutomaticMarks = useCallback(
     (item: Item) => {
-      const key = `${item.name}@+${item.level || 0}`,
-        commerceKey = automaticCommerceRuleKey(item);
+      const key = ruleKey(item),
+        commerceKey = commerceRuleKey(item);
       return Boolean(
-        autoItemMarks[key] ||
-        (!item.level && autoItemMarks[item.name]) ||
+        ruleMode(autoItemMarks, item) ||
         autoUpgradeMarks[key] ||
         autoCompoundMarks.some((rule) => rule.name === item.name) ||
         autoDeconstruction[commerceKey] ||
-        autoNpcSales[
-          sharedRules || character.name === merchant
-            ? commerceKey
-            : JSON.stringify([character.name, commerceKey])
-        ] ||
-        (!!merchant && autoExchanges[`${item.name}@${item.level || 0}`]) ||
+        autoNpcSales[npcSaleRuleKey(item, sharedRules || character.name === merchant ? undefined : character.name)] ||
+        (!!merchant && autoExchanges[exchangeKey(item.name, item.level)]) ||
         (character.name === merchant &&
           (autoStandMarks[commerceKey] ||
-            (merchantWeapon?.item && same(item, merchantWeapon.item)))),
+            (merchantWeapon?.item && markMatches(item, merchantWeapon.item)))),
       );
     },
     [
@@ -622,8 +618,14 @@ export const InventoryPanel = memo(function InventoryPanel({
     [onCommand, character.name],
   );
   const clearAutomaticSection = async (section: AutomaticSection) => {
-    if (section === 'npc' || section === 'stand')
+    if (section === 'npc' || section === 'stand') {
+      // The merchant card lists every character's NPC sale rule, so its clear removes each
+      // for its owner; the clear-all takes the merchant-wide rules.
+      if (section === 'npc' && character.name === merchant)
+        for (const rule of Object.values(autoNpcSales))
+          if (rule.character) onRemoveAutomaticSale('npc', rule.item, rule.character);
       onClearAutomaticSales(section);
+    }
     else if (section === 'compound')
       await onCommand(character.name, 'clear-auto-compounds');
     else if (section === 'upgrade')
@@ -639,7 +641,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   };
   return (
     <div className="p-5">
-      <CharacterSectionToggle label="Inventory" open={inventoryOpen} controls={inventoryId} onToggle={()=>setInventoryOpen(value=>!value)}
+      <CharacterSectionToggle data-area="inventory" label="Inventory" open={inventoryOpen} controls={inventoryId} onToggle={()=>setInventoryOpen(value=>!value)}
         count={<span className={`font-mono text-xs ${capacityColor}`} title={`${freeSlots} slots free`}>{occupiedSlots}/{totalSlots}</span>}/>
       <div id={inventoryId}>
       {inventoryOpen ? (
@@ -692,30 +694,24 @@ export const InventoryPanel = memo(function InventoryPanel({
                 );
               const bankMarked = marked.some((mark) =>
                 'item' in mark
-                  ? mark.slot === entry.slot && same(mark.item, entry.item)
-                  : same(mark, entry.item),
+                  ? mark.slot === entry.slot && markMatches(mark.item, entry.item)
+                  : markMatches(mark, entry.item),
               );
               const merchantMarkedItem = merchantMarked.some((mark) =>
                 'item' in mark
-                  ? mark.slot === entry.slot && same(mark.item, entry.item)
-                  : same(mark, entry.item),
+                  ? mark.slot === entry.slot && markMatches(mark.item, entry.item)
+                  : markMatches(mark, entry.item),
               );
-              const autoRuleKey = `${entry.item.name}@+${Math.max(0, Number(entry.item.level) || 0)}`;
-              // Name-only rules are from older builds and intentionally apply only
-              // to +0 items; upgraded copies must remain independent.
-              const autoMarkMode =
-                autoItemMarks[autoRuleKey] ||
-                ((Number(entry.item.level) || 0) === 0
-                  ? autoItemMarks[entry.item.name]
-                  : undefined);
+              const autoRuleKey = ruleKey(entry.item);
+              const autoMarkMode = ruleMode(autoItemMarks, entry.item);
               const deliveryTarget =
                 character.name === merchant
                   ? Object.keys(merchantDeliveries).find((target) =>
                       (merchantDeliveries[target] || []).some((mark) =>
                         'item' in mark
                           ? mark.slot === entry.slot &&
-                            same(mark.item, entry.item)
-                          : same(mark, entry.item),
+                            markMatches(mark.item, entry.item)
+                          : markMatches(mark, entry.item),
                       ),
                     )
                   : undefined;
@@ -725,32 +721,22 @@ export const InventoryPanel = memo(function InventoryPanel({
                   (mark) =>
                     !mark.bankPack &&
                     mark.slot === entry.slot &&
-                    same(mark.item, entry.item),
+                    markMatches(mark.item, entry.item),
                 );
               const merchantWeaponMarked =
                 character.name === merchant &&
                 !!merchantWeapon?.item &&
-                same(merchantWeapon.item, entry.item);
+                markMatches(merchantWeapon.item, entry.item);
               const upgradeable = !!entry.meta?.upgradeable;
               const compoundable = !!entry.meta?.compoundable;
               const itemType = String(entry.meta?.definition.type || '');
-              const classUsage = entry.meta?.usage?.classes.find(
-                (usage) => usage.id === character.ctype,
-              );
-              const comparisonSlots =
-                itemType === 'ring'
-                  ? ['ring1', 'ring2']
-                  : itemType === 'earring'
-                    ? ['earring1', 'earring2']
-                    : itemType === 'weapon' && classUsage?.hands === 1
-                      ? ['mainhand', 'offhand']
-                      : [];
+              const comparisonSlots = comparisonSlotsFor(entry.meta, character);
               const upgradeMark = upgradeable
                 ? upgradeMarks.find(
                     (mark) =>
                       !mark.equipped &&
                       mark.slot === entry.slot &&
-                      same(mark.item, entry.item),
+                      markMatches(mark.item, entry.item),
                   )
                 : undefined;
               const inventoryStatScrollMark =
@@ -759,13 +745,13 @@ export const InventoryPanel = memo(function InventoryPanel({
                       (mark) =>
                         !mark.equipped &&
                         mark.slot === entry.slot &&
-                        same(mark.item, entry.item),
+                        markMatches(mark.item, entry.item),
                     )
                   : undefined;
               const compoundGroup = compoundGroups.find((group) =>
                 group.items.some(
                   (mark) =>
-                    mark.slot === entry.slot && same(mark.item, entry.item),
+                    mark.slot === entry.slot && markMatches(mark.item, entry.item),
                 ),
               );
               const autoCompoundMark = autoCompoundMarks.find(
@@ -775,16 +761,12 @@ export const InventoryPanel = memo(function InventoryPanel({
                 !!autoCompoundMark &&
                 Number(entry.item.level || 0) < autoCompoundMark.targetTier &&
                 Number(autoCompoundMark.quantity) !== 0;
-              const autoExchangeKey = `${entry.item.name}@${entry.item.level || 0}`;
+              const autoExchangeKey = exchangeKey(entry.item.name, entry.item.level);
               const autoExchangeMarked =
                 !!merchant && !!autoExchanges[autoExchangeKey];
-              const automaticSaleKey = automaticCommerceRuleKey(entry.item);
+              const automaticSaleKey = commerceRuleKey(entry.item);
               const autoNpcSaleMarked =
-                !!autoNpcSales[
-                  sharedRules || character.name === merchant
-                    ? automaticSaleKey
-                    : JSON.stringify([character.name, automaticSaleKey])
-                ];
+                !!autoNpcSales[npcSaleRuleKey(entry.item, sharedRules || character.name === merchant ? undefined : character.name)];
               const npcSale = npcSaleMarks.find(
                 (mark) =>
                   (character.name === merchant
@@ -792,7 +774,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                     : mark.source === 'character' &&
                       mark.character === character.name) &&
                   mark.slot === entry.slot &&
-                  automaticCommerceRuleKey(mark.item) === automaticSaleKey,
+                  commerceRuleKey(mark.item) === automaticSaleKey,
               );
               const npcSaleStatus = npcSale ? npcSale.state || 'queued' : null;
               const npcSaleDetails = npcSale
@@ -811,17 +793,35 @@ export const InventoryPanel = memo(function InventoryPanel({
                   mark.owner === character.name &&
                   mark.slot === entry.slot &&
                   mark.state !== 'complete' &&
-                  same(entry.item, mark.item),
+                  markMatches(entry.item, mark.item),
               );
               const autoDeconstruct = !!autoDeconstruction[automaticSaleKey];
-              const deconstructable = canDeconstruct(
+              const dismantles = deconstructable(
                 entry.item,
                 deconstructionCatalog,
               );
               const autoStandMarked =
                 character.name === merchant && autoStandMarks[automaticSaleKey];
-              const exchangeable =
-                !!merchant && Number(entry.meta?.definition.e || 0) > 0;
+              const exchangeable = exchangeableEntry(entry);
+              // The five automatic action sections of the item menu share one set of marks.
+              const automaticActions = (section: NonNullable<AutomaticItemActionsProps['section']>) => !!merchant && (
+                <AutomaticItemActions
+                  section={section}
+                  entry={entry}
+                  bank={autoMarkMode === 'bank'}
+                  merchant={character.name === merchant}
+                  stand={!!autoStandMarked}
+                  npc={autoNpcSaleMarked}
+                  exchange={autoExchangeMarked}
+                  exchangeable={exchangeable}
+                  upgradeTiers={upgradeRuleTiers(autoUpgradeMarks[autoRuleKey])}
+                  compoundTier={autoCompoundMark?.targetTier}
+                  buyable={buyable}
+                  onCommand={(type, extra) => onCommand(character.name, type, entry.item, extra)}
+                  onStand={() => onAutoStand(entry)}
+                  onNpc={() => onAutoNpcSale(entry)}
+                />
+              );
               const banner = itemActionBanner(
                 [
                   !!deconstruction && {
@@ -940,7 +940,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                     >
                       {lucky ? <LuckySlotOutline /> : null}
                       {entry.meta?.sprite ? (
-                        <ItemSprite sprite={entry.meta.sprite} />
+                        <SpriteCrop sprite={entry.meta.sprite} />
                       ) : (
                         <span className="block truncate font-mono text-[10px]">
                           {entry.item.name}
@@ -957,6 +957,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                       {entry.item.stat_type ? (
                         <span
                           className={`absolute left-1 top-1 z-10 rounded px-1 font-mono text-[9px] ring-1 ${statBadgeClass(entry.item.stat_type)}`}
+                          style={statBadgeStyle(entry.item.stat_type)}
                         >
                           {entry.item.stat_type}
                         </span>
@@ -991,6 +992,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                         <SuggestedPriceDetails
                           entry={entry}
                           buyable={buyable}
+                          catalog={catalog}
                           observed={priceHistory[entry.item.name]}
                         />
                         {deconstruction || autoDeconstruct ? (
@@ -1010,7 +1012,6 @@ export const InventoryPanel = memo(function InventoryPanel({
                     {itemSelection.forEntry(entry).length > 1 ? (
                       <BatchItemActions
                         entries={itemSelection.forEntry(entry)}
-                        merchant={!!merchant}
                         onError={onBatchError}
                         onCommand={(type, item, extra) =>
                           (onBatchCommand || onCommand)(
@@ -1039,9 +1040,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                                 )
                             : undefined
                         }
-                        exchangeable={(item) =>
-                          !!merchant && Number(item.meta?.definition.e || 0) > 0
-                        }
+                        exchangeable={exchangeableEntry}
                       />
                     ) : (
                       <>
@@ -1083,17 +1082,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                                     key={slot}
                                     onClick={() => onCompare(entry, slot)}
                                   >
-                                    {slot === 'mainhand'
-                                      ? 'Main hand'
-                                      : slot === 'offhand'
-                                        ? 'Off hand'
-                                        : slot === 'ring1'
-                                          ? 'Ring 1'
-                                          : slot === 'ring2'
-                                            ? 'Ring 2'
-                                            : slot === 'earring1'
-                                              ? 'Earring 1'
-                                              : 'Earring 2'}
+                                    {comparisonSlotLabel(slot)}
                                     <span className="ml-auto pl-5 text-xs text-muted-foreground">
                                       {character.slots[slot]
                                         ? String(
@@ -1207,12 +1196,11 @@ export const InventoryPanel = memo(function InventoryPanel({
                                 (choice) =>
                                   choice.purchasable ||
                                   (statScrollInventory[choice.scroll] || 0) >=
-                                    statScrollQuantity(entry.meta, entry.item),
+                                    statScrollCount(entry.meta?.definition || {}, Number(entry.item.level) || 0),
                               ).map((choice) => {
-                                const required = statScrollQuantity(
-                                  entry.meta,
-                                  entry.item,
-                                );
+                                const required = statScrollCount(entry.meta?.definition || {}, Number(entry.item.level) || 0);
+                                const cost = statScrollCost(entry.meta?.definition || {}, Number(entry.item.level) || 0, choice.scroll,
+                                  catalogPrice(catalog));
                                 const owned =
                                   statScrollInventory[choice.scroll] || 0;
                                 return (
@@ -1242,7 +1230,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                                     </span>
                                     <span className="ml-auto pl-5 font-mono text-black">
                                       {choice.purchasable
-                                        ? `${primaryStatScrollCost(entry.meta, entry.item).toLocaleString()}g · ${required} scroll${required === 1 ? "" : "s"}`
+                                        ? `${cost === null ? 'Price unavailable' : cost.toLocaleString() + 'g'} · ${required} scroll${required === 1 ? "" : "s"}`
                                         : `${owned}/${required} owned`}
                                     </span>
                                   </ContextMenuItem>
@@ -1262,32 +1250,11 @@ export const InventoryPanel = memo(function InventoryPanel({
                               )
                             }
                           >
-                            <ArrowRightLeft />
+                            <ArrowRightLeft className="mr-2 h-4 w-4" />
                             Exchange
                           </ContextMenuItem>
                         )}
-                        {!!merchant && (
-                          <AutomaticItemActions
-                            section="exchange"
-                            entry={entry}
-                            bank={autoMarkMode === 'bank'}
-                            merchant={character.name === merchant}
-                            stand={!!autoStandMarked}
-                            npc={autoNpcSaleMarked}
-                            exchange={autoExchangeMarked}
-                            exchangeable={exchangeable}
-                            upgradeTiers={upgradeRuleTiers(
-                              autoUpgradeMarks[autoRuleKey],
-                            )}
-                            compoundTier={autoCompoundMark?.targetTier}
-                            buyable={buyable}
-                            onCommand={(type, extra) =>
-                              onCommand(character.name, type, entry.item, extra)
-                            }
-                            onStand={() => onAutoStand(entry)}
-                            onNpc={() => onAutoNpcSale(entry)}
-                          />
-                        )}
+                        {automaticActions('exchange')}
                         <ContextMenuItem
                           disabled={bankMarked}
                           onClick={() =>
@@ -1299,28 +1266,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                           <Landmark className="mr-2 h-4 w-4" />
                           Mark for bank
                         </ContextMenuItem>
-                        {!!merchant && (
-                          <AutomaticItemActions
-                            section="bank"
-                            entry={entry}
-                            bank={autoMarkMode === 'bank'}
-                            merchant={character.name === merchant}
-                            stand={!!autoStandMarked}
-                            npc={autoNpcSaleMarked}
-                            exchange={autoExchangeMarked}
-                            exchangeable={exchangeable}
-                            upgradeTiers={upgradeRuleTiers(
-                              autoUpgradeMarks[autoRuleKey],
-                            )}
-                            compoundTier={autoCompoundMark?.targetTier}
-                            buyable={buyable}
-                            onCommand={(type, extra) =>
-                              onCommand(character.name, type, entry.item, extra)
-                            }
-                            onStand={() => onAutoStand(entry)}
-                            onNpc={() => onAutoNpcSale(entry)}
-                          />
-                        )}
+                        {automaticActions('bank')}
                         {character.name === merchant ? (
                           <>
                             <ContextMenuItem
@@ -1338,28 +1284,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                           </>
                         ) : null}
 
-                        {!!merchant && (
-                          <AutomaticItemActions
-                            section="stand"
-                            entry={entry}
-                            bank={autoMarkMode === 'bank'}
-                            merchant={character.name === merchant}
-                            stand={!!autoStandMarked}
-                            npc={autoNpcSaleMarked}
-                            exchange={autoExchangeMarked}
-                            exchangeable={exchangeable}
-                            upgradeTiers={upgradeRuleTiers(
-                              autoUpgradeMarks[autoRuleKey],
-                            )}
-                            compoundTier={autoCompoundMark?.targetTier}
-                            buyable={buyable}
-                            onCommand={(type, extra) =>
-                              onCommand(character.name, type, entry.item, extra)
-                            }
-                            onStand={() => onAutoStand(entry)}
-                            onNpc={() => onAutoNpcSale(entry)}
-                          />
-                        )}
+                        {automaticActions('stand')}
                         {merchant ? (
                           <UpgradeActions
                             showAutomatic={true}
@@ -1416,28 +1341,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                             Mark for compounding
                           </ContextMenuItem>
                         ) : null}
-                        {!!merchant && (
-                          <AutomaticItemActions
-                            section="compound"
-                            entry={entry}
-                            bank={autoMarkMode === 'bank'}
-                            merchant={character.name === merchant}
-                            stand={!!autoStandMarked}
-                            npc={autoNpcSaleMarked}
-                            exchange={autoExchangeMarked}
-                            exchangeable={exchangeable}
-                            upgradeTiers={upgradeRuleTiers(
-                              autoUpgradeMarks[autoRuleKey],
-                            )}
-                            compoundTier={autoCompoundMark?.targetTier}
-                            buyable={buyable}
-                            onCommand={(type, extra) =>
-                              onCommand(character.name, type, entry.item, extra)
-                            }
-                            onStand={() => onAutoStand(entry)}
-                            onNpc={() => onAutoNpcSale(entry)}
-                          />
-                        )}
+                        {automaticActions('compound')}
                         {character.name !== merchant ? (
                           <>
                             <ContextMenuItem
@@ -1476,10 +1380,10 @@ export const InventoryPanel = memo(function InventoryPanel({
                             </ContextMenuItem>
                           </>
                         ) : null}
-                        {merchant || (deconstructable && onDeconstruction) ? (
+                        {merchant || (dismantles && onDeconstruction) ? (
                           <ContextMenuSeparator className="my-1 h-px bg-slate-600" />
                         ) : null}
-                        {deconstructable && onDeconstruction ? (
+                        {dismantles && onDeconstruction ? (
                           <>
                             <ContextMenuItem
                               className="text-orange-300"
@@ -1516,28 +1420,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                             </ContextMenuItem>
                           </>
                         ) : null}
-                        {!!merchant && (
-                          <AutomaticItemActions
-                            section="npc"
-                            entry={entry}
-                            bank={autoMarkMode === 'bank'}
-                            merchant={character.name === merchant}
-                            stand={!!autoStandMarked}
-                            npc={autoNpcSaleMarked}
-                            exchange={autoExchangeMarked}
-                            exchangeable={exchangeable}
-                            upgradeTiers={upgradeRuleTiers(
-                              autoUpgradeMarks[autoRuleKey],
-                            )}
-                            compoundTier={autoCompoundMark?.targetTier}
-                            buyable={buyable}
-                            onCommand={(type, extra) =>
-                              onCommand(character.name, type, entry.item, extra)
-                            }
-                            onStand={() => onAutoStand(entry)}
-                            onNpc={() => onAutoNpcSale(entry)}
-                          />
-                        )}
+                        {automaticActions('npc')}
                         {Boolean(
                           bankMarked ||
                           merchantMarkedItem ||
@@ -1569,6 +1452,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                         )}
                       </>
                     )}
+                    <AddonSlot name="item-rules" part="inventory-menu" item={entry.item} character={character.name} />
                   </ContextMenuContent>
                 </ContextMenu>
               );
@@ -1582,16 +1466,15 @@ export const InventoryPanel = memo(function InventoryPanel({
         upgradeMarks={upgradeMarks}
         autoUpgradeMarks={autoUpgradeMarks}
         statScrollMarks={statScrollMarks}
-        statScrollInventory={statScrollInventory}
         onSelect={onSelect}
         onUnequip={onUnequip}
         onUpgrade={onEquipmentUpgrade}
         onAutoUpgrade={onEquipmentAutoUpgrade}
-        onStatScroll={onEquipmentStatScroll}
         hasAutomaticMarks={hasAutomaticMarks}
         onClearMarks={onEquipmentClearMarks}
         onBuy={onEquipmentBuy}
       />
+      <AddonSlot name="card-section" part="equipped" character={character.name} reports={character.addonReports} />
       {restock}
       {character.name !== merchant && (
         <div className="mt-5 grid gap-2 border-t border-emerald-900 pt-4">
@@ -1608,26 +1491,29 @@ export const InventoryPanel = memo(function InventoryPanel({
       <div
         className={`${character.name !== merchant ? "mt-2" : "mt-5"} grid gap-2`}
       >
+        {character.name === merchant && <OverlaidBy fields={["autoItemMarks"]} />}
         {automaticSection(
           'npc',
           'Auto NPC sales',
           <DollarSign className="h-4 w-4" />,
           'border-rose-800 text-rose-300',
           [
+            // The merchant card lists every NPC sale rule; a character's own rule carries its
+            // owner's name and removes for that owner. Only a merchant-wide rule keeps copies.
             ...Object.entries(autoNpcSales)
-              .filter(([, rule]) =>
-                character.name === merchant
-                  ? !rule.character
-                  : rule.character === character.name,
-              )
-              .map(([key, rule]) => ({
+              .map(([key, rule]) => rule.character ? {
+                key,
+                item: rule.item,
+                detail: rule.character,
+                onRemove: () => onRemoveAutomaticSale('npc', rule.item, rule.character),
+              } : {
                 key,
                 item: rule.item,
                 edits: [{ id: 'reserve', value: rule.keep ?? 0,
                   label: `Keep ${rule.keep ?? 0}`, min: 0, max: Number.MAX_SAFE_INTEGER,
                   onSave: (keep: number) => onUpdateNpcReserve(rule.item, keep) }],
                 onRemove: () => onRemoveAutomaticSale('npc', rule.item),
-              })),
+              }),
             ...npcSaleMarks.map((mark) => ({
               key: mark.id,
               item: mark.item,
@@ -1683,7 +1569,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                         value: tiers,
                         label: `${tiers} tier${tiers === 1 ? "" : "s"} → +${Number(item.level || 0) + tiers}`,
                         min: 1,
-                        max: Math.max(1, 13 - Number(item.level || 0)),
+                        max: Math.max(1, UPGRADE_LEVEL_MAX - Number(item.level || 0)),
                         onSave: (value: number) =>
                           void onCommand(
                             owner,
@@ -1705,7 +1591,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                               ? 'Completed'
                               : `Remaining ${quantity}`,
                         min: 1,
-                        max: 9999,
+                        max: STACK_SIZE_MAX,
                         allowUnlimited: true,
                         onSave: (value: number) =>
                           void onCommand(
@@ -1745,7 +1631,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                       value: rule.targetTier,
                       label: `Target +${rule.targetTier}`,
                       min: 1,
-                      max: 7,
+                      max: COMPOUND_TARGET_MAX,
                       onSave: (value: number) =>
                         void onCommand(
                           owner,
@@ -1767,7 +1653,7 @@ export const InventoryPanel = memo(function InventoryPanel({
                             ? 'Completed'
                             : `Remaining ${rule.quantity}`,
                       min: 1,
-                      max: 9999,
+                      max: STACK_SIZE_MAX,
                       allowUnlimited: true,
                       onSave: (value: number) =>
                         void onCommand(
@@ -1796,22 +1682,7 @@ export const InventoryPanel = memo(function InventoryPanel({
               'Auto merchant marks',
               <PackageOpen className="h-4 w-4" />,
               'border-purple-800 text-purple-300',
-              Object.entries(autoItemMarks)
-                .filter(([, mode]) => mode === 'merchant')
-                .map(([key]) => ({
-                  key,
-                  item: automaticRuleItem(key),
-                  onRemove: () =>
-                    void onCommand(
-                      character.name,
-                      'remove-auto-item-mark',
-                      undefined,
-                      {
-                        mode: 'merchant',
-                        ruleKey: key,
-                      },
-                    ),
-                })),
+              autoItemMarkRows('merchant'),
             )
           : null}
         {automaticSection(
@@ -1819,22 +1690,7 @@ export const InventoryPanel = memo(function InventoryPanel({
           'Auto bank marks',
           <Landmark className="h-4 w-4" />,
           'border-amber-800 text-amber-300',
-          Object.entries(autoItemMarks)
-            .filter(([, mode]) => mode === 'bank')
-            .map(([key]) => ({
-              key,
-              item: automaticRuleItem(key),
-              onRemove: () =>
-                void onCommand(
-                  character.name,
-                  'remove-auto-item-mark',
-                  undefined,
-                  {
-                    mode: 'bank',
-                    ruleKey: key,
-                  },
-                ),
-            })),
+          autoItemMarkRows('bank'),
         )}
         {character.name === merchant ? (
           <>
@@ -1859,6 +1715,7 @@ export const InventoryPanel = memo(function InventoryPanel({
             Return to leader
           </Button>
         )}
+        <AddonSlot name="card-section" part="inventory" character={character.name} reports={character.addonReports} />
       </div>
     </div>
   );

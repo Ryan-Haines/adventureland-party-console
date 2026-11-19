@@ -1,4 +1,5 @@
 'use client';
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { Settings } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useClock } from '@/hooks/use-clock';
@@ -24,17 +25,8 @@ export function CaveEventRow() {
     if (view?.state.phase === 'active') setOpen(false);
   }, [view?.state.phase]);
   const resume = view?.members[0]?.observation?.visit?.resume;
-  const eligible =
-    !!view?.members.length &&
-    view.members.length <= 3 &&
-    view.members.every(
-      (m) =>
-        m.fresh &&
-        m.observation?.supported &&
-        m.observation.visit &&
-        now - m.observation.visit.checkedAt < 45000 &&
-        (m.observation.visit.available || m.observation.visit.resume),
-    );
+  // The hunting owner's entry checks answer whether the party may enter (DungeonView.entryRefusal).
+  const eligible = !!view && view.entryRefusal === null;
   return (
     <div className="flex items-center gap-2 border-b border-slate-600 py-2">
       <span>Cave of Many Dreams — {dungeonEntryLabel(view, now)}</span>
@@ -45,7 +37,7 @@ export function CaveEventRow() {
         >
           <Settings className="size-4" />
         </DialogTrigger>
-        <DialogContent
+        <DialogContent data-area="cave-settings"
           showCloseButton={false}
           className="max-h-[85vh] overflow-auto border-slate-500 bg-[#101c1a] text-emerald-50"
         >
@@ -91,6 +83,25 @@ export function CaveEventRow() {
             your visit. You may not be able to enter again until the daily
             reset.
           </p>
+          <label className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              className="mt-1 accent-emerald-500"
+              checked={view?.state.afterRun === 'stay'}
+              disabled={!view || query.busy}
+              onChange={(e) =>
+                void query.action({
+                  action: 'settings',
+                  afterRun: e.target.checked ? 'stay' : 'go-back',
+                })
+              }
+            />
+            After a run, stay outside until I press Release
+          </label>
+          <p className="text-sm text-slate-300">
+            Off: once everyone is out, the party goes back to its task on its
+            own. Escape, death handling and respawn run outside either way.
+          </p>
           <button
             className={dungeonButton}
             disabled={
@@ -110,7 +121,7 @@ export function CaveEventRow() {
               disabled={query.busy}
               onClick={() => void query.action({ action: 'release' })}
             >
-              Resume ordinary activity
+              Release
             </button>
           )}
           {!eligible && (
@@ -125,6 +136,7 @@ export function CaveEventRow() {
             </p>
           )}
           <DialogClose className={dungeonButton}>Close</DialogClose>
+          <AddonSlot name="dialog-section" part="cave-settings" />
         </DialogContent>
       </Dialog>
     </div>

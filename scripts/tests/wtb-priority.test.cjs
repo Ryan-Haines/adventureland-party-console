@@ -4,12 +4,19 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const source = require('./helpers/coordinator-source.cjs').coordinatorSource();
+const {coordinatorReadyFacts}=require('../../runtime/merchant-jobs/coordinator/dispatch.ts');
+const {partyHooks}=require('../../runtime/hooks/index.ts');
+// The pick reads the dispatch pass's job facts; the hunting owner's and the items owner's answers hold
+// nothing here.
+partyHooks().publish({name:'core:wtb-priority-reads',folder:'core',author:'test',summary:'Nothing holds a job.',
+  hooks:{'cave.state':()=>({owned:false}),'items.needs':()=>({gold:0,withdrawals:[],slots:0,postage:0})}});
+const pick=r=>r.pickJobByPriority(coordinatorReadyFacts(r.party,{now:Date.now,capacityBlocked:job=>r.merchantTransferCapacityBlocked(job)}));
 function runtime() {
   const party = { standBids: { cheap: { priorityOverride: 0 }, urgent: { priorityOverride: 100 }, normal: {} }, standListings: [],
     merchantRoutinePriorities: { 'stand bid purchases': 40, 'ALData marketplace purchases': 60,
       'party collection': 90, 'inventory cleanout': 95 }, merchantQueue: [], merchantCharacter: 'M',
     merchantJobBlocks: {}, statuses: {}, bankbois: {}, nextCommandId: 1 };
-  const r = vm.createContext({ party, coordinatorPolicies: require('../../runtime/coordinator/index.ts'), persistSettings() {}, dispatchMerchant() {}, merchantLog() {} });
+  const r = vm.createContext(require('./helpers/coordinator-source.cjs').withCoordinatorImports({ party, persistSettings() {}, dispatchMerchant() {}, merchantLog() {} }));
   vm.runInContext(source.slice(source.indexOf('  function merchantRoutinePriority('), source.indexOf('  function merchantCapacitySignature(')), r);
   vm.runInContext(source.slice(source.indexOf('  function merchantCapacitySignature('), source.indexOf('  function scheduleNearbyGiveaways(')), r);
   require('./helpers/coordinator-merchant.cjs').merchantQueueRuntime(r);
@@ -46,7 +53,7 @@ test('local stand sync outranks optional work and is deduplicated', () => {
   assert.equal(party.merchantQueue[0].inPlaceStandSync, true);
 });
 test('live stand listings do not claim inventory slots that the bag has reused', () => {
-  const {createStandMarks}=require('../../runtime/coordinator/merchant/stand-marks.ts');
+  const {createStandMarks}=require('../../runtime/items/coordinator/market.ts');
   const item={name:'ring',level:2};
   const state={merchantCharacter:'M',standListings:[{id:'live',slot:3,item,state:'live',tradeSlot:'trade1'}],
     withdrawals:{},statuses:{M:{items:[{slot:3,item}]}},bankSnapshot:null};
@@ -56,11 +63,11 @@ test('live stand listings do not claim inventory slots that the bag has reused',
   assert.equal(state.standListings.length,2);
   assert.equal(state.standListings[0].id,'live');
   assert.equal(state.standListings[1].slot,3);
-  const {createAutomaticMerchantSales}=require('../../runtime/coordinator/merchant/automatic-sales.ts');
-  const {automaticCommerceRuleKey}=require('../../runtime/coordinator/inventory/item-identity.ts');
+  const {createAutomaticMerchantSales}=require('../../runtime/items/coordinator/market.ts');
+  const {commerceRuleKey}=require('../../runtime/items/identity.ts');
   state.standListings.splice(1);
   Object.assign(state.standListings[0],{state:'live',tradeSlot:'trade1'});
-  Object.assign(state,{autoNpcSales:{},autoStandMarks:{[automaticCommerceRuleKey(item)]:{price:100}},
+  Object.assign(state,{autoNpcSales:{},autoStandMarks:{[commerceRuleKey(item)]:{price:100}},
     npcSaleMarks:[],merchantCurrent:null,merchantQueue:[]});
   const automatic=createAutomaticMerchantSales(state,{now:()=>1,nextCommand:()=>3,queue(){},
     publish(){},syncStand:()=>true,idle(){},persist(){}});
@@ -77,27 +84,29 @@ test('party transfers are ineligible while only the three-slot logistics reserve
     r.stampMerchantJob({ id: 'self-clean', target: 'M', reason: 'npc sales', priorityOverride: 80, queuedAt: 2 }),
   );
   assert.equal(r.merchantTransferCapacityBlocked(party.merchantQueue[0]), true);
-  assert.equal(r.pickJobByPriority().id, 'self-clean');
+  assert.equal(pick(r).id, 'self-clean');
   assert.equal(party.merchantQueue[0].id, 'transfer');
 });
 test('queued jobs use live saved overrides and reverting to default takes effect', () => {
   const { r, party } = runtime();
   party.merchantQueue = ['cheap', 'normal', 'urgent'].map((bidItemId, queuedAt) => ({ bidItemId, queuedAt, reason: 'Ponty purchases' }));
-  assert.equal(r.pickJobByPriority().bidItemId, 'urgent');
+  assert.equal(pick(r).bidItemId, 'urgent');
   party.standBids.cheap.priorityOverride = 90;
-  assert.equal(r.pickJobByPriority().bidItemId, 'cheap');
+  assert.equal(pick(r).bidItemId, 'cheap');
   delete party.standBids.cheap.priorityOverride;
   assert.equal(r.merchantJobPriority({ bidItemId: 'cheap', reason: 'Ponty purchases' }), 40);
 });
 test('matching considers urgent bids first instead of insertion order', () => {
-  const { r } = runtime();
-  assert.equal(r.prioritizedStandBids('Ponty purchases').map(([id]) => id).join(','), 'urgent,normal,cheap');
+  // The bid purchases' prioritized port is coordinatorPrioritizedBids on the party records.
+  const { party } = runtime();
+  const { coordinatorPrioritizedBids } = require('../../runtime/merchant-jobs/rules.ts');
+  assert.equal(coordinatorPrioritizedBids(party, 'Ponty purchases').map(([id]) => id).join(','), 'urgent,normal,cheap');
 });
 
 test('bid API persists zero, preserves omitted overrides, clears null and rejects invalid values without cancelling jobs', () => {
   let cancelled = 0, saved = 0, status;
   const party = { standBids: { belt: { priorityOverride: 75 } }, merchantCatalog: { allItems: [{ id: 'belt' }] }, statuses: {} };
-  const {createMerchantBidRoute}=require('../../runtime/coordinator/http/merchant-bid.ts');
+  const {createMerchantBidRoute}=require('../../runtime/items/coordinator/routes/market.ts');
   const handler=createMerchantBidRoute(party,{removeQueued:()=>cancelled++,persist:()=>saved++,log(){},
     observe(){},publish(){},ponty:()=>true,aldata(){},dispatch(){}});
   const send = fields => { status = 200; const res = { status: code => { status = code; return res; }, json() {} };
@@ -110,4 +119,10 @@ test('bid API persists zero, preserves omitted overrides, clears null and reject
   }
   assert.equal(saved, 3); assert.equal(cancelled, 3);
   assert.equal(JSON.parse(JSON.stringify(party.standBids)).belt.quantity, 3);
+  // Each refused field names its own bound.
+  let error; const refused = fields => { const res = { status: () => res, json: body => { error = body.error; } };
+    handler({ body: { itemId: 'belt', price: 100, quantity: 3, ...fields } }, res); return error; };
+  assert.match(refused({ price: 1e12 }), /bid from 1 to 99,999,999,999 gold/);
+  assert.match(refused({ quantity: 0 }), /^Quantity must be a positive whole number\.$/);
+  assert.match(refused({ minimumQuality: 13 }), /minimum level from \+0 to \+12/);
 });

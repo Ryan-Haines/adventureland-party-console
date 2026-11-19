@@ -5,6 +5,15 @@ import {createServer} from 'node:net';
 import path from 'node:path';
 import {ConsoleBuildStore} from './store.ts';
 import type {Candidate, CandidateManifest} from './contracts.ts';
+import {writeInstalled} from '../../runtime/hooks/build/installed.mts';
+import {lifecycleSavedFields} from '../../runtime/lifecycle/fields.ts';
+import {stopTree, waitForHealthy} from '../hosting/process-tree.ts';
+import type {HostBound} from '../hosting/http.ts';
+
+// The candidate dashboard's readiness bound: a candidate server that starts and never answers its
+// page fails the build at this bound, which the build log names.
+const DASHBOARD_READY: HostBound = {name: 'candidateDashboardReadyMs', ms: 30_000};
+const pollMs = lifecycleSavedFields.settings.hostPollMs.default;
 
 // Maintained debug hosting imports the native fixture client/bootstrap boundary.
 const roots = ['runtime', 'characters', 'dashboard', 'tools', 'scripts', 'patches', 'e2e', '.caracal'];
@@ -26,12 +35,15 @@ function caracalFile(parts:string[]):boolean{
 function permitted(name: string): boolean {
   const parts=name.split('/'), base=parts.at(-1)!;
   if(parts.some(part=>excluded.has(part)) || base.startsWith('.env') || /\.(log|tmp|bak|tsbuildinfo)$/.test(base)) return false;
-  if(name.startsWith('dashboard/lib/')&&['account-inventory.cjs','event-policy.cjs','compound-cost.cjs','farming-areas.cjs'].includes(base))return false;
+  if(name.startsWith('dashboard/lib/')&&['account-inventory.cjs','compound-cost.cjs'].includes(base))return false;
+  if(name==='runtime/hunting/farming-areas.cjs')return false;
   if(name.startsWith('.caracal/')&&!caracalFile(parts))return false;
   if(name.startsWith('characters/'))return name==='characters/shared.js';
   return true;
 }
-async function inventory(root: string, outputs=false): Promise<Record<string,string>> {
+// A file's stat stamp (size and modification time in ns) beside the content hash it was read with.
+type Stamped=Map<string,{stamp:string;hash:string}>;
+async function inventory(root: string, outputs=false, stamped?: Stamped): Promise<Record<string,string>> {
   const files:Record<string,string>={};
   const names:string[]=[];
   async function walk(relative:string):Promise<void>{
@@ -51,12 +63,30 @@ async function inventory(root: string, outputs=false): Promise<Record<string,str
   }
   names.sort();let cursor=0;
   await Promise.all(Array.from({length:Math.min(32,names.length)},async()=>{
-    while(cursor<names.length){const name=names[cursor++];files[name]=digest(await readFile(path.join(root,name)));}
+    while(cursor<names.length){const name=names[cursor++];files[name]=stamped?await stampedHash(root,name,stamped):digest(await readFile(path.join(root,name)));}
   }));
+  if(stamped)for(const name of stamped.keys())if(!(name in files))stamped.delete(name);
   return Object.fromEntries(names.map(name=>[name,files[name]]));
+}
+// The stat comes before the read, so a save that lands between them moves the stamp again and the
+// next poll reads the file once more.
+async function stampedHash(root:string,name:string,stamped:Stamped):Promise<string>{
+  const info=await stat(path.join(root,name),{bigint:true}),stamp=info.size+':'+info.mtimeNs,known=stamped.get(name);
+  if(known?.stamp===stamp)return known.hash;
+  const hash=digest(await readFile(path.join(root,name)));
+  stamped.set(name,{stamp,hash});
+  return hash;
 }
 const fingerprint=(files:Record<string,string>)=>digest(JSON.stringify(Object.entries(files).sort(([a],[b])=>a.localeCompare(b))));
 export async function sourceFingerprint(root:string):Promise<string>{return fingerprint(await inventory(root));}
+/** The watcher's poll: the same fingerprint as sourceFingerprint, reading again only the files whose
+ * stat stamp moved since the last poll. Reading and hashing every source file each builderPollMs
+ * cost 1.4 to 7.8 s of wall time and about a third of a core on an idle console (fork f4d8d711,
+ * 738b52d2, 7847cddb); a stat per file keeps the poll, which network-mounted checkouts need. */
+export function sourcePoll(root:string):()=>Promise<string>{
+  const stamped:Stamped=new Map();
+  return async()=>fingerprint(await inventory(root,false,stamped));
+}
 function isolatedEnvironment(extra:NodeJS.ProcessEnv={}):NodeJS.ProcessEnv{
   const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('AL_')&&!key.startsWith('E2E_')&&!/(TOKEN|PASSWORD|SECRET|SESSION|CREDENTIAL)/i.test(key)));
   return {...env,...extra};
@@ -66,9 +96,8 @@ async function command(cwd:string,args:string[],env:NodeJS.ProcessEnv={},signal?
   await new Promise<void>((resolve,reject)=>{
     const child=spawn(process.execPath,args,{cwd,env:isolatedEnvironment(env),stdio:['ignore','pipe','pipe'],windowsHide:true,signal,detached:process.platform!=='win32'});
     const abort=()=>{
-      if(!child.pid)return;
-      if(process.platform==='win32'){const killer=spawn('taskkill',['/pid',String(child.pid),'/T','/F'],{stdio:'ignore',windowsHide:true});killer.on('error',()=>{});}
-      else try{process.kill(-child.pid,'SIGTERM');}catch{/* Already exited. */}
+      const pid=child.pid;
+      if(pid)void stopTree(pid).catch(error=>console.error(`Could not stop candidate command pid ${pid}:`,error));
     };
     signal?.addEventListener('abort',abort,{once:true});
     let tail='';
@@ -82,16 +111,18 @@ async function npmCli():Promise<string>{
   for(const file of candidates)if(file&&await stat(file).catch(()=>undefined))return file;
   throw new Error('Cannot locate npm CLI for isolated dependency installation');
 }
-async function dependencyLocked<T>(store:ConsoleBuildStore,id:string,action:()=>Promise<T>,signal?:AbortSignal):Promise<T>{
-  const parent=path.join(store.directory,'dependency-locks');await mkdir(parent,{recursive:true});
+/** The build's dependency cache lock, which lifecycle-rules.test.cjs drives with a live owner. */
+export async function dependencyLocked<T>(store:ConsoleBuildStore,id:string,action:()=>Promise<T>,signal?:AbortSignal):Promise<T>{
+  const parent=path.join(path.dirname(store.dependencies),'dependency-locks');await mkdir(parent,{recursive:true});
   const lock=path.join(parent,id),token=randomUUID();
-  for(let attempt=0;;attempt++){
+  // The lock is held while its owner's process lives: the wait ends when the owner releases it, or
+  // takes the lock over when owner.json names a process that is gone.
+  for(;;){
     signal?.throwIfAborted();
     try{await mkdir(lock);break;}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
     const owner=await readFile(path.join(lock,'owner.json'),'utf8').then(value=>JSON.parse(value) as {pid:number}).catch(()=>undefined);
     if(owner){try{process.kill(owner.pid,0);}catch(error){if((error as NodeJS.ErrnoException).code==='ESRCH'){await rename(lock,lock+'.abandoned-'+token).catch(()=>{});continue;}}}
-    if(attempt>=1800)throw new Error('Dependency cache is busy');
-    await new Promise(resolve=>setTimeout(resolve,200));
+    await new Promise(resolve=>setTimeout(resolve,pollMs));
   }
   await writeFile(path.join(lock,'owner.json'),JSON.stringify({pid:process.pid,token}));
   try{return await action();}finally{
@@ -99,6 +130,19 @@ async function dependencyLocked<T>(store:ConsoleBuildStore,id:string,action:()=>
     const owner=JSON.parse(await readFile(path.join(lock,'owner.json'),'utf8'));
     if(owner.token===token)await rm(lock,{recursive:true});
   }
+}
+type LockEntry={version?:string;resolved?:string;integrity?:string;link?:boolean;optional?:boolean};
+// npm's hidden lock (node_modules/.package-lock.json) drops lock-only flags such as `peer` and
+// leaves out optional packages for other platforms, so an installed tree matches its lock when each
+// installed package has the lock's identity (version, resolved, integrity, link) and each absent
+// one is optional (fork 0bea0e19, 4ddff3c9).
+const installedIdentity=(entry:LockEntry)=>JSON.stringify([entry.version,entry.resolved,entry.integrity,entry.link]);
+export function installedMatchesLock(expected:{packages?:Record<string,LockEntry>},actual?:{packages?:Record<string,LockEntry>}):boolean{
+  if(!actual)return false;
+  return Object.entries(expected.packages||{}).every(([key,value])=>{
+    const installed=actual.packages?.[key];
+    return !key||(installed?installedIdentity(installed)===installedIdentity(value):value.optional===true);
+  });
 }
 async function dependencyCache(root:string,app:string,store:ConsoleBuildStore,signal?:AbortSignal):Promise<string>{
   const names={root:'',dashboard:'dashboard',caracal:'.caracal'};
@@ -109,10 +153,10 @@ async function dependencyCache(root:string,app:string,store:ConsoleBuildStore,si
   const id=digest(JSON.stringify({locks,platform:process.platform,arch:process.arch,abi:process.versions.modules,binLinks:false}));
   await store.pinDependencies([id]);
   await dependencyLocked(store,id,async()=>{
-    const cache=path.join(store.directory,'dependencies',id);
+    const cache=path.join(store.dependencies,id);
     const complete=await readFile(path.join(cache,'complete.json'),'utf8').catch(()=>undefined);
     if(complete&&JSON.parse(complete).id===id)return;
-    const stage=path.join(store.directory,'dependency-stage-'+randomUUID());
+    const stage=path.join(path.dirname(store.dependencies),'dependency-stage-'+randomUUID());
     try{
     for(const [name,relative] of Object.entries(names)){
       signal?.throwIfAborted();
@@ -124,16 +168,17 @@ async function dependencyCache(root:string,app:string,store:ConsoleBuildStore,si
       const hidden=await readFile(path.join(existing,'.package-lock.json'),'utf8').catch(()=>undefined);
       const expected=JSON.parse(await readFile(path.join(destination,'package-lock.json'),'utf8'));
       const actual=hidden?JSON.parse(hidden):undefined;
-      const compatible=actual&&Object.entries(expected.packages||{}).every(([key,value])=>!key||JSON.stringify(value)===JSON.stringify(actual.packages?.[key]));
-      if(compatible)await cp(existing,path.join(destination,'node_modules'),{recursive:true,dereference:true});
-      else await command(destination,[await npmCli(),'ci','--no-audit','--no-fund','--no-bin-links'],{},signal);
+      if(installedMatchesLock(expected,actual))await cp(existing,path.join(destination,'node_modules'),{recursive:true,dereference:true});
+      // The production image sets NODE_ENV=production (Dockerfile), which leaves out dev
+      // dependencies; a candidate builds with them, TypeScript among them.
+      else await command(destination,[await npmCli(),'ci','--include=dev','--no-audit','--no-fund','--no-bin-links'],{},signal);
     }
     const files=await inventory(stage,true);
     await writeFile(path.join(stage,'complete.json'),JSON.stringify({id,files,manifestHash:digest(JSON.stringify({id,files}))}));
     await mkdir(path.dirname(cache),{recursive:true});await rename(stage,cache);
-    }finally{await removeOwnedStage(store.directory,stage);}
+    }finally{await removeOwnedStage(path.dirname(store.dependencies),stage);}
   },signal);
-  for(const [name,relative] of Object.entries(names))await symlink(path.join(store.directory,'dependencies',id,name,'node_modules'),path.join(app,relative,'node_modules'),process.platform==='win32'?'junction':'dir');
+  for(const [name,relative] of Object.entries(names))await symlink(path.join(store.dependencies,id,name,'node_modules'),path.join(app,relative,'node_modules'),process.platform==='win32'?'junction':'dir');
   return id;
 }
 async function freePort():Promise<number>{
@@ -143,25 +188,15 @@ async function validateDashboard(app:string,signal?:AbortSignal):Promise<void>{
   signal?.throwIfAborted();
   const port=await freePort();
   const child=spawn(process.execPath,['tools/dashboard/node-server.mts',String(port),path.join(app,'dashboard/.build/container')],{cwd:app,env:isolatedEnvironment(),stdio:'ignore',windowsHide:true,signal});
-  let failure:Error|undefined;child.once('error',error=>{failure=error;});
-  try{
-    const deadline=Date.now()+30_000;
-    while(Date.now()<deadline){
-      signal?.throwIfAborted();
-      if(failure)throw failure;if(child.exitCode!==null)throw new Error('Candidate dashboard exited before readiness');
-      const response=await fetch(`http://127.0.0.1:${port}/`,{signal:AbortSignal.timeout(1500)}).catch(()=>undefined);
-      if(response){await response.body?.cancel();if(response.ok)return;}
-      await new Promise(resolve=>setTimeout(resolve,200));
-    }
-    throw new Error('Candidate dashboard readiness timed out');
-  }finally{if(child.exitCode===null){const stopped=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await stopped;}}
+  try{await waitForHealthy(child,`http://127.0.0.1:${port}/`,'Candidate dashboard',DASHBOARD_READY,{signal});}
+  finally{if(child.exitCode===null){const stopped=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await stopped;}}
 }
 function componentHashes(files:Record<string,string>,dependencyId:string):CandidateManifest['components']{
   const select=(predicate:(name:string)=>boolean)=>digest(dependencyId+fingerprint(Object.fromEntries(Object.entries(files).filter(([name])=>predicate(name)))));
   return {
     dashboard:select(name=>name.startsWith('dashboard/.build/container/')||name.startsWith('tools/dashboard/')),
-    characters:select(name=>name.startsWith('characters/')&&!name.endsWith('build-history.json')||name.startsWith('runtime/steam/')||name.startsWith('.build/shared/')),
-    coordinator:select(name=>name.startsWith('.build/runtime/')&&!['steam-bridge.js','universal-loader.js','roles.js','party-member.js','profiles.js'].includes(path.basename(name))||name.startsWith('scripts/')||name.startsWith('.caracal/')||name.startsWith('tools/caracal/')||name.startsWith('.build/shared/')),
+    characters:select(name=>name.startsWith('characters/')&&!name.endsWith('build-history.json')||name.startsWith('runtime/lifecycle/roster/')||name.startsWith('.build/shared/')),
+    coordinator:select(name=>name.startsWith('.build/runtime/')&&!['steam-bridge.js','universal-loader.js','party-member.js','profiles.js'].includes(path.basename(name))||name.startsWith('scripts/')||name==='runtime/lifecycle/coordinator/client-files.cjs'||name.startsWith('.caracal/')||name.startsWith('tools/caracal/')||name.startsWith('.build/shared/')),
   };
 }
 /** Compile only within a private source snapshot; publish after actual readiness. */
@@ -176,6 +211,9 @@ export async function buildCandidate(root:string,store:ConsoleBuildStore,signal?
   try{
   const dependencyId=await dependencyCache(root,app,store,signal);
   const tsc='node_modules/typescript/bin/tsc';
+  // tsc reads the generated add-on imports, so the copy gets them first;
+  // the build tools below write the same modules again.
+  writeInstalled(app);
   for(const config of ['dashboard/tsconfig.json','tools/tsconfig.json','runtime/tsconfig.json'])await command(app,[tsc,'-p',config,'--noEmit','--incremental','false'],{},signal);
   await command(app,['--input-type=module','-e',"await import('./tools/console-build/hosting.ts')"],{},signal);
   for(const script of ['tools/build-shared.mts','tools/build-runtime.mts','tools/game/build.mts'])await command(app,[script,'--publish'],{},signal);

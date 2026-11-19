@@ -2,6 +2,8 @@
  * These are partial public packets, not complete game entities. Review on upgrade. */
 export const cipherIngredients = ['verdantspore', 'frostscale', 'embercoal', 'gloomfeather'] as const;
 export type Ingredient = typeof cipherIngredients[number];
+// The game brews five ingredients in order (the `brew` CODE contract), so a mix has five places.
+export const CIPHER_MIX_LENGTH = 5;
 export interface CipherGatheringPlan {
   round:string; realm:string; owner:string; mode:'gathering'|'brewing'|'finished'; ingredient?:Ingredient; monster?:string;
   reason:'initial stock'|'recipe shortage'|'gathering ended';
@@ -9,6 +11,8 @@ export interface CipherGatheringPlan {
 }
 export interface CipherGatheringContext {
   owner:string; round?:string; ready:boolean; stock:Record<string,number>; plan?:CipherGatheringPlan; mixesLeft?:number;
+  // The items owner still fetches the round's ingredients to the merchant's bag.
+  fetching?:boolean;
 }
 export interface CipherClue { mix: string[]; right: number }
 export interface CipherBoard {
@@ -28,15 +32,16 @@ export const defaultCipherSettings: CipherSettings = {
   gatherMonsters: ['goo', 'arcticbee', 'plantoid', 'snake'],
 };
 export function validMix(mix: unknown): mix is Ingredient[] {
-  return Array.isArray(mix) && mix.length === 5 && mix.every(item => cipherIngredients.includes(item));
+  return Array.isArray(mix) && mix.length === CIPHER_MIX_LENGTH && mix.every(item => cipherIngredients.includes(item));
 }
 export function cipherScore(a: string[], b: string[]): number {
   return a.reduce((count, name, i) => count + Number(name === b[i]), 0);
 }
-const recipes = Array.from({length: 1024}, (_, n) => Array.from({length: 5}, (_, i) => cipherIngredients[Math.floor(n / 4 ** i) % 4]));
+const recipes = Array.from({length: cipherIngredients.length ** CIPHER_MIX_LENGTH}, (_, n) =>
+  Array.from({length: CIPHER_MIX_LENGTH}, (_, i) => cipherIngredients[Math.floor(n / cipherIngredients.length ** i) % cipherIngredients.length]));
 export function cipherCandidates(board: CipherBoard): string[][] {
   const clues = board.board ?? [];
-  if (clues.some(clue => !validMix(clue.mix) || !Number.isInteger(clue.right) || clue.right < 0 || clue.right > 5)) return [];
+  if (clues.some(clue => !validMix(clue.mix) || !Number.isInteger(clue.right) || clue.right < 0 || clue.right > CIPHER_MIX_LENGTH)) return [];
   const fit = typeof board.fit === 'string' && /^[0-9a-f]{256}$/i.test(board.fit) ? board.fit : null;
   if (!fit && (board.mixes ?? 0) > clues.length) return [];
   return recipes.filter((mix, n) => (!fit || ((parseInt(fit[n >> 2], 16) >> (n & 3)) & 1) !== 0) &&
@@ -68,10 +73,25 @@ export function solveCipher(board: CipherBoard, stock: Record<string, number>): 
   return {mix: best?.slice() ?? null, candidates: candidates.length, worst: best ? worst : 0};
 }
 export interface PublishedOccurrence { event: string; at: number; status: string; id?: string }
-export function nextPublishedEvent(schedule: {events?: PublishedOccurrence[]; repeats?: PublishedOccurrence[]}, id: string, now: number) {
+// The Cipher entry of a member's event schedule report (character/clock.ts `schedule`).
+export function cipherEntry<T>(report: { eventSchedules?: readonly { id?: unknown; cipher?: T }[] | null } | null | undefined): T | undefined {
+  return report?.eventSchedules?.find(entry => entry.id === 'witchcipher')?.cipher;
+}
+type PublishedSchedule = { events?: PublishedOccurrence[]; repeats?: PublishedOccurrence[] };
+/** The published calendar's scheduled occurrences of one event, earliest first. */
+export function scheduledOccurrences(schedule: PublishedSchedule, id: string): PublishedOccurrence[] {
   return [...(schedule.events ?? []), ...(schedule.repeats ?? [])]
-    .filter(entry => entry.event === id && entry.status === 'scheduled' && Number.isFinite(entry.at) && entry.at > now)
-    .sort((a, b) => a.at - b.at)[0];
+    .filter(entry => entry.event === id && entry.status === 'scheduled' && Number.isFinite(entry.at))
+    .sort((a, b) => a.at - b.at);
+}
+/** An event's first scheduled occurrence after `now`. */
+export function nextPublishedEvent(schedule: PublishedSchedule, id: string, now: number): PublishedOccurrence | undefined {
+  return scheduledOccurrences(schedule, id).find(entry => entry.at > now);
+}
+// The Witch's drop rate of a Cipher ingredient from a monster: `loot` per thousand of its HP, at
+// most 1 (b9b5c91e eventScheduleSnapshot, shared.js:534).
+export function cipherDropRate(loot: unknown, hp: unknown): number {
+  return Math.min(1, Number(loot) * Number(hp) / 1000);
 }
 // Minimum of all 5,040 orders from the native forest arrival (0,0), using
 // collision-checked walking paths and 300 distance-equivalent per map crossing.

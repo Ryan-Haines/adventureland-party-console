@@ -1,37 +1,24 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const Module = require('node:module');
-const { buildSync } = require('esbuild');
+const loadModule = require('./helpers/dashboard-query-module.cjs');
 const React = require('../../dashboard/node_modules/react');
 const { create, act } = require('../../dashboard/node_modules/react-test-renderer');
 
 class TestActionError extends Error { constructor(details) { super(details.error); this.details=details; } }
-function load(name) {
-  const filename = path.resolve('dashboard/features/party', name + '.tsx');
-  const bundle = buildSync({ entryPoints: [filename], bundle: true, packages: 'external',
-    external: ['@/components/ui/*', './query-actions'], platform: 'node', format: 'cjs', write: false });
-  const compiled = new Module(filename, module);
-  compiled.filename = filename;
-  compiled.paths = Module._nodeModulePaths(path.dirname(filename));
-  compiled.require = function (id) {
-    // Keep the actual feature logic; only replace browser UI primitives.
-    if (id === './query-actions') return {PartyActionError:TestActionError};
-    if (id.startsWith('@/components/ui/')) return new Proxy({}, {
-      get: (_, name) => name === 'Button' ? 'button' : String(name),
-    });
-    return Module.prototype.require.call(this, id);
-  };
-  compiled._compile(bundle.outputFiles[0].text, filename);
-  return compiled.exports;
-}
+// The real feature logic with the browser UI primitives replaced.
+const load = name => loadModule(name + '.tsx', { './query-actions': { PartyActionError: TestActionError },
+  '@/components/ui/*': new Proxy({}, { get: (_, name) => name === 'Button' ? 'button' : String(name) }) });
 const { ItemDetails } = load('item-details');
 const { WTBOrderDialog } = load('wtborder-dialog');
-const { pontyPrice } = load('ponty-price');
+const { pontyPrice } = require('../../runtime/items/rules.ts');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const text = node => typeof node === 'string' ? node : (node.children || []).map(text).join('');
 
-test('recipe +7 cape keeps its level through inspection, WTB, Ponty price and saving', async () => {
+test('recipe +7 cape keeps its level through inspection, WTB, Ponty price and saving', async t => {
+  // ItemCard listens on the page for its "i" shortcut (item-card.tsx).
+  const previousDocument = global.document;
+  global.document = new EventTarget();
+  t.after(() => { global.document = previousDocument; });
   const meta = { definition: { name: 'Cape', type: 'cape', g: 10000, upgrade: {}, grades: [7, 9] }, upgradeable: true };
   const mantle = { character: 'Catalog', entry: { slot: -1, item: { name: 'beastmantle' }, meta: {
     definition: { name: 'Beast Mantle', type: 'cape' }, world: { recipe: { cost: 1000, materials: [

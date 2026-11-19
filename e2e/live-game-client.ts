@@ -19,6 +19,10 @@ export interface LiveClient {
   snapshot(): Promise<any>;
   events(): Promise<any[]>;
   disconnects(): ReadonlyArray<Record<string, unknown>>;
+  /** Each `limitdcreport` and `disconnect_reason` the server sent this character, kept in Node
+   *  as it arrives, so the native reload that follows a disconnect cannot lose it
+   *. */
+  limitdcs(): ReadonlyArray<Record<string, unknown>>;
   run(expression: string): Promise<any>;
 }
 
@@ -30,12 +34,13 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
   const page = options.primary?.page || await context.newPage();
   if(!options.primary)await installCompanionGraphicsDiagnostic(context,options,process.env.E2E_COMPANION_NO_GRAPHICS==='1');
   const errors: string[] = options.primary?.errors || [];
-  const disconnectJournal:Array<Record<string,unknown>>=[];
+  const disconnectJournal:Array<Record<string,unknown>>=[],limitdcJournal:Array<Record<string,unknown>>=[];
   const disconnectBinding='nativeDisconnect_'+randomUUID().replaceAll('-','');
   await page.exposeBinding(disconnectBinding, (_source, entry:Record<string,unknown>)=>{
     if(entry?.name!==options.name)return;
-    disconnectJournal.push(entry);
-    if(disconnectJournal.length>32)disconnectJournal.shift();
+    const journal=entry.limitdc?limitdcJournal:disconnectJournal;
+    journal.push(entry);
+    if(journal.length>32)journal.shift();
   });
   let native: Frame;
   if (options.primary) {
@@ -107,7 +112,7 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
             autoReload:scalar(game.auto_reload),reloadState:scalar(game.reload_state),reloadTimer:scalar(game.reload_timer),
             characterToLoad:typeof game.character_to_load==='string'?game.character_to_load:null,
             manuallyStopped,path:location.pathname,runtimeGeneration:scalar(runner?.__partyRuntimeGeneration),
-            eventReturnCycleId:scalar(runner?.__partyEventRecoveryCycleId)};
+            eventReturnCycleId:scalar(runner?.__partyEventExit?.report().cycleId)};
           Promise.resolve(game[disconnectBinding](entry)).catch(()=>{});
         }catch{}
       });
@@ -139,7 +144,7 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
           try{const r=runner?.partyQueueClient?.independent?.report?.();independentRoute=r&&{id:r.id,target:r.target,direct:r.direct,level:r.level,phase:r.phase,point:r.point&&{x:r.point.x,y:r.point.y},prediction:r.prediction&&{at:r.prediction.at,target:{...r.prediction.target},destination:{...r.prediction.destination},targetSpeed:r.prediction.targetSpeed,own:{...r.prediction.own},ownSpeed:r.prediction.ownSpeed,reach:r.prediction.reach,horizon:r.prediction.horizon},ownSpeed:c.speed,nativeTarget:enemy&&{id:String(enemy.id),x:enemy.real_x??enemy.x,y:enemy.real_y??enemy.y,moving:!!enemy.moving,speed:enemy.speed,going_x:enemy.going_x,going_y:enemy.going_y,inRange:runner?.is_in_range?.(enemy)}};}catch(error){independentRoute={error:String(error)};}
           game.__e2eEvents.push({sequence:++game.__e2eEventSequence,at:Date.now(),event:'move-issued',
             data:{x:p.x,y:p.y,going_x:p.going_x,going_y:p.going_y,m:p.m},
-            motion:{parent:body(c),code:body(code),clear,approachGoal,independentRoute,owner:runner?.__partyCombatOwner,
+            motion:{parent:body(c),code:body(code),clear,approachGoal,independentRoute,owner:runner?.__partyMovement?.live()?.owner??null,
               recovery:runner?.__partyGroupedCombat?.formationRecovery&&{id:runner.__partyGroupedCombat.formationRecovery.id,
                 target:runner.__partyGroupedCombat.formationRecovery.target,mover:runner.__partyGroupedCombat.formationRecovery.mover,
                 phase:runner.__partyGroupedCombat.formationRecovery.phase,attempt:runner.__partyGroupedCombat.formationRecovery.attempt},
@@ -158,7 +163,8 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
         const payload=args[0]||{},ids=hostileSkill?[...(payload.id==null?[]:[payload.id]),...(Array.isArray(payload.ids)?payload.ids:[]),...(Array.isArray(payload.targets)?payload.targets.map((value:any)=>Array.isArray(value)?value[0]:value):[])].map(String):undefined;
         const attackTarget=game.entities?.[String(payload.id??runner?.__partyGroupedCombat?.target?.id)];
         let candidate:any,convoy:any;
-        try { candidate=runner?.sharedRoutine?.getWalkingPassiveTarget?.(true);convoy=runner?.sharedRoutine?.combatTraceSnapshot?.(); } catch { return; }
+        let readError:string|undefined;
+        try { candidate=runner?.sharedRoutine?.targeting?.walkingPassiveTarget?.(true);convoy=runner?.partyStatus?.character?.combatTraceSnapshot(); } catch(error) { readError=String(error); }
         let independent:any;
         if(game.__e2eObserveMoves&&(game.__e2eIndependentObservedAttackCount||0)<100){
           const group=runner?.__partyGroupedCombat;
@@ -171,7 +177,7 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
               // The production readiness gate executes in CODE, not its game
               // parent, which can occupy an adjacent acknowledged clock window.
               gameAt:Date.now(),codeAt,
-              serverAt:codeAt===undefined?undefined:codeAt+Number(runner?.sharedRoutine?.queueClockOffset?.()||0),
+              serverAt:codeAt===undefined?undefined:codeAt+Number(runner?.__partyMovement?.walkState?.clockOffset||0),
               ready:group.independentReadiness&&Object.fromEntries(Object.entries(group.independentReadiness).map(([name,value]:[string,any])=>[name,
                 value&&{selection:value.selection,target:value.target,at:value.at,ready:value.ready,confirmation:value.confirmation}]))};
           }
@@ -180,10 +186,10 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
         const handoff=(runner?.__partyHandoffTrace||[]).filter((e:any)=>e.selection===group?.selection&&String(e.target)===String(group?.target?.id)&&['committed','attempt','blocked','range-commit-received'].includes(e.stage)).slice(-6).map((e:any)=>({at:e.at,stage:e.stage,target:e.target,selection:e.selection,reason:e.reason,confirmation:e.confirmation,cooldownReadyAt:e.cooldownReadyAt,frequency:e.frequency,timerLatenessMs:e.timerLatenessMs}));
         game.__e2eEvents.push({sequence:++game.__e2eEventSequence,at:Date.now(),event:hostileSkill?'offensive-skill-issued':'attack-issued',
           data:{id:payload.id==null?undefined:String(payload.id),actor:c.name,ids,skill:hostileSkill?String(payload.name):undefined},motion:{map:c.map,in:c.in??c.map,server:String(game.server_region||'')+String(game.server_identifier||''),
-            x:c.real_x??c.x,y:c.real_y??c.y,moving:!!c.moving,owner:runner?.__partyCombatOwner,
+            x:c.real_x??c.x,y:c.real_y??c.y,moving:!!c.moving,owner:runner?.__partyMovement?.live()?.owner??null,
             inRange:runner?.is_in_range?.(attackTarget),range:c.range,nativeAttack:{dueAt:Number.isFinite(attackDue)?attackDue:undefined,canAttack:runner?.can_attack?.(attackTarget)},handoff,attackTarget:attackTarget&&{id:String(attackTarget.id),x:attackTarget.real_x??attackTarget.x,y:attackTarget.real_y??attackTarget.y},
             independent,convoyId:convoy?.convoy,convoyPhase:convoy?.convoyPhase,convoyEpoch:convoy?.convoyEpoch,
-            candidate:candidate&&{id:String(candidate.id),mtype:candidate.mtype}}});
+            candidate:candidate&&{id:String(candidate.id),mtype:candidate.mtype},readError}});
         if(game.__e2eEvents.length>2000)game.__e2eEvents.shift();
       };
       if(typeof socket.onAnyOutgoing==='function'){
@@ -199,8 +205,15 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
           return emit.apply(this,args);
         };
       }
+      // The server's call limit disconnect (node/server.js:5024-5025) reaches Node at once.
+      for(const event of ['limitdcreport','disconnect_reason'])socket.on(event,(data:unknown)=>{
+        try{Promise.resolve(game[disconnectBinding]({limitdc:true,at:Date.now(),name,event,data:JSON.parse(JSON.stringify(data??null))})).catch(()=>{});}catch{}
+      });
+      // The tracker reply's arrival only, without its account data, for its age.
+      socket.on('tracker',()=>{game.__e2eEvents.push({sequence:++game.__e2eEventSequence,at:Date.now(),event:'tracker-arrived'});
+        if(game.__e2eEvents.length>2000)game.__e2eEvents.shift();});
       // Incoming observations only; no synthetic packets.
-      for(const event of ['hit','death','game_response','game_log','chest_opened','disappear','new_map','party_update','player'])socket.on(event,(data:unknown)=>{
+      for(const event of ['hit','death','game_response','game_log','chest_opened','disappear','new_map','party_update','player','limitdcreport','disconnect_reason'])socket.on(event,(data:unknown)=>{
         const runner=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
         const c=runner?.character,command=event==='player'&&game.socket===socket?
           runner?.__partyDungeonRuntime?.commandIdentity?.():undefined;
@@ -270,8 +283,7 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
           request:entry.details?.request,repeats:entry.details?.repeats,lastAt:entry.details?.lastAt}));
         const commandObservation={at:Date.now(),attemptAt:runner?.__partyStatusAttemptAt,
           successAt:runner?.__partyStatusSuccessAt,lastCommandId:runner?.__partyLastCommand,
-          navigationIntent:runner?.__partyNavigationIntent,eventReturnCycleId:runner?.__partyEventRecoveryCycleId,
-          eventReturnOwnerAt:runner?.__partyEventRecoveryOwnerAt,travelSignalAt:runner?.__partyTravelSignalAt,
+          navigationIntent:runner?.__partyNavigationIntent,eventReturnCycleId:runner?.__partyEventExit?.report().cycleId,travelSignalAt:runner?.__partyTravelSignalAt,
           transport:{full:timing(transport?.full),fast:timing(transport?.fast),clock:transport?.clock},
           walk:walk&&({activity:walk.activity,key:walk.key,parentCommandId:walk.parentCommandId,
             revision:walk.revision,token:walk.token,convoyId:walk.convoyId,cancelled:walk.cancelled}),
@@ -283,6 +295,7 @@ export async function launchGameClient(context: BrowserContext, options: LiveCli
       }));
     },
     disconnects() { return disconnectJournal.map(entry=>({...entry})); },
+    limitdcs() { return limitdcJournal.map(entry=>({...entry})); },
     async events() { return observe(async frame=>{await retainEvents(frame);return [...eventLedger];}); },
     async run(expression) {
       // Reacquire before evaluation; never replay a potentially mutating expression.

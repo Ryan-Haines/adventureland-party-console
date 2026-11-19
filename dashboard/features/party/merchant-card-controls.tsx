@@ -1,5 +1,6 @@
 "use client";
 import { MerchantCollectionSettings, type MerchantCollectionSettingsProps } from "./merchant-collection-settings";
+import { AddonSlot } from "../../../runtime/hooks/dashboard/slots";
 import { useClock } from "@/hooks/use-clock";
 import { MerchantActivityLog } from "@/components/merchant-activity";
 import { Button } from "@/components/ui/button";
@@ -17,21 +18,22 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useState, type ReactNode } from "react";
 import { usePartyAction } from "./query-actions";
 import { domainOptions, useVisible } from "./query-cache";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { durationLabel } from "./duration-label";
 import { MerchantJob } from "./merchant-job";
-import { merchantJobLabel } from "./merchant-job-label";
 import { PartyState } from "./party-state";
 import { SendToPartyControl } from "./send-to-party-control";
 import { MerchantCancelJobControl } from "./merchant-cancel-job-control";
-import { routineFor } from '../../../runtime/coordinator/merchant/routines';
-import { coordinatorMerchantTransferBlocked } from '../../../runtime/coordinator/merchant/job-policy';
-import { collectsPartyItems, pickupReason } from '../../../runtime/coordinator/merchant/pickup-jobs';
+import { merchantRoutinePriority, routineFor } from '../../../runtime/merchant-jobs/api.ts';
+import { coordinatorMerchantTransferBlocked } from '../../../runtime/merchant-jobs/api.ts';
+import { merchantJobLabel, merchantKind, pickupReason } from '../../../runtime/merchant-jobs/api.ts';
+import { protectedSlotsOf } from '../../../runtime/items/api.ts';
 import { useCharacterData } from './dashboard-live';
 import { audited } from './field-read-audit';
+import { SettingsLock } from './settings-lock';
 
 export const MerchantCardControls = memo(function MerchantCardControls({
   state: baseState,
@@ -69,10 +71,11 @@ export const MerchantCardControls = memo(function MerchantCardControls({
   const logs = useQueries({ queries: [{ ...domainOptions(client, 'logs'), enabled: visible }].filter(() => activityOpen) })[0];
   const state = { ...baseState, ...logs?.data };
   const [cleanupResult, setCleanupResult] = useState<string | null>(null);
+  // A refused Retry, shown on its job's row (issue #14).
+  const [retryRefusal, setRetryRefusal] = useState<{ id: unknown; message: string } | null>(null);
   const inventory = useCharacterData(state.merchantCharacter || "", 'inventory');
   const merchantStatus = state.merchantCharacter ? state.characters[state.merchantCharacter] : null;
   const merchant = merchantStatus ? audited('merged', {...merchantStatus, ...inventory}) : null;
-  const inventoryAtCapacity = Array.isArray(merchant?.items) && merchant.items.filter((entry) => !entry).length <= 3;
   const readiness = (mode: "fishing" | "mining") => {
     const remaining = Math.max(
       0,
@@ -97,15 +100,22 @@ export const MerchantCardControls = memo(function MerchantCardControls({
     );
   };
   const jobLabel = (job: MerchantJob) => merchantJobLabel(job, state.merchantCatalog?.allItems);
+  const gatheringAtCapacity = Array.isArray(merchant?.items) &&
+    merchant.items.filter((entry) => !entry).length <= protectedSlotsOf(state, state.merchantCharacter || '');
+  // A queued gathering job waits until the merchant jobs owner's planner lists it ready.
+  const ready = new Set((state.merchantReady || []).map((job) => job.id));
   const capacityBlocked = (job: MerchantJob) => {
-    if (job.reason === "fishing" || job.reason === "mining") return inventoryAtCapacity;
+    if (job.reason === "fishing" || job.reason === "mining") return !ready.has(String(job.id));
     const reason = pickupReason(job.reason, job.target, state.merchantCharacter);
     return coordinatorMerchantTransferBlocked(
       { merchantCharacter: state.merchantCharacter || null, statuses: {...state.characters, ...(merchant && state.merchantCharacter ? {[state.merchantCharacter]: merchant} : {})} },
-      { ...job, reason: collectsPartyItems(reason) ? "marked items" : reason },
+      { ...job, reason: merchantKind(reason).collects ? "marked items" : reason },
     );
   };
-  const capacityReason = `Merchant capacity blocked (${merchant?.items?.filter(Boolean).length}/${merchant?.items?.length} slots occupied; three slots reserved)`;
+  // The items owner's capacity rule holds a transfer; the merchant jobs owner's plan holds a gathering job.
+  const blockedReason = (job: MerchantJob) => (job.reason === 'fishing' || job.reason === 'mining') && job.id
+    ? "Not ready in the merchant's plan"
+    : `Merchant capacity blocked (${merchant?.items?.filter(Boolean).length}/${merchant?.items?.length} slots occupied; protected free slots reserved)`;
   const merchantJobs: { job: MerchantJob; status: string }[] = [
     ...(state.merchantCurrent
       ? [
@@ -129,6 +139,9 @@ export const MerchantCardControls = memo(function MerchantCardControls({
           : 'blocked'
         : 'queued',
     })),
+    // The gathering the console plans: each enabled mode past its cooldown, which gathering
+    // runs on the character with no queued job. It waits while the bag is at the protected free
+    // slots, the reserve gathering keeps (gathering.ts `blockedReason`).
     ...(state.gatheringModes || [])
       .filter(
         (mode): mode is 'fishing' | 'mining' =>
@@ -146,11 +159,11 @@ export const MerchantCardControls = memo(function MerchantCardControls({
           reason: mode,
           target: state.merchantCharacter || '',
         } satisfies MerchantJob,
-        status: inventoryAtCapacity ? 'BLOCKED' : 'queued',
+        status: gatheringAtCapacity ? 'BLOCKED' : 'queued',
       })),
   ];
   return (
-    <section className="border-b border-amber-900/70 bg-amber-400/[0.03] p-4">
+    <section data-area="merchant-controls" className="border-b border-amber-900/70 bg-amber-400/[0.03] p-4">
       <details className="group mb-3 rounded border border-amber-900/60 bg-black/20">
         <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-amber-300">
           <span>
@@ -185,8 +198,7 @@ export const MerchantCardControls = memo(function MerchantCardControls({
                 <span className="mr-1 text-amber-300">
                   P
                   {job.priority ??
-                    state.merchantRoutinePriorities?.[routineFor(job)] ??
-                    50}
+                    merchantRoutinePriority(state.merchantRoutinePriorities || {}, routineFor(job))}
                 </span>
                 {jobLabel(job)}
                 {job.target && job.reason !== 'join giveaway'
@@ -197,7 +209,7 @@ export const MerchantCardControls = memo(function MerchantCardControls({
                 className={`max-w-32 shrink-0 truncate ${status.toLowerCase() === "blocked" ? "text-red-400" : "text-emerald-100/70"}`}
                 title={
                   status.toLowerCase() === 'blocked'
-                    ? capacityReason
+                    ? blockedReason(job)
                     : job.realmBlockedReason || job.pauseReason || status
                 }
               >
@@ -208,26 +220,28 @@ export const MerchantCardControls = memo(function MerchantCardControls({
                       ? `Retry at ${new Date(job.retryAt).toLocaleTimeString()}`
                       : job.pauseReason || status)}
               </span>
-              {job.realmRetryExhausted && (
+              {!!job.realmAttempts && (
                 <button
                   type="button"
                   className="rounded border border-amber-600 bg-zinc-950 px-2 py-1 text-amber-200 hover:border-amber-300 hover:bg-amber-950 hover:text-white"
-                  onClick={() =>
-                    action.mutate({
-                      path: '/merchant/job/retry',
-                      body: { id: job.id },
-                    })
-                  }
+                  onClick={() => {
+                    setRetryRefusal(null);
+                    action.mutateAsync({ path: '/merchant/job/retry', body: { id: job.id } })
+                      .catch((error: unknown) => setRetryRefusal({ id: job.id, message: error instanceof Error ? error.message : String(error) }));
+                  }}
                 >
                   Retry
                 </button>
+              )}
+              {retryRefusal && retryRefusal.id === job.id && (
+                <span role="alert" className="text-rose-200">{retryRefusal.message}</span>
               )}
             </div>
           ))}
           {state.mluckSchedule &&
             !merchantJobs.some(
               ({ job }) =>
-                job.reason === 'merchant luck' &&
+                !!merchantKind(job.reason).luck &&
                 job.target === state.mluckSchedule?.target,
             ) && (
               <div className="flex min-w-0 items-center gap-3 text-left">
@@ -363,58 +377,12 @@ export const MerchantCardControls = memo(function MerchantCardControls({
           Routines
         </Button>
 
-        <Button
-          variant="outline"
-          aria-pressed={state.gatheringModes?.includes('mining')}
-          onClick={() =>
-            void onGather('mining', !state.gatheringModes?.includes('mining'))
-          }
-          className={
-            state.gatheringModes?.includes('mining')
-              ? 'h-9 border-emerald-300 bg-emerald-500 px-2 text-[11px] text-emerald-950 hover:bg-emerald-400'
-              : 'h-9 border-emerald-700 bg-[#07100f] px-2 text-[11px] text-emerald-300 hover:bg-emerald-950'
-          }
-        >
-          <span className="flex items-center justify-center gap-1 whitespace-nowrap">
-            <Pickaxe aria-hidden className="h-3.5 w-3.5" />
-            <span>
-              Mining · {state.gatheringModes?.includes('mining') ? 'On' : 'Off'}{' '}
-              ·
-            </span>
-            {state.gatheringNoTool?.mining &&
-            !state.gatheringModes?.includes('mining') ? (
-              <span className="text-amber-200">No tool</span>
-            ) : (
-              readiness('mining')
-            )}
-          </span>
-        </Button>
-        <Button
-          variant="outline"
-          aria-pressed={state.gatheringModes?.includes('fishing')}
-          onClick={() =>
-            void onGather('fishing', !state.gatheringModes?.includes('fishing'))
-          }
-          className={
-            state.gatheringModes?.includes('fishing')
-              ? 'h-9 border-cyan-300 bg-cyan-400 px-2 text-[11px] text-cyan-950 hover:bg-cyan-300'
-              : 'h-9 border-cyan-700 bg-[#07100f] px-2 text-[11px] text-cyan-300 hover:bg-cyan-950'
-          }
-        >
-          <span className="flex items-center justify-center gap-1 whitespace-nowrap">
-            <Fish aria-hidden className="h-3.5 w-3.5" />
-            <span>
-              Fishing ·{' '}
-              {state.gatheringModes?.includes('fishing') ? 'On' : 'Off'} ·
-            </span>
-            {state.gatheringNoTool?.fishing &&
-            !state.gatheringModes?.includes('fishing') ? (
-              <span className="text-amber-200">No tool</span>
-            ) : (
-              readiness('fishing')
-            )}
-          </span>
-        </Button>
+        <GatheringToggle mode="mining" label="Mining" icon={Pickaxe} state={state} onGather={onGather} readiness={readiness}
+          on="h-9 border-emerald-300 bg-emerald-500 px-2 text-[11px] text-emerald-950 hover:bg-emerald-400"
+          off="h-9 border-emerald-700 bg-[#07100f] px-2 text-[11px] text-emerald-300 hover:bg-emerald-950" />
+        <GatheringToggle mode="fishing" label="Fishing" icon={Fish} state={state} onGather={onGather} readiness={readiness}
+          on="h-9 border-cyan-300 bg-cyan-400 px-2 text-[11px] text-cyan-950 hover:bg-cyan-300"
+          off="h-9 border-cyan-700 bg-[#07100f] px-2 text-[11px] text-cyan-300 hover:bg-cyan-950" />
         <Button
           variant="outline"
           onClick={() => void onClear()}
@@ -423,8 +391,25 @@ export const MerchantCardControls = memo(function MerchantCardControls({
           <X className="mr-1.5 h-3.5 w-3.5" />
           Clear job queue
         </Button>
-        <MerchantCollectionSettings toolCrafting={state.merchantAutomations} buyUpgradeBatchSize={state.buyUpgradeBatchSize} {...collectionSettings} merchantStandLocation={state.merchantStandLocation} bankSortState={state} deliveryTripsEnabled={state.merchantAutomations?.deliveries !== false} withdrawalTripsEnabled={state.merchantAutomations?.withdrawals !== false} />
+        <SettingsLock><MerchantCollectionSettings toolCrafting={state.merchantAutomations} buyUpgradeBatchSize={state.buyUpgradeBatchSize} {...collectionSettings} merchantStandLocation={state.merchantStandLocation} bankSortState={state} deliveryTripsEnabled={state.merchantAutomations?.deliveries !== false} withdrawalTripsEnabled={state.merchantAutomations?.withdrawals !== false} realms={state.realmControl?.realms} realmBlacklist={state.merchantRealmBlacklist} /></SettingsLock>
       </div>
+      <AddonSlot name="card-section" part="merchant" character={merchant?.name ?? ''} reports={merchant?.addonReports} />
     </section>
   );
 });
+// One gathering mode's switch on the merchant card: its state, a missing tool, or its readiness.
+function GatheringToggle({ mode, label, icon: Icon, state, onGather, readiness, on, off }: {
+  mode: 'mining' | 'fishing'; label: string; icon: typeof Pickaxe; state: PartyState;
+  onGather(mode: 'mining' | 'fishing', enabled: boolean): unknown; readiness(mode: 'mining' | 'fishing'): ReactNode; on: string; off: string;
+}) {
+  const enabled = !!state.gatheringModes?.includes(mode);
+  return (
+    <Button variant="outline" aria-pressed={enabled} onClick={() => void onGather(mode, !enabled)} className={enabled ? on : off}>
+      <span className="flex items-center justify-center gap-1 whitespace-nowrap">
+        <Icon aria-hidden className="h-3.5 w-3.5" />
+        <span>{label} · {enabled ? 'On' : 'Off'} ·</span>
+        {state.gatheringNoTool?.[mode] && !enabled ? <span className="text-amber-200">No tool</span> : readiness(mode)}
+      </span>
+    </Button>
+  );
+}

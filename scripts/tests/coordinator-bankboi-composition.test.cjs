@@ -1,14 +1,24 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { createCoordinatorBankboiService } = require('../../runtime/coordinator/inventory/bankboi-composition.ts');
+const { createBankboiStorage: createCoordinatorBankboiService } = require('../../runtime/items/coordinator/storage.ts');
+const { partyHooks } = require('../../runtime/hooks/index.ts');
+// The group and event answers a transaction's start reads: no group holds the merchant and no
+// event return is deferred.
+require('../../runtime/tasks/api.ts').publishTasks({ groupOf: () => null, live: () => null });
+require('../../runtime/events/api.ts').publishEventAnswers({ deferredReturn: () => false });
 function fixture() {
   const state = { bankboiTransaction: null, merchantCharacter: 'M', statuses: { M: { seenAt: 100 } },
-    merchantCurrent: null, headlessSlots: ['M'], withdrawals: {} };
+    merchantCurrent: null, headlessSlots: ['M'], withdrawals: {}, lifecycle: {}, commands: {}, nextCommandId: 1, bankSnapshot: null,
+    bankbois: { V: { name: 'V', state: 'ready', items: Array(42).fill(null) } },
+    bankboiQueue: [{ id: 'a', pack: 'items1', slot: 35, state: 'staged', item: { name: 'leather', q: 2 } }] };
   const workers = { M: { enabled: true }, V: { enabled: true } }, calls = [];
-  const ports = { now: () => 100, plan: () => ({ candidate: { name: 'V' }, retrievals: [], requests: [] }),
-    assignSlot: (slot, name) => { calls.push(['assign', slot, name]); state.headlessSlots[slot - 1] = name; },
+  // The roster's slot answer starts the named character in the slot.
+  partyHooks().publish({ name: 'core:roster-fixture', folder: 'core', author: 'test', summary: 'Starts a character in a slot.',
+    hooks: { 'roster.assign': (slot, name) => { calls.push(['assign', slot, name]); state.headlessSlots[slot - 1] = name; },
+      'roster.offline': async () => true } });
+  const ports = { now: () => 100,
     stop: async block => calls.push(['stop', block.enabled, state.headlessSlots[0]]),
     persistRoster: () => calls.push('roster'), persistBank: () => calls.push('bank'),
-    collect: (...args) => calls.push(['collect', ...args]), log() {} };
+    collect: (...args) => calls.push(['collect', ...args]), log() {}, merchantHeld: () => false };
   return { state, workers, calls, service: createCoordinatorBankboiService(state, workers, ports) };
 }
 

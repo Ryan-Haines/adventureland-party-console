@@ -1,30 +1,14 @@
 import { test, expect } from "./fixtures";
+import { mountComponent, color, rgb } from "./fixtures/component-harness";
 import type { Locator, Page } from "@playwright/test";
-import { build } from "esbuild";
-import path from "node:path";
 
 // Failure inventory: docs/stat-colors.md. Every card renders in Chromium with the
 // console styles; the declared data gives each card the same stats.
-const color = (locator: Locator) => locator.first().evaluate((node) => getComputedStyle(node).color);
-const rgb = (hex: string) => {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
-};
 const PALETTE = { attack: "#DB2900", mp: "#3A62CE", armor: "#A3A9B0", resistance: "#8B74C9", lifesteal: "#C8323E", range: "#93A6A2",
   frequency: "#3BE681", speed: "#36B89E", fortitude: "#9A6BC9", manasteal: "#5C66D9", evasion: "#7AC0F5", cooldown: "#4EB7DE" };
 
 test("each stat reads the same color in every game-style card", async ({ page, app }) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `
+  await mountComponent(page, app, "stat-colors-harness", `
     import React from 'react';import {createRoot} from 'react-dom/client';
     import {ItemDetails} from './features/party/item-details';
     import {MonsterDetailsDialog} from './features/party/monster-details-dialog';
@@ -40,23 +24,13 @@ test("each stat reads the same color in every game-style card", async ({ page, a
       kind==='character'?<CharacterStatsDialog character={value} onOpenChange={noop}/>:
       kind==='comparison'?<GearComparisonDialog comparison={value} onOpenChange={noop}/>:
       <SkillsDialog open classes={value} onOpenChange={noop}/>),0);
-  `,
-    },
-  });
-  await page.goto(app.url);
-  await expect(page.locator("body")).toContainText("Party");
-  const styles = await page.locator('style, link[rel="stylesheet"]').evaluateAll((nodes) => nodes.map((node) => node.outerHTML).join("\n"));
-  await page.route("**/stat-colors-harness", (route) =>
-    route.fulfill({ contentType: "text/html", body: `<!doctype html><head>${styles}</head><body><div id="root"></div></body>` }));
-  await page.setViewportSize({ width: 1400, height: 1000 });
-  await page.goto(app.url + "/stat-colors-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  `);
   const show = async (p: Page, kind: string, value: unknown) => {
     await p.evaluate(([k, v]) => (window as any).show(k, v), [kind, value] as const);
     await expect(p.getByRole("dialog")).toBeVisible();
     return p.getByRole("dialog");
   };
-  const label = (box: Locator, key: string) => color(box.locator(`[data-line="${key}"] [data-label]`));
+  const label = (box: Locator, key: string) => color(box.locator(`[data-line="${key}"] [data-label]`).first());
 
   const stats = { attack: 30, mp: 50, armor: 20, resistance: 10, lifesteal: 2, range: 5, evasion: 3, frequency: 1, speed: 4 };
   const item = await show(page, "item", { character: "W", entry: { slot: 1, item: { name: "testgear", level: 0 },

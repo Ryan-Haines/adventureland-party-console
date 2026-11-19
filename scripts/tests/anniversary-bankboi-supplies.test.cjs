@@ -1,12 +1,12 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const routing=require('../bank-stack-routing.cjs');
-const {inventoryCounts}=require('../../.build/shared/account-inventory.cjs');
+const routing=require('../../runtime/items/coordinator/storage.ts');
+const {inventoryCounts}=require('../../dashboard/lib/account-inventory.ts');
 function fixture(){
  const item={name:'slice_citrus',q:281};
  const party={merchantCharacter:'M',statuses:{M:{items:[]}},withdrawals:{},bankbois:{bankboi0:{name:'bankboi0',state:'ready',items:[{slot:21,item}]}},bankSnapshot:{packs:{items1:Array(42).fill(null)}},bankboiQueue:[]};
  let handler;const logs=[];
  const c=vm.createContext({party,ANNIVERSARY_SLICES:['slice_citrus','slice_strawberry'],anniversaryCounts:()=>inventoryCounts(Object.values(party.statuses),party.bankSnapshot,Object.values(party.bankbois)),persistBankState(){},merchantLog:(...args)=>logs.push(args),express_inst:{post:(_,fn)=>handler=fn}});
- handler=require('../../runtime/coordinator/http/anniversary-supplies.ts').createAnniversarySuppliesRoute(party,
+ handler=require('../../runtime/events/coordinator/routes.ts').createAnniversarySuppliesRoute(party,
   {counts:c.anniversaryCounts,persist:c.persistBankState,log:c.merchantLog});
  function request(missing,character='M'){const res={status(code){this.code=code;return this;},json(body){this.body=body;return this;}};handler({body:{character,missing}},res);return res;}
  return {party,request,logs};

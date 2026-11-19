@@ -20,13 +20,14 @@ if [[ $EUID -eq 0 ]]; then
 fi
 for command in node npm git tar flock; do
   if ! command -v "$command" >/dev/null 2>&1; then
-    echo "Missing prerequisite: $command. Install Node 26.12.1+, npm, Git, tar and util-linux (flock)." >&2
+    echo "Missing prerequisite: $command. Install Node (the floor is package.json engines.node), npm, Git, tar and util-linux (flock)." >&2
     exit 1
   fi
 done
-node -e 'const [major,minor,patch]=process.versions.node.split(".").map(Number); if(major<26||(major===26&&(minor<12||(minor===12&&patch<1)))){console.error("Node 26.12.1+ is required.");process.exit(1)} if(!["x64","arm64"].includes(process.arch)){console.error("A 64-bit x64 or arm64 Linux installation is required.");process.exit(1)}'
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+# The Node floor is package.json's engines.node, declared once.
+node -e 'const floor=require("./package.json").engines.node.replace(/^>=/,""),need=floor.split(".").map(Number),have=process.versions.node.split(".").map(Number),i=need.findIndex((n,k)=>have[k]!==n); if(i>=0&&have[i]<need[i]){console.error("Node "+floor+" or later is required.");process.exit(1)} if(!["x64","arm64"].includes(process.arch)){console.error("A 64-bit x64 or arm64 Linux installation is required.");process.exit(1)}'
 mkdir -p .build
 # Keep the descriptor open across exec; Linux releases this lock on exit.
 exec 9>.build/native-console.lock

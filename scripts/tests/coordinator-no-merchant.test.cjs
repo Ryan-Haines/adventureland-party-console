@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createMerchantHomeRecovery } = require('../../runtime/coordinator/merchant/home-recovery.ts');
-const { createMerchantRealmRoutes } = require('../../runtime/coordinator/http/merchant-realms.ts');
+const {createMerchantRealmOwner:createMerchantHomeRecovery}=require('../../runtime/merchant-realm/coordinator/owner.ts');
+const { createMerchantRealmRoutes } = require('../../runtime/merchant-realm/coordinator/routes.ts');
 
 test('a stalled sale cannot restart a worker after merchant selection is cleared', () => {
   const job = { id: 'sale', reason: 'ALData marketplace sales', startedAt: 1 };

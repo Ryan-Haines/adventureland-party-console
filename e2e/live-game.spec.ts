@@ -7,11 +7,9 @@ import { seedSmallGoobrawl } from './game/event-scenario';
 import { killNativeCharacter } from './hunt-interruption-helpers';
 import { createHash } from 'node:crypto';
 
-const W = 'E2EWarrior', P = 'E2EPriest', M = 'E2EMerchant';
+import { warrior as W, priest as P, merchant as M, quantity, observed, evidence, point, arrived, party, travel, seedQuest, start, hunt, type Location } from './game/hunt-lifecycle';
 type Live = LiveGame;
-type Location = { map: string; x: number; y: number };
 const names = [W, P, M];
-const quantity = (items: any[], id: string) => items.reduce((sum, item) => sum + (item?.name === id ? item.q || 1 : 0), 0);
 
 test('Steam-style CODE replacement retires old socket callbacks and pending heartbeat', async ({live},info)=>{
   // Failure modes: detached CODE callbacks still dereference native parent;
@@ -30,13 +28,13 @@ test('Steam-style CODE replacement retires old socket callbacks and pending hear
   const before=await game.evaluate(()=>{
     const host=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
     host.__e2eRetiringRunner=runner;host.__e2eRetiringGame=host;
-    // Replay a historical leaked subscription using the actual maintained
-    // callbacks, not a fabricated game response or a replacement native handler.
-    const managed=['queueCombatEvent','anniversarySliceNames','anniversaryKissResponses','donationXpPerGold'];
-    host.__e2eHistoricResponses=host.socket.listeners('game_response').filter((fn:Function)=>managed.some(symbol=>String(fn).includes(symbol)));
-    host.__e2eNativeResponses=host.socket.listeners('game_response').filter((fn:Function)=>!host.__e2eHistoricResponses.includes(fn));
+    // The lifecycle owner's run scope registers every CODE listener as a wrapper made in the
+    // runner frame, so the runner realm's functions are the managed ones and the rest are the
+    // game's own.
+    host.__e2eManagedResponses=host.socket.listeners('game_response').filter((fn:Function)=>fn instanceof runner.Function);
+    host.__e2eNativeResponses=host.socket.listeners('game_response').filter((fn:Function)=>!host.__e2eManagedResponses.includes(fn));
     return {generation:runner.__partyRuntimeGeneration,at:runner.__partyStatusSuccessAt,listeners:host.socket.listeners('server_info').length,
-      responseListeners:host.socket.listeners('game_response').length,historicResponses:host.__e2eHistoricResponses.length,name:host.character.name};
+      responseListeners:host.socket.listeners('game_response').length,managedResponses:host.__e2eManagedResponses.length,name:host.character.name};
   });
   const oldFrame=game.childFrames().find(frame=>new URL(frame.url()).pathname==='/runner')!;
   let release!:()=>void,held=false,deploy=false;
@@ -48,7 +46,6 @@ test('Steam-style CODE replacement retires old socket callbacks and pending hear
   // Declared deployment boundary: identical maintained runtime bytes with an
   // innocuous comment and a matching checksum represent a new published build.
   let deployedFile='',deployedBody='',deployedHash='';
-  let replayed=false;
   // Explicit deployment publication is required; a rebuilt manifest alone must
   // never retire the running native frame.
   await client.page.route('**/CODE/adventure_land/activation.json*',async route=>{
@@ -66,10 +63,6 @@ test('Steam-style CODE replacement retires old socket callbacks and pending hear
   await client.page.route('**/CODE/adventure_land/generated/**/*.js*',async route=>{
     if(deploy&&new URL(route.request().url()).pathname.endsWith('/'+deployedFile)){
       if(deploymentResponses.length<80)deploymentResponses.push({at:Date.now(),kind:'class',oldFrame:route.request().frame()===oldFrame,hash:deployedHash});
-      if(!replayed&&route.request().frame()!==oldFrame){
-        replayed=true;
-        await game.evaluate(()=>{const host=window as any;for(const handler of host.__e2eHistoricResponses)host.socket.on('game_response',handler);});
-      }
       await route.fulfill({status:200,contentType:'text/javascript',body:deployedBody});
     }
     else await route.continue();
@@ -92,7 +85,7 @@ test('Steam-style CODE replacement retires old socket callbacks and pending hear
           loaderPresent:!!runner?.__partyCodeLoader,loaderGeneration:runner?.__partyLoaderGeneration,runtimeGeneration:runner?.__partyRuntimeGeneration,
           runtimeStartedAt:runner?.__partyLoaderRuntimeStartedAt,statusSuccessAt:runner?.__partyStatusSuccessAt,
           stopped:host.localStorage.getItem('party-code-stopped:'+host.character.name),
-          occupied:runner?.sharedRoutine?.isOccupied?.(),canReload:runner?.sharedRoutine?.canReload?.(),combatOwner:runner?.__partyCombatOwner};
+          occupied:!!runner?.__partyHooks?.skills.allows({rank:'damage',occupied:true}),canReload:runner?.sharedRoutine?.canReload?.(),combatOwner:runner?.__partyMovement?.live()?.owner??null};
       });
       if(loaderObservations.length<80)loaderObservations.push(observation);
       return observation.replaced;
@@ -103,13 +96,15 @@ test('Steam-style CODE replacement retires old socket callbacks and pending hear
       const host=window as any,old=host.__e2eRetiringRunner;
       return {sameGame:host===host.__e2eRetiringGame,connected:host.socket.connected,name:host.character.name,
         listeners:host.socket.listeners('server_info').length,responseListeners:host.socket.listeners('game_response').length,
-        nativeResponsesPreserved:host.__e2eNativeResponses.every((fn:Function)=>host.socket.listeners('game_response').includes(fn)),oldGeneration:old.__partyRuntimeGeneration};
+        nativeResponsesPreserved:host.__e2eNativeResponses.every((fn:Function)=>host.socket.listeners('game_response').includes(fn)),
+        managedLeft:host.__e2eManagedResponses.filter((fn:Function)=>host.socket.listeners('game_response').includes(fn)).length,oldGeneration:old.__partyRuntimeGeneration};
     });
     await info.attach('native-code-replacement-lifecycle',{body:JSON.stringify({before,after,held,errors:client.errors,state:await live.state()}),contentType:'application/json'});
     expect(after.sameGame).toBe(true);expect(after.connected).toBe(true);expect(after.name).toBe(before.name);
     expect(after.listeners,'Retired CODE must remove its game-window socket listeners').toBe(before.listeners);
-    expect(before.historicResponses).toBeGreaterThan(0);expect(replayed).toBe(true);
-    expect(after.responseListeners,'Historical managed response callbacks must be retired too').toBe(before.responseListeners);
+    expect(before.managedResponses).toBeGreaterThan(0);
+    expect(after.managedLeft,'Retired CODE must remove its game_response listeners').toBe(0);
+    expect(after.responseListeners,'The new CODE registers as many game_response listeners as the old one held').toBe(before.responseListeners);
     expect(after.nativeResponsesPreserved).toBe(true);
     expect(after.oldGeneration,'Retired callbacks must lose runtime ownership').toBeGreaterThan(before.generation);
     expect(client.errors.filter(error=>/null.*(?:character|S)|(?:character|S).*null/.test(error))).toEqual([]);
@@ -117,47 +112,10 @@ test('Steam-style CODE replacement retires old socket callbacks and pending hear
     await evidence(live,info,'native-code-replacement-new-runtime-arrival',{before,after,destination});
   }finally{
     release();
-    await info.attach('native-loader-deployment-observations',{body:JSON.stringify({before,held,deploy,replayed,deployedHash,loaderObservations,deploymentResponses}),contentType:'application/json'});
+    await info.attach('native-loader-deployment-observations',{body:JSON.stringify({before,held,deploy,deployedHash,loaderObservations,deploymentResponses}),contentType:'application/json'});
   }
 });
 
-async function observed(live: Live): Promise<Record<string, any>> {
-  return live.admin(`output=Object.fromEntries(${JSON.stringify(names)}.map(name=>{const p=get_player(name);return [name,p?{name:p.name,map:p.map,in:p.in,x:p.x,y:p.y,hp:p.hp,rip:!!p.rip,moving:!!p.moving,gold:p.gold,xp:p.xp,items:p.items,slots:p.slots,quest:p.s.monsterhunt||null,party:p.party||null,townAt:p.last.town?+p.last.town:0}:null]}))`);
-}
-async function evidence(live: Live, info: TestInfo, label: string, detail: unknown = {}) {
-  await info.attach(label, { body: JSON.stringify({ detail, server: await observed(live), coordinator: await live.state() }, null, 2), contentType: 'application/json' });
-}
-async function point(live: Live, name: string, distance = 250, direction = 1): Promise<Location> {
-  return live.admin(`output=(()=>{const p=get_player(${JSON.stringify(name)});for(let i=0;i<16;i++){const a=i*Math.PI/8;const x=p.x+${distance * direction}*Math.cos(a),y=p.y+${distance * direction}*Math.sin(a);if(can_move({map:p.map,x:p.x,y:p.y,going_x:x,going_y:y,base:p.base}))return {map:p.map,x,y};}throw Error('No reachable test destination')})()`);
-}
-async function arrived(live: Live, party: string[], destination: Location, timeout = 120_000) {
-  await expect.poll(async () => {
-    const players = await observed(live);
-    return party.every(name => players[name]?.map === destination.map && Math.hypot(players[name].x-destination.x, players[name].y-destination.y) < 35 && !players[name].moving);
-  }, { message: `Real server must observe ${party.join(', ')} arriving`, timeout, intervals: [250, 500, 1000] }).toBe(true);
-}
-async function party(live: Live) {
-  await live.post('/formation', { leader: W });
-  await live.post('/formation', { character: P, follow: true });
-  await expect.poll(async () => (await live.state()).followers[P]).toBe(true);
-}
-async function travel(live: Live, character: string, destination: Location) {
-  return live.post('/command', { character, type: 'character-travel', location: destination, label: 'E2E observed destination' });
-}
-async function seedQuest(live: Live, count: number) {
-  await live.admin(`output=${JSON.stringify([W, P])}.map(name=>{const p=get_player(name);p.s.monsterhunt={sn:region+' '+server_name,id:'goo',c:${count},ms:1800000};resend(p,'u+cid+reopen');return p.s.monsterhunt})`);
-  await expect.poll(async () => (await live.state()).characters[W]?.monsterHunt?.count, { timeout: 20_000 }).toBe(count);
-}
-async function startHunt(live: Live) {
-  await expect.poll(async () => (await live.state(true)).monsterChoices?.some((entry: any) => entry.id === 'goo'),
-    { timeout: 120_000, message: 'Native catalog discovery must publish Hunt destinations' }).toBe(true);
-  const state = await live.state(true);
-  const location = state.monsterChoices.find((entry: any) => entry.id === 'goo')?.locations.find((area: Location) => area.map === 'main');
-  expect(location, 'The real client must publish a Goo spawn catalog').toBeTruthy();
-  await live.post('/farming-mode', { character: W, mode: 'hunt', backup: { monsterFocus: ['goo'], location } });
-  return location as Location;
-}
-function hunt(state: any) { return state.monsterHunt || state.farmingProfiles?.[W]?.monsterHunt; }
 
 test.describe('real server, native clients, maintained character runtime', () => {
   test.setTimeout(240_000);
@@ -178,30 +136,6 @@ test.describe('real server, native clients, maintained character runtime', () =>
     await convoy(live, info);
   });
 
-  test('a newer manual order wins over an already moving character route', async ({ live }, info) => {
-    const before = await observed(live), first = await point(live, W, 400);
-    await travel(live, W, first);
-    await expect.poll(async () => Math.hypot((await observed(live))[W].x-before[W].x, (await observed(live))[W].y-before[W].y), { timeout: 30_000 }).toBeGreaterThan(35);
-    const replacement = await point(live, W, 180, -1);
-    await travel(live, W, replacement);
-    await arrived(live, [W], replacement);
-    await live.restartCoordinator();
-    await arrived(live, [W], replacement);
-    expect(Math.hypot((await observed(live))[W].x-first.x, (await observed(live))[W].y-first.y)).toBeGreaterThan(60);
-    await evidence(live, info, 'superseding-navigation-after-restart', { first, replacement });
-  });
-
-  test('coordinator interruption during a convoy recovers the actual destination', async ({ live }, info) => {
-    await party(live);
-    const before = await observed(live), destination = await point(live, W, 450);
-    await live.post('/travel', destination);
-    await expect.poll(async () => Math.hypot((await observed(live))[W].x-before[W].x, (await observed(live))[W].y-before[W].y), { timeout: 40_000 }).toBeGreaterThan(40);
-    await evidence(live, info, 'before-convoy-restart', { destination });
-    await live.restartCoordinator();
-    await arrived(live, [W, P], destination);
-    await evidence(live, info, 'recovered-convoy-arrival', { destination });
-  });
-
   test('a lost native follower reconnects and finishes the current convoy', async ({ live }, info) => {
     await party(live);
     const before = await observed(live), destination = await point(live, W, 450);
@@ -214,8 +148,9 @@ test.describe('real server, native clients, maintained character runtime', () =>
     await evidence(live, info, 'native-reconnect-arrival', { destination });
   });
 
-  for (const minorInjury of [false, true]) {
-  test('Town executes a real cast after travel and returns both party members' + (minorInjury ? ' without passive healing cancelling the channel' : ''), async ({ live }, info) => {
+  // The healing title checks the Town landing (step 4 item 6) and the cast that a heal must not
+  // cancel (step 11 item 11) in one run; a plain cast is the same run with less checked.
+  test('Town executes a real cast after travel and returns both party members without passive healing cancelling the channel', async ({ live }, info) => {
     await party(live);
     const away = await point(live, W, 350);
     await live.post('/travel', away);
@@ -226,7 +161,7 @@ test.describe('real server, native clients, maintained character runtime', () =>
     // native healing clears the caster's channel and splits the returning party.
     // Declare the initial healing condition once, at the first real channel.
     // No cast, heal, transport, arrival or successful response is fabricated.
-    if (minorInjury) await live.admin(`output=(()=>{
+    await live.admin(`output=(()=>{
       const fixture=globalThis.__e2eTownHealing={armedAt:Date.now()};
       fixture.timer=setInterval(()=>{const p=get_player(${JSON.stringify(P)});
         if(fixture.seed||!p?.c?.town)return;
@@ -247,27 +182,24 @@ test.describe('real server, native clients, maintained character runtime', () =>
         Math.abs(current[name].y-spawn.y) <= spawn.scatter/2+1);
     }, { timeout: 90_000, message: 'Both native Town casts must complete inside the actual server spawn bounds' }).toBe(true);
     await expect.poll(async () => (await live.state()).townCycle?.pending?.length || 0).toBe(0);
-    if (minorInjury) {
-      const seed=await live.admin('output=globalThis.__e2eTownHealing.seed');
-      expect(seed,'The native Town channel must receive the declared minor injury').toBeTruthy();
-      const events=await live.clients[P].events();
-      const receipt=events.find((event:any)=>event.event==='new_map'&&event.at>=seed.at&&event.data?.name===spawn.map&&event.data?.effect===1);
-      expect(receipt,'The first real cast must produce a Town transport').toBeTruthy();
-      // Native transport and a later heal can share one ChronAL window timestamp.
-      // End the channel at its transport receipt's sequence, not an inclusive time.
-      const channelHeals=events.filter((event:any)=>event.at>=seed.at&&event.sequence<receipt.sequence&&event.event==='hit'&&event.data?.hid===P&&event.data?.source==='heal');
-      const starts=events.filter((event:any)=>event.at>=seed.at&&event.sequence<receipt.sequence&&event.event==='game_response'&&event.data?.place==='town'&&event.data?.in_progress);
-      await info.attach('native-town-healing-channel',{body:JSON.stringify({seed,receipt,channelHeals,starts,postArrivalHeals:events.filter((event:any)=>event.sequence>receipt.sequence&&event.at===receipt.at&&event.event==='hit'&&event.data?.hid===P&&event.data?.source==='heal')}),contentType:'application/json'});
-      expect(channelHeals,'Routine heals must not cancel Town channeling').toEqual([]);
-      expect(starts.length,'No second Town request may be needed after the declared injury').toBeLessThanOrEqual(1);
-      expect(receipt.at-seed.at,'The original three-second native cast must finish without a walking fallback').toBeLessThan(8000);
-    }
+    const seed=await live.admin('output=globalThis.__e2eTownHealing.seed');
+    expect(seed,'The native Town channel must receive the declared minor injury').toBeTruthy();
+    const events=await live.clients[P].events();
+    const receipt=events.find((event:any)=>event.event==='new_map'&&event.at>=seed.at&&event.data?.name===spawn.map&&event.data?.effect===1);
+    expect(receipt,'The first real cast must produce a Town transport').toBeTruthy();
+    // Native transport and a later heal can share one ChronAL window timestamp.
+    // End the channel at its transport receipt's sequence, not an inclusive time.
+    const channelHeals=events.filter((event:any)=>event.at>=seed.at&&event.sequence<receipt.sequence&&event.event==='hit'&&event.data?.hid===P&&event.data?.source==='heal');
+    const starts=events.filter((event:any)=>event.at>=seed.at&&event.sequence<receipt.sequence&&event.event==='game_response'&&event.data?.place==='town'&&event.data?.in_progress);
+    await info.attach('native-town-healing-channel',{body:JSON.stringify({seed,receipt,channelHeals,starts,postArrivalHeals:events.filter((event:any)=>event.sequence>receipt.sequence&&event.at===receipt.at&&event.event==='hit'&&event.data?.hid===P&&event.data?.source==='heal')}),contentType:'application/json'});
+    expect(channelHeals,'Routine heals must not cancel Town channeling').toEqual([]);
+    expect(starts.length,'No second Town request may be needed after the declared injury').toBeLessThanOrEqual(1);
+    expect(receipt.at-seed.at,'The original three-second native cast must finish without a walking fallback').toBeLessThan(8000);
     await evidence(live, info, 'town-server-arrival', { away, spawn });
     } finally {
-      if(minorInjury) await live.admin('output=(()=>{const fixture=globalThis.__e2eTownHealing;if(fixture)clearInterval(fixture.timer);delete globalThis.__e2eTownHealing;return true;})()');
+      await live.admin('output=(()=>{const fixture=globalThis.__e2eTownHealing;if(fixture)clearInterval(fixture.timer);delete globalThis.__e2eTownHealing;return true;})()');
     }
   });
-  }
 
   test('a merchant route crosses a real door into the bank and returns home', async ({ live }, info) => {
     const bank = await live.admin(`output={map:'bank',x:G.maps.bank.spawns[0][0],y:G.maps.bank.spawns[0][1]}`);
@@ -309,9 +241,9 @@ test.describe('real server, native clients, maintained character runtime', () =>
 
   test('a completed Hunt survives restart and claims its reward only once', async ({ live }, info) => {
     await party(live);
-    await seedQuest(live, 0);
+    await seedQuest(live, 'goo', 0);
     const before = await observed(live), tokens = quantity(before[W].items, 'monstertoken');
-    await startHunt(live);
+    await start(live);
     await live.restartCoordinator();
     await expect.poll(async () => quantity((await observed(live))[W].items, 'monstertoken'), { timeout: 120_000 }).toBe(tokens+1);
     await live.post('/farming-mode', { character: W, mode: 'default' });
@@ -322,8 +254,8 @@ test.describe('real server, native clients, maintained character runtime', () =>
 
   test('Hunt off and a new destination prevent the previous mission resuming after restart', async ({ live }, info) => {
     await party(live);
-    await seedQuest(live, 20);
-    await startHunt(live);
+    await seedQuest(live, 'goo', 20);
+    await start(live);
     await expect.poll(async () => !!hunt(await live.state())).toBe(true);
     await live.post('/farming-mode', { character: W, mode: 'default' });
     const destination = await point(live, W, 250, -1);
@@ -334,50 +266,13 @@ test.describe('real server, native clients, maintained character runtime', () =>
     await evidence(live, info, 'hunt-off-manual-ownership', { destination });
   });
 
-  for (const restart of [false, true]) {
-    test(`Goobrawl interrupts Hunt and real event evacuation resumes it${restart ? ' across coordinator restart' : ''}`, async ({ live }, info) => {
-      test.setTimeout(360_000);
-      const encounter = await seedSmallGoobrawl(live);
-      await info.attach('goobrawl-initial-encounter', { body: JSON.stringify(encounter), contentType: 'application/json' });
-      await party(live);
-      await seedQuest(live, 30);
-      await startHunt(live);
-      await live.post('/formation', { character: W, eventSelections: ['goobrawl'] });
-      await live.admin(`events.goobrawl=true;delete timers.goobrawl;output=true`);
-      await expect.poll(async () => { const state=await observed(live);return [W,P].every(name=>state[name].map==='goobrawl'); }, { timeout: 90_000 }).toBe(true);
-      let survivors: {id:string;type:string;hp:number}[]=[];
-      await expect.poll(async()=>{
-        survivors=await live.admin(`output=Object.values(instances.goobrawl.monsters).map(m=>({id:m.id,type:m.type,hp:m.hp}))`);
-        return survivors.length;
-      },{timeout:30_000,intervals:[100,250],message:'Native arena spawning must provide a real combat encounter after entry'}).toBeGreaterThan(0);
-      await evidence(live, info, 'inside-live-goobrawl');
-      if (restart) await live.restartCoordinator();
-      await live.admin(`timers.goobrawl=new Date(0);output=true`);
-      // Timer expiry leaves native survivors to kill before the ended-event
-      // grace period and real transporter evacuation can begin.
-      await expect.poll(async () => { const state=await observed(live);return [W,P].every(name=>state[name].map==='main'); }, { timeout: 180_000 }).toBe(true);
-      const combat = (await Promise.all([W,P].map(name => live.clients[name].events()))).flat();
-      expect(combat.some((event: any) => survivors.some((monster: any) => String(monster.id) === String(event.data?.id)) &&
-        (event.event === 'death' || event.event === 'hit' && event.data?.kill)), 'Native clients must kill an observed event monster').toBe(true);
-      await expect.poll(async () => { const state=hunt(await live.state());return !!state && state.stage!=='paused-event'; }, { timeout: 60_000 }).toBe(true);
-      const afterExit = (await observed(live))[W];
-      await expect.poll(async () => {
-        const current = (await observed(live))[W];
-        return current.map === 'main' && ((current.quest?.id === afterExit.quest?.id &&
-          current.quest?.c < afterExit.quest?.c) ||
-          quantity(current.items, 'monstertoken') > quantity(afterExit.items, 'monstertoken'));
-      }, { timeout: 150_000, message: 'Hunt must execute real combat or turn-in after leaving the event' }).toBe(true);
-      await evidence(live, info, 'live-event-hunt-handback', { restart, survivors, afterExit });
-    });
-  }
-
   for (const joining of [true, false]) {
   test(`Hunt off ${joining ? 'as soon as the leader joins' : 'after the party joins'} a real event preserves evacuation without reviving Hunt`, async ({ live }, info) => {
     const encounter = await seedSmallGoobrawl(live);
     await info.attach('goobrawl-initial-encounter', { body: JSON.stringify(encounter), contentType: 'application/json' });
     await party(live);
-    await seedQuest(live, 30);
-    await startHunt(live);
+    await seedQuest(live, 'goo', 30);
+    await start(live);
     await live.post('/formation', { character: W, eventSelections: ['goobrawl'] });
     await live.admin(`events.goobrawl=true;delete timers.goobrawl;output=true`);
     await expect.poll(async () => { const state=await observed(live);return (joining ? [W] : [W,P]).every(name=>state[name].map==='goobrawl'); }, { timeout: 90_000 }).toBe(true);

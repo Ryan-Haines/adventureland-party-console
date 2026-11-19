@@ -13,7 +13,10 @@ test('entry countdown requires fresh server eligibility and never guesses availa
   view.members[0].fresh = false;
   assert.equal(dungeonEntryLabel(view, now), 'Availability unknown');
   view.members[0].fresh = true;
-  assert.equal(dungeonEntryLabel(view, now + 46000), 'Availability unknown');
+  // The daily answer counts until the game reset it names, so only a reset passed since checkedAt makes it unknown.
+  view.members[0].observation.visit.checkedAt = now - 1;
+  assert.equal(dungeonEntryLabel(view, now - 1), 'Available now');
+  assert.equal(dungeonEntryLabel(view, now), 'Availability unknown');
 });
 test('dungeon panel exposes actual objectives and explicit priest recovery controls', () => {
   const React = require('../../dashboard/node_modules/react');
@@ -44,4 +47,14 @@ test('dungeon panel exposes actual objectives and explicit priest recovery contr
     view.members[1].observation.recovery.phase='failed';
     assert.doesNotMatch(render(),/disabled=""[^>]*>Call Nera/);
   } finally { client.clear(); }
+});
+
+// DF20: the Cave map draws only the current floor's entities.
+test('DF20: the Cave map draws the current floor only', () => {
+  const map = require('node:fs').readFileSync('dashboard/features/party/cave-map.tsx', 'utf8');
+  assert.match(map, /const currentFrames = Object\.fromEntries\(Object\.entries\(frames\)\.filter\(\(\[, frame\]\) => frame\.map === map\)\);/);
+  // The member name list under the map names every streaming member, on any floor; the drawn layers read currentFrames.
+  const nameList = /\{Object\.values\(frames\)\.map\(\(f\) => \(\s*<span key=\{f\.name\}>\{f\.name\}<\/span>/;
+  assert.match(map, nameList);
+  assert.doesNotMatch(map.replace(nameList, ''), /Object\.values\(frames\)/);
 });

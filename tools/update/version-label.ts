@@ -1,14 +1,24 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
-import { readJson } from './files.ts';
+import { requiredJson } from '../build-store.ts';
 import type { Release } from './contracts.ts';
 const execute = promisify(execFile);
+let gitLogged = false;
 export async function consoleVersion(root: string, release?: Release): Promise<{current: string; displayVersion: string}> {
   if (release) return { current: release.version, displayVersion: release.version };
   async function git(args: string[]) {
     try { return (await execute('git', ['-C', root, ...args], { timeout: 3000, windowsHide: true })).stdout.trim(); }
-    catch { return ''; }
+    catch (error) {
+      // Off a tag, `describe` failing is git's normal answer; any other failure (no git, the 3 s
+      // bound, a broken repository) is logged once, so a fallback label has a cause on record.
+      const text = String((error as { stderr?: string }).stderr || (error as Error).message).trim();
+      if (!/no tag exactly matches|No names found|cannot describe/i.test(text) && !gitLogged) {
+        gitLogged = true;
+        console.warn(`Version label: git ${args[0]} failed: ${text}`);
+      }
+      return '';
+    }
   }
   const [tag, branch, exact, dirty] = await Promise.all([
     git(['describe', '--tags', '--match', 'v[0-9]*', '--abbrev=0']),
@@ -21,7 +31,7 @@ export async function consoleVersion(root: string, release?: Release): Promise<{
     const current = exact.replace(/^v/, '');
     return { current, displayVersion: current };
   }
-  const base = valid(tag) ? tag.replace(/^v/, '') : (await readJson<{version:string}>(path.join(root, 'package.json'))).version;
+  const base = valid(tag) ? tag.replace(/^v/, '') : (await requiredJson<{version:string}>(path.join(root, 'package.json'))).version;
   return { current: base, displayVersion: base + ' + ' + (branch || (await git(['rev-parse', '--short', 'HEAD'])) || 'development') };
 }
 export async function versionLabel(root: string, release?: Release): Promise<string> {

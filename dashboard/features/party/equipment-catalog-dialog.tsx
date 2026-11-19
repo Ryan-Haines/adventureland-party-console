@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -18,14 +19,13 @@ import {
 } from "@/components/ui/select";
 import { memo, useMemo, useState, type ReactNode } from "react";
 import { EQUIPMENT_TYPES } from "./equipment-types";
-import { ItemSprite } from "./item-sprite";
+import { SpriteCrop } from "./sprite-crop";
 import { MerchantCatalogItem } from "./merchant-catalog-item";
 import type { InventoryEntry } from "./inventory-entry";
 
-// The full equipment catalog can run into the hundreds of items; mounting every
-// row at once (each with a sprite, several labels and an optional compare
-// button) has been observed to freeze the tab for multiple seconds on open.
-// Render a bounded initial window and append more as the user scrolls.
+// Mounting every row of the catalog (hundreds, each with a sprite, labels and a compare button)
+// froze the tab for seconds on open, so the dialog renders ROW_BATCH rows and adds more as you
+// scroll.
 const ROW_BATCH = 120;
 
 export const EquipmentCatalogDialog = memo(function EquipmentCatalogDialog({
@@ -43,6 +43,8 @@ export const EquipmentCatalogDialog = memo(function EquipmentCatalogDialog({
   comparisonSource?: InventoryEntry | null;
   comparison?: {
     selectedIds: string[];
+    // True once the comparison holds COMPARISON_ALTERNATIVES alternatives (catalog-comparison.tsx).
+    full: boolean;
     onAdd: (item: MerchantCatalogItem) => void;
     controls: ReactNode;
   };
@@ -159,7 +161,7 @@ export const EquipmentCatalogDialog = memo(function EquipmentCatalogDialog({
   ];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] w-[96vw] max-w-[1500px] flex-col border-cyan-800 bg-[#07120f] text-emerald-50 sm:max-w-[96vw] 2xl:max-w-[1500px]">
+      <DialogContent data-area="catalog" className="flex max-h-[92vh] w-[96vw] max-w-[1500px] flex-col border-cyan-800 bg-[#07120f] text-emerald-50 sm:max-w-[96vw] 2xl:max-w-[1500px]">
         <DialogHeader>
           <DialogTitle>Equipment catalog</DialogTitle>
           <DialogDescription>
@@ -301,7 +303,7 @@ export const EquipmentCatalogDialog = memo(function EquipmentCatalogDialog({
                   className="min-w-0 flex-1 rounded border border-cyan-950 bg-[#081510] p-2 text-center text-emerald-50 hover:border-cyan-400 hover:bg-cyan-950"
                 >
                   <div className="relative mx-auto h-12 w-12">
-                    {item.sprite && <ItemSprite sprite={item.sprite} />}
+                    {item.sprite && <SpriteCrop sprite={item.sprite} />}
                   </div>
                   <p className="mt-1 truncate text-xs font-semibold">{item.name}</p>
                   <p className="font-mono text-[9px] uppercase text-cyan-100/45">
@@ -322,7 +324,7 @@ export const EquipmentCatalogDialog = memo(function EquipmentCatalogDialog({
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={comparison.selectedIds.includes(item.id) || comparison.selectedIds.length >= 3}
+                    disabled={comparison.selectedIds.includes(item.id) || comparison.full}
                     onClick={() => comparison.onAdd(item)}
                     className="h-auto whitespace-normal border-cyan-700 bg-[#10251f] px-1 py-2 text-xs text-cyan-100 hover:border-cyan-400 hover:bg-cyan-950 hover:text-white disabled:opacity-60"
                   >
@@ -334,6 +336,7 @@ export const EquipmentCatalogDialog = memo(function EquipmentCatalogDialog({
             })}
           </div>
         </div>
+        <AddonSlot name="dialog-section" part="catalog" />
       </DialogContent>
     </Dialog>
   );

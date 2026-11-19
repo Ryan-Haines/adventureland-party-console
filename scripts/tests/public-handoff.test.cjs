@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { publicHandoff } = require('../../runtime/roster/public-handoff.ts');
+const { publicHandoff } = require('../../runtime/lifecycle/roster/public-handoff.ts');
 
 test('completed transfers never expose stale timeout flags to older dashboards', () => {
   const operation = { phase: 'complete', startedAt: 1, timedOut: true, error: null };
@@ -14,7 +14,9 @@ test('only an actual timeout failure exposes the compatibility timeout flag', ()
   assert.equal(publicHandoff(operation).timedOut, false);
   operation.phase = 'failed';
   operation.error = 'Steam handoff timed out; ownership remains reserved until recovery';
+  operation.failure = 'timeout';
   assert.equal(publicHandoff(operation).timedOut, true);
   operation.error = 'Bootstrap could not be saved';
+  delete operation.failure;
   assert.equal(publicHandoff(operation).timedOut, false);
 });

@@ -1,5 +1,5 @@
 import {test,expect} from './live-fixtures';
-import {gameplayTimers} from './network-clock';
+import {gameplayTimers,waitForGameplay} from './network-clock';
 import {W,P,M} from './hunt-interruption-helpers';
 import {readFile,writeFile,mkdir,cp} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -21,8 +21,8 @@ test('one deployment barrier covers the native browser and real headless workers
     await expect.poll(async()=>{const state=await live.state();return !state.activeSlots.some((slot:any)=>slot.character===name)&&(!state.steamSwitch||state.steamSwitch.phase==='complete');},{timeout:60000}).toBe(true);
     await expect.poll(()=>live.admin(`output=!!get_player('${name}')`),{timeout:30000}).toBe(false);
     const state=await live.state(),slot=state.activeSlots.find((slot:any)=>!slot.character&&slot.kind!=='steam');
-    const index=slot?.slot??slot?.index??(name===P?0:1);
-    await live.post('/slots/'+index+'/spawn',{character:name});
+    expect(slot,'a free worker slot after the logout').toBeDefined();
+    await live.post('/slots/'+(slot.slot??slot.index)+'/spawn',{character:name});
     await expect.poll(async()=>(await live.state()).characters[name]?.runtime,{timeout:90000}).toBe('headless');
   }
   const movementSamples:any[]=[];
@@ -93,6 +93,20 @@ test('one deployment barrier covers the native browser and real headless workers
     await expect.poll(()=>live.admin(`output=(()=>{const p=get_player('${P}');return !!p&&!p.moving;})()`),{timeout:10000,message:'Native headless movement must settle before declaring the post-retirement leg'}).toBe(true);
     const postRetirementDestination=await live.admin(`output=(()=>{const p=get_player('${P}');if(!p||p.moving)throw Error('Headless Priest is not settled');for(const [dx,dy] of [[75,0],[-75,0],[0,75],[0,-75]]){const point={map:p.map,x:p.x+dx,y:p.y+dy};if(can_move({...p,going_x:point.x,going_y:point.y})&&can_move({...p,x:point.x,y:point.y,going_x:point.x,going_y:point.y}))return point;}throw Error('No native post-retirement collision-clear endpoint');})()`);
     await nativeWalking(postRetirementDestination,'after CODE retirement');
+    // A headless worker stopped while a lease
+    // stands leaves the participants the host reloads, and stays stopped after the lease ends. The
+    // safe reload row's party is native only, so the row joins this test, whose workers are headless.
+    const participants=async()=>((await (await fetch(live.deploymentPaths.apiUrl+'/party-api/console-maintenance')).json()).participants||[]).slice().sort();
+    live.consoleDrainLease('lf23-stopped-worker',Date.now()+120000,{loadMode:'safe'});
+    await expect.poll(participants,{timeout:30000,message:'Each fresh character counts for the lease'}).toEqual([W,P,M].sort());
+    const merchantSlot=(await live.state()).activeSlots.find((slot:any)=>slot.character===M);
+    expect(merchantSlot,'the merchant holds a worker slot').toBeDefined();
+    await live.post('/slots/'+(merchantSlot?.slot??merchantSlot?.index)+'/logout',{});
+    await expect.poll(participants,{timeout:30000,message:'A stopped worker leaves the participants'}).toEqual([W,P].sort());
+    live.consoleDrainLease(null);
+    await waitForGameplay(3000);
+    expect((await live.state()).activeSlots.some((slot:any)=>slot.character===M),'A stopped worker stays out after the lease').toBe(false);
+    expect(await live.admin(`output=!!get_player('${M}')`),'A stopped worker is not logged in again').toBe(false);
     await info.attach('native-mixed-deployment-barrier',{body:JSON.stringify({operation,journal:await store.journal(),samples}),contentType:'application/json'});
   }finally{
     const host={at:Date.now(),lease:drain.lease,

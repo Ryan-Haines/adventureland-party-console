@@ -1,5 +1,5 @@
-import {test,expect} from './live-fixtures';
-import {M,P,beginAnniversary,endAnniversary,world,quantity} from './game/hunt-events';
+import {test,expect,logoutNative} from './live-fixtures';
+import {M,P,beginAnniversary,endAnniversary,holdHalloweenSeason,world,quantity} from './game/hunt-events';
 
 for(const kind of ['current','deferred'] as const)test(`merchant Main arrival retires ${kind} empty event return and sells a full inventory during Hunt`,async({live},info)=>{
   test.setTimeout(240_000);
@@ -44,7 +44,10 @@ test.describe('merchant October admission',()=>{
     await live.post('/farming-mode',{mode:'hunt',backup:{monsterFocus:['goo'],location:goo.locations[0]}});
     await live.clients[M].run(`(()=>{globalThis.__merchantEventMoves=[];const service=globalThis.__partyMovement,move=service.move;service.move=function(destination,...args){globalThis.__merchantEventMoves.push({at:Date.now(),destination,job:globalThis.__merchantActiveJob?.jobId,stack:new Error().stack});if(globalThis.__merchantEventMoves.length>128)globalThis.__merchantEventMoves.shift();return move.call(this,destination,...args);};return true;})()`);
     await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto npc sales':false}});
-    await live.admin(`output=(()=>{events.halloween=true;E.halloween=true;const p=get_player('${M}');p.items=[{name:'stand0'},{name:'hpot1',q:9999},{name:'mpot1',q:9999},...Array.from({length:39},()=>({name:'helmet',level:0}))];p.p.trickortreat=null;p.trickortreat=trick_or_treat_status(p);cache_player_items(p);resend(p,'u+reopen+cid');broadcast_e();return true;})()`);
+    // The server closes Halloween once its clock passes the season's end, so the door tour that
+    // waits out the full bag found no season left; the row holds the season open.
+    await holdHalloweenSeason(live);
+    await live.admin(`output=(()=>{const p=get_player('${M}');p.items=[{name:'stand0'},{name:'hpot1',q:9999},{name:'mpot1',q:9999},...Array.from({length:39},()=>({name:'helmet',level:0}))];p.p.trickortreat=null;p.trickortreat=trick_or_treat_status(p);cache_player_items(p);resend(p,'u+reopen+cid');broadcast_e();return true;})()`);
     await expect.poll(async()=>(await live.state()).characters[M].items.filter((e:any)=>e?.item?.name==='helmet').length).toBe(39);
     await live.post('/merchant/auto-npc-sale',{item:{name:'helmet',level:0},keep:0});
     await live.restoreHistoricalSettings(()=>({deferredEventReturns:{[M]:{cycleId:'merchant-cipher-before-doors',event:'witchcipher',checkpoint:null,navigationRevision:0,deferredAt:Date.now()-60000,phase:'awaiting-event-handoff'}}}));
@@ -70,12 +73,7 @@ test('unavailable native Anniversary host releases merchant bank work then visit
     const before=await world(live);
     const seed=await beginAnniversary(live,P);
     await expect.poll(async()=>await live.admin('output=E.anniversary?.live')).toBe(true);
-    await live.post('/steam/action',{character:P,action:'logout'});
-    await expect.poll(async()=>{
-      const operation=(await live.state()).steamSwitch;
-      return !operation || operation.phase==='complete';
-    },{timeout:90_000}).toBe(true);
-    await expect.poll(async()=>await live.admin(`output=!!get_player('${P}')`),{timeout:30_000}).toBe(false);
+    await logoutNative(live,P);
     await expect.poll(async()=>await live.admin('output=E.anniversary?.available'),{timeout:30_000}).toBe(false);
     await live.post('/formation',{character:M,eventSelections:['anniversary']});
     // Native initial stock, not a fabricated withdrawal/deposit result.

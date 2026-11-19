@@ -6,7 +6,7 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { useUpgradeOfferings, type OfferingSource } from './upgrade-offering-controls';
-import { upgradeOfferings, resolveUpgradeOffering, type UpgradeOffering } from '../../../runtime/upgrade-offerings';
+import { upgradeOfferings, resolveUpgradeOffering, type UpgradeOffering } from '../../../runtime/items/api.ts';
 import { SpriteCrop } from './sprite-crop';
 import { useState } from "react";
 import { UpgradePreviewPanel } from "./upgrade-preview-panel";
@@ -16,7 +16,7 @@ import { Item } from "./item";
 import { itemMaximumLevel } from "./item-maximum-level";
 import { ItemMeta } from "./item-meta";
 import { UpgradeMark } from "./upgrade-mark";
-import { upgradeScrollCost } from "./upgrade-scroll-cost";
+import { NPC_SOLD_SCROLL_GRADES, catalogPrice, upgradeScrollCost, upgradeScrollGrades } from "@/lib/game-formulas";
 
 export function UpgradeActions({
   item,
@@ -48,6 +48,14 @@ export function UpgradeActions({
   const menuColors = "border-slate-300 !bg-white !text-black [&_[role=menuitem]]:!text-black [&_[role=menuitem]]:focus:!bg-slate-100 [&_[role=menuitem]]:data-highlighted:!bg-slate-100 [&_[role=menuitem][data-disabled]]:!text-slate-400";
   const level = item.level || 0,
     max = Math.max(0, itemMaximumLevel(meta) - level);
+  // A tier whose run uses scroll3 says its cost is the NPC price, the game value `g`; a live market
+  // price is a later feature (the user's answer of 2026-11-15).
+  function scrollCost(tiers: number) {
+    const cost = upgradeScrollCost(meta?.definition || {}, level, tiers, catalogPrice(offerings?.catalog || []));
+    if (cost === null) return 'Price unavailable';
+    const unsold = upgradeScrollGrades(meta?.definition || {}, level, tiers).some(grade => grade >= NPC_SOLD_SCROLL_GRADES);
+    return cost.toLocaleString() + 'g' + (unsold ? ' (NPC price)' : '');
+  }
   function destinationOffering(tiers: number) {
     const step = level + tiers - 1;
     const rule = resolveUpgradeOffering(offerings?.rules || [], item.name, step);
@@ -75,7 +83,7 @@ export function UpgradeActions({
                   +{level} → +{level + tiers} {destinationOffering(tiers)}
                 </span>
                 <span title="Scroll cost" className="ml-auto pl-5 font-mono text-black">
-                  {upgradeScrollCost(meta, level, tiers).toLocaleString()}g
+                  {scrollCost(tiers)}
                 </span>
               </ContextMenuItem>
             ))}
@@ -103,7 +111,7 @@ export function UpgradeActions({
               <ContextMenuItem key={tiers} disabled={autoTiers === tiers} onClick={() => onAutoMark(tiers)}>
                 <span>+{level} → +{level + tiers} {destinationOffering(tiers)}</span>
                 <span title="Scroll cost" className="ml-auto pl-5 font-mono text-black">
-                  {upgradeScrollCost(meta, level, tiers).toLocaleString()}g
+                  {scrollCost(tiers)}
                 </span>
               </ContextMenuItem>
             ))}

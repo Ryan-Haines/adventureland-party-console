@@ -4,6 +4,7 @@ import { access, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
+import { publicPort } from './defaults.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Native source installations use the managed candidate workflow in both modes.
@@ -17,7 +18,7 @@ function run(command: string, args: string[], cwd = root, env = process.env) {
 }
 // Check before installing or publishing anything, including an older launcher
 // which does not participate in the checkout lock.
-for (const port of [Number(process.env.AL_PORT || 3010), Number(process.env.AL_INTERNAL_DASHBOARD_PORT || 3030), Number(process.env.AL_INTERNAL_API_PORT)]) {
+for (const port of [publicPort(), Number(process.env.AL_INTERNAL_DASHBOARD_PORT || 3030), Number(process.env.AL_INTERNAL_API_PORT)]) {
   await new Promise<void>((resolve, reject) => {
     const probe = createServer();
     probe.once('error', error => reject(new Error(`Cannot use port ${port}: ${error.message}. Stop any existing console using that port and check permissions.`)));
@@ -54,6 +55,6 @@ catch (error) {
 }
 await dependencies(path.join(root, '.caracal'));
 run(process.execPath, ['tools/hosting/install-caddy.mts']);
-console.log('Starting Party Console with the newest completed candidate. Builds completed while running stay staged until loaded or the next startup.');
+console.log('Starting Party Console with the newest completed build. Builds completed while it runs stay staged until loaded or the next start.');
 console.log('Open a Dashboard address printed below to connect your account. Leave this terminal open; Ctrl+C stops the console.');
 await import('./start.mts');

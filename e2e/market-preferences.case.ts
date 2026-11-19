@@ -39,7 +39,8 @@ test.describe('Market preferences',()=>{
   test.use({marketStand:true});
   const errors=new WeakMap<Page,string[]>();
   test.beforeEach(async({page})=>{const collected:string[]=[];errors.set(page,collected);page.on('pageerror',error=>collected.push(error.message));});
-  test.afterEach(async({page},info)=>{await info.attach('market-browser-errors',{body:JSON.stringify(errors.get(page)||[]),contentType:'application/json'});});
+  // A page error fails the case it happened in; the attachment keeps the messages.
+  test.afterEach(async({page},info)=>{const collected=errors.get(page)||[];await info.attach('market-browser-errors',{body:JSON.stringify(collected),contentType:'application/json'});expect(collected).toEqual([]);});
 test('market listing filters hide stale observations on all four tabs',async({page},info)=>{
 
   const clock={classifiedsStale:false};await marketFeed(page,clock);await page.goto('/');await expect(page.getByRole('heading',{name:'M',exact:true})).toBeVisible();

@@ -1,9 +1,11 @@
 'use client';
+import { caveVisitCurrent } from '../../../runtime/hunting/api.ts';
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { read, useVisible } from './query-cache';
+import { read, reportPeriod, useVisible } from './query-cache';
 import { usePartyAction } from './query-actions';
-import type { DungeonView } from '../../../runtime/dungeons/contracts';
+import type { DungeonView } from '../../../runtime/hunting/api';
+import { requestId } from '@/lib/request-id';
 
 export function useDungeons() {
   const client = useQueryClient(),
@@ -14,8 +16,8 @@ export function useDungeons() {
     queryFn: ({ signal }) =>
       read<DungeonView>(client, '/daily-dungeons', signal),
     enabled: visible,
-    refetchInterval: 1000,
-    staleTime: 1000,
+    refetchInterval: reportPeriod,
+    staleTime: reportPeriod,
   });
   const [error, setError] = useState('');
   async function action(body: Record<string, unknown>) {
@@ -23,7 +25,7 @@ export function useDungeons() {
     try {
       const result = await mutation.mutateAsync({
         path: '/daily-dungeons',
-        body: { ...body, operationId: crypto.randomUUID() },
+        body: { ...body, operationId: requestId() },
       });
       client.setQueryData(['party', 'daily-dungeons'], result);
       return true;
@@ -42,7 +44,7 @@ export function dungeonCountdown(at: number, now: number) {
 export function dungeonEntryLabel(view: DungeonView | undefined, now: number) {
   const member = view?.members[0],
     visit = member?.observation?.visit;
-  if (!member?.fresh || !visit || now - visit.checkedAt > 45000)
+  if (!member?.fresh || !visit || !caveVisitCurrent(visit, now))
     return 'Availability unknown';
   if (visit.available) return 'Available now';
   if (visit.resets > now)

@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createEventRecoveryRoutes}=require('../../runtime/coordinator/http/event-recovery.ts');
-const {createEventAcknowledgementRoutes}=require('../../runtime/coordinator/http/event-acknowledgements.ts');
+const {createEventRecoveryRoutes}=require('../../runtime/events/coordinator/routes.ts');
+const {createEventAcknowledgementRoutes}=require('../../runtime/events/coordinator/routes.ts');
 function fixture(){
  const state={leader:'L',eventReturn:null,anniversary:{eventCycle:null},eventSessions:{},statuses:{L:{seenAt:100,map:'level2w',x:9,y:9}},
   commands:{},deferredEventReturns:{},townCycle:null,partyFarmingMode:'default',monsterSearchRadiusByCharacter:{}};
@@ -23,9 +23,9 @@ test('exit acknowledgement must match both command and replacement runtime',()=>
  assert.deepEqual(t.state.eventReturn.pending,['L']);
  assert.equal(t.send('returnComplete',body).body.routedLeader,true);
 });
-test('event absence must be sustained and absent from every opted-in live report',()=>{
- const t=fixture(),body={character:'L',event:'franky',missingFor:9999};assert.equal(t.send('ended',body).code,409);
- body.missingFor=10000;t.state.statuses.L.serverLiveEvents=[{name:'franky'}];assert.equal(t.send('ended',body).code,409);assert.equal(t.calls.length,0);
+test('event absence must be absent from every opted-in live report',()=>{
+ const t=fixture(),body={character:'L',event:'franky'};
+ t.state.statuses.L.serverLiveEvents=[{name:'franky'}];assert.equal(t.send('ended',body).code,409);assert.equal(t.calls.length,0);
  t.state.statuses.L.serverLiveEvents=[];assert.equal(t.send('ended',body).body.cycleId,'return');
 });
 test('disabling one anniversary follower returns only that member while the remaining party stays',()=>{
@@ -36,7 +36,8 @@ test('disabling one anniversary follower returns only that member while the rema
 test('Town event acknowledgement updates coordinates before destination selection',()=>{
  const t=fixture();t.state.eventReturn={cycleId:'return',event:'franky',pending:['L']};
  const body={character:'L',cycleId:'return',navigationRevision:1,map:'main',x:0,y:0};
- assert.equal(t.send('returnComplete',{...body,mapEvent:'franky'}).code,409);
+ const refused=t.send('returnComplete',{...body,mapEvent:'franky'});
+ assert.equal(refused.code,409);assert.equal(refused.body.error,'character is still inside the ended event');
  const r=t.send('returnComplete',body);assert.equal(r.body.routedLeader,true);assert.deepEqual(t.calls,[['position','main'],['finish']]);
 });
 test('late deferred acknowledgement preserves unrelated newer commands and leaves cleanup to reconciliation',()=>{
@@ -63,4 +64,16 @@ test('resume engagement stamps only routes owning the acknowledged command and r
  assert.equal(result.code,200);assert.equal(route.engagedAt,100);
  assert.equal(stale.engagedAt,undefined);assert.equal(newer.engagedAt,undefined);
  assert.equal(t.state.anniversary.eventCycle.returnRoutes.L,route);
+});
+// EV18 (EVT-050): a deselection returns the deselected event's members, and the
+// leader's anniversary deselection aborts the round.
+test('a deselected event returns its members, and the leader deselecting the anniversary aborts the round',()=>{
+ const t=fixture();t.enabled.clear();
+ t.state.eventSessions={L:{event:'crabxx',participants:['L','F'],waypoints:{L:{revision:1}}},F:{event:'crabxx',participants:['L','F'],waypoints:{}}};
+ assert.equal(t.send('disabled',{character:'L',event:'crabxx'}).code,200);
+ assert.deepEqual(t.calls[0].slice(0,2),['begin','crabxx']);assert.deepEqual(t.calls[0][2].participants,['L','F']);assert.equal(t.calls[0][3],true);
+ assert.deepEqual(t.state.eventSessions,{});
+ const a=fixture();a.enabled.delete('L');a.state.anniversary.eventCycle={id:'round',liveRound:'r1',target:'X',participants:['L','F'],waypoints:{}};
+ assert.equal(a.send('disabled',{character:'L',event:'anniversary'}).code,200);
+ assert.deepEqual(a.calls[0],['abort',a.state.anniversary.eventCycle,'r1','X','L','event-disabled']);
 });

@@ -1,6 +1,6 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const {coordinatorMerchantPriority: priority, coordinatorPrioritizedBids: bids,
-  coordinatorMerchantTransferBlocked: blocked, coordinatorMerchantCapacitySignature: signature} = require('../../runtime/coordinator/merchant/job-policy.ts');
+  coordinatorMerchantTransferBlocked: blocked, coordinatorMerchantCapacitySignature: signature} = require('../../runtime/merchant-jobs/rules.ts');
 
 function state() {
   return {bankbois: {B:{name:'B'}}, merchantCharacter: 'M', merchantRoutinePriorities: {'manual bank exchange': 20, 'stand bid purchases': 40},
@@ -45,4 +45,19 @@ test('capacity signatures ignore travel and gold but track inventory and bank ch
   s.statuses.P = {items: [{item: {name: 'leather', q: 1}}]};
   const inventoryChanged = signature(s, 'P'); assert.notEqual(inventoryChanged, initial);
   s.bankSnapshot.packs.items2 = {}; assert.notEqual(signature(s, 'P'), inventoryChanged);
+});
+
+// v1.5 row 15 (e2e/merchant-sale-scheduling-failures.md item 4): a merchant bank job that carries
+// auto NPC stock runs at the sale's priority; its own gates stay, and nothing else is lifted.
+test('a bank job carrying auto NPC stock lends the sale its priority, and only that job', () => {
+  const s = {merchantCharacter: 'M', bankbois: {}, merchantRoutinePriorities: {withdrawals: 30, 'bank collection': 30, 'auto npc sales': 80, 'manual bank exchange': 20},
+    withdrawals: {M: [{pack: 'items0', slot: 3, autoNpcRuleKey: 'leather'}]}, merchantAutomations: {}};
+  for (const reason of ['withdrawals', 'bank collection']) assert.equal(priority(s, {target: 'M', reason}), 80, reason);
+  assert.equal(priority(s, {target: 'M', reason: 'manual bank exchange'}), 20);
+  assert.equal(priority(s, {target: 'P', reason: 'withdrawals'}), 30);
+  s.merchantAutomations['auto npc sales'] = false; assert.equal(priority(s, {target: 'M', reason: 'withdrawals'}), 30);
+  s.merchantAutomations = {}; s.withdrawals.M = [{pack: 'items0', slot: 3}]; assert.equal(priority(s, {target: 'M', reason: 'withdrawals'}), 30);
+  // A sale priority below the job's own leaves the job's.
+  s.withdrawals.M[0].autoNpcRuleKey = 'leather'; s.merchantRoutinePriorities['auto npc sales'] = 10;
+  assert.equal(priority(s, {target: 'M', reason: 'withdrawals'}), 30);
 });

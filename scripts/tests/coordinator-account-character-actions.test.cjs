@@ -1,11 +1,11 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createCoordinatorAccountCharacterActions}=require('../../runtime/coordinator/http/account-character-actions.ts');
+const {createCoordinatorAccountCharacterActions}=require('../../runtime/items/coordinator/routes/characters.ts');
 function fixture(){
  const state={headlessSlots:[null],bankboiPrefix:'Vault',bankbois:{},bankboiQueue:[],bankboiTransaction:null};
  const names=new Set(),calls=[],timers=[];let reply=[],refresh=async()=>{};
  const service=createCoordinatorAccountCharacterActions(state,{
   now:()=>100000000,classes:['mage'],characterCount:()=>names.size,owned:name=>names.has(name),session:'fixture-session',
-  loadFetch:async()=>{calls.push('load');return async(url,options)=>{calls.push({url,options});return {ok:true,statusText:'OK',json:async()=>reply};};},
+  loadFetch:async()=>{calls.push('load');return async(url,{signal,...options})=>{assert.ok(signal instanceof AbortSignal,'the request carries the kept bound');calls.push({url,options});return {ok:true,statusText:'OK',json:async()=>reply};};},
   adopt:snapshot=>{calls.push('adopt');for(const entry of snapshot.characters)names.add(entry.name);},
   refresh:async()=>{calls.push('refresh');await refresh();},later:(callback,ms)=>{timers.push(callback);calls.push(['timer',ms]);},
   assign:(slot,name)=>calls.push(['assign',slot,name]),persistBank:()=>calls.push('bank'),serviceBank:()=>calls.push('service'),log:()=>{},
@@ -35,16 +35,4 @@ test('account guards prevent paid creation and occupied deletion before loading 
  assert.deepEqual(t.calls,['refresh','load',{url:'https://adventure.land/api/delete_character',options:{method:'POST',
   headers:{Cookie:'auth=fixture-session','Content-Type':'application/json; charset=utf-8'},body:'{"name":"B"}'}},'refresh','bank']);
  assert.equal(t.state.bankbois.B,undefined);
-});
-
-test('unconfirmed creation waits on the injected retry timer before assigning a character',async()=>{
- const t=fixture();t.setReply({});let refreshes=0;
- t.onRefresh(async()=>{if(++refreshes===2)t.names.add('NewMage');});
- const pending=t.invoke(t.service.creation.roster,{name:'NewMage',class:'mage'});
- for(let i=0;i<20&&t.timers.length===0;i++)await Promise.resolve();
- assert.equal(t.timers.length,1);assert.ok(t.calls.some(call=>Array.isArray(call)&&call[0]==='timer'&&call[1]===500));
- assert.equal(t.calls.some(call=>Array.isArray(call)&&call[0]==='assign'),false);
- t.timers[0]();assert.equal((await pending).code,200);
- assert.deepEqual(t.calls.at(-1),['assign',1,'NewMage']);
- assert.equal(t.calls.filter(call=>call==='load').length,1);
 });

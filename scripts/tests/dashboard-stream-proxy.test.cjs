@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
 const { gateway } = require('../../tools/hosting/gateway.ts');
-const { createDashboardStream } = require('../../runtime/coordinator/telemetry/dashboard-stream.ts');
+const { createDashboardStream } = require('../../runtime/status/coordinator/streams.ts');
 async function listen(server) { await new Promise(done => server.listen(0, '127.0.0.1', done)); return server.address().port; }
 async function close(server) { server.closeAllConnections(); await new Promise(done => server.close(done)); }
 function nativeProxy() {
@@ -17,9 +17,11 @@ function nativeProxy() {
   return context.proxy;
 }
 for (const kind of ['gateway', 'native']) test(`${kind} passes authenticated SSE snapshots and five-second heartbeats, then cleans up disconnected upstream`, { timeout: 9000 }, async () => {
-  const routes = new Map(); const statuses = { A: { dashboardRuntime: 'r', seenAt: Date.now(), hp: 100, items: [], slots: {} } };
-  const streams = createDashboardStream({ now: Date.now, statuses: () => statuses, active: () => true,
-    every: setInterval, cancel: clearInterval });
+  const routes = new Map(); const statuses = { A: { name: 'A', dashboardRuntime: 'r', seenAt: Date.now(), hp: 100, items: [], slots: {} } };
+  // The stream's timers are recorded and fired by the row, so the row reads the interval and waits for no real 5 s.
+  const timers = [];
+  const streams = createDashboardStream({ now: Date.now, statuses: () => statuses,
+    every: (callback, ms) => { timers.push({ callback, ms }); return timers.length; }, cancel() {} });
   streams.install({ get: (path, handler) => routes.set(path, handler), post() {} });
   const upstream = http.createServer((request, response) => {
     response.set = headers => { for (const [name, value] of Object.entries(headers)) response.setHeader(name, value); };
@@ -29,7 +31,7 @@ for (const kind of ['gateway', 'native']) test(`${kind} passes authenticated SSE
   const proxy = nativeProxy();
   const downstream = kind === 'gateway' ? gateway({ apiPort: port, dashboardPort: port, configured: () => true,
     access: { required: true, valid: (scope, token) => scope === 'browsers' && token === 'test-session' } }) :
-    http.createServer((request, response) => proxy(request, response, { port }));
+    http.createServer((request, response) => proxy(request, response, port));
   const proxyPort = await listen(downstream);
   try {
     if (kind === 'gateway') {
@@ -40,8 +42,12 @@ for (const kind of ['gateway', 'native']) test(`${kind} passes authenticated SSE
     const response = await fetch(`http://127.0.0.1:${proxyPort}/party-api/dashboard-stream`, { headers: { Cookie: 'party=test-session' }, signal: controller.signal });
     assert.match(response.headers.get('content-type'), /event-stream/);
     const reader = response.body.getReader(), decoder = new TextDecoder(); let text = '';
+    while (!text.includes('"snapshot"')) text += decoder.decode((await reader.read()).value);
+    assert.match(text, /"A"/, 'the snapshot carries character A');
+    assert.ok(timers.some(timer => timer.ms === 5000), 'a timer runs at the five-second heartbeat interval');
+    for (const timer of timers.filter(timer => timer.ms === 5000)) timer.callback();
     while (!text.includes('"heartbeat"')) text += decoder.decode((await reader.read()).value);
-    assert.match(text, /"snapshot"/); assert.match(text, /"heartbeat"/); assert.equal(streams.count(), 1);
+    assert.match(text, /"heartbeat"/); assert.equal(streams.count(), 1);
     controller.abort(); await reader.cancel().catch(() => {});
     for (let index = 0; index < 20 && streams.count(); index++) await new Promise(done => setTimeout(done, 10));
     assert.equal(streams.count(), 0);

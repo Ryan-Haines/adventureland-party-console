@@ -2,8 +2,8 @@ import type { Route } from '@playwright/test';
 
 /**
  * Fetches the real state for a test that rewrites it. The dashboard sends its
- * cached revision for bank, logs and market (runtime/coordinator/telemetry/
- * section-revision.ts), and the coordinator answers 304 when its own body
+ * cached revision for bank, logs and market (runtime/status/coordinator/state.ts,
+ * table S), and the coordinator answers 304 when its own body
  * still matches. A rewritten body never matches, so the read drops the
  * revision and always gets a full body to rewrite.
  */

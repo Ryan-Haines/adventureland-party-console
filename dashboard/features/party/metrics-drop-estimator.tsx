@@ -1,11 +1,12 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { MetricsResponse } from '../../../runtime/metrics/contracts.ts';
-import { encouragementLuck, projectDirectDrop } from '../../../runtime/metrics/luck.ts';
+import type { MetricsResponse } from '../../../runtime/status/api.ts';
+import { encouragementLuck, projectDirectDrop } from '../../../runtime/status/api.ts';
 import type { MerchantCatalog } from './merchant-catalog';
 import type { Char } from './char';
 import { characterKey } from './character-cache';
+import { useCharacterData } from './dashboard-live';
 import { MetricsChart, metricFormat } from './metrics-chart';
 import { MetricsSelect, metricsControl } from './metrics-controls';
 import { MetricsItemPicker } from './metrics-item-picker';
@@ -44,8 +45,9 @@ export function MetricsDropEstimator({ data, catalog, characters, server, live }
     select: (character: Partial<Char>) => !live || !character.conditions ? undefined
       : encouragementLuck(undefined, Object.fromEntries(character.conditions.map(condition => [condition.id, condition.live]))) ?? undefined,
   }).data;
-  const fresh = latest && Date.now() - latest.last.at < 30_000;
-  const nativeEncouragement = fresh && currentBuffs !== undefined ? currentBuffs : latest?.last.encouragementLuck ?? 1;
+  // The live buffs count while the coordinator answers the character online.
+  const online = !!useCharacterData(selectedName, 'presence')?.seenAt;
+  const nativeEncouragement = online && currentBuffs !== undefined ? currentBuffs : latest?.last.encouragementLuck ?? 1;
   const encouragement = encouragementOverride === '' ? nativeEncouragement : Number(encouragementOverride);
   const allRows = selectMetricRows(data.points.flatMap(point => point.values), [], server);
   const monsterDamage = allRows.flatMap(row => row.damage.filter(hit => hit.monster === source?.monsterId).map(hit => ({ character: row.character, amount: hit.amount })));

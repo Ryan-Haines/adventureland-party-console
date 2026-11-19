@@ -14,12 +14,28 @@ import {buildCandidate} from './builder.ts';
 import {verifyManifest,type GameManifest,type CharacterClass} from '../game/manifest.ts';
 import {atomicJson,readJson} from '../build-store.ts';
 import {safeReload} from './safe-reload.ts';
-import {deployStartupCandidate} from './startup.ts';
+import {deployRefusal,type LoadMode} from '../../runtime/lifecycle/rules.ts';
+import {readPause} from '../../runtime/lifecycle/coordinator/control.ts';
+import {lifecycleSavedFields} from '../../runtime/lifecycle/fields.ts';
+import {fresh as freshAt} from '../../runtime/protocol/reports.ts';
+import {bounded,type HostBound} from '../hosting/http.ts';
+// The managed host's bounds against a coordinator or dashboard that does not answer: one coordinator
+// read, the first dashboard activation and CODE publication at start, and the status page's Cave check.
+// releaseWaitMs and activationMs are the lifecycle owner's saved fields; each bound logs through `bounded` when it ends a wait.
+const COORDINATOR_READ:HostBound={name:'coordinatorReadMs',ms:3000};
+const FIRST_ACTIVATION:HostBound={name:'firstActivationMs',ms:120_000};
+const CAVE_CHECK:HostBound={name:'caveCheckMs',ms:1500};
+const RELEASE_WAIT:HostBound={name:'releaseWaitMs',ms:lifecycleSavedFields.settings.releaseWaitMs.default};
+const ACTIVATION:HostBound={name:'activationMs',ms:lifecycleSavedFields.settings.activationMs.default};
 
+// startupCandidateId is the candidate bootstrap.ts selected and imported this host from (store.startupCandidate).
 interface ManagedOptions{dashboardPort:number;apiPort:number;coordinatorEnv?:NodeJS.ProcessEnv;coordinatorOnly?:boolean;startupCandidateId?:string}
-interface CharacterReport{seenAt?:number;connected?:boolean;rip?:boolean;type?:string;ctype?:string;codeHash?:string;name?:string;map?:string;dungeon?:{cave?:{run?:string}|null};consoleMaintenance?:{id?:string;ready?:boolean}|null}
+interface CharacterReport{seenAt?:number;connected?:boolean;fresh?:boolean;rip?:boolean;type?:string;ctype?:string;codeHash?:string;name?:string;map?:string;consoleMaintenance?:{id?:string;ready?:boolean}|null}
 interface PublicState{characters?:Record<string,CharacterReport>}
-const fresh=(report:CharacterReport)=>report.connected!==false&&Number.isFinite(report.seenAt)&&Date.now()-Number(report.seenAt)<=5000&&Number(report.seenAt)<=Date.now()+1000;
+// The coordinator answers each report's freshness with its one rule. A
+// coordinator built before that field (b9b5c91e, or a rollback candidate) serves none, and the host
+// then applies the same rule, runtime/protocol/reports.ts `fresh`, to the report's seenAt.
+const fresh=(report:CharacterReport)=>report.fresh??(report.connected!==false&&freshAt(report.seenAt,Date.now()));
 async function installHooks(app:string,root:string,signal:AbortSignal):Promise<void>{
   signal.throwIfAborted();
   const prepared=await readJson<{schema:number}>(path.join(app,'.caracal/prepared-runtime.json'));
@@ -29,7 +45,7 @@ async function installHooks(app:string,root:string,signal:AbortSignal):Promise<v
   });
 }
 async function json<T>(port:number,route:string,signal:AbortSignal):Promise<T>{
-  const response=await fetch(`http://127.0.0.1:${port}${route}`,{signal:AbortSignal.any([signal,AbortSignal.timeout(3000)]),cache:'no-store'});
+  const response=await bounded(COORDINATOR_READ,'a coordinator read of '+route,read=>fetch(`http://127.0.0.1:${port}${route}`,{signal:AbortSignal.any([signal,read]),cache:'no-store'}));
   if(!response.ok)throw new Error(`Coordinator readiness HTTP ${response.status}`);
   return response.json() as Promise<T>;
 }
@@ -56,7 +72,7 @@ async function publishCode(app:string,deployed:string,signal:AbortSignal,activat
   const prior=await readJson<{id:string;manifest:GameManifest}>(path.join(deployed,'activation.json'));
   if(activation&&prior?.id===activation.id&&prior.manifest.generation===manifest.generation)return manifest;
   for(const entry of Object.values(manifest.classes)){signal.throwIfAborted();await atomicCopy(path.join(directory,entry.file),path.join(deployed,entry.file));}
-  for(const name of ['shared.js','party-member.js','roles.js','profiles.js','steam-bridge.js','universal-loader.js','farming-zones.js','farming-zones.cjs']){
+  for(const name of ['shared.js','party-member.js','profiles.js','steam-bridge.js','universal-loader.js','farming-zones.js']){
     signal.throwIfAborted();const source=path.join(directory,name);if(await lstat(source).catch(()=>undefined))await atomicCopy(source,path.join(deployed,name));
   }
   signal.throwIfAborted();await atomicCopy(path.join(directory,'manifest.json'),path.join(deployed,'manifest.json'));
@@ -76,11 +92,25 @@ export async function createManagedConsole(root:string,services:Services,options
   let coordinatorCandidate:string|undefined;
   let captured:PublicState|undefined;
   let acknowledgeAfter=0;
-  const maintenance=safeReload(path.resolve(options.coordinatorEnv?.AL_DATA_DIR||process.env.AL_DATA_DIR||path.join(root,'.build/hosting-data')),
-    signal=>json<{id?:string|null;ready?:boolean}>(options.apiPort,'/party-api/console-maintenance',signal));
+  const dataDirectory=path.resolve(options.coordinatorEnv?.AL_DATA_DIR||process.env.AL_DATA_DIR||path.join(root,'.build/hosting-data'));
+  const maintenance=safeReload(dataDirectory,
+    signal=>json<{id?:string|null;ready?:boolean}>(options.apiPort,'/party-api/console-maintenance',signal).catch(()=>({id:null,ready:false})));
+  // The characters a load counts are the participants, which the coordinator answers; the
+  // host keeps no list of its own while the coordinator answers. With it down, the captured roster
+  // stands in.
+  async function participants(signal:AbortSignal):Promise<string[]|undefined>{
+    return (await json<{participants?:string[]}>(options.apiPort,'/party-api/console-maintenance',signal).catch(()=>undefined))?.participants;
+  }
   async function runtimeState(signal:AbortSignal):Promise<PublicState>{
     const state=await json<PublicState>(options.apiPort,'/party-api/console-runtime',signal).catch(()=>json<PublicState>(options.apiPort,'/party-api/state?catalog=0',signal));
-    return {characters:Object.fromEntries(Object.entries(state.characters||{}).map(([name,r])=>[name,{name,seenAt:r.seenAt,connected:r.connected,rip:r.rip,type:r.type,ctype:r.ctype,codeHash:r.codeHash,map:r.map,dungeon:r.dungeon,consoleMaintenance:r.consoleMaintenance}]))};
+    return {characters:Object.fromEntries(Object.entries(state.characters||{}).map(([name,r])=>[name,{name,seenAt:r.seenAt,connected:r.connected,fresh:r.fresh,rip:r.rip,type:r.type,ctype:r.ctype,codeHash:r.codeHash,map:r.map,consoleMaintenance:r.consoleMaintenance}]))};
+  }
+  // The coordinator answers whether a deploy of this mode may
+  // start. With the coordinator down the host applies the same rule to the saved roster's maps.
+  async function admission(mode:LoadMode,signal:AbortSignal):Promise<string|null>{
+    if(!coordinatorEnv)return null;
+    return json<{refusal:string|null}>(options.apiPort,`/party-api/console-maintenance/admit?mode=${mode}`,signal).then(answer=>answer.refusal)
+      .catch(async()=>deployRefusal(mode,Object.entries((await readJson<PublicState>(path.join(store.directory,'activation-roster.json')))?.characters||{}).map(([name,report])=>({name,task:null,map:report.map}))));
   }
   const verified=new Map<string,import('./contracts.ts').Candidate>();
   const hostLoader=fileURLToPath(new URL('../../characters/universal-loader.js',import.meta.url));
@@ -88,7 +118,7 @@ export async function createManagedConsole(root:string,services:Services,options
     const id=path.basename(path.dirname(directory));let candidate=verified.get(id);if(!candidate){candidate=await store.verify(id);verified.set(id,candidate);}return candidate;
   };
   const ports:ActivationPorts={
-    async stage(candidate,previous,operation,signal){
+    async stage(candidate,previous,signal){
       verified.set(candidate.manifest.id,candidate);if(previous)verified.set(previous.manifest.id,previous);
       await dashboard.prepare(candidate,signal);
       const stage=path.join(store.directory,'code-staging',candidate.manifest.id,'characters');await mkdir(stage,{recursive:true});
@@ -125,35 +155,14 @@ export async function createManagedConsole(root:string,services:Services,options
     },
     async activateDashboard(directory,signal){await dashboard.activate(await resolve(directory),signal);await store.pin([...dashboard.pinnedBuilds,...(coordinatorCandidate?[coordinatorCandidate]:[])]);},
     async reloadCharacters(directory,signal){
-      const frozen=!!captured;
-      // Coordinator replacement can resume a saved storage handoff before the
-      // new lease arrives. Reconcile that actual roster in immediate/startup
-      // loads too; the coordinator retires only positively stopped workers.
-      if(captured&&maintenance.lease){
-        while(true){
-          signal.throwIfAborted();
-          const current=await runtimeState(signal).catch(()=>undefined);
-          const safe=await json<{id?:string;participants?:string[]}>(options.apiPort,'/party-api/console-maintenance',signal).catch(()=>undefined);
-          if(!current||!safe){await new Promise(resolve=>setTimeout(resolve,200));continue;}
-          const names=safe.participants||Object.keys(captured.characters||{});
-          if(safe.id===maintenance.lease.id&&names.every(name=>{
-            const report=current.characters?.[name];
-            return !!report&&fresh(report)&&report.consoleMaintenance?.id===maintenance.lease!.id&&
-              (maintenance.lease!.loadMode==='now'||report.consoleMaintenance.ready===true);
-          })){
-            captured={characters:Object.fromEntries(names.map(name=>[name,current.characters![name]]))};
-            await atomicJson(path.join(store.directory,'activation-roster.json'),captured);
-            break;
-          }
-          await new Promise(resolve=>setTimeout(resolve,200));
-        }
-      }
-      const state=captured||(coordinatorEnv?await runtimeState(signal):{});
+      const counted=maintenance.lease&&coordinatorEnv?await participants(signal):undefined;
+      const frozen=!counted&&!!captured;
+      const state=frozen?captured!:(coordinatorEnv?await runtimeState(signal):{});
       acknowledgeAfter=Date.now();
       const manifest=await publishCode(directory,deployed,signal,maintenance.lease?{id:maintenance.lease.id,maintenance:maintenance.lease}:undefined),expected:Record<string,string>={};
       for(const [name,report] of Object.entries(state.characters||{})){
         const entry=manifest.classes[(report.ctype||report.type) as CharacterClass];
-        if(!frozen&&!fresh(report))continue;
+        if(counted?!counted.includes(name):!frozen&&!fresh(report))continue;
         if(!entry)throw new Error('Cannot identify connected character class: '+name);
         expected[name]=entry.sha256;
       }
@@ -170,41 +179,28 @@ export async function createManagedConsole(root:string,services:Services,options
   };
   const driver={...createDeploymentDriver(ports),
     async beginMaintenance(operation:import('./contracts.ts').DeploymentJournal,signal:AbortSignal){
-      captured=undefined;await maintenance.begin(operation.id,operation.mode||'now');
+      // The host asks admission before it writes the lease, so a refused deploy publishes none.
+      captured=undefined;const refusal=await admission(operation.mode||'now',signal);if(refusal)throw Error(refusal);
+      await maintenance.begin(operation.id,operation.mode||'now');
       const state=coordinatorEnv?await runtimeState(signal).catch(()=>readJson<PublicState>(path.join(store.directory,'activation-roster.json')).then(value=>value||{})):{};
-      if(operation.mode!=='now'&&Object.values(state.characters||{}).some(report=>!!report.dungeon?.cave?.run||/^zone_[a-f0-9]+_\d+$/.test(report.map||'')))throw Error('This load mode is unavailable in Cave');
       captured={characters:Object.fromEntries(Object.entries(state.characters||{}).filter(([,report])=>fresh(report)))};
       operation.participants=Object.keys(captured.characters||{});
       await atomicJson(path.join(store.directory,'activation-roster.json'),captured);
     },
-    async waitUntilSafe(id:string,signal:AbortSignal,mode?:import('./contracts.ts').DeploymentMode){
-      await maintenance.waitUntilSafe(id,signal,mode);
-      // A completed slot handoff may replace a client captured before draining.
-      // The coordinator certifies the current roster; freeze its fresh held clients
-      // for CODE readiness rather than waiting for an intentionally stopped worker.
-      const state=await runtimeState(signal);
-      const safe=await json<{id?:string;ready?:boolean;participants?:string[]}>(options.apiPort,'/party-api/console-maintenance',signal);
-      if(safe.id!==id||!safe.ready)throw Error('Console safety changed while capturing the activation roster');
-      const names=safe.participants||Object.keys(captured?.characters||{});
-      const characters:Record<string,CharacterReport>={};
-      for(const name of names){
-        const report=state.characters?.[name];
-        if(!report||!fresh(report)||report.consoleMaintenance?.id!==id||report.consoleMaintenance.ready!==true)
-          throw Error('Missing fresh safe acknowledgement while capturing '+name);
-        characters[name]=report;
-      }
-      captured={characters};
-      await atomicJson(path.join(store.directory,'activation-roster.json'),captured);
-    },
+    waitUntilSafe:(id:string,signal:AbortSignal,mode?:import('./contracts.ts').DeploymentMode)=>maintenance.waitUntilSafe(id,signal,mode),
     async releaseSafeWait(id:string){
+      // The participants are read while the lease still stands; its release ends the set.
+      const lease=await bounded(RELEASE_WAIT,'the participant read before a release',participants);
       await maintenance.releaseSafeWait(id);
       await dashboard.discardPrepared();
       // Releasing a preparation failure need not wait for replacement CODE.
       const journal=await store.journal();if(journal?.phase!=='resuming'&&journal?.phase!=='rolling-back')return;
-      const releasedAt=Date.now(),signal=AbortSignal.timeout(30000);
-      while(true){signal.throwIfAborted();const state=await runtimeState(signal);
-        if(Object.keys(captured?.characters||{}).every(name=>fresh(state.characters?.[name]||{})&&Number(state.characters?.[name]?.seenAt)>=releasedAt&&state.characters?.[name]?.consoleMaintenance?.id!==id))return;
-        await new Promise(resolve=>setTimeout(resolve,200));}
+      const releasedAt=Date.now(),counted=lease??Object.keys(captured?.characters||{});
+      await bounded(RELEASE_WAIT,'the wait for released characters to report',async signal=>{
+        while(true){signal.throwIfAborted();const state=await runtimeState(signal);
+          if(counted.every(name=>fresh(state.characters?.[name]||{})&&Number(state.characters?.[name]?.seenAt)>=releasedAt&&state.characters?.[name]?.consoleMaintenance?.id!==id))return;
+          await new Promise(resolve=>setTimeout(resolve,lifecycleSavedFields.settings.hostPollMs.default));}
+      });
     }};
   const controller=new ConsoleBuildController(store,driver);
   const refs=await store.references();
@@ -212,20 +208,23 @@ export async function createManagedConsole(root:string,services:Services,options
   if(!active)active=options.startupCandidateId?await store.verify(options.startupCandidateId):await buildCandidate(root,store);
   const bootstrap=active;
   await dashboard.listen(options.dashboardPort);
-  try{await dashboard.activate(bootstrap,AbortSignal.timeout(120_000));}catch(error){await dashboard.stop();throw error;}
-  if(!options.coordinatorOnly||!await lstat(path.join(deployed,'manifest.json')).catch(()=>undefined))await publishCode(bootstrap.directory,deployed,AbortSignal.timeout(120_000));
+  try{await bounded(FIRST_ACTIVATION,'the first dashboard activation',signal=>dashboard.activate(bootstrap,signal));}catch(error){await dashboard.stop();throw error;}
+  if(!options.coordinatorOnly||!await lstat(path.join(deployed,'manifest.json')).catch(()=>undefined))await bounded(FIRST_ACTIVATION,'the first CODE publication',signal=>publishCode(bootstrap.directory,deployed,signal));
   await store.pin(dashboard.pinnedBuilds);
   // Account setup can happen later. Keep its already selected dashboard/CODE
   // pinned across an ordinary restart rather than choosing edited source again.
   if (!refs.active) await store.setReferences({...await store.references(), active: bootstrap.manifest.id});
   const watcher=startConsoleBuilder(root,controller);
-  const routes=consoleBuildRoutes(controller);
+  const routes=consoleBuildRoutes(controller,{
+    cave:async()=>await bounded(CAVE_CHECK,'the status page Cave check',signal=>admission('safe',signal)).catch(()=>null)!==null,
+    waiting:()=>maintenance.waiting,
+    refusal:()=>coordinatorEnv?undefined:'Configure and start the account before deploying a console build'});
   return {
     code:{async route(req:import('node:http').IncomingMessage,res:import('node:http').ServerResponse,pathname:string){
       if(pathname==='/party-api/console-deployment'){
         // activation tells loaders whether activation.json exists, so they stop polling it for a 404.
         const activation=await activationId(deployed);
-        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({serverNow:Date.now(),consoleMaintenance:maintenance.lease||null,activation}));return true;
+        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({serverNow:Date.now(),consoleMaintenance:maintenance.lease||null,consolePaused:!!readPause(dataDirectory),activation}));return true;
       }
       if(!pathname.startsWith('/CODE/adventure_land/'))return false;
       if(!['GET','HEAD'].includes(req.method||'')){res.writeHead(405);res.end();return true;}
@@ -234,29 +233,24 @@ export async function createManagedConsole(root:string,services:Services,options
       const data=await readFile(path.join(deployed,name)).catch(()=>undefined);
       res.writeHead(data?200:404,{'Content-Type':name.endsWith('.json')?'application/json':'text/javascript','Cache-Control':'no-store'});res.end(req.method==='HEAD'?undefined:data);return true;
     }},
-    controller,routes:{async route(req:import('node:http').IncomingMessage,res:import('node:http').ServerResponse,pathname:string){
-      if(req.method==='GET'){
-        const status=await controller.status(),state=coordinatorEnv?await runtimeState(AbortSignal.timeout(1500)).catch(()=>({} as PublicState)):{};
-        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({...status,operation:status.operation&&{...status.operation,waiting:maintenance.waiting},cave:Object.values(state.characters||{}).some(r=>!!r.dungeon?.cave?.run||/^zone_[a-f0-9]+_\d+$/.test(r.map||''))}));return;
-      }
-      if(req.method==='POST'&&!coordinatorEnv){res.writeHead(409,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({error:'Configure and start the account before deploying a console build'}));return;}
-      await routes.route(req,res,pathname);
-    }},
+    controller,routes,
     async startGame(env:NodeJS.ProcessEnv){
       coordinatorEnv={...process.env,...options.coordinatorEnv,...env};
       coordinatorEnv.AL_DATA_DIR=path.resolve(coordinatorEnv.AL_DATA_DIR || path.join(root,'.build/hosting-data'));
       await controller.recover();
       const operation=await store.journal();if(operation&&!['complete','failed'].includes(operation.phase))throw new Error('Console deployment recovery remains incomplete');
       const refs=await store.references(),candidate=refs.active?await store.verify(refs.active):bootstrap;
-      const signal=AbortSignal.timeout(120_000);
-      await ports.startCoordinator(candidate.directory,signal);
-      while(true){
-        signal.throwIfAborted();const observed=await ports.observe(signal);
-        if(observed.coordinator?.artifactId===candidate.manifest.id&&observed.coordinator.hash===candidate.manifest.components.coordinator)break;
-        await new Promise(resolve=>setTimeout(resolve,200));
-      }
+      await bounded(ACTIVATION,'the start coordinator activation',async signal=>{
+        await ports.startCoordinator(candidate.directory,signal);
+        while(true){
+          signal.throwIfAborted();const observed=await ports.observe(signal);
+          if(observed.coordinator?.artifactId===candidate.manifest.id&&observed.coordinator.hash===candidate.manifest.components.coordinator)return;
+          await new Promise(resolve=>setTimeout(resolve,lifecycleSavedFields.settings.hostPollMs.default));
+        }
+      });
       await store.setReferences({...await store.references(),active:candidate.manifest.id});
-      await deployStartupCandidate(controller,options.startupCandidateId);
+      // The launch deploys the candidate bootstrap.ts selected (controller.ts `launch`).
+      await controller.launch(options.startupCandidateId);
     },
     async stop(){controller.stopWaiting();await watcher.dispose();await services.stopService('console-coordinator');await dashboard.stop();await store.pin([]);},
   };

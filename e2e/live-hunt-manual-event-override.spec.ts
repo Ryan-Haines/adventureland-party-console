@@ -1,4 +1,4 @@
-import {contains} from '../dashboard/lib/farming-zones';
+import {contains} from '../runtime/hunting/zones';
 import {test,expect} from './live-fixtures';
 import {observeNativePlanner} from './native-planner-observation';
 
@@ -99,6 +99,14 @@ test(`explicit ${entry} travel skips only the current native event occurrence`,a
       return members.every(name=>native[name].map==='halloween'&&s.characters[name]?.joinedEvent==='mrpumpkin'&&
         s.eventAttendance?.[name]?.mrpumpkin?.id===null);
     },{timeout:120_000,message:'Both native actors must really attend the declared occurrence'}).toBe(true);
+    if(entry==='command'){
+      // EV8: a move to a point on the event's own map keeps the occurrence.
+      // (-300,600) is inside a wall: both planners refuse it. (-400,650) is open ground beside the boss.
+      await live.post('/command',{character:W,type:'party-monster-travel',location:{map:'halloween',x:-400,y:650},label:'manual move inside the event map'});
+      await expect.poll(async()=>{const native=await world();return native[W].map==='halloween'&&Math.hypot(native[W].x+400,native[W].y-650)<150;},{timeout:60_000}).toBe(true);
+      const inside=await live.state();
+      for(const name of members)expect(inside.eventAttendance[name].mrpumpkin.ignored,'EV8: a move inside the map keeps attendance').toBeUndefined();
+    }
     await live.post('/formation',{character:P,follow:true});
     const destination=entry==='monster' ? (await live.state(true)).monsterChoices.find((choice:any)=>choice.id==='goo').locations.find((location:any)=>location.map==='main') : {map:'main',x:0,y:0};
     expect(destination).toBeTruthy();
@@ -125,7 +133,12 @@ test(`explicit ${entry} travel skips only the current native event occurrence`,a
     expect(competingReturn,'No forced return may compete with explicit manual travel').toBe(false);
     if(entry==='travel'){
       expect(planningFaults,'The initial follower route must encounter the declared transport failure').toHaveLength(1);
-      expect(recoveryHolds.length,'Both clients must freshly acknowledge the stopped recovery hold').toBeGreaterThan(0);
+      // The coordinator restores the walk on the first round in which every participant reports the
+      // hold (defense.ts `ready`), about one report after the reset, which the 100 ms state samples
+      // above can miss. Its restored record is written only once every participant reported the hold.
+      const restored=Object.values((await live.state()).combatLogs??{}).flat().filter((entry:any)=>entry?.message==='Convoy communication restored'&&entry.at>=issuedAt);
+      expect(recoveryHolds.length>0||restored.length>0,
+        'Both clients must freshly acknowledge the stopped recovery hold').toBe(true);
     }
     if(entry==='monster') {
       await expect.poll(async()=>{const s=await live.state(),native=await world(),packets=await live.clients[W].events();
@@ -142,14 +155,21 @@ test(`explicit ${entry} travel skips only the current native event occurrence`,a
       return members.every(name=>s.characters[name]?.seenAt>=arrivedAt+10_000);
     },{timeout:30_000}).toBe(true);
     for(const name of members){
-      const denied=await live.post('/hunt-event-permission',{character:name,event:'mrpumpkin'});
-      expect(denied.allowed).toBe(false);
+      // The events owner's answer for the member's report refuses the occurrence it left (the ingest).
+      expect((await live.state()).characters[name]?.eventAdmission?.allowed).not.toBe(true);
       await live.post('/event-disabled',{character:name,event:'mrpumpkin'});
       expect((await live.state()).eventReturn,'Manual override must not create a competing event return').toBeFalsy();
     }
     const skipped=await live.state();
     expect(skipped.eventSelectionsByCharacter[W]).toContain('mrpumpkin');
     for(const name of members)expect(skipped.eventAttendance[name].mrpumpkin.ignored).toBe('manual travel');
+    if(entry==='command'){
+      // EV8's rejoin half: the event-list slot names the left member, and the rejoin
+      // route takes back that manual leave; the next report's admission allows the occurrence.
+      expect(await live.post('/event-rejoin',{character:W,event:'mrpumpkin'})).toEqual({ok:true});
+      expect((await live.state()).eventAttendance[W].mrpumpkin.ignored,'EV8: the rejoin route clears the manual leave').toBeUndefined();
+      await expect.poll(async()=>(await live.state()).characters[W]?.eventAdmission?.allowed,{timeout:30_000}).toBe(true);
+    }
     await retire();
     await expect.poll(async()=>{const s=await live.state();
       return members.every(name=>s.eventAttendance?.[name]?.mrpumpkin?.ended===true);

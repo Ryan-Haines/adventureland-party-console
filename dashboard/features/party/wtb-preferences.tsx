@@ -15,7 +15,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Check, Info, Package } from 'lucide-react';
-import { ItemSprite } from './item-sprite';
+import { SpriteCrop } from './sprite-crop';
 import type { MerchantCatalogItem } from './merchant-catalog-item';
 import { PartyActionError } from './query-actions';
 
@@ -73,7 +73,7 @@ export function WTBPreference({
         >
           <Info className="h-3 w-3" />
         </PopoverTrigger>
-        <PopoverContent
+        <PopoverContent data-area="wtb-preferences-help"
           side="top"
           className="max-w-xs whitespace-normal border border-violet-600 bg-black text-sm text-violet-100"
         >
@@ -128,7 +128,7 @@ export function useWTBReplacement(catalog: MerchantCatalogItem[] = []) {
             if (!open && !saving) setPending(null);
           }}
         >
-          <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden border border-violet-700 bg-[#101019] text-violet-100 sm:max-w-xl">
+          <DialogContent data-area="wtb-preferences" className="flex max-h-[85vh] flex-col overflow-hidden border border-violet-700 bg-[#101019] text-violet-100 sm:max-w-xl">
             <DialogHeader className="shrink-0 pr-8">
               <DialogTitle className="text-xl text-white">Make room for a buy order</DialogTitle>
               <DialogDescription className="text-sm leading-relaxed text-violet-200">
@@ -142,7 +142,7 @@ export function useWTBReplacement(catalog: MerchantCatalogItem[] = []) {
                 return <label key={entry.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${active ? 'border-violet-400 bg-violet-950' : 'border-slate-700 bg-[#091310] hover:border-violet-600 hover:bg-[#16221e]'}`}>
                   <input type="radio" name="stand-replacement" value={entry.id} checked={active} disabled={saving} onChange={() => setSelected(entry.id)} className="h-4 w-4 shrink-0 accent-violet-400 [color-scheme:dark]" />
                   <span className="relative h-11 w-11 shrink-0 rounded border border-slate-600 bg-black">
-                    {item?.sprite ? <ItemSprite sprite={item.sprite} /> : <Package aria-hidden="true" className="m-2 h-6 w-6 text-slate-400" />}
+                    {item?.sprite ? <SpriteCrop sprite={item.sprite} /> : <Package aria-hidden="true" className="m-2 h-6 w-6 text-slate-400" />}
                   </span>
                   <span className="min-w-0 flex-1"><span className="block truncate font-medium text-white">{item?.name || entry.itemId}</span><span className="block text-xs tabular-nums text-slate-300">{entry.quantity.toLocaleString()} at {entry.price.toLocaleString()}g each</span></span>
                   <span className={`rounded border px-2 py-1 text-xs font-medium ${entry.kind === 'sale' ? 'border-amber-700 bg-amber-950 text-amber-200' : 'border-violet-600 bg-violet-950 text-violet-200'}`}>{entry.kind === 'sale' ? 'Selling' : 'Buying'}</span>

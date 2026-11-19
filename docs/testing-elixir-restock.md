@@ -12,7 +12,7 @@ independent asynchronous milestones. Validate an actual native purchase, deliver
 consumption and craft, plus opt-out and restart paths using ChronAL.
 
 Native elixirs live in slots.elixir with an expiry, not necessarily character.s.
-The equipped icon and Active status must reflect that same native expiry. Transfers,
+The equipped icon and the card's status icon must reflect that same native expiry. Transfers,
 sales, banking, failed actions and CODE reload must not count as consumption.
 Consumption costs must survive metrics retries/restarts without double counting;
 legacy samples without accounting must be identified. Gold adjustments must not
@@ -33,7 +33,7 @@ must complete and a later merchant inventory report must arrive before delivery
 can preempt that work or another procurement order can be admitted. Delivery
 retires idle/gathering movement before taking ownership.
 
-Native elixir expiry drives the equipped icon countdown and Active status entry.
+Native elixir expiry drives the equipped icon countdown and the card's status icon.
 Successful native potion/elixir receipts increment persistent consumption totals
 at catalog replacement value. Successful purchases are tracked separately so the
 default-enabled gold checkbox does not charge both purchase and consumption.

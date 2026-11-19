@@ -8,6 +8,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { MonsterChoice } from "./monster-choice";
 import { Sprite } from "./sprite";
 import { SpriteCrop } from "./sprite-crop";
+import { MONSTER_PRIORITY } from '../../../runtime/characters/targeting/api.ts';
 
 export const MonsterFocusPicker = memo(function MonsterFocusPicker({
   monsters,
@@ -20,8 +21,9 @@ export const MonsterFocusPicker = memo(function MonsterFocusPicker({
   monsters: MonsterChoice[];
   selected: string[];
   onChange: (selected: string[]) => void | Promise<void>;
-  priorities: Record<string, number>;
-  onPriorityChange: (priorities: Record<string, number>) => void;
+  // The priority boxes show only with a saved priority table to edit; the Hunt setup has none.
+  priorities?: Record<string, number>;
+  onPriorityChange?: (priorities: Record<string, number>) => void;
   renderRouteButton?: (selected: string[]) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -31,17 +33,10 @@ export const MonsterFocusPicker = memo(function MonsterFocusPicker({
   const [selectionDraft, setSelectionDraft] = useState<string[]>(selected);
   const selectionDirty = useRef(false);
   const selectionGeneration = useRef(0);
-  const selectionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectionWrites = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     if (!selectionDirty.current) setSelectionDraft(selected);
   }, [selected]);
-  useEffect(
-    () => () => {
-      if (selectionTimer.current) clearTimeout(selectionTimer.current);
-    },
-    [],
-  );
   const choices: [string, string, Sprite | null][] = [
     ["all", "All monsters", null],
     ...monsters.map(
@@ -78,22 +73,19 @@ export const MonsterFocusPicker = memo(function MonsterFocusPicker({
     const generation = ++selectionGeneration.current;
     selectionDirty.current = true;
     setSelectionDraft(next);
-    if (selectionTimer.current) clearTimeout(selectionTimer.current);
-    selectionTimer.current = setTimeout(() => {
-      selectionTimer.current = null;
-      // Complete focus lists are replacements, so enforce request ordering.
-      selectionWrites.current = selectionWrites.current
-        .catch(() => undefined)
-        .then(async () => {
-          await onChange(next);
-        })
-        .finally(() => {
-          if (selectionGeneration.current === generation) {
-            selectionDirty.current = false;
-            setSelectionDraft(next);
-          }
-        });
-    }, 180);
+    // Each tick sends its whole focus list, a replacement, so the writes go in order: the last
+    // tick's list is the one that stays.
+    selectionWrites.current = selectionWrites.current
+      .catch(() => undefined)
+      .then(async () => {
+        await onChange(next);
+      })
+      .finally(() => {
+        if (selectionGeneration.current === generation) {
+          selectionDirty.current = false;
+          setSelectionDraft(next);
+        }
+      });
   };
   const toggle = (id: string, checked: boolean) => {
     if (id === "tinyp") { setFairyExplanation(true); return; }
@@ -103,24 +95,23 @@ export const MonsterFocusPicker = memo(function MonsterFocusPicker({
     else next = next.filter((value) => value !== id);
     queueSelection(next);
   };
-  const displayedPriority = (id: string) => priorityDrafts[id] ?? String(priorities[id] ?? 50);
+  const displayedPriority = (id: string) => priorityDrafts[id] ?? String(priorities?.[id] ?? MONSTER_PRIORITY.unset);
+  // A priority box saves once, when it commits (blur or Enter); typing only edits the draft. The targeting owner's
+  // declaration sets the range and the rank of a monster with none.
   const commitPriority = (id: string) => {
-    const parsed = Number(priorityDrafts[id] ?? priorities[id] ?? 50);
-    const value = Number.isFinite(parsed) ? Math.max(0, Math.min(1000, Math.round(parsed))) : 50;
+    if (!(id in priorityDrafts)) return;
+    const parsed = Number(priorityDrafts[id]);
     setPriorityDrafts((current) => {
       const next = { ...current };
       delete next[id];
       return next;
     });
-    onPriorityChange({ ...priorities, [id]: value });
+    if (!priorityDrafts[id].trim() || !Number.isFinite(parsed)) return;
+    const value = Math.max(MONSTER_PRIORITY.min, Math.min(MONSTER_PRIORITY.max, Math.round(parsed)));
+    if (priorities && onPriorityChange && value !== priorities[id]) onPriorityChange({ ...priorities, [id]: value });
   };
   const updatePriority = (id: string, draft: string) => {
     setPriorityDrafts((current) => ({ ...current, [id]: draft }));
-    if (!draft.trim()) return;
-    const parsed = Number(draft);
-    if (!Number.isFinite(parsed)) return;
-    const value = Math.max(0, Math.min(1000, Math.round(parsed)));
-    onPriorityChange({ ...priorities, [id]: value });
   };
   const labels = selectionDraft.map((id) =>
     id === "all" ? "All monsters" : monsters.find((monster) => monster.id === id)?.name || id,
@@ -156,7 +147,7 @@ export const MonsterFocusPicker = memo(function MonsterFocusPicker({
             {selectionDraft.includes("all") ? "ALL" : selectionDraft.length}
           </span>
         </PopoverTrigger>
-        <PopoverContent
+        <PopoverContent data-area="monster-focus"
           align="end"
           className="w-80 border border-emerald-800 bg-[#091614] p-2 text-emerald-50"
         >
@@ -188,10 +179,10 @@ export const MonsterFocusPicker = memo(function MonsterFocusPicker({
                     )}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
-                  <Input
+                  {onPriorityChange && <Input
                     type="number"
-                    min={0}
-                    max={1000}
+                    min={MONSTER_PRIORITY.min}
+                    max={MONSTER_PRIORITY.max}
                     aria-label={`${label} priority`}
                     title="Target priority (higher wins)"
                     value={displayedPriority(id)}
@@ -203,7 +194,7 @@ export const MonsterFocusPicker = memo(function MonsterFocusPicker({
                       if (event.key === "Enter") event.currentTarget.blur();
                     }}
                     className="h-8 w-16 shrink-0 border-emerald-800 bg-black/45 px-2 text-center font-mono text-xs"
-                  />
+                  />}
                 </label>
               );
             })}

@@ -27,7 +27,9 @@ try {
     method: "POST", headers: { Origin: origin, Cookie: cookie, "Content-Type": "application/json" }, body: JSON.stringify(input),
   });
   const state = await fetch(origin + "/setup/state");
-  assert.deepEqual(await state.json(), { configured: false, requirePairing: false, canConfigureAccount: true });
+  // The three fields this smoke checks; setupState also sends the server address, realms and TLS state.
+  const { configured, requirePairing, canConfigureAccount } = await state.json() as Record<string, unknown>;
+  assert.deepEqual({ configured, requirePairing, canConfigureAccount }, { configured: false, requirePairing: false, canConfigureAccount: true });
   assert.equal((await fetch(origin + "/setup")).status, 200);
   const direct = await (await post("steam", { origin })).json() as { code: string };
   assert.equal(direct.code, `$.getScript("${origin}/CODE/adventure_land/universal-loader.js");`);

@@ -1,15 +1,14 @@
 "use client";
 
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
+import { BANK_PACK_CELLS, bagSize, bankboiPack, bankStagingReserved, commerceRuleKey, keyHeld, STAGING_FIRST, stagingCell, vaultAccess, type DeconstructionCatalog, markMatches } from '../../../runtime/items/api.ts';
 import { useItemSelection, BatchItemActions } from './item-selection';
 import { BankProductionActions } from './bank-production-actions';
 import type { MerchantExchangeItem } from './merchant-exchange-item';
 
 import { BankSortControl, type BankSortState } from "./bank-sort-control";
-import { automaticCommerceRuleKey } from "./automatic-commerce-rule-key";
 import { BankItemBanner, type BankItemRules } from './bank-item-banner';
 import type { PartyState } from "./party-state";
-import { standIsFull } from "./stand-capacity";
-import type { StandBid } from "./stand-bid";
 import { itemMenuClass } from "./item-menu-style";
 
 import { BankUpgradeActions } from './bank-upgrade-actions';
@@ -17,7 +16,6 @@ import { ClearItemMarks } from './clear-item-marks';
 import { AutoActionIcon } from './auto-action-icon';
 import { BankDeconstructionActions } from './bank-deconstruction-actions';
 
-import type { DeconstructionCatalog } from './deconstruction';
 
 import { Button } from "@/components/ui/button";
 
@@ -73,9 +71,8 @@ import { InventoryEntry } from "./inventory-entry";
 
 import { Item } from "./item";
 
-import { ItemSprite } from "./item-sprite";
+import { SpriteCrop } from "./sprite-crop";
 
-import { MerchantBuyItem } from "./merchant-buy-item";
 
 import { MerchantCatalogItem } from "./merchant-catalog-item";
 
@@ -83,13 +80,11 @@ import { MluckClover } from "./mluck-clover";
 
 import { NpcSaleMark } from "./npc-sale-mark";
 
-import { same } from "./same";
 
 import { StandListing } from "./stand-listing";
 
-import { StandPriceHistory } from "./stand-price-history";
 
-import { statBadgeClass } from "./stat-badge-class";
+import { statBadgeClass, statBadgeStyle } from "./stat-badge-class";
 
 
 import { Withdrawal } from "./withdrawal";
@@ -140,7 +135,7 @@ export const BankSheet = memo(function BankSheet({
 
 
   standListings,
-  standBids = {},
+  standFull,
   autoStandMarks = {},
   automaticRules = {},
 
@@ -216,22 +211,21 @@ export const BankSheet = memo(function BankSheet({
 
   onDeleteBankboi: (name: string) => Promise<void>;
 
-  buyable: MerchantBuyItem[];
 
   catalog: MerchantCatalogItem[];
 
-  priceHistory: Record<string, StandPriceHistory>;
 
   standListings: StandListing[];
   autoStandMarks?: PartyState["autoStandMarks"];
   automaticRules?: BankItemRules;
-  standBids?: Record<string, StandBid>;
+  // The items owner's stand count says the merchant's stand is full (stand-capacity.ts).
+  standFull: boolean;
 
   onStand: (pack: string, entry: InventoryEntry, all?: boolean) => void;
 
   onUnstand: (pack: string, entry: InventoryEntry) => void;
 
-  onNpcSale: (pack: string, entry: InventoryEntry, all?: boolean) => void;
+  onNpcSale: (pack: string, entry: InventoryEntry) => void;
 
   onDeconstruction: (pack: string, entry: InventoryEntry, all: boolean, auto?: boolean) => void;
   onBatchCommand: (
@@ -261,8 +255,8 @@ export const BankSheet = memo(function BankSheet({
   onUnlock: (vault: BankVault, kind: "key" | "gold") => Promise<void>;
 
 }) {
-
-
+  // The first vault's last row holds BankBoi cargo while the account has a BankBoi.
+  const staging = bankStagingReserved({ bankbois });
 
   const selectionEntries = [
     ...Object.entries(bank?.packs || {}).flatMap(([pack, entries]) =>
@@ -271,7 +265,7 @@ export const BankSheet = memo(function BankSheet({
     ...bankbois.flatMap((worker) =>
       (worker.items ||
     []).flatMap((entry) =>
-        entry ? [{ ...entry, pack: `bankboi:${worker.name}` }] : [],
+        entry ? [{ ...entry, pack: bankboiPack(worker.name) }] : [],
       ),
     ),
   ];
@@ -313,7 +307,6 @@ export const BankSheet = memo(function BankSheet({
   const batchMenu = (pack: string, entry: InventoryEntry) => (
     <BatchItemActions
       entries={batch(pack, entry)}
-      merchant={!!merchant}
       onError={onBatchError}
       onBank={(item) =>
         !marked(sourcePack(pack, entry, item), item)
@@ -400,7 +393,6 @@ export const BankSheet = memo(function BankSheet({
     }
   };
 
-  const standFull = standIsFull(standListings, standBids);
 
   const marked = (pack: string, entry: InventoryEntry) =>
     !!merchant &&
@@ -408,7 +400,7 @@ export const BankSheet = memo(function BankSheet({
       (request) =>
         request.pack === pack &&
         request.slot === entry.slot &&
-        same(request.item, entry.item),
+        markMatches(request.item, entry.item),
     );
 
   const standMarked = (pack: string, entry: InventoryEntry) =>
@@ -416,7 +408,7 @@ export const BankSheet = memo(function BankSheet({
       (listing) =>
         listing.bankPack === pack &&
         listing.bankSlot === entry.slot &&
-        same(listing.item, entry.item),
+        markMatches(listing.item, entry.item),
     );
 
   const npcMarked = (pack: string, entry: InventoryEntry) =>
@@ -425,36 +417,63 @@ export const BankSheet = memo(function BankSheet({
         !mark.auto &&
         mark.pack === pack &&
         mark.slot === entry.slot &&
-        same(mark.item, entry.item),
+        markMatches(mark.item, entry.item),
+    );
+
+  // One item menu for the bank pack tiles and the bankboi tiles; `pack` names either. The bank
+  // tile's withdrawal items wait for a merchant. The bankboi tile's stay open, and a press with no
+  // merchant shows bank-withdrawal.tsx's "No merchant is configured" (b9b5c91e bank-sheet.tsx:1116-1139).
+  const itemMenu = (pack: string, entry: InventoryEntry, withdrawLocked: boolean) =>
+    batch(pack, entry).length > 1 ? (
+      batchMenu(pack, entry)
+    ) : (
+      <>
+        {merchant && production(pack, entry)}
+        <ContextMenuItem disabled={withdrawLocked} onClick={() => onWithdraw(pack, entry)}>
+          <Landmark className="mr-2 h-4 w-4" />
+          {marked(pack, entry) ? 'Unmark withdrawal' : 'Mark for withdrawal'}
+        </ContextMenuItem>
+        <ContextMenuItem disabled={withdrawLocked} onClick={() => onWithdrawAll(pack, entry)}>
+          <Landmark className="mr-2 h-4 w-4" />
+          Mark all for withdrawal
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={standFull && !standMarked(pack, entry)}
+          onClick={() => (standMarked(pack, entry) ? onUnstand(pack, entry) : onStand(pack, entry))}
+        >
+          <Store className="mr-2 h-4 w-4" />
+          {standMarked(pack, entry) ? 'Unmark for stand' : 'Mark for stand'}
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!merchant || !!entry.item.l} onClick={() => onAutoStand(entry)}>
+          <AutoActionIcon>
+            <Store />
+          </AutoActionIcon>
+          Auto mark for stand…
+        </ContextMenuItem>
+        <BankUpgradeActions entry={entry} pack={pack} catalog={catalog} merchant={merchant} onUpgrade={onUpgrade} />
+        <ContextMenuSeparator />
+        <BankDeconstructionActions
+          entry={entry}
+          pack={pack}
+          merchant={merchant}
+          catalog={deconstructionCatalog}
+          onMark={onDeconstruction}
+        />
+        <ContextMenuItem className="text-rose-300" onClick={() => onNpcSale(pack, entry)}>
+          <DollarSign className="mr-2 h-4 w-4" />
+          Sell to NPC…
+        </ContextMenuItem>
+        <ContextMenuItem className="text-rose-300" disabled={!merchant || !!entry.item.l} onClick={() => onAutoNpcSale(entry)}>
+          <AutoActionIcon>
+            <DollarSign />
+          </AutoActionIcon>
+          Auto sell to NPC…
+        </ContextMenuItem>
+        <ClearItemMarks onClear={() => onClearMarks(pack, entry)} />
+      </>
     );
 
   const unlockedPacks = new Set(Object.keys(bank?.packs || {}));
-
-  const keyQuantity = (key: string) => {
-    let quantity = (merchantState?.items || []).reduce(
-      (sum, entry) =>
-        sum + (entry?.item.name === key ? Number(entry.item.q || 1) : 0),
-
-      0,
-    );
-
-    Object.values(bank?.packs || {}).forEach((entries) =>
-      entries.forEach((entry) => {
-        if (entry?.item.name === key) quantity += Number(entry.item.q || 1);
-      }),
-    );
-
-    return quantity;
-  };
-
-  const floorAccessible = (floor: string) =>
-    floor === 'bank' ||
-    vaults.some(
-      (vault) =>
-        vault.floor === floor &&
-        vault.gold === 0 &&
-        unlockedPacks.has(vault.pack),
-    );
 
   const floorNames: Record<string, string> = {
     bank: 'Main bank',
@@ -467,7 +486,7 @@ export const BankSheet = memo(function BankSheet({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] w-[min(1500px,calc(100vw-2rem))] max-w-none overflow-y-auto border-emerald-900 bg-[#091614] text-emerald-50 sm:max-w-none">
+        <DialogContent data-area="bank" className="max-h-[90vh] w-[min(1500px,calc(100vw-2rem))] max-w-none overflow-y-auto border-emerald-900 bg-[#091614] text-emerald-50 sm:max-w-none">
           <DialogHeader>
             <DialogTitle className="text-emerald-50">Bank</DialogTitle>
 
@@ -501,10 +520,9 @@ export const BankSheet = memo(function BankSheet({
                     {(() => {
                       const occupied = items.filter(Boolean).length;
 
-                      const usableItems =
-                        bankbois.length > 0 && pack === 'items1'
-                          ? items.slice(0, 35)
-                          : items;
+                      const usableItems = staging
+                        ? items.filter((_, slot) => !stagingCell(pack, slot))
+                        : items;
 
                       const free =
                         usableItems.length - usableItems.filter(Boolean).length;
@@ -526,8 +544,7 @@ export const BankSheet = memo(function BankSheet({
 
                   <div className="grid grid-cols-7 gap-2">
                     {items.map((entry, i) => {
-                      const reserved =
-                        bankbois.length > 0 && pack === 'items1' && i >= 35;
+                      const reserved = staging && stagingCell(pack, i);
 
                       return entry ? (
                         <ContextMenu key={i}>
@@ -571,7 +588,7 @@ export const BankSheet = memo(function BankSheet({
                               }
                             >
                               {entry.meta?.sprite && (
-                                <ItemSprite sprite={entry.meta.sprite} />
+                                <SpriteCrop sprite={entry.meta.sprite} />
                               )}{' '}
                               {entry.item.level ? (
                                 <span className="absolute bottom-1 left-1 z-10 rounded bg-black/75 px-1 font-mono text-[10px] font-semibold text-emerald-300">
@@ -581,6 +598,7 @@ export const BankSheet = memo(function BankSheet({
                               {entry.item.stat_type ? (
                                 <span
                                   className={`absolute left-1 top-1 z-10 rounded px-1 font-mono text-[9px] font-semibold uppercase ring-1 ${statBadgeClass(entry.item.stat_type)}`}
+                                  style={statBadgeStyle(entry.item.stat_type)}
                                 >
                                   {entry.item.stat_type}
                                 </span>
@@ -603,7 +621,7 @@ export const BankSheet = memo(function BankSheet({
                               ) : null}
                               {standMarked(pack, entry) &&
                               !autoStandMarks[
-                                automaticCommerceRuleKey(entry.item)
+                                commerceRuleKey(entry.item)
                               ] ? (
                                 <span
                                   title="Configured for merchant stand"
@@ -617,103 +635,8 @@ export const BankSheet = memo(function BankSheet({
                           </Tooltip>
 
                           <ContextMenuContent className={itemMenuClass}>
-                            {batch(pack, entry).length > 1 ? (
-                              batchMenu(pack, entry)
-                            ) : (
-                              <>
-                                {merchant && production(pack, entry)}
-                                <ContextMenuItem
-                                  disabled={!merchant}
-
-                                  onClick={() => onWithdraw(pack, entry)}
-                                >
-                                  <Landmark className="mr-2 h-4 w-4" />
-                                  {marked(pack, entry)
-                                    ? 'Unmark withdrawal'
-                                    : 'Mark for withdrawal'}
-                                </ContextMenuItem>
-
-                                <ContextMenuItem
-                                  disabled={!merchant}
-
-                                  onClick={() => onWithdrawAll(pack, entry)}
-                                >
-                                  <Landmark className="mr-2 h-4 w-4" />
-                                  Mark all for withdrawal
-                                </ContextMenuItem>
-
-                                <ContextMenuItem
-                                  disabled={
-                                    standFull && !standMarked(pack, entry)
-                                  }
-
-                                  onClick={() =>
-                                    standMarked(pack, entry)
-                                      ? onUnstand(pack, entry)
-                                      : onStand(pack, entry)
-                                  }
-
-                                  className="bg-white text-black data-highlighted:bg-slate-100 data-disabled:bg-white data-disabled:text-slate-400"
-                                >
-                                  <Store className="mr-2 h-4 w-4" />
-                                  {standMarked(pack, entry)
-                                    ? 'Unmark for stand'
-                                    : 'Mark for stand'}
-                                </ContextMenuItem>
-
-                                <ContextMenuItem
-                                  disabled={!merchant || !!entry.item.l}
-
-                                  onClick={() => onAutoStand(entry)}
-                                >
-                                  <AutoActionIcon>
-                                    <Store />
-                                  </AutoActionIcon>
-                                  Auto mark for stand…
-                                </ContextMenuItem>
-
-                                <BankUpgradeActions
-                                  entry={entry}
-                                  pack={pack}
-                                  catalog={catalog}
-                                  merchant={merchant}
-                                  onUpgrade={onUpgrade}
-                                />
-                                <ContextMenuSeparator className="my-1 h-px bg-slate-300" />
-                                <BankDeconstructionActions
-                                  entry={entry}
-                                  pack={pack}
-                                  merchant={merchant}
-                                  catalog={deconstructionCatalog}
-                                  onMark={onDeconstruction}
-                                />
-
-                                <ContextMenuItem
-                                  className="text-rose-300"
-
-                                  onClick={() => onNpcSale(pack, entry)}
-                                >
-                                  <DollarSign className="mr-2 h-4 w-4" />
-                                  Sell to NPC…
-                                </ContextMenuItem>
-
-                                <ContextMenuItem
-                                  className="text-rose-300"
-                                  disabled={!merchant || !!entry.item.l}
-
-                                  onClick={() => onAutoNpcSale(entry)}
-                                >
-                                  <AutoActionIcon>
-                                    <DollarSign />
-                                  </AutoActionIcon>
-                                  Auto sell to NPC…
-                                </ContextMenuItem>
-
-                                <ClearItemMarks
-                                  onClear={() => onClearMarks(pack, entry)}
-                                />
-                              </>
-                            )}
+                            {itemMenu(pack, entry, !merchant)}
+                            <AddonSlot name="item-rules" part="bank-menu" item={entry.item} character={pack} />
                           </ContextMenuContent>
                         </ContextMenu>
                       ) : (
@@ -745,7 +668,7 @@ export const BankSheet = memo(function BankSheet({
               <div className="mt-3 space-y-4">
                 {[...new Set(vaults.map((vault) => vault.floor))].map(
                   (floor) => {
-                    const accessible = floorAccessible(floor);
+                    const accessible = vaultAccess(vaults, bank?.packs || {}, floor);
 
                     const floorVaults = vaults.filter(
                       (vault) => vault.floor === floor,
@@ -753,7 +676,7 @@ export const BankSheet = memo(function BankSheet({
 
                     const key = floorVaults.find((vault) => vault.key)?.key;
 
-                    const ownedKeys = key ? keyQuantity(key.id) : 0;
+                    const ownedKeys = key ? keyHeld(merchantState?.items, bank?.packs || {}, key.id) : 0;
 
                     const locked = floorVaults.filter(
                       (vault) =>
@@ -881,11 +804,11 @@ export const BankSheet = memo(function BankSheet({
               if (!bankboiBusy) setConfirmFirstBankboi(value);
             }}
           >
-            <DialogContent className="border border-cyan-700 bg-[#071315] text-slate-100">
+            <DialogContent data-area="bank-create" className="border border-cyan-700 bg-[#071315] text-slate-100">
               <DialogHeader>
                 <DialogTitle>Create first BankBoi?</DialogTitle>
                 <DialogDescription className="text-slate-200">
-                  This will reserve the final 7 slots of bank pane 1 for BankBoi
+                  This will reserve the final {BANK_PACK_CELLS - STAGING_FIRST} slots of bank pane 1 for BankBoi
                   logistics. Items already in those slots will be moved into
                   BankBoi storage.
                 </DialogDescription>
@@ -991,7 +914,7 @@ export const BankSheet = memo(function BankSheet({
 
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs text-slate-400">
-                            {occupied}/42
+                            {occupied}/{bagSize(bankboi)}
                           </span>
 
                           <button
@@ -1020,7 +943,7 @@ export const BankSheet = memo(function BankSheet({
 
                       <div className="grid grid-cols-7 gap-2">
                         {Array.from(
-                          { length: 42 },
+                          { length: bagSize(bankboi) },
                           (_, slot) => bankboi.items?.[slot] || null,
                         ).map((entry, slot) =>
                           entry ? (
@@ -1033,28 +956,28 @@ export const BankSheet = memo(function BankSheet({
                                     !selection.click(
                                       event,
                                       selectable(
-                                        `bankboi:${bankboi.name}`,
+                                        bankboiPack(bankboi.name),
                                         entry,
                                       ),
                                     )
                                   )
-                                    onSelect(`bankboi:${bankboi.name}`, entry);
+                                    onSelect(bankboiPack(bankboi.name), entry);
                                 }}
                                 onContextMenu={() =>
                                   selection.context(
                                     selectable(
-                                      `bankboi:${bankboi.name}`,
+                                      bankboiPack(bankboi.name),
                                       entry,
                                     ),
                                   )
                                 }
                                 aria-pressed={selection.has(
-                                  selectable(`bankboi:${bankboi.name}`, entry),
+                                  selectable(bankboiPack(bankboi.name), entry),
                                 )}
                                 style={
                                   selection.has(
                                     selectable(
-                                      `bankboi:${bankboi.name}`,
+                                      bankboiPack(bankboi.name),
                                       entry,
                                     ),
                                   )
@@ -1065,13 +988,13 @@ export const BankSheet = memo(function BankSheet({
                                     : undefined
                                 }
 
-                                className={`relative aspect-square overflow-hidden border bg-black/60 transition-opacity ${matchesSearch(entry) ? "opacity-100" : "opacity-25"} ${marked(`bankboi:${bankboi.name}`, entry) ? 'border-amber-400' : 'border-cyan-950'} hover:border-cyan-400`}
+                                className={`relative aspect-square overflow-hidden border bg-black/60 transition-opacity ${matchesSearch(entry) ? "opacity-100" : "opacity-25"} ${marked(bankboiPack(bankboi.name), entry) ? 'border-amber-400' : 'border-cyan-950'} hover:border-cyan-400`}
 
                                 >
 
                                   {entry.meta?.sprite ? (
 
-                                    <ItemSprite sprite={entry.meta.sprite} />
+                                    <SpriteCrop sprite={entry.meta.sprite} />
 
                                   ) : null}
 
@@ -1096,147 +1019,14 @@ export const BankSheet = memo(function BankSheet({
                                   ) : null}
 
                                   <MluckClover item={entry.item} />
-                              <BankItemBanner item={entry.item} rules={automaticRules} manualNpc={npcMarked(`bankboi:${bankboi.name}`,
+                              <BankItemBanner item={entry.item} rules={automaticRules} manualNpc={npcMarked(bankboiPack(bankboi.name),
                                     entry,
                                   )}
                                 />
                               </ContextMenuTrigger>
 
                               <ContextMenuContent className={itemMenuClass}>
-                                {batch(`bankboi:${bankboi.name}`, entry)
-                                  .length > 1 ? (
-                                  batchMenu(`bankboi:${bankboi.name}`, entry)
-                                ) : (
-                                  <>
-                                    {merchant &&
-                                      production(
-                                        `bankboi:${bankboi.name}`,
-                                        entry,
-                                      )}
-                                    <ContextMenuItem
-                                      onClick={() =>
-                                        onWithdraw(
-                                          `bankboi:${bankboi.name}`,
-                                          entry,
-                                        )
-                                      }
-                                    >
-                                      <Landmark className="mr-2 h-4 w-4" />
-                                      {marked(`bankboi:${bankboi.name}`, entry)
-                                        ? 'Unmark withdrawal'
-                                        : 'Mark for withdrawal'}
-                                    </ContextMenuItem>
-
-                                    <ContextMenuItem
-                                      onClick={() =>
-                                        onWithdrawAll(
-                                          `bankboi:${bankboi.name}`,
-                                          entry,
-                                        )
-                                      }
-                                    >
-                                      <Landmark className="mr-2 h-4 w-4" />
-                                      Mark all for withdrawal
-                                    </ContextMenuItem>
-
-                                    <ContextMenuItem
-                                      disabled={
-                                        standFull &&
-                                        !standMarked(
-                                          `bankboi:${bankboi.name}`,
-                                          entry,
-                                        )
-                                      }
-
-                                      onClick={() =>
-                                        standMarked(
-                                          `bankboi:${bankboi.name}`,
-                                          entry,
-                                        )
-                                          ? onUnstand(
-                                              `bankboi:${bankboi.name}`,
-                                              entry,
-                                            )
-                                          : onStand(
-                                              `bankboi:${bankboi.name}`,
-                                              entry,
-                                            )
-                                      }
-
-                                      className="bg-white text-black data-highlighted:bg-slate-100 data-disabled:bg-white data-disabled:text-slate-400"
-                                    >
-                                      <Store className="mr-2 h-4 w-4" />
-                                      {standMarked(
-                                        `bankboi:${bankboi.name}`,
-                                        entry,
-                                      )
-                                        ? 'Unmark for stand'
-                                        : 'Mark for stand'}
-                                    </ContextMenuItem>
-
-                                    <ContextMenuItem
-                                      disabled={!merchant || !!entry.item.l}
-
-                                      onClick={() => onAutoStand(entry)}
-                                    >
-                                      <AutoActionIcon>
-                                        <Store />
-                                      </AutoActionIcon>
-                                      Auto mark for stand…
-                                    </ContextMenuItem>
-
-                                    <BankUpgradeActions
-                                      entry={entry}
-                                      pack={`bankboi:${bankboi.name}`}
-                                      catalog={catalog}
-                                      merchant={merchant}
-                                      onUpgrade={onUpgrade}
-                                    />
-                                    <ContextMenuSeparator className="my-1 h-px bg-slate-300" />
-                                    <BankDeconstructionActions
-                                      entry={entry}
-                                      pack={`bankboi:${bankboi.name}`}
-                                      merchant={merchant}
-                                      catalog={deconstructionCatalog}
-                                      onMark={onDeconstruction}
-                                    />
-
-                                    <ContextMenuItem
-                                      className="text-rose-300"
-
-                                      onClick={() =>
-                                        onNpcSale(
-                                          `bankboi:${bankboi.name}`,
-                                          entry,
-                                        )
-                                      }
-                                    >
-                                      <DollarSign className="mr-2 h-4 w-4" />
-                                      Sell to NPC…
-                                    </ContextMenuItem>
-
-                                    <ContextMenuItem
-                                      className="text-rose-300"
-                                      disabled={!merchant || !!entry.item.l}
-
-                                      onClick={() => onAutoNpcSale(entry)}
-                                    >
-                                      <AutoActionIcon>
-                                        <DollarSign />
-                                      </AutoActionIcon>
-                                      Auto sell to NPC…
-                                    </ContextMenuItem>
-
-                                    <ClearItemMarks
-                                      onClear={() =>
-                                        onClearMarks(
-                                          `bankboi:${bankboi.name}`,
-                                          entry,
-                                        )
-                                      }
-                                    />
-                                  </>
-                                )}
+                                {itemMenu(bankboiPack(bankboi.name), entry, false)}
                               </ContextMenuContent>
                             </ContextMenu>
                           ) : (
@@ -1259,6 +1049,7 @@ export const BankSheet = memo(function BankSheet({
               )}
             </div>
           </section>
+          <AddonSlot name="dialog-section" part="bank" />
         </DialogContent>
       </Dialog>
 
@@ -1269,7 +1060,7 @@ export const BankSheet = memo(function BankSheet({
           if (!open) setUnlocking(null);
         }}
       >
-        <DialogContent className="border-amber-800 bg-[#091614] text-emerald-50 sm:max-w-md">
+        <DialogContent data-area="bank-unlock" className="border-amber-800 bg-[#091614] text-emerald-50 sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {unlockKind === 'key'

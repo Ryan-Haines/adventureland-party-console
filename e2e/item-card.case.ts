@@ -1,54 +1,26 @@
 import { test, expect } from "./fixtures";
+import { mountComponent, color, rgb } from "./fixtures/component-harness";
 import type { Locator } from "@playwright/test";
-import { build } from "esbuild";
-import path from "node:path";
+import { readFileSync } from "node:fs";
 
 // Failure inventory: docs/item-card.md. Game metadata is a declared boundary;
 // the maintained ItemDetails dialog runs in Chromium with the console styles.
-const color = (locator: Locator) => locator.evaluate((node) => getComputedStyle(node).color);
-const rgb = (hex: string) => {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
-};
 const line = (box: Locator, key: string) => box.locator(`[data-line="${key}"]`);
 const label = (box: Locator, key: string) => color(box.locator(`[data-line="${key}"] [data-label]`));
 
 test("item details show stats as the game card beside a matching extras box", async ({ page, app }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `
+  await mountComponent(page, app, "item-card-harness", `
     import React from 'react';import {createRoot} from 'react-dom/client';
     import {ItemDetails} from './features/party/item-details';
     const root=createRoot(document.getElementById('root'));
-    window.mountItem=(selected,skills)=>root.render(<ItemDetails selected={selected} catalog={[]} exchanges={[]} skills={skills||[]}
+    window.mountItem=(selected,skills,exchanges)=>root.render(<ItemDetails selected={selected} catalog={[]} exchanges={exchanges||[]} skills={skills||[]}
       monsters={[]} characters={[{name:'W',ctype:'mage',level:80,slots:{}}]} achievements={{}} standFull={false}
       onNavigate={()=>{}} onAddWTB={()=>{}} onAddStand={()=>{}} onCompare={()=>{}} onCompareCatalog={()=>{}}
       onOpenChange={()=>root.render(null)}/>);
-  `,
-    },
-  });
-  await page.goto(app.url);
-  await expect(page.locator("body")).toContainText("Party");
-  const styles = await page
-    .locator('style, link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((node) => node.outerHTML).join("\n"));
-  await page.route("**/item-card-harness", (route) =>
-    route.fulfill({ contentType: "text/html", body: `<!doctype html><head>${styles}</head><body><div id="root"></div></body>` }),
-  );
-  await page.setViewportSize({ width: 1400, height: 1000 });
-  await page.goto(app.url + "/item-card-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  const mount = async (selected: unknown, skills?: unknown) => {
+  `);
+  const mount = async (selected: unknown, skills?: unknown, exchanges?: unknown) => {
     await page.evaluate(() => (window as any).mountItem(null));
-    await page.evaluate(([value, catalog]) => (window as any).mountItem(value, catalog), [selected, skills] as const);
+    await page.evaluate(([value, catalog, table]) => (window as any).mountItem(value, catalog, table), [selected, skills, exchanges] as const);
   };
 
   // The Mothstep Boots as reported: a Cave of Darkness map bonus and grid fields with no card line.
@@ -387,4 +359,63 @@ test("item details show stats as the game card beside a matching extras box", as
   await expect(line(ringExtras, "quantity")).toHaveText("Quantity: 2");
   await expect(line(ringExtras, "stat_type")).toHaveText("Stat Scroll: Dexterity");
   await info.attach("item-card-ring", { body: await ringCard.screenshot(), contentType: "image/png" });
+
+  // I opens the item's data for the card in the topmost dialog only. A held
+  // key, a modifier, a text field or a dialog above the card's opens nothing.
+  const data = page.getByRole("dialog", { name: "Item information", exact: true });
+  await page.keyboard.press("Shift+I");
+  await expect(data).toHaveCount(0);
+  await page.evaluate(() => {
+    const field = document.createElement("input");
+    field.id = "df39-field";
+    document.querySelector('[role="dialog"]')!.appendChild(field);
+    field.focus();
+  });
+  await page.keyboard.press("i");
+  await expect(data).toHaveCount(0);
+  await page.evaluate(() => {
+    document.getElementById("df39-field")!.remove();
+    const above = document.createElement("div");
+    above.setAttribute("role", "dialog");
+    above.id = "df39-above";
+    document.body.appendChild(above);
+  });
+  await page.keyboard.press("i");
+  await expect(data).toHaveCount(0);
+  await page.evaluate(() => document.getElementById("df39-above")!.remove());
+  await page.keyboard.press("i");
+  await expect(data).toBeVisible();
+  await expect(data.locator("pre")).toContainText('"name": "dexring"');
+  await page.keyboard.press("Escape");
+  await expect(data).toHaveCount(0);
+  await ringCard.getByRole("button", { name: "Item information (I)", exact: true }).click();
+  await expect(data).toBeVisible();
+  await page.keyboard.press("Escape");
+  // A CX Jar shows what it holds, from the item's own data, and says so when it holds nothing.
+  const jar = (data?: string) => ({
+    character: "W",
+    entry: { slot: 3, item: { name: "cxjar", ...(data ? { data } : {}) },
+      meta: { definition: { name: "CX Jar", type: "jar" }, usage: { classes: [], hands: [] }, sprite: null } },
+  });
+  const jarCard = page.getByRole("dialog", { name: "CX Jar", exact: true }).getByRole("region", { name: "Item card", exact: true });
+  await mount(jar("hat221"));
+  await expect(line(jarCard, "filled_with")).toHaveText("Filled with: hat221");
+  await mount(jar());
+  await expect(line(jarCard, "filled_with")).toHaveText("Filled with: nothing");
+
+  // An exchange that can award the item lists under "Exchange reward" at
+  // every level of the item, since its result names the item and not a level.
+  const source = { key: "gemfragment", id: "gemfragment", level: 0, name: "Gem Fragment", cost: 0, required: 1, npc: "", sprite: null,
+    results: [{ id: "wcap", kind: "wcap", name: "Wanderer's Cap", quantity: 1, chance: 0.25, sprite: null }] };
+  for (const level of [0, 7]) {
+    await mount({ character: "W", entry: { slot: 4, item: { name: "wcap", level },
+      meta: { definition: { name: "Wanderer's Cap", type: "helmet" }, upgradeable: true, maxLevel: 12, usage: { classes: [], hands: [] }, sprite: null } } },
+      undefined, [source]);
+    const cap = page.getByRole("dialog", { name: level ? `Wanderer's Cap +${level}` : "Wanderer's Cap", exact: true });
+    const reward = cap.locator("section").filter({ has: page.getByRole("heading", { name: "Exchange reward", exact: true }) });
+    await expect(reward, `level ${level}`).toContainText("Gem Fragment");
+  }
+  // The inventory menu's Exchange entry carries its icon, as the other entries do.
+  const panel = readFileSync("dashboard/features/party/inventory-panel.tsx", "utf8");
+  expect(panel).toMatch(/<ArrowRightLeft className="mr-2 h-4 w-4" \/>\s*Exchange\s*<\/ContextMenuItem>/);
 });

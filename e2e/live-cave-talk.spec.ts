@@ -1,25 +1,18 @@
 import {test,expect} from './live-fixtures';
-import type {CaveCommand} from '../runtime/dungeons/contracts';
+import type {CaveCommand} from '../runtime/hunting/api';
+import {caveView,caveAct,voteAndSettle} from './cave-harness';
 
 const W='E2EWarrior',P='E2EPriest';
+// Each Cave repair kind climbs a ladder with no cap.
 test.use({initialPosition:{map:'main',x:816,y:1180}});
 
-test('Cave talk reopens a merchant after a later encounter, buys its item, and Retry keeps spent repairs',async({live,page},info)=>{
+test('Cave talk reopens a merchant after a later encounter, buys its item, and Retry starts the failed travel again',async({live,page},info)=>{
   test.setTimeout(900_000);
   await live.admin("Dev=true;Prod=false;G.events.dreams.disabled=false;G.events.dreams.encounters=G.events.dreams.encounters.filter(e=>['e11','e20','e31','e50'].includes(e.id));output=true");
   await live.post('/formation',{leader:W});
   await live.post('/formation',{character:P,follow:true});
-  const view=async()=>await (await page.request.get(live.url+'/party-api/daily-dungeons',{maxRetries:1})).json();
-  const act=(body:Record<string,unknown>)=>live.post('/daily-dungeons',{operationId:crypto.randomUUID(),...body});
+  const view=caveView(live,page),act=caveAct(live);
   const native=(code:string)=>live.admin(`output=(()=>{const run=generated_entry(get_player('${W}')).record;${code}})()`);
-  async function reply(v:any){
-    const c=v.members[0]?.observation?.cave;
-    if(!c?.choice||c.choice.resolved)return false;
-    const option=c.choice.options.find((o:any)=>!o.unavailable&&!o.cost&&!o.amber);
-    await act({action:'vote',run:c.run,choice:c.choice.id,option:option.id});
-    await expect.poll(async()=>(await view()).members.every((m:any)=>m.observation?.cave?.choice?.id!==c.choice.id||m.observation.cave.choice.resolved),{timeout:30_000}).toBe(true);
-    return true;
-  }
   await expect.poll(async()=>{
     const v=await view();
     return v.members.length===2&&v.members.every((m:any)=>m.fresh&&m.observation?.ready&&m.observation?.visit?.available&&m.observation.leader===W&&m.observation.members.length===2);
@@ -44,7 +37,7 @@ test('Cave talk reopens a merchant after a later encounter, buys its item, and R
   // Answer the merchant once, near it.
   await expect.poll(async()=>{
     const v=await view(),c=v.members[0].observation.cave;
-    if(c.choice&&!c.choice.resolved)return shopShown(v)?(await reply(v),true):(await reply(v),false);
+    if(c.choice&&!c.choice.resolved)return shopShown(v)?(await voteAndSettle(view,act,v.members[0]?.observation?.cave),true):(await voteAndSettle(view,act,v.members[0]?.observation?.cave),false);
     if(shopShown(v))return true;
     if(!v.state.travel&&!Object.values(v.state.commands).some((x:any)=>x.action==='move'))await act({action:'move',run:c.run,target:(await shopPoint()).id});
     return false;
@@ -89,22 +82,34 @@ test('Cave talk reopens a merchant after a later encounter, buys its item, and R
     return Object.entries(v.state.commands).filter(([,c]:any)=>c.action==='buy').every(([name,c]:any)=>
       v.members.find((m:any)=>m.name===name)?.observation?.action?.id===c.id&&v.members.find((m:any)=>m.name===name).observation.action.status==='complete');
   },{timeout:30_000,message:'The buyer must report its completed purchase'}).toBe(true);
-  // A destination inside solid rock fails every repair. Retry is one more attempt.
-  await reply(await view());
+  // A destination inside solid rock fails every repair. The Cave repair ladder keeps no
+  // count: each repair is a new travel command, and no count stops travel. Retry is one more attempt.
+  await voteAndSettle(view,act);
   const rock=await native(`const p=get_player('${W}'),m=G.maps[p.map];const d=G.geometry[p.map];return {map:p.map,x:d.min_x+4,y:d.min_y+4};`);
   await act({action:'waypoint',run:(await view()).state.run,map:rock.map,x:rock.x,y:rock.y});
-  let spent:any;
-  await expect.poll(async()=>{spent=(await view()).state.travel;await reply(await view());return spent?.repairs||0;},{timeout:240_000,message:'Automatic repairs must run out'}).toBe(3);
+  const travelIds=new Set<string>();
+  await expect.poll(async()=>{const v=await view();
+    for(const c of Object.values(v.state.commands) as any[])if(/^cave-(assemble|travel):/.test(String(c?.id)))travelIds.add(String(c.id));
+    await voteAndSettle(view,act);return travelIds.size-2;},
+    {timeout:240_000,message:'Automatic repairs must go on past the old cap of 3 (the first gather and walk are not repairs)'}).toBeGreaterThan(3);
   await expect.poll(async()=>{
     const v=await view();
     return v.members.some((m:any)=>m.observation?.action?.id===v.state.commands[m.name]?.id&&m.observation.action.status==='failed');
   },{timeout:120_000}).toBe(true);
-  const before=(await view()).state.travel.serial;
-  await act({action:'retry',run:(await view()).state.run});
-  const after=(await view()).state.travel;
+  // The ladder's 'same' and 'other' repairs also start travels and bump the serial. A travel with
+  // waitAt set is waiting for the next report and starts none until it arrives, so Retry's
+  // travel is the only serial bump after that read.
+  await expect.poll(async()=>(await view()).state.travel?.waitAt!==undefined,
+    {timeout:120_000,intervals:[250],message:'The repair ladder must wait for a report before Retry'}).toBe(true);
+  const waiting=await view();
+  const before=waiting.state.travel.serial;
+  await act({action:'retry',run:waiting.state.run});
+  const afterView=await view(),after=afterView.state.travel;
   expect(after.serial).toBe(before+1);
-  expect(after.repairs,'Retry must keep the spent automatic repairs').toBe(3);
+  // The coordinator issues one assembly command per participant, named run:serial:member.
+  expect(Object.values(afterView.state.commands).some((c:any)=>String(c?.id).startsWith(`cave-assemble:${waiting.state.run}:${before+1}:`)),
+    'Retry must issue its own assembly command').toBe(true);
   await expect.poll(async()=>(await view()).state.travel?.serial,{timeout:60_000}).toBe(before+1);
-  await info.attach('native-cave-retry-repairs',{body:JSON.stringify({before,after,final:(await view()).state.travel}),contentType:'application/json'});
+  await info.attach('native-cave-retry-repairs',{body:JSON.stringify({before,after,travelIds:[...travelIds],final:(await view()).state.travel}),contentType:'application/json'});
   await act({action:'progress',enabled:false});
 });

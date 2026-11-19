@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { untilRunning } from './debug-running';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const execute = promisify(execFile);
@@ -27,11 +28,7 @@ test('Settings launches a disposable god party, repeats Cave entry and destroys 
     const starting = await state();
     await context.request.post(app.url + '/console-debug/start', { headers: { Origin: app.url }, data: {} });
     expect((await state()).project).toBe(starting.project);
-    await expect.poll(async () => {
-      const current = await state();
-      if (current.phase === 'error') throw Error(current.error);
-      return current.phase;
-    }, { timeout: 1_500_000, intervals: [2000] }).toBe('running');
+    await untilRunning(state);
     const running = await state(); project = running.project;
     const link = page.getByRole('link', { name: 'Open debug console' });
     const url = await link.getAttribute('href');

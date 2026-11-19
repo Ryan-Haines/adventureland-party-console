@@ -1,4 +1,6 @@
 'use client';
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
+import { itemValue, pontyPrice } from '../../../runtime/items/api.ts';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -21,8 +23,6 @@ import { Item } from './item';
 import { ItemMeta } from './item-meta';
 import type { MerchantCatalogItem } from './merchant-catalog-item';
 import { MerchantBuyItem } from './merchant-buy-item';
-import { npcSaleValue } from './npc-sale-value';
-import { pontyPrice } from './ponty-price';
 import { StandBid } from './stand-bid';
 import { StandPriceButton } from './stand-price-button';
 import { StandPriceHistory } from './stand-price-history';
@@ -45,7 +45,7 @@ export function WTBOrderDialog({
   existing,
   onSave,
 }: {
-  item: { item: Item; meta?: ItemMeta | null };
+  item: { item: Item; meta?: ItemMeta | null; price?: number };
   onOpenChange: (open: boolean) => void;
   buyable: MerchantBuyItem[];
   catalog?: MerchantCatalogItem[];
@@ -61,11 +61,12 @@ export function WTBOrderDialog({
   ) => Promise<void>;
 }) {
   // Mounted for each new WTB request: polling must not overwrite an open draft.
+  // A bid at this level keeps its price; otherwise the listing the request came from fills it.
   const [price, setPrice] = useState(() =>
     existing &&
     Number(existing.minimumQuality || 0) === Number(item.item.level || 0)
       ? String(existing.price)
-      : '',
+      : item.price ? String(item.price) : '',
   );
   const [quantity, setQuantity] = useState(() =>
     existing ? String(existing.quantity) : '1',
@@ -86,13 +87,14 @@ export function WTBOrderDialog({
   const valuation = useSuggestedItemValue(
     { slot: -1, item: previewItem, meta: item.meta },
     buyable,
+    catalog,
   );
   const defaultPrice = Math.max(
     1,
     Number(item.meta?.definition.g) || valuation.defaultPrice || 1,
   );
-  const npcPrice = Math.max(1, npcSaleValue(previewItem, item.meta));
-  const pontyValue = Math.max(1, pontyPrice(previewItem, item.meta));
+  const npcPrice = Math.max(1, Math.round(itemValue(previewItem, item.meta ?? undefined) ?? 0));
+  const pontyValue = pontyPrice(previewItem, item.meta ?? undefined) ?? 1;
   const marketLow = exactLevelPrice(
     history?.marketLow,
     history?.marketLowLevel,
@@ -145,7 +147,7 @@ export function WTBOrderDialog({
   return (
     <>
       <Dialog open onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden border-violet-800 bg-black text-emerald-50 sm:max-w-2xl">
+        <DialogContent data-area="wtb-order" className="flex max-h-[90vh] flex-col overflow-hidden border-violet-800 bg-black text-emerald-50 sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               Add to WTB ·{' '}
@@ -247,7 +249,7 @@ export function WTBOrderDialog({
                         >
                           <Info className="h-3 w-3" />
                         </PopoverTrigger>
-                        <PopoverContent className="max-w-xs border-amber-700 bg-black text-sm text-amber-100">
+                        <PopoverContent data-area="wtb-order-help" className="max-w-xs border-amber-700 bg-black text-sm text-amber-100">
                           Estimated gold you would earn while farming enough
                           monsters to obtain one of this item, based on its drop
                           rate and those monsters' gold rewards.
@@ -258,6 +260,7 @@ export function WTBOrderDialog({
                 />
               ))}
             </div>
+            <AddonSlot name="dialog-section" part="wtb-order" />
           </div>
           <DialogFooter className="shrink-0 border-t border-emerald-900 bg-[#081513] pt-3">
             <Button

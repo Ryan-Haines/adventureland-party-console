@@ -22,7 +22,6 @@ export async function nativeMonsterInitialPosition(admin:(code:string)=>Promise<
         const center=bound=>{const offset=typeof bound?.[0]==='string'?1:0;return (Number(bound?.[offset])+Number(bound?.[offset+2]))/2;};
         return center(first)-center(second);
       })){
-      if(spawn.type!==type)continue;
       const bounds=spawn.boundary||spawn.boundaries?.[0];if(!Array.isArray(bounds))continue;
       const offset=typeof bounds[0]==='string'?1:0;
       const center={x:(Number(bounds[offset])+Number(bounds[offset+2]))/2,y:(Number(bounds[offset+1])+Number(bounds[offset+3]))/2};
@@ -36,4 +35,37 @@ export async function nativeMonsterInitialPosition(admin:(code:string)=>Promise<
         return {map,x,y,monster:type,bounds,center,base:entity.base,selfClear:true,localClearance:24};
       }
     }throw Error('No collision-safe native monster initial position: '+type);})()`);
+}
+
+/** Announce a Halloween boss spawn `leadMs` ahead at the native server_info boundary; the boss itself stays native. */
+export async function announceSpawn(live: { admin(code: string): Promise<any> }, event: string, leadMs: number) {
+  return live.admin(`output=(()=>{
+    const type=${JSON.stringify(event)},spawn=new Date(Date.now()+${leadMs}),announcement={live:false,spawn};
+    globalThis.__e2eHalloweenAnnouncements ||= {};
+    clearInterval(globalThis.__e2eHalloweenAnnouncements[type]?.timer);
+    // The pinned backend deletes non-live E entries in event_loop even before
+    // their timer. Declare this schedule at the native server_info read boundary;
+    // actual boss creation/damage/death/movement stay entirely native.
+    if(!globalThis.__e2eHalloweenNativeBroadcast){
+      globalThis.__e2eHalloweenNativeBroadcast=broadcast_e;
+      broadcast_e=function(dontSend){
+        if(dontSend)return;
+        const snapshot={...E};
+        for(const [name,entry] of Object.entries(globalThis.__e2eHalloweenAnnouncements)){
+          if(get_monster(name))entry.liveSeen=true;
+          if(!entry.liveSeen&&Date.now()<=entry.expiresAt)snapshot[name]=entry.announcement;
+        }
+        broadcast('server_info',snapshot);
+      };
+    }
+    const entry={announcement,expiresAt:spawn.getTime()+125000,liveSeen:false,timer:null};
+    globalThis.__e2eHalloweenAnnouncements[type]=entry;
+    const publish=()=>{
+      if(get_monster(type))entry.liveSeen=true;
+      if(entry.liveSeen||Date.now()>entry.expiresAt){clearInterval(entry.timer);return;}
+      broadcast_e();
+    };
+    entry.timer=setInterval(publish,500);publish();
+    return {...announcement,fixture:'immutable native server_info schedule boundary',expiresAt:spawn.getTime()+125000};
+  })()`);
 }

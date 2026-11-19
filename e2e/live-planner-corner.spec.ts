@@ -1,5 +1,7 @@
 import {test,expect} from './live-fixtures';
 import {W,P,world} from './game/hunt-events';
+import {readFileSync} from 'node:fs';
+import path from 'node:path';
 
 // Failure inventory: e2e/planner-corner-failures.md (#147). From main (135, 72)
 // the planner's route to the tunnel door starts with an edge through the wall at
@@ -26,7 +28,22 @@ test.describe('planner corner edges',()=>{
       return out;})()`);
     await info.attach('planner-corner-plan',{body:JSON.stringify({request,plot:plan.plot,edges},null,2),contentType:'application/json'});
     expect(edges.filter((e:any)=>!e.walkable),'The planned route must contain no edge the game rejects').toEqual([]);
+    // MOV-028: the planner's own first edge, start to (153, -51), crosses the wall at x=144, and
+    // the worker puts one detour point in front of it (corner-edges.ts detourRejectedEdges).
+    // The plot opens with the start itself, so one detour point is one point between the two.
+    const corner=plan.plot.findIndex((p:any)=>p.map==='main'&&Math.hypot(p.x-153,p.y+51)<=1);
+    const before=plan.plot.slice(0,corner).filter((p:any)=>Math.hypot(p.x-start.x,p.y-start.y)>1);
+    expect(corner,'The route keeps the planner\'s point past the corner').toBeGreaterThan(0);
+    expect(before.length,'One detour point in front of the corner').toBe(1);
+    expect(await live.admin(`output=can_move({map:'main',x:${start.x},y:${start.y},going_x:153,going_y:-51,base:{h:8,v:7,vn:2}})`),
+      'The planner\'s own edge past the corner is one the game rejects').toBe(false);
 
+    // MOV-157: a game version the coordinator holds no prepared geometry for, as after a failed
+    // preparation (application.ts prepareMovement), answers a completed rejection the client's
+    // native planner takes over from, and the coordinator keeps planning the prepared version.
+    const unprepared=await live.post('/movement-plan',{...request,id:request.id+'-unprepared',version:request.version+1});
+    expect(String(unprepared.error),'An unprepared version answers a planner rejection').toMatch(/No compatible game geometry prepared/);
+    expect(unprepared.plot,'An unprepared version answers no route').toBeUndefined();
     // Exercise the other reported corners through the real planner HTTP route,
     // and compare its output with native server collision for each footprint.
     const cases=[
@@ -45,16 +62,46 @@ test.describe('planner corner edges',()=>{
       expect(checked.filter((edge:any)=>!edge.walkable),'Every sampled edge must pass native collision').toEqual([]);
     }
 
+    // bothAt waits for both fighters on main within 35 of the point.
+    const bothAt=(point:{x:number;y:number},message:string)=>expect.poll(async()=>{const s=await world(live);
+      return [W,P].every(n=>s.players[n].map==='main'&&Math.hypot(s.players[n].x-point.x,s.players[n].y-point.y)<35);},
+      {timeout:120_000,intervals:[1000],message}).toBe(true);
+
     // The party walks it as a shared route without spending repairs.
     const travelAt=Date.now();
     await live.post('/travel',door);
-    await expect.poll(async()=>{const s=await world(live);
-      return [W,P].every(n=>s.players[n].map==='main'&&Math.hypot(s.players[n].x-door.x,s.players[n].y-door.y)<35);},
-      {timeout:120_000,intervals:[1000],message:'Both fighters must reach the tunnel door'}).toBe(true);
-    const logs=(await live.state()).combatLogs||{};
+    await bothAt(door,'Both fighters must reach the tunnel door');
+    const logs=(await live.state()).combatLogs;
+    expect(logs,'the state publishes combatLogs').toBeDefined();
     const repairs=[W,P].flatMap(n=>((logs[n]?.events||logs[n]||[]) as any[]).filter(e=>e.at>=travelAt&&/Repairing rejected walking segment|Shared connector repair failed/.test(e.message))
       .map(e=>({who:n,at:e.at,message:e.message})));
     await info.attach('planner-corner-travel',{body:JSON.stringify({travelAt,arrivedAt:Date.now(),repairs},null,2),contentType:'application/json'});
     expect(repairs,'Walking the planned route must need no client repair').toEqual([]);
+
+    // MOV-157: the coordinator restarts on game files that fail to load. prepareMovement's catch
+    // prepares no geometry, every plan request answers the planner rejection, and the party
+    // still walks home on the clients' native planner.
+    await live.restartCoordinator(undefined,{E2E_UNLOADABLE_GAME_FILES:'1'});
+    const failed=await live.post('/movement-plan',{...request,id:request.id+'-unloadable'});
+    expect(String(failed.error),'With no prepared geometry the planner rejects the running version').toMatch(/No compatible game geometry prepared.*prepared none/);
+    expect(failed.plot,'With no prepared geometry the planner answers no route').toBeUndefined();
+    // The same fault fails the items owner's bank vault read, which warns and answers no vaults
+    // (items/coordinator/storage.ts loadCoordinatorBankVaults), so the coordinator still started.
+    const coordinatorLog=readFileSync(path.join(live.deploymentPaths.directory,'coordinator.log'),'utf8');
+    expect(coordinatorLog,'The bank vault read warns on the unloadable game file').toContain('Could not load bank-vault definitions');
+    // The restarted coordinator takes the travel once both fighters report to it again.
+    await expect.poll(async()=>{const s=await live.state();return [W,P].every(n=>s.characters?.[n]?.runtime==='native'&&Date.now()-s.characters[n].seenAt<3000);},
+      {timeout:60_000,message:'Both fighters must report to the restarted coordinator'}).toBe(true);
+    const fallbackAt=Date.now(), walkedOut=await live.clients[W].run('__partyMovement.last()?.id');
+    await live.post('/travel',start);
+    await bothAt(start,'Both fighters must walk back on native movement');
+    // bothAt passes within 35 of the start while the walk back still runs, and last() holds the
+    // walk out until that journey ends; one run read it 13 s before the native arrival.
+    let last:any;
+    await expect.poll(async()=>{last=await live.clients[W].run('(()=>{const l=__partyMovement.last();return l&&{id:l.id,end:l.end,engine:l.engine,done:l.done};})()');
+      return !!last&&last.id!==walkedOut&&!await live.clients[W].run('!!__partyMovement.report()');},
+      {timeout:60_000,message:'The walk back ends'}).toBe(true);
+    await info.attach('planner-corner-unloadable',{body:JSON.stringify({failed,fallbackAt,last}),contentType:'application/json'});
+    expect(last?.engine,'The walk back plans natively').toBe('native');
   });
 });

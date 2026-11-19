@@ -1,8 +1,9 @@
 import { networkInterfaces } from "node:os";
 import type { Server } from "node:http";
 import type { Access } from "./access.ts";
+import { publicPort } from "./defaults.ts";
 export async function listen(server: Server, access: Access) {
-  const port = Number(process.env.AL_PORT || 3010), host = process.env.AL_HOST || "0.0.0.0";
+  const port = publicPort(), host = process.env.AL_HOST || "0.0.0.0";
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid AL_PORT");
   const invitation = access.required ? await access.invitation() : undefined;
   const addresses = host === "0.0.0.0"

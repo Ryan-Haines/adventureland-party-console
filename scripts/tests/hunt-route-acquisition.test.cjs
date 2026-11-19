@@ -1,10 +1,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const legacy=require('../convoy-navigation.cjs');
-const {engageHunt,propagateHuntTarget}=require('../../runtime/coordinator/hunt/engagement.ts');
-const {createHuntTravel}=require('../../runtime/coordinator/hunt/travel.ts');
+const {engageWalk,validReport}=require('../../runtime/movement/coordinator/walk.ts'),legacy={engage:engageWalk,validReport};
+const {engageHunt,propagateHuntTarget,createHunt}=require('../../runtime/hunting/coordinator/hunt.ts');
 function fixture(){
  const original={map:'main',x:1000,y:1000,boundary:[900,900,1100,1100]}, encounter={map:'main',x:110,y:0,boundary:[80,-30,140,30]};
- const state={nextCommandId:10,leader:'A',partyFarmingMode:'default',farmingPolicy:'hunt',
+ const state={nextCommandId:10,leader:'A',followers:{B:true},partyFarmingMode:'default',targetMode:'hunt',
   activeConvoy:{id:'c',epoch:2,phase:'travel',departAt:1000,purpose:'monster-hunt',huntTarget:'bee',combatHandoffAllowed:true,
    participants:['A','B'],completed:[],location:original,runtimes:{A:'r',B:'b'}},
   commands:{A:{id:3,type:'party-monster-travel',convoyId:'c',epoch:2,navigationRevision:7},B:{id:4,type:'party-monster-travel',convoyId:'c',epoch:2,navigationRevision:8}},
@@ -17,7 +16,7 @@ function fixture(){
  return {state,body,options,original,encounter};
 }
 
-for (const phase of ['assemble','shared-prepare','scheduled','travel']) test('Hunt route rejects early handoff during '+phase,()=>{
+for (const phase of ['assemble','shared-prepare','travel']) test('Hunt route rejects early handoff during '+phase,()=>{
  const r=fixture();r.state.activeConvoy.phase=phase;
  for (const name of ['A','B']) {
   r.body.character=name;
@@ -32,13 +31,16 @@ test('replacement commands disable legacy early handoff and retain the attack-wh
  const r=fixture();propagateHuntTarget(r.state);
  assert.equal(r.state.commands.B.huntTarget,'bee');assert.equal(r.state.commands.B.combatHandoffAllowed,false);
 });
+// The mission walk through the hunting owner's Hunt service (hunt.ts `createHunt`).
 function travelFixture() {
- const r=fixture(), starts=[];
- r.state.activeConvoy=null;r.state.monsterHunt.missions[0].destinationVersion=1;
- const ports={now:()=>2000,fresh:()=>true,ownsTravel:()=>false,destination:()=>r.original,
-  contains:require('../../dashboard/lib/farming-zones.ts').contains,arrivalProtected:()=>false,partyFighting:()=>true,persist(){},
-  start(h,d,l,stage){starts.push(d);h.stage=stage;},advance(){throw Error('unexpected advance')}};
- r.tick=()=>createHuntTravel(r.state,ports).step(r.state.monsterHunt);r.starts=starts;return r;
+ const r=fixture(), starts=[], names=['A','B'];
+ r.state.activeConvoy=null;r.state.commands={};r.state.monsterHunt.missions[0].destinationVersion=1;
+ require('./helpers/travel-observations.cjs').observeTravel(r.state.statuses);
+ const service=createHunt(r.state,{now:()=>2000,participants:()=>names,online:()=>true,ownsTravel:()=>false,
+  cancelConvoy(){r.state.activeConvoy=null;},persist(){},selectedDestination:()=>null,
+  start(location){starts.push(location);r.state.activeConvoy={id:'c'+starts.length,purpose:'monster-hunt',phase:'assemble',location,participants:names};return true;},
+  navigation:{authorize(){},intent:n=>r.state.navigationIntents[n]}});
+ r.tick=()=>{service.tick();r.state.activeConvoy=null;};r.starts=starts;return r;
 }
 test('missing convoy is not proof of arrival; nearby bees and active combat cannot release the route',()=>{
  const r=travelFixture();r.tick();assert.equal(r.starts.length,1);assert.equal(r.state.monsterHunt.stage,'mission-travel');
@@ -61,4 +63,21 @@ test('whole-party spawn arrival enables free farming, which may then spread beyo
 test('previous premature farming state repairs toward the saved origin despite nearby combat',()=>{
  const r=travelFixture();r.state.monsterHunt.stage='farming';r.tick();
  assert.equal(r.starts.length,1);assert.equal(r.starts[0],r.original);
+});
+// The acquisition log wrote at most one line per channel per 2 s and repeated a line after 10 s, so
+// a candidate that changed inside 2 s never showed. It now writes each change of candidate or reason
+// at once, and a repeat only counts, carried on the next line.
+test('the Hunt acquisition log writes each change of candidate or reason with the repeat count',()=>{
+ const {installHuntClient}=require('../../runtime/hunting/character/hunt.ts');
+ const lines=[];
+ const ports={character:()=>({name:'A',map:'main',x:0,y:0}),radius:()=>100,log:(kind,message,details)=>lines.push([message,details.candidate?.id??null,details.previousRepeats])};
+ const client=installHuntClient(new Proxy(ports,{get:(t,k)=>k in t?t[k]:()=>null}));
+ const command={huntTarget:'bee',convoyId:'c'},bee=id=>({id,mtype:'bee',x:1,y:0});
+ client.log(command,bee('b1'),'outside search radius');
+ client.log(command,bee('b1'),'outside search radius');client.log(command,bee('b1'),'outside search radius');
+ client.log(command,bee('b2'),'outside search radius');
+ client.log(command,bee('b2'),'not visible');
+ client.log(command,bee('b2'),'not visible',{},'response');
+ assert.deepEqual(lines,[['Hunt acquisition: outside search radius','b1',0],['Hunt acquisition: outside search radius','b2',2],
+  ['Hunt acquisition: not visible','b2',0],['Hunt acquisition: not visible','b2',0]]);
 });

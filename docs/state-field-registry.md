@@ -3,17 +3,19 @@
 Summary: `section=fast` sent every character status field except a
 seven-entry omit list, so debug data such as the `combatTrace` ring buffer
 (146 KB per character) went out on every 250 ms poll whenever the live stream
-was down. A new registry, `runtime/coordinator/telemetry/character-fields.ts`,
-lists all 170 fields a status can carry and holds coded whitelists for the
-per-character sections. With `PARTY_STATE_FIELDS=enforce`, `section=fast`
-sends the 60 fields that some client reads: on a saved four-character state it
-drops from 628 KB to 37 KB and builds in 0.2 ms instead of 2.6 ms. The default,
-`shadow`, keeps the v1.4.0 output so a console can audit reads before
-enforcing. The full `/party-api/state` request keeps every field.
+was down. The registry, table F in `runtime/status/rules.ts` (dashboard and
+status, 12), lists all 169 fields a status can carry and holds coded whitelists
+for the per-character sections. The combat trace and the handoff timing now
+stay on the character and travel only under the diagnostics lease (the status owner's
+`runtime/status/character/rings.ts`, table G). `section=fast` sends the 60 fields that some
+client reads: on a saved four-character state it drops from 628 KB to 37 KB and
+builds in 0.2 ms where the full state takes 2.6 ms. `PARTY_STATE_FIELDS=shadow` is the audit
+mode: it sends the v1.4.0 output so an audit sees reads the whitelist would
+drop. The full `/party-api/state` request keeps every field.
 
 ## What changed
 
-- `character-fields.ts` part 1, `characterFields`: every key that
+- Table F's part 1, `characterFields`: every key that
   `snapshot()` and `sampleTravelReport()` in `characters/shared.js` report,
   plus the keys the coordinator stamps (`seenAt`, `inventorySeenAt`). Each
   entry has a description, a tier (`lean` or `debug`), a size hint with a
@@ -22,7 +24,7 @@ enforcing. The full `/party-api/state` request keeps every field.
 - Part 2, `sectionFields`: plain arrays for `fast`, `inventory`,
   `diagnostics` (core `characterDetails`) and `coreSummary` (core
   `characters`). Adding a field to a section is one line.
-- `public-state-characters.ts`: `fastCharacters` calls `fastProjection`, and
+- `runtime/status/coordinator/state.ts`: `fastCharacters` calls `fastProjection`, and
   `diagnosticCharacters` reads its allow-list from `sectionFields.diagnostics`
   (unchanged content).
 - `dashboard/features/party/field-read-audit.ts`: an opt-in recording proxy
@@ -42,11 +44,11 @@ three report fields and keeps 1.5's own section changes:
 - `donationLevelXp`, the XP per level from `G.levels` for
   `donation-preview.tsx`: `fast`, next to `donationXpPerGold`, and
   `diagnostics`, where 1.5 added it.
-- `inventoryRevision` (inventory deltas, `status/inventory-carry.ts`):
+- `inventoryRevision` (inventory deltas, `runtime/items/coordinator/storage.ts` `createInventoryCarry`):
   consumed at ingestion, not stored, in no section.
 
 The item `title` 1.5 added to each copy's meta stays in the compact meta
-fields (`public-state-characters.ts`). Rerunning `scan-readers.mts` on the
+fields (`runtime/status/coordinator/state.ts`). Rerunning `scan-readers.mts` on the
 1.5 dashboard, with #135's cards, `donation-preview.tsx` and
 `offline-character-view.tsx`, finds no other status field read outside the
 whitelists: the remaining names are `inspection` and `updatedAt` from the
@@ -57,6 +59,38 @@ its own `/party-api/metrics` routes plus `conditions` (stream) and core's
 Coordinator-level fields 1.5 adds (`characterSnapshots` in config,
 `accountGold` in core) are state fields, not per-character status fields.
 The fork's whitelist still needs `cosmetics` and `reservedInventory`.
+
+## Fields added by the movement owner
+
+The movement owner adds these
+character status fields to `characterFields`:
+
+- `activity`, the card's activity line: the assigned task, its phase and the stuck
+  notice while it lasts. The coordinator stamps it at ingestion and refreshes it on
+  every state read (`runtime/status/coordinator/line.ts`); it sits in `fast` and `diagnostics`.
+- `movementLive`, the request that holds the character's movement (row, owner
+  identity, tier), or null; `debug`, read by the activity line.
+- `movementClimb`, the movement owner's climber: its activity, the rung it tries and
+  the stuck notice with its record id; `debug`.
+- `reportIntervalMs`, the gap between the character's last two reports. A group walk
+  counts a report as stale only after two of them while no attacker is known; `debug`.
+- `addonReports`, each enabled add-on's own report by add-on name (the
+  `status.report` hook); `lean`, read by the dashboard.
+
+Coordinator state that is not a per-character status field:
+
+- A convoy keeps its walk's ladder: `ladder` (the climb's state, so a restart resumes
+  it), `ladderRung` and `ladderTrying` (the rung in plain words for the activity line
+  and the convoy history), `rallyWalking` (the safe-point rung assembles walking only)
+  and `group` (the coordinator service that owns the walk: `party`, or a solo
+  character). A walk command carries `group` and `rallyWalking` to each member.
+- A passive hunting rule carries `interruptsHunt`, the rare's "May interrupt Hunt
+  travel" switch; unset means on.
+- The coordinator settings carry `addons`, each add-on's switch and settings, served
+  by `GET` and `POST /party-api/addons` and sent with every status reply.
+- Each farming profile carries `addonFarming`, a farming mode add-on's store for that
+  scope, which persists with the profile. A status reply's farming section carries
+  `addonDeliveries`, what each mode add-on hands that scope's characters.
 
 ## Tiers
 
@@ -73,24 +107,22 @@ field that leaves the lean sections stays readable there.
 
 ## Rollout
 
-`PARTY_STATE_FIELDS` selects the fast-section behavior, following the
-`PARTY_MOVEMENT_MODE` pattern in `docs/movement.md`:
+`section=fast` sends only `sectionFields.fast` (the field audit covers the dashboard, the PWA and the Android app).
+`PARTY_STATE_FIELDS=shadow` is the registry's audit mode and sends the v1.4.0
+output unchanged.
 
-- `shadow` (default): `section=fast` sends the v1.4.0 output unchanged.
-- `enforce`: `section=fast` sends only `sectionFields.fast`.
+Audit procedure:
 
-Shadow procedure:
-
-1. Run the console with the default (`shadow`).
+1. Run the console with `PARTY_STATE_FIELDS=shadow`.
 2. In the dashboard, run `localStorage.setItem('party-field-audit', '1')` in
    the browser console and reload. `field-read-audit.ts` then wraps every
    per-character object the dashboard reads in a recording proxy and logs one
    `console.warn` per field read outside the whitelist for that cache kind.
 3. Use the dashboard normally for a few days. No `[field audit]` warnings
    means the whitelist covers every read path that use reached.
-4. Set `PARTY_STATE_FIELDS=enforce` and restart through the supported
-   supervisor workflow. `localStorage.removeItem('party-field-audit')` turns
-   the proxy off again.
+4. Remove `PARTY_STATE_FIELDS` and restart through the supported supervisor
+   workflow. `localStorage.removeItem('party-field-audit')` turns the proxy off
+   again.
 
 ## Failure inventory
 
@@ -160,10 +192,10 @@ Mode switching and speed:
 - Failures 3, 4 and 7: a field is `lean` exactly when an external client
   reads it or the stream sends it, and `fast` is every stored lean field
   except the three large ones the inventory section carries.
-- Failures 1 and 2: the readers inventory below, and the console E2E project
-  run with `PARTY_STATE_FIELDS=enforce`.
+- Failures 1 and 2: the readers inventory below, and the console E2E project,
+  which runs with the whitelist.
 - Failures 3, 5, 7 and 11 through the real coordinator and dashboard:
-  `e2e/console-field-registry.spec.ts`. With `PARTY_STATE_FIELDS=enforce` the
+  `e2e/console-field-registry.spec.ts`. With the whitelist the
   fixture's status reports reach `section=fast` with only `sectionFields.fast`
   names, the full request keeps the debug fields, and the dashboard shows the
   party gold from fast polling with the live stream blocked. In the default
@@ -252,7 +284,7 @@ read (why the whitelist carries them):
 
 Not sent in enforce mode (92 stored debug fields, still in the full request):
 the identity and protocol fields (`runtime`, `platform`, `clientVersion`,
-`codeHash`, ...), the combat queue (`combatTrace`, `groupedCombat`,
+`codeHash`, ...), the combat queue (`groupedCombat`,
 `combatSelection`, `combat`, `threats`, the rare and loot reports), movement
 and navigation diagnostics (`movement`, `convoyNavigation`, `travelSample`,
 `farmingNavigationDebug`, `farmAreaEvidence`, ...), the event feed fields, and

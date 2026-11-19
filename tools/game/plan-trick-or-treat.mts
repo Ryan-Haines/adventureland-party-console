@@ -16,7 +16,9 @@ const native=createRequire(import.meta.url)('./pathfinder-benchmark/native.cjs')
 // New event definitions are absent from the pinned upstream type package.
 const doors=(context.G.events.trickortreat.doors as [MapKey,number,number][]).map(([map,x,y])=>({map,x,y:y+40}));
 planner.prepare(game);
-const points=[...doors,{map:'halloween' as MapKey,x:0,y:0}];
+// The search starts at the Halloween arrival, the point after the doors; a map crossing costs as
+// much as a walk of crossMapCost units.
+const points=[...doors,{map:'halloween' as MapKey,x:0,y:0}], start=doors.length, crossMapCost=300;
 const legs=points.map((from,i)=>points.map((to,j)=>{
   if(i===j)return {distance:0,path:[]};
   let route=planner.getPath(from.map,from.x,from.y,to.map,to.x,to.y,{speed:10000});
@@ -30,7 +32,7 @@ const legs=points.map((from,i)=>points.map((to,j)=>{
     if(node.map===previous.map){
       if(node.method==='move' && !context.can_move({map:node.map,x:previous.x,y:previous.y,going_x:node.x,going_y:node.y,base:{h:8,v:7,vn:2}}))throw Error(`Native collision rejected ${i} -> ${j}`);
       distance+=Math.hypot(node.x-previous.x,node.y-previous.y);
-    }else distance+=300;
+    }else distance+=crossMapCost;
     previous=node;
   }
   return {distance,path:route};
@@ -38,9 +40,9 @@ const legs=points.map((from,i)=>points.map((to,j)=>{
 let best:number[]=[],cost=Infinity,count=0;
 function visit(order:number[],remaining:number[],length:number){
   if(!remaining.length){count++;if(length<cost){cost=length;best=order;}return;}
-  for(const id of remaining)visit([...order,id],remaining.filter(other=>other!==id),length+legs[order.at(-1)??7][id].distance);
+  for(const id of remaining)visit([...order,id],remaining.filter(other=>other!==id),length+legs[order.at(-1)??start][id].distance);
 }
 visit([],doors.map((_,i)=>i),0);
 fs.mkdirSync('.build/october-research',{recursive:true});
-fs.writeFileSync('.build/october-research/door-route.json',JSON.stringify({version,start:points[7],crossMapCost:300,permutations:count,route:best,cost,doors,legs},null,2));
+fs.writeFileSync('.build/october-research/door-route.json',JSON.stringify({version,start:points[start],crossMapCost,permutations:count,route:best,cost,doors,legs},null,2));
 console.log(JSON.stringify({route:best,cost,permutations:count,evidence:'.build/october-research/door-route.json'}));

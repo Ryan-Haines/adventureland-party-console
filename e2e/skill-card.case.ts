@@ -1,15 +1,9 @@
 import { test, expect } from "./fixtures";
+import { mountComponent, color, rgb } from "./fixtures/component-harness";
 import type { Locator } from "@playwright/test";
-import { build } from "esbuild";
-import path from "node:path";
 
 // Failure inventory: docs/skill-card.md. Skill definitions are declared from the live
 // game data (17665); the maintained SkillsDialog and ItemDetails run in Chromium.
-const color = (locator: Locator) => locator.evaluate((node) => getComputedStyle(node).color);
-const rgb = (hex: string) => {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
-};
 const skill = (id: string, definition: Record<string, unknown>) => ({ id, name: String(definition.name), sprite: null, definition });
 const SKILLS = [
   { id: "ranger", name: "Ranger", skills: [
@@ -35,17 +29,7 @@ const SKILLS = [
 ];
 
 test("skills show the game's skill card beside an extras box in both dialogs", async ({ page, app }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `
+  await mountComponent(page, app, "skill-card-harness", `
     import React from 'react';import {createRoot} from 'react-dom/client';
     import {SkillsDialog} from './features/party/skills-dialog';
     import {ItemDetails} from './features/party/item-details';
@@ -55,20 +39,7 @@ test("skills show the game's skill card beside an extras box in both dialogs", a
       monsters={[]} characters={[]} achievements={{}} standFull={false} onNavigate={()=>{}} onAddWTB={()=>{}} onAddStand={()=>{}}
       onCompare={()=>{}} onCompareCatalog={()=>{}} onOpenChange={()=>root.render(null)}/>);
     window.unmount=()=>root.render(null);
-  `,
-    },
-  });
-  await page.goto(app.url);
-  await expect(page.locator("body")).toContainText("Party");
-  const styles = await page
-    .locator('style, link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((node) => node.outerHTML).join("\n"));
-  await page.route("**/skill-card-harness", (route) =>
-    route.fulfill({ contentType: "text/html", body: `<!doctype html><head>${styles}</head><body><div id="root"></div></body>` }),
-  );
-  await page.setViewportSize({ width: 1600, height: 1000 });
-  await page.goto(app.url + "/skill-card-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  `, { width: 1600, height: 1000 });
   await page.evaluate((classes) => (window as any).mountSkills(classes), SKILLS);
   const dialog = page.getByRole("dialog", { name: "Class skills and conditions", exact: true });
   const lines = (box: Locator) => box.locator("[data-line]").evaluateAll((nodes) => nodes.map((node) => node.textContent));

@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createAnniversarySupplies,anniversaryTradeIdentity}=require('../../runtime/coordinator/anniversary/supplies.ts');
+const {createAnniversarySupplies,anniversaryTradeIdentity}=require('../../runtime/events/coordinator/anniversary.ts');
 const item=(name,q)=>({item:{name,q}});
 
 test('anniversary supply totals prefer BankBoi snapshots over duplicate live inventories and read replacement state',()=>{

@@ -19,7 +19,7 @@ export function TracktrixBonuses({ name }: { name: string }) {
 
 export function TracktrixBonusList({ data, title = 'Current Tracktrix bonuses', theme = 'violet' }: { data?: Char['tracktrix']; title?: string; theme?: 'violet' | 'rose' }) {
   const bonuses = Object.entries(data?.bonuses || {}).filter(([, value]) => Number.isFinite(value) && value !== 0);
-  return <section className={`rounded border p-3 text-sm ${theme === 'rose' ? 'border-rose-800 bg-[#251218] text-rose-100' : 'border-violet-700 bg-[#101724] text-violet-100'}`}>
+  return <section data-area="tracktrix" className={`rounded border p-3 text-sm ${theme === 'rose' ? 'border-rose-800 bg-[#251218] text-rose-100' : 'border-violet-700 bg-[#101724] text-violet-100'}`}>
     <h4 className="mb-2 font-semibold">{title}</h4>
     {!data || (data.active && data.bonuses === null) ? <p>Waiting for Tracktrix data.</p>
       : !data.active ? <p>Inactive — this character is not receiving Tracktrix bonuses.</p>
@@ -27,5 +27,6 @@ export function TracktrixBonusList({ data, title = 'Current Tracktrix bonuses', 
       : <dl className="grid grid-cols-2 gap-x-4 gap-y-1">{bonuses.map(([stat, value]) =>
         <div key={stat} className="flex justify-between gap-3"><dt>{stat.replaceAll('_', ' ').toUpperCase()}</dt>
           <dd className={`font-mono ${theme === 'rose' ? 'text-rose-200' : 'text-emerald-200'}`}>{value > 0 ? '+' : ''}{value.toLocaleString()}</dd></div>)}</dl>}
+    {data?.active && data.calculated && bonuses.length ? <p className="mt-2 text-xs opacity-80">Calculated from the kill scores; the game has not sent its own totals.</p> : null}
   </section>;
 }

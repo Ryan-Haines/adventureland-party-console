@@ -1,70 +1,50 @@
-import type { initializeCoordinatorEnvironment } from "./environment.ts";
-import type { ObservedCharacterStatus } from "./status/observed-status.ts";
-import type { createManualOrders } from "./commerce/manual-orders.ts";
-import type { createMerchantControlRoutes } from "./http/merchant-control.ts";
-import type { createTransferCommands } from "./inventory/transfer-commands.ts";
-import type { createCoordinatorCharacterCommands } from "./http/character-actions.ts";
-import type { createCoordinatorHunt } from "./hunt/composition.ts";
-import type { Catalog } from "../../dashboard/lib/farming-zones.ts";
-import type { createCoordinatorInventoryActions } from "./http/inventory-actions.ts";
-import type { createCoordinatorMerchantDeliveryActions } from "./http/merchant-delivery-actions.ts";
-import type { createMailJobs } from "./commerce/mail-jobs.ts";
-import type { createNpcSaleRoute } from "./http/npc-sale.ts";
-import type { queueExchangeStorage } from "./inventory/exchange-storage.ts";
-import type { reconcileCoordinatorUpgradeMarks } from "./inventory/mark-reconciliation.ts";
-import type { createStaleOrderRoute } from "./http/stale-orders.ts";
-import type { createCoordinatorNavigationActions } from "./http/navigation-actions.ts";
+import type { initializeCoordinatorEnvironment } from "../lifecycle/coordinator/start.ts";
+import type { ObservedCharacterStatus } from "../status/api.ts";
+import { type createManualOrders, type createCoordinatorCharacterCommands, type createCoordinatorInventoryActions,
+  type createMailJobs, type createNpcSaleRoute, type queueExchangeStorage,
+  type reconcileCoordinatorUpgradeMarks, type createStaleOrderRoute, type StandBid, type WithdrawalRequest, type StoredBankboi,
+  type BankboiInventory, type loadCoordinatorBankVaults, type StandMark, type initialALDataState, type PublicListing,
+  type createReservedBankboiCargo, type createImprovementScheduler } from "../items/coordinator/api.ts";
+import { type initialMerchantRuntime, type initialGatheringState, type initialEventState, type initialCommandState,
+  type initialRecoveryState, type createInitialCoordinatorState, type initialMerchantSales } from "../settings/coordinator/api.ts";
+import type { createMerchantControlRoutes } from "../merchant-jobs/api.ts";
+import type { createMerchantCompletionRoute } from "../merchant-jobs/coordinator/api.ts";
+import type { createTransferCommands } from "../items/coordinator/api.ts";
+import type { createHunt } from "../hunting/coordinator/api.ts";
+import type { Catalog } from "../hunting/api.ts";
+import type { createCoordinatorNavigationActions, PartyConvoy } from "../movement/api/coordinator.ts";
 import type {
   coordinatorMerchantPriority,
   coordinatorPrioritizedBids,
-} from "./merchant/job-policy.ts";
-import type { StandBid } from "./commerce/bids.ts";
+} from "../merchant-jobs/api.ts";
 import type {
   CoordinatorAccount,
   CoordinatorConfiguration,
-} from "./infrastructure/platform-contracts.ts";
-import type { initialHeadlessSlots, initialSteamRoster } from "./characters/initial-roster.ts";
-import type { initialMerchantRuntime } from "./merchant/initial-runtime.ts";
-import type { initialBankState } from "./inventory/initial-bank.ts";
-import type { MerchantWork } from "./merchant/work.ts";
-import type { WithdrawalRequest } from "./inventory/exchange-storage.ts";
-import type { initialFarmingState } from "./navigation/initial-farming.ts";
-import type { initialGatheringState } from "./merchant/initial-gathering.ts";
-import type { initialEventState } from "./initial-core.ts";
-import type { HuntCycle } from "./hunt/contracts.ts";
-import type { EventRecovery, EventReturnState } from "./events/return-types.ts";
-import type { StoredBankboi } from "./inventory/storage-contracts.ts";
-import type { BankboiInventory } from "./inventory/bankboi-completion.ts";
-import type { createAnniversarySuppliesRoute } from "./http/anniversary-supplies.ts";
-import type { initialAnniversaryState } from "./anniversary/initial-state.ts";
-import type { createAnniversaryReturns } from "./anniversary/returns.ts";
-import type { createAnniversaryNavigationRoutes } from "./http/anniversary-navigation.ts";
-import type { createWorkerSetup } from "./characters/worker-setup.ts";
-import type { CharacterBlock } from "./characters/types.ts";
-import type { initialCollectionState } from "./inventory/initial-collection.ts";
-import type { initialCommandState } from "./navigation/initial-commands.ts";
-import type { PartyConvoy } from "./navigation/convoy.ts";
+} from "../lifecycle/coordinator/platform-contracts.ts";
+import type { initialHeadlessSlots, initialSteamRoster } from "../lifecycle/roster/initial-roster.ts";
+import type { initialBankState } from "../items/coordinator/api.ts";
+import type { MerchantWork } from "../merchant-jobs/api.ts";
+import type { loadFarmingRecord } from "../hunting/coordinator/api.ts";
+import type { HuntCycle } from "../hunting/api.ts";
+import type { EventRecovery, EventReturnState } from "../events/api.ts";
+import type { createAnniversarySuppliesRoute } from "../events/coordinator/api.ts";
+import type { initialAnniversaryState } from "../events/coordinator/api.ts";
+import type { createAnniversaryReturns } from "../events/coordinator/api.ts";
+import type { createAnniversaryNavigationRoutes } from "../events/coordinator/api.ts";
+import type { createWorkers } from "../lifecycle/coordinator/workers.ts";
+import type { CharacterBlock } from "../lifecycle/api.ts";
+import type { initialCollectionState } from "../items/coordinator/api.ts";
 import type { ItemMark } from "./contracts/item.ts";
-import type { initialItemIntents, ItemIntents } from "./inventory/initial-intents.ts";
-import type { createCoordinatorEventReturns } from "./events/return-composition.ts";
-import type { createEventObservations } from "./events/observations.ts";
-import type { initialRecoveryState } from "./initial-core.ts";
-import type { CombatRecovery, EscapeRecovery } from "./navigation/recovery-contracts.ts";
-import type { CharacterWork, MerchantCommand } from "./merchant/work.ts";
-import type { createInitialCoordinatorState } from "./initial-state.ts";
-import type { SavedServiceSettings } from "./persistence/settings-contracts.ts";
-import type { HuntConvoy } from "./hunt/contracts.ts";
-import type { loadCoordinatorBankVaults } from "./infrastructure/game-data.ts";
-import type { coordinatorGenerationPorts } from "./characters/runtime-lifecycle.ts";
-import type { initialMerchantSales } from "./merchant/initial-settings.ts";
-import type { StandMark } from "./merchant/stand-marks.ts";
-import type { recoverMerchantQueue } from "./merchant/restart-queue.ts";
-import type { ABStrategy } from "./events/abtesting.ts";
-import type { initialALDataState } from "./commerce/initial-aldata.ts";
-import type { PublicListing } from "./commerce/market-types.ts";
-import type { NavigationIntent } from "./navigation/selection-contracts.ts";
-import type { createReservedBankboiCargo } from "./inventory/reserved-cargo.ts";
-import type { createImprovementScheduler } from "./merchant/improvement-scheduler.ts";
+import type { initialItemIntents, ItemIntents } from "../items/coordinator/api.ts";
+import type { createCoordinatorEventReturns } from "../events/coordinator/api.ts";
+import type { createEventObservations } from "../events/coordinator/api.ts";
+import type { PartyEscape, PartyRecovery } from "./survival/api.ts";
+import type { CharacterWork, MerchantCommand } from "../merchant-jobs/api.ts";
+import type { createRestockRoute } from "../items/coordinator/api.ts";
+import type { HuntConvoy } from "../hunting/api.ts";
+import type { recoverMerchantQueue } from "../merchant-jobs/api.ts";
+import type { ABStrategy } from "../events/api.ts";
+import type { NavigationIntent } from "../movement/api/coordinator.ts";
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -96,7 +76,7 @@ export type InitializationContractChecks = [
   >,
   Assert<
     ReturnType<typeof createInitialCoordinatorState<string>> extends Parameters<
-      typeof createCoordinatorHunt
+      typeof createHunt
     >[0]
       ? true
       : false
@@ -150,7 +130,7 @@ export type InitializationContractChecks = [
   >,
   Assert<
     ReturnType<typeof createInitialCoordinatorState<string>> extends Parameters<
-      typeof createCoordinatorMerchantDeliveryActions
+      typeof createMerchantCompletionRoute
     >[0]
       ? true
       : false
@@ -243,24 +223,21 @@ export type InitializationContractChecks = [
       ReturnType<typeof loadCoordinatorBankVaults>
     >
   >,
-  Assert<
-    CharacterBlock extends Parameters<typeof coordinatorGenerationPorts>[0][string] ? true : false
-  >,
   Assert<PartyConvoy extends HuntConvoy ? true : false>,
   Assert<
     Equal<
       ReturnType<typeof createInitialCoordinatorState<string>>["merchantDeliveries"],
-      NonNullable<SavedServiceSettings["merchantDeliveries"]>
+      Parameters<typeof createTransferCommands>[0]["merchantDeliveries"]
     >
   >,
   Assert<
     Equal<
       ReturnType<typeof createInitialCoordinatorState<string>>["restockPolicies"],
-      NonNullable<SavedServiceSettings["restockPolicies"]>
+      Parameters<typeof createRestockRoute>[0]["restockPolicies"]
     >
   >,
-  Assert<Equal<ReturnType<typeof initialRecoveryState>["combatRecovery"], CombatRecovery | null>>,
-  Assert<Equal<ReturnType<typeof initialRecoveryState>["escape"], EscapeRecovery | null>>,
+  Assert<Equal<ReturnType<typeof initialRecoveryState>["combatRecovery"], PartyRecovery | null>>,
+  Assert<Equal<ReturnType<typeof initialRecoveryState>["escape"], PartyEscape | null>>,
   Assert<Equal<ReturnType<typeof initialRecoveryState>["groupedCombatResetAt"], number>>,
   Assert<
     NonNullable<ItemIntents["statScrolls"][string]> extends CharacterWork["statScrolls"]
@@ -278,9 +255,9 @@ export type InitializationContractChecks = [
     Equal<ReturnType<typeof initialBankState>["withdrawals"], Record<string, WithdrawalRequest[]>>
   >,
   Assert<Equal<ReturnType<typeof initialBankState>["bankObserver"], string | null>>,
-  Assert<Equal<ReturnType<typeof initialFarmingState>["monsterHunt"], HuntCycle | null>>,
-  Assert<Equal<ReturnType<typeof initialFarmingState>["scatterMonsterTypes"], string[]>>,
-  Assert<Equal<ReturnType<typeof initialFarmingState>["partyFarmingMonsterType"], string | null>>,
+  Assert<Equal<ReturnType<typeof loadFarmingRecord>["monsterHunt"], HuntCycle | null>>,
+  Assert<Equal<ReturnType<typeof loadFarmingRecord>["scatterMonsterTypes"], string[]>>,
+  Assert<Equal<ReturnType<typeof loadFarmingRecord>["partyFarmingMonsterType"], string | null>>,
   Assert<Equal<ReturnType<typeof initialGatheringState>["gatheringModes"], string[]>>,
   Assert<Equal<ReturnType<typeof initialEventState>["eventReturn"], EventRecovery | null>>,
   Assert<Equal<ReturnType<typeof initialEventState>["eventReturnLast"], EventReturnState["last"]>>,
@@ -320,7 +297,7 @@ export type InitializationContractChecks = [
       ? true
       : false
   >,
-  Assert<Equal<ReturnType<ReturnType<typeof createWorkerSetup>["ensure"]>, CharacterBlock>>,
+  Assert<Equal<ReturnType<ReturnType<typeof createWorkers>["ensure"]>, CharacterBlock>>,
   Assert<Equal<ReturnType<typeof initialCollectionState>["threshold"], number>>,
   Assert<Equal<ReturnType<typeof initialCommandState>["activeConvoy"], PartyConvoy | null>>,
   Assert<Equal<ReturnType<typeof initialCollectionState>["marked"], Record<string, ItemMark[]>>>,

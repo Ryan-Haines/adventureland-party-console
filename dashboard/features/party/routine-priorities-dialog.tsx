@@ -1,4 +1,6 @@
 'use client';
+import { AddonSlot, OverlaidBy } from '../../../runtime/hooks/dashboard/slots';
+import type { AddonKindRow } from '../../../runtime/merchant-jobs/api';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -12,21 +14,23 @@ import {
 } from '@/components/ui/dialog';
 import { GripVertical } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { automaticRoutineKeys } from './automatic-routine-keys';
-import { routineLabels } from './routine-labels';
+import { useEffect, useRef, useState } from 'react';
+import { useReorderList, type DragPosition } from '@/lib/use-reorder-list';
+import { automaticRoutine, defaultMerchantRoutinePriorities, merchantRoutinePriority, movedRoutinePriorities, ROUTINE_DIALOG_LABELS, typedRoutinePriority } from '../../../runtime/merchant-jobs/api.ts';
 
 export function RoutinePrioritiesDialog({
   open,
   onOpenChange,
   priorities,
   enabled,
+  kinds = [],
   onSave,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   priorities: Record<string, number>;
   enabled: Record<string, boolean>;
+  kinds?: readonly AddonKindRow[];
   onSave: (
     priorities: Record<string, number>,
     enabled: Record<string, boolean>,
@@ -36,10 +40,9 @@ export function RoutinePrioritiesDialog({
   const [enabledDraft, setEnabledDraft] =
     useState<Record<string, boolean>>(enabled);
   const [dragged, setDragged] = useState<string | null>(null);
-  const [dragPosition, setDragPosition] = useState<{x:number;y:number;width:number;offsetX:number;offsetY:number} | null>(null);
+  const [dragPosition, setDragPosition] = useState<DragPosition | null>(null);
   const dragOriginal = useRef<Record<string,number> | null>(null);
-  const rowPositions = useRef(new Map<string,number>());
-  const listRef = useRef<HTMLDivElement>(null);
+  const { listRef, remember, rowAt } = useReorderList('routine', dragged, dragPosition, draft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const wasOpen = useRef(false);
@@ -54,9 +57,11 @@ export function RoutinePrioritiesDialog({
     }
     wasOpen.current = open;
   }, [open, priorities, enabled]);
-  const sortedRoutines = Object.entries(routineLabels).sort(
+  // the merchant jobs owner's merchantRoutinePriority orders the list: a routine with no saved value sorts at its fallback
+  // of 50, and a saved one is clamped to the merchant jobs owner's range.
+  const sortedRoutines = Object.entries(ROUTINE_DIALOG_LABELS).sort(
     ([keyA, labelA], [keyB, labelB]) =>
-      (draft[keyB] ?? 50) - (draft[keyA] ?? 50) || labelA.localeCompare(labelB),
+      merchantRoutinePriority(draft, keyB) - merchantRoutinePriority(draft, keyA) || labelA.localeCompare(labelB),
   );
   const disabledRoutine = (key: string) => ["deliveries", "withdrawals"].includes(key) && enabled[key] === false;
   const movableRoutines = sortedRoutines.filter(([key]) => !disabledRoutine(key));
@@ -67,49 +72,21 @@ export function RoutinePrioritiesDialog({
       .filter((key) => key !== source);
     const index = keys.indexOf(target) + (after ? 1 : 0);
     keys.splice(index, 0, source);
-    const next = { ...draft };
-    next[source] = index
-      ? (next[keys[index - 1]] ?? 50) - 1
-      : Math.min(100, (next[keys[1]] ?? 50) + 1);
-    for (let i = 1; i < keys.length; i++)
-      next[keys[i]] = Math.min(
-        next[keys[i]] ?? 50,
-        (next[keys[i - 1]] ?? 50) - 1,
-      );
-    if (keys.some((key) => next[key] < 0))
-      keys.forEach((key, i) => {
-        next[key] = 100 - i;
-      });
-    rowPositions.current = new Map(Array.from(listRef.current?.querySelectorAll<HTMLElement>('[data-routine]') || []).map(row => [row.dataset.routine!, row.getBoundingClientRect().top]));
+    const next = movedRoutinePriorities(draft, keys, index);
+    remember();
     setDraft(next);
   };
-  useLayoutEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    for (const row of listRef.current?.querySelectorAll<HTMLElement>('[data-routine]') || []) {
-      const previous=rowPositions.current.get(row.dataset.routine!);
-      if(previous !== undefined && row.dataset.routine !== dragged) {
-        const delta=previous-row.getBoundingClientRect().top;
-        if(delta)row.animate([{transform:`translateY(${delta}px)`},{transform:'translateY(0)'}],{duration:150,easing:'ease-out'});
-      }
-    }
-    rowPositions.current.clear();
-  }, [draft, dragged]);
-  useEffect(() => {
-    if(!dragPosition || !dragged)return;
-    let frame=0;
-    const scroll=()=>{const list=listRef.current;if(list){const bounds=list.getBoundingClientRect(),y=dragPosition.y+dragPosition.offsetY;if(y<bounds.top+40)list.scrollTop-=8;else if(y>bounds.bottom-40)list.scrollTop+=8;}frame=requestAnimationFrame(scroll);};
-    frame=requestAnimationFrame(scroll);return ()=>cancelAnimationFrame(frame);
-  },[dragPosition,dragged]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden border-amber-800 bg-[#091614] text-emerald-50 sm:max-w-2xl">
+      <DialogContent data-area="routines" className="flex max-h-[85vh] flex-col overflow-hidden border-amber-800 bg-[#091614] text-emerald-50 sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Merchant routines · {Object.keys(routineLabels).filter(key => !disabledRoutine(key) && (!(automaticRoutineKeys.has(key) || key === 'fishing' || key === 'mining') || enabledDraft[key] !== false)).length}/{Object.keys(routineLabels).length} enabled</DialogTitle>
+          <DialogTitle>Merchant routines · {Object.keys(ROUTINE_DIALOG_LABELS).filter(key => !disabledRoutine(key) && (!(automaticRoutine(key) || key === 'fishing' || key === 'mining') || enabledDraft[key] !== false)).length}/{Object.keys(ROUTINE_DIALOG_LABELS).length} enabled</DialogTitle>
           <DialogDescription>
             Higher priorities run first. Equal priorities run oldest first.
             Enabled controls only automatic scheduling.
           </DialogDescription>
         </DialogHeader>
+        <OverlaidBy fields={["merchantRoutinePriorities"]} />
         <div ref={listRef}
                 onPointerMove={event => {
                   if(!dragged || !dragPosition)return;
@@ -118,10 +95,8 @@ export function RoutinePrioritiesDialog({
                   const bounds=list.getBoundingClientRect();
                   if(event.clientY<bounds.top+45)list.scrollTop-=15;
                   if(event.clientY>bounds.bottom-45)list.scrollTop+=15;
-                  for(const row of list.querySelectorAll<HTMLElement>('[data-routine]')){
-                    const rect=row.getBoundingClientRect();
-                    if(event.clientY>=rect.top && event.clientY<=rect.bottom && row.dataset.routine!==dragged){move(dragged,row.dataset.routine!,event.clientY>rect.top+rect.height/2);break;}
-                  }
+                  const hit=rowAt(event.clientY);
+                  if(hit)move(dragged,hit.target,hit.after);
                 }}
                 onPointerUp={() => {setDragged(null);setDragPosition(null);dragOriginal.current=null;}}
                 onPointerCancel={() => {if(dragOriginal.current)setDraft(dragOriginal.current);setDragged(null);setDragPosition(null);}}
@@ -134,7 +109,7 @@ export function RoutinePrioritiesDialog({
               aria-describedby={disabledRoutine(key) ? `${key}-routine-help` : undefined}
               className={`flex items-center gap-3 rounded border bg-slate-950 px-3 py-2 transition-transform ${disabledRoutine(key) ? "text-slate-400" : "text-emerald-50"} ${dragged === key ? "border-cyan-300 opacity-25" : "border-emerald-900/70"}`}
             >
-              {automaticRoutineKeys.has(key) ||
+              {automaticRoutine(key) ||
               key === 'fishing' ||
               key === 'mining' ? (
                 <Checkbox
@@ -156,15 +131,9 @@ export function RoutinePrioritiesDialog({
                 disabled={disabledRoutine(key)}
                 aria-describedby={disabledRoutine(key) ? `${key}-routine-help` : undefined}
                 inputMode="numeric"
-                value={disabledRoutine(key) ? priorities[key] ?? 90 : draft[key] ?? priorities[key] ?? 50}
+                value={disabledRoutine(key) ? priorities[key] ?? defaultMerchantRoutinePriorities()[key] : draft[key] ?? merchantRoutinePriority(priorities, key)}
                 onChange={(event) => {
-                  const value = Math.max(
-                    0,
-                    Math.min(
-                      100,
-                      Number(event.target.value.replace(/[^0-9]/g, '')) || 0,
-                    ),
-                  );
+                  const value = typedRoutinePriority(event.target.value);
                   setDraft((old) => ({ ...old, [key]: value }));
                 }}
                 className="h-8 w-20 border-amber-700 bg-slate-950 text-right font-mono text-amber-100 disabled:border-slate-600 disabled:text-slate-400"
@@ -204,7 +173,8 @@ export function RoutinePrioritiesDialog({
             </div>
           ))}
         </div>
-        {dragged && !disabledRoutine(dragged) && dragPosition && createPortal(<div aria-hidden="true" className="pointer-events-none fixed z-[100] flex items-center justify-between rounded border border-cyan-300 bg-slate-900 px-3 py-3 text-slate-100 shadow-2xl" style={{left:dragPosition.x,top:dragPosition.y,width:dragPosition.width}}><span>{routineLabels[dragged]}</span><span>{draft[dragged]} <GripVertical className="ml-3 inline size-4" /></span></div>, document.body)}
+        <AddonSlot name="merchant-routines" part="routines" priorities={draft} enabled={enabledDraft} kinds={kinds} />
+        {dragged && !disabledRoutine(dragged) && dragPosition && createPortal(<div aria-hidden="true" className="pointer-events-none fixed z-[100] flex items-center justify-between rounded border border-cyan-300 bg-slate-900 px-3 py-3 text-slate-100 shadow-2xl" style={{left:dragPosition.x,top:dragPosition.y,width:dragPosition.width}}><span>{ROUTINE_DIALOG_LABELS[dragged]}</span><span>{draft[dragged]} <GripVertical className="ml-3 inline size-4" /></span></div>, document.body)}
         {error && (
           <p role="alert" className="text-sm text-rose-200">
             {error}

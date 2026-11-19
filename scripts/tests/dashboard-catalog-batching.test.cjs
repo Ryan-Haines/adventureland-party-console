@@ -23,22 +23,19 @@ test('catalog appends rows near the scroll bottom and resets on filtering and re
   }));
   let tree, open = true;
   const render = () => React.createElement(exports.EquipmentCatalogDialog, { open, catalog, onOpenChange() {}, onInspect() {} });
-  const rows = () => tree.root.findAllByType('ItemSprite').length;
-  const more = () => tree.root.findAllByType('Button').find(button => String(button.props.children).startsWith('Show '));
+  const rows = () => tree.root.findAllByType('SpriteCrop').length;
   const scroll = (remaining) => tree.root.findAllByType('div').find(node => node.props.onScroll).props.onScroll({
     currentTarget: { scrollHeight: 4000, clientHeight: 600, scrollTop: 3400 - remaining },
   });
   try {
     await act(async () => { tree = create(render()); });
     assert.equal(rows(), 120);
-    assert.equal(more(), undefined);
     await act(async () => scroll(1000));
     assert.equal(rows(), 120, 'scrolling far from the end does not mount more rows');
     await act(async () => { scroll(400); scroll(400); });
     assert.equal(rows(), 240);
     await act(async () => scroll(0));
     assert.equal(rows(), 250);
-    assert.equal(more(), undefined);
     await act(async () => scroll(0));
     assert.equal(rows(), 250, 'the final batch is bounded by the filtered catalog');
     const input = tree.root.findByType('Input');

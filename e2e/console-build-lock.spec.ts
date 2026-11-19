@@ -86,7 +86,8 @@ for(const mode of ['transient','permanent','unrelated','replacement'] as const){
       import path from 'node:path';
       import {syncBuiltinESMExports} from 'node:module';
       const root=${JSON.stringify(root)},report=${JSON.stringify(report)},mode=${JSON.stringify(mode)};
-      const lock=path.join(root,'.build/console/operation.lock'),nativeRename=fs.rename,attempts=[];
+      const lock=path.join(root,'.build/console/operation.lock'),nativeRename=fs.rename,attempts=[],warnings=[];
+      console.warn=(...values)=>{warnings.push(values.join(' '));};
       fs.rename=async(from,to)=>{
         if(String(from)===lock&&String(to).startsWith(lock+'.released-')){
           attempts.push({owner:JSON.parse(await fs.readFile(path.join(lock,'owner.json'),'utf8')),
@@ -104,7 +105,7 @@ for(const mode of ['transient','permanent','unrelated','replacement'] as const){
       catch(value){error={message:String(value),code:value.code};}
       const remainingOwner=await fs.readFile(path.join(lock,'owner.json'),'utf8').then(JSON.parse).catch(()=>null);
       const entries=await fs.readdir(store.directory);
-      await fs.writeFile(report,JSON.stringify({mode,original,result,error,attempts,remainingOwner,entries},null,2));
+      await fs.writeFile(report,JSON.stringify({mode,original,result,error,attempts,warnings,remainingOwner,entries},null,2));
     `);
     await promisify(execFile)(process.execPath,[script],{windowsHide:true,timeout:30_000});
     const evidence=JSON.parse(await readFile(report,'utf8'));
@@ -119,7 +120,13 @@ for(const mode of ['transient','permanent','unrelated','replacement'] as const){
       expect(evidence.entries).toEqual(['operation.lock']);
     }else{
       expect(evidence.error.code).toBe(mode==='permanent'?'EPERM':'EACCES');
-      expect(evidence.result).toBeUndefined();expect(evidence.attempts).toHaveLength(mode==='permanent'?6:1);
+      expect(evidence.result).toBeUndefined();
+      // whileShared retries a sharing violation until its bound ends (tools/build-store.ts
+      // SHARING_VIOLATION) and logs that end; an unrelated code fails on the first attempt.
+      if(mode==='permanent'){
+        expect(evidence.attempts.length).toBeGreaterThan(1);
+        expect(evidence.warnings.filter((line:string)=>line.startsWith('[bound] sharingViolationMs'))).toHaveLength(1);
+      }else{expect(evidence.attempts).toHaveLength(1);expect(evidence.warnings).toEqual([]);}
       expect(evidence.remainingOwner).toEqual(evidence.original);expect(evidence.entries).toEqual(['operation.lock']);
     }
   });

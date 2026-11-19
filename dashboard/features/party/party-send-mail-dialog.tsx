@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { ALDATA_AUTH_MAIL } from "../../../runtime/items/api.ts";
 import { PartyItemDetails } from "./party-item-details";
 import { SendMailDialog } from "./send-mail-dialog";
 import type { PartyConsoleModel } from "./use-party-console";
@@ -27,7 +28,7 @@ function PartySendMailDialogConnected({ base }: { base: PartyConsoleModel }) {
       bankbois={state.bankbois || []}
       onSend={async (mail) => {
         await post("/merchant/send-mail", mail);
-        if (mail.recipient === "earthiverse" && mail.subject === "aldata_auth") model.setALDataAuthPending(true);
+        if (mail.recipient === ALDATA_AUTH_MAIL.recipient && mail.subject === ALDATA_AUTH_MAIL.subject) model.setALDataAuthPending(true);
       }}
     />
   );

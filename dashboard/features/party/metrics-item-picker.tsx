@@ -26,7 +26,7 @@ export function MetricsItemPicker({ items, value, onChange, label = "Choose drop
       {selected?.sprite ? <span className="relative size-6 shrink-0"><SpriteCrop sprite={selected.sprite} size={24} /></span> : <Search size={14} className="shrink-0 text-slate-400" />}
       <span className="min-w-0 flex-1 truncate text-left">{selected?.name || 'Search items'}</span><ChevronDown size={16} className="shrink-0 text-slate-400" />
     </PopoverTrigger>
-    <PopoverContent align="start" sideOffset={8} positionerClassName="z-[130]" className={metricsMenu + ' w-[360px] max-w-[calc(100vw-32px)] p-0'}>
+    <PopoverContent data-area="metrics-item-picker" align="start" sideOffset={8} positionerClassName="z-[130]" className={metricsMenu + ' w-[360px] max-w-[calc(100vw-32px)] p-0'}>
       <Command shouldFilter={false} className="overflow-hidden rounded-xl" label={label + " search"}>
         <div className="flex items-center gap-3 border-b border-[#30433f] px-4"><Search size={16} className="shrink-0 text-emerald-400" />
           <Command.Input value={query} onValueChange={setQuery} placeholder="Search name, ID, set or type" aria-label={label === "Choose drop item" ? "Search drop items" : "Search elixirs"} className="h-14 w-full bg-transparent text-base text-slate-100 outline-none placeholder:text-slate-500" />

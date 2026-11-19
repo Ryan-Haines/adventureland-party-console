@@ -7,18 +7,18 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   await quests(live,info,{[W]:{count:100},[P]:{count:100}});
   await live.clients[W].run(`(()=>{
     const generation=globalThis.__partyRuntimeGeneration;
-    const excludedConvoy=sharedRoutine.combatTraceSnapshot().convoy;
-    const fault=globalThis.__e2eFallbackStop={generation,issued:0,receipt:null,timeout:setTimeout,drift:null,boundary:null,boundaries:[],
-      detailDescriptor:Object.getOwnPropertyDescriptor(globalThis,'__partyNavigationDetail'),detailValue:globalThis.__partyNavigationDetail};
+    const excludedConvoy=partyStatus.character.combatTraceSnapshot().convoy;
+    const fault=globalThis.__e2eFallbackStop={generation,issued:0,receipt:null,drift:null,boundary:null,boundaries:[],
+      detailDescriptor:Object.getOwnPropertyDescriptor(globalThis.__partyMovement.walkState,'navigationDetail'),detailValue:globalThis.__partyMovement.walkState.navigationDetail};
     // An already stopped actor can skip settlement entirely. At this owned
     // rendezvous boundary, send a real zero-distance native move: the native
     // client marks it moving until physics settles, without changing position.
     // This guarantees the wait exists; no character flag or report is fabricated.
-    Object.defineProperty(globalThis,'__partyNavigationDetail',{configurable:true,enumerable:true,
+    Object.defineProperty(globalThis.__partyMovement.walkState,'navigationDetail',{configurable:true,enumerable:true,
       get(){return fault.detailValue;},set(value){
         fault.detailValue=value;
         if(value!=='rendezvous'||fault.drift||!fault.receipt||globalThis.__partyRuntimeGeneration!==generation)return;
-        const convoy=sharedRoutine.combatTraceSnapshot();
+        const convoy=partyStatus.character.combatTraceSnapshot();
         if(convoy.convoy===fault.receipt.owner.convoyId||convoy.convoyPhase!=='rendezvous'||convoy.cancelled)return;
         // An early origin correction can reject this attempt before any wait.
         // Keep the fault eligible for the next exact owner until the late walk runs.
@@ -32,38 +32,47 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
         }catch(error){boundary.error=String(error);}
       }});
     // A native position update can arrive after the leader's initial origin
-    // check, while rendezvous waits for movement/cruise speed to settle. Deliver
-    // one real walk during that owned wait; leave status and other timers live.
-    fault.wrappedTimeout=function(callback,delay,...args){
-      const convoy=sharedRoutine.combatTraceSnapshot();
-      if(delay!==80||fault.drift||!fault.receipt||globalThis.__partyRuntimeGeneration!==generation||
+    // check, while rendezvous waits for movement/cruise speed to settle. That
+    // settle is a loop the movement owner runs on its own scheduler passes
+    // (\`every\` under the walk's ':settle' holder), and a pass waits on its run's
+    // promise. Deliver one real walk inside that owned wait; leave status and
+    // timers live.
+    const service=globalThis.__partyMovement;
+    fault.every=service.every;
+    fault.wrappedEvery=function(holder,run){
+      const convoy=partyStatus.character.combatTraceSnapshot();
+      if(!String(holder).endsWith(':settle')||fault.drift||!fault.receipt||globalThis.__partyRuntimeGeneration!==generation||
           convoy.convoy===fault.receipt.owner.convoyId||convoy.convoyPhase!=='rendezvous'||
           fault.boundary?.convoy!==convoy.convoy||fault.boundary?.epoch!==convoy.convoyEpoch)
-        return fault.timeout.call(globalThis,callback,delay,...args);
+        return fault.every.call(this,holder,run);
       const drift=fault.drift={convoy:convoy.convoy,epoch:convoy.convoyEpoch};
-      return fault.timeout.call(globalThis,async()=>{
-        const current=sharedRoutine.combatTraceSnapshot();
-        if(globalThis.__partyRuntimeGeneration!==generation||current.convoy!==drift.convoy||current.convoyEpoch!==drift.epoch){
-          drift.error='Rendezvous owner changed before native walk';return callback(...args);
-        }
-        drift.from={map:character.map,x:character.x,y:character.y};
-        const to={x:character.x,y:character.y+80};
-        if(!can_move_to(to.x,to.y)){drift.error='Native drift destination is unwalkable';return callback(...args);}
-        try{await xmove(to.x,to.y);drift.arrived={map:character.map,x:character.x,y:character.y};}
-        catch(error){drift.error=String(error);}
-        callback(...args);
-      },delay);
+      let walked=null;
+      return fault.every.call(this,holder,function(){
+        if(walked)return run();
+        walked=(async()=>{
+          const current=partyStatus.character.combatTraceSnapshot();
+          if(globalThis.__partyRuntimeGeneration!==generation||current.convoy!==drift.convoy||current.convoyEpoch!==drift.epoch){
+            drift.error='Rendezvous owner changed before native walk';return;
+          }
+          drift.from={map:character.map,x:character.x,y:character.y};
+          const to={x:character.x,y:character.y+80};
+          if(!can_move_to(to.x,to.y)){drift.error='Native drift destination is unwalkable';return;}
+          try{await xmove(to.x,to.y);drift.arrived={map:character.map,x:character.x,y:character.y};}
+          catch(error){drift.error=String(error);}
+        })();
+        return walked.then(()=>run());
+      });
     };
-    globalThis.setTimeout=fault.wrappedTimeout;
+    service.every=fault.wrappedEvery;
     fault.timer=setInterval(()=>{
       if(fault.issued || globalThis.__partyRuntimeGeneration!==generation)return;
       const service=globalThis.__partyMovement,journey=service?.report(),owner=journey?.owner;
-      const convoy=sharedRoutine.combatTraceSnapshot();
+      const convoy=partyStatus.character.combatTraceSnapshot();
       const revision=globalThis.__partyNavigationIntent?.revision;
       if(convoy.convoy===excludedConvoy || !journey || !owner || !Number.isFinite(owner.commandId) || !Number.isFinite(owner.navigationRevision) || !service.state.moving || !character.moving || character.c?.town || parent.transporting ||
           convoy.convoyPhase!=='travelling' || owner.convoyId!==convoy.convoy || owner.epoch!==convoy.convoyEpoch ||
           owner.navigationRevision!==revision || convoy.cancelled)return;
-      const runtime=sharedRoutine.queueReport().combatSelection.runtimeId;
+      const runtime=sharedRoutine.targeting.queueReport().combatSelection.runtimeId;
       if(!journey.id.startsWith(character.name+':'+runtime+':'))return;
       fault.issued=1;clearInterval(fault.timer);
       fault.receipt={at:Date.now(),map:character.map,x:character.x,y:character.y,
@@ -74,8 +83,10 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
     },50);
   })()`);
   // Hold the leader's genuine fallback preparation responses while a native
-  // eight-unit walk makes its origin stale. The early origin check must reprepare
-  // before the separate settlement-time drift fault is admitted.
+  // eight-unit walk moves the leader off its rally point. The leader stays inside the
+  // rally range, so the walk starts from where it stands on the same epoch (decided
+  // 2026-10-28: no walk-back to a fixed origin), and the settlement-time drift fault
+  // lands on that epoch.
   let originDriftIssued=false;
   let originOperation:{convoy:string;epoch:number;completion:Promise<unknown>}|undefined;
   const preparationDeliveries:{name:string;at:number;id:number;convoy:string;epoch:number;fast:boolean;held:boolean;deliveredAt?:number}[]=[];
@@ -130,7 +141,7 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   expect(Math.hypot(preRendezvousDrift.arrived.x-preRendezvousDrift.from.x,preRendezvousDrift.arrived.y-preRendezvousDrift.from.y)).toBeGreaterThan(7);
   expect(boundaries.some((entry:any)=>entry.convoy===preRendezvousDrift.command.convoyId&&entry.epoch===preRendezvousDrift.command.epoch)).toBe(true);
   expect(drift).toBeTruthy();expect(drift.error).toBeUndefined();
-  expect({convoy:drift.convoy,epoch:drift.epoch}).not.toEqual({convoy:preRendezvousDrift.command.convoyId,epoch:preRendezvousDrift.command.epoch});
+  expect({convoy:drift.convoy,epoch:drift.epoch}).toEqual({convoy:preRendezvousDrift.command.convoyId,epoch:preRendezvousDrift.command.epoch});
   expect(boundary.pending).toBe(true);expect(boundary.error).toBeUndefined();
   expect({convoy:boundary.convoy,epoch:boundary.epoch}).toEqual({convoy:drift.convoy,epoch:drift.epoch});
   expect(drift.arrived.map).toBe(drift.from.map);
@@ -138,9 +149,9 @@ test('native Hunt fallback arrival releases farming instead of repeatedly restar
   await artifact(live,info,'native-fallback-arrival-and-continuing-kills',{interrupted,recovering,firstKills});
   }finally{
     await live.clients[W].page.unrouteAll({behavior:'wait'});
-    const fault=await live.clients[W].run(`(()=>{const fault=globalThis.__e2eFallbackStop;if(fault){clearInterval(fault.timer);if(globalThis.setTimeout===fault.wrappedTimeout)globalThis.setTimeout=fault.timeout;
-      if(fault.detailDescriptor)Object.defineProperty(globalThis,'__partyNavigationDetail',{...fault.detailDescriptor,value:fault.detailValue});
-      else{delete globalThis.__partyNavigationDetail;globalThis.__partyNavigationDetail=fault.detailValue;}}
+    const fault=await live.clients[W].run(`(()=>{const fault=globalThis.__e2eFallbackStop;if(fault){clearInterval(fault.timer);if(globalThis.__partyMovement?.every===fault.wrappedEvery)globalThis.__partyMovement.every=fault.every;
+      if(fault.detailDescriptor)Object.defineProperty(globalThis.__partyMovement.walkState,'navigationDetail',{...fault.detailDescriptor,value:fault.detailValue});
+      else{delete globalThis.__partyMovement.walkState.navigationDetail;globalThis.__partyMovement.walkState.navigationDetail=fault.detailValue;}}
       return fault?{generation:fault.generation,issued:fault.issued,receipt:fault.receipt,drift:fault.drift,boundary:fault.boundary,boundaries:fault.boundaries,preRendezvousDrift:fault.preRendezvousDrift}:null;})()`);
     await info.attach('native-fallback-preparation-deliveries',{body:JSON.stringify(preparationDeliveries),contentType:'application/json'});
     await info.attach('native-fallback-stop-ledger',{body:JSON.stringify(fault),contentType:'application/json'});

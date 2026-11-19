@@ -1,7 +1,17 @@
 import { inspectorPort } from './platform.ts';
+import { bounded, type HostBound } from '../hosting/http.ts';
 
 export interface InspectorTarget { url: string; socket: string }
+// No inspector answers: no game window runs with automation. LocalSteam reads this as no window open;
+// every other inspector error (a refused socket host, a malformed or oversized list) reaches its caller.
+export class InspectorUnavailable extends Error {}
 const origin = `http://127.0.0.1:${inspectorPort}`;
+// The desktop inspector's bounds against a game client process that accepts and never answers: the
+// target list, the socket open and one command's reply. Each logs when it ends its wait.
+const TARGET_LIST: HostBound = { name: 'inspectorTargetsMs', ms: 2000 };
+const SOCKET_OPEN: HostBound = { name: 'inspectorOpenMs', ms: 4000 };
+const COMMAND_REPLY: HostBound = { name: 'inspectorCommandMs', ms: 6000 };
+const fired = (bound: HostBound) => console.warn(`[bound] ${bound.name} (${bound.ms} ms) ended a desktop inspector wait`);
 export function gameUrl(value: string): boolean {
   try { const url = new URL(value); return url.protocol === 'https:' &&
     ['adventure.land', 'www.adventure.land', 'cloudflare.adventure.land'].includes(url.hostname) && !url.port; }
@@ -27,8 +37,9 @@ export function linuxTargets(html: string): InspectorTarget[] {
   return result;
 }
 export async function targets(platform = process.platform): Promise<InspectorTarget[]> {
-  const response = await fetch(origin + (platform === 'win32' ? '/json/list' : '/'), { signal: AbortSignal.timeout(2000), redirect: 'error' });
-  if (!response.ok) throw Error('Desktop inspector is not available.');
+  const response = await bounded(TARGET_LIST, 'the desktop target list', signal => fetch(origin + (platform === 'win32' ? '/json/list' : '/'), { signal, redirect: 'error' }))
+    .catch((error: Error) => { throw new InspectorUnavailable('Desktop inspector is not available: ' + error.message); });
+  if (!response.ok) throw new InspectorUnavailable('Desktop inspector is not available.');
   const text = await response.text();
   if (text.length > 1024 * 1024) throw Error('Desktop inspector response is too large.');
   return platform === 'win32' ? windowsTargets(JSON.parse(text)) : linuxTargets(text);
@@ -52,7 +63,7 @@ export class Inspector {
     const socket = new WebSocket(target.socket);
     const inspector = new Inspector(socket);
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { socket.close(); reject(Error('Desktop inspector connection timed out.')); }, 4000);
+      const timer = setTimeout(() => { fired(SOCKET_OPEN); socket.close(); reject(Error('Desktop inspector connection timed out.')); }, SOCKET_OPEN.ms);
       socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
       socket.addEventListener('error', () => { clearTimeout(timer); reject(Error('Cannot attach to desktop inspector.')); }, { once: true });
     });
@@ -69,7 +80,7 @@ export class Inspector {
   private request(method: string, params: object, nested: boolean): Promise<Reply['result']> {
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(Error('Desktop command timed out.')); }, 6000);
+      const timer = setTimeout(() => { fired(COMMAND_REPLY); this.pending.delete(id); reject(Error('Desktop command timed out.')); }, COMMAND_REPLY.ms);
       this.pending.set(id, { resolve, reject, timer });
       const message = JSON.stringify({ id, method, params });
       if (nested && this.targetId) void this.request('Target.sendMessageToTarget', { targetId: this.targetId, message }, false).catch(error => {

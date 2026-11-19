@@ -10,7 +10,7 @@ const realImmediate = setImmediate;
 const realClearImmediate = clearImmediate;
 const http = require("node:http");
 const { randomUUID } = require("node:crypto");
-const { joinClock } = require("./join-clock.cjs");
+const { joinClock, clockPerformance } = require("./join-clock.cjs");
 const { createNativeIo } = require('./native-io.cjs');
 const chronalDirectory = () =>
   process.env.E2E_CHRONAL_DIR || path.resolve(__dirname, "../../.build/sim/chronal");
@@ -28,17 +28,6 @@ function socketUrl(broker, id, scope) {
   url.searchParams.set("scope", scope);
   url.searchParams.set("label", `${process.argv[1]}:thread-${require("node:worker_threads").threadId}`);
   return url;
-}
-function clockPerformance(clock, config, dateOnly) {
-  if (dateOnly) return realPerformance;
-  return new Proxy(realPerformance, {
-    get(target, key) {
-      if (key === "now") return () => clock.now - config.epoch;
-      if (key === "timeOrigin") return config.epoch;
-      const value = Reflect.get(target, key, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
 }
 
 function configuration(env = process.env) {
@@ -116,7 +105,7 @@ function install({ dateOnly = false } = {}) {
   clock.installInto(globalThis, {
     vmContext: vm.createContext({ Date: realDate, Math: Object.create(Math) }),
   });
-  globalThis.performance = clockPerformance(clock, config, dateOnly);
+  globalThis.performance = dateOnly ? realPerformance : clockPerformance(realPerformance, clock, config);
   const { createNodeTimers, installNodeTimers, installWindowTimers } = require("./network-timers.cjs");
   const timers = createNodeTimers(clock);
   if (dateOnly) {
@@ -281,5 +270,5 @@ function install({ dateOnly = false } = {}) {
   globalThis.__e2eChronalClock = receipt;
   return receipt;
 }
-module.exports = { configuration, install };
+module.exports = { install };
 if (process.env.E2E_CLOCK_PRELOAD === "1") install();

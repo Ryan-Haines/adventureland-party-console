@@ -2,9 +2,19 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, rename, readdir, lstat, realpath, rm, unlink, readlink } from 'node:fs/promises';
 import path from 'node:path';
-import { atomicJson, readJson, inspectRemoval, applyRemovals } from '../build-store.ts';
+import { atomicJson, readJson, inspectRemoval, applyRemovals, whileShared, RETAIN_BUILDS, pinLive, livePins } from '../build-store.ts';
+import type { HostBound } from '../hosting/http.ts';
 import {deploymentPending, type Candidate, type CandidateManifest, type CandidateSummary, type DeploymentJournal, type References} from './contracts.ts';
 
+/** Whether the latest completed build replaces the active one: it is at least as new. The launch and
+ *  the status's `available` both ask it. */
+export const newer = (latest: {createdAt: string}, active?: {createdAt: string}) => !active || latest.createdAt >= active.createdAt;
+
+// A lock directory with no owner.json is a holder that exited between its mkdir and its owner write;
+// directoryStale reclaims it once it is this old and logs that it did (tools/BUILD-HISTORY.md).
+const OWNERLESS_LOCK: HostBound = {name: 'ownerlessLockMs', ms: 30_000};
+// A lock wait lasts while the holder's pid runs; the waiter reads the holder again every LOCK_POLL_MS.
+const LOCK_POLL_MS = 50;
 const validId = (id: string) => /^[a-f0-9]{64}$/.test(id);
 async function fileHash(file: string): Promise<string> {
   const hash = createHash('sha256');
@@ -18,7 +28,9 @@ async function directoryStale(directory: string): Promise<boolean> {
     catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH'; }
   }
   const info = await lstat(directory).catch(() => undefined);
-  return !!info && Date.now() - info.birthtimeMs >= 30_000;
+  if (!info || Date.now() - info.birthtimeMs < OWNERLESS_LOCK.ms) return false;
+  console.warn(`[bound] ${OWNERLESS_LOCK.name} (${OWNERLESS_LOCK.ms} ms) ended the wait on ownerless ${directory}`);
+  return true;
 }
 async function removeOwnedClaim(claim: string, token: string) {
   const owner = await readJson<{token: string}>(path.join(claim, 'owner.json')).catch(() => undefined);
@@ -68,18 +80,24 @@ async function verifyFiles(directory: string, files: Record<string, string>, obs
 }
 export class ConsoleBuildStore {
   readonly directory: string;
-  constructor(root: string) { this.directory = path.resolve(root, '.build/console'); }
+  /** The dependency cache folder: the store's own, or another store's when `dependencies` names it.
+   *  A store on another store's cache builds its candidates there and keeps its own releases,
+   *  references and counts (fixture store, e2e/fixtures/addon-candidate.ts). */
+  readonly dependencies: string;
+  constructor(root: string, dependencies?: string) {
+    this.directory = path.resolve(root, '.build/console');
+    this.dependencies = dependencies ?? path.join(this.directory, 'dependencies');
+  }
   async locked<T>(action: () => Promise<T>): Promise<T> {
     await mkdir(this.directory, {recursive: true});
     const lock = path.join(this.directory, 'operation.lock');
     const token = randomUUID();
-    for (let attempt = 0; ; attempt++) {
+    for (;;) {
       try { await mkdir(lock); break; }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         if (await this.reclaim(lock, token)) continue;
-        if (attempt >= 600) throw new Error('Console candidate store is busy');
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, LOCK_POLL_MS));
       }
     }
     await atomicJson(path.join(lock, 'owner.json'), {pid: process.pid, token});
@@ -90,15 +108,14 @@ export class ConsoleBuildStore {
     // Fence the ownership check and rename with the same auditor mutex used by
     // stale recovery. Never remove owner.json from the admission pathname.
     const claim = path.join(lock, 'recovery');
-    for (let attempt = 0; ; attempt++) {
+    for (;;) {
       try { await mkdir(claim); break; }
       catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === 'ENOENT') return;
         if (code !== 'EEXIST') throw error;
         await this.reclaimAuditor(claim, token);
-        if (attempt >= 600) throw new Error('Console candidate release auditor is busy');
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, LOCK_POLL_MS));
       }
     }
     let detached = false;
@@ -113,32 +130,20 @@ export class ConsoleBuildStore {
     }
   }
   private async detachOwnedLock(lock: string, released: string, token: string): Promise<boolean> {
-    // The caller holds the recovery auditor claim through every bounded retry.
-    for (let attempt = 0; ; attempt++) {
+    // The caller holds the recovery auditor claim through every retry.
+    return whileShared('the release of ' + lock, ['EBUSY', 'EPERM'], async () => {
       const owner = await readJson<{token: string}>(path.join(lock, 'owner.json')).catch(() => undefined);
       if (owner?.token !== token) return false;
-      try { await rename(lock, released); return true; }
-      catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (!['EBUSY', 'EPERM'].includes(code || '') || attempt >= 5) throw error;
-        await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
-      }
-    }
+      await rename(lock, released);
+      return true;
+    });
   }
   private async removeReleased(released: string): Promise<void> {
     // Retry only the detached generation; a successor may already own lock.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const verified = await inspectRemoval(this.directory, path.relative(this.directory, released));
-        await rm(verified.path, {recursive: true});
-        return;
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'ENOENT') return;
-        if (!['ENOTEMPTY', 'EBUSY', 'EPERM'].includes(code || '') || attempt >= 5) throw error;
-        await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
-      }
-    }
+    await whileShared('the removal of ' + released, ['ENOTEMPTY', 'EBUSY', 'EPERM'], async () => {
+      const verified = await inspectRemoval(this.directory, path.relative(this.directory, released));
+      await rm(verified.path, {recursive: true});
+    }).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; });
   }
   private async reclaim(lock: string, token: string): Promise<boolean> {
     // Only one stale-owner auditor may inspect/rename a given lock generation.
@@ -205,7 +210,7 @@ export class ConsoleBuildStore {
   private async verifyDependencyLink(directory: string, manifest: CandidateManifest, name: string) {
     const dependency = {'node_modules': 'root', 'dashboard/node_modules': 'dashboard', '.caracal/node_modules': 'caracal'}[name];
     if (!dependency || !manifest.dependencyId || !validId(manifest.dependencyId)) throw new Error('Candidate refuses links: ' + name);
-    const cache = path.join(this.directory, 'dependencies', manifest.dependencyId);
+    const cache = path.join(this.dependencies, manifest.dependencyId);
     const complete = await readJson<{id: string}>(path.join(cache, 'complete.json'));
     const expected = path.join(cache, dependency, 'node_modules');
     if (complete?.id !== manifest.dependencyId || await realpath(path.join(directory, name)) !== expected || await realpath(cache) !== cache)
@@ -213,7 +218,7 @@ export class ConsoleBuildStore {
   }
   private async verifyDependencies(id: string) {
     if (!validId(id)) throw new Error('Invalid dependency cache ID');
-    const cache = path.join(this.directory, 'dependencies', id);
+    const cache = path.join(this.dependencies, id);
     if (await realpath(cache) !== cache) throw new Error('Dependency cache is redirected');
     const complete = await readJson<{id: string; files: Record<string, string>; manifestHash: string}>(path.join(cache, 'complete.json'));
     if (complete?.id !== id || !complete.files || !Object.keys(complete.files).length ||
@@ -244,18 +249,20 @@ export class ConsoleBuildStore {
     });
   }
   references() { return readJson<References>(path.join(this.directory, 'references.json')).then(value => value || {}); }
+  /** The launch's candidate, read once (tools/console-build/startup.ts startupCandidate): the
+   *  newest completed build, else the active one. A build that completes after this read stays staged. */
+  async startupCandidate(): Promise<Candidate | undefined> {
+    const refs = await this.references();
+    const active = refs.active ? await this.verify(refs.active) : undefined;
+    if (!refs.latest || refs.latest === refs.active) return active;
+    const latest = await this.verify(refs.latest);
+    return newer(latest.manifest, active?.manifest) ? latest : active;
+  }
   private async publishStage(stage:string,id:string):Promise<void>{
     // Retain the operation lock and verified stage through transient Windows
     // sharing violations. Permanent/unrelated failures still leave it unpublished.
-    for(let attempt=0;;attempt++){
-      try{await rename(stage,this.release(id));return;}
-      catch(error){
-        const code=(error as NodeJS.ErrnoException).code;
-        if(['EEXIST','ENOTEMPTY'].includes(code||'')){await this.verify(id);return;}
-        if(!['EBUSY','EPERM'].includes(code||'')||attempt>=5)throw error;
-        await new Promise(resolve=>setTimeout(resolve,50*(attempt+1)));
-      }
-    }
+    try{await whileShared('the publication of '+id,['EBUSY','EPERM'],()=>rename(stage,this.release(id)));}
+    catch(error){if(!['EEXIST','ENOTEMPTY'].includes((error as NodeJS.ErrnoException).code||''))throw error;await this.verify(id);}
   }
   async setReferences(refs: References) {
     for (const id of Object.values(refs)) if (id) await this.metadata(id);
@@ -292,22 +299,22 @@ export class ConsoleBuildStore {
   async pin(ids: string[]) {
     await this.locked(async () => {
       for (const id of ids) await this.metadata(id);
-      await atomicJson(path.join(this.directory, `live-${process.pid}.json`), {pid: process.pid, ids});
+      await pinLive(this.directory, `live-${process.pid}.json`, ids);
     });
   }
   /** Builder pins a cache before completing a candidate; caches are shared across history. */
   async pinDependencies(ids: string[]) {
     await this.locked(async () => {
       if (ids.some(id => !validId(id))) throw new Error('Invalid dependency cache pin');
-      await atomicJson(path.join(this.directory, `dependency-live-${process.pid}.json`), {pid: process.pid, ids});
+      await pinLive(this.directory, `dependency-live-${process.pid}.json`, ids);
     });
   }
   async cleanup(): Promise<void> {
     await this.locked(async () => {
       const history = await this.history(), refs = await this.references(), journal = await this.journal();
-      const keep = new Set([...history.slice(-20).map(item => item.id), ...Object.values(refs)]);
+      const keep = new Set([...history.slice(-RETAIN_BUILDS).map(item => item.id), ...Object.values(refs)]);
       if (journal && deploymentPending(journal.phase)) { keep.add(journal.target); keep.add(journal.previous); }
-      for (const id of await this.livePins(/^live-\d+\.json$/)) keep.add(id);
+      for (const id of await livePins(this.directory, /^live-\d+\.json$/)) keep.add(id);
       const trash=path.join(this.directory,'trash');await mkdir(trash,{recursive:true});
       if(await realpath(trash)!==trash)throw Error('Cleanup trash is redirected');
       for (const item of history) if (!keep.has(item.id)) {
@@ -315,10 +322,10 @@ export class ConsoleBuildStore {
         await rename(source,path.join(trash,'release-'+item.id+'-'+randomUUID()));
       }
       const dependencies = new Set(history.filter(item => keep.has(item.id)).map(item => item.dependencyId).filter((id): id is string => !!id));
-      for (const id of await this.livePins(/^dependency-live-\d+\.json$/)) dependencies.add(id);
-      const caches=await readdir(path.join(this.directory,'dependencies')).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return [];throw error;});
+      for (const id of await livePins(this.directory, /^dependency-live-\d+\.json$/)) dependencies.add(id);
+      const caches=await readdir(this.dependencies).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return [];throw error;});
       for(const id of caches.filter(validId))if(!dependencies.has(id)){
-        const source=path.join(this.directory,'dependencies',id);if((await lstat(source)).isSymbolicLink())throw Error('Cleanup refuses redirected dependency');
+        const source=path.join(this.dependencies,id);if((await lstat(source)).isSymbolicLink())throw Error('Cleanup refuses redirected dependency');
         await rename(source,path.join(trash,'dependencies-'+id+'-'+randomUUID()));
       }
     });
@@ -335,7 +342,7 @@ export class ConsoleBuildStore {
             const file=path.join(directory,'app',link),info=await lstat(file).catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return undefined;throw error;});
             if(info?.isSymbolicLink()){
               const target=path.resolve(path.dirname(file),await readlink(file));
-              const expected=manifest?.dependencyId&&validId(manifest.dependencyId)?path.join(this.directory,'dependencies',manifest.dependencyId,component,'node_modules'):null;
+              const expected=manifest?.dependencyId&&validId(manifest.dependencyId)?path.join(this.dependencies,manifest.dependencyId,component,'node_modules'):null;
               if(target!==expected)throw Error('Cleanup refuses unexpected dependency link');await unlink(file);
             }
           }
@@ -343,16 +350,5 @@ export class ConsoleBuildStore {
         await applyRemovals(this.directory,[await inspectRemoval(this.directory,'trash/'+name)]);
       }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
     }
-  }
-  private async livePins(pattern: RegExp): Promise<string[]> {
-    const pins: string[] = [];
-    for (const name of await readdir(this.directory)) {
-      if (!pattern.test(name)) continue;
-      const lease = await readJson<{pid: number; ids: string[]}>(path.join(this.directory, name));
-      if (!lease) continue;
-      try { process.kill(lease.pid, 0); pins.push(...lease.ids); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-    }
-    return pins;
   }
 }

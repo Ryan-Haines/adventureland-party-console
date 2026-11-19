@@ -441,3 +441,6 @@ Startup state assembly extracted and published in initialization.ts. Snapshot re
 Storage observation composition extracted and published in status/storage-composition.ts. Bank snapshot adapters, BankBoi observation and merchant sales observation now share typed live views with separate bank/settings persistence. Two regressions cover snapshot adoption order, live BankBoi dispatch state and replaced stand listings with persistence-before-publication. Full staged-host suite 1,392/1,392; runtime typecheck/lint, build and isolated installer/startup parity pass. Host 52790 bytes; full typed root remains incomplete. Character assets preserved.
 
 Merchant dispatch/idle composition extracted and published in merchant/service-composition.ts. Shared storage/readiness gates and internal idle fallback now assemble in TypeScript with original creation order. Two regressions cover live merchant/realm/listings, shared command sequence and pending storage preserving queued work. Full staged-host suite 1,394/1,394; runtime typecheck/lint, build and isolated installer/startup parity pass. Host 52418 bytes; full typed root remains incomplete. Character assets preserved.
+
+This history ends at b9b5c91e. From there each owner's module header names the files it replaced,
+and [the README](README.md) "Finding the code" maps where each part lives now.

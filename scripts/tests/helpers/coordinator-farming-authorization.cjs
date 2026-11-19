@@ -1,4 +1,4 @@
-const {authorizeCoordinatorFarmingRoute} = require('../../../runtime/coordinator/navigation/runtime.ts');
+const {authorizeCoordinatorFarmingRoute} = require('../../../runtime/movement/coordinator/runtime.ts');
 
 /** Bind the production authorization function to each integration fixture's live controls. */
 exports.installFarmingAuthorization = context => {

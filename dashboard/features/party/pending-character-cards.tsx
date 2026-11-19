@@ -1,28 +1,6 @@
 import type { PartyConsoleModel } from './use-party-console';
 import { CharacterPortrait } from './character-portrait';
 import { useState } from 'react';
-
-function SteamConnectionRecovery({ model, name }: { model: PartyConsoleModel; name: string }) {
-  const [busy, setBusy] = useState(false);
-  const phase = model.state.steamSwitch?.phase;
-  const pending = !!phase && phase !== 'complete';
-  const controls = 'rounded border border-cyan-700 bg-[#071315] px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-950 hover:text-white disabled:opacity-50';
-  return <div className="mt-4 space-y-3">
-    <p className="text-sm text-slate-200">If Steam is open but cannot connect, close the Adventure Land game window, then retry here so Party Console can launch it with its connection enabled.</p>
-    <div className="flex flex-wrap gap-2">
-      <button type="button" className={controls} disabled={busy || pending} onClick={async () => {
-        setBusy(true);
-        try { await model.switchSteam(name); } finally { setBusy(false); }
-      }}>{busy ? 'Connecting to Steam…' : 'Retry Steam connection'}</button>
-      <a className={controls} href="/setup">Open connection setup</a>
-      {phase === 'failed' && <button type="button" className={controls} disabled={busy} onClick={async () => {
-        setBusy(true);
-        try { await model.recoverSteamHandoff(); } finally { setBusy(false); }
-      }}>Recover Steam handoff after characters are offline</button>}
-    </div>
-    {pending && <p className="text-sm text-amber-200">{model.state.steamSwitch?.error || 'A Steam handoff is in progress. Wait for it to finish before retrying.'}</p>}
-  </div>;
-}
 const labels = {
   loading: 'Loading in Steam',
   code: 'CODE active — waiting for Party Console',
@@ -60,9 +38,32 @@ export function pendingCharacters(model: PartyConsoleModel) {
     })),
   ];
 }
+// 's recovery: every pending Steam primary card offers a retry of the Steam connection, the
+// connection setup page and, after a failed handoff, its recovery. A press or a handoff in flight
+// disables the presses, so one click sends one switch. Each press goes through the model's roster
+// actions, the dashboard's one action client.
+function SteamConnectionRecovery({ model, name }: { model: PartyConsoleModel; name: string }) {
+  const [busy, setBusy] = useState(false);
+  const phase = model.state.steamSwitch?.phase;
+  const pending = !!phase && phase !== 'complete';
+  const press = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    try { await action(); } finally { setBusy(false); }
+  };
+  const controls = 'rounded border border-cyan-700 bg-[#071315] px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-950 hover:text-white disabled:opacity-50';
+  return <div className="mt-4 space-y-3">
+    <p className="text-sm text-slate-200">If Steam is open but cannot connect, close the Adventure Land game window, then retry here so Party Console can launch it with its connection enabled.</p>
+    <div className="flex flex-wrap gap-2">
+      <button type="button" className={controls} disabled={busy || pending} onClick={() => void press(() => model.switchSteam(name))}>{busy ? 'Connecting to Steam…' : 'Retry Steam connection'}</button>
+      <a className={controls} href="/setup">Open connection setup</a>
+      {phase === 'failed' && <button type="button" className={controls} disabled={busy} onClick={() => void press(() => model.recoverSteamHandoff())}>Recover Steam handoff after characters are offline</button>}
+    </div>
+    {pending && <p className="text-sm text-amber-200">{model.state.steamSwitch?.error || 'A Steam handoff is in progress. Wait for it to finish before retrying.'}</p>}
+  </div>;
+}
 export function PendingCharacterCards({ model }: { model: PartyConsoleModel }) {
   return pendingCharacters(model).map((entry) => (
-    <article
+    <article data-area="pending-card"
       key={entry.name}
       className="min-h-48 rounded border border-slate-500 bg-[#101c1a] p-5 text-slate-100"
       aria-live="polite"

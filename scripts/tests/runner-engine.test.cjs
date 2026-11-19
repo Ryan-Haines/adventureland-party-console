@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
 const { JSDOM } = require('../../.caracal/node_modules/jsdom');
 const jquery = require('../../.caracal/node_modules/jquery');
-const { createRunnerHost } = require('../../runtime/lifecycle/runner-host.ts');
+const { createRunnerHost } = require('../../runtime/lifecycle/character/host.ts');
 
 test('downloaded game and CODE engines survive repeated runner disposal on one socket', async () => {
   const gameRoot=path.resolve('.caracal/game_files');
@@ -19,7 +19,11 @@ test('downloaded game and CODE engines survive repeated runner disposal on one s
   const directory = path.resolve('.build/test-runners/real-engine');
   await fs.mkdir(directory, { recursive: true });
   const codeFile = path.join(directory, 'entry.js');
-  await fs.writeFile(codeFile, 'parent.socket.on("test-event", function(){parent.effects.push(character.name)});');
+  // The generation's run scope (run.ts createRunScope) records the console's listeners, and the
+  // host's facade no longer does, so this CODE removes its own listener in on_destroy, which the
+  // host's dispose calls, as the game's CODE contract asks.
+  await fs.writeFile(codeFile, 'var heard=function(){parent.effects.push(character.name)};parent.socket.on("test-event",heard);'
+    + 'function on_destroy(){parent.socket.removeListener("test-event",heard);}');
   const windows = [];
   function createContext(parent) {
     const window = new JSDOM('', { url: 'https://adventure.land/' }).window;
@@ -101,6 +105,11 @@ test('downloaded game and CODE engines survive repeated runner disposal on one s
       items: Array(42).fill(null), slots: {}, s: {}, c: {}, q: {}, hp: 100, mp: 100,
       max_hp: 100, max_mp: 100, gold: 0, speed: 40, range: 100, frequency: 1, attack: 10,
       in: 'main', skin: 'marmor1a', base: { h: 8, v: 7, vn: 2 } });
+    // socket.io's emit goes to the server, so the call budget's own `players` and `tracker` requests
+    // never reach the client's listeners. This EventEmitter would hand them straight back during the
+    // class bundle's install, before the status report the reply feeds exists.
+    const emit = socket.emit;
+    socket.emit = function (name, ...args) { return name === 'players' || name === 'tracker' || emit.call(this, name, ...args); };
     host = createRunnerHost({ upper: game, createContext, evaluateFiles,
       runnerFiles: ['common_functions.js', 'old_common_functions.js', 'runner_functions.js', 'runner_compat.js'],
       codeFile: path.resolve('.build/game', manifest.classes.mage.file),

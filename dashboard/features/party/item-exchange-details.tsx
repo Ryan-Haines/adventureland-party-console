@@ -1,5 +1,6 @@
+import { exchangeResultIsItem } from '../../../runtime/items/api.ts';
 import type { MerchantExchangeItem } from './merchant-exchange-item';
-import { ItemSprite } from './item-sprite';
+import { SpriteCrop } from './sprite-crop';
 import type { Sprite } from './sprite';
 import type { ReactNode } from 'react';
 import type { ExchangeRewardTileData } from './exchange-reward-tile';
@@ -36,7 +37,8 @@ export function ItemExchangeDetails({
     (entry) => entry.id === id && entry.level === level,
   );
   // A table can award the same item in different quantities or through nested rolls.
-  // Sum those mutually exclusive outcomes for the chance of receiving the item.
+  // Sum those mutually exclusive outcomes for the chance of receiving the item. A source shows at
+  // every level of the item, since an exchange result names the item and not its level.
   const sources = exchanges.flatMap((entry) => {
     if (entry.reward) return [];
     const chance = entry.results.reduce((sum, result) =>
@@ -64,7 +66,7 @@ export function ItemExchangeDetails({
       className="flex items-center gap-2 rounded border border-amber-900 bg-slate-950 p-2 text-left text-amber-100 hover:border-amber-400 hover:bg-slate-800 disabled:cursor-default disabled:hover:border-amber-900 disabled:hover:bg-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
     >
       <span className="relative h-8 w-8 shrink-0">
-        {sprite && <ItemSprite sprite={sprite} />}
+        {sprite && <SpriteCrop sprite={sprite} />}
       </span>
       <span className="min-w-0 flex-1 text-xs">
         {quantity.toLocaleString()} × {name}
@@ -78,7 +80,7 @@ export function ItemExchangeDetails({
   return (
     <>
       {!!prices.length && (
-        <section className="rounded border border-amber-900 bg-slate-950 p-4">
+        <section data-area="item-exchange" className="rounded border border-amber-900 bg-slate-950 p-4">
           <h3 className="font-mono text-xs uppercase tracking-wider text-amber-300">
             Exchange price
           </h3>
@@ -98,7 +100,7 @@ export function ItemExchangeDetails({
         </section>
       )}
       {!!rewards.length && (
-        <section className="rounded border border-amber-900 bg-slate-950 p-4">
+        <section data-area="item-exchange-rewards" className="rounded border border-amber-900 bg-slate-950 p-4">
           <h3 className="font-mono text-xs uppercase tracking-wider text-amber-300">
             {box ? 'Rewards' : 'Exchange drops'}
           </h3>
@@ -131,9 +133,7 @@ export function ItemExchangeDetails({
                         result.sprite,
                         rewardChance(result.chance),
                         0,
-                        !['empty', 'gold', 'shells', 'cx', 'cxbundle'].includes(
-                          result.kind,
-                        ),
+                        exchangeResultIsItem(result.kind),
                         true,
                         result.kind,
                       ),
@@ -154,7 +154,7 @@ export function ItemExchangeDetails({
         </section>
       )}
       {!!sources.length && (
-        <section className="rounded border border-amber-900 bg-slate-950 p-4">
+        <section data-area="item-exchange-sources" className="rounded border border-amber-900 bg-slate-950 p-4">
           <h3 className="font-mono text-xs uppercase tracking-wider text-amber-300">Exchange reward</h3>
           <p className="mt-2 text-xs text-slate-300">Chance per exchange using the quantity shown</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">

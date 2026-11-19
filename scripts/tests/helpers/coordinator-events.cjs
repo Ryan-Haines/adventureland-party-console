@@ -1,4 +1,4 @@
-const {createEventReturns}=require('../../../runtime/coordinator/events/returns.ts');
+const {createEventReturns}=require('../../../runtime/events/coordinator/returns.ts');
 function eventService(context){
  const party=context.party;
  const service=createEventReturns({

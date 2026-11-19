@@ -1,6 +1,6 @@
-const {createConvoyEngagementRoutes}=require('../../../runtime/coordinator/http/convoy-engagement.ts');
-const {createConvoyAcknowledgementRoutes}=require('../../../runtime/coordinator/http/convoy-acknowledgements.ts');
-const {createFarmingReturnRoute}=require('../../../runtime/coordinator/http/farming-return.ts');
+// Movement's convoy routes over a sliced coordinator context. The empty spawn return has no route:
+// farm.ts `returnToSpawn` decides it on the coordinator tick.
+const {createConvoyEngagementRoutes,createConvoyAcknowledgementRoutes}=require('../../../runtime/movement/coordinator/routes.ts');
 function convoyRoutes(context){
  const {party,farmingNavigation:nav}=context,now=()=>context.Date?.now?.()??Date.now();
  const ports={now,owned:name=>context.ownedCharacter(name),intent:name=>nav.intent(name),group:()=>context.groupedCombatSnapshot(),
@@ -11,7 +11,7 @@ function convoyRoutes(context){
  const engagement=createConvoyEngagementRoutes(party,ports);
  const acknowledgements=createConvoyAcknowledgementRoutes(party,{now,owned:ports.owned,valid:body=>context.convoyNavigation.validReport(party,body),
   nextCommand:()=>party.nextCommandId++,persist:ports.persist,history:()=>context.persistHistory(),hold:(...args)=>context.convoyNavigation.hold(party,...args),error:message=>context.console.error(message)});
- return {'convoy-engage':engagement.engage,'grouped-approach':engagement.approach,'farming-return':createFarmingReturnRoute(party,ports),
+ return {'convoy-engage':engagement.engage,'grouped-approach':engagement.approach,
   'convoy-complete':acknowledgements.complete,'convoy-failed':acknowledgements.failed};
 }
 module.exports={convoyRoutes};

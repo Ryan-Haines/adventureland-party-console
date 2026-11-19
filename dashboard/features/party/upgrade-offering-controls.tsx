@@ -3,12 +3,12 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ChevronRight, Sparkles, X } from 'lucide-react';
-import { ItemSprite } from './item-sprite';
+import { SpriteCrop } from './sprite-crop';
 import { itemMaximumLevel } from './item-maximum-level';
 import type { Item } from './item';
 import type { ItemMeta } from './item-meta';
 import type { MerchantCatalogItem } from './merchant-catalog-item';
-import { upgradeOfferings, offeringOverlap, type UpgradeOffering, type UpgradeOfferingRule } from '../../../runtime/upgrade-offerings';
+import { upgradeOfferings, offeringProblem, type UpgradeOffering, type UpgradeOfferingRule } from '../../../runtime/items/api.ts';
 
 export type OfferingSource = {slot:number | string; equipped?:boolean};
 type Selection = {item:Item; meta?:ItemMeta | null; source?:OfferingSource; offering?:UpgradeOffering; rule?:UpgradeOfferingRule};
@@ -58,7 +58,7 @@ export function UpgradeOfferingProvider({children, character, executor, stock, r
 function OfferingIcon({name, catalog}: {name:string; catalog:MerchantCatalogItem[]}) {
   const item = catalog.find(entry => entry.id === name);
   return <span className="relative inline-block h-14 w-14 shrink-0 overflow-hidden rounded border border-slate-600 bg-black" aria-label={item?.name || name}>
-    {item?.sprite && <ItemSprite sprite={item.sprite} />}
+    {item?.sprite && <SpriteCrop sprite={item.sprite} />}
   </span>;
 }
 
@@ -74,10 +74,8 @@ function OfferingDialog({selection, rules, stock, catalog, close, save}: {
     offering:selection.offering || 'offeringp', required:true,
   });
   const [busy,setBusy] = useState(false), [error,setError] = useState('');
-  const overlap = !manual && offeringOverlap(rules,rule);
-  const invalid = overlap ? `There is already a rule that covers +${overlap.floor} to +${overlap.ceiling}.`
-    : !manual && (rule.floor >= rule.ceiling || rule.ceiling > max) ? 'Choose a higher destination level.'
-    : manual && !stock[rule.offering] ? 'This offering is no longer available.' : '';
+  const invalid = manual ? (stock[rule.offering] ? '' : 'This offering is no longer available.')
+    : offeringProblem(rules, rule, max)?.error || '';
   const name = catalog.find(entry => entry.id === selection.item.name)?.name || selection.item.name;
   async function confirm() {
     if (busy || invalid) return;
@@ -90,7 +88,7 @@ function OfferingDialog({selection, rules, stock, catalog, close, save}: {
     finally { setBusy(false); }
   }
   return <Dialog open onOpenChange={open => {if (!open && !busy) close();}}>
-    <DialogContent className="border-slate-600 bg-slate-950 text-slate-100">
+    <DialogContent data-area="upgrade-offerings" className="border-slate-600 bg-slate-950 text-slate-100">
       <DialogHeader><DialogTitle>{manual ? 'Confirm upgrade' : selection.rule ? 'Edit upgrade rule' : 'Add upgrade rule'}</DialogTitle>
         <DialogDescription className="text-slate-300">{manual
           ? `Use ${upgradeOfferings[rule.offering]} to upgrade ${name} from +${level} to +${level+1}?`
@@ -131,7 +129,7 @@ export function UpgradeOfferingRules() {
     try { await controls.clear(); }
     finally { setClearing(false); setClearArmed(false); }
   }
-  return <section className="-mx-5 border-y border-sky-800 bg-black text-sky-300">
+  return <section data-area="upgrade-offering-rules" className="-mx-5 border-y border-sky-800 bg-black text-sky-300">
     <div className="flex h-10 w-full items-stretch bg-black">
     <button type="button" aria-label="Upgrade rules" aria-expanded={open} onClick={() => {setOpen(!open); setClearArmed(false);}}
       className="flex min-w-0 flex-1 items-center gap-2 border-0 bg-black px-5 text-left text-xs text-sky-300 transition-colors hover:bg-slate-900 hover:text-sky-100">

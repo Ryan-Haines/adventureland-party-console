@@ -1,4 +1,6 @@
-/** Definition durations are milliseconds, except elixir item durations (hours). */
+// Definition durations are milliseconds, except an elixir's duration, which the game gives in hours.
+export const durationIsHours = (definition: Record<string, unknown>) => definition.type === "elixir";
+
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms)) return "Unknown";
   if (ms <= 0) return "0s";
@@ -12,5 +14,5 @@ export function formatDuration(ms: number): string {
 
 export function durationStat(key: string, value: unknown, definition: Record<string, unknown> = {}): string | null {
   if (!/^(duration(?:_min|_max)?|cooldown(?:_min|_max)?|reuse_cooldown|ms|remainingMs)$/.test(key) || typeof value !== "number") return null;
-  return formatDuration(value * (key === "duration" && definition.type === "elixir" ? 3600000 : 1));
+  return formatDuration(value * (key === "duration" && durationIsHours(definition) ? 3600000 : 1));
 }

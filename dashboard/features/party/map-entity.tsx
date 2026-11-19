@@ -6,8 +6,6 @@ export type MapEntity = {
   id: string;
   name: string;
   type: string;
-  ctype?: string | null;
-  mtype?: string | null;
   x: number;
   y: number;
   hp: number;
@@ -18,8 +16,6 @@ export type MapEntity = {
   target?: string | null;
   sprite?: Sprite | null;
   direction?: number;
-  going_x?: number;
-  going_y?: number;
   dollHtml?: string | null;
   stand?: string | boolean | null;
   standSprite?: Sprite | null;

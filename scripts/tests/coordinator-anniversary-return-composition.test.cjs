@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { createCoordinatorAnniversaryReturns } = require('../../runtime/coordinator/anniversary/return-composition.ts');
+const { createCoordinatorAnniversaryReturns } = require('../../runtime/events/coordinator/anniversary.ts');
 
 for(const mode of ['owned','new-navigation','manual-cancel','protected','not-ready'])test('early anniversary return handles '+mode+' farming walk',()=>{
  const cycle={id:'round',startsAt:0,endsAt:300000,participants:['A'],waypoints:{A:{revision:1,location:{map:'main',x:0,y:0}}}};

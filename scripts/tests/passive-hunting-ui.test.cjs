@@ -1,11 +1,7 @@
-const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),Module=require('node:module');
-const {buildSync}=require('esbuild'),React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
+const {test}=require('node:test'),assert=require('node:assert/strict'),load=require('./helpers/dashboard-query-module.cjs');
+const React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
-const filename=path.resolve('dashboard/features/party/passive-hunting-menu.tsx'),m=new Module(filename,module);
-m.filename=filename;m.paths=Module._nodeModulePaths(path.dirname(filename));
-m.require=function(id){if(id.startsWith('@/components/ui/'))return new Proxy({},{get:(_,key)=>String(key)});return Module.prototype.require.call(this,id);};
-m._compile(buildSync({entryPoints:[filename],bundle:true,packages:'external',external:['@/components/ui/*'],platform:'node',format:'cjs',write:false}).outputFiles[0].text,filename);
-const {PassiveHuntingMenu}=m.exports;
+const {PassiveHuntingMenu}=load('passive-hunting-menu.tsx',{'@/components/ui/*':new Proxy({},{get:(_,key)=>String(key)})});
 const text=n=>typeof n==='string'?n:(n.children||[]).map(text).join('');
 test('searchable menu saves separate enable, movement, priority and generator choices with readable controls',async()=>{
  const calls=[],props={renderMonsterDetails:(id,onClose)=>React.createElement('MonsterDetails',{id,onClose}),settings:{version:1,rules:{},useFieldGenerators:true},catalog:[{id:'bee',name:'Bee'},{id:'phoenix',name:'Phoenix'},{id:'fieldgen0',name:'Generator'}],onSave:async patch=>calls.push(patch)};
@@ -20,6 +16,8 @@ test('searchable menu saves separate enable, movement, priority and generator ch
   await act(async()=>enabled.props.onCheckedChange(true));assert.deepEqual(calls.pop(),{rules:{bee:{enabled:true}}});
   const moving=view.root.findAllByType('Checkbox').find(n=>n.props['aria-label']==='Keep moving to destination for Bee');assert.equal(moving.props.checked,false);
   await act(async()=>moving.props.onCheckedChange(true));assert.deepEqual(calls.pop(),{rules:{bee:{keepMoving:true}}});
+  const interrupts=view.root.findAllByType('Checkbox').find(n=>n.props['aria-label']==='Bee May interrupt Hunt');assert.equal(interrupts.props.checked,true,'a rare interrupts the Hunt unless its rule says otherwise');
+  await act(async()=>interrupts.props.onCheckedChange(false));assert.deepEqual(calls.pop(),{rules:{bee:{interruptsHunt:false}}});
   const input=()=>view.root.findAllByType('input').find(n=>n.props['aria-label']==='Bee passive priority');
   await act(async()=>input().props.onChange({target:{value:'123'}}));await act(async()=>input().props.onBlur());assert.deepEqual(calls.pop(),{rules:{bee:{priority:123}}});
   await act(async()=>input().props.onChange({target:{value:'-1'}}));await act(async()=>input().props.onBlur());assert.equal(calls.length,0);assert.ok(view.root.findByProps({role:'alert'}));
@@ -38,12 +36,12 @@ test('searchable menu saves separate enable, movement, priority and generator ch
  }finally{await act(async()=>view?.unmount());}
 });
 
-const farmingFilename=path.resolve('dashboard/features/party/farming-mode-control.tsx'),farmingModule=new Module(farmingFilename,module);
-farmingModule.filename=farmingFilename;farmingModule.paths=Module._nodeModulePaths(path.dirname(farmingFilename));farmingModule.require=m.require;
-farmingModule._compile(buildSync({entryPoints:[farmingFilename],bundle:true,packages:'external',external:['@/components/ui/*'],platform:'node',format:'cjs',write:false}).outputFiles[0].text,farmingFilename);
+const farmingModule={exports:load('farming-mode-control.tsx',{'@/components/ui/*':new Proxy({},{get:(_,key)=>String(key)})})};
+// The two mode rows' core entries with their declared buttons (runtime/hooks/core.ts), which the farming card labels its pair from.
+const entries=slot=>require('../../runtime/hooks/core.ts').coreRegistrations.flatMap(r=>(r.slots??[]).filter(s=>s.slot===slot).map(s=>({mode:s.mode,addon:r.name,button:s.button})));
 
 test('closing nested monster details preserves both passive hunting and farming dialogs',async()=>{
- const props={policy:'default',effectiveMode:'default',blacklist:{},catalog:[{id:'bee',name:'Bee'}],onClearBlacklist:async()=>{},onSelect(){},onRareChange:async()=>{},
+ const props={combatEntries:entries('combat-mode'),targetEntries:entries('target-mode'),combatMode:'default',targetMode:'farming',effectiveMode:'default',blacklist:{},catalog:[{id:'bee',name:'Bee'}],onClearBlacklist:async()=>{},onSelect(){},onRareChange:async()=>{},
   renderMonsterDetails:(id,close)=>React.createElement('Dialog',{open:true,'data-monster':id,onOpenChange:open=>{if(!open)close()}},React.createElement('button',{'aria-label':'Close monster',onClick:close}))};
  let view;try{
   await act(async()=>view=create(React.createElement(function ControlledFarming(){const [settingsOpen,setSettingsOpen]=React.useState(false);return React.createElement(farmingModule.exports.FarmingModeControl,{...props,settingsOpen,onSettingsOpenChange:setSettingsOpen});})));

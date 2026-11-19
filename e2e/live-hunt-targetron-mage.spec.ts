@@ -1,5 +1,5 @@
 import {test,expect} from './live-fixtures';
-import {W,P,evidence} from './hunt-interruption-helpers';
+import {W,P,evidence,combatOwned} from './hunt-interruption-helpers';
 
 // The pinned native server's sMap does not admit (-873,-405). This nearby
 // interior cell preserves the reported wall while allowing real native moves.
@@ -113,10 +113,18 @@ test('mage reengages a blocked Targetron from the reported UHills screenshot',as
       }
       return (await live.clients[W].events()).some((event:any)=>event.event==='hit'&&String(event.data?.id)===seed.id&&event.data?.hid===W&&event.data?.damage>0);
     },{timeout:60000,intervals:[100,250],message:'The mage must recover around native UHills terrain and damage Targetron'}).toBe(true);
+    // The mage casts on the pass it reaches range, between two of the sampler's 100 ms samples, so
+    // the poll can see the hit before any in-range sample exists. Read the samples up to the first
+    // one taken at or after the hit.
+    const hitAt=(await live.clients[W].events()).find((event:any)=>event.event==='hit'&&String(event.data?.id)===seed.id&&event.data?.hid===W&&event.data?.damage>0).at;
+    await expect.poll(async()=>{
+      samples.push(...await live.clients[W].run('globalThis.__e2eTargetronMageSampler.samples.splice(0)'));
+      return samples.some(sample=>sample.at>=hitAt);
+    },{timeout:10000,message:'The sampler must record the mage at its first hit'}).toBe(true);
     expect(samples.some(sample=>sample.distance!==null&&sample.distance<=geometry.range),
       'The mage must reach native attack range').toBe(true);
     expect(samples.some(sample=>sample.ownedDisplacement&&sample.observedSegmentClear||
-      sample.moving&&sample.segmentClear&&(sample.positioning?.movementOwner==='combat'||sample.positioning?.movementOwner==='combat-approach'&&sample.positioning.mode==='independent-approach'&&typeof sample.positioning.approachId==='string')&&sample.positioning?.target===seed.id),
+      sample.moving&&sample.segmentClear&&combatOwned(sample.positioning)&&sample.positioning?.target===seed.id),
       'The selected native encounter must own collision-clear combat movement').toBe(true);
     expect(samples.some(sample=>Math.hypot(sample.x-geometry.origin.x,sample.y-geometry.origin.y)>10),
       'The mage must actually leave its initially blocked position').toBe(true);

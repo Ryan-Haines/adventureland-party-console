@@ -1,9 +1,16 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {fixture}=require('./helpers/coordinator-workers.cjs');
-test('an unresolved realm refreshes and retries without choosing a different realm',()=>{
- const f=fixture();let refreshed=0;f.ports.resolveRealm=()=>undefined;f.ports.refreshAccount=async()=>refreshed++;
+// Table W's realm row: the retry waits on the account's answer, never on a timer.
+test('an unresolved realm refreshes and retries without choosing a different realm',async()=>{
+ const f=fixture(),asked=[];let refreshed=0,resolves=false;
+ f.ports.resolveRealm=realm=>{asked.push(realm);return resolves?{address:'fixture',path:'/',port:443}:undefined;};f.ports.refreshAccount=async()=>refreshed++;
  f.manager.start('W');assert.equal(f.workers.length,0);assert.equal(refreshed,1);assert.equal(f.lifecycle.W,'realm-error');
- assert.equal(f.timers[0].ms,3000);f.blocks.W.enabled=false;f.timers[0].callback();assert.equal(f.workers.length,0);
+ await new Promise(setImmediate);assert.equal(f.workers.length,0,'an answer without the realm keeps the wait');
+ resolves=true;f.manager.accountChanged({characters:['W']});assert.equal(f.workers.length,1,'the answer with the realm starts it');
+ assert.deepEqual([...new Set(asked)],['SR_USII'],'no other realm was asked');
+ const off=fixture();off.ports.resolveRealm=()=>undefined;off.manager.start('W');off.blocks.W.enabled=false;
+ off.ports.resolveRealm=()=>({address:'fixture',path:'/',port:443});off.manager.accountChanged({});assert.equal(off.workers.length,0,'a worker turned off waits no more');
+ assert.equal(f.timers.length+off.timers.length,0);
 });
 test('worker arguments and sibling messages preserve their wire format',()=>{
  const f=fixture(),w=f.manager.start('W');w.emit('message',{type:'process_ready'});
@@ -12,10 +19,13 @@ test('worker arguments and sibling messages preserve their wire format',()=>{
  w.emit('message',{type:'connected'});assert.equal(f.lifecycle.W,'online');assert.deepEqual(w.sent.at(-1),{type:'siblings_and_acc',account:{characters:['W']},siblings:['W']});
 });
 test('bootstrap repair finishes before replacement scheduling',async()=>{
- const f=fixture();let repair;f.ports.repair=()=>new Promise(resolve=>{repair=resolve;});const w=f.manager.start('W');
+ const {lifecycleSavedFields}=require('../../runtime/lifecycle/fields.ts');
+ const f=fixture();let repair;f.ports.gameFiles={refresh_latest:()=>new Promise(resolve=>{repair=()=>resolve({version:10,revision:'10'});})};
+ const w=f.manager.start('W');
  w.emit('message',{type:'bootstrap_failed'});assert.equal(f.lifecycle.W,'repairing');w.emit('exit',1,null);
- await new Promise(setImmediate);assert.equal(f.timers.length,0);repair();await new Promise(setImmediate);
- assert.equal(f.timers[0].ms,1500);f.timers[0].callback();assert.equal(f.workers.length,2);
+ await new Promise(setImmediate);assert.equal(f.timers.length,0);repair();
+ for(let turn=0;turn<4;turn++)await new Promise(setImmediate);
+ assert.equal(f.timers[0].ms,lifecycleSavedFields.settings.workerRestartMs.default);f.timers[0].callback();assert.equal(f.workers.length,2);
 });
 test('retired worker messages cannot deploy characters or write storage',()=>{
  const f=fixture(),old=f.manager.start('W');f.manager.start('W');old.emit('message',{type:'deploy',character:'P'});
@@ -59,12 +69,15 @@ test('worker stop requests graceful termination before killing after the grace i
 });
 
 test('new workers use the current default, pinned workers retain their version, and only current workers can signal updates',()=>{
- const f=fixture();let version=11,updates=[];f.ports.currentVersion=()=>version;f.ports.clientUpdate=event=>updates.push(event);
- const first=f.manager.start('W');first.emit('message',{type:'process_ready'});assert.equal(first.sent[0].arguments.version,11);
- const firstInstance=f.blocks.W.clientInstance;version=12;const next=f.manager.start('W');next.emit('message',{type:'process_ready'});
- assert.equal(next.sent[0].arguments.version,12);assert.notEqual(f.blocks.W.clientInstance,firstInstance);
- first.emit('message',{type:'client_update',event:'reloaded'});assert.deepEqual(updates,[]);
- next.emit('message',{type:'client_update',event:'welcome'});assert.deepEqual(updates,['welcome']);
- f.blocks.W.version=9;const pinned=f.manager.start('W');pinned.emit('message',{type:'process_ready'});assert.equal(pinned.sent[0].arguments.version,9);
- pinned.emit('message',{type:'client_update',event:'reloaded'});assert.deepEqual(updates,['welcome']);
+ // Each update asks the client files for the official client; this one never answers, so the rows
+ // read only who asked and with which force.
+ const f=fixture(),updates=[];f.ports.gameFiles={refresh_latest:force=>{updates.push(force);return new Promise(()=>{});}};
+ const first=f.manager.start('W');first.emit('message',{type:'process_ready'});assert.equal(first.sent[0].arguments.version,10);
+ const firstInstance=f.blocks.W.clientInstance;const next=f.manager.start('W');next.emit('message',{type:'process_ready'});
+ assert.equal(next.sent[0].arguments.version,10);assert.notEqual(f.blocks.W.clientInstance,firstInstance);
+ first.emit('message',{type:'client_update',event:'reloaded'});assert.deepEqual(updates,[],'a retired worker signals nothing');
+ next.emit('message',{type:'client_update',event:'welcome'});assert.deepEqual(updates,[false],'a welcome asks without force');
+ const p=fixture(),asked=[];p.ports.gameFiles={refresh_latest:force=>{asked.push(force);return new Promise(()=>{});}};
+ p.blocks.W.version=9;const pinned=p.manager.start('W');pinned.emit('message',{type:'process_ready'});assert.equal(pinned.sent[0].arguments.version,9);
+ pinned.emit('message',{type:'client_update',event:'reloaded'});assert.deepEqual(asked,[],'a pinned worker asks no update');
 });

@@ -1,3 +1,16 @@
+Some tests that the Validate lines below name are gone. For a movement change,
+e2e/movement-owner-failures.md "Step 11 test cut" names the check of each failure mode.
+
+The v1.5.0 notes below keep their original wording and module names. The owner modules now
+hold their behaviour: event convoy and catch-up in runtime/movement/ and
+runtime/events/, cleanouts and gathering in runtime/merchant-jobs/, bank sort and stack
+consolidation in runtime/items/character/bank.ts, upgrade recovery in
+runtime/items/coordinator/production.ts, mail in runtime/items/coordinator/mail.ts and the
+BankBoi retry classes in runtime/items/rules.ts. These behaviours are not in the
+build yet: independent event catch-up beside a convoy, a running cleanout owning duplicate
+pending demand, the Auto NPC withdrawal priority lift, the missing-survivor report and
+native can_stack with locked bank piles.
+
 Cipher gathering chooses an ordinary farmable spawn using the same map and
 geometry restrictions as the farming catalog. Instanced templates such as
 `dungeon0` must never become a Goo gathering destination. Validate the native
@@ -154,7 +167,7 @@ acknowledgements for three continuous seconds before activation; renewed combat
 resets this window, and missing reports never imply
 safety. Interrupted waits preserve the active build and expire/release the hold.
 Validate `console-build.spec.ts`, `console-build-safe-host.spec.ts` and
-`live-console-safe-reload.spec.ts`; see `docs/testing-safe-console-reload.md`.
+the console reload rows (`e2e/console-reload-rows.ts`) of the Arena table; see `docs/testing-safe-console-reload.md`.
 Activate dashboard, coordinator and character assets together for this protocol.
 Fast combat snapshots carry the same ordered maintenance lease as full status;
 successor promotion and the final attack gate reject new targets during the hold.
@@ -200,7 +213,7 @@ enabled event live. Retire only their matching-cycle exit/continuation commands
 and owned return walk; preserve the saved checkpoint until normal admission
 adopts it. New ended-event returns exclude these members too. Stale reports and
 disabled events retain the return. Validate both native Halloween handoffs and
-checkpoint arrival in `live-event-return-handoff.spec.ts`; failure inventory is
+checkpoint arrival in the `e2e/event-checkpoint-rows.ts` rows of the default fixture table; failure inventory is
 `docs/testing-event-return-handoff.md`. Coordinator-only activation uses the
 supported `scripts/start-console.ps1 -CoordinatorOnly` restart.
 
@@ -279,7 +292,9 @@ the maintained route and formation ownership. Validate the native terrain gap
 case in `live-event-runtime-recovery.spec.ts`; activate character assets and
 coordinator together. Failure inventory: `docs/testing-event-terrain-approach.md`.
 
-Combat corner recovery samples reachable sides of the selected target using native
+Formation recovery before a pull climbs the movement owner's progress ladder over
+its staging goals with no attempt count (docs/farming-combat.md, Formation terrain
+recovery). Combat corner recovery samples reachable sides of the selected target using native
 hitbox distance, retaining a selected side until arrival or a meaningful target
 change. Its bounded local detour may separate a healthy, unattacked melee fighter
 from priest coverage only while the target attacks another living formation member.
@@ -461,9 +476,9 @@ Failed event walking with runtime-lost can also recover after CODE turnover and
 coordinator restart. At least one captured runtime must change, and every
 participant must report fresh living ownership of the same event, realm,
 navigation revision and parent
-scope; only the old convoy's release command may remain. Replacement retains
-route retry counts. Exhausted, geometry, unchanged-runtime, manual and stale
-ownership failures remain held. Validate `live-event-runtime-recovery.spec.ts`
+scope; only the old convoy's release command may remain. Replacement carries the
+walk's ladder (`runtime/protocol/ladder.ts`) from where it stood.
+Geometry, unchanged-runtime, manual and stale ownership failures remain held. Validate `live-event-runtime-recovery.spec.ts`
 with actual upstream CODE replacement and native boss hits before activation.
 
 Halloween respawn walking may replace a failed event convoy only when a fresh
@@ -477,7 +492,7 @@ verified speed definition; evidence retains the actual speed and active buff.
 Publish character/coordinator assets through the supported full restart.
 
 Merchant shopping uses one shared asynchronous estimator in
-`runtime/upgrade-estimate.ts`. A deterministically ordered cart/request shares
+`runtime/items/rules.ts` (the upgrade estimate). A deterministically ordered cart/request shares
 60 million native random-roll simulations across at most 3,000 runs per line.
 Incomplete runs are discarded; fewer than 30 completed runs makes a line
 unavailable. Cooperative yields keep heartbeats responsive. Stale browser
@@ -517,7 +532,7 @@ lucky tracker/identity journeys. Character and dashboard assets require full res
 
 Bag-only merchant handoffs interleave with native combat without initiating farm
 reunion for a stationary fighter. Equipped upgrade marks retain combat waiting.
-Every item/gold send checks range below 400, living peers and call cost <=120;
+Every item/gold send checks range below 400 and living peers, and asks the call budget's job band;
 one thirty-second handoff budget bounds waiting. Inventory is resolved after waits
 and protection checks, and acknowledged sends alone populate partial receipts.
 Unsent marks stay pending. Partial emergency cleanout queues a durable retryAt
@@ -632,7 +647,9 @@ immutable console candidate; activation remains explicit.
 Cave travel assembles participants at the leader before departure, shares the
 leader's validated native route, applies the slowest party speed through native
 cruise, and holds members that get ahead in walking progress. Interrupted routes
-regroup and prepare together, with a bounded three-repair limit. Manual stair
+regroup and prepare together. Each kind of repair climbs the one ladder
+(`runtime/hunting/coordinator/cave.ts` `caveRound`): the same strategy, the other, then a wait for the
+next report, with no count. Manual stair
 destinations issue native transport after arrival
 and retain that destination through an intervening farewell vote. Other encounter
 votes stop the selected route. Revealed objectives on other floors return a
@@ -681,11 +698,12 @@ restart below; character execution reuses the existing self-bank command.
 Exchange reward tiles edit the merchant's existing automatic item rules, including
 rules for stock that has not arrived yet. Inventory and reward previews share
 `dashboard/features/party/automatic-item-actions.tsx`; selecting an action retires
-other automatic actions and pending reservations through
-`inventory/automatic-action.ts`. Unmarked exchange rewards default to banking;
-sale, upgrade, compound, deconstruction and exchange rules retain rewards for
-normal merchant work. `/merchant/exchange-progress` returns current reward routing
-after bank travel. Auto exchange rules persist for future complete batches and
+other automatic actions and pending reservations through the one remover of
+`runtime/items/coordinator/fates.ts`. An exchange reward takes the first
+active rule in `AUTOMATIC_ORDER` (runtime/items/rules.ts) and banks with none;
+a reward the rules bank records the saved `bank` rule, so its routing survives a
+restart. `/merchant/exchange-progress` returns current reward routing after bank
+travel. Auto exchange rules persist for future complete batches and
 allow nested boxes to queue another exchange; locked stacks are excluded.
 Manual exchange is always enabled. Automatic exchange has its own checkbox and
 priority; legacy Exchange priority/enable settings migrate to the new routines.
@@ -720,7 +738,9 @@ Hunt. Activate this coordinator change with the supported coordinator-only resta
 
 Failed delivery equips wait for a full merchant inventory received after the failure. Missing stock retires the mark; retained stock retries delivery under a fresh identity so late receipts cannot consume the new attempt. Combat heartbeats do not refresh inventory age. Pending reconciliation persists across restart without issuing more equip commands. Validate the two failed delivery equip native E2Es and activate with the supported coordinator-only restart below.
 
-SIGINT, SIGTERM and SIGQUIT already share the coordinator shutdown handler. It stops managed characters and closes storage; each worker gets a bounded 500 ms closing notification before forced termination. This is not a transaction drain and does not guarantee completion of an in-flight game transfer. Durable recovery remains required. The Windows E2E restart uses IPC to invoke that same handler; it does not claim POSIX signal delivery or container-wide draining coverage.
+SIGINT, SIGTERM and SIGQUIT already share the coordinator shutdown handler. It stops managed characters and closes storage; each worker gets a bounded 500 ms closing notification before forced termination. A signal alone is not a transaction drain and does not guarantee completion of an in-flight game transfer. Durable recovery remains required. The Windows E2E restart uses IPC to invoke that same handler; it does not claim POSIX signal delivery or container-wide draining coverage.
+
+The console Pause, Play and the clean shutdown live in lifecycle's module, `runtime/lifecycle/coordinator/control.ts` (routes `/party-api/console-control` and `/party-api/console-control/:action` in `runtime/lifecycle/coordinator/routes.ts`, the top bar's Pause and shutdown icons). The Pause is one fact: control.ts holds it in memory and saves it in `updates/console-pause.json`, which it alone writes. It rides no lease. The task owner holds every group with `by: 'user'` and its heartbeat hold field carries `user` to every character, so the lifecycle owner's hold table holds a paused character (`runtime/lifecycle/rules.ts` `runRow`) and its run scope runs none of its acting timers, listeners or commands until Play (`runtime/lifecycle/character/run.ts`, `intake.ts`): it walks, attacks, drinks, regenerates and respawns not at all, so a dead one stays dead. The managed host's `/party-api/console-deployment` carries the Pause as its own field, `consolePaused`, for a character that has not heard the coordinator yet. A deploy lease while paused is served as it is, and the characters stay held by the hold field. The file survives restarts and deploys, and Play only removes it: no setting is captured or written back, so a choice changed while paused stays. The clean shutdown is the drain: it pauses, waits until every running character acknowledges held and still, flushes storage and marks the file `safeAt`; the shutdown handler (`runtime/lifecycle/coordinator/start.ts`) then ends its worker wait when storage must start closing, the host's forced exit (`hostExitGraceMs`, 15 s, `tools/hosting/start.mts`) less the measured time of that flush, so the writer lock goes before the forced exit. The next start resumes once after the characters running at Pause connect, or after the saved setting `consoleResumeWaitMs` (default 180 s, written through `POST /party-api/settings`, read at each check). A shutdown requested during a Cave run or an event waits for it unless forced (`runtime/lifecycle/rules.ts`). The coordinator's one command per status reply goes through the character's intake (`runtime/lifecycle/character/intake.ts`, table I in `runtime/lifecycle/rules.ts`): it takes none while table P holds the character or a deploy lease drains it, and Manual takes only the merchant handoff. An update's health check reads `/party-api/console-runtime`, whose `start.failed` names a start that threw, and rolls back at once on it or on an exited process. The deploy lease's one shape and every reader's question (table D: the merchant, recovery, pulls and the heartbeat reply) are `runtime/lifecycle/rules.ts`; the host asks admission (`/party-api/console-maintenance/admit`) before it writes a lease. Validate `live-console-safe-reload.spec.ts` and the card and top bar journey.
 
 A fresh installation designates its first owned, connected merchant when that
 character belongs to a headless slot or the native group. Identification precedes
@@ -774,8 +794,8 @@ party acknowledgements so retaliation cannot acquire a Hunt primary, defensive
 stop, or loot hold. These attacks never chase or change the route. Town casts,
 transport transitions, stale authorization and superseding navigation still block
 optional attacks; Keep moving off and stationary activity policies are unchanged.
-Validate passive-hunting, passing-admission, Hunt travel-defense, continuous-return,
-unified-return and shared-convoy tests. Publish character and coordinator assets
+Validate passive-hunting, passing-admission, Hunt travel-defense and shared-convoy
+tests. Publish character and coordinator assets
 through the full restart and verify fresh generations and attacks while walking.
 
 Merchant interruption cleanup releases only matching handoff commands and transitions
@@ -809,10 +829,12 @@ planning estimate, not a character speed change. Normal authorized Town routes
 and the existing Halloween shortcut remain available.
 
 Rendezvous progress includes fresh physical displacement under the matching
-convoy, epoch, command, navigation revision and runtime. Necessary obstacle
-detours therefore do not consume the thirty-second no-progress budget merely
-because straight-line distance increases. The two-minute absolute deadline and
-terminal recovery budget remain unchanged. Native Town-recovery E2Es cancel one
+convoy, epoch, command, navigation revision and runtime, so an obstacle detour that
+moves a member away from the rally still counts as progress. The rally waits on
+arrivals, holder answers, acknowledged delivery and each member's own walking stall,
+with no round of reports ([group walks](../../docs/convoy-movement.md)), a walk a
+Hunt route owns too (the hunting owner's). A stall climbs the walk's ladder, and progress
+starts the round again, so no count ends the walk. Native Town-recovery E2Es cancel one
 actual cast while peers arrive and require reunion plus both Daisy rewards.
 The native red-plan excerpt is in `docs/testing-town-return-red.json`.
 Use the full supported restart for planner/coordinator deployment; builds do not
@@ -820,15 +842,14 @@ activate running processes. Private live diagnostic captures stay uncommitted.
 
 ## Town rally and merchant movement ownership
 
-A Town fallback retains its rally until route preparation succeeds. Walking time
-cannot consume the protocol-readiness deadline: that timer counts continuous
-runtime incompatibility only. Rally movement remains bounded by 30 seconds without
-progress and 120 seconds total, including arrivals whose leader is still moving.
-Non-preemptible Hunt recipients defer merchant dispatch even when the return is
+A Town fallback retains its rally until route preparation succeeds. A member with
+no fresh report from a compatible runtime leaves the walk through `letGo`, and movement's failure rule
+ends a report that never comes (`runtime-lost`). The rally ends as the
+section above says. Non-preemptible Hunt recipients defer merchant dispatch even when the return is
 failed. Handoff races return `deferred: true, reason: "hunt_movement_owned"`; clients
 report that failure kind and completion preserves job identity, progress and retry
 allowance. Command IDs fence redispatched completions. Validate hunt-return-town,
-shared-convoy, continuous-hunt-return, automatic-collection, merchant completion,
+shared-convoy, automatic-collection, merchant completion,
 queue, interruption and commerce tests. Publish character/coordinator assets with
 the full restart. Existing failed Hunt returns still require Retry return once;
 verify actual Daisy arrival and subsequent merchant eligibility.
@@ -876,7 +897,7 @@ terminal-hold acknowledgements at its destination. Command, runtime, route, real
 instance and navigation ownership must still match the current Hunt return.
 This completes observed travel without resetting the exhausted retry budget;
 normal Hunt policy owns reward claims. Manual navigation and other owners remain
-protected. Validate shared-convoy, continuous-hunt-return and Hunt composition;
+protected. Validate shared-convoy and Hunt composition;
 activate with the coordinator-only restart.
 
 ## Dashboard render and polling performance
@@ -1034,8 +1055,9 @@ Validate combat-handoff, combat-channel, combat-queue, combat-movement, healing,
 formation, departure-loot and convoy-timing tests. Activate character and coordinator
 assets together with the supported full restart below and verify fresh runtime IDs.
 
-Managed ALClient planning, native fallback, convoy protocol 4, diagnostics and
-rollback modes are documented in [movement](../../docs/movement.md).
+Managed ALClient planning, native fallback, diagnostics and rollback modes are
+documented in [movement](../../docs/movement.md); the group walk is in
+[group walks](../../docs/convoy-movement.md).
 
 The installed caracAL entry is a 363-byte CommonJS launcher. All coordinator
 implementation lives in TypeScript here. Edit these sources, not
@@ -1050,11 +1072,10 @@ application bundle. The source is split for maintenance; esbuild combines it for
 Node execution. Edit a domain module for behavior, or `application.ts` to change
 how services connect.
 
-Both `coordinator-application.cjs` and `coordinator-policies.cjs` are generated:
-**do not edit them**. The application bundle includes startup wiring and imported
-services. The policy bundle exports services without starting the application; it
-originated as the migration bridge. They duplicate substantial code, and the
-current launcher loads the application bundle directly.
+`coordinator-application.cjs` is generated: **do not edit it**. The application
+bundle includes startup wiring and imported services, and the launcher loads it
+directly. `application.ts` imports each owner from its coordinator door (for example
+`runtime/items/coordinator/api.ts`), never from an owner's own files.
 
 Inline source maps include debugging information and original TypeScript. As an
 illustrative snapshot, the application bundle was approximately 631 KB JavaScript
@@ -1065,20 +1086,39 @@ data, not additional executable logic.
 ## Finding the code
 
 - `application.ts`: composition and startup wiring.
-- `infrastructure/`: installed caracAL dependencies and platform contracts.
-- `initialization.ts`, `state/`, `persistence/`: saved state, defaults and storage.
-- `characters/`, `lifecycle/`: workers, IPC, roster and shutdown.
-- `navigation/`: convoys and travel; `hunt/`: Monster Hunt.
-- `navigation/travel-defense.ts`: current attacker observations, travel combat
-  ownership and passive target retirement. `navigation/convoy-defense.ts` shares
-  the defense/loot barrier between route engines; its generated
-  `.build/runtime/convoy-defense.cjs` is loaded by the legacy compatibility adapter.
+- `runtime/lifecycle/coordinator/platform-contracts.ts`, `web-platform.ts` and `application-platform.ts`:
+  installed caracAL dependencies and platform contracts, which lifecycle (13) holds.
+- `initialization.ts`, `state/`: saved state and defaults at start.
+- `runtime/settings/`: the settings owner, one module
+  ). Every other owner imports only
+  `runtime/settings/api.ts`: the declaration types, the kinds, the check blocks, `valueProblem`,
+  `settingsDraft` and the write types. `rules.ts` holds what a declaration may say and builds the
+  declaration table from every declarer (`coordinator/declarations.ts`, each built owner's
+  `saved-fields.ts` and the held blocks of `held/`). `coordinator/install.ts` builds the one
+  writer (`coordinator/writer.ts`) and the persistence (`coordinator/persistence/`: the journal,
+  its lock, the snapshots, the save windows, the import and the worker storage), and registers
+  `core:settings`; `character/install.ts` answers on a character by refusing every write. The
+  formation, settings, thresholds and import routes sit in `coordinator/routes/`.
+- `runtime/lifecycle/`: the lifecycle owner: the
+  headless workers and IPC (`coordinator/workers.ts`), CODE generations (`coordinator/code.ts`),
+  start and shutdown (`coordinator/start.ts`) and the roster (`roster/`).
+- `navigation/`: farm areas, rare hunting, the planner worker and the files other owners keep
+  there; the group walk is movement's, in `runtime/movement/coordinator/`. `hunt/`: Monster Hunt.
+- `runtime/tasks/`: the groups and tasks owner, one per group (the party, each solo character,
+  the merchant). It decides which task holds the group by the rule table in
+  `runtime/tasks/rules.ts`, keeps a 128-entry ring per group and checks its four invariants on
+  every status report (`GET /party-api/tasks` reads it). Its event wind-down is its answer to the
+  group walk's `member.holder` (`core:tasks`).
+- `runtime/movement/coordinator/defense.ts`: current attacker observations, travel
+  combat ownership, the walk's `defending` and `communication-hold` phases and the
+  merchant pause. `navigation/convoy-defense.ts` keeps only the functions of the tasks owner that stay
+  with their owner; targeting's travel retire is in `targeting/snapshot.ts`.
 - `anniversary/` and `events/`: anniversary, Franky and other event coordination.
 - `merchant/`, `inventory/`: jobs, upgrades, collection and BankBoi.
 - `http/`, `status/`, `telemetry/`: routes, heartbeat ingestion and dashboard views.
 
-Policies use explicit ports for time and external I/O. Importing `index.ts`
-does not start workers, timers or connections. Legacy shared JavaScript services
+Policies use explicit ports for time and external I/O. Importing an owner's
+coordinator door does not start workers, timers or connections. Legacy shared JavaScript services
 remain external dependencies with explicit consumer contracts.
 
 ## Build and validate
@@ -1140,8 +1180,9 @@ but unjoined events do not become evacuation participants.
 
 Event recovery retains each validated Main-town acknowledgement while waiting for
 companions. A member moving to another ordinary map after its acknowledgement
-must not strand Hunt in paused-event, even while a deselected boss remains globally
-live. Handoff still requires fresh, alive non-event-map reports and unchanged
+must not hold the Hunt suspended, even while a deselected boss remains globally
+live: the attendance task ends with its occurrence, and the task owner resumes the Hunt
+from its own record. Handoff still requires fresh, alive non-event-map reports and unchanged
 navigation ownership; a Franky map-exit receipt alone does not satisfy Town.
 
 Event evacuation hands directly to current Hunt policy after fresh Main town
@@ -1165,11 +1206,10 @@ Only a fresh matching `recoveryFailed` report under the captured navigation owne
 can trigger this reset; newer commands, manual cancellation, and events take priority.
 The reset releases Escape/death recovery and selects current-party quests while
 preserving blacklist history, settings, backup destination, and pending loot.
-The leader's combat log records `restarting hunting routine due to failure` with
-the character, position, error, and old/new cycle identities. The handled Escape ID
-is retained in persisted combat recovery to prevent replay after restart.
-Validate `hunt-retreat-restart`, `combat-disengagement`, Hunt composition, and Escape
-tests. ALClient/native endpoint trimming also requires `movement-service` and shared
+An exhausted retreat is a failure of the escape task's ladder
+4.2): the group walks to its safe point and the Hunt starts again from its record; no
+restart is counted per escape. Validate the survival owner's party recovery (`runtime/coordinator/survival/recovery.ts`,
+`combat-disengagement.test.cjs`), Hunt composition, and Escape tests. ALClient/native endpoint trimming also requires `movement-service` and shared
 convoy checks: only a blocked final walking point within arrival tolerance is omitted;
 precision and shared endpoints remain protected. Publish character and coordinator
 assets with the full restart below, then verify fresh runtimes and Hunt progression.
@@ -1183,23 +1223,21 @@ then regroups toward the saved Hunt destination without replacing its mission.
 
 A shared hold owns the client phase even while local in-range attacks continue.
 Only a newer owned defense command can release that acknowledgement into combat.
-Recovery preserves the five-second stability and thirty-second cooldown barriers,
+Recovery clears the hold on the first round of fresh, held, acknowledged reports,
 then reconciles combat and loot before preparing movement. Hold diagnostics name
 missing participants and acknowledgements; defense logs record changed blockers.
 Validate `convoy-communication`, `hunt-travel-defense`, `travel-defense`,
 `shared-convoy`, `passive-hunting`, `combat-queue`, and `queue-markers`. Publish
 character and coordinator assets together with the full restart below.
 
-Protocol-4 Hunt travel keeps communication outages separate from movement failure.
+Hunt travel keeps communication outages separate from movement failure.
 Missing heartbeats or an expired matching signal stop the party in a persisted
-communication hold without spending movement or Hunt retry budgets. All members
-must acknowledge the current hold and provide five seconds of fresh, living,
-stopped reports before a new route generation is prepared; repeated resumptions
-are spaced at least thirty seconds apart. Restart discards stability observations,
-and runtime replacement requires new acknowledgements. Manual navigation wins.
+communication hold without spending movement or Hunt retry budgets. Every walk, a Hunt's
+too, clears the hold on the first round of fresh, held, acknowledged reports
+(the hunting owner's). Runtime replacement requires new acknowledgements. Manual navigation wins.
 
-Arrival remains `arrived` while transient completion HTTP failures retry (one
-request at a time, five-second timeout, jittered 1/2/5/10-second backoff). The
+Arrival remains `arrived` while a transient completion HTTP failure waits for the
+member's next status report and asks again, one request at a time. The
 existing verified-arrival fallback still applies, and persisted latest completion
 receipts make response-loss replays harmless. Only captured legacy completion
 network failures at their destination enter the one-time migration path; real
@@ -1276,15 +1314,17 @@ and Hunt composition tests. Publish both character and coordinator assets with
 the full restart, then verify every member reaches the destination before farming.
 
 Shared convoy departure tolerates matching travel reports within 500 ms of the
-scheduled departure. Transient readiness changes stop and reprepare under the
-original 60-second readiness deadline without spending a movement retry.
-Walking execution may reissue one stopped, collision-checked owned segment;
-only observed displacement resets its five-second progress deadline. A repeated
-walking stall switches the shared planner to native within the two-regroup limit.
-Hunt return retries preserve that fallback and pending Daisy rewards. Stale arrival
+scheduled departure. Transient readiness changes stop and prepare again; the
+readiness lasts while each member's fight or chests keep falling (rules.ts
+`departureStep`), and a readiness that stops falling climbs the walk's ladder.
+Walking execution sends a stopped, collision-checked owned step again once, one
+measured round trip later; 2 units of displacement start the walking try again
+([movement](../../docs/movement.md) "Execution and recovery"). A walking stall
+climbs the walk's ladder, whose `other-route` rung switches the shared planner to
+native. Hunt return climbs preserve that fallback and pending Daisy rewards. Stale arrival
 responses wait for replacement commands instead of reporting another failure.
-If a final Hunt-return completion request never settles, three seconds of verified
-arrival reports let the coordinator finish the convoy and proceed to Daisy claims.
+If a final Hunt-return completion request never settles, every member's next report
+after the arrival was ready, still ready, lets the coordinator finish the convoy and proceed to Daisy claims.
 Fresh route, runtime, command, and navigation ownership checks still apply.
 Validate `shared-convoy`, `movement-service`, `convoy`, and Hunt return tests;
 publish character and coordinator assets together through the full restart.
@@ -1304,18 +1344,18 @@ companions. Confirm the new primary stays connected and headless slots stay assi
 Passing attacks first publish an exact encounter reservation over the combat
 channel and wait for every active fighter/convoy participant to acknowledge it.
 Missing approval skips the optional attack while travel continues. Admission is
-scoped to runtime, membership, navigation and convoy ownership. Protocol 4 optional
-attacks require an owned travelling signal; transitions still suppress them.
-Protocol 4 defensive stops retain their local convoy identity and first interruption
-cause until the coordinator acknowledges the stop. If every recorded cause becomes
+scoped to runtime, membership, navigation and convoy ownership. Optional attacks on
+a group walk require an owned travelling signal; transitions still suppress them.
+A defensive stop keeps its local walk identity and first interruption cause until
+the coordinator acknowledges the stop. If every recorded cause becomes
 a passing encounter, fresh observations let the coordinator rebuild the current
 owned route without a defensive loot hold. Genuine defensive kills retain loot
 handling. See the [keep-moving audit](../../docs/keep-moving-combat-audit.md).
 Validate passing-admission, passive-hunting, convoy-defense and shared-convoy tests;
 publish character and coordinator assets together using the full restart.
-The shared travel watchdog regroups
-after three seconds of fresh missing local route reports, preserving the destination
-and checking navigation ownership first. Validate with `shared-convoy.test.cjs`,
+The shared travel watchdog climbs the walk's ladder
+when the member's next fresh report still has no local route, preserving the destination
+and checking navigation ownership first (walk.ts `missingTravelRoute`). Validate with `shared-convoy.test.cjs`,
 `convoy-defense.test.cjs`, and `passive-hunting.test.cjs`.
 
 Managed public distributions use the host's authenticated update controller. Its
@@ -1505,10 +1545,12 @@ with `merchant-delivery-recovery.test.cjs`, `coordinator-scheduling.test.cjs`, a
 `coordinator-sale-routes.test.cjs`. This reconciliation change needs only the
 coordinator-only restart.
 
-Automatic inventory rules are shared through `inventory/shared-rules.ts` and
-managed on the merchant panel. The versioned migration retains its original
-documents in `merchantRules.backup`; merchant rules take precedence and unresolved
-fighter conflicts remain inactive until selected. Manual requests retain their
+Automatic inventory rules are shared through `runtime/items/coordinator/fates.ts`
+and managed on the merchant panel. The rules' members are every reporting
+character that is not a BankBoi, read when asked, so a character added later
+shares them. The versioned migration writes through the settings writer and
+retains its original documents in `merchantRules.backup`; merchant rules take
+precedence and unresolved fighter conflicts remain inactive until selected. Manual requests retain their
 character and equipment-slot ownership. Automatic processing pickups use the
 normal collection threshold and nearby exception.
 Deconstruction reservations match item identity as well as slot, so stale records
@@ -1682,9 +1724,9 @@ Exhaustion retains the first and latest failure and continues in-range defense;
 owner recreation/restart cannot reset the budget. A genuinely new Town opportunity
 can release a route failure. Manual navigation and communication/death recovery win.
 Anniversary visits hand back to the existing post-event workflow after Main arrival;
-Hunt continues its itinerary to Daisy. This does not change farming after the visit.
-Validate unified-return, continuous-hunt-return, hunt-return-town, shared convoy,
-movement, class skills, and anniversary tests.
+Hunt continues its return to Daisy. This does not change farming after the visit.
+Validate hunt-return-town, shared convoy, movement, class skills, and anniversary
+tests.
 Publish character and coordinator assets together for these checks.
 Transition release is latched; duplicate acknowledgements
 are idempotent, and temporarily stale observations wait without discarding ownership.
@@ -1706,8 +1748,8 @@ the party, matching the mode sent to characters. A learned Hunt monster reported
 during a rare encounter must not clear the shared target queue. Cover this through
 fighter and merchant heartbeats and resume ordinary scatter after rare ownership
 ends (`coordinator-status-composition.test.cjs`, `phoenix-patrol-regression.test.cjs`).
-Validate with `continuous-hunt-return.test.cjs`, `hunt-return-regression.test.cjs`,
-`movement-barrier.test.cjs`, `planner-geometry.test.cjs` and `shared-convoy.test.cjs`.
+Validate with `planner-geometry.test.cjs`, `shared-convoy.test.cjs` and
+live-hunt-lifecycle's return to Daisy.
 These changes include `characters/shared.js`, so they
 require the full restart. An already exhausted return uses the existing
 `/party-api/monster-hunt/retry-return` action after fresh runtimes connect.
@@ -1778,9 +1820,9 @@ farming through the final second. Hunt's own `farm-recovery` shared walk yields 
 before event-pause handling. Failed farming walks also release on fresh reports,
 with matching parent revisions and command ownership. Actual event travel, Escape,
 death recovery and manual navigation keep priority. Test `hunt-farm-walk.test.cjs`.
-Rare acquisition uses the same turn-in priority during travel and claims, so a new
-Tiny P sighting cannot repeatedly cancel the Daisy convoy. Cover the real wiring
-with `coordinator-recovery-hooks.test.cjs`.
+Rare acquisition yields while the groups and tasks owner's table refuses the rare
+against the party's live task, the Hunt hand-in among them, so a new Tiny P sighting
+cannot repeatedly cancel the Daisy convoy.
 An unseen engaged queue head may yield to a visible eligible alternative after
 eight seconds of fresh party absence observations even when local search cannot
 reach its last position. This releases an obligation, not a death: old attack
@@ -1832,8 +1874,8 @@ Event recovery repairs staging walks left behind by older handoffs, including
 failed walks restored after restart. Both paths require matching participants
 and saved/current navigation revisions, and preserve protected travel. Late
 staging requests cannot reclaim movement during combat handoff or recovery.
-Validate the entire return through Hunt leaving `paused-event`; arrival at Main
-alone does not complete recovery to the saved destination.
+Validate the entire return through the Hunt task resuming once the return task ends;
+arrival at Main alone does not complete recovery to the saved destination.
 
 Merchant collection pauses an ordinary or event-return convoy through a persisted
 interruption. All members acknowledge a stop before the recipient receives its
@@ -1950,7 +1992,7 @@ Native movement refreshes generated geometry and pauses for party combat, loot,
 stale reports, and forced votes. Dungeon combat uses the ordinary class skill,
 healing, formation and kiting routines with cave-specific targeting and ownership.
 `dungeons/priest-recovery.ts` assigns one priest per death and persists permission
-before an Essence can be consumed. `runtime/characters/cave-recovery.ts` prepares
+before an Essence can be consumed. The survival owner's Cave revival (`runtime/characters/survival/cave-revival.ts`) prepares
 the gravestone and uses the existing priest action slots, preserving living-party
 healing and combat MP reserves. Outside combat, it can approach and wait for MP.
 The local recovery ledger survives reloads; uncertain or interrupted casts are
@@ -1980,8 +2022,8 @@ and character changes together through the full restart workflow.
 Hunt pickup and outbound shared convoys recover missing completion acknowledgements
 using the same three-second verified-arrival hold as continuous Daisy returns.
 Fresh stopped reports must match the route, command, runtime, server and navigation
-ownership; legacy per-leg returns retain their transition barriers. Validate
-shared-convoy and continuous-hunt-return tests. Coordinator-only restart suffices.
+ownership. Validate
+shared-convoy tests. Coordinator-only restart suffices.
 
 Delivered equipment retains its awaiting-equip receipt instead of overwriting an
 active command. Scheduling uses the merchant interruption barrier to stop convoy
@@ -1999,8 +2041,11 @@ with the coordinator-only restart workflow.
 ALClient route rejection can use the existing native connector or full native
 fallback. An ALClient execution failure receives one coordinator-owned native
 attempt. Native exhaustion excludes that destination for the current Hunt cycle
-and selects another catalogued spawn of the same monster. With no alternative,
-Hunt reports the exhausted route. Recovery never dispatches a guessed door or Town
+and climbs the Hunt's task ladder (hunt.ts `climbSpawn`): the alternative rung is
+another catalogued spawn of the same monster, regroup starts the spawns over, the
+safe point starts the Hunt over from its quests and fall-back skips the mission.
+A walk that reaches its spawn returns the ladder to its first rung, and the card
+names the rung. Recovery never dispatches a guessed door or Town
 relocation. Old persisted relocation attempts are retired before further dispatch.
 
 Explicit Hunt-off clears the Hunt cycle, commands, owned recovery convoy, failure
@@ -2036,8 +2081,8 @@ which clients accept at transport receipt using monotonic deadlines. Lease-only 
 do not change combat long-poll revisions. Commands still arrive through full status.
 
 Observation/communication loss is a temporary shared hold, preserving retry budgets
-and cruise ownership. Recovery requires fresh matching stopped reports and the existing
-stability/cooldown window, then plans from current stopped positions. It never sends an
+and cruise ownership. The walk clears the hold on the first round of fresh, held,
+acknowledged reports, then plans from current stopped positions. It never sends an
 assemble command to an old rally or invents a defensive loot obligation. Genuine prior
 defense/loot remains owned. Full/fast timing, clock estimates, and bounded coordinator
 event-loop delay accompany travel diagnostics.
@@ -2066,7 +2111,7 @@ full restart and verify spawn-edge arrival and sequential attacks live.
 
 ## Shared movement communication failures
 
-All protocol-4 shared convoys, including anniversary staging, hold on coordinator
+All group walks, including anniversary staging, hold on coordinator
 communication loss without spending route retries. Movement errors retain typed
 request metadata through executor and promise boundaries. Barrier HTTP requests
 retain their two-second per-request limit and retry the same identity with 250 ms
@@ -2076,11 +2121,11 @@ Planner request loss also holds; validated alternate candidates remain usable.
 
 Captured legacy communication-only failures may recover once under matching
 convoy/epoch/navigation ownership; mixed route failures are excluded. Restart
-restores temporary holds for protocol-4 workflows. Event cycles and kiss receipts
+restores temporary holds for group walks. Event cycles and kiss receipts
 remain owned by anniversary policy, including expiry and Hunt handback. Bounded
 status-stage and barrier timings expose handler cost separately from event-loop delay.
 Validate barrier-communication, movement-service, return-planner, shared-convoy,
-convoy-communication, movement-barrier, anniversary kiss/return, and status-ingestion.
+convoy-communication, anniversary kiss/return, and status-ingestion.
 Publish characters and coordinator together with the supported full restart.
 
 ## Preferred Hunt spawns
@@ -2150,10 +2195,9 @@ The native Hunt follower-reconnect regression observes rendezvous identity and
 requires both actual Daisy rewards. Stale epoch, command, revision and runtime
 checks remain unchanged. This character-runtime fix requires publishing assets
 and the supported full restart; a coordinator-only build does not activate it.
-Route preparation gets a separate 60-second clock after the party finishes
-assembling. A long valid rendezvous must not consume that deadline before route
-installation begins. Assembly still has its 30-second no-progress and 120-second
-absolute limits; departure readiness keeps its independent deadline. The native
+Route preparation starts after the party finishes assembling, so a long valid
+rendezvous spends nothing of it. Readiness lasts while each member's fight or chests
+keep falling; a stall climbs the walk's ladder (route-store.ts `readinessStalled`). The native
 partial-Town restart case rejects false preparation retries as well as stranded
 characters.
 
@@ -2172,8 +2216,9 @@ attaches it to the parent game window. A full supported restart is required to
 install the headless hook and recreate an already-stopped native draw loop.
 
 Catalog preparation yields between bounded 8 ms batches rather than every item.
-Shared departure retains its readiness deadline until all participants report
-departure; late preparation acknowledgements do not spend walking retries.
+Shared departure readiness lasts while each member's fight or chests keep falling,
+and a stall climbs the walk's ladder (route-store.ts `readinessStalled`); late
+preparation acknowledgements do not spend walking retries.
 Actual walking failures still use the existing bounded recovery policy.
 
 Validate with the native missing-frame walking scenario, successive Ice Roamer
@@ -2344,8 +2389,9 @@ Native explicitly unintentional stacked hits, like explosion splash, do not
 nominate an outside player's fight for convoy defense. A verified outside-party
 native target is required; direct hits, unknown targets and party attacks keep
 their conservative defense path. Validate both Targetron collateral journeys.
-sharedRoutine.convoyNavigationReport exposes the existing read-only current
-navigation ownership for diagnostics before the next full status publication.
+The walk client's report carries the current navigation ownership read-only as
+`convoyNavigation` (movement/character/walk-client.ts `convoyNavigationReport`)
+for diagnostics.
 
 An older native missing-tool report must not disable gathering after automatic
 replacement crafting has been enabled. The coordinator checks the current

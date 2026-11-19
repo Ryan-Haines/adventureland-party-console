@@ -1,4 +1,5 @@
 "use client";
+import { commerceRuleKey, defaultStandPrice } from '../../../runtime/items/api.ts';
 import { ExchangeItemSelection } from './exchange-item-selection';
 import { lazy } from "react";
 import { DeferredPanel } from "./deferred-panel";
@@ -10,7 +11,6 @@ const MerchantCommerceDialog = lazy(() =>
 import type { PartyConsoleModel } from "./use-party-console";
 
 import { usePanelModel } from "./use-panel-model";
-import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
 import { ExchangeRewardTile } from './exchange-reward-tile';
 import { UpgradeOfferingProvider } from './upgrade-offering-controls';
 export function PartyMerchantCommerceDialog({ model }: { model: PartyConsoleModel;
@@ -42,7 +42,7 @@ function PartyMerchantCommerceDialogConnected({ base }: { base: PartyConsoleMode
             else {
               const meta = state.merchantCatalog?.allItems?.find(
                     (entry) => entry.id === draft.id)?.meta;
-              const price = state.autoStandMarks?.[automaticCommerceRuleKey(item)]?.price || Math.max(1, Number(meta?.definition.g) || 1);
+              const price = state.autoStandMarks?.[commerceRuleKey(item)]?.price || defaultStandPrice(meta?.definition);
               await model.post('/merchant/auto-stand', { item, price });
             }
           }

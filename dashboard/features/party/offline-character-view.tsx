@@ -1,4 +1,5 @@
 'use client';
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { useState } from 'react';
 import {
   Dialog,
@@ -42,7 +43,7 @@ export function OfflineCharacterView({
           if (!open) onClose();
         }}
       >
-        <DialogContent className="max-h-[85vh] overflow-auto border-slate-600 bg-[#0b1916] text-white">
+        <DialogContent data-area="offline-character" className="max-h-[85vh] overflow-auto border-slate-600 bg-[#0b1916] text-white">
           <DialogHeader>
             <DialogTitle>{character.name} inventory and equipment</DialogTitle>
           </DialogHeader>
@@ -109,10 +110,11 @@ export function OfflineCharacterView({
               </div>
             </section>
           ))}
+          <AddonSlot name="dialog-section" part="offline-character" subject={character} />
         </DialogContent>
           {item && (
             <Dialog open onOpenChange={open=>{if(!open)setItem(null);}}>
-            <DialogContent className="max-h-[85vh] overflow-auto border-slate-600 bg-[#0b1916] text-white">
+            <DialogContent data-area="offline-stats" className="max-h-[85vh] overflow-auto border-slate-600 bg-[#0b1916] text-white">
             <DialogHeader><DialogTitle>{String(item.meta?.definition.name || item.item.name)} +{item.item.level || 0}</DialogTitle></DialogHeader>
             {item.meta?.sprite && <span role="img" aria-label="Inspected item sprite" className="relative block h-12 w-12"><SpriteCrop sprite={item.meta.sprite}/></span>}
               <ItemCard
@@ -129,7 +131,7 @@ export function OfflineCharacterView({
             </DialogContent>
             </Dialog>
           )}
-      {stats && (character.inspection && !character.inspection.calculated ? <Dialog open onOpenChange={open=>{if(!open)setStats(false);}}><DialogContent className="border-slate-600 bg-[#0b1916] text-white"><DialogHeader><DialogTitle>{character.name} saved stats</DialogTitle></DialogHeader><p>{character.inspection.note}</p><p>Level: {character.level}</p><p>XP: {character.xp.toLocaleString()}</p><p>HP: {character.hp}</p><p>MP: {character.mp}</p><p>Gold: {character.gold.toLocaleString()}</p><p>Maximum HP/MP, attack, armor, resistance and attributes: unavailable</p></DialogContent></Dialog> : <CharacterStatsDialog offline={offline} character={character} onOpenChange={open=>{if(!open)setStats(false);}}/>)}
+      {stats && (character.inspection && !character.inspection.calculated ? <Dialog open onOpenChange={open=>{if(!open)setStats(false);}}><DialogContent data-area="offline-saved-stats" className="border-slate-600 bg-[#0b1916] text-white"><DialogHeader><DialogTitle>{character.name} saved stats</DialogTitle></DialogHeader><p>{character.inspection.note}</p><p>Level: {character.level}</p><p>XP: {character.xp.toLocaleString()}</p><p>HP: {character.hp}</p><p>MP: {character.mp}</p><p>Gold: {character.gold.toLocaleString()}</p><p>Maximum HP/MP, attack, armor, resistance and attributes: unavailable</p></DialogContent></Dialog> : <CharacterStatsDialog offline={offline} character={character} onOpenChange={open=>{if(!open)setStats(false);}}/>)}
       <GearComparisonDialog
         comparison={comparison ? { character, entry: comparison } : null}
         currentCharacter={character}

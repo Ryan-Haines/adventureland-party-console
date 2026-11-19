@@ -1,24 +1,31 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {createBankboiObservation}=require('../../runtime/coordinator/status/bankboi.ts');
+const {createBankboiStorage}=require('../../runtime/items/coordinator/storage.ts');
 
+// A BankBoi's reports through the observe (storage.ts createBankboiStorage), over the party state.
+function fixture({transaction,bankbois,withdrawals={},commands={}}){
+ const state={merchantCharacter:'M',merchantCurrent:null,headlessSlots:['B'],statuses:{},lifecycle:{},bankSnapshot:null,nextCommandId:1,
+  bankboiTransaction:transaction,bankbois,bankboiQueue:[{id:'cargo'},{id:'other'}],withdrawals,commands},effects=[];
+ const storage=createBankboiStorage(state,{},{now:()=>100,stop:async()=>{},persistRoster(){},persistBank:()=>effects.push('persist'),collect(){},log(){},merchantHeld:()=>false});
+ return {state,effects,storage};
+}
 test('storage startup reports carry protected withdrawals and transition the transaction exactly once',()=>{
- const state={workers:{B:{}},transaction:{bankboi:'B',mode:'retrieve',phase:'waiting-for-bankboi',requestIds:['cargo'],retrievals:[{item:{name:'coat'}}]},
-  requests:[{id:'cargo'},{id:'other'}]},commands={},effects=[];
- const withdrawals=[{pack:'bankboi:B',item:{name:'leather'}},{pack:'items1',slot:35},{pack:'bankboi:Other',item:{name:'sword'}}];
- const observer=createBankboiObservation(state,{now:()=>100,nextCommand:()=>1,hasCommand:name=>!!commands[name],command:(name,command)=>{commands[name]=command;},
-  withdrawals:()=>withdrawals,stackHomes:()=>({leather:{owner:'bank'}}),persist:()=>effects.push('persist')});
- const body={name:'B',items:[{slot:0,item:{name:'leather'}}],gold:10};observer.observe(body);
- assert.equal(state.workers.B.items,body.items);assert.equal(state.workers.B.seenAt,100);assert.equal(state.transaction.phase,'processing');
- assert.deepEqual(commands.B.requests,[{id:'cargo'}]);assert.deepEqual(commands.B.protectedItems,[{name:'leather'}]);
- assert.deepEqual(commands.B.reservedLocations,[{pack:'items1',slot:35}]);assert.equal(commands.B.unload,true);
- observer.observe(body);assert.deepEqual(effects,['persist']);
+ const {state,effects,storage}=fixture({bankbois:{B:{name:'B'}},
+  transaction:{bankboi:'B',mode:'retrieve',phase:'waiting-for-bankboi',requestIds:['cargo'],retrievals:[{item:{name:'coat'}}]},
+  withdrawals:{M:[{pack:'bankboi:B',item:{name:'leather'}},{pack:'items1',slot:35},{pack:'bankboi:Other',item:{name:'sword'}}]}});
+ const body={name:'B',items:[{slot:0,item:{name:'leather'}}],gold:10};storage.observe(body);
+ const worker=state.bankbois.B,command=state.commands.B;
+ assert.equal(worker.items,body.items);assert.equal(worker.seenAt,100);assert.equal(state.bankboiTransaction.phase,'processing');
+ assert.deepEqual(command.requests,[{id:'cargo'}]);assert.deepEqual(command.protectedItems,[{name:'leather'}]);
+ assert.deepEqual(command.reservedLocations,[{pack:'items1',slot:35}]);assert.equal(command.unload,true);
+ storage.observe(body);assert.deepEqual(effects,['persist']);
 });
 
 test('pending worker commands and unrelated characters cannot start the storage handoff',()=>{
- const state={workers:{B:{items:[{slot:0,item:{name:'coat'}}]}},transaction:{bankboi:'B',mode:'store',phase:'waiting-for-bankboi',requestIds:[]},requests:[]};
- const observer=createBankboiObservation(state,{now:()=>100,nextCommand:()=>1,hasCommand:()=>true,command(){assert.fail('must not overwrite a command');},
-  withdrawals:()=>[],stackHomes:()=>({}),persist(){assert.fail('no dispatch');}});
- observer.observe({name:'P',items:[]});observer.observe({name:'B'});
- assert.equal(state.workers.B.items.length,1);assert.equal(state.transaction.phase,'waiting-for-bankboi');
+ const pending={id:9,type:'bankboi-service'};
+ const {state,effects,storage}=fixture({bankbois:{B:{name:'B',items:[{slot:0,item:{name:'coat'}}]}},commands:{B:pending},
+  transaction:{bankboi:'B',mode:'store',phase:'waiting-for-bankboi',requestIds:[]}});
+ storage.observe({name:'P',items:[]});storage.observe({name:'B'});
+ assert.equal(state.bankbois.B.items.length,1);assert.equal(state.bankboiTransaction.phase,'waiting-for-bankboi');
+ assert.equal(state.commands.B,pending);assert.deepEqual(effects,[]);
 });

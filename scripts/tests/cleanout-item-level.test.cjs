@@ -1,11 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const source = fs.readFileSync('characters/shared.js', 'utf8');
-const context = vm.createContext({});
-vm.runInContext(source.slice(source.indexOf('  function cleanoutRespectsAutoItemLevel('),
-  source.indexOf('  async function withMerchantHandoffRecovery(')), context);
+// The module's own export: the check reads the items owner's rule key parse, which a sliced copy cannot reach.
+const context = require('../../runtime/merchant-jobs/character/visits.ts');
 
 test('cleanout cannot bypass a +0 merchant rule to collect delivered +8 breeches', () => {
   const check = context.cleanoutRespectsAutoItemLevel;

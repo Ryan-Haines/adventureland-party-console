@@ -2,7 +2,7 @@
 // Bundled with the pinned ChronAL VirtualClock, without replacing browser I/O.
 const { VirtualClock } = require("chronal-clock");
 const { stats: taskStats } = require("./browser-task-queue.cjs");
-const { joinClock } = require("./join-clock.cjs");
+const { joinClock, clockPerformance } = require("./join-clock.cjs");
 const { createNativeIo } = require('./native-io.cjs');
 const config = globalThis.__e2eClockConfiguration;
 if (config && config.rate > 1) {
@@ -51,19 +51,34 @@ if (config && config.rate > 1) {
   });
   clock.installInto(globalThis, { profile: "browser", vmContext: globalThis });
   Math.random = nativeRandom;
+  // A long window names its timers (13.4d item 4: one CODE frame spent 70 s of wall time in its
+  // own timers in one window, and the reading did not say which). Each timer callback is timed
+  // against the wall clock and counted per window by its callback. A long window names its slowest
+  // callbacks, and only their next registrations capture a stack, so an ordinary window pays no
+  // capture and the next long window gives the reader the file and line, which owner:check's map
+  // names the owner of.
+  const LONG_WINDOW_MS = 10000;
+  let windowTimers = new Map();
+  const longCallbacks = new WeakSet();
+  const timed = (kind, callback) => {
+    if (typeof callback !== "function") return callback;
+    const site = longCallbacks.has(callback) ? new Error() : null;
+    return function () {
+      const started = nativePerformance.now();
+      try { return callback.apply(this, arguments); }
+      finally {
+        const entry = windowTimers.get(callback) || { kind, callback, site, count: 0, ms: 0 };
+        entry.count++; entry.ms += nativePerformance.now() - started; windowTimers.set(callback, entry);
+      }
+    };
+  };
+  for (const kind of ["setTimeout", "setInterval"]) {
+    const installed = globalThis[kind];
+    globalThis[kind] = function (callback, ...rest) { return installed.call(this, timed(kind, callback), ...rest); };
+  }
   // Keep actual browser rendering and Playwright observation on their native
   // cadence. Game and CODE Date/timers share the accelerated gameplay epoch.
-  Object.defineProperty(globalThis, "performance", {
-    value: new Proxy(nativePerformance, {
-      get(target, key) {
-        if (key === "now") return () => clock.now - config.epoch;
-        if (key === "timeOrigin") return config.epoch;
-        const value = Reflect.get(target, key, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    }),
-    configurable: true,
-  });
+  Object.defineProperty(globalThis, "performance", { value: clockPerformance(nativePerformance, clock, config), configurable: true });
   globalThis.requestAnimationFrame = callback => {
     if(typeof callback!=='function')throw new TypeError('Animation callback must be a function');
     return nativeFrame.call(globalThis,()=>callback.call(globalThis,clock.now-config.epoch));
@@ -71,7 +86,8 @@ if (config && config.rate > 1) {
   globalThis.cancelAnimationFrame = nativeCancelFrame;
   let first = true;
   const state = { phase: "initial", ticks: 0, connectionAttempts: 0, connections: [] };
-  const timing = { windows: 0, events: 0, wallMs: 0, maxWindowMs: 0 };
+  // The reading names its own long-window threshold beside the windows it records.
+  const timing = { windows: 0, events: 0, wallMs: 0, maxWindowMs: 0, longWindowMs: LONG_WINDOW_MS, long: [] };
   const join = {};
   let resolveReady, rejectReady;
   const ready = new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
@@ -91,10 +107,21 @@ if (config && config.rate > 1) {
         await globalThis.__e2eChronalFrame(id);
       const advance = async(next,receivedWall) => {
         state.phase = "advance";
-        const started = nativePerformance.now(), events = clock.events;
+        const started = nativePerformance.now(), events = clock.events, from = clock.now;
+        windowTimers = new Map();
         if(first){Object.assign(join,joinClock(clock,next.now));first=false;}
         else await clock.run({until:next.now});
         const elapsed=nativePerformance.now()-started;
+        if(elapsed>=LONG_WINDOW_MS){
+          let name=null;try{name=globalThis.character?.name??globalThis.parent?.character?.name??null;}catch(_){/* a cross-origin parent names no character */}
+          const slowest=[...windowTimers.values()].sort((a,b)=>b.ms-a.ms).slice(0,5);
+          for(const t of slowest)longCallbacks.add(t.callback);
+          timing.long.push({at:clock.now,virtualMs:clock.now-from,wallMs:Math.round(elapsed),events:clock.events-events,label:location.pathname,name,
+            timers:slowest.map(t=>({kind:t.kind,count:t.count,ms:Math.round(t.ms),name:t.callback.name||null,
+              source:String(t.callback).slice(0,200),site:t.site&&String(t.site.stack||'').split(String.fromCharCode(10)).slice(3,9).map(l=>l.trim())}))});
+          if(timing.long.length>10)timing.long.shift();
+        }
+        windowTimers = new Map();
         timing.windows++;timing.events+=clock.events-events;
         timing.wallMs+=elapsed;timing.maxWindowMs=Math.max(timing.maxWindowMs,elapsed);
         state.ticks++;state.phase="idle";

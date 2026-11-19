@@ -4,8 +4,7 @@ const {createServer,request}=require('node:http');
 const {Access}=require('../../tools/hosting/access.ts');
 const {gateway}=require('../../tools/hosting/gateway.ts');
 const {setupAddress}=require('../../tools/hosting/address.ts');
-const listen=server=>new Promise(resolve=>server.listen(0,'127.0.0.1',()=>resolve(server.address().port)));
-const close=server=>new Promise(resolve=>server.close(resolve));
+const {listen,close,setupDom}=require('./fixtures/hosting-scenario.cjs');
 
 test('setup detects the reachable address without exposing a Docker container IP',()=>{
  const interfaces={Ethernet:[{address:'192.168.1.25',family:'IPv4',internal:false}]};
@@ -89,12 +88,11 @@ test('pairing cookies authorize LAN HTTP alongside a public HTTPS origin',async(
 });
 
 test('setup omits pairing when off and account setup where unsupported',async()=>{
- const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  for(const state of [{configured:true,requirePairing:false,canConfigureAccount:false},{configured:false,requirePairing:false,canConfigureAccount:true},{configured:true,requirePairing:true,canConfigureAccount:true}]) {
-  const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){w.fetch=async()=>({ok:true,json:async()=>state});}});
+  const {dom,el,flush}=setupDom(w=>{w.fetch=async()=>({ok:true,json:async()=>state});});
   try {
-   await new Promise(resolve=>setImmediate(resolve));
-   const el=id=>dom.window.document.getElementById(id);
+   await flush();
+   
    assert.equal(el('pair').hidden,true);assert.equal(el('settings').hidden,false);
    assert.equal(el('account').hidden,!state.canConfigureAccount||state.configured);
    assert.equal(el('invite').hidden,!state.requirePairing);assert.equal(el('address').textContent,'http://lan:3010');
@@ -103,21 +101,20 @@ test('setup omits pairing when off and account setup where unsupported',async()=
 });
 
 test('game session starts masked, toggles visibly without changing it, and clears after connecting',async()=>{
- const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  const calls=[];let configured=false;
- const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){w.fetch=async(url,options)=>{
+ const {dom,el,flush}=setupDom(w=>{w.fetch=async(url,options)=>{
   if(url==='/setup/session'){calls.push(JSON.parse(options.body));configured=true;}
   return {ok:true,json:async()=>({configured,requirePairing:false,canConfigureAccount:true,realms:['SR_USII']})};
- };}});
+ };});
  try {
-  await new Promise(resolve=>setImmediate(resolve));
-  const el=id=>dom.window.document.getElementById(id),input=el('session'),toggle=el('toggleSession');
+  await flush();
+  const input=el('session'),toggle=el('toggleSession');
   assert.equal(input.type,'password');assert.equal(toggle.getAttribute('aria-pressed'),'false');
   input.value='US_Abc123-privateToken';toggle.click();
   assert.equal(input.type,'text');assert.equal(toggle.getAttribute('aria-label'),'Hide game session');
   assert.equal(toggle.getAttribute('aria-pressed'),'true');assert.equal(input.value,'US_Abc123-privateToken');
   toggle.click();assert.equal(input.type,'password');assert.equal(toggle.getAttribute('aria-label'),'Show game session');
-  toggle.click();el('connect').click();await new Promise(resolve=>setImmediate(resolve));
+  toggle.click();el('connect').click();await flush();
   assert.deepEqual(calls,[{session:'US_Abc123-privateToken',realm:'SR_USII'}]);
   assert.equal(input.value,'');assert.equal(input.type,'password');assert.equal(el('account').hidden,true);
   assert.equal(el('success').hidden,false);assert.match(el('success').textContent,/Account connected/);
@@ -126,22 +123,21 @@ test('game session starts masked, toggles visibly without changing it, and clear
 });
 
 test('only a connected client starts the green countdown; failed authentication never redirects',async()=>{
- const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  for(const accepted of [true,false]) {
   let tick,poll,cleared=false,connected=false;
-  const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){
+  const {dom,el,flush}=setupDom(w=>{
    w.setInterval=(fn,delay)=>{assert.equal(delay,1000);tick=fn;return 42;};
    w.clearInterval=id=>{if(id===42)cleared=true;};
    w.setTimeout=fn=>{poll=fn;return 43;};w.clearTimeout=()=>{};
    w.fetch=async url=>({ok:url!=='/setup/session'||accepted,json:async()=>({connected,code:'loader',configured:accepted,canConfigureAccount:true,requirePairing:false,realms:['SR_USII'],error:'Invalid game session'})});
-  }});
+  });
   try {
-   await new Promise(r=>setImmediate(r));
-   const el=id=>dom.window.document.getElementById(id);
-   el('connect').click();await new Promise(r=>setImmediate(r));
+   await flush();
+   
+   el('connect').click();await flush();
    if(!accepted){assert.equal(tick,undefined);assert.equal(el('success').hidden,true);assert.equal(el('error').textContent,'Invalid game session');continue;}
    assert.equal(dom.window.getComputedStyle(el('success')).color,'rgb(134, 239, 172)');assert.equal(el('error').textContent,'');
-   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();await new Promise(r=>setImmediate(r));
+   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();await flush();
    assert.equal(tick,undefined);assert.equal(el('code').value,'loader');
    connected=true;await poll();assert.match(el('linkStatus').textContent,/Client connected. Taking you to the dashboard in 5/);
    assert.equal(dom.window.getComputedStyle(el('linkStatus')).color,'rgb(134, 239, 172)');
@@ -152,15 +148,14 @@ test('only a connected client starts the green countdown; failed authentication 
 });
 
 test('choosing a supported local setup generates its loader automatically; LAN copy fallback selects code',async()=>{
- const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  const calls=[];let tick,poll;
- const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){
+ const {dom,el,flush}=setupDom(w=>{
   w.setInterval=fn=>{tick=fn;return 1;};w.clearInterval=()=>{};
   w.setTimeout=fn=>{poll=fn;return 2;};w.clearTimeout=()=>{};
   w.fetch=async(url,options)=>{calls.push([url,options]);if(url.includes('/connection'))throw Error('unavailable');return {ok:true,json:async()=>({configured:true,code:'client loader',serverAddress:'http://192.168.1.10:3010'})};};
- }});
+ });
  try {
-  const flush=()=>new Promise(r=>setImmediate(r));await flush();const el=id=>dom.window.document.getElementById(id);
+  await flush();
   assert.equal(calls.length,1);assert.equal(tick,undefined);assert.equal(poll,undefined);
   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();
   await flush();assert.equal(el('loader'),null);assert.deepEqual(JSON.parse(calls.find(([url])=>url==='/setup/client')[1].body),{placement:'same',client:'windows-steam',https:false});assert.deepEqual(JSON.parse(calls.find(([url])=>url==='/setup/steam')[1].body),{origin:'http://127.0.0.1:3010',placement:'same',client:'windows-steam',https:false});
@@ -172,19 +167,18 @@ test('choosing a supported local setup generates its loader automatically; LAN c
 });
 
 test('setup bounds connection requests, rechecks on focus, and starts only one inline countdown',async()=>{
- const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  const timers=new Map();let next=1,requests=0,countdowns=0,connected=false;
- const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){
+ const {dom,el,flush}=setupDom(w=>{
   w.setTimeout=(fn,ms)=>{const id=next++;timers.set(id,{fn,ms});return id};w.clearTimeout=id=>timers.delete(id);
   w.setInterval=()=>{countdowns++;return 50};w.clearInterval=()=>{};
   w.fetch=async(url,options)=>{
    if(url.includes('/connection')){requests++;if(requests===1)return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(Error('timeout'))));return {ok:true,json:async()=>({connected})}}
    return {ok:true,json:async()=>({configured:true,code:'loader'})};
   };
- }});
- const flush=()=>new Promise(r=>setImmediate(r));
+ });
+ 
  try{
-  await flush();const el=id=>dom.window.document.getElementById(id);
+  await flush();
   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();await flush();
   dom.window.dispatchEvent(new dom.window.Event('focus'));assert.equal(requests,1);
   [...timers.values()].find(t=>t.ms===8000).fn();await flush();assert.match(el('linkStatus').textContent,/retry/);

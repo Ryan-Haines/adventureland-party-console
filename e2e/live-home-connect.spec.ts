@@ -1,4 +1,4 @@
-import { test, expect } from './live-fixtures';
+import { test, expect, headlessMerchant } from './live-fixtures';
 
 // Failure modes: stale saved/setup realms win over native home; startup repeats
 // that stale connection; home selection overwrites an explicit realm transition.
@@ -13,14 +13,7 @@ test.use({ liveHeadless:true, staleWorkerRealm:'SR_USII' });
 test('headless spawn and restart use home realm despite stale worker configuration', async ({ page, live }, info) => {
   test.setTimeout(240_000);
   try {
-    await live.post('/steam/action', {character:'E2EMerchant',action:'logout'});
-    await expect.poll(async () => (await live.state()).activeSlots.some((slot:any) => slot.character === 'E2EMerchant'), {timeout:90_000}).toBe(false);
-    await expect.poll(async () => {
-      const operation = (await live.state()).steamSwitch;
-      return !operation || operation.phase === 'complete';
-    }, {timeout:90_000}).toBe(true);
-    await expect.poll(async () => await live.admin("output=!!get_player('E2EMerchant')"), {timeout:30_000}).toBe(false);
-    await live.post('/slots/1/spawn', {character:'E2EMerchant'});
+    await headlessMerchant(live);
     await expect.poll(async () => await live.admin("output=get_player('E2EMerchant')?.p.home || null"), {timeout:90_000}).toBe('USI');
     await expect.poll(async () => (await live.state()).characters.E2EMerchant?.server, {timeout:90_000}).toBe('USI');
     const before = await live.state();

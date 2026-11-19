@@ -25,6 +25,11 @@ test(`native headless merchant approaches ${departure.label} transporter within 
    approached ||= actual.transports.some((packet:any)=>packet.from.map===departure.map&&Number.isFinite(packet.legalRange)&&packet.legalRange>0&&packet.range<packet.legalRange&&packet.clear&&packet.to==='main');
    crossed ||= actual.merchant?.map==='main';
    if(samples.length<200)samples.push({at:Date.now(),actual,movement:s.characters[M]?.movement,current:s.merchantCurrent,queue:s.merchantQueue});
+   // Desert: the merchant keeps the shortest route (v1.5.0's), which need not use the transporter, so
+   // any route that ends in range of the fighter passes, and a transport it does use must be a legal
+   // one (the user's decision of 2026-11-17).
+   const illegal=actual.transports.some((packet:any)=>packet.from.map===departure.map&&Number.isFinite(packet.legalRange)&&packet.legalRange>0&&!(packet.range<packet.legalRange&&packet.clear));
+   if(departure.map==='desertland')return !illegal&&crossed&&actual.stock===0;
    return approached&&crossed&&actual.stock===0;
   },{timeout:120000,intervals:[200,500],message:'Native transporter approach, actual transport and real cargo receipt'}).toBe(true);
   expect(await totalLeather(live)).toBe(7);

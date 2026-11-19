@@ -66,14 +66,12 @@ test('unlocked lucky inference overrides cursor and lapsing confidence resumes s
   await expect(dialog.getByText(/Next upgrade will test for lucky upgrade · slot 1/)).toBeVisible();
   await app.restartCoordinator(); await page.reload();
   const next=merchant.getByLabel('Raw Emerald',{exact:true});
-  // A parallel page or post-reload layout change can retire a one-shot hover.
-  // Repeat the actual pointer entry and exact visible result in the same budget.
-  await expect(async()=>{
-    await page.bringToFront();
-    await page.mouse.move(0,0);
-    await next.hover({timeout:1000});
-    await expect(page.getByText('Next upgrade will test for lucky upgrade · slot 1. Click for options.',{exact:true})).toBeVisible({timeout:1000});
-  }).toPass({timeout:15_000,intervals:[100,250]});
+  // The row hovers once the reloaded card is in front and laid out (hover waits for the cell to
+  // stand still), as lucky-slot-lock.spec.ts does.
+  await page.bringToFront();
+  await expect(next).toBeVisible();
+  await next.hover();
+  await expect(page.getByText('Next upgrade will test for lucky upgrade · slot 1. Click for options.',{exact:true})).toBeVisible();
   await info.attach('resumed-sequential-discovery-tooltip',{body:await page.screenshot(),contentType:'image/png'});
   await next.click();
   await page.getByRole('menuitem',{name:'Show lucky slot data',exact:true}).click();

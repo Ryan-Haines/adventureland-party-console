@@ -1,7 +1,6 @@
+const {targetingContext} = require('./helpers/targeting-module.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const {namedFunction}=require('./helpers/named-function.cjs');
-const {reconcileQueue}=require('../../runtime/combat/queue.ts');
-const source=fs.readFileSync('characters/shared.js','utf8');
+const {reconcileQueue}=require('../../runtime/coordinator/targeting/queue.ts');
 // Retained isolated performance boundary: native gameplay cannot deterministically
 // produce malformed historical timestamps or count identity builds. Failure modes:
 // stale indexes after push/replacement/realm changes; invalid duplicate hides a
@@ -9,10 +8,11 @@ const source=fs.readFileSync('characters/shared.js','utf8');
 // scanning work remains per monster; tombstone index includes filtered/evicted deaths.
 function fixture(){
  let now=100000,realm='USII',calls=0;
- const c=vm.createContext({Date:{now:()=>now},character:{map:'main',in:'main'},reunionRealm:()=>realm,
-  committedHuntEncounter:()=>false,passiveHunting:{rules:{}},coordinatorClockOffset:0,
-  fightDeaths:[],peerPassingEncounters:[],passingEncounters:{},groupedCombat:{deaths:[],passingEncounters:[]}});
- vm.runInContext(namedFunction(source,'passingKey')+'\n'+namedFunction(source,'isPassingEncounter'),c);
+ // passingKey and isPassingEncounter are targeting's (targeting/passing.ts), over movement's realm.
+ const c=targetingContext({Date:{now:()=>now},character:{map:'main',in:'main'},
+  committedHuntEncounter:()=>false,coordinatorClockOffset:0,
+  fightDeaths:[],peerPassingEncounters:[],passingEncounters:{},groupedCombat:{deaths:[],passingEncounters:[]}},undefined,
+  {walks:{reunionRealm:()=>realm}});
  const key=c.passingKey;c.passingKey=t=>{calls++;return key(t);};
  const reference=t=>{
   const k=key(t);if(t.dead||t.hp===0)return false;

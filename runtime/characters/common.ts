@@ -1,18 +1,7 @@
-import './map-projectiles.ts';
-import "./geometry.ts";
-import "./dungeons.ts";
-import "./cave-recovery.ts";
-import "./game-rendering-entry.ts";
-import "./dashboard-bridge.ts";
-import "./lucky-upgrade.ts";
-import "./lucky-slot-tracker.ts";
-import "./upgrade-preview.ts";
-import "./exchange-rewards.ts";
-import "./craft-reservations.ts";
-import "./compound-storage.ts";
-import "./bank-stacks.ts";
-import "./movement.ts";
-import "./metrics.ts";
-import "./map-sprites.ts";
-import "./october-events.ts";
+// The class bundles' composition: the owners, then shared.js, which reads them at its install.
+import "./owners.ts";
 import "../../characters/shared.js";
+// The settings owner's answer in this realm.
+import { partyHooks } from "../hooks/index.ts";
+import { installCharacterSettings } from "../settings/character/api.ts";
+installCharacterSettings(partyHooks());

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { setHidden } from './fixtures/component-harness';
 
 // Request efficiency (docs/efficiency.md § Requests and logs) against the real
 // coordinator behind the hosting gateway.
@@ -144,11 +145,6 @@ test('display-only dashboard timers pause while the tab is hidden and read at on
     if (['/console-update', '/console-build', '/console-debug'].includes(path) || path.endsWith('/upgrade-preview')) requests.push({ path: path.replace(/^.*\/upgrade-preview$/, '/upgrade-preview'), at: Date.now() });
   });
   const count = (path: string) => requests.filter(entry => entry.path === path).length;
-  const setHidden = (hidden: boolean) => page.evaluate(hidden => {
-    Object.defineProperty(document, 'hidden', { value: hidden, configurable: true });
-    Object.defineProperty(document, 'visibilityState', { value: hidden ? 'hidden' : 'visible', configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-  }, hidden);
   await page.goto('/');
   const merchant = page.locator('article').filter({ has: page.getByRole('heading', { name: 'M', exact: true }) });
   await merchant.getByText('sword', { exact: true }).click({ button: 'right' });
@@ -157,14 +153,16 @@ test('display-only dashboard timers pause while the tab is hidden and read at on
   await page.waitForTimeout(4500);
   const visible = { update: count('/console-update'), preview: count('/upgrade-preview'), build: count('/console-build') };
   expect(visible.update).toBeGreaterThan(0);
-  expect(visible.preview).toBeGreaterThan(1);
-  await setHidden(true);
+  // The open panel reads the stored preview once, then again only when the core read's preview
+  // signal or the merchant's bag changes (upgrade-preview-panel.tsx `previewSignal`).
+  expect(visible.preview).toBeGreaterThan(0);
+  await setHidden(page,true);
   await page.waitForTimeout(500);
   const hiddenAt = { update: count('/console-update'), preview: count('/upgrade-preview'), build: count('/console-build') };
   await page.waitForTimeout(7000);
   const hidden = { update: count('/console-update') - hiddenAt.update, preview: count('/upgrade-preview') - hiddenAt.preview, build: count('/console-build') - hiddenAt.build };
   const shownAt = Date.now();
-  await setHidden(false);
+  await setHidden(page,false);
   await expect.poll(() => count('/console-update') > hiddenAt.update + hidden.update && count('/upgrade-preview') > hiddenAt.preview + hidden.preview, { timeout: 5000 }).toBe(true);
   const firstAfter = (path: string) => requests.find(entry => entry.path === path && entry.at >= shownAt)!.at - shownAt;
   const returned = { update: firstAfter('/console-update'), preview: firstAfter('/upgrade-preview') };

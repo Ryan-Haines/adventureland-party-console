@@ -7,10 +7,12 @@ import { OfflineCharacterView } from './offline-character-view';
 import type { Char } from './char';
 import { CharacterPortrait } from './character-portrait';
 
-import { API } from './api';
+import { useQueryClient } from '@tanstack/react-query';
+import { performAction } from './query-actions';
 import { inventoryWithCatalogMeta } from './item-catalog-meta';
 import type { PartyState } from './party-state';
 export function AccountSettings({ state }: { state: PartyState }) {
+  const client = useQueryClient();
   const [loading,setLoading]=useState<string|null>(null);
   const [inspected, setInspected] = useState<
     (Char & { updatedAt?: number }) | null
@@ -43,7 +45,7 @@ export function AccountSettings({ state }: { state: PartyState }) {
               type="button"
               aria-label={`Inspect ${member.name}`}
               disabled={!!loading}
-              onClick={async()=>{if(snapshot){setInspected(snapshot);return;}setLoading(member.name);setError('');try{setInspected(await loadCharacterInspection(member.name));}catch(error){setError(error instanceof Error?error.message:String(error));}finally{setLoading(null);}}}
+              onClick={async()=>{if(snapshot){setInspected(snapshot);return;}setLoading(member.name);setError('');try{setInspected(await loadCharacterInspection(client,member.name));}catch(error){setError(error instanceof Error?error.message:String(error));}finally{setLoading(null);}}}
               key={member.name}
               className="rounded border border-slate-600 bg-slate-950 p-2 text-center"
             >
@@ -103,13 +105,7 @@ export function AccountSettings({ state }: { state: PartyState }) {
         onClick={async () => {
           setError('');
           try {
-            const r = await fetch(`${API}/dashboard-preferences`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ bankboiPrefix: prefix.trim() }),
-            });
-            if (!r.ok)
-              throw new Error(((await r.json()) as { error: string }).error);
+            await performAction(client, '/dashboard-preferences', { bankboiPrefix: prefix.trim() });
             setSaved(true);
           } catch (e) {
             setError(String((e as Error).message));

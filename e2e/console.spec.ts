@@ -1,3 +1,4 @@
+import './addon-console.case';
 import './character-sections.case';
 import './npc-sale-reserve.case';
 import './elixir-restock.case';
@@ -5,9 +6,12 @@ import './map-sprites.case';
 import './drop-rewards.case';
 import './release-ui.case';
 import './market-preferences.case';
-import { test, expect } from './fixtures';
+import { test, expect, consoleScenarioTable, settingsRowsReset } from './fixtures';
+import { settingsRows } from './settings-rows';
+import { declaredImportable, declaredSettings } from './settings-samples';
 import { fetchFullState } from './state-route';
 import './gear-comparison.case';
+import './comparison-portrait.case';
 import './steam-audio.case';
 import './steam-pending-recovery.case';
 import './steam-desktop-arrival.case';
@@ -21,9 +25,10 @@ import './stat-colors.case';
 import './catalog-comparison.case';
 import './bestiary-events.case';
 import './item-titles.case';
+import './cave-destinations.case';
 import { createServer } from 'node:http';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { transform, build } from 'esbuild';
+import { build } from 'esbuild';
 import { LocalSteam, type DesktopPorts } from '../tools/steam/service';
 import { SteamPreferenceStore } from '../tools/steam/preferences';
 import { randomUUID } from 'node:crypto';
@@ -32,77 +37,64 @@ import { gateway } from '../tools/hosting/gateway';
 import { Access } from '../tools/hosting/access';
 import { startupRealms } from '../tools/hosting/realms';
 import { accountConfig, sessionValue } from '../tools/hosting/account';
-import ts from 'typescript';
 
 test('Steam merchant realm switch replaces its page and resumes saved progress', async ({ page }, info) => {
   // Failure modes: Steam waits forever; headless navigates; IV/V rejected;
-  // rejected HTTP switches navigate; saved completed listings bought twice.
-  // Desktop Steam, coordinator dispatch, and native purchases are external
-  // boundaries here. Maintained functions execute in a real browser and use
-  // HTTP switch/receipt boundaries and actual page replacement.
-  const source=readFileSync('characters/shared.js','utf8');
-  const tree=ts.createSourceFile('shared.js',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
-  const pieces:string[]=[];
-  let nativeSwitch='';
-  function visit(node:ts.Node){
-    if(ts.isFunctionDeclaration(node)&&node.name&&['realmPagePath','awaitRealmRestart','merchantPontyBuy','merchantJoinGiveaway','merchantALDataBuy','merchantALDataSell','merchantIdle'].includes(node.name.text))pieces.push(node.getText(tree));
-    if(ts.isIfStatement(node)&&node.expression.getText(tree)==='command.type === "native-realm-switch"')nativeSwitch=node.getText(tree);
-    ts.forEachChild(node,visit);
-  }
-  visit(tree);
+  // rejected HTTP switches navigate; a resumed job changes page again on the realm it reached.
+  // Desktop Steam and coordinator dispatch are external boundaries here. The realm owner's
+  // hop (runtime/merchant-realm/character/hop.ts, bcf842d23) runs in a real browser over the HTTP
+  // switch boundary and actual page replacement. Every merchant executor hops through it;
+  // scripts/tests/ponty-market.test.cjs checks that a resumed Ponty buy skips its saved
+  // completed listings.
+  const bundle=await build({stdin:{contents:"export {createMerchantHop} from './runtime/merchant-realm/character/hop.ts';export {partyHooks} from './runtime/hooks/index.ts';",
+    resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'iife',globalName:'MerchantRealm',platform:'browser'});
   const packets:{url:string;body:any}[]=[];
-  let reject=false;
+  let reject=false,alreadyThere=false;
   await page.route('http://merchant.test/**',async route=>{
     const request=route.request();
     if(request.method()==='POST'){
       packets.push({url:new URL(request.url()).pathname,body:request.postDataJSON()});
-      await route.fulfill({status:reject?409:200,json:{ok:!reject}});
+      await route.fulfill({status:reject?409:200,json:{ok:!reject,...(alreadyThere?{alreadyThere:true}:{})}});
     }else await route.fulfill({contentType:'text/html',body:'<body>Merchant native page boundary</body>'});
   });
   async function install(headless=false){
-    await page.addScriptTag({content:`var character={name:'Patinder',gold:1000,items:Array(42).fill(null)};
-      parent.server_region='US';parent.server_identifier='III';parent.caracAL=${headless?'{}':'null'};
-      var switchAccepted=false;
-      async function request(url,args){var response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(args.body)});if(!response.ok)throw Error('Rejected switch');var body=await response.json();if(url==='/merchant/realm-switch')switchAccepted=true;return body;}
-      var root=window,lastCommand=0,merchantIdleActive=false,merchantHomeRealm='SR_USII';function game_log(){};
-      async function refreshPontyListings(){};${pieces.join('\n')}
-      async function nativeSwitch(command){${nativeSwitch}}`});
+    await page.addScriptTag({content:bundle.outputFiles[0].text+`
+      var held=[],game={server_region:'US',server_identifier:'III',caracAL:${headless?'{}':'null'},window:window};
+      MerchantRealm.partyHooks().register({name:'core:hop-band-e2e',folder:'core',author:'test',summary:'Sends every job call.',
+        hooks:{'calls.band':function(){return 'send';},'calls.window':function(){return 0;}}});
+      var hop=MerchantRealm.createMerchantHop({parent:function(){return game;},character:function(){return {name:'Patinder'};},
+        request:async function(url,args){var response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(args.body)});
+          if(!response.ok)throw Error('Rejected switch');return response.json();},
+        holdRealm:function(realm){held.push(realm);},sleep:async function(){},log:function(){}});`});
   }
-  const listing={key:'listing-86',rid:'native-listing',item:{name:'coat',level:0},quantity:1,unitPrice:100,price:100,serverRegion:'US',serverIdentifier:'II'};
   await page.goto('http://merchant.test/character/Patinder/in/US/III/');await install();
-  await page.evaluate(listing=>{void (window as any).merchantPontyBuy({jobId:'issue-86',listings:[listing]});},listing);
+  await page.evaluate(()=>{void (window as any).hop.jobHop({jobId:'issue-86'},'SR_USII');});
   await expect(page).toHaveURL('http://merchant.test/character/Patinder/in/US/II/');
-  expect(packets[0].body.realm).toBe('SR_USII');
-  await install();
-  await page.evaluate(async listing=>{await (window as any).merchantPontyBuy({jobId:'issue-86',listings:[listing],completedListingKeys:[listing.key]});},listing);
-  expect(packets.find(packet=>packet.url==='/merchant/complete')?.body.success).toBe(true);
+  expect(packets[0]).toEqual({url:'/merchant/realm-switch',body:{jobId:'issue-86',character:'Patinder',realm:'SR_USII'}});
+  await install();alreadyThere=true;
+  expect(await page.evaluate(()=>(window as any).hop.jobHop({jobId:'issue-86'},'SR_USII'))).toBe('here');
+  expect(await page.evaluate(()=>(window as any).held)).toEqual([]);
+  expect(page.url()).toBe('http://merchant.test/character/Patinder/in/US/II/');alreadyThere=false;
   await page.goto('http://merchant.test/character/Patinder/in/US/III/');await install(true);
-  await page.evaluate(listing=>{void (window as any).merchantPontyBuy({jobId:'headless-86',listings:[listing]});},listing);
-  await expect.poll(()=>packets.some(packet=>packet.body.jobId==='headless-86')).toBe(true);
-  await expect.poll(()=>page.evaluate(()=>(window as any).switchAccepted)).toBe(true);
+  expect(await page.evaluate(()=>(window as any).hop.jobHop({jobId:'headless-86'},'SR_USII'))).toBe('yielded');
+  expect(packets.some(packet=>packet.body.jobId==='headless-86')).toBe(true);
+  expect(await page.evaluate(()=>(window as any).held)).toEqual(['SR_USII']);
   expect(page.url()).toBe('http://merchant.test/character/Patinder/in/US/III/');
+  expect(await page.evaluate(async()=>{try{await (window as any).hop.nativeSwitch({realm:'SR_USII'});return null;}catch(error){return String(error);}}))
+    .toContain('Native realm switching requires the Steam game client');
   await install();reject=true;
-  const rejection=await page.evaluate(async listing=>{try{await (window as any).merchantPontyBuy({jobId:'rejected-86',listings:[listing]});return null;}catch(error){return String(error);}},listing);
-  expect(rejection).toContain('Rejected switch');expect(page.url()).toBe('http://merchant.test/character/Patinder/in/US/III/');reject=false;
-  for(const [handler,command] of [
-    ['merchantJoinGiveaway',{jobId:'giveaway-86',realm:'SR_USII'}],
-    ['merchantALDataBuy',{jobId:'aldata-buy-86',listings:[listing]}],
-    ['merchantALDataSell',{jobId:'aldata-sale-86',buyOrder:{item:{name:'coat'},buyer:'Buyer',serverRegion:'US',serverIdentifier:'II'}}],
-    ['merchantIdle',{homeRealm:'SR_USII'}],
-  ] as const){
-    await page.goto('http://merchant.test/character/Patinder/in/US/III/');await install();
-    await page.evaluate(({handler,command})=>{const host=window as any;host.character.items[0]={name:'coat'};void host[handler](command);},{handler,command});
-    await expect(page).toHaveURL('http://merchant.test/character/Patinder/in/US/II/');
-  }
+  const rejection=await page.evaluate(async()=>{try{await (window as any).hop.jobHop({jobId:'rejected-86'},'SR_USII');return null;}catch(error){return String(error);}});
+  expect(rejection).toContain('Rejected switch');expect(page.url()).toBe('http://merchant.test/character/Patinder/in/US/III/');
+  expect(await page.evaluate(()=>(window as any).held)).toEqual([]);reject=false;
   const destinations=[];
   for(const [realm,destination] of [['SR_USI','US/I'],['SR_USII','US/II'],['SR_USIII','US/III'],['SR_USIV','US/IV'],['SR_USV','US/V'],['SR_EUIV','EU/IV'],['SR_ASIAII','ASIA/II'],['SR_USPVP','US/PVP']]){
     await page.goto('http://merchant.test/start');await install();
-    await page.evaluate(realm=>{void (window as any).nativeSwitch({type:'native-realm-switch',realm});},realm);
+    await page.evaluate(realm=>{void (window as any).hop.nativeSwitch({realm});},realm);
     await expect(page).toHaveURL(`http://merchant.test/character/Patinder/in/${destination}/`);
     destinations.push({realm,url:page.url()});
   }
-  await install();expect(await page.evaluate(()=>(window as any).realmPagePath('SR_MOON'))).toBeNull();
-  expect(await page.evaluate(async()=>{try{await (window as any).nativeSwitch({type:'native-realm-switch',realm:'SR_MOON'});return null;}catch(error){return String(error);}})).toContain('Invalid realm switch destination');
+  await install();expect(await page.evaluate(()=>(window as any).hop.pagePath('SR_MOON'))).toBeNull();
+  expect(await page.evaluate(async()=>{try{await (window as any).hop.nativeSwitch({realm:'SR_MOON'});return null;}catch(error){return String(error);}})).toContain('Invalid realm switch destination');
   await info.attach('steam-merchant-realm-ledger',{body:JSON.stringify({packets,destinations}),contentType:'application/json'});
   await info.attach('steam-merchant-realm-page',{body:await page.screenshot(),contentType:'image/png'});
 });
@@ -165,7 +157,10 @@ test('uncertain merchant upgrade shows red diagnostics and authoritative UTC ret
   await expect.poll(async()=>(await app.state()).merchantCurrent?.reason).toBe('merchant commerce');
   const current=(await app.state()).merchantCurrent;
   const error=`Upgrade outcome uncertain; ${choice.id} from +0 to +1 at inventory slot 7; inventory review required`;
-  await app.deliverMerchantCompletion({jobId:current.id,commandId:current.commandId,success:false,failureKind:'commerce_recovery',error});
+  // The character's order runner sends an uncertain upgrade with its failure code
+  // (runtime/items/character/production.ts), and the coordinator reads the code, not the text
+  // (ec58740c9).
+  await app.deliverMerchantCompletion({jobId:current.id,commandId:current.commandId,success:false,failureKind:'commerce_recovery',code:'upgrade_uncertain',error});
   await expect.poll(async()=>(await app.state()).merchantActivity.some((entry:any)=>entry.level==='error'&&JSON.stringify(entry.details).includes(error))).toBe(true);
   const state=await app.state(),retry=state.merchantQueue.find((job:any)=>job.resumedFrom===current.id);
   expect(retry.retryAt).toBeGreaterThan(Date.now());
@@ -278,22 +273,24 @@ test('held escape shows its reason and resumes only through an explicit action',
   // released prematurely; failed release hides the hold; released errors linger.
   // Declare the escape read boundary; the actual Resume POST reaches the
   // coordinator. This checks console recovery controls, not rescue skill outcomes.
+  // The planted reason is the one a `failed-hold` escape carries today (runtime/coordinator/survival/escape.ts,
+  // no game data for the safe goal).
   let stage='failed-hold', rejectResume=true;
   const requests: {path:string,status:number}[]=[];
   await page.route('**/party-api/escape', async route => {
     if (route.request().method()!=='GET') {await route.continue();return;}
     await route.fulfill({json:{escape:{id:'console-held-escape',stage,
-      error:'Missing warrior, mage, or priest',progress:{W:{error:'cant_respawn'}}}}});
+      error:'No game data for the safe goal',progress:{W:{error:'cant_respawn'}}},button:stage==='released'?'escape':stage==='blink'?'escaping':'resume',resumeAt:null}});
   });
   await page.route('**/party-api/escape/resume',async route=>{
     if(rejectResume){requests.push({path:'/escape/resume',status:409});await route.fulfill({status:409,json:{error:'Recovery is still held'}});return;}
     const response=await route.fetch();requests.push({path:'/escape/resume',status:response.status()});
     expect(response.ok()).toBe(true);stage='released';
-    await route.fulfill({response,json:{escape:{id:'console-held-escape',stage,error:null,progress:{}}}});
+    await route.fulfill({response,json:{escape:{id:'console-held-escape',stage,error:null,progress:{}},button:'escape',resumeAt:null}});
   });
   await page.goto('/');
-  const resume=page.getByRole('button',{name:'Resume automation',exact:true});
-  await expect(page.getByText('Missing warrior, mage, or priest',{exact:true})).toBeVisible();
+  const resume=page.getByRole('button',{name:'Resume',exact:true});
+  await expect(page.getByText('No game data for the safe goal',{exact:true})).toBeVisible();
   await expect(resume).toBeVisible();
   await resume.scrollIntoViewIfNeeded();
   await info.attach('escape-held-reason',{body:await page.screenshot(),contentType:'image/png'});
@@ -302,12 +299,31 @@ test('held escape shows its reason and resumes only through an explicit action',
   await expect(resume).toBeEnabled();
   rejectResume=false;await resume.click();
   await expect(resume).toHaveCount(0);
-  await expect(page.getByText('Missing warrior, mage, or priest',{exact:true})).toHaveCount(0);
+  await expect(page.getByText('No game data for the safe goal',{exact:true})).toHaveCount(0);
   stage='blink';await page.reload();
-  await expect(page.getByRole('button',{name:/Escape - failed$/})).toBeDisabled();
+  await expect(page.getByRole('button',{name:/Escaping$/})).toHaveAttribute('aria-disabled','true');
   await expect(resume).toHaveCount(0);
   await info.attach('escape-resume-actions',{body:JSON.stringify(requests),contentType:'application/json'});
   await info.attach('escape-active-rescue',{body:await page.screenshot(),contentType:'image/png'});
+});
+
+test('an escape that reached home reads as home and keeps the resume control', async ({page},info) => {
+  // Step 8a item 11 (e2e/movement-owner-failures.md): an escape that walked every member
+  // home holds in stage `home`; the button reads it as home, not as a failure, and the
+  // player still resumes automation by hand. A recovery convoy's end stays `failed-hold`.
+  let stage='home';
+  await page.route('**/party-api/escape', async route => {
+    if (route.request().method()!=='GET') {await route.continue();return;}
+    // The coordinated escape fell to independent recovery first, so the hold carries that note.
+    await route.fulfill({json:{escape:{id:'console-home-escape',stage,error:'Requested members need independent escape recovery',progress:{}},button:'resume',resumeAt:null}});
+  });
+  await page.goto('/');
+  await expect(page.getByText(/^Escaped home\./)).toBeVisible();
+  await expect(page.getByRole('button',{name:'Resume',exact:true})).toBeVisible();
+  await expect(page.getByText(/^Escape failed\./)).toHaveCount(0);
+  await info.attach('escape-home',{body:await page.screenshot(),contentType:'image/png'});
+  stage='failed-hold';await page.reload();
+  await expect(page.getByText(/^Escape failed\./)).toBeVisible();
 });
 
 test('Halloween events stay opt-in, show partial-feed timers, inherit and persist', async ({page,app},info) => {
@@ -375,8 +391,12 @@ test('Halloween events stay opt-in, show partial-feed timers, inherit and persis
   // Saving keeps the dropdown available for editing the next event.
   await row('Mr. Pumpkin').getByRole('button',{name:'Mr. Pumpkin settings'}).click();
   await page.getByLabel('Death limit',{exact:true}).fill('1');
+  // Decided by the user on 2026-10-28: each boss event's settings choose the boss
+  // approach; going straight is the default and saves nothing, fighting adds is saved.
+  await expect(page.getByRole('radio',{name:/Go straight to the boss/})).toBeChecked();
+  await page.getByRole('radio',{name:/Fight adds on the way/}).check();
   await page.getByRole('button',{name:'Save event settings',exact:true}).click();
-  await expect.poll(async()=>(await app.state()).eventLimitsByCharacter.W.mrpumpkin).toEqual({deathLimit:1,timeLimitMinutes:null});
+  await expect.poll(async()=>(await app.state()).eventLimitsByCharacter.W.mrpumpkin).toEqual({deathLimit:1,timeLimitMinutes:null,bossApproach:'fight-adds'});
   await expect(row('Mr. Green').getByRole('button',{name:'Mr. Green settings'})).toBeVisible();
   await info.attach('event-settings-dropdown-retained',{body:await page.screenshot(),contentType:'image/png'});
   await page.keyboard.press('Escape');
@@ -549,7 +569,8 @@ test('blacklists survive Hunt mode changes, restart and dashboard export import'
     expect(imported.ok(),await imported.text()).toBe(true);
     return summary;
   };
-  const blacklist={goo:{monsterId:'goo',at:Date.now(),deaths:2,expirations:0,reason:'Hunt death threshold reached'}};
+  // Hunt's writer gives every entry its kind (runtime/hunting/coordinator/hunt.ts, f8ec4e8ff).
+  const blacklist={goo:{monsterId:'goo',at:Date.now(),kind:'deaths',deaths:2,expirations:0,reason:'Hunt death threshold reached'}};
   const failures={goo:{deaths:2,expirations:0}};
   const seed=await restore({farmingProfiles:{W:{huntBlacklist:blacklist,huntFailures:failures},P:{huntBlacklist:blacklist,huntFailures:failures},Unknown:{huntBlacklist:blacklist}}});
   expect(seed.skippedCharacters.Unknown).toContain('farmingProfiles');
@@ -576,12 +597,43 @@ test('blacklists survive Hunt mode changes, restart and dashboard export import'
   expect((await app.state()).farmingProfiles.W.huntBlacklist).toEqual({});
   expect((await app.state()).farmingProfiles.P.huntBlacklist).toEqual(blacklist);
   await post('/merchant/blacklist',{action:'clear'});
+  // The import line: the import writes its settings
+  // through the writer as `import`, one line per changed setting, and its records with no line.
+  const threshold=exported.settings.threshold;
+  await post('/config',{threshold:threshold+7});
+  const from=(await app.state()).settingsChanges.length;
   await restore(exported.settings);
+  const importLines=(await app.state()).settingsChanges.slice(from);
+  expect(importLines.map((line:{by:string})=>line.by).filter((by:string)=>by!=='import'),'every line the import writes names it').toEqual([]);
+  expect(importLines.map((line:{field:string})=>line.field).filter((field:string)=>!declaredSettings().includes(field)),'a record writes no line').toEqual([]);
+  expect(importLines.find((line:{field:string})=>line.field==='threshold')).toMatchObject({old:threshold+7,new:threshold,by:'import'});
+  await info.attach('import-lines',{body:JSON.stringify(importLines),contentType:'application/json'});
   await app.restartCoordinator();
   const final=await app.state();
   expect(final.farmingProfiles.W.huntBlacklist).toEqual(blacklist);
   expect(final.farmingProfiles.P.huntBlacklist).toEqual(blacklist);
   expect(final.merchantBlacklist).toEqual(exported.settings.merchantBlacklist);
+  // SET-015: the export carries only the declarations marked importable.
+  const importable=new Set(declaredImportable());
+  expect(Object.keys(exported.settings).filter(key=>!importable.has(key)),'exported fields no declaration marks importable').toEqual([]);
+  // The import refuses a value the
+  // dashboard's own route refuses, names the field, and changes nothing, beside a valid field.
+  // An imported count past the bag reads as the bag (runtime/items/saved-fields.ts `fit`,
+  // 6207be215), so 50 previews; the route still refuses it.
+  const refusals:unknown[]=[];
+  for(const value of [50,0.5]){
+    const source=JSON.stringify({format:'party-console-settings',version:1,settings:{threshold:final.threshold+1,itemCollectionThreshold:value}});
+    const preview=await page.request.post(app.url+'/party-api/dashboard-state/preview',{data:source,headers:{'Content-Type':'text/plain',Origin:app.url}});
+    const body=await preview.json();
+    refusals.push({value,status:preview.status(),body});
+    expect(preview.status()).toBe(value===50?200:400);
+    if(value!==50)expect(body.error).toBe('Invalid saved itemCollectionThreshold; nothing was imported');
+    const route=await page.request.post(app.url+'/party-api/config',{data:{itemCollectionThreshold:value},headers:{Origin:app.url}});
+    expect(route.status(),'the route refuses the same value').toBe(400);
+  }
+  const unchanged=await app.state();
+  expect([unchanged.threshold,unchanged.itemCollectionThreshold]).toEqual([final.threshold,final.itemCollectionThreshold]);
+  await info.attach('import-refusals',{body:JSON.stringify(refusals),contentType:'application/json'});
   await page.goto('/');
   await info.attach('blacklist-export-round-trip',{body:JSON.stringify({seed,exported,final}),contentType:'application/json'});
   await info.attach('blacklist-dashboard',{body:await page.screenshot({fullPage:true}),contentType:'image/png'});
@@ -937,12 +989,18 @@ test('active Bankboi uses its dedicated card instead of a pending character card
   await info.attach('bankboi-dedicated-active-card', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('Live WTB counts bank stock after empty slots without withdrawing it', async ({ page }, info) => {
+test('Live WTB counts bank stock after empty slots without withdrawing it', async ({ page, app }, info) => {
   // Failure modes: empty slot objects crash rendering; later stock is omitted;
-  // multiple bank stacks are undercounted; merchant-only stock stops matching.
-  // Inject the bank/market read boundary; the dashboard and its UI actions run normally.
+  // multiple bank stacks are undercounted; merchant-only stock stops matching;
+  // the Market opens without loading the bank section, so bank stock reads 0.
+  // The coordinator counts the stock the bank section carries (runtime/status/coordinator/state.ts
+  // `ownedStock`, 0862d8125), so the bank arrives in M's report as a bank visit sends it. Only the
+  // market read boundary is injected; the dashboard and its UI actions run normally.
   const bank = { gold: 0, packs: { items0: [null, {}, { slot: 2, item: { name: 'leather', q: 4 } }],
     items1: [{ slot: 0, item: { name: 'leather', q: 2 } }] } };
+  const merchant = { ...(await app.state()).characters.M, name: 'M', bank };
+  delete merchant.seenAt; delete merchant.statusSequence;
+  await app.deliverStatus(merchant);
   const orders = [
     { key: 'bank-leather', buyer: 'E2EBankBuyer', item: { name: 'leather' }, quantity: 9 },
     { key: 'inventory-sword', buyer: 'E2EInventoryBuyer', item: { name: 'sword', level: 0 }, quantity: 5 },
@@ -953,7 +1011,9 @@ test('Live WTB counts bank stock after empty slots without withdrawing it', asyn
   await page.route('**/party-api/state*', async route => {
     const response = await fetchFullState(route);
     const state = await response.json();
-    await route.fulfill({ response, json: { ...state, bank, aldata: { ...state.aldata, buyOrders: orders } } });
+    const section = new URL(route.request().url()).searchParams.get('section');
+    if (section === 'market') return route.fulfill({ response, json: { ...state, aldata: { ...state.aldata, buyOrders: orders } } });
+    await route.fulfill({ response, json: state });
   });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'M', exact: true })).toBeVisible();
@@ -984,55 +1044,13 @@ test('Live WTB counts bank stock after empty slots without withdrawing it', asyn
   await info.attach('bank-wtb-available-without-withdrawal', { body: await page.screenshot(), contentType: 'image/png' });
 });
 
-test('account preference rejects invalid drafts and survives reload and coordinator restart', async ({ page, app }, testInfo) => {
-  const evidence: Record<string, unknown> = { before: await app.state(), exchanges: [] };
-  const exchanges = evidence.exchanges as unknown[];
-  await page.goto('/');
-  const openSettings = async () => {
-    // Live cards require the browser's coordinator subscription to be mounted.
-    await expect(page.getByRole('heading', { name: 'W', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Interface settings', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Interface settings' })).toBeVisible();
-  };
-  await openSettings();
-  const input = page.getByLabel('Default name for bankboi', { exact: true });
-  const initial = await input.inputValue();
-  const save = async (value: string, status: number) => {
-    await input.fill(value);
-    const received = page.waitForResponse(response =>
-      new URL(response.url()).pathname.endsWith('/dashboard-preferences') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Save name', exact: true }).click();
-    const response = await received;
-    // The settings UI consumes only rejected bodies; success is verified against real state.
-    const body = response.ok() ? undefined : await response.json();
-    exchanges.push({ request: response.request().postDataJSON(), status: response.status(), response: body });
-    expect(response.status()).toBe(status);
-    return body;
-  };
-  const rejected = await save('x', 400);
-  await expect(page.getByRole('alert').filter({ hasText: rejected.error })).toBeVisible();
-  await expect(input).toHaveValue('x');
-  expect((await app.state()).bankboiPrefix || '').toBe(initial);
-  await save('E2EBank', 200);
-  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeVisible();
-  await expect(page.getByRole('alert').filter({ hasText: rejected.error })).toHaveCount(0);
-  expect((await app.state()).bankboiPrefix).toBe('E2EBank');
-  await save('!', 400);
-  await expect(input).toHaveValue('!');
-  expect((await app.state()).bankboiPrefix).toBe('E2EBank');
-  await page.reload();
-  await openSettings();
-  await expect(input).toHaveValue('E2EBank');
-  evidence.afterReload = await app.state();
-  await app.restartCoordinator();
-  await page.reload();
-  await openSettings();
-  await expect(input).toHaveValue('E2EBank');
-  evidence.afterRestart = await app.state();
-  expect((evidence.afterRestart as { bankboiPrefix?: string }).bankboiPrefix).toBe('E2EBank');
-  await input.scrollIntoViewIfNeeded();
-  await testInfo.attach('persisted-account-setting', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
-  await testInfo.attach('account-setting-http-and-state', { body: Buffer.from(JSON.stringify(evidence, null, 2)), contentType: 'application/json' });
+// The settings table: the settings owner's rows
+// that start from the console fixture, in e2e/settings-rows.ts. M is a BankBoi in the bank
+// document, for the settings table's BankBoi reply (the fixture account has W, P and M). The fixture add-on
+// (e2e/fixtures/settings-hooks-addon.ts) gives the add-on route a setting of each kind to check.
+test.describe('settings table', () => {
+  test.use({ fixtureAddon: true, savedRecords: [[{ party_dashboard_bank_state_v1: { bankbois: { M: { name: 'M', state: 'ready', items: [] } } } }], { scope: 'test' }] });
+  consoleScenarioTable('settings: the rows that start from the console fixture', 600_000, settingsRowsReset, settingsRows);
 });
 
 test.describe('player mark menu', () => {
@@ -1120,7 +1138,10 @@ test('inventory context menu and upgrade preview stay readable without queueing 
     initialReads.push({at:Date.now(),...observed});
     return observed.upgrades;
   },{message:'Merchant initialization must publish its exact empty upgrade projection before preview comparison'})
-    .toEqual({M:[]});}
+    // The shared rules' members are every reporting character that is not a BankBoi (d842febf8), and
+    // each member's reconcile leaves its list in place, empty with no intent (items/coordinator/
+    // production.ts `writeIntents`), so W and P publish theirs beside M.
+    .toEqual({M:[],P:[],W:[]});}
   finally{await testInfo.attach('preview-initial-readiness',{body:JSON.stringify(initialReads),contentType:'application/json'});}
   await sword.click({ button: 'right' });
   const rootMenu = page.locator('[data-slot="context-menu-content"]');
@@ -1391,7 +1412,9 @@ test('fixed-origin map image proxy returns native Dreams tiles and rejects exter
     expect(proxied.status()).toBe(200);
     expect(proxied.headers()['content-type']).toContain('image/png');
     expect(proxied.headers()['x-content-type-options']).toBe('nosniff');
-    expect(proxied.headers()['cache-control']).toContain('max-age=86400');
+    // The proxy passes the game server's own caching.
+    const direct=await fetch(nativeUrl);
+    expect(proxied.headers()['cache-control']).toBe(direct.headers.get('cache-control') ?? undefined);
     const nativeBytes=await proxied.body();
     expect([...nativeBytes.subarray(0,8)]).toEqual([137,80,78,71,13,10,26,10]);
     expect(nativeBytes.length).toBeGreaterThan(100);
@@ -1405,7 +1428,9 @@ test('Cave map survives stale reports without allowing stale waypoint actions',a
   // Declared read-boundary fixture: no native receipts, combat, or ownership is forged.
   let run='read-fixture-a',floor=0,fresh=true,operations=0;
   const name='M';
-  const view=()=>({state:{phase:'active',run,participants:[name],protectFromEvents:true,commands:{},operations:[],progress:{enabled:false,serial:0}},members:[{name,fresh,observation:{protocol:1,at:Date.now(),supported:true,alive:true,ready:true,members:[name],cave:{run,floor,expires:Date.now()+600000,remainingMs:600000,paused:false,gold:0,amber:0,points:[]}}}]});
+  const view=()=>({state:{phase:'active',run,participants:[name],protectFromEvents:true,commands:{},operations:[],progress:{enabled:false,serial:0}},members:[{name,fresh,observation:{protocol:1,at:Date.now(),supported:true,alive:true,ready:true,members:[name],cave:{run,floor,expires:Date.now()+600000,remainingMs:600000,paused:false,gold:0,amber:0,points:[]}}}],
+    // The Cave owner answers readiness in the view (ebf9c3e94); here it follows the one member's freshness.
+    entryRefusal:null,travelling:false,actionsReady:fresh,reopenable:[]});
   await page.route('**/party-api/daily-dungeons',route=>{
     if(route.request().method()==='POST')operations++;
     return route.fulfill({json:view()});
@@ -1466,7 +1491,9 @@ test('Steam handoff preserves saved setup when browser choices are incomplete', 
   const ports: DesktopPorts = {
     platform: 'win32', targets: async () => launched ? [{url:'http://game',socket:'ws://fixture'}] : [],
     executable: async () => 'declared-steam-executable', running: async () => false,
-    launch: async () => { launched++; }, connect: async () => ({ evaluate: async () => { attachments++; connected=true; return true; }, close: () => {} }),
+    // One attach is one inspector connection; it reads the page's bridge before it installs one
+    // (tools/steam/service.ts `attach`, 70057889a), so evaluate runs twice per attach.
+    launch: async () => { launched++; }, connect: async () => { attachments++; return { evaluate: async () => { connected=true; return true; }, close: () => {} }; },
     bridgeReady: async () => connected, server: async () => 'http://console', source: async () => '', now: Date.now, sleep: async () => {},
   };
   let steam = new LocalSteam(preferences, ports);
@@ -1487,8 +1514,9 @@ test('Steam handoff preserves saved setup when browser choices are incomplete', 
     await page.evaluate(()=>localStorage.setItem('party-connection-setup',JSON.stringify({placement:'',client:''})));
     // Execute the maintained dashboard request adapter in a real browser, then
     // observe the actual HTTP gateway, persisted preference and desktop boundary.
-    const helper = await transform(readFileSync('dashboard/features/party/steam-client-setup.ts','utf8'),{loader:'ts',format:'iife',globalName:'SteamSetup'});
-    await page.addScriptTag({content:helper.code});
+    // The adapter imports the lifecycle owner's setup check (858305c30), so it is bundled.
+    const helper = await build({entryPoints:['dashboard/features/party/steam-client-setup.ts'],bundle:true,write:false,format:'iife',globalName:'SteamSetup',platform:'browser'});
+    await page.addScriptTag({content:helper.outputFiles[0].text});
     await page.evaluate(()=>{
       const button=document.createElement('button'); button.textContent='Request Steam primary';
       button.onclick=async()=>{
@@ -1547,7 +1575,7 @@ test('Steam bridge reports native save rejection without losing its reason', asy
   const page=await browser.newPage();
   try {
     await page.goto(origin);
-    const bundle=await build({entryPoints:['runtime/steam/bridge.ts'],bundle:true,write:false,format:'iife',globalName:'NativeBridge',platform:'browser'});
+    const bundle=await build({entryPoints:['runtime/lifecycle/roster/bridge.ts'],bundle:true,write:false,format:'iife',globalName:'NativeBridge',platform:'browser'});
     await page.addScriptTag({content:bundle.outputFiles[0].text});
     await page.evaluate(origin=>{
       const host=window as unknown as Record<string,unknown>;
@@ -1582,7 +1610,7 @@ test('Steam bridge reserves a free native CODE slot without overwriting saved co
   const page=await browser.newPage();
   try {
     await page.goto(origin);
-    const bundle=await build({entryPoints:['runtime/steam/bridge.ts'],bundle:true,write:false,format:'iife',globalName:'NativeBridge',platform:'browser'});
+    const bundle=await build({entryPoints:['runtime/lifecycle/roster/bridge.ts'],bundle:true,write:false,format:'iife',globalName:'NativeBridge',platform:'browser'});
     await page.addScriptTag({content:bundle.outputFiles[0].text});
     await page.evaluate(origin=>{
       const host=window as unknown as Record<string,unknown>;
@@ -1692,3 +1720,79 @@ test.describe('stand buy order item levels',()=>{
 import './metrics-history.case';
 
 import './mailbox-enhancements.case';
+
+test('the card shows the activity line under the level line, and the stuck notice only while it lasts', async ({page},info) => {
+  // Step 8b item 15 (e2e/movement-owner-failures.md): the coordinator publishes one
+  // `activity` field per character; the card reads it and shows the notice only while
+  // the field carries one, never a time without progress.
+  let activity:Record<string,unknown>={text:'Travelling to farm - Goo',task:'farm',phase:'travel'};
+  await page.route('**/party-api/dashboard-stream',route=>route.abort());
+  await page.route('**/party-api/state*',async route=>{
+    const response=await fetchFullState(route),state=await response.json();
+    for(const key of ['characterDetails','characters'])if(state[key]?.W)state[key].W={...state[key].W,activity};
+    await route.fulfill({response,json:state});
+  });
+  await page.goto('/');
+  const card=page.locator('article').filter({has:page.getByRole('heading',{name:'W',exact:true})});
+  const line=card.getByText('Travelling to farm - Goo',{exact:true});
+  await expect(line).toBeVisible();
+  const level=card.getByText(/^Lv /);
+  const [levelBox,lineBox]=[await level.boundingBox(),await line.boundingBox()];
+  expect(lineBox!.y,'the activity line sits under the level line').toBeGreaterThan(levelBox!.y);
+  await info.attach('activity-travel',{body:await page.screenshot(),contentType:'image/png'});
+  activity={text:'Regrouping after escape - walking around the Arena door',task:'escape',phase:'recovering',
+    notice:'Stuck - trying walking around the Arena door',incident:'stuck:W:runtime:42'};
+  await expect(card.getByText('Stuck - trying walking around the Arena door',{exact:true})).toBeVisible();
+  await expect(card.getByText(/Regrouping after escape - walking around the Arena door/)).toBeVisible();
+  await info.attach('activity-notice',{body:await page.screenshot(),contentType:'image/png'});
+  activity={text:'Regrouping after escape - walking around the Arena door',task:'escape',phase:'recovering'};
+  await expect(card.getByText(/^Stuck/)).toHaveCount(0);
+  await expect(card.getByText('Regrouping after escape - walking around the Arena door',{exact:true})).toBeVisible();
+  await expect(card.getByText(/\d+ ?min/)).toHaveCount(0);
+});
+
+test('the diagnostics view lists stuck and caught-error records with their lead-up and id links', async ({page},info) => {
+  // Step 8b item 14: a debug view reached from the address, not part of the card.
+  const leadUp=[{seq:7,at:1000,decision:'climbing',owner:'escape:e1',cause:'ladder'},
+    {seq:8,at:1100,decision:'ended',kind:'escape',owner:'escape:e1',code:'replaced:manual',by:{kind:'manual',owner:'manual'}}];
+  const stuck={id:'stuck:W:runtime:9',kind:'stuck',character:'W',owner:'escape:e1',activity:'Regrouping after escape',rung:'door',
+    trying:'walking around the Arena door',noProgressMs:12000,position:{map:'arena',x:10,y:20},blocked:{code:'replaced:manual',by:{kind:'manual',owner:'manual'}},leadUp};
+  const caught={id:'caught-error:W:runtime:12',kind:'caught-error',character:'W',error:'Error: forced owner error',position:{map:'main',x:0,y:0},leadUp:leadUp.slice(0,1)};
+  await page.route('**/party-api/diagnostics/records*',route=>route.fulfill({json:{character:'W',until:1500,
+    live:{movement:{at:1200,records:[],incidents:[stuck]}},snapshots:[{id:'W/1-1-caught-error',trigger:'caught-error',at:1300,incident:caught.id,incidents:[caught],records:1}]}}));
+  await page.goto('/#diagnostics/movement');
+  const dialog=page.getByRole('dialog',{name:'Diagnostics'});
+  await expect(dialog).toBeVisible();
+  for(const record of [stuck,caught])await expect(dialog.getByRole('link',{name:record.id,exact:true}).first()).toBeVisible();
+  await expect(dialog.getByText('Regrouping after escape',{exact:true}).first()).toBeVisible();
+  await expect(dialog.getByText('12 s without progress')).toBeVisible();
+  await info.attach('movement-records-list',{body:await page.screenshot(),contentType:'image/png'});
+  await dialog.getByRole('link',{name:stuck.id,exact:true}).first().click();
+  await expect(dialog.getByRole('article')).toHaveCount(1);
+  await expect(dialog.getByRole('article',{name:stuck.id})).toBeVisible();
+  await expect(dialog.getByRole('cell',{name:'replaced:manual'})).toBeVisible();
+  await info.attach('movement-records-one',{body:await page.screenshot(),contentType:'image/png'});
+  await dialog.getByRole('link',{name:'All records'}).click();
+  await expect(dialog.getByRole('article')).toHaveCount(2);
+});
+
+// An order for a realm on the blacklist asks your confirmation and does not run
+// without it; once you confirm, that one order runs; the list survives a restart. An end-run row.
+test('a manual realm order for a blacklisted realm runs only once you confirm it', async ({ page, app }, info) => {
+  const post = (path: string, data: unknown) => page.request.post(app.url + path, { headers: { Origin: app.url }, data });
+  expect((await post('/party-api/settings', { changes: [{ field: 'merchantRealmBlacklist', value: ['SR_USII'] }] })).ok()).toBe(true);
+  // The dashboard's realm order goes to the party switch (dashboard/features/party/use-party-console.tsx);
+  // /merchant/realm-switch is the character's job hop and answers only its current job. The console
+  // fixture's account lists one realm, SR_USII (e2e/coordinator.cjs), so the order names it.
+  const refused = await post('/party-api/realm/switch', { realm: 'SR_USII' });
+  expect(refused.status()).toBe(409);
+  const warning = await refused.json();
+  expect(warning.needsConfirmation).toBe(true);
+  // The switch runs on after its answer, so the accepted order answers 202 with its operation.
+  const confirmed = await post('/party-api/realm/switch', { realm: 'SR_USII', confirm: true });
+  expect(confirmed.status(), await confirmed.text()).toBe(202);
+  expect((await confirmed.json()).operation).toMatchObject({ realm: 'SR_USII', confirmed: true });
+  await app.restartCoordinator();
+  expect((await app.state()).merchantRealmBlacklist).toEqual(['SR_USII']);
+  await info.attach('realm-blacklist-order', { body: JSON.stringify({ warning, confirmed: await confirmed.json() }), contentType: 'application/json' });
+});

@@ -1,18 +1,18 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createStartupSlots}=require('../../runtime/coordinator/characters/startup-slots.ts');
+const {fixture}=require('./helpers/coordinator-workers.cjs');
 test('startup preparation clears connection before watching and then disables workers',()=>{
- const workers={F:{connected:true,enabled:true}},observed=[];
- const service=createStartupSlots(workers,{headlessSlots:[],nativeOwner:null},{watch:(_name,worker)=>observed.push({...worker})});
- service.prepare();assert.deepEqual(observed,[{connected:false,enabled:true}]);assert.equal(workers.F.enabled,false);
+ const observed=[],f=fixture({blocks:{F:{connected:true,enabled:true}},watch:(_name,worker)=>observed.push({...worker})});
+ f.manager.prepareSlots();assert.deepEqual(observed,[{connected:false,enabled:true}]);assert.equal(f.blocks.F.enabled,false);
 });
 test('restoration preserves Steam reservations, clears invalid slots and starts each worker once',()=>{
- const state={headlessSlots:['Steam','Gone','F','F',null,'Primary'],nativeOwner:'Primary'},workers={F:{enabled:false}},calls=[];
- const service=createStartupSlots(workers,state,{reserved:name=>name==='Steam',owned:name=>name!=='Gone',ensure:name=>{calls.push(['ensure',name]);return workers[name];},start:name=>calls.push(['start',name]),persist:()=>calls.push(['persist'])});
- service.restore();assert.deepEqual(state.headlessSlots,['Steam',null,'F','F',null,null]);assert.equal(calls.filter(x=>x[0]==='start').length,1);assert.equal(workers.F.enabled,true);assert.deepEqual(calls.at(-1),['persist']);
- service.restore();assert.equal(calls.filter(x=>x[0]==='start').length,1);
+ const calls=[],f=fixture({blocks:{F:{enabled:false}},state:{headlessSlots:['Steam','Gone','F','F',null,'Primary'],nativeOwner:'Primary'},
+  reserved:name=>name==='Steam',owned:name=>name!=='Gone',commit:by=>calls.push(['commit',by])});
+ f.manager.restoreSlots();assert.deepEqual(f.state.headlessSlots,['Steam',null,'F','F',null,null]);assert.equal(f.workers.length,1);assert.equal(f.blocks.F.enabled,true);assert.deepEqual(calls,[['commit','start']]);
+ f.manager.restoreSlots();assert.equal(f.workers.length,1);
+ // A slot write commits the roster with its actor, so roster.changed names it.
+ f.manager.assign(5,'F','storage');assert.deepEqual(calls.at(-1),['commit','storage']);
 });
 test('restoration reads ownership at invocation so a Steam handoff during the delay is respected',()=>{
- const state={headlessSlots:['F'],nativeOwner:null},workers={F:{enabled:false}};let reserved=false,started=0;
- const service=createStartupSlots(workers,state,{watch(){},reserved:()=>reserved,owned:()=>true,ensure:()=>workers.F,start:()=>started++,persist(){}});
- service.prepare();reserved=true;service.restore();assert.equal(started,0);assert.deepEqual(state.headlessSlots,['F']);
+ let reserved=false;const f=fixture({blocks:{F:{enabled:false}},state:{headlessSlots:['F'],nativeOwner:null},reserved:()=>reserved});
+ f.manager.prepareSlots();reserved=true;f.manager.restoreSlots();assert.equal(f.workers.length,0);assert.deepEqual(f.state.headlessSlots,['F']);
 });

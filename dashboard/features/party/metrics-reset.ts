@@ -1,8 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { MetricResetKind } from '../../../runtime/metrics/contracts.ts';
-import { parseMetricResets } from '../../../runtime/metrics/parse.ts';
-import { API } from './api';
-import { authenticationLost, ReadError } from './query-cache';
+import type { MetricResetKind } from '../../../runtime/status/api.ts';
+import { parseMetricResets } from '../../../runtime/status/api.ts';
+import { performAction } from './query-actions';
 
 /** Only a user click calls this destructive endpoint. Filter changes never erase data. */
 export function useMetricsReset() {
@@ -10,12 +9,7 @@ export function useMetricsReset() {
   return useMutation({
     scope: { id: 'metrics-reset' },
     mutationFn: async (metric: MetricResetKind | 'all' | 'performance') => {
-      const response = await fetch(API + '/metrics/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ metric }) });
-      if (response.status === 401 || response.status === 403 || response.redirected) {
-        authenticationLost(client); throw new ReadError(401, 'Session expired');
-      }
-      if (!response.ok) throw new Error('Could not reset metrics');
-      const result: unknown = await response.json();
+      const result: unknown = await performAction(client, '/metrics/reset', { metric });
       const resets = result && typeof result === 'object' && 'resets' in result ? parseMetricResets(result.resets) : null;
       if (!resets) throw new Error('Invalid metrics reset response');
       return resets;

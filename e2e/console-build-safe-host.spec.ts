@@ -5,17 +5,21 @@ import {test,expect} from './fixtures';
 import {ConsoleBuildStore} from '../tools/console-build/store';
 import {ConsoleBuildController} from '../tools/console-build/controller';
 import {safeReload} from '../tools/console-build/safe-reload';
-import {consoleMaintenance} from '../runtime/coordinator/lifecycle/console-maintenance';
+import {createLease} from '../runtime/lifecycle/coordinator/lease';
 import type {CandidateManifest} from '../tools/console-build/contracts';
 import {readJson} from '../tools/build-store';
+import {LEASE_FILE} from '../runtime/lifecycle/rules';
+import {lifecycleSavedFields} from '../runtime/lifecycle/fields';
 
 test('safe maintenance replaces a stopped slot owner without accepting a missing acknowledgement',async({},info)=>{
   // Failure inventory: an old merchant remains sticky after a slot handoff;
   // merely stale/missing clients are incorrectly retired; a replacement's
   // combat or missing ack is ignored; an assigned stopped client is skipped.
-  const root=info.outputPath('slot-handoff'),maintenance=consoleMaintenance(root);
+  // The lease (runtime/lifecycle/coordinator/lease.ts) hears a stop through `leave`, which the
+  // worker stop path calls (workers.ts `stop`).
+  const root=info.outputPath('slot-handoff'),maintenance=createLease(root,{now:Date.now,paused:()=>false,log:()=>{},notify:()=>{}});
   await mkdir(path.join(root,'updates'),{recursive:true});
-  await writeFile(path.join(root,'updates/pause.json'),JSON.stringify({id:'handoff',mode:'draining',expires:Date.now()+60000}));
+  await writeFile(path.join(root,LEASE_FILE),JSON.stringify({id:'handoff',mode:'draining',expires:Date.now()+60000}));
   const held={seenAt:Date.now(),consoleMaintenance:{id:'handoff',mode:'draining',combat:false,ready:true}};
   const reports:any={Merchant:held};
   const ledger:any[]=[];
@@ -24,18 +28,20 @@ test('safe maintenance replaces a stopped slot owner without accepting a missing
   reports.Merchant={...held,seenAt:Date.now()-20000};reports.BankBoi={seenAt:Date.now()};
   ledger.push(maintenance.status(reports,['BankBoi']));
   expect(ledger.at(-1).waiting).toEqual(['Merchant','BankBoi']);
-  ledger.push(maintenance.status(reports,['BankBoi'],false,['Merchant']));
+  maintenance.leave('Merchant');
+  ledger.push(maintenance.status(reports,['BankBoi']));
   expect(ledger.at(-1).waiting).toEqual(['BankBoi']);
   reports.BankBoi={...held,seenAt:Date.now()};
-  ledger.push(maintenance.status(reports,['BankBoi'],false,['Merchant']));
+  ledger.push(maintenance.status(reports,['BankBoi']));
   expect(ledger.at(-1).ready).toBe(true);
-  ledger.push(maintenance.status(reports,['Merchant','BankBoi'],false,['Merchant']));
+  ledger.push(maintenance.status(reports,['Merchant','BankBoi']));
   expect(ledger.at(-1).waiting).toEqual(['Merchant']);
   await info.attach('safe-slot-handoff-ledger',{body:JSON.stringify(ledger),contentType:'application/json'});
+  maintenance.close();
 });
 
 test('safe reload requires fresh combat-free acknowledgements and preserves interrupted waits',async({},info)=>{
-  const root=info.outputPath('safe-host'),store=new ConsoleBuildStore(root),maintenance=consoleMaintenance(root);
+  const root=info.outputPath('safe-host'),store=new ConsoleBuildStore(root),maintenance=createLease(root,{now:Date.now,paused:()=>false,log:()=>{},notify:()=>{}});
   const ledger:any[]=[];
   let combat=true,stale=false,finish:(()=>void)|undefined;
   const driver={...safeReload(root,async()=>{
@@ -62,31 +68,33 @@ test('safe reload requires fresh combat-free acknowledgements and preserves inte
     combat=false;stale=true;
     await new Promise(resolve=>setTimeout(resolve,1200));expect(ledger).toHaveLength(0);
     stale=false;
-    await new Promise(resolve=>setTimeout(resolve,2200));expect(ledger).toHaveLength(0);
+    // The driver runs on lifecycle's default safe window; each wait below stops short of it.
+    const clearMs=lifecycleSavedFields.settings.leaseClearMs.default,short=clearMs-800;
+    await new Promise(resolve=>setTimeout(resolve,short));expect(ledger).toHaveLength(0);
     combat=true;
     await new Promise(resolve=>setTimeout(resolve,700));expect(ledger).toHaveLength(0);
     combat=false;
     const clearedAt=Date.now();
-    await new Promise(resolve=>setTimeout(resolve,2200));expect(ledger).toHaveLength(0);
-    await expect.poll(()=>ledger.length,{timeout:6000}).toBe(1);
-    expect(Date.now()-clearedAt).toBeGreaterThanOrEqual(3000);
+    await new Promise(resolve=>setTimeout(resolve,short));expect(ledger).toHaveLength(0);
+    await expect.poll(()=>ledger.length,{timeout:2*clearMs}).toBe(1);
+    expect(Date.now()-clearedAt).toBeGreaterThanOrEqual(clearMs);
     ledger[0].combatClearWindowMs=Date.now()-clearedAt;
     expect((await store.references()).active).toBe(a);
-    expect((await readJson<{id:string}>(path.join(root,'updates/pause.json')))?.id).toBe(request.id);
+    expect((await readJson<{id:string}>(path.join(root,LEASE_FILE)))?.id).toBe(request.id);
     finish?.();await expect.poll(async()=>(await store.journal())?.phase).toBe('complete');
-    await expect.poll(()=>readJson(path.join(root,'updates/pause.json'))).toBeUndefined();
+    await expect.poll(()=>readJson(path.join(root,LEASE_FILE))).toBeUndefined();
     expect((await store.references()).active).toBe(b);
     await expect.poll(()=>!!finishCleanup).toBe(true);
     expect((await store.journal())?.phase).toBe('complete');
     // Cleanup is still blocked, but the real host lease has already released.
-    expect(await readJson(path.join(root,'updates/pause.json'))).toBeUndefined();
+    expect(await readJson(path.join(root,LEASE_FILE))).toBeUndefined();
     finishCleanup?.();store.cleanup=cleanup;
     await new Promise(resolve=>setTimeout(resolve,300));
     combat=true;
     const waiting=await controller.deploy(a,'safe');await expect.poll(()=>maintenance.current()?.id).toBe(waiting.id);
     controller.stopWaiting();await expect.poll(async()=>(await store.journal())?.phase).toBe('failed');
     expect(ledger).toHaveLength(1);expect(ledger[0]).toMatchObject({action:'activate',target:b});expect((await store.references()).active).toBe(b);
-    await expect.poll(()=>readJson(path.join(root,'updates/pause.json'))).toBeUndefined();
+    await expect.poll(()=>readJson(path.join(root,LEASE_FILE))).toBeUndefined();
     await store.setJournal({...waiting,phase:'waiting-safe'});
     await controller.recover();
     expect((await store.journal())?.phase).toBe('failed');expect((await store.references()).active).toBe(b);

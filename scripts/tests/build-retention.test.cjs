@@ -4,7 +4,10 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const {classes, digest, verifyManifest} = require('../../tools/game/manifest.ts');
 const {rememberGame, cleanGame, gameHistory, rollbackGame, resumeGame} = require('../../tools/game/history.ts');
-const {atomicJson, withBuildLock, inspectRemoval, applyRemovals} = require('../../tools/build-store.ts');
+const {atomicJson, withBuildLock, inspectRemoval, applyRemovals, RETAIN_BUILDS} = require('../../tools/build-store.ts');
+// Each store makes three builds past RETAIN_BUILDS (the lifecycle owner's retainedCandidates), so two fall out of it
+// beside the pinned oldest one.
+const BUILDS=RETAIN_BUILDS+3;
 const {rememberDashboard, cleanDashboard, dashboardHistory, pinDashboard} = require('../../tools/dashboard/history.ts');
 
 async function fixture(action) {
@@ -22,15 +25,16 @@ async function generation(directory,n) {
  const manifest={schema:1,generation:digest(classes.map(name=>name+':'+entries[name].sha256).join('\n')),classes:entries};
  await rememberGame(directory,manifest);return manifest;
 }
-test('keeps 20 distinct complete game builds plus a pinned older current build; preview is read-only',()=>fixture(async root=>{
+test('keeps RETAIN_BUILDS distinct complete game builds plus a pinned older current build; preview is read-only',()=>fixture(async root=>{
  const directory=path.join(root,'characters'),versions=[];
- for(let i=0;i<23;i++) versions.push(await generation(directory,i));
+ for(let i=0;i<BUILDS;i++) versions.push(await generation(directory,i));
  await atomicJson(path.join(directory,'manifest.json'),versions[0]);
- await rememberGame(directory,versions[22]);assert.equal((await gameHistory(directory)).length,23);
- const preview=await cleanGame(directory,false);assert.equal(preview.retained.length,21);assert.equal(preview.removals.length,14);
+ await rememberGame(directory,versions.at(-1));assert.equal((await gameHistory(directory)).length,BUILDS);
+ const preview=await cleanGame(directory,false);assert.equal(preview.retained.length,RETAIN_BUILDS+1);
+ assert.equal(preview.removals.length,(BUILDS-RETAIN_BUILDS-1)*classes.length,'each class file of the two builds past the window');
  await verifyManifest(directory,versions[1]);await cleanGame(directory,true);
  await assert.rejects(verifyManifest(directory,versions[1]),/ENOENT/);
- await verifyManifest(directory,versions[0]);await verifyManifest(directory,versions[22]);
+ await verifyManifest(directory,versions[0]);await verifyManifest(directory,versions.at(-1));
  assert.equal((await cleanGame(directory,false)).removals.length,0);
 }));
 test('rollback verifies chosen build, pins publication, and resume publishes staged build',()=>fixture(async root=>{
@@ -64,9 +68,9 @@ test('store lock excludes concurrent mutation and cleanup refuses escaped paths 
  const link=path.join(root,'link');await fs.symlink(target,link,'junction');
  try {await assert.rejects(inspectRemoval(root,'link'),/links/);} finally {await fs.unlink(link);}
 }));
-test('dashboard retains 20 releases plus live older versions, removes validation but preserves settings',()=>fixture(async root=>{
+test('dashboard retains RETAIN_BUILDS releases plus live older versions, removes validation but preserves settings',()=>fixture(async root=>{
  const ids=[];
- for(let i=0;i<23;i++) {
+ for(let i=0;i<BUILDS;i++) {
   const id=i.toString(16).padStart(20,'0');ids.push(id);
   const release=path.join(root,'.build/releases',id);await fs.mkdir(path.join(release,'server'),{recursive:true});
   await atomicJson(path.join(release,'server/index.js'),{});await atomicJson(path.join(release,'complete.json'),{generation:id});
@@ -75,17 +79,18 @@ test('dashboard retains 20 releases plus live older versions, removes validation
  await pinDashboard(root,3020,[ids[0]]);
  await atomicJson(path.join(root,'.build/mode.json'),{mode:'production'});
  await atomicJson(path.join(root,'.build/validation/output.json'),{});
- const preview=await cleanDashboard(root,[ids[1]],false);assert.equal(preview.retained.length,22);
+ // The window, the pinned ids[0] and the live ids[1] stay; ids[2] and the validation output go.
+ const preview=await cleanDashboard(root,[ids[1]],false);assert.equal(preview.retained.length,RETAIN_BUILDS+2);
  assert.equal(preview.removals.length,2);
  await cleanDashboard(root,[ids[1]],true);
- assert.equal((await dashboardHistory(root)).length,22);
+ assert.equal((await dashboardHistory(root)).length,RETAIN_BUILDS+2);
  await fs.access(path.join(root,'.build/mode.json'));
  await assert.rejects(fs.access(path.join(root,'.build/releases',ids[2])),/ENOENT/);
  await fs.access(path.join(root,'.build/releases',ids[0]));
 }));
 test('dashboard rollback selects the requested release and restores pin on startup failure',async()=>{
  const source=await fs.readFile('tools/dashboard/supervisor.mts','utf8');
- const start=source.indexOf('async function changeMode('),end=source.indexOf('async function handleBuilds(',start);
+ const start=source.indexOf('class Busy extends Error'),end=source.indexOf('// The gate of the routes that change the supervisor',start);
  const ts=require('typescript'),vm=require('node:vm');
  const code=ts.transpileModule(source.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
  for(const fail of [false,true]) {

@@ -209,21 +209,6 @@ async function main() {
   // the clock's event order, and the traced replay would no longer be the run it investigates.
   enableTrace({ clock, out, transport, sim });
 
-  if (process.env.SIM_E2E_IPC === "1") {
-    await require("./session.cjs").serveSession({
-      sim,
-      api,
-      waitFor,
-      out,
-      counts,
-      transport,
-      characters,
-      root,
-      runDir,
-    });
-    await sim.close();
-    return;
-  }
   const executeStep = async (step) => {
     if (step.action === "farm") return farm(step);
     if (step.action === "hunt") return hunt(step);
@@ -284,16 +269,20 @@ async function main() {
       );
     return result;
   }
-  async function farmingChoices(step) {
-    const { farmingAreas } = require(path.join(root, "dashboard/lib/farming-areas.cjs"));
-    let areas = [];
-    for (let attempt = 0; attempt < 60 && !areas.length; attempt++) {
+  /** Polls /state until `read` finds an answer in the coordinator's monsterChoices, as the dashboard waits for them. */
+  async function monsterChoices(read) {
+    let found = [];
+    for (let attempt = 0; attempt < 60 && !found.length; attempt++) {
       const state = await waitFor(api("GET", "/state"));
-      if (state.body && state.body.monsterChoices)
-        areas = farmingAreas(state.body.monsterChoices, [step.monster]);
-      if (!areas.length)
+      if (state.body && state.body.monsterChoices) found = read(state.body.monsterChoices);
+      if (!found.length)
         await waitFor(new Promise((resolve) => clock.at(clock.now + 5000, resolve)));
     }
+    return found;
+  }
+  async function farmingChoices(step) {
+    const { farmingAreas } = require(path.join(root, "runtime/hunting/farming-areas.cjs"));
+    const areas = await monsterChoices((choices) => farmingAreas(choices, [step.monster]));
     if (!areas.length)
       throw new Error(`[sim] no farming area for ${step.monster} (see coordinator.log)`);
     return areas;
@@ -314,15 +303,8 @@ async function main() {
     await call("POST", "/formation", { leader: step.leader });
     for (const name of step.followers || [])
       await call("POST", "/formation", { character: name, follow: true });
-    const { zones } = require(path.join(root, "characters/farming-zones.cjs"));
-    let regions = [];
-    for (let attempt = 0; attempt < 60 && !regions.length; attempt++) {
-      const state = await waitFor(api("GET", "/state"));
-      if (state.body && state.body.monsterChoices)
-        regions = zones(state.body.monsterChoices, [step.monster]);
-      if (!regions.length)
-        await waitFor(new Promise((resolve) => clock.at(clock.now + 5000, resolve)));
-    }
+    const { zones } = require(path.join(root, "characters/farming-zones.js"));
+    const regions = await monsterChoices((choices) => zones(choices, [step.monster]));
     if (!regions.length)
       throw new Error(`[sim] no spawn regions for ${step.monster} (see coordinator.log)`);
     await call("POST", "/navigate-to-monster", {
@@ -543,6 +525,24 @@ async function exercise({ clock, sim, scenario, out, api, waitFor, executeStep }
   return { realMs: performance.now() - real0, virtualMs: clock.now - startedAt, paced };
 }
 
+// The run's identity, which the report and the session's close both open with: the ChronAL pin
+// (pins.json), the installed game, the CODE generation the run staged and the coordinator bundle it
+// ran.
+function reportHeader({ chronalDir, root, runDir }) {
+  return {
+    pins: {
+      chronal: require("./pins.json").chronal,
+      game: JSON.parse(fs.readFileSync(path.join(chronalDir, "runtime/installed.json"))),
+    },
+    coordinatorSha256: hash(
+      fs.readFileSync(path.join(root, ".build/runtime/coordinator-application.cjs")),
+    ),
+    codeGeneration: JSON.parse(
+      fs.readFileSync(path.join(runDir, "CODE/adventure_land/manifest.json")),
+    ).generation,
+  };
+}
+
 function makeReport({
   chronalDir,
   scenarioFile,
@@ -564,20 +564,11 @@ function makeReport({
   deathLog,
 }) {
   return {
-    pins: {
-      chronal: "e858d3f4cc941cc5ab87b94d2e471c0fb9dfd785",
-      game: JSON.parse(fs.readFileSync(path.join(chronalDir, "runtime/installed.json"))),
-    },
+    ...reportHeader({ chronalDir, root, runDir }),
     schema: 1,
     paced,
     scenarioSha256: hash(fs.readFileSync(scenarioFile)),
     timelineSha256: hash(fs.readFileSync(path.join(out, "timeline.jsonl"))),
-    coordinatorSha256: hash(
-      fs.readFileSync(path.join(root, ".build/runtime/coordinator-application.cjs")),
-    ),
-    codeGeneration: JSON.parse(
-      fs.readFileSync(path.join(runDir, "CODE/adventure_land/manifest.json")),
-    ).generation,
     totalRealSeconds: +((performance.now() - launchedAt) / 1000).toFixed(3),
     scenario: path.basename(scenarioFile),
     seed: scenario.seed ?? 1,
@@ -650,10 +641,6 @@ function codeDirectory(dir) {
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 }
 
-/**
- * scenario.expect: { minKills: { <type>: n }, maxCycleMinutes: n, maxDeaths: n, maxErrors: n }. A scenario with
- * expectations is a test: the run exits 1 and report.expect lists what failed.
- */
 /** XP earned across level-ups: the game resets xp at each level, and G.levels[level] is that level's total. */
 function levelXp(from, to, sim) {
   let total = 0;

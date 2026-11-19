@@ -1,19 +1,12 @@
 const test = require('node:test'), assert = require('node:assert/strict'), path = require('node:path');
-const { createNative } = require('../../tools/game/pathfinder-benchmark/native.cjs');
-const { createPlannerService } = require('../../runtime/coordinator/navigation/planner-service.ts');
-const { repairDoorApproaches } = require('../../runtime/navigation/door-approach.ts');
-const { validateRoute } = require('../../runtime/navigation/validation.ts');
-const directory = path.resolve('.caracal/game_files/17175');
-function fixture() {
-  const native = createNative(directory);
-  const ports = { game: native.game, walk: (a,b) => native.canWalk(a,b),
-    door: (p,d) => native.context.is_door_close(p.map,d,p.x,p.y) && native.context.can_use_door(p.map,d,p.x,p.y),
-    hasKey: () => false };
-  return { native, ports };
-}
-test('Daisy to both booboo spawns validates completely after the bounded walking repair', async () => {
-  const { native, ports } = fixture();
-  const service = createPlannerService(path.resolve('.build/runtime/movement-planner.cjs'));
+const { createPlannerService } = require('../../runtime/movement/coordinator/planner-service.ts');
+const { repairDoorApproaches } = require('../../runtime/movement/geometry/door-approach.ts');
+const { validateRoute } = require('../../runtime/movement/geometry/validation.ts');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {fixture}=require('./fixtures/daisy-door-routes-scenario.cjs');
+scenarioTable('routes through doors validate completely, keep their transition and refuse locked doors (MOV-010)', fixture, [
+ ['Daisy to both booboo spawns validates completely after the bounded walking repair', async ({ native, ports })=>{
+  const service = createPlannerService(path.resolve('.build/runtime/movement-planner.cjs'), require('./helpers/run-scope.cjs').testScope('02', 'act'));
   const from = { map:'main', x:126, y:-413 };
   try {
     const prepared = service.prepare(native.game, 17175); await prepared.ready;
@@ -36,30 +29,31 @@ test('Daisy to both booboo spawns validates completely after the bounded walking
       assert.equal(plot.some(p => p.town), false);
     }
   } finally { service.dispose(); }
-});
-test('level1 door detour walks around the wall and retains the selected transition', () => {
-  const { ports } = fixture(), from = {map:'level1',x:-377,y:576};
+ }],
+ ['level1 door detour walks around the wall and retains the selected transition', ({ ports })=>{
+ const  from = {map:'level1',x:-377,y:576};
   const transition = {map:'level2',x:1,y:-5,transport:true,s:1};
   assert.match(validateRoute(ports,from,transition,[transition],false).reason,/approach/);
   const repaired = repairDoorApproaches(ports,from,[transition]);
   assert.ok(repaired.length > 2);
   assert.equal(repaired.at(-1),transition);
   assert.equal(validateRoute(ports,from,transition,repaired,false),null);
-});
-test('inaccessible or locked doors remain rejected without changing the destination', () => {
-  const { ports } = fixture(), from = {map:'level1',x:-377,y:576};
+ }],
+ ['inaccessible or locked doors remain rejected without changing the destination', ({ ports })=>{
+ const  from = {map:'level1',x:-377,y:576};
   const transition = {map:'level2',x:1,y:-5,transport:true,s:1};
   const blocked = {...ports,walk:()=>false};
   assert.deepEqual(repairDoorApproaches(blocked,from,[transition]),[transition]);
   const door = ports.game.maps.level1.doors.find(d=>d[4]==='level2'); door[7]='key';
   assert.deepEqual(repairDoorApproaches(ports,from,[{...transition,key:'bkey'}]),[{...transition,key:'bkey'}]);
-});
-test('unreachable door search stays within its fixed collision-check budget', () => {
-  const { ports } = fixture(), from = {map:'level1',x:-377,y:576};
+ }],
+ ['unreachable door search stays within its fixed collision-check budget', ({ ports })=>{
+ const  from = {map:'level1',x:-377,y:576};
   const transition = {map:'level2',x:1,y:-5,transport:true,s:1};
   let checks = 0;
   const isolated = {...ports, walk:(a,b) => { checks++; return b.x <= from.x && ports.walk(a,b); }};
   assert.deepEqual(repairDoorApproaches(isolated,from,[transition]),[transition]);
   assert.ok(checks > 100, 'exercise the local search, not just direct rejection');
   assert.ok(checks < 17000, 'at most 2048 expansions with eight edges plus direct candidates');
-});
+ }],
+]);

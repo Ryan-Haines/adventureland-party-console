@@ -1,7 +1,8 @@
 "use client";
-import type { LuckySlotHistory } from '../../../runtime/lucky-slot-tracking';
-import type { MerchantStandLocation } from '../../../runtime/coordinator/merchant/stand-location';
-import type { DeconstructionMark, DeconstructionCatalog } from "./deconstruction";
+import type { LuckySlotHistory } from '../../../runtime/items/api.ts';
+import type { MerchantStandLocation } from '../../../runtime/merchant-jobs/api.ts';
+import type { DeconstructionMark } from "../../../runtime/items/api.ts";
+import type { DeconstructionCatalog } from '../../../runtime/items/api.ts';
 import { ActiveSlot } from "./active-slot";
 import { ALDataState } from "./aldata-state";
 import { AppearanceChoice } from "./appearance-choice";
@@ -15,7 +16,6 @@ import { BestiaryMonster } from "./bestiary-monster";
 import { Char } from "./char";
 import { CombatLogEntry } from "./combat-log-entry";
 import { CompoundGroup } from "./compound-group";
-import { FarmingPolicy } from "./farming-policy";
 import { Item } from "./item";
 import { Location } from "./location";
 import { MerchantActivity } from "./merchant-activity";
@@ -34,27 +34,36 @@ import { SkillClass } from "./skill-class";
 import { StandBid } from "./stand-bid";
 import { StandListing } from "./stand-listing";
 import { StandPriceHistory } from "./stand-price-history";
-import { StandSearchState } from "./stand-search-state";
 import { StatScrollMark } from "./stat-scroll-mark";
-import { SteamSwitch } from "./steam-switch";
+import type { ConsoleControlState, SteamSwitch } from "../../../runtime/lifecycle/api.ts";
 import { UpgradeMark } from "./upgrade-mark";
 import { Withdrawal } from "./withdrawal";
 
 export type PartyState = {
+  // Declared settings the dashboard receives (DeclaredFieldsShown below).
+  goldReserve?: number;
+  mailCheckSeconds?: number;
+  protectedFreeSlots?: number;
+  farmingPolicy?: string;
+  appLocks?: string[];
   characterSnapshots?: Record<string, Char & { updatedAt: number }>;
-  upgradeOfferingRules?: import("../../../runtime/upgrade-offerings").UpgradeOfferingRule[];
-  upgradeOfferingStock?: Partial<Record<import("../../../runtime/upgrade-offerings").UpgradeOffering, number>>;
+  upgradeOfferingRules?: import("../../../runtime/items/api.ts").UpgradeOfferingRule[];
+  upgradeOfferingStock?: Partial<Record<import("../../../runtime/items/api.ts").UpgradeOffering, number>>;
   characterAppearances?: Record<string, Pick<Char, "skin" | "characterSprite" | "characterDollHtml"> & {updatedAt:number;
     }>;
+  // The items owner's incompatible-rule rows (items/rules.ts incompatibleRuleRows).
+  incompatibleRules?: { item: Item; actions: string[] }[];
   merchantRules?:
-    | import("../../../runtime/coordinator/inventory/shared-rules").SharedRules | null;
+    | import("../../../runtime/items/api.ts").SharedRules | null;
   gameVersion?: number;
-  gameLogs?: Record<string, import("../../../runtime/game-log-filters").GameLog[]>;
+  gameLogs?: Record<string, import("../../../runtime/status/api.ts").GameLog[]>;
+  // The settings owner's audit lines, in the logs section.
+  settingsChanges?: { at: number; field: string; character?: string; addon?: string; key?: string; old?: unknown; new?: unknown; by: string }[];
   bankboiPrefix?: string;
   anniversaryAutoChat?: boolean;
   referenceRevision?: string;
   accountId?: string | null;
-  passiveHunting?: import("../../../runtime/coordinator/navigation/passive-settings").PassiveSettings;
+  passiveHunting?: import("../../../runtime/hunting/api.ts").PassiveSettings;
   passiveRareHunts?: { tinyp: boolean; phoenix: boolean; goldenbat?: boolean; cutebee?: boolean; hen?: boolean; rooster?: boolean;
   };
   phoenixRouteOrder?: string[];
@@ -77,25 +86,32 @@ export type PartyState = {
   characters: Record<string, Char>;
   roster?: RosterMember[];
   activeSlots?: ActiveSlot[];
-  characterConnections?: import('../../../runtime/roster/connection-status').CharacterConnection[];
+  characterConnections?: import('../../../runtime/lifecycle/api.ts').CharacterConnection[];
   classChoices?: string[];
   appearanceChoices?: Record<string, AppearanceChoice[]>;
   steamSwitch?: SteamSwitch | null;
   realmControl?: RealmControl;
+  consoleControl?: ConsoleControlState | null;
   marked: Record<string, BankMark[]>;
   merchantMarked?: Record<string, BankMark[]>;
   autoItemMarks?: Record<string, Record<string, "bank" | "merchant">>;
   autoUpgradeMarks?: Record<string, AutoUpgradeMarks>;
   merchantDeliveries?: Record<string, BankMark[]>;
   standListings?: StandListing[];
+  // The items owner's stand count in the core section.
+  standSlots?: { slots: number; used: number; free: number };
   npcSaleMarks?: NpcSaleMark[];
-  deconstructionMarks?: DeconstructionMark[];
+  deconstructionMarks?: DeconstructionMark<Item>[];
   autoDeconstruction?: Record<string, Record<string, { item: Item }>>;
   deconstructionCatalog?: DeconstructionCatalog;
   autoNpcSales?: Record<string, { item: Item; createdAt: number; character?: string; keep?: number }>;
   autoStandMarks?: Record<string, { item: Item; price: number; createdAt: number }>;
   merchantRoutinePriorities?: Record<string, number>;
-  marketIgnoredItems?: import("../../../runtime/market-preferences").MarketIgnoredItem[];
+  // The bag copies an add-on's claim or action holds, by character and slot (10 part 4).
+  addonItemFates?: Record<string, Record<number, import("../../../runtime/items/api.ts").Fate>>;
+  // The add-on job kinds the merchant runs, each under its routine key.
+  merchantAddonKinds?: import("../../../runtime/merchant-jobs/api.ts").AddonKindRow[];
+  marketIgnoredItems?: import("../../../runtime/items/api.ts").MarketIgnoredItem[];
   merchantBlacklist?: Record<string, MerchantBlacklistEntry>;
   merchantAutomations?: Record<string, boolean>;
   giveawayRealms?: { key: string; label: string }[];
@@ -105,7 +121,6 @@ export type PartyState = {
   autoBlacklistMerchants?: boolean;
   nativeStand?: { offers: Record<string, { itemId: string; auto: boolean; phase: string; slot: string; level?: number; price?: number; quantity?: number; acknowledged?: number; problem?: string }>; problems: Record<string, string>; purchases?: Record<string, { item: { name: string; q?: number; price?: number }; quantity: number; jobId: string }> };
   standPriceHistory?: Record<string, StandPriceHistory>;
-  standSearch?: StandSearchState;
   upgrades?: Record<string, UpgradeMark[]>;
   statScrolls?: Record<string, StatScrollMark[]>;
   purchases?: Record<string, { name: string }[]>;
@@ -117,34 +132,41 @@ export type PartyState = {
   leader?: string | null;
   followers?: Record<string, boolean>;
   eventsByCharacter?: Record<string, boolean>;
-  eventAttendance?: Record<string, Record<string, Pick<import("../../../runtime/coordinator/events/attendance-limits").AttendanceInstance, "ignored" | "ended">>>;
-  eventLimitsByCharacter?: Record<string, Record<string, import("../../lib/event-policy").EventLimits>>;
+  eventAttendance?: Record<string, Record<string, Pick<import("../../../runtime/events/api.ts").AttendanceInstance, "ignored" | "ended" | "attending">>>;
+  eventLimitsByCharacter?: Record<string, Record<string, import("../../../runtime/events/api.ts").EventLimits>>;
   eventPrioritiesByCharacter?: Record<string, string[]>;
   eventSelectionsByCharacter?: Record<string, string[]>;
+  handControlByCharacter?: Record<string, import('./hand-control').HandControl>;
   eventSchedules?: import("./event-selection-control").EventSchedule[];
   monsterFocus?: string[] | string;
   monsterFocusByCharacter?: Record<string, string[]>;
   monsterPrioritiesByCharacter?: Record<string, Record<string, number>>;
   monsterSearchRadiusByCharacter?: Record<string, number>;
-  combatRecovery?:{phase:string;reason?:string;names:string[]}|null;
   scatterMonsterTypes?: string[];
-  huntSettings?: import("../../../runtime/coordinator/hunt/settings").HuntSettings;
+  huntSettings?: import("../../../runtime/hunting/api.ts").HuntSettings;
+  // The root relocation switch.
+  relocateIfCompeting?: boolean;
   huntFailures?: Record<string, {deaths: number; expirations: number}>;
   huntBlacklist?: Record<
     string,
     { monsterId: string; at: number; deaths: number; expirations?: number; reason?: string; characters?: string[];
     }
   >;
+  // Each farming scope's settings (config) and its live controller state (core).
   farmingProfiles?: Record<string, {
-    farmAreaState?: PartyState["farmAreaState"];
-    farmingPolicy?: FarmingPolicy;
-    monsterHunt?: MonsterHuntState | null;
-    huntSettings?: import("../../../runtime/coordinator/hunt/settings").HuntSettings;
+    combatMode?: string;
+    targetMode?: string;
+    huntSettings?: import("../../../runtime/hunting/api.ts").HuntSettings;
     huntBlacklist?: PartyState["huntBlacklist"];
     monsterFocus?: string[];
     location?: PartyState["partyLocation"];
   }>;
-  farmingPolicy?: FarmingPolicy;
+  farmingLive?: Record<string, {
+    farmAreaState?: PartyState["farmAreaState"];
+    monsterHunt?: MonsterHuntState | null;
+  }>;
+  combatMode?: string;
+  targetMode?: string;
   partyFarmingMode?: "default" | "scatter";
   partyFarmingMonsterType?: string | null;
   monsterHunt?: MonsterHuntState | null;
@@ -155,8 +177,6 @@ export type PartyState = {
     lastProgressAt?: number;
     failureCode?: string;
     failure?: string;
-    legIndex?: number;
-    returnLegs?: { type: "walk" | "town"; location: Location }[];
     blockers?: Record<string, { reason: string; expectedCommandId: number | null;
       reportedCommandId: number | null; expectedPhase: string; reportedPhase: string | null;
       }>;
@@ -166,6 +186,8 @@ export type PartyState = {
   restockPolicies?: Record<string, RestockPolicy>;
   merchantCharacter?: string | null;
   merchantForceStand?: boolean;
+  // The realms automatic merchant work skips.
+  merchantRealmBlacklist?: string[];
   merchantStandLocation?: MerchantStandLocation | null;
   merchantWeapon?: { item: Item } | null;
   luckyUpgradeSlots?: Record<string, number | null>;
@@ -173,6 +195,8 @@ export type PartyState = {
   luckySlotResume?: Record<string, {slot: number; rolls: number}>;
   luckySlotTracking?: LuckySlotHistory;
   merchantQueue?: MerchantJob[];
+  // the merchant jobs owner's ready jobs in its pick's order, by id.
+  merchantReady?: { id: string; reason: string; target: string; priority: number; realm: string | null }[];
   merchantCurrent?: MerchantJob | null;
   merchantActivity?: MerchantActivity[];
   combatLogs?: Record<string, CombatLogEntry[]>;
@@ -194,8 +218,12 @@ export type PartyState = {
   ponty?: PontyState;
   merchantCatalog?: MerchantCatalog;
   bank?: BankSnapshot | null;
+  // The bank section's sellable copies by `ownedStockKey` (the items owner's `items.bank()` and `items.stock`).
+  ownedStock?: Record<string, import('../../../runtime/status/api.ts').OwnedStock>;
   bankGold?: number | null;
-  accountGold?: { carried: number | null; total: number | null };
+  accountGold?: { carried: number | null; offline: number | null; total: number | null };
+  // The last ring save (coordinator/diagnostics.ts), which lights the record icon.
+  recordSaved?: import('../../../runtime/status/api.ts').RecordSaved | null;
   bankVaults?: BankVault[];
   bankbois?: Bankboi[];
   bankboiQueue?: {
@@ -268,3 +296,8 @@ export type PartyState = {
     handoffTargets?: { name: string; round: string; slice: string }[];
   };
 };
+// The settings owner ties these fields to the saved-field declarations:
+// a field declared for the `config` section that PartyState lacks fails the
+// typecheck. The value types stay the dashboard's own view shapes.
+type Tied<Missing extends never> = Missing;
+export type DeclaredFieldsShown = Tied<Exclude<import('../../../runtime/settings/coordinator/api.ts').DeliveredField<'dashboard'>, keyof PartyState>>;

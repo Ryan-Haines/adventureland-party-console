@@ -1,7 +1,8 @@
 import { request } from 'node:https';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-export async function verifyHTTPS(data: string, port = 3443) {
+import { DEFAULT_HTTPS_PORT } from './defaults.ts';
+export async function verifyHTTPS(data: string, port = DEFAULT_HTTPS_PORT) {
  const ca = await readFile(path.join(data, 'tls/caddy/pki/authorities/local/root.crt'));
  const get = (pathname: string) => new Promise<string>((resolve, reject) => {
   const req = request({ hostname: '127.0.0.1', port, path: pathname, ca, agent: false }, res => {

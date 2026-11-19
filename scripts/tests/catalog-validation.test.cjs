@@ -1,12 +1,12 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {validateCatalog,createCatalogValidation}=require('../../runtime/coordinator/status/catalog-validation.ts');
-const {consumeStatusCatalogs}=require('../../runtime/coordinator/status/catalogs.ts');
+const {validateCatalog,createCatalogValidation}=require('../../runtime/status/coordinator/intake.ts');
+const {consumeStatusCatalogs}=require('../../runtime/status/coordinator/intake.ts');
 const definitions={monsters:{bee:{hp:300,achievements:[[10,'stat','dex',1]]}},skills:{attack:{cooldown:100}},items:{sword:{name:'Sword',upgrade:{attack:1},g:10}}};
 const bestiary=[{id:'bee',definition:{...definitions.monsters.bee,max_hp:300}}];
 const skills=[{id:'shared',skills:[{id:'attack',definition:definitions.skills.attack}]}];
 const items={allItems:[{id:'sword',meta:{definition:{name:'Sword',g:10,id:'sword'}}}]};
 test('unavailable installed definitions block catalogs and recover when readable',()=>{
- const {createInstalledCatalogValidation}=require('../../runtime/coordinator/status/catalog-validation.ts');
+ const {createInstalledCatalogValidation}=require('../../runtime/status/coordinator/intake.ts');
  let available=false;const messages=[];
  const validate=createInstalledCatalogValidation(12,()=>{if(!available)throw Error('missing');return definitions},m=>messages.push(m));
  assert.equal(validate('bestiaryCatalog',bestiary,12),false);assert.equal(messages.length,1);

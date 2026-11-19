@@ -1,16 +1,10 @@
 import { test, expect } from "./fixtures";
-import type { Locator, Page } from "@playwright/test";
-import { build } from "esbuild";
-import path from "node:path";
+import { mountComponent, color, rgb } from "./fixtures/component-harness";
+import type { Page } from "@playwright/test";
 
 // Failure inventory: docs/catalog-comparison-card.md. Game metadata is a declared
 // boundary; the maintained Equipment catalog dialog runs in Chromium with the console
 // styles, and the journey adds items and opens the comparison through its buttons.
-const color = (locator: Locator) => locator.evaluate((node) => getComputedStyle(node).color);
-const rgb = (hex: string) => {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
-};
 const square = (fill: string) => ({
   url: "data:image/svg+xml;base64," + Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="${fill}"/></svg>`).toString("base64"),
   tileSize: 40, columns: 1, rows: 1, x: 0, y: 0,
@@ -36,17 +30,7 @@ const catalog = [
 ];
 
 export async function openComparison(page: Page, app: { url: string }, entry: unknown = source) {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `
+  await mountComponent(page, app, "catalog-comparison-harness", `
     import React, {useState} from 'react';import {createRoot} from 'react-dom/client';
     import {QueryClient, QueryClientProvider} from '@tanstack/react-query';
     import {PartyEquipmentCatalogDialog} from './features/party/party-equipment-catalog-dialog';
@@ -59,20 +43,7 @@ export async function openComparison(page: Page, app: { url: string }, entry: un
     }
     const root=createRoot(document.getElementById('root'));
     window.mountCatalog=(catalog,source)=>root.render(<Harness catalog={catalog} source={source}/>);
-  `,
-    },
-  });
-  await page.goto(app.url);
-  await expect(page.locator("body")).toContainText("Party");
-  const styles = await page
-    .locator('style, link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((node) => node.outerHTML).join("\n"));
-  await page.route("**/catalog-comparison-harness", (route) =>
-    route.fulfill({ contentType: "text/html", body: `<!doctype html><head>${styles}</head><body><div id="root"></div></body>` }),
-  );
-  await page.setViewportSize({ width: 1400, height: 1000 });
-  await page.goto(app.url + "/catalog-comparison-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  `);
   await page.evaluate(([items, entry]) => (window as any).mountCatalog(items, entry), [catalog, entry] as const);
   const picker = page.getByRole("dialog", { name: "Equipment catalog", exact: true });
   for (const name of ["Bow", "Wand"])

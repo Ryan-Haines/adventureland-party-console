@@ -1,5 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
-const {loadCoordinatorBankVaults,createCoordinatorGameData}=require('../../runtime/coordinator/infrastructure/game-data.ts');
+const {createCoordinatorGameData}=require('../../runtime/status/coordinator/streams.ts');
+const {loadCoordinatorBankVaults}=require('../../runtime/items/coordinator/storage.ts');
 function ports(read){const calls=[],warnings=[];return {calls,warnings,read,evaluate:(source,context,filename)=>{calls.push({context,filename});return vm.runInNewContext(source,context,filename?{filename}:undefined);},warn:(...args)=>warnings.push(args)};}
 test('vault data preserves numeric ordering, floor keys and price coercion',()=>{
  let path;const p=ports(value=>{path=value;return 'var bank_packs={items10:["bank_u","25",2],items2:["bank",0,"bad"],items3:["bank_b",1,0]}; var character_slots=[];';});

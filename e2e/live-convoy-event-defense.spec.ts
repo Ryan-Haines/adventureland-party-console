@@ -1,5 +1,5 @@
 import {test,expect} from './live-fixtures';
-import {farmingAreas} from '../dashboard/lib/farming-areas';
+import {farmingAreas} from '../runtime/hunting/areas';
 
 const W='E2EWarrior',P='E2EPriest';
 // The leader is in main while the follower fights a live event boss in halloween.
@@ -19,13 +19,23 @@ test('a follower fighting a live event boss a map away does not hold the leader 
   try{
     await expect.poll(async()=>{
       const s=await live.state(),leader=s.characters[W],follower=s.characters[P],now=Date.now();
-      // Attacker and LIVE-feed publication are independent. Establish both
-      // before asking the coordinator to classify this remote event fight.
+      // Attacker and LIVE-feed publication are independent. This poll establishes the
+      // fresh attacker on another map; the next one establishes the LIVE feed.
       return [leader,follower].every(c=>c&&now-c.seenAt<=3000&&c.seenAt<=now+500)&&
         !!leader.server&&leader.server===follower.server&&leader.map!==follower.map&&
-        follower.serverLiveEvents?.some((event:any)=>event.name==='mrpumpkin')&&
         follower.groupedCombat?.currentAttackers?.some((t:any)=>String(t.id)===seed.id&&t.mtype==='mrpumpkin'&&t.target===P);
-    },{timeout:60_000,message:'Fresh reports must establish the seeded attacker as a live event boss on another map'}).toBe(true);
+    },{timeout:60_000,message:'Fresh reports must establish the seeded event boss as the attacker on another map'}).toBe(true);
+    // The fight a map away is an event fight only once the follower's own report names the
+    // event live; until then the coordinator holds the leader for an ordinary attacker, by
+    // design. A report sent before the seed's broadcast does not name it, and the event clock
+    // (runtime/events/character/clock.ts `receiveClock`) must be current for it to count.
+    const feed:any[]=[];
+    await expect.poll(async()=>{
+      const c=(await live.state()).characters[P];
+      feed.push({at:Date.now(),eventClockStale:c?.eventClockStale,serverLiveEvents:c?.serverLiveEvents});
+      return c?.eventClockStale===false&&!!c?.serverLiveEvents?.some((event:any)=>event?.name==='mrpumpkin');
+    },{timeout:120_000,message:'The follower must report the live event boss as a live server event'}).toBe(true);
+    await info.attach('follower-event-feed',{body:JSON.stringify({first:feed[0],last:feed.at(-1),polls:feed.length}),contentType:'application/json'});
     await live.post('/formation',{leader:W});
     await live.post('/formation',{character:P,follow:true});
     const choices=(await live.state(true)).monsterChoices;

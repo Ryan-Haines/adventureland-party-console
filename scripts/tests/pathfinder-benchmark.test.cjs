@@ -1,15 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const path = require("node:path");
-const fs = require("node:fs");
-const { createNative } = require("../../tools/game/pathfinder-benchmark/native.cjs");
+const { createNative, ENGINES } = require("../../tools/game/pathfinder-benchmark/native.cjs");
 const { validate } = require("../../tools/game/pathfinder-benchmark/validate.cjs");
 const { paired, summarize } = require("../../tools/game/pathfinder-benchmark/report.cjs");
-const directory = path.resolve(__dirname, "../../.caracal/game_files/16846");
 const {
   measurementCounts,
   shouldMeasure,
+  SLOW_ROUTE,
 } = require("../../tools/game/pathfinder-benchmark/sampling.cjs");
+const { checkCounts } = require("../../tools/game/pathfinder-benchmark/verify.cjs");
 test("query watchdog times out and removes listeners without swallowing worker failures", async () => {
   const { EventEmitter } = require("node:events");
   const { message } = require("../../tools/game/pathfinder-benchmark/run.cjs");
@@ -40,9 +39,11 @@ test("bounded sampling uses matched pilot fixtures, paired counts, and explicit 
     provenance: { revision: "rev" },
     routes: [{ id: "fast" }, { id: "slow" }],
     passes: 30,
+    warmups: 5,
+    engines: ENGINES,
   };
   const results = ["fast", "slow"].flatMap((route) =>
-    ["native-visible", "native-hidden", "alclient"].map((engine) => ({
+    ENGINES.map((engine) => ({
       route,
       engine,
       ms: route === "fast" ? 10 : 2000,
@@ -50,7 +51,7 @@ test("bounded sampling uses matched pilot fixtures, paired counts, and explicit 
   );
   const pilot = { metadata: structuredClone(metadata), results };
   metadata.measurementsByRoute = measurementCounts(pilot, metadata);
-  assert.deepEqual(metadata.measurementsByRoute, { fast: 30, slow: 3 });
+  assert.deepEqual(metadata.measurementsByRoute, { fast: { passes: 30, warmups: 5 }, slow: SLOW_ROUTE });
   assert.equal(shouldMeasure(metadata, "slow", -1), false);
   assert.equal(shouldMeasure(metadata, "fast", -5), true);
   assert.equal(shouldMeasure(metadata, "slow", 2), true);
@@ -62,8 +63,10 @@ test("bounded sampling uses matched pilot fixtures, paired counts, and explicit 
 });
 test(
   "offline native adapter uses installed planning code and forbids movement/network/timers",
-  { skip: !fs.existsSync(directory) },
   () => {
+    // The fixture client 16846 (scripts/tests/fixtures/game/manifest.json); a checkout without it
+    // fails with the path and the restore command.
+    const { directory } = require("./helpers/installed-game.cjs").gameFiles(16846);
     const native = createNative(directory);
     const route = { from: { map: "main", x: 0, y: 0 }, to: { map: "main", x: 20, y: 0 } };
     const result = native.query(route);
@@ -139,4 +142,17 @@ test("paired statistics exclude invalid fast paths and preserve failures in tota
   assert.equal(paired(rows).pairs, 1);
   assert.equal(summarize(rows).errors, 1);
   assert.equal(summarize(rows).count, 3);
+  // A failed query stays in the count and the errors and out of the latency columns.
+  const timedOut = { engine: "alclient", route: "slow", pass: 0, ms: 50, error: "timeout", quality: { valid: false } };
+  const summary = summarize([...rows, timedOut]);
+  assert.deepEqual([summary.count, summary.errors, summary.timeouts], [4, 2, 1]);
+  assert.deepEqual([summary.medianMs, summary.maxMs], [11, 20]);
+  assert.equal(summarize([timedOut]).maxMs, null);
+});
+test("stored results hold each route's planned passes for every engine", () => {
+  const metadata = { engines: ENGINES, passes: 2, routes: [{ id: "fast" }, { id: "slow" }],
+    measurementsByRoute: { fast: { passes: 2, warmups: 1 }, slow: { passes: 1, warmups: 0 } } };
+  const rows = (id, passes) => ENGINES.flatMap((engine) => Array.from({ length: passes }, (_, pass) => ({ route: id, engine, pass })));
+  checkCounts({ metadata, results: [...rows("fast", 2), ...rows("slow", 1)] });
+  assert.throws(() => checkCounts({ metadata, results: [...rows("fast", 2), ...rows("slow", 2)] }), /slow\/native-visible count/);
 });

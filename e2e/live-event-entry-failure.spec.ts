@@ -3,6 +3,7 @@ import type {Route} from '@playwright/test';
 import {observeNativePlanner} from './native-planner-observation';
 
 const W='E2EWarrior', P='E2EPriest', names=[W,P];
+// A refused entry climbs the walk's own ladder (design § 5.2).
 test.use({initialPosition:{map:'halloween',x:-550,y:-290}});
 
 for(const fault of ['Town unavailable once','entry unavailable until exhausted'] as const){
@@ -22,7 +23,7 @@ test(`native event entry recovers ${fault}`,async({live},info)=>{
   const restoreObservation=await observer.install(live.clients[W]);
   // The native binding observes current ownership before ajax sends. Read the
   // coordinator once in parallel; no CDP round trip or cached prior epoch.
-  let refusals=0;
+  let refusals=0,firstRefusalAt:number|undefined;
   const rejectEntry=async(route:Route)=>{
     const req=route.request(),body=req.method()==='POST'?req.postDataJSON():null;
     if(body?.character!==W||body.to?.map!==seed.map||body.to?.x!==seed.x||body.to?.y!==seed.y)return route.fallback();
@@ -38,7 +39,7 @@ test(`native event entry recovers ${fault}`,async({live},info)=>{
     }
     const rejected=fault==='entry unavailable until exhausted'||refusals===0;
     if(rejected){
-      refusals++;
+      refusals++;firstRefusalAt??=Date.now();
       await route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:
         fault==='Town unavailable once'?'Town warp currently unavailable':'Declared entry service unavailable'})});
     }else await route.fallback();
@@ -55,29 +56,24 @@ test(`native event entry recovers ${fault}`,async({live},info)=>{
   await context.route('**/party-api/movement-plan',rejectEntry);
   try{
     await live.post('/formation',{character:W,eventSelections:['mrpumpkin']});
+    // Under either fault both fighters reach the boss and deal it native damage. After refused
+    // entries no refusal count ends the walk: its other route plans natively, and the occurrence
+    // is never skipped as a travel failure.
+    await expect.poll(async()=>{
+      const hits=await live.clients[W].events();
+      return names.every(name=>hits.some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.id&&e.data?.hid===name&&e.data?.damage>0));
+    },{timeout:180_000,message:fault==='Town unavailable once'?'Walking fallback must reach the actual boss and both fighters must deal native damage':
+      'The walk ladder must reach the actual boss after refused entries'}).toBe(true);
     if(fault==='Town unavailable once'){
-      await expect.poll(async()=>{
-        const hits=await live.clients[W].events();
-        return names.every(name=>hits.some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.id&&e.data?.hid===name&&e.data?.damage>0));
-      },{timeout:180_000,message:'Walking fallback must reach the actual boss and both fighters must deal native damage'}).toBe(true);
       expect(refusals).toBe(1);
       expect(requests.some(r=>!r.rejected&&r.disableTown&&r.body.town===false)).toBe(true);
     }else{
-      await expect.poll(async()=>{
-        const s=await live.state();samples.push({at:Date.now(),convoy:s.activeConvoy,eventReturn:s.eventReturn,
-          attendance:s.eventAttendance,characters:Object.fromEntries(names.map(n=>[n,{map:s.characters[n]?.map,x:s.characters[n]?.x,y:s.characters[n]?.y,eventRecovery:s.characters[n]?.eventRecovery}]))});
-        if(samples.length>80)samples.splice(1,1);
-        return names.every(n=>s.eventAttendance[n]?.mrpumpkin?.ignored==='travel failure');
-      },{timeout:90_000,message:'Exhausted entry must skip this occurrence and begin owned recovery'}).toBe(true);
-      expect(refusals).toBe(3);
-      await expect.poll(async()=>{const s=await live.state();return !s.eventReturn&&!s.activeConvoy&&names.every(n=>
-        s.characters[n]?.map==='main'&&!s.characters[n]?.rip&&Math.hypot(s.characters[n].x,s.characters[n].y)<150);
-      },{timeout:150_000,message:'Both real native characters must recover to Main after exhausted entry'}).toBe(true);
-      const before=refusals;await live.restartCoordinator();
-      await expect.poll(async()=>{const s=await live.state();return names.every(n=>s.characters[n]?.map==='main'&&
-        Date.now()-s.characters[n].seenAt<3000&&s.eventAttendance[n]?.mrpumpkin?.ignored==='travel failure');
-      },{timeout:30_000}).toBe(true);
-      expect(refusals).toBe(before);
+      expect(refusals).toBeGreaterThan(0);
+      // Every plan to the boss after the first refusal is refused. A plan that missed the fresh
+      // ownership read went through unrefused and would let the walk reach the boss outside the fault.
+      expect(unmatched.filter(entry=>entry.at>firstRefusalAt!),'Every boss plan after the first refusal must be refused').toEqual([]);
+      const s=await live.state();
+      expect(names.some(n=>s.eventAttendance[n]?.mrpumpkin?.ignored==='travel failure')).toBe(false);
     }
     expect(validationErrors,'Every refusal must retain exact fresh coordinator ownership').toEqual([]);
     const rejectedIds=new Set(requests.filter(request=>request.rejected).map(request=>request.body.id));
@@ -87,7 +83,7 @@ test(`native event entry recovers ${fault}`,async({live},info)=>{
     await context.unroute('**/party-api/movement-plan',rejectEntry);
     observer.dispose();
     await restoreObservation();
-    await info.attach('native-event-entry-recovery',{body:JSON.stringify({fault,seed,requests,unmatched,validationErrors,requestFailures:observer.failures,samples,final:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
+    await info.attach('native-event-entry-recovery',{body:JSON.stringify({fault,seed,requests,unmatched,validationErrors,requestFailures:observer.failures,deliveryFailures:observer.deliveryFailures,samples,final:await live.state(),events:await live.clients[W].events()}),contentType:'application/json'});
     await live.post('/formation',{character:W,eventSelections:[]});
     await live.admin(`output=(()=>{const m=get_monster('mrpumpkin');if(String(m?.id)===${JSON.stringify(seed.id)})remove_monster(m,{silent:true});G.monsters.mrpumpkin=globalThis.__entryRecoveryOriginalPumpkin;delete globalThis.__entryRecoveryOriginalPumpkin;delete E.mrpumpkin;broadcast_e();return true;})()`);
   }

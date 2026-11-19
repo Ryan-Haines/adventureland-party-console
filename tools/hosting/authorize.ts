@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Options } from "./setup-routes.ts";
 import { pair, setupRoute } from "./setup-routes.ts";
-import { json, redirect } from "./http.ts";
+import { bounded, json, PROXY_UPSTREAM, redirect } from "./http.ts";
 import { requestOrigin } from './request-origin.ts';
+import { coordinatorPort } from './defaults.ts';
 export function authorizeSteam(
   req: IncomingMessage,
   res: ServerResponse,
@@ -28,7 +29,7 @@ export function authorizeSteam(
     return false;
   }
   req.url = match[2] + url.search;
-  if (!/^\/(party-api\/|CODE\/adventure_land\/)/.test(req.url)) {
+  if (!gamePath(match[2])) {
     json(res, 404, { error: "Unknown game endpoint" });
     return false;
   }
@@ -49,12 +50,32 @@ function browserOriginAllowed(req: IncomingMessage, sameOrigin: boolean) {
 function requiresAccountSetup(options: Options): boolean {
   return !options.configured() && !!options.configure;
 }
+// A request with `Authorization: Bearer <key>` is an app, not a
+// browser, so the pairing cookie and the browser origin do not apply. The gateway asks the
+// coordinator's key route (runtime/status/coordinator/apps.ts) and lets the request through only
+// for a key it knows; the coordinator's gate then checks the route's scope.
+async function authorizeApp(req: IncomingMessage, res: ServerResponse, url: URL, options: Options): Promise<boolean> {
+  if (!url.pathname.startsWith('/party-api/')) {
+    json(res, 403, { error: 'An app key reaches only the console interface (/party-api/)' });
+    return false;
+  }
+  const answer = await bounded(PROXY_UPSTREAM, 'the app key check', (signal) => fetch(`http://127.0.0.1:${coordinatorPort(options)}/party-api/apps/verify`, {
+    headers: { authorization: String(req.headers.authorization) }, signal,
+  })).catch((error: Error & { cause?: { code?: string } }) => {
+    console.warn(`App key check could not reach the coordinator: ${error.cause?.code || error.message}`);
+    return null;
+  });
+  if (!answer) { json(res, 503, { error: 'Service is starting or unavailable; retry shortly' }); return false; }
+  if (!answer.ok) { json(res, answer.status, await answer.json().catch(() => ({ error: 'App key refused' }))); return false; }
+  return true;
+}
 export async function authorizeBrowser(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
   options: Options,
 ) {
+  if (/^Bearer\s/i.test(req.headers.authorization || '')) return await authorizeApp(req, res, url, options);
   const sameOrigin = sameBrowserOrigin(req, options);
   if (!options.access.required && gamePath(url.pathname) && !sameOrigin) {
     if (requiresAccountSetup(options)) {

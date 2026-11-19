@@ -1,6 +1,8 @@
 import {test,expect} from './live-fixtures';
+import { setHidden } from './fixtures/component-harness';
 import type {Page} from '@playwright/test';
 import {createRequire} from 'node:module';
+import {caveView,caveAct,voteAndSettle} from './cave-harness';
 const sharp: typeof import('../dashboard/node_modules/sharp') = createRequire(import.meta.url)('../dashboard/node_modules/sharp');
 
 const W='E2EWarrior',P='E2EPriest',names=[W,P];
@@ -37,22 +39,7 @@ test('a headless party sees the Cave floor through its leader and frees it when 
   await live.post('/formation',{character:P,follow:true});
   await headless(live,P);
   await headless(live,W);
-  const view=async()=>await (await page.request.get(live.url+'/party-api/daily-dungeons',{maxRetries:1})).json();
-  const act=(body:Record<string,unknown>)=>live.post('/daily-dungeons',{operationId:crypto.randomUUID(),...body});
-  async function reply(v:any){
-    const c=v.members[0]?.observation?.cave;
-    if(!c?.choice||c.choice.resolved)return false;
-    const option=c.choice.options.find((o:any)=>!o.unavailable&&!o.cost&&!o.amber);
-    await act({action:'vote',run:c.run,choice:c.choice.id,option:option.id});
-    await expect.poll(async()=>{
-      const current=await view();
-      return current.members.length===2&&current.members.every((m:any)=>m.fresh&&m.observation?.alive&&
-        m.observation.cave?.run===c.run&&m.observation.cave.floor===c.floor&&
-        m.observation.cave.choice?.id===c.choice.id&&m.observation.cave.choice.resolved&&
-        m.observation.cave.choice.votes?.[m.name]===option.id);
-    },{timeout:30_000,message:'Both native replies must settle for this exact choice'}).toBe(true);
-    return true;
-  }
+  const view=caveView(live,page),act=caveAct(live);
   await expect.poll(async()=>{
     const v=await view();
     return v.members.length===2&&v.members.every((m:any)=>m.fresh&&m.observation?.ready&&m.observation?.visit?.available&&m.observation.leader===W&&m.observation.members.length===2);
@@ -62,7 +49,7 @@ test('a headless party sees the Cave floor through its leader and frees it when 
   expect(handshake).toEqual({[W]:false,[P]:true});
   await act({action:'enter'});
   await expect.poll(async()=>(await view()).state.phase,{timeout:90_000}).toBe('active');
-  await reply(await view());
+  await voteAndSettle(view,act);
   const cave=(await view()).members[0].observation.cave;
   const zone='zone_'+cave.run+'_'+cave.floor;
   await info.attach('headless-cave-entry',{body:JSON.stringify(await view()),contentType:'application/json'});
@@ -85,7 +72,7 @@ test('a headless party sees the Cave floor through its leader and frees it when 
   // The follower's own worker never received floor art; its card still draws the floor.
   const followerCard=page.getByRole('article').filter({has:page.getByRole('heading',{name:P,exact:true})});
   await expect.poll(async()=>{
-    await reply(await view());
+    await voteAndSettle(view,act);
     const expand=followerCard.getByRole('button',{name:'Expand live map'});
     if(await expand.isVisible())await expand.click({timeout:1000});
     return followerCard.locator('canvas').isVisible();
@@ -102,7 +89,7 @@ test('a headless party sees the Cave floor through its leader and frees it when 
   try {
     await expect.poll(async()=>{
       const current=await view(),choice=current.members[0]?.observation?.cave?.choice;
-      const replied=await reply(current);
+      const replied=await voteAndSettle(view,act,current.members[0]?.observation?.cave);
       const dialogs=await page.getByRole('dialog').count();
       renderingObservations.push({at:Date.now(),choice:choice?.id,resolved:choice?.resolved,replied,dialogs});
       if(replied||dialogs)return false;
@@ -133,29 +120,24 @@ test('a headless party sees the Cave floor through its leader and frees it when 
   expect(efficiency.framesWithDefinition).toBe(1);
   // The full Cave map keeps its definition across frames and stops streaming in a hidden tab.
   const controls=page.getByRole('region',{name:'Cave of Many Dreams controls'});
-  await reply(await view());
+  await voteAndSettle(view,act);
   await controls.getByRole('button',{name:'View full map'}).click();
   const fullMap=page.getByRole('dialog',{name:/Cave of Many Dreams/});
   await expect(fullMap.locator('canvas')).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>(window as any).__e2eMapStreams.size),{timeout:10_000}).toBeGreaterThanOrEqual(2);
   await info.attach('headless-cave-full-map',{body:await fullMap.screenshot(),contentType:'image/png'});
-  const setHidden=(hidden:boolean)=>page.evaluate(hidden=>{
-    Object.defineProperty(document,'hidden',{value:hidden,configurable:true});
-    Object.defineProperty(document,'visibilityState',{value:hidden?'hidden':'visible',configurable:true});
-    document.dispatchEvent(new Event('visibilitychange'));
-  },hidden);
-  await setHidden(true);
+  await setHidden(page,true);
   await expect.poll(()=>page.evaluate(()=>(window as any).__e2eMapStreams.size),{timeout:10_000,message:'A hidden tab must close every map stream'}).toBe(0);
-  await setHidden(false);
+  await setHidden(page,false);
   await expect.poll(()=>page.evaluate(()=>(window as any).__e2eMapStreams.size),{timeout:10_000}).toBeGreaterThanOrEqual(2);
   await page.keyboard.press('Escape');
-  // Leaving the Cave clears the floor and every field of the finished visit.
-  await reply(await view());
+  // Leaving the Cave clears the floor and every field of the finished visit. "After a run"
+  // defaults to go back (decided 2026-11-15), so the visit ends once both members are out,
+  // with no Release.
+  await voteAndSettle(view,act);
   await act({action:'exit'});
-  await expect.poll(async()=>(await view()).state.phase,{timeout:90_000}).toBe('held');
-  await act({action:'release'});
   let idle:any;
-  await expect.poll(async()=>(idle=await view()).state.phase,{timeout:30_000}).toBe('idle');
+  await expect.poll(async()=>(idle=await view()).state.phase,{timeout:90_000}).toBe('idle');
   for(const field of ['interruptedPhase','interruptedCommands','progress','travel','stairContinuation','pendingEvent'])
     expect(idle.state[field],field+' must not outlive the visit').toBeUndefined();
   await expect.poll(async()=>(await page.request.get(live.url+'/party-api/maps/'+zone)).status(),

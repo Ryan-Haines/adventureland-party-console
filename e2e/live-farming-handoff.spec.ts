@@ -1,7 +1,7 @@
 import {test,expect} from './live-fixtures';
 import {W,P,evidence} from './hunt-interruption-helpers';
-import {contains} from '../dashboard/lib/farming-zones';
-import {farmingAreas} from '../dashboard/lib/farming-areas';
+import {contains} from '../runtime/hunting/zones';
+import {farmingAreas} from '../runtime/hunting/areas';
 
 // Failure inventory: a visible bot across UHills terrain must not strand the
 // convoy; both fighters must reach the farm and deliver actual native hits.

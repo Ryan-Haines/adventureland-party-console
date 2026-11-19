@@ -1,6 +1,6 @@
 "use client";
 import type { Entity } from 'typed-adventureland';
-import type { LuckySlotTracking } from "../../../runtime/lucky-slot-tracking";
+import type { LuckySlotTracking } from "../../../runtime/items/api.ts";
 import { BestiaryMonster } from "./bestiary-monster";
 import { Condition } from "./condition";
 import { EquippedEntry } from "./equipped-entry";
@@ -14,9 +14,14 @@ import { SkillClass } from "./skill-class";
 import { Sprite } from "./sprite";
 
 export type Char = {
+  // Each enabled add-on's `status.report` answer by add-on name (runtime/status/rules.ts `addonReports`).
+  addonReports?: Record<string, unknown>;
   inspection?: {source:"account-snapshot";calculated:boolean;synchronizedAt:string|null;note:string};
   luckySlotTracking?: LuckySlotTracking;
-  tracktrix?: { active: boolean; bonuses: Record<string, number> | null; sprite?: Sprite | null;
+  // The events owner's measured walk lead per event, in ms before its round (table F's fast section, 12 part 9).
+  eventLeads?: Record<string, number>;
+  // `calculated` marks a total the report added up from the scores where the game sent no stats.
+  tracktrix?: { active: boolean; calculated?: boolean; bonuses: Record<string, number> | null; sprite?: Sprite | null;
   };
   lootStatus?: {at:number;map:string;eligible:number;pending:boolean;error?:string|null;
   };
@@ -30,6 +35,9 @@ export type Char = {
   server?: string | null;
   ping?: number | null;
   primaryStat?: string | null;
+  // The coordinator's activity line (runtime/status/coordinator/line.ts): the assigned
+  // task and its phase, and the stuck notice while the movement owner reports one.
+  activity?: { text: string; task: string; phase: string; notice?: string; incident?: string; addons?: { addon: string; label: string }[] } | null;
   level: number;
   attack?: number;
   frequency?: number;

@@ -30,8 +30,8 @@ are repeatable evidence; no fixture records successful combat or travel outcomes
 - A visible Slender warp must invalidate an old walking destination, without
   stealing a newer navigation or event-return owner. Actual sightings can reopen
   an exhausted search; a not-live to live transition starts a new episode.
-- Existing magical reflection checks must still reject attacks and magical
-  offensive skills. Physical combat remains eligible.
+- A character's "Don't hit with magic" list (Slenderman on it by default) must still
+  reject its attacks and magical offensive skills. Physical combat remains eligible.
 - Native Slender RED on game 15555 found that player serialization omits
   `character.damage_type` even for a physical Blade-equipped warrior. The
   compatibility resolver must prefer a valid native field, then the current
@@ -103,9 +103,9 @@ route still requires 100-unit arrival. Preserve shaped farming areas, unrelated
 legacy return tolerance, ownership revisions, and stale/dead actor guards.
 GREEN5 records a valid Mr. Green checkpoint and cancelled route at 107.55 units.
 Fixture boundaries must also clear only prior fixture-owned encounters between
-cases, and derive Slender's initial bounded HP from fighters actually permitted
-to damage its reflection; a blocked magical priest cannot contribute expected
-DPS. Native damage, kills and movement remain untouched after declaration.
+cases, and derive Slender's initial bounded HP from the fighters whose reflect lists
+permit them to damage it; a priest whose magic list blocks Slender cannot contribute
+expected DPS. Native damage, kills and movement remain untouched after declaration.
 # CI staging restart failure inventory
 
 Tiny P projectile failure inventory: native server attack initiation teleports an escapist monster before a projectile resolves unless a live field generator is within 300 units of its actual current position. A field deployed near its previous position does not suffice. Class, actor, weapon, skin and skill projectile overrides must follow native precedence; actual melee attacks remain eligible outside a field. Dead, invisible or foreign-map fields must not grant permission. CI's existing native Tiny P case recorded a magiport and avoided zero-damage priest attack outside the deployed field before this fix; positive damage, native kill and native loot assertions remain unchanged.

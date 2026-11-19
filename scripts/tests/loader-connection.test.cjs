@@ -1,30 +1,23 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const {createHash,webcrypto}=require('node:crypto');
-const {JSDOM,ResourceLoader}=require('../../.caracal/node_modules/jsdom');
+const {ResourceLoader}=require('../../.caracal/node_modules/jsdom');
+const {loaderWindow,loaderSource,manifestFor}=require('./fixtures/loader-scenario.cjs');
 const jquery=require('../../.caracal/node_modules/jquery');
-const {initializeConnection,needsSteamBridge,steamBootstrap,steamBridgeVersion}=require('../../runtime/steam/connection.ts');
+const {initializeConnection,needsSteamBridge,steamBootstrap,steamBridgeVersion}=require('../../runtime/lifecycle/roster/connection.ts');
 
 test('bridge download retries without another Engage, serializes requests, and respects disposal and manual stops',async()=>{
- const loader=fs.readFileSync('.build/runtime/universal-loader.js','utf8');
+ const loader=loaderSource();
  for(const mode of ['recover','dispose','stopped']) {
-  const dom=new JSDOM('',{url:'https://adventure.land',runScripts:'dangerously'}),w=dom.window;
-  let interval,attempts=0,release,installs=0;
-  const code='globalThis.characterInstalled=true;',hash=createHash('sha256').update(code).digest('hex');
-  Object.defineProperty(w.crypto,'subtle',{value:webcrypto.subtle});
-  Object.assign(w,{TextEncoder,AbortSignal,AbortController,character:{name:'P',ctype:'warrior'},game_log(){},
-   setInterval:fn=>{interval=fn;return 1;},clearInterval(){},
-   fetch:async url=>{
+  let attempts=0,release,installs=0;
+  const code='globalThis.characterInstalled=true;';
+  const l=loaderWindow({globals:{bridgeReady:()=>installs++},fetch:async url=>{
     if(url.includes('steam-bridge.js')){attempts++;if(attempts===1)throw Error('temporary outage');return new Promise(resolve=>{release=()=>resolve({ok:true,text:async()=>`globalThis.bridgeReady();globalThis.__partySteamBridge={version:${steamBridgeVersion},server:globalThis.__partyServer};`})})}
-    return {ok:true,text:async()=>url.includes('manifest.json')?JSON.stringify({schema:1,classes:{warrior:{file:`generated/${hash}/warrior.js`,sha256:hash}}}):code};
-   },bridgeReady:()=>installs++});
+    return {ok:true,text:async()=>url.includes('manifest.json')?JSON.stringify(manifestFor(code)):code};
+  }}),w=l.w,until=l.until,interval=l.interval;
   const flush=async()=>{for(let n=0;n<10;n++)await new Promise(r=>setImmediate(r));};
-  const until=async predicate=>{for(let n=0;n<200&&!predicate();n++)await new Promise(r=>setTimeout(r,10));assert.ok(predicate());};
   try{
    if(mode==='stopped')w.localStorage.setItem('party-code-stopped:P','1');
    w.eval(loader);await flush();assert.equal(attempts,1);
-   // WebCrypto completes on a worker thread; event-loop turns are not a deadline.
    if(mode!=='stopped')await until(()=>w.characterInstalled===true);
    interval();interval();await flush();assert.equal(attempts,2);
    if(mode==='dispose')w.__partyCodeLoader.dispose();
@@ -35,7 +28,7 @@ test('bridge download retries without another Engage, serializes requests, and r
     assert.equal(w.localStorage.getItem('party-code-stopped:P'),'1');
     w.localStorage.setItem('party-code-stopped:P','0');interval();await until(()=>w.characterInstalled===true);assert.equal(w.characterInstalled,true);
    }
-  }finally{w.__partyCodeLoader?.dispose();w.close();}
+  }finally{l.close();}
  }
 });
 
@@ -56,26 +49,20 @@ test('loader URL wins over stale globals and preserves the gateway prefix',()=>{
 });
 
 test('jQuery loads the real bundle, retaining its address through bridge setup and explicit activation',async()=>{
- const loader=fs.readFileSync('.build/runtime/universal-loader.js','utf8');
+ const loader=loaderSource();
  for(const base of ['http://127.0.0.1:924','http://192.168.1.50:3010','http://pi:3010/bridge/abc']) {
   const scriptRequests=[],requests=[],errors=[],starts=[];
   class Resources extends ResourceLoader {
    fetch(url){scriptRequests.push(url);return Promise.resolve(Buffer.from(loader));}
   }
-  const dom=new JSDOM('',{url:'https://adventure.land',runScripts:'dangerously',resources:new Resources()});
-  const w=dom.window;
-  let interval,revision=1;
+  let revision=1;
   const code=()=>`globalThis.installed=${revision};`;
-  const hash=()=>createHash('sha256').update(code()).digest('hex');
-  Object.defineProperty(w.crypto,'subtle',{value:webcrypto.subtle});
-  Object.assign(w,{TextEncoder,AbortSignal,AbortController,character:{name:'P',ctype:'warrior'},__partyServer:'http://stale:924',
-   __partySteamBridge:{realmProtocol:2},game_log:(message,color)=>{if(color==='red')errors.push(message);},
-   setInterval:fn=>{interval=fn;return 1;},clearInterval(){},start_runner:(id,source)=>starts.push(source),
+  const l=loaderWindow({resources:new Resources(),globals:{__partyServer:'http://stale:924',__partySteamBridge:{realmProtocol:2},
+   game_log:(message,color)=>{if(color==='red')errors.push(message);},start_runner:(id,source)=>starts.push(source)},
    fetch:async url=>{requests.push(url);return {ok:true,json:async()=>({serverNow:Date.now(),consoleMaintenance:null}),text:async()=>url.includes('steam-bridge.js')
     ? `globalThis.bridgeInstalls=(globalThis.bridgeInstalls||0)+1;globalThis.__partySteamBridge={version:${steamBridgeVersion},server:globalThis.__partyServer};`
-    :url.includes('activation.json')?JSON.stringify({id:'explicit-'+revision,manifest:{schema:1,classes:{warrior:{file:`generated/${hash()}/warrior.js`,sha256:hash()}}}})
-    :url.includes('manifest.json')?JSON.stringify({schema:1,classes:{warrior:{file:`generated/${hash()}/warrior.js`,sha256:hash()}}}):code()};}});
-  const until=async predicate=>{for(let i=0;i<100&&!predicate();i++)await new Promise(r=>setTimeout(r,10));assert.ok(predicate());};
+    :url.includes('activation.json')?JSON.stringify({id:'explicit-'+revision,manifest:manifestFor(code())})
+    :url.includes('manifest.json')?JSON.stringify(manifestFor(code())):code()};}}),w=l.w,until=l.until,interval=l.interval;
   try {
    w.$=jquery(w);
    w.eval(steamBootstrap(base));
@@ -90,6 +77,24 @@ test('jQuery loads the real bundle, retaining its address through bridge setup a
    w.localStorage.setItem('party-code-stopped:P','1');
    const before=requests.filter(url=>url.startsWith(base+'/CODE/')).length,controlBefore=requests.filter(url=>url===base+'/party-api/console-deployment').length;interval();await new Promise(r=>setImmediate(r));assert.equal(requests.filter(url=>url.startsWith(base+'/CODE/')).length,before);assert.equal(requests.filter(url=>url===base+'/party-api/console-deployment').length,controlBefore+1);
    assert.deepEqual(errors,[]);
-  } finally {w.__partyCodeLoader?.dispose();w.close();}
+  } finally {l.close();}
+ }
+});
+
+// Observed in a side-by-side profile: each companion page of the e2e party evaluated steam-bridge.js on every poll.
+test('a companion window or CaracAL page never downloads the Steam bridge',async()=>{
+ const loader=loaderSource(),code='globalThis.characterInstalled=true;';
+ for(const globals of [{no_html:true},{is_bot:1},{caracAL:{}}]){
+  let bridgeFetches=0;
+  const l=loaderWindow({globals,fetch:async url=>{
+   if(url.includes('steam-bridge.js')){bridgeFetches++;return {ok:true,text:async()=>''};}
+   if(url.includes('console-deployment'))return {ok:true,json:async()=>({serverNow:Date.now(),consoleMaintenance:null})};
+   return {ok:true,text:async()=>url.includes('manifest.json')?JSON.stringify(manifestFor(code)):code};
+  }});
+  try{
+   l.w.eval(loader);await l.until(()=>l.w.characterInstalled===true);
+   for(let n=0;n<3;n++){l.interval();await new Promise(r=>setImmediate(r));}
+   assert.equal(bridgeFetches,0,JSON.stringify(globals));
+  }finally{l.close();}
  }
 });

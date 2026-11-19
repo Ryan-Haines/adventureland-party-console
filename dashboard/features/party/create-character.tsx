@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { AppearanceChoice } from "./appearance-choice";
 import { CharacterPortrait } from "./character-portrait";
+import { CHARACTER_NAME_MAX, CHARACTER_NAME_MIN, nameCharacters } from "../../../runtime/lifecycle/api.ts";
 
 export function CreateCharacter({
   open,
@@ -50,7 +51,7 @@ export function CreateCharacter({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border border-cyan-800 bg-[#0b1916] text-emerald-50 sm:max-w-md">
+      <DialogContent data-area="create-character" className="border border-cyan-800 bg-[#0b1916] text-emerald-50 sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Create character</DialogTitle>
           <DialogDescription className="text-emerald-100/55">
@@ -63,8 +64,8 @@ export function CreateCharacter({
             Name
             <Input
               value={name}
-              maxLength={12}
-              onChange={(event) => setName(event.target.value.replace(/[^A-Za-z0-9_]/g, ""))}
+              maxLength={CHARACTER_NAME_MAX}
+              onChange={(event) => setName(nameCharacters(event.target.value))}
               className="border-cyan-800 bg-black/30"
               placeholder="NewRanger"
             />
@@ -123,7 +124,7 @@ export function CreateCharacter({
             Cancel
           </Button>
           <Button
-            disabled={busy || name.length < 4 || !appearances.length}
+            disabled={busy || name.length < CHARACTER_NAME_MIN || !appearances.length}
             onClick={onCreate}
             className="bg-cyan-400 text-cyan-950 hover:bg-cyan-300"
           >

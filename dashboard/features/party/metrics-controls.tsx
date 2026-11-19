@@ -18,7 +18,7 @@ export function MetricsSelect({ label, value, onChange, options, className = '' 
 }
 export function MetricsMenu({ label, trigger, children, className = metricsIconControl }: { label: string; trigger: ReactNode; children: ReactNode; className?: string }) {
   return <Popover><PopoverTrigger className={className} aria-label={label} title={label}>{trigger}</PopoverTrigger>
-    <PopoverContent align="end" sideOffset={8} positionerClassName="z-[130]" className={metricsMenu + ' max-w-[calc(100vw-32px)]'}>
+    <PopoverContent data-area="metrics-controls" align="end" sideOffset={8} positionerClassName="z-[130]" className={metricsMenu + ' max-w-[calc(100vw-32px)]'}>
       {children}
     </PopoverContent>
   </Popover>;

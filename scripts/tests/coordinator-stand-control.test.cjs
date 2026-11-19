@@ -1,7 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createMerchantIdleRoute}=require('../../runtime/coordinator/http/merchant-idle.ts');
-const {createMerchantBidRoute}=require('../../runtime/coordinator/http/merchant-bid.ts');
-const {createStackMergeRoute}=require('../../runtime/coordinator/http/stack-merge.ts');
+const {createMerchantIdleRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
+const {createMerchantBidRoute}=require('../../runtime/items/coordinator/routes/market.ts');
+const {createStackMergeRoute}=require('../../runtime/items/coordinator/routes/inventory.ts');
 function invoke(handler,body){const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;}};handler({body},res);return res;}
 function idleFixture(){
  const state={merchantCharacter:'M',commands:{M:{id:5,type:'merchant-idle'}},standListings:[],withdrawals:{}};
@@ -33,7 +33,7 @@ test('bank-backed listing withdrawals are deduplicated across idle completions',
 });
 test('idle reports reject stale generations and preserve unrelated commands',()=>{
  const f=idleFixture();assert.equal(f.send({phase:'complete',commandId:4}).code,409);assert.deepEqual(f.calls,[]);
- f.state.commands.M={id:5,type:'merchant-service'};f.send({phase:'failed',error:'interrupted'});
+ f.state.commands.M={id:5,type:'merchant-service'};f.send({phase:'failed',error:'interrupted',code:'interrupted'});
  assert.equal(f.state.commands.M.type,'merchant-service');assert.equal(f.calls[0][0],'Stand return interrupted; retrying');
  assert.equal(f.send({phase:'invalid'}).code,400);assert.equal(f.send({character:'X',phase:'complete'}).code,409);
 });
@@ -53,13 +53,15 @@ test('editing a legacy bid without a saved level retains its priority and suppli
  assert.deepEqual(state.standBids.cap,{price:500,quantity:1,priorityOverride:75,minimumQuality:8,useStandSlot:false,acceptHigherLevels:true,revision:0,standSuppressed:undefined});
  assert.deepEqual(previous,{price:100,quantity:2,priorityOverride:75});
 });
-test('stack merge authorization fences reservations, stale observations and changed quantities',()=>{
+// The route plans the bag the merchant sends and answers null while a fence holds.
+test('stack merge plans the sent bag and fences reservations and stale observations',()=>{
  const merge={from:2,to:3,source:{name:'leather',q:2},target:{name:'leather',q:3}};
+ const items=[null,null,{slot:2,item:{name:'leather',q:2}},{slot:3,item:{name:'leather',q:3}}];
  const state={merchantCharacter:'M',statuses:{M:{seenAt:100000}}};let anniversary={},busy=false;
- const handler=createStackMergeRoute(state,{now:()=>100000,anniversary:()=>anniversary,bankboiBusy:()=>busy,plan:()=>merge,identity:item=>item?.name});
- const send=proposed=>invoke(handler,{character:'M',merge:proposed||merge}).body.allowed;
- assert.equal(send(),true);assert.equal(send({...merge,source:{name:'leather',q:1}}),false);
- busy=true;assert.equal(send(),false);busy=false;
- anniversary={reserved:true};assert.equal(send(),false);anniversary={busy:true};assert.equal(send(),false);anniversary={};
- state.statuses.M.seenAt=89999;assert.equal(send(),false);
+ const handler=createStackMergeRoute(state,{now:()=>100000,anniversary:()=>anniversary,bankboiBusy:()=>busy,plan:bag=>bag===items?merge:null});
+ const send=(body={character:'M',items})=>invoke(handler,body).body.merge;
+ assert.equal(send(),merge);assert.equal(send({character:'M'}),null);assert.equal(send({character:'F',items}),null);
+ busy=true;assert.equal(send(),null);busy=false;
+ anniversary={reserved:true};assert.equal(send(),null);anniversary={busy:true};assert.equal(send(),null);anniversary={};
+ state.statuses.M.seenAt=89999;assert.equal(send(),null);
 });

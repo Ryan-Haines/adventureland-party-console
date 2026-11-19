@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const {reconcileCoordinatorCompoundMarks: reconcile} = require('../../runtime/coordinator/inventory/compound-marks.ts');
+const {reconcileCoordinatorCompoundMarks: reconcile} = require('../../runtime/items/coordinator/production.ts');
 const item = {name: 'ringsj', level: 0};
 const group = (id, slots, identity = item) => ({id, items: slots.map(slot => ({slot, item: {...identity}}))});
 const inventory = slots => ({items: slots.map(slot => ({slot, item: {...item}}))});
@@ -45,4 +45,23 @@ test('ordinary marks cannot relocate onto decorated copies', () => {
   const state = {compounds: {M: [group('a', [5, 8, 9])]}};
   assert.equal(reconcile(state, 'M', {items: [0, 1, 2].map(slot => ({slot, item: {...item, p: 'shiny'}}))}), false);
   assert.deepEqual(state.compounds.M[0].items.map(mark => mark.slot), [5, 8, 9]);
+});
+
+// IT60: a manual compound may take its triplet from a
+// BankBoi's stock; the selection names the BankBoi pack and the group keeps each copy's storage.
+test('a manual compound selects its triplet from BankBoi stock', () => {
+  const {createCompoundCommands} = require('../../runtime/items/coordinator/production.ts');
+  const ring = {name: 'ring', level: 1};
+  const state = {merchantCharacter: 'M', compounds: {}, autoCompounds: {}, autoUpgradeMarks: {}, upgrades: {}, merchantQueue: [], merchantCurrent: null,
+    statuses: {M: {items: []}}, bankSnapshot: {packs: {}}, bankbois: {B: {name: 'B', items: [0, 1, 2, 3].map(slot => ({slot, item: {...ring}}))}},
+    merchantCatalog: {allItems: [{id: 'ring', meta: {compoundable: true}}]}};
+  const queued = [];
+  const service = createCompoundCommands(state, {write: () => ({ok: true}), persist() {}, schedule() {}, log() {}, queue: (names, reason) => queued.push(reason)});
+  service.handle({type: 'compound-mark', character: 'M', pack: 'bankboi:B', slot: 0, item: ring});
+  assert.deepEqual(state.compounds.M?.[0]?.items.map(mark => mark.storage), [{pack: 'bankboi:B', slot: 0}, {pack: 'bankboi:B', slot: 1}, {pack: 'bankboi:B', slot: 2}]);
+  assert.deepEqual(queued, ['manual compounds']);
+  // v1.5 row 38: a cell with a pending withdrawal is left out of the next triplet.
+  state.compounds.M = []; state.withdrawals = {M: [{pack: 'bankboi:B', slot: 1, item: ring, improvement: 'manual upgrades'}]};
+  service.handle({type: 'compound-mark', character: 'M', pack: 'bankboi:B', slot: 0, item: ring});
+  assert.deepEqual(state.compounds.M?.[0]?.items.map(mark => mark.storage.slot), [0, 2, 3]);
 });

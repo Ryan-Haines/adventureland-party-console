@@ -1,11 +1,13 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { createFormationRoute } = require('../../runtime/coordinator/http/formation.ts');
-const { supportedEvents, eventPriorityOrder } = require('../../dashboard/lib/event-policy.ts');
+const { createFormationRoute } = require('../../runtime/settings/coordinator/routes/formation.ts');
+const { supportedEvents, eventPriorityOrder } = require('../../runtime/events/rules.ts');
+const { settingsWriter } = require('./helpers/settings-writer.cjs');
 // Failure inventory: docs/testing-october-events.md § Event priorities from an older client.
 const older = ['mrgreen', 'mrpumpkin', 'anniversary', 'abtesting', 'goobrawl', 'crabxx', 'franky', 'icegolem', 'snowman', 'slenderman'];
 function post(eventPriorities) {
-  const state = { leader: null, merchantCharacter: null, followers: {}, eventsByCharacter: {}, eventLimitsByCharacter: {}, eventPrioritiesByCharacter: {}, eventSelectionsByCharacter: {} };
-  const route = createFormationRoute(state, { managed: () => true, owned: () => true, supported: supportedEvents, inherited: () => false, selected: () => [], persist() {} });
+  const state = { leader: null, merchantCharacter: null, followers: {}, eventsByCharacter: {}, eventLimitsByCharacter: {}, eventPrioritiesByCharacter: {}, eventSelectionsByCharacter: {},
+    handControlByCharacter: {} };
+  const route = createFormationRoute(state, { managed: () => true, owned: () => true, supported: supportedEvents, inherited: () => false, selected: () => [], write: settingsWriter(state).write });
   let code = 200, body;
   route({ body: { character: 'W', eventPriorities } }, { status(value) { code = value; return this; }, json(value) { body = value; return this; } });
   return { code, body, saved: state.eventPrioritiesByCharacter.W };

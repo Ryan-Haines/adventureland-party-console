@@ -3,7 +3,8 @@ const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
 const { fork } = require("node:child_process");
-const { createNative } = require("./native.cjs");
+const { performance } = require("node:perf_hooks");
+const { createNative, ENGINES, GAME_VERSION } = require("./native.cjs");
 const { corpus } = require("./corpus.cjs");
 const { validate } = require("./validate.cjs");
 const { measurementCounts, shouldMeasure } = require("./sampling.cjs");
@@ -71,7 +72,7 @@ function configuration() {
     ? JSON.parse(fs.readFileSync(inputPath, "utf8").replace(/^\uFEFF/, ""))
     : {};
   const version =
-    process.argv.find((x) => /^\d+$/.test(x)) || String(snapshot.gameVersion || "16846");
+    process.argv.find((x) => /^\d+$/.test(x)) || String(snapshot.gameVersion || GAME_VERSION);
   const directory = path.join(root, ".caracal/game_files", version);
   const native = createNative(directory),
     fixtures = corpus(native, snapshot);
@@ -80,6 +81,8 @@ function configuration() {
   fs.mkdirSync(output, { recursive: true });
   const metadata = {
     startedAt: new Date().toISOString(),
+    // The engines each pass measures; verify.cjs checks the counts per engine from this list.
+    engines: ["native-visible", "native-hidden", "alclient"],
     version,
     node: process.version,
     platform: process.platform,
@@ -101,6 +104,7 @@ function configuration() {
     coldRuns: smoke ? 1 : 5,
     timeoutMs: 30000,
     bounded,
+    engines: ENGINES,
     scope:
       "offline; no executor, sockets, or live character movement; native slices run back-to-back, scheduler wait excluded",
     ...fixtures,
@@ -140,15 +144,19 @@ async function coldMeasurements(engines, metadata, directory) {
   return cold;
 }
 async function query(sessions, engine, route, pass, directory) {
-  const session = sessions[engine];
+  const session = sessions[engine],
+    started = performance.now();
   try {
     const pending = message(session.worker, 31000);
     session.worker.postMessage({ route, seed: 42 + Math.max(0, pass) });
     return await pending;
   } catch (error) {
+    // A failed query keeps its time to failure and the failure's own text (timeout, worker exit or
+    // the worker's error); report.cjs leaves it out of the latency columns and counts it.
+    const ms = performance.now() - started;
     await session.worker.terminate();
     sessions[engine] = await launch(engine, directory);
-    return { error: error.message, ms: 30000, path: [] };
+    return { error: error.message, ms, path: [] };
   }
 }
 async function measurePass(config, sessions, engines, pass, results) {
@@ -170,8 +178,8 @@ async function measurePass(config, sessions, engines, pass, results) {
 }
 async function main() {
   const config = configuration(),
-    { smoke, directory, metadata } = config;
-  const engines = ["native-visible", "native-hidden", "alclient"];
+    { smoke, directory, metadata } = config,
+    { engines } = metadata;
   const cold = await coldMeasurements(engines, metadata, directory),
     results = [];
   const sessions = {};
@@ -199,4 +207,4 @@ if (require.main === module)
     console.error(error);
     process.exitCode = 1;
   });
-module.exports = { message, launch };
+module.exports = { message };

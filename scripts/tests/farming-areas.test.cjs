@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs'), vm = require('node:vm');
 const { farmingAreas, validFarmingLocation } = require('../../.build/shared/farming-areas.cjs');
+const { spawnCatalog } = require('../../runtime/hunting/areas.ts');
 const box = (boundary, map = 'main') => ({ map, boundary, x: (boundary[0]+boundary[2])/2, y: (boundary[1]+boundary[3])/2 });
 test('farming location validation preserves raw input rejection and exact coordinate matching',()=>{
   const catalog=[{id:'a',locations:[box([0,0,100,100])]}];
@@ -34,11 +34,9 @@ function catalogFromGame() {
       {type:'snake',boundary:[-720,-820,-418,-203],count:9},{type:'snake',boundary:[141,-792,552,-702],count:6},{type:'osnake',boundary:[141,-792,552,-702],count:2}] },
     cave: { monsters: [{type:'mvampire',boundaries:[['cave',-367,-1296,-14,-1057],['cave',1068,-123,1420,78]],count:1}] }
   } } };
-  const source = fs.readFileSync('characters/shared.js','utf8');
-  const fn = source.slice(source.indexOf('  function monsterChoices('),source.indexOf('  function bestiaryCatalog()'));
-  context.monsterSpriteDefinition = () => null;
-  vm.runInNewContext(fn+';result=monsterChoices()',context);
-  return JSON.parse(JSON.stringify(context.result));
+  // The hunting owner's spawn catalog (areas.ts `spawnCatalog`), which the character's farm owner publishes as the
+  // role code's monsterChoices.
+  return JSON.parse(JSON.stringify(spawnCatalog(context.G)));
 }
 test('real snake catalog ranks shared areas first and includes every multi-map spawn boundary', () => {
   const catalog = catalogFromGame(), areas = farmingAreas(catalog,['snake','osnake']);
@@ -53,10 +51,12 @@ test('bestiary validates selection before releasing escape or changing farming s
   const source=require('./helpers/coordinator-source.cjs').coordinatorSource();
   const start=source.indexOf('express_inst.post("/party-api/navigate-to-monster"');
   const route=source.slice(start,source.indexOf('express_inst.post("/party-api/focus"',start));
-  let handler; const party={monsterChoices:[{id:'a',locations:[box([0,0,100,100])]}],leader:'warrior',statuses:{warrior:{seenAt:Date.now()}}};
+  let handler; const party={monsterChoices:[{id:'a',locations:[box([0,0,100,100])]}],leader:'warrior',statuses:{warrior:{seenAt:Date.now()}},combatMode:'scatter',targetMode:'hunt'};
   const context={express_inst:{post:(url,fn)=>{if(url==='/party-api/navigate-to-monster')handler=fn;}},party,validFarmingLocation,escapeControl:{release:()=>assert.fail('released on invalid input')},Date};
   handler=require('./helpers/coordinator-monster-selection.cjs').monsterRoutes(context).navigate;
   let status;const res={status:n=>{status=n;return res;},json:()=>{}};
   handler({body:{monsterId:'a',location:{map:'cave',x:1,y:1}}},res);
-  assert.equal(status,409);assert.equal(party.farmingPolicy,undefined);
+  // A refused pick leaves both slot fields; an accepted one sets target Farming and keeps the
+  // combat mode.
+  assert.equal(status,409);assert.deepEqual([party.combatMode,party.targetMode],['scatter','hunt']);
 });

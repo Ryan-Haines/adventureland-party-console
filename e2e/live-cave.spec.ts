@@ -4,6 +4,9 @@ import { test, expect } from './live-fixtures';
 import { createRequire } from 'node:module';
 import {createNativeProgressBudget} from './native-progress-budget.js';
 import type {Route} from '@playwright/test';
+import {killNativeCharacter} from './hunt-interruption-helpers';
+import {addonSwitches} from './fixtures/hunting-hooks-addon';
+import {caveView,caveAct,voteAndSettle} from './cave-harness';
 const sharp: typeof import('../dashboard/node_modules/sharp') = createRequire(import.meta.url)('../dashboard/node_modules/sharp');
 test.use({ initialPosition: { map: 'main', x: 816, y: 1180 } });
 
@@ -32,7 +35,8 @@ async ({ live, page }, info) => {
     if(visitRun){
       const matching=view.members.filter((m:any)=>m.fresh&&m.observation?.cave?.run===visitRun);
       if(matching.length)lastVisitRemaining=Math.min(...matching.map((m:any)=>m.observation.cave.remainingMs));
-      if(view.state.phase==='held'&&view.members.length===2&&view.members.every((m:any)=>m.fresh&&!m.observation?.cave))
+      // With "After a run" on go back (the default) the visit retires once everyone is out.
+      if(['held','idle'].includes(view.state.phase)&&view.members.length===2&&view.members.every((m:any)=>m.fresh&&!m.observation?.cave))
         throw Error('Native Cave visit ended before journey completion; last observed remaining time: '+lastVisitRemaining+'ms');
     }
     return view;
@@ -124,11 +128,22 @@ async ({ live, page }, info) => {
     return !state.travel && state.progress?.enabled===false &&
       !Object.values(state.commands).some((c:any)=>c.action==='move');
   },{timeout:20_000,message:'Stop travel must acknowledge removal of owned moves and automatic progress'}).toBe(true);
+  // Records the page's requests that match, each with its response once it lands, until stop().
+  const trackRequests=(match:(request:import('@playwright/test').Request)=>boolean)=>{
+    const requests:{request:import('@playwright/test').Request;response?:Promise<{status:number;body:any;request:any}>}[]=[];
+    const requested=(request:import('@playwright/test').Request)=>{if(match(request))requests.push({request});};
+    const responded=(reply:import('@playwright/test').Response)=>{
+      const entry=requests.find(entry=>entry.request===reply.request());
+      if(entry)entry.response=reply.json().then(body=>({status:reply.status(),body,request:reply.request().postDataJSON()}));
+    };
+    page.on('request',requested);page.on('response',responded);
+    return {requests,stop:()=>{page.off('request',requested);page.off('response',responded);}};
+  };
   const roomChoices=new Map<string,{initial:string|undefined;resumed:Set<string>}>();
   const acceptRoom=async(point:{id:string;label:string;map:string},deferNativeChoice=false)=>{
     if(!roomChoices.has(point.id))roomChoices.set(point.id,{initial:(await dungeon()).members[0].observation.cave.choice?.id,resumed:new Set()});
     const expectedRun=point.map.slice(5,point.map.lastIndexOf('_')),expectedFloor=Number(point.map.split('_').at(-1));
-    const requests:{request:import('@playwright/test').Request;response?:Promise<{status:number;body:any;request:any}>}[]=[],attempts:unknown[]=[];
+    const tracker=trackRequests(request=>match(request)),requests=tracker.requests,attempts:unknown[]=[];
     let consumed=0,acceptedState:any,deferred=false;
     const completedRequiredRoom=(view:any)=>deferNativeChoice&&view.state.phase==='active'&&view.state.run===expectedRun&&
       view.members.length===2&&view.members.every((m:any)=>m.fresh&&m.observation?.alive&&
@@ -136,11 +151,6 @@ async ({ live, page }, info) => {
         m.observation.cave.points.some((p:any)=>p.id===point.id&&p.map===point.map&&p.required&&p.done));
     const match=(request:import('@playwright/test').Request)=>request.method()==='POST'&&new URL(request.url()).pathname==='/party-api/daily-dungeons'&&
       request.postDataJSON()?.action==='move'&&request.postDataJSON()?.target===point.id;
-    const requested=(request:import('@playwright/test').Request)=>{if(match(request))requests.push({request});};
-    const responded=(reply:import('@playwright/test').Response)=>{
-      const entry=requests.find(entry=>entry.request===reply.request());
-      if(entry)entry.response=reply.json().then(body=>({status:reply.status(),body,request:reply.request().postDataJSON()}));
-    };
     const identity=async()=>{
       const view=await dungeon();expect(view.state.phase).toBe('active');expect(view.state.run).toBe(expectedRun);
       expect(view.members.every((m:any)=>m.observation?.alive&&m.observation.cave?.run===expectedRun&&m.observation.cave.floor===expectedFloor)).toBe(true);
@@ -158,7 +168,6 @@ async ({ live, page }, info) => {
       expect(paused,'Native room selection requires an unpaused run').toBe(false);
       return view;
     };
-    page.on('request',requested);page.on('response',responded);
     try{
       await expect.poll(async()=>{
         if(requests.length===consumed){
@@ -207,7 +216,7 @@ async ({ live, page }, info) => {
         return true;
       },{timeout:60_000,message:'Native room selection must receive an owned accepted action'}).toBe(true);
     }finally{
-      page.off('request',requested);page.off('response',responded);
+      tracker.stop();
       await info.attach('native-cave-room-selection-acceptance',{body:JSON.stringify({point,attempts,consumed,requests:requests.map(entry=>({body:entry.request.postDataJSON(),responseObserved:!!entry.response}))}),contentType:'application/json'});
     }
     return deferred?undefined:acceptedState;
@@ -290,17 +299,21 @@ async ({ live, page }, info) => {
     }
   };
   const sameTravelTarget=(a:any,b:any)=>!!a&&!!b&&['id','map','x','y','down','to','exit','room','kind','required'].every(key=>a[key]===b[key]);
+  // Both members run the owned Cave travel command of this serial toward the target.
+  const ownedTravel=(view:any,run:string,floor:number,serial:number,sameTarget:(target:any)=>boolean)=>['E2EWarrior','E2EPriest'].every(name=>{
+    const member=view.members.find((m:any)=>m.name===name),command=view.state.commands[name],expected=`cave-travel:${run}:${serial}:${name}`;
+    return member?.fresh&&member.observation?.alive&&member.observation.cave?.run===run&&
+      member.observation.cave.floor===floor&&command?.action==='move'&&command.run===run&&
+      command.id===expected&&sameTarget(command.target)&&member.observation.travel?.id===expected;
+  });
   const repairedOwnedTravel=(view:any,prior:any)=>{
     const old=prior?.travel,t=view?.state?.travel;
     if(!old||!view?.state||view.state.phase!=='active'||view.state.run!==prior.run||!sameTravelTarget(t?.target,old.target))return;
-    const delta=t.serial-old.serial,previous=old.repairs||0,count=t.repairs;
-    if(!Number.isSafeInteger(t.serial)||!Number.isSafeInteger(count)||delta<=0||count>3||count-previous!==delta)return;
-    const owned=['E2EWarrior','E2EPriest'].every(name=>{
-      const member=view.members.find((m:any)=>m.name===name),command=view.state.commands[name],expected=`cave-travel:${prior.run}:${t.serial}:${name}`;
-      return member?.fresh&&member.observation?.alive&&member.observation.cave?.run===prior.run&&
-        member.observation.cave.floor===cave.floor&&command?.action==='move'&&command.run===prior.run&&
-        command.id===expected&&sameTravelTarget(command.target,old.target)&&member.observation.travel?.id===expected;
-    });
+    // The Cave repair ladder keeps no repair count: a repair that starts the travel again
+    // takes the next serial.
+    const delta=t.serial-old.serial;
+    if(!Number.isSafeInteger(t.serial)||delta<=0)return;
+    const owned=ownedTravel(view,prior.run,cave.floor,t.serial,target=>sameTravelTarget(target,old.target));
     if(owned)return view.state;
   };
   if (journey === 'interface') {
@@ -376,13 +389,7 @@ async ({ live, page }, info) => {
     };
     const isWaypoint=(request:import('@playwright/test').Request)=>request.method()==='POST'&&
       new URL(request.url()).pathname==='/party-api/daily-dungeons'&&request.postDataJSON()?.action==='waypoint';
-    const requests:{request:import('@playwright/test').Request;response?:Promise<{status:number;body:any;request:any}>}[]=[];
-    const requested=(request:import('@playwright/test').Request)=>{if(isWaypoint(request))requests.push({request});};
-    const responded=(reply:import('@playwright/test').Response)=>{
-      const entry=requests.find(entry=>entry.request===reply.request());
-      if(entry)entry.response=reply.json().then(body=>({status:reply.status(),body,request:reply.request().postDataJSON()}));
-    };
-    page.on('request',requested);page.on('response',responded);
+    const tracker=trackRequests(isWaypoint),requests=tracker.requests;
     let consumed=0;
     try{
       await expect.poll(async()=>{
@@ -444,7 +451,7 @@ async ({ live, page }, info) => {
           return true;
       },{timeout:60_000,message:'The actual UI waypoint request must receive fresh native acceptance'}).toBe(true);
     }finally{
-      page.off('request',requested);page.off('response',responded);
+      tracker.stop();
       await info.attach('native-cave-waypoint-submission-ledger',{body:JSON.stringify({attempts,consumed,requests:requests.map(entry=>({body:entry.request.postDataJSON(),responseObserved:!!entry.response}))}),contentType:'application/json'});
     }
   };
@@ -783,7 +790,7 @@ async ({ live, page }, info) => {
       const native=await Promise.all(['E2EWarrior','E2EPriest'].map(name=>live.clients[name].frame.evaluate(({goal,acceptedAt})=>{
         const p=window as any,w=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
         const c=w.character,control=w.__partyGroupedCombat,entity=control?.target?.id?w.get_entity(control.target.id):null;
-        const clock=w.__partyTravelTransport?.clock,now=Date.now(),selected=w.sharedRoutine?.getDungeonTarget?.();
+        const clock=w.__partyTravelTransport?.clock,now=Date.now(),selected=w.sharedRoutine?.targeting?.getDungeonTarget?.();
         const raw=entity?Object.fromEntries(['id','type','visible','dead','hp','map','in','x','y','real_x','real_y','range','target','cave'].map(key=>[key,entity[key]])):null;
         return {at:now,name:c.name,map:c.map,in:c.in,x:c.real_x,y:c.real_y,rip:c.rip,hp:c.hp,cave:c.cave,
           runtimeGeneration:w.__partyRuntimeGeneration,codeHash:w.__partyCodeHash,commandIdentity:w.__partyDungeonRuntime?.commandIdentity?.(),
@@ -793,8 +800,8 @@ async ({ live, page }, info) => {
           control:control?Object.fromEntries(['key','seenAt','target','committed','selection','members','caveScope'].map(key=>[key,control[key]])):null,
           entity:raw,selected:selected?.id||null,knownDead:entity?!!w.partyRoleRunner?.isKnownDead(entity.id):null,
           nativeWalk:entity?w.can_move_to(entity.x,entity.y):null,
-          attackAllowed:entity?!!w.sharedRoutine?.groupedAttackAllowed?.(entity):null,
-          runtime:w.__partyDungeonRuntime?.report(),occupied:w.sharedRoutine?.isOccupied?.()};
+          attackAllowed:entity?!!w.sharedRoutine?.targeting?.groupedAttackAllowed?.(entity):null,
+          runtime:w.__partyDungeonRuntime?.report(),occupied:!!w.__partyHooks?.skills.allows({rank:'damage',occupied:true})};
       },{goal:{x:farm.x,y:farm.y},acceptedAt:farmAcceptedAt})));
       for(const member of native)recordFarmArrival(member,s.characters[member.name],farmSampledAt);
       farmCombatSamples.push({at:farmSampledAt,native,characters:Object.fromEntries(['E2EWarrior','E2EPriest'].map(name=>[name,{dungeon:s.characters[name].dungeon,movement:s.characters[name].movement}]))});
@@ -816,13 +823,7 @@ async ({ live, page }, info) => {
     const bossGenerations:any[]=[{cause:'accepted',serial,repairCount}],bossReceipts:any[]=[];
     expect(Number.isSafeInteger(serial),'Accepted boss move must identify its owned travel generation').toBe(true);
     const sameBossTarget=(target:any)=>sameTravelTarget(target,second);
-    const bossOwnedMembers=(view:any,current:number)=>['E2EWarrior','E2EPriest'].every(name=>{
-      const member=view.members.find((m:any)=>m.name===name),command=view.state.commands[name],
-        expected=`cave-travel:${cave.run}:${current}:${name}`;
-      return member?.fresh&&member.observation?.alive&&member.observation.cave?.run===cave.run&&
-        member.observation.cave.floor===cave.floor&&command?.action==='move'&&command.run===cave.run&&
-        command.id===expected&&sameBossTarget(command.target)&&member.observation.travel?.id===expected;
-    });
+    const bossOwnedMembers=(view:any,current:number)=>ownedTravel(view,cave.run,cave.floor,current,sameBossTarget);
     const ownedBoss=(view:any)=>{
       const t=view.state.travel;
       for(const member of view.members){const receipt=member.observation?.action;
@@ -848,7 +849,7 @@ async ({ live, page }, info) => {
       await expect.poll(async()=>{await continueBoss();return ownedBoss(await dungeon());},{timeout:300_000,message:'Accepted boss generation must dispatch owned moves after native assembly'}).toBe(true);
     } finally {
       const native=await Promise.allSettled(['E2EWarrior','E2EPriest'].map(name=>live.clients[name].run(`(()=>{
-        const id=sharedRoutine.sharedTargetId(),target=id?get_entity(id):null,selected=sharedRoutine.getDungeonTarget();
+        const id=sharedRoutine.targeting.sharedTargetId(),target=id?get_entity(id):null,selected=sharedRoutine.targeting.getDungeonTarget();
         return {name:character.name,at:Date.now(),x:character.real_x,y:character.real_y,
           retained:id,selected:selected?.id||null,position:globalThis.partyCombatPosition,
           target:target?{id:target.id,mtype:target.mtype,hp:target.hp,dead:target.dead,visible:target.visible,
@@ -1020,7 +1021,7 @@ async ({ live, page }, info) => {
         const p=window as any,w=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
         const m=w?.__partyMovement,c=w?.character,command=w?.__partyDungeonRuntime?.commandIdentity?.();
         return {at:Date.now(),name:c?.name,map:c?.map,in:c?.in,
-          active:!!(m?.state?.moving&&m.state.searching&&!m.state.found&&m.gate.owner&&command?.id===id&&command.run===run&&c?.cave?.run===run&&!c.cave.paused&&!w.__partyMovementPaused),
+          active:!!(m?.state?.moving&&m.state.searching&&!m.state.found&&m.live()?.kind==='cave'&&command?.id===id&&command.run===run&&c?.cave?.run===run&&!c.cave.paused&&!w.__partyMovementPaused),
           command,movement:m?.report?.(),runtimeGeneration:w?.__partyRuntimeGeneration,codeHash:w?.__partyCodeHash,
           nativeMoving:!!w?.character?.moving,transporting:!!p.transporting,
           nativePlanning:w?.__partyMovement?.nativePlanning?.(),schedule:w?.__partyMovement?.report?.()?.planningSchedule,
@@ -1103,7 +1104,7 @@ async ({ live, page }, info) => {
                 distance:Math.hypot(e.real_x-c.real_x,e.real_y-c.real_y),clear:can_move_to(e.real_x,e.real_y),
                 awidth:e.awidth,aheight:e.aheight,base:e.base,dimensions:p.G.dimensions[e.mtype]}))},
           command:globalThis.__partyDungeonRuntime?.commandIdentity?.(),entitiesObservedAt:globalThis.__partyEntitiesObservedAt,
-          selected:sharedRoutine.getDungeonTarget()?.id,
+          selected:sharedRoutine.targeting.getDungeonTarget()?.id,
           cave:c.cave?{run:c.cave.run,floor:c.cave.floor,paused:c.cave.paused,choice:c.cave.choice}:null,
           geometry:p.G.geometry[c.map],mapData:p.G.maps[c.map]};
       })()`)));
@@ -1159,6 +1160,10 @@ async ({ live, page }, info) => {
   const stairReplies:{id:string;title:string;option:string;room:string;run:string}[]=[];
   const stairNativeChoices:any[]=[];
   const stairSamples:any[]=[];
+  // HN39's C row: each stairs receipt a member reports, with whether its run was paused then and at
+  // the member's sample before.
+  const stairsReceipts:{at:number;name:string;paused:boolean;wasPaused:boolean;id:string;status:string;error?:string}[]=[];
+  const lastPaused:Record<string,boolean>={};
   let lastStairKey='';
   let blockedStairAt=0,blockedStairId='';
   let stairMoveFlags:{name:string;enabled:boolean;count:number}[]=[];
@@ -1255,6 +1260,11 @@ async ({ live, page }, info) => {
     else if(stairSamples.at(-1)?.transition)stairSamples.push({...sample,transition:false});
     else stairSamples[stairSamples.length-1]={...sample,transition:false};
     if(stairSamples.length>100)stairSamples.splice(5,1);
+    for(const m of v.members){
+      const r=m.observation?.action,paused=!!m.observation?.cave?.paused;
+      if(r?.command?.action==='stairs')stairsReceipts.push({at,name:m.name,paused,wasPaused:!!lastPaused[m.name],id:r.id,status:r.status,error:r.error});
+      lastPaused[m.name]=paused;
+    }
   };
   const advanceStairs=async()=>{
     const v=await dungeon(),c=v.members[0].observation.cave;
@@ -1333,6 +1343,14 @@ async ({ live, page }, info) => {
   expect(stairDisplacement?.completed,'Native completed stairs must exercise actual displacement').toBe(true);
   expect(stairSamples.some(s=>s.members.some((m:any)=>m.expected?.independent===true)),
     'Displaced completion must receive a fresh independent movement command before stairs').toBe(true);
+  // HN39: the farewell planted at the stairs is a native
+  // conversation pause. No stairs command first shows as dispatched during a pause that was already
+  // on, and a `cave_paused` refusal is never journaled `uncertain`; the floor change above shows the
+  // stairs went once the party could move.
+  const firstSeen=new Map<string,typeof stairsReceipts[number]>();
+  for(const r of stairsReceipts)if(!firstSeen.has(r.name+':'+r.id))firstSeen.set(r.name+':'+r.id,r);
+  expect([...firstSeen.values()].filter(r=>r.paused&&r.wasPaused&&r.status==='dispatched'),'HN39: no stairs go out while the run is paused').toEqual([]);
+  expect(stairsReceipts.filter(r=>r.status==='uncertain'&&/cave_paused/.test(r.error||'')),'HN39: a pause refusal is a definite failure').toEqual([]);
   console.log('[Cave verified] Both characters reached the next native floor');
   await info.attach('native-cave-floor-transition',{body:JSON.stringify({stairReplies,dungeon:await dungeon(),state:await live.state()}),contentType:'application/json'});
   const newFloorChoice=(await dungeon()).members[0].observation.cave.choice;
@@ -1354,87 +1372,20 @@ async ({ live, page }, info) => {
   await controls.getByRole('button', { name: 'Exit dungeon', exact: true }).click();
   visitRun=undefined;
   await page.getByRole('dialog', { name: 'Exit the dungeon?' }).getByRole('button', { name: 'Confirm exit' }).click();
-  await expect.poll(async () => (await dungeon()).state.phase, { timeout: 60_000 }).toBe('held');
+  // The default "After a run" goes back, so the visit retires once every member is out.
+  // HN24: it retires on the report where every member stands
+  // outside with nothing pending, with no fixed wait, so once each member has reported again after
+  // the first view that shows them all outside, the visit is idle.
+  let outside: any, next: any;
+  await expect.poll(async () => { outside = await dungeon();
+    return outside.members.length === 2 && outside.members.every((m: any) => m.fresh && m.observation && !m.observation.cave); }, { timeout: 60_000 }).toBe(true);
+  await expect.poll(async () => { next = await dungeon();
+    return outside.members.every((m: any) => next.members.find((n: any) => n.name === m.name)?.observation?.at > m.observation.at); }, { timeout: 30_000 }).toBe(true);
+  expect(next.state.phase, 'HN24: the visit ends on the report after everyone is out').toBe('idle');
+  await expect.poll(async () => (await dungeon()).state.phase, { timeout: 60_000 }).toBe('idle');
   await info.attach('native-cave-exit', { body: JSON.stringify(await dungeon()), contentType: 'application/json' });
 });
 
-test('Cave shared-route pacing keeps the party together and stops the selected route', async ({live,page},info)=>{
-  test.setTimeout(540_000);
-  await live.admin("Dev=true;Prod=false;G.events.dreams.disabled=false;G.events.dreams.encounters=G.events.dreams.encounters.filter(e=>['e11','e20','e31','e50'].includes(e.id));output=true");
-  await live.post('/formation',{leader:'E2EWarrior'});
-  await live.post('/formation',{character:'E2EPriest',follow:true});
-  const view=async()=>await (await page.request.get(live.url+'/party-api/daily-dungeons',{maxRetries:1})).json();
-  const act=(body:Record<string,unknown>)=>live.post('/daily-dungeons',{operationId:crypto.randomUUID(),...body});
-  await expect.poll(async()=>{
-    const v=await view();
-    return v.members.length===2&&v.members.every((m:any)=>m.fresh&&m.observation?.ready&&m.observation?.visit?.available&&m.observation.members.length===2&&m.observation.leader==='E2EWarrior');
-  },{timeout:60_000}).toBe(true);
-  await act({action:'enter'});
-  await expect.poll(async()=>(await view()).state.phase,{timeout:60_000}).toBe('active');
-  async function reply(v:any) {
-    const c=v.members[0].observation.cave;
-    if(!c.choice||c.choice.resolved)return false;
-    const option=c.choice.options.find((o:any)=>!o.unavailable&&!o.cost&&!o.amber);
-    await act({action:'vote',run:c.run,choice:c.choice.id,option:option.id});
-    await expect.poll(async()=>{
-      const current=await view();
-      return current.state.run===c.run&&current.members.length===2&&current.members.every((m:any)=>{
-        const observed=m.observation?.cave,choice=observed?.choice;
-        return m.fresh&&m.observation?.alive&&observed?.run===c.run&&observed.floor===c.floor&&
-          choice?.id===c.choice.id&&choice.resolved&&choice.votes?.[m.name]===option.id;
-      });
-    },{timeout:20_000,message:'Both native participant votes must settle before pacing travel'}).toBe(true);
-    return true;
-  }
-  await reply(await view());
-  const initial=await live.state(),cave=(await view()).members[0].observation.cave;
-  const target=cave.points.filter((p:any)=>p.kind==='farm'&&!p.done).sort((a:any,b:any)=>Math.hypot(a.x-initial.characters.E2EWarrior.x,a.y-initial.characters.E2EWarrior.y)-Math.hypot(b.x-initial.characters.E2EWarrior.x,b.y-initial.characters.E2EWarrior.y))[0];
-  await act({action:'move',run:cave.run,target:target.id});
-  const preparation:any[]=[];let sampledAt=0;
-  try{
-    await expect.poll(async()=>{
-      const v=await view();
-      if(await reply(v)){await act({action:'move',run:cave.run,target:target.id});return false;}
-      if(Date.now()-sampledAt>=5000){
-        sampledAt=Date.now();
-        const native=await live.clients.E2EWarrior.run('({at:Date.now(),searching:smart.searching,found:smart.found,index:typeof start==="number"?start:null,queued:typeof queue!=="undefined"?queue.length:null})');
-        preparation.push({at:sampledAt,native,travel:v.members.map((m:any)=>({name:m.name,travel:m.observation?.travel,action:m.observation?.action}))});
-      }
-      return v.members.every((m:any)=>{
-        const command=v.state.commands[m.name];
-        return command?.action==='move'&&command.target?.id===target.id&&command.run===cave.run&&
-          m.observation?.travel?.id===command.id&&m.observation.travel.prepared;
-      });
-    },{timeout:270_000,message:'The owned Cave routes must prepare within the progressive native planning allowance'}).toBe(true);
-  }finally{await info.attach('native-cave-pacing-route-preparation',{body:JSON.stringify(preparation),contentType:'application/json'});}
-  let evidence:any;
-  await expect.poll(async()=>{
-    const v=await view();
-    if(await reply(v)){await act({action:'move',run:cave.run,target:target.id});return false;}
-    const s=await live.state(),w=s.characters.E2EWarrior,p=s.characters.E2EPriest;
-    evidence={view:v,characters:{E2EWarrior:w,E2EPriest:p},gap:Math.hypot(w.x-p.x,w.y-p.y)};
-    return v.members.every((m:any)=>m.observation.travel?.prepared)&&p.movement?.engine==='cave-convoy'&&
-      Math.min(Math.hypot(w.x-initial.characters.E2EWarrior.x,w.y-initial.characters.E2EWarrior.y),Math.hypot(p.x-initial.characters.E2EPriest.x,p.y-initial.characters.E2EPriest.y))>100;
-  },{timeout:60_000}).toBe(true);
-  expect(evidence.gap).toBeLessThan(220);
-  const cruise=await live.admin("output=['E2EWarrior','E2EPriest'].map(n=>({name:n,cruise:get_player(n).cruise}));");
-  expect(cruise[0].cruise).toBeGreaterThan(0);expect(cruise[0].cruise).toBe(cruise[1].cruise);
-  await info.attach('native-cave-shared-pacing',{body:JSON.stringify({initial,target,cruise,...evidence}),contentType:'application/json'});
-  await act({action:'progress',enabled:false});
-  expect(Object.values((await view()).state.commands).some((c:any)=>['move','gather'].includes(c.action))).toBe(false);
-  for(const name of ['E2EWarrior','E2EPriest'])await expect.poll(async()=>live.clients[name].frame.evaluate(()=>{
-    const w=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-    return !!w.__partyMovement.state.moving;
-  }),{timeout:10_000}).toBe(false);
-  const dashboardReady=page.waitForResponse(response=>response.request().method()==='GET'&&
-    new URL(response.url()).pathname==='/party-api/daily-dungeons'&&response.ok(),{timeout:60_000});
-  await Promise.all([dashboardReady,page.goto(live.url)]);
-  // Walking can reveal a fresh encounter even after travel is stopped. Its
-  // native modal correctly hides background controls until the party answers.
-  await reply(await view());
-  await expect(page.getByRole('region',{name:'Cave of Many Dreams controls'})).toBeVisible();
-  await info.attach('native-cave-stopped-pacing',{body:await page.getByRole('region',{name:'Cave of Many Dreams controls'}).screenshot(),contentType:'image/png'});
-});
 
 
 
@@ -1445,8 +1396,7 @@ test(`Cave assembly regroups displaced completed participants before departure (
   await live.admin("Dev=true;Prod=false;G.events.dreams.disabled=false;G.events.dreams.encounters=G.events.dreams.encounters.filter(e=>['e11','e20','e31','e50'].includes(e.id));output=true");
   await live.post('/formation',{leader:'E2EWarrior'});
   await live.post('/formation',{character:'E2EPriest',follow:true});
-  const view=async()=>await (await page.request.get(live.url+'/party-api/daily-dungeons',{maxRetries:1})).json();
-  const act=(body:Record<string,unknown>)=>live.post('/daily-dungeons',{operationId:crypto.randomUUID(),...body});
+  const view=caveView(live,page),act=caveAct(live);
   const positions=()=>live.admin("output=Object.fromEntries(['E2EWarrior','E2EPriest'].map(name=>{const p=get_player(name);return [name,{map:p.map,x:p.x,y:p.y,moving:!!p.moving,cruise:p.cruise}]}))");
   const point=(name:string,distance:number)=>live.admin(`output=(()=>{
     const p=get_player(${JSON.stringify(name)}),run=generated_entry(p).record;
@@ -1497,17 +1447,7 @@ test(`Cave assembly regroups displaced completed participants before departure (
   const cave=(await view()).members[0].observation.cave;
   const initialNativeShop=await nativeShop();
   if(cave.choice&&!cave.choice.resolved&&initialNativeShop.room?.vote?.id!==cave.choice.id){
-    const option=cave.choice.options.find((o:any)=>!o.unavailable&&!o.cost&&!o.amber);
-    expect(option).toBeTruthy();
-    await act({action:'vote',run:cave.run,choice:cave.choice.id,option:option.id});
-    await expect.poll(async()=>{
-      const current=await view();
-      return current.state.run===cave.run&&current.members.length===2&&current.members.every((m:any)=>{
-        const observed=m.observation?.cave,choice=observed?.choice;
-        return m.fresh&&m.observation?.alive&&observed?.run===cave.run&&observed.floor===cave.floor&&
-          choice?.id===cave.choice.id&&choice.resolved&&choice.votes?.[m.name]===option.id;
-      });
-    },{timeout:30_000,message:'Both native participant votes must settle before assembly staging'}).toBe(true);
+    await voteAndSettle(view,act,cave,'Both native participant votes must settle before assembly staging');
   }
   const shopSetupStarted=Date.now(),shopSetupEvidence:any[]=[];
   let shop=await nativeShop();
@@ -1668,7 +1608,7 @@ test(`Cave assembly regroups displaced completed participants before departure (
     await expect.poll(async()=>{
       const v=await view(),command=v.state.commands.E2EWarrior;
       regroupId=command?.id;
-      return command?.action==='gather'&&regroupId!==initialId&&v.state.travel?.assemblyRepairs===1;
+      return command?.action==='gather'&&regroupId!==initialId&&String(regroupId).includes(':regroup:')&&!!v.state.travel?.ladders?.assembly;
     },{timeout:30_000,intervals:[100,250]}).toBe(true);
     await expect.poll(async()=>{
       const v=await view(),report=v.members.find((m:any)=>m.name==='E2EWarrior').observation.action,p=(await positions()).E2EWarrior;
@@ -1681,3 +1621,86 @@ test(`Cave assembly regroups displaced completed participants before departure (
   await info.attach('native-cave-completed-assembly-regroup',{body:JSON.stringify({initialId,regroupId,positions:await positions(),dungeon:await view()}),contentType:'application/json'});
 });
 }
+
+// The hunts and farming owner's Cave rows: one visit entered through the player's action, then one step
+// per row. The fixture add-on (e2e/fixtures/hunting-hooks-addon.ts) hears `cave.phase` and answers
+// `cave.state`; HN29 kills the warrior inside with the priest carrying an essence of life; HN25 plants
+// Goo Brawl with "Don't leave for other events" off, which ends the visit, so it runs last. HN24 and
+// HN39 sit in the journeys above, HN23 in the default table's Cave row (e2e/cave-pacing-row.ts).
+// Written for the end run, not run at the build (user, 2026-11-12).
+test('Cave owner rows: the phase notice, the visit read, the priest after the rescue vote and the event exit', async ({live,page},info) => {
+  test.setTimeout(900_000);
+  const W='E2EWarrior',P='E2EPriest';
+  await live.admin("Dev=true;Prod=false;G.events.dreams.disabled=false;G.events.dreams.encounters=G.events.dreams.encounters.filter(e=>['e11','e20','e31','e50'].includes(e.id));output=true");
+  await live.post('/formation',{leader:W});
+  await live.post('/formation',{character:P,follow:true});
+  const view=caveView(live,page),act=caveAct(live);
+  const hooks=(body:Record<string,unknown>)=>live.post('/e2e-hunting-hooks',body);
+  const caveState=async(...args:string[])=>(await hooks({op:'ask',hook:'cave.state',args})).answer;
+  const phases=async(since:number)=>((await hooks({op:'heard',since})) as any[]).filter(h=>h.hook==='cave.phase');
+  const openVote=(m:any)=>!!m.observation?.cave?.paused||(!!m.observation?.cave?.choice&&!m.observation.cave.choice.resolved);
+  expect(await hooks({op:'register'}),'the coordinator half registers').toEqual({ok:true});
+  await live.post('/settings',{changes:[{field:'addons',value:await live.clients[W]!.run(addonSwitches(true))}]});
+  const since=Date.now();
+  try {
+    await expect.poll(async()=>{const v=await view();return v.members.length===2&&v.members.every((m:any)=>m.fresh&&m.observation?.ready&&m.observation?.visit?.available&&m.observation.members.length===2);},{timeout:60_000}).toBe(true);
+    await act({action:'enter'});
+    await expect.poll(async()=>(await view()).state.phase,{timeout:60_000}).toBe('active');
+    const run=(await view()).state.run;
+    await test.step('C: `cave.phase` tells each phase change once, the entry by the player', async()=>{
+      await expect.poll(async()=>(await phases(since)).map(h=>h.payload.to),{timeout:30_000}).toEqual(expect.arrayContaining(['gathering','active']));
+      const heard=await phases(since);
+      expect(heard[0].payload).toMatchObject({from:'idle',to:'gathering',by:'player'});
+      for(let i=1;i<heard.length;i++)expect(heard[i].payload.from,'each notice starts where the one before ended').toBe(heard[i-1].payload.to);
+      expect(heard.find(h=>h.payload.to==='active').reads.cave,'the add-on reads the visit at the notice').toMatchObject({phase:'active',run});
+    });
+    await test.step('C: `cave.state` answers each member inside and owned, and the visit active', async()=>{
+      for(const name of [W,P])expect(await caveState(name),name).toMatchObject({inside:true,owned:true,canRelease:false});
+      expect(await caveState()).toMatchObject({phase:'active',run,members:expect.arrayContaining([W,P])});
+    });
+    await test.step('C HN29: no revival is authorized while a rescue vote is open (SRV-Q37, SV42, SV27)', async()=>{
+      await live.admin(`output=(()=>{const p=get_player('${P}');if(p.items.some(i=>i&&i.name==='essenceoflife'))return true;
+        const slot=p.items.findIndex((i,k)=>!i&&k<p.isize);if(slot<0)throw Error('No free slot for the essence');p.items[slot]={name:'essenceoflife'};
+        cache_player_items(p);resend(p,'reopen+cid');return true;})()`);
+      await expect.poll(async()=>(await view()).members.find((m:any)=>m.name===P)?.observation?.recovery?.essence,{timeout:30_000}).toBe(true);
+      // The game refuses every attack in a paused Cave ('cave_paused'), the death fault's own
+      // included, so an encounter's open choice from the entry is voted first and the death opens
+      // the rescue vote this step reads.
+      await voteAndSettle(view,act);
+      await expect.poll(async()=>(await view()).members.some(openVote),{timeout:30_000,message:'The Cave runs before the death fault'}).toBe(false);
+      await killNativeCharacter(live,W);
+      const samples:any[]=[];
+      try {
+        await expect.poll(async()=>{
+          const v=await view(),warrior=v.members.find((m:any)=>m.name===W);
+          samples.push({at:Date.now(),open:v.members.some(openVote),recovery:v.state.priestRecovery??null,manual:!!v.state.manualRecovery,alive:warrior?.observation?.alive});
+          // The warrior's report lags the fault, so a revival is an alive report after a dead one: the
+          // rerun read two pre-death reports as the revival, and HN25 then planted its event while the
+          // death and its revival vote were still on the way.
+          return samples.some(s=>s.alive===false)&&warrior?.observation?.alive===true;
+        },{timeout:180_000,intervals:[250],message:'HN29: the warrior is revived inside'}).toBe(true);
+      } finally {await info.attach('hn29-revival-order',{body:JSON.stringify(samples),contentType:'application/json'});}
+      // A revival authorized before a vote opened may finish during it, so the row reads the sample
+      // where each authorization was first seen.
+      const first=new Map<string,any>();
+      for(const s of samples)if(s.recovery?.authorized&&!first.has(s.recovery.id))first.set(s.recovery.id,s);
+      expect([...first.values()].filter(s=>s.open),'HN29: no revival is authorized while a rescue vote is open').toEqual([]);
+    });
+    await test.step('C HN25: a planted Goo Brawl exits between encounters and lands within 60 s', async()=>{
+      await act({action:'settings',protectFromEvents:false});
+      await live.post('/formation',{character:W,eventSelections:['goobrawl']});
+      const planted=Date.now();
+      await live.admin('events.goobrawl=true;delete timers.goobrawl;output=true');
+      let exiting:any;
+      await expect.poll(async()=>{const v=await view();if(!exiting&&v.state.phase==='exiting')exiting=v;return !!exiting;},{timeout:60_000,intervals:[250]}).toBe(true);
+      expect(exiting.members.filter(openVote).map((m:any)=>m.name),'HN25: the exit leaves no open vote').toEqual([]);
+      await expect.poll(async()=>{const s=await live.state();return [W,P].every(n=>s.characters[n]?.map==='goobrawl');},
+        {timeout:Math.max(1,60_000-(Date.now()-planted)),message:'HN25: the party reaches the event within 60 s of its spawn'}).toBe(true);
+      await expect.poll(async()=>(await view()).state.phase,{timeout:30_000,message:'HN24: a visit left for an event ends once everyone is out'}).toBe('idle');
+      expect((await phases(since)).map(h=>h.payload.to),'C: the exit and its end are told').toEqual(expect.arrayContaining(['exiting','held','idle']));
+    });
+  } finally {
+    await live.admin('events.goobrawl=false;output=true');
+    await live.post('/settings',{changes:[{field:'addons',value:await live.clients[W]!.run(addonSwitches(false))}]});
+  }
+});

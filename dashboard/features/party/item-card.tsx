@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Item } from "./item";
 import type { ItemMeta } from "./item-meta";
 import { itemCardLines, type ItemCardLine } from "./item-card-lines";
@@ -10,6 +10,13 @@ export const GAME_FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospa
 // The game's item box: black, a 5px gray border and a dashed underline under the
 // title (render_item in the game's js/html.js). docs/item-card.md.
 // A box inside a dialog that already has regions can be a labelled group (a fieldset) instead.
+// A card's extras box: the fields the card draws no line for, each coloured by its key.
+export function ExtrasBox({ label, extras, colors }: { label: string; extras: [string, string, ReactNode][]; colors: Record<string, string> }) {
+  if (!extras.length) return null;
+  return <GameBox label={label} className="min-w-[14rem] flex-1">
+    {extras.map(([key, name, value]) => <GameLine key={key} line={key} label={name} value={value} color={colors[key] || "#C3C3C3"} />)}
+  </GameBox>;
+}
 export function GameBox({ label, className = "", group = false, children }: {
   label: string; className?: string; group?: boolean; children: ReactNode;
 }) {
@@ -18,18 +25,7 @@ export function GameBox({ label, className = "", group = false, children }: {
     className: `min-w-0 border-[5px] border-[#808080] bg-black px-4 py-3 text-[13px] leading-5 text-[#E4E4E4] ${className}`,
     style: { fontFamily: GAME_FONT },
   };
-  return group ? <fieldset {...props}>{children}</fieldset> : <section {...props}>{children}</section>;
-}
-
-export function GameHeading({ color = "#E4E4E4", children, aside }: { color?: string; children: ReactNode; aside?: ReactNode }) {
-  return (
-    <div className="mb-1 mt-3 flex flex-wrap items-end justify-between gap-2 first:mt-0">
-      <h3 className="inline-block border-b-2 border-dashed border-[#808080] font-semibold" style={{ color }}>
-        {children}
-      </h3>
-      {aside}
-    </div>
-  );
+  return group ? <fieldset {...props}>{children}</fieldset> : <section data-area="item-card" {...props}>{children}</section>;
 }
 
 // One "Label: value" line in the game's style, with the label in its color.
@@ -75,41 +71,46 @@ export function ItemCard({ meta, item, level, properties, setName, usable, skill
   skillHint: (id: string) => string | undefined;
   onSkill: (id: string) => void;
 }) {
-  const [informationOpen, setInformationOpen] = useState(false);
-  const informationButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== 'i' || event.ctrlKey || event.altKey || event.metaKey || event.repeat || event.defaultPrevented) return;
-      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
-      const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter(node => node.getClientRects().length);
-      if (dialogs.at(-1) !== informationButton.current?.closest('[role="dialog"]')) return;
-      event.preventDefault();
-      setInformationOpen(true);
-    };
-    window.addEventListener('keydown', keydown);
-    return () => window.removeEventListener('keydown', keydown);
-  }, []);
   const lines = itemCardLines({ meta, item, level, properties, setName, usable, skillName })
     .filter((line) => line.key !== "explanation");
+  const [json, setJson] = useState(false);
+  const informationButton = useRef<HTMLButtonElement>(null);
+  // I opens the JSON for the card in the topmost visible dialog only, never from a text field, and
+  // never with a modifier or a held key. The listener runs only in the browser, in this effect.
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "i" || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.defaultPrevented) return;
+      if (event.target instanceof Element && event.target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+      const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).filter((node) => node.getClientRects().length);
+      if (!informationButton.current || dialogs.at(-1) !== informationButton.current.closest('[role="dialog"]')) return;
+      event.preventDefault();
+      setJson(true);
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, []);
   return (
-    <><GameBox label="Item card" className="min-w-[16rem] flex-1">
-      {lines.map((line) => (
-        line.key === 'info' && line.kind === 'prop' ? <button key={line.key} ref={informationButton} type="button" data-line="info"
-          aria-label="Item information (I)" aria-keyshortcuts="I" title="Item information (I)"
-          onClick={() => setInformationOpen(true)}
-          className="block border border-transparent bg-black text-left text-[#E4E4E4] hover:border-gray-500 hover:bg-gray-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
-          <span data-label style={{color:line.color}}>{line.label}</span>: {line.value}
-        </button> : <CardLine key={line.key} line={line} skillHint={skillHint} onSkill={onSkill} />
-      ))}
-    </GameBox>
-    <Dialog open={informationOpen} onOpenChange={setInformationOpen}>
-      <DialogContent showCloseButton={false} className="max-h-[85vh] overflow-y-auto border-emerald-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
-        <DialogHeader><DialogTitle>Item information</DialogTitle><DialogDescription>JSON for {item.name}</DialogDescription></DialogHeader>
-        <pre role="region" aria-label="Item JSON" className="overflow-x-auto rounded border border-emerald-900 bg-black p-3 text-xs text-emerald-100">{JSON.stringify({item,definition:meta?.definition||{},properties},null,2)}</pre>
-        <DialogClose className="justify-self-end rounded border border-emerald-700 bg-[#07100f] px-3 py-2 text-emerald-100 hover:border-emerald-400 hover:bg-[#10251f] hover:text-white">Close information</DialogClose>
-      </DialogContent>
-    </Dialog></>
+    <>
+      <GameBox label="Item card" className="min-w-[16rem] flex-1">
+        {lines.map((line) => line.key === "info" && line.kind === "prop" ? (
+          <button key={line.key} ref={informationButton} type="button" data-line="info"
+            aria-label="Item information (I)" aria-keyshortcuts="I" title="Item information (I)"
+            onClick={() => setJson(true)}
+            className="block border border-transparent bg-black text-left text-[#E4E4E4] hover:border-gray-500 hover:bg-gray-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">
+            <span data-label style={{ color: line.color }}>{line.label}</span>: {line.value}
+          </button>
+        ) : (
+          <CardLine key={line.key} line={line} skillHint={skillHint} onSkill={onSkill} />
+        ))}
+      </GameBox>
+      <Dialog open={json} onOpenChange={setJson}>
+        <DialogContent data-area="item-information" showCloseButton={false} className="max-h-[85vh] overflow-y-auto border-emerald-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
+          <DialogHeader><DialogTitle>Item information</DialogTitle><DialogDescription>JSON for {item.name}</DialogDescription></DialogHeader>
+          <pre role="region" aria-label="Item JSON" className="overflow-x-auto rounded border border-emerald-900 bg-black p-3 text-xs text-emerald-100">{JSON.stringify({ item, definition: meta?.definition || {}, properties }, null, 2)}</pre>
+          <DialogClose className="justify-self-end rounded border border-emerald-700 bg-[#07100f] px-3 py-2 text-emerald-100 hover:border-emerald-400 hover:bg-[#10251f] hover:text-white">Close information</DialogClose>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

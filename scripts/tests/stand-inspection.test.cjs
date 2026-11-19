@@ -3,20 +3,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('../../dashboard/node_modules/typescript');
-const { standSaleRows, standBuyRows, occupiedStandSlots, standOccupancy } = require('../../dashboard/features/party/stand-inspection.ts');
+const { standSaleRows, standBuyRows } = require('../../dashboard/features/party/stand-inspection.ts');
 const bid = {price: 100, quantity: 15000, minimumQuality: 2, useStandSlot: true};
 const entry = (name, b=false) => ({item:{name, level:2, price:100, q:99, b}});
 
-test('only placed buys count, not pending explicit reservations',()=>{
+test('only placed buys get a row, not pending explicit reservations',()=>{
  const sales=Array.from({length:12},(_,i)=>({tradeSlot:`trade${i+1}`,state:'live'}));
  const bids={vitscroll:bid,slice_blueberry:bid,shopping:{...bid,useStandSlot:false}};
  const offers={offers:{v:{itemId:'vitscroll',slot:'trade13',phase:'live'},b:{itemId:'slice_blueberry',slot:'trade14',phase:'live'}}};
  for(const native of [{offers:{}},offers])
-  assert.deepEqual(standOccupancy(sales,native,{standOpen:false},bids),{sales:12,buys:native === offers ? 2 : 0,total:native === offers ? 14 : 12});
- const slots=Object.fromEntries(sales.map(s=>[s.tradeSlot,entry('sale')]));
- slots.trade13=entry('vitscroll',true);slots.trade14=entry('slice_blueberry',true);
- assert.equal(occupiedStandSlots(sales,offers,{standOpen:true,slots},bids),14);
- assert.equal(occupiedStandSlots(sales,{offers:{}},{standOpen:false},{slice_blueberry:bid}),12);
+  assert.equal(standBuyRows(bids,native,{standOpen:false},sales).length,native === offers ? 2 : 0);
+ assert.equal(standBuyRows({slice_blueberry:bid},{offers:{}},{standOpen:false},sales).length,0);
 });
 
 test('twelve sales and four buys exclude a paused stale seventeenth listing',()=>{
@@ -26,23 +23,28 @@ test('twelve sales and four buys exclude a paused stale seventeenth listing',()=
  const native={offers:Object.fromEntries([13,14,15,16].map(i=>[i,{slot:`trade${i}`,phase:'live'}]))};
  for(const standOpen of [true,false]) {
    const merchant={standOpen,slots:standOpen?slots:{}};
-   assert.deepEqual(standOccupancy(listings,native,merchant),{sales:12,buys:4,total:16});
+   assert.equal(standBuyRows({},native,merchant,listings).length,4);
    const rows=standSaleRows(listings,merchant,native);
    assert.equal(rows.filter(r=>r.occupied).length,12);
    assert.deepEqual(rows.filter(r=>!r.occupied).map(r=>r.key),['paused']);
  }
  // An observed buy slot takes precedence over a stale sale reference, even closed.
- assert.deepEqual(standOccupancy([listings[0]],{}, {standOpen:false,slots:{trade1:entry('buy',true)}}),{sales:0,buys:1,total:1});
+ const buyFirst={standOpen:false,slots:{trade1:entry('buy',true)}};
+ assert.equal(standSaleRows([listings[0]],buyFirst,{}).filter(r=>r.occupied).length,0);
+ assert.equal(standBuyRows({},{},buyFirst,[listings[0]]).length,1);
 });
 
-test('closed stand counts retained sale and buy slots once, excluding waiting orders',()=>{
- const sales=Array.from({length:12},(_,i)=>({tradeSlot:'trade'+(i+1),state:'live'}));
- sales.push({tradeSlot:'trade13',state:'paused'},{state:'waiting'});
- const native={offers:Object.fromEntries([13,14,15,16].map(i=>[i,{slot:'trade'+i,phase:'live'}]))};
- assert.equal(occupiedStandSlots(sales,native,{standOpen:false,slots:{}}),16);
- assert.equal(occupiedStandSlots(sales,native,{standOpen:false,slots:{trade1:entry('cap')}}),16);
- assert.equal(occupiedStandSlots(sales,native,{standOpen:true,slots:{trade1:entry('cap')}}),1);
- assert.equal(occupiedStandSlots([{state:'waiting'}],{offers:{q:{slot:'trade2',phase:'placing'}}},{standOpen:false}),0);
+test('waiting and placing orders get no occupied row',()=>{
+ assert.equal(standSaleRows([{state:'waiting',item:{name:'cap'}}],{standOpen:false},{offers:{}}).filter(r=>r.occupied).length,0);
+ assert.equal(standBuyRows({},{offers:{q:{itemId:'cap',slot:'trade2',phase:'placing'}}},{standOpen:false}).length,0);
+});
+
+// The game gives 24 and 30 cell stands (get_trade_slots); a cell past trade16 is a cell.
+test('a sale and a buy past trade16 get their rows on a 30 cell stand',()=>{
+ const listings=[{id:'far',tradeSlot:'trade24',state:'live',item:{name:'cap',level:2},price:100}];
+ const merchant={standOpen:true,slots:{trade24:entry('cap'),trade30:entry('vitscroll',true)}};
+ assert.deepEqual(standSaleRows(listings,merchant).map(r=>[r.key,r.status]),[['far','Live']]);
+ assert.deepEqual(standBuyRows({vitscroll:bid},{offers:{}},merchant,listings).map(r=>r.key),['trade30']);
 });
 test('sales exclude buys, consume matches once, retain queued/paused and unmatched slots', () => {
  const listings = [{id:'one',slot:0,item:{name:'cap',level:2},price:100,quantity:1}, {id:'two',slot:1,item:{name:'cap',level:2},price:100,quantity:1}, {id:'three',slot:2,item:{name:'paused'},price:10,quantity:1,state:'paused'}];
@@ -66,20 +68,27 @@ const React = require('../../dashboard/node_modules/react');
 const renderer = require('../../dashboard/node_modules/react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const code=ts.transpileModule(fs.readFileSync('dashboard/features/party/stand-sheet.tsx','utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-const context={exports:{},require(name){
+// The open panel holds a market watch stream; this stand-in opens no connection.
+const context={exports:{},EventSource:class{close(){}},require(name){
  if(name==='react')return React;
  if(name==='react/jsx-runtime')return require('../../dashboard/node_modules/react/jsx-runtime');
- if(name==='../../../runtime/market-preferences')return require('../../runtime/market-preferences.ts');
- if(name==='./stand-inspection')return {standSaleRows,standBuyRows,occupiedStandSlots,standOccupancy};
+ if(name==='../../../runtime/items/rules')return require('../../runtime/items/rules.ts');
+ if(name==='../../../runtime/items/identity')return require('../../runtime/items/identity.ts');
+ if(name==='../../../runtime/items/api.ts')return require('../../runtime/items/api.ts');
+ if(name==='./stand-inspection')return {standSaleRows,standBuyRows};
+ if(name==='./stand-bid-save')return require('../../dashboard/features/party/stand-bid-save.ts');
  if(name==='./level-price-history')return {levelPriceHistory:()=>({})};
+ if(name==='./market-age')return {marketAge:()=>''};
  if(name==='@/hooks/use-clock')return {useClock:()=>1000};
  if(name==='@/hooks/use-stored-boolean')return {useStoredBoolean:(_,v)=>React.useState(v)};
  if(name==='./query-actions')return {usePartyAction:()=>({})};
+ // No add-on is installed here, so the Market's add-on slots draw nothing and its filters keep every row.
+ if(name==='../../../runtime/hooks/dashboard/slots')return {AddonSlot:()=>null,useAddonListView:()=>({declared:false,values:{},set(){},keep:()=>true,sort:items=>items})};
  if(name==='./wtb-preferences')return {WTBPreference:'WTBPreference',useWTBReplacement:()=>({save:fn=>fn(),dialog:null})};
  return new Proxy({}, {get:(_,key)=>String(key)});
 }};
 vm.runInNewContext(code,context);
-const props=()=>({open:true,marketOpen:true,merchant:{standOpen:true,slots:{trade1:entry('cap',true)}},onOpenChange(){},onMarketOpenChange(){},catalog:[{id:'cap',name:'Cap'}],buyable:[],bids:{cap:bid},listings:[],priceHistory:{},blacklist:{},marketIgnoredItems:[],onBid:async()=>{},onInspect(){}});
+const props=()=>({open:true,marketOpen:true,stand:{slots:16,used:0,free:16},merchant:{standOpen:true,slots:{trade1:entry('cap',true)}},onOpenChange(){},onMarketOpenChange(){},catalog:[{id:'cap',name:'Cap'}],buyable:[],bids:{cap:bid},listings:[],priceHistory:{},blacklist:{},marketIgnoredItems:[],onBid:async()=>{},onInspect(){}});
 
 test('WTB catalog is a narrow name-and-add picker opening the regular order editor',async()=>{
  const p=props(),opened=[];let saves=0,root;
@@ -196,14 +205,14 @@ test('twelve sale slots and four buy slots show exactly four of six candidate bu
   const rows=standBuyRows(bids,native,merchant,listings);
   assert.equal(rows.length,4);
   assert.deepEqual(rows.map(r=>r.id),['buy0','buy1','buy2','buy3']);
-  assert.deepEqual(standOccupancy(listings,native,merchant,bids),{sales:12,buys:rows.length,total:16});
+  assert.equal(standSaleRows(listings,merchant,native).filter(r=>r.occupied).length,12);
  }
 });
 test('slot collisions, stale offers and invalid slots cannot add buy cards',()=>{
  const {listings,bids,native,slots}=fullStandFixture();
  native.offers.extra={...native.offers[0],slot:'trade1',itemId:'buy4'};
- native.offers.invalid={...native.offers[0],slot:'trade17'};
- slots.trade17=entry('buy4',true);
+ native.offers.invalid={...native.offers[0],slot:'trade0'};
+ slots.trade0=entry('buy4',true);
  for(const standOpen of [true,false]) {
   const merchant={standOpen,slots};
   assert.equal(standBuyRows(bids,native,merchant,listings).length,4);
@@ -250,4 +259,56 @@ test('missing stand observation is unknown rather than closed',async()=>{
  assert.ok(dialog.findAllByType('span').some(node=>node.children.includes('Stand status unknown')));
  assert.ok(!dialog.findAllByType('span').some(node=>node.children.includes('Stand closed')));
  await renderer.act(async()=>root.unmount());
+});
+
+// The merchant reports the game's get_trade_slots count and every planner plans to
+// the report. Red on an earlier build: every planner planned 16.
+test('the stand counts 24 at level 70 and 30 at level 80, and plans to the report',()=>{
+ const {planted}=require('./helpers/items-character.cjs');
+ const {createBagReads}=require('../../runtime/items/character/bag.ts');
+ const {standSlotUse}=require('../../runtime/items/rules.ts');
+ const G={items:{stand0:{type:'stand'},cstand:{type:'stand'}}};
+ const slotsAt=(level,stand='stand0')=>{
+  const character={ctype:'merchant',level,items:[{name:stand}]};
+  return createBagReads(planted({character:()=>character,G:()=>G,margin:()=>100,now:()=>0})).standSlots();
+ };
+ assert.deepEqual([slotsAt(60),slotsAt(60,'cstand'),slotsAt(70),slotsAt(80)],[16,24,24,30]);
+ const listings=n=>Array.from({length:n},(_,i)=>({tradeSlot:'trade'+(i+1),state:'live'}));
+ for(const slots of [24,30]){
+  const state={merchantCharacter:'M',statuses:{M:{standSlots:slots}},standListings:listings(slots+2)};
+  assert.deepEqual(standSlotUse(state),{slots,used:slots,free:0});
+  assert.deepEqual(standSlotUse({...state,standListings:listings(20)}),{slots,used:20,free:slots-20});
+ }
+ assert.equal(standSlotUse({merchantCharacter:'M',statuses:{M:{}},standListings:[]}).slots,16);
+});
+
+// A configured listing finds its stand cell by the items owner's markMatches, so the cell's price,
+// count and stack id never split them, and a different title does.
+test('a listing matches its stand cell by 10s mark identity',()=>{
+ const listing={id:'one',state:'live',item:{name:'cap',level:2,p:'shiny'},price:100};
+ const cell=item=>({standOpen:true,slots:{trade1:{item:{...item,price:100,q:3,rid:'r1'}}}});
+ assert.equal(standSaleRows([listing],cell({name:'cap',level:2,p:'shiny'}))[0].occupied,true);
+ assert.equal(standSaleRows([listing],cell({name:'cap',level:2,p:'glitched'}))[0].occupied,false);
+});
+
+// Live WTB's List button offers only a cell the bank section counted, so a bag copy that the
+// items owner's claim keeps (counted 0 by items.stock) shows no List button.
+test('a claimed bag copy shows no List button',async()=>{
+ const order={buyer:'B',item:{name:'cap',level:2},price:500,quantity:1,seenAt:-1e9,serverRegion:'US',serverIdentifier:'I',key:'k'};
+ const copy={slot:4,item:{name:'cap',level:2,q:1}};
+ const lists=[];
+ const render=async ownedStock=>{
+  const p={...props(),merchant:{name:'M',standOpen:true,slots:{},items:[copy]},aldata:{buyOrders:[order]},ownedStock,
+   onListForWTB:(...args)=>lists.push(args)};
+  let root;await renderer.act(async()=>{root=renderer.create(React.createElement(context.exports.StandSheet,p))});
+  const tab=root.root.findAll(n=>n.type==='Button'&&n.children.some(c=>String(c).startsWith('Live WTB')))[0];
+  await renderer.act(async()=>tab.props.onClick());
+  const list=root.root.findAll(n=>n.type==='Button'&&n.children.includes('List'));
+  if(list[0])await renderer.act(async()=>list[0].props.onClick());
+  await renderer.act(async()=>root.unmount());
+  return list.length;
+ };
+ assert.equal(await render({}),0);
+ assert.equal(await render({'cap@2@':{count:1,sources:[{entry:copy}]}}),1);
+ assert.deepEqual(lists.map(args=>[args[0].slot,args[1]]),[[4,undefined]]);
 });

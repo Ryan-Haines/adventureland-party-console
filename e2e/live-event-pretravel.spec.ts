@@ -1,13 +1,17 @@
 import {test,expect} from './live-fixtures';
 
-// Failure inventory: clock skew moves the displayed minute; departure starts
-// only at LIVE or at one minute; early attendance retires; staging attacks;
-// cancelled occurrences keep ownership; restart loses the native deadline.
+// Failure inventory: clock skew moves the displayed minute; early attendance retires; staging
+// attacks; cancelled occurrences keep ownership; restart loses the native deadline. EV1: the walk
+// departs no earlier than the lead (the group's walk estimate plus one
+// report interval, `eventLeads`) and arrives by the spawn plus 60 s. EV2: the farming goes on
+// through the lead, so no member leaves its farm before the lead starts.
 for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,()=>{
   const destination=event==='horseman'?{map:'halloween',x:-405,y:-1640}:{map:'spookytown',x:255,y:-1425};
-  // Keep Graveyard's origin in the open cemetery, clear of the southern wall.
-  test.use({initialPeacefulAmbientMaps:['spookytown','halloween'],initialPosition:{...destination,y:destination.y+(event==='horseman'?500:275)}});
-  test(`Event pretravel ${event} leaves two minutes early and ${event==='horseman'?'fights only after LIVE':'returns when cancelled'}`,async({live},info)=>{
+  // Keep Graveyard's origin in the open cemetery, clear of the southern wall. Horseman's origin
+  // walks straight to the spawn: 500 south of it, (-405,-1140), is a pocket the planner and the
+  // game's own pathfinder find no route out of, so the walk estimate never answers.
+  test.use({initialPeacefulAmbientMaps:['spookytown','halloween'],initialPosition:{...destination,y:destination.y+(event==='horseman'?200:275)}});
+  test(`Event pretravel ${event} leaves at its walk estimate and ${event==='horseman'?'fights only after LIVE':'returns when cancelled'}`,async({live},info)=>{
     test.setTimeout(480_000);
     const fighters=['E2EWarrior','E2EPriest'];
     await live.post('/formation',{leader:fighters[0]});
@@ -22,8 +26,12 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
       const attackers=${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return {name,count:p.targets,
         actual:Object.values(instances[p.in].monsters).filter(m=>m.target===name).length};});
       const occurrence={event,at,status:'scheduled',id:'e2e-pretravel-'+event};
-      const original=broadcast_e;
-      globalThis.__e2ePretravel={occurrence,original};
+      const original=broadcast_e,scheduleTick=event_schedule_tick;
+      // The server's own lineup can start a real Graveyard Rising during the run (a wave rose at
+      // 84 s in one step 11 run), and its live event keeps the party attending, so no cancelled
+      // return begins. The declared occurrence is the only one the run publishes or starts.
+      event_schedule_tick=function(){};
+      globalThis.__e2ePretravel={occurrence,original,scheduleTick};
       broadcast_e=function(dontSend){if(dontSend)return;const snapshot={...E,schedule:{...E.schedule,events:[occurrence],repeats:[]}};
         // A cancelled declared occurrence must not reveal an unrelated ambient live round.
         if(occurrence.status!=='live')delete snapshot[event];broadcast('server_info',snapshot);};
@@ -37,24 +45,27 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
       const nativeNow=await live.admin('output=Date.now()');
       expect(seed.at-nativeNow).toBeGreaterThan(120000);
       expect(fighters.every(name=>before.characters[name]?.joinedEvent!==event)).toBe(true);
+      // EV2: until the lead starts every fighter stays on its farming task.
+      const early:{at:number;lead:number;report:number;tasks:unknown[]}[]=[];
       await expect.poll(async()=>{
         const s=await live.state(),at=await live.admin('output=Date.now()');
+        const lead=Math.max(...fighters.map(name=>Number(s.characters[name]?.eventLeads?.[event])||0));
+        const report=Math.max(...fighters.map(name=>Number(s.characters[name]?.reportIntervalMs)||0));
+        if(lead&&seed.at-at>lead+report)early.push({at,lead,report,tasks:await Promise.all(fighters.map(name=>live.clients[name].run('(()=>{const t=globalThis.partyTasks.assignment.memberTask();return t&&t.task?t.task.kind:null;})()')))});
         const ready=fighters.every(name=>s.characters[name]?.joinedEvent===event&&s.characters[name]?.serverStagingEvents?.some((entry:any)=>entry.name===event&&entry.spawnId===seed.at));
-        if(ready)observations.push({phase:'departed',at,state:s});return ready;
-      },{timeout:60_000}).toBe(true);
-      expect(seed.at-observations[0].at).toBeGreaterThan(60000);
-      expect(seed.at-observations[0].at).toBeLessThanOrEqual(120000);
+        if(ready)observations.push({phase:'departed',at,state:s,lead,report});return ready;
+      },{timeout:150_000}).toBe(true);
+      expect(early.every(sample=>sample.tasks.every(kind=>kind!=='event-attendance')),'EV2: no fighter leaves its farm before the lead').toBe(true);
+      const departed=observations[0];
+      expect(departed.lead,'K2 answered a walk estimate for the group').toBeGreaterThan(0);
+      expect(seed.at-departed.at,'EV1: no departure before the estimate plus one report').toBeLessThanOrEqual(departed.lead+departed.report);
       expect(observations[0].state.eventSchedules.find((entry:any)=>entry.id===event)?.next).toBe(seed.at);
-      // Preparation and native walking share the published pretravel window.
-      // A fixed one-minute wait can expire while travel still has time before LIVE.
-      const arrivalWindow=seed.at-await live.admin('output=Date.now()');
-      expect(arrivalWindow).toBeGreaterThan(0);
       await expect.poll(async()=>{
         const native=await live.admin(`output=({at:Date.now(),players:${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return {name,map:p.map,x:p.x,y:p.y}})})`);
         const ready=native.players.every((p:any)=>p.map===destination.map&&Math.hypot(p.x-destination.x,p.y-destination.y)<100);
         if(ready)observations.push({phase:'arrived-before-start',native});return ready;
-      },{timeout:arrivalWindow}).toBe(true);
-      expect(observations.at(-1).native.at).toBeLessThan(seed.at);
+      },{timeout:180_000}).toBe(true);
+      expect(observations.at(-1).native.at,'EV1: arrival by the spawn plus 60 s').toBeLessThanOrEqual(seed.at+60000);
       expect((await live.state()).eventReturn).toBeFalsy();
       // Native 'hit' also carries priest healing. Check outgoing damage during
       // this actual pretravel leg, excluding ordinary farming before departure.
@@ -101,7 +112,7 @@ for(const event of ['horseman','graveyard'])test.describe(`published ${event}`,(
     }finally{
       await info.attach('event-pretravel-native-evidence',{body:JSON.stringify({seed,checkpoint,observations,returnTrace:await live.admin('output=globalThis.__e2ePretravel.returnTrace||null'),state:await live.state()}),contentType:'application/json'});
       await live.admin(`output=(()=>{const owner=globalThis.__e2ePretravel;clearInterval(owner.returnTimer);
-        broadcast_e=owner.original;delete globalThis.__e2ePretravel;broadcast_e();return true;})()`);
+        broadcast_e=owner.original;event_schedule_tick=owner.scheduleTick;delete globalThis.__e2ePretravel;broadcast_e();return true;})()`);
     }
   });
 });

@@ -2,9 +2,9 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {Access}=require('../../tools/hosting/access.ts');
 const {gateway,loaderCode}=require('../../tools/hosting/gateway.ts');
-const {serverAddress,steamBootstrap}=require('../../runtime/steam/connection.ts');
-const {mailPostage}=require('../mail-postage.cjs');
-const {scripts}=require('../client-files.cjs');
+const {serverAddress,steamBootstrap}=require('../../runtime/lifecycle/roster/connection.ts');
+const {mailPostage}=require('../../runtime/items/coordinator/mail.ts');
+const {scripts}=require('../../runtime/lifecycle/coordinator/client-files.cjs');
 const {accountPayload,sessionValue}=require('../../tools/hosting/account.ts');
 test('onboarding accepts current and legacy account payloads and normalizes quoted sessions',()=>{
  const account={characters:[{name:'UserMerchant',type:'merchant'}],servers:[{key:'SR_USII'}]};
@@ -31,11 +31,15 @@ test('ALData preparation opens a mail draft and makes no paid send request',asyn
  let declaration;function visit(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='aldataAction')declaration=node;ts.forEachChild(node,visit);}visit(ast);
  const source=declaration.getText(ast);
  const calls=[],drafts=[],opened=[];
- const context={API:'/party-api',fetch:async(url,options)=>{calls.push([url,options]);return{ok:true,json:async()=>({key:'unique-key'})}},
+ // The context hands in the hook's imports: performAction (query-actions.ts) records each request it
+ // would send, and the mail address is the items owner's own.
+ const {ALDATA_AUTH_MAIL}=require('../../runtime/items/api.ts');
+ const context={client:{},ALDATA_AUTH_MAIL,PartyActionError:class extends Error{},
+  performAction:async(client,url,body,options)=>{calls.push([url,body,options]);return{key:'unique-key'};},
   setALDataBusy(){},setActionError(error){assert.equal(error,null)},setMailDraft:draft=>drafts.push(draft),setSettingsOpen(){},setMailOpen:open=>opened.push(open)};
  vm.createContext(context);vm.runInContext(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
  await context.aldataAction('send');
- assert.deepEqual(calls,[['/party-api/aldata/key',undefined]]);assert.deepEqual(JSON.parse(JSON.stringify(drafts)),[{recipient:'earthiverse',subject:'aldata_auth',message:'unique-key'}]);
+ assert.deepEqual(JSON.parse(JSON.stringify(calls)),[['/aldata/key',null,{method:'GET'}]]);assert.deepEqual(JSON.parse(JSON.stringify(drafts)),[{recipient:'earthiverse',subject:'aldata_auth',message:'unique-key'}]);
  assert.deepEqual(opened,[true]);
 });
 test('pairing is single-use, credentials survive restart, and Steam can be revoked',async()=>{
@@ -118,6 +122,30 @@ test('gateway requires pairing and rejects foreign origins and revoked Steam tok
   await a.revokeSteam();assert.equal((await fetch(base+'/bridge/'+token+'/party-api/state')).status,401);
  }finally{await new Promise(resolve=>server.close(resolve));await fs.rm(dir,{recursive:true,force:true});}
 });
+// An app key passes the gateway only through the coordinator's key route.
+test('gateway passes a known app key to /party-api/ and answers each refusal',async()=>{
+ const http=require('node:http');
+ const coordinator=http.createServer((req,res)=>{
+  const known=req.headers.authorization==='Bearer known';
+  if(req.url==='/party-api/apps/verify'){res.writeHead(known?200:401,{'Content-Type':'application/json'});res.end(JSON.stringify(known?{ok:true}:{error:'Unknown app key'}));return;}
+  res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({path:req.url}));
+ });
+ await new Promise(resolve=>coordinator.listen(0,'127.0.0.1',resolve));const apiPort=coordinator.address().port;
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'party-gateway-')),a=new Access(path.join(dir,'access.json'));
+ await a.load();await a.setRequired(true);
+ const server=gateway({access:a,configured:()=>true,dashboardPort:1,apiPort});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const base='http://127.0.0.1:'+server.address().port;
+ const asApp=(key,route)=>fetch(base+route,{headers:{Authorization:'Bearer '+key}});
+ try {
+  const passed=await asApp('known','/party-api/state');
+  assert.equal(passed.status,200);assert.deepEqual(await passed.json(),{path:'/party-api/state'});
+  const refused=await asApp('stranger','/party-api/state');
+  assert.equal(refused.status,401);assert.deepEqual(await refused.json(),{error:'Unknown app key'});
+  assert.equal((await asApp('known','/')).status,403);
+  await new Promise(resolve=>coordinator.close(resolve));
+  assert.equal((await asApp('known','/party-api/state')).status,503);
+ }finally{coordinator.close();await new Promise(resolve=>server.close(resolve));await fs.rm(dir,{recursive:true,force:true});}
+});
 test('remote bootstrap preserves server in both runner and parent without changing bundle bytes',()=>{
  const base='http://pi:3010/bridge/abc';assert.equal(serverAddress({parent:{__partyServer:base}}),base);
  assert.equal(loaderCode(base),steamBootstrap(base));assert.equal(loaderCode(base),'$.getScript("http://pi:3010/bridge/abc/CODE/adventure_land/universal-loader.js");');
@@ -137,7 +165,7 @@ test('postage uses official client amount and gracefully handles changed markup'
 
 test('client update failure retains a complete manifest; simultaneous refreshes share one download',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'party-client-')),previous=process.cwd(),originalFetch=global.fetch;
- const files=require('../client-files.cjs');let missing=false,calls=0;
+ const files=require('../../runtime/lifecycle/coordinator/client-files.cjs');let missing=false,calls=0;
  process.chdir(dir);
  global.fetch=async url=>{
   calls++;
@@ -153,4 +181,19 @@ test('client update failure retains a complete manifest; simultaneous refreshes 
   assert.ok(!files.get_game_files(123).includes('/js/future.js'));
   assert.deepEqual(await fs.readdir('game_files'),['123']);
  }finally{process.chdir(previous);global.fetch=originalFetch;await fs.rm(dir,{recursive:true,force:true});}
+});
+
+// The gateway URL the dashboard's children redirect to follows AL_PORT and otherwise the one public
+// port default in tools/hosting/defaults.ts.
+test('dashboard gateway URL reads the public port from the hosting defaults',()=>{
+ const {configureDashboardGateway,DASHBOARD_PORT}=require('../../tools/dashboard/gateway-access.ts');
+ const {DEFAULT_PUBLIC_PORT}=require('../../tools/hosting/defaults.ts');
+ const saved={...process.env};
+ try{
+  delete process.env.AL_PUBLIC_URL;process.env.AL_PORT='4321';configureDashboardGateway();
+  assert.equal(process.env.AL_DASHBOARD_GATEWAY_URL,'http://localhost:4321');
+  delete process.env.AL_PORT;configureDashboardGateway();
+  assert.equal(process.env.AL_DASHBOARD_GATEWAY_URL,'http://localhost:'+DEFAULT_PUBLIC_PORT);
+  assert.equal(DASHBOARD_PORT,DEFAULT_PUBLIC_PORT);
+ }finally{for(const key of Object.keys(process.env))if(!(key in saved))delete process.env[key];Object.assign(process.env,saved);}
 });

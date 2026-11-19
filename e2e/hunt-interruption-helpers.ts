@@ -1,16 +1,7 @@
 import { expect, type LiveGame } from './live-fixtures';
-import type { TestInfo } from '@playwright/test';
-export const W='E2EWarrior', P='E2EPriest', M='E2EMerchant', fighters=[W,P], names=[W,P,M];
-export const quantity=(items:any[],id:string)=>items.reduce((n,item)=>n+(item?.name===id?item.q||1:0),0);
-export const hunt=(s:any)=>s.monsterHunt||s.farmingProfiles?.[W]?.monsterHunt;
-export async function observed(live:LiveGame):Promise<Record<string,any>> {
-  let snapshot:Record<string,any>={};
-  await expect.poll(async()=>{
-    snapshot=await live.admin(`output=Object.fromEntries(${JSON.stringify(names)}.map(name=>{const p=get_player(name);return [name,p?{map:p.map,in:p.in,x:p.x,y:p.y,hp:p.hp,rip:!!p.rip,moving:!!p.moving,items:p.items,quest:p.s.monsterhunt||null}:null]}))`);
-    return names.every(name=>!!snapshot[name]);
-  },{timeout:30_000,intervals:[100,250],message:'All actual native interruption participants must be present before observing their state'}).toBe(true);
-  return snapshot;
-}
+import { warrior as W, priest as P, merchant as M, fighters, partyNames as names, quantity, hunt, observed, evidence } from './game/hunt-lifecycle';
+// hunt-lifecycle.ts holds the party names and the shared observations for every live row file.
+export { W, P, M, fighters, quantity, hunt, observed, evidence };
 export async function killNativeCharacter(live:LiveGame,name:string) {
   // Native Rime Shatter disables stacked-hit sharing; ordinary monster attacks
   // can kill both overlapping fighters and accidentally consume two death counts.
@@ -36,25 +27,6 @@ export async function killNativeCharacter(live:LiveGame,name:string) {
     receipts={hit,death};return true;
   },{timeout:15000,intervals:[100,250],message:'The native lethal attack must publish damage and death to its client'}).toBe(true);
   return {...fault,...receipts};
-}
-export async function evidence(live:LiveGame,info:TestInfo,label:string,detail:unknown={}) {
-  await info.attach(label,{body:JSON.stringify({detail,server:await observed(live),coordinator:await live.state()},null,2),contentType:'application/json'});
-}
-export async function prepareHunt(live:LiveGame,id='armadillo',count=1) {
-  await live.post('/formation',{leader:W});await live.post('/formation',{character:P,follow:true});
-  await expect.poll(async()=>!!(await live.state(true)).monsterChoices?.find((m:any)=>m.id===id),{timeout:120000}).toBe(true);
-  await live.admin(`output=${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);p.s.monsterhunt={sn:region+' '+server_name,id:${JSON.stringify(id)},c:${count},ms:1800000};resend(p,'u+cid+reopen');return p.s.monsterhunt})`);
-  await expect.poll(async()=>{
-    const state=await live.state();
-    return fighters.every(name=>state.characters[name]?.monsterHunt?.id===id&&state.characters[name]?.monsterHunt?.count===count);
-  },{timeout:30000,message:'Both native quest observations must arrive before Hunt selects its owners'}).toBe(true);
-  const state=await live.state(true),choice=state.monsterChoices.find((m:any)=>m.id===id);
-  const location=choice.locations.find((l:any)=>l.map==='main')||choice.locations[0];
-  expect(location).toBeTruthy();
-  return {id,location,before:await observed(live)};
-}
-export async function beginHunt(live:LiveGame,setup:Awaited<ReturnType<typeof prepareHunt>>) {
-  await live.post('/farming-mode',{character:W,mode:'hunt',backup:{monsterFocus:[setup.id],location:setup.location}});
 }
 export async function reward(live:LiveGame,before:Record<string,any>,timeout=240000) {
   await expect.poll(async()=>{
@@ -98,6 +70,17 @@ export async function spawnGoo(live:LiveGame,name=W,observableCombatSeconds=0,ah
     message:'Introduce one passing encounter on an actual native walking leg'}).toBe(true);
   return seeded;
 }
+// Removes every monster on the map without a respawn and drops the map's queued respawns, so only
+// the encounter a row seeds there stands.
+export async function clearMap(live:LiveGame,map:string){
+  await live.admin(`output=(()=>{const map=${JSON.stringify(map)};for(const m of Object.values(instances[map].monsters))remove_monster(m,{method:'disappear',nospawn:true});for(let i=monster_respawns.length-1;i>=0;i--)if(monster_respawns[i][0]?.map===map)monster_respawns.splice(i,1);return true;})()`);
+}
+// A native hit packet in which the attacker damages the monster; taunt's 1-damage hit does not count.
+export const nativeHit=(e:any,attacker:string,id:string)=>e.event==='hit'&&e.data?.hid===attacker&&String(e.data?.id)===id&&e.data?.damage>1&&e.data?.source!=='taunt';
+// A combat position the member moves under its own independent approach.
+export const approachOwned=(p:any)=>p?.mode==='independent-approach'&&p.movementOwner==='combat-approach'&&!!p.approachId;
+// A combat position that combat owns, directly or through the member's own approach.
+export const combatOwned=(p:any)=>p?.movementOwner==='combat'||approachOwned(p);
 export async function killedByParty(live:LiveGame,id:string,timeout=45000,observations?:unknown[],options:{passingGoo?:boolean;startedAt?:number;convoyId?:string}={}) {
   let matched:{monsterId:string;attackIssued?:unknown;movingIssued?:unknown;hit:unknown;death:unknown}|undefined;
   let sampledAt=0;
@@ -112,7 +95,7 @@ export async function killedByParty(live:LiveGame,id:string,timeout=45000,observ
         const events=(window as any).__e2eEvents||[];
         const game=window as any, runner=(document.getElementById('maincode') as HTMLIFrameElement)?.contentWindow as any;
         const target=game.entities?.[id], c=game.character, shared=runner?.sharedRoutine;
-        const candidate=sample&&shared?.getWalkingPassiveTarget?.(true);
+        const candidate=sample&&shared?.targeting?.walkingPassiveTarget?.(true);
         const eligibleHits:any[]=[];
         const hits=events.filter((event:any)=>{
           if(event.event!=='hit'||!fighters.includes(String(event.data?.hid)))return false;
@@ -135,7 +118,7 @@ export async function killedByParty(live:LiveGame,id:string,timeout=45000,observ
           partyHits:passingGoo?events.filter((e:any)=>e.event==='hit'&&e.at>=startedAt&&fighters.includes(String(e.data?.hid))&&e.data?.damage>0):[],death:events.find((e:any)=>e.event==='death'&&String(e.data?.id)===killedId),
           ...(sample?{diagnostic:{at:Date.now(),id,position:{map:c.map,x:c.real_x,y:c.real_y,going_x:c.going_x,going_y:c.going_y,moving:c.moving,range:c.range},
             target:target&&{id:target.id,x:target.real_x??target.x,y:target.real_y??target.y,hp:target.hp,visible:target.visible,dead:target.dead,inRange:runner?.is_in_range?.(target)},
-            candidate:candidate&&{id:candidate.id,mtype:candidate.mtype},combatOwner:runner?.__partyCombatOwner,
+            candidate:candidate&&{id:candidate.id,mtype:candidate.mtype},combatOwner:runner?.__partyMovement?.live()?.owner??null,
             attackState:runner?.partyCombatState&&{stage:runner.partyCombatState.stage,skippedAttack:runner.partyCombatState.skippedAttack,targetRejection:runner.partyCombatState.targetRejection,selectedTarget:runner.partyCombatState.selectedTarget},
             acknowledgement:runner?.partyQueueClient?.passingAcknowledgement?.(),
             encounters:Object.values(game.__partyPassingEncounters||{}).filter((e:any)=>String(e.id)===id),

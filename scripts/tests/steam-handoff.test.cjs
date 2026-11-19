@@ -1,20 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { SteamHandoff, reservedForSteam } = require('../../runtime/roster/handoff.ts');
-
-function fixture(slots = ['Mage', 'Warrior', 'Merchant', null]) {
-  const state = { native: 'Priest', slots, handoff: null };
-  const online = new Set(['Priest', ...slots.filter(Boolean)]), started = [], stopped = [];
-  const ports = {
-    now: () => 100, id: () => 'transaction-1', save() {}, bridgeReady: () => true,
-    owned: name => ['Priest', 'Mage', 'Warrior', 'Merchant', 'Ranger'].includes(name),
-    validateParticipants(names) { if (new Set(names).size > 4) throw new Error('session limit'); },
-    async stopHeadless(name) { stopped.push(name); online.delete(name); },
-    startHeadless(name, slot) { assert.ok(!online.has(name), 'never double login'); online.add(name); started.push([name, slot]); },
-    async confirmOffline(name) { return !online.has(name); },
-  };
-  return { state, online, started, stopped, ports, service: new SteamHandoff(state, ports) };
-}
+const { reservedForSteam } = require('../../runtime/lifecycle/roster/handoff.ts');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
+const { handoffFixture: fixture, groupFixture, merchantMove } = require('./fixtures/steam-roster-scenario.cjs');
 
 test('Steam switch reciprocally transfers the target slot only after confirmed native release', async () => {
   const f = fixture();
@@ -110,3 +98,27 @@ test('timeout never starts a duplicate; recovery requires authoritative offline 
   assert.deepEqual(f.state.slots, [null, 'Warrior', 'Merchant', null]);
   assert.deepEqual(f.started, []);
 });
+
+// MJ46: a Steam move that names or holds the merchant waits while
+// the realm owner's move for it is in flight, so the Steam client never navigates the merchant away
+// from `realm.target()`; once the move arrives, the Steam move goes.
+scenarioTable('MJ46: a Steam move holding the merchant waits while its realm move is in flight', () => undefined, [
+  ['a single handoff naming the merchant', async () => {
+    const f = fixture(), move = merchantMove({ merchant: 'Merchant', steam: ['Priest'], slots: [] });
+    f.ports.validateParticipants = move.validateParticipants;
+    assert.equal(move.realm.want('job:a', 'SR_EUI'), 'moving');
+    await assert.rejects(f.service.begin('Merchant'), /active inventory operation/);
+    assert.deepEqual(f.stopped, []);
+    move.arrive();
+    assert.equal((await f.service.begin('Merchant')).phase, 'release');
+  }],
+  ['a group action whose participants hold the merchant', async () => {
+    const f = groupFixture(), move = merchantMove({ merchant: 'M', steam: ['P'], slots: ['M', 'W', 'Trader', null] });
+    f.ports.validateParticipants = move.validateParticipants;
+    assert.equal(move.realm.want('job:a', 'SR_EUI'), 'moving');
+    await assert.rejects(f.service.begin('headless', 'P'), /active inventory operation/);
+    assert.deepEqual(f.stopped, []);
+    move.arrive();
+    await f.service.begin('headless', 'P'); assert.ok(f.state.handoff);
+  }],
+]);

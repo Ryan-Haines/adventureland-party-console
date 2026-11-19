@@ -1,7 +1,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {createMapStreams}=require('../../runtime/coordinator/telemetry/map-stream.ts');
-const {createCombatLogRoutes}=require('../../runtime/coordinator/telemetry/combat-log.ts');
+const {createMapStreams,createMarketWatch}=require('../../runtime/status/coordinator/streams.ts');
+const {createCombatLogRoutes}=require('../../runtime/status/coordinator/logs.ts');
 const {httpFixture}=require('./helpers/coordinator-http.cjs');
 
 test('map streams replay the latest frame, heartbeat every fifteen seconds, and release subscribers on close',()=>{
@@ -13,8 +13,22 @@ test('map streams replay the latest frame, heartbeat every fifteen seconds, and 
  const first=http.invoke('GET','/party-api/map-stream/:character',undefined,{character:'P'});
  const second=http.invoke('GET','/party-api/map-stream/:character',undefined,{character:'P'});
  assert.equal(streams.count('P'),2);assert.deepEqual(first.response.chunks,['data: '+JSON.stringify(frame)+'\n\n']);
- assert.equal(timers[0].ms,15000);timers[0].callback();assert.equal(first.response.chunks.at(-1),': keepalive\n\n');
+ assert.equal(timers[0].ms,5000);timers[0].callback();assert.equal(first.response.chunks.at(-1),': keepalive\n\n');
  first.request.close();assert.equal(streams.count('P'),1);second.request.close();assert.equal(streams.count('P'),0);assert.equal(cancelled.length,2);
+});
+
+// The market feeds refresh while someone watches the market. The dashboard's open market or stand
+// panel holds this stream, and closing the panel, the tab or the connection ends the watch.
+test('the market watch holds while a viewer stream is open and ends when the last one closes',()=>{
+ const timers=[],cancelled=[],http=httpFixture();
+ const watch=createMarketWatch({every:(callback,ms)=>{const timer={callback,ms};timers.push(timer);return timer;},cancel:timer=>cancelled.push(timer)});
+ watch.install(http.router);
+ assert.equal(watch.watched(),false);
+ const first=http.invoke('GET','/party-api/market-watch'),second=http.invoke('GET','/party-api/market-watch');
+ assert.equal(watch.watched(),true);
+ timers[0].callback();assert.equal(first.response.chunks.at(-1),': keepalive\n\n');
+ first.request.close();assert.equal(watch.watched(),true);
+ second.request.close();assert.equal(watch.watched(),false);assert.equal(cancelled.length,2);
 });
 
 test('map routes reject unknown characters and malformed frames and cache map definitions',()=>{
@@ -24,7 +38,7 @@ test('map routes reject unknown characters and malformed frames and cache map de
  assert.equal(http.invoke('GET','/party-api/map-stream/:character',undefined,{character:'Q'}).response.code,404);
  assert.equal(http.invoke('GET','/party-api/maps/:map',undefined,{map:'missing'}).response.code,404);
  const result=http.invoke('GET','/party-api/maps/:map',undefined,{map:'main'}).response;
- assert.equal(result.body,definition);assert.equal(result.headers['Cache-Control'],'public, max-age=3600');
+ assert.equal(result.body,definition);assert.equal(result.headers['Cache-Control'],'no-cache');
 });
 
 test('combat logs bound batch and retention sizes, normalize values, and clear only the selected character',()=>{

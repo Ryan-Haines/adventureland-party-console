@@ -1,30 +1,48 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {offeringRule}=require('../../runtime/upgrade-offerings.ts');
-const {createOfferingCommands}=require('../../runtime/coordinator/inventory/upgrade-offerings.ts');
-const {createUpgradeCommands}=require('../../runtime/coordinator/inventory/upgrade-commands.ts');
-const {offeringStock}=require('../../runtime/coordinator/inventory/offering-stock.ts');
-const {recordOfferingWait,upgradeOfferingReady}=require('../../runtime/coordinator/inventory/offering-waits.ts');
-const {beginProduction,finishProduction}=require('../../runtime/coordinator/inventory/production.ts');
-const {reconcileUpgradeMarks}=require('../../runtime/coordinator/inventory/upgrade-marks.ts');
-const {initialItemIntents}=require('../../runtime/coordinator/inventory/initial-intents.ts');
+const {settingsWriter,merchantViewNames}=require('./helpers/settings-writer.cjs');
+const {offeringRule,fitOfferingRules,maximumItemLevel,validOfferingRules}=require('../../runtime/items/rules.ts');
+const {createOfferingCommands}=require('../../runtime/items/coordinator/production.ts');
+const {createUpgradeCommands}=require('../../runtime/items/coordinator/production.ts');
+const {offeringStock}=require('../../runtime/items/coordinator/production.ts');
+const {recordOfferingWait,upgradeOfferingReady}=require('../../runtime/items/coordinator/production.ts');
+const {beginProduction,finishProduction}=require('../../runtime/items/coordinator/production.ts');
+const {reconcileUpgradeMarks}=require('../../runtime/items/coordinator/production.ts');
+const {initialItemIntents}=require('../../runtime/items/saved-fields.ts');
 function fixture(){return {merchantCharacter:'M',merchantCatalog:{allItems:[{id:'sword',upgradeable:true,meta:{maxLevel:13}}]},statuses:{M:{items:[]}},
  upgrades:{M:[]},autoUpgradeMarks:{M:{'sword@+0':{tiers:9,quantity:1}}},autoCompounds:{},goldTargets:{},production:{attempts:{}},upgradeOfferingRules:[]};}
 function rule(extra={}){return {id:'primling',name:'sword',floor:7,ceiling:9,offering:'offeringp',required:true,...extra};}
 test('ranges cover transitions, with adjacent ranges and no overlap',()=>{
- const state=fixture(),command=createOfferingCommands(state,()=>{});
- for(const r of [rule({id:undefined}),rule({id:undefined,floor:9,ceiling:13,offering:'offering'})])assert.equal(command({type:'upgrade-offering-rule',rule:r}),null);
+ const state=fixture(),command=createOfferingCommands(state,settingsWriter(state).write);
+ for(const r of [rule({id:undefined}),rule({id:undefined,floor:9,ceiling:12,offering:'offering'})])assert.equal(command({type:'upgrade-offering-rule',rule:r}),null);
  assert.equal(offeringRule(state.upgradeOfferingRules,'sword',6),undefined);
  assert.equal(offeringRule(state.upgradeOfferingRules,'sword',8).offering,'offeringp');
  assert.equal(offeringRule(state.upgradeOfferingRules,'sword',9).offering,'offering');
- assert.equal(offeringRule(state.upgradeOfferingRules,'sword',13),undefined);
+ assert.equal(offeringRule(state.upgradeOfferingRules,'sword',12),undefined);
  assert.equal(offeringRule(state.upgradeOfferingRules,'other',8),undefined);
  const conflict=command({type:'upgrade-offering-rule',rule:rule({id:undefined,floor:8,ceiling:10})});
  assert.equal(conflict.status,409);assert.match(conflict.body.error,/already a rule.*\+7 to \+9/);
- for(const invalid of [{floor:9,ceiling:9},{floor:-1},{ceiling:14},{offering:'scroll0'},{required:'yes'},{name:'unknown'}])
+ assert.equal(command({type:'upgrade-offering-rule',rule:rule({id:undefined,floor:13,ceiling:14})}).status,400);
+ for(const invalid of [{floor:9,ceiling:9},{floor:-1},{offering:'scroll0'},{required:'yes'},{name:'unknown'}])
   assert.equal(command({type:'upgrade-offering-rule',rule:rule({id:undefined,...invalid})}).status,400);
- const saved=JSON.parse(JSON.stringify(state));assert.deepEqual(initialItemIntents(saved).upgradeOfferingRules,state.upgradeOfferingRules);
+ const saved=JSON.parse(JSON.stringify(state));assert.deepEqual(initialItemIntents(saved,{declared:require('../../runtime/settings/coordinator/table.ts').declared}).upgradeOfferingRules,state.upgradeOfferingRules);
  const first=state.upgradeOfferingRules[0];assert.equal(command({type:'upgrade-offering-rule',rule:{...first,required:false}}),null);
  assert.equal(command({type:'upgrade-offering-rule',rule:{id:first.id},remove:true}),null);assert.equal(state.upgradeOfferingRules.length,1);
+});
+
+// The game's upgrade table ends at +12 and the server refuses a scroll upgrade to a level it has no row
+// for, so a ceiling at 13 named an offering for a +12 upgrade the server never runs. The route and the
+// dashboard's rule dialog both stop at maximumItemLevel, and an older saved or imported list fits to it.
+test('an offering rule ends at the game top upgrade level on both sides',()=>{
+ const state=fixture(),command=createOfferingCommands(state,settingsWriter(state).write),top=maximumItemLevel({upgrade:true});
+ assert.equal(top,12);
+ assert.equal(command({type:'upgrade-offering-rule',rule:rule({id:undefined,floor:11,ceiling:top+1})}).status,400);
+ assert.equal(command({type:'upgrade-offering-rule',rule:rule({id:undefined,floor:11,ceiling:top})}),null);
+ const older=[rule({id:'a',floor:5,ceiling:13}),rule({id:'b',floor:12,ceiling:13})];
+ assert.equal(validOfferingRules(older),false);
+ assert.deepEqual(fitOfferingRules(older),[rule({id:'a',floor:5,ceiling:12})]);
+ state.upgradeOfferingRules=older;
+ assert.equal(command({type:'upgrade-offering-rule',rule:rule({id:'a',floor:5,ceiling:12,required:false})}),null);
+ assert.deepEqual(state.upgradeOfferingRules,[rule({id:'a',floor:5,ceiling:12,required:false})]);
 });
 test('stock excludes locked and reserved quantities across merchant storage locations',()=>{
  const state=fixture();state.statuses.M.items=[{slot:0,item:{name:'offeringp',q:3}},{slot:1,item:{name:'offeringx',l:'l'}}];

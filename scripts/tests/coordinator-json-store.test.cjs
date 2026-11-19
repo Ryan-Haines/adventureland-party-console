@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {createJsonStore} = require('../../runtime/coordinator/persistence/json-store.ts');
+const {createJsonStore} = require('../../runtime/settings/coordinator/persistence/json-store.ts');
 
 test('shared storage retains JSON.parse coercion and falsey snapshot defaults', () => {
   const values = new Map(), errors = [];

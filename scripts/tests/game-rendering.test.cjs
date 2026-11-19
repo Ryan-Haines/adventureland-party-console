@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { namedFunction } = require('./helpers/named-function.cjs');
-const { installGameRendering } = require('../../runtime/characters/game-rendering.ts');
+const { installGameRendering } = require('../../runtime/status/character/telemetry.ts');
 
 // Failure modes and the native-versus-isolated boundary were recorded first in
 // docs/testing-ice-roamer-failures.md. Execute the pinned native selector itself.

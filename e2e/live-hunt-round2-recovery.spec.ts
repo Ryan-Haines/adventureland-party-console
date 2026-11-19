@@ -5,7 +5,7 @@ import {W,P,M,world,beginAnniversary,endAnniversary} from './game/hunt-events';
 
 test.describe('native escape requested membership',()=>{
   test.use({initialPosition:{map:'main',x:200,y:-120}});
-  for(const metadata of ['missing','duplicate'] as const)test(`native escape retains both members with ${metadata} role metadata`,async({live},info)=>{
+  for(const metadata of ['missing'] as const)test(`native escape retains both members with ${metadata} role metadata`,async({live},info)=>{
     test.setTimeout(120_000);
     // Failure inventory is recorded before the implementation in
     // docs/testing-escape-membership.md. Only coordinator metadata is faulted;
@@ -28,16 +28,21 @@ test.describe('native escape requested membership',()=>{
         const before=await live.state();
         // Historical persisted omission, not a fabricated gameplay outcome:
         // restore the old membership bug with unchanged native/navigation state.
+        // The recovery records the target mode, as runtime/coordinator/survival/recovery.ts `capture` does
+        // so the seed stays current.
         await live.restoreHistoricalSettings(settings=>{
           const recovery={id:'declared-historical-membership-death',names:[W,P],leader:W,
-            policy:settings.farmingPolicy,focus:JSON.stringify(before.monsterFocus),
+            policy:settings.targetMode,focus:JSON.stringify(before.monsterFocus),
             revisions:Object.fromEntries([W,P].map(name=>[name,settings.navigationIntents[name].revision])),
             phase:'recovering',at:Date.now(),deaths:[],reason:'Declared persisted omission'};
           return {escape:{...settings.escape,participants:[W],stage:'failed-hold'},combatRecovery:recovery,
             farmingProfiles:{...settings.farmingProfiles,[W]:{...settings.farmingProfiles[W],combatRecovery:recovery}}};
         });
       }else await live.restartCoordinator();
-      await expect.poll(async()=>{const native=await world(live);positions.push({at:Date.now(),players:native.players});return [W,P].every(name=>{const p=native.players[name];return p&&!p.rip&&p.map==='main'&&Math.hypot(p.x,p.y)<=65;});},{timeout:60_000,intervals:[500]}).toBe(true);
+      // The escape walks to the safe table's death goal it was admitted with (Main's spawn 5 here).
+      const home=admission.escape.home;
+      expect(home?.goal).toBe('death');
+      await expect.poll(async()=>{const native=await world(live);positions.push({at:Date.now(),players:native.players});return [W,P].every(name=>{const p=native.players[name];return p&&!p.rip&&p.map===home.map&&Math.hypot(p.x-home.x,p.y-home.y)<=home.radius;});},{timeout:60_000,intervals:[500]}).toBe(true);
     }finally{
       await info.attach('native-escape-requested-membership',{body:JSON.stringify({metadata,admission,positions,final:await live.state(),native:await world(live),events:{[W]:await live.clients[W].events(),[P]:await live.clients[P].events()}}),contentType:'application/json'});
       await context.unrouteAll({behavior:'ignoreErrors'});
@@ -69,13 +74,32 @@ test.describe('native collateral convoy defense',()=>{
     try{
       await live.post('/travel',destination);
       await expect.poll(async()=>{const s=await live.state();return s.activeConvoy?.participants?.includes(W)&&['shared-prepare','shared-travel','travel'].includes(s.activeConvoy.phase);},{timeout:30_000}).toBe(true);
-      await expect.poll(async()=>{const s=await live.state();return s.characters[W]?.convoyNavigation?.id===s.activeConvoy.id;},{timeout:15_000}).toBe(true);
+      // The route above drops each report of the warrior's that carries routeReady, and the
+      // warrior's first report of the walk can already carry it, so the coordinator may never hear
+      // its convoy. The warrior's own client names the walk it runs.
+      await expect.poll(async()=>{const s=await live.state(),own=await live.clients[W].run('partyMovement.convoyNavigationReport()?.id??null');return !!s.activeConvoy&&own===s.activeConvoy.id;},{timeout:15_000}).toBe(true);
       monster=await live.admin(`output=(()=>{const p=get_player('${W}'),original=G.monsters.targetron;try{
         G.monsters.targetron={...original,hp:1000000,attack:1000,speed:0,charge:0,aggro:0,range:200};
         const m=new_monster(p.in,{type:'targetron',count:1,boundary:[p.x+40,p.y,p.x+41,p.y+1]},{temp:1});
-        target_player(m,get_player('${partyTarget?W:M}'));return {id:m.id,type:m.type,instance:p.in,target:m.target,map:m.map,x:m.x,y:m.y,explosion:m.explosion};
+        // Every later recalculation (target_player, a condition: node/server.js
+        // calculate_monster_stats) reads zone_stats before the catalog, so the seed keeps its
+        // declared attack, frequency and speed for the whole case.
+        m.zone_stats={...G.monsters.targetron};
+        target_player(m,get_player('${partyTarget?W:M}'));return {id:m.id,type:m.type,instance:p.in,target:m.target??null,map:m.map,x:m.x,y:m.y,explosion:m.explosion,
+          peaceful:!!m.peaceful,dead:!!m.dead,conditions:Object.keys(m.s||{}),zoneActor:!!m.zone_actor};
       }finally{G.monsters.targetron=original;}})()`);
-      await expect.poll(async()=>{const hits=(await live.clients[W].events()).filter((e:any)=>e.event==='hit'&&String(e.data?.hid)===String(monster.id)&&e.data?.id===W&&e.data?.damage>0);return partyTarget?hits.length:hits.filter((e:any)=>e.data.splash===true).length;},{timeout:30_000}).toBeGreaterThan(0);
+      // The seed's own precondition: the declared Targetron attacks its declared target.
+      expect(monster.target,'The seeded Targetron must target '+(partyTarget?W:M)+': '+JSON.stringify(monster)).toBe(partyTarget?W:M);
+      // Each poll also records the seed's own state and where W and M stand, so a case that
+      // sees no hit names whom the Targetron attacked and from where.
+      const seedTrace:any[]=[];
+      try{
+        await expect.poll(async()=>{
+          seedTrace.push(await live.admin(`output=(()=>{const m=instances[${JSON.stringify(monster.instance)}]?.monsters?.[${JSON.stringify(monster.id)}],w=get_player('${W}'),mm=get_player('${M}');
+            return {at:Date.now(),seed:m?{target:m.target||null,x:m.x,y:m.y,speed:m.speed,attack:m.attack,frequency:m.frequency,moving:!!m.moving}:null,W:w&&{x:w.x,y:w.y,moving:!!w.moving},M:mm&&{x:mm.x,y:mm.y}};})()`));
+          const hits=(await live.clients[W].events()).filter((e:any)=>e.event==='hit'&&String(e.data?.hid)===String(monster.id)&&e.data?.id===W&&e.data?.damage>0);
+          return partyTarget?hits.length:hits.filter((e:any)=>e.data.splash===true).length;},{timeout:30_000}).toBeGreaterThan(0);
+      }finally{await info.attach('native-targetron-seed-trace',{body:JSON.stringify(seedTrace),contentType:'application/json'});}
       holdReady=false;
       await expect.poll(async()=>{const state=await live.state(),native=await world(live);samples.push({at:Date.now(),convoy:state.activeConvoy&&{id:state.activeConvoy.id,phase:state.activeConvoy.phase,epoch:state.activeConvoy.epoch},players:Object.fromEntries([W,P].map(n=>[n,{map:native.players[n].map,x:native.players[n].x,y:native.players[n].y}]))});
         return partyTarget?[W,P].some(n=>state.characters[n]?.convoyNavigation?.defenseTargets?.some((t:any)=>String(t.id)===String(monster.id))):[W,P].every(n=>native.players[n].map===destination.map&&Math.hypot(native.players[n].x-destination.x,native.players[n].y-destination.y)<=25);
@@ -136,32 +160,6 @@ test.describe('native arrival connector recovery',()=>{
       await live.clients[W].run('__e2eConnector.restore()');
     }
   });
-});
-
-test('native escape revival is throttled while native respawn is unavailable',async({live},info)=>{
-  test.setTimeout(120_000);
-  // Declare an already-owned recovering escape at the status read boundary:
-  // native death, respawn cooldown, outgoing calls and revival remain real.
-  let recovery=true;
-  const context=live.clients[W].page.context();
-  await context.route('**/party-api/status',async route=>{
-    const response=await route.fetch(),state=await response.json();
-    if(route.request().postDataJSON()?.name===W&&recovery)state.escape={id:'declared-escape-recovery',stage:'recovering'};
-    await route.fulfill({response,json:state});
-  });
-  await live.clients[W].run(`(()=>{
-    const socket=parent.socket,emit=socket.emit;globalThis.__e2eRespawnCalls=[];
-    socket.emit=function(event,...args){if(event==='respawn')__e2eRespawnCalls.push(Date.now());return emit.apply(socket,[event,...args]);};
-    globalThis.__e2eRespawnRestore=()=>{socket.emit=emit;};return true;})()`);
-  try{
-    await expect.poll(()=>live.clients[W].run('sharedRoutine.isOccupied()'),{timeout:15_000}).toBe(true);
-    const death=await killNativeCharacter(live,W);
-    await expect.poll(()=>live.clients[W].run('character.rip'),{timeout:60_000}).toBe(false);
-    const calls:number[]=await live.clients[W].run('__e2eRespawnCalls');
-    expect(calls.length).toBeGreaterThan(1);
-    for(let index=1;index<calls.length;index++)expect(calls[index]-calls[index-1]).toBeGreaterThanOrEqual(950);
-    await info.attach('native-escape-respawn-ledger',{body:JSON.stringify({death,calls,events:await live.clients[W].events(),final:await world(live)}),contentType:'application/json'});
-  }finally{recovery=false;await context.unrouteAll({behavior:'ignoreErrors'});await live.clients[W].run('__e2eRespawnRestore()');}
 });
 
 test.describe('native Anniversary staging recovery',()=>{

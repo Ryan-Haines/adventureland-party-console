@@ -22,7 +22,7 @@ Run the console project for `console-build.spec.ts`,
 `console-build-safe-host.spec.ts`, `console-build-host.spec.ts` and
 `console-build-gateway.spec.ts`. Run the live project for
 `live-console-main-reload.spec.ts`, `live-console-mixed-deployment.spec.ts` and
-`live-console-safe-reload.spec.ts`; these are five native journeys. Use the normal
+the console reload rows of the Arena table (`e2e/console-reload-rows.ts`); these are five native journeys. Use the normal
 Docker fixture installation documented in docs/testing.md, never the live account.
 Run `node e2e/verify-artifacts.cjs` after each group before retaining its report.
 

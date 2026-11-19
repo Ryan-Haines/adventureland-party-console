@@ -30,10 +30,12 @@ export async function observeNativeCaveCombat(clients:Record<string,LiveClient>,
         movementRay:game.can_move({map:c.map,x:c.real_x,y:c.real_y,going_x:x,going_y:y,base:c.base}),canAttack:code?.can_attack?.(e)};
       });
       const position=code?.partyCombatPosition||{},selection=code?.partyCombatState||{};
-      const trace=code?.sharedRoutine?.combatTraceSnapshot?.();
+      // The latest entry of the status owner's combat trace ring on the CODE frame (runtime/status/character/rings.ts),
+      // the one snapshot b9b5c91e's combatTraceSnapshot gave.
+      const trace=code?.__partyCombatTrace?.at(-1);
       o.samples.push({at:now,actor:own,enemies,codeAvailable:!!code?.sharedRoutine,generation:code?.__partyRuntimeGeneration,
        selection:{selectedTarget:selection.selectedTarget,mode:selection.mode},position:{mode:position.mode,reason:position.reason,movementOwner:position.movementOwner},
-       trace,movement:code?.__partyMovement?.report?.(),caveOwner:code?.__partyCaveMoveOwner});
+       trace,movement:code?.__partyMovement?.report?.()});
       if(o.samples.length>128)o.samples.splice(16,1);
      }catch(error){o.errors.push(String(error));if(o.errors.length>8)o.errors.shift();}
     };

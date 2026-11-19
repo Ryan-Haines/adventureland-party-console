@@ -1,3 +1,5 @@
+import { exchangeKey } from '../../runtime/items/api.ts';
+
 type Entry = { item?: { name?: string; level?: number; q?: number } | null } | null;
 type Inventory = { name: string; items?: Entry[] };
 
@@ -13,7 +15,7 @@ export function inventoryCounts(
   const add = (entry: Entry) => {
     if (!entry?.item) return;
     const item = entry.item;
-    const key = byLevel ? `${item.name}@${item.level || 0}` : String(item.name);
+    const key = byLevel ? exchangeKey(item.name, item.level) : String(item.name);
     totals[key] = (totals[key] || 0) + Math.max(1, Number(item.q) || 1);
   };
   characters

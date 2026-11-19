@@ -1,89 +1,58 @@
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const test=require('node:test'),assert=require('node:assert/strict');
+const {walkStatePorts}=require('./helpers/walk-state-ports.cjs');
+const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs');
 const zones=require('../../.build/shared/farming-zones.cjs');
-const shared=fs.readFileSync(process.env.AL_SHARED_SOURCE || 'characters/shared.js','utf8');
-const coordinator=require('./helpers/coordinator-source.cjs').coordinatorSource();
-function movement() {
- let now=10000,calls=0,stops=0,resolve;
- const target={id:'bee',x:0,y:200,map:'main'},character={name:'W',map:'main',x:0,y:0,speed:60};
- const c=vm.createContext({character,parent:{entities:{}},partyLocation:{id:'a',map:'main',x:0,y:200,shapes:[{boundary:[-50,150,50,250]}]},
-  runtimeCurrent:()=>true,sharedRoutine:{isOccupied:()=>false},activeCombatEvent:()=>false,joinedEvent:null,anniversaryStaging:false,anniversaryBusy:false,
-  groupedFarming:()=>false,requestGroupApproach:()=>false,
-  navigationIntent:{revision:1},Date:{now:()=>now},is_in_range:()=>false,combatDistance:()=>200,lastAttackAt:0,
-  partyConvoyActive:false,convoyTraveling:null,farmTravelPaused:false,can_walk:()=>true,can_move:()=>true,can_move_to:()=>false,safeCombatPoint:()=>true,formationBody:()=>({}),recoverFormationCorner:()=>false,
-  inFarmArea:(target,area)=>zones.contains(area,target,0,400),partyFarmingZones:zones,combatApproachPoint:()=>({x:0,y:190}),smart:{},
-  smart_move:p=>{calls++;c.smart.on_done=()=>{};return new Promise(r=>resolve=r);},stop:()=>{stops++;return Promise.resolve();}});c.root=c;
- vm.runInContext(shared.slice(shared.indexOf('  var farmApproach ='),shared.indexOf('  var formationState =')),c);
- return {c,target,calls:()=>calls,stops:()=>stops,now:v=>now=v,resolve:()=>resolve()};
-}
-test('blocked unengaged target starts only one route and times out with a target cooldown',()=>{
- const r=movement();assert.equal(r.c.recoverFarmApproach(r.target),false);r.now(11600);
- assert.equal(r.c.recoverFarmApproach(r.target),true);r.now(14600);r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),1);
- r.now(44601);r.c.recoverFarmApproach(r.target);assert.equal(r.stops(),1);assert.ok(r.c.farmApproach.failed.bee>44601);
-});
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {movement,controlFixture}=require('./fixtures/farm-approach-scenario.cjs');
 
-test('exhausted local candidates relinquish to the certified formation approach without moving',()=>{
- const r=movement();const moves=[];
- r.c.partyQueueClient={formation:{approachStatus:()=> 'planning'}};
- r.c.move=(x,y)=>{moves.push({x,y});return Promise.resolve();};
- assert.equal(r.c.recoverFarmApproach(r.target),false,'legitimate initial approach remains available');
- r.now(11600);
- assert.equal(r.c.recoverFarmApproach(r.target),false,'no safe candidate must not hold formation for three seconds');
- assert.deepEqual(moves,[]);assert.equal(r.calls(),0,'no independent route replaces certified formation');
- assert.equal(r.c.farmApproach.local.point,null);
-});
-
-test('a certified local candidate keeps its existing attempt window',()=>{
- const r=movement();const moves=[];
- r.c.partyQueueClient={formation:{approachStatus:()=> 'planning'}};
- r.c.move=(x,y)=>{moves.push({x,y});return Promise.resolve();};
- r.c.can_move_to=(x,y)=>x>1;
- assert.equal(r.c.recoverFarmApproach(r.target),false);
- r.now(11600);assert.equal(r.c.recoverFarmApproach(r.target),true);
- assert.equal(moves.length,1);assert.ok(moves[0].x>1);assert.equal(r.calls(),0);
- r.now(12000);assert.equal(r.c.recoverFarmApproach(r.target),true);
- assert.equal(moves.length,2);assert.equal(r.calls(),0);
- r.now(14601);assert.equal(r.c.recoverFarmApproach(r.target),false,'a real local attempt remains bounded to three seconds');
- assert.equal(moves.length,2);assert.equal(r.calls(),0,'certified formation retains routing ownership');
-});
-test('aggro suppresses path search; a replacement navigation owner is never stopped',()=>{
- const r=movement();r.c.recoverFarmApproach(r.target);r.now(11600);
- r.c.parent.entities.a={type:'monster',visible:true,target:'W'};r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),0);
- delete r.c.parent.entities.a;r.c.recoverFarmApproach(r.target);r.now(14600);r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),1);
- r.c.smart.on_done=()=>{};r.c.recoverFarmApproach(r.target);assert.equal(r.stops(),0);assert.equal(r.c.farmApproach.route,null);
-});
-test('target loss cancels only owned recovery and allows new acquisition',()=>{
- const r=movement();r.c.recoverFarmApproach(r.target);r.now(11600);r.c.recoverFarmApproach(r.target);r.now(14600);r.c.recoverFarmApproach(r.target);
- r.c.recoverFarmApproach(null);assert.equal(r.stops(),1);assert.equal(r.c.farmApproach.route,null);
-});
-
-test('rare handoff stops empty-zone search while the combat group selects its target',()=>{
- const r=movement();r.c.recoverFarmApproach(r.target);r.now(11600);r.c.recoverFarmApproach(r.target);
- r.now(14600);r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),1);
- r.c.rareActive=()=>true;
- for(let i=0;i<20;i++){r.now(15000+i*500);assert.equal(r.c.recoverFarmApproach(null),true);}
- assert.equal(r.stops(),1);assert.equal(r.calls(),1);assert.equal(r.c.farmApproach.route,null);
- r.c.rareActive=()=>false;r.c.recoverFarmApproach(null);r.now(30000);r.c.recoverFarmApproach(null);
- assert.equal(r.calls(),2,'ordinary zone search resumes after rare ownership ends');
-});
-
-// Failure inventory from the native hen return: defense may retain an engaged
-// but rejected target after selection clears; isOccupied can therefore be false.
-// Empty-zone movement must stay blocked, actual target approach must still work,
-// and ordinary farm search must resume after the convoy releases ownership.
-test('convoy defense retains movement when combat selection clears',()=>{
- const r=movement(),moves=[];
- r.c.move=(x,y)=>{moves.push({x,y});return Promise.resolve();};r.c.can_move_to=()=>true;
- r.c.partyConvoyActive=true;r.c.convoyTraveling={id:'hen-return',defensePaused:true};r.c.__partyConvoyDefense='hen-return';
- assert.equal(r.c.recoverFarmApproach(null),true);
- assert.deepEqual(moves,[],'No empty-zone move may leave the defensive loot checkpoint');
- assert.equal(r.c.recoverFarmApproach(r.target),false);
- r.now(11600);assert.equal(r.c.recoverFarmApproach(r.target),true);
- assert.equal(moves.length,1,'The same convoy still permits approaching a selected defensive target');
- r.c.partyConvoyActive=false;r.c.convoyTraveling=null;r.c.__partyConvoyDefense=null;
- r.c.recoverFarmApproach(null);assert.equal(moves.length,2,'Ordinary farm search resumes after release');
-});
-
-test('target outside priest spacing does not convoy when already attackable or still approaching',()=>{
+scenarioTable("the farm approach searches the zone and routes around obstacles to a blocked target", ()=>movement, [
+ ['the farm zone search routes into the zone or waits there: an idle leader outside routes in, an empty area waits, a merchant never searches', movement=>{
+  {const r=movement();r.c.character.ctype='warrior';r.c.recoverFarmApproach(null);assert.equal(r.calls(),0);r.now(13000);r.c.recoverFarmApproach(null);assert.equal(r.calls(),1);
+   assert.equal(zones.contains(r.c.partyLocation,r.c.farmApproach.route.destination),true);}
+  {const r=movement();r.c.partyLocation={map:'main',x:0,y:0};r.c.character.x=200;
+   for(const time of [10000,12000,20000,60000]){r.now(time);assert.equal(r.c.recoverFarmApproach(null),false);}
+   assert.equal(r.calls(),0);assert.equal('searchAt' in r.c.farmApproach,false,'no search delay of its own (RF6 class B)');
+   r.c.is_in_range=()=>true;r.c.character.range=300;
+   assert.equal(r.c.recoverFarmApproach(r.target),false);
+   assert.equal(r.calls(),0);
+   r.c.partyLocation={map:'main',x:0,y:0,shapes:[{boundary:[100,-50,300,50]}]};
+   assert.equal(r.c.recoverFarmApproach(null),false);assert.equal(r.calls(),0);}
+  {const r=movement();r.c.character.ctype='merchant';r.c.recoverFarmApproach(null);assert.equal(r.calls(),0);}}],
+ // An unplannable search point and an exhausted search wait for the next report,
+ // so the native planner runs once per report, not once per 100 ms tick.
+ ['the zone search waits for the next report after a route ends and after its last point, with no per-tick retry', async movement=>{
+  {const r=movement();let reported;r.c.nextReport=()=>new Promise(done=>{reported=done;});
+   r.c.recoverFarmApproach(null);r.now(13000);r.c.recoverFarmApproach(null);assert.equal(r.calls(),1);
+   r.reject();await new Promise(done=>setImmediate(done));
+   for(const time of [13100,13200,13300,20000]){r.now(time);assert.equal(r.c.recoverFarmApproach(null),true);}
+   assert.equal(r.calls(),1,'no planner search per tick');assert.equal(r.c.partyCombatPosition.reason,'zone search waiting for the next report');
+   reported();await new Promise(done=>setImmediate(done));
+   r.now(20100);r.c.recoverFarmApproach(null);r.now(23100);r.c.recoverFarmApproach(null);assert.equal(r.calls(),2,'the next point plans after the report');}
+  {const r=movement();let reported;r.c.nextReport=()=>new Promise(done=>{reported=done;});r.c.partyFarmingZones={searchPoints:()=>[]};
+   r.c.recoverFarmApproach(null);assert.equal(r.c.partyCombatPosition.reason,'zone search exhausted; waiting for reachable spawns');
+   r.now(10100);r.c.recoverFarmApproach(null);assert.equal(r.c.partyCombatPosition.reason,'zone search waiting for the next report');
+   reported();await new Promise(done=>setImmediate(done));
+   r.now(10200);r.c.recoverFarmApproach(null);assert.equal(r.c.partyCombatPosition.reason,'zone search exhausted; waiting for reachable spawns');}}],
+ ['a blocked farm target gets one route and a bounded detour, a clear one is never routed, and a route that cannot reach it hands the target back to targeting', async movement=>{
+  {const r=movement();assert.equal(r.c.recoverFarmApproach(r.target),false);r.now(11600);
+   assert.equal(r.c.recoverFarmApproach(r.target),true);r.now(14600);r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),1);
+   r.now(44601);r.c.recoverFarmApproach(r.target);assert.equal(r.stops(),0,'the route keeps going past 30 s');
+   r.reject();await new Promise(done=>setImmediate(done));
+   assert.deepEqual(r.notices,[['targeting.unreachable',{character:'W',target:'bee',why:'approach'}]]);
+   assert.equal(r.c.farmApproach.route,null);}
+  {const r=movement();let moves=0;
+   r.c.can_move_to=()=>true;r.c.move=()=>{moves++;return Promise.resolve();};
+   r.c.requestGroupApproach=()=>{throw Error('unexpected convoy');};
+   r.c.recoverFarmApproach(r.target);r.now(13100);r.c.recoverFarmApproach(r.target);
+   assert.equal(moves,1);assert.equal(r.calls(),0);}}],
+ ['the farm approach ends only the route it owns: aggro pauses its search, a newer owner is never stopped, target loss ends its own route', movement=>{
+  {const r=movement();r.c.recoverFarmApproach(r.target);r.now(11600);
+   r.c.parent.entities.a={type:'monster',visible:true,target:'W'};r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),0);
+   delete r.c.parent.entities.a;r.c.recoverFarmApproach(r.target);r.now(14600);r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),1);
+   r.replace();r.c.recoverFarmApproach(r.target);assert.equal(r.stops(),0);assert.equal(r.c.farmApproach.route,null);}
+  {const r=movement();r.c.recoverFarmApproach(r.target);r.now(11600);r.c.recoverFarmApproach(r.target);r.now(14600);r.c.recoverFarmApproach(r.target);
+   r.c.recoverFarmApproach(null);assert.equal(r.stops(),1);assert.equal(r.c.farmApproach.route,null);}}],
+ ['target outside priest spacing does not convoy when already attackable or still approaching', movement=>{
  const r=movement();let requests=0;
  r.c.groupedFarming=()=>true;r.c.groupedCombat={anchor:{x:0,y:0},range:100};
  r.c.requestGroupApproach=()=>{requests++;return true;};
@@ -91,125 +60,100 @@ test('target outside priest spacing does not convoy when already attackable or s
  assert.equal(r.c.recoverFarmApproach(r.target),false);assert.equal(requests,0);
  r.c.is_in_range=()=>false;r.c.recoverFarmApproach(r.target);
  r.now(11000);r.c.recoverFarmApproach(r.target);assert.equal(requests,0);
- r.now(12600);r.c.recoverFarmApproach(r.target);r.now(15600);r.c.recoverFarmApproach(r.target);assert.equal(requests,0);assert.equal(r.calls(),1);
+ r.now(12600);r.c.recoverFarmApproach(r.target);r.now(15600);r.c.recoverFarmApproach(r.target);assert.equal(requests,0);assert.equal(r.calls(),1);}],
+]);
+// farm-zone-recovery.test.cjs (row 24): on the native hen return the defence may keep an engaged
+// target that the selection rejected, so the selection clears. The empty-zone search stays off, the
+// walk's defensive approach to a selected target still goes, and the ordinary search comes back once
+// the walk lets the member go (approach.ts recoverFarmApproach).
+test('convoy defense retains movement when combat selection clears',()=>{
+ const r=movement(),moves=[];
+ r.c.move=(x,y)=>{moves.push({x,y});return Promise.resolve();};r.c.can_move_to=()=>true;
+ r.c.partyConvoyActive=true;r.c.groupWalk.travel={id:'hen-return',defensePaused:true};r.c.convoyDefense='hen-return';
+ assert.equal(r.c.recoverFarmApproach(null),true);
+ assert.deepEqual(moves,[],'no empty-zone move leaves the defensive loot checkpoint');
+ assert.equal(r.c.recoverFarmApproach(r.target),false);
+ r.now(11600);assert.equal(r.c.recoverFarmApproach(r.target),true);
+ assert.equal(moves.length,1,'the same walk still lets the member approach a selected defensive target');
+ r.c.partyConvoyActive=false;r.c.groupWalk.travel=null;r.c.convoyDefense=null;
+ r.c.recoverFarmApproach(null);assert.equal(moves.length+r.calls(),2,'the ordinary farm search comes back after the release');
 });
 test('convoy setup waits through transport lock and handles a racing unable rejection',async()=>{
  let now=1000,stops=0;
- const c={parent:{transporting:true},character:{s:{}},convoy:{},ownsConvoy:()=>true,can_walk:()=>now>=1300,
-  Date:{now:()=>now},phase(){},setTimeout(fn){now+=100;fn();},stop:async()=>{if(++stops===1)throw {reason:'unable'};}};
- vm.runInNewContext(shared.slice(shared.indexOf('    async function stopForConvoy()'),shared.indexOf('    function navigate(destination)',shared.indexOf('    async function stopForConvoy()'))),c);
- await c.stopForConvoy();assert.equal(stops,2);assert.equal(now,1400);
+ // The walk client's travel (walk-client.ts coordinatedMonsterTravel) stops the member before it
+ // holds; the convoy's command names the walk that takes movement over (owner.ts walkRequest).
+ const {createWalkClient}=require('../../runtime/movement/character/walk-client.ts');
+ const host={parent:{transporting:true},can_walk:()=>now>=1300,game_log(){}};
+ const client=createWalkClient(host,{...walkStatePorts(host),now:()=>now,character:()=>({s:{}}),current:()=>true,intent:()=>({revision:0}),generation:()=>1,
+  setPartyLocation(){},endFollow(){},movement:()=>({}),walkStands:()=>({end(){}}),walkRequest:()=>({kind:'group-walk',owner:'walk:C:1:0'}),
+  stop:async()=>{if(++stops===1)throw {reason:'unable'};},
+  // Each owner scheduler pass stands for 100 ms of the test's clock.
+  nextPass:async()=>{now+=100;}});
+ const travel=client.coordinatedMonsterTravel({id:2,convoyId:'C',epoch:1,navigationRevision:0,phase:'shared-hold',location:{map:'main',x:0,y:0}});
+ for(let i=0;i<10&&client.groupWalk.travel.phase!=='held';i++)await new Promise(setImmediate);
+ assert.equal(stops,2);assert.equal(now,1400);assert.equal(client.groupWalk.travel.phase,'held');
+ client.groupWalk.travel.release();await travel;
 });
-function controlFixture() {
- let now=10000;const starts=[];
- const catalog=[{id:'bee',locations:[{map:'main',x:50,y:50,boundary:[0,0,100,100]},{map:'main',x:350,y:50,boundary:[300,0,400,100]}]}];
- const areas=zones.zones(catalog,['bee']);
- const party={leader:'W',followers:{P:true},statuses:{W:{name:'W',seenAt:now},P:{name:'P',seenAt:now}},monsterChoices:catalog,
-   monsterFocus:['bee'],location:areas[0],farmAreaState:{},commands:{},farmingPolicy:'auto'};
- const c={party,farmingAreas:require('../../.build/shared/farming-areas.cjs').farmingAreas,character_manage:{W:{},P:{},Merchant:{}},farmZones:zones,farmAreaControl:require('../farm-area-control.cjs'),
-   huntTurnInOwnsTravel:require('../../runtime/hunt/policy.ts').priority,
-   huntPolicy:require('../../runtime/hunt/policy.ts'),
-   Date:{now:()=>now},farmingNavigation:{members:()=>['W','P'],intent:()=>({cancelled:false,revision:1}),authorize(){}},persistSettings(){},
-   cancelActiveConvoy(){party.activeConvoy=null;},advanceHuntMission(h){h.advanced=true;},
-   startPartyMonsterConvoy(location){starts.push(location);party.activeConvoy={phase:'assemble'};},
-   startHuntConvoy(h,location){starts.push(location);party.activeConvoy={phase:'assemble'};}};
- require('./helpers/travel-observations.cjs').observeTravel(party.statuses);
- for(const [name,s] of Object.entries(party.statuses))Object.assign(s,{map:'main',in:'main',server:'USII',combatSelection:{runtimeId:name},farmCompetition:{at:now,runtimeId:name,revision:1,areaId:areas[0].id,map:'main',in:'main',server:'USII',radius:400,monsters:{},players:['Other']}});
- Object.assign(c,require('./helpers/coordinator-farm-areas.cjs').farmAreaService(c));
- return {c,party,areas,starts,advance(ms=1100){now+=ms;for(const s of Object.values(party.statuses)){s.seenAt=now;if(s.farmCompetition)s.farmCompetition.at=now;}},now:()=>now};
-}
-test('competition waits for fighting to finish, relocates once, and keeps normal focus',()=>{
+scenarioTable("farm area control relocates on competition and keeps failed convoys with their owner", ()=>controlFixture, [
+ ['competition cannot relocate while a scattered follower still sees the target type', controlFixture=>{
+ const t=controlFixture();t.party.statuses.W.farmAreaEvidence=[{key:'kill',actor:'Other',mtype:'bee',map:'main',x:50,y:50,at:t.now(),kill:true}];
+ t.party.statuses.P.farmCompetition.monsters.bee=1;t.c.farmAreaTick();assert.equal(t.starts.length,0);assert.equal(t.party.farmAreaState.pending??null,null);
+ delete t.party.statuses.P.farmCompetition.monsters.bee;t.advance();t.c.farmAreaTick();assert.equal(t.starts.length,1);}],
+ ['competition waits for fighting to finish, relocates once, and keeps normal focus', controlFixture=>{
  const t=controlFixture();t.party.statuses.W.farmAreaEvidence=[{key:'kill',actor:'Other',mtype:'bee',map:'main',x:50,y:50,at:t.now(),kill:true}];
  t.party.statuses.W.map='main';t.party.statuses.W.groupedCombat.currentAttackers=[{id:'bee',map:'main',target:'W',hp:100}];t.party.statuses.W.target={hp:100};t.party.statuses.W.combat={inRange:true};t.c.farmAreaTick();assert.ok(t.party.farmAreaState.pending);
  t.advance();t.c.farmAreaTick();assert.equal(t.starts.length,0);
  t.party.statuses.W.target=null;t.party.statuses.W.groupedCombat.currentAttackers=[];t.advance();t.c.farmAreaTick();assert.equal(t.starts[0].x,350);assert.deepEqual(t.party.monsterFocus,['bee']);
- t.party.activeConvoy=null;t.advance();t.c.farmAreaTick();assert.equal(t.starts.length,1);
-});
-test('failed outbound Hunt convoy retains mission recovery ownership without farming retries',()=>{
- const t=controlFixture();t.party.farmingPolicy='hunt';const h=t.party.monsterHunt={target:'bee',stage:'mission-travel',missions:[{target:'bee',destination:t.areas[0]}],currentIndex:0,deathCount:1};
- const convoy=t.party.activeConvoy={phase:'failed',purpose:'monster-hunt',location:t.areas[0],failure:'unable'};
- for(const delay of [1100,2100,30000]){t.advance(delay);t.c.farmAreaTick();assert.equal(t.party.activeConvoy,convoy);}
- assert.equal(t.starts.length,0);assert.equal(t.party.farmAreaState.pending,null);
- assert.deepEqual(t.party.farmAreaState.failures,{});assert.equal(h.missions[0].destination,t.areas[0]);
- assert.equal(h.deathCount,1);assert.equal(t.party.huntBlacklist,undefined);
-});
-
-test('repeated convoy ownership failures retry without declaring the zone unreachable',()=>{
- const t=controlFixture();
- for(let i=0;i<3;i++){
-  t.party.activeConvoy={phase:'failed',location:t.areas[0],failure:'W: stale route owner'};
-  t.advance();t.c.farmAreaTick();assert.notEqual(t.party.farmAreaState.paused,true);
-  assert.equal(t.party.farmAreaState.failures[t.areas[0].id],undefined);
-  t.advance(10100);t.c.farmAreaTick();assert.equal(t.starts.length,i+1);
- }
- assert.equal(t.party.farmAreaState.lastFailure.transient,true);
-});
-test('exhausted geometry repair holds farming without retrying or blacklisting its zone',()=>{
- const t=controlFixture(),convoy={phase:'failed',location:t.areas[0],failureCode:'geometry-mismatch',failure:'Geometry recovery failed after one reload'};
- t.party.activeConvoy=convoy;t.advance();t.c.farmAreaTick();
- assert.equal(t.party.activeConvoy,convoy);assert.equal(t.party.farmAreaState.paused,true);
- assert.equal(t.party.farmAreaState.pending,null);assert.equal(t.party.farmAreaState.failures[t.areas[0].id],undefined);
- t.advance(70000);t.c.farmAreaTick();assert.equal(t.starts.length,0);
-});
-test('obsolete recovery pause is cleared once, preserving future deliberate holds',()=>{
- const t=controlFixture();t.party.farmAreaState={paused:true,failures:{old:2}};t.c.farmAreaTick();
- assert.equal(t.party.farmAreaState.paused,false);assert.equal(t.party.farmAreaState.recoveryVersion,2);
- t.party.farmAreaState.paused=true;t.advance();t.c.farmAreaTick();assert.equal(t.party.farmAreaState.paused,true);
-});
-
-test('stale travel failure clears only after the party reaches its active farming zone',()=>{
- const t=controlFixture();t.c.farmAreaTick();
- const state=t.party.farmAreaState;
- state.lastFailure={at:1,reason:'W: stale route owner'};state.message='Travel failed: W: stale route owner';
- for(const s of Object.values(t.party.statuses))Object.assign(s,{map:'main',x:-1000,y:-1000});
- t.advance();t.c.farmAreaTick();assert.ok(state.lastFailure);
- for(const s of Object.values(t.party.statuses))Object.assign(s,{map:'main',x:50,y:50});
- t.advance();t.c.farmAreaTick();assert.equal(state.lastFailure,null);assert.equal(state.message,null);
-});
-
-test('farm zone retries cannot reroute a protected turn-in toward monsters',()=>{
- const t=controlFixture();t.party.farmingPolicy='hunt';
- t.party.monsterHunt={stage:'returning',target:'bee',turnIn:{phase:'returning',owner:'W'}};
- const convoy=t.party.activeConvoy={phase:'failed',purpose:'monster-hunt',location:{map:'main',x:126,y:-413},failure:'runtime lost'};
- t.c.farmAreaTick();assert.equal(t.party.activeConvoy,convoy);assert.equal(t.starts.length,0);
-});
-test('merchant never starts a farming search route',()=>{
- const r=movement();r.c.character.ctype='merchant';r.c.recoverFarmApproach(null);assert.equal(r.calls(),0);
-});
-
-test('empty farming areas wait without routing and a respawn is immediately eligible',()=>{
- const r=movement();r.c.partyLocation={map:'main',x:0,y:0};r.c.character.x=200;
- for(const time of [10000,12000,20000,60000]){r.now(time);assert.equal(r.c.recoverFarmApproach(null),false);}
- assert.equal(r.calls(),0);assert.equal(r.c.farmApproach.searchAt,0);
- r.c.is_in_range=()=>true;r.c.character.range=300;
- assert.equal(r.c.recoverFarmApproach(r.target),false);
- assert.equal(r.calls(),0);
- r.c.partyLocation={map:'main',x:0,y:0,shapes:[{boundary:[100,-50,300,50]}]};
- assert.equal(r.c.recoverFarmApproach(null),false);assert.equal(r.calls(),0);
-});
-
-test('arriving inside cancels only the owned empty-area search route',()=>{
- for(const replaced of [false,true]){
-  const r=movement();r.c.recoverFarmApproach(null);r.now(13000);r.c.recoverFarmApproach(null);
-  assert.equal(r.calls(),1);r.c.character.y=200;
-  if(replaced)r.c.smart.on_done=()=>{};
-  assert.equal(r.c.recoverFarmApproach(null),false);
-  assert.equal(r.stops(),replaced?0:1);assert.equal(r.c.farmApproach.route,null);
- }
-});
-test('idle leader outside the selected zone routes into it instead of waiting for a visible target',()=>{
- const r=movement();r.c.character.ctype='warrior';r.c.recoverFarmApproach(null);assert.equal(r.calls(),0);r.now(13000);r.c.recoverFarmApproach(null);assert.equal(r.calls(),1);
- assert.equal(zones.contains(r.c.partyLocation,r.c.farmApproach.route.destination),true);
-});
+ t.party.activeConvoy=null;t.advance();t.c.farmAreaTick();assert.equal(t.starts.length,1);}],
+ ['a failed farm convoy retries a transient failure without marking the zone unreachable, and a geometry mismatch re-plans', ()=>{
+  {const t=controlFixture();
+   for(let i=0;i<3;i++){
+    t.party.activeConvoy={phase:'failed',location:t.areas[0],failure:'W: stale route owner'};
+    t.advance();t.c.farmAreaTick();assert.notEqual(t.party.farmAreaState.paused,true);
+    assert.equal(t.party.farmAreaState.failures[t.areas[0].id],undefined);
+    t.advance(10100);t.c.farmAreaTick();assert.equal(t.starts.length,i+1);
+   }
+   assert.equal(t.party.farmAreaState.lastFailure.transient,true);}
+  // A geometry mismatch re-plans the same area from where the members stand, with no pause
+  // for the player.
+  {const t=controlFixture(),convoy={phase:'failed',location:t.areas[0],failureCode:'geometry-mismatch',failure:'Geometry recovery failed after one reload'};
+   t.party.activeConvoy=convoy;t.advance();t.c.farmAreaTick();
+   assert.equal(t.party.activeConvoy,null);assert.notEqual(t.party.farmAreaState.paused,true);
+   assert.equal(t.party.farmAreaState.pending.destination.id,t.areas[0].id);assert.equal(t.party.farmAreaState.failures[t.areas[0].id],undefined);
+   t.advance(10100);t.c.farmAreaTick();assert.equal(t.starts.length,1);}
+  // The end code classifies the failure, never its text: a route failure whose words name an owner
+  // counts a strike, and an owner-lost code with route words counts none.
+  {const t=controlFixture();
+   t.party.activeConvoy={phase:'failed',location:t.areas[0],failureCode:'route-failed',failure:'W: stale route owner'};
+   t.advance();t.c.farmAreaTick();assert.equal(t.party.farmAreaState.failures[t.areas[0].id],1);
+   t.party.activeConvoy={phase:'failed',location:t.areas[1],failureCode:'owner-lost',failure:'No route found'};
+   t.advance(10100);t.c.farmAreaTick();assert.equal(t.party.farmAreaState.failures[t.areas[1].id],undefined);}}],
+ // The end code is the failure's cause, so the first route failure leaves the area out of the
+ // alternatives; a second strike was needed before, which walked the broken route once more.
+ ['one route failure moves the group to another area', ()=>{
+  const t=controlFixture();
+  t.party.activeConvoy={phase:'failed',location:t.areas[0],failureCode:'route-failed',failure:'W: no path'};
+  t.advance();t.c.farmAreaTick();
+  assert.equal(t.party.farmAreaState.pending.destination.id,t.areas[1].id);}],
+ // Nothing pauses farming travel any more, so the load ends a pause a saved state carries.
+ ['a saved recovery pause is cleared, so it never holds farming', ()=>{
+ const {loadFarmingRecord}=require('../../runtime/hunting/coordinator/record.ts');
+ const loaded=loadFarmingRecord({farmAreaState:{paused:true,failures:{old:2}}},{},()=>1).farmAreaState;
+ assert.deepEqual([loaded.paused,loaded.recoveryVersion,loaded.failures],[false,2,{}]);}],
+]);
 test('wild boar entry point is inside the zone and valid with game collision geometry',()=>{
  const {installGameGeometry}=require('./helpers/game-geometry.cjs');
- const r=vm.createContext({root:{partyFarmingZones:zones},character:{map:'winterland',x:20,y:30,base:{h:8,v:7,vn:2}},G:{}});
+ const r=createMovementContext({root:{partyFarmingZones:zones},character:{map:'winterland',x:20,y:30,base:{h:8,v:7,vn:2}},G:{}});
  assert.equal(installGameGeometry(r),true);
- vm.runInContext(shared.slice(shared.indexOf('  function farmingEntryPoint('),shared.indexOf('  function prepareConvoyRoute(')),r);
+ // The hunting owner's farm client picks the entry point; shared.js hands it movement's walkable,
+ // a point a body can stand on (movement/character/install.ts walk.walkable).
+ const {installFarmClient}=require('../../runtime/hunting/character/farm.ts');
+ const walkable=p=>r.can_move({map:p.map,x:p.x,y:p.y,going_x:p.x,going_y:p.y,base:r.character.base});
+ const ports={character:()=>r.character,walkable,kept:()=>({})};
+ const farm=installFarmClient(new Proxy(ports,{get:(t,k)=>k in t?t[k]:()=>null}));
  const area={map:'winterland',x:20,y:-1109,shapes:[{boundary:[-173,-1488,212,-730]}]};
- const point=r.farmingEntryPoint(area);assert.equal(zones.contains(area,point),true);assert.ok(point.y < -730);
+ const point=farm.entryPoint(area);assert.equal(zones.contains(area,point),true);assert.ok(point.y < -730);
 });
-
 test('explicit farming route releases completed Escape before authorizing the convoy',()=>{
  const party={escape:{stage:'complete'},farmAreaState:{paused:true,message:'old failure',pending:{},failures:{old:2}}};
  let destination=null;
@@ -217,64 +161,4 @@ test('explicit farming route releases completed Escape before authorizing the co
  require('./helpers/coordinator-farming-authorization.cjs').installFarmingAuthorization(c);
  const zone={map:'winterland',x:20,y:-1109};c.authorizeFarmingRoute(['W'],zone,true);
  assert.equal(destination,zone);assert.equal(party.farmAreaState.paused,false);assert.equal(party.farmAreaState.message,null);
-});
-
-test('convoy announced before local command blocks independent zone searching',()=>{
- const r=movement();r.c.partyConvoyActive=true;
- assert.equal(r.c.recoverFarmApproach(null),true);assert.equal(r.calls(),0);
-});
-test('Escape release installs convoy ownership before its first asynchronous stop',async()=>{
- const r=movement();r.c.state={partyConvoyActive:true,escape:null};r.c.partyConvoyActive=false;
- vm.runInContext(require('./helpers/named-function.cjs').namedFunction(shared,'convoyActivityFromStatus'),r.c);
- r.c.applyEscape=async()=>{assert.equal(r.c.recoverFarmApproach(null),true);assert.equal(r.calls(),0);};
- vm.runInContext(shared.slice(shared.indexOf('  async function applyEventReturnOwner('),shared.indexOf('  async function merchantSendMail(')),r.c);
- const start=shared.indexOf('      // Install the new convoy barrier');
- const end=shared.indexOf('      await applyNavigationIntent',start);
- await vm.runInContext('(async()=>{'+shared.slice(start,end)+'})()',r.c);
-});
-
-test('superseded Town guard cannot stop a new convoy or cast Town after an awaited stop',async()=>{
- const calls=[];const c=vm.createContext({character:{ctype:'warrior',map:'winterland',x:0,y:0},partyTownActive:true,townTraveling:false,townOverrideInFlight:false,
-  convoyTraveling:null,root:{__partyTownGeneration:1},runtimeCurrent:()=>true,escapeOwns:()=>false,
-  stop:async type=>{calls.push(type);c.partyTownActive=false;c.root.__partyTownGeneration++;},use_skill:async name=>calls.push(name)});
- vm.runInContext(shared.slice(shared.indexOf('  async function enforcePartyTownOverride()'),shared.indexOf('  function maintainTownOverrideGuard()')),c);
- await c.enforcePartyTownOverride();assert.deepEqual(calls,['smart']);assert.equal(c.townOverrideInFlight,false);
-});
-
-
-test('clear local approach never calls smart routing or group convoy',()=>{
- const r=movement();let moves=0;
- r.c.can_move_to=()=>true;r.c.move=()=>{moves++;return Promise.resolve();};
- r.c.requestGroupApproach=()=>{throw Error('unexpected convoy');};
- r.c.recoverFarmApproach(r.target);r.now(13100);r.c.recoverFarmApproach(r.target);
- assert.equal(moves,1);assert.equal(r.calls(),0);
-});
-
-
-test('a blocked target moving slightly cannot reset the local detour deadline forever',()=>{
- const r=movement();let y=190;
- r.c.combatApproachPoint=()=>({x:0,y});
- r.c.recoverFarmApproach(r.target);r.now(11600);r.c.recoverFarmApproach(r.target);
- y=192;r.now(13000);r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),0);
- y=193;r.now(14600);r.c.recoverFarmApproach(r.target);assert.equal(r.calls(),1);
-});
-
-test('competition cannot relocate while a scattered follower still sees the target type',()=>{
- const t=controlFixture();t.party.statuses.W.farmAreaEvidence=[{key:'kill',actor:'Other',mtype:'bee',map:'main',x:50,y:50,at:t.now(),kill:true}];
- t.party.statuses.P.farmCompetition.monsters.bee=1;t.c.farmAreaTick();assert.equal(t.starts.length,0);assert.equal(t.party.farmAreaState.pending,null);
- delete t.party.statuses.P.farmCompetition.monsters.bee;t.advance();t.c.farmAreaTick();assert.equal(t.starts.length,1);
-});
-test('a pending conflict is cancelled if monsters reappear before departure',()=>{
- const t=controlFixture();t.party.statuses.W.farmAreaEvidence=[{key:'kill',actor:'Other',mtype:'bee',map:'main',x:50,y:50,at:t.now(),kill:true}];
- t.party.statuses.W.map='main';t.party.statuses.W.groupedCombat.currentAttackers=[{id:'enemy',map:'main',target:'W',hp:100}];
- t.c.farmAreaTick();assert.ok(t.party.farmAreaState.pending);t.party.statuses.P.farmCompetition.monsters.bee=1;t.advance();t.c.farmAreaTick();assert.equal(t.party.farmAreaState.pending,null);assert.equal(t.starts.length,0);
-});
-
-test('retained backend event exit after CODE turnover prevents empty-zone farming until cycle retires',()=>{
- const r=movement();r.c.partyLocation.map='winterland';r.c.eventReturnPending=false;r.c.__partyEventRecoveryCycleId='event-1';
- vm.runInContext(require('./helpers/named-function.cjs').namedFunction(shared,'eventExitOwnsMovement'),r.c);
- for(let i=0;i<20;i++){r.now(13000+i*1000);assert.equal(r.c.recoverFarmApproach(null),true);}
- assert.equal(r.calls(),0);assert.equal(r.stops(),0);
- r.c.__partyEventRecoveryCycleId=null;r.now(40000);r.c.recoverFarmApproach(null);
- assert.equal(r.calls(),1,'native farming continuation resumes after actual cycle retirement');
 });

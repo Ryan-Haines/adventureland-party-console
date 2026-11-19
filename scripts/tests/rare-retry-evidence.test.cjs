@@ -1,39 +1,30 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createRareRetryEvidence}=require('../../runtime/coordinator/navigation/rare-retry-evidence.ts');
-test('rejection receipts project heartbeat positions and migrate bloated saved receipts without reopening pursuit',()=>{
+// The hunting owner's rare service keeps its rejections (coordinator/rares.ts `reject`, `renewed`) and the load
+// projects old saved ones (record.ts `loadRareRejections`).
+const {rareRejection}=require('../../runtime/hunting/coordinator/rares.ts');
+const {loadFarmingRecord}=require('../../runtime/hunting/coordinator/record.ts');
+const {fixture}=require('./fixtures/rare-hunting-scenario.cjs');
+test('rejection receipts project heartbeat positions and the load trims bloated saved receipts',()=>{
  const sight={id:'phoenix',mtype:'phoenix',map:'main',x:10,y:0,hp:100,seenAt:1000,realm:':USII',in:'main',reporter:'P'};
  const heartbeat={map:'main',x:0,y:0,items:[{meta:'x'.repeat(1000000)}],combatTrace:[],groupedCombat:{}};
- const saved={legacy:{sight:{...sight,extra:heartbeat},origin:heartbeat}};
- const service=createRareRetryEvidence(saved);
- assert.deepEqual(saved.legacy.origin,{map:'main',x:0,y:0});
- assert.ok(JSON.stringify(saved).length<1000);
- assert.equal(service.eligible('legacy',{...sight,seenAt:2000},heartbeat),false);
- service.reject('new',sight,heartbeat);
- heartbeat.x=99;sight.hp=1;
- assert.equal(saved.new.origin.x,0);assert.equal(saved.new.sight.hp,100);
- assert.ok(JSON.stringify(saved).length<2000);
- assert.equal(service.eligible('legacy',{...sight,seenAt:2000},heartbeat),true);
+ const loaded=loadFarmingRecord({rareRetryEvidence:{legacy:{sight:{...sight,extra:heartbeat},origin:heartbeat}}},{},()=>1).rareRetryEvidence;
+ assert.deepEqual(loaded.legacy.origin,{map:'main',x:0,y:0});assert.ok(JSON.stringify(loaded).length<1000);
+ const kept=rareRejection(sight,heartbeat);heartbeat.x=99;sight.hp=1;
+ assert.deepEqual([kept.origin.x,kept.sight.hp],[0,100]);
 });
-test('unchanged rejected rare evidence cannot repeatedly cancel return; material changes admit it again',()=>{
- const r=createRareRetryEvidence(),s={id:'hen',map:'main',x:10,y:0,hp:100,target:null,seenAt:1000},origin={map:'main',x:0,y:0};
- r.reject('hen',s,origin);
- assert.equal(r.eligible('hen',{...s,seenAt:99999},origin),false);
- assert.equal(r.eligible('new-hen',s,origin),true);
- assert.equal(r.eligible('hen',{...s,hp:99,seenAt:2000},origin),true);
- r.reject('hen',s,origin);assert.equal(r.eligible('hen',{...s,seenAt:2000},{...origin,x:60}),false);
+// A rejected rare is tried again only on a newer sighting with less HP, newly engaged by the party or
+// newly in reach, on the group's map; an unchanged or older sighting leaves it rejected.
+test('unchanged rejected rare evidence stays rejected; a newer sighting with less HP admits it again',()=>{
+ const r=fixture(),key=':USII|main|main|phoenix';
+ r.party.rareRetryEvidence={[key]:{sight:{id:'phoenix',mtype:'phoenix',map:'main',in:'main',realm:':USII',x:20,y:10,hp:5600,seenAt:r.time()},origin:{map:'main',x:0,y:0}}};
+ r.advance(1000);r.sight();assert.equal(r.controller.encounter(),false);assert.ok(r.party.rareRetryEvidence[key]);
+ r.advance(1000);r.sight('phoenix','W',{hp:5500});assert.equal(r.party.rareRetryEvidence[key],undefined);
 });
 
-test('ambient wandering and restarts preserve rejection; usable range or new combat clears it',()=>{
- const saved={},s={id:'fairy',map:'main',x:100,y:0,hp:5600,seenAt:1000},origin={map:'main',x:0,y:0};
- createRareRetryEvidence(saved).reject('fairy',s,origin);
- const restored=createRareRetryEvidence(JSON.parse(JSON.stringify(saved)));
- assert.equal(restored.eligible('fairy',{...s,x:500,seenAt:2000},{...origin,x:100}),false);
- assert.equal(restored.eligible('fairy',{...s,hp:1},origin),false,'stale damage cannot reopen pursuit');
- assert.equal(restored.eligible('fairy',{...s,seenAt:3000},origin,true),true);
-});
-
-test('old engagement and already-known reachability cannot repeatedly reopen a rejection',()=>{
- const r=createRareRetryEvidence(),s={id:'fairy',map:'main',x:0,y:0,hp:5600,seenAt:1000,partyEngaged:true,reachable:true},origin={map:'main',x:0,y:0};
- r.reject('fairy',s,origin);assert.equal(r.eligible('fairy',{...s,seenAt:2000},origin,true),false);
- assert.equal(r.eligible('fairy',{...s,hp:5500,seenAt:3000},origin,true),true);
+// HN21: the retry rejection keys on the end code the encounter sets, never on its message text.
+test('HN21 only a released or no-progress end rejects the rare', () => {
+ const {rareEndRejects,rareEndLabel}=require('../../runtime/hunting/rules.ts');
+ for (const code of ['released','no-progress']) assert.equal(rareEndRejects(code),true,code);
+ for (const code of ['killed','died','disabled','claimed','interrupted']) assert.equal(rareEndRejects(code),false,code);
+ assert.match(rareEndLabel('no-progress','Phoenix'),/no progress/);
 });

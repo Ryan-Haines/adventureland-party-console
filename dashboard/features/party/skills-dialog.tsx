@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { displayValue } from "./display-value";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { X } from "lucide-react";
 import { useState } from "react";
-import { ItemSprite } from "./item-sprite";
+import { SpriteCrop } from "./sprite-crop";
 import { SkillClass } from "./skill-class";
 import { SkillEntry } from "./skill-entry";
 import { skillRangeLabel } from "./skill-range-label";
@@ -44,7 +45,7 @@ export function SkillsDialog({
         if (!next) setSelected(null);
       }}
     >
-      <DialogContent
+      <DialogContent data-area="skills"
         className="flex max-h-[92vh] flex-col border-violet-900 bg-[#0b1916] text-emerald-50"
         style={{ width: "calc(100vw - 2rem)", maxWidth: "1500px" }}
       >
@@ -86,7 +87,7 @@ export function SkillsDialog({
                       className="min-w-0 rounded border border-violet-800 bg-[#101d1b] p-2 text-center text-emerald-50 hover:border-violet-400 hover:bg-[#202b2b]"
                     >
                       <div className="relative mx-auto h-11 w-11">
-                        {skill.sprite && <ItemSprite sprite={skill.sprite} />}
+                        {skill.sprite && <SpriteCrop sprite={skill.sprite} />}
                       </div>
                       <p className="mt-1 truncate text-[11px]" title={skill.name}>
                         {skill.name}
@@ -121,7 +122,7 @@ export function SkillsDialog({
                 </Button>
                 <div className="mb-3 flex items-center gap-3">
                   <div className="relative h-12 w-12">
-                    {selected.sprite && <ItemSprite sprite={selected.sprite} />}
+                    {selected.sprite && <SpriteCrop sprite={selected.sprite} />}
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold">{selected.name}</h3>
@@ -150,6 +151,7 @@ export function SkillsDialog({
             )}
           </aside>
         </div>
+        <AddonSlot name="dialog-section" part="skills" />
       </DialogContent>
     </Dialog>
   );

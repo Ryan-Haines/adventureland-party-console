@@ -1,4 +1,4 @@
-import { METRIC_RESET_KINDS, type MetricsResponse, type MetricTotals, type MetricResetKind, type MetricResets } from '../../../runtime/metrics/contracts.ts';
+import { METRIC_RESET_KINDS, type MetricsResponse, type MetricTotals, type MetricResetKind, type MetricResets } from '../../../runtime/status/api.ts';
 
 export interface GraphPoint { at: number; [key: string]: number | null }
 export interface GraphSeries { key: string; label: string; color: string; dash?: string }

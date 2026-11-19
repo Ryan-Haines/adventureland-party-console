@@ -1,6 +1,16 @@
 import type {BrowserContext, Request} from '@playwright/test';
 import {gameplayTimers} from './network-clock';
 
+/** A binding lives as long as its context and the worker reuses one context across rows, so each context registers it once and forwards to the current row's observer. */
+const ownershipSinks=new WeakMap<BrowserContext,{sink:(at:number,body:any)=>void}>();
+async function exposeOwnershipBinding(context:BrowserContext,sink:(at:number,body:any)=>void){
+  const held=ownershipSinks.get(context);
+  if(held){held.sink=sink;return;}
+  const entry={sink};
+  ownershipSinks.set(context,entry);
+  await context.exposeBinding('__e2eNativePlannerOwnership',(_source,value)=>entry.sink(value.at,value.body));
+}
+
 /** Observe real status traffic; never reacquire CODE while holding a 2s request. */
 export function observeNativePlanner(context:BrowserContext) {
   const {setTimeout,clearTimeout}=gameplayTimers()??globalThis;
@@ -24,25 +34,31 @@ export function observeNativePlanner(context:BrowserContext) {
     failures.push({at:Date.now(),id:request.postDataJSON()?.id,error:request.failure()?.errorText});
   };
   context.on('request',requested);context.on('requestfailed',failed);
+  let deliveryFailures=0;
   return {
     failures,
+    get deliveryFailures(){return deliveryFailures;},
     async install(client:{run(code:string):Promise<any>}){
-      await context.exposeBinding('__e2eNativePlannerOwnership',(_source,value)=>remember(value.at,value.body));
+      await exposeOwnershipBinding(context,(at,body)=>remember(at,body));
       await client.run(`(()=>{
         const native=$.ajax;
         function observed(options){
           if(options&&typeof options==='object'&&new URL(options.url,location.href).pathname==='/party-api/movement-plan'){
-            const request=JSON.parse(options.data),movement=globalThis.__partyMovement?.report?.(),convoyNavigation=globalThis.sharedRoutine?.convoyNavigationReport?.();
+            const request=JSON.parse(options.data),movement=globalThis.__partyMovement?.report?.(),convoyNavigation=globalThis.partyMovement?.convoyNavigationReport?.();
             if(request.character===character.name&&movement?.id===request.id&&convoyNavigation)
-              void globalThis.__e2eNativePlannerOwnership({at:Date.now(),body:{name:character.name,movement,convoyNavigation}}).catch(()=>{});
+              void globalThis.__e2eNativePlannerOwnership({at:Date.now(),body:{name:character.name,movement,convoyNavigation}})
+                .catch(()=>{globalThis.__e2eNativePlannerDeliveryFailures=(globalThis.__e2eNativePlannerDeliveryFailures||0)+1;});
           }
           return native.apply(this,arguments);
         }
         $.ajax=observed;
-        globalThis.__e2eRestoreNativePlannerOwnership=()=>{if($.ajax===observed)$.ajax=native;delete globalThis.__e2eRestoreNativePlannerOwnership;};
+        globalThis.__e2eRestoreNativePlannerOwnership=()=>{if($.ajax===observed)$.ajax=native;delete globalThis.__e2eRestoreNativePlannerOwnership;
+          const failed=globalThis.__e2eNativePlannerDeliveryFailures||0;delete globalThis.__e2eNativePlannerDeliveryFailures;return failed;};
         return true;
       })()`);
-      return ()=>client.run('(()=>{globalThis.__e2eRestoreNativePlannerOwnership?.();return true;})()');
+      // The restore reads back the ownership reports the binding refused, so the row's attachment
+      // tells a missing sample from a lost delivery.
+      return async()=>{deliveryFailures+=Number(await client.run('(()=>globalThis.__e2eRestoreNativePlannerOwnership?.()??0)()'))||0;};
     },
     async sample(request:{character:string;id:string}) {
       const matching=()=>{

@@ -24,7 +24,7 @@ export function HuntBlacklistPicker({catalog,blacklist,disabled,onAdd,renderMons
   return <>
     <Button size="sm" disabled={disabled||!onAdd} className={control} onClick={()=>{setSearch('');setError('');setOpen(true);}}>Add</Button>
     <Dialog open={open} onOpenChange={value=>{setOpen(value);if(!value)setInspected(null);}}>
-      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-xl">
+      <DialogContent data-area="hunt-blacklist-picker" className="flex max-h-[85vh] flex-col overflow-hidden border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-xl">
         <DialogHeader><DialogTitle>Add to Hunt blacklist</DialogTitle><DialogDescription className="text-emerald-100/80">Choose any monster to skip its Hunt quests. Click a monster for details.</DialogDescription></DialogHeader>
         <input aria-label="Search blacklist monsters" placeholder="Search monsters…" value={search} onChange={e=>setSearch(e.target.value)} className="w-full rounded border border-emerald-600 bg-[#07110f] px-3 py-2 text-emerald-50 placeholder:text-emerald-100/60"/>
         <section aria-label="Hunt blacklist monsters" className="min-h-0 max-h-[55vh] space-y-2 overflow-y-auto overscroll-contain">

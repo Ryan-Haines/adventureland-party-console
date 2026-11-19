@@ -1,8 +1,8 @@
 import type { LiveGame } from '../live-fixtures';
 import { expect } from '../live-fixtures';
 
-export const W='E2EWarrior', P='E2EPriest', M='E2EMerchant';
-export const quantity=(items:any[],id:string)=>items.reduce((n,item)=>n+(item?.name===id?item.q||1:0),0);
+import {warrior as W,priest as P,merchant as M,quantity} from './hunt-lifecycle';
+export {W,P,M,quantity};
 export async function world(live:LiveGame) {
   let observed:any;
   await expect.poll(async()=>{
@@ -15,21 +15,16 @@ export async function world(live:LiveGame) {
   return observed;
 }
 
-export async function prepareHunt(live:LiveGame) {
-  await live.post('/formation',{leader:W});
-  await live.post('/formation',{character:P,follow:true});
-  await expect.poll(async()=>(await live.state(true)).monsterChoices?.some((m:any)=>m.id==='goo'),{timeout:120_000}).toBe(true);
-  const location=(await live.state(true)).monsterChoices.find((m:any)=>m.id==='goo').locations.find((l:any)=>l.map==='main');
-  await live.admin(`output=${JSON.stringify([W,P])}.map(name=>{const p=get_player(name);p.s.monsterhunt={sn:region+' '+server_name,id:'goo',c:500,ms:1800000};resend(p,'u+cid+reopen');return p.s.monsterhunt})`);
-  await expect.poll(async()=>(await live.state()).characters[W]?.monsterHunt?.count,{timeout:20_000}).toBe(500);
-  await live.post('/farming-mode',{character:W,mode:'hunt',backup:{monsterFocus:['goo'],location}});
-  await expect.poll(async()=>(await live.state()).monsterHunt?.cycleId,{timeout:30_000}).toBeTruthy();
-  return {cycleId:(await live.state()).monsterHunt.cycleId,location};
-}
-/** Real upstream rule factory; only its initial scheduling clock/selection seed is controlled. */
+/** Real upstream rule factory; only its initial scheduling clock/selection seed is controlled.
+ *  The round's target is the first eligible player in the seeded order, and the event's reward
+ *  block leaves out a player under realm fatigue or hop sickness (logic/anniversary_event.js
+ *  `rewardBlock`). Realm fatigue from an earlier realm change outlasts the world reset, so the host
+ *  starts without either, or the round picks the next player. */
 export async function beginAnniversary(live:LiveGame,host=P) {
   return live.admin(`output=(()=>{
     if(events.anniversary)throw Error('Anniversary already active');
+    const hosting=get_player(${JSON.stringify(host)});
+    if(hosting?.s&&(hosting.s.realmfatigue||hosting.s.hopsickness)){delete hosting.s.realmfatigue;delete hosting.s.hopsickness;resend(hosting,'u+cid');}
     const interval=anniversary_rules.INTERVAL;
     const offset=Math.ceil(Date.now()/interval)*interval-Date.now()+100;
     let first=true;
@@ -85,4 +80,20 @@ export async function cleanupEvents(live:LiveGame) {
     }
     delete globalThis.__e2eHuntRareOriginal;return true;
   })()`);
+}
+// The pinned server ends Halloween at design/event_flags.js `event_ends.halloween`
+// (2026-11-03T00:00:00.000Z), and its event_loop (server_functions.js season_end_logic) sets
+// events.halloween back to false within a second once the clock passes that time. The row moves
+// the end a day past its own clock and opens the season, so the tour runs on any date; the undo
+// restores the flag before the end time, so season_end_logic never runs halloween_season_end.
+export async function holdHalloweenSeason(live:LiveGame){
+  const previous=await live.admin(`output=(()=>{const previous={enabled:!!events.halloween,published:!!E.halloween,end:event_ends.halloween??null};
+    event_ends.halloween=new Date(Date.now()+86400000).toISOString();events.halloween=true;E.halloween=true;broadcast_e();return previous;})()`);
+  // The restore also ends the season inside a row that must see the end's return finish; running it
+  // twice restores the same values.
+  const restore=()=>live.admin(`output=(()=>{const previous=${JSON.stringify(previous)};
+    events.halloween=previous.enabled;if(!previous.published)delete E.halloween;
+    if(previous.end==null)delete event_ends.halloween;else event_ends.halloween=previous.end;broadcast_e();return true;})()`);
+  live.undo('Halloween season hold',restore);
+  return restore;
 }

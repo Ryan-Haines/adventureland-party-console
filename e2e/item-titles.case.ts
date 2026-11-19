@@ -1,7 +1,6 @@
 import { test, expect } from "./fixtures";
 import type { Locator } from "@playwright/test";
-import { build } from "esbuild";
-import path from "node:path";
+import { color, mountComponent } from "./fixtures/component-harness";
 import { openComparison, weapon } from "./catalog-comparison.case";
 
 // Failure inventory: docs/item-titles.md. Game metadata, including G.titles on the
@@ -16,17 +15,7 @@ const blade = (p: string, properties?: Record<string, number>) => ({
 });
 
 test("item titles name the copy and add the game's title stats", async ({ page, app }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `
+  await mountComponent(page, app, "item-titles-harness", `
     import React from 'react';import {createRoot} from 'react-dom/client';
     import {ItemDetails} from './features/party/item-details';
     import {GearComparisonDialog} from './features/party/gear-comparison-dialog';
@@ -36,17 +25,7 @@ test("item titles name the copy and add the game's title stats", async ({ page, 
       kind==='item'?<ItemDetails selected={value} catalog={[]} exchanges={[]} skills={[]} monsters={[]} characters={[]} achievements={{}} standFull={false}
         onNavigate={noop} onAddWTB={noop} onAddStand={noop} onCompare={noop} onCompareCatalog={noop} onOpenChange={noop}/>:
       <GearComparisonDialog comparison={value} onOpenChange={noop}/>),0);
-  `,
-    },
-  });
-  await page.goto(app.url);
-  await expect(page.locator("body")).toContainText("Party");
-  const styles = await page.locator('style, link[rel="stylesheet"]').evaluateAll((nodes) => nodes.map((node) => node.outerHTML).join("\n"));
-  await page.route("**/item-titles-harness", (route) =>
-    route.fulfill({ contentType: "text/html", body: `<!doctype html><head>${styles}</head><body><div id="root"></div></body>` }));
-  await page.setViewportSize({ width: 1400, height: 1000 });
-  await page.goto(app.url + "/item-titles-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  `);
   const item = async (name: string, entry: unknown) => {
     await page.evaluate((value) => (window as any).show("item", value), { character: "W", entry: { slot: 1, ...(entry as object) } });
     const dialog = page.getByRole("dialog", { name, exact: true });
@@ -62,7 +41,7 @@ test("item titles name the copy and add the game's title stats", async ({ page, 
   const shiny = await item("Shiny Blade +7", blade("shiny"));
   await expect(line(shiny.card, "attack")).toHaveText("Damage: 53");
   await expect(line(shiny.extras, "title")).toHaveText("Title: Shiny");
-  expect(await line(shiny.extras, "title").locator("[data-label]").evaluate((node) => getComputedStyle(node).color)).toBe("rgb(255, 215, 0)");
+  expect(await color(line(shiny.extras, "title").locator("[data-label]"))).toBe("rgb(255, 215, 0)");
   await info.attach("item-titles-shiny-blade", { body: await shiny.dialog.screenshot(), contentType: "image/png" });
   // 2: a two-handed type gains 7.
   const axe = await item("Shiny Axe", { item: { name: "axe", level: 0, p: "shiny" },

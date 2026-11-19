@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from 'react';
 import type { Sprite } from './sprite';
-import { SpriteCrop } from './sprite-crop';
+import { SPRITE_CROP_SIZE, SpriteCrop } from './sprite-crop';
 import { spriteCenterOffset } from './sprite-center';
 
 const sheets = new Map<string, Promise<HTMLImageElement>>();
@@ -20,8 +20,13 @@ function offset(sprite: Sprite) {
     const context = canvas.getContext('2d', { willReadFrequently: true });
     if (!context) return { x: 0, y: 0 };
     context.drawImage(image, sprite.x * width, sprite.y * height, width, height, 0, 0, width, height);
-    return spriteCenterOffset(context.getImageData(0, 0, width, height).data, width, height, 48);
-  })().catch(() => ({ x: 0, y: 0 })));
+    return spriteCenterOffset(context.getImageData(0, 0, width, height).data, width, height, SPRITE_CROP_SIZE);
+  })().catch((error: unknown) => {
+    // A failed sheet or offset is not kept, so the next mount asks again; the sprite draws unshifted.
+    offsets.delete(key); sheets.delete(sprite.url);
+    console.error(`Sprite ${sprite.url} could not be centred`, error);
+    return { x: 0, y: 0 };
+  }));
   return offsets.get(key)!;
 }
 export function CenteredMonsterSprite({ sprite }: { sprite: Sprite }) {

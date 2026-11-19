@@ -1,14 +1,14 @@
 import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
-import { redirectInternal, fromGateway, dashboardReadyMessage } from './gateway-access.ts';
+import { redirectInternal, fromGateway, dashboardReadyMessage, DASHBOARD_PORT } from './gateway-access.ts';
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import { fingerprint } from "./fingerprint.ts";
 import { completed, launch, stop, waitForHealthy } from "./process.ts";
-import { readJson, withBuildLock } from '../build-store.ts';
+import { readJson, withBuildLock } from '../hosting/api.ts';
 import { dashboardHistory, rememberDashboard, releasePath, cleanDashboard, pinDashboard } from './history.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dashboard");
@@ -17,11 +17,12 @@ const publicPort =
   Number(
     process.argv.find((argument) => argument.startsWith("--port="))?.split("=")[1] ||
       process.env.AL_DASHBOARD_PUBLIC_PORT,
-  ) || 3010;
+  ) || DASHBOARD_PORT;
 const stateFile = path.join(
   root,
-  process.env.AL_DASHBOARD_MODE_FILE || (publicPort === 3010 ? ".build/mode.json" : `.build/mode-${publicPort}.json`),
+  process.env.AL_DASHBOARD_MODE_FILE || (publicPort === DASHBOARD_PORT ? ".build/mode.json" : `.build/mode-${publicPort}.json`),
 );
+const localOrigins = [`http://localhost:${publicPort}`, `http://127.0.0.1:${publicPort}`];
 type Mode = "development" | "production";
 type Running = { mode: Mode; port: number; process: ChildProcess; generation?: string; id: string };
 let active: Running | undefined;
@@ -124,10 +125,19 @@ async function rejectCandidate(candidate: Running | undefined, error: unknown): 
   failure = error instanceof Error ? error.message : String(error);
   await pin();
 }
-async function changeMode(mode: Mode, selected?: string): Promise<void> {
-  if (busy) throw new Error("A dashboard build is already in progress");
-  if (active?.mode === mode && mode === "development") return;
+// One operation at a time: claim() refuses while one runs, and the routes answer that refusal 409.
+class Busy extends Error {}
+function claim(): void {
+  if (busy) throw new Busy("A dashboard operation is in progress");
   busy = true;
+}
+// The claim is taken before the first await, so a route knows at once whether its change runs.
+function changeMode(mode: Mode, selected?: string): Promise<void> {
+  claim();
+  return switchMode(mode, selected).finally(() => { busy = false; });
+}
+async function switchMode(mode: Mode, selected?: string): Promise<void> {
+  if (active?.mode === mode && mode === "development") return;
   failure = null;
   let candidate: Running | undefined;
   const priorSelection = rollbackSelection;
@@ -141,7 +151,30 @@ async function changeMode(mode: Mode, selected?: string): Promise<void> {
     rollbackSelection = priorSelection;
     await rejectCandidate(candidate, error);
     throw error;
-  } finally { busy = false; }
+  }
+}
+
+// The gate of the routes that change the supervisor: a container build is immutable, a change comes
+// from this dashboard's own origin, and its body is read under the route's cap. It answers the
+// refusal and returns undefined, or returns the parsed body.
+async function changingRequest(req: IncomingMessage, res: ServerResponse, cap: number): Promise<unknown> {
+  if (process.env.AL_DASHBOARD_PREBUILT) {
+    json(res, 409, { error: "Container builds are immutable. Rebuild the Docker image to update." });
+    return;
+  }
+  if (!localOrigins.includes(req.headers.origin || "")) {
+    json(res, 403, { error: "Local dashboard origin required" });
+    return;
+  }
+  let body = "";
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > cap) throw new Error("Request too large");
+  }
+  return JSON.parse(body);
+}
+function refused(res: ServerResponse, error: unknown): void {
+  json(res, error instanceof Busy ? 409 : 400, { error: error instanceof Error ? error.message : String(error) });
 }
 
 async function handleBuilds(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -150,30 +183,18 @@ async function handleBuilds(req: IncomingMessage, res: ServerResponse): Promise<
       json(res, 200, await buildList()); return;
     }
     if (req.method !== 'POST') { json(res, 405, {error: 'Use GET or POST'}); return; }
-    if (process.env.AL_DASHBOARD_PREBUILT) throw new Error('Container builds are immutable');
-    if (![ `http://localhost:${publicPort}`, `http://127.0.0.1:${publicPort}` ].includes(req.headers.origin || '')) {
-      json(res, 403, {error: 'Local dashboard origin required'}); return;
-    }
-    if (busy) { json(res, 409, {error: 'A dashboard operation is in progress'}); return; }
-    await performBuildAction(await readBuildRequest(req), res);
-  } catch (error) { json(res, 400, {error: error instanceof Error ? error.message : String(error)}); }
+    const input = await changingRequest(req, res, 1024) as BuildRequest | undefined;
+    if (input) await performBuildAction(input, res);
+  } catch (error) { refused(res, error); }
 }
 async function buildList() {
   return {active: active?.generation, previous: previous?.generation,
     pinned: rollbackSelection, builds: await dashboardHistory(root)};
 }
 interface BuildRequest {action: string; id?: string; apply?: boolean}
-async function readBuildRequest(req: IncomingMessage): Promise<BuildRequest> {
-  let body = '';
-  for await (const chunk of req) { body += chunk; if (body.length > 1024) throw new Error('Request too large'); }
-  return JSON.parse(body) as BuildRequest;
-}
 async function performBuildAction(input: BuildRequest, res: ServerResponse): Promise<void> {
-    // Recheck after reading the request body; another request may have started
-    // an operation while this one was still arriving.
-    if (busy) { json(res, 409, {error: 'A dashboard operation is in progress'}); return; }
     if (input.action === 'clean') {
-      busy = true;
+      claim();
       try { json(res, 200, await cleanup(input.apply === true)); } finally { busy = false; }
       return;
     }
@@ -190,14 +211,14 @@ function json(response: ServerResponse, status: number, value: unknown): void {
   response.end(JSON.stringify(value));
 }
 
-function proxy(req: IncomingMessage, res: ServerResponse, target: Running, fallback = true): void {
+function proxy(req: IncomingMessage, res: ServerResponse, port: number, fallback = true): void {
   const upstream = request(
     {
       hostname: "127.0.0.1",
-      port: target.port,
+      port,
       method: req.method,
       path: req.url,
-      headers: { ...req.headers, host: `127.0.0.1:${target.port}` },
+      headers: { ...req.headers, host: `127.0.0.1:${port}` },
     },
     (response) => {
       if (
@@ -208,7 +229,7 @@ function proxy(req: IncomingMessage, res: ServerResponse, target: Running, fallb
         /\.(js|css|woff2?)(\?|$)/.test(req.url || "")
       ) {
         response.resume();
-        proxy(req, res, previous, false);
+        proxy(req, res, previous.port, false);
         return;
       }
       res.writeHead(response.statusCode || 502, response.headers);
@@ -225,40 +246,16 @@ function proxy(req: IncomingMessage, res: ServerResponse, target: Running, fallb
   else upstream.end();
 }
 
-async function readModeRequest(req: IncomingMessage): Promise<Mode> {
-      let body = "";
-      for await (const chunk of req) {
-        body += chunk;
-        if (body.length > 128) throw new Error("Request too large");
-      }
-      const { mode } = JSON.parse(body) as { mode: Mode };
-      if (mode !== "development" && mode !== "production")
-        throw new Error("Invalid dashboard mode");
-  return mode;
-}
 async function handleMode(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if (process.env.AL_DASHBOARD_PREBUILT) {
-      json(res, 409, { error: "Container builds are immutable. Rebuild the Docker image to update." });
-      return;
-    }
-    // Requests changing the local supervisor must originate in this dashboard.
-    if (
-      req.headers.origin !== `http://localhost:${publicPort}` &&
-      req.headers.origin !== `http://127.0.0.1:${publicPort}`
-    ) {
-      json(res, 403, { error: "Local dashboard origin required" });
-      return;
-    }
     try {
-      const mode = await readModeRequest(req);
-      if (busy) {
-        json(res, 409, { error: "A dashboard build is already in progress" });
-        return;
-      }
+      const input = await changingRequest(req, res, 128) as { mode?: Mode } | undefined;
+      if (!input) return;
+      if (input.mode !== "development" && input.mode !== "production") throw new Error("Invalid dashboard mode");
+      const change = changeMode(input.mode);
       json(res, 202, { pending: true });
-      void changeMode(mode).catch((error) => console.error(error.message));
+      void change.catch((error) => console.error(error.message));
     } catch (error) {
-      json(res, 400, { error: error instanceof Error ? error.message : "Invalid request" });
+      refused(res, error);
     }
 }
 
@@ -270,7 +267,7 @@ const server = createServer(async (req, res) => {
   if (req.url !== '/__dashboard/state' && redirectInternal(req, res)) return;
   if (req.url === '/__dashboard/builds') { await handleBuilds(req, res); return; }
   if (req.url?.startsWith("/party-api/")) {
-    proxy(req, res, { port: Number(process.env.AL_INTERNAL_API_PORT) || 924 } as Running);
+    proxy(req, res, Number(process.env.AL_INTERNAL_API_PORT) || 924);
     return;
   }
   if (req.url === "/__dashboard/state" && req.method === "GET") {
@@ -285,7 +282,7 @@ const server = createServer(async (req, res) => {
     json(res, 503, { error: failure || "Dashboard is starting" });
     return;
   }
-  proxy(req, res, active);
+  proxy(req, res, active.port);
 });
 
 server.on("upgrade", (req, socket, head) => {
@@ -318,16 +315,13 @@ process.once("SIGINT", () => void shutdown());
 process.once("SIGTERM", () => void shutdown());
 server.listen(publicPort, "127.0.0.1", async () => {
   let mode: Mode = process.argv.includes("--production") || process.env.AL_DASHBOARD_PREBUILT ? "production" : "development";
-  if (!process.argv.includes("--development") && !process.argv.includes("--production")) {
-    try {
-      const saved = JSON.parse(await readFile(stateFile, "utf8"));
-      if (saved.mode === "production") mode = "production";
-      rollbackSelection = saved.rollback;
-    } catch {
-      /* First launch uses HMR. */
-    }
-  }
+  // One read of the mode file: a missing file is a first launch, which uses HMR; a bad file is named
+  // and the supervisor starts in the mode the flags give.
+  let saved: { mode?: Mode; rollback?: string } | undefined;
+  try { saved = await readJson<{ mode?: Mode; rollback?: string }>(stateFile); }
+  catch (error) { console.error(`Could not read the dashboard mode file ${stateFile}:`, error); }
+  if (!process.argv.includes("--development") && !process.argv.includes("--production") && saved?.mode === "production") mode = "production";
   // A pinned rollback survives ordinary restarts, including --production.
-  if (!rollbackSelection) rollbackSelection = (await readJson<{rollback?: string}>(stateFile))?.rollback;
+  rollbackSelection = saved?.rollback;
   await changeMode(mode, rollbackSelection).catch((error) => console.error(error.message));
 });

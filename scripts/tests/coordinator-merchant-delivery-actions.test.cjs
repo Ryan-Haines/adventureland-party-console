@@ -1,21 +1,15 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createCoordinatorMerchantDeliveryActions}=require('../../runtime/coordinator/http/merchant-delivery-actions.ts');
-const {fixture}=require('./helpers/coordinator-completion.cjs');
+const {run}=require('./helpers/coordinator-host.cjs');
 
-
-function compose(f,extra={}) {
- return createCoordinatorMerchantDeliveryActions(f.state,{...f.ports,
-  inbox:()=>({complete:f.ports.mailComplete}),fetchMarket:f.ports.fetchAuth,
-  bankboi:async()=>{},identity:JSON.stringify,...extra});
-}
-
-test('authentication confirmation encodes current credentials when the delayed callback runs',async()=>{
- const f=fixture({job:{reason:'ALData authentication'}}),paths=[];
- const service=compose(f,{fetchMarket:async path=>{paths.push(path);return {auth:'CORRECT'};}});
- service.complete({body:{jobId:'job',success:true}},f.response);
- assert.deepEqual(paths,[]);assert.ok(f.calls.some(call=>call[0]==='timer'&&call[1]===65000));
- f.state.merchantCharacter='M /'; f.state.aldata.key='key/?#';
- f.timers[0]();await Promise.resolve();await Promise.resolve();
- assert.deepEqual(paths,['/auth/M%20%2F/key%2F%3F%23']);
- assert.equal(f.state.aldata.auth,'CORRECT');assert.ok(f.calls.some(call=>call[0]==='publishALData'));
+// The host composes the merchant job owner's completion route with the items owner's command ids;
+// the items owner's install runs the mail jobs. The key mail's check moved to the items owner's
+// publication ask (coordinator-market-feeds.test.cjs), so the route takes no ALData fetch.
+test('the completion route takes the items owner command ids and no ALData fetch',async()=>{
+ let party,completion;
+ const host=await run(undefined,{
+  '../items/coordinator/api.ts':policies=>({...policies,installItems(state,ports){party=state;return policies.installItems(state,ports);}}),
+  '../merchant-jobs/coordinator/api.ts':policies=>({...policies,createMerchantCompletionRoute(state,ports){completion=ports;return policies.createMerchantCompletionRoute(state,ports);}}),
+ });
+ assert.equal(completion.fetchAuth,undefined);
+ assert.equal(completion.nextCommand(),party.nextCommandId-1,'the completion route takes 10\'s command ids');
 });

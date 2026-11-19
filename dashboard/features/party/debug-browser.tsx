@@ -1,17 +1,22 @@
 'use client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { setLocalDebugAssets } from './game-image-url';
+import { hostAction } from './query-actions';
 export const debugGameUrl = '/debug-game/vnc.html?autoconnect=1&resize=scale&path=debug-game/websockify';
-export function useDebugBrowser() {
+export type DebugState = { phase: string; message: string; error?: string; port?: number; token?: string; project?: string; insideDebug?: boolean };
+export const debugQueryKey = ['console-debug'];
+// The one read of /console-debug. The banner reads it once; the settings section passes its poll
+// interval, and both observers share the answer.
+export function useConsoleDebug(refetchInterval?: number) {
+  const client = useQueryClient();
   return useQuery({
-    queryKey: ['debug-browser'], staleTime: Infinity,
-    queryFn: async () => {
-      const response = await fetch('/console-debug');
-      if (!response.ok) return false;
-      return (await response.json() as { insideDebug?: boolean }).insideDebug === true;
-    },
-  }).data === true;
+    queryKey: debugQueryKey, staleTime: refetchInterval ? 0 : Infinity, refetchInterval, retry: false,
+    queryFn: async ({ signal }) => await hostAction<DebugState>(client, '/console-debug', {}, { method: 'GET', signal }),
+  });
+}
+export function useDebugBrowser() {
+  return useConsoleDebug().data?.insideDebug === true;
 }
 export function DebugBrowserBanner() {
   const debug = useDebugBrowser();

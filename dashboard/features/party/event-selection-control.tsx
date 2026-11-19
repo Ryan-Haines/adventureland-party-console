@@ -1,29 +1,33 @@
 "use client";
 import { CaveEventRow } from './dungeon-settings';
-import { memo, useState, useEffect, useLayoutEffect, useRef } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { EventLimitsDialog } from "./event-limits-dialog";
 import { GripVertical, Settings } from "lucide-react";
 
 import { useClock } from "@/hooks/use-clock";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { eventDisplayNames, eventPolicy, selectedEvents, supportedEvents, eventPriorityOrder, eventLimits, type EventLimits } from "@/lib/event-policy";
+import { eventDisplayNames, eventPolicy, selectedEvents, supportedEvents, eventPriorityOrder, eventLimits, eventListRows, type EventLimits } from '../../../runtime/events/api';
+import { useQueryClient } from '@tanstack/react-query';
+import { performAction } from './query-actions';
+import { OverlaidBy } from '../../../runtime/hooks/dashboard/slots';
 import { PartyState } from "./party-state";
 import type {CipherView} from './cipher-controls';
-import type {TrickOrTreatCounts} from '../../../runtime/coordinator/events/schedule-reports';
+import type {TrickOrTreatCounts} from '../../../runtime/events/api.ts';
+import { requestId } from '@/lib/request-id';
+import { useReorderList, type DragPosition } from '@/lib/use-reorder-list';
 
 export type EventSchedule = { id: string; name: string; live?: boolean; next?: number; expires?: number; stale?: boolean; slotAt?: number; slotKind?: string; clockOffsetMs?:number; realmOffsetHours?:number; confirmed?:boolean; occurrences?:{at:number;status:string}[]; cipher?:CipherView; trickOrTreat?:{characters:Record<string,TrickOrTreatCounts>} };
 export type EventSelectionState = Pick<PartyState, "leader" | "merchantCharacter" | "followers" |
   "eventAttendance" | "eventLimitsByCharacter" | "eventPrioritiesByCharacter" | "eventsByCharacter" | "eventSelectionsByCharacter" | "eventSchedules">;
 export function eventTimeLabel(next: number | undefined, now: number, clockOffsetMs = 0) {
   if (!next || !Number.isFinite(next)) return "Time not announced";
-  const ms = next < 1e12 ? next * 1000 : next;
-  const remaining = Math.max(0, ms - now - clockOffsetMs);
-  return `${new Intl.DateTimeFormat(undefined, { weekday:'short', hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(ms)} (${Math.floor(remaining / 60000)}m ${Math.floor(remaining / 1000) % 60}s)`;
+  // The events owner's schedule gives milliseconds (its one epoch conversion, runtime/events/character/clock.ts `feedEpoch`).
+  const remaining = Math.max(0, next - now - clockOffsetMs);
+  return `${new Intl.DateTimeFormat(undefined, { weekday:'short', hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(next)} (${Math.floor(remaining / 60000)}m ${Math.floor(remaining / 1000) % 60}s)`;
 }
 function realmTimeLabel(next:number, offset:number) {
-  const ms=next<1e12?next*1000:next;
-  const time=new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(ms+offset*3600000);
+  const time=new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(next+offset*3600000);
   return `Realm: ${time} (UTC${offset<0?'−':'+'}${Math.abs(offset)})`;
 }
 function dailyResetLabel(now:number, clockOffsetMs=0) {
@@ -34,52 +38,27 @@ function dailyResetLabel(now:number, clockOffsetMs=0) {
   return `${local} (${Math.floor(seconds/3600)}h ${Math.floor(seconds/60)%60}m ${seconds%60}s)`;
 }
 export const EventSelectionControl = memo(function EventSelectionControl({ state, name, onChange, onPriorityChange, onLimitsChange, onAnniversary }: {
-  onLimitsChange: (event: string, limits: EventLimits) => Promise<unknown> | void; onPriorityChange: (events: string[]) => Promise<unknown> | void; state: EventSelectionState; name: string; merchant: boolean; onAnniversary: () => void; onChange: (events: string[]) => void;
+  onLimitsChange: (event: string, limits: EventLimits) => Promise<unknown> | void; onPriorityChange: (events: string[]) => Promise<unknown> | void; state: EventSelectionState; name: string; onAnniversary: () => void; onChange: (events: string[]) => void;
 }) {
   const [dragged, setDragged] = useState<string | null>(null);
   const savedOrder = eventPriorityOrder(state, name);
   const [draft, setDraft] = useState<string[] | null>(null);
   const order = draft ?? savedOrder;
-  const [dragPosition, setDragPosition] = useState<{x:number;y:number;width:number;offsetX:number;offsetY:number} | null>(null);
+  const [dragPosition, setDragPosition] = useState<DragPosition | null>(null);
   const [settings, setSettings] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const listRef = useRef<HTMLDivElement>(null);
+  const client = useQueryClient();
   const dragOrder = useRef<string[] | null>(null);
-  const positions = useRef(new Map<string, number>());
+  const { listRef, remember, rowAt } = useReorderList('event', dragged, dragPosition, draft);
   useEffect(() => { if (!dragged && draft?.join(',') === savedOrder.join(',')) setDraft(null); }, [dragged, draft, savedOrder]);
   const move = (source: string, target: string, after: boolean) => {
     if (source === target || !order.includes(target)) return;
     const next = order.filter(id => id !== source);
     next.splice(next.indexOf(target) + (after ? 1 : 0), 0, source);
-    positions.current = new Map(Array.from(listRef.current?.querySelectorAll<HTMLElement>('[data-event]') ?? []).map(row => [row.dataset.event!, row.getBoundingClientRect().top]));
+    remember();
     setDraft(next);
     return next;
   };
-  useLayoutEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    for (const row of listRef.current?.querySelectorAll<HTMLElement>('[data-event]') ?? []) {
-      const previous = positions.current.get(row.dataset.event!);
-      if (previous != null && row.dataset.event !== dragged) {
-        const delta = previous - row.getBoundingClientRect().top;
-        if (delta) row.animate([{transform:`translateY(${delta}px)`},{transform:'translateY(0)'}],{duration:150,easing:'ease-out'});
-      }
-    }
-    positions.current.clear();
-  }, [draft, dragged]);
-  useEffect(() => {
-    if (!dragged || !dragPosition) return;
-    let frame = 0;
-    const scroll = () => {
-      const list = listRef.current;
-      if (list) { const rect = list.getBoundingClientRect(), y = dragPosition.y + dragPosition.offsetY;
-        if (y < rect.top + 40) list.scrollTop -= 8;
-        else if (y > rect.bottom - 40) list.scrollTop += 8;
-      }
-      frame = requestAnimationFrame(scroll);
-    };
-    frame = requestAnimationFrame(scroll);
-    return () => cancelAnimationFrame(frame);
-  }, [dragged, dragPosition]);
   const saveOrder = async (next: string[]) => {
     try { await onPriorityChange(next); }
     catch (failure) { setDraft(null); setError(failure instanceof Error ? failure.message : String(failure)); }
@@ -88,9 +67,8 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
   const now = useClock(), policy = eventPolicy(state, name), selected = selectedEvents(state, name);
   const cipherSource = name===state.merchantCharacter && state.leader && state.eventSelectionsByCharacter?.[state.leader]?.includes('witchcipher') ? state.leader : policy.source;
   const saveCipher = async (limits:EventLimits, enable=false) => {
-    const response=await fetch('/party-api/formation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({character:cipherSource,
-      ...(enable?{eventSelections:[...new Set([...selectedEvents(state,cipherSource),'witchcipher'])]}:{}),eventLimits:{event:'witchcipher',limits}})});
-    if(!response.ok)throw Error(await response.text());
+    await performAction(client,'/formation',{character:cipherSource,
+      ...(enable?{eventSelections:[...new Set([...selectedEvents(state,cipherSource),'witchcipher'])]}:{}),eventLimits:{event:'witchcipher',limits}});
   };
   // Server schedules are observations, not the supported catalog: seasonal
   // bosses must remain selectable even when the current feed omits them.
@@ -100,12 +78,17 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
     return { ...schedule, id, name: eventDisplayNames[id] ?? schedule?.name ?? id };
   });
   const rows = catalog.filter(event => event.id !== "cave" && event.name.toLowerCase() !== "cave of many dreams");
+  // The events owner's `event-list` slot data: each member's open occurrence with its state and the rejoin flag.
+  const listed = eventListRows(state.eventAttendance);
+  const rejoin = (event: string) => { setError(''); performAction(client, '/event-rejoin', { character: name, event })
+    .catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure))); };
   return <>
     {dragged && dragPosition && createPortal(<div data-testid="event-drag-preview" aria-hidden="true" className="pointer-events-none fixed z-[100] flex items-center justify-between rounded border border-cyan-300 bg-slate-900 px-3 py-3 text-emerald-50 shadow-2xl" style={{left:dragPosition.x,top:dragPosition.y,width:dragPosition.width}}><span>{eventDisplayNames[dragged]}</span><span>{order.length-order.indexOf(dragged)} <GripVertical className="ml-3 inline size-4" /></span></div>, document.body)}
     <Popover onOpenChange={open => { if (!open && dragged) cancelDrag(); }}>
     <PopoverTrigger className="cursor-pointer rounded border border-slate-500 bg-[#101c1a] px-2 py-1 text-xs text-emerald-100 hover:bg-[#20332e]">Events ({selected.length}) ▾</PopoverTrigger>
-    <PopoverContent align="start" className="max-h-[min(40rem,var(--available-height))] w-[30rem] max-w-[calc(100vw-1rem)] flex flex-col overflow-hidden rounded border border-slate-500 bg-[#101c1a] p-3 text-xs text-emerald-50 shadow-xl">
+    <PopoverContent data-area="events-menu" data-addon-slot="event-list" align="start" className="max-h-[min(40rem,var(--available-height))] w-[30rem] max-w-[calc(100vw-1rem)] flex flex-col overflow-hidden rounded border border-slate-500 bg-[#101c1a] p-3 text-xs text-emerald-50 shadow-xl">
       {policy.inherited && <p className="mb-2 text-amber-200">Using {policy.source}’s events</p>}
+      <OverlaidBy fields={["eventPrioritiesByCharacter", "eventLimitsByCharacter"]} />
       <CaveEventRow />
       <p className="mt-2 text-slate-300">Higher numbers attend first. Drag to reorder.</p>
       {error && <p role="alert" className="text-red-300">{error}</p>}
@@ -116,22 +99,20 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
           const bounds = listRef.current!.getBoundingClientRect();
           if (e.clientY < bounds.top) { move(dragged, order[0], false); return; }
           if (e.clientY > bounds.bottom) { move(dragged, order[order.length-1], true); return; }
-          for (const row of listRef.current?.querySelectorAll<HTMLElement>('[data-event]') ?? []) {
-            const rect = row.getBoundingClientRect();
-            if (e.clientY >= rect.top && e.clientY <= rect.bottom && row.dataset.event !== dragged) {
-              move(dragged, row.dataset.event!, e.clientY > rect.top + rect.height/2); break;
-            }
-          }
+          const hit = rowAt(e.clientY);
+          if (hit) move(dragged, hit.target, hit.after);
         }}
         onPointerUp={() => { if (dragged) void saveOrder(order); setDragged(null); setDragPosition(null); dragOrder.current = null; }}
         onPointerCancel={cancelDrag}>
       {rows.map(event => {
-        const supported = supportedEvents.includes(event.id), allowed = supported;
+        const supported = supportedEvents.includes(event.id);
         const reportedKnocks=event.trickOrTreat?.characters?.[name];
-        const knocks=reportedKnocks && !event.stale && now-reportedKnocks.observedAt<15000 &&
-          reportedKnocks.day===new Date(now+(event.clockOffsetMs||0)).toISOString().slice(0,10)?reportedKnocks:undefined;
-        const ignored = [state.eventAttendance?.[name]?.[event.id], state.eventAttendance?.[policy.source]?.[event.id]]
-          .find((entry,index) => entry?.ignored && !entry.ended && (index === 0 || entry.ignored !== 'manual travel'))?.ignored;
+        // The events owner's knock counts carry only a character whose report is fresh by the movement owner's presence rule, on the
+        // realm's day (events/coordinator/occurrences.ts `knockCounts`), so the view shows them as sent.
+        const knocks=reportedKnocks && !event.stale?reportedKnocks:undefined;
+        // The member's own skip shows, and its leader's unless the leader's was a manual move.
+        const own = listed.find(row => row.member === name && row.event === event.id && row.reason);
+        const ignored = (own ?? listed.find(row => row.member === policy.source && row.event === event.id && row.reason && !row.rejoin))?.reason;
         return <div key={event.id} data-event={event.id} className={`flex items-center gap-2 rounded border bg-slate-950 px-2 py-2 text-emerald-50 ${dragged === event.id ? 'border-cyan-300 opacity-25' : 'border-emerald-900/70'}`}>
           <button type="button" aria-label={`Move ${event.name}`} title="Drag to reorder; use arrow keys to move" disabled={!supported || policy.inherited}
             style={{touchAction:'none'}} className="shrink-0 cursor-grab rounded border border-slate-600 bg-[#10201b] p-1 text-slate-200 hover:bg-slate-700 hover:text-white active:cursor-grabbing disabled:opacity-30"
@@ -149,17 +130,17 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
               if (target) { e.preventDefault(); const next = move(event.id,target,e.key === 'ArrowDown'); if (next) void saveOrder(next); }
             }}><GripVertical className="size-3" /></button>
           <span aria-label={`${event.name} priority`} className="w-8 shrink-0 text-center text-emerald-200">{supported ? order.length - order.indexOf(event.id) : 0}</span>
-          <input type="checkbox" checked={allowed && selected.includes(event.id)} disabled={!allowed || policy.inherited}
+          <input type="checkbox" checked={supported && selected.includes(event.id)} disabled={!supported || policy.inherited}
             className="accent-emerald-500" onChange={e => onChange(e.target.checked ? [...selected, event.id] : selected.filter(id => id !== event.id))} />
           <span>{event.name} — {!supported ? "Unsupported" : event.live ? "LIVE" : event.next ? eventTimeLabel(event.next, now, event.clockOffsetMs) : "Time not announced"}
             {event.id==='trickortreat'&&<>
               {now>0&&<span className="block text-cyan-200">Next daily reset: {dailyResetLabel(now,event.clockOffsetMs)}</span>}
               <span className="block text-emerald-200" title="Character: usable knocks remaining. Account: upper bound from observed door histories; the game does not expose a separate account counter. Other characters or realms may have spent more.">
-                Knocks left · Character: {knocks?.characterRemaining??'—'}/{reportedKnocks?.characterLimit??7} · Account: {knocks ? `${knocks.accountRemainingUpperBound>0?'up to ':''}${knocks.accountRemainingUpperBound}` : '—'}/{reportedKnocks?.accountLimit??14}
+                Knocks left · Character: {knocks?.characterRemaining??'—'}/{reportedKnocks?.characterLimit??'—'} · Account: {knocks ? `${knocks.accountRemainingUpperBound>0?'up to ':''}${knocks.accountRemainingUpperBound}` : '—'}/{reportedKnocks?.accountLimit??'—'}
               </span>
               <span className="block text-slate-300">Once daily at 00:00 UTC · Available during Halloween</span>
             </>}
-            {!!event.next&&event.realmOffsetHours!==undefined&&<span className="block text-slate-300">{realmTimeLabel(event.next,event.realmOffsetHours)}</span>}{event.confirmed&&<span className="block text-cyan-200">Realm schedule confirmed</span>}{event.stale ? " · timing stale" : ""}{ignored && <span className="block text-amber-200">Skipped this instance: {ignored}</span>}{!!event.occurrences?.length&&<details className="mt-1 text-slate-300"><summary className="cursor-pointer">Next seven days</summary>{event.occurrences.slice().sort((a,b)=>a.at-b.at).map((entry,i)=><div key={i}>{new Date(entry.at).toLocaleString()}</div>)}</details>}</span>
+            {!!event.next&&event.realmOffsetHours!==undefined&&<span className="block text-slate-300">{realmTimeLabel(event.next,event.realmOffsetHours)}</span>}{event.confirmed&&<span className="block text-cyan-200">Realm schedule confirmed</span>}{event.stale ? " · timing stale" : ""}{ignored && <span className="block text-amber-200">Skipped this instance: {ignored}</span>}{own?.rejoin && <button type="button" onClick={() => rejoin(event.id)} className="mt-1 block rounded border border-amber-500 bg-slate-950 px-2 py-0.5 text-amber-100 hover:bg-slate-800">Rejoin</button>}{!!event.occurrences?.length&&<details className="mt-1 text-slate-300"><summary className="cursor-pointer">Next seven days</summary>{event.occurrences.slice().sort((a,b)=>a.at-b.at).map((entry,i)=><div key={i}>{new Date(entry.at).toLocaleString()}</div>)}</details>}</span>
           <button type="button" aria-label={`${event.name} settings`} disabled={!supported} onClick={() => setSettings(event.id)} className="ml-auto rounded border border-slate-500 bg-slate-950 p-2 text-pink-200 hover:bg-slate-800"><Settings className="size-4" /></button>
         </div>;
       })}
@@ -171,7 +152,7 @@ export const EventSelectionControl = memo(function EventSelectionControl({ state
         onManual={async (mix,limits)=>{
           const event=schedules.get('witchcipher'),board=event?.cipher?.board;
           if(!board?.live||!board.id||event?.stale)throw Error('Wait for a fresh live realm board');
-          await saveCipher({...limits,cipher:{...limits.cipher!,automatic:false,manual:{id:crypto.randomUUID(),round:board.id,cracks:board.cracks??0,mix}}},true);
+          await saveCipher({...limits,cipher:{...limits.cipher!,automatic:false,manual:{id:requestId(),round:board.id,cracks:board.cracks??0,mix}}},true);
         }}
         inherited={policy.inherited} onClose={() => setSettings(null)} onSave={(event,limits)=>event==='witchcipher'&&cipherSource!==policy.source?saveCipher(limits):onLimitsChange(event,limits)} onAnniversary={onAnniversary} />}
     </PopoverContent>

@@ -1,20 +1,17 @@
 import {test,expect} from '@playwright/test';
 import {createServer} from 'node:http';
-import {createHash} from 'node:crypto';
-import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {ConsoleBuildController} from '../tools/console-build/controller';
 import {ConsoleBuildStore} from '../tools/console-build/store';
+import {stage} from './console-build-helpers';
 import {consoleBuildRoutes} from '../tools/console-build/routes';
 import {safeReload} from '../tools/console-build/safe-reload';
 import {readJson} from '../tools/build-store';
+import {LEASE_FILE} from '../runtime/lifecycle/rules';
 
 test('deployment admission, duplicates and terminal cleanup use the durable operation',async({},info)=>{
   const root=info.outputPath('transaction'),store=new ConsoleBuildStore(root);
-  async function stage(label:string){const id=createHash('sha256').update(label).digest('hex'),dir=path.join(root,label);
-    await mkdir(path.join(dir,'app'),{recursive:true});await writeFile(path.join(dir,'app/item.txt'),label);
-    return store.complete(dir,{schema:1,id,sourceHash:id,createdAt:new Date().toISOString(),components:{dashboard:id,coordinator:id,characters:id},files:{'item.txt':id}});}
-  const a=await stage('first'),b=await stage('next');await store.setReferences({active:a.manifest.id,latest:b.manifest.id});
+  const a=await stage(store,'first'),b=await stage(store,'next');await store.setReferences({active:a.manifest.id,latest:b.manifest.id});
   let verified!:()=>void,activated!:()=>void,cleaned!:()=>void;
   const verificationGate=new Promise<void>(resolve=>{verified=resolve;});
   const verify=store.verify.bind(store);let gate=true;
@@ -43,11 +40,11 @@ test('deployment admission, duplicates and terminal cleanup use the durable oper
 
 test('safe deployment renews its lease throughout delayed activation',async({},info)=>{
   const root=info.outputPath('renewal'),samples:any[]=[];
-  const drain=safeReload(root,async()=>{const lease=await readJson<{id:string}>(path.join(root,'updates/pause.json'));return {id:lease?.id,ready:true};},{leaseMs:2000,clearMs:100,pollMs:50});
+  const drain=safeReload(root,async()=>{const lease=await readJson<{id:string}>(path.join(root,LEASE_FILE));return {id:lease?.id,ready:true};},{leaseMs:2000,clearMs:100,pollMs:50});
   await drain.waitUntilSafe('long-activation',AbortSignal.timeout(10000));
-  try{for(let sample=0;sample<8;sample++){await new Promise(resolve=>setTimeout(resolve,400));const lease=await readJson<{id:string;expires:number}>(path.join(root,'updates/pause.json'));
+  try{for(let sample=0;sample<8;sample++){await new Promise(resolve=>setTimeout(resolve,400));const lease=await readJson<{id:string;expires:number}>(path.join(root,LEASE_FILE));
     expect(lease?.id).toBe('long-activation');expect(lease!.expires).toBeGreaterThan(Date.now());samples.push({at:Date.now(),lease});}
   }finally{await drain.releaseSafeWait('long-activation');}
-  expect(await readJson(path.join(root,'updates/pause.json'))).toBeUndefined();
+  expect(await readJson(path.join(root,LEASE_FILE))).toBeUndefined();
   await info.attach('renewed-activation-hold',{body:JSON.stringify(samples),contentType:'application/json'});
 });

@@ -10,18 +10,25 @@ function hash(file) {
   finally { fs.closeSync(descriptor); }
   return digest.digest('hex');
 }
+// A failed git read answers null, so the manifest records an unknown tree as unknown: a sentinel
+// string here made `dirty` read true on every run git could not read.
 function gitRaw(...args) {
   try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024 }); }
-  catch { return 'unavailable'; }
+  catch { return null; }
 }
-const git = (...args) => gitRaw(...args).trim();
+const git = (...args) => gitRaw(...args)?.trim() ?? null;
+// The revision, branch and dirty flag of the run; dirty is null when git cannot read the tree.
+function gitProvenance(read = git) {
+  const status = read('status', '--porcelain');
+  return { revision: read('rev-parse', 'HEAD') ?? 'unavailable', branch: read('branch', '--show-current') ?? 'unavailable',
+    dirty: status === null ? null : status.length > 0 };
+}
 class ArtifactReporter {
   onBegin(config, suite) {
     this.started = new Date().toISOString(); this.tests = [];
     const candidate=JSON.parse(process.env.E2E_DASHBOARD_CANDIDATE||'null');
     this.provenance = {
-      revision: git('rev-parse', 'HEAD'), branch: git('branch', '--show-current'),
-      dirty: git('status', '--porcelain').length > 0,
+      ...gitProvenance(),
       node: process.version, platform: process.platform,
       workers:config.workers,
       dashboardCandidate:candidate?JSON.parse(fs.readFileSync(candidate.manifestPath,'utf8')):null,
@@ -39,10 +46,10 @@ class ArtifactReporter {
     this.ledger = path.join(root, '.build/e2e-results/outcomes.jsonl');
     fs.writeFileSync(this.ledger, '', { flush: true });
     fs.writeFileSync(path.join(reproduction, 'run.json'), JSON.stringify({ started: this.started, ...this.provenance, selectedTests: this.selectedTests }, null, 2));
-    fs.writeFileSync(path.join(reproduction, 'working-tree.patch'), gitRaw('diff', '--binary', 'HEAD'));
+    const patch = gitRaw('diff', '--binary', 'HEAD');
+    if (patch !== null) fs.writeFileSync(path.join(reproduction, 'working-tree.patch'), patch);
     const untracked = git('ls-files', '--others', '--exclude-standard', '--', 'e2e', 'playwright.config.ts', '.github/workflows', 'docs/testing*.md', 'docs/testing*.json', 'tools/sim');
-    for (const relative of untracked.split('\n').filter(Boolean)) {
-      if (relative === 'unavailable') continue;
+    for (const relative of (untracked ?? '').split('\n').filter(Boolean)) {
       const target = path.join(reproduction, 'untracked', relative);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(path.join(root, relative), target);
@@ -120,3 +127,4 @@ class ArtifactReporter {
   }
 }
 module.exports = ArtifactReporter;
+module.exports.gitProvenance = gitProvenance;

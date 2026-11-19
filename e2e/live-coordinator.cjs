@@ -1,4 +1,5 @@
 const {isLoopback}=require('./game/addresses.cjs');
+const {createLiveAccount}=require('./live-account.cjs');
 // Production coordinator, with account/client-file transport pointed at the disposable upstream server.
 require('../tools/sim/network-clock.cjs').install();
 // Character status and every game action come from actual browser CODE runtimes.
@@ -29,24 +30,13 @@ async function api(method, body = {}) {
   if (!response.ok) throw Error('Upstream API ' + method + ': ' + response.status);
   return response.json();
 }
-const account = {
-  response: null, listeners: [],
-  async updateInfo() {
-    const raw = await api('servers_and_characters');
-    const info = Array.isArray(raw) ? raw[0] : raw.servers ? raw : raw.infs?.find(value => value.type === 'servers_and_characters');
-    if (!Array.isArray(info?.characters) || !Array.isArray(info?.servers)) throw Error('Local account API returned no roster');
-    this.response = info;
-    for (const listener of this.listeners) listener(info);
-    return info;
-  },
-  resolve_char(name) { return this.response.characters.find(character => character.name === name); },
+const account = Object.assign(createLiveAccount(api), {
   resolve_realm(realm) {
     const server = this.response.servers.find(server => server.key === realm || server.region + server.name === realm);
     const port = server?.region==='US' && server?.name==='II' ? '9004' : '9003';
     return server && { ...server, address: new URL(webUrl).origin.replace(':8083', ':'+port).replace(':8090', ':7192') };
   },
-  add_listener(listener) { this.listeners.push(listener); },
-};
+});
 const resolve = createRequire(path.join(root, '.caracal/standalones/CharacterCoordinator.js'));
 const nativeExpress = require('express');
 let listener;
@@ -78,6 +68,9 @@ fixtureExpress.json = (...args) => {
         return sendJson.call(this,value);
       };
     }
+    if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/merchant/complete' &&
+        fs.existsSync(path.join(directory, 'hold-merchant-completion')))
+      return res.status(503).json({error:'Declared E2E merchant completion hold'});
     if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/status' && req.body?.name === 'E2EBankBoi') {
       const sendJson = res.json;
       res.json = function(value) {
@@ -97,6 +90,42 @@ fixtureExpress.json = (...args) => {
         return sendJson.call(this,value);
       };
     }
+    // The group owners' calls for the records row: in the tasks owner
+    // step 2 no provider asks, so the row drives the owner in this process.
+    if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/e2e-tasks') {
+      const owner = globalThis.__partyTasks, allowed = new Set(['request', 'update', 'release', 'fail', 'progress', 'rung', 'hold', 'tick', 'allows']);
+      if (!owner) return res.status(503).json({ error: 'No task owner in this coordinator' });
+      try { return res.json({ results: (req.body.ops || []).map(({ op, args }) => {
+        if (!allowed.has(op)) throw Error('Not a task owner call: ' + op);
+        return owner[op](...(args || []));
+      }) }); }
+      catch (error) { return res.status(400).json({ error: String(error) }); }
+    }
+    // The anchor fixture add-on (scripts/tests/fixtures/anchor-addon.ts) joins this coordinator's
+    // registry on a row's request, as e2e/coordinator.cjs registers the settings fixture: the
+    // coordinator answers `group.anchor` (runtime/coordinator/targeting/queue.ts `evaluateGroup`). The
+    // shipped tank-hold add-on answers it too, and holds it only while it is on (its default is off).
+    if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/e2e-anchor-addon') {
+      const hooks = globalThis.__partyHooks;
+      if (!hooks) return res.status(503).json({ error: 'No hook registry in this coordinator' });
+      const { registration } = require('../scripts/tests/fixtures/anchor-addon.ts');
+      const registered = hooks.map().registrations.some(r => r.name === registration.name) ? { ok: true } : hooks.register(registration);
+      return registered.ok ? res.json({ ok: true, name: registration.name }) : res.status(400).json({ error: registered.message });
+    }
+    // The hook fixture add-ons' coordinator halves (e2e/fixtures/*-hooks-addon.ts): one route,
+    // `/party-api/e2e-<name>-hooks`, serves each fixture from HOOK_FIXTURES.
+    const fixtureRoute = req.method === 'POST' && /^\/party-api\/e2e-([a-z]+)-hooks$/.exec(req.originalUrl.split('?')[0]);
+    if (fixtureRoute && HOOK_FIXTURES[fixtureRoute[1]]) {
+      const hooks = globalThis.__partyHooks;
+      if (!hooks) return res.status(503).json({ error: 'No hook registry in this coordinator' });
+      const body = req.body || {}, run = hookFixtureOps(fixtureRoute[1])[body.op];
+      if (!run) return res.status(400).json({ error: 'Unknown op ' + body.op });
+      try { const out = run(body, hooks); return out && out.ok === false ? res.status(400).json({ error: out.message }) : res.json(out); }
+      catch (error) { return res.status(400).json({ error: String(error) }); }
+    }
+    if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/merchant/complete' &&
+        fs.existsSync(path.join(directory, 'hold-merchant-completion')))
+      return res.status(503).json({error:'Declared E2E merchant completion hold'});
     if (req.method === 'POST' && req.originalUrl.split('?')[0] === '/party-api/status' &&
         req.body?.name === 'E2EMerchant' && (fs.existsSync(path.join(directory, 'hold-merchant-status')) ||
           Array.isArray(req.body.items) && fs.existsSync(path.join(directory, 'hold-merchant-inventory'))))
@@ -120,6 +149,74 @@ async function assetText(route) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
+}
+// Lifecycle's fixture add-on hears the coordinator's start, so while its marker exists it joins the
+// registry the moment the application creates it, before the start sends `lifecycle.started`. Each heard
+// line carries the `lifecycle.state` read at that notice.
+const lifecycleHooks = (() => {
+  const fixture = () => require('./fixtures/lifecycle-hooks-addon.ts');
+  const marker = path.join(directory, 'e2e-lifecycle-hooks.on'), file = path.join(directory, 'e2e-lifecycle-hooks.jsonl');
+  const join = hooks => hooks.map().registrations.some(r => r.name === fixture().LIFECYCLE_HOOKS_ADDON) ? { ok: true }
+    : hooks.register(fixture().coordinatorRegistration(entry =>
+      fs.appendFileSync(file, JSON.stringify({ ...entry, state: hooks.askRow('lifecycle.state', []) ?? null }) + '\n')));
+  const heard = since => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(e => e.at >= since) : [];
+  let registry;
+  Object.defineProperty(globalThis, '__partyHooks', { configurable: true, get: () => registry,
+    set(value) { registry = value; if (value && fs.existsSync(marker)) join(value); } });
+  return { marker, join, heard };
+})();
+// The hook fixture add-ons the live coordinator joins on a row's request. Each entry names its fixture module and
+// its state; every fixture answers `register` (join once, hooks-fixture-kit.ts registerOnce), `heard`
+// (its entries from `since` on) and `ask` (a read an add-on may ask), and `ops` adds the ops its rows
+// set answers with. Lifecycle's state is its heard file, so its entry replaces the three defaults.
+const answerOps = { answers(state, { answers }) {
+  for (const [key, value] of Object.entries(answers || {})) if (value === null) delete state.answers[key]; else state.answers[key] = value;
+  return state.answers; } };
+const refuseOp = { refuse(state, { refuse }) { state.refuse = refuse || undefined; return { refuse: state.refuse ?? null }; } };
+const HOOK_FIXTURES = {
+  lifecycle: { ops: {
+    register(_state, _body, hooks) { fs.writeFileSync(lifecycleHooks.marker, ''); return lifecycleHooks.join(hooks); },
+    heard(_state, { since = 0 }) { return lifecycleHooks.heard(since); },
+    off() { fs.rmSync(lifecycleHooks.marker, { force: true }); return { ok: true }; } } },
+  status: { module: './fixtures/status-hooks-addon.ts', state: () => ({ heard: [], line: null, task: false }), ops: {
+    line(state, { line = null }) { state.line = line; return { ok: true }; },
+    task(state, { task = false }) { state.task = !!task; return { ok: true }; },
+    // A planted ring save, as the movement owner's records owner sends it.
+    notify(_state, { hook, args = [] }, hooks) { hooks.notify(hook, args[0] ?? {}); return { ok: true }; },
+    off(state) { state.line = null; state.task = false; return { ok: true }; } } },
+  // The movement hooks rows read what the coordinator half saw and ask movement's published reads and walk requests.
+  movement: { module: './fixtures/movement-hooks-addon.ts', state: () => ({ seen: [], answers: {} }), ops: { ...answerOps,
+    seen(state) { return state.seen; },
+    ask(_state, { hook, args = [] }, hooks) { return { answer: hooks.ask(hook, ...args) ?? null }; },
+    walks(_state, { hook, args = [] }, hooks) { return { answer: hook === 'walks.end' ? hooks.walks.end(...args) : hooks.walks.holders(...args) }; } } },
+  tasks: { module: './fixtures/tasks-hooks-addon.ts', state: () => ({ heard: [], answers: {} }), ops: answerOps },
+  survival: { module: './fixtures/survival-hooks-addon.ts', state: () => ({ heard: [] }), ops: refuseOp },
+  events: { module: './fixtures/events-hooks-addon.ts', state: () => ({ heard: [] }), ops: refuseOp },
+  // `set` names the quest it refuses, the spawn it keeps, the areas it refuses and the patrol order.
+  hunting: { module: './fixtures/hunting-hooks-addon.ts', state: () => ({ heard: [] }), ops: {
+    set(state, { refuseQuest, keepSpawn, refuseAreas, order }) { Object.assign(state, { refuseQuest, keepSpawn, refuseAreas, order }); return { ok: true }; } } },
+  merchant: { module: './fixtures/merchant-hooks-addon.ts', state: () => ({ heard: [], jobs: [] }), ops: {
+    jobs(state, { jobs }) { state.jobs.splice(0, state.jobs.length, ...(jobs || [])); return { jobs: state.jobs }; } } },
+  items: { module: './fixtures/items-hooks-addon.ts', state: () => ({ heard: [], claims: [], actions: {}, listings: [] }), ops: {
+    answers(state, { claims, actions, listings }) {
+      if (claims) state.claims.splice(0, state.claims.length, ...claims);
+      if (actions) state.actions = actions;
+      if (listings) state.listings.splice(0, state.listings.length, ...listings);
+      return { claims: state.claims, actions: state.actions, listings: state.listings }; } } },
+  // `answers` sets the coordinator half's answers, as e2e/fixtures/targeting-hooks-addon.ts `answer` sets the page's.
+  targeting: { module: './fixtures/targeting-hooks-addon.ts', state: () => ({ heard: [], asked: {}, answers: {} }), ops: {
+    answers(state, { answers }) { state.answers = answers || {}; return state.answers; } } },
+};
+const hookFixtureStates = {};
+// The ops of one fixture, each taking the request body and the registry and answering the reply.
+function hookFixtureOps(name) {
+  const entry = HOOK_FIXTURES[name], state = hookFixtureStates[name] ||= entry.state ? entry.state() : {};
+  const defaults = entry.module ? {
+    register: (_state, _body, hooks) => require('./fixtures/hooks-fixture-kit.ts').registerOnce(hooks, require(entry.module).coordinatorRegistration(state)),
+    heard: (_state, { since = 0 }) => state.heard.filter(h => h.at >= since),
+    ask: (_state, { hook, args = [] }, hooks) => ({ answer: hooks.askRow(hook, args) ?? null }),
+  } : {};
+  return Object.fromEntries(Object.entries({ ...defaults, ...entry.ops }).map(([op, run]) => [op, (body, hooks) => run(state, body, hooks)]));
 }
 async function main() {
   const assetStarted=process.hrtime.bigint();
@@ -151,7 +248,7 @@ async function main() {
   fs.writeFileSync(path.join(gameDirectory,'data.js'),dataSource);
   fs.writeFileSync(path.join(gameDirectory,'old_common_functions.js'),await assetText('/js/old_common_functions.js'));
   if (headless) {
-    const assets = require('../scripts/client-files.cjs');
+    const assets = require('../runtime/lifecycle/coordinator/client-files.cjs');
     const character = encodeURIComponent(account.response.characters[0].name);
     const manifest = {
       game: assets.scripts(await assetText('/character/' + character + '/in/US/I/')),
@@ -197,16 +294,23 @@ async function main() {
   const configuredCharacters = Object.fromEntries(account.response.characters.map(character =>
     [character.name, { enabled: false, realm: process.env.E2E_STALE_WORKER_REALM || realm.key, version }]));
   const adapters = {
-    // Use this test build's catalog without publishing assets into the live
-    // installation. Native gameplay and coordinator selection remain real.
-    '../../dashboard/lib/event-policy.cjs': require(path.join(root, '.build/shared/event-policy.cjs')),
     '../config': { characters: configuredCharacters, merchant: JSON.parse(process.env.E2E_MERCHANT_DEFAULT || '"E2EMerchant"'), watch_CODE: false, enable_TYPECODE: false,
       web_app: { party_dashboard: true, expose_CODE: true, port } },
-    '../account_info': async () => account,
+    '../account_info': () => account.build(),
     '../game_files': { ensure_latest: async () => version, cull_versions: async () => {},
       available_versions: async () => [version], get_revision: async () => 'local-upstream',
       locate_game_file: resource => path.join(gameDirectory, resource) },
     '../api': api,
+    // MOV-157 (e2e/movement-owner-failures.md X.g1.13b): with E2E_UNLOADABLE_GAME_FILES no reader
+    // can read the version's old_common_functions.js, which is what a version's game files failing
+    // to load means. Movement's preparation (application.ts prepareMovement) then holds no geometry,
+    // and the items owner's bank vault read (items/coordinator/storage.ts loadCoordinatorBankVaults) warns and
+    // answers no vaults, so the coordinator still starts.
+    'node:fs': process.env.E2E_UNLOADABLE_GAME_FILES === '1' ? { ...fs, readFileSync(file, ...args) {
+      if (typeof file === 'string' && path.basename(file) === 'old_common_functions.js')
+        throw Error('e2e: the game file failed to load: ' + file);
+      return fs.readFileSync(file, ...args);
+    } } : fs,
     '../src/CONSTANTS': { LOCALSTORAGE_PATH: path.join(directory, 'state.jsonl'),
       LOCALSTORAGE_ROTA_PATH: path.join(directory, 'rotation.jsonl'), STAT_BEAT_INTERVAL: 1000 },
     '../src/LogUtils': { log: logger, console: logger, ctype_to_clid: {} },

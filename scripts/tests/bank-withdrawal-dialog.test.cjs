@@ -1,16 +1,10 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const fs=require('node:fs'),path=require('node:path'),Module=require('node:module');
-const {transformSync}=require('esbuild');
+const load=require('./helpers/dashboard-query-module.cjs');
 const React=require('../../dashboard/node_modules/react');
 const {create,act}=require('../../dashboard/node_modules/react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
 class PartyActionError extends Error {constructor(){super('confirmation');this.details={code:'auto_bank_confirmation_required'};}}
-const filename=path.resolve('dashboard/features/party/bank-withdrawal.tsx');
-const loaded=new Module(filename,module);loaded.filename=filename;loaded.paths=Module._nodeModulePaths(path.dirname(filename));
-const baseRequire=loaded.require.bind(loaded);
-loaded.require=name=>name.startsWith('@/components/ui/')?new Proxy({},{get:(_target,key)=>key}):name==='./query-actions'?{PartyActionError}:baseRequire(name);
-loaded._compile(transformSync(fs.readFileSync(filename,'utf8'),{loader:'tsx',format:'cjs',jsx:'automatic'}).code,filename);
-const {useBankWithdrawal}=loaded.exports;
+const {useBankWithdrawal}=load('bank-withdrawal.tsx',{'@/components/ui/*':new Proxy({},{get:(_target,key)=>key}),'./query-actions':{PartyActionError}});
 function buttons(element){return !React.isValidElement(element)?[]:[...(element.type==='Button'?[element]:[]),...React.Children.toArray(element.props.children).flatMap(buttons)];}
 
 test('withdrawal confirmation cancels without a second request, confirms original selection once, and retains errors',async()=>{

@@ -1,14 +1,20 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const safety = require('../hunt-safety.cjs');
-const navigation = require('../farming-navigation.cjs');
-const {beginHuntEventTrip, endHuntEventTrip} = require('../../runtime/coordinator/events/hunt-trip.ts');
-const {coordinatorGroupedSnapshot} = require('../../runtime/coordinator/navigation/grouped-snapshot.ts');
-const {evaluateGroup} = require('../../runtime/combat/grouped.ts');
+// No member of these fixtures is at an event: The tasks owner's `presence` answers none.
+require('./helpers/requesters.cjs').publishPresence();
+// The hunting owner's death rule (rules.ts `eventDeath`): true when the death counts nothing on the Hunt. The
+// cycle asks it once per survival died notice (hunt.ts `died`), which hunt-settings counts.
+const {eventDeath} = require('../../runtime/hunting/rules.ts');
+const exempt = (state, name, status, at) => eventDeath(status, state.huntEventTrips?.[name] || [], at, true);
+require('./fixtures/coordinator-core.cjs');
+const navigation = require('./helpers/farming-navigation.cjs');
+const {beginHuntEventTrip, endHuntEventTrip} = require('../../runtime/events/coordinator/attendance.ts');
+const {coordinatorGroupedSnapshot} = require('../../runtime/coordinator/targeting/snapshot.ts');
+const {evaluateGroup} = require('../../runtime/coordinator/targeting/queue.ts');
 const {huntBlacklistLabel} = require('../../dashboard/features/party/hunt-blacklist-label.ts');
 
 function deathFixture() {
   const state = {};
-  const trip = beginHuntEventTrip(state, 'W', 'icegolem', 20000);
+  const trip = beginHuntEventTrip(state, 'W', 'icegolem', 20000, true);
   const hunt = {startedAt: 10000, participants: ['W'], eventTrips: state.huntEventTrips};
   const status = {seenAt: 30000, hp: 0, rip: true, map: 'winterland', lastDeath: {at: 30000, eventTrip: {...trip}}};
   return {state, trip, hunt, status};
@@ -18,40 +24,32 @@ for (const [phase, at] of [['departure',21000],['combat',30000],['return',49000]
   test(`Ice Golem ${phase} death is consumed without blacklisting or recounting`, () => {
     const f = deathFixture();
     f.status.lastDeath.at = at; f.status.seenAt = at;
-    assert.deepEqual(safety.recordDeaths(f.hunt, {W:f.status}, at), []);
-    assert.equal(f.hunt.deathCount, 0);
+    assert.equal(exempt(f.state, 'W', f.status, at), true);
     endHuntEventTrip(f.state, 'W', 'icegolem', 50000);
-    const restored = JSON.parse(JSON.stringify(f.hunt));
-    f.status.seenAt = 55000; f.status.rip = false; f.status.hp = 100;
-    assert.deepEqual(safety.recordDeaths(restored, {W:f.status}, 55000), []);
-    assert.equal(restored.deathCount, 0);
+    assert.equal(exempt(f.state, 'W', f.status, at), true);
   });
 }
 
 test('late event death stays exempt after return; a new outside death counts even with a stale client trip', () => {
   const f = deathFixture();
   endHuntEventTrip(f.state, 'W', 'icegolem', 50000);
-  f.status.seenAt = 55000; f.status.rip = false; f.status.hp = 100;
-  assert.deepEqual(safety.recordDeaths(f.hunt, {W:f.status}, 55000), []);
-  f.status.seenAt = 60000; f.status.rip = true; f.status.hp = 0; f.status.lastDeath.at = 60000;
-  assert.deepEqual(safety.recordDeaths(f.hunt, {W:f.status}, 60000), ['W']);
+  assert.equal(exempt(f.state, 'W', f.status, 30000), true);
+  f.status.seenAt = 60000; f.status.lastDeath.at = 60000;
+  assert.equal(exempt(f.state, 'W', f.status, 60000), false);
 });
 
 test('globally live Ice Golem does not exempt a normal hunt death', () => {
-  const hunt = {startedAt:10000, participants:['W']};
   const status = {seenAt:30000, hp:0, rip:true, activeEvent:'icegolem', lastDeath:{at:30000,eventTrip:null}};
-  assert.deepEqual(safety.recordDeaths(hunt,{W:status},30000),['W']);
+  assert.equal(exempt({}, 'W', status, 30000), false);
 });
 
 test('rip edge before the event death packet and repeated permission requests are idempotent', () => {
   const f = deathFixture(); delete f.status.lastDeath;
-  assert.equal(beginHuntEventTrip(f.state,'W','icegolem',25000),f.trip);
+  assert.equal(beginHuntEventTrip(f.state,'W','icegolem',25000,true),f.trip);
   assert.equal(f.state.huntEventTrips.W.length,1);
-  assert.deepEqual(safety.recordDeaths(f.hunt,{W:f.status},30000),[]);
-  f.status.rip=false; f.status.hp=100; f.status.seenAt=40000;
+  assert.equal(exempt(f.state, 'W', f.status, 30000), true);
   f.status.lastDeath={at:30050,eventTrip:{...f.trip}};
-  assert.deepEqual(safety.recordDeaths(f.hunt,{W:f.status},40000),[]);
-  assert.equal(f.hunt.deathCount,0);
+  assert.equal(exempt(f.state, 'W', f.status, 30050), true);
 });
 
 function returnFixture() {
@@ -59,7 +57,7 @@ function returnFixture() {
   const party={leader:'W',merchantCharacter:'B',followers:{P:true},characterLocations:{},
     location:{map:'winter_cave',x:0,y:0},statuses:{W:{map:'winterland',x:0,y:0,seenAt:time,hp:100},P:{map:'winterland',x:0,y:0,seenAt:time,hp:100}},
     commands:{},nextCommandId:1,anniversary:{},eventSessions:{},deferredEventReturns:{}};
-  for(const name of ['W','P']) beginHuntEventTrip(party,name,'icegolem',20000);
+  for(const name of ['W','P']) beginHuntEventTrip(party,name,'icegolem',20000,true);
   const nav=navigation(party,{now:()=>time,names:()=>['W','P'],activeNames:()=>['W','P'],persist(){},log(){},
     startConvoy(location,label,participants,purpose){party.activeConvoy={id:'return-'+(++starts),phase:'travel',participants,location,purpose};return true;},
     cancelConvoy(){party.activeConvoy=null;}});
@@ -76,7 +74,7 @@ test('replayed return dispatch and slow healthy routes keep one convoy until arr
   assert.equal(f.party.huntEventTrips.W[0].endedAt,undefined);
   for(const s of Object.values(f.party.statuses))Object.assign(s,{map:'winter_cave',x:0,y:0});
   assert.equal(f.nav.reconcile(f.owner,'event-return'),true);
-  assert.ok(f.party.huntEventTrips.W[0].endedAt);assert.ok(f.party.combatEventHandoff.endedAt);
+  assert.ok(f.party.huntEventTrips.W[0].endedAt);
 });
 
 test('failed return retries once and manual cancellation closes protection without reviving movement', () => {
@@ -100,9 +98,9 @@ function groupFixture() {
   const old=evaluateGroup(null,members,'W',time);
   const state={leader:'W',statuses:Object.fromEntries(members.map(m=>[m.name,m.status])),groupedCombat:old,
     partyFarmingMode:'default',headlessSlots:['W','P'],steamMembers:[],followers:{P:true},merchantCharacter:'B',combatLogs:{},
-    combatEventHandoff:{startedAt:20000,endedAt:49000}};
-  const ports={now:()=>time,tickDisengagement(){},disengagementActive:()=>false,intent:()=>({revision:1}),
-    owned:name=>({type:name==='P'?'priest':'warrior'}),prepare:m=>m,evaluate:evaluateGroup,finalize:g=>g,blocksPulls:()=>false};
+    eventBoundary:{startedAt:20000,endedAt:49000}};
+  const ports={now:()=>time,recoveryGroup:()=>null,intent:()=>({revision:1}),
+    owned:name=>({type:name==='P'?'priest':'warrior'}),prepare:m=>m,evaluate:evaluateGroup,pullsHeld:()=>false,rareRejections:()=>[]};
   function reports(){for(const m of members){m.status.seenAt=time;m.status.groupedCombat.state=old;}}
   return {state,old,members,target,alternative,run(){return coordinatorGroupedSnapshot(state,ports);},
     advance(at){time=at;reports();}};
@@ -128,8 +126,8 @@ for(const evidence of ['sightings','threats'])test(`event handoff preserves a pr
 test('stale member reports delay retirement; ordinary disappearance outside events retains its fight',()=>{
   const f=groupFixture();f.advance(50000);f.members[1].status.seenAt=45000;
   for(const m of f.members)m.status.groupedCombat.sightings=[];
-  assert.equal(f.run().target.id,'old');assert.ok(f.state.combatEventHandoff);
-  f.state.combatEventHandoff=null;f.advance(51000);assert.equal(f.run().target.id,'old');
+  assert.equal(f.run().target.id,'old');assert.ok(f.state.eventBoundary);
+  f.state.eventBoundary=null;f.advance(51000);assert.equal(f.run().target.id,'old');
 });
 
 test('blacklist labels distinguish expirations, legacy reasons, and mixed causes',()=>{

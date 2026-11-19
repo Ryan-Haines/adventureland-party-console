@@ -1,3 +1,10 @@
 # A blank context line in a unified patch must contain its single space prefix.
 patches/*.patch whitespace=-blank-at-eol
 *.sh text eol=lf
+# Build outputs: npm run build:runtime -- --publish writes the character bundles from runtime/, and
+# runtime/hooks/cli/hook-list.mts writes the hook list. GitHub collapses them in diffs.
+characters/party-member.js linguist-generated=true
+characters/steam-bridge.js linguist-generated=true
+characters/universal-loader.js linguist-generated=true
+characters/profiles.js linguist-generated=true
+runtime/addons/HOOKS.md linguist-generated=true

@@ -1,7 +1,7 @@
 # Dashboard optimization validation (#17)
 
 Baseline: `34e3ee7418223620567cfb2b26f1f4e7cb49653e` on `hunt-lifecycle-fixes`.
-Run `node scripts/benchmark-dashboard-optimizations.cjs [baseline-ref]` from the
+Run `node tools/dashboard/benchmarks/dashboard-optimizations.cjs [baseline-ref]` from the
 repository root. Results go to `.build/dashboard-optimizations-benchmark.json`.
 The benchmark is offline and sends no game actions or telemetry to live services.
 

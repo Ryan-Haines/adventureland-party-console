@@ -1,18 +1,24 @@
+const { targetingContext } = require('./helpers/targeting-module.cjs');
+const {productionFunctions} = require('./helpers/production-functions.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const {installQueueClient}=require('../../runtime/combat/client.ts');
-const {reconcileQueue}=require('../../runtime/combat/queue.ts');
+const {installQueueClient}=require('../../runtime/characters/targeting/queue-client.ts');
+const {reconcileQueue}=require('../../runtime/coordinator/targeting/queue.ts');
+const {testScope}=require('./helpers/run-scope.cjs');
+// The game window's socket, which the client's 04 handle listens on for native position changes.
+const socket={on(){},off(){}};
 const target={id:'rat',mtype:'rat',type:'monster',visible:true,map:'mansion',in:'mansion',x:80,y:0};
 const death={id:'rat',map:'mansion',in:'mansion',server:'USII',at:1000};
 function fixture(run,retained=[],deaths=[]){
  const saved=Object.fromEntries(['parent','character','get_entity','setInterval','clearInterval'].map(k=>[k,global[k]]));
  let grouped=true,server='USII',client;
  const root={__partyFightDeaths:deaths};
- Object.assign(global,{parent:{__partyQueueEvidence:retained},character:{name:'P',map:'mansion',in:'mansion',x:0,y:0},
+ Object.assign(global,{parent:{socket,__partyQueueEvidence:retained},character:{name:'P',map:'mansion',in:'mansion',x:0,y:0},
   get_entity:()=>target,setInterval:()=>1,clearInterval(){}});
- const shared={usesGroupedCombat:()=>grouped,getFarmingMode:()=>grouped?'default':'scatter',queueClockOffset:()=>0,
-  sharedTargetId:()=>null,queueMembers:()=>['P'],queueRequest:()=>new Promise(()=>{}),
-  queueReport:()=>({server,groupedCombat:{epoch:1,deaths:root.__partyFightDeaths,evidence:client?.reportEvidence()||[]}})};
- try{client=installQueueClient(root,shared);run({client,root,shared,scatter(){grouped=false;},move(){server='EUI';character.map='main';character.in='main';}});}
+ const shared={
+  targeting:{state:{},sharedTargetId:()=>null,queueRequest:()=>new Promise(()=>{}),
+   queueReport:()=>({server,groupedCombat:{epoch:1,deaths:root.__partyFightDeaths,evidence:client?.reportEvidence()||[]}})}};
+ root.partyStatus={character:{applyChannel:(data,combat)=>combat(data),handoffTiming:require('../../runtime/status/character/rings.ts').createHandoffTiming([],()=>true)}};root.partyTasks={partyList:()=>['P']};root.partyHunting={farm:{grouped:()=>grouped,mode:()=>grouped?'default':'scatter'}};root.partyMovement={coordinatorNow:()=>Date.now()+0,convoyActive:()=>false,independentApproachClient:()=>null,terrainRecoveryClient:()=>null,queueSightRecovery:()=>null};
+ try{client=installQueueClient(root,shared,testScope('04','act'));run({client,root,shared,scatter(){grouped=false;},move(){server='EUI';character.map='main';character.in='main';}});}
  finally{client?.stop();Object.assign(global,saved);}
 }
 test('scatter accepts rejection of an existing action and preserves its original identity after travel',()=>fixture(f=>{
@@ -20,7 +26,7 @@ test('scatter accepts rejection of an existing action and preserves its original
  assert.equal(f.client.evidence(target,'rejected',action),action);
  assert.deepEqual({...f.client.events[0],at:before.at},{...before,state:'rejected'});
  assert.equal(f.client.evidence(target,'pending'),null,'scatter cannot create new grouped actions');
- assert.equal(f.shared.queueReport().groupedCombat.evidence[0].state,'rejected');
+ assert.equal(f.shared.targeting.queueReport().groupedCombat.evidence[0].state,'rejected');
  assert.equal(f.root.__partyQueueEvidenceTrace.at(-1).mode,'scatter');
 }));
 test('hit settles a pending action in scatter after the grouped target was cleared',()=>fixture(f=>{
@@ -29,7 +35,7 @@ test('hit settles a pending action in scatter after the grouped target was clear
 }));
 test('local death removes pending evidence during scatter and rejects its late completion',()=>fixture(f=>{
  const action=f.client.evidence(target,'pending');f.scatter();f.root.__partyFightDeaths.push(death);
- assert.deepEqual(f.shared.queueReport().groupedCombat.evidence,[]);
+ assert.deepEqual(f.shared.targeting.queueReport().groupedCombat.evidence,[]);
  assert.equal(f.client.evidence(target,'engaged',action),null);
  assert.equal(f.root.__partyQueueEvidenceTrace.at(-1).reason,'confirmed local death');
 }));
@@ -49,10 +55,9 @@ test('wrong realm or instance death preserves a real pending projectile',()=>fix
  f.client.reportEvidence([{...death,id:String(target.id)}]);assert.equal(f.client.events.length,0);
 }));
 test('confirmed death hook cleans evidence before flushing even outside grouped mode',()=>{
- const source=fs.readFileSync('characters/shared.js','utf8'),start=source.indexOf('  function reportFightDeath('),end=source.indexOf('  function groupedEntityReport(',start);
- const calls=[],context=vm.createContext({root:{partyQueueClient:{reportEvidence:deaths=>calls.push(['cleanup',deaths.length]),flush:()=>calls.push(['flush'])}},
+ const calls=[],context=targetingContext({root:{},queueClient:{reportEvidence:deaths=>calls.push(['cleanup',deaths.length]),flush:()=>calls.push(['flush'])},
   groupedCombat:null,fightDeaths:[],character:{map:'mansion',in:'mansion'},reunionRealm:()=> 'USII',coordinatorClockOffset:0,Date});
- vm.runInContext(source.slice(start,end),context);context.reportFightDeath('rat');
+ vm.runInContext(productionFunctions(['reportFightDeath']),context);context.reportFightDeath('rat');
  assert.deepEqual(calls,[['cleanup',1],['flush']]);
 });
 test('death and rejection both promote the visible successor instead of restoring the invisible head',()=>{

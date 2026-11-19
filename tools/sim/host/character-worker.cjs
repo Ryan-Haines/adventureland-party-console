@@ -5,6 +5,36 @@ const { EventEmitter } = require("node:events");
 const { PassThrough } = require("node:stream");
 const { bootCharacter } = require("./character.cjs");
 
+// The coordinator's handle on one character process (caracAL's fork()), which both sim hosts give
+// it: its streams, pid and exit, which emits `disconnect` and `exit` on the sim clock.
+function simWorker(clock, pid) {
+  const worker = new EventEmitter();
+  worker.stdout = new PassThrough();
+  worker.stderr = new PassThrough();
+  worker.connected = true;
+  worker.pid = pid;
+  worker.exitCode = null;
+  worker.exit = (code) => {
+    if (!worker.connected) return;
+    worker.connected = false;
+    worker.exitCode = code;
+    clock.at(
+      clock.now,
+      () => {
+        worker.emit("disconnect");
+        worker.emit("exit", code, null);
+      },
+      "worker exit",
+    );
+  };
+  worker.kill = () => {
+    worker.exit(null);
+    return true;
+  };
+  worker.disconnect = () => worker.exit(0);
+  return worker;
+}
+
 /**
  * @param {object} o
  * @param {object} o.sim         ChronAL Sim (single-thread)
@@ -19,33 +49,11 @@ function workerFactory(o) {
     clock = o.sim.clock;
   let forks = 0;
   return function fork() {
-    const worker = new EventEmitter();
-    worker.stdout = new PassThrough();
-    worker.stderr = new PassThrough();
-    worker.connected = true;
-    worker.pid = 5000 + forks++;
-    worker.exitCode = null;
+    const worker = simWorker(clock, 5000 + forks++),
+      { exit } = worker;
     const send = (message) =>
       clock.at(clock.now, () => worker.emit("message", message), "worker->coordinator");
-    const exit = (code) => {
-      if (!worker.connected) return;
-      worker.connected = false;
-      worker.exitCode = code;
-      clock.at(
-        clock.now,
-        () => {
-          worker.emit("disconnect");
-          worker.emit("exit", code, null);
-        },
-        "worker exit",
-      );
-    };
     let character = null;
-    worker.kill = () => {
-      exit(null);
-      return true;
-    };
-    worker.disconnect = () => exit(0);
     worker.send = (message) => {
       clock.at(
         clock.now,
@@ -97,4 +105,4 @@ function workerFactory(o) {
   };
 }
 
-module.exports = { workerFactory };
+module.exports = { workerFactory, simWorker };

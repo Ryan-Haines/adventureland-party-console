@@ -2,7 +2,7 @@ import { expect as nativeExpect } from "@playwright/test";
 import { createRequire } from "node:module";
 import { performance } from "node:perf_hooks";
 const require = createRequire(import.meta.url);
-export const clockRate = () => Number(process.env.E2E_CLOCK_RATE || 1);
+const clockRate = () => Number(process.env.E2E_CLOCK_RATE || 1);
 /** Native browser/CDP network timing has a wall epoch, independent of gameplay. */
 export const nativeWallNow = () => performance.timeOrigin + performance.now();
 /** CI may advance below native speed; a stall means no virtual progress. */

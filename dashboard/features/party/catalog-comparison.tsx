@@ -2,7 +2,7 @@
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { InventoryEntry } from "./inventory-entry";
-import { ItemSprite } from "./item-sprite";
+import { SpriteCrop } from "./sprite-crop";
 import { itemMaximumLevel } from "./item-maximum-level";
 import { propertiesAtLevel } from "./properties-at-level";
 import { ITEM_DETAIL_PROPERTY_RANK } from "./item-detail-property-rank";
@@ -22,6 +22,8 @@ export const comparisonEntry = (entry: InventoryEntry): CatalogComparisonEntry =
 });
 export const comparisonButtonClass = "border-cyan-700 bg-[#10251f] text-cyan-100 hover:border-cyan-400 hover:bg-cyan-950 hover:text-white";
 
+// The catalog comparison holds item A and at most this many alternatives against it.
+export const COMPARISON_ALTERNATIVES = 3;
 export function CatalogComparison({ entries, onChange, onRemove }: {
   entries: CatalogComparisonEntry[];
   onChange: (index: number, value: CatalogComparisonEntry) => void;
@@ -51,7 +53,7 @@ export function CatalogComparison({ entries, onChange, onRemove }: {
               return (
                 <th scope="col" key={index} className="min-w-52 border-l border-cyan-900 p-3 align-top text-left font-normal">
                   <p className="mb-2 font-semibold text-cyan-200">{label}{index === 0 ? " · Baseline" : ` · vs A`}</p>
-                  <div className="relative mb-2 h-12 w-12">{entry.meta?.sprite && <ItemSprite sprite={entry.meta.sprite} />}</div>
+                  <div className="relative mb-2 h-12 w-12">{entry.meta?.sprite && <SpriteCrop sprite={entry.meta.sprite} />}</div>
                   <p className="mb-3 font-semibold">{name}</p>
                   {(entry.meta?.upgradeable || entry.meta?.compoundable) ? (
                     <div className="mb-4 rounded border border-violet-900 bg-[#07100f] p-3">

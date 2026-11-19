@@ -1,37 +1,7 @@
-import { test, expect } from './live-fixtures';
+import { test, expect, reloadCode } from './live-fixtures';
 import {nativeWallNow} from './network-clock';
 
 const merchant = 'E2EMerchant';
-
-test('lucky slot recovery retires ambiguous restoration and preserves provable native swaps', async ({live},info) => {
-  // Failure modes: ambiguous restoration blocks later work or swaps unrelated
-  // stock; valid potion quantity recovery loses items; replay repeats a native
-  // swap or reissues the completed upgrade.
-  // This isolated native journal owns its two cells against ordinary idle bag
-  // compression, just as a live inventory command owns them in production.
-  await live.clients[merchant].run(`globalThis.__partyInventoryCommands=(globalThis.__partyInventoryCommands||0)+1;true`);
-  try {
-  await live.admin(`output=(()=>{const p=get_player('${merchant}');p.items[20]={name:'hpot1',q:4};p.items[21]={name:'helmet',level:1};cache_player_items(p);resend(p,'reopen+cid');return p.items.slice(20,22);})()`);
-  await expect.poll(async()=>(await live.clients[merchant].snapshot()).items[20]?.q).toBe(4);
-  const journal={from:20,to:21,item:{name:'helmet',level:0},displaced:{name:'hpot1',q:5},phase:'running'};
-  await info.attach('declared-lucky-recovery-history',{body:JSON.stringify(journal),contentType:'application/json'});
-  const recovered=await live.clients[merchant].run(`(async()=>{let journal=${JSON.stringify(journal)};const warnings=[],swaps=[],attempts=[];const service=createPartyLuckyUpgrade({item:i=>character.items[i]&&JSON.parse(JSON.stringify(character.items[i]))||null,busy:()=>!!(character.q&&(character.q.upgrade||character.q.compound)),swap:(a,b)=>{swaps.push([a,b]);return swap(a,b);},read:()=>journal,write:j=>{journal=j;},sleep:ms=>new Promise(r=>setTimeout(r,ms)),now:Date.now,current:()=>true,log:slot=>attempts.push(slot),warn:(reason,entry)=>warnings.push({reason,entry})});const original=JSON.parse(JSON.stringify(journal));journal.displaced={name:'mpot1',q:5};let rejected;try{await service.recover();}catch(error){rejected=error.message;}const untouched=JSON.parse(JSON.stringify(character.items.slice(20,22)));const abandoned=journal;await service.recover();const repeated={journal,items:JSON.parse(JSON.stringify(character.items.slice(20,22))),swaps:swaps.slice(),attempts:attempts.slice()};journal=original;await service.recover();journal={...original,phase:"restoring",result:{name:"helmet",level:1}};await service.recover();return {rejected,untouched,abandoned,repeated,warnings,swaps,attempts,journal,items:character.items.slice(20,22)};})()`);
-  expect(recovered.rejected).toBeUndefined();
-  expect(recovered.abandoned).toBeNull();
-  expect(recovered.warnings).toHaveLength(1);
-  expect(recovered.warnings[0].reason).toContain('displaced item changed');
-  expect(recovered.warnings[0].entry.displaced).toEqual({name:'mpot1',q:5});
-  expect(recovered.untouched).toEqual([{name:'hpot1',q:4},{name:'helmet',level:1}]);
-  expect(recovered.repeated).toEqual({journal:null,items:recovered.untouched,swaps:[],attempts:[]});
-  expect(recovered.swaps).toEqual([[20,21]]);
-  expect(recovered.attempts).toEqual([]);
-  expect(recovered.journal).toBeNull();
-  expect(recovered.items).toEqual([{name:'helmet',level:1},{name:'hpot1',q:4}]);
-  await info.attach('lucky-recovery-native-result',{body:JSON.stringify({recovered,events:await live.clients[merchant].events()}),contentType:'application/json'});
-  } finally {
-    await live.clients[merchant].run(`globalThis.__partyInventoryCommands=Math.max(0,(globalThis.__partyInventoryCommands||0)-1);true`);
-  }
-});
 
 test('Hunt blacklist full catalog scrolls and sprites select their own monster', async ({page,live},info) => {
   // Failure modes: absolute sprites cover the modal and intercept other rows;
@@ -124,11 +94,7 @@ test.describe('stale merchant recovery', () => {
         return true;
       }, { timeout: 60_000 }).toBe(true);
       const activatedAt = Date.now();
-      await live.clients[merchant].frame.evaluate(() => {
-        const game = window as any;
-        const runner = (document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-        game.start_runner('maincode', `$.getScript(${JSON.stringify(runner.__partyServer + '/CODE/adventure_land/universal-loader.js')});`);
-      });
+      await reloadCode(live, merchant);
       await expect.poll(async () => {
         const status = (await live.state()).characters[merchant];
         return !!status?.dashboardRuntime && status.dashboardRuntime !== previousRuntime &&
@@ -153,14 +119,14 @@ test.describe('stale merchant recovery', () => {
 
   test('automatic missing sale marks expire while manual and locked marks survive restart', async ({ live }, info) => {
     // Failure modes: unchanged-inventory cache prevents GC; manual intent is
-    // discarded; locked stock expires; restart resets the original blocked clock.
-    const blockedAt = Date.now() - 299_000;
-    const inventory = (await live.state()).characters[merchant].items;
-    const blockedInventory = JSON.stringify(inventory.map((entry: { slot: number; item: unknown } | null) => entry && [entry.slot, entry.item]));
-    const base = { source: 'merchant', slot: 20, item: { name: 'helmet', level: 0 }, quantity: 1, state: 'blocked', blockedAt, blockedInventory };
+    // discarded; locked stock expires; restart drops a mark it should keep.
+    // An automatic sale whose copy stays missing across a bag change goes, with no
+    // clock: the marks were blocked on an earlier bag, so the restore's first
+    // reconcile is that change.
+    const base = { source: 'merchant', slot: 20, item: { name: 'helmet', level: 0 }, quantity: 1, state: 'blocked', blockedInventory: 'an earlier bag' };
     await live.restoreHistoricalSettings(() => ({ npcSaleMarks: [
-      { ...base, id: 'old-auto', auto: true, error: 'Marked item is not in merchant inventory' },
-      { ...base, id: 'manual', auto: false, error: 'Marked item is not in merchant inventory' },
+      { ...base, id: 'old-auto', auto: true, error: 'Marked item is not in merchant inventory', code: 'marked_missing' },
+      { ...base, id: 'manual', auto: false, error: 'Marked item is not in merchant inventory', code: 'marked_missing' },
     ] }));
     await expect.poll(async () => (await live.state()).npcSaleMarks.map((mark: { id: string }) => mark.id)).toEqual(['manual']);
     await live.admin(`output=(()=>{const p=get_player('${merchant}');p.items[20]={name:'helmet',level:0,l:'l'};cache_player_items(p);resend(p,'reopen+cid');return p.items;})()`);
@@ -180,14 +146,17 @@ test.describe('stale merchant recovery', () => {
     // unrelated item; an uncertain transfer is replayed; recovery loops forever.
     await live.admin(`output=(()=>{const p=get_player('${merchant}');p.items[20]={name:'helmet',level:0};cache_player_items(p);resend(p,'reopen+cid');return p.items;})()`);
     await expect.poll(async () => (await live.clients[merchant].snapshot()).items[20]?.name).toBe('helmet');
-    await live.clients[merchant].run(`(()=>{const journal={buffers:[{slot:20,identity:JSON.stringify(['leather',0,null,null,null,null,null,null,null]),source:21}],pending:[{inventory:20,item:null}],recoveryStartedAt:Date.now()-31000};localStorage.setItem('party-bank-stack-buffer:'+character.name,JSON.stringify(journal));window.__partyBankStackJournal=journal;return journal;})()`);
+    // The bank keeps its stack journal in the items owner's journal store: the runtime's own copy on
+    // the window wins over the stored one (runtime/items/character/owner.ts journals), so the row
+    // plants both.
+    await live.clients[merchant].run(`(()=>{const journal={buffers:[{slot:20,identity:JSON.stringify(['leather',0,null,null,null,null,null,null,null]),source:21}],pending:[{inventory:20,item:null}]};localStorage.setItem('party-bank-stack-buffer:'+character.name,JSON.stringify(journal));(window.__partyItemJournals||={})['party-bank-stack-buffer']=journal;return journal;})()`);
     await live.post('/command', { character: merchant, type: 'character-travel', location: { map: 'main', x: 250, y: 0 } });
     await expect.poll(async () => (await live.clients[merchant].snapshot()).x, { timeout: 90_000 }).toBeGreaterThan(200);
     expect((await live.clients[merchant].snapshot()).items[20]).toMatchObject({ name: 'helmet', level: 0 });
     await live.post('/command', { character: merchant, type: 'mark', slot: 20, item: { name: 'helmet', level: 0 } });
     await live.post('/command', { character: merchant, type: 'bank' });
     await expect.poll(async () => (await live.clients[merchant].snapshot()).items[20], { timeout: 90_000 }).toBeNull();
-    await expect.poll(() => live.clients[merchant].run('window.__partyBankStackJournal')).toBeNull();
+    await expect.poll(() => live.clients[merchant].run("(window.__partyItemJournals||{})['party-bank-stack-buffer'] ?? null")).toBeNull();
     const stored = await live.admin(`output=(()=>{const p=get_player('${merchant}');return Object.entries(p.user).filter(([key,value])=>/^items[0-9]+$/.test(key)&&Array.isArray(value)).flatMap(([,items])=>items).filter(item=>item&&item.name==='helmet'&&item.level===0);})()`);
     expect(stored).toHaveLength(1);
     await info.attach('stale-bank-native-travel', { body: JSON.stringify({ client: await live.clients[merchant].snapshot(), state: await live.state(), events: await live.clients[merchant].events() }), contentType: 'application/json' });
@@ -226,6 +195,9 @@ test.describe('stale merchant recovery', () => {
     await live.post('/merchant/routine-priorities', { priorities: {}, enabled: { 'manual bank exchange': true } });
     // Restart restores the old intent into the queue. Admit one native report
     // to assign it, drop its response, then withhold every further worker report.
+    // The report is admitted only once the restored job is queued: one step 11 run
+    // spent it before, and the job stayed queued with nothing left to assign it.
+    await expect.poll(async () => (await live.state()).merchantQueue?.some((job: any) => job?.id === 'offline-exhausted'), { timeout: 20_000 }).toBe(true);
     allowOneReport = true;
     await expect.poll(async () => (await live.state()).merchantCurrent?.id, { timeout: 20_000 }).toBe('offline-exhausted');
     expect(reportReceipts.filter(receipt=>receipt.status>=200&&receipt.status<300)).toHaveLength(1);

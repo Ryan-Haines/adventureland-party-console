@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { namedFunction } = require('./helpers/named-function.cjs');
-const { installGameRendering } = require('../../runtime/characters/game-rendering.ts');
+const { installGameRendering } = require('../../runtime/status/character/telemetry.ts');
 
 // Failure inventory: docs/efficiency.md, Character threads follow-ups, CT6.
 // A unit test: a headless client has no renderer, so its tint bookkeeping is

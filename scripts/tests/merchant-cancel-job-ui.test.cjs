@@ -1,17 +1,11 @@
-const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),Module=require('node:module');
-const {buildSync}=require('esbuild'),React=require('../../dashboard/node_modules/react');
+const test=require('node:test'),assert=require('node:assert/strict'),load=require('./helpers/dashboard-query-module.cjs');
+const React=require('../../dashboard/node_modules/react');
 const {create,act}=require('../../dashboard/node_modules/react-test-renderer');
-const filename=path.resolve('dashboard/features/party/merchant-cancel-job-control.tsx');
-const bundle=buildSync({entryPoints:[filename],bundle:true,packages:'external',external:['@/components/ui/dialog','@/components/ui/button'],platform:'node',format:'cjs',write:false});
-const compiled=new Module(filename,module);compiled.filename=filename;compiled.paths=Module._nodeModulePaths(path.dirname(filename));
-compiled.require=function(id){
- if(id==='@/components/ui/button')return {Button:props=>React.createElement('button',props)};
- if(id==='@/components/ui/dialog')return {
+const compiled={exports:load('merchant-cancel-job-control.tsx',{
+ '@/components/ui/button':{Button:props=>React.createElement('button',props)},
+ '@/components/ui/dialog':{
   Dialog:props=>props.open?React.createElement('section',props):null,
-  ...Object.fromEntries(['DialogContent','DialogDescription','DialogFooter','DialogHeader','DialogTitle'].map(name=>[name,props=>React.createElement('section',props)]))};
- return Module.prototype.require.call(this,id);
-};
-compiled._compile(bundle.outputFiles[0].text,filename);
+  ...Object.fromEntries(['DialogContent','DialogDescription','DialogFooter','DialogHeader','DialogTitle'].map(name=>[name,props=>React.createElement('section',props)]))}})};
 global.IS_REACT_ACT_ENVIRONMENT=true;
 test('automatic cancellation requires confirmation; dismissing leaves the routine alone and repeated confirms send once',async()=>{
  let tree,finish;const calls=[];

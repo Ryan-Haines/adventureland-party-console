@@ -1,12 +1,10 @@
 "use client";
 import type { InventoryEntry } from './inventory-entry';
-export function physicalInventory(items: (InventoryEntry | null)[], size = 42) {
+import { BASE_INVENTORY_SIZE } from '../../../runtime/items/api.ts';
+export function physicalInventory(items: (InventoryEntry | null)[], size = BASE_INVENTORY_SIZE) {
   const slots: (InventoryEntry | null)[] = Array(Math.max(size, items.length)).fill(null);
   for (const entry of items) if (entry && Number.isInteger(entry.slot) && entry.slot >= 0 && entry.slot < slots.length) slots[entry.slot] = entry;
   return slots;
-}
-export function validLuckySlot(slot: unknown): slot is number {
-  return Number.isInteger(slot) && Number(slot) >= 0 && Number(slot) < 42;
 }
 export function LuckySlotOutline() {
   return <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute -inset-[5px] z-20 h-[calc(100%+10px)] w-[calc(100%+10px)] overflow-visible fill-none text-amber-300">

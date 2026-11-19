@@ -37,7 +37,7 @@ export function useBankWithdrawal(post: PartyConsoleModel["post"], onError: (mes
   }, [pending, onError, submit]);
   function close() { setPending(null); setConfirmationError(null); }
   const confirmation = <Dialog open={!!pending} onOpenChange={open => { if (!open && !busy) close(); }}>
-    <DialogContent showCloseButton={false} className="border border-emerald-800 bg-[#091614] text-emerald-50">
+    <DialogContent data-area="bank-mark-removal" showCloseButton={false} className="border border-emerald-800 bg-[#091614] text-emerald-50">
       <DialogHeader>
         <DialogTitle className="text-emerald-50">Remove automatic bank mark?</DialogTitle>
         <DialogDescription className="text-emerald-100">This item is automatically marked for bank. Allow withdrawal and remove mark?</DialogDescription>

@@ -24,12 +24,14 @@ optional gathering and runs before another outbound batch fills the row.
 
 The worker holds the banking activity lock during service to prevent automatic
 restocking or gathering from pulling it away. On failure it reports completed
-transfers, current inventory, and the bank snapshot. Transient bank-unavailable,
-not-in-bank, and interrupted errors permit another service pass after a ten-second
-backoff. Other errors remain visible for diagnosis. Capacity limits still apply:
+transfers, current inventory, and the bank snapshot. A failure carries its code
+(the failure codes in `runtime/items/rules.ts`); an interrupted worker runs again at its next report,
+which renews its `seenAt`. Other errors remain visible for diagnosis. Capacity limits still apply:
 a new worker is not created automatically when all storage is genuinely full.
 
 Before sorting a visited bank floor, compatible normal-pane stacks consolidate.
+The sort runs only inside the visit's own `banking` hold or a free bag, so it never
+moves a copy another operation holds (`runtime/items/character/bank.ts`).
 Same-pane consolidation needs no inventory space; cross-pane consolidation uses
 two empty inventory buffers and restores them on failure. Reserved transfer slots
 are excluded. Stack limits and item properties remain compatibility constraints.

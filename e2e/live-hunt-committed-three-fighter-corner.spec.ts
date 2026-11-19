@@ -47,7 +47,7 @@ test('committed three-fighter corner preserves red combat while Mage and Priest 
     await live.post('/focus',{monsterFocus:['targetron'],monsterPriorities:{targetron:999},monsterSearchRadius:600});
     await live.post('/farming-mode',{character:W,mode:'default'});
     await expect.poll(async()=>{const views=await Promise.all(fighters.map(name=>live.clients[name].run(
-      '({grouped:!!sharedRoutine.usesGroupedCombat(),members:sharedRoutine.queueMembers()})')));
+      '({grouped:!!partyHunting.farm.grouped(),members:partyTasks.partyList()})')));
       return views.every(v=>v.grouped&&fighters.every(name=>v.members.includes(name)));},
       {timeout:30000,message:'All three actual fighter runtimes must adopt the committed formation'}).toBe(true);
     const hit=(list:any[],name:string,since=0)=>list.find(e=>e.event==='hit'&&e.at>=since&&e.at<=Date.now()&&String(e.data?.id)===seed.id&&
@@ -61,10 +61,10 @@ test('committed three-fighter corner preserves red combat while Mage and Priest 
       {timeout:15000,message:'The real native fight must be committed to all three fighter controls'}).toBe(true);
     await expect.poll(async()=>{
       const native=await Promise.all(fighters.map(name=>live.clients[name].run(`(()=>{
-        const t=parent.entities[${JSON.stringify(seed.id)}],r=sharedRoutine.combatTraceSnapshot();
+        const t=parent.entities[${JSON.stringify(seed.id)}],r=partyStatus.character.combatTraceSnapshot();
         return {at:Date.now(),name:character.name,map:character.map,in:character.in,x:character.real_x,y:character.real_y,
           hp:character.hp,rip:character.rip,connected:parent.socket?.connected,generation:__partyRuntimeGeneration,
-          target:r.target,ownedTarget:sharedRoutine.sharedTargetId(),epoch:r.epoch,position:globalThis.partyCombatPosition,
+          target:r.target,ownedTarget:sharedRoutine.targeting.sharedTargetId(),epoch:r.epoch,position:globalThis.partyCombatPosition,
           localApproach:globalThis.partyQueueClient?.formation?.approachStatus?.(),
           enemy:t&&{id:t.id,hp:t.hp,dead:t.dead,x:t.real_x,y:t.real_y}};
       })()`)));

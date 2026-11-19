@@ -1,52 +1,91 @@
-import {characterInspectionRoute} from "./characters/inspection.ts";
-import { observeEventAttendance, eventInstanceAllowed } from "./events/attendance-limits.ts";
-import { createDungeons } from './dungeons/service.ts';
-import { dungeonOwns } from '../dungeons/contracts.ts';
-import type { HttpHandler, HttpRouter } from "./http/contracts.ts";
-import { consoleMaintenance } from './lifecycle/console-maintenance.ts';
-import { createUpgradePreviews } from './merchant/upgrade-preview.ts';
-import { merchantVisibility } from './merchant/visibility.ts';
-import { loadCoordinatorDependencies } from "./infrastructure/dependencies.ts";
-import {marketIgnoredItemsRoute} from "./http/market-ignored-items.ts";
-import * as coordinatorPolicies from "./index.ts";
-import { realmOperationOwnsCharacter } from "./characters/realm-switch.ts";
-import type { CatalogDefinitions } from './status/catalog-validation.ts';
-import type { WebMiddleware, WebRouter, WebMonitor } from "./infrastructure/web-platform.ts";
-import type { CoordinatorApplicationPlatform } from "./infrastructure/application-platform.ts";
-import { installProductionRoutes } from "./inventory/production.ts";
-import { migrateSharedRules, installSharedRuleRoutes, sharedMember } from "./inventory/shared-rules.ts";
-import { loadCoordinatorGeometry } from './navigation/planner-geometry.ts';
-import { initializeStandLocation, standLocationRoute } from './merchant/stand-location.ts';
-import { createRareRouteDistance } from './navigation/rare-route-distance.ts';
-import { createMetricsService } from './metrics/service.ts';
-import { accountGoldSnapshot } from './telemetry/account-gold.ts';
-/** A farm-area snapshot saved while record() was idle keeps expired hits. */
-function pruneSavedFarmAreas(
-  party: { farmAreaState?: object | null; farmingProfiles?: Record<string, { farmAreaState?: object | null } | null | undefined> },
-  control: Pick<import("./infrastructure/hunt-platform.ts").FarmAreaControlPlatform, "prune">,
-): void {
-  for (const scope of [party, ...Object.values(party.farmingProfiles || {})])
-    if (scope?.farmAreaState) control.prune(scope.farmAreaState, Date.now());
-}
-
+// The coordinator's composition root (owner 00): one function builds every owner's coordinator
+// install and hands each the ports it reads, in creation order. A port here only hands another
+// owner's read or write across; a closure that holds a rule or state is that owner's (design lists
+// each one still here). The order: the lifecycle owner's run scope and the environment, movement's
+// planner and geometry, the groups, events and tasks, the merchant realm, the party's combat group,
+// the workers and the console control, the items and merchant jobs, the roster, survival, the web
+// routes, then the lifecycle owner's character start. The function declarations the flow hands as
+// ports sit after it, one section per owner.
+import { createMailInboxRoutes, inventoryMergePlan, createUpgradePreviews, installProductionRoutes, installMarketRoutes,
+  loadCoordinatorBankVaults, createCoordinatorStorageService, createBankboiStorage, planPontyPurchase, loadCoordinatorItemData,
+  createDeconstructionRoutes, createMerchantObservation, createMerchantExchangeRoutes, createCoordinatorMarketAccountActions,
+  createCoordinatorAccountCharacterActions, createCoordinatorBankActions, createStaleOrderRoute, createRuleConflictRoute,
+  createCoordinatorInventoryActions, normalizeMarketSales, normalizeMarketBids, storageKey,
+  createMerchantBlacklistRoute, sellerKey, createCoordinatorCharacterCommands, createReservedBankboiCargo, createInventoryReservations,
+  createMerchantOrderRoute, createCoordinatorMarketFeeds, normalizePontyListings, createCoordinatorPurchases, restockPolicyOf,
+  restockInventorySatisfied, clearCoordinatorResolvedUpgrades, installItems, migrateSharedRules, itemAskFacts } from "../items/coordinator/api.ts";
+import { createSettingsRoutes, installCoordinatorSettings, readLegacyStorage, initializeCoordinatorState, createFormationRoute,
+  createCoordinatorDashboardImport, createThresholdRoute, coordinatorSettings } from "../settings/coordinator/api.ts";
+import { createPlannerService, createPartyTravelRoutes, createCoordinatorManualNavigation, createCoordinatorTravelClock,
+  installSharedConvoyRoute, installMovementRoutes, installMovementRecordRoutes, createCoordinatorPartyConvoys,
+  createCoordinatorNavigationActions } from "../movement/api/coordinator.ts";
+import { defaultMerchantRoutinePriorities, defaultMerchantAutomations, merchantRoutinePriority as routinePriorityOf,
+  coordinatorMerchantPriority, coordinatorMerchantTransferBlocked } from "../merchant-jobs/api.ts";
+import { createCoordinatorActivity, createDashboardStream, createStatusIntake, createReply, createCardLines,
+  createCoordinatorPublicOverview, createCoordinatorTelemetry, installStatusNotices, online as reportOnline, createHeartbeatReply,
+  openMetricsService, createDiagnostics, installStatusRoutes, createApps, requestCaller, accountGoldSnapshot } from "../status/coordinator/api.ts";
+import { recoverMerchantQueue, coordinatorPrioritizedBids, createCoordinatorMerchantQueue, createCoordinatorMerchantServices,
+  createCoordinatorMerchantRecovery, createMerchantScheduling, createMerchantPartyRoutes, createCoordinatorMerchantJobActions,
+  createCoordinatorMerchantActions, createCoordinatorMerchantAutomation, createCoordinatorMerchantConfiguration,
+  stampMerchantJob as stampJob, coordinatorCollectionSlots, coordinatorCollectionNearby, coordinatorCollectionReady,
+  takeCoordinatorMerchantJob, coordinatorMerchantCapacitySignature, hasStrongMluck as strongMluck, mluckTravelLead as mluckLead, createMerchantCompletionRoute } from "../merchant-jobs/coordinator/api.ts";
+import { createCoordinatorRealmActions } from "../merchant-realm/api.ts";
+import { createCoordinatorAnniversaryReturns, createCoordinatorAnniversarySnapshot, createCoordinatorAnniversaryActions,
+  anniversaryTradeIdentity, createAnniversarySupplies, coordinatorEventCheckpoint, createCoordinatorEventReturns,
+  createCoordinatorEventObservations, createEventRecoveryRoutes, activeCoordinatorNames } from "../events/coordinator/api.ts";
+import { markedItem, markMatches, commerceRuleKey, ruleKey } from "../items/api.ts";
+import { createFocusRoute, createPartyCheckpointRoute, createMonsterSelectionRoutes, createFarmingCommand, createSavedFarmingModeRoute,
+  createHuntRoutes } from "../hunting/coordinator/api.ts";
+import { createSurvivalRoutes, installCoordinatorSurvival, type SurvivalParty } from "./survival/api.ts";
+import { coordinatorGroupedSnapshot, installCoordinatorTargeting, installEventBoundary } from "./targeting/api.ts";
+import { ladderPort, installTasks, type PartyRecord, type ScopePorts, activeOf, coordinatorHuntParticipants, createCombatGroups,
+  createFarmingScopes, groupId, groupKey, reconcileFarmingMembership, createScopedRoutes, installTaskRoutes } from "../tasks/coordinator/api.ts";
+import { fresh, setReadings } from "../protocol/reports.ts";
+import { createEventReturnTravel, eventAskFacts, eventInstanceAllowed, installEvents, migrateEventSelections } from '../events/coordinator/api.ts';
+// The events owner's rules, the one instance events/coordinator/install.ts adopts add-on event
+// kinds into.
+import { eventEnabled, eventPolicy, selectedEvents } from '../events/api.ts';
+import type { CaveMemberState, CaveVisitState, FarmingFocus, HuntView } from '../hunting/api.ts';
+import { acceptArrival, cancelCoordinatorHuntConvoy, clearCoordinatorHunt, coordinatorHuntDestination, installHunting,
+  createMonsterSelection, caveFloors, installCaveRoutes, migrateEmptyFocusIntents, migrateRareRules, migrateSharedMonsterFocus,
+  selectCoordinatorMonsterDestination, searchReach, validPassivePatch, createFarmingIntents, farmingRecordOf, writeSpot, dungeonEnter, huntAskFacts } from '../hunting/coordinator/api.ts';
+import type { HttpResponse } from "../lifecycle/api.ts";
+import { createConsoleControl } from '../lifecycle/coordinator/control.ts';
+import { installCoordinatorDashboard, installLifecycleRoutes, startCoordinatorWebServices } from '../lifecycle/coordinator/routes.ts';
+import { createShutdown, failStart, initializeCoordinatorEnvironment, lifecycleRegistration, startCharacters } from '../lifecycle/coordinator/start.ts';
+import { createCoordinatorRun } from '../lifecycle/character/run.ts';
+import { coordinatorClock, createWorkers } from '../lifecycle/coordinator/workers.ts';
+import { coordinatorOwnership, createCoordinatorOwnershipPorts, createRosterCommit } from '../lifecycle/roster/ownership.ts';
+import { createRosterProjection } from '../lifecycle/roster/roster-projection.ts';
+import { realmLabel } from '../protocol/realm.ts';
+import { reservedForSteam } from '../lifecycle/roster/handoff.ts';
+import { classScript, createCode } from '../lifecycle/coordinator/code.ts';
+import { merchantVisibility } from '../merchant-jobs/coordinator/api.ts';
+import { loadCoordinatorDependencies } from "../lifecycle/coordinator/start.ts";
+import { createAddonRoutes } from "../hooks/http.ts";
+import { adoptSavedSwitches } from "../hooks/core.ts";
+import type { SettingsChange, SettingsWriteResult } from "../settings/api.ts";
+import { convoyFighting, canStand, createCommandOwnership, createMovementRecords, createRareRouteDistance, createRouteTime, gameItems, gameMonsters,
+  installCoordinatorMovement, movementFingerprint, prepareMovement as prepareMovementGeometry, stepWalks } from "../movement/api/coordinator.ts";
+import { migrateHeadlessRealms, realmOperationOwnsCharacter, realmOperationDestination, normalizedRealm } from "../merchant-realm/api.ts";
+import type { WebMiddleware, WebRouter, WebMonitor } from "../lifecycle/coordinator/web-platform.ts";
+import type { CoordinatorApplicationPlatform } from "../lifecycle/coordinator/application-platform.ts";
+import { GROUPS, priority } from '../tasks/api.ts';
+import { merchantJobSource } from '../merchant-jobs/coordinator/api.ts';
+import { merchantRealmSource, nextRealmReport, createMerchantRealmOwner, accountHomeRealm, characterHomeRealm, createMerchantHomeCommand } from '../merchant-realm/api.ts';
+import { migrateMerchantSettings, installStandLocationRoute } from '../merchant-jobs/coordinator/api.ts';
+import { partyHooks } from '../hooks/index.ts';
+import { coordinatorReads } from '../hooks/coordinator-reads.ts';
+import type { WalkTakeover } from '../hooks/registry.ts';
 export function startCoordinatorApplication(
   platform: CoordinatorApplicationPlatform,
 ): Promise<void> {
-  const consoleUpdate = consoleMaintenance(process.env.AL_DATA_DIR);
   const require = platform.require,
     __dirname = platform.directory;
   const {
-    huntPolicy,
-    watchGenerations,
-    classScript,
     evaluateGroup,
     installRosterRoutes,
     publicHandoff,
-    requestReload,
-    eventPolicy,
-    selectedEvents,
-    eventEnabled,
-    supportedEvents,
     child_process,
     account_info,
     game_files,
@@ -56,21 +95,9 @@ export function startCoordinatorApplication(
     fs_regular,
     crypto,
     vm,
-    pontyMarket,
-    huntSafety,
     farmZones,
-    farmAreaControl,
-    rareHunting,
-    createFarmingNavigation,
     convoyNavigation,
-    merchantInventoryStacks,
-    bankStackRouting,
-    createMailInbox,
     validFarmingLocation,
-    farmingAreas,
-    createEscape,
-    convoyDefense,
-    createDisengagement,
     LOCALSTORAGE_PATH,
     LOCALSTORAGE_ROTA_PATH,
     STAT_BEAT_INTERVAL,
@@ -81,11 +108,17 @@ export function startCoordinatorApplication(
   } = loadCoordinatorDependencies(require);
 
   //TODO check for invalid session
-  //TODO improve termination
   //MAYBE improve linux service
-  //MAYBE exclude used versions
 
   return (async () => {
+    // The lifecycle owner's coordinator run (runtime/lifecycle/character/run.ts
+    // `createCoordinatorRun`) holds every coordinator timer under its owner's handle, and the
+    // shutdown's `stopRun` releases them all before storage closes.
+    const coordinatorRun = createCoordinatorRun({ setTimeout, clearTimeout, setInterval, clearInterval });
+    const scopes = { act02: coordinatorRun.scope('02', 'act'), act08: coordinatorRun.scope('08', 'act'), act09: coordinatorRun.scope('09', 'act'),
+      act10: coordinatorRun.scope('10', 'act'), act11: coordinatorRun.scope('11', 'act'), act13: coordinatorRun.scope('13', 'act'), observe12: coordinatorRun.scope('12', 'observe') };
+    // The lifecycle owner's workers, CODE reload and ownership waits.
+    const lifecycleClock = coordinatorClock(scopes.act13);
     const {
       localStorage,
       sessionStorage,
@@ -95,61 +128,48 @@ export function startCoordinatorApplication(
       account: my_acc,
       workers: character_manage,
       configuredRealm,
-    } = await coordinatorPolicies.initializeCoordinatorEnvironment({
-      createStorage: () => new FileStoredKeyValues(LOCALSTORAGE_PATH, LOCALSTORAGE_ROTA_PATH),
+    } = await initializeCoordinatorEnvironment({
+      createStorage: () => new FileStoredKeyValues(LOCALSTORAGE_PATH, LOCALSTORAGE_ROTA_PATH, scopes.act11),
       migration: {
-        read: (path) => fs_regular.readFileSync(path, "utf8"),
+        read: readLegacyStorage,
         remove: (path) => fs_regular.unlinkSync(path),
         info: (details, message) => log.info(details, message),
       },
       ensureLatest: () => game_files.ensure_latest(),
       configuration:
-        (): import("./infrastructure/platform-contracts.ts").CoordinatorConfiguration =>
+        (): import("../lifecycle/coordinator/platform-contracts.ts").CoordinatorConfiguration =>
           require("../config"),
       cullVersions: (versions) => game_files.cull_versions(versions),
       environmentSession: () => process.env.AL_SESSION,
       account: (session) => account_info(session),
-      accountHomeRealm: (account) => {
-        const homes = account.response.characters.map((entry) =>
-          entry.home ? "SR_" + entry.home.replace(/^SR_/, "") : null);
-        return homes.length && homes[0] && homes.every((home) => home === homes[0])
-          ? homes[0] : null;
-      },
+      accountHomeRealm,
     });
-    let version = initialVersion;
-    let clientRevision = await game_files.get_revision?.(version) || String(version);
-    const movementPlanner = coordinatorPolicies.createPlannerService(platform.plannerWorkerFile || (platform.codeDirectory || __dirname) + '/../../.build/runtime/movement-planner.cjs');
-    const movementFingerprints = new Map<number, string>();
-    let canStand: (x: number, y: number) => boolean = () => false;
-    async function prepareMovement(gameVersion: number) {
-      try {
-        const directory = './game_files/' + gameVersion + '/';
-        const data = fs_regular.readFileSync(directory + 'data.js', 'utf8');
-        const common = fs_regular.readFileSync(directory + 'old_common_functions.js', 'utf8');
-        const geometry = loadCoordinatorGeometry(data, common);
-        canStand = (x, y) => geometry.canStand(x, y);
-        const prepared = movementPlanner.prepare(geometry.game, gameVersion, {data, common});
-        await prepared.ready;
-        movementFingerprints.set(gameVersion, prepared.fingerprint);
-        log.info({ version: gameVersion, fingerprint: prepared.fingerprint }, 'ALClient movement geometry ready');
-        return prepared;
-      } catch (error) { log.warn({error}, 'Could not prepare ALClient; native movement fallback enabled'); return null; }
-    }
-    await prepareMovement(version);
+    const movementPlanner = createPlannerService(platform.plannerWorkerFile || (platform.codeDirectory || __dirname) + '/../../.build/runtime/movement-planner.cjs', scopes.act02);
+    // Saved movement snapshots beside the metrics journal (design § 7).
+    const movementRecords = createMovementRecords({
+      now: () => Date.now(),
+      notify: (hook, payload) => { partyHooks().notify(hook, payload); },
+      directory: LOCALSTORAGE_PATH + '.movement-snapshots', files: fs_regular,
+    });
+    const walkFailed = movementRecords.walkFailed;
+    // Table G's one lease for every ring; the view reads movement's saved snapshots beside the live
+    // rings.
+    const diagnostics = createDiagnostics({ now: () => Date.now(), status: name => party.statuses[name],
+      snapshots: name => movementRecords.snapshots(name) });
+    const prepareMovement = (gameVersion: number) => prepareMovementGeometry(gameVersion, {
+      read: path => fs_regular.readFileSync(path, 'utf8'), planner: movementPlanner, log });
+    await prepareMovement(initialVersion);
     const PARTY_CLASSES = ["warrior", "paladin", "rogue", "ranger", "mage", "priest", "merchant"];
-    const gameDataPorts: Parameters<typeof coordinatorPolicies.loadCoordinatorBankVaults>[1] = {
+    const gameDataPorts: Parameters<typeof loadCoordinatorBankVaults>[1] = {
       read: (path) => fs_regular.readFileSync(path, "utf8"),
       evaluate: (source, context, filename) =>
         vm.runInNewContext(source, context, filename ? { filename } : undefined),
       warn: (details, message) => log.warn(details, message),
     };
-    function loadBankVaultDefinitions() {
-      return coordinatorPolicies.loadCoordinatorBankVaults(version, gameDataPorts);
-    }
     const DEFAULT_MERCHANT_ROUTINE_PRIORITIES =
-      coordinatorPolicies.defaultMerchantRoutinePriorities();
-    const DEFAULT_MERCHANT_AUTOMATIONS = coordinatorPolicies.defaultMerchantAutomations();
-    const { party, persistedSettings } = coordinatorPolicies.initializeCoordinatorState(
+      defaultMerchantRoutinePriorities();
+    const DEFAULT_MERCHANT_AUTOMATIONS = defaultMerchantAutomations();
+    const { party, persistedSettings } = initializeCoordinatorState(
       localStorage,
       character_manage,
       configuredRealm,
@@ -157,161 +177,222 @@ export function startCoordinatorApplication(
         merchantDefault: cfg.merchant || null,
         now: () => Date.now(),
         loadBankVaultDefinitions,
-        warn: (details, message) => log.warn(details, message),
+        log,
       },
     );
-    const dungeons = createDungeons(party, {
-      canStart: names => {
-        if (party.merchantCurrent?.target && names.includes(party.merchantCurrent.target)) throw Error('Wait for the active merchant visit to finish');
-      },
-      now: Date.now, persist: persistSettings,
-      cancel: names => {
-        cancelActiveConvoy();
-        for (const name of names) delete party.commands[name];
-      },
+    // The report ages every coordinator reader asks (runtime/protocol/reports.ts), from the saved
+    // settings, once the settings are loaded; the core registration keeps them current on each
+    // change (hooks/core.ts).
+    setReadings(party);
+    // The lifecycle owner's roster projection reads only the party state and the account. The
+    // metrics service reads it for the first account gold point as it opens, so the projection
+    // stands before that service.
+    const rosterProjection = createRosterProjection(
+      party,
+      () => my_acc.response,
+      () => Date.now(),
+    );
+    // The settings owner: the one writer and the persistence. Every route writes a setting
+    // through `settings.write`, which it answers; the save names below are the persistence's
+    // own functions, which other owners' code calls.
+    const settings = installCoordinatorSettings(party, {
+      hooks: partyHooks(), storage: localStorage, timers: scopes.act11, now: () => Date.now(), log: message => console.error(message),
+      owned: name => !!ownedCharacter(name),
+      monsters: gameMonsters, items: gameItems, spawns: () => party.monsterChoices ?? null,
+      scope: name => farmingScopes.profile(name),
+      app: () => requestCaller()?.by,
     });
-    const metrics = (() => {
-      try {
-        return createMetricsService(LOCALSTORAGE_PATH + '.metrics.jsonl', {
-          owned: name => !!ownedCharacter(name), now: Date.now,
-          accountGold: () => accountGoldSnapshot(party.bankSnapshot, slotPayload(), Object.values(party.bankbois), party.statuses).total,
-          warn: error => log.warn({ error }, 'Metrics retention failed'),
-        });
-      } catch (error) {
-        // A metrics disk/startup failure must not stop character coordination.
-        // Preserve the original history and expose an unavailable endpoint.
-        log.warn({ error }, 'Metrics storage unavailable; party coordination continues');
-        return { close() { return Promise.resolve(); }, install(router: HttpRouter) {
-          const unavailable: HttpHandler = (_request, response) => response.status(503).json({ error: 'Metrics storage unavailable' });
-          router.get('/party-api/metrics', unavailable); router.post('/party-api/metrics', unavailable);
-          router.post('/party-api/metrics/reset', unavailable);
-          router.get('/party-api/metrics/kills', unavailable);
-          router.get('/party-api/metrics/bars', unavailable);
-          router.get('/party-api/metrics/account-gold', unavailable);
-        } };
-      }
-    })();
-    migrateSharedRules(party, Object.keys(character_manage).filter(name => !party.bankbois[name]));
-    const farmingScopes = coordinatorPolicies.createFarmingScopes(party);
-    const soloServices = new Map<string, ReturnType<typeof createSoloServices>>();
-    const aldataPublicationScheduler = coordinatorPolicies.createPublicationScheduler(
-      {
-        get publishTimer() {
-          return party.aldata.publishTimer;
-        },
-        set publishTimer(value) {
-          party.aldata.publishTimer = value;
+    const { persistence, write: writeSettings, persistSettings, persistHistory, persistHistoryNow, persistALData, persistRosterState } = settings;
+    // The add-on system reads its saved switches once the settings answer.
+    adoptSavedSwitches(partyHooks());
+    // The hunts and farming owner: the party's Cave visit and rare service; each combat group's Hunt
+    // and farm spot come from its `group` below.
+    const hunting = installHunting(party, {
+      cave: {
+        now: Date.now, persist: persistSettings, merchantVisit: () => party.merchantCurrent?.target,
+        // The lifecycle owner's roster answers (roster-projection.ts): online for the Hunt's
+        // events-pending hold, offline for the Cave's drop, so a starting or repairing worker
+        // keeps its member.
+        online,
+        offline: name => rosterProjection.offline(name),
+        cancel: names => {
+          cancelActiveConvoy();
+          for (const name of names) delete party.commands[name];
         },
       },
-      {
-        later: (callback, delay) => setTimeout(callback, delay),
-        publish: publishALDataTrades,
+      rare: {
+        group: () => groupId('party', party.leader),
+        members: () => huntParticipants(),
+        intent: (name) => farmingNavigation.intent(name),
+        cancelConvoy: cancelActiveConvoy,
+        convoy: (location, label, names, purpose) => startPartyMonsterConvoy(location as Parameters<typeof startPartyMonsterConvoy>[0], label, names, purpose),
+        persist: persistSettings,
+        write: writeSettings,
+        reconcileHuntArrival: () => huntTick.reconcileArrival(),
+        // The table's answer for a rare against the live task: rank, and the
+        // rare's "May interrupt Hunt" switch when its type is known.
+        taskRefuses: (mtype) => tasks.rareRefused(mtype),
+        monsters: gameMonsters,
+        // The party group's farming ladder, which a failed Phoenix patrol leg climbs.
+        ladder: () => ladderPort(taskOwner, () => groupId('party', party.leader), ['farming']),
+        routeDistance: createRareRouteDistance(request=>movementPlanner.plan(request),
+          ()=>({version: party.gameVersion, fingerprint: movementFingerprint(party.gameVersion)})),
       },
-    );
-    const activity = coordinatorPolicies.createCoordinatorActivity(party, {
+      persist: persistSettings,
+      groups: () => groups.combat().flatMap(g => g.id ? [g.id] : []),
+      solo: name => !!groups.solo(name),
+      farmingState: name => farmingRecord(name), activeNames, now: Date.now,
+    });
+    const { cave: dungeons, rares: rareControl } = hunting;
+    const metrics = openMetricsService(LOCALSTORAGE_PATH + '.metrics.jsonl', {
+      owned: name => !!ownedCharacter(name), now: Date.now, timers: scopes.observe12,
+      accountGold: () => accountGoldSnapshot(party.bankSnapshot, slotPayload(), Object.values(party.bankbois), party.statuses).total,
+      warn: error => log.warn({ error }, 'Metrics retention failed'),
+      unavailable: error => log.warn({ error }, 'Metrics storage unavailable; party coordination continues'),
+    });
+    const migration = migrateSharedRules(party, Object.keys(character_manage).filter(name => !party.bankbois[name]), writeSettings);
+    if (migration && !migration.ok) log.warn({ error: migration.error }, 'Shared rule migration refused; the next start migrates again');
+    const farmingScopes = createFarmingScopes(party, coordinatorSettings().lists);
+    // The groups and tasks owner: its module installs with the records its sources read
+    // (runtime/tasks/). The combat groups this file's one composition builds
+    // (runtime/tasks/coordinator/groups.ts): the party's group, and each solo group composed on
+    // first use. The hunting owner's farming record of a character, from the tasks owner's groups
+    // and scopes.
+    const farmingRecord = farmingRecordOf(party, { isCombat: name => groups.isCombat(name), effective: name => farmingScopes.effective(name) });
+    const groups = createCombatGroups({ party, owned: ownedCharacter, owner: farmingScopes.owner, members: farmingScopes.members, activeNames,
+      partyGroup: () => partyGroup, compose: soloGroup, leaderScopePorts: () => leaderScopePorts });
+    // The events owner's coordinator install.
+    const coordinatorEvents = installEvents(party, {
+      dungeons, groups, activeNames, persist: persistSettings,
+      partyObservations: () => eventObservations, partyReturns: () => eventReturns,
+      runs: kind => tasks.runs(null, kind), anniversary: () => anniversaryReturns,
+      observeTask: (name) => tasks.observe(name), admits: name => tasks.owner.allows('event-attendance', name),
+    });
+    const { eventsEnabledFor, merchantAnniversaryControl, anniversaryCombatParticipants, resolveAbtestingStrategy } = coordinatorEvents;
+    const tasks = installTasks({
+      hooks: partyHooks(), now: () => Date.now(), persist: persistSettings, record: () => party, records: movementRecords,
+      groups, members: farmingScopes.members, activeNames,
+      eventEnabled: (name, event) => eventEnabled(party, name, event), instanceAllowed: (name, event) => eventInstanceAllowed(party, name, event),
+      attends: eventsEnabledFor, monsters: gameMonsters,
+      startConvoy: (...args) => partyConvoys.start(...args), navigation: () => farmingNavigation,
+      visit: () => dungeons.task(), rare: () => rareControl.task(), reconcileVisit: () => dungeons.reconcile(), releaseVisit: () => dungeons.release(),
+      reconcile: previous => reconcileFarmingMembership(party, farmingScopes, previous, (key, member) => partyHooks().walks.end(key, 'membership', member)),
+      lockoutMs: () => Number(partyHooks().read({ field: 'escapeResumeLockoutMs' })),
+      paused: () => consoleControl.state().paused,
+    });
+    const startPartyMonsterConvoy = tasks.startWalk;
+    const taskOwner = tasks.owner;
+    // The merchant group's job ladder: the job owner books a retry's failure on it at the next
+    // claim, and a checkpoint or a completion is progress.
+    const merchantJobLadder = ladderPort(taskOwner, () => party.merchantCharacter ? `merchant:${party.merchantCharacter}` : null, ['merchant-job']);
+    // The merchant realm owner: the wants, the move in flight and the realm-hold ladder.
+    const merchantRealm = createMerchantRealmOwner(party, {
+      now: () => Date.now(), block: name => characterWorkers.ensure(name), realmLabel, log: merchantLog,
+      persist: persistSettings, restart: block => void characterWorkers.stop(block), resolve: realm => my_acc.resolve_realm(realm),
+      ladder: ladderPort(taskOwner, () => party.merchantCharacter ? `merchant:${party.merchantCharacter}` : null, ['realm-hold']),
+      taskTick: () => void tasks.live(party.merchantCharacter ? `merchant:${party.merchantCharacter}` : null),
+    });
+    // The realm owner's `realm` source and reads, which the tasks owner asks in its declared
+    // place.
+    const realmSource = partyHooks().publish(merchantRealmSource(() => merchantRealm, () => party.merchantRealmRequests?.[String(party.merchantCharacter)]?.owner));
+    if (!realmSource.ok) throw Error(`The realm owner's core:merchant-realm did not load: ${realmSource.message}`);
+    installEventBoundary(partyHooks(), party, () => Date.now());
+    const activity = createCoordinatorActivity(party, {
       now: () => Date.now(),
       persistHistory,
     });
-    const persistence = coordinatorPolicies.createCoordinatorPersistence(party, localStorage);
-    pruneSavedFarmAreas(party, farmAreaControl);
-    if (initializeStandLocation(party, Object.keys(persistedSettings).length === 0, canStand)) persistence.settings();
-    const storageService = coordinatorPolicies.createCoordinatorStorageService(
+    if (migrateMerchantSettings(party, Object.keys(persistedSettings).length === 0, canStand, writeSettings)) persistence.settings();
+    migrateRareRules(party, writeSettings, console.error);
+    const storageService = createCoordinatorStorageService(
       party,
       persistBankState,
     );
-    coordinatorPolicies.migrateCharacterSelections(party, character_manage, supportedEvents);
-    coordinatorPolicies.migrateSharedMonsterFocus(party);
-    const createCommandOwnership: import("./infrastructure/navigation-platform.ts").CommandOwnershipPlatform = require("../../scripts/command-ownership.cjs");
+    migrateHeadlessRealms(party, character_manage);
+    migrateSharedMonsterFocus(party);
+    // The movement owner's coordinator answer, `walks.end`, over each combat group's walk. It installs before the
+    // party group is composed, since the group's heartbeat reply asks `movement.reply`.
+    installCoordinatorMovement(partyHooks(), groups.walkGroup, { statuses: () => party.statuses,
+      time: createRouteTime(request => movementPlanner.plan(request), () => ({ version: party.gameVersion, fingerprint: movementFingerprint(party.gameVersion) })) });
     const commandOwnership = createCommandOwnership(party);
-    const farmingNavigation = createFarmingNavigation(party, {
-      names: () => Object.keys(character_manage),
-      activeNames,
-      cancelConvoy: cancelActiveConvoy,
-      startConvoy: startPartyMonsterConvoy,
-      persist: persistSettings,
-      log: anniversaryLog,
-    });
-    coordinatorPolicies.migrateEmptyFocusIntents(
+    const partyGroup = composeCombatGroup(party, 'party'), {
+      farmingNavigation, partyConvoys, groupedCombatSnapshot, huntParticipants, huntTick,
+      farmAreaNavigation, heartbeatResponse, eventReturns, eventObservations, eventRecoveryRoutes, huntModeRoute, huntBlacklistRoute, huntSettingsRoute,
+      huntControlRoutes, eventAcknowledgementRoutes, convoyEngagementRoutes, convoyAcknowledgementRoutes, walks: partyWalks,
+    } = partyGroup;
+    migrateEmptyFocusIntents(
       persistedSettings.navigationIntents,
       party,
       farmingNavigation,
     );
-    const workerClock: import("./characters/types.ts").WorkerClock = {
-      now: () => Date.now(),
-      later: (callback, ms) => setTimeout(callback, ms),
-      cancel: (timer) => clearTimeout(timer),
-      sleep,
-    };
-    const { manager: characterManager, code: characterCode } =
-      coordinatorPolicies.createCoordinatorCharacterServices({
-        blocks: character_manage,
-        clock: workerClock,
-        log: console,
-        local: localStorage,
-        session: sessionStorage,
-        version,
-        currentVersion: () => version,
-        clientUpdate: event => { void clientUpdates.request(event); },
-        sessionToken: sess,
-        classIds: ctype_to_clid,
-        configuration: cfg,
-        lifecycleState: () => party.lifecycle,
-        accountSource: my_acc,
-        repair: () => clientUpdates.request("repair"),
-        fork: () =>
-          child_process.fork("./src/CharacterThread.js", [], {
-            stdio: ["ignore", "pipe", "pipe", "ipc"],
-          }),
-        // The fork above always configures both streams as pipes.
-        pipe: (worker) => {
-          worker.stdout!.pipe(process.stdout);
-          worker.stderr!.pipe(process.stderr);
-        },
-        fullCaveFloors: name => party.leader === name,
-        monitor: (name, block) =>
-          bwi_instance.publisher
-            ? monitoring_util.create_monitor_ui(
-                bwi_instance,
-                name,
-                block,
-                cfg.web_app.enable_minimap,
-              )
-            : null,
-        code: {
-          hash: () => crypto.createHash("sha256"),
-          read: (file) => fs_regular.readFileSync(file),
-          reload: requestReload,
-          stop: (block, reason) => softkill_block(block, reason),
-          watch: (script, changed) => fs_regular.watch(script, changed),
-          warn: (details, message) => log.warn(details, message),
-        },
-      });
-    const eventReturns = coordinatorPolicies.createCoordinatorEventReturns(party, {
-      now: () => Date.now(),
-      activeNames: () => activeNames().filter(name => name === party.merchantCharacter || farmingScopes.owner(name) === party.leader),
-      enabled: eventsEnabledFor,
-      checkpoint: eventCheckpoint,
-      cancelConvoy: cancelActiveConvoy,
-      startConvoy: startPartyMonsterConvoy,
-      anniversaryParticipants: anniversaryCombatParticipants,
-      navigation: farmingNavigation,
-      persist: persistSettings,
+    // The roster's one commit: the roster routes and the workers' slot writes each send roster.changed through it.
+    const rosterCommit = createRosterCommit(party, { save: persistRosterState, notify: (hook, payload) => { partyHooks().notify(hook, payload); } });
+    // The headless workers and their game client (runtime/lifecycle/coordinator/workers.ts).
+    const characterWorkers = createWorkers({
+      blocks: character_manage,
+      notify: (hook, payload) => { partyHooks().notify(hook, payload); },
+      state: party,
+      clock: lifecycleClock,
+      log: console,
+      local: localStorage,
+      session: sessionStorage,
+      sessionToken: sess,
+      typeCode: !!cfg.enable_TYPECODE,
+      minimap: !!cfg.web_app?.enable_minimap,
+      classIds: ctype_to_clid,
+      caveFloors: name => caveFloors(party.leader, name),
+      stopped: name => consoleControl.stopped(name),
+      resolveRealm: (realm) => my_acc.resolve_realm(realm),
+      resolveCharacter: (name) => my_acc.resolve_char(name),
+      refreshAccount: () => my_acc.updateInfo(),
+      account: () => my_acc.response,
+      fork: child_process.fork,
+      // workers.ts forks every worker with both streams as pipes.
+      pipe: (worker) => {
+        worker.stdout!.pipe(process.stdout);
+        worker.stderr!.pipe(process.stderr);
+      },
+      monitorUi: monitoring_util.create_monitor_ui,
+      // Keep the original TypeError if a queued worker no longer has an account entry.
+      configuredRealm,
+      homeRealm: name => characterHomeRealm(rosterProjection.homeRealm(), ownedCharacter(name)?.home),
+      script: (name) => classScript("./CODE/adventure_land", ownedCharacter(name)!.type),
+      watch: (name, block) => characterCode.watch(name, block),
+      commit: rosterCommit,
+      reserved: name => reservedForSteam({ native: party.nativeOwner, steam: party.steamMembers, slots: party.headlessSlots, handoff: party.steamSwitch }, name!),
+      owned: name => !!ownedCharacter(name),
+      client: { version: initialVersion, revision: await game_files.get_revision?.(initialVersion) || String(initialVersion) },
+      gameFiles: game_files,
+      versionData: { movement: prepareMovement, maps: version => prepareVersion(version), gameData: gameDataPorts },
     });
-    const bankboiService = coordinatorPolicies.createCoordinatorBankboiService(
+    // CODE reload (runtime/lifecycle/coordinator/code.ts).
+    const characterCode = createCode({
+      notify: (hook, payload) => { partyHooks().notify(hook, payload); },
+      blocks: character_manage,
+      clock: lifecycleClock,
+      log: console,
+      watching: !!cfg.watch_CODE && !process.env.AL_CONSOLE_ARTIFACT,
+      hash: () => crypto.createHash("sha256"),
+      read: (file) => fs_regular.readFileSync(file),
+      watch: (script, changed) => fs_regular.watch(script, changed),
+      className: name => ownedCharacter(name)?.type,
+      stop: (block, reason) => characterWorkers.stop(block, reason),
+    });
+    // Table D's merchant row (lifecycle/rules.ts): the Pause and a deploy lease hold the merchant's jobs.
+    const merchantHeld = () => !consoleControl.allows('merchant');
+    const bankboiService = createBankboiStorage(
       party,
       character_manage,
       {
         now: () => Date.now(),
-        plan: () => consoleUpdate.blocksMerchant() ? null : bankStackRouting.servicePlan(party),
-        assignSlot: assignHeadlessSlot,
-        stop: (block) => softkill_block(block),
+        stop: (block) => characterWorkers.stop(block),
         persistRoster: persistRosterState,
         persistBank: persistBankState,
         collect: queueMerchant,
         log: merchantLog,
+        merchantHeld,
       },
     );
-    const merchantQueue = coordinatorPolicies.createCoordinatorMerchantQueue(party, {
+    const merchantQueue = createCoordinatorMerchantQueue(party, {
       now: () => Date.now(),
       collectionReady: markedCollectionReady,
       capacitySignature: merchantCapacitySignature,
@@ -319,58 +400,65 @@ export function startCoordinatorApplication(
       priority: merchantJobPriority,
       stamp: stampMerchantJob,
       persist: persistSettings,
-      dispatch: dispatchMerchant,
+      dispatch: () => merchantDispatcher.dispatch(),
       log: merchantLog,
     });
-    const realmRoutes = coordinatorPolicies.createCoordinatorRealmActions(party, {
+    const realmRoutes = createCoordinatorRealmActions(party, {
       now: () => Date.now(),
-      sleep,
-      pauseMerchant: pauseMerchantForRealmSwitch,
-      retireConvoys: retireConvoysForRealmSwitch,
+      nextReport: bound => nextRealmReport(scopes.act09, bound),
+      stamp: stampMerchantJob,
+      realm: merchantRealm,
+      groups: () => groups.combat(),
+      endWalk: group => partyHooks().walks.end(groupKey(group), 'realm-switch'),
+      roster: { owned: name => rosterProjection.owned(name), homeRealm: () => rosterProjection.homeRealm() },
+      account: my_acc,
       native: nativeName,
-      block: ensureCharacterBlock,
-      stop: softkill_block,
+      block: name => characterWorkers.ensure(name),
+      stop: block => characterWorkers.stop(block),
       persist: persistSettings,
       label: realmLabel,
-      dispatch: dispatchMerchant,
+      dispatch: () => merchantDispatcher.dispatch(),
       resolve: (realm) => my_acc.resolve_realm(realm),
       bankBusy: () => bankboiService.busy(),
       participants: realmParticipants,
       current: () => realmControlPayload().currentRealm,
-      home: accountHomeRealm,
-      characterHome: (name) => rosterProjection.owned(name)?.home || null,
-      characterType:(name)=>rosterProjection.owned(name)?.type || null,
-      accountCharacters: () => my_acc.response.characters.map((entry) => entry.name),
-      start: (name) => characterManager.start(name),
-      connectionCount: () => my_acc.response.characters.filter((entry) => !!entry.online).length,
-      refresh: () => my_acc.updateInfo(),
+      start: (name) => characterWorkers.start(name),
     });
-    const shutdownCoordinator = coordinatorPolicies.createShutdown({
+    // Pause, Play, the clean shutdown and the deploy lease (runtime/lifecycle/coordinator/control.ts).
+    const consoleControl = createConsoleControl(process.env.AL_DATA_DIR, {
+      now: Date.now,
+      roster: party,
+      statuses: () => party.statuses,
+      task: name => taskOwner.assignment(name),
+      flush: () => { persistence.flush(); persistRosterState(); },
+      log: (message, level = 'info') => { console.log('Console control: ' + message); activity.merchant('Console: ' + message, level); },
+      resumeWaitMs: () => Number(partyHooks().read({ field: 'consoleResumeWaitMs' })),
+      notify: (hook, payload) => { partyHooks().notify(hook, payload); },
+    });
+    const shutdownCoordinator = createShutdown({
+      prepared: consoleControl.prepared,
+      flushMs: consoleControl.flushMs,
       log: (message) => console.log(message),
-      stopCharacters: () => characterManager.stopAll(),
-      closeStorage: async () => { persistence.flush(); movementPlanner.dispose(); await metrics.close(); localStorage.close(); },
+      stopCharacters: () => characterWorkers.stopAll(),
+      stopRun: coordinatorRun.stop,
+      timers: scopes.act13,
+      closeStorage: async () => { consoleControl.close(); persistence.flush(); movementPlanner.dispose(); await metrics.close(); localStorage.close(); },
       exit: () => process.exit(),
     });
     const { dispatcher: merchantDispatcher, idle: merchantIdle } =
-      coordinatorPolicies.createCoordinatorMerchantServices(party, {
+      createCoordinatorMerchantServices(party, {
         now: () => Date.now(),
-        headless: () => !party.steamMembers.includes(String(party.merchantCharacter)),
-        travel: async (realm) => {
-          const merchant = String(party.merchantCharacter);
-          if (!my_acc.resolve_realm(realm)) throw new Error("Unknown merchant destination realm");
-          const block = ensureCharacterBlock(merchant);
-          party.merchantHomeReturnAt = 0;
-          delete party.commands[merchant];
-          block.realm = realm;
-          block.pendingRealm = party.merchantRealmRequests[merchant] = {realm, owner:'job', requestedAt:Date.now(), attempts:1};
-          persistSettings();
-          await softkill_block(block);
-        },
-        ensureHome: ensureMerchantHome,
-        routineNeedsHome: merchantRoutineNeedsHome,
-        storageBusy: () => bankboiService.busy(),
-        storagePlan: (state) => bankStackRouting.servicePlan(state, { includeCoolingDown: true }),
-        startStorage: maybeStartBankboiService,
+        // A member in no group (offline or unowned) has no task to refuse the visit.
+        visitAllowed: tasks.visitAllowed,
+        travel: realm => merchantRealm.visit(realm),
+        ensureHome: reason => merchantRealm.homeWant(reason),
+        returningHome: () => merchantRealm.returningHome(),
+        realmRefuses: realm => merchantRealm.refuses('job', realm),
+        enqueue: merchantQueue.enqueue,
+        ladder: merchantJobLadder,
+        consoleUpdate: merchantHeld,
+        partySwitch: realmOwnsMerchant,
+        expire: () => merchantRecovery.expire(String(party.merchantCharacter)),
         anniversary: merchantAnniversaryControl,
         routinePriority: merchantRoutinePriority,
         priority: merchantJobPriority,
@@ -378,59 +466,78 @@ export function startCoordinatorApplication(
         collectionReady: markedCollectionReady,
         pick: pickJobByPriority,
         stamp: stampMerchantJob,
-        planPonty: (...args) => pontyMarket.planPurchase(...args),
+        // A Ponty candidate always carries its lot's quantity (the items owner's
+        // normalizePontyListings).
+        planPonty: (listings, quantity, server, automatic) =>
+          planPontyPurchase(listings as (typeof listings[number] & { quantity: number })[], quantity, server, automatic),
         restock: policyFor,
         persist: persistSettings,
         log: merchantLog,
-        inventoryMerge: (state, status) => merchantInventoryStacks.plan(state, status),
+        inventoryMerge: inventoryMergePlan,
       });
-    const farmAreaNavigation = coordinatorPolicies.createCoordinatorFarmNavigation(
-      party,
-      character_manage,
-      {
-        now: () => Date.now(),
-        rareOwns: () => rareControl.owns(),
-        members: () => farmingNavigation.members(),
-        areas: farmingAreas,
-        resolve: (catalog, ids, location) => farmZones.resolve(catalog, ids, location),
-        areaId: (area) => farmZones.id(area),
-        record: (state, reports, workers, areas, now) =>
-          farmAreaControl.record(state, reports, workers, areas, now),
-        intent: (name) => farmingNavigation.intent(name),
-        contains: (area, report, margin, radius) =>
-          farmZones.contains(area, report, margin, radius),
-        huntOwns: huntTurnInOwnsTravel,
-        eventOwns: (hunt, state) => huntPolicy.eventOwnsTravel(hunt, state),
-        cancelConvoy: cancelActiveConvoy,
-        alternatives: (state, areas, active, now, excluded) =>
-          farmAreaControl.alternatives(state, areas, active, now, excluded),
-        advanceHunt: advanceHuntMission,
-        fighting: (report, now) => farmAreaControl.fighting(report, now),
-        startHunt: startHuntConvoy,
-        authorize: (names, location, force) => farmingNavigation.authorize(names, location, force),
-        startConvoy: startPartyMonsterConvoy,
-        persist: persistSettings,
-      },
-    );
-    const partyConvoys = coordinatorPolicies.createCoordinatorPartyConvoys(party, {
-      log: (message) => merchantLog(message, "info"),
-      now: () => Date.now(),
-      activeNames,
-      intent: (name) => farmingNavigation.intent(name),
-      resolveArea: (catalog, monsters, location) => farmZones.resolve(catalog, monsters, location),
+    // The items owner (the realm stay and the item reads): after a market job on another
+    // realm, the merchant stays while a ready job there is at least as urgent as the best one at home.
+    const itemsOwner = installItems(party, {
+      merchant: () => party.merchantCharacter,
+      home: () => normalizedRealm(party.activeRealm),
+      here: () => normalizedRealm(party.statuses[String(party.merchantCharacter)]?.server),
+      want: (owner, realm) => merchantRealm.want(owner, realm),
+      release: owner => merchantRealm.release(owner),
+      account: my_acc,
       persist: persistSettings,
+      merchantHeld,
+      queue: queueMerchant,
+      deconstruct: name => deconstructionRoutes.reconcile(name),
+      automaticSales: reconcileAutomaticMerchantSales,
+      characterId: name => {
+        const owned = ownedCharacter(name);
+        return owned && typeof owned === 'object' && 'id' in owned &&
+          (typeof owned.id === 'string' || typeof owned.id === 'number') ? String(owned.id) : undefined;
+      },
+      observePonty: observation => pontyService.observe(observation),
+      adoptReservedCargo: () => adoptReservedBankboiCargo(),
+      persistBank: () => persistBankState(),
+      marketReport: () => {
+        marketFeeds.ask();
+        void marketFeeds.publish();
+      },
+      pontyWanted: () => marketFeeds.wanted('ponty'),
+      storage: bankboiService,
+      log: merchantLog,
+      scope: scopes.act10,
     });
-    const anniversaryReturns = coordinatorPolicies.createCoordinatorAnniversaryReturns(party, {
+    // The add-on actions' coordinator side: the hunting owner's Cave entry
+    // runs here, and each ask the reply carries brings the facts its owner's character door reads: the
+    // items owner's working gold, fates and Ponty prices, the events owner's admission for an event.join and the hunting owner's
+    // Hunt cycle for a hunt.take.
+    const addonDoors = partyHooks().publishDoors({ dungeonEnter });
+    if (!addonDoors.ok) throw Error(`The coordinator's add-on doors did not load: ${addonDoors.message}`);
+    const addonFacts = partyHooks().publishFacts({
+      '10': ask => ({ ...itemAskFacts(ask.character, ask.addon) }),
+      '06': ask => ask.action === 'event.join' ? { ...eventAskFacts(ask.character, String(ask.args.event)) } : undefined,
+      '07': ask => ask.action === 'hunt.take' ? { ...huntAskFacts(ask.character) } : undefined,
+    });
+    if (!addonFacts.ok) throw Error(`The coordinator's add-on facts did not load: ${addonFacts.message}`);
+    // Every owner's coordinator and both-sides reads, which an add-on asks through ctx.read.
+    const reads = coordinatorReads();
+    if (reads.missing.length) throw Error(`The coordinator's add-on reads have no door: ${reads.missing.join(', ')}`);
+    const addonReads = partyHooks().publishReads(reads.answers);
+    if (!addonReads.ok) throw Error(`The coordinator's add-on reads did not load: ${addonReads.message}`);
+    // The job owner's `job` source and reads, which the tasks owner asks in its declared
+    // place.
+    const jobSource = partyHooks().publish(merchantJobSource(() => party.merchantCurrent, name => party.statuses[name], () => merchantDispatcher.ready()));
+    if (!jobSource.ok) throw Error(`The job owner's core:merchant-jobs did not load: ${jobSource.message}`);
+    const anniversaryReturns = createCoordinatorAnniversaryReturns(party, {
       cancelConvoy: cancelActiveConvoy,
       now: () => Date.now(),
       participants: anniversaryCombatParticipants,
       activeNames,
+      online,
       navigation: farmingNavigation,
       log: anniversaryLog,
       persist: persistSettings,
-      schedule: scheduleAnniversaryReturnConvoy,
     });
-    const anniversarySnapshot = coordinatorPolicies.createCoordinatorAnniversarySnapshot(
+    const anniversarySnapshot = createCoordinatorAnniversarySnapshot(
       party,
       character_manage,
       {
@@ -438,77 +545,34 @@ export function startCoordinatorApplication(
         counts: anniversaryCounts,
         enabled: eventsEnabledFor,
         owned: ownedCharacter,
+        online,
         log: anniversaryLog,
         persist: persistSettings,
       },
     );
-    const {
-      lifecycle: huntLifecycle,
-      convoy: huntConvoy,
-      quests: huntQuests,
-      tick: huntTick,
-    } = coordinatorPolicies.createCoordinatorHunt(party, {
+    const merchantRecovery = createCoordinatorMerchantRecovery(party, {
       now: () => Date.now(),
-      participants: huntParticipants,
-      fighting: () => convoyDefense.fighting(party, huntParticipants()),
-      rareEncounter: () => rareControl.encounter(),
-      cancelHuntConvoy,
-      cancelConvoy: cancelActiveConvoy,
-      clear: clearMonsterHuntState,
-      persist: persistSettings,
-      selectedDestination: selectedMonsterDestination,
-      monsterDestination,
-      missionDestination: (hunt) => huntSafety.missionDestination(hunt, monsterDestination),
-      start: startPartyMonsterConvoy,
-      navigation: farmingNavigation,
-      ownsTravel: huntTurnInOwnsTravel,
-      recordDeaths: (hunt) => huntSafety.recordDeaths(hunt, party.statuses, Date.now()),
-      contains: (destination, status, margin, radius) =>
-        farmZones.contains(destination, status, margin, radius),
-      arrivalProtected: (hunt, status, destination) =>
-        huntSafety.arrivalProtected(
-          hunt,
-          party.leader,
-          status,
-          farmingNavigation.intent(party.leader),
-          destination,
-          Date.now(),
-        ),
-      partyFighting: (hunt) => huntSafety.partyFighting(hunt, party.statuses, Date.now()),
-    });
-    const merchantRecovery = coordinatorPolicies.createCoordinatorMerchantRecovery(party, {
-      now: () => Date.now(),
-      clearOwnedCommand: (name, matches) => commandOwnership.clear(name, matches),
+      ladder: merchantJobLadder,
       restockSatisfied,
       stamp: stampMerchantJob,
       log: merchantLog,
       persist: persistSettings,
-      dispatch: dispatchMerchant,
-      recoverSale: recoverStalledMerchantSale,
+      dispatch: () => merchantDispatcher.dispatch(),
+      recoverSale: () => merchantRealm.recoverStalledSale(),
+      recovers: () => consoleControl.allows('recovery'),
+      offline: name => !rosterProjection.online(name),
     });
-    setInterval(() => {
-      if (consoleUpdate.current()) return;
-      recoverStalledMerchantSale();
-      merchantRecovery.expire(String(party.merchantCharacter));
-    }, 1000);
-    party.deconstructionCatalog = coordinatorPolicies.loadCoordinatorDeconstructionCatalog(version, gameDataPorts);
-    const deconstructionRoutes = coordinatorPolicies.createDeconstruction(party, {
-      now: () => Date.now(), next: () => party.nextCommandId++, persist: persistSettings,
+    Object.assign(party, loadCoordinatorItemData(initialVersion, gameDataPorts));
+    const deconstructionRoutes = createDeconstructionRoutes(party, {
+      now: () => Date.now(), next: itemsOwner.nextCommand, persist: persistSettings, write: writeSettings,
       owned: ownedCharacter, queue: queueMerchant, log: merchantLog,
       bankService: maybeStartBankboiService,
       persistBank: persistBankState,
-      reserved: (name, slot, item) => {
-        const lists = [party.marked[name], party.upgrades[name], party.statScrolls[name], party.merchantDeliveries[name],
-          name === party.merchantCharacter ? party.npcSaleMarks : [], name === party.merchantCharacter ? party.standListings : []];
-        if (lists.some(list => (list || []).some(mark => mark.slot === slot && sameMarkedItem(item, mark.item)))) return true;
-        return (party.compounds[name] || []).some(group => group.items.some(mark => mark.slot === slot));
-      },
+      reserved: itemsOwner.reserved,
     });
-    const merchantScheduling = coordinatorPolicies.createCoordinatorMerchantScheduling(party, {
+    const merchantScheduling = createMerchantScheduling(party, {
       log: merchantLog,
-      reconcileItems: reconcileAutoItemMarks,
-      reconcileUpgrades: reconcileAutoUpgradeMarks,
-      reconcileSales: (report) => { const changed = deconstructionRoutes.reconcile(report.name); return reconcileAutomaticMerchantSales(report) || changed; },
+      reconcileReport: itemsOwner.reconcileReport,
       luck: scheduleMerchantLuck,
       recovery: merchantRecovery.observe,
       standMarket: observeStandMarket,
@@ -516,102 +580,45 @@ export function startCoordinatorApplication(
       compounds: scheduleAutoCompound,
       exchanges: scheduleAutoExchange,
       policy: policyFor,
-      elixirReady: (name, rule, have) => {
-        const merchant=party.merchantCharacter;
-        if (!merchant || !party.statuses[merchant] || merchantOrderRoute.restockPending(rule.item)) return false;
-        const stock=coordinatorPolicies.protectedMerchantStorageStock(party).filter(entry=>entry.item?.name===rule.item && !entry.item.l && !entry.item.b &&
-          !entry.craftLocation.startsWith('bankboi:') && (name!==merchant || !entry.craftLocation.startsWith('inventory:')))
-          .reduce((sum,entry)=>sum+(Number(entry.item?.q)||1),0);
-        if (stock>0) return true;
-        if (rule.autoAcquire) merchantOrderRoute.restockSupply(rule.item,Math.max(1,rule.max-have));
-        return false;
-      },
+      elixirReady: (name, rule, have) => itemsOwner.elixirReady(name, rule, have, merchantOrderRoute),
       queue: queueMerchant,
-      markedItem,
-      sameItem: sameMarkedItem,
+      markedItem: markedItem,
+      sameItem: markMatches,
       collectionSlots: collectionSlotCount,
       standSync: queueLocalStandSync,
-      dispatch: dispatchMerchant,
-      idle: dispatchMerchantIdle,
-      startStorage: maybeStartBankboiService,
-      logStorageError: merchantLog,
+      dispatch: () => merchantDispatcher.dispatch(),
+      idle: () => merchantIdle.idle(),
+      addonProposes: () => partyHooks().merchantJobs.proposes(),
+      expire: () => { if (!merchantHeld() && !realmOwnsMerchant()) merchantRecovery.expire(String(party.merchantCharacter)); },
       clearOwnedCommand: (name, matches) => commandOwnership.clear(name, matches),
-      dispatchBank,
+      dispatchBank: itemsOwner.dispatchBank,
       activeNames,
       persist: persistSettings,
       now: () => Date.now(),
     });
-    const upgradePreviews = createUpgradePreviews(party, {persist:persistSettings, dispatch:dispatchMerchant, stamp:stampMerchantJob});
-    const heartbeatResponse = coordinatorPolicies.createCoordinatorHeartbeatResponse(party, {
+    const upgradePreviews = createUpgradePreviews(party, {persist:persistSettings, dispatch:() => merchantDispatcher.dispatch(), enqueue:merchantQueue.enqueue});
+    const merchantObservation = createMerchantObservation(party,
+      { log: merchantLog, persist: persistSettings, publish: scheduleALDataPublish });
+    const merchantExchangeRoutes = createMerchantExchangeRoutes(party, {
       now: () => Date.now(),
-      persist: persistSettings,
-      activeNames: () => activeNames().filter(n => n === party.merchantCharacter || farmingScopes.owner(n) === party.leader),
-      enabled: eventsEnabledFor,
-      intent: (name) => farmingNavigation.intent(name),
-      escapeOwns: (name) => escapeControl.owns(name),
-      rareControl: (name) => rareControl.control(name),
-      convoySignal: (state, name) => convoyNavigation.signal(state, name),
-      resolveArea: (catalog, focus, waypoint) => farmZones.resolve(catalog, focus, waypoint),
-      waypoint: (name) => farmingNavigation.waypoint(name),
-      rareEncounter: () => rareControl.encounter(),
-      huntOwns: huntTurnInOwnsTravel,
-      mapSubscriberCount,
-      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois, party.merchantCatalog),
-      groupedCombat: groupedCombatSnapshot,
-      selectedEvents: (state, name) => selectedEvents(state, name).filter(event => eventInstanceAllowed(party, name, event)),
-      anniversary: publicAnniversaryState,
-      rareOwns: () => rareControl.owns(),
-    });
-    const eventObservations = coordinatorPolicies.createCoordinatorEventObservations(party, {
-      cancelConvoy: cancelActiveConvoy,
-      releaseAnniversary: (cycle) => farmingNavigation.releaseReturn(cycle),
-      now: () => Date.now(),
-      activeNames: () => activeNames().filter(name => name === party.merchantCharacter || farmingScopes.owner(name) === party.leader),
-      enabled: eventsEnabledFor,
-      checkpoint: eventCheckpoint,
-      navigation: farmingNavigation,
-      persist: persistSettings,
-      log: anniversaryLog,
-      goobrawlStillFighting,
-      begin: beginEventReturn,
-      finishIfReady: finishEventReturnIfReady,
-    });
-    const {
-      bankboi: bankboiObservation,
-      merchant: merchantObservation,
-      bankState: bankObservationState,
-      bankPorts: bankObservationPorts,
-    } = coordinatorPolicies.createCoordinatorStorageObservations(party, {
-      now: () => Date.now(),
-      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois, party.merchantCatalog),
-      persistBank: persistBankState,
+      nextCommand: itemsOwner.nextCommand,
+      enqueue: merchantQueue.enqueue,
       log: merchantLog,
       persist: persistSettings,
-      publish: scheduleALDataPublish,
-      adoptReservedCargo: adoptReservedBankboiCargo,
-    });
-    const merchantExchangeRoutes = coordinatorPolicies.createMerchantExchangeRoutes(party, {
-      now: () => Date.now(),
-      nextCommand: () => party.nextCommandId++,
-      stamp: stampMerchantJob,
-      log: merchantLog,
-      persist: persistSettings,
-      dispatch: dispatchMerchant,
+      dispatch: () => merchantDispatcher.dispatch(),
       queueStorage: queueExchangeStorage,
-      collectOfferings:()=>{
-        const requests=party.withdrawals[String(party.merchantCharacter)] || [];
-        if(requests.some(request=>!String(request.pack).startsWith('bankboi:')))
-          queueMerchant([party.merchantCharacter],"manual bank exchange");
-      },
+      collectOfferings: itemsOwner.collectOfferings,
       queueOffering:(offering,quantity)=>storageService.queueOffering(offering,quantity),
+      write: writeSettings,
     });
     const {
       visits: anniversaryVisitRoutes,
       navigation: anniversaryNavigationRoutes,
       commerce: anniversaryCommerceRoutes,
       supplies: anniversarySuppliesRoute,
-    } = coordinatorPolicies.createCoordinatorAnniversaryActions(party, {
+    } = createCoordinatorAnniversaryActions(party, {
       now: () => Date.now(),
+      nextCommand: tasks.nextCommand,
       owned: ownedCharacter,
       enabled: eventsEnabledFor,
       intent: (name) => farmingNavigation.intent(name),
@@ -620,7 +627,7 @@ export function startCoordinatorApplication(
       log: anniversaryLog,
       persist: persistSettings,
       scheduleReturn: scheduleAnniversaryReturnConvoy,
-      huntOwns: huntTurnInOwnsTravel,
+      huntOwns: () => tasks.turnIn(party, 'heartbeat'),
       supersede: (cycle) => farmingNavigation.supersede(cycle),
       cancelConvoy: cancelActiveConvoy,
       fallback: anniversaryFallbackDestination,
@@ -634,40 +641,31 @@ export function startCoordinatorApplication(
       merchantLog,
     });
     const { market: aldataRoutes, postage: mailPostageRoute } =
-      coordinatorPolicies.createCoordinatorMarketAccountActions(party, {
+      createCoordinatorMarketAccountActions(party, {
         now: () => Date.now(),
+        write: writeSettings,
         randomBytes: (size) => crypto.randomBytes(size),
         snapshot: publicALDataState,
         fetch: aldataFetch,
         refresh: refreshALData,
         persistMarket: persistALData,
         publish: scheduleALDataPublish,
-        stamp: stampMerchantJob,
+        enqueue: merchantQueue.enqueue,
         log: merchantLog,
         persist: persistSettings,
-        dispatch: dispatchMerchant,
-        versions: () => game_files.available_versions(),
-        locate: (path, version) => game_files.locate_game_file(path, version),
-        read: (path, encoding) => fs_regular.promises.readFile(path, encoding),
-        postage: (html) => {
-          const postage: import("./infrastructure/mail-platform.ts").MailPostagePlatform = require("../../scripts/mail-postage.cjs");
-          return postage.mailPostage(html);
-        },
+        dispatch: () => merchantDispatcher.dispatch(),
       });
     const { creation: characterCreationRoutes, deletion: bankboiDeleteRoute } =
-      coordinatorPolicies.createCoordinatorAccountCharacterActions(party, {
+      createCoordinatorAccountCharacterActions(party, {
         now: () => Date.now(),
         classes: PARTY_CLASSES,
         characterCount: () => my_acc.response.characters.length,
         owned: ownedCharacter,
         session: sess,
         loadFetch: () => platform.loadFetch(),
-        adopt: (snapshot) => {
-          my_acc.response = snapshot;
-        },
-        refresh: () => my_acc.updateInfo(),
-        later: (callback, milliseconds) => setTimeout(callback, milliseconds),
-        assign: assignHeadlessSlot,
+        adopt: itemsOwner.adoptAccount,
+        refresh: itemsOwner.refreshAccount,
+        assign: (slot, name) => characterWorkers.assign(slot, name, 'storage'),
         persistBank: () => { adoptReservedBankboiCargo(); persistBankState(); },
         serviceBank: maybeStartBankboiService,
         log: merchantLog,
@@ -676,129 +674,85 @@ export function startCoordinatorApplication(
       storage: bankboiStorageRoutes,
       unlock: bankUnlockRoute,
       restock: restockRoute,
-    } = coordinatorPolicies.createCoordinatorBankActions(party, {
+    } = createCoordinatorBankActions(party, {
       now: () => Date.now(),
-      identity: storageIdentity,
+      write: writeSettings,
       log: merchantLog,
-      signature: (state, entry) => bankStackRouting.storageSignature(state, entry),
       adopt: adoptReservedBankboiCargo,
       persistBank: persistBankState,
-      plan: (state) => bankStackRouting.servicePlan(state, { includeCoolingDown: true }),
       restore: restoreMerchantAfterBankboi,
-      stamp: stampMerchantJob,
+      enqueue: merchantQueue.enqueue,
       publicJob: publicMerchantJob,
       persist: persistSettings,
-      dispatch: dispatchMerchant,
+      dispatch: () => merchantDispatcher.dispatch(),
       owned: ownedCharacter,
     });
-    const {
-      focus: focusRoute,
-      formation: formationRoute,
-      actions: partyActionRoutes,
-    } = coordinatorPolicies.createCoordinatorPartyConfiguration(party, character_manage, {
-      dungeon: dungeons,
-      changed: previous => coordinatorPolicies.reconcileFarmingMembership(party, farmingScopes, previous),
+    // The party routes: the hunting owner's focus and farming checkpoint, the settings owner's formation, the merchant jobs owner's party
+    // visits, movement's party travel and Town and survival's Escape and Resume. Travel and Escape ask the
+    // hunting owner's Cave exit and release (runtime/hunting/coordinator/cave.ts); the formation reads the
+    // worker registry.
+    const partyRoutePorts: Parameters<typeof createFocusRoute>[1] & Omit<Parameters<typeof createFormationRoute>[1], 'managed'> &
+      Parameters<typeof createPartyCheckpointRoute>[1] & Parameters<typeof createMerchantPartyRoutes>[1] &
+      Omit<Parameters<typeof createPartyTravelRoutes>[1], 'nextCommand' | 'exitDungeon' | 'releaseDungeon'> &
+      Omit<Parameters<typeof createSurvivalRoutes>[1], 'exitDungeon' | 'releaseDungeon'> = {
+      enqueue: merchantQueue.enqueue,
+      escapeButton: () => tasks.holds.button(),
+      escapeResumeAt: () => tasks.holds.resumeAt(),
+      pressEscape: shown => tasks.holds.escape(shown),
+      pressResume: shown => tasks.holds.resume(shown),
+      handHeld: tasks.holds.held,
+      write: writeSettings,
       focusChanged: () => farmAreaNavigation.focusChanged(),
       now: () => Date.now(),
       owned: ownedCharacter,
       members: () => farmingNavigation.members(),
       invalidate: (...args) => farmingNavigation.invalidate(...args),
       persist: persistSettings,
-      supported: supportedEvents,
-      inherited: (name) => eventPolicy(party, name).inherited,
-      selected: (name) => selectedEvents(party, name),
-      release: () => escapeControl.release(),
+      inherited: (name, formation) => eventPolicy(formation, name).inherited,
+      selected: (name, formation) => selectedEvents(formation, name),
+      release: () => survival.release(),
       active: activeNames,
       authorize: (...args) => farmingNavigation.authorize(...args),
-      dispatch: dispatchMerchant,
-      escape: (names) => escapeControl.start(names),
+      dispatch: () => merchantDispatcher.dispatch(),
+      escape: (names, by) => survival.start(names, by),
       queue: queueMerchant,
       convoy: startPartyMonsterConvoy,
-    });
-    const {
-      mode: huntModeRoute,
-      blacklist: huntBlacklistRoute,
-      settings: huntSettingsRoute,
-      controls: huntControlRoutes,
-    } = coordinatorPolicies.createCoordinatorHuntActions(party, {
-      now: () => Date.now(),
-      fighting: (state, names) => convoyDefense.fighting(state, names),
-      participants: huntParticipants,
-      intent: (name) => farmingNavigation.intent(name),
-      release: () => escapeControl.release(),
-      authorize: (...args) => farmingNavigation.authorize(...args),
-      monsterDestination,
-      clear: clearMonsterHuntState,
-      selectedDestination: selectedMonsterDestination,
-      convoy: startPartyMonsterConvoy,
-      returnToDaisy: returnHuntToDaisy,
-      begin: beginMonsterHuntCycle,
-      waypoint: (name) => farmingNavigation.waypoint(name),
-      validLocation: (catalog, focus, location) => validFarmingLocation(catalog, focus, location),
-      persist: persistSettings,
-      owned: ownedCharacter,
-      ownsTravel: huntTurnInOwnsTravel,
-      fresh: freshHuntParty,
-      eventDeparture: (name, event, operation) => eventObservations.authorize(name, event, operation),
-      cancelConvoy: cancelHuntConvoy,
-      start: startHuntConvoy,
-    });
-    const eventRecoveryRoutes = coordinatorPolicies.createEventRecoveryRoutes(party, {
-      owned: ownedCharacter,
-      enabled: eventsEnabledFor,
-      participants: anniversaryCombatParticipants,
-      active: activeNames,
-      abort: finishAnniversaryAbort,
-      begin: beginEventReturn,
-      snapshot: publicAnniversaryState,
-    });
-    const {
-      events: eventAcknowledgementRoutes,
-      engagement: convoyEngagementRoutes,
-      farmingReturn: farmingReturnRoute,
-      acknowledgements: convoyAcknowledgementRoutes,
-    } = coordinatorPolicies.createCoordinatorNavigationActions(party, {
-      now: () => Date.now(),
-      owned: ownedCharacter,
-      intent: (name) => farmingNavigation.intent(name),
-      group: groupedCombatSnapshot,
-      persist: persistSettings,
-      selectedDestination: selectedMonsterDestination,
-      finishReturn: finishEventReturnIfReady,
-      contains: (...args) => farmZones.contains(...args),
-      huntOwns: huntTurnInOwnsTravel,
-      engage: (state, body, options) => convoyNavigation.engage(state, body, options),
-      acceptArrival: (hunt, active, body, at) => huntSafety.acceptArrival(hunt, active, body, at),
-      waypoint: (name) => farmingNavigation.waypoint(name),
-      start: startPartyMonsterConvoy,
-      active: activeNames,
-      members: () => farmingNavigation.members(),
-      valid: (state, body) => convoyNavigation.validReport(state, body),
-      history: persistHistory,
-      hold: (state, ...args) => convoyNavigation.hold(state, ...args),
-      error: (message) => console.error(message),
-    });
-    const monsterSelectionRoutes = coordinatorPolicies.createMonsterSelectionRoutes(party, {
+    };
+    const focusRoute = createFocusRoute(party, partyRoutePorts);
+    const formationRoute = createFormationRoute(party, { ...partyRoutePorts,
+      managed: (name: string) => Object.hasOwn(character_manage, name) });
+    const exitDungeon = (res: HttpResponse) => dungeons.exitDungeon(res, tasks.nextCommand());
+    const releaseDungeon = (res: HttpResponse) => dungeons.releaseDungeon(res);
+    const partyActionRoutes = {
+      checkpoint: createPartyCheckpointRoute(party, partyRoutePorts),
+      ...createMerchantPartyRoutes(party, partyRoutePorts),
+      ...createPartyTravelRoutes(party, { ...partyRoutePorts, nextCommand: tasks.nextCommand, exitDungeon, releaseDungeon }),
+      ...createSurvivalRoutes(party, { ...partyRoutePorts, exitDungeon, releaseDungeon }),
+    };
+    // The add-on switches and settings, written through the settings writer as addressed changes
+    // (runtime/settings/coordinator/writer.ts) and sent with every status reply.
+    const addonRoutes = createAddonRoutes({ write: writeSettings, fighters: settings.fighters, persist: persistSettings, now: Date.now });
+    const settingsRoutes = createSettingsRoutes({ write: writeSettings, read: query => partyHooks().read(query),
+      entries: slot => partyHooks().entries(slot).map(e => e.mode), now: () => Date.now() });
+    const monsterSelectionRoutes = createMonsterSelectionRoutes(party, {
       now: () => Date.now(),
       dungeon: dungeons,
-      validPhoenixOrder: (order) => rareHunting.validateOrder(party.monsterChoices, order),
-      validLocation: (id, location) =>
-        validFarmingLocation(party.monsterChoices || [], [id], location),
-      destination: (type) => coordinatorPolicies.coordinatorHuntDestination(party, type,
-        (choices, focus) => farmZones.zones(choices, focus), false),
-      release: () => escapeControl.release(),
+      destination: (type) => coordinatorHuntDestination(party, type, false),
+      release: () => survival.release(),
       clearHunt: clearMonsterHuntState,
       members: () => farmingNavigation.members(),
       authorize: (...args) => farmingNavigation.authorize(...args),
       start: startPartyMonsterConvoy,
-      startPhoenix: (order) => rareControl.start(order),
+      startPhoenix: () => rareControl.start(),
       stopPhoenix: (reason) => rareControl.stop(reason),
       persist: persistSettings,
-      validPassive: (settings) => rareHunting.validPassiveSettings(settings),
-      setPassive: (settings) => rareControl.setSettings(settings),
+      validPassive: validPassivePatch,
+      setPassive: (settings) => rareControl.setSettings(settings, "dashboard:rare-hunting"),
+      write: writeSettings,
       invalidate: (...args) => farmingNavigation.invalidate(...args),
     });
-    const staleOrderRoute = coordinatorPolicies.createStaleOrderRoute(party, persistSettings);
+    const staleOrderRoute = createStaleOrderRoute(party, persistSettings);
+    const ruleConflictRoute = createRuleConflictRoute(party, persistSettings, writeSettings);
     const {
       automatic: automaticSaleRoutes,
       npc: npcSaleRoute,
@@ -808,31 +762,33 @@ export function startCoordinatorApplication(
       idle: merchantIdleRoute,
       bid: merchantBidRoute,
       merge: stackMergeRoute,
-    } = coordinatorPolicies.createCoordinatorInventoryActions(party, {
+    } = createCoordinatorInventoryActions(party, {
       now: () => Date.now(),
-      key: automaticCommerceRuleKey,
+      offline: name => !rosterProjection.online(name),
+      write: writeSettings,
+      key: commerceRuleKey,
       reconcile: reconcileAutomaticMerchantSales,
       persist: persistSettings,
       publish: scheduleALDataPublish,
       syncStand: queueLocalStandSync,
-      idle: dispatchMerchantIdle,
+      idle: () => merchantIdle.idle(),
       persistBank: persistBankState,
       bankService: maybeStartBankboiService,
-      stamp: stampMerchantJob,
+      enqueue: merchantQueue.enqueue,
       queue: queueMerchant,
       log: merchantLog,
       owned: ownedCharacter,
-      dispatchBank,
-      sameItem: sameMarkedItem,
+      visitAllowed: tasks.visitAllowed,
+      dispatchBank: itemsOwner.dispatchBank,
+      sameItem: markMatches,
       removeQueued: removeQueuedBidPurchases,
       observe: observeStandMarket,
       ponty: queuePontyMatches,
       aldata: queueALDataMatches,
-      dispatch: dispatchMerchant,
+      dispatch: () => merchantDispatcher.dispatch(),
       anniversary: merchantAnniversaryControl,
       bankboiBusy: () => bankboiService.busy(),
-      plan: (state, status, boundary) => merchantInventoryStacks.plan(state, status, boundary),
-      identity: bankStackRouting.identity,
+      plan: inventoryMergePlan,
     });
     const {
       progress: merchantProgressRoutes,
@@ -840,59 +796,54 @@ export function startCoordinatorApplication(
       clusters: merchantClusterRoutes,
       realms: merchantRealmRoutes,
       location: marketplaceLocationRoute,
-    } = coordinatorPolicies.createCoordinatorMerchantJobActions(party, {
+    } = createCoordinatorMerchantJobActions(party, {
       now: () => Date.now(),
+      offline: name => !rosterProjection.online(name),
+      ladder: merchantJobLadder,
+      visitAllowed: tasks.visitAllowed,
       capacityBlocked: merchantTransferCapacityBlocked,
       collectionReady: markedCollectionReady,
-      anniversaryReserved: () => {
-        const control = merchantAnniversaryControl();
-        return control.featured || control.reserved || control.kissDue || control.busy;
-      },
+      anniversaryReserved: coordinatorEvents.anniversaryReserved,
       priority: merchantJobPriority,
       routinePriority: merchantRoutinePriority,
       persist: persistSettings,
       stamp: stampMerchantJob,
       log: merchantLog,
-      dispatch: dispatchMerchant,
+      dispatch: () => merchantDispatcher.dispatch(),
       active: activeNames,
       fulfill: fulfillStandBid,
       dismiss: (key) => pontyService.dismiss(key),
-      blacklist: blacklistMerchant,
-      blacklistingEnabled: () => party.autoBlacklistMerchants !== false,
+      blacklist: itemsOwner.blacklist,
+      blacklistingEnabled: itemsOwner.blacklistingEnabled,
       resolve: (realm) => my_acc.resolve_realm(realm),
-      block: ensureCharacterBlock,
-      label: realmLabel,
-      stop: (block) => softkill_block(block),
-      later: (callback, delay) => setTimeout(callback, delay),
+      realm: merchantRealm,
       fetchMarket: aldataFetch,
-      normalizePurchases: normalizeALDataMerchants,
-      normalizeSales: normalizeALDataMerchantBuyOrders,
+      normalizePurchases: normalizeMarketSales,
+      normalizeSales: normalizeMarketBids,
     });
-    let mailInbox: import("./http/mail-inbox.ts").MailInbox;
-    const {
-      mail: mailJobs,
-      send: sendMailRoute,
-      complete: merchantCompletionRoute,
-    } = coordinatorPolicies.createCoordinatorMerchantDeliveryActions(party, {
+    // The items owner's install runs the mail jobs and the send route, and the merchant jobs owner's completion route
+    // takes the items owner's inbox answers and the ALData auth fetch.
+    const { jobs: mailJobs, send: sendMailRoute } = itemsOwner.mail({ now: () => Date.now(), enqueue: merchantQueue.enqueue,
+      dispatch: () => merchantDispatcher.dispatch(), bankboi: maybeStartBankboiService, identity: storageKey });
+    const merchantCompletionRoute = createMerchantCompletionRoute(party, {
       now: () => Date.now(),
+      nextCommand: itemsOwner.nextCommand,
       stamp: stampMerchantJob,
+      enqueue: merchantQueue.enqueue,
       persist: persistSettings,
       persistBank: persistBankState,
-      dispatch: dispatchMerchant,
-      bankboi: maybeStartBankboiService,
+      dispatch: () => merchantDispatcher.dispatch(),
       log: merchantLog,
-      identity: storageIdentity,
-      inbox: () => mailInbox,
-      fulfill: fulfillStandBid,
+      mailSent: itemsOwner.mailSent,
+      mailComplete: itemsOwner.mailComplete,
       clearUpgrades: clearResolvedUpgradeMarks,
       clearIncoming: clearIncomingCompoundReservation,
       capacitySignature: merchantCapacitySignature,
       persistALData,
-      fetchMarket: aldataFetch,
       publishALData: scheduleALDataPublish,
-      schedule: (callback, delay) => setTimeout(callback, delay),
       queue: queueMerchant,
-      ensureHome: ensureMerchantHome,
+      ensureHome: reason => merchantRealm.homeWant(reason),
+      ladder: merchantJobLadder,
       pontyMatches: queuePontyMatches,
       aldataMatches: queueALDataMatches,
     });
@@ -900,211 +851,188 @@ export function startCoordinatorApplication(
       orders: manualMarketOrderRoutes,
       controls: merchantControlRoutes,
       requests: merchantRequestRoutes,
-    } = coordinatorPolicies.createCoordinatorMerchantActions(party, {
+    } = createCoordinatorMerchantActions(party, {
       now: () => Date.now(),
+      write: writeSettings,
       stamp: stampMerchantJob,
+      enqueue: merchantQueue.enqueue,
       log: merchantLog,
       persist: persistSettings,
-      dispatch: dispatchMerchant,
-      plan: pontyMarket.planPurchase,
+      dispatch: () => merchantDispatcher.dispatch(),
+      plan: planPontyPurchase,
       automations: DEFAULT_MERCHANT_AUTOMATIONS,
       resolveRealm: (realm) => my_acc.resolve_realm(realm),
-      block: ensureCharacterBlock,
       realmLabel,
-      stop: (block) => softkill_block(block),
-      later: (callback, milliseconds) => setTimeout(callback, milliseconds),
+      realm: merchantRealm,
     });
-    const manualNavigationCommands = coordinatorPolicies.createCoordinatorManualNavigation(party, {
+    const manualNavigationCommands = createCoordinatorManualNavigation(party, {
       now: () => Date.now(),
       queue: queueMerchant,
-      releaseEscape: () => escapeControl.release(),
+      releaseEscape: () => survival.release(),
       navigation: farmingNavigation,
       convoy: startPartyMonsterConvoy,
-      block: ensureCharacterBlock,
-      resolveRealm: (realm) => my_acc.resolve_realm(realm),
-      realmLabel,
-      stop: (block) => softkill_block(block),
-      later: (callback, milliseconds) => setTimeout(callback, milliseconds),
-      log: merchantLog,
+      caller: requestCaller,
       persist: persistSettings,
+      // The call budget's go-home command, built on the realm owner's ports.
+      home: createMerchantHomeCommand(party, {
+        now: () => Date.now(), nextCommand: tasks.nextCommand, block: name => characterWorkers.ensure(name),
+        realmExists: (realm) => !!my_acc.resolve_realm(realm), realmLabel,
+        restart: (block) => characterWorkers.stop(block), log: merchantLog, persist: persistSettings,
+      }),
     });
-    const merchantBlacklistRoute = coordinatorPolicies.createMerchantBlacklistRoute(party, {
+    const merchantBlacklistRoute = createMerchantBlacklistRoute(party, {
       now: () => Date.now(),
-      key: merchantBlacklistKey,
+      key: sellerKey,
       log: merchantLog,
       persist: persistSettings,
+      write: writeSettings,
     });
-    const characterCommandRoute = coordinatorPolicies.createCoordinatorCharacterCommands(
+    const characterCommandRoute = createCoordinatorCharacterCommands(
       party,
       character_manage,
       {
-        navigation: body => {
-          try {
-            if (["party-monster-travel", "character-travel", "travel", "force-travel", "return-leader"].includes(String(body.type)) &&
-                body.character !== party.merchantCharacter) dungeons.release();
-          } catch (error) { return { status: 409, body: { error: String(error) } }; }
-          return manualNavigationCommands.handle(body);
-        },
-        farmingState: name => farmingScopes.effective(name),
-        farmingLocation: validFarmingLocation,
-        key: autoItemRuleKey,
-        mode: autoItemRuleMode,
+        write: writeSettings,
+        enqueue: merchantQueue.enqueue,
+        navigation: body => tasks.travelCommand(body, command => manualNavigationCommands.handle(command)),
+        farming: createFarmingCommand(party, { farmingState: farmingRecord, location: validFarmingLocation, persist: persistSettings,
+          members: () => farmingNavigation.members(), invalidate: (names, reason, shared) => farmingNavigation.invalidate(names, reason, shared) }),
+        key: ruleKey,
         persist: persistSettings,
         persistBank: persistBankState,
         queue: queueMerchant,
-        reconcileUpgrades: reconcileAutoUpgradeMarks,
-        reconcileMarks: reconcileAutoItemMarks,
+        reconcileUpgrades: itemsOwner.reconcileIntents,
+        reconcileMarks: itemsOwner.reconcileMarks,
         scheduleCompound: scheduleAutoCompound,
         scheduleExchange: scheduleAutoExchange,
         log: merchantLog,
         removeReservations: removeInventoryReservations,
         clearIncoming: clearIncomingCompoundReservation,
         marksCleared: () => { scheduleALDataPublish(); queueLocalStandSync(); },
-        sameItem: sameMarkedItem,
-        identity: storageIdentity,
+        sameItem: markMatches,
+        identity: storageKey,
         bankboi: maybeStartBankboiService,
       },
     );
-    const dashboardImportRoutes = coordinatorPolicies.createCoordinatorDashboardImport(
+    const dashboardImportRoutes = createCoordinatorDashboardImport(
       party,
       LOCALSTORAGE_PATH,
       {
-        rosterReady: () => rosterPayload().length > 0,
+        roster: rosterPayload,
         owned: ownedCharacter,
         crypto,
         files: fs_regular,
         header: (request, name) => request.get(name),
         now: () => Date.now(),
         persist: persistSettings,
+        write: writeSettings,
+        hooks: partyHooks(),
       },
     );
-    const workerSetup = coordinatorPolicies.createWorkerSetup(character_manage, party, {
-      // Keep the original TypeError if a queued worker no longer has an account entry.
-      configuredRealm,
-      persistRealmRequests: persistSettings,
-      homeRealm: (name) => {
-        const home = accountHomeRealm() || ownedCharacter(name)?.home;
-        return home ? "SR_" + home.replace(/^SR_/, "") : null;
-      },
-      script: (name) => classScript("./CODE/adventure_land", ownedCharacter(name)!.type),
-      watch: watchCharacterCode,
-      persist: persistRosterState,
-      start: start_char,
-    });
-    const rosterProjection = coordinatorPolicies.createRosterProjection(
-      party,
-      () => my_acc.response,
-      () => Date.now(),
-    );
+    // The writer checks each character against the roster, so the slot migration runs once the
+    // roster projection exists.
+    settings.migrateSlots(farmingScopes.savedCopies('farmingPolicy'));
+    migrateEventSelections(party, character_manage, writeSettings, console.error);
     const {
       giveaways: giveawayScheduler,
       improvements: improvementScheduler,
-      home: merchantHomeRecovery,
       sales: automaticMerchantSales,
       luck: luckScheduler,
-    } = coordinatorPolicies.createCoordinatorMerchantAutomation(party, {
+    } = createCoordinatorMerchantAutomation(party, {
       now: () => Date.now(),
-      stamp: stampMerchantJob,
+      realmRefuses: realm => merchantRealm.refuses('job', realm),
+      enqueue: merchantQueue.enqueue,
       log: merchantLog,
       persist: persistSettings,
       queue: queueMerchant,
       publish: scheduleALDataPublish,
       syncStand: queueLocalStandSync,
-      idle: dispatchMerchantIdle,
-      dispatch: dispatchMerchant,
+      idle: () => merchantIdle.idle(),
+      dispatch: () => merchantDispatcher.dispatch(),
       names: activeNames,
       strong: hasStrongMluck,
-      remaining: mluckRemaining,
       lead: mluckTravelLead,
-      block: ensureCharacterBlock,
-      realmLabel,
-      stop: softkill_block,
-      later: setTimeout,
     });
-    const reservedBankboiCargo = coordinatorPolicies.createReservedBankboiCargo(party, {
-      identity: (item) => bankStackRouting.identity(item),
+    const reservedBankboiCargo = createReservedBankboiCargo(party, {
       now: () => Date.now(),
       persist: persistBankState,
     });
     // Restore reserved-row intent even when the merchant reconnects outside the bank.
     reservedBankboiCargo.reconcile();
-    const inventoryReservations = coordinatorPolicies.createInventoryReservations(party);
-    const bankQueueService = coordinatorPolicies.createBankQueue(party, {
+    const inventoryReservations = createInventoryReservations(party);
+    const merchantOrderRoute = createMerchantOrderRoute(party, {
       now: () => Date.now(),
-      nextCommand: () => party.nextCommandId++,
-    });
-    const merchantOrderRoute = coordinatorPolicies.createMerchantOrderRoute(party, {
-      now: () => Date.now(),
-      nextCommand: () => party.nextCommandId++,
+      yieldToIO: () => scopes.act10.sleep(0),
+      nextCommand: itemsOwner.nextCommand,
+      enqueue: merchantQueue.enqueue,
       activeNames,
       log: merchantLog,
       persist: persistSettings,
-      dispatch: dispatchMerchant,
+      dispatch: () => merchantDispatcher.dispatch(),
       persistBank: persistBankState,
       bankboi: maybeStartBankboiService,
     });
-    const dashboardStream = coordinatorPolicies.createDashboardStream({
+    const dashboardStream = createDashboardStream({
       now: Date.now, statuses: () => party.statuses,
-      active: (name) => activeNames().includes(name) && Date.now() - Number(party.statuses[name]?.seenAt || 0) < 10000,
-      every: (callback, ms) => setInterval(callback, ms), cancel: clearInterval,
+      every: scopes.observe12.setInterval, cancel: scopes.observe12.clearInterval,
       catalog: () => party.merchantCatalog,
     });
-    const statusIngestion = coordinatorPolicies.createCoordinatorStatusIngestion(
+    const statusIngestion = createStatusIntake<NonNullable<typeof party.statuses[string]>>(
       party,
       character_manage,
       {
-        acceptCatalogs: body => {
-          if (!body.clientVersion) return true;
-          if (Number(body.clientVersion) !== version) return false;
-          return body.runtime !== "headless" || (!character_manage[body.name]?.version && body.clientInstance === character_manage[body.name]?.clientInstance);
-        },
-        farmingState: name => isCombatCharacter(name) ? farmingScopes.effective(name) : party,
-        rareOwns: name => !soloFor(name) && rareControl.owns(),
+        write: writeSettings,
         now: () => Date.now(),
         owned: ownedCharacter,
         persistRoster: persistRosterState,
-        itemKey: pontyMarket.itemKey,
-        observePonty: (observation) => pontyService.observe(observation),
-        bankState: bankObservationState,
-        bankPorts: bankObservationPorts,
+        items: itemsOwner,
         merchant: merchantObservation.observe,
         groupedCombat: groupedCombatSnapshot,
         rareReport: (name, report) => rareControl.report(name, report),
-        rareTick: () => { if (!dungeonOwns(party)) rareControl.tick(); },
-        bankboi: bankboiObservation.observe,
+        rareTick: hunting.rareTick,
+        bankboi: bankboiService.observe,
         anniversary: reconcileAnniversaryReturnFromStatus,
-        huntTick: monsterHuntTick,
-        farmAreaTick,
+        taskTick: name => tasks.taskTick(name),
+        hunting,
         persist: persistSettings,
         abtesting: resolveAbtestingStrategy,
         activeNames,
-        events: report => {
-          if (observeEventAttendance(party, report, Date.now())) persistSettings();
-          (soloFor(report.name)?.eventObservations || eventObservations).observe(report);
-        },
-        publish: scheduleALDataPublish,
+        events: coordinatorEvents.observe,
         convoyStep: stepAllConvoys,
         merchantScheduling: merchantScheduling.observe,
-        response: (name, mode) => {
-          dungeons.reconcile();
-          const maintenance = consoleUpdate.current(party.statuses);
-          if (maintenance && maintenance.mode !== 'draining') return { serverNow: Date.now(), consoleMaintenance: maintenance };
-          const lease = mode ? undefined : dashboardStream.lease(name);
-          return { ...(soloFor(name)?.heartbeatResponse || heartbeatResponse).response(name, mode),
-            consoleMaintenance: maintenance,
-            ...(dungeonOwns(party, name) ? { groupedCombat: groupedCombatSnapshot() } : {}),
-            ...(party.dailyDungeons ? { dailyDungeon: dungeons.control(name) } : {}),
-            merchantVisibility: merchantVisibility(party, name, Date.now()),
-            ...(party.statuses[name]?.dashboardRuntime ? { dashboardLease: lease } : {}) };
-        },
+        reply: createReply({
+          lifecycle: {
+            observe: name => { consoleControl.observe(); characterWorkers.reported(name, party.statuses[name] ?? {}); characterCode.reported(name, party.statuses[name] ?? {}); characterCode.nativeReloaded(name, party.statuses[name] ?? {}); },
+            allows: () => consoleControl.allows('reply'), served: () => consoleControl.served() },
+          group: name => (groups.solo(name)?.heartbeatResponse || heartbeatResponse).sections,
+          hand: name => tasks.handResponse(name),
+          visit: name => !!tasks.visit(name),
+          groupedCombat: groupedCombatSnapshot,
+          cave: dungeons.reply,
+          merchantVisibility: name => merchantVisibility(party, name, Date.now()),
+          dashboardLease: dashboardStream.replyLease,
+          now: () => Date.now(),
+        }),
       },
     );
-    const publicOverview = coordinatorPolicies.createCoordinatorPublicOverview(party, {
+    const cardLines = createCardLines(party as Parameters<typeof createCardLines>[0], {
+        assignment: (member) => tasks.memberTask(member),
+        monsterName: (key) => gameMonsters()?.[key]?.name,
+        groupLine: (member) => taskOwner.status(member),
+        lifecycle: () => consoleControl.state(),
+        hunt: (member) => { const group = taskOwner.groupOf(member); return group ? partyHooks().ask('hunt.view', group) as HuntView | undefined : undefined; },
+        merchantJob: () => !!partyHooks().ask('jobs.current'),
+        escaping: (member) => partyHooks().survival.escaping(member),
+        recovery: () => partyHooks().survival.recovery(groupKey(groupId('party', party.leader))),
+        cave: () => partyHooks().ask('cave.state') as CaveVisitState,
+        entryLabel: (slot, mode) => partyHooks().entries(slot).find(entry => entry.mode === mode)?.button?.label,
+      });
+    const publicOverview = createCoordinatorPublicOverview(party, {
       accountCharacter: ownedCharacter,
+      activity: cardLines,
       now: () => Date.now(),
       handoff: publicHandoff,
       aldata: publicALDataState,
-      servers: () => my_acc.response?.servers || [],
+      servers: rosterProjection.servers,
       roster: rosterPayload,
       slots: slotPayload,
       classes: PARTY_CLASSES,
@@ -1114,1166 +1042,155 @@ export function startCoordinatorApplication(
       collectionNearby: merchantCollectionNearby,
       luckSchedule: mluckScheduleStatus,
       realmControl: realmControlPayload,
+      consoleControl: () => consoleControl.status(),
+      recordSaved: () => diagnostics.lastSaved(),
     });
     const publicStateRoute = publicOverview.route;
     const {
       settings: merchantSettingsRoutes,
       priorities: routinePriorityRoute,
-      thresholds: thresholdRoute,
-    } = coordinatorPolicies.createCoordinatorMerchantConfiguration(party, {
-      reconcile: () => {
-        const status = party.statuses[String(party.merchantCharacter)];
-        if (status) reconcileAutomaticMerchantSales(status);
-      },
-      runtime: (name) => {
-        const status = party.statuses[name];
-        return status && !status.rip && Date.now() - status.seenAt < 10000
-          ? status.combatSelection?.runtimeId : undefined;
-      },
+      collectionChanged,
+    } = createCoordinatorMerchantConfiguration(party, {
+      reconcileSales: reconcileAutomaticMerchantSales,
+      runtime: itemsOwner.runtime,
       ownedType: (name) => ownedCharacter(name)?.type,
       persist: persistSettings,
-      dispatch: dispatchMerchant,
+      dispatch: () => merchantDispatcher.dispatch(),
       log: merchantLog,
       priorities: DEFAULT_MERCHANT_ROUTINE_PRIORITIES,
       automations: DEFAULT_MERCHANT_AUTOMATIONS,
-      bidPurchaseReasons: () => coordinatorPolicies.automaticBidPurchaseReasons,
       stamp: stampMerchantJob,
+      write: writeSettings,
     });
-    setInterval(() => merchantSettingsRoutes.bankSort.reconcile(), 1000);
-    const { maps: mapStreams, combat: combatLogRoutes, prepareVersion } =
-      coordinatorPolicies.createCoordinatorTelemetry(__dirname, version, party.combatLogs, {
+    // The thresholds route is the settings owner's; the job owner answers a collection change.
+    const thresholdRoute = createThresholdRoute(party, { collectionChanged, write: writeSettings });
+    const { maps: mapStreams, market: marketWatch, combat: combatLogRoutes, prepareVersion } =
+      createCoordinatorTelemetry(__dirname, initialVersion, party.combatLogs, {
         owned: ownedCharacter,
         now: () => Date.now(),
         persistHistory,
-        persistHistoryNow: () => persistence.historyNow(),
+        persistHistoryNow,
         data: gameDataPorts,
         activeMaps: () => Object.values(party.statuses).map((status) => status?.map),
-        every: (callback, milliseconds) => setInterval(callback, milliseconds),
-        cancel: (timer: ReturnType<typeof setInterval>) => clearInterval(timer),
+        leader: () => party.leader, reportMap: (name) => party.statuses[name]?.map,
+        every: scopes.observe12.setInterval, cancel: scopes.observe12.clearInterval,
       });
-    party.gameVersion = version;
-    function catalogValidator(gameVersion: number) {
-      return coordinatorPolicies.createInstalledCatalogValidation(gameVersion, () => {
-        const context: { G?: CatalogDefinitions } = {};
-        gameDataPorts.evaluate(gameDataPorts.read('./game_files/' + gameVersion + '/data.js'), context);
-        if (!context.G) throw new Error('Catalog validation requires installed game definitions');
-        return context.G;
-      }, message => log.info({}, message));
-    }
-    Object.assign(party, { validateCatalog: catalogValidator(version) });
-    const clientUpdates = coordinatorPolicies.createClientUpdates({
-      current: () => ({version, revision: clientRevision}),
-      refresh: force => {
-        if (!game_files.refresh_latest) throw Error('Live client refresh is not installed');
-        return game_files.refresh_latest(force);
-      },
-      prepare: async candidate => ({
-        movement: await prepareMovement(candidate.version),
-        validateCatalog: catalogValidator(candidate.version),
-        activateMaps: prepareVersion(candidate.version),
-        bankVaults: coordinatorPolicies.loadCoordinatorBankVaults(candidate.version, gameDataPorts),
-        deconstruction: coordinatorPolicies.loadCoordinatorDeconstructionCatalog(candidate.version, gameDataPorts),
-      }),
-      activate: (candidate, data) => {
-        data.activateMaps();
-        version = candidate.version;
-        clientRevision = candidate.revision;
-        party.gameVersion = version;
-        Object.assign(party, { validateCatalog: data.validateCatalog });
-        party.bankVaults = data.bankVaults;
-        party.deconstructionCatalog = data.deconstruction;
-        party.merchantCatalog = null;
-        party.merchantCatalogVersion = null;
-        party.bestiaryCatalog = null;
-        party.skillCatalog = null;
-        party.monsterChoices = null;
-        party.travelPlaces = null;
-        party.appearanceChoices = null;
-      },
-      blocks: character_manage,
-      stop: (block, reason) => characterManager.stop(block, reason),
-      start: name => characterManager.start(name),
-      healthy: (name, worker, candidate) => {
-        const block = character_manage[name], report = party.statuses[name];
-        return block.instance === worker && !!block.connected && report?.clientVersion === candidate.version &&
-          report.clientInstance === block.clientInstance && Date.now() - report.seenAt < 10000;
-      },
-      now: () => Date.now(), sleep, cancel: clearTimeout,
-      status: value => {
-        party.clientUpdate = value;
-        if (value.error) console.warn('Game client update failed', value);
-        else console.log('Game client update ' + value.phase, value);
-      },
-    });
-    // This legacy pseudo-routine is now folded into the single Merchant's Luck
-    // itinerary and should no longer appear as a separately prioritized job.
-    delete party.merchantRoutinePriorities["merchant luck exchange"];
-    function mapSubscriberCount(name: Parameters<typeof mapStreams.count>[0]) {
-      // A watched Cave floor also turns on the leader's telemetry while the
-      // coordinator lacks that floor; only the leader's worker receives full
-      // floors (runtime/lifecycle/cave-floor-handshake.ts).
-      const supplier = name === party.leader && mapStreams.floorWanted(party.statuses[name]?.map);
-      return mapStreams.count(name) + (supplier ? 1 : 0);
-    }
 
-    coordinatorPolicies.recoverMerchantQueue(party, () => Date.now(), stampMerchantJob);
+    recoverMerchantQueue(party, () => Date.now(), stampMerchantJob);
 
-    function persistRosterState() {
-      persistence.roster();
-    }
+    const anniversarySupplies = createAnniversarySupplies(party);
 
-    function ownedCharacter(name: Parameters<typeof rosterProjection.owned>[0]) {
-      return rosterProjection.owned(name);
-    }
-
-    function liveEventFor(name:string,event?:string):boolean {
-      const report=party.statuses[name];
-      return !!report && Date.now()-report.seenAt<3000 && (event==='anniversary'
-        ? !!report.anniversaryServer?.live
-        : !!report.serverLiveEvents?.some(entry=>entry.name===event) || stagingEventLive(name,event));
-    }
-
-    function eventsEnabledFor(name: string, event?: string) {
-      const enabled = event ? eventEnabled(party, name, event)
-        : selectedEvents(party, name).some(selected => eventInstanceAllowed(party, name, selected));
-      if (!enabled || event && !eventInstanceAllowed(party, name, event)) return false;
-      return dungeons.eventAllowed(name, event, liveEventFor(name,event));
-
-    }
-
-    function rosterPayload() {
-      return rosterProjection.roster();
-    }
-
-    function accountHomeRealm() {
-      return rosterProjection.homeRealm();
-    }
-
-    function realmLabel(realm?: Parameters<typeof coordinatorPolicies.coordinatorRealmLabel>[0]) {
-      return coordinatorPolicies.coordinatorRealmLabel(realm);
-    }
-
-    function realmParticipants() {
-      return rosterProjection.participants();
-    }
-
-    function realmControlPayload() {
-      return rosterProjection.control();
-    }
-
-    function nativeName() {
-      return party.nativeOwner;
-    }
-
-    function slotPayload() {
-      return rosterProjection.slots();
-    }
-
-    function persistBankState() {
-      persistence.bank();
-    }
-
-    function queueExchangeStorage(
-      job: Parameters<typeof storageService.queueExchange>[0],
-      shortages?: Parameters<typeof storageService.queueExchange>[1],
-    ) {
-      return storageService.queueExchange(job, shortages);
-    }
-
-    function storageIdentity(
-      item?: Parameters<typeof coordinatorPolicies.coordinatorStorageIdentity>[0],
-    ) {
-      return coordinatorPolicies.coordinatorStorageIdentity(item);
-    }
-
-    function adoptReservedBankboiCargo() {
-      return reservedBankboiCargo.reconcile();
-    }
-
-    function persistSettings() {
-      persistence.scheduleSettings();
-    }
-
-    function persistHistory() {
-      persistence.history();
-    }
-
-    function persistALData() {
-      persistence.aldata();
-    }
-
-    function policyFor(name: Parameters<typeof coordinatorPolicies.coordinatorRestockPolicy>[1]) {
-      return coordinatorPolicies.coordinatorRestockPolicy(party.restockPolicies, name);
-    }
-
-    function restockSatisfied(
-      name: string,
-      items: Parameters<typeof coordinatorPolicies.restockInventorySatisfied>[0],
-    ) {
-      return coordinatorPolicies.restockInventorySatisfied(items, () => policyFor(name));
-    }
-
-    function merchantLog(
-      message: Parameters<typeof activity.merchant>[0],
-      level: Parameters<typeof activity.merchant>[1] = "info",
-      details?: Parameters<typeof activity.merchant>[2],
-    ) {
-      activity.merchant(message, level, details);
-    }
-
-    const anniversarySupplies = coordinatorPolicies.createAnniversarySupplies(party);
-
-    function anniversaryLog(
-      message: Parameters<typeof activity.anniversary>[0],
-      level: Parameters<typeof activity.anniversary>[1] = "info",
-      details?: Parameters<typeof activity.anniversary>[2],
-    ) {
-      activity.anniversary(message, level, details);
-    }
-
-    function anniversaryCounts() {
-      return anniversarySupplies.counts();
-    }
-
-    function anniversaryTradeIdentity(
-      owner: Parameters<typeof coordinatorPolicies.anniversaryTradeIdentity>[0],
-      sender: Parameters<typeof coordinatorPolicies.anniversaryTradeIdentity>[1],
-    ) {
-      return coordinatorPolicies.anniversaryTradeIdentity(owner, sender);
-    }
-
-    function anniversaryIdentityAlreadyTraded(
-      identity: Parameters<typeof anniversarySupplies.alreadyTraded>[0],
-    ) {
-      return anniversarySupplies.alreadyTraded(identity);
-    }
-
-    function publicAnniversaryState() {
-      return anniversarySnapshot.snapshot();
-    }
-
-    const marketFeeds = coordinatorPolicies.createCoordinatorMarketFeeds(party, {
+    const marketFeeds = createCoordinatorMarketFeeds(party, {
       baseUrl: process.env.AL_DATA_URL,
       now: () => Date.now(),
-      sleep,
+      sleep: scopes.act10.sleep,
       fetch: (url, options) => fetch(url, options),
-      timeout: (milliseconds) => AbortSignal.timeout(milliseconds),
       queueMarket: queueALDataMatches,
       queuePonty: queuePontyMatches,
       persistSettings,
       persistAuthentication: persistALData,
       anniversary: publicAnniversaryState,
-      normalizePonty: (records, items) => pontyMarket.normalize(records, items),
-      realmExists: (realm) => !!my_acc.resolve_realm(realm),
-      every: (callback, milliseconds) => setInterval(callback, milliseconds),
+      normalizePonty: (records, items) => normalizePontyListings(records, items),
+      realmExists: itemsOwner.realmExists,
+      watched: marketWatch.watched,
     });
     const { client: aldataClient, aldata: aldataService, ponty: pontyService } = marketFeeds;
-    async function aldataFetch(
-      path: Parameters<typeof aldataClient.request>[0],
-      options: Parameters<typeof aldataClient.request>[1] = {},
-    ) {
-      return aldataClient.request(path, options);
-    }
 
     const { local: localMarket, bids: bidPurchases } =
-      coordinatorPolicies.createCoordinatorPurchases(party, {
+      createCoordinatorPurchases(party, {
         now: () => Date.now(),
         priority: merchantJobPriority,
         publish: scheduleALDataPublish,
         log: merchantLog,
         prioritized: prioritizedStandBids,
         planPonty: (candidates, quantity, server, local) =>
-          pontyMarket.planPurchase(candidates, quantity, server, local),
-        stamp: stampMerchantJob,
+          planPontyPurchase(candidates, quantity, server, local),
+        enqueue: merchantQueue.enqueue,
         persist: persistSettings,
-        dispatch: dispatchMerchant,
-        blacklisted: isMerchantBlacklisted,
+        dispatch: () => merchantDispatcher.dispatch(),
+        blacklisted: itemsOwner.blacklisted,
       });
-    function publicALDataState() {
-      return aldataService.snapshot();
-    }
 
-    function publicMerchantJob(job?: Parameters<typeof publicOverview.job>[0]) {
-      return publicOverview.job(job);
-    }
-
-    function normalizeALDataMerchants(
-      merchants: Parameters<typeof coordinatorPolicies.normalizeMarketSales>[0],
-    ) {
-      return coordinatorPolicies.normalizeMarketSales(merchants);
-    }
-
-    function normalizeALDataMerchantBuyOrders(
-      merchants: Parameters<typeof coordinatorPolicies.normalizeMarketBids>[0],
-    ) {
-      return coordinatorPolicies.normalizeMarketBids(merchants);
-    }
-
-    function removeQueuedBidPurchases(itemId: Parameters<typeof bidPurchases.removeQueued>[0]) {
-      return bidPurchases.removeQueued(itemId);
-    }
-
-    function fulfillStandBid(
-      item: Parameters<typeof bidPurchases.fulfill>[0],
-      quantity: Parameters<typeof bidPurchases.fulfill>[1],
-    ) {
-      return bidPurchases.fulfill(item, quantity);
-    }
-
-    function queuePontyMatches() {
-      return bidPurchases.queuePonty();
-    }
-
-    function queueALDataMatches() {
-      return bidPurchases.queueMarket();
-    }
-
-    function merchantBlacklistKey(
-      entry?: Parameters<typeof coordinatorPolicies.merchantIdentityKey>[0],
-    ) {
-      return coordinatorPolicies.merchantIdentityKey(entry);
-    }
-    function isMerchantBlacklisted(
-      entry?: Parameters<typeof coordinatorPolicies.merchantBlocked>[1],
-    ) {
-      return coordinatorPolicies.merchantBlocked(party.merchantBlacklist, entry, Date.now(), party.autoBlacklistMerchants !== false);
-    }
-    function blacklistMerchant(
-      listing: Parameters<typeof coordinatorPolicies.recordMerchantFailure>[1],
-      reason: Parameters<typeof coordinatorPolicies.recordMerchantFailure>[2],
-    ) {
-      return coordinatorPolicies.recordMerchantFailure(
-        party.merchantBlacklist,
-        listing,
-        reason,
-        Date.now(),
-      );
-    }
-
-    async function refreshALData(kind: Parameters<typeof aldataService.refresh>[0] = "all") {
-      return aldataService.refresh(kind);
-    }
-
-    async function publishALDataTrades() {
-      return aldataService.publish();
-    }
-
-    function scheduleALDataPublish() {
-      aldataPublicationScheduler.schedule();
-    }
-
-    marketFeeds.start();
-
-    function observeStandMarket(listings: Parameters<typeof localMarket.observe>[0]) {
-      return localMarket.observe(listings);
-    }
-
-    function markedItem(entry?: Parameters<typeof coordinatorPolicies.markedItem>[0]) {
-      return coordinatorPolicies.markedItem(entry);
-    }
-
-    function sameMarkedItem(
-      first?: Parameters<typeof coordinatorPolicies.sameMarkedItem>[0],
-      second?: Parameters<typeof coordinatorPolicies.sameMarkedItem>[1],
-    ) {
-      return coordinatorPolicies.sameMarkedItem(first, second);
-    }
-
-    function autoItemRuleKey(item?: Parameters<typeof coordinatorPolicies.autoItemRuleKey>[0]) {
-      return coordinatorPolicies.autoItemRuleKey(item);
-    }
-
-    function autoItemRuleMode(
-      rules: Parameters<typeof coordinatorPolicies.autoItemRuleMode>[0],
-      item?: Parameters<typeof coordinatorPolicies.autoItemRuleMode>[1],
-    ) {
-      return coordinatorPolicies.autoItemRuleMode(rules, item);
-    }
-
-    function automaticCommerceRuleKey(
-      item?: Parameters<typeof coordinatorPolicies.automaticCommerceRuleKey>[0],
-    ) {
-      return coordinatorPolicies.automaticCommerceRuleKey(item);
-    }
-
-    function reconcileAutomaticMerchantSales(
-      status?: Parameters<typeof automaticMerchantSales.reconcile>[0],
-    ) {
-      return automaticMerchantSales.reconcile(status);
-    }
-
-    function removeInventoryReservations(
-      name: Parameters<typeof inventoryReservations.remove>[0],
-      slot: Parameters<typeof inventoryReservations.remove>[1],
-      item: Parameters<typeof inventoryReservations.remove>[2],
-    ) {
-      inventoryReservations.remove(name, slot, item);
-    }
-
-    function reconcileAutoItemMarks(
-      name: Parameters<typeof coordinatorPolicies.reconcileCoordinatorCollectionMarks>[1],
-      status?: Parameters<typeof coordinatorPolicies.reconcileCoordinatorCollectionMarks>[2],
-    ) {
-      if (!sharedMember(party, name)) return false;
-      return coordinatorPolicies.reconcileCoordinatorCollectionMarks(party, name, status);
-    }
-
-    function clearResolvedUpgradeMarks(
-      name: Parameters<typeof coordinatorPolicies.clearCoordinatorResolvedUpgrades>[1],
-      resolved: Parameters<typeof coordinatorPolicies.clearCoordinatorResolvedUpgrades>[2],
-    ) {
-      coordinatorPolicies.clearCoordinatorResolvedUpgrades(party, name, resolved);
-    }
-
-    function reconcileAutoUpgradeMarks(
-      name: Parameters<typeof coordinatorPolicies.reconcileCoordinatorUpgradeMarks>[1],
-      status?: Parameters<typeof coordinatorPolicies.reconcileCoordinatorUpgradeMarks>[2],
-    ) {
-      if (!sharedMember(party, name)) return false;
-      const compounds = coordinatorPolicies.reconcileCoordinatorCompoundMarks(party, name, status);
-      return coordinatorPolicies.reconcileCoordinatorUpgradeMarks(party, name, status) || compounds;
-    }
-
-    function clearIncomingCompoundReservation(
-      name: Parameters<typeof inventoryReservations.clearIncoming>[0],
-      item: Parameters<typeof inventoryReservations.clearIncoming>[1],
-    ) {
-      inventoryReservations.clearIncoming(name, item);
-    }
-
-    function merchantRoutinePriority(
-      reason: Parameters<typeof coordinatorPolicies.merchantRoutinePriority>[1],
-    ) {
-      return coordinatorPolicies.merchantRoutinePriority(party.merchantRoutinePriorities, reason);
-    }
-
-    function stampMerchantJob<T extends Parameters<typeof coordinatorPolicies.stampMerchantJob>[0]>(
-      job: T,
-    ) {
-      return coordinatorPolicies.stampMerchantJob(job, merchantJobPriority, Date.now());
-    }
-
-    function merchantJobPriority(
-      job: Parameters<typeof coordinatorPolicies.coordinatorMerchantPriority>[1],
-    ) {
-      return coordinatorPolicies.coordinatorMerchantPriority(party, job);
-    }
-
-    function prioritizedStandBids(
-      reason: Parameters<typeof coordinatorPolicies.coordinatorPrioritizedBids>[1],
-    ) {
-      return coordinatorPolicies.coordinatorPrioritizedBids(party, reason);
-    }
-
-    function merchantTransferCapacityBlocked(
-      job?: Parameters<typeof coordinatorPolicies.coordinatorMerchantTransferBlocked>[1],
-    ) {
-      return coordinatorPolicies.coordinatorMerchantTransferBlocked(party, job);
-    }
-
-    function collectionSlotCount(
-      name: Parameters<typeof coordinatorPolicies.coordinatorCollectionSlots>[1],
-    ) {
-      return coordinatorPolicies.coordinatorCollectionSlots(party, name);
-    }
-
-    function merchantCollectionNearby(
-      name: Parameters<typeof coordinatorPolicies.coordinatorCollectionNearby>[1],
-    ) {
-      return coordinatorPolicies.coordinatorCollectionNearby(party, name, () => Date.now());
-    }
-
-    function markedCollectionReady(
-      job: Parameters<typeof coordinatorPolicies.coordinatorCollectionReady>[1],
-    ) {
-      return coordinatorPolicies.coordinatorCollectionReady(party, job, () => Date.now());
-    }
-
-    function pickJobByPriority() {
-      return coordinatorPolicies.takeCoordinatorMerchantJob(party, () => Date.now());
-    }
-
-    function merchantCapacitySignature(
-      name: Parameters<typeof coordinatorPolicies.coordinatorMerchantCapacitySignature>[1],
-    ) {
-      return coordinatorPolicies.coordinatorMerchantCapacitySignature(party, name);
-    }
-
-    function queueMerchant(
-      names: Parameters<typeof merchantQueue.queue>[0],
-      reason: Parameters<typeof merchantQueue.queue>[1] = "service",
-    ) {
-      merchantQueue.queue(names, reason);
-    }
-
-    function queueLocalStandSync() {
-      return merchantQueue.localStandSync();
-    }
-
-    function scheduleNearbyGiveaways(status?: Parameters<typeof giveawayScheduler.schedule>[0]) {
-      giveawayScheduler.schedule(status);
-      giveawayScheduler.scheduleMarket(party.aldata.merchants);
-    }
-
-    function scheduleAutoCompound(
-      name: Parameters<typeof improvementScheduler.compound>[0],
-      status?: Parameters<typeof improvementScheduler.compound>[1],
-    ) {
-      return improvementScheduler.compound(name, status);
-    }
-
-    function scheduleAutoExchange(status?: Parameters<typeof improvementScheduler.exchange>[0]) {
-      return improvementScheduler.exchange(status);
-    }
-
-    function merchantRoutineNeedsHome(
-      reason: Parameters<typeof coordinatorPolicies.merchantRoutineNeedsHome>[0],
-    ) {
-      return coordinatorPolicies.merchantRoutineNeedsHome(reason);
-    }
-
-    function merchantRuntimeFresh(merchant: string, runtime: "native" | "headless") {
-      const status = party.statuses[merchant];
-      return status?.runtime === runtime && Number(status.seenAt) >= Date.now() - 10_000;
-    }
-
-    function ensureMerchantHome(reason: Parameters<typeof merchantHomeRecovery.ensureHome>[0]) {
-      const merchant = String(party.merchantCharacter);
-      const returningHome = party.merchantRealmRequests[merchant]?.owner === "home";
-      if (party.steamMembers.includes(merchant)) {
-        if (!returningHome && !merchantRuntimeFresh(merchant, "native")) return false;
-        return merchantHomeRecovery.ensureHome(reason);
-      }
-      // A retired native status is not permission to create a headless realm
-      // return. Wait for the assigned worker's own fresh observation so initial
-      // native-home login cannot inherit an offline merchant's phantom request.
-      // Already admitted returns retain their original retry/exhaustion clock
-      // even while the worker disconnects or its status becomes stale.
-      if (!returningHome && (!party.headlessSlots.includes(merchant) ||
-          !merchantRuntimeFresh(merchant, "headless"))) return false;
-      return merchantHomeRecovery.ensureHome(reason);
-    }
-
-    function recoverStalledMerchantSale() {
-      return merchantHomeRecovery.recoverStalledSale();
-    }
-
-    function dispatchMerchant() {
-      if (consoleUpdate.blocksMerchant() || realmOwnsMerchant()) return;
-      merchantRecovery.expire(String(party.merchantCharacter));
-      if (coordinatorPolicies.pruneIneligibleCollections(party, () => Date.now())) persistSettings();
-      merchantDispatcher.dispatch();
-    }
-
-    function merchantAnniversaryControl() {
-      const round = String(party.statuses[String(party.merchantCharacter)]?.anniversaryServer?.round);
-      return coordinatorPolicies.merchantAnniversaryControl(
-        party.merchantCharacter,
-        !!party.merchantCharacter && eventsEnabledFor(party.merchantCharacter, "anniversary"),
-        party.statuses[String(party.merchantCharacter)],
-        party.anniversary.abortedRounds,
-        Date.now(),
-        party.anniversary.rounds[round]?.claims?.[String(party.merchantCharacter)] ? round : undefined,
-      );
-    }
-
-    function dispatchMerchantIdle() {
-      if (consoleUpdate.blocksMerchant() || realmOwnsMerchant()) return;
-      merchantIdle.idle();
-    }
-
-    function stagingEventLive(name: string, event?: string): boolean {
-      const report = party.statuses[name];
-      if (!report) return false;
-      return ['mrgreen', 'mrpumpkin', 'horseman', 'graveyard'].includes(event || '') && report.eventFeedConnected === true &&
-        report.eventClockStale !== true && Array.isArray(report.serverStagingEvents) &&
-        report.serverStagingEvents.some((entry: unknown) => stagingEventEligible(entry, event));
-    }
-
-    function stagingEventEligible(entry: unknown, event?: string): boolean {
-      return !!entry && typeof entry === 'object' && 'name' in entry && entry.name === event &&
-        'spawnAt' in entry && typeof entry.spawnAt === 'number' && Number.isFinite(entry.spawnAt) &&
-        entry.spawnAt - Date.now() <= 120000 && Date.now() - entry.spawnAt <= 120000;
-    }
-
-    function realmOwnsMerchant() {
-      return realmOperationOwnsCharacter(party.realmSwitch, party.merchantCharacter);
-    }
-
-    function activeNames() {
-      return coordinatorPolicies.activeCoordinatorNames(party.statuses, Date.now());
-    }
-
-    function pauseMerchantForRealmSwitch() {
-      coordinatorPolicies.pauseMerchantForRealm(party, () => Date.now(), stampMerchantJob);
-    }
-
-    function retireConvoysForRealmSwitch(participants: string[]) {
-      // Keep saved farming destinations intact; only departed travel loses its owner.
-      if (party.activeConvoy?.participants.some(name => participants.includes(name)))
-        partyConvoys.cancel("party departed for another realm");
-      for (const service of independentServices()) {
-        if (service.state.activeConvoy?.participants.some(name => participants.includes(name)))
-          service.partyConvoys.cancel("party departed for another realm");
-      }
-    }
-
-    function resolveAbtestingStrategy() {
-      return coordinatorPolicies.updateCoordinatorABStrategy(party, {
-        activeNames,
-        enabled: eventsEnabledFor,
-        now: Date.now,
-        persist: persistSettings,
-      });
-    }
-
-    function selectedMonsterDestination(
-      name: Parameters<typeof coordinatorPolicies.selectCoordinatorMonsterDestination>[1],
-    ) {
-      return coordinatorPolicies.selectCoordinatorMonsterDestination(party, name);
-    }
-
-    const travelClock = coordinatorPolicies.createCoordinatorTravelClock(party, {
+    const travelClock = createCoordinatorTravelClock({
       convoyStep: () => {
         return stepAllConvoys();
       },
       persist: persistSettings,
-      escapeStep: () => { if (!dungeonOwns(party)) escapeControl.step(); },
-      disengagementTick: () => { if (!dungeonOwns(party)) combatDisengagement.tick(); },
-      rareTick: () => { if (!dungeonOwns(party)) rareControl.tick(); },
-      eventReturn: () => { if (!dungeonOwns(party)) reconcileCombatEventReturn(); },
-      anniversaryTick: () => { if (!dungeonOwns(party)) anniversaryReturns.tick(); },
-      dispatchAnniversary: dispatchAnniversaryReturn,
-      every: (callback, milliseconds) => setInterval(callback, milliseconds),
-      // Node accepts null as a no-op; retain that call despite the narrower declaration.
-      later: (callback, milliseconds) => setTimeout(callback, milliseconds),
-      cancel: (timer) => clearTimeout(timer!),
+      every: scopes.act02.setInterval,
     });
     travelClock.startTravel();
 
-    const restartFailedHunt = coordinatorPolicies.createHuntRetreatRestart(party, {
+    // The targeting owner's coordinator answers, the passing column and the grouped fight read, over
+    // each combat group's record by its walk key.
+    installCoordinatorTargeting(partyHooks(), { state: key => groups.walkGroup(key)?.state, now: () => Date.now() });
+    installStatusNotices(partyHooks(), { state: key => groups.walkGroup(key)?.state }, diagnostics, {
+      cardLine: cardLines,
+      lastReport: name => { const status = party.statuses[name]; return status ? { report: status, seenAt: Number(status.seenAt) } : null; },
+      connected: name => reportOnline(party.statuses[name], Date.now()),
+    });
+    // The survival owner's party half: the death counter, the verdict, the escape and the death
+    // recovery, and their `core:survival` answers.
+    const survival = installCoordinatorSurvival({ hooks: partyHooks(), party, now: () => Date.now(), persist: persistSettings,
+      group: () => groupKey(groupId('party', party.leader)), members: () => farmingNavigation.members(), intent: (name) => farmingNavigation.intent(name),
+      convoy: (location, label, names, purpose) => startPartyMonsterConvoy(location as Parameters<typeof startPartyMonsterConvoy>[0], label, names, purpose),
+      // The escape and death recovery gates ask the hunting owner's `cave.state` for a member inside a run.
+      inCave: (name) => (partyHooks().ask('cave.state', name) as CaveMemberState).inside, online });
+    const leaderScopePorts = scopePorts(party, { members: () => farmingNavigation.members(),
+      select: (id, location) => monsterSelectionRoutes.modeTarget(id, location),
+      passive: { rule: (id) => party.passiveHunting?.rules[id], set: (rules, by) => rareControl.setSettings({ rules }, by) } });
+    // The scoped farming routes (runtime/tasks/coordinator/routes.ts): a character's request goes to
+    // its own group's handler.
+    const scoped = createScopedRoutes<ReturnType<typeof soloGroup>>({
+      owned: ownedCharacter, merchant: () => party.merchantCharacter, combat: groups.isCombat, owner: farmingScopes.owner,
+      // The status owner's app interface v1 (runtime/status/coordinator/routes.ts): the
+      // scoped route's reply names each scope's single mode, derived from the pair
+      // (settings/slots.ts), for the apps.
+      solo: groups.solo, mainOwner: () => party.leader, mode: name => farmingScopes.profile(name).farmingPolicy,
+      savedMode: () => createSavedFarmingModeRoute(party, { profile: farmingScopes.profile,
+        persist: persistSettings, write: writeSettings }),
+      walkRoutes: (routes, service) => installSharedConvoyRoute(routes, service.state, ownedCharacter, service.walks),
+    });
+    const scopedRoute = scoped.route;
+    const liveTask = tasks.live;
+
+    // The roster's ports, which its routes and lifecycle's roster reads share.
+    const rosterPorts: Parameters<typeof createCoordinatorOwnershipPorts>[2] = {
       now: Date.now,
-      intent: name => farmingNavigation.intent(name),
-      participants: huntParticipants,
-      releaseEscape: () => escapeControl.release(),
-      begin: beginMonsterHuntCycle,
-      persist: persistSettings,
-    });
-    const recoveryHooks = coordinatorPolicies.createCoordinatorRecoveryHooks(party, {
-      huntParticipants,
-      members: () => farmingNavigation.members(),
-      intent: (name) => farmingNavigation.intent(name),
-      cancelConvoy: cancelActiveConvoy,
-      convoy: startPartyMonsterConvoy,
-      persist: persistSettings,
-      prepareHunt: prepareHuntQuests,
-      escape: (names) => escapeControl.start(names),
-      releaseEscape: () => escapeControl.release(),
-      abandonRare: () => rareControl.abandon(),
-      resumeHunt: () => monsterHuntTick(),
-      restartFailedHunt,
-    });
-    const rareControl = rareHunting.createRareHunting(party, {...recoveryHooks.rare,
-      reconcileHuntArrival: () => huntTick.reconcileArrival(),
-      routeDistance: createRareRouteDistance(request=>movementPlanner.plan(request),
-        ()=>({version, fingerprint:movementFingerprints.get(version) || ''})),
-    });
-    const escapeControl = createEscape(party, recoveryHooks.escape);
-    const combatDisengagement = createDisengagement(party, recoveryHooks.disengagement);
-
-    function createSoloServices(name: string) {
-      const party = farmingScopes.view(name);
-      const activeNames = () => Object.keys(party.statuses).filter(n => n === name && Date.now() - party.statuses[n]!.seenAt < 10000);
-      const rareControl = { owns: () => false, encounter: () => null, control: (_name: string) => null };
-      const huntParticipants = () => coordinatorPolicies.coordinatorHuntParticipants(party, Date.now, activeNames);
-      const selectedMonsterDestination = (character: string | null) => coordinatorPolicies.selectCoordinatorMonsterDestination(party, character);
-      const monsterDestination = (type: string | null | undefined) => coordinatorPolicies.coordinatorHuntDestination(party, type, (choices, focus) => farmZones.zones(choices, focus));
-      const cancelHuntConvoy = () => coordinatorPolicies.cancelCoordinatorHuntConvoy(party);
-      const clearMonsterHuntState = () => coordinatorPolicies.clearCoordinatorHunt(party);
-      const farmingNavigation = createFarmingNavigation(party, {
-        names: () => [name], activeNames,
-        cancelConvoy: () => partyConvoys.cancel(),
-        startConvoy: (...args) => partyConvoys.start(...args),
-        persist: persistSettings, log: anniversaryLog,
-      });
-
-    const partyConvoys = coordinatorPolicies.createCoordinatorPartyConvoys(party, {
-      log: (message) => merchantLog(message, "info"),
-      now: () => Date.now(),
-      activeNames,
-      intent: (name) => farmingNavigation.intent(name),
-      resolveArea: (catalog, monsters, location) => farmZones.resolve(catalog, monsters, location),
-      persist: persistSettings,
-    });
-
-      const startPartyMonsterConvoy = partyConvoys.start;
-      const cancelActiveConvoy = partyConvoys.cancel;
-
-      function groupedCombatSnapshot() {
-        // The scoped leader also uses the native group target lock. A null group
-        // only appears to work when a travel encounter finishes its quest first.
-        // Independent controllers do not own shared party disengagement or rares.
-        return coordinatorPolicies.coordinatorGroupedSnapshot(party, {
-          now: Date.now,
-          tickDisengagement: () => {},
-          disengagementActive: () => false,
-          intent: character => farmingNavigation.intent(character),
-          owned: ownedCharacter,
-          prepare: members => members,
-          evaluate: evaluateGroup,
-          finalize: group => group,
-          blocksPulls: () => !!consoleUpdate.current(),
-        });
-      }
-
-    const {
-      lifecycle: huntLifecycle,
-      convoy: huntConvoy,
-      quests: huntQuests,
-      tick: huntTick,
-    } = coordinatorPolicies.createCoordinatorHunt(party, {
-      now: () => Date.now(),
-      participants: huntParticipants,
-      fighting: () => convoyDefense.fighting(party, huntParticipants()),
-      rareEncounter: () => rareControl.encounter(),
-      cancelHuntConvoy,
-      cancelConvoy: cancelActiveConvoy,
-      clear: clearMonsterHuntState,
-      persist: persistSettings,
-      selectedDestination: selectedMonsterDestination,
-      monsterDestination,
-      missionDestination: (hunt) => huntSafety.missionDestination(hunt, monsterDestination),
-      start: startPartyMonsterConvoy,
-      navigation: farmingNavigation,
-      ownsTravel: huntTurnInOwnsTravel,
-      recordDeaths: (hunt) => huntSafety.recordDeaths(hunt, party.statuses, Date.now()),
-      contains: (destination, status, margin, radius) =>
-        farmZones.contains(destination, status, margin, radius),
-      arrivalProtected: (hunt, status, destination) =>
-        huntSafety.arrivalProtected(
-          hunt,
-          party.leader,
-          status,
-          farmingNavigation.intent(party.leader),
-          destination,
-          Date.now(),
-        ),
-      partyFighting: (hunt) => huntSafety.partyFighting(hunt, party.statuses, Date.now()),
-    });
-
-      const beginMonsterHuntCycle = huntLifecycle.begin;
-      const freshHuntParty = huntLifecycle.fresh;
-      const returnHuntToDaisy = huntQuests.returnToDaisy;
-      const startHuntConvoy = huntConvoy.start;
-      const advanceHuntMission = huntQuests.advance;
-
-    const farmAreaNavigation = coordinatorPolicies.createCoordinatorFarmNavigation(
-      party,
-      character_manage,
-      {
-        now: () => Date.now(),
-        rareOwns: () => rareControl.owns(),
-        members: () => farmingNavigation.members(),
-        areas: farmingAreas,
-        resolve: (catalog, ids, location) => farmZones.resolve(catalog, ids, location),
-        areaId: (area) => farmZones.id(area),
-        record: (state, reports, workers, areas, now) =>
-          farmAreaControl.record(state, reports, workers, areas, now),
-        intent: (name) => farmingNavigation.intent(name),
-        contains: (area, report, margin, radius) =>
-          farmZones.contains(area, report, margin, radius),
-        huntOwns: huntTurnInOwnsTravel,
-        eventOwns: (hunt, state) => huntPolicy.eventOwnsTravel(hunt, state),
-        cancelConvoy: cancelActiveConvoy,
-        alternatives: (state, areas, active, now, excluded) =>
-          farmAreaControl.alternatives(state, areas, active, now, excluded),
-        advanceHunt: advanceHuntMission,
-        fighting: (report, now) => farmAreaControl.fighting(report, now),
-        startHunt: startHuntConvoy,
-        authorize: (names, location, force) => farmingNavigation.authorize(names, location, force),
-        startConvoy: startPartyMonsterConvoy,
-        persist: persistSettings,
-      },
-    );
-
-
-    const heartbeatResponse = coordinatorPolicies.createCoordinatorHeartbeatResponse(party, {
-      now: () => Date.now(),
-      persist: persistSettings,
-      activeNames,
-      enabled: eventsEnabledFor,
-      intent: (name) => farmingNavigation.intent(name),
-      escapeOwns: (name) => escapeControl.owns(name),
-      rareControl: (name) => rareControl.control(name),
-      convoySignal: (state, name) => convoyNavigation.signal(state, name),
-      resolveArea: (catalog, focus, waypoint) => farmZones.resolve(catalog, focus, waypoint),
-      waypoint: (name) => farmingNavigation.waypoint(name),
-      rareEncounter: () => rareControl.encounter(),
-      huntOwns: huntTurnInOwnsTravel,
-      mapSubscriberCount,
-      stackHomes: (bank, bankbois) => bankStackRouting.homes(bank, bankbois, party.merchantCatalog),
-      groupedCombat: groupedCombatSnapshot,
-      selectedEvents: (state, name) => selectedEvents(state, name).filter(event => eventInstanceAllowed(party, name, event)),
-      anniversary: publicAnniversaryState,
-      rareOwns: () => rareControl.owns(),
-    });
-      const eventCheckpoint = () => coordinatorPolicies.coordinatorEventCheckpoint(party, character => farmingNavigation.waypoint(character));
-      const eventReturns = coordinatorPolicies.createCoordinatorEventReturns(party, {
-        now: Date.now, activeNames, enabled: eventsEnabledFor, checkpoint: eventCheckpoint,
-        cancelConvoy: cancelActiveConvoy, startConvoy: startPartyMonsterConvoy,
-        anniversaryParticipants: activeNames, navigation: farmingNavigation, persist: persistSettings,
-      });
-      const beginEventReturn = eventReturns.begin;
-      const finishEventReturnIfReady = eventReturns.finishIfReady;
-      const eventObservations = coordinatorPolicies.createCoordinatorEventObservations(party, {
-        now: Date.now, activeNames, enabled: eventsEnabledFor, checkpoint: eventCheckpoint,
-        cancelConvoy: cancelActiveConvoy, releaseAnniversary: cycle => farmingNavigation.releaseReturn(cycle),
-        navigation: farmingNavigation, persist: persistSettings, log: anniversaryLog,
-        goobrawlStillFighting: eventReturns.goobrawlStillFighting,
-        begin: beginEventReturn, finishIfReady: finishEventReturnIfReady,
-      });
-      const eventRecoveryRoutes = coordinatorPolicies.createEventRecoveryRoutes(party, {
-        owned: ownedCharacter, enabled: eventsEnabledFor, participants: activeNames, active: activeNames,
-        abort: finishAnniversaryAbort, begin: beginEventReturn, snapshot: publicAnniversaryState,
-      });
-      const focusRoute = coordinatorPolicies.createFocusRoute(party, {
-        focusChanged: () => farmAreaNavigation.focusChanged(),
-        owned: ownedCharacter, members: () => [name], invalidate: (...args) => farmingNavigation.invalidate(...args), persist: persistSettings,
-      });
-    const {
-      mode: huntModeRoute,
-      blacklist: huntBlacklistRoute,
-      settings: huntSettingsRoute,
-      controls: huntControlRoutes,
-    } = coordinatorPolicies.createCoordinatorHuntActions(party, {
-      now: () => Date.now(),
-      fighting: (state, names) => convoyDefense.fighting(state, names),
-      participants: huntParticipants,
-      intent: (name) => farmingNavigation.intent(name),
-      release: () => {},
-      authorize: (...args) => farmingNavigation.authorize(...args),
-      monsterDestination,
-      clear: clearMonsterHuntState,
-      selectedDestination: selectedMonsterDestination,
-      convoy: startPartyMonsterConvoy,
-      returnToDaisy: returnHuntToDaisy,
-      begin: beginMonsterHuntCycle,
-      waypoint: (name) => farmingNavigation.waypoint(name),
-      validLocation: (catalog, focus, location) => validFarmingLocation(catalog, focus, location),
-      persist: persistSettings,
+      id: () => crypto.randomUUID(),
+      commit: rosterCommit,
+      notify: (hook, payload) => { partyHooks().notify(hook, payload); },
       owned: ownedCharacter,
-      ownsTravel: huntTurnInOwnsTravel,
-      fresh: freshHuntParty,
-      eventDeparture: (name, event, operation) => eventObservations.authorize(name, event, operation),
-      cancelConvoy: cancelHuntConvoy,
-      start: startHuntConvoy,
-    });
-
-    const {
-      events: eventAcknowledgementRoutes,
-      engagement: convoyEngagementRoutes,
-      farmingReturn: farmingReturnRoute,
-      acknowledgements: convoyAcknowledgementRoutes,
-    } = coordinatorPolicies.createCoordinatorNavigationActions(party, {
-      now: () => Date.now(),
-      owned: ownedCharacter,
-      intent: (name) => farmingNavigation.intent(name),
-      group: groupedCombatSnapshot,
-      persist: persistSettings,
-      selectedDestination: selectedMonsterDestination,
-      finishReturn: finishEventReturnIfReady,
-      contains: (...args) => farmZones.contains(...args),
-      huntOwns: huntTurnInOwnsTravel,
-      engage: (state, body, options) => convoyNavigation.engage(state, body, options),
-      acceptArrival: (hunt, active, body, at) => huntSafety.acceptArrival(hunt, active, body, at),
-      waypoint: (name) => farmingNavigation.waypoint(name),
-      start: startPartyMonsterConvoy,
-      active: activeNames,
-      members: () => farmingNavigation.members(),
-      valid: (state, body) => convoyNavigation.validReport(state, body),
-      history: persistHistory,
-      hold: (state, ...args) => convoyNavigation.hold(state, ...args),
-      error: (message) => console.error(message),
-    });
-
-      const walks = {
-        now: Date.now, members: () => [name], owned: ownedCharacter, enabled: eventsEnabledFor,
-        start: startPartyMonsterConvoy, persist: persistSettings, cancel: cancelActiveConvoy,
-        allowed: (activity: string) => ["town-return", "event-return"].includes(activity) || !huntTurnInOwnsTravel(party.monsterHunt),
-      };
-      return { state: party, eventReturns, eventObservations, eventRecoveryRoutes, focusRoute, farmingNavigation, partyConvoys, huntTick, farmAreaNavigation, heartbeatResponse,
-        huntModeRoute, huntBlacklistRoute, huntSettingsRoute, huntControlRoutes,
-        eventAcknowledgementRoutes, convoyEngagementRoutes, farmingReturnRoute, convoyAcknowledgementRoutes, walks };
-    }
-    function independentServices() {
-      return activeNames().filter(name => isCombatCharacter(name) && farmingScopes.owner(name) === name && name !== party.leader)
-        .map(name => soloFor(name)!);
-    }
-    function stepAllConvoys() {
-      partyConvoys.recoverRestart();
-      let changed = convoyNavigation.step(party);
-      for (const service of independentServices()) {
-        service.partyConvoys.recoverRestart();
-        changed = convoyNavigation.step(service.state) || changed;
-      }
-      return changed;
-    }
-    function scopedRoute(main: HttpHandler, select: (service: ReturnType<typeof createSoloServices>) => HttpHandler, edit = false, savedMode = false): HttpHandler {
-      return coordinatorPolicies.createScopedFarmingRoute(main, select, {
-        owned: ownedCharacter, merchant: () => party.merchantCharacter, combat: isCombatCharacter, owner: farmingScopes.owner,
-        solo: soloFor, mainOwner: () => party.leader, mode: name => farmingScopes.profile(name).farmingPolicy,
-      }, edit, savedMode ? coordinatorPolicies.createSavedFarmingModeRoute({
-        profile: farmingScopes.profile,
-        validLocation: (focus, location) => validFarmingLocation(party.monsterChoices || [], focus, location),
-        persist: persistSettings,
-      }) : undefined);
-    }
-    function scopedRouter(router: HttpRouter): HttpRouter {
-      const handlers = new Map<string, Map<string, HttpHandler>>();
-      const register = (method: "get" | "post", path: string, main: HttpHandler) => router[method](path, (req, res) => {
-        const name = String(coordinatorPolicies.requestObject(method === "get" ? req.query : req.body).character);
-        if (!ownedCharacter(name)) return res.status(400).json({error: "unknown character"});
-        const service = soloFor(name);
-        if (!service) return main(req, res);
-        if (!handlers.has(name)) {
-          const routes = new Map<string, HttpHandler>();
-          coordinatorPolicies.installSharedConvoyRoute({
-            get: (url, handler) => routes.set("get " + url, handler),
-            post: (url, handler) => routes.set("post " + url, handler),
-          }, service.state, ownedCharacter, service.walks);
-          handlers.set(name, routes);
-        }
-        return handlers.get(name)!.get(method + " " + path)!(req, res);
-      });
-      return { get: (path, handler) => register("get", path, handler), post: (path, handler) => register("post", path, handler) };
-    }
-    function isCombatCharacter(name: string) {
-      return name !== party.merchantCharacter && party.statuses[name]?.ctype !== "merchant" && ownedCharacter(name)?.type !== "merchant";
-    }
-    function soloFor(name: string) {
-      if (!isCombatCharacter(name) || farmingScopes.owner(name) === party.leader) return null;
-      let service = soloServices.get(name);
-      if (!service) { service = createSoloServices(name); soloServices.set(name, service); }
-      return service;
-    }
-
-    function startPartyMonsterConvoy(
-      locationInput: Parameters<typeof partyConvoys.start>[0],
-      label?: Parameters<typeof partyConvoys.start>[1],
-      participantNames?: Parameters<typeof partyConvoys.start>[2],
-      purpose?: Parameters<typeof partyConvoys.start>[3],
-      cause?: Parameters<typeof partyConvoys.start>[4],
-    ) {
-      return partyConvoys.start(locationInput, label, participantNames, purpose, cause);
-    }
-
-    function huntParticipants() {
-      return coordinatorPolicies.coordinatorHuntParticipants(party, () => Date.now(), activeNames);
-    }
-
-    function cancelHuntConvoy() {
-      return coordinatorPolicies.cancelCoordinatorHuntConvoy(party);
-    }
-
-    function cancelActiveConvoy() {
-      return partyConvoys.cancel();
-    }
-
-    function clearMonsterHuntState() {
-      return coordinatorPolicies.clearCoordinatorHunt(party);
-    }
-
-    function farmAreaTick() {
-      if (!dungeonOwns(party)) farmAreaNavigation.tick();
-      for (const service of independentServices()) service.farmAreaNavigation.tick();
-    }
-
-    function monsterDestination(
-      type: Parameters<typeof coordinatorPolicies.coordinatorHuntDestination>[1],
-    ) {
-      return coordinatorPolicies.coordinatorHuntDestination(party, type, (choices, focus) =>
-        farmZones.zones(choices, focus),
-      );
-    }
-
-    function startHuntConvoy(
-      hunt: Parameters<typeof huntConvoy.start>[0],
-      location: Parameters<typeof huntConvoy.start>[1],
-      label: Parameters<typeof huntConvoy.start>[2],
-      nextStage: Parameters<typeof huntConvoy.start>[3],
-    ) {
-      return huntConvoy.start(hunt, location, label, nextStage);
-    }
-
-    function returnHuntToDaisy(hunt: Parameters<typeof huntQuests.returnToDaisy>[0]) {
-      return huntQuests.returnToDaisy(hunt);
-    }
-
-    function huntTurnInOwnsTravel(hunt: import("../hunt/policy.ts").Hunt | null) {
-      return huntPolicy.priority(hunt);
-    }
-
-    function advanceHuntMission(hunt: Parameters<typeof huntQuests.advance>[0]) {
-      return huntQuests.advance(hunt);
-    }
-
-    function beginMonsterHuntCycle(
-      returnPolicy?: Parameters<typeof huntLifecycle.begin>[0],
-      returnLocation?: Parameters<typeof huntLifecycle.begin>[1],
-      resume?: Parameters<typeof huntLifecycle.begin>[2],
-    ) {
-      return huntLifecycle.begin(returnPolicy, returnLocation, resume);
-    }
-
-    function freshHuntParty(hunt: Parameters<typeof huntLifecycle.fresh>[0]) {
-      return huntLifecycle.fresh(hunt);
-    }
-
-    function prepareHuntQuests(hunt: Parameters<typeof huntQuests.prepare>[0]) {
-      return huntQuests.prepare(hunt);
-    }
-
-    function monsterHuntTick(_previousStatus?: unknown, _changedName?: string) {
-      dungeons.reconcile();
-      if (party.leader && !dungeonOwns(party)) huntTick.tick();
-      for (const service of independentServices()) {
-        const before = JSON.stringify({...service.state.monsterHunt, message: undefined});
-        service.huntTick.tick();
-        if (before !== JSON.stringify({...service.state.monsterHunt, message: undefined})) persistSettings();
-      }
-    }
-
-    function anniversaryCombatParticipants() {
-      return activeNames().filter(
-        (name) => name !== party.merchantCharacter && eventsEnabledFor(name, "anniversary"),
-      );
-    }
-
-    function anniversaryFallbackDestination(_candidate?: unknown) {
-      return farmingNavigation.waypoint(party.leader);
-    }
-
-    function abortAnniversaryRound(body: Parameters<typeof anniversaryReturns.abort>[0]) {
-      return anniversaryReturns.abort(body);
-    }
-
-    function finishAnniversaryAbort(
-      cycle: Parameters<typeof anniversaryReturns.finishAbort>[0],
-      round: Parameters<typeof anniversaryReturns.finishAbort>[1],
-      target: Parameters<typeof anniversaryReturns.finishAbort>[2],
-      name: Parameters<typeof anniversaryReturns.finishAbort>[3],
-      reason: Parameters<typeof anniversaryReturns.finishAbort>[4],
-    ) {
-      return anniversaryReturns.finishAbort(cycle, round, target, name, reason);
-    }
-
-    function dispatchAnniversaryReturn(force: Parameters<typeof anniversaryReturns.dispatch>[0]) {
-      return anniversaryReturns.dispatch(force);
-    }
-
-    function scheduleAnniversaryReturnConvoy() {
-      travelClock.scheduleAnniversary();
-    }
-
-    function reconcileAnniversaryReturnFromStatus(
-      name: Parameters<typeof anniversaryReturns.reconcile>[0],
-      status: Parameters<typeof anniversaryReturns.reconcile>[1],
-    ) {
-      return anniversaryReturns.reconcile(name, status);
-    }
-
-    travelClock.startReturns();
-
-    function eventCheckpoint(_candidate?: unknown) {
-      return coordinatorPolicies.coordinatorEventCheckpoint(party, (name) =>
-        farmingNavigation.waypoint(name),
-      );
-    }
-
-    function goobrawlStillFighting() {
-      return eventReturns.goobrawlStillFighting();
-    }
-    function beginEventReturn(
-      eventName: Parameters<typeof eventReturns.begin>[0],
-      session?: Parameters<typeof eventReturns.begin>[1],
-      forced: Parameters<typeof eventReturns.begin>[2] = false,
-    ) {
-      return eventReturns.begin(eventName, session, forced);
-    }
-
-    function finishEventReturnIfReady() {
-      return eventReturns.finishIfReady();
-    }
-
-    function reconcileCombatEventReturn() {
-      eventReturns.reconcile();
-      for (const service of independentServices()) service.eventReturns.reconcile();
-    }
-
-    function mluckRemaining(status?: Parameters<typeof coordinatorPolicies.mluckRemaining>[0]) {
-      return coordinatorPolicies.mluckRemaining(
-        status,
-        party.merchantCharacter,
-        status && Number(party.mluckCastAt[status.name]),
-        Date.now(),
-      );
-    }
-
-    function hasStrongMluck(status?: Parameters<typeof coordinatorPolicies.hasStrongMluck>[0]) {
-      return coordinatorPolicies.hasStrongMluck(status);
-    }
-
-    function mluckTravelLead(
-      targetStatus: Parameters<typeof coordinatorPolicies.mluckTravelLead>[1],
-    ) {
-      return coordinatorPolicies.mluckTravelLead(
-        party.statuses[String(party.merchantCharacter)],
-        targetStatus,
-      );
-    }
-
-    function scheduleMerchantLuck() {
-      return luckScheduler.schedule();
-    }
-
-    function mluckScheduleStatus() {
-      return luckScheduler.snapshot();
-    }
-
-    function dispatchBank() {
-      if (consoleUpdate.blocksMerchant()) return;
-      bankQueueService.dispatch();
-    }
-
-    let bwi_instance: WebMonitor | { publisher?: never } = {};
-    coordinatorPolicies.startCoordinatorWebServices<WebMiddleware, WebRouter, WebMonitor>(
+      updateAccount: () => my_acc.updateInfo(),
+      sleep: lifecycleClock.sleep,
+      nextAccount: () => new Promise(resolve => { const answered = (account: unknown) => { my_acc.remove_listener(answered); resolve(account); }; my_acc.add_listener(answered); }),
+      realmMoving: name => merchantRealm.movingFor(name),
+      switchRealm: names => realmOperationDestination(party.realmSwitch ?? null, names),
+      stop: (block, reason) => characterWorkers.stop(block, reason),
+      assignSlot: (slot, name, by) => characterWorkers.assign(slot, name, by),
+      roster: rosterPayload,
+      configuredRealm,
+      releaseBankboi: () => bankboiService.releaseForSteam(),
+    };
+    partyHooks().register(lifecycleRegistration(rosterPorts, consoleControl, { now: Date.now, startedAt: Date.now(),
+      report: name => party.statuses[name], worker: name => character_manage[name] }));
+    startCoordinatorWebServices<WebMiddleware, WebRouter, WebMonitor>(
       cfg.web_app,
       cfg.enable_TYPECODE,
       {
-        createRouter: () => {
-          const router = express();
-          router.get('/party-api/build-identity', (_request, response) => response.json({
-            artifactId: process.env.AL_CONSOLE_ARTIFACT_ID || null,
-            hash: process.env.AL_CONSOLE_COORDINATOR_HASH || null,
-          }));
-          return router;
-        },
+        createRouter: express,
         createMonitor: (options) => new bwi(options),
-        retainMonitor: (monitor) => {
-          bwi_instance = monitor;
-        },
+        retainMonitor: characterWorkers.retainMonitor,
         staticFiles: (directory) => express.static(directory),
         directory: __dirname,
         updateRate: STAT_BEAT_INTERVAL,
         info: (details, message) => log.info(details, message),
         error: (...args) => console.error(...args),
         dashboard: (express_inst) =>
-          coordinatorPolicies.installCoordinatorDashboard<WebMiddleware, WebMiddleware, WebRouter>(
+          installCoordinatorDashboard<WebMiddleware, WebMiddleware, WebRouter>(
             express_inst,
             {
-              publicStateRoute,
-              readyRoute: (_request, response) => response.json({ ready: true }),
               dashboardImportRoutes,
+              settingsRoutes,
               anniversaryVisitRoutes,
               anniversaryNavigationRoutes,
               anniversaryCommerceRoutes,
@@ -2284,22 +1201,24 @@ export function startCoordinatorApplication(
               bankboiStorageRoutes,
               bankboiDeleteRoute,
               realmRoutes,
-              statusIngestion,
               monsterSelectionRoutes,
+              addonRoutes,
+              addonFarmingRoute: scopedRoute(tasks.slots.route(party, () => String(party.leader)), service => service.addonFarmingRoute, true),
+              addonCommandRoute: scopedRoute(addonRoutes.command(party, () => String(party.leader)), service => service.addonCommandRoute, true),
               focusRoute: scopedRoute(focusRoute, service => service.focusRoute),
               formationRoute,
               huntBlacklistRoute: scopedRoute(huntBlacklistRoute, service => service.huntBlacklistRoute, true),
               huntSettingsRoute: scopedRoute(huntSettingsRoute, service => service.huntSettingsRoute, true),
               huntModeRoute: scopedRoute(huntModeRoute, service => service.huntModeRoute, true, true),
-              huntControlRoutes: { permission: scopedRoute(huntControlRoutes.permission, service => service.huntControlRoutes.permission), retryReturn: scopedRoute(huntControlRoutes.retryReturn, service => service.huntControlRoutes.retryReturn), interactionComplete: scopedRoute(huntControlRoutes.interactionComplete, service => service.huntControlRoutes.interactionComplete) },
-              eventRecoveryRoutes: { disabled: scopedRoute(eventRecoveryRoutes.disabled, service => service.eventRecoveryRoutes.disabled), ended: scopedRoute(eventRecoveryRoutes.ended, service => service.eventRecoveryRoutes.ended) },
-              eventAcknowledgementRoutes: { progress: scopedRoute(eventAcknowledgementRoutes.progress, service => service.eventAcknowledgementRoutes.progress), townComplete: scopedRoute(eventAcknowledgementRoutes.townComplete, service => service.eventAcknowledgementRoutes.townComplete), returnComplete: scopedRoute(eventAcknowledgementRoutes.returnComplete, service => service.eventAcknowledgementRoutes.returnComplete), resumeComplete: scopedRoute(eventAcknowledgementRoutes.resumeComplete, service => service.eventAcknowledgementRoutes.resumeComplete) },
-              convoyEngagementRoutes: { engage: scopedRoute(convoyEngagementRoutes.engage, service => service.convoyEngagementRoutes.engage), approach: scopedRoute(convoyEngagementRoutes.approach, service => service.convoyEngagementRoutes.approach) },
-              farmingReturnRoute: scopedRoute(farmingReturnRoute, service => service.farmingReturnRoute),
-              convoyAcknowledgementRoutes: { complete: scopedRoute(convoyAcknowledgementRoutes.complete, service => service.convoyAcknowledgementRoutes.complete), failed: scopedRoute(convoyAcknowledgementRoutes.failed, service => service.convoyAcknowledgementRoutes.failed) },
+              huntControlRoutes: scoped.group(huntControlRoutes, service => service.huntControlRoutes),
+              eventRecoveryRoutes: scoped.group(eventRecoveryRoutes, service => service.eventRecoveryRoutes),
+              eventAcknowledgementRoutes: scoped.group(eventAcknowledgementRoutes, service => service.eventAcknowledgementRoutes),
+              convoyEngagementRoutes: scoped.group(convoyEngagementRoutes, service => service.convoyEngagementRoutes),
+              convoyAcknowledgementRoutes: scoped.group(convoyAcknowledgementRoutes, service => service.convoyAcknowledgementRoutes),
               partyActionRoutes,
               merchantSettingsRoutes,
               staleOrderRoute,
+              ruleConflictRoute,
               standMarkRoute,
               npcSaleRoute,
               deconstructionRoutes,
@@ -2332,119 +1251,609 @@ export function startCoordinatorApplication(
               json: (options) => express.json(options),
               text: (options) => express.text(options),
               maps: (router) => {
-                dungeons.install(router);
+                installCaveRoutes(router, dungeons);
                 upgradePreviews.install(router);
-                router.get('/party-api/console-maintenance', (_req, res) => res.json(consoleUpdate.status(party.statuses,
-                  [...party.headlessSlots, ...party.steamMembers], !!party.steamSwitch && party.steamSwitch.phase !== 'complete',
-                  Object.entries(character_manage).filter(([, block]) => block.enabled === false && block.connected === false && !block.instance).map(([name]) => name))));
-                const codeActivation = () => {
-                  try { return String(JSON.parse(fs_regular.readFileSync(__dirname + '/../CODE/adventure_land/activation.json', 'utf8')).id || '') || null; }
-                  catch { return null; }
-                };
-                // activation tells loaders whether this CODE directory has an activation
-                // record, so they stop polling activation.json for a 404.
-                router.get('/party-api/console-deployment',(_req,res)=>res.json({serverNow:Date.now(),consoleMaintenance:consoleUpdate.current(),activation:codeActivation()}));
-                router.get('/party-api/console-runtime', (_req,res)=>res.json({characters:Object.fromEntries(Object.entries(party.statuses).map(([name,report])=>[name,{
-                  name,seenAt:report.seenAt,connected:report.connected,ctype:report.ctype,type:report.type,codeHash:report.codeHash,rip:report.rip,
-                  consoleMaintenance:report.consoleMaintenance,map:report.map,in:report.in,x:report.x,y:report.y,
-                  dungeon:{cave:{run:coordinatorPolicies.requestObject(coordinatorPolicies.requestObject(report.dungeon).cave).run}},
-                }]))}));
-                router.get('/party-api/characters/:name/inspection', characterInspectionRoute({
-                  owned:name=>!!ownedCharacter(name), now:Date.now, version:()=>version, directory:__dirname,
-                  read:file=>fs_regular.readFileSync(file,'utf8'),
-                  catalog:()=>{const entries=coordinatorPolicies.requestObject(party.merchantCatalog).allItems;return Array.isArray(entries)?entries:[];},
-                  fetch:async name=>{const fetch=await platform.loadFetch();const response=await fetch('https://adventure.land/api/mainframe_get_character',{method:'POST',headers:{Cookie:'auth='+sess,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({character:name}).toString(),signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error('Could not read saved character from the game');return response.json();},
-                }));
-                coordinatorPolicies.installMovementRoutes(router, movementPlanner, ownedCharacter);
+                installLifecycleRoutes(router, { control: consoleControl, statuses: () => party.statuses,
+                  code: __dirname + '/../CODE/adventure_land', inspection: {
+                    owned: name => !!ownedCharacter(name), now: Date.now, version: () => party.gameVersion, directory: __dirname,
+                    read: file => fs_regular.readFileSync(file, 'utf8'),
+                    catalog: () => party.merchantCatalog, session: () => sess, loadFetch: () => platform.loadFetch(),
+                    log: message => console.warn('Character inspection: ' + message),
+                  } });
+                installMovementRoutes(router, movementPlanner, ownedCharacter);
+                installMovementRecordRoutes(router, movementRecords, ownedCharacter);
+                installTaskRoutes(router, taskOwner, group => movementRecords.snapshots(group), () => Object.fromEntries(tasks.presences));
                 installProductionRoutes(router, party, () => persistence.settings(), merchantLog);
-                router.post('/party-api/market/ignored-items',marketIgnoredItemsRoute(party,persistSettings));
-                router.post('/party-api/merchant/stand-location', standLocationRoute(party, (x,y) => canStand(x,y), persistSettings));
-                installSharedRuleRoutes(router, party, persistSettings);
-                router.post("/party-api/merchant/native-stand", coordinatorPolicies.createNativeStandRoute(party, { fulfill: fulfillStandBid, persist: persistSettings, dispatch: dispatchMerchant, stamp: stampMerchantJob }));
-                mapStreams.install(router);
-                coordinatorPolicies.installSharedConvoyRoute(scopedRouter(router), party, ownedCharacter, {
-                  now: () => Date.now(), members: () => farmingNavigation.members(), owned: ownedCharacter,
-                  enabled: eventsEnabledFor, start: startPartyMonsterConvoy, persist: persistSettings, cancel: cancelActiveConvoy,
-                  allowed: (activity) => (!party.escape || party.escape.stage === "released") &&
-                    (["town-return", "event-return"].includes(activity) || !huntTurnInOwnsTravel(party.monsterHunt)),
-                });
+                installStandLocationRoute(router, party, canStand, writeSettings);
+                installMarketRoutes(router, party, { fulfill: fulfillStandBid, persist: persistSettings, dispatch: () => merchantDispatcher.dispatch(), enqueue: merchantQueue.enqueue, write: writeSettings });
+                installSharedConvoyRoute(scoped.router(router), party, ownedCharacter, partyWalks);
               },
-              liveTelemetry: (router) => dashboardStream.install(router),
-              combatLogs: (router) => { combatLogRoutes.install(router); metrics.install(router); },
+              status: (router) => installStatusRoutes(router, { state: publicStateRoute, intake: statusIngestion,
+                installs: [mapStreams, marketWatch, dashboardStream, combatLogRoutes, metrics], diagnostics, owned: ownedCharacter,
+                apps: createApps(party as Parameters<typeof createApps>[0], { now: Date.now, persist: persistSettings, notify: (event, payload) => { partyHooks().notify(event, payload); } }) }),
               roster: (express_inst) => {
-                const ownership = coordinatorPolicies.coordinatorOwnership(party);
-                installRosterRoutes(
-                  express_inst,
-                  ownership,
-                  coordinatorPolicies.createCoordinatorOwnershipPorts(party, character_manage, {
-                    now: Date.now,
-                    id: () => crypto.randomUUID(),
-                    save: persistRosterState,
-                    owned: ownedCharacter,
-                    updateAccount: () => my_acc.updateInfo(),
-                    sleep,
-                    stop: softkill_block,
-                    assignSlot: assignHeadlessSlot,
-                    roster: rosterPayload,
-                    configuredRealm,
-                    releaseBankboi: (confirm) => bankboiService.releaseForSteam(confirm),
-                  }),
-                );
+                const ownership = coordinatorOwnership(party);
+                installRosterRoutes(express_inst, ownership, createCoordinatorOwnershipPorts(party, character_manage, rosterPorts), scopes.act13);
               },
-              startMail: () =>
-                coordinatorPolicies.startCoordinatorMail(party, my_acc, {
-                  persist: persistSettings,
-                  session: sess,
-                  loadFetch: () => platform.loadFetch(),
-                  timeout: (milliseconds) => AbortSignal.timeout(milliseconds),
-                  createInbox: createMailInbox,
-                  enqueue: mailJobs.collect,
-                  retain: (inbox) => {
-                    mailInbox = inbox;
-                  },
-                  current: () => mailInbox,
-                  every: (callback, milliseconds) => setInterval(callback, milliseconds),
-                }),
+              startMail: () => createMailInboxRoutes(itemsOwner.startMail({ session: sess,
+                loadFetch: () => platform.loadFetch(), enqueue: mailJobs.collect })),
             },
           ),
       },
     );
 
-    function sleep(ms?: Parameters<typeof setTimeout>[1]) {
-      return new Promise<void>((resolve) => setTimeout(resolve, ms));
-    }
+    // The root's port functions, by owner section. Each is a declaration the flow above hands as
+    // a port; the order of the sections follows the header's.
 
-    function groupedCombatSnapshot() {
-      return coordinatorPolicies.coordinatorGroupedSnapshot(party, {
-        now: Date.now,
-        tickDisengagement: () => combatDisengagement.tick(),
-        disengagementActive: () => combatDisengagement.active(),
-        intent: (name) => farmingNavigation.intent(name),
-        owned: ownedCharacter,
-        prepare: (members) => combatDisengagement.prepare(members),
-        evaluate: evaluateGroup,
-        finalize: (group) => combatDisengagement.finalize(group),
-        blocksPulls: () => !!consoleUpdate.current() || rareControl.blocksPulls(),
-        patrolAcquisitionAllowed: () => rareControl.patrolAcquisitionAllowed?.() || false,
+    // The tasks owner's combat group composition: each group's services, the solo groups and the
+    // scope ports. One composition of a combat group's services (cut 1), the party's group and each
+    // solo group alike. Where the two kinds differ, the composition reads the kind's `groups`
+    // columns (runtime/tasks/rules.ts `GROUPS`); a port whose source the kind does not run answers
+    // nothing. The group's id is its kind and its leader, and a solo scope's leader is its one
+    // character (hunt/scopes.ts `view`).
+    function composeCombatGroup(state: typeof party, kind: 'party' | 'solo') {
+      const columns = GROUPS[kind];
+      const group = () => groupId(kind, state.leader);
+      // A group of one reads only its own report; the party's event services and heartbeat read
+      // groups.ts `partyScoped`.
+      const own = () => activeOf(state.leader, activeNames());
+      const one = columns.members === 'one';
+      const active = one ? own : activeNames;
+      const scoped: () => string[] = one ? own : groups.partyScoped;
+      const members = one ? () => [String(state.leader)] : () => farmingNavigation.members();
+      const intent = columns.holds ? navigationIntentOf : (name: string) => farmingNavigation.intent(name);
+      const start: typeof startPartyMonsterConvoy = columns.holds ? startPartyMonsterConvoy : (...args) => partyConvoys.start(...args);
+      const cancel = () => partyConvoys.cancel();
+      const huntParticipants = () => coordinatorHuntParticipants(state, Date.now, active);
+      const selectedDestination = (character: string | null) => selectCoordinatorMonsterDestination(state, character);
+      const monsterDestination = (type: string | null | undefined) => coordinatorHuntDestination(state, type);
+      const cancelHuntConvoy = () => cancelCoordinatorHuntConvoy(state, cancel);
+      const clearHunt = () => clearCoordinatorHunt(state, cancel);
+      // The hunting owner's farming destinations and the events owner's event return travel, which reads them
+      // and keeps its own owners' waypoints on them.
+      const farmingIntents = createFarmingIntents(state, {
+        now: Date.now, names: one ? () => [String(state.leader)] : () => Object.keys(character_manage), online,
+        cancelConvoy: cancel, startConvoy: start, events: () => eventTravel, persist: persistSettings,
       });
+      const eventTravel = createEventReturnTravel(state, {
+        now: Date.now, nextCommand: tasks.nextCommand, intent: farmingIntents.intent, members: farmingIntents.members, waypoint: farmingIntents.waypoint,
+        activeNames: active, cancelConvoy: cancel, startConvoy: start, persist: persistSettings, log: anniversaryLog,
+      });
+      const farmingNavigation = { ...farmingIntents, ...eventTravel };
+      const partyConvoys = createCoordinatorPartyConvoys(state, {
+        // The convoy's progress shows on each member's card, not in the merchant activity.
+        log: (message) => console.log('Party convoy: ' + message),
+        now: () => Date.now(),
+        activeNames: active,
+        intent: (name) => farmingNavigation.intent(name),
+        resolveArea: (catalog, monsters, location) => farmZones.resolve(catalog, monsters, location),
+        persist: persistSettings,
+        group: () => groupKey(group()),
+        live: () => liveTask(group()),
+        listeners: partyHooks(),
+      });
+      // The hunting owner's rejected rares for the group (`farming.focus`), which the grouped queue
+      // and the walk's Hunt travel read.
+      const focus = () => partyHooks().ask('farming.focus', group() ?? undefined) as FarmingFocus | undefined;
+      const rareRejections = () => focus()?.rare.rejected ?? [];
+      // The scoped leader also uses the native group target lock. A null group only appears to
+      // work when a travel encounter finishes its quest first.
+      const groupedCombatSnapshot = () => coordinatorGroupedSnapshot(state, {
+        now: Date.now,
+        // The party's death recovery (`deathRecovery`), asked by the group's walk key.
+        recoveryGroup: () => columns.deathRecovery ? groupKey(group()) : null,
+        intent,
+        owned: ownedCharacter,
+        // A member under a user hold is in no grouped pull (13.5): the console never moves it, so
+        // its attack-range readiness never comes, and a pull that waited on it would never commit.
+        prepare: (list) => columns.deathRecovery ? tasks.unheld(list, kind) : list,
+        evaluate: evaluateGroup,
+        rareRejections,
+        pullsHeld: () => !consoleControl.allows('pulls', rare.blocksPulls()),
+        patrolAcquisitionAllowed: () => !!focus()?.rare.patrolAcquisition,
+      });
+      const eventCheckpoint = () => coordinatorEventCheckpoint(state, name => farmingNavigation.waypoint(name));
+      const eventReturns = createCoordinatorEventReturns(state, {
+        now: () => Date.now(),
+        nextCommand: tasks.nextCommand,
+        activeNames: scoped,
+        // The return's members follow the group's scope owner, so one whose Follow changed leaves it.
+        moved: name => farmingScopes.owner(name) !== state.leader,
+        enabled: eventsEnabledFor,
+        checkpoint: eventCheckpoint,
+        cancelConvoy: cancel,
+        startConvoy: start,
+        anniversaryParticipants: one ? own : anniversaryCombatParticipants,
+        navigation: farmingNavigation,
+        persist: persistSettings,
+        // The `into Hunt` row: the hunting owner's `hunt.view` names the group's Hunt
+        // cycle.
+        huntCycle: () => !!group() && !!(partyHooks().ask('hunt.view', group()!) as HuntView | undefined)?.stage,
+      });
+      // The group's Hunt and farm spot (07 2.2); their task ladders climb the group's.
+      const { hunt, farm: farmAreaNavigation, huntLadder, rare } = hunting.group(state, kind, character_manage, {
+        now: () => Date.now(),
+        participants: huntParticipants,
+        cancelConvoy: cancel,
+        persist: persistSettings,
+        selectedDestination,
+        start,
+        navigation: farmingNavigation,
+        ladder: kinds => ladderPort(taskOwner, group, kinds),
+        intentHold: (reason) => tasks.intentHold(group(), reason),
+        group,
+        farmingLive: () => tasks.farmingLive(group()),
+        drain: () => consoleControl.drain(),
+      });
+      const heartbeatResponse = createHeartbeatReply(state, {
+        now: () => Date.now(),
+        diagnosticsRings: name => diagnostics.rings(name),
+        persist: persistSettings,
+        activeNames: scoped,
+        enabled: eventsEnabledFor,
+        intent,
+
+        rareControl: rare.control,
+        rareRejections,
+        convoySignal: (convoyState, name) => convoyNavigation.signal(convoyState, name),
+        resolveArea: (catalog, focus, waypoint) => farmZones.resolve(catalog, focus, waypoint),
+        waypoint: (name) => farmingNavigation.waypoint(name),
+        rareEncounter: rare.encounter,
+        // On the party's heartbeat: a hand-in never holds a member away from a live event it
+        // attends. A solo heartbeat reads the hand-in without the yield (`groups`).
+        huntOwns: () => tasks.turnIn(state, columns.turnIn),
+        mapSubscriberCount: (name) => mapStreams.count(name),
+        items: (name, command) => itemsOwner.reply(name, command),
+        groupedCombat: groupedCombatSnapshot,
+        selectedEvents: coordinatorEvents.attendableEvents,
+        anniversary: publicAnniversaryState,
+        rareOwns: rare.owns,
+        task: tasks.memberTask,
+        setting: query => partyHooks().read(query),
+      });
+      const eventObservations = createCoordinatorEventObservations(state, {
+        cancelConvoy: cancel,
+        nextCommand: tasks.nextCommand,
+        releaseAnniversary: farmingNavigation.releaseReturn,
+        now: () => Date.now(),
+        activeNames: scoped,
+        online,
+        enabled: eventsEnabledFor,
+        admits: name => taskOwner.allows('event-attendance', name),
+        selected: coordinatorEvents.selected,
+        checkpoint: eventCheckpoint,
+        navigation: farmingNavigation,
+        persist: persistSettings,
+        log: anniversaryLog,
+        goobrawlStillFighting: eventReturns.goobrawlStillFighting,
+        begin: eventReturns.begin,
+        finishIfReady: eventReturns.finishIfReady,
+      });
+      const {
+        mode: huntModeRoute,
+        blacklist: huntBlacklistRoute,
+        settings: huntSettingsRoute,
+        controls: huntControlRoutes,
+      } = createHuntRoutes(state, {
+        now: () => Date.now(),
+        write: writeSettings,
+        fighting: (fightState, names) => convoyFighting(fightState, names),
+        participants: huntParticipants,
+        intent: (name) => farmingNavigation.intent(name),
+        release: () => { if (columns.escape) survival.release(); },
+        authorize: (...args) => farmingNavigation.authorize(...args),
+        monsterDestination,
+        clear: clearHunt,
+        selectedDestination,
+        convoy: start,
+        begin: (...args) => hunt.begin(...args),
+        waypoint: (name) => farmingNavigation.waypoint(name),
+        persist: persistSettings,
+        owned: ownedCharacter,
+        ownsTravel: priority,
+        ladder: huntLadder,
+        fresh: (cycle) => hunt.fresh(cycle),
+        cancelConvoy: cancelHuntConvoy,
+        start: (cycle, location, label, stage) => hunt.start(cycle, location, label, stage),
+        group,
+      });
+      const eventRecoveryRoutes = createEventRecoveryRoutes(state, {
+        owned: ownedCharacter,
+        enabled: eventsEnabledFor,
+        participants: one ? own : anniversaryCombatParticipants,
+        active,
+        abort: finishAnniversaryAbort,
+        begin: eventReturns.begin,
+        snapshot: publicAnniversaryState,
+        persist: persistSettings,
+      });
+      const {
+        events: eventAcknowledgementRoutes,
+        engagement: convoyEngagementRoutes,
+        acknowledgements: convoyAcknowledgementRoutes,
+      } = createCoordinatorNavigationActions(state, {
+        now: () => Date.now(),
+        owned: ownedCharacter,
+        walkFailed,
+        farmingLive: () => tasks.farmingLive(group()),
+        intent: (name) => farmingNavigation.intent(name),
+        group: groupedCombatSnapshot,
+        persist: persistSettings,
+        selectedDestination,
+        finishReturn: eventReturns.finishIfReady,
+        contains: (...args) => farmZones.contains(...args),
+        huntOwns: priority,
+        engage: (engageState, body, options) => convoyNavigation.engage(engageState, body, options),
+        acceptArrival,
+        waypoint: (name) => farmingNavigation.waypoint(name),
+        start,
+        active,
+        members: () => farmingNavigation.members(),
+        valid: (validState, body) => convoyNavigation.validReport(validState, body),
+        history: persistHistory,
+        hold: (holdState, ...args) => convoyNavigation.hold(holdState, ...args),
+        error: (message) => console.error(message),
+      });
+      // The group's shared walk (navigation/shared-walk.ts). The party's walks wait for its escape.
+      const walks = {
+        now: Date.now, members, owned: ownedCharacter, enabled: eventsEnabledFor, start, live: () => liveTask(group()), persist: persistSettings, cancel, group,
+        allowed: (activity: string, takeover?: WalkTakeover) => tasks.walkAllowed(state, activity, kind, takeover),
+      };
+      return { state, farmingNavigation, partyConvoys, groupedCombatSnapshot, huntParticipants, hunt, huntTick: hunt, farmAreaNavigation, heartbeatResponse,
+        eventReturns, eventObservations, eventRecoveryRoutes, huntModeRoute, huntBlacklistRoute, huntSettingsRoute, huntControlRoutes,
+        eventAcknowledgementRoutes, convoyEngagementRoutes, convoyAcknowledgementRoutes, walks };
     }
 
-    function watchCharacterCode(
-      char_name: Parameters<typeof characterCode.watch>[0],
-      char_block: Parameters<typeof characterCode.watch>[1],
+    // A solo group's composition, plus the two pieces the party's own routes hold for the party:
+    // the focus route and a target mode entry's selection, which moves this character alone with
+    // the same manual-monster walk.
+    function soloGroup(name: string) {
+      const group = composeCombatGroup(farmingScopes.view(name), 'solo'), { state, farmingNavigation } = group;
+      const modeSelection = createMonsterSelection(state, {
+        now: Date.now,
+        destination: () => null, release: () => {}, clearHunt: () => clearCoordinatorHunt(state, () => group.partyConvoys.cancel()),
+        members: () => [name], authorize: (...args) => farmingNavigation.authorize(...args),
+        start: group.walks.start, startPhoenix: () => {}, stopPhoenix: () => {},
+        persist: persistSettings, validPassive: () => false, setPassive: () => ({ ok: false, field: "passiveHunting", error: "Passive hunting belongs to the party's scope" }),
+        write: writeSettings,
+        invalidate: (...args) => farmingNavigation.invalidate(...args),
+      });
+      return { ...group,
+        focusRoute: createFocusRoute(state, {
+          focusChanged: () => group.farmAreaNavigation.focusChanged(),
+          owned: ownedCharacter, members: () => [name], invalidate: (...args) => farmingNavigation.invalidate(...args), persist: persistSettings,
+          write: writeSettings,
+        }),
+        scopePorts: scopePorts(state, { members: () => [name], select: (id, location) => modeSelection.select(id, location, true) }),
+        addonFarmingRoute: tasks.slots.route(state, () => name), addonCommandRoute: addonRoutes.command(state, () => name) };
+    }
+
+    // A target mode entry's ports for one farming scope (`target.mode`). When the entry waits is
+    // The tasks owner's `busy` (runtime/tasks/coordinator/install.ts).
+    function scopePorts(state: typeof party, ports: { members(): string[];
+      select(id: string, location: Parameters<typeof monsterSelectionRoutes.modeTarget>[1]): string[] | null;
+      passive?: { rule(id: string): unknown; set(rules: Record<string, unknown>, by: string): SettingsWriteResult } }): ScopePorts {
+      return { members: ports.members, select: ports.select, passive: ports.passive, write: (changes, by) => writeSettings({ changes, by }),
+        focus: (ids: string[]) => { writeSpot(state, { monsterFocus: ids }); },
+        destination: (type: string) => coordinatorHuntDestination(state, type, false),
+        radius: () => searchReach(state.monsterSearchRadiusByCharacter, state.leader), persist: persistSettings };
+    }
+
+    function activeNames() {
+      return activeCoordinatorNames(party.statuses, Date.now());
+    }
+    // The lifecycle owner's answer whether a member is online by any client (roster-projection.ts
+    // `online`): the escape, the Cave and the event holds ask it before they drop a member whose
+    // reports stopped.
+    function online(name: string) {
+      return rosterProjection.online(name);
+    }
+
+    // movement's walks: the convoy step, the active walk's cancel and a member's navigation
+    // intent.
+    function stepAllConvoys() { return stepWalks(groups.combat(), convoyNavigation); }
+
+    function cancelActiveConvoy() {
+      return partyConvoys.cancel();
+    }
+
+    function navigationIntentOf(name: string): import("../movement/api/coordinator.ts").NavigationIntent { return tasks.holds.intent(name, farmingNavigation.intent(name)); }
+
+    // The hunting owner's Hunt record clear.
+    function clearMonsterHuntState() {
+      return clearCoordinatorHunt(party, cancelActiveConvoy);
+    }
+
+    // The events owner's anniversary: its log, counts, trade identity, public state and
+    // return walk.
+    function anniversaryLog(
+      message: Parameters<typeof activity.anniversary>[0],
+      level: Parameters<typeof activity.anniversary>[1] = "info",
+      details?: Parameters<typeof activity.anniversary>[2],
     ) {
-      characterCode.watch(char_name, char_block);
+      activity.anniversary(message, level, details);
     }
 
-    function ensureCharacterBlock(name: Parameters<typeof workerSetup.ensure>[0]) {
-      return workerSetup.ensure(name);
+    function anniversaryCounts() {
+      return anniversarySupplies.counts();
     }
 
-    function assignHeadlessSlot(
-      slot: Parameters<typeof workerSetup.assign>[0],
-      name: Parameters<typeof workerSetup.assign>[1],
+    function anniversaryIdentityAlreadyTraded(
+      identity: Parameters<typeof anniversarySupplies.alreadyTraded>[0],
     ) {
-      workerSetup.assign(slot, name);
+      return anniversarySupplies.alreadyTraded(identity);
+    }
+
+    function publicAnniversaryState() {
+      return anniversarySnapshot.snapshot();
+    }
+
+    function anniversaryFallbackDestination(_candidate?: unknown) {
+      return farmingNavigation.waypoint(party.leader);
+    }
+
+    function abortAnniversaryRound(body: Parameters<typeof anniversaryReturns.abort>[0]) {
+      return anniversaryReturns.abort(body);
+    }
+
+    function finishAnniversaryAbort(
+      cycle: Parameters<typeof anniversaryReturns.finishAbort>[0],
+      round: Parameters<typeof anniversaryReturns.finishAbort>[1],
+      target: Parameters<typeof anniversaryReturns.finishAbort>[2],
+      name: Parameters<typeof anniversaryReturns.finishAbort>[3],
+      reason: Parameters<typeof anniversaryReturns.finishAbort>[4],
+    ) {
+      return anniversaryReturns.finishAbort(cycle, round, target, name, reason);
+    }
+
+    function scheduleAnniversaryReturnConvoy() {
+      coordinatorEvents.anniversaryDispatch();
+    }
+
+    function reconcileAnniversaryReturnFromStatus(
+      name: Parameters<typeof anniversaryReturns.reconcile>[0],
+      status: Parameters<typeof anniversaryReturns.reconcile>[1],
+    ) {
+      return anniversaryReturns.reconcile(name, status);
+    }
+
+    // The call budget's merchant realm: the realm's participants, its control payload and whether a
+    // realm move holds the merchant.
+    function realmParticipants() {
+      return rosterProjection.participants();
+    }
+
+    function realmControlPayload() {
+      return rosterProjection.control();
+    }
+
+    function realmOwnsMerchant() {
+      return realmOperationOwnsCharacter(party.realmSwitch, party.merchantCharacter);
+    }
+
+    // The merchant job owner's merchant jobs: the activity log, the job's priority and stamp, the
+    // collection and capacity reads, the queue, the giveaways and the luck.
+    function merchantLog(
+      message: Parameters<typeof activity.merchant>[0],
+      level: Parameters<typeof activity.merchant>[1] = "info",
+      details?: Parameters<typeof activity.merchant>[2],
+    ) {
+      activity.merchant(message, level, details);
+    }
+
+    function publicMerchantJob(job?: Parameters<typeof publicOverview.job>[0]) {
+      return publicOverview.job(job);
+    }
+
+    function merchantRoutinePriority(
+      reason: Parameters<typeof routinePriorityOf>[1],
+    ) {
+      return routinePriorityOf(party.merchantRoutinePriorities, reason);
+    }
+
+    function stampMerchantJob<T extends Parameters<typeof stampJob>[0]>(
+      job: T,
+    ) {
+      return stampJob(job, merchantJobPriority, Date.now());
+    }
+
+    function merchantJobPriority(
+      job: Parameters<typeof coordinatorMerchantPriority>[1],
+    ) {
+      return coordinatorMerchantPriority(party, job);
+    }
+
+    function merchantTransferCapacityBlocked(
+      job?: Parameters<typeof coordinatorMerchantTransferBlocked>[1],
+    ) {
+      return coordinatorMerchantTransferBlocked(party, job);
+    }
+
+    function collectionSlotCount(
+      name: Parameters<typeof coordinatorCollectionSlots>[1],
+    ) {
+      return coordinatorCollectionSlots(party, name);
+    }
+
+    function merchantCollectionNearby(
+      name: Parameters<typeof coordinatorCollectionNearby>[1],
+    ) {
+      return coordinatorCollectionNearby(party, name, () => Date.now());
+    }
+
+    function markedCollectionReady(
+      job: Parameters<typeof coordinatorCollectionReady>[1],
+    ) {
+      return coordinatorCollectionReady(party, job, () => Date.now());
+    }
+
+    function pickJobByPriority(facts: Parameters<typeof takeCoordinatorMerchantJob>[1], run?: string) {
+      return takeCoordinatorMerchantJob(party, facts, run);
+    }
+
+    function merchantCapacitySignature(
+      name: Parameters<typeof coordinatorMerchantCapacitySignature>[1],
+    ) {
+      return coordinatorMerchantCapacitySignature(party, name);
+    }
+
+    function queueMerchant(
+      names: Parameters<typeof merchantQueue.queue>[0],
+      reason: Parameters<typeof merchantQueue.queue>[1] = "service",
+    ) {
+      merchantQueue.queue(names, reason);
+    }
+
+    function scheduleNearbyGiveaways(status?: Parameters<typeof giveawayScheduler.schedule>[0]) {
+      giveawayScheduler.schedule(status);
+      giveawayScheduler.scheduleMarket(party.aldata.merchants);
+    }
+
+    function hasStrongMluck(status?: Parameters<typeof strongMluck>[0]) {
+      return strongMluck(status, party.merchantCharacter);
+    }
+
+    function mluckTravelLead(
+      targetStatus: Parameters<typeof mluckLead>[1],
+    ) {
+      return mluckLead(
+        party.statuses[String(party.merchantCharacter)],
+        targetStatus,
+      );
+    }
+
+    function scheduleMerchantLuck() {
+      return luckScheduler.schedule();
+    }
+
+    function mluckScheduleStatus() {
+      return luckScheduler.snapshot();
+    }
+
+    // The items owner's items, bank and commerce: the bank vaults and state, the restock, the market
+    // feeds and bids, the reservations and the BankBoi.
+    function loadBankVaultDefinitions() {
+      return loadCoordinatorBankVaults(initialVersion, gameDataPorts);
+    }
+
+    function persistBankState() {
+      persistence.bank();
+    }
+
+    function queueExchangeStorage(
+      job: Parameters<typeof storageService.queueExchange>[0],
+      shortages?: Parameters<typeof storageService.queueExchange>[1],
+    ) {
+      return storageService.queueExchange(job, shortages);
+    }
+
+    function adoptReservedBankboiCargo() {
+      return reservedBankboiCargo.reconcile();
+    }
+
+    function policyFor(name: string | null) {
+      return restockPolicyOf(party.restockPolicies, name);
+    }
+
+    function restockSatisfied(
+      name: string,
+      items: Parameters<typeof restockInventorySatisfied>[0],
+    ) {
+      return restockInventorySatisfied(items, () => policyFor(name));
+    }
+
+    async function aldataFetch(
+      path: Parameters<typeof aldataClient.request>[0],
+      options: Parameters<typeof aldataClient.request>[1] = {},
+    ) {
+      return aldataClient.request(path, options);
+    }
+
+    // The dashboard's read of the market asks the feeds.
+    function publicALDataState() {
+      marketFeeds.ask();
+      return aldataService.snapshot();
+    }
+
+    function removeQueuedBidPurchases(itemId: Parameters<typeof bidPurchases.removeQueued>[0]) {
+      return bidPurchases.removeQueued(itemId);
+    }
+
+    function fulfillStandBid(
+      item: Parameters<typeof bidPurchases.fulfill>[0],
+      quantity: Parameters<typeof bidPurchases.fulfill>[1],
+    ) {
+      return bidPurchases.fulfill(item, quantity);
+    }
+
+    function queuePontyMatches() {
+      return bidPurchases.queuePonty();
+    }
+
+    function queueALDataMatches() {
+      return bidPurchases.queueMarket();
+    }
+
+    async function refreshALData(kind: Parameters<typeof aldataService.refresh>[0] = "all") {
+      return aldataService.refresh(kind);
+    }
+
+    // A market change publishes through the one publication check.
+    function scheduleALDataPublish() {
+      void marketFeeds.publish();
+    }
+
+    function observeStandMarket(listings: Parameters<typeof localMarket.observe>[0]) {
+      return localMarket.observe(listings);
+    }
+
+    function reconcileAutomaticMerchantSales(
+      status?: Parameters<typeof automaticMerchantSales.reconcile>[0],
+    ) {
+      return automaticMerchantSales.reconcile(status);
+    }
+
+    function removeInventoryReservations(
+      name: Parameters<typeof inventoryReservations.remove>[0],
+      slot: Parameters<typeof inventoryReservations.remove>[1],
+      item: Parameters<typeof inventoryReservations.remove>[2],
+    ) {
+      inventoryReservations.remove(name, slot, item);
+    }
+
+    function clearResolvedUpgradeMarks(
+      name: Parameters<typeof clearCoordinatorResolvedUpgrades>[1],
+      resolved: Parameters<typeof clearCoordinatorResolvedUpgrades>[2],
+    ) {
+      clearCoordinatorResolvedUpgrades(party, name, resolved);
+    }
+
+    function clearIncomingCompoundReservation(
+      name: Parameters<typeof inventoryReservations.clearIncoming>[0],
+      item: Parameters<typeof inventoryReservations.clearIncoming>[1],
+    ) {
+      inventoryReservations.clearIncoming(name, item);
+    }
+
+    function prioritizedStandBids(
+      reason: Parameters<typeof coordinatorPrioritizedBids>[1],
+    ) {
+      return coordinatorPrioritizedBids(party, reason);
+    }
+
+    function queueLocalStandSync() {
+      return merchantQueue.localStandSync();
+    }
+
+    function scheduleAutoCompound(
+      name: Parameters<typeof improvementScheduler.compound>[0],
+      status?: Parameters<typeof improvementScheduler.compound>[1],
+    ) {
+      return improvementScheduler.compound(name, status);
+    }
+
+    function scheduleAutoExchange(status?: Parameters<typeof improvementScheduler.exchange>[0]) {
+      return improvementScheduler.exchange(status);
     }
 
     async function restoreMerchantAfterBankboi(
@@ -2456,43 +1865,43 @@ export function startCoordinatorApplication(
     async function maybeStartBankboiService() {
       return bankboiService.start();
     }
-    //attempts to softkill child processes
-    //by sending an ipc if the client is connected and giving some timeout
-    //why not actual SIGTERM? cause windows cant even
-    async function softkill_block(
-      char_block: Parameters<typeof characterManager.stop>[0],
-      reason: Parameters<typeof characterManager.stop>[1] = "requested worker restart",
-    ) {
-      return characterManager.stop(char_block, reason);
+
+    // The lifecycle owner's lifecycle and roster: the owned characters, the roster and slot
+    // payloads and the shutdown.
+    function ownedCharacter(name: Parameters<typeof rosterProjection.owned>[0]) {
+      return rosterProjection.owned(name);
     }
 
-    function update_siblings_and_acc(info: Parameters<typeof characterManager.siblings>[0]) {
-      characterManager.siblings(info);
+    function rosterPayload() {
+      return rosterProjection.roster();
     }
-    function start_char(char_name: Parameters<typeof characterManager.start>[0]) {
-      return characterManager.start(char_name);
+
+    function nativeName() {
+      return party.nativeOwner;
     }
-    //TODO beta new logic for #5
-    //i need to implement decent lifecycle-handling
+
+    function slotPayload() {
+      return rosterProjection.slots();
+    }
+
     async function shutdown(signal: Parameters<typeof shutdownCoordinator>[0]) {
       return shutdownCoordinator(signal);
     }
-    coordinatorPolicies.startCoordinatorCharacters(character_manage, party, {
+
+    startCharacters({
       events: process,
       shutdown,
-      watch: watchCharacterCode,
-      owned: ownedCharacter,
-      ensure: ensureCharacterBlock,
-      start: start_char,
-      persist: persistRosterState,
-      later: (callback, milliseconds) => setTimeout(callback, milliseconds),
-      watchCode: cfg.watch_CODE,
-      watchGenerations,
-      stop: softkill_block,
-      report: (message, details) => console.log(message, details),
-      subscribeAccount: () => my_acc.add_listener(update_siblings_and_acc),
+      workers: characterWorkers,
+      code: characterCode,
+      watchCode: !!cfg.watch_CODE,
+      artifact: !!process.env.AL_CONSOLE_ARTIFACT,
+      subscribeAccount: listener => my_acc.add_listener(listener),
+      // A coordinator that starts under a deploy lease is a deploy's reload; one with the clean
+      // shutdown's resume mark resumes.
+      started: () => ({ realm: rosterProjection.homeRealm() ?? null, generation: process.env.AL_CONSOLE_ARTIFACT ?? null,
+        reason: consoleControl.state().drain ? 'reload' : consoleControl.status().resume ? 'resume' : 'start' }),
+      notify: (hook, payload) => { partyHooks().notify(hook, payload); },
+      timers: scopes.act13,
     });
-  })().catch((e) => {
-    console.error("failed to start caracAL", e);
-  });
+  })().catch(failStart);
 }

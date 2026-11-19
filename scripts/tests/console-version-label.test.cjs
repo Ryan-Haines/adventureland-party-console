@@ -40,14 +40,13 @@ test('hosting compares the tagged source version while retaining notification-on
   async function status() {
    let value;await hosting.route({method:'GET'},{writeHead(){},end(body){value=JSON.parse(body);}},'/console-update');return value;
   }
-  let state;
-  for(let i=0;i<50;i++){state=await status();if(state.phase!=='checking')break;await new Promise(r=>setTimeout(r,10));}
+  await hosting.polled;
+  let state=await status();
   assert.equal(state.current,'1.0.2');assert.equal(state.displayVersion,'1.0.2 + main');
   assert.equal(state.phase,'idle');assert.equal(state.available,undefined);assert.equal(state.managed,false);assert.equal(manifestCalls,0);
   latest='1.0.3';
   const {Readable}=require('node:stream');const request=Readable.from(['{}']);request.method='POST';request.headers={};
   await hosting.route(request,{writeHead(){},end(){}},'/console-update/check');
-  for(let i=0;i<50 && !manifestCalls;i++)await new Promise(r=>setTimeout(r,10));
   assert.equal(manifestCalls,1,'a genuinely newer release still requests its manifest');
   state=await status();assert.equal(state.available,'1.0.3');assert.equal(state.phase,'available');assert.equal(state.managed,false);
  }finally{global.fetch=originalFetch;await fs.rm(root,{recursive:true,force:true});}

@@ -1,7 +1,8 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const {reconcileDeliveries,acknowledgeDelivery}=require('../../runtime/coordinator/merchant/delivery-recovery.ts');
-const {createMerchantCompletionRoute}=require('../../runtime/coordinator/http/merchant-completion.ts');
+const {reconcileDeliveries,acknowledgeDelivery}=require('../../runtime/merchant-jobs/coordinator/deliveries.ts');
+const {createMerchantCompletionRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
 const {fixture}=require('./helpers/coordinator-completion.cjs');
+const {installVisits}=require('./helpers/merchant-visits.cjs');
 const orb={name:'orbg',level:2,p:null};
 const status=(items=[],slots={})=>({seenAt:100000,items,slots});
 
@@ -90,9 +91,8 @@ test('equip receipt is idempotent across persisted state reload',()=>{
  assert.equal(acknowledgeDelivery(marks,{id:'d'}),undefined);assert.equal(marks.length,1);assert.equal(marks[0].awaitingEquip,true);
 });
 function client(storage=new Map(),request=async()=>{}) {
- const src=fs.readFileSync('characters/shared.js','utf8'),start=src.indexOf('  var recoveredDeliveryJournal = false;'),end=src.indexOf('  async function prepareBankUpgrades',start);
- let sends=0;const context={root:{localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}},character:{name:'M',ctype:'merchant'},request,merchantSendItem:async()=>{sends++;}};
- vm.createContext(context);vm.runInContext(src.slice(start,end),context);return {context,storage,sends:()=>sends};
+ let sends=0;const context={root:{localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}},character:{name:'M',ctype:'merchant'},request};
+ installVisits(context,{root:()=>context.root,merchantSendItem:async()=>{sends++;}});return {context,storage,sends:()=>sends};
 }
 test('lost confirmation response and runtime reload retry only the receipt',async()=>{
  let fail=true;const a=client(new Map(),async(_url,{body})=>{if(body.phase==='confirmed'&&fail)throw Error('offline');});
@@ -107,10 +107,15 @@ test('restart during send blocks that delivery without another game send',async(
  assert.equal(await c.context.sendReservedMerchantDelivery({target:'F'},{id:'d',item:orb},4),false);assert.equal(c.sends(),0);
 });
 test('missing reserved delivery does not prevent a valid later delivery or collection',async()=>{
- const src=fs.readFileSync('characters/shared.js','utf8'),start=src.indexOf('        for (var markedDeliveryIndex = 0;'),end=src.indexOf('        for (var d = 0;',start);
- const sent=[],context={command:{target:'F',merchantDeliveries:[{id:'missing',item:orb},{id:'valid',slot:3,item:{name:'sword'}}]},deliveredMerchantItems:[],activity:[],character:{items:{3:{name:'sword'}}},sameItem:(a,b)=>a?.name===b.name,findItem:()=>-1,sendReservedMerchantDelivery:async(_c,m)=>{sent.push(m.id);return true;},collected:false};
- vm.createContext(context);await vm.runInContext('(async()=>{'+src.slice(start,end)+'collected=true;})()',context);
- assert.deepEqual(sent,['valid']);assert.equal(context.collected,true);assert.equal(context.deliveredMerchantItems.length,1);
+ // The service visit's delivery pass (visits.ts merchantService): a mark whose item is gone is skipped and the valid one is sent.
+ const sent=[],completes=[],context={character:{name:'M',ctype:'merchant',items:[null,null,null,{name:'sword'}],gold:0},request:async(url,options)=>{
+  if(url==='/merchant/complete')completes.push(options.body);return url.startsWith('/merchant/job/')?{handoff:{}}:{};},
+  sleep:async()=>{},waitForPlayer:async()=>{},meet:async()=>{},get_player:name=>({name}),sameItem:(a,b)=>a?.name===b?.name,
+  findItem:wanted=>context.character.items.findIndex(item=>item&&item.name===wanted.name),freeInventorySlots:()=>10,game_log(){}};
+ installVisits(context,{root:()=>({localStorage:{getItem:()=>null,setItem(){}}}),preloadStatScrolls:async()=>{},statusQuantity:()=>0,
+  merchantSendItem:async(_name,slot)=>{sent.push(context.character.items[slot].name);},tidyLuckySlot:async()=>{},luck:()=>({castsLuck:()=>false}),collectAfter(){}});
+ await context.merchantService({id:1,jobId:'J',target:'F',collectionOnly:true,merchantDeliveries:[{id:'missing',item:orb},{id:'valid',slot:3,item:{name:'sword'}}]});
+ assert.deepEqual(sent,['sword']);assert.equal(completes[0].success,true);assert.equal(completes[0].merchantDeliveriesDelivered.length,1);
 });
 test('legacy final receipts remain usable after IDs are assigned',()=>{
  const receipt={slot:4,item:orb},marks=[{...receipt,id:'migrated',legacy:true}];
@@ -123,9 +128,9 @@ test('an uncertain receipt arriving after confirmation cannot demote an equipmen
  assert.equal(f.state.merchantDeliveries.F[0].awaitingEquip,true);assert.equal(f.state.merchantDeliveries.F[0].blocked,undefined);
 });
 test('repeated cleanout requests do not duplicate jobs or queued logs',()=>{
- const {createMerchantHandoffRoutes}=require('../../runtime/coordinator/http/merchant-handoff.ts');
+ const {createMerchantHandoffRoutes}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
  const state={merchantCharacter:'M',merchantCurrent:null,merchantQueue:[]};let logs=0;
- const ports={owned:()=>true,queue:(names,reason)=>state.merchantQueue.push({target:names[0],reason}),log:()=>logs++};
+ const ports={offline:()=>false,owned:()=>true,queue:(names,reason)=>state.merchantQueue.push({target:names[0],reason}),log:()=>logs++};
  const response={json:x=>x,status(){return this;}},routes=createMerchantHandoffRoutes(state,ports);
  routes.cleanout({body:{character:'F'}},response);routes.cleanout({body:{character:'F'}},response);
  assert.equal(state.merchantQueue.length,1);assert.equal(logs,1);
@@ -136,9 +141,42 @@ test('cancelled or already completed delivery is never sent by a stale command',
  assert.equal(c.sends(),0);
 });
 test('equipment receipt clears only its delivery ID among identical items',()=>{
- const {createInventoryReceiptRoutes}=require('../../runtime/coordinator/http/inventory-receipts.ts');
+ const {createInventoryReceiptRoutes}=require('../../runtime/items/coordinator/routes/inventory.ts');
  const state={merchantDeliveries:{F:[{id:'first',item:orb,awaitingEquip:true},{id:'second',item:orb,awaitingEquip:true}]},commands:{F:{type:'equip-deliveries',id:9}}};
  const route=createInventoryReceiptRoutes(state,{owned:()=>true,log:()=>{},persist:()=>{}}),response={json:x=>x,status(){return this;}};
  route.equipment({body:{character:'F',commandId:9,results:[{item:orb,deliveryId:'second',success:true}]}},response);
  assert.deepEqual(state.merchantDeliveries.F.map(x=>x.id),['first']);
+});
+
+// IT26: a self improve that fails after taking a piece off puts it back in its empty
+// slot. The failure here is the coordinator's checkpoint refusing; any failure takes the same
+// path. Red on b9b5c91e: the failure left the piece in the bag.
+test('IT26: a failed self improve re-equips what it took off',async()=>{
+ const {productionHarness}=require('./helpers/items-character.cjs');
+ const staff={name:'staff',level:3};
+ const character={name:'Merchant',ctype:'merchant',items:[null,null,null],slots:{mainhand:{...staff}},bank:{},q:{}};
+ const equips=[];
+ const {production}=productionHarness({character,G:{items:{staff:{}},skills:{}},ports:{
+  unequip:async slot=>{character.items[0]=character.slots[slot];character.slots[slot]=null;},
+  equip:async(slot,name)=>{equips.push([slot,name]);character.slots[name]=character.items[slot];character.items[slot]=null;},
+  request:async path=>{if(path!=='/merchant/complete')throw Error('checkpoint down');}}});
+ await production.merchantSelfImprove({jobId:'j1',upgrades:[{equipped:true,slot:'mainhand',item:{...staff}}],statScrolls:[]}).catch(()=>{});
+ assert.deepEqual(equips,[[0,'mainhand']]);
+ assert.equal(character.slots.mainhand.name,'staff');
+});
+// B149: a restock whose supply copy is gone stays undelivered and the report says so,
+// so the next visit restocks. b9b5c91e shared.js:7148 marked it delivered with no send and no line.
+test('B149: a restock with no copy in the bag is reported undelivered and sends nothing',async()=>{
+ const sent=[],completes=[],context={character:{name:'M',ctype:'merchant',items:[null,null,null,{name:'sword'}],gold:0},request:async(url,options)=>{
+  if(url==='/merchant/complete')completes.push(options.body);return url.startsWith('/merchant/job/')?{handoff:{}}:{};},
+  sleep:async()=>{},waitForPlayer:async()=>{},meet:async()=>{},get_player:name=>({name}),sameItem:(a,b)=>a?.name===b?.name,
+  findItem:wanted=>context.character.items.findIndex(item=>item&&item.name===wanted.name),freeInventorySlots:()=>10,game_log(){},
+  G:{items:{hpot0:{g:20}}}};
+ installVisits(context,{root:()=>({localStorage:{getItem:()=>null,setItem(){}}}),preloadStatScrolls:async()=>{},collectAfter(){},
+  tidyLuckySlot:async()=>{},luck:()=>({castsLuck:()=>false}),merchantSendItem:async(_name,slot)=>{sent.push(context.character.items[slot]?.name);},
+  // The target holds none and the merchant's count says ten, so it buys none, then finds no copy to send.
+  statusQuantity:()=>0,itemSeller:()=>'fancypots',inventoryQuantity:()=>10,findInventoryItemByName:()=>-1});
+ await context.merchantService({id:1,jobId:'J',target:'F',collectionOnly:true,restock:{hp:{item:'hpot0',min:5,max:10}}});
+ assert.deepEqual(sent,[]);
+ assert.ok(completes[0].activity.some(line=>line.level==='error'&&line.message==='Restock not delivered: no hpot0 for F'),JSON.stringify(completes[0].activity));
 });

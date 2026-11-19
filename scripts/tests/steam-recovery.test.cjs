@@ -2,9 +2,17 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { JSDOM } = require('../../.caracal/node_modules/jsdom');
-const { createSteamRecovery } = require('../../runtime/steam/recovery.ts');
-const { steamBootstrap, previousSteamBootstrap, steamBridgeVersion } = require('../../runtime/steam/connection.ts');
-const { installSteamBridge } = require('../../runtime/steam/bridge.ts');
+const { createSteamRecovery } = require('../../runtime/lifecycle/roster/recovery.ts');
+const { steamBootstrap, previousSteamBootstrap, steamBridgeVersion } = require('../../runtime/lifecycle/roster/connection.ts');
+const { installSteamBridge } = require('../../runtime/lifecycle/roster/bridge.ts');
+const { hidden } = require('./helpers/declared.cjs');
+
+// The coordinator's bridge session with no handoff in flight: the handoff service's arrival check and
+// expiry find nothing to do (roster/routes.ts builds it with the real service, roster/handoff.ts).
+function bridgeSession(BridgeSession, now) {
+  return new BridgeSession({slots:[],steam:['P'],native:'P',handoff:null},{reconcileArrival(){},expire(){}},
+    {now,owned:name=>name==='P',save(){},validateParticipants(){},bridgeChanged(){}});
+}
 
 function fixture() {
   const dom = new JSDOM('<iframe id="maincode"></iframe><iframe id="icharc"></iframe>', {url:'https://adventure.land'});
@@ -19,7 +27,17 @@ function fixture() {
   let supervisor;
   const install = (persist=async()=> '100') => supervisor = createSteamRecovery(host,'bootstrap',persist,s=>logs.push(s));
   install();
-  return {host, companion, reply, starts, logs, install, get supervisor(){return supervisor;},
+  // The game page around installSteamBridge, with no supervisor of the fixture's own: the saved CODE
+  // in slot 100 at `base`, the code cache and the page's calls, each replaceable by a row.
+  const base='http://127.0.0.1:924', cache=new Map();
+  const bridgeHost=page=>{
+    supervisor.dispose();
+    host.localStorage.setItem('party-console-bootstrap-slot-v1:'+base,'100');
+    Object.assign(host,{sessionStorage:host.localStorage,location:{},X:{codes:{'100':['Existing CODE',0]},characters:[{name:'P',id:'p'}]},
+      storage_get:k=>cache.get(k),storage_set:(k,v)=>cache.set(k,v),setTimeout:()=>1,clearTimeout(){},get_active_characters:()=>({}),
+      api_call:async()=>({success:true})},page);
+  };
+  return {host, companion, reply, starts, logs, install, base, cache, bridgeHost, get supervisor(){return supervisor;},
     close(){supervisor.dispose();dom.window.close();}};
 }
 
@@ -87,11 +105,16 @@ test('confirmed Steam arrivals repair stale connected CODE after a coordinator r
       ()=>{f.companion.server_identifier='II';f.reply.operation.releasedAt=undefined;},
       ()=>{f.reply.operation.releasedAt=500;f.reply.operation.multi.desired=['P'];},
       ()=>{f.reply.operation.multi.desired=['P','C'];f.host.localStorage.setItem('party-code-stopped:C','1');},
-      ()=>{f.host.localStorage.removeItem('party-code-stopped:C');f.companion.socket.connected=false;},
+      // LF25: another window (Q) holds the released handoff.
+      ()=>{f.host.localStorage.removeItem('party-code-stopped:C');f.reply.operation.multi={primary:'Q',desired:['Q','C']};},
+      ()=>{f.reply.operation.multi={primary:'P',desired:['P','C']};f.companion.socket.connected=false;},
     ]) { change(); now+=30000; await f.supervisor.tick(f.reply); }
     assert.deepEqual(f.starts,['C']);
     f.companion.socket.connected=true;f.reply.operation.phase='navigate';now+=30000;
     await f.supervisor.tick(f.reply);assert.deepEqual(f.starts,['C','C']);
+    // A reply that names no primary leaves the handoff with the window that holds it.
+    f.reply.primary=null;now+=30000;
+    await f.supervisor.tick(f.reply);assert.deepEqual(f.starts,['C','C','C'],'this window holds the handoff and repairs its member');
   } finally {f.close();}
 });
 
@@ -125,14 +148,9 @@ test('previous managed bootstrap remains recognizable for migration', async()=>{
 test('managed slot upgrades preserve unrelated saved code and install primary and companion autorun',async()=>{
   for (const variant of ['current', 'legacy', 'previous', 'unrelated']) {
     const unrelated=variant==='unrelated';
-    const f=fixture(), saved=[], cache=new Map();
-    f.supervisor.dispose();
-    const base='http://127.0.0.1:924', key='party-console-bootstrap-slot-v1:'+base;
-    f.host.localStorage.setItem(key,'100');
+    const f=fixture(), saved=[], base=f.base;
     const legacy=`globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis.__partyServer;$.getScript(${JSON.stringify(base+'/CODE/adventure_land/universal-loader.js')});`;
-    Object.assign(f.host,{sessionStorage:f.host.localStorage, location:{}, X:{codes:{'100':['Existing CODE',0]},characters:[{name:'P',id:'p'},{name:'C',id:'c'}]},
-      storage_get:k=>cache.get(k),storage_set:(k,v)=>cache.set(k,v),
-      setTimeout:()=>1,clearTimeout(){},get_active_characters:()=>({C:'code'}),
+    f.bridgeHost({X:{codes:{'100':['Existing CODE',0]},characters:[{name:'P',id:'p'},{name:'C',id:'c'}]},get_active_characters:()=>({C:'code'}),
       api_call:async(method,body)=>{saved.push(body);return {success:true};},
       fetch:async url=>url.startsWith('/code.js') ? new Response(unrelated?'// my personal code':variant==='previous'?previousSteamBootstrap(base):variant==='current'?steamBootstrap(base):legacy) : Response.json({...f.reply,members:[]})});
     try {
@@ -141,8 +159,83 @@ test('managed slot upgrades preserve unrelated saved code and install primary an
       assert.equal(disposed,1);assert.equal(f.host.__partySteamBridge.version,steamBridgeVersion);assert.equal(f.host.__partySteamBridge.server,base);
       assert.equal(saved.length,1);
       assert.equal(saved[0].slot,unrelated?'99':'100');
-      const stored=JSON.parse(cache.get('code_cache'));
+      const stored=JSON.parse(f.cache.get('code_cache'));
       for(const id of ['p','c']){assert.equal(stored['run_'+id],'1');assert.equal(stored['code_'+id],steamBootstrap(base));}
     } finally {f.host.__partySteamBridge.dispose();f.close();}
   }
+});
+
+// steamRecoveryAttemptsBound (lifecycle/fields.ts, bigcheck/bounds.md): a game window whose CODE never
+// reports healthy trips the bound once, at the restart that reaches it; it queues on the Steam window
+// (status/character/bounds.ts), the bridge sends the queue with its next report and the coordinator's
+// bridge session hands it to the status owner's bound record.
+test('steamRecoveryAttemptsBound: a CODE that never reports healthy trips the bound and records it', async t => {
+  let now=1000; t.mock.method(Date,'now',()=>now); const f=fixture();
+  const {boundsPending,boundsSent}=require('../../runtime/status/api.ts');
+  try {
+    boundsSent(boundsPending().length);
+    f.reply.steam=['P']; await f.supervisor.tick(f.reply);
+    for (const delta of [5000,5000,10000,20000,30000]) {now+=delta;await f.supervisor.tick(f.reply);}
+    const firings=boundsPending();
+    assert.equal(firings.length,1); assert.equal(firings[0].bound,'steamRecoveryAttemptsBound'); assert.equal(firings[0].subject,'P');
+    const {BridgeSession}=require('../../runtime/lifecycle/roster/bridge-session.ts');
+    const {boundFirings}=require('../../runtime/status/coordinator/api.ts');
+    const before=boundFirings().counts.steamRecoveryAttemptsBound||0;
+    const session=bridgeSession(BridgeSession,()=>now);
+    await session.receive({clientId:'bridge-1',version:1,character:'P',boundsFired:firings});
+    assert.equal(boundFirings().counts.steamRecoveryAttemptsBound,before+1);
+    const entry=boundFirings().entries.at(-1); assert.equal(entry.owner,'13'); assert.equal(entry.subject,'P');
+    boundsSent(firings.length); assert.deepEqual(boundsPending(),[]);
+  } finally {f.close();}
+});
+
+// steamSlotCheckMs and steamBridgeRequestMs (lifecycle/fields.ts, bigcheck/bounds.md): a slot check the
+// game's server never answers, and a bridge post the coordinator never answers, end at their kept
+// bounds; each firing queues on the Steam window for the bridge's next report.
+test('a slot check and a bridge post that never answer end at their kept bounds and queue the firings',async t=>{
+  const bounds=[];
+  t.mock.method(AbortSignal,'timeout',ms=>{const c=new AbortController();bounds.push({ms,trip:()=>c.abort(new DOMException('bound','TimeoutError'))});return c.signal;});
+  const {boundsPending,boundsSent}=require('../../runtime/status/api.ts');
+  boundsSent(boundsPending().length);
+  const f=fixture(), polls=[];
+  let bridgeHangs=false;
+  const hang=init=>new Promise((_resolve,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason)));
+  f.bridgeHost({setTimeout:fn=>{polls.push(fn);return 1;},
+    fetch:async(url,init)=>url.startsWith('/code.js')||bridgeHangs?hang(init):Response.json({...f.reply,steam:['P'],members:[]})});
+  try {
+    installSteamBridge(f.host);await new Promise(r=>setImmediate(r));
+    bounds.filter(b=>b.ms===hidden('steamSlotCheckMs')).at(-1).trip();await new Promise(r=>setImmediate(r));
+    bridgeHangs=true;polls.at(-1)();await new Promise(r=>setImmediate(r));
+    bounds.filter(b=>b.ms===hidden('steamBridgeRequestMs')).at(-1).trip();await new Promise(r=>setImmediate(r));
+    const firings=boundsPending();
+    assert.deepEqual(firings.map(x=>[x.bound,x.owner,x.state.what]),
+      [['steamSlotCheckMs','13','code.js'],['steamBridgeRequestMs','13','/steam/bridge']]);
+    // A window with no character connected still reports its firings, under its own name.
+    const {BridgeSession}=require('../../runtime/lifecycle/roster/bridge-session.ts');
+    const {boundFirings}=require('../../runtime/status/coordinator/api.ts');
+    const session=bridgeSession(BridgeSession,()=>Date.now());
+    await session.receive({clientId:'bridge-2',version:1,character:null,boundsFired:firings});
+    assert.deepEqual(boundFirings().entries.slice(-2).map(e=>[e.bound,e.subject]),[['steamSlotCheckMs','Steam window'],['steamBridgeRequestMs','Steam window']]);
+  } finally {boundsSent(boundsPending().length);f.host.__partySteamBridge?.dispose();f.close();}
+});
+
+test('a running CODE whose reports fail for less than steamRunnerStaleMs keeps running', async t => {
+  let now=1000; t.mock.method(Date,'now',()=>now); const f=fixture();
+  try {
+    f.reply.steam=['P']; f.host.code_active=true;
+    f.host.document.getElementById('maincode').contentWindow.__partyStatusSuccessAt=now;
+    await f.supervisor.tick(f.reply);
+    // The live walking-return row drops every report for 10 to 20 s and expects the CODE that held
+    // its walk to resume with its route cache.
+    now=16000; await f.supervisor.tick(f.reply);
+    assert.deepEqual(f.starts,[],'a 15 s report outage is the coordinator hold, not a dead CODE');
+    const {boundsPending}=require('../../runtime/status/api.ts');
+    const fired=()=>boundsPending().filter(e=>e.bound==='steamRunnerStaleMs'&&e.subject==='P').length,before=fired();
+    now=1000+hidden('steamRunnerStaleMs'); await f.supervisor.tick(f.reply);
+    assert.deepEqual(f.starts,['P']);
+    // The silence that restarts the CODE tells the status owner's bound record once, not on each restart after it.
+    assert.equal(fired(),before+1,'the stale bound did not report');
+    now+=hidden('steamRecoveryMaxMs'); await f.supervisor.tick(f.reply);
+    assert.equal(fired(),before+1,'the stale bound reported again within one run of restarts');
+  } finally {f.close();}
 });

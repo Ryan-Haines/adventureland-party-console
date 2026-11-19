@@ -1,6 +1,6 @@
-// Drives #87's metrics service (runtime/coordinator/metrics/service.ts) the way
+// Drives #87's metrics service (runtime/status/coordinator/metrics/service.ts) the way
 // four farming characters do: one frame per character per second, each POSTed
-// at its own phase, as runtime/characters/metrics.ts sends them. Reports bytes
+// at its own phase, as runtime/status/character/telemetry.ts sends them. Reports bytes
 // appended to and compacted in the metrics journal, the live set, and how long
 // each POST waits for its acknowledgement. Real time, so the commit window and
 // the asynchronous journal writes run as they do on a console.
@@ -21,10 +21,28 @@ for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i]!.repla
 const root = path.resolve(args.get('root') || path.join(import.meta.dirname, '..'));
 const seconds = Number(args.get('seconds') || 120);
 const characterCount = Number(args.get('characters') || 4);
-const { createMetricsService } = await import(pathToFileURL(path.join(root, 'runtime/coordinator/metrics/service.ts')).href);
+const { createMetricsService } = await import(pathToFileURL(path.join(root, 'runtime/status/coordinator/metrics/service.ts')).href);
 
 const counters = { appendBytes: 0, appends: 0, compactionBytes: 0, compactions: 0 };
 const fsModule = createRequire(import.meta.url)('node:fs');
+// The settings owner's CoordinatorJsonlStore (runtime/settings/coordinator/persistence/jsonl-store.ts), which the
+// service writes through today, appends with writeFileSync on the journal's descriptor and compacts
+// into a descriptor it opens on the `.compact` path. The async hooks below measure a --root checkout
+// whose journal wrote with fs.writeFile and fs.promises.open, as b9b5c91e's MetricsJsonlStore did.
+const compacting = new Set<number>();
+const openSync = fs.openSync, writeFileSync = fs.writeFileSync;
+fsModule.openSync = (target: fs.PathLike, ...rest: unknown[]) => {
+  const descriptor = (openSync as (...values: unknown[]) => number)(target, ...rest);
+  if (String(target).endsWith('.compact')) { compacting.add(descriptor); counters.compactions++; }
+  return descriptor;
+};
+fsModule.writeFileSync = (target: unknown, data: string, ...rest: unknown[]) => {
+  if (typeof target === 'number' && compacting.has(target)) counters.compactionBytes += Buffer.byteLength(data);
+  else if (typeof target === 'number') { counters.appendBytes += Buffer.byteLength(data); counters.appends++; }
+  return (writeFileSync as (...values: unknown[]) => void)(target, data, ...rest);
+};
+const closeSync = fs.closeSync;
+fsModule.closeSync = (descriptor: number) => { compacting.delete(descriptor); return closeSync(descriptor); };
 const writeFile = fs.writeFile;
 fsModule.writeFile = (target: unknown, data: string, ...rest: unknown[]) => {
   if (typeof target === 'number') { counters.appendBytes += Buffer.byteLength(data); counters.appends++; }

@@ -1,25 +1,12 @@
 import {waitForGameplay} from './network-clock';
 import {observeNativeNavigationHttp} from './native-navigation-http-observer';
 import {installTerminalSettlementFault} from './native-terminal-settlement-fault';
-import {observeNativeStatus} from './native-status-observer';
-import { test, expect, type LiveGame } from './live-fixtures';
+import { test, expect, type LiveGame, reloadCode } from './live-fixtures';
 import { killNativeCharacter } from './hunt-interruption-helpers';
-import { nativeEventSpawn } from './game/event-spawn';
+import { announceSpawn, nativeEventSpawn } from './game/event-spawn';
 
 const W = 'E2EWarrior', P = 'E2EPriest', fighters = [W, P];
 
-const statusObservers=new Map<string,Awaited<ReturnType<typeof observeNativeStatus>>>();
-test.beforeEach(async({live},info)=>{
-  if(info.title.includes('recovers death and returns after deselection')||info.title.includes('returns after native death')){
-    try{statusObservers.set(info.testId,await observeNativeStatus(live.clients,fighters));}
-    catch(error){await info.attach('native-status-observer-install-error',{body:String(error),contentType:'text/plain'});throw error;}
-  }
-});
-test.afterEach(async({},info)=>{
-  const observer=statusObservers.get(info.testId);if(!observer)return;
-  try{await info.attach('native-event-status-metadata',{body:JSON.stringify(await observer.finish()),contentType:'application/json'});}
-  finally{statusObservers.delete(info.testId);}
-});
 
 test.beforeEach(async ({live},info) => {
   // Reset only declarations from previous Halloween cases, before this case
@@ -120,37 +107,10 @@ async function world(live: LiveGame, event: string) {
     players:Object.fromEntries(${JSON.stringify(fighters)}.map(name=>{const p=get_player(name);return [name,p?{map:p.map,x:p.x,y:p.y,rip:!!p.rip}:null]}))}})()`);
 }
 
-async function announceSpawn(live: LiveGame, event: string, leadMs: number) {
-  return live.admin(`output=(()=>{
-    const type=${JSON.stringify(event)},spawn=new Date(Date.now()+${leadMs}),announcement={live:false,spawn};
-    globalThis.__e2eHalloweenAnnouncements ||= {};
-    clearInterval(globalThis.__e2eHalloweenAnnouncements[type]?.timer);
-    // The pinned backend deletes non-live E entries in event_loop even before
-    // their timer. Declare this schedule at the native server_info read boundary;
-    // actual boss creation/damage/death/movement stay entirely native.
-    if(!globalThis.__e2eHalloweenNativeBroadcast){
-      globalThis.__e2eHalloweenNativeBroadcast=broadcast_e;
-      broadcast_e=function(dontSend){
-        if(dontSend)return;
-        const snapshot={...E};
-        for(const [name,entry] of Object.entries(globalThis.__e2eHalloweenAnnouncements)){
-          if(get_monster(name))entry.liveSeen=true;
-          if(!entry.liveSeen&&Date.now()<=entry.expiresAt)snapshot[name]=entry.announcement;
-        }
-        broadcast('server_info',snapshot);
-      };
-    }
-    const entry={announcement,expiresAt:spawn.getTime()+125000,liveSeen:false,timer:null};
-    globalThis.__e2eHalloweenAnnouncements[type]=entry;
-    const publish=()=>{
-      if(get_monster(type))entry.liveSeen=true;
-      if(entry.liveSeen||Date.now()>entry.expiresAt){clearInterval(entry.timer);return;}
-      broadcast_e();
-    };
-    entry.timer=setInterval(publish,500);publish();
-    return {...announcement,fixture:'immutable native server_info schedule boundary',expiresAt:spawn.getTime()+125000};
-  })()`);
-}
+// A staged event is due only its group's walk estimate (plus one report) before the spawn, so a
+// fighter near the spawn starts staging seconds before it. A wait for staging or admission outlasts
+// the 55 s announcement.
+const STAGING_WAIT_MS = 90_000;
 
 async function spawn(live: LiveGame, event: string, map: string, x: number, y: number, nativeAdds = false) {
   return live.admin(`output=(()=>{
@@ -212,7 +172,7 @@ for (const encounter of [{id:'mrgreen',add:'greenjr',drop:'ashleaf',map:'spookyt
         const seed=await spawn(live,encounter.id,encounter.map,encounter.x,encounter.y,true);
         await info.attach('native-threshold-spawn-definition',{body:JSON.stringify(seed),contentType:'application/json'});
         await expect.poll(async()=>{
-          const sample=await live.admin(`output=(()=>{const boss=instances[${JSON.stringify(seed.map)}]?.monsters[${JSON.stringify(seed.id)}];return {adds:globalThis.__e2eThresholdAdds,boss:boss?{id:String(boss.id),hp:boss.hp,max_hp:boss.max_hp,map:boss.map,x:boss.x,y:boss.y}:null}})()`);
+          const sample=await live.admin(`output=(()=>{const boss=instances[${JSON.stringify(seed.map)}]?.monsters[${JSON.stringify(seed.id)}];return {adds:globalThis.__e2eThresholdAdds,boss:boss?{id:String(boss.id),hp:boss.hp,max_hp:boss.max_hp,map:boss.map,x:boss.x,y:boss.y,target:boss.target||null,points:Object.keys(boss.points||{}),spawns:boss.spawns,last:boss.last}:null}})()`);
           ledgers.push({at:Date.now(),...sample});
           const selection=await live.state();
           ledgers[ledgers.length-1].selections=fighters.map(name=>({name,target:selection.characters[name]?.combatSelection?.target}));
@@ -271,29 +231,28 @@ for (const encounter of [{id:'mrgreen',add:'greenjr',drop:'ashleaf',map:'spookyt
 
 test.describe('authorized pre-join native staging',()=>{
   test.use({initialEventSpawn:'mrpumpkin'});
-  test('Halloween future staging survives delayed genuine permission responses before both clients join',async({live},info)=>{
-    test.setTimeout(180_000);
+  test('Halloween future staging survives a delayed genuine admission before both clients join',async({live},info)=>{
+    test.setTimeout(240_000);
     const encounter={id:'mrpumpkin',...await nativeEventSpawn(live.admin,'mrpumpkin')};
+    // The coordinator admits each fighter in its report's ingest (the events owner's) and the reply carries the
+    // answer; holding back that answer from the clients keeps them staging while the admission stands.
     const context=live.clients[W].page.context(),first:Record<string,number>={},ledger:any[]=[];
-    let release!:()=>void,holding=true;const gate=new Promise<void>(resolve=>{release=resolve;});
-    const pending=new Set<Promise<void>>();
+    let holding=true;
     const handler=async(route:import('@playwright/test').Route)=>{
       let body:any;try{body=route.request().postDataJSON();}catch{await route.fallback();return;}
-      if(!holding || !fighters.includes(body?.character) || body?.event!=='mrpumpkin'){await route.fallback();return;}
+      if(!holding || !fighters.includes(body?.name)){await route.fallback();return;}
       const response=await route.fetch({maxRetries:0,maxRedirects:0,timeout:5000}),result=await response.json();
-      if(!response.ok() || result.allowed!==true){await route.fulfill({response});return;}
-      first[body.character]??=Date.now();
-      if(ledger.length<64)ledger.push({at:Date.now(),action:'actual-authorization-response-held',character:body.character,status:response.status(),allowed:result.allowed});
-      const task=(async()=>{await gate;try{await route.fulfill({response});if(ledger.length<64)ledger.push({at:Date.now(),action:'original-authorization-response-delivered',character:body.character});}
-        catch(error){if(ledger.length<64)ledger.push({at:Date.now(),action:'original-request-already-timed-out',character:body.character,error:String(error)});}})();
-      pending.add(task);try{await task;}finally{pending.delete(task);}
+      if(!response.ok() || result.eventAdmission?.event!=='mrpumpkin' || result.eventAdmission.allowed!==true){await route.fulfill({response,json:result});return;}
+      first[body.name]??=Date.now();
+      if(ledger.length<64)ledger.push({at:Date.now(),action:'actual-admission-held',character:body.name,status:response.status()});
+      await route.fulfill({response,json:{...result,eventAdmission:null}});
     };
-    await context.route('**/party-api/hunt-event-permission',handler);
+    await context.route('**/party-api/status',handler);
     let beforeRelease:any,arrival:any,firstPrematureReturn:any;
     try{
       const timer=await announceSpawn(live,'mrpumpkin',55000);
       await prepare(live,'mrpumpkin');
-      await expect.poll(()=>fighters.every(name=>Number.isFinite(first[name])),{timeout:30_000,message:'Both actual native event permissions must be authorized before their genuine responses are delayed'}).toBe(true);
+      await expect.poll(()=>fighters.every(name=>Number.isFinite(first[name])),{timeout:STAGING_WAIT_MS,message:'Both actual native fighters must be admitted before their genuine answers are delayed'}).toBe(true);
       await expect.poll(async()=>{
         const state=await live.state(),now=Date.now(),authorizedAt=Math.max(...fighters.map(name=>first[name]));
         if(state.eventReturn){firstPrematureReturn??={at:now,cycleId:state.eventReturn.cycleId,event:state.eventReturn.event,phase:state.eventReturn.phase};return false;}
@@ -303,18 +262,20 @@ test.describe('authorized pre-join native staging',()=>{
         if(now-authorizedAt>=11000&&ready){beforeRelease={at:now,authorizedAt,timer,characters:Object.fromEntries(fighters.map(name=>[name,{seenAt:state.characters[name].seenAt,joinedEvent:state.characters[name].joinedEvent,server:state.characters[name].server,serverStagingEvents:state.characters[name].serverStagingEvents}])),eventReturn:state.eventReturn};return true;}
         return false;
       },{intervals:[100,250],timeout:20_000,message:'Eleven seconds of actual fresh pre-join native staging must retain authorized attendance'}).toBe(true);
-      holding=false;release();await Promise.all([...pending]);
+      holding=false;
       await expect.poll(async()=>{const native=await world(live,'mrpumpkin');if(native.boss)return false;
         const reached=fighters.every(name=>native.players[name]?.map===encounter.map&&Math.hypot(native.players[name].x-encounter.x,native.players[name].y-encounter.y)<80);
         if(reached)arrival={at:Date.now(),native};return reached;
-      },{timeout:35_000,message:'Both actual native characters must walk to the fixed announced spawn after original permission delivery'}).toBe(true);
+      },{timeout:35_000,message:'Both actual native characters must walk to the fixed announced spawn once the admission reaches them'}).toBe(true);
     }finally{
-      holding=false;release();await Promise.allSettled([...pending]);await context.unroute('**/party-api/hunt-event-permission',handler);
+      holding=false;await context.unroute('**/party-api/status',handler);
       await info.attach('native-authorized-prejoin-staging',{body:JSON.stringify({first,beforeRelease,arrival,firstPrematureReturn,ledger}),contentType:'application/json'});
     }
   });
 });
 
+// The status observer records both fighters' native status metadata for these rows (live-fixtures.ts).
+test.describe(()=>{test.use({nativeStatusObserver:true});
 for (const original of [{ id: 'mrgreen',terminalFault:false }, { id: 'mrpumpkin',terminalFault:false },{id:'mrpumpkin',terminalFault:true}]) {
   test.describe(original.id, () => {
     test.use({ initialEventSpawn: original.id });
@@ -329,7 +290,7 @@ for (const original of [{ id: 'mrgreen',terminalFault:false }, { id: 'mrpumpkin'
         const state = await live.state();
         return fighters.every(name => state.characters[name]?.joinedEvent === encounter.id &&
           state.characters[name]?.serverStagingEvents?.some((event: any) => event.name === encounter.id));
-      }, { timeout: 35_000, message: 'Both real clients must attend the announced boss before it is live' }).toBe(true);
+      }, { timeout: STAGING_WAIT_MS, message: 'Both real clients must attend the announced boss before it is live' }).toBe(true);
       await expect.poll(async () => {
         const native = await world(live, encounter.id);
         return !native.boss && fighters.every(name => native.players[name] && Math.hypot(native.players[name].x - encounter.x, native.players[name].y - encounter.y) < 80);
@@ -376,10 +337,7 @@ for (const original of [{ id: 'mrgreen',terminalFault:false }, { id: 'mrpumpkin'
             before=state;return true;
           },{timeout:90_000,message:'Turn over CODE only during the actual owned event-exit child walk'}).toBe(true);
           returnPhases.replacementRequestedAt=Date.now();
-          await live.clients[W].frame.evaluate(()=>{
-            const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-            game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);
-          });
+          await reloadCode(live,W);
           await expect.poll(async()=>{
             const state=await live.state(),warrior=state.characters[W];
             observations.push({at:Date.now(),recovery:state.eventReturn,warrior});
@@ -426,8 +384,10 @@ for (const original of [{ id: 'mrgreen',terminalFault:false }, { id: 'mrpumpkin'
     });
   });
 }
+});
 
 test.describe('Slenderman', () => {
+  test.use({nativeStatusObserver:true});
   test.use({ initialPosition: { map: 'halloween', x: 0, y: 0 } });
   test('Halloween Slenderman follows native map-only sightings, reacquires a warp and returns after native death', async ({ live }, info) => {
     test.setTimeout(600_000);
@@ -482,14 +442,11 @@ test.describe('Absent Halloween spawn', () => {
   test.use({ initialPosition: { map: 'halloween', x: -335, y: 685 } });
   test('Halloween staging abandons an absent native spawn after its fixed deadline and returns without reopening', async ({ live }, info) => {
     test.setTimeout(420_000);
-    // October's native season now runs automatically in the pinned server.
-    // Declare this encounter's absent spawn before admission; otherwise the
-    // unrelated season timer creates a real boss halfway through the timeout.
+    // The harness reset holds the season's own Mr. Pumpkin timer (e2e/game/bootstrap.cjs), so
+    // no boss appears at the announced spawn.
     const timerSeed=await live.admin(`output=(()=>{if(get_monster('mrpumpkin'))throw Error('Absent-spawn fixture requires no boss');
-      globalThis.__e2eAbsentPumpkinTimer=timers.mrpumpkin;timers.mrpumpkin=new Date(Date.now()+3600000);
-      return {at:Date.now(),original:globalThis.__e2eAbsentPumpkinTimer,delayedUntil:timers.mrpumpkin};})()`);
+      return {at:Date.now(),heldUntil:timers.mrpumpkin};})()`);
     await info.attach('absent-native-spawn-timer-declaration',{body:JSON.stringify(timerSeed),contentType:'application/json'});
-    try {
     const announcement = await announceSpawn(live, 'mrpumpkin', 15000);
     const savedCheckpoint = await prepare(live, 'mrpumpkin');
     expect(savedCheckpoint.location.map).toBe('halloween');
@@ -511,8 +468,5 @@ test.describe('Absent Halloween spawn', () => {
     await waitForGameplay(11000);
     expect((await live.state()).characters[W]?.joinedEvent, 'Another native feed must not reopen the expired timer').toBeFalsy();
     await info.attach('absent-native-spawn-bounded-return', { body: JSON.stringify({ announcement, savedCheckpoint, native: await world(live, 'mrpumpkin'), coordinator: await live.state() }), contentType: 'application/json' });
-    } finally {
-      await live.admin("output=(()=>{timers.mrpumpkin=globalThis.__e2eAbsentPumpkinTimer;delete globalThis.__e2eAbsentPumpkinTimer;return true;})()");
-    }
   });
 });

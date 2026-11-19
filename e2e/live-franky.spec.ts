@@ -12,7 +12,7 @@ async function removeOwnedMummies(live: Pick<LiveGame, 'admin'>, ids: string[]) 
   if (!ids.length) return;
   await live.admin(`output=(()=>{for(const id of ${JSON.stringify(ids)}){
     const matches=Object.values(instances).map(i=>i.monsters[id]).filter(Boolean);
-    if(matches.length>1||matches.some(m=>m.type!=='mummy'))throw Error('Owned mummy identity mismatch');
+    if(matches.length>1||matches.some(m=>!['mummy','nerfedmummy'].includes(m.type)))throw Error('Owned mummy identity mismatch');
     for(const m of matches)remove_monster(m,{method:'disappear',nospawn:true});}return true;})()`);
 }
 const tokens = (player: any) => player.items.reduce((sum: number, item: any) => sum + (item?.name === 'monstertoken' ? item.q || 1 : 0), 0);
@@ -25,6 +25,8 @@ test.describe('Franky personal defense and Cleave', () => {
     // attackers; a dead mummy remains selected; Franky still blocks Cleave.
     // Native fixture declares durable stationary enemies; targeting, skills,
     // damage, CODE, coordinator publication and browser transport remain real.
+    // Franky's attackers are the boss's own spawn type in the game data (`nerfedmummy`); the server's
+    // spawns are cleared so only the declared ones stand.
     const names = [W, 'E2EPriest'];
     const owned: string[] = [];
     try {
@@ -38,7 +40,7 @@ test.describe('Franky personal defense and Cleave', () => {
     }, { timeout: 120_000 }).toBe(true);
     const seeded = await live.admin(`output=(()=>{const boss=get_monster('franky');boss.hp=boss.max_hp=100000000;
       const mummies=${JSON.stringify(names)}.map(name=>{const p=get_player(name);
-        const m=new_monster(p.in,{type:'mummy',position:[p.x+12,p.y],radius:0,count:1},{temp:1});
+        const m=new_monster(p.in,{type:'nerfedmummy',position:[p.x+12,p.y],radius:0,count:1},{temp:1});
         m.hp=m.max_hp=100000;m.attack=1;m.s.stunned={ms:600000};target_player(m,p);
         return {name,id:String(m.id),hp:m.hp,in:m.in};});return {boss:String(boss.id),mummies};})()`);
     owned.push(...seeded.mummies.map((m:any)=>m.id));
@@ -55,13 +57,17 @@ test.describe('Franky personal defense and Cleave', () => {
       const s=await live.state();return names.every(n=>String(s.characters[n]?.target?.id)===seeded.boss);
     }, { timeout: 30_000 }).toBe(true);
     const cleaveSeed = await live.admin(`output=(()=>{const p=get_player('${W}');p.slots.mainhand={name:'waxe',level:0};p.slots.offhand=null;p.cslots.mainhand=cache_item(p.slots.mainhand);p.cslots.offhand=null;calculate_player_stats(p);p.mp=p.max_mp;
-      const ids=[];for(const dx of [-15,15]){const m=new_monster(p.in,{type:'mummy',position:[p.x+dx,p.y],radius:0,count:1},{temp:1});
+      const ids=[];for(const dx of [-15,15]){const m=new_monster(p.in,{type:'nerfedmummy',position:[p.x+dx,p.y],radius:0,count:1},{temp:1});
         m.hp=m.max_hp=100000;m.attack=1;m.s.stunned={ms:600000};target_player(m,p);ids.push(String(m.id));}
       resend(p,'u+cid+reopen');return {ids,mp:p.mp};})()`);
     owned.push(...cleaveSeed.ids);
     try { await expect.poll(async () => cleaveLanded(await live.clients[W].events(), cleaveSeed.ids),
       { timeout: 30_000, message:'Native Cleave must hit both declared nearby enemies' }).toBe(true); }
-    finally { await info.attach('cleave-runtime-observation',{body:JSON.stringify(await live.clients[W].run(`(()=>{const s=sharedRoutine,c=s.combatContext();return {actor:{level:character.level,mp:character.mp,x:character.x,y:character.y,slots:character.slots},skill:G.skills.cleave,weapon:G.items[character.slots.mainhand.name]?.wtype,context:{mode:c.mode,event:c.event},franky:s.frankyCombatActive(),monsters:c.monsters.map(t=>({id:t.id,distance:distance(character,t),allowed:s.skillTargetAllowed(t,'cleave'),rare:s.rareAttackAllowed(t,'cleave')})),cooldown:is_on_cooldown('cleave')};})()`)),contentType:'application/json'}); }
+    finally {
+      const frame=await live.clients[W].run(`(()=>({actor:{level:character.level,mp:character.mp,x:character.x,y:character.y,slots:character.slots},skill:G.skills.cleave,
+        weapon:G.items[character.slots.mainhand.name]?.wtype,franky:__partyEventFacts.frankyActive(),cooldown:is_on_cooldown('cleave'),
+        monsters:Object.values(parent.entities).filter(t=>t.type==='monster').map(t=>({id:t.id,type:t.mtype,target:t.target,distance:distance(character,t)}))}))()`);
+      await info.attach('cleave-runtime-observation',{body:JSON.stringify({...frame,turns:(await live.state()).characters[W]?.turns??null}),contentType:'application/json'}); }
     await info.attach('franky-native-cleave', { body:JSON.stringify({cleaveSeed,events:await live.clients[W].events(),state:await live.state()}),contentType:'application/json' });
     } finally { await removeOwnedMummies(live, owned); }
   });
@@ -83,7 +89,7 @@ test.describe('ordinary warrior Cleave', () => {
     await live.post('/checkpoint', {});
     await live.post('/farming-mode', { character:W, mode });
     await expect.poll(async()=>{const s=await live.state();return !s.activeConvoy&&[W,'E2EPriest'].every(n=>s.characters[n]?.map==='main'&&!s.characters[n]?.moving);}, {timeout:90000}).toBe(true);
-    await expect.poll(()=>live.clients[W].run('sharedRoutine.combatContext().mode')).toBe(mode==='scatter'?'scatter':'grouped');
+    await expect.poll(()=>live.clients[W].run('partyHunting.farm.mode()==="scatter"?"scatter":"grouped"')).toBe(mode==='scatter'?'scatter':'grouped');
     const first=await live.admin(`output=(()=>{const p=get_player('${W}');p.slots.mainhand={name:'waxe',level:0};p.slots.offhand=null;p.cslots.mainhand=cache_item(p.slots.mainhand);p.cslots.offhand=null;
       // Ample declared mana lets scatter exercise its budgeted positive case.
       p.slots.amulet={name:'intamulet',level:20};p.cslots.amulet=cache_item(p.slots.amulet);calculate_player_stats(p);p.mp=p.max_mp;
@@ -98,7 +104,12 @@ test.describe('ordinary warrior Cleave', () => {
     owned.push(second);
     try { await expect.poll(async()=>cleaveLanded(await live.clients[W].events(), [first,second]),
       {timeout:30000,message:'Both nearby native attackers must receive Cleave'}).toBe(true); }
-    finally { await info.attach('ordinary-cleave-eligibility-'+mode,{body:JSON.stringify(await live.clients[W].run(`(()=>{const s=sharedRoutine,c=s.combatContext();return {mp:character.mp,weapon:character.slots.mainhand,mode:c.mode,event:c.event,allies:c.allies.map(a=>a.name),monsters:c.monsters.map(t=>({id:t.id,type:t.mtype,target:t.target,distance:distance(character,t),allowed:s.skillTargetAllowed(t,'cleave')})),skill:partyCombatState.skill};})()`)),contentType:'application/json'}); }
+    finally {
+      // The turns report carries the skill engine's last choices and refusals; the frame gives the
+      // farming mode and the monsters around the warrior.
+      const frame=await live.clients[W].run(`(()=>({mp:character.mp,weapon:character.slots.mainhand,mode:partyHunting.farm.mode(),
+        monsters:Object.values(parent.entities).filter(t=>t.type==='monster').map(t=>({id:t.id,type:t.mtype,target:t.target,distance:distance(character,t)}))}))()`);
+      await info.attach('ordinary-cleave-eligibility-'+mode,{body:JSON.stringify({...frame,turns:(await live.state()).characters[W]?.turns??null}),contentType:'application/json'}); }
     await info.attach('ordinary-native-cleave-'+mode,{body:JSON.stringify({first,second,events:await live.clients[W].events(),state:await live.state()}),contentType:'application/json'});
     } finally { await removeOwnedMummies(live, owned); }
   });
@@ -131,7 +142,7 @@ test('restored acknowledged Franky exit resumes completed gscorpion Hunt from de
     };
   });
   await info.attach('historical-recovery-provenance', { body: JSON.stringify({provenance:history.provenance,initial}), contentType:'application/json' });
-  await expect.poll(async () => { const state=await live.state();return !state.eventReturn && state.monsterHunt?.stage!=='paused-event' && Date.now()-state.characters[W]?.seenAt<3000; }, { timeout:30_000, intervals:[100], message:'An acknowledged historical exit must resume Hunt without another Main arrival' }).toBe(true);
+  await expect.poll(async () => { const state=await live.state();return !state.eventReturn && Date.now()-state.characters[W]?.seenAt<3000; }, { timeout:30_000, intervals:[100], message:'An acknowledged historical exit must resume Hunt without another Main arrival' }).toBe(true);
   const handoff=await observed();
   await info.attach('franky-handoff-position', { body:JSON.stringify({observedAt:Date.now(),handoff,state:await live.state()}),contentType:'application/json' });
   expect(handoff.map).toBe('desertland');

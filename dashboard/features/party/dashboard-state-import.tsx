@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
-import { API } from "./api";
+import { useQueryClient } from "@tanstack/react-query";
+import { performAction } from "./query-actions";
 import { StateExportButton } from "./state-export-button";
 
 interface SourceInfo { filename: string; canonicalPath: string; localPath: string; dockerPath: string; maxBytes: number }
@@ -13,6 +14,7 @@ const label = (field: string) => ({ marked: "Bank collection marks", merchantMar
   upgradeOfferingRules: "Upgrade offering rules", autoUpgradeMarks: "Automatic upgrade rules", autoItemMarks: "Automatic collection rules" }[field] || field.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()));
 
 export function DashboardStateImport() {
+  const client = useQueryClient();
   const [info, setInfo] = useState<SourceInfo | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [filename, setFilename] = useState("");
@@ -27,24 +29,15 @@ export function DashboardStateImport() {
   useEffect(() => {
     const controller = new AbortController();
     const currentSelection = selection;
-    fetch(`${API}/dashboard-state`, { signal: controller.signal }).then(async response => {
-      if (!response.ok) {
-        const body = await response.text();
-        let detail = body; try { detail = JSON.parse(body).error || body; } catch {}
-        throw new Error(detail || `HTTP ${response.status} ${response.statusText}`);
-      }
-      setInfo(await response.json());
-    }).catch(error => { if (!controller.signal.aborted) setError(String(error.message)); });
+    performAction<SourceInfo>(client, "/dashboard-state", null, { method: "GET", signal: controller.signal })
+      .then(setInfo)
+      .catch(error => { if (!controller.signal.aborted) setError(String(error.message)); });
     return () => { controller.abort(); currentSelection.current++; };
-  }, []);
+  }, [client]);
 
   async function request(action: string, source: string, digest?: string) {
-    const response = await fetch(`${API}/dashboard-state/${action}`, { method: "POST", body: source,
-      headers: { "Content-Type": "text/plain;charset=UTF-8", ...(digest ? { "X-State-Preview": digest } : {}) } });
-    const text = await response.text();
-    let parsed: unknown; try { parsed = JSON.parse(text); } catch { throw new Error(text || `HTTP ${response.status} ${response.statusText}`); }
-    const data = parsed as (Preview & { error?: string; backupPath?: string }) | null;
-    if (!response.ok || !data) throw new Error(data?.error || `Import request failed (${response.status})`);
+    const data = await performAction(client, `/dashboard-state/${action}`, null,
+      { text: source, headers: digest ? { "X-State-Preview": digest } : {} }) as unknown as Preview & { backupPath?: string };
     if (!Array.isArray(data.fields) || !Array.isArray(data.characters) || typeof data.digest !== "string") throw new Error("Invalid import response");
     return data;
   }
@@ -53,7 +46,9 @@ export function DashboardStateImport() {
     const revision = ++selection.current;
     setError(""); setBackup(""); setPreview(null); content.current = ""; setFilename(file.name);
     setErrorContext("Error reading state file");
-    if (file.size > (info?.maxBytes || 128 * 1024 * 1024)) { setError("Choose a state file smaller than 128 MB."); return; }
+    // The server's import route names its own size limit and volume path (settings/coordinator/routes/import.ts).
+    if (!info) { setError("Waiting for the server's import limits."); return; }
+    if (file.size > info.maxBytes) { setError(`Choose a state file smaller than ${Math.floor(info.maxBytes / 1024 / 1024)} MB.`); return; }
     setBusy(true);
     try {
       const source = await file.text();
@@ -75,14 +70,14 @@ export function DashboardStateImport() {
     } catch (error) { setError(error instanceof Error ? error.message : "Import failed"); }
     finally { setBusy(false); }
   }
-  return <section className="min-w-0 rounded border border-slate-600 bg-[#101c1a] p-4 text-emerald-50">
+  return <section data-area="state-import" className="min-w-0 rounded border border-slate-600 bg-[#101c1a] p-4 text-emerald-50">
     <h3 className="font-semibold">Dashboard state import/export</h3>
 
     <p className="mt-1 text-sm text-slate-200">Choose an exported settings JSON file or a legacy <code>caraGarage.jsonl</code> file. Import saved marks, automation rules, farming and event preferences.</p>
     <dl className="mt-3 space-y-2 text-xs text-slate-200">
       <div><dt className="font-semibold text-emerald-100">This server’s canonical path</dt><dd className="break-all font-mono">{info?.canonicalPath || "Loading…"}</dd></div>
       <div><dt className="font-semibold text-emerald-100">Local installation</dt><dd className="break-all font-mono">{info?.localPath || "<installation>/.caracal/localStorage/caraGarage.jsonl"}</dd></div>
-      <div><dt className="font-semibold text-emerald-100">Docker volume</dt><dd className="break-all font-mono">/data/localStorage/caraGarage.jsonl</dd></div>
+      <div><dt className="font-semibold text-emerald-100">Docker volume</dt><dd className="break-all font-mono">{info?.dockerPath || "Loading…"}</dd></div>
     </dl>
     <p className="mt-3 text-xs text-slate-300">Use a copy taken while the old service was stopped. Credentials, logins, queued work and travel state stay as they are. Full migration instructions are in the README.</p>
     <input ref={picker} type="file" accept=".json,application/json,.jsonl,application/x-ndjson,text/plain" aria-label="Import state file" className="sr-only"

@@ -6,8 +6,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { JSDOM } = require('../../.caracal/node_modules/jsdom');
 const jquery = require('../../.caracal/node_modules/jquery');
-const { installNativeAjax, nativeAjaxEligible } = require('../../runtime/lifecycle/native-ajax.ts');
-const { createRunnerHost } = require('../../runtime/lifecycle/runner-host.ts');
+const { installNativeAjax, nativeAjaxEligible } = require('../../runtime/lifecycle/character/host.ts');
+const { createRunnerHost } = require('../../runtime/lifecycle/character/host.ts');
 
 // Failure inventory: docs/efficiency.md, Character threads, CT2.
 function codeWindow() {
@@ -16,7 +16,9 @@ function codeWindow() {
   return window;
 }
 async function server(handler) {
-  const seen = { requests: [], connections: 0, closed: 0 };
+  const seen = { requests: [], connections: 0, closed: 0 }, closeWaiters = [];
+  // Resolves once the server has seen more than `count` sockets close, so a row waits on the close itself.
+  seen.closedPast = count => seen.closed > count ? Promise.resolve() : new Promise(resolve => closeWaiters.push([count, resolve]));
   const instance = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => chunks.push(chunk));
@@ -30,7 +32,10 @@ async function server(handler) {
       handler(req, res, seen);
     });
   });
-  instance.on('connection', socket => { seen.connections++; socket.on('close', () => seen.closed++); });
+  instance.on('connection', socket => { seen.connections++; socket.on('close', () => {
+    seen.closed++;
+    for (const waiter of closeWaiters.filter(([count]) => seen.closed > count)) { closeWaiters.splice(closeWaiters.indexOf(waiter), 1); waiter[1](); }
+  }); });
   await new Promise(resolve => instance.listen(0, '127.0.0.1', resolve));
   const base = 'http://127.0.0.1:' + instance.address().port;
   return { seen, base, close: () => new Promise(resolve => { instance.closeAllConnections(); instance.close(resolve); }) };
@@ -108,7 +113,7 @@ test('HTTP errors, invalid JSON, timeouts, refused connections and aborts keep t
     assert.equal(slow.ok, false);
     assert.equal(slow.status, 'timeout');
     assert.equal(slow.xhr.status, 0);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await local.seen.closedPast(closedBefore);
     assert.ok(local.seen.closed > closedBefore, 'a timed out request must release its connection');
 
     const pending = window.$.ajax({ url: local.base + '/slow', dataType: 'json' });

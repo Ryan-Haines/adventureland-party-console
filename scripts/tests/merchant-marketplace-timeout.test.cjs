@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 test('unreachable marketplace destinations are not blacklistable offenses', () => {
-  const {createMarketplaceProgressRoutes}=require('../../runtime/coordinator/http/marketplace-progress.ts');
+  const {createMarketplaceProgressRoutes}=require('../../runtime/items/coordinator/routes/market.ts');
   for(const failureCode of ['destination_unreachable','listing_not_available','seller_not_visible','stand_not_open']) {
     const listing={key:'a',item:{name:'ring'},quantity:1,seller:'Seller',serverRegion:'US',serverIdentifier:'II'};
     const state={merchantCharacter:'M',merchantCurrent:{id:'job',reason:'ALData marketplace purchases',listings:[listing]},

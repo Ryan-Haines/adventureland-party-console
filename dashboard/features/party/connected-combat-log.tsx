@@ -27,7 +27,7 @@ export const ConnectedCombatLog = memo(function ConnectedCombatLog({
   const [open, setOpen] = useStoredBoolean(`party-section:${character}:combat-log`, false);
   const id=useId();
   return (
-    <section className="mt-4 border-t border-emerald-900/70">
+    <section data-area="combat-log" className="mt-4 border-t border-emerald-900/70">
       <CharacterSectionToggle label="Combat log" open={open} controls={id} onToggle={()=>setOpen(value=>!value)}/>
       <div id={id}>{open && <LogContents character={character} />}</div>
     </section>

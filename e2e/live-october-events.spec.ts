@@ -1,7 +1,9 @@
 import {test,expect} from './live-fixtures';
+import {holdHalloweenSeason} from './game/hunt-events';
 import {cipherIngredients,trickOrTreatRoute} from '../runtime/events/october';
-import {supportedEvents} from '../dashboard/lib/event-policy';
-import type {Route} from '@playwright/test';
+import {supportedEvents} from '../runtime/events/rules';
+import {killNativeCharacter} from './hunt-interruption-helpers';
+import {prepareHunt,start} from './game/hunt-lifecycle';
 
 test.use({initialPosition:{map:'halloween',x:0,y:0}});
 
@@ -12,13 +14,15 @@ async function publishedCipherStock(live:import('./live-fixtures').LiveGame,name
 }
 
 
+
 test('October native door tour visits every door once and restores its farming checkpoint',async({live},info)=>{
   test.setTimeout(420_000);
   const name='E2EWarrior';
   await live.post('/formation',{leader:name});
   await live.post('/formation',{character:'E2EPriest',follow:true});
   await live.post('/formation',{character:'E2EMerchant',eventSelections:[]});
-  const initial=await live.admin(`output=(()=>{events.halloween=true;E.halloween=true;const p=get_player('${name}');p.p.trickortreat=null;p.trickortreat=trick_or_treat_status(p);resend(p,'u+cid');broadcast_e();return {at:Date.now(),map:p.map,x:p.x,y:p.y,doors:G.events.trickortreat.doors}})()`);
+  await holdHalloweenSeason(live);
+  const initial=await live.admin(`output=(()=>{const p=get_player('${name}');p.p.trickortreat=null;p.trickortreat=trick_or_treat_status(p);resend(p,'u+cid');broadcast_e();return {at:Date.now(),map:p.map,x:p.x,y:p.y,doors:G.events.trickortreat.doors}})()`);
   await info.attach('october-door-initial-native',{body:JSON.stringify(initial),contentType:'application/json'});
   await expect.poll(async()=>{const s=await live.state(),c=s.characters[name];return c?.map===initial.map&&Math.hypot(c.x-initial.x,c.y-initial.y)<5;},{timeout:30_000}).toBe(true);
   const checkpoint=await live.post('/checkpoint',{});
@@ -71,6 +75,9 @@ test('October native cipher merchant solves a constrained recipe and does not re
     for(let i=0;i<names.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:names[i],q:25};}
     cache_player_items(p);calculate_player_stats(p);resend(p,'reopen+cid');
     witch_cipher_start({id:'e2e-october-cipher'});
+    // The merchant walks to the Witch for a mix it cannot brew yet only from gather_end, so the
+    // round's gathering ends at the seed for the clue count to decide at the Witch.
+    witch_cipher.gather_end=Date.now();
     witch_cipher.secret=${JSON.stringify(secret)};
     witch_cipher.history=Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'frostscale':name),right:4}));
     witch_cipher_publish();
@@ -106,8 +113,16 @@ test('October native cipher merchant solves a constrained recipe and does not re
   await live.post('/formation',{character:merchant,eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:0,minClues:5,automatic:false}}}});
   // The leader owns party Cipher settings; the merchant popup must submit to
   // that same policy instead of saving an ineffective merchant-only request.
-  await live.post('/formation',{leader:'E2EWarrior'});
-  await live.post('/formation',{character:'E2EWarrior',eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:0,minClues:5,automatic:false}}}});
+  // One request moves the lead and sets the new leader's Cipher settings, so the merchant never
+  // plays under the new leader's default settings (automatic, one clue).
+  await live.post('/formation',{leader:'E2EWarrior',character:'E2EWarrior',eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:0,minClues:5,automatic:false}}}});
+  // The merchant takes the settings from the reply to its next report and applies them before the
+  // report after that. Until then it still brews automatically at five clues, so the seed below
+  // waits for that second report: an automatic brew would crack the seeded recipe and empty the board.
+  const posted=Date.now();let replied=0;
+  await expect.poll(async()=>{const seen=Number((await live.state()).characters[merchant]?.seenAt)||0;if(!replied&&seen>posted)replied=seen;return replied>0&&seen>replied;},{timeout:30_000}).toBe(true);
+  // With automatic off and no manual request its Cipher activity ends and its report leaves the event.
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.joinedEvent??null,{timeout:30_000}).toBeNull();
   const manualSeed=await live.admin(`output=(()=>{witch_cipher.secret=Array(5).fill('frostscale');witch_cipher.history=Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'embercoal':name),right:4}));witch_cipher_publish();return witch_cipher_public();})()`);
   // The dashboard fixture blocks external requests. Serve the actual pinned
   // native image bytes from this test's game host, just like the Cave journey.
@@ -128,7 +143,8 @@ test('October native cipher merchant solves a constrained recipe and does not re
   expect(decoded.every(image=>image.width>100&&image.height>100)).toBe(true);
   await board.scrollIntoViewIfNeeded();
   await info.attach('october-native-cipher-board',{body:await page.screenshot({animations:'disabled'}),contentType:'image/png'});
-  await live.admin('output=(()=>{witch_cipher.history.push({...witch_cipher.history[0]});witch_cipher_publish();return witch_cipher_public();})()');
+  // A crack since the manual seed empties the board, and a copied clue then has no mix.
+  await live.admin('output=(()=>{if(!witch_cipher.history.length)throw Error("The manual seed board was cracked before its sixth clue");witch_cipher.history.push({...witch_cipher.history[0]});witch_cipher_publish();return witch_cipher_public();})()');
   await expect(board.getByText('6 clues · 1 possible recipes · recipe 2',{exact:true})).toBeVisible({timeout:30_000});
   const sources=page.getByRole('combobox',{name:'verdantspore farming monster',exact:true});
   await sources.click();
@@ -166,16 +182,26 @@ test('October Horseman walks to the forest graveyard and engages the native boss
   const name='E2EWarrior';
   await live.post('/formation',{leader:name});
   await live.post('/formation',{character:'E2EPriest',follow:true});
+  live.undo('the declared Horseman calendar entry',()=>live.admin('output=(()=>{const c=globalThis.__e2eHorsemanCalendar;if(c){broadcast_e=c.original;delete globalThis.__e2eHorsemanCalendar;broadcast_e();}return true;})()'));
   const seed=await live.admin(`output=(()=>{
+    // The pinned server's Halloween season ends on 2026-11-03 (design/event_flags.js), after which its
+    // calendar lists no Horseman. The row declares one scheduled occurrence at the server_info
+    // boundary, so the published lineup does not depend on the run's date.
+    const occurrence={id:'e2e-horseman-calendar',event:'horseman',at:Date.now()+3600000,status:'scheduled'};
+    globalThis.__e2eHorsemanCalendar??={original:broadcast_e,occurrence};
+    broadcast_e=function(dontSend){if(dontSend)return;const schedule=E.schedule||{};
+      broadcast('server_info',{...E,schedule:{...schedule,events:[...(schedule.events||[]).filter(entry=>entry.event!=='horseman'),occurrence]}});};
     G.monsters.horseman={...G.monsters.horseman,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true,spawns:[]};
     const m=new_monster('halloween',{type:'horseman',count:1,boundary:[-405,-1640,-405,-1640]},{temp:1});
     E.horseman={live:true,id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();
-    return {id:String(m.id),map:m.map,x:m.x,y:m.y};
+    return {id:String(m.id),map:m.map,x:m.x,y:m.y,occurrence};
   })()`);
   await live.post('/formation',{character:name,eventSelections:['horseman']});
-  const lineup=await live.clients[name].run('server.status.schedule');
+  let lineup:any;
+  await expect.poll(async()=>{lineup=await live.clients[name].run('server.status.schedule');
+    return [...lineup.events,...lineup.repeats].some((entry:{id?:string})=>entry.id===seed.occurrence.id);},{timeout:15_000}).toBe(true);
   const horseman=[...lineup.events,...lineup.repeats].filter((entry:{event:string;status:string})=>entry.event==='horseman'&&entry.status==='scheduled').map((entry:{at:number})=>entry.at);
-  expect(horseman.length).toBeGreaterThan(0);
+  expect(horseman).toEqual([seed.occurrence.at]);
   await expect.poll(async()=>{const s=await live.state();return s.eventSchedules?.find((entry:{id:string})=>entry.id==='horseman')?.occurrences?.map((entry:{at:number})=>entry.at);},{timeout:30_000}).toEqual(horseman);
   await expect.poll(async()=>{const hits=await live.clients[name].events();return ['E2EWarrior','E2EPriest'].every(name=>hits.some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.id&&e.data?.hid===name&&e.data?.damage>0));},{timeout:180_000}).toBe(true);
   const position=await live.clients[name].snapshot();
@@ -262,202 +288,212 @@ test.describe('October Graveyard targeting',()=>{
   });
 });
 
+// Decided 2026-11-11: the fighters gather until gather_end,
+// then walk to the Witch and hand their ingredients to the merchant there, then go back to farming.
+// The merchant does not gather: it leaves for the Witch at gather_end less its walk lead and arrives
+// by gather_end. The minimum clue count stays above the board's, so no mix is affordable early
+// and no brew runs. Every ingredient is in stock, so the owner's plan is `brewing`, and frostscale,
+// the scarcest, is the fighters' gathering ingredient.
 test.describe('October Cipher gathering',()=>{
-  // CI exposed a transfer gap when combat settles on opposite sides of this
-  // native target. Retain those coordinates instead of a roaming ambient seed.
-  test.use({initialPosition:{map:'winterland',x:1321.03,y:-796.51},initialMonsterSpawn:null});
-  test('October party gathers and transfers ingredients to its designated merchant',async({live},info)=>{
-    test.setTimeout(600_000);
-    const name='E2EWarrior',merchant='E2EMerchant';
+  test.use({initialPosition:null,initialMonsterSpawn:'arcticbee'});
+  test('October fighters gather until gather_end, then hand their ingredients to the merchant at the Witch',async({live},info)=>{
+    test.setTimeout(720_000);
+    const name='E2EWarrior',priest='E2EPriest',merchant='E2EMerchant',fighters=[name,priest];
+    const seeded=Object.fromEntries(cipherIngredients.map(id=>[id,id==='frostscale'?1:3]));
     await live.post('/formation',{leader:name});
-    await live.post('/formation',{character:'E2EPriest',follow:true});
-    const encounter=await live.admin(`output=(()=>{
+    await live.post('/formation',{character:priest,follow:true});
+    const seed=await live.admin(`output=(()=>{
       const p=get_player('${name}');
-      const ingredients=${JSON.stringify(cipherIngredients)};
-      for(let i=0;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]=i===1?null:{name:ingredients[i],q:3};}
+      const ingredients=${JSON.stringify(cipherIngredients)},seeded=${JSON.stringify(seeded)};
+      for(let i=0;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:ingredients[i],q:seeded[ingredients[i]]};}
       cache_player_items(p);resend(p,'reopen+cid');
-      // This journey needs one surviving gathering target and no Frost Scale
-      // drops. Retire the ambient pack with the reset journal's no-respawn path.
-      for(const ambient of Object.values(instances[p.in].monsters))
-        if(ambient.type==='arcticbee')remove_monster(ambient,{silent:true,nospawn:true});
-      const original=G.monsters.arcticbee;let m;
-      try{
-        G.monsters.arcticbee={...original,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
-        m=new_monster(p.map,{type:'arcticbee',count:1,boundary:[1124.48,-796.51,1124.48,-796.51]},{temp:1});
-      }finally{G.monsters.arcticbee=original;}
-      return {id:String(m.id),map:p.map,x:p.x,y:p.y};
-    })()`);
-    const expectedStock=Object.fromEntries(cipherIngredients.map((id,i)=>[id,i===1?0:3]));
-    await expect.poll(()=>publishedCipherStock(live,name),{timeout:30_000,
-      message:'The seeded party stock must be published before the gathering round begins'}).toEqual(expectedStock);
-    const seed={...encounter,board:await live.admin(`output=(()=>{
+      G.monsters.arcticbee={...G.monsters.arcticbee,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
+      const m=new_monster(p.map,{type:'arcticbee',count:1,boundary:[p.x,p.y,p.x,p.y]},{temp:1});
       witch_cipher_start({id:'e2e-october-gathering'});
       // Declare a shorter native drop window up front; retain six minutes of
       // actual gathering and exercise the same published cutoff without a sleep.
       witch_cipher.gather_end=Date.now()+7*60_000;witch_cipher_publish();
-      return witch_cipher_public();
-    })()`) };
-    try{
-    await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:20,minClues:1,automatic:false}}}});
-    await expect.poll(async()=>{const s=await live.state();return ['E2EWarrior','E2EPriest',merchant].every(n=>s.characters[n]?.joinedEvent==='witchcipher');},{timeout:60_000}).toBe(true);
-    await expect.poll(async()=>{const hits=await live.clients[name].events();return hits.filter((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.id&&e.data?.hid===name&&e.data?.damage>0).length>=3;},{timeout:60_000}).toBe(true);
-    await expect.poll(async()=>await live.clients[merchant].run(`Object.fromEntries(${JSON.stringify(cipherIngredients)}.map(name=>[name,character.items.reduce((n,item)=>n+(item?.name===name?(item.q||1):0),0)]))`),{timeout:60_000}).toEqual(Object.fromEntries(cipherIngredients.map((name,i)=>[name,i===1?0:3])));
-    const plans=await Promise.all([name,'E2EPriest',merchant].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
-    expect(plans.every(plan=>plan?.ingredient==='frostscale'&&plan?.monster==='arcticbee'&&plan?.owner===name)).toBe(true);
+      return {id:String(m.id),map:p.map,x:p.x,y:p.y,board:witch_cipher_public()};
+    })()`);
+    const cipher={gatherMinutes:20,minClues:99,automatic:true};
+    await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher}}});
+    // Rule 1: both fighters attend and fight the gathering monster.
+    await expect.poll(async()=>{const s=await live.state();return fighters.every(n=>s.characters[n]?.joinedEvent==='witchcipher');},{timeout:60_000}).toBe(true);
+    await expect.poll(async()=>{const hits=await live.clients[name].events();return fighters.every(n=>hits.some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.id&&e.data?.hid===n&&e.data?.damage>0));},{timeout:60_000}).toBe(true);
+    // Rule 4: the merchant affords no mix, so it does not wait at the Witch this far before its lead.
+    expect((await live.state()).characters[merchant]?.joinedEvent,'the merchant does not gather').not.toBe('witchcipher');
+    const plans=await Promise.all([...fighters,merchant].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
+    expect(plans.every(plan=>plan?.mode==='brewing'&&plan?.owner===name)).toBe(true);
     await live.restartCoordinator();
-    await live.post('/formation',{character:name,eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:20,minClues:1,automatic:false,gatherMonsters:['goo','wolfie','plantoid','snake']}}}});
-    await expect.poll(()=>live.admin('output=Date.now()'),{timeout:400_000}).toBeGreaterThan(seed.board.start+6*60_000);
-    const retained=await Promise.all([name,'E2EPriest',merchant].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
+    // A settings change keeps the plan; frostscale's pick stays the arcticbee, since a brewing plan's
+    // fighter gathers the scarcest ingredient's pick.
+    await live.post('/formation',{character:name,eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{...cipher,gatherMonsters:['goo','arcticbee','plantoid','snake']}}}});
+    // Rule 3: the merchant reaches the Witch by gather_end.
+    let merchantArrivedAt=0;
+    await expect.poll(async()=>{
+      const at=await live.admin(`output=(()=>{const p=get_player('${merchant}'),w=(G.maps.halloween.npcs||[]).find(n=>n.id==='witch');
+        return p&&w&&p.map==='halloween'&&Math.hypot(p.x-w.position[0],p.y-w.position[1]-30)<=60?Date.now():0;})()`);
+      if(at&&!merchantArrivedAt)merchantArrivedAt=at;return merchantArrivedAt>0;
+    },{timeout:480_000}).toBe(true);
+    expect(merchantArrivedAt,'the merchant arrives by gather_end').toBeLessThanOrEqual(seed.board.gather_end);
+    await expect.poll(()=>live.admin('output=Date.now()'),{timeout:120_000}).toBeGreaterThan(seed.board.gather_end);
+    const retained=await Promise.all([...fighters,merchant].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
     expect(retained).toEqual(plans);
-    const after=(await live.clients[name].events()).filter((entry:any)=>entry.event==='hit'&&String(entry.data?.id)===seed.id&&entry.data?.hid===name&&entry.data?.damage>0&&entry.at>=seed.board.start+5*60_000);
-    expect(after.length).toBeGreaterThan(0);
-    const remaining=await live.clients[name].run(`character.items.filter(item=>${JSON.stringify(cipherIngredients)}.includes(item?.name))`);
-    expect(remaining).toEqual([]);
+    // Rule 1: the fighters kept gathering into the last minute before gather_end.
+    const late=(await live.clients[name].events()).filter((entry:any)=>entry.event==='hit'&&String(entry.data?.id)===seed.id&&entry.data?.hid===name&&entry.data?.damage>0&&entry.at>=seed.board.gather_end-60_000);
+    expect(late.length).toBeGreaterThan(0);
+    // Rule 2: from gather_end each fighter hands every ingredient to the merchant at the Witch.
+    const held=(n:string)=>live.clients[n].run(`Object.fromEntries(${JSON.stringify(cipherIngredients)}.map(name=>[name,character.items.reduce((n,item)=>n+(item?.name===name?(item.q||1):0),0)]))`);
+    await expect.poll(async()=>(await Promise.all(fighters.map(held))).every(stock=>cipherIngredients.every(id=>stock[id]===0)),{timeout:240_000}).toBe(true);
+    const merchantStock=await held(merchant);
+    for(const id of cipherIngredients)expect(merchantStock[id],id).toBeGreaterThanOrEqual(seeded[id]);
+    // Rule 2: a fighter that handed everything over leaves the Witch for its farming.
+    await expect.poll(async()=>{const s=await live.state();return fighters.every(n=>s.characters[n]?.joinedEvent!=='witchcipher');},{timeout:120_000}).toBe(true);
     expect(await live.clients[merchant].run('character.witchcipher?.mixes??0')).toBe(0);
-    await expect.poll(async()=>Promise.all([name,'E2EPriest',merchant].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering?.mode`))),{timeout:120_000}).toEqual(['finished','finished','finished']);
-    await expect.poll(async()=>{const s=await live.state();return [name,'E2EPriest',merchant].every(n=>s.characters[n]?.joinedEvent!=='witchcipher');},{timeout:120_000}).toBe(true);
-    expect(await live.clients[merchant].run('character.witchcipher?.mixes??0')).toBe(0);
-    await info.attach('october-native-gathering-and-transfer',{body:JSON.stringify({seed,plans,retained,remaining,merchant:await live.clients[merchant].snapshot(),events:await live.clients[name].events(),state:await live.state()}),contentType:'application/json'});
-    }finally{await live.admin(`output=(()=>{const m=instances[${JSON.stringify(seed.map)}]?.monsters[${JSON.stringify(seed.id)}];if(m)remove_monster(m,{silent:true});return true;})()`);}
+    await info.attach('october-native-gathering-and-transfer',{body:JSON.stringify({seed,plans,retained,merchantArrivedAt,merchantStock,merchant:await live.clients[merchant].snapshot(),events:await live.clients[name].events(),state:await live.state()}),contentType:'application/json'});
   });
 });
 
 test.describe('October Cipher inventory decisions',()=>{
   test.use({initialPosition:{map:'halloween',x:858,y:-120}});
-  for(const shortage of [false,true])test(`October Cipher ${shortage?'farms an unavoidable recipe shortage without spending a try':'prefers abundant ingredients for equally informative guesses'}`,async({live},info)=>{
+  // With the clue setting at 0 the merchant brews on an empty
+  // board, the solver's first guess, as on b9b5c91e.
+  const cases=[
+    {kind:'abundant',stock:[25,1,1,1],title:'prefers abundant ingredients for equally informative guesses'},
+    {kind:'shortage',stock:[25,1,1,1],title:'ends an unavoidable recipe shortage at gather_end without spending a try'},
+    {kind:'empty',stock:[5,5,5,5],title:'with clues 0 brews on an empty board'},
+  ] as const;
+  for(const {kind,stock,title} of cases)test(`October Cipher ${title}`,async({live},info)=>{
     test.setTimeout(240_000);
     const merchant='E2EMerchant';
     for(const character of ['E2EWarrior','E2EPriest',merchant])await live.post('/formation',{character,eventSelections:[],follow:false});
     const seed=await live.admin(`output=(()=>{
-      const p=get_player('${merchant}'),ingredients=${JSON.stringify(cipherIngredients)};
-      for(let i=0;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:ingredients[i],q:i===0?25:1};}
+      const p=get_player('${merchant}'),ingredients=${JSON.stringify(cipherIngredients)},stock=${JSON.stringify(stock)};
+      for(let i=0;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:ingredients[i],q:stock[i]};}
       cache_player_items(p);resend(p,'reopen+cid');return {stock:p.items};
     })()`);
-    const expectedStock=Object.fromEntries(cipherIngredients.map((id,i)=>[id,i===0?25:1]));
+    const expectedStock=Object.fromEntries(cipherIngredients.map((id,i)=>[id,stock[i]]));
     await expect.poll(()=>publishedCipherStock(live,merchant),{timeout:30_000,
       message:'The declared starting inventory must reach the client and coordinator before publishing a Cipher round'}).toEqual(expectedStock);
+    live.undo('the witch_cipher_brew receipt wrap',()=>live.admin('output=(()=>{if(global.e2eCipherBrew){witch_cipher_brew=global.e2eCipherBrew;delete global.e2eCipherBrew;}return true;})()'));
     const board=await live.admin(`output=(()=>{
-      witch_cipher_start({id:'e2e-stock-decision'});
-      witch_cipher.secret=${JSON.stringify(shortage?Array(5).fill('frostscale'):['verdantspore','frostscale','embercoal','gloomfeather','frostscale'])};
-      if(${shortage})witch_cipher.history=Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'embercoal':name),right:4}));
+      witch_cipher_start({id:${JSON.stringify(kind==='empty'?'e2e-empty-board':'e2e-stock-decision')}});
+      if(${kind!=='empty'})witch_cipher.secret=${JSON.stringify(kind==='shortage'?Array(5).fill('frostscale'):['verdantspore','frostscale','embercoal','gloomfeather','frostscale'])};
+      // Before gather_end the merchant waits for the fighters' gathering on a mix its bag cannot
+      // brew; from gather_end it ends the round on the shortage, so the shortage row starts there.
+      if(${kind==='shortage'})witch_cipher.gather_end=Date.now();
+      if(${kind!=='abundant'})witch_cipher.history=${kind==='shortage'}?Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'embercoal':name),right:4})):[];
       witch_cipher_publish();
-      global.e2eCipherReceipts=[];const original=witch_cipher_brew;
+      global.e2eCipherReceipts=[];const original=global.e2eCipherBrew||=witch_cipher_brew;
       witch_cipher_brew=async function(player,names){const at=Date.now(),result=await original(player,names);e2eCipherReceipts.push({at,player:player.name,mix:names.slice(),result});return result;};
       return witch_cipher_public();
     })()`);
+    if(kind==='empty')expect(board.board??[],'the board starts empty').toEqual([]);
     // Native day claims survive earlier rounds on this fixture's shared realm.
     // Assert an exact unchanged counter, in addition to zero brew receipts.
     const startingMixes=await live.admin(`output=witch_cipher_info(get_player('${merchant}')).then(info=>info.mixes-info.mixes_left)`);
     await live.post('/formation',{character:merchant,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{minClues:0,automatic:true}}}});
-    if(shortage){
-      await expect.poll(()=>live.clients[merchant].run(`get('party-october-${merchant}')?.gathering`),{timeout:90_000}).toMatchObject({mode:'gathering',ingredient:'frostscale',monster:'arcticbee',reason:'recipe shortage'});
+    if(kind==='shortage'){
+      await expect.poll(()=>live.clients[merchant].run(`get('party-october-${merchant}')?.gathering`),{timeout:90_000}).toMatchObject({mode:'finished',ingredient:'frostscale',monster:'arcticbee',reason:'recipe shortage'});
       expect(await live.admin('output=e2eCipherReceipts')).toEqual([]);
       expect(await live.clients[merchant].run('character.witchcipher?.mixes??0')).toBe(startingMixes);
       expect(await live.clients[merchant].run("character.items.find(item=>item?.name==='frostscale')?.q")).toBe(1);
-    }else{
+    }else if(kind==='abundant'){
       await expect.poll(()=>live.admin('output=e2eCipherReceipts[0]||null'),{timeout:90_000}).toMatchObject({player:merchant,mix:Array(5).fill('verdantspore'),result:{success:true,right:1}});
+    }else{
+      await expect.poll(()=>live.admin('output=e2eCipherReceipts[0]||null'),{timeout:120_000}).toMatchObject({player:merchant,result:{success:true}});
     }
-    await info.attach('october-native-stock-decision',{body:JSON.stringify({seed,board,expectedStock,startingMixes,receipts:await live.admin('output=e2eCipherReceipts'),journal:await live.clients[merchant].run(`get('party-october-${merchant}')`),state:await live.state()}),contentType:'application/json'});
+    await info.attach(kind==='empty'?'october-native-empty-board':'october-native-stock-decision',{body:JSON.stringify({seed,board,expectedStock,startingMixes,receipts:await live.admin('output=e2eCipherReceipts'),journal:await live.clients[merchant].run(`get('party-october-${merchant}')`),state:await live.state()}),contentType:'application/json'});
+  });
+});
+
+// Found on 2026-10-29: a death on the way to the Cipher or a replaced
+// walk does not end the trip; the Hunt runs when the round starts, the priest dies on the way, and the
+// party still reaches the round and gathers.
+test.describe('October Cipher during a Hunt',()=>{
+  test.use({initialPosition:null,initialMonsterSpawn:'arcticbee'});
+  test('Hunt running when the Cipher starts, one member dies on the way, the party reaches the Cipher and gathers',async({live},info)=>{
+    test.setTimeout(600_000);
+    const name='E2EWarrior',priest='E2EPriest';
+    const hunt=await prepareHunt(live,{monster:'armadillo',count:1});await start(live,name,hunt.monster,hunt.location);
+    await expect.poll(async()=>(await live.state()).monsterHunt?.stage,{timeout:120_000}).toBeTruthy();
+    const seed=await live.admin(`output=(()=>{
+      G.monsters.arcticbee={...G.monsters.arcticbee,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
+      witch_cipher_start({id:'e2e-cipher-hunt'});witch_cipher.gather_end=Date.now()+7*60_000;witch_cipher_publish();
+      return {board:witch_cipher_public()};
+    })()`);
+    await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:20,minClues:1,automatic:false}}}});
+    await expect.poll(async()=>{const s=await live.state();return [name,priest].every(n=>s.characters[n]?.joinedEvent==='witchcipher');},{timeout:120_000}).toBe(true);
+    const deathAt=Date.now(),death=await killNativeCharacter(live,priest);
+    // The trip goes on: the priest's attendance stays (no limit), and both reach the gathering monster.
+    await expect.poll(async()=>{
+      const s=await live.state();
+      const attendance=s.eventAttendance?.[priest]?.witchcipher;
+      return !!attendance&&!attendance.ignored&&[name,priest].every(n=>s.characters[n]?.joinedEvent==='witchcipher'&&!s.characters[n]?.rip);
+    },{timeout:240_000}).toBe(true);
+    await expect.poll(async()=>{const hits=await live.clients[name].events();return [name,priest].every(n=>hits.some((e:any)=>e.event==='hit'&&e.data?.hid===n&&e.data?.damage>0&&e.at>deathAt));},{timeout:240_000}).toBe(true);
+    const plans=await Promise.all([name,priest].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
+    expect(plans.every(plan=>plan?.mode==='gathering'||plan?.mode==='brewing'),'the Cipher plan stands after the death').toBe(true);
+    await info.attach('october-cipher-hunt-death',{body:JSON.stringify({hunt,seed,death,plans,state:await live.state()}),contentType:'application/json'});
   });
 });
 
 test.describe('October Cipher complete stock at cutoff',()=>{
-  test.use({initialPosition:null,initialMonsterSpawn:'goo',initialPositions:{E2EMerchant:{map:'main',x:80,y:-80}}});
-  test('October Cipher gathers through the cutoff then brews with all four ingredient types',async({live},info)=>{
+  test.use({initialPosition:null,initialMonsterSpawn:'goo'});
+  // The merchant holds 25 of each
+  // ingredient but verdantspore and the history solves the all-frostscale mix, so it brews that mix
+  // before the cutoff on its own stock, with no verdantspore from the fighters, who hand over only at
+  // the Witch from `gather_end` (the "October Cipher gathering" row checks that handover).
+  test('October Cipher brews early on the mix the merchant affords, before the fighters hand over',async({live},info)=>{
     test.setTimeout(420_000);
     const name='E2EWarrior',merchant='E2EMerchant';
-    let holdMerchant=true;
-    const merchantEntry=async(route:Route)=>{
-      const body=route.request().postDataJSON();
-      if(holdMerchant&&body?.character===merchant&&body.event==='witchcipher'){
-        await route.fulfill({status:200,json:{allowed:false,reason:'Declared gathering-only merchant entry hold'}});return;
-      }
-      await route.fallback();
-    };
-    await live.clients[merchant].page.context().route('**/party-api/hunt-event-permission',merchantEntry);
-    // Retain these native receipts independently of the rolling combat log.
-    await live.clients[merchant].frame.evaluate(()=>{
-      const game=window as any;
-      const ledger:any[]=[];
-      const listener=(data:any)=>{
-        if(data?.response==='item_received'&&data.item==='verdantspore'&&['E2EWarrior','E2EPriest'].includes(data.name)&&data.q>0)
-          ledger.push({at:Date.now(),data:JSON.parse(JSON.stringify(data))});
-      };
-      game.__e2eCipherTransfers={ledger,listener,socket:game.socket};
-      game.socket.on('game_response',listener);
-    });
-    try{
     await live.post('/formation',{leader:name});
     await live.post('/formation',{character:'E2EPriest',follow:true});
-    // Party loot can award an item to any native party member regardless of
-    // distance. Keep this recipient outside that pool until delivery is proven.
-    await live.post('/formation',{character:merchant,follow:false});
-    await expect.poll(()=>live.admin(`output=!!get_player('${merchant}').party`)).toBe(false);
-    await live.post('/merchant/stand-location',{map:'main',x:80,y:-80});
-    await live.post('/merchant/force-stand',{enabled:true});
-    await expect.poll(async()=>{const c=await live.clients[merchant].snapshot();return c.map==='main'&&Math.hypot(c.x-80,c.y+80)<=35;},{timeout:60_000}).toBe(true);
+    live.undo('the witch_cipher_brew receipt wrap',()=>live.admin('output=(()=>{if(global.e2eCipherBrew){witch_cipher_brew=global.e2eCipherBrew;delete global.e2eCipherBrew;}return true;})()'));
+    live.undo('the Witch loot and calendar collision of the cutoff row',()=>live.admin(`output=(()=>{if('e2eCipherLoot' in global){G.events.witchcipher.loot=global.e2eCipherLoot;delete global.e2eCipherLoot;}
+      const list=event_schedule_state().state().occurrences,at=list.findIndex(o=>o.id==='e2e-ambient-calendar-cipher');if(at>=0)list.splice(at,1);return true;})()`));
     const seed=await live.admin(`output=(()=>{
       const p=get_player('${merchant}'),ingredients=${JSON.stringify(cipherIngredients)};
       for(let i=1;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:ingredients[i],q:25};}
       cache_player_items(p);resend(p,'reopen+cid');
       // Guaranteed native ingredient rolls from real goo kills; no fabricated
       // inventory, action result, or runtime deadline transition after setup.
-      G.events.witchcipher.loot=100;
+      global.e2eCipherLoot??=G.events.witchcipher.loot;G.events.witchcipher.loot=100;
       witch_cipher_start({id:'e2e-cutoff-complete'});witch_cipher.gather_end=Date.now()+3*60_000;
-      witch_cipher.secret=Array(5).fill('verdantspore');
+      witch_cipher.secret=Array(5).fill('frostscale');
       witch_cipher.history=Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'embercoal':name),right:4}));witch_cipher_publish();
-      // Reproduce a realm-calendar collision on every date, not just 06:00.
-      // The disposable world's background schedule must not replace our round.
-      const collision={id:'e2e-ambient-calendar-cipher',event:'witchcipher',at:Date.now(),status:'scheduled',season:'halloween'};
+      // Reproduce a realm-calendar collision on every date, not only 06:00 (aac30d45
+      // live-october-events.spec.ts:409-413): the background schedule must not replace this round.
+      // The server's own Cipher occurrences carry no season (its November lineup lists them), and
+      // the Halloween season the pinned server gates on ended on 2026-11-03, so the declared
+      // occurrence carries none either.
+      const collision={id:'e2e-ambient-calendar-cipher',event:'witchcipher',at:Date.now(),status:'scheduled'};
       event_schedule_state().state().occurrences.push(collision);
-      global.e2eCipherReceipts=[];const original=witch_cipher_brew;
+      global.e2eCipherReceipts=[];const original=global.e2eCipherBrew||=witch_cipher_brew;
       witch_cipher_brew=async function(player,names){const at=Date.now(),result=await original(player,names);e2eCipherReceipts.push({at,player:player.name,mix:names.slice(),result});return result;};
       return {board:witch_cipher_public(),calendarCollision:collision};
     })()`);
     await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{minClues:5,automatic:true}}}});
     await expect.poll(()=>live.clients[name].run(`get('party-october-${name}')?.gathering`),{timeout:60_000}).toMatchObject({round:seed.board.id,mode:'gathering',ingredient:'verdantspore',monster:'goo'});
-    // Gathering uses real fighter stock while the merchant waits at its stand,
-    // outside both the native loot party and the 400-unit loot radius.
-    let gatheringStock:Record<string,Pick<import('typed-adventureland').CharacterEntity,'map'|'x'|'y'>&{stock:Record<string,number>}>={};
-    await expect.poll(async()=>{
-      gatheringStock=await live.admin(`output=Object.fromEntries(['E2EWarrior','E2EPriest','E2EMerchant'].map(name=>{const p=get_player(name);return [name,{map:p.map,x:p.x,y:p.y,stock:Object.fromEntries(${JSON.stringify(cipherIngredients)}.map(id=>[id,p.items.reduce((n,item)=>n+(item?.name===id?(item.q||1):0),0)]))}]}))`);
-      return cipherIngredients.every(id=>Object.values(gatheringStock).reduce((sum,player)=>sum+player.stock[id],0)>0);
-    },{timeout:120_000,message:'Real party loot must complete all four shared ingredient types before cutoff'}).toBe(true);
-    await info.attach('october-native-gathered-stock',{body:JSON.stringify(gatheringStock),contentType:'application/json'});
+    // The fighters carry the merchant's Merchant's Luck from the loadout, so the game may hand the
+    // merchant its own copy of a fighter's loot, marked `m` with the finder (one run: one copy at the
+    // priest's first chest). A handover sends the fighter's own item, which carries no `m`.
+    const verdantspore=()=>live.clients[merchant].run("character.items.filter(item=>item?.name==='verdantspore'&&!item.m).reduce((n,item)=>n+(item.q||1),0)");
+    await expect.poll(()=>live.admin('output=e2eCipherReceipts[0]||null'),{timeout:150_000}).toMatchObject({mix:Array(5).fill('frostscale'),result:{success:true,cracked:true}});
     const before=await live.admin('output={at:Date.now(),receipts:e2eCipherReceipts}');
-    expect(before.at).toBeLessThan(seed.board.gather_end);expect(before.receipts).toEqual([]);
-    await expect.poll(()=>live.admin('output=Date.now()'),{timeout:240_000}).toBeGreaterThanOrEqual(seed.board.gather_end);
-    holdMerchant=false;
-    await live.post('/merchant/force-stand',{enabled:false});
-    await expect.poll(()=>live.admin('output=e2eCipherReceipts[0]||null'),{timeout:240_000}).toMatchObject({mix:Array(5).fill('verdantspore'),result:{success:true,cracked:true}});
+    expect(before.receipts[0].at).toBeLessThan(seed.board.gather_end);
+    expect(await verdantspore()).toBe(0);
     const receipts=await live.admin('output=e2eCipherReceipts');
-    expect(receipts[0].at).toBeGreaterThanOrEqual(seed.board.gather_end);
-    await expect.poll(()=>live.clients[merchant].run("character.items.filter(item=>item?.name==='verdantspore').reduce((n,item)=>n+(item.q||1),0)"),{timeout:120_000}).toBeGreaterThan(0);
-    const receivedSpores=async()=>live.clients[merchant].frame.evaluate(start=>(window as any).__e2eCipherTransfers.ledger.filter((entry:{at:number})=>entry.at>=start),seed.board.start);
-    await expect.poll(async()=>(await receivedSpores()).length,{timeout:30_000,message:'Native transfer receipts must confirm delivery of the gathered ingredient'}).toBeGreaterThan(0);
-    const transferReceipts=await receivedSpores();
     const journal=await live.clients[name].run(`get('party-october-${name}')`);
-    expect(journal.gathering).toMatchObject({round:seed.board.id,mode:'brewing',reason:'gathering ended'});
-    // Explicit calendar coverage still uses the native scheduler and publication.
-    // Only unrelated automatic starts are isolated by the default fixture.
+    // Explicit calendar coverage still uses the native scheduler and publication; the default
+    // fixture isolates only unrelated automatic starts (e2e/game/bootstrap.cjs).
     try{
       await live.admin('globalThis.__e2eAllowScheduledEvents=true;event_schedule_tick(Date.now());output=true');
       await expect.poll(async()=>{
         const s=await live.state();return s.eventSchedules.find((event:{id:string})=>event.id==='witchcipher')?.cipher?.board?.id;
       },{timeout:30_000}).toBe(seed.calendarCollision.id);
-      await info.attach('october-native-cutoff-complete',{body:JSON.stringify({seed,gatheringStock,before,receipts,transferReceipts,journal,state:await live.state()}),contentType:'application/json'});
+      await info.attach('october-native-cutoff-complete',{body:JSON.stringify({seed,before,receipts,journal,state:await live.state()}),contentType:'application/json'});
     }finally{await live.admin('globalThis.__e2eAllowScheduledEvents=false;output=true');}
-    }finally{
-      holdMerchant=false;
-      await live.clients[merchant].page.context().unroute('**/party-api/hunt-event-permission',merchantEntry);
-      const transfers=await live.clients[merchant].frame.evaluate(()=>{
-        const game=window as any,observer=game.__e2eCipherTransfers;
-        observer.socket.off('game_response',observer.listener);
-        delete game.__e2eCipherTransfers;
-        return observer.ledger;
-      });
-      await info.attach('october-retained-native-transfers',{body:JSON.stringify(transfers),contentType:'application/json'});
-    }
   });
 });
 

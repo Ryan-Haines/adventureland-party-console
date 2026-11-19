@@ -1,9 +1,11 @@
 "use client";
 import { Sprite } from "./sprite";
 
+// The drawn size of a sprite crop; CenteredMonsterSprite scales its centring shift to it.
+export const SPRITE_CROP_SIZE = 48;
 export function SpriteCrop({
   sprite,
-  size = 48,
+  size = SPRITE_CROP_SIZE,
   width = size,
   height = size,
 }: {

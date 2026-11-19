@@ -77,11 +77,17 @@ for (const stored of [0,200]) test(`an automatic NPC sale keeps the configured a
     // 2, 3: the merchant sells down to exactly 250 across bag and bank.
     await expect.poll(async () => { const n = await native(live); samples.push({ at: Date.now(), ...n }); return n.carried + n.bank; },
       { timeout: 300_000, intervals: [2000] }).toBe(250);
-    // 4: and stops there.
-    await new Promise(resolve => setTimeout(resolve, 20_000));
-    const settled = await native(live);
-    samples.push({ at: Date.now(), ...settled });
-    expect(settled.carried + settled.bank).toBe(250);
+    // 4: and stops there. The sale routine marks from the merchant's inventory reports, so the row
+    // reads the total on each sample until a newer report reached the coordinator and no automatic
+    // sale is queued or running: the routine had its next check and sold nothing past the keep.
+    const reportedAt = (await live.state()).characters[merchant]?.seenAt || 0;
+    let settled = await native(live);
+    await expect.poll(async () => {
+      settled = await native(live); samples.push({ at: Date.now(), ...settled });
+      expect(settled.carried + settled.bank, 'the total stays at the keep on every sample').toBe(250);
+      const s = await live.state(), jobs = [s.merchantCurrent, ...(s.merchantQueue || [])];
+      return (s.characters[merchant]?.seenAt || 0) > reportedAt && !jobs.some((job: any) => job?.reason === 'auto npc sales');
+    }, { timeout: 60_000, intervals: [2000], message: 'The sale routine checks again and sells nothing past the keep' }).toBe(true);
     expect(settled.gold).toBeGreaterThan(before.gold);
     if (stored) {
       const offline = await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'E2EBankBoi'});

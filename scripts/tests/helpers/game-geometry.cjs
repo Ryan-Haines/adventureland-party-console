@@ -1,5 +1,6 @@
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const manifest=require('../fixtures/game/manifest.json');
+const { sliceBetween } = require('./slice.cjs');
 function installGameGeometry(context, requestedVersion) {
   const base = path.resolve('.caracal/game_files');
   if (!fs.existsSync(base)) return false;
@@ -12,9 +13,10 @@ function installGameGeometry(context, requestedVersion) {
   context.G.geometry = game.geometry;
   Object.assign(context, { min: Math.min, max: Math.max, EPS: 1e-8, REPS: Number.EPSILON,
     Place: 'client', m_line_x: false, m_line_y: false });
-  vm.runInContext(common.slice(common.indexOf('function bsearch_start('), common.indexOf('function closest_line(')), context);
-  vm.runInContext(common.slice(common.indexOf('function get_x('), common.indexOf('function simple_distance(')), context);
-  vm.runInContext(common.slice(common.indexOf('function distance('), common.indexOf('function random_away(')), context);
+  const file = path.join(base, version, 'old_common_functions.js');
+  vm.runInContext(sliceBetween(common, 'function bsearch_start(', 'function closest_line(', file), context);
+  vm.runInContext(sliceBetween(common, 'function get_x(', 'function simple_distance(', file), context);
+  vm.runInContext(sliceBetween(common, 'function distance(', 'function random_away(', file), context);
   context.can_move_to = (x, y) => context.can_move({ map: context.character.map,
     x: context.character.x, y: context.character.y, going_x: x, going_y: y, base: context.character.base });
   return true;

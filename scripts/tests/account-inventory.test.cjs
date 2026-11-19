@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {createAnniversarySnapshot}=require('../../runtime/coordinator/anniversary/snapshot.ts');
-const {anniversarySlices}=require('../../runtime/coordinator/anniversary/contracts.ts');
-const { inventoryCounts } = require('../../.build/shared/account-inventory.cjs');
+const {createAnniversarySnapshot}=require('../../runtime/events/coordinator/anniversary.ts');
+const {anniversarySlices}=require('../../runtime/events/rules.ts');
+const { inventoryCounts } = require('../../dashboard/lib/account-inventory.ts');
 const stack = (name, q, level = 0) => ({ slot: 0, item: { name, q, level } });
 
 test('counts characters, bank packs and offline bankbois together', () => {

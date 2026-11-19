@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {collectPassing}=require('../../runtime/combat/passing.ts');
+const {collectPassing}=require('../../runtime/characters/targeting/api.ts');
 
 // collectPassing runs twice for every status and combat report response (passingAdmission and
 // passingReports). Failure lines:

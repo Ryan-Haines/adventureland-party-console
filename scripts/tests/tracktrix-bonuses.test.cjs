@@ -1,22 +1,34 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const fs = require('node:fs'), vm = require('node:vm');
-const shared = fs.readFileSync('characters/shared.js', 'utf8');
+const { statusReport, gameReads } = require('./helpers/status-report.cjs');
+// The account tracker scores rat 15 and goo 5 (report.ts reads `parent.tracker`).
 function fixture() {
-  const context = vm.createContext({ character: { items: [{name:'tracker'}] },
-    parent: {character: {}}, G: {items: {tracker:{skin:'tracker'}}, monsters: {
-      rat: {achievements:[[10,'stat','dex',2],[20,'stat','dex',3],[10,'item','gold',100]]},
-      goo: {achievements:[[5,'stat','speed',1]]},
-    }}, spriteDefinition:skin=>({skin}), monsterAchievementProgress:()=>({rat:{score:15},goo:{score:5}}) });
-  vm.runInContext(shared.slice(shared.indexOf('  function tracktrixBonuses('),shared.indexOf('  function monsterAchievementProgress(')),context);
-  return context;
+  const c = { character: { name: 'Ranger', items: [{ name: 'tracker' }] },
+    parent: { character: {}, tracker: { monsters: { rat: 15, goo: 5 } } }, G: { items: { tracker: { skin: 'tracker' } }, monsters: {
+      rat: { achievements: [[10, 'stat', 'dex', 2], [20, 'stat', 'dex', 3], [10, 'item', 'gold', 100]] },
+      goo: { achievements: [[5, 'stat', 'speed', 1]] },
+    }, sprites: {} } };
+  return { c, report: gameReads(c) };
 }
-test('Tracktrix totals only unlocked stat rewards and prefers reported stats',()=>{
-  const r=fixture();assert.deepEqual(JSON.parse(JSON.stringify(r.tracktrixBonuses().bonuses)),{dex:2,speed:1});
-  r.parent.character.monster_stats={dex:7};assert.equal(r.tracktrixBonuses().bonuses.dex,7);
+test('Tracktrix totals only unlocked stat rewards and prefers reported stats', () => {
+  const { c, report } = fixture();
+  const read = () => JSON.parse(JSON.stringify(report.tracktrix()));
+  assert.deepEqual(read().bonuses, { dex: 2, speed: 1 });
+  // A total the report adds up itself is marked.
+  assert.equal(read().calculated, true);
+  c.parent.character.monster_stats = { dex: 7 };
+  assert.equal(read().bonuses.dex, 7);
+  assert.equal(read().calculated, false);
 });
-test('banked Tracktrix does not display stale bonuses; missing data remains unknown',()=>{
-  const r=fixture();r.parent.character.monster_stats={dex:7};r.character.items=[];
-  assert.equal(r.tracktrixBonuses().active,false);assert.equal(Object.keys(r.tracktrixBonuses().bonuses).length,0);
-  r.character.items=[{name:'supercomputer'}];delete r.parent.character.monster_stats;
-  r.monsterAchievementProgress=()=>null;assert.equal(r.tracktrixBonuses().bonuses,null);
+test('banked Tracktrix does not display stale bonuses; missing data remains unknown', () => {
+  const { c, report } = fixture();
+  c.parent.character.monster_stats = { dex: 7 }; c.character.items = [];
+  assert.equal(report.tracktrix().active, false); assert.equal(Object.keys(report.tracktrix().bonuses).length, 0);
+  c.character.items = [{ name: 'supercomputer' }]; delete c.parent.character.monster_stats; c.parent.tracker = {};
+  assert.equal(report.tracktrix().bonuses, null);
+});
+// The report object carries only the members a production caller reads; the game reads are the
+// module's own exports.
+test('the report object leaves the game reads to the module', () => {
+  const report = statusReport(fixture().c);
+  assert.deepEqual(['tracktrix', 'runSpeed', 'characterDollHtml', 'dollHtml', 'classAppearanceChoices'].filter(key => key in report), []);
 });

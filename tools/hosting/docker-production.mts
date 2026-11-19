@@ -2,7 +2,7 @@
 // when switching modes, then immediately drop root privileges before hosting.
 import { mkdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { grantDockerSocket } from '../debug/docker-access.ts';
+import { grantDockerSocket } from './docker-access.ts';
 if (process.getuid?.() === 0) {
   await grantDockerSocket('1000');
   await mkdir('/data', { recursive: true });

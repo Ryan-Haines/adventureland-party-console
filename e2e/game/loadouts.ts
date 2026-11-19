@@ -1,6 +1,6 @@
 import type { ItemInfo } from 'typed-adventureland';
 
-export type NativeLoadout = 'fragile' | 'god' | 'combat-range' | 'combat-follow-range';
+export type NativeLoadout = 'fragile' | 'god' | 'combat-range' | 'combat-follow-range' | 'god-mage-range';
 type Equipment = Pick<ItemInfo, 'name' | 'level'>;
 const item = (name: Equipment['name'], level: number): Equipment => ({name, level});
 
@@ -26,7 +26,11 @@ const baseLoadouts = {
     weaponLevel: 0,
   },
 } as const;
-export const loadouts={...baseLoadouts,'combat-follow-range':{...baseLoadouts['combat-range'],description:'Durable native armor with upgraded staff weapons for caster follow-clearance recovery.'}} as const;
+export const loadouts={...baseLoadouts,'combat-follow-range':{...baseLoadouts['combat-range'],description:'Durable native armor with upgraded staff weapons for caster follow-clearance recovery.'},
+  // The god party with the mage on its level-zero class weapon: a +100 staff gives a mage an attack
+  // range of 483, past energize's 320, so a row that needs the mage beside the tank uses this one.
+  'god-mage-range':{...baseLoadouts.god,description:'The god loadout with the mage on its level-zero class weapon, for a normal mage range.',mageWeaponLevel:0}} as const;
+const mageWeaponLevel=(profile:NativeLoadout)=>(loadouts[profile] as {mageWeaponLevel?:number}).mageWeaponLevel;
 
 /** Runs after reset, before native login: no connected character is modified. */
 export async function seedLoadout(admin: (code: string) => Promise<unknown>, profile: NativeLoadout, primaryClass: 'warrior' | 'ranger' | 'mage' = 'warrior', extraFighter: 'mage' | null = null) {
@@ -44,10 +48,10 @@ export async function seedLoadout(admin: (code: string) => Promise<unknown>, pro
       if(name==='E2EWarrior')c.type=${JSON.stringify(primaryClass)};
       if(name==='E2EBankBoi'){c.type=${JSON.stringify(extraFighter)};c.level=80;}
       const slots=structuredClone(G.classes[c.type].base_slots||{});
-      const weaponLevel=definition.weaponLevel;
+      const weaponLevel=c.type==='mage'&&definition.mageWeaponLevel!==undefined?definition.mageWeaponLevel:definition.weaponLevel;
       for(const value of Object.values(slots))if(value&&value.name)value.level=weaponLevel;
       Object.assign(slots,structuredClone(definition.armor));
-      if(profile==='god'||profile==='combat-range'||profile==='combat-follow-range') {
+      if(profile==='god'||profile==='god-mage-range'||profile==='combat-range'||profile==='combat-follow-range') {
         const stat=c.type==='warrior'?'str':c.type==='ranger'?'dex':'int';
         slots.amulet={name:stat+'amulet',level:20};slots.belt={name:stat+'belt',level:20};
       }
@@ -70,7 +74,7 @@ export async function seedLoadout(admin: (code: string) => Promise<unknown>, pro
   for(const name of names) {
     const character=seed.characters.find(entry=>entry.name===name);
     const followStaff=profile==='combat-follow-range'&&(character?.type==='priest'||character?.type==='mage');
-    const weaponLevel=followStaff?(character.type==='priest'?12:15):selected.weaponLevel;
+    const weaponLevel=followStaff?(character.type==='priest'?12:15):character?.type==='mage'&&mageWeaponLevel(profile)!==undefined?mageWeaponLevel(profile)!:selected.weaponLevel;
     if(character?.slots?.mainhand?.level!==weaponLevel||followStaff&&character.slots.mainhand.name!=='staff')
       throw Error('Native loadout weapon mismatch: '+name);
     for(const [slot,expected] of Object.entries(selected.armor)) {

@@ -47,9 +47,13 @@ test('Trick or Treat shows character allowance and honest shared account counts'
   await page.reload();
   row=await open('P');
   await expect(row).toContainText('Character: 0/7');await expect(row).toContainText('Account: 0/14');
-  const tomorrow=new Date(Date.now()+86400000).toISOString().slice(0,10);
-  await page.clock.setFixedTime(new Date(tomorrow+'T00:00:01Z'));
-  await expect(row).toContainText('Character: —/7');await expect(row).toContainText('Account: —/14');
+  // The coordinator drops a count whose day is not the realm's day (runtime/events/coordinator/
+  // occurrences.ts `knockCounts`), and the view shows the counts as sent, with a dash for each
+  // limit when there are none (4a4337a3f). Reports still on the day before the rollover stand for
+  // the realm's new day.
+  const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  await send('W',[0,1,2,3,4,5,6],0,'same-account',yesterday);await send('P',[0,1],0,'same-account',yesterday);
+  await expect(row).toContainText('Character: —/—');await expect(row).toContainText('Account: —/—');
   await info.attach('trick-or-treat-knocks-awaiting-reset-feed',{body:await page.screenshot(),contentType:'image/png'});
   await page.unrouteAll({behavior:'wait'});
 });

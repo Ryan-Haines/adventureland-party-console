@@ -4,7 +4,7 @@ Before implementation: independent automation switches must not enable each othe
 
 Existing account API and merchant completion boundaries remain authoritative. Browser fixtures declare saved outbox receipts and native account mail observations; gameplay collection continues through the maintained native merchant job.
 
-Implemented as a maintained TypeScript policy around the existing account inbox. Both automations default off and persist independently. Successful send receipts create durable, deduplicated local outbox records; native mail sent before this version is not backfilled. Incoming message IDs remain unseen until the mailbox opens. Automatic deletion requires a confirmed native collected attachment and no owned active collection job; text-only messages are preserved. Failed automatic collection backs off for thirty seconds. Native inventory capacity, ownership and idempotency checks remain in the existing executor. Browser evidence and the ChronAL native attachment round trip are selected centrally for validation.
+Implemented as a maintained TypeScript policy around the existing account inbox. Both automations default off and persist independently. Successful send receipts create durable, deduplicated local outbox records; native mail sent before this version is not backfilled. Incoming message IDs remain unseen until the mailbox opens. Automatic deletion requires a confirmed native collected attachment and no owned active collection job; text-only messages are preserved. A failed automatic collection or deletion waits for the next mail check, which runs every "Check mail every" seconds (30 by default); a refresh you ask for does not retry it. Native inventory capacity, ownership and idempotency checks remain in the existing executor. Browser evidence and the ChronAL native attachment round trip are selected centrally for validation.
 
 ## Automatic deletion exceptions
 
@@ -24,8 +24,8 @@ calls hammer a failing API; restart loses the enabled preference or recovery.
 Automation now catches failures per message/action and retains explicit diagnostics
 separate from listing errors. Refresh/settings requests return their current
 snapshot after an automatic action rejection. Other eligible messages continue;
-each failed action retries after thirty seconds. Removed messages no longer retain
-retry bookkeeping. Game-side `exception` responses are not manufactured into
+each failed action retries at the next mail check (items/coordinator/mail.ts). Removed
+messages no longer retain retry bookkeeping. Game-side `exception` responses are not manufactured into
 successes: the message stays present and the dashboard reports automatic deletion
 failure until a native request succeeds. No unclaimed attachment deletion or
 alternate deletion endpoint is attempted.
@@ -39,7 +39,7 @@ npm run test:e2e:verify
 ```
 
 The browser scenario declares one native API rejection, verifies a later collected
-message deletes, checks preference/error rendering and retry backoff, then removes
+message deletes, checks preference/error rendering and the retry at the next mail check, then removes
 the declared fault and verifies recovery after restart. Retain
 `mailbox-delete-exception-recovery` and the screenshot/video. Native scenarios
 cover deletion enabled before collection and enabled afterward, with unchanged

@@ -20,7 +20,7 @@ ${anchor}`);
 source = source
   .replaceAll(".get_game_files()", ".get_game_files(proc_args.version)")
   .replaceAll(".get_runner_files()", ".get_runner_files(proc_args.version)");
-// New official helpers read storage while scripts are evaluated, before html_vars.js.
+// The official helpers read storage while caracAL evaluates the game scripts, before html_vars.js.
 if (!source.includes('game_context.is_electron = false;')) {
   if (!source.includes('  game_context.bowser = {};')) throw new Error('Unrecognized game context initialization');
   source = source.replace('  game_context.bowser = {};',
@@ -48,12 +48,13 @@ if (!source.includes('bootstrap_failed')) {
       await make_game(msg.arguments);
     } catch (error) {
       console.error("game bootstrap failed", error);
-      if (process.connected) process.send({type: "bootstrap_failed", error: String(error.message || error)});
-      setTimeout(() => process.exit(1), 25);
+      // The exit follows the send's own callback, once the message is handed to the IPC channel.
+      if (process.connected) process.send({type: "bootstrap_failed", error: String(error.message || error)}, () => process.exit(1));
+      else process.exit(1);
     }`);
 }
-// Install in the long-lived game context before its first draw. A CODE-scoped
-// callback would become invalid when that runner is disposed.
+// installGameRendering hooks the long-lived game context before its first draw; that context
+// outlives every CODE runner.
 if (!source.includes('installGameRendering(game_context)')) {
   const anchor = '  vm.runInContext("the_game()", game_context);';
   if (!source.includes(anchor)) throw new Error('Unrecognized native game startup');
@@ -61,7 +62,7 @@ if (!source.includes('installGameRendering(game_context)')) {
     '  require("../../.build/runtime/lifecycle.cjs").installGameRendering(game_context);\n' + anchor);
 }
 // Before the first init_socket(), the party leader's worker asks for full Cave
-// floors (runtime/lifecycle/cave-floor-handshake.ts). An older lifecycle
+// floors (runtime/lifecycle/character/host.ts). An older lifecycle
 // bundle without the installer leaves the socket factory unchanged.
 if (!source.includes('installCaveFloorHandshake')) {
   const anchor = '  vm.runInContext("the_game()", game_context);';
@@ -70,7 +71,7 @@ if (!source.includes('installCaveFloorHandshake')) {
     '  require("../../.build/runtime/lifecycle.cjs").installCaveFloorHandshake?.(game_context, proc_args.full_cave_floors === true);\n' + anchor);
 }
 // Print party kills and finds from the named sibling's thread only
-// (runtime/characters/game-log-echo.ts). An older lifecycle bundle without the
+// (runtime/status/character/telemetry.ts). An older lifecycle bundle without the
 // installer keeps caracAL's own echo hook.
 if (!source.includes('installGameLogEcho')) {
   const hook = source.indexOf('const old_add_log = add_log;');
@@ -115,7 +116,7 @@ source =
       upper: game_context, createContext: make_context, evaluateFiles: ev_files,
       runnerFiles: game_files.get_runner_files(proc_args.version).map(f => game_files.locate_game_file(f, proc_args.version)),
       codeFile: target_script, send: message => process.send(message),
-      codeDependencies: ["farming-zones.js", "shared.js", "profiles.js", "roles.js"].map(file => "./CODE/adventure_land/" + file),
+      codeDependencies: ["farming-zones.js", "shared.js", "profiles.js"].map(file => "./CODE/adventure_land/" + file),
       connected: () => new Promise(resolve => {
         const listener = message => {
           if (message.type !== "siblings_and_acc") return;

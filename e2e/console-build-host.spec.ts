@@ -8,11 +8,11 @@ import {syncBuiltinESMExports} from 'node:module';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {ConsoleBuildStore} from '../tools/console-build/store';
+import {RETAIN_BUILDS} from '../tools/build-store';
 import {ConsoleBuildController} from '../tools/console-build/controller';
 import {createDeploymentDriver, type ActivationPorts} from '../tools/console-build/driver';
 import {ImmutableDashboard} from '../tools/console-build/dashboard';
 import type {Candidate, CandidateManifest} from '../tools/console-build/contracts';
-import {startupCandidate, deployStartupCandidate} from '../tools/console-build/startup';
 import {loadManagedConsole} from '../tools/console-build/bootstrap';
 import type {Services} from '../tools/hosting/services';
 
@@ -167,10 +167,13 @@ test('immutable console process activation preserves exact selection, rollback a
   try {
     await host.driver.activate(a, undefined, AbortSignal.timeout(5000));
     expect(await host.body()).toBe('process-A');
-    const accepted = await host.controller.deploy(b.manifest.id);
+    // With an older active build and a newer completed one, a launch loads the newer through the deploy path;
+    // C completes after the launch's
+    // one read, so it stays staged until a deploy names it.
+    const selected = await store.startupCandidate();
     const c = await stage(store, root, 'process-C', 3);
-    expect(accepted.target).toBe(b.manifest.id);
-    await terminal(host.controller);
+    expect(selected?.manifest.id).toBe(b.manifest.id);
+    await host.controller.launch(selected?.manifest.id);
     expect((await store.references()).active).toBe(b.manifest.id);
     expect((await store.references()).latest).toBe(c.manifest.id);
     expect(await host.body()).toBe('process-B');
@@ -195,7 +198,7 @@ test('immutable console process activation preserves exact selection, rollback a
     expect((await store.references()).latest).toBe(broken.manifest.id);
     await info.attach('active-dashboard-process-crash-recovery', {body: JSON.stringify({beforeCrash, afterCrash, references: await store.references()}), contentType: 'application/json'});
     expect(JSON.parse(await readFile(state, 'utf8'))).toEqual({currentJob: 'keep-this-job', gold: 1234});
-    await info.attach('exact-process-deployment-and-rollback', {body: JSON.stringify({accepted, references: await store.references(), journal: await store.journal(), identity: await host.observation(), state: JSON.parse(await readFile(state, 'utf8'))}), contentType: 'application/json'});
+    await info.attach('exact-process-deployment-and-rollback', {body: JSON.stringify({selected: selected?.manifest.id, references: await store.references(), journal: await store.journal(), identity: await host.observation(), state: JSON.parse(await readFile(state, 'utf8'))}), contentType: 'application/json'});
   } finally { await host.stop(); }
   const restarted = await processHost(store, info);
   try {
@@ -252,14 +255,15 @@ test('interrupted console deployment recovers prior executable and retention pro
     await store.pin([c.manifest.id]);
     await store.cleanup();
     const retainedPinned = (await store.history()).map(value => value.id);
-    expect(retainedPinned).toHaveLength(23);
-    expect(retainedPinned).toEqual(expect.arrayContaining([a.manifest.id, b.manifest.id, c.manifest.id, ...candidates.slice(-20).map(value => value.manifest.id)]));
+    // The three pinned builds stay beside the store's RETAIN_BUILDS latest candidates.
+    expect(retainedPinned).toHaveLength(3 + RETAIN_BUILDS);
+    expect(retainedPinned).toEqual(expect.arrayContaining([a.manifest.id, b.manifest.id, c.manifest.id, ...candidates.slice(-RETAIN_BUILDS).map(value => value.manifest.id)]));
     const dependencyPins = await readdir(path.join(store.directory, 'dependencies'));
     expect(dependencyPins.sort()).toEqual(dependencies.map(value => value.id).sort());
     await store.pin([]);
     await store.cleanup();
     const retainedReleased = (await store.history()).map(value => value.id);
-    expect(retainedReleased).toHaveLength(22);
+    expect(retainedReleased).toHaveLength(2 + RETAIN_BUILDS);
     expect(retainedReleased).not.toContain(c.manifest.id);
     const dependencyReleased = await readdir(path.join(store.directory, 'dependencies'));
     expect(dependencyReleased.sort()).toEqual([dependencies[0].id, dependencies[1].id, dependencies[3].id].sort());
@@ -334,7 +338,10 @@ test('managed native preload pins external packages while preserving installed s
 
 test('managed headless generations require explicit activation and retain the selected generation across busy retry',async({},info)=>{
   const {fork}=await import('node:child_process');
-  const {watchGenerations,classScript}=await import('../runtime/lifecycle/generations');
+  const {createCode,classScript}=await import('../runtime/lifecycle/coordinator/code');
+  const {coordinatorClock}=await import('../runtime/lifecycle/coordinator/workers');
+  const {createCoordinatorRun}=await import('../runtime/lifecycle/character/run');
+  const run=createCoordinatorRun({setTimeout,clearTimeout,setInterval,clearInterval});
   const {classes}=await import('../tools/game/manifest');
   const directory=path.resolve('.build/e2e','explicit-code-'+randomUUID()),code=path.join(directory,'code');
   await mkdir(code,{recursive:true});
@@ -350,8 +357,10 @@ test('managed headless generations require explicit activation and retain the se
   await writeFile(workerFile,`const fs=require('node:fs'),path=require('node:path');let busy=true;process.on('message',m=>{if(m.type!=='reload_code')return;if(busy){busy=false;process.send({type:'observed',status:'busy',generation:m.generation});process.send({type:'code_reload_result',id:m.id,generation:m.generation,status:'busy'});return;}const source=fs.readFileSync(path.join(${JSON.stringify(code)},m.script.replace('adventure_land/','')),'utf8');eval(source);process.send({type:'observed',status:'ready',generation:m.generation,executed:globalThis.executed});process.send({type:'code_reload_result',id:m.id,generation:m.generation,status:'ready'});});`);
   const worker=fork(workerFile,[],{stdio:['ignore','pipe','pipe','ipc']}),ledger:any[]=[],reports:any[]=[];
   worker.on('message',m=>{if((m as any)?.type==='observed')ledger.push(m);});
-  const liveWorker={name:'W',className:'warrior',process:worker,script:'adventure_land/'+a.classes.warrior.file};
-  const activator=watchGenerations({directory:code,activationFile,workers:()=>[liveWorker],current:()=>true,activated:(_w,script)=>{liveWorker.script=script;},restart:async()=>{throw Error('Unexpected native restart');},report:(message,detail)=>reports.push({message,detail})});
+  const liveWorker:{enabled:boolean,instance:typeof worker,script:string,codeReloadBusy?:boolean}={enabled:true,instance:worker,script:'adventure_land/'+a.classes.warrior.file};
+  const report=(message:string,detail?:unknown)=>{reports.push({message,detail});};
+  const host=createCode({blocks:{W:liveWorker},clock:coordinatorClock(run.scope('13','act')),log:{log:report,warn:report,error:report},watching:false,hash:()=>createHash('sha256'),read:()=>new Uint8Array(),watch:()=>{throw Error('Unexpected script watch');},className:()=>'warrior',stop:async()=>{throw Error('Unexpected native restart');},notify:()=>{}});
+  const activator=host.watchGenerations(code,activationFile);
   try{
     await writeFile(manifestFile,JSON.stringify(b));
     await new Promise(resolve=>setTimeout(resolve,2500));
@@ -359,7 +368,10 @@ test('managed headless generations require explicit activation and retain the se
     const {atomicJson}=await import('../tools/build-store');
     await atomicJson(activationFile,{id:'explicit-B',manifest:b});
     await expect.poll(()=>ledger.some(e=>e.status==='busy'),{timeout:5000}).toBe(true);
+    await expect.poll(()=>liveWorker.codeReloadBusy,{timeout:5000}).toBe(true);
     await writeFile(manifestFile,JSON.stringify(c));
+    // Table W's busy row retries on the worker's first report that reads not busy (code.ts `reported`).
+    host.reported('W',{busy:false});
     await expect.poll(()=>ledger.some(e=>e.executed==='B:warrior'),{timeout:8000}).toBe(true);
     expect(liveWorker.script).toBe('adventure_land/'+b.classes.warrior.file);
     expect(classScript(code,'warrior'),'Worker recovery must use the explicitly selected generation').toBe(liveWorker.script);
@@ -367,7 +379,7 @@ test('managed headless generations require explicit activation and retain the se
     await atomicJson(activationFile,{id:'explicit-rollback',manifest:a});
     await expect.poll(()=>ledger.some(e=>e.executed==='A:warrior'),{timeout:5000}).toBe(true);
     await info.attach('explicit-headless-activation-and-busy-retry',{body:JSON.stringify({a,b,c,ledger,reports}),contentType:'application/json'});
-  }finally{activator.dispose();await stopChild(worker);}
+  }finally{activator.dispose();run.stop();await stopChild(worker);}
 });
 
 // Failure inventory: startup keeps an older active build; it chases builds made
@@ -381,7 +393,7 @@ test('console startup deploys its newest completed snapshot and rolls back faile
   try {
     const a=await stage(store,root,'startup-A',1), b=await stage(store,root,'startup-B',2);
     await store.setReferences({active:a.manifest.id,latest:b.manifest.id});
-    const selected=await startupCandidate(store);
+    const selected=await store.startupCandidate();
     expect(selected?.manifest.id).toBe(b.manifest.id);
     const c=await stage(store,root,'startup-C',3);
     const saved=path.join(root,'account-state.json');await writeFile(saved,JSON.stringify({job:'preserve',gold:1234}));
@@ -391,30 +403,30 @@ test('console startup deploys its newest completed snapshot and rolls back faile
     await store.setJournal({id:'interrupted',target:c.manifest.id,previous:a.manifest.id,startedAt:new Date().toISOString(),phase:'preparing'});
     await host.controller.recover();
     expect((await store.journal())?.phase).toBe('failed');
-    await deployStartupCandidate(host.controller,selected?.manifest.id);
+    await host.controller.launch(selected?.manifest.id);
     let snapshot={refs:await store.references(),identity:await host.observation(),dashboard:await host.body(),operation:await store.journal()};
     expect(snapshot.refs.active).toBe(b.manifest.id);expect(snapshot.refs.latest).toBe(c.manifest.id);
     expect(snapshot.identity.artifactId).toBe(b.manifest.id);expect(snapshot.dashboard).toBe('startup-B');
     expect(snapshot.operation?.phase).toBe('complete');
     const unchangedId=snapshot.operation?.id;
-    await deployStartupCandidate(host.controller,b.manifest.id);
+    await host.controller.launch(b.manifest.id);
     expect((await store.journal())?.id).toBe(unchangedId);
     await info.attach('startup-frozen-selection',{body:JSON.stringify(snapshot),contentType:'application/json'});
     await host.stop();host=undefined;
     // The next launch picks up C, which was deliberately left staged above.
-    const next=await startupCandidate(store);expect(next?.manifest.id).toBe(c.manifest.id);
+    const next=await store.startupCandidate();expect(next?.manifest.id).toBe(c.manifest.id);
     host=await processHost(store,info);await host.driver.activate(b,undefined,AbortSignal.timeout(5000));
-    await deployStartupCandidate(host.controller,next?.manifest.id);
+    await host.controller.launch(next?.manifest.id);
     expect((await host.observation()).artifactId).toBe(c.manifest.id);expect(await host.body()).toBe('startup-C');
     const bad=await stage(store,root,'startup-broken',4,true);
-    await expect(deployStartupCandidate(host.controller,(await startupCandidate(store))?.manifest.id)).rejects.toThrow('Startup console deployment failed');
+    await expect(host.controller.launch((await store.startupCandidate())?.manifest.id)).rejects.toThrow('Startup console deployment failed');
     snapshot={refs:await store.references(),identity:await host.observation(),dashboard:await host.body(),operation:await store.journal()};
     expect(snapshot.refs.active).toBe(c.manifest.id);expect(snapshot.identity.artifactId).toBe(c.manifest.id);
     expect(snapshot.dashboard).toBe('startup-C');expect(snapshot.operation?.phase).toBe('failed');
     expect(JSON.parse(await readFile(saved,'utf8'))).toEqual({job:'preserve',gold:1234});
     await info.attach('startup-readiness-rollback',{body:JSON.stringify(snapshot),contentType:'application/json'});
     await writeFile(path.join(bad.directory,'coordinator.mts'),'corrupted');
-    await expect(startupCandidate(store)).rejects.toThrow();
+    await expect(store.startupCandidate()).rejects.toThrow();
     expect((await store.references()).active).toBe(c.manifest.id);
   } finally {
     await host?.stop();

@@ -17,3 +17,14 @@ test('fractional extra rolls, rare chances and indirect rewards retain their pro
   assert.equal(effectiveDropRate({rate:0.25,originRate:15,quantity:1,sourceType:'monster',acquisitionPath:['box','reward']}), 0.25);
   assert.equal(effectiveDropRate({rate:0.1,originRate:15,quantity:1,sourceType:'world'}), 0.1);
 });
+
+// An exchange step before the reward makes it indirect; open and world steps keep it direct,
+// and a rate past the safe integer convergents keeps its exact decimal ratio.
+test('isDirectDrop reads the acquisition path, and a tiny rate keeps its exact ratio', () => {
+  const { isDirectDrop } = require('../../dashboard/features/party/drop-rate.ts');
+  assert.equal(isDirectDrop({acquisitionPath:['open tombkey','reward']}), true);
+  assert.equal(isDirectDrop({acquisitionPath:['World drop','reward']}), true);
+  assert.equal(isDirectDrop({acquisitionPath:['candy1','reward']}), false);
+  assert.equal(isDirectDrop({}), true);
+  assert.equal(formatDropRate({rate:1e-20,quantity:1}), '1/100,000,000,000,000,000,000\n(0.000000000000000001%)');
+});

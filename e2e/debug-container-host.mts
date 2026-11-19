@@ -1,5 +1,5 @@
 // Runs the actual debug control gateway as the regular unprivileged Docker user.
-import { grantDockerSocket } from '../tools/debug/docker-access.ts';
+import { grantDockerSocket } from '../tools/hosting/docker-access.ts';
 import { DebugInstances } from '../tools/debug/service.ts';
 import { Access } from '../tools/hosting/access.ts';
 import { gateway } from '../tools/hosting/gateway.ts';

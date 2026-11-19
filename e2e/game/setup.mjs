@@ -62,7 +62,9 @@ export default async function setup(config) {
         const results=await Promise.allSettled(pending.map(item=>up(item)));
         pending.length=0;
         const errors=results.filter(result=>result.status==='rejected').map(result=>result.reason);
-        if(errors.length)throw new AggregateError(errors,'Isolated game startup failed');
+        // Playwright prints only the message and stack of a global setup error, never
+        // AggregateError.errors, so the message carries each pool's own stack.
+        if(errors.length)throw new AggregateError(errors,'Isolated game startup failed:\n'+errors.map(error=>error?.stack||String(error)).join('\n'));
       }
     }
     process.env.E2E_GAME_POOLS=JSON.stringify(pools.map(({clock,...pool})=>pool));

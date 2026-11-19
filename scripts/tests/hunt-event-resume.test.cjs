@@ -1,25 +1,30 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const {createCoordinatorEventReturns} = require('../../runtime/coordinator/events/return-composition.ts');
-const {createHuntMode} = require('../../runtime/coordinator/hunt/mode.ts');
-const navigation = require('../farming-navigation.cjs');
+const {createCoordinatorEventReturns} = require('../../runtime/events/coordinator/returns.ts');
+const {createHuntMode} = require('../../runtime/tasks/coordinator/slots.ts');
+const {createHuntEntry} = require('../../runtime/hunting/coordinator/modes.ts');
+const navigation = require('./helpers/farming-navigation.cjs');
+// The return's walk repair reads the tasks owner's task tier for each participant; no member here holds a task.
+require('../../runtime/tasks/api.ts').publishTasks({assignment:()=>null});
 
 function fixture(event = 'goobrawl') {
   let now=50000, starts=0;
   const names=['QwenTina','GermanicHP','GDroidPT'], backup={map:'winterland',x:-169,y:-2026};
   const state={leader:names[0],followers:{GermanicHP:true,GDroidPT:true},merchantCharacter:'M',
-    farmingPolicy:'hunt',monsterHunterLocation:{map:'main',x:126,y:-413},location:backup,characterLocations:{},navigationIntents:{},
+    targetMode:'hunt',monsterHunterLocation:{map:'main',x:126,y:-413},location:backup,characterLocations:{},navigationIntents:{},
     monsterFocus:['wolfie'],monsterFocusByCharacter:{},nextCommandId:100,commands:{},statuses:{},
     eventReturn:null,eventReturnLast:null,deferredEventReturns:{},anniversary:{},eventSessions:{},
     combatLogs:{},huntEventTrips:{},activeConvoy:null,
-    monsterHunt:{cycleId:'hunt',stage:'paused-event',resumeStage:'mission-travel',target:'bee',
+    monsterHunt:{cycleId:'hunt',stage:'mission-travel',target:'bee',
       participants:names,missions:[{target:'bee'}],currentIndex:0,loot:{complete:false}}};
   for(const n of names){state.navigationIntents[n]={revision:4,cancelled:false};
     state.statuses[n]={seenAt:now,map:event,mapEvent:event,x:0,y:0,hp:100};}
   const cancelConvoy=()=>{const c=state.activeConvoy;for(const n of names)if(state.commands[n]?.convoyId===c?.id)delete state.commands[n];state.activeConvoy=null;};
   const nav=navigation(state,{now:()=>now,names:()=>names,activeNames:()=>names,persist(){},log(){},cancelConvoy,
     startConvoy(location,label,participants,purpose){starts++;state.activeConvoy={id:'checkpoint',location,label,participants,purpose,phase:'assemble'};return true;}});
-  const ports={now:()=>now,activeNames:()=>names,enabled:()=>true,checkpoint:()=>backup,cancelConvoy,
-    startConvoy:()=>false,anniversaryParticipants:()=>[],navigation:nav,persist(){}};
+  const ports={now:()=>now,nextCommand:()=>state.nextCommandId++,activeNames:()=>names,enabled:()=>true,checkpoint:()=>backup,cancelConvoy,
+    startConvoy:()=>false,anniversaryParticipants:()=>[],navigation:nav,persist(){},
+    // The hunting owner's `hunt.view` stage, as application.ts answers it for the group.
+    huntCycle:()=>!!state.monsterHunt?.stage};
   let service=createCoordinatorEventReturns(state,ports);
   const recovery=service.begin(event);
   function atTown(n){Object.assign(state.statuses[n],{map:'main',mapEvent:null,x:0,y:0,
@@ -28,10 +33,12 @@ function fixture(event = 'goobrawl') {
     state.activeConvoy={id:'child',phase:'failed',failure:'runtime-lost',purpose:'shared-walk',walkingActivity:'farm-recovery',
       participants:['QwenTina'],walkingParents:{QwenTina:{revision:4,parentId:73}}};
     state.commands.QwenTina={id:74,type:'party-monster-travel',convoyId:'child'};}
-  const mode=createHuntMode(state,{participants:()=>names,cancelled:n=>!!state.navigationIntents[n].cancelled,selectedDestination:()=>({location:backup}),
-    release(){},authorize:nav.authorize,
+  // The tasks owner's target mode slot asks the hunting owner's Hunt entry, as hunting/coordinator/routes.ts builds it.
+  const entry=createHuntEntry(state,{participants:()=>names,cancelled:n=>!!state.navigationIntents[n].cancelled,selectedDestination:()=>({location:backup}),
+    release(){},authorize:nav.authorize,monsterDestination:()=>null,
     clear(){state.monsterHunt=null;},convoy(){throw Error('must not dispatch fallback')},
-    begin(){state.monsterHunt={cycleId:'fresh',participants:names,missions:[],currentIndex:-1,stage:'checking-quests'};},returnToDaisy(){throw Error('must await evacuation')}});
+    begin(){state.monsterHunt={cycleId:'fresh',participants:names,missions:[],currentIndex:-1,stage:'checking-quests'};}});
+  const mode=createHuntMode(state,{write:require('./helpers/settings-writer.cjs').settingsWriter(state).write,entry});
   return {state,names,recovery,service:()=>service,atTown,child,mode,starts:()=>starts,
     restart(){Object.assign(state,JSON.parse(JSON.stringify(state)));service=createCoordinatorEventReturns(state,ports);}};
 }
@@ -48,8 +55,10 @@ test(`${event} evacuation hands directly to current Hunt without a checkpoint de
 test('staggered restart, deferred exit, failed farm child and Hunt off/on resume current policy',()=>{
   const f=fixture();f.atTown('QwenTina');f.atTown('GermanicHP');f.child();
   f.state.deferredEventReturns.GDroidPT={cycleId:f.recovery.cycleId,checkpoint:{map:'winterland',x:0,y:0}};
-  f.mode.select('auto',null,undefined,false);f.mode.select('hunt',null,undefined,false);
-  f.restart();f.restart();f.service().reconcile();
+  f.mode.select({combatMode:'auto',targetMode:'farming'},null,undefined,false);f.mode.select({targetMode:'hunt'},null,undefined,false);
+  // The into-Hunt row hands off only with no command but the return's own, so the first pass
+  // repairs the failed farm child and clears its command, and the next pass hands off.
+  f.restart();f.restart();f.service().reconcile();f.service().reconcile();
   assert.equal(f.state.eventReturn,null);assert.equal(f.state.activeConvoy,null);assert.equal(f.starts(),0);
   assert.equal(f.state.monsterHunt.stage,'checking-quests');assert.equal(f.state.monsterHunt.target,undefined);
   assert.equal(f.state.deferredEventReturns.GDroidPT.checkpoint,null);
@@ -63,14 +72,13 @@ test('currently connected late member must really leave before handoff',()=>{
   f.atTown('GDroidPT');f.service().reconcile();assert.equal(f.state.eventReturn,null);
 });
 
-for(const kind of ['stale','manual','merchant','newer-command','unrelated-convoy'])
+for(const kind of ['stale','manual','merchant','newer-command'])
 test(`Hunt handoff preserves ${kind} ownership or observation`,()=>{
   const f=fixture();f.names.forEach(f.atTown);
   if(kind==='stale')f.state.statuses.GDroidPT.seenAt=1;
   if(kind==='manual')f.state.navigationIntents.GDroidPT={revision:5,cancelled:true};
   if(kind==='merchant')f.state.commands.GDroidPT={id:800,type:'merchant-handoff'};
   if(kind==='newer-command')f.state.commands.GDroidPT={id:800,type:'character-travel'};
-  if(kind==='unrelated-convoy')f.state.activeConvoy={id:'manual',purpose:'manual',phase:'travel',participants:f.names};
   const commands=JSON.stringify(f.state.commands);f.service().reconcile();
   assert.ok(f.state.eventReturn);assert.equal(f.starts(),0);assert.equal(JSON.stringify(f.state.commands),commands);
 });
@@ -82,13 +90,13 @@ test('unowned farm child cannot be retired by label alone',()=>{
 
 test('leaving Hunt during evacuation returns to the newly selected normal destination',()=>{
   const f=fixture();delete f.state.monsterHunt.loot;f.names.forEach(f.atTown);f.recovery.pending=[];
-  f.mode.select('auto',null,undefined,false);f.service().reconcile();
+  f.mode.select({combatMode:'auto',targetMode:'farming'},null,undefined,false);f.service().reconcile();
   assert.equal(f.state.activeConvoy.purpose,'event-return');assert.equal(f.state.activeConvoy.location.map,'winterland');
 });
 
 test('leaving Hunt discards pending execution while preserving event evacuation',()=>{
   const f=fixture();f.state.statuses.QwenTina.monsterHunt={id:'bee',count:0,remainingMs:300000};
-  f.mode.select('auto',null,undefined,false);
+  f.mode.select({combatMode:'auto',targetMode:'farming'},null,undefined,false);
   assert.equal(f.state.monsterHunt,null);assert.equal(f.starts(),0);
   f.names.forEach(f.atTown);f.service().reconcile();
   assert.equal(f.state.monsterHunt,null);assert.ok(f.state.eventReturn);
@@ -96,14 +104,14 @@ test('leaving Hunt discards pending execution while preserving event evacuation'
 });
 
 test('normal farming repairs an owned failed checkpoint child after runtime replacement',()=>{
-  const f=fixture();f.state.farmingPolicy='auto';delete f.state.monsterHunt;
+  const f=fixture();f.state.targetMode='farming';delete f.state.monsterHunt;
   f.names.forEach(f.atTown);f.recovery.pending=[];f.child();f.restart();f.service().reconcile();
   assert.notEqual(f.state.activeConvoy?.id,'child');assert.equal(f.starts(),1);
 });
 
 test('explicit Hunt reselection releases manual cancellation without dispatching the backup',()=>{
   const f=fixture();f.state.navigationIntents.GDroidPT.cancelled=true;
-  f.mode.select('hunt',null,undefined,false);
+  f.mode.select({targetMode:'hunt'},null,undefined,false);
   assert.equal(f.state.navigationIntents.GDroidPT.cancelled,false);
   assert.equal(f.state.location.map,'main');assert.equal(f.starts(),0);
   f.names.forEach(f.atTown);f.service().reconcile();assert.equal(f.state.eventReturn,null);

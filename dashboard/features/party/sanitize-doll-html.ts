@@ -40,14 +40,27 @@ function safeStyle(style: string): string {
   }).join(';');
 }
 
+// Bounds against the game's doll markup, which a saved characterDollHtml shows is a few KB a few
+// levels deep: a longer or deeper doll draws no portrait, and the first one a page meets is reported
+// to the browser console (the page has no door to the status owner's boundFired).
+const DOLL_HTML_MAX_CHARS = 100_000;
+const DOLL_HTML_MAX_DEPTH = 128;
+let dollBoundReported = false;
+function dollBoundHit(bound: string) {
+  if (dollBoundReported) return '';
+  dollBoundReported = true;
+  console.warn(`A character doll passed ${bound} and draws no portrait`);
+  return '';
+}
 /** Parse into plain data, then rebuild only native doll tags and attributes.
  * parse5 never creates DOM nodes or requests resources; this also works during
  * server rendering. No raw game/player markup touches a live element.
  */
 export function sanitizeDollHtml(html: string | null | undefined): string {
-  if (!html || html.length > 100_000) return '';
+  if (!html) return '';
+  if (html.length > DOLL_HTML_MAX_CHARS) return dollBoundHit('DOLL_HTML_MAX_CHARS');
   function render(node: DefaultTreeAdapterTypes.ChildNode, depth: number): string {
-    if (depth > 128) return '';
+    if (depth > DOLL_HTML_MAX_DEPTH) return dollBoundHit('DOLL_HTML_MAX_DEPTH');
     if (node.nodeName === '#text') return escape((node as DefaultTreeAdapterTypes.TextNode).value);
     if (!('tagName' in node) || node.namespaceURI !== 'http://www.w3.org/1999/xhtml' || !tags.has(node.tagName)) return '';
     const attributes = node.attrs.flatMap(attribute => {

@@ -59,6 +59,10 @@ function checkKills(expect, kills, failures) {
         `${k.type} ${k.id} took ${k.cycleMinutes} min from spawn to death > ${expect.maxCycleMinutes}`,
       );
 }
+/**
+ * scenario.expect: { minKills: { <type>: n }, maxCycleMinutes: n, maxDeaths: n, maxErrors: n }. A scenario with
+ * expectations is a test: the run exits 1 and report.expect lists what failed.
+ */
 function check(expect, report) {
   const failures = [];
   const deaths = Object.values(report.characters).reduce((n, c) => n + (c.deaths || 0), 0);

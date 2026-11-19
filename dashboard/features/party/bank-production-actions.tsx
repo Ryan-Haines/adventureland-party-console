@@ -22,7 +22,7 @@ export function BankProductionActions({
 }) {
   if (entry.item.l || entry.item.b || entry.operation) return null;
   const level = entry.item.level || 0,
-    max = Math.min(7, itemMaximumLevel(entry.meta));
+    max = itemMaximumLevel(entry.meta);
   return (
     <>
       {exchangeable && (

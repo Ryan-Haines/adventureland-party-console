@@ -1,5 +1,5 @@
 import { test, expect, type LiveGame } from './live-fixtures';
-import { automaticCommerceRuleKey } from '../runtime/coordinator/inventory/item-identity';
+import { commerceRuleKey } from '../runtime/items/identity';
 
 test('full merchant defers external compounds until native NPC sales free capacity', async ({live},info) => {
   test.setTimeout(420_000);
@@ -144,11 +144,27 @@ test('bank NPC selection caps ten stacks and excludes persisted NPC stand confli
   await expect.poll(async () => (await live.state()).bank?.packs.items0?.[13]?.item.name,{timeout:90_000}).toBe('shoes');
   await expect.poll(async () => (await live.state()).merchantCurrent,{timeout:90_000}).toBeNull();
   await live.post('/merchant/force-stand',{enabled:true});
+  // The marking stops when each marked stack has a free bag cell past the lucky hold and the
+  // protected free slots, so 13 empty cells, 3 protected and no lucky slot cap the first pass at ten.
+  // The server pads a short bag with `items.length = 42` (server_functions.js:4577), so its empty
+  // cells are holes that filter() skips; the plant counts them by index.
+  const planted=await live.admin(`output=(()=>{const p=get_player('${merchant}');
+    const empty=()=>{let n=0;for(let i=0;i<p.isize;i++)if(!p.items[i])n++;return n;};let fill=empty()-13;const asked=fill;
+    for(let i=0;i<p.isize&&fill>0;i++)if(!p.items[i]){p.items[i]={name:'coat',level:0,l:'l'};fill--;}cache_player_items(p);resend(p,'reopen+cid');
+    return {asked,isize:p.isize,length:p.items.length,map:p.map,empty:empty()};})()`);
+  try{await expect.poll(async()=>(await live.clients[merchant].snapshot()).items.filter((i:any)=>!i).length).toBe(13);}
+  finally{
+    const server=await live.admin(`output=(p=>p&&{map:p.map,items:p.items.map(i=>i&&i.name)})(get_player('${merchant}'))`).catch(error=>String(error));
+    const client=await live.clients[merchant].snapshot().then((c:any)=>({map:c.map,items:c.items.map((i:any)=>i&&i.name)})).catch(error=>String(error));
+    const state=await live.state();
+    await info.attach('bank-npc-coat-plant',{body:JSON.stringify({planted,server,client,current:state.merchantCurrent,activity:state.merchantActivity?.slice(-12)}),contentType:'application/json'});
+  }
   // Historical rule conflict is input, not fabricated sale success. The normal
   // editor correctly retires competing rules, so restore a legacy mixed store.
   await live.restoreHistoricalSettings(() => ({
-    autoNpcSales:{[automaticCommerceRuleKey({name:'helmet',level:0})]:{item:{name:'helmet',level:0},createdAt:Date.now()},[automaticCommerceRuleKey({name:'shoes',level:0})]:{item:{name:'shoes',level:0},createdAt:Date.now()}},
-    autoStandMarks:{[automaticCommerceRuleKey({name:'shoes',level:0})]:{price:1000}},
+    protectedFreeSlots:3,luckyUpgradeSlots:{},luckySlotResume:{},luckySlotLocks:{},
+    autoNpcSales:{[commerceRuleKey({name:'helmet',level:0})]:{item:{name:'helmet',level:0},createdAt:Date.now()},[commerceRuleKey({name:'shoes',level:0})]:{item:{name:'shoes',level:0},createdAt:Date.now()}},
+    autoStandMarks:{[commerceRuleKey({name:'shoes',level:0})]:{price:1000}},
   }));
   await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto npc sales':true}});
   await expect.poll(async () => (await live.state()).withdrawals[merchant]?.length).toBe(10);

@@ -1,10 +1,13 @@
+const {productionFunctions} = require('./helpers/production-functions.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {createNative}=require('../../tools/game/pathfinder-benchmark/native.cjs');
-const source=fs.readFileSync('characters/shared.js','utf8'),context=vm.createContext({});
-vm.runInContext(source.slice(source.indexOf('  function gatheringDestination('),source.indexOf('  function gatheringStatus(')),context);
+const context=vm.createContext({});
+vm.runInContext(productionFunctions(['gatheringDestination']),context);
 
 test('fishing and mining destinations are reachable and within server 24-unit range with arrival margin',()=>{
- for(const version of [...new Set(['16846','17083',String(require('./helpers/installed-game.cjs').version)])].filter(v=>fs.existsSync('.caracal/game_files/'+v+'/data.js'))) {
+ const versions=[...new Set(['16846','17083',String(require('./helpers/installed-game.cjs').version)])].filter(v=>fs.existsSync('.caracal/game_files/'+v+'/data.js'));
+ assert.ok(versions.length>0,'no game files under .caracal/game_files for 16846, 17083 or the installed version; run node scripts/ci/restore-game-fixtures.cjs');
+ for(const version of versions) {
   const n=createNative('.caracal/game_files/'+version);
   for(const mode of ['fishing','mining']) {
    const p=context.gatheringDestination(mode),zone=n.game.maps[p.map].zones.find(z=>z.type===mode);

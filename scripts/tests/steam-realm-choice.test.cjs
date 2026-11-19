@@ -1,8 +1,8 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {JSDOM}=require('../../.caracal/node_modules/jsdom');
-const {createRealmChoice}=require('../../runtime/steam/realm-choice.ts');
-const {installSteamBridge}=require('../../runtime/steam/bridge.ts');
+const {createRealmChoice}=require('../../runtime/lifecycle/roster/realm-choice.ts');
+const {installSteamBridge}=require('../../runtime/lifecycle/roster/bridge.ts');
 test('realm modal survives polls, uses explicit dark colors, and sends one choice',async()=>{
  const dom=new JSDOM('');dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  const calls=[];let resolve;const modal=createRealmChoice(dom.window.document,(...args)=>{calls.push(args);return new Promise(r=>resolve=r);});

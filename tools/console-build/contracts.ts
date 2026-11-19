@@ -1,3 +1,4 @@
+import type { LoadMode } from "../../runtime/lifecycle/rules.ts";
 export type Component = 'dashboard' | 'coordinator' | 'characters';
 export interface CandidateManifest {
   schema: 1;
@@ -12,7 +13,8 @@ export interface CandidateManifest {
 }
 export interface Candidate { manifest: CandidateManifest; directory: string }
 export type CandidateSummary = Omit<CandidateManifest, 'files'>;
-export type DeploymentMode = 'now' | 'safe' | 'main';
+// The host's deploy modes are the lease's load modes: one lease shape.
+export type DeploymentMode = LoadMode;
 export const deploymentPending = (phase: DeploymentJournal['phase']) => !['complete', 'failed'].includes(phase);
 export interface References { active?: string; latest?: string; previous?: string }
 export interface DeploymentJournal {

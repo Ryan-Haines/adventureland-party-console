@@ -1,18 +1,10 @@
 const test=require('node:test'), assert=require('node:assert/strict');
-const {SteamGroup}=require('../../runtime/roster/steam-group.ts');
-const {orderCharacters}=require('../../dashboard/features/party/character-order.ts');
-function fixture(steam=['P'],slots=['M','W','Trader',null]) {
- let now=1000,id=0;const state={native:steam[0]||null,steam,slots,handoff:null};
- const online=new Set([...steam,...slots.filter(Boolean)]),stopped=[],started=[];
- const ports={now:()=>now,id:()=>String(++id),save(){},bridgeReady:()=>true,owned:()=>true,
-  validateParticipants:names=>assert.ok(new Set(names).size<=4),
-  stopHeadless:async name=>{stopped.push(name);online.delete(name);},confirmOffline:async name=>!online.has(name),
-  startHeadless:(name,slot)=>{assert.ok(!online.has(name));online.add(name);started.push([name,slot]);}};
- const service=new SteamGroup(state,ports);
- return {state,online,stopped,started,service,ports,advance:ms=>now+=ms,
-  release:async()=>{state.handoff.multi.release.forEach(n=>online.delete(n));await service.released(state.handoff.id);}};
-}
-
+const {SteamGroup}=require('../../runtime/lifecycle/roster/steam-group.ts');
+const {groupFixture:fixture}=require('./fixtures/steam-roster-scenario.cjs');
+const {orderCharacters}=require('../../runtime/lifecycle/roster/character-order.ts');
+const {hiddenValue}=require('../../runtime/settings/coordinator/api.ts');
+// The handoff bound as the party holds it (lifecycle/fields.ts steamHandoffBoundMs).
+const BOUND=()=>hiddenValue('steamHandoffBoundMs');
 test('lost primary release reply completes only after authoritative offline confirmation',async()=>{
  const f=fixture();await f.service.begin('headless','P');
  f.service.expire();await new Promise(resolve=>setImmediate(resolve));
@@ -25,8 +17,8 @@ test('lost primary release reply completes only after authoritative offline conf
 });
 test('persisted lost-release timeout resumes without a Steam bridge reply',async()=>{
  const f=fixture();await f.service.begin('headless','P');
- f.state.handoff.phase='failed';f.state.handoff.error='Steam operation timed out; assignments remain reserved until recovery';
- f.advance(180000);const restarted=new SteamGroup(f.state,f.ports);
+ f.state.handoff.phase='failed';f.state.handoff.error='Steam operation timed out; assignments remain reserved until recovery';f.state.handoff.failure='timeout';
+ f.advance(BOUND());const restarted=new SteamGroup(f.state,f.ports);
  restarted.expire();await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(f.started,[]);assert.equal(f.state.handoff.phase,'failed');
  f.online.delete('P');restarted.expire();await new Promise(resolve=>setImmediate(resolve));
@@ -40,7 +32,7 @@ test('headless release polling does not retry explicit bridge failures',async()=
 });
 test('interrupted headless release resumes after startup marks ownership uncertain',async()=>{
  const f=fixture();await f.service.begin('headless','P');
- f.state.handoff.phase='failed';f.state.handoff.error='Coordinator restarted during handoff; confirm offline ownership before recovery';
+ f.state.handoff.phase='failed';f.state.handoff.error='Coordinator restarted during handoff; confirm offline ownership before recovery';f.state.handoff.failure='coordinator-restart';
  f.online.delete('P');f.service.expire();await new Promise(resolve=>setImmediate(resolve));
  assert.equal(f.state.handoff.phase,'complete');assert.deepEqual(f.started,[['P',3]]);
 });
@@ -84,21 +76,42 @@ test('offline login adds a Steam background and capacity checks precede mutation
  await assert.rejects(f.service.begin('login','Fifth'),/maximum characters logged in/);
  assert.equal(f.state.handoff.multi.subject,'Trader');
 });
+// steamHandoffBoundMs (lifecycle/fields.ts, bigcheck/bounds.md): a handoff step the Steam client
+// never answers trips the bound, which fails the handoff and tells the status owner's bound
+// record.
+test('steamHandoffBoundMs: an unanswered handoff trips the bound and records it',async()=>{
+ const {boundFirings}=require('../../runtime/status/coordinator/api.ts');
+ const before=boundFirings().counts.steamHandoffBoundMs||0;
+ const f=fixture();await f.service.begin('primary','M');await f.release();f.advance(BOUND());f.service.expire();
+ assert.equal(f.state.handoff.phase,'failed');
+ assert.equal(boundFirings().counts.steamHandoffBoundMs,before+1);
+ const entry=boundFirings().entries.at(-1);assert.equal(entry.bound,'steamHandoffBoundMs');assert.equal(entry.owner,'13');
+});
+// The bound is the saved value the settings owner holds for the party, not the declaration's
+// default.
+test('steamHandoffBoundMs: a saved bound shorter than the default trips at the saved value',async()=>{
+ const {hiddenSettings,holdHiddenSettings}=require('../../runtime/settings/coordinator/table.ts');
+ const saved=hiddenSettings({}).steamHandoffBoundMs/2;
+ holdHiddenSettings({...hiddenSettings({}),steamHandoffBoundMs:saved});
+ try{const f=fixture();await f.service.begin('primary','M');await f.release();f.advance(saved);f.service.expire();
+  assert.equal(f.state.handoff.phase,'failed');}
+ finally{holdHiddenSettings(null);}
+});
 test('timed-out transfer accepts matching late group arrival without duplicates',async()=>{
- const f=fixture();await f.service.begin('primary','M');await f.release();f.advance(180000);f.service.expire();
+ const f=fixture();await f.service.begin('primary','M');await f.release();f.advance(BOUND());f.service.expire();
  assert.equal(f.state.handoff.phase,'failed');f.service.observe('M',['M','P']);
  assert.equal(f.state.handoff.phase,'complete');assert.deepEqual(f.started,[]);
 });
 test('concurrent actions are rejected and recovery cannot release an online reservation',async()=>{
  const f=fixture();await f.service.begin('primary','M');
- await assert.rejects(f.service.begin('primary','W'),/pending/);f.advance(180000);f.service.expire();
+ await assert.rejects(f.service.begin('primary','W'),/pending/);f.advance(BOUND());f.service.expire();
  f.online.add('M');
  await assert.rejects(f.service.recover(),/still online/);assert.ok(f.state.handoff);
  f.online.delete('M');f.online.delete('P');await f.service.recover();assert.equal(f.state.native,null);
 });
 test('failure before Steam release preserves the untouched primary during recovery',async()=>{
  const f=fixture();f.ports.stopHeadless=async()=>{};await f.service.begin('primary','M');
- f.advance(180000);f.service.expire();f.online.delete('M');await f.service.recover();
+ f.advance(BOUND());f.service.expire();f.online.delete('M');await f.service.recover();
  assert.equal(f.state.native,'P');assert.deepEqual(f.state.steam,['P']);assert.ok(f.online.has('P'));
 });
 test('slow account offline confirmation stays preparing and advances on a later poll',async()=>{
@@ -158,16 +171,6 @@ test('dashboard orders hosting tiers using roster order without moving merchant 
   .map(c=>c.name), ['Trader','Mage','Warrior','Priest','Ranger']);
  assert.deepEqual(characters.map(c=>c.name), ['Ranger','Mage','Priest','Trader','Warrior']);
 });
-test('Tracktrix refresh runs in both native and headless sessions',()=>{
- const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync('characters/shared.js','utf8');
- for(const caracAL of [undefined,true]) {
-  const calls=[],ctx={parent:{caracAL,socket:{emit:name=>calls.push(name)}},root:{},trackerWasHeld:true,requestSilentTracker:null,
-   setTimeout:()=>1,clearTimeout(){}};vm.createContext(ctx);
-  vm.runInContext(source.slice(source.indexOf('  function scheduleTrackerSnapshot('),source.indexOf('  var trackerInventoryListener')),ctx);
-  ctx.requestTrackerSnapshot();assert.equal(calls.length,1);
-  ctx.scheduleTrackerSnapshot(1);assert.equal(ctx.root.__partyTrackerTimer,1);
- }
-});
 test('wrong-realm login waits without releasing ownership; Stay is scoped to each login',async()=>{
  const f=fixture(['P'],['M',null,null,null]);
  f.ports.realmContext=()=>({current:'SR_USIV',home:'SR_USII'});
@@ -205,4 +208,33 @@ test('cancel and changed realm observations cannot perform the stale choice',asy
  const op=await f.service.begin('primary','M');realm='SR_USV';
  await f.service.chooseRealm(op.id,'switch');assert.equal(op.phase,'awaiting-realm-choice');assert.deepEqual(f.stopped,[]);
  await f.service.chooseRealm(op.id,'cancel');assert.equal(f.state.handoff,null);assert.equal(f.state.slots[0],'M');
+});
+
+// Decision 2026-11-17 (decisions.md): while a party switch or its rollback owns its participants, a
+// Steam restore takes the switch's realm with no Switch/Stay prompt. The realm owner's door answers
+// which realm that is: the switch's target while it switches, the realm it left while it rolls back.
+// Observed in live-merchant-realm-recovery.spec.ts "sixty second timeout": the bridge's restore of
+// the missing Priest parked on the prompt during the rollback to US II.
+test('a Steam restore during a party switch or its rollback takes the switch realm with no prompt',async()=>{
+ const {realmOperationDestination}=require('../../runtime/merchant-realm/api.ts');
+ for(const [phase,realm] of [['switching','SR_USI'],['rolling-back','SR_USII']]){
+  const f=fixture(['P','Q'],[null,null,null,null]);f.online.delete('Q');
+  f.ports.realmContext=()=>({current:'SR_USIV',home:'SR_EUI'});
+  const operation={id:'s',realm:'SR_USI',fromRealm:'SR_USII',participants:['P','Q'],startedAt:0,phase,characters:[]};
+  f.ports.switchRealm=names=>realmOperationDestination(operation,names);
+  const op=await f.service.begin('primary','P');
+  assert.notEqual(op.phase,'awaiting-realm-choice',phase);
+  assert.equal(op.realmChoice,undefined,phase);assert.equal(op.destinationRealm,realm,phase);
+ }
+});
+test('a Steam restore outside a party switch still asks Switch or Stay',async()=>{
+ const {realmOperationDestination}=require('../../runtime/merchant-realm/api.ts');
+ for(const operation of [null,{id:'s',realm:'SR_USI',fromRealm:'SR_USII',participants:['P','Q'],startedAt:0,phase:'complete',characters:[]},
+  {id:'s',realm:'SR_USI',fromRealm:'SR_USII',participants:['W'],startedAt:0,phase:'switching',characters:[]}]){
+  const f=fixture(['P','Q'],[null,null,null,null]);f.online.delete('Q');
+  f.ports.realmContext=()=>({current:'SR_USIV',home:'SR_EUI'});
+  f.ports.switchRealm=names=>realmOperationDestination(operation,names);
+  const op=await f.service.begin('primary','P');
+  assert.equal(op.phase,'awaiting-realm-choice');assert.equal(op.destinationRealm,undefined);
+ }
 });

@@ -2,14 +2,14 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import type {createManagedConsole} from './hosting.ts';
 import {ConsoleBuildStore} from './store.ts';
-import {startupCandidate} from './startup.ts';
 
-/** A deliberate launch selects the newest completed host implementation and
- * deploys that same frozen candidate after recovering any interrupted operation. */
+/** Stable checkout entrypoint: a launch selects its candidate once (store.startupCandidate: the newest
+ * completed build, else the active one), runs that candidate's host code and deploys that same id
+ * (bootstrap.ts). First setup has no candidate, so it uses the installed bootstrap code. */
 export async function loadManagedConsole(...args: Parameters<typeof createManagedConsole>): Promise<Awaited<ReturnType<typeof createManagedConsole>>> {
   const [root] = args;
   const store = new ConsoleBuildStore(root);
-  const selected = await startupCandidate(store);
+  const selected = await store.startupCandidate();
   const implementation: typeof import('./hosting.ts') = selected
     ? await import(pathToFileURL(path.join(selected.directory, 'tools/console-build/hosting.ts')).href)
     : await import('./hosting.ts');

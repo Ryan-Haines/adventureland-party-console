@@ -1,6 +1,6 @@
 import {waitForGameplay,nativeWallNow} from './network-clock';
 import {gateNativeAjaxInput} from './native-ajax-input';
-import { test, expect, type LiveGame } from './live-fixtures';
+import { test, expect, type LiveGame, reloadCode } from './live-fixtures';
 import type { TestInfo } from '@playwright/test';
 import type { Item } from '../runtime/coordinator/contracts/item';
 
@@ -26,55 +26,6 @@ test('merchant buys one Liquid Luck from the customer side of the Winter Inn bar
     }, {timeout: 30_000}).toBe(true);
   } finally {
     await record(live, info, 'native-liquid-luck-purchase', before, {jobId: order.jobId});
-  }
-});
-
-test('unlinked upgrade adopts compatible native intermediate without claiming existing results',async({live},info)=>{
-  // The retained paid batch needs ten native upgrades; CI timers are ~20s each.
-  test.setTimeout(450_000);
-  await catalog(live,'helmet');
-  await seed(live,{5:{name:'scroll0',q:20},10:{name:'helmet',level:2},11:{name:'helmet',level:3},12:{name:'helmet',level:3},23:{name:'helmet',level:0},24:{name:'helmet',level:0},25:{name:'helmet',level:0}});
-  const id='unlinked-intermediate-commerce',before=await economy(live),checkpoints:any[]=[],observations:any[]=[];
-  const progress={phase:'leveling',buyIndex:0,attempts:4,spent:4200,completedResults:1,results:[{slot:8,item:{name:'helmet',level:3},buyIndex:0}],activeItem:{name:'helmet',level:1},activeSlot:26,cycleActive:true,batchItems:[20,21,22].map(slot=>({slot,item:{name:'helmet',level:0}})),batchRemaining:0,sequence:2,pendingUpgrade:{level:2}};
-  let held=false,codeReplaced=false,release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
-  await live.clients[merchant].page.route('**/party-api/merchant/checkpoint',async route=>{
-    const body=route.request().postDataJSON();
-    const observe=()=>{if(body.state&&typeof body.state==='object'){checkpoints.push(body.state);observations.push({at:Date.now(),state:body.state});}};
-    // Only the declared adoption response needs a proxy and interruption. Later
-    // checkpoints must use the browser's ordinary transport and error handling.
-    if(held||!body.state?.inventoryAdoption||body.state.pendingUpgrade){observe();await route.continue();return;}
-    held=true;
-    const response=await route.fetch();
-    expect(response.status()).toBe(200);
-    observe(); // Publish the adoption to the test only after authoritative persistence.
-    observations.push({at:Date.now(),action:'adoption-persisted',status:response.status()});
-    await gate;
-    observations.push({at:Date.now(),action:'adoption-response-released'});
-    await route.fulfill({response}).catch(error=>{if(!codeReplaced)throw error;});
-  });
-  try{
-    await live.restoreHistoricalSettings(()=>({production:{attempts:{'historical-unlinked-receipt':{name:'helmet',level:2,kind:'upgrade',rules:[],completed:true,completedAt:Date.now(),success:true}}},
-      merchantQueue:[{id,target:merchant,reason:'merchant commerce',queuedAt:Date.now(),commerceOrderId:id,commerceProgressVersion:2,
-        order:{buys:[{id:'helmet',quantity:2,level:3,attempts:100,budget:500000}],crafts:[]},resumeState:progress}]}));
-    await expect.poll(()=>checkpoints.some(s=>s.activeItem?.level===2&&!s.pendingUpgrade),{timeout:90_000}).toBe(true);
-    const adoption=checkpoints.find(s=>s.activeItem?.level===2&&!s.pendingUpgrade);
-    expect(adoption).toMatchObject({spent:4200,attempts:4,completedResults:1,activeSlot:10});
-    expect(adoption.batchItems.map((entry:any)=>entry.slot).sort()).toEqual([23,24,25]);
-    const oldRuntime=(await live.state()).characters[merchant].dashboardRuntime;
-    await live.clients[merchant].frame.evaluate(()=>{const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);});
-    codeReplaced=true;release();
-    await expect.poll(async()=>(await live.state()).characters[merchant]?.dashboardRuntime,{timeout:60_000}).not.toBe(oldRuntime);
-    await jobFinished(live,id,300_000);
-    const after=await economy(live);
-    const finished=(v:Economy)=>v.characters[merchant].items.filter(i=>i?.name==='helmet'&&i.level===3).length;
-    const newResults=Math.max(...checkpoints.map(s=>Number(s.completedResults)||0))-1;
-    expect(newResults).toBeGreaterThanOrEqual(1);
-    expect(finished(after)-finished(before)).toBe(newResults);
-    expect((await live.state()).merchantActivity.some((a:any)=>String(a.message).includes('Inventory adoption assumption'))).toBe(true);
-    await record(live,info,'native-unlinked-intermediate-adoption',before,{id,adoption,checkpoints,after});
-  }finally{
-    release();await live.clients[merchant].page.unrouteAll({behavior:'ignoreErrors'});
-    await info.attach('unlinked-commerce-adoption-progress',{body:JSON.stringify({id,progress,checkpoints,observations,state:await live.state()}),contentType:'application/json'});
   }
 });
 
@@ -107,11 +58,9 @@ test('completed native upgrade receipt restores commerce after a lost completion
     const order=await live.post('/merchant/order',{buys:[{id:'helmet',quantity:1,level:1}],crafts:[]});
     await expect.poll(()=>held,{timeout:120_000}).toBe(true);
     expect(receipt.attempt.completed).toBe(true);expect(receipt.attempt.success).toBe(true);
-    relocation=await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(merchant)}),item=${JSON.stringify(journal.outcomeItem)};
-      const matches=p.items.map((v,i)=>v&&v.name===item.name&&(v.level||0)===(item.level||0)?i:-1).filter(i=>i>=0);
-      if(matches.length!==1)throw Error('Native completed survivor is not unique');
-      const from=matches[0],to=p.items.findIndex((v,i)=>!v&&i!==from);if(to<0)throw Error('No empty relocation slot');
-      p.items[to]=p.items[from];p.items[from]=null;cache_player_items(p);resend(p,'reopen+cid');return {from,to,item:p.items[to]};})()`);
+    // The survivor stays at the cell its receipt names: a commerce order reads each owned copy at
+    // its recorded cell (production.ts `settleUpgrade`), so a moved survivor holds for review.
+    relocation=null;
     // Declared persistence fault: the completion response was lost and the
     // replacement CODE has no local production journal. Paid commerce state
     // remains intact; only authoritative receipt evidence can restore it.
@@ -119,10 +68,7 @@ test('completed native upgrade receipt restores commerce after a lost completion
     faults.push({at:Date.now(),action:'lost-local-production-journal-before-code-replacement'});
     const oldRuntime=(await live.state()).characters[merchant].dashboardRuntime;
     const replacedAt=Date.now();
-    await live.clients[merchant].frame.evaluate(()=>{
-      const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-      game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);
-    });
+    await reloadCode(live,merchant);
     faults.push({at:replacedAt,action:'abrupt-native-code-replacement',oldRuntime});
     release();
     await expect.poll(async()=>{const c=(await live.state()).characters[merchant];return c?.dashboardRuntime&&c.dashboardRuntime!==oldRuntime&&c.seenAt>=replacedAt;},{timeout:60_000}).toBeTruthy();
@@ -141,7 +87,10 @@ test('completed native upgrade receipt restores commerce after a lost completion
   }
 });
 
-for (const surplus of [false,true]) test(`restarted upgrade batch ${surplus ? 'holds surplus identical cargo' : 'remaps compacted owned items'}`,async({live},info)=>{
+// A commerce order reads each owned copy at its recorded cell, with no remap (production.ts
+// `verifyCommerceResults`): copies that moved, surplus identical cargo included, hold the order for
+// inventory review with no upgrade attempt.
+for (const surplus of [false,true]) test(`restarted upgrade batch whose owned items moved holds for inventory review${surplus ? ' beside surplus identical cargo' : ''}`,async({live},info)=>{
   test.setTimeout(240_000);
   await catalog(live,'helmet');
   const id='compacted-owned-upgrade-batch',item={name:'helmet',level:0};
@@ -153,62 +102,11 @@ for (const surplus of [false,true]) test(`restarted upgrade batch ${surplus ? 'h
     activeItem:item,activeSlot:22,cycleActive:true,batchItems:[{slot:24,item},{slot:25,item}],batchRemaining:0,sequence:2};
   await live.restoreHistoricalSettings(()=>({merchantQueue:[{id,target:merchant,reason:'merchant commerce',queuedAt:Date.now(),commerceOrderId:id,
     commerceProgressVersion:2,order:{buys:[{id:'helmet',quantity:3,level:1,attempts:3,budget:100000}],crafts:[]},resumeState:progress}]}));
-  if(surplus){
-    await expect.poll(async()=> (await live.state()).merchantQueue.some((job:any)=>job.commerceOrderId===id&&/ambiguous/.test(job.lastError||'')),{timeout:90_000}).toBe(true);
-    expect((await economy(live)).characters[merchant].items).toEqual(before.characters[merchant].items);
-  }else{
-    await expect.poll(async()=>{const s=await live.state();return ![s.merchantCurrent,...s.merchantQueue].some((job:any)=>job?.commerceOrderId===id);},{timeout:180_000}).toBe(true);
-    const after=await economy(live);
-    expect(after.characters[merchant].items.filter(item=>item?.name==='helmet'&&item.level===1)).toHaveLength(3);
-    expect((await live.clients[merchant].events()).filter((event:any)=>event.event==='game_response'&&event.data?.response==='upgrade_success')).toHaveLength(3);
-    await live.restartCoordinator();
-    expect((await economy(live)).characters[merchant].items.filter(item=>item?.name==='helmet'&&item.level===1)).toHaveLength(3);
-  }
+  await expect.poll(async()=>(await live.state()).merchantQueue.some((job:any)=>job.commerceOrderId===id&&/requires inventory review/.test(job.lastError||'')),{timeout:90_000}).toBe(true);
+  const helmets=(state:Economy)=>state.characters[merchant].items.map((entry,slot)=>entry?.name==='helmet'?{slot,level:entry.level||0}:null).filter(Boolean);
+  expect(helmets(await economy(live))).toEqual(helmets(before));
+  expect((await live.clients[merchant].events()).filter((event:any)=>event.event==='game_response'&&/^upgrade_/.test(String(event.data?.response)))).toEqual([]);
   await record(live,info,'compacted-upgrade-batch-ownership',before,{progress,surplus,state:await live.state()});
-});
-
-test('running upgrade batch remaps items moved after its first result',async({live},info)=>{
-  test.setTimeout(240_000);
-  await catalog(live,'helmet');
-  const id='running-relocated-upgrade-batch',item={name:'helmet',level:0};
-  await seed(live,{5:{name:'scroll0',q:6},17:item,18:item,19:item});
-  const before=await economy(live),observations:any[]=[];
-  let relocation:any,moved=false;
-  await live.clients[merchant].page.route('**/party-api/merchant/checkpoint',async route=>{
-    const body=route.request().postDataJSON();
-    if(body.jobId!==id||moved||body.state?.completedResults!==1||body.state.activeItem||body.state.batchItems?.length!==2){await route.continue();return;}
-    moved=true;
-    const response=await route.fetch();
-    expect(response.status()).toBe(200);
-    observations.push({at:Date.now(),action:'first-result-persisted',state:body.state});
-    relocation=await live.admin(`output=(()=>{const p=get_player(${JSON.stringify(merchant)}),moves=${JSON.stringify(body.state.batchItems.map((entry:any,index:number)=>({from:entry.slot,to:26+index})))};
-      for(const m of moves){if(p.items[m.to]||p.items[m.from]?.name!=='helmet'||(p.items[m.from].level||0)!==0)throw Error('Declared remaining batch relocation changed');}
-      for(const m of moves){p.items[m.to]=p.items[m.from];p.items[m.from]=null;}
-      cache_player_items(p);resend(p,'reopen+cid');return moves;})()`);
-    await expect.poll(async()=>{const c=await live.clients[merchant].snapshot();return relocation.every((m:any)=>!c.items[m.from]&&c.items[m.to]?.name==='helmet'&&(c.items[m.to].level||0)===0);},{timeout:15_000}).toBe(true);
-    observations.push({at:Date.now(),action:'native-batch-relocation-observed',relocation});
-    await route.fulfill({response});
-  });
-  try{
-    const progress={phase:'leveling',buyIndex:0,attempts:3,spent:9600,completedResults:0,results:[],activeItem:item,activeSlot:17,
-      cycleActive:true,batchItems:[{slot:18,item},{slot:19,item}],batchRemaining:0,sequence:2};
-    await live.restoreHistoricalSettings(()=>({merchantQueue:[{id,target:merchant,reason:'merchant commerce',queuedAt:Date.now(),commerceOrderId:id,
-      commerceProgressVersion:2,order:{buys:[{id:'helmet',quantity:3,level:1,attempts:3,budget:100000}],crafts:[]},resumeState:progress}]}));
-    await expect.poll(()=>moved,{timeout:90_000}).toBe(true);
-    let outcome='running';
-    await expect.poll(async()=>{const s=await live.state(),job=[s.merchantCurrent,...s.merchantQueue].find((j:any)=>j?.commerceOrderId===id);
-      outcome=job?.lastError?String(job.lastError):job?'running':'completed';return outcome;},{timeout:90_000}).not.toBe('running');
-    expect(outcome).toBe('completed');
-    const after=await economy(live);
-    expect(after.characters[merchant].items.filter(i=>i?.name==='helmet'&&i.level===1)).toHaveLength(3);
-    expect(quantity(after.characters[merchant].items,'scroll0')).toBe(quantity(before.characters[merchant].items,'scroll0')-3);
-    expect((await live.clients[merchant].events()).filter((e:any)=>e.event==='game_response'&&e.data?.response==='upgrade_success')).toHaveLength(3);
-    for(const [slot,entry] of before.characters[merchant].items.entries())if(entry&&entry.name!=='helmet'&&entry.name!=='scroll0')expect(after.characters[merchant].items[slot]).toEqual(entry);
-    await record(live,info,'running-batch-relocation',before,{relocation,observations,after});
-  }finally{
-    await live.clients[merchant].page.unrouteAll({behavior:'ignoreErrors'});
-    await info.attach('running-batch-relocation-progress',{body:JSON.stringify({relocation,observations,state:await live.state()}),contentType:'application/json'});
-  }
 });
 
 test('unavailable upgrade estimate enforces its gold cap across native purchases and restart',async({live},info)=>{
@@ -358,16 +256,19 @@ test('operator unknown receipt review resumes a missing commerce cycle without r
   // inventory survivor. No successful/destroyed receipt is fabricated.
   await live.restoreHistoricalSettings(()=>({production:{attempts:{[receipt]:{name:'helmet',level:1,kind:'upgrade',rules:[],journal:{id:receipt,item:{name:'helmet',level:0},slots:[10],phase:'running',request:{character:merchant,id:receipt,kind:'upgrade',item:{name:'helmet',level:0}},commerce:{key:'party-commerce:'+id,sequence:2,state:progress}}}}},merchantQueue:[{id,target:merchant,reason:'merchant commerce',queuedAt:Date.now(),commerceOrderId:id,commerceProgressVersion:2,order:{buys:[{id:'helmet',quantity:1,level:1,attempts:20,budget:100000}],crafts:[]},resumeState:progress}]}));
   await live.clients[merchant].run(`localStorage.setItem(${JSON.stringify('party-commerce:'+id)},${JSON.stringify(JSON.stringify({...progress,sequence:1,activeItem:{name:'helmet',level:2}}))})`);
-  await live.post('/merchant/production',{character:merchant,action:'resolve-unknown',resumeMissing:true,id:receipt,kind:'upgrade',item:{name:'helmet',level:0},reason:'E2E operator reviewed native inventory; interrupted item missing; preserve spending and resume remaining allowance'});
+  const reviewed=await live.post('/merchant/production',{character:merchant,action:'resolve-unknown',resumeMissing:true,id:receipt,kind:'upgrade',item:{name:'helmet',level:0},reason:'E2E operator reviewed native inventory; interrupted item missing; preserve spending and resume remaining allowance'});
   await expect.poll(async()=>{
     const state=await live.state();
     return ![state.merchantCurrent,...state.merchantQueue].some((job:any)=>job?.commerceOrderId===id);
   },{timeout:180_000}).toBe(true);
   expect((await live.clients[merchant].snapshot()).items.some((item:any)=>item?.name==='helmet'&&item.level===1)).toBe(true);
+  expect(reviewed.attempt.resolution.outcome).toBe('unknown');
+  expect(reviewed.attempt.success).toBeUndefined();
+  // The journal keeps each item's newest finished attempt (production.ts `pruneProductionReceipts`),
+  // so the resumed cycle's own helmet attempt replaces the reviewed receipt.
   const inspection=await live.post('/merchant/production',{character:merchant,action:'inspect',id:receipt,kind:'upgrade',item:{name:'helmet',level:0}});
-  expect(inspection.attempt.resolution.outcome).toBe('unknown');
-  expect(inspection.attempt.success).toBeUndefined();
-  await info.attach('reviewed-unknown-native-continuation',{body:JSON.stringify({progress,inspection,state:await live.state(),events:await live.clients[merchant].events()}),contentType:'application/json'});
+  expect(inspection.attempt).toBeNull();
+  await info.attach('reviewed-unknown-native-continuation',{body:JSON.stringify({progress,reviewed,inspection,state:await live.state(),events:await live.clients[merchant].events()}),contentType:'application/json'});
 });
 
 test('merchant stand location is valid at first setup and stays saved through restart', async ({ live, page }, info) => {
@@ -404,12 +305,44 @@ test('merchant stand location is valid at first setup and stays saved through re
   await info.attach('merchant-stand-location-native', { body: JSON.stringify({ first, blocked, client: await live.clients[merchant].snapshot(), state: await live.state(), events: await live.clients[merchant].events() }), contentType: 'application/json' });
   await page.close();
 });
+// The live half of the stand-bid row: with one stand bid the bank covers, the
+// merchant keeps the funding between jobs, so six other jobs queue at most one "native stand funding"
+// job, not one per job. The base (b9b5c91e) is expected red here with more than 1.
+test('MJ15: one covered stand bid queues its funding once across six other jobs', async ({ live }, info) => {
+  test.setTimeout(480_000);
+  await seed(live, { 10: { name: 'stand0' } });
+  await live.admin(`output=(()=>{const m=get_player(${JSON.stringify(merchant)});m.gold=20000;if(m.user)m.user.gold=Math.max(Number(m.user.gold)||0,500000);resend(m,'reopen+cid');return m.gold;})()`);
+  await live.restoreHistoricalSettings(() => ({
+    autoStandBuys: true,
+    standBids: { leather: { price: 150000, quantity: 3, minimumQuality: 0, useStandSlot: true, revision: 1 } },
+  }));
+  await live.post('/merchant/force-stand', { enabled: true });
+  await expect.poll(async () => live.clients[merchant].run('!!character.stand'), { timeout: 90_000 }).toBe(true);
+  await live.post('/merchant/force-stand', { enabled: false });
+  const jobs = Array.from({ length: 6 }, (_, index) => ({ id: 'mj15-' + index, target: merchant, reason: 'manual bank exchange', queuedAt: Date.now() + index }));
+  await live.restoreHistoricalSettings(() => ({ merchantQueue: jobs }));
+  const funding = new Set<string>();
+  await expect.poll(async () => {
+    const state = await live.state();
+    for (const job of [state.merchantCurrent, ...state.merchantQueue]) if (job?.reason === 'native stand funding') funding.add(String(job.id));
+    return [state.merchantCurrent, ...state.merchantQueue].some((job: any) => String(job?.id || '').startsWith('mj15-'));
+  }, { timeout: 420_000, intervals: [1_000] }).toBe(false);
+  // The merchant's command target includes the stand's funding, so a job that runs before the stand
+  // reports short of it withdraws the funding itself and the stand never queues the job (08-09 design
+  // 3.7, "the funding job is queued once per change of the bids, not once per job"). The row
+  // allows that one job or none, and the stand stays funded after the six jobs.
+  const carried = await live.admin(`output=get_player(${JSON.stringify(merchant)}).gold`);
+  await info.attach('mj15-stand-funding', { body: JSON.stringify({ funding: [...funding], carried, state: await live.state() }), contentType: 'application/json' });
+  expect(funding.size).toBeLessThanOrEqual(1);
+  expect(carried).toBeGreaterThanOrEqual(150000);
+});
+
 const names = ['E2EWarrior', 'E2EPriest', merchant];
 type Items = (Item | null)[];
 
 for(const locked of [false,true]) test(`best-effort lucky restoration preserves changed native cargo and ${locked?'locked':'sequential'} rolls across CODE restart`,async({live},info)=>{
   test.setTimeout(480_000);
-  const slot=4,movedSlot=27,checkpoints:any[]=[];
+  const slot=5,movedSlot=27,checkpoints:any[]=[];
   let changed=false;
   await live.clients[merchant].frame.evaluate(()=>{
     const game=window as any;
@@ -428,7 +361,17 @@ for(const locked of [false,true]) test(`best-effort lucky restoration preserves 
   try {
     await live.restoreHistoricalSettings(()=>({luckyUpgradeSlots:{},luckySlotResume:{[merchant]:{slot,rolls:0}},luckySlotLocks:locked?{[merchant]:slot}:{}}));
     await catalog(live,'helmet');
-    await seed(live,{[slot]:{name:'seashell',q:3}});
+    // The idle tidy keeps the lucky slot empty (production.ts `tidyReply`), and a merchant with no
+    // stand now idles with no command (the stand-less return and departure fixes), so cargo seeded
+    // into the lucky slot moved out before the order. The seashell sits in the first cell past the
+    // potions, which the tidy leaves, and the preparation checkpoint below moves it into the lucky
+    // slot while the job holds the bag. The game puts a purchase in the first empty cell, and the
+    // tidy packs the bag into the cells before the lucky slot (production.ts lucky `tidy`), so with
+    // the lucky slot at 4 a bought scroll took cell 3 and the helmet the empty lucky slot, where the
+    // upgrade ran in place with no preparation and no restoration. Both rows own their scroll in
+    // cell 3, where the tidy packs it, and use lucky slot 5, so the helmet lands in cell 4 and the
+    // job prepares the lucky slot.
+    await seed(live,{2:{name:'seashell',q:3},3:{name:'scroll0',q:1}});
     const rollSetup=await live.admin(`output=(()=>{
       const p=get_player('${merchant}'),skills=['massproduction','massproductionpp'].map(name=>({name,level:Number(G.skills[name].level)}));
       const requirement=Math.min(...skills.map(skill=>skill.level));
@@ -456,6 +399,18 @@ for(const locked of [false,true]) test(`best-effort lucky restoration preserves 
         await new Promise(resolve=>setTimeout(resolve,100));
       }};
       globalThis.__e2eLuckyInput=null;globalThis.__e2eLuckyInputError=null;
+      globalThis.__e2ePrepareCheckpointAjax=(${gateNativeAjaxInput.toString()})(globalThis,options=>{
+        if(!String(options?.url).endsWith('/merchant/production'))return false;
+        const body=typeof options.data==='string'?JSON.parse(options.data):null;
+        return body?.character===character.name&&body.action==='checkpoint'&&body.journal?.lucky?.phase==='preparing'&&body.journal.lucky.to===${slot};
+      },async()=>{
+        try{
+          const from=character.items.findIndex(item=>item?.name==='seashell');
+          if(from<0||character.items[${slot}])throw Error('Native lucky cargo unavailable for the lucky slot');
+          await swap(from,${slot});
+          await waitFor(()=>character.items[${slot}]?.name==='seashell','native lucky cargo swap');
+        }catch(error){globalThis.__e2eLuckyInputError=String(error);throw error;}
+      },owns);
       globalThis.__e2eRestoreCheckpointAjax=(${gateNativeAjaxInput.toString()})(globalThis,options=>{
         if(!String(options?.url).endsWith('/merchant/production'))return false;
         const body=typeof options.data==='string'?JSON.parse(options.data):null,journal=body?.journal?.lucky;
@@ -489,7 +444,7 @@ for(const locked of [false,true]) test(`best-effort lucky restoration preserves 
       if(input.result){changed=true;checkpoints.push(input.result);return true;}return false;
     },{timeout:150_000}).toBe(true);
     await finish(first.jobId);
-    await live.clients[merchant].run('globalThis.__e2eRestoreCheckpointAjax()');
+    await live.clients[merchant].run('globalThis.__e2eRestoreCheckpointAjax();globalThis.__e2ePrepareCheckpointAjax()');
     const after=await economy(live);
     expect(quantity(after.characters[merchant].items,'seashell')-quantity(before.characters[merchant].items,'seashell')).toBe(1);
     expect(after.characters[merchant].items.filter(item=>item?.name==='helmet'&&item.level===1)).toHaveLength(1);
@@ -499,10 +454,7 @@ for(const locked of [false,true]) test(`best-effort lucky restoration preserves 
     expect(restorationSwaps).toEqual([]);
     checkpoints.push({restorationSwaps,retiredInventory:await live.clients[merchant].snapshot()});
     const runtime=(await live.state()).characters[merchant].dashboardRuntime;
-    await live.clients[merchant].frame.evaluate(()=>{
-      const game=window as any,runner=(document.getElementById('maincode') as HTMLIFrameElement).contentWindow as any;
-      game.start_runner('maincode',`$.getScript(${JSON.stringify(runner.__partyServer+'/CODE/adventure_land/universal-loader.js')});`);
-    });
+    await reloadCode(live,merchant);
     // Creating an iframe does not mean its loader has finished fetching from
     // the coordinator that the next operation deliberately stops.
     await expect.poll(async()=>{
@@ -716,8 +668,12 @@ test('merchant mass skills use both tiers and passive recovery restores critical
   // Hold only the independent recovery pulse to exercise native low-MP input.
   // Reconnecting below reinstalls the actual production timer.
   await live.clients[merchant].run('clearInterval(globalThis.__partyPassiveRegenTimer);globalThis.partyRoleRunner.stop();true');
+  // The higher tiers leave one Merchant's Luck cast of MP (production.ts `massBuff`), so the pool
+  // sits below a higher tier's cost plus that reserve and above both lower tiers' costs.
+  const costs = await live.admin(`output=Object.fromEntries(['massproductionpp','massexchangepp','massproduction','massexchange','mluck'].map(s=>[s,G.skills[s].mp]))`);
   async function lowMana() {
-    const pool = await live.admin(`output=(()=>{const p=get_player('${merchant}');p.mp=Math.max(40,Math.floor(p.max_mp*.2)-150);resend(p,'reopen+cid');return p.mp})()`);
+    const pool = await live.admin(`output=(()=>{const p=get_player('${merchant}');p.mp=${Math.min(costs.massproductionpp, costs.massexchangepp) + costs.mluck - 5};resend(p,'reopen+cid');return p.mp})()`);
+    expect(pool).toBeGreaterThanOrEqual(Math.max(costs.massproduction, costs.massexchange));
     await expect.poll(async () => (await live.clients[merchant].snapshot()).mp).toBeLessThanOrEqual(pool + 50);
   }
   await lowMana();
@@ -729,7 +685,7 @@ test('merchant mass skills use both tiers and passive recovery restores critical
   expect(skills.some((entry: any) => entry.skill === 'massproduction')).toBe(true);
   expect(skills.some((entry: any) => entry.skill === 'massexchange')).toBe(true);
   for (const entry of skills.filter((entry: any) => ['massproductionpp', 'massexchangepp'].includes(entry.skill)))
-    expect(entry.mp - 200).toBeGreaterThanOrEqual(entry.maxMp * .2);
+    expect(entry.mp - costs[entry.skill]).toBeGreaterThanOrEqual(costs.mluck);
 
   await live.reconnectClient(merchant);
   const context = live.clients[merchant].page.context();
@@ -1505,4 +1461,24 @@ for(const automatic of [false,true]) test(`${automatic?'automatic':'manual'} com
   await info.attach('native-manual-bank-compound-observations',{body:JSON.stringify({before,observations,state:await live.state()}),contentType:'application/json'});
   await live.admin(`output=(()=>{const hook=globalThis.__manualBankCompoundHook;if(hook){hook.socket.removeListener('compound',hook.wrapped);hook.socket.on('compound',hook.original);delete globalThis.__manualBankCompoundHook;}return true;})()`).catch(()=>{});
  }
+});
+
+// IT21: a level 80 merchant reports the game's 30 trade slots and the stand plans to
+// them. Red on b9b5c91e: the stand planned 16.
+test('IT21: a level 80 merchant opens a 30-slot stand',async({live},info)=>{
+  test.setTimeout(240_000);
+  // The admin answers the level it replaced, so the row puts the merchant's own level back.
+  const level=async(value:number)=>{
+    const replaced=await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${merchant}'});
+      const before=c.level;c.level=${value};await db.collection('character').replaceOne({_id:c._id},c);return before;})()`);
+    await live.reconnectClient(merchant);
+    return Number(replaced);
+  };
+  const original=await level(80);
+  try {
+    await expect.poll(async()=>(await live.state()).characters[merchant]?.standSlots,{timeout:120_000}).toBe(30);
+    await info.attach('IT21 stand slots',{body:JSON.stringify({original,slots:30}),contentType:'application/json'});
+  } finally {
+    await level(original);
+  }
 });

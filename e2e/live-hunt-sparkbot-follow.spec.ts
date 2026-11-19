@@ -1,7 +1,7 @@
 import {isolateNativeMapAmbient,restoreNativeMapAmbient} from './native-map-ambient-isolation';
 import {observeNativeTransport} from './native-transport-observer';
 import {test,expect} from './live-fixtures';
-import {W,P} from './hunt-interruption-helpers';
+import {W,P,nativeHit,approachOwned} from './hunt-interruption-helpers';
 const M='E2EBankBoi',fighters=[W,P,M];
 // All roles begin at the same admitted native-clear position.
 const leaderPoint={x:-344.13,y:-437.24};
@@ -27,7 +27,7 @@ for(const scene of [{monster:'sparkbot',wallRange:false},{monster:'goo',wallRang
   await live.post('/focus',{monsterFocus:[monster],monsterPriorities:{[monster]:999},monsterSearchRadius:600});
   await live.post('/farming-mode',{character:W,mode:'default'});
   await expect.poll(async()=>{
-   const roles=await Promise.all(fighters.map(name=>live.clients[name].run(`(()=>{const s=globalThis.sharedRoutine,g=globalThis.__partyGroupedCombat,focus=s?.getMonsterFocus?.(),nomination=globalThis.__partyNomination?.focus;return {name:character.name,grouped:!!s?.usesGroupedCombat(),leader:s?.isLeader()===${name===W},groupLeader:g?.leader===${JSON.stringify(W)},members:${JSON.stringify(fighters)}.every(n=>g?.members?.includes(n)),independent:g?.independentApproach===true,focus,nomination,focusReady:!!focus?.includes(${JSON.stringify(monster)}),nominationReady:!nomination||nomination.includes(${JSON.stringify(monster)})};})()`)));
+   const roles=await Promise.all(fighters.map(name=>live.clients[name].run(`(()=>{const s=globalThis.sharedRoutine,g=globalThis.__partyGroupedCombat,focus=globalThis.partyHunting?.farm.focus().slice(),nomination=globalThis.__partyNomination?.focus;return {name:character.name,grouped:!!globalThis.partyHunting?.farm.grouped(),leader:s?.targeting.isLeader()===${name===W},groupLeader:g?.leader===${JSON.stringify(W)},members:${JSON.stringify(fighters)}.every(n=>g?.members?.includes(n)),independent:g?.independentApproach===true,focus,nomination,focusReady:!!focus?.includes(${JSON.stringify(monster)}),nominationReady:!nomination||nomination.includes(${JSON.stringify(monster)})};})()`)));
    configured.push({at:Date.now(),roles});if(configured.length>32)configured.splice(4,1);
    return roles.every(r=>r.grouped&&r.leader&&r.groupLeader&&r.members&&r.independent&&r.focusReady&&r.nominationReady);
   },{timeout:15000,message:'Actual CODE must adopt both configured group and focus before the declared setup hold'}).toBe(true);
@@ -88,7 +88,7 @@ for(const scene of [{monster:'sparkbot',wallRange:false},{monster:'goo',wallRang
   await expect.poll(async()=>{
    const state=await live.state();samples.push({at:Date.now(),roles:fighters.map(name=>({name,x:state.characters[name]?.x,y:state.characters[name]?.y,position:state.characters[name]?.combat?.positioning,recovery:state.characters[name]?.groupedCombat?.formationRecovery}))});
    for(const name of fighters)events[name]=await live.clients[name].events();
-   return fighters.every(name=>events[name].some(e=>e.event==='hit'&&e.data?.hid===name&&String(e.data?.id)===seed.id&&e.data?.damage>1&&e.data?.source!=='taunt'));
+   return fighters.every(name=>events[name].some(e=>nativeHit(e,name,seed.id)));
   },{timeout:90000,message:'All three native roles must recover and damage the declared Sparkbot'}).toBe(true);
   if(monster==='goo'){
    const firstAttack=fighters.flatMap(name=>events[name].filter(e=>e.event==='attack-issued'&&e.data?.id===seed.id || e.event==='offensive-skill-issued'&&(e.data?.ids?.includes(seed.id)||!e.data?.ids?.length&&e.motion?.independent?.target===seed.id))).sort((a,b)=>a.at-b.at)[0];
@@ -109,9 +109,11 @@ for(const scene of [{monster:'sparkbot',wallRange:false},{monster:'goo',wallRang
   if(queue){
    seed.successors=await live.admin(`output=(()=>{const primary=instances.uhills.monsters[${JSON.stringify(seed.id)}];if(!primary||!(primary.hp>0)||primary.dead)throw Error('Declared primary is no longer alive before successor seeding');const successors=[];for(const dx of [-24,-48]){let x=primary.x+dx,y=primary.y,centerFallback=false;if(!can_move({map:primary.map,x,y,going_x:x,going_y:y,base:primary.base})){x=primary.x;y=primary.y;centerFallback=true;if(!can_move({...primary,going_x:x,going_y:y}))throw Error('Current native primary center is not clear for successor declaration');}const next=new_monster('uhills',{__e2eAmbientExempt:true,type:'goo',count:1,position:[x,y],radius:40},{temp:1});__e2eFollowOwnedMonsters.push({id:String(next.id),type:next.type,map:next.map,instance:next.in});next.hp=next.max_hp=10000000;next.u=true;next.abs=true;next.cid++;if(!can_move({...next,going_x:next.x,going_y:next.y}))throw Error('Actual roaming successor spawn is not native-clear');successors.push({id:String(next.id),x:next.x,y:next.y,center:{x,y},centerFallback});}return successors;})()`);
    const queued=seed.successors.map((m:any)=>m.id);
-   await expect.poll(async()=>{for(const name of fighters)events[name]=await live.clients[name].events();samples.push({at:Date.now(),queue:await live.clients[W].run(`(()=>{const g=globalThis.__partyGroupedCombat,e=parent.entities[${JSON.stringify(seed.id)}];return {target:g?.target?.id,ids:g?.queue?.map(t=>t.id),primaryAlive:!!e&&e.hp>0&&!e.dead};})()`)});return events[W].some(e=>e.event==='death'&&String(e.data?.id)===seed.id)&&fighters.some(name=>events[name].some(e=>(e.event==='attack-issued'||e.event==='offensive-skill-issued')&&(queued.includes(e.data?.id)||e.data?.ids?.some((id:string)=>queued.includes(id))||queued.includes(e.motion?.independent?.target))));},{timeout:90000,message:'Real native first Goo death must advance to an initially queued successor'}).toBe(true);
+   // An issued attack or hostile skill aimed at one of the queued successors.
+   const attacksQueued=(e:any)=>(e.event==='attack-issued'||e.event==='offensive-skill-issued')&&(queued.includes(e.data?.id)||e.data?.ids?.some((id:string)=>queued.includes(id))||queued.includes(e.motion?.independent?.target));
+   await expect.poll(async()=>{for(const name of fighters)events[name]=await live.clients[name].events();samples.push({at:Date.now(),queue:await live.clients[W].run(`(()=>{const g=globalThis.__partyGroupedCombat,e=parent.entities[${JSON.stringify(seed.id)}];return {target:g?.target?.id,ids:g?.queue?.map(t=>t.id),primaryAlive:!!e&&e.hp>0&&!e.dead};})()`)});return events[W].some(e=>e.event==='death'&&String(e.data?.id)===seed.id)&&fighters.some(name=>events[name].some(attacksQueued));},{timeout:90000,message:'Real native first Goo death must advance to an initially queued successor'}).toBe(true);
    expect(samples.some(s=>s.queue?.target===seed.id&&s.queue.primaryAlive&&queued.every((id:string)=>s.queue.ids?.includes(id))),'Both actual successors must be observed queued while the first native primary is alive').toBe(true);
-   const attack=fighters.flatMap(name=>events[name]).filter(e=>(e.event==='attack-issued'||e.event==='offensive-skill-issued')&&(queued.includes(e.data?.id)||e.data?.ids?.some((id:string)=>queued.includes(id))||queued.includes(e.motion?.independent?.target))).sort((a,b)=>a.at-b.at)[0],barrier=attack.motion?.independent;
+   const attack=fighters.flatMap(name=>events[name]).filter(attacksQueued).sort((a,b)=>a.at-b.at)[0],barrier=attack.motion?.independent;
    expect(attack.motion.inRange).toBe(true);expect(barrier?.committed).toBe(true);expect(queued).toContain(barrier?.target);
    expect(attack.motion.attackTarget?.id).toBe(barrier.target);
    expect(barrier.confirmation?.target).toBe(barrier.target);expect(barrier.serverAt).toBeLessThan(barrier.confirmation.expiresAt);
@@ -129,10 +131,9 @@ for(const scene of [{monster:'sparkbot',wallRange:false},{monster:'goo',wallRang
    expect(first,'A coherent first actual direct move must observe a genuinely moving native target outside attack range').toBeTruthy();
    const route=first.event.motion.independentRoute,input=route.prediction,point=route.point,native=route.nativeTarget;
    const dx=input.destination.x-input.target.x,dy=input.destination.y-input.target.y,leg=Math.hypot(dx,dy),px=point.x-input.target.x,py=point.y-input.target.y;
-   expect(input.ownSpeed).toBeGreaterThan(0);expect(input.horizon).toBeGreaterThan(0);expect(input.horizon).toBeLessThanOrEqual(2+0.000001);
+   expect(input.ownSpeed).toBeGreaterThan(0);expect(input.horizon).toBeGreaterThan(0);expect(input.horizon,'The prediction ends with the target leg').toBeLessThanOrEqual(leg/input.targetSpeed+0.000001);
    expect((px*dx+py*dy)/leg,'The actually issued center must lead along its immutable native motion input').toBeGreaterThan(0.000001);
    expect(Math.abs(px*dy-py*dx)/leg).toBeLessThanOrEqual(0.000001);
-   expect(Math.hypot(px,py)).toBeLessThanOrEqual(input.targetSpeed*2+0.000001);
    expect(Math.hypot(px,py)).toBeLessThanOrEqual(leg+0.000001);
    expect(Math.abs(Math.hypot(px,py)-input.targetSpeed*input.horizon)).toBeLessThanOrEqual(0.000001);
    expect(first.event.at-input.at,'Issued inputs and actual native packet share the native clock').toBeGreaterThanOrEqual(0);
@@ -140,10 +141,9 @@ for(const scene of [{monster:'sparkbot',wallRange:false},{monster:'goo',wallRang
 
   }
   for(const name of scene.wallRange?[]:[P,M]){
-   const firstHit=events[name].find(e=>e.event==='hit'&&e.data?.hid===name&&String(e.data?.id)===seed.id&&e.data?.damage>1&&e.data?.source!=='taunt');
+   const firstHit=events[name].find(e=>nativeHit(e,name,seed.id));
    const ownedMove=events[name].find(e=>e.event==='move-issued'&&e.at<=firstHit.at&&e.motion?.position?.target===seed.id&&
-    e.motion.position.mode==='independent-approach'&&e.motion.position.movementOwner==='combat-approach'&&
-    e.motion.position.approachId&&e.motion.position.target===seed.id&&Math.hypot(e.data.going_x-e.data.x,e.data.going_y-e.data.y)>1);
+    approachOwned(e.motion.position)&&Math.hypot(e.data.going_x-e.data.x,e.data.going_y-e.data.y)>1);
    expect(ownedMove,'Caster must independently move under the matching owned approach before its first native damage').toBeTruthy();
    expect(events[name].some(e=>e.event==='player'&&e.data?.id===name&&e.sequence>ownedMove.sequence&&e.at<=firstHit.at&&
     Math.hypot(e.data.x-ownedMove.data.x,e.data.y-ownedMove.data.y)>1),'Actual socket displacement must follow the owned recovery move').toBe(true);

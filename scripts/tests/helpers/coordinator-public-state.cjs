@@ -1,13 +1,17 @@
-const {publicStateFields}=require('../../../runtime/coordinator/telemetry/public-state-types.ts');
-const {createPublicStateRoute}=require('../../../runtime/coordinator/telemetry/public-state.ts');
+const {publicStateFields}=require('../../../runtime/status/coordinator/state.ts');
+const {createPublicStateRoute}=require('../../../runtime/status/coordinator/state.ts');
 function publicStateRuntime(){
  const now=1000000;
- const party={...Object.fromEntries(publicStateFields.map(key=>[key,{field:key}])),
+ const party={...Object.fromEntries(publicStateFields().map(key=>[key,{field:key}])),
   statuses:{P:{name:'P',seenAt:now,server:'USII',map:'main',x:1,y:2,realmPlayers:['Alice','Bob'],
     items:[{slot:0,item:{name:'coat'},meta:{definition:{s:1},sprite:'sprite',unneeded:'omit-me'}},null],
     slots:{helmet:{item:{name:'helmet'},meta:{definition:{g:1}}}},characterDollHtml:'<div>doll</div>',nearbyGiveaways:[],nearbyStandListings:[],bank:{private:false}},
    Q:{name:'Q',seenAt:now-20000,server:'USII',realmPlayers:['Stale']}},
   commands:{P:{id:10,type:'party-monster-travel',phase:'assemble',convoyId:'convoy',private:'omit'},Q:null},
+  // The items owner's stand count reads the listings as a list (items/coordinator stand rows).
+  standListings:[],
+  // No merchant: core's ready jobs ask 08 through the hooks only for a named merchant.
+  merchantCharacter:null,
   location:{map:'main',x:100,y:200},abtestingStrategy:null,bankSnapshot:{packs:{items0:[]}},bankVaults:[{pack:'items0'}],
   bankboiQueue:[],bankboiTransaction:null,ponty:{listings:[]},autoUpgradeMarks:{P:{}},travelPlaces:[{map:'main'}],
   monsterChoices:[{id:'goo'}],bestiaryCatalog:[{id:'goo'}],skillCatalog:[{id:'attack'}],appearanceChoices:{eyes:[]},
@@ -21,7 +25,7 @@ function publicStateRuntime(){
  const ports={now:()=>now,handoff:()=>funcs.publicHandoff(),aldata:()=>funcs.publicALDataState(),servers:()=>my_acc.response.servers,
   roster:()=>funcs.rosterPayload(),slots:()=>funcs.slotPayload(),classes:PARTY_CLASSES,eventSchedules:()=>funcs.publicEventSchedules(),
   anniversary:()=>funcs.publicAnniversaryState(),job:job=>funcs.publicMerchantJob(job),luckSchedule:()=>funcs.mluckScheduleStatus(),
-  bankbois:()=>funcs.bankboiPublicState(),realmControl:()=>funcs.realmControlPayload()};
+  bankbois:()=>funcs.bankboiPublicState(),realmControl:()=>funcs.realmControlPayload(),consoleControl:()=>null,activity:()=>null};
  return {party,ports,route:createPublicStateRoute(party,ports),legacy:{party,my_acc,PARTY_CLASSES,...funcs,Date:{now:()=>now,parse:Date.parse}}};
 }
 module.exports={publicStateRuntime};

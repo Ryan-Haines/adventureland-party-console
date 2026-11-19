@@ -7,19 +7,14 @@ import { domainOptions, key, useVisible } from './query-cache';
 import type { Char } from './char';
 import { characterKey, writeCharacter, writeVitals, type CharacterDomain } from './character-cache';
 export { characterKey } from './character-cache';
-import {
-  dashboardLiveMetrics,
-  receivedLiveMessage,
-  clearLiveMetrics,
-} from './live-metrics';
 import { audited } from './field-read-audit';
 
-export const liveConnectionKey = ['party', 'connection'] as const;
-export interface LiveConnection {
+const liveConnectionKey = ['party', 'connection'] as const;
+interface LiveConnection {
   healthy: boolean;
   version: number;
 }
-export function useLiveHealthy() {
+function useLiveHealthy() {
   return (
     useQuery({
       queryKey: liveConnectionKey,
@@ -54,10 +49,11 @@ export function DashboardLive() {
   });
   useEffect(() => {
     if (!visible) return;
+    // `waiting` is set while a failed stream waits for the coordinator to answer a poll again.
     let stream: EventSource | undefined,
       stopped = false,
-      lastHeartbeat = Date.now();
-    let reconnect: ReturnType<typeof setTimeout> | undefined;
+      waiting = false;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     const status = (healthy: boolean) => {
       const version =
         (client.getQueryData<LiveConnection>(liveConnectionKey)?.version || 0) +
@@ -71,8 +67,7 @@ export function DashboardLive() {
         inventories.delete(name);
         return;
       }
-      const sampledAt = record.sample > 0 ? record.sampledAt : undefined;
-      writeVitals(client, name, record.vitals, sampledAt);
+      writeVitals(client, name, record.vitals);
       const size =
         Number(record.vitals.inventorySize) || Object.keys(record.items).length;
       // Native arrays can contain occupied overflow cells beyond isize. Keep
@@ -89,21 +84,25 @@ export function DashboardLive() {
         ),
         inventorySize: size,
         slots: record.slots,
-      }, sampledAt);
+      });
     });
+    // A failed stream reconnects once the coordinator answers the fallback core poll again, which
+    // runs while the stream is down.
     function fail() {
       if (stopped) return;
       stream?.close();
+      clearTimeout(watchdog);
       status(false);
-      if (!stopped && !reconnect)
-        reconnect = setTimeout(() => {
-          reconnect = undefined;
-          connect();
-        }, 1000);
+      waiting = true;
+    }
+    // The stream fails after three heartbeats it did not hear, at the period the stream names.
+    function heard(heartbeatMs: number | undefined) {
+      clearTimeout(watchdog);
+      if (heartbeatMs) watchdog = setTimeout(fail, 3 * heartbeatMs);
     }
     function connect() {
       if (stopped) return;
-      lastHeartbeat = Date.now();
+      waiting = false;
       const source = new EventSource(`${API}/dashboard-stream`);
       stream = source;
       source.onerror = () => {
@@ -112,11 +111,10 @@ export function DashboardLive() {
       source.onmessage = (event) => {
         if (stopped || stream !== source) return;
         try {
-          receivedLiveMessage(event.data);
           const message = JSON.parse(event.data) as LiveMessage;
           if (!receiver.accept(message)) return;
           if (message.type === 'heartbeat' || message.type === 'snapshot')
-            lastHeartbeat = Date.now();
+            heard(message.heartbeatMs);
           if (message.type === 'snapshot') {
             void client.cancelQueries({ queryKey: key('fast') });
             void client.cancelQueries({ queryKey: key('inventory') });
@@ -129,7 +127,6 @@ export function DashboardLive() {
     }
     status(false);
     connect();
-    Object.assign(window, { dashboardLiveMetrics });
     const unsubscribe = client.getQueryCache().subscribe((event) => {
       if (
         event.type === 'removed' &&
@@ -137,18 +134,15 @@ export function DashboardLive() {
       ) {
         stopped = true;
         stream?.close();
-        clearTimeout(reconnect);
+        clearTimeout(watchdog);
       }
+      if (waiting && event.type === 'updated' && event.action.type === 'success' && event.query.queryKey[1] === 'core')
+        connect();
     });
-    const watchdog = setInterval(() => {
-      if (Date.now() - lastHeartbeat > 15000) fail();
-    }, 1000);
     return () => {
       stopped = true;
-      clearLiveMetrics();
       unsubscribe();
-      clearInterval(watchdog);
-      clearTimeout(reconnect);
+      clearTimeout(watchdog);
       stream?.close();
       status(false);
     };

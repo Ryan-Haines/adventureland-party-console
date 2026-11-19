@@ -2,24 +2,23 @@
 import { BestiaryDrop } from "./bestiary-drop";
 import { BestiaryMonster } from "./bestiary-monster";
 import { indirectBestiaryDrops } from "./indirect-bestiary-drops";
-import { ItemSprite } from "./item-sprite";
+import { SpriteCrop } from "./sprite-crop";
 import { MerchantCatalogItem } from "./merchant-catalog-item";
 import { effectiveDropRate, formatDropRate } from "./drop-rate";
 
 type EventDrop = BestiaryDrop & { condition?: string };
 
-function eventDropsFor(monster: BestiaryMonster, catalog: MerchantCatalogItem[]): EventDrop[] {
+// A drop the catalog marks with an event window shows under Event drops, even outside the event.
+export function eventDropsFor(monster: BestiaryMonster, catalog: MerchantCatalogItem[]): EventDrop[] {
   const seen = new Set<string>();
   return catalog.flatMap(item => {
     if (seen.has(item.id)) return [];
     seen.add(item.id);
     return (item.meta?.world?.drops || []).filter(source =>
-      source.monsterId === monster.id && source.sourceType === "monster" &&
-      // The native catalog retains this condition even outside the event.
-      source.acquisitionPath?.includes("Witch's Cipher: gathering window only")
+      source.monsterId === monster.id && source.sourceType === "monster" && !!source.eventWindow
     ).map(source => ({ id: item.id, name: item.name, sprite: item.sprite,
       rate: effectiveDropRate(source), quantity: source.quantity || 1,
-      condition: source.acquisitionPath!.join(" · ") }));
+      condition: (source.acquisitionPath || []).join(" · ") }));
   }).sort((a, b) => b.rate - a.rate || a.name.localeCompare(b.name));
 }
 
@@ -50,7 +49,7 @@ export function BestiaryDrops({
             className="flex items-center gap-2 rounded border border-amber-800 bg-[#07100f] p-2 text-left text-emerald-50 hover:border-amber-500 hover:bg-amber-950"
           >
             <div className="relative h-9 w-9 shrink-0">
-              {drop.sprite && <ItemSprite sprite={drop.sprite} />}
+              {drop.sprite && <SpriteCrop sprite={drop.sprite} />}
             </div>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs">{drop.name}</span>

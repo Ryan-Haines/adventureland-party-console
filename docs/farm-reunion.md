@@ -25,6 +25,7 @@ Reunion requires actual proximity within 150 units of the eligible teammate.
 Individual event-return commands additionally require the saved destination's
 arrival check before completion is reported. Magiport never completes a convoy.
 
-Potion thresholds are unchanged: mage/priest HP below 50%, MP below 20%, with HP
-priority and the existing shared cooldown. Occupied recovery continues passive
+Every class drinks HP below its "HP potion below" setting (50%, the merchant 20%) and MP
+below its "MP potion below" setting (20%), HP first, during reunion travel too, with the
+shared potion cooldown. Occupied recovery continues passive
 regeneration; it does not assume an MP potion can be consumed immediately.

@@ -1,4 +1,6 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
+import { itemValue, TRACKER_ITEMS } from '../../../runtime/items/api.ts';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,7 +16,7 @@ import { useState } from "react";
 import { TracktrixBonuses } from './tracktrix-bonuses';
 import { BestiaryDrops } from "./bestiary-drops";
 import { BestiaryMonster } from "./bestiary-monster";
-import { calculatedLevelProperties } from "./calculated-level-properties";
+import { itemProperties } from "@/lib/game-formulas";
 import { Char } from "./char";
 import { comparisonSlotLabel } from "./comparison-slot-label";
 import { comparisonSlotsFor } from "./comparison-slots-for";
@@ -30,10 +32,8 @@ import { ITEM_DETAIL_PROPERTY_RANK } from "./item-detail-property-rank";
 import { effectiveDropRate, formatDropRate as dropRate, isDirectDrop } from "./drop-rate";
 import { itemMaximumLevel } from "./item-maximum-level";
 import { ItemMeta } from "./item-meta";
-import { ItemSprite } from "./item-sprite";
 import { MerchantCatalogItem } from "./merchant-catalog-item";
 import { MonsterAchievementProgress } from "./monster-achievement-progress";
-import { npcSaleValue } from "./npc-sale-value";
 import { SelectedItem } from "./selected-item";
 import { SpriteCrop } from "./sprite-crop";
 
@@ -41,7 +41,7 @@ import { ItemExchangeDetails } from "./item-exchange-details";
 import type { MerchantExchangeItem } from "./merchant-exchange-item";
 import type { ReactNode } from 'react';
 import type { ExchangeRewardTileData } from './exchange-reward-tile';
-import { itemSlotExtras, onItemCard } from "./item-card-lines";
+import { itemSlotExtras, onItemCard, statSummary } from "./item-card-lines";
 import { ItemCard, ItemExtraStats } from "./item-card";
 import { SkillCards } from "./skill-card";
 import { MonsterCards } from "./monster-card";
@@ -195,12 +195,12 @@ export function ItemDetails({
   const def = selected?.entry.meta?.definition || {},
     properties = selected?.entry.meta?.properties || {},
     world = selected?.entry.meta?.world,
-    currentCalculated = calculatedLevelProperties(
+    currentCalculated = itemProperties(
       selected?.entry.meta ?? undefined,
       selected?.entry.item || { name: "" },
       actualLevel,
     ),
-    previewCalculated = calculatedLevelProperties(
+    previewCalculated = itemProperties(
       selected?.entry.meta ?? undefined,
       selected?.entry.item || { name: "" },
       previewLevel,
@@ -252,13 +252,6 @@ export function ItemDetails({
       const rightRank = ITEM_DETAIL_PROPERTY_RANK.get(right) ?? Number.MAX_SAFE_INTEGER;
       return leftRank - rightRank || left.localeCompare(right);
     });
-  const statSummary = (values: Record<string, string | number | boolean>) =>
-    Object.entries(values)
-      .map(
-        ([key, value]) =>
-          `${key.replaceAll("_", " ")} ${typeof value === "number" && value > 0 ? "+" : ""}${String(value)}`,
-      )
-      .join(" · ");
   // Stats the level calculation doesn't cover, such as a fixed lifesteal, keep their live value.
   const cardProperties = { ...properties, ...previewProperties };
   const formatStat = (key: string, value: string | number | boolean | unknown[]) =>
@@ -270,7 +263,7 @@ export function ItemDetails({
   if (selectedSkill)
     return (
       <Dialog open={!!initialSelected} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto border border-violet-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
+        <DialogContent data-area="item-skill" className="max-h-[90vh] overflow-y-auto border border-violet-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
           <DialogHeader>
             <div className="flex items-center gap-3 pr-8">
               <Button type="button" variant="ghost" size="icon" onClick={goBack} title="Back" aria-label="Back"
@@ -278,7 +271,7 @@ export function ItemDetails({
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               <div className="relative h-12 w-12 shrink-0">
-                {selectedSkill.sprite && <ItemSprite sprite={selectedSkill.sprite} />}
+                {selectedSkill.sprite && <SpriteCrop sprite={selectedSkill.sprite} />}
               </div>
               <div>
                 <DialogTitle>{selectedSkill.name}</DialogTitle>
@@ -296,7 +289,7 @@ export function ItemDetails({
   if (selectedMonster)
     return (
       <Dialog open={!!initialSelected} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto border border-rose-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
+        <DialogContent data-area="item-monster" className="max-h-[90vh] overflow-y-auto border border-rose-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
           <DialogHeader>
             <div className="flex items-center gap-3 pr-8">
               <Button
@@ -357,7 +350,7 @@ export function ItemDetails({
     );
   return (
     <Dialog open={!!initialSelected} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border border-emerald-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
+      <DialogContent data-area="item" className="max-h-[90vh] overflow-y-auto border border-emerald-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
         <DialogHeader>
           <div className="flex items-center gap-4 pr-8">
             {trail.length > 0 && (
@@ -375,7 +368,7 @@ export function ItemDetails({
             )}
             {selected?.entry.meta?.sprite && (
               <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded border border-emerald-700 bg-black">
-                <ItemSprite sprite={selected.entry.meta.sprite} />
+                <SpriteCrop sprite={selected.entry.meta.sprite} />
               </div>
             )}
             <div className="min-w-0 flex-1">
@@ -416,7 +409,7 @@ export function ItemDetails({
             ) : null}
           </div>
         </DialogHeader>
-        {selected && ['tracker', 'supercomputer'].includes(selected.entry.item.name) && characters.some(character => character.name === selected.character) && <TracktrixBonuses name={selected.character} />}
+        {selected && TRACKER_ITEMS.includes(selected.entry.item.name) && characters.some(character => character.name === selected.character) && <TracktrixBonuses name={selected.character} />}
         {def.explanation && (
           <p className="text-sm leading-6 text-emerald-50/80">{String(def.explanation)}</p>
         )}
@@ -435,10 +428,7 @@ export function ItemDetails({
           <div className="flex items-center justify-between rounded border border-rose-900/60 bg-rose-950/10 px-3 py-2 text-xs">
             <span className="text-emerald-100/55">Sell to NPC</span>
             <span className="font-mono text-rose-200">
-              {npcSaleValue(
-                { ...selected.entry.item, level: previewLevel },
-                selected.entry.meta,
-              ).toLocaleString()}
+              {Math.round(itemValue({ ...selected.entry.item, level: previewLevel }, selected.entry.meta ?? undefined) ?? 0).toLocaleString()}
               g
             </span>
           </div>
@@ -504,7 +494,7 @@ export function ItemDetails({
                       <SlidersHorizontal className="mr-2 h-3.5 w-3.5" />
                       Compare
                     </PopoverTrigger>
-                    <PopoverContent
+                    <PopoverContent data-area="item-popover"
                       align="end"
                       className="w-72 border border-cyan-700 bg-[#07100f] p-2 text-cyan-50 shadow-2xl"
                     >
@@ -665,7 +655,7 @@ export function ItemDetails({
                   className={`flex items-center gap-2 rounded border p-2 text-left transition hover:border-cyan-400 hover:bg-cyan-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${item.id === selected?.entry.item.name ? "border-cyan-400 bg-cyan-400/10" : "border-cyan-950"}`}
                 >
                   <div className="relative h-8 w-8 shrink-0">
-                    {item.sprite && <ItemSprite sprite={item.sprite} />}
+                    {item.sprite && <SpriteCrop sprite={item.sprite} />}
                   </div>
                   <span className="text-[11px]">
                     {item.quantity > 1 ? `${item.quantity} × ` : ""}
@@ -708,7 +698,7 @@ export function ItemDetails({
                   className="flex items-center gap-2 rounded border border-emerald-950 p-2 text-left transition hover:border-emerald-500 hover:bg-emerald-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                 >
                   <div className="relative h-8 w-8 shrink-0">
-                    {use.sprite && <ItemSprite sprite={use.sprite} />}
+                    {use.sprite && <SpriteCrop sprite={use.sprite} />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs">{use.name}</p>
@@ -752,7 +742,7 @@ export function ItemDetails({
                   className="flex items-center gap-2 rounded border border-violet-950 p-2 text-left transition hover:border-violet-500 hover:bg-violet-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
                 >
                   <div className="relative h-8 w-8 shrink-0">
-                    {material.sprite && <ItemSprite sprite={material.sprite} />}
+                    {material.sprite && <SpriteCrop sprite={material.sprite} />}
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs">
@@ -824,6 +814,8 @@ export function ItemDetails({
         ); }))}
         {selected?.exchangeAdd && !selectedMonster && <Button disabled={!selected.exchangeAdd.enabled} onClick={selected.exchangeAdd.onAdd}
           className="w-full border border-emerald-500 bg-emerald-950 text-emerald-100 hover:bg-emerald-900">Add</Button>}
+        {selected ? <AddonSlot name="item-rules" part="item-details" item={selected.entry.item} character={selected.character} /> : null}
+        <AddonSlot name="dialog-section" part="item" subject={selected} />
       </DialogContent>
     </Dialog>
   );

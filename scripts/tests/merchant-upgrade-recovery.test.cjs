@@ -1,63 +1,94 @@
+const {productionHarness} = require('./helpers/items-character.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
-const shared = fs.readFileSync(path.join(__dirname, '../../characters/shared.js'), 'utf8');
 const coordinator = require('./helpers/coordinator-source.cjs').coordinatorSource();
 
-test('displaced manual upgrade selects unfinished stock without treating finished duplicates as survivors',()=>{
- const {namedFunction}=require('./helpers/named-function.cjs');
- const items=Array(12).fill(null);items[3]={name:'ololipop',level:8};items[5]={name:'ololipop',level:8};items[10]={name:'ololipop',level:5};
- const c=vm.createContext({character:{items},G:{items:{ololipop:{}}},maximumItemLevel:()=>13,
-  sameItem:(a,b)=>!!a&&!!b&&a.name===b.name&&(a.level||0)===(b.level||0)});
- vm.runInContext(namedFunction(shared,'findUpgradeMarkSlot'),c);
+// A fighter's marked upgrade run (production.ts `merchantImprove`) over a twelve cell bag; each
+// upgrade the game answers raises the level, and `calls` keeps the slots in order.
+function improveRun(items){
+ const character={name:'F',ctype:'warrior',items,q:{}},calls=[];
+ items[0]={name:'scroll0',q:50};
+ const {production}=productionHarness({character,G:{items:{ololipop:{upgrade:{}},scroll0:{}},skills:{}},ports:{
+  request:async()=>({craftProtection:{requirements:[]},upgradeOfferingRules:[],upgradeOfferingStock:{}}),
+  upgrade:async slot=>{calls.push(slot);items[slot]={...items[slot],level:items[slot].level+1};return {success:true,num:slot};}}});
+ return {calls,improve:(...upgrades)=>production.merchantImprove({upgrades},[])};
+}
+test('displaced manual upgrade selects unfinished stock without treating finished duplicates as survivors',async()=>{
+ const bag=()=>{const items=Array(12).fill(null);items[3]={name:'ololipop',level:8};items[5]={name:'ololipop',level:8};items[10]={name:'ololipop',level:5};return items;};
  const mark={requestId:'manual',slot:7,item:{name:'ololipop',level:5},tiers:3};
- assert.equal(c.findUpgradeMarkSlot(mark,{}),10);
- items[11]={name:'ololipop',level:6};
- assert.throws(()=>c.findUpgradeMarkSlot(mark,{}),/Upgrade inventory recovery ambiguous.*ololipop.*5.*8/);
- assert.equal(c.findUpgradeMarkSlot({...mark,liveSlot:11},{}),11);
- assert.equal(c.findUpgradeMarkSlot(mark,{11:true}),10);
+ let run=improveRun(bag());await run.improve({...mark});assert.equal(run.calls[0],10);
+ let items=bag();items[11]={name:'ololipop',level:6};run=improveRun(items);
+ await assert.rejects(run.improve({...mark}),/Upgrade inventory recovery ambiguous.*ololipop.*5.*8/);
+ items=bag();items[11]={name:'ololipop',level:6};run=improveRun(items);await run.improve({...mark,liveSlot:11});assert.equal(run.calls[0],11);
+ // A slot an earlier mark of the run used is not a survivor.
+ items=bag();items[11]={name:'ololipop',level:6};run=improveRun(items);
+ await run.improve({...mark,requestId:'first',liveSlot:11,tiers:2},{...mark});assert.deepEqual([run.calls[0],run.calls[2]],[11,10]);
+ // v1.5 row 2: an admitted automatic pass whose copy is gone blocks with its target kept; a manual
+ // mark and an automatic mark not yet admitted answer no slot.
+ const gone={auto:true,passId:'pass',slot:7,item:{name:'ololipop',level:9},tiers:2};
+ await assert.rejects(improveRun(bag()).improve({...gone}),/Automatic upgrade survivor is ambiguous or missing: ololipop; preserved target \+11/);
+ run=improveRun(bag());await run.improve({...gone,passId:undefined});assert.deepEqual(run.calls,[]);
+ run=improveRun(bag());await run.improve({...gone,auto:false,requestId:undefined});assert.deepEqual(run.calls,[]);
+});
+// The live automatic offering row (e2e/live-bankboi-offerings.spec.ts 'BankBoi-only offering supplies
+// required automatic native upgrade'): the pass's first copy went poof, and the next mark's offering
+// demand read every mark of the job, the destroyed one too. v1.5 blocks a gone copy only at its own
+// turn (aac30d45 shared.js:6286), so the run goes on to the next copy.
+test('an automatic pass whose copy went poof this run goes on to the next mark under an offering rule',async()=>{
+ const items=Array(12).fill(null),calls=[];
+ items[0]={name:'scroll0',q:50};items[1]={name:'offeringp',q:2};items[3]={name:'ololipop',level:8};items[5]={name:'ololipop',level:8};
+ const character={name:'F',ctype:'warrior',items,q:{}};
+ const {production}=productionHarness({character,G:{items:{ololipop:{upgrade:{}},scroll0:{},offeringp:{}},skills:{}},ports:{
+  request:async()=>({craftProtection:{requirements:[]},upgradeOfferingRules:[{name:'ololipop',floor:8,ceiling:9,offering:'offeringp',required:false}],
+   upgradeOfferingStock:{offeringp:2}}),
+  upgrade:async slot=>{calls.push(slot);if(calls.length===1){items[slot]=null;return {failed:true,success:false,num:slot};}
+   items[slot]={...items[slot],level:items[slot].level+1};return {success:true,num:slot};}}});
+ const mark=slot=>({auto:true,passId:'pass',slot,item:{name:'ololipop',level:8},tiers:1});
+ await production.merchantImprove({upgrades:[mark(3),mark(5)]},[]);
+ assert.deepEqual(calls,[3,5],'the second copy is upgraded after the first went poof');
+ assert.equal(items[5].level,9);
 });
 
+// A merchant's upgrade (production.ts `upgradeConfirmed`) under the production journal and the lucky
+// slot service; `checkpoint` is the game's change while the protection checkpoint is out.
+function merchantUpgrade(items,{checkpoint=()=>{}}={}){
+ const character={name:'M',ctype:'merchant',items,q:{}},calls=[];
+ const h=productionHarness({character,ports:{job:()=>({jobId:'j'}),
+  request:async(path,{body})=>{
+   if(path==='/merchant/checkpoint')checkpoint(items);
+   return path==='/merchant/production'&&body.action==='pending'?{pending:[]}:{};
+  },
+  swap:async(a,b)=>{[items[a],items[b]]=[items[b],items[a]];},
+  upgrade:async(slot,scroll)=>{calls.push([slot,scroll]);items[slot]={...items[slot],level:items[slot].level+1};items[scroll]={...items[scroll],q:items[scroll].q-1};return {success:true,num:slot};}}});
+ return {...h,calls};
+}
 test('upgrade reselects a scroll moved during its asynchronous protection checkpoint', async () => {
-  const {namedFunction} = require('./helpers/named-function.cjs');
-  const items = [{name:'wcap',level:1},{name:'scroll0',q:4},null];
-  let selected;
-  const context = vm.createContext({character:{ctype:'merchant',items}, luckyUpgradeSlot:7,
-    verifyMerchantItemMarks:async()=>{items[2]=items[1];items[1]=null;},
-    findInventoryItemByName:name=>items.findIndex(item=>item?.name===name),
-    merchantLuckyUpgrade:()=>({run:async(item,scroll)=>{selected=scroll;return {success:true};}}),
-  });
-  require('./helpers/client-dependencies.cjs').productionJournalContext(context);
-  vm.runInContext(namedFunction(shared,'observedUpgradeConfirmed'),context);
-  await context.observedUpgradeConfirmed(0,1,'wcap',1);
-  assert.equal(selected,2);
+  const items = [{name:'wcap',level:1},{name:'scroll0',q:4},null,null,null,null,null,null];
+  const {production,calls}=merchantUpgrade(items,{checkpoint:bag=>{if(bag[1]){bag[2]=bag[1];bag[1]=null;}}});
+  production.setLuckySlot(7);
+  await production.upgradeConfirmed(0,1,'wcap',2);
+  assert.deepEqual(calls,[[7,2]]);
 });
-for(const [verified,candidate,expected] of [[null,0,0],[null,null,2],[7,0,7]])test('upgrade executes selected slot and restores inventory: '+JSON.stringify({verified,candidate}),async()=>{
- const {createLuckyUpgrade}=require('../../runtime/characters/lucky-upgrade.ts');
- const {namedFunction}=require('./helpers/named-function.cjs');
+// The lucky slot is the verified one, else the slot search's next (cursor 0 with no rolls seen),
+// else, on discovery data the search cannot read, the item's own slot.
+for(const [verified,expected] of [[null,0],['corrupt',2],[7,7]])test('upgrade executes selected slot and restores inventory: '+JSON.stringify({verified}),async()=>{
  const items=Array(42).fill(null);items[2]={name:'wcap',level:0};items[4]={name:'scroll0',q:2};items[0]={name:'tracker'};
- let journal=null,clock=0,begins=0;const calls=[];
- const service=createLuckyUpgrade({item:slot=>items[slot],busy:()=>false,swap:async(a,b)=>{[items[a],items[b]]=[items[b],items[a]];},
-  read:()=>journal,write:value=>journal=value,now:()=>clock,sleep:async ms=>clock+=ms,current:()=>true,log:()=>{}});
- const context=vm.createContext({character:{ctype:'merchant',items},luckyUpgradeSlot:verified,
-  luckySlotTracking:()=>({select:()=>candidate,begin:()=>begins++}),verifyMerchantItemMarks:async()=>{},
-  findInventoryItemByName:name=>items.findIndex(item=>item?.name===name),merchantLuckyUpgrade:()=>service,
-  upgradeAtSlotConfirmed:async(slot,scroll)=>{calls.push([slot,scroll]);items[slot].level++;items[scroll].q--;return {success:true};}});
- require('./helpers/client-dependencies.cjs').productionJournalContext(context);
- vm.runInContext(namedFunction(shared,'observedUpgradeConfirmed'),context);await context.observedUpgradeConfirmed(2,4,'wcap',1);
- assert.deepEqual(calls,[[expected,4]]);assert.equal(begins,1);assert.equal(items[2].level,1);assert.equal(items[0].name,'tracker');assert.equal(journal,null);
+ const {production,calls,stored}=merchantUpgrade(items);
+ if(verified==='corrupt')production.luckyReply({luckySlotTracking:{M:{other:'corrupt'}}});else production.setLuckySlot(verified);
+ await production.upgradeConfirmed(2,4,'wcap',1);
+ assert.deepEqual(calls,[[expected,4]]);assert.equal(items[2].level,1);assert.equal(items[0].name,'tracker');assert.equal(stored['party-lucky-upgrade']??null,null);
 });
 
 test('bank-sourced pass persists before production and resumes at its original target after relocation', () => {
-  const {beginProduction, finishProduction} = require('../../runtime/coordinator/inventory/production.ts');
-  const {reconcileCoordinatorUpgradeMarks} = require('../../runtime/coordinator/inventory/mark-reconciliation.ts');
-  const {processingPending} = require('../../runtime/coordinator/inventory/shared-rules.ts');
+  const {beginProduction, finishProduction} = require('../../runtime/items/coordinator/production.ts');
+  const {reconcileCoordinatorUpgradeMarks} = require('../../runtime/items/coordinator/production.ts');
+  const {processingPending} = require('../../runtime/items/rules.ts');
   const {party, r, status} = marksRuntime();
   Object.assign(party, {merchantCharacter:'M', production:{attempts:{}}, autoCompounds:{}});
   const mark = {passId:'pass',slot:19,item:{name:'wcap',level:0},tiers:8,auto:true};
   beginProduction(party,{id:'first',kind:'upgrade',item:mark.item,automatic:{family:'upgrade',key:'wcap@+0',mark}});
+  // v1.5 row 2: a mark keeps the copy's live cell and fingerprint beside its original.
   assert.deepEqual(party.upgrades.M,[{...mark,liveItem:mark.item,liveSlot:19}]);
   finishProduction(party,'first',true);
   const busy = {items:[],upgradeInventoryBusy:true};
@@ -66,7 +97,7 @@ test('bank-sourced pass persists before production and resumes at its original t
   party.upgrades=JSON.parse(JSON.stringify(party.upgrades));
   const snapshot=status(4);snapshot.items[0].slot=7;
   r.reconcileAutoUpgradeMarks('M',snapshot);
-  assert.deepEqual(party.upgrades.M,[{...mark,slot:7,liveSlot:7,liveItem:{name:"wcap",level:4}}]);
+  assert.deepEqual(party.upgrades.M,[{...mark,slot:7,liveSlot:7,liveItem:{name:'wcap',level:4}}]);
   assert.equal(processingPending(party,{name:'wcap',level:4}),true);
   assert.equal(processingPending(party,{name:'wcap',level:8}),false);
   r.clearResolvedUpgradeMarks('M',[mark]);
@@ -84,7 +115,7 @@ test('relocating a pass does not steal a survivor already owned by another pass'
 
 function marksRuntime() {
   const party = { autoUpgradeMarks: { M: { 'wcap@+0': { tiers: 8, quantity: -1 } } }, upgrades: { M: [] } };
-  const policies = require('../../runtime/coordinator/inventory/upgrade-marks.ts');
+  const policies = require('../../runtime/items/coordinator/production.ts');
   const r = {
     reconcileAutoUpgradeMarks(name, status) {
       const result = policies.reconcileUpgradeMarks(party.upgrades[name] || [], party.autoUpgradeMarks[name] || {}, status.items);
@@ -144,27 +175,25 @@ test('finishing one batch preserves upgrade marks queued during that batch', () 
   assert.equal(party.upgrades.M[0].slot, 25);
 });
 
-test('the Town watchdog cannot interrupt merchant work even with a stale global hold', async () => {
-  let guard;
-  const stops = [];
+// Step 10: the Town override is a rank 85 claim; the 100 ms watchdog that stopped movement went.
+test('the Town override never claims or stops a merchant, even with a stale global hold', async () => {
+  const stops = [], claims = [];
   const r = vm.createContext({ escapeOwns: () => false, character: { ctype: 'merchant', map: 'main', x: -207, y: -220 },
-    root: {}, partyTownActive: true, townTraveling: false, townOverrideInFlight: false,
+    root: {}, partyTownActive: true, townTraveling: false,
     smart: { moving: true }, stop: kind => stops.push(kind), is_moving: () => true,
-    setInterval: callback => { guard = callback; return 1; }, clearInterval() {},
+    movement: { hold: request => { claims.push(request.owner); return 'granted'; } },
   });
-  vm.runInContext(shared.slice(shared.indexOf('  async function enforcePartyTownOverride('),
-    shared.indexOf('  async function tick()')), r);
+  // The override is the movement requesters' (runtime/movement/character/owner.ts).
+  require('./helpers/requesters.cjs').installRequesters(r);
   await r.enforcePartyTownOverride();
-  r.maintainTownOverrideGuard();
-  guard();
   assert.deepEqual(stops, []);
-  assert.equal(r.root.__partyTownGuardTimer, null);
+  assert.deepEqual(claims, []);
 });
 test('legacy manual bank pass identity survives normalization and an admitted old command',()=>{
- const {initialItemIntents}=require('../../runtime/coordinator/inventory/initial-intents.ts');
- const {rememberUpgradeContinuation}=require('../../runtime/coordinator/inventory/upgrade-continuation.ts');
+ const {initialItemIntents}=require('../../runtime/items/saved-fields.ts');
+ const {rememberUpgradeContinuation}=require('../../runtime/items/coordinator/production.ts');
  const mark={passId:'bank-manual-pass',slot:7,item:{name:'sshield',level:0},tiers:4};
- const intents=initialItemIntents({upgrades:{M:[mark]}});
+ const intents=initialItemIntents({upgrades:{M:[mark]}},{declared:require('../../runtime/settings/coordinator/table.ts').declared});
  assert.equal(intents.upgrades.M[0].requestId,mark.passId);
  const state={...intents,merchantCharacter:'M',autoUpgradeMarks:{}};
  const body={kind:'upgrade',item:{name:'sshield',level:1},automatic:{family:'manual-upgrade',mark:{...mark,slot:9}}};
@@ -174,4 +203,26 @@ test('legacy manual bank pass identity survives normalization and an admitted ol
  assert.throws(()=>rememberUpgradeContinuation(state,{...body,automatic:{family:'manual-upgrade',mark:{...mark,passId:'other'}}}),/continuation changed/);
  assert.throws(()=>rememberUpgradeContinuation(state,{...body,item:{name:'helmet',level:1}}),/item changed/);
  assert.throws(()=>rememberUpgradeContinuation(state,{...body,automatic:{family:'manual-upgrade',mark:{...mark,tiers:5}}}),/target changed/);
+});
+
+// An intent holds its copy by identity,
+// follows it below its target, and ends at its target or when its copy leaves the bag.
+test('intents follow their copies by identity and end at their target or when the copy leaves', () => {
+  const {reconcileUpgradeMarks} = require('../../runtime/items/coordinator/production.ts');
+  const bag = (...entries) => entries.map(([slot, level]) => ({slot, item: {name: 'wcap', level}, meta: {upgradeable: true}}));
+  const manual = (requestId, slot) => ({requestId, slot, item: {name: 'wcap', level: 0}, tiers: 2});
+  // A tidy moved two identical copies: each request takes a distinct unfinished copy.
+  let result = reconcileUpgradeMarks([manual('a', 3), manual('b', 4)], {}, bag([10, 1], [11, 0]));
+  assert.deepEqual(result.marks.map(mark => mark.slot).sort(), [10, 11]);
+  // One copy left: one request keeps it and the other ends; two requests never share a copy.
+  result = reconcileUpgradeMarks([manual('a', 3), manual('b', 4)], {}, bag([10, 1]));
+  assert.deepEqual(result.marks.map(mark => [mark.requestId, mark.slot]), [['a', 10]]);
+  // A finished copy elsewhere is never claimed by a moved intent.
+  result = reconcileUpgradeMarks([manual('a', 3)], {}, bag([10, 2]));
+  assert.deepEqual(result.marks, []);
+  // A manual request ends when its copy reaches its target, and stays while it is below it.
+  result = reconcileUpgradeMarks([manual('a', 3)], {}, bag([3, 2]));
+  assert.deepEqual(result.marks, []);
+  result = reconcileUpgradeMarks([manual('a', 3)], {}, bag([3, 1]));
+  assert.deepEqual(result.marks.map(mark => mark.slot), [3]);
 });

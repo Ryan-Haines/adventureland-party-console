@@ -1,12 +1,15 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {caveCombat}=require('../../runtime/coordinator/dungeons/combat.ts');
+// The hunting owner's Cave queue (coordinator/cave.ts `caveCombat`) over the targeting owner's evaluateGroup, as snapshot.ts hands it.
+const {caveCombat}=require('../../runtime/hunting/coordinator/cave.ts');
+const {evaluateGroup}=require('../../runtime/coordinator/targeting/queue.ts');
+require('./fixtures/coordinator-core.cjs');
 function fixture(){
  const state={dailyDungeons:{phase:'active',run:'r',participants:['W','P','M']},statuses:{}};
  for(const [i,name] of ['W','P','M'].entries())state.statuses[name]={ctype:['warrior','priest','mage'][i],seenAt:1000,hp:100,map:'zone_r_0',in:'zone_r_0',server:'USII',x:i*10,y:0,range:200,
  dungeon:{cave:{run:'r',floor:0,paused:false}},combatSelection:{runtimeId:name,id:null,revision:0,map:'zone_r_0'},groupedCombat:{protocol:4,anchorVisible:true,candidates:[],deaths:[],evidence:[],sightings:[]}};
  let now=1000;
  return {state,tick(){for(const s of Object.values(state.statuses)){s.seenAt=now;s.groupedCombat.ack=state.groupedCombat?.selection;s.groupedCombat.queueAck=state.groupedCombat?.queueRevision;}
- state.groupedCombat=caveCombat(state,now);now+=100;return state.groupedCombat;}};
+ state.groupedCombat=caveCombat(state,now,evaluateGroup);now+=100;return state.groupedCombat;}};
 }
 const monster=(id,x)=>({id,mtype:'cave_rat',map:'zone_r_0',in:'zone_r_0',x,y:0,hp:100,priority:50});
 test('cave uses three-slot normal queue, accepts follower sightings and promotes after death',()=>{

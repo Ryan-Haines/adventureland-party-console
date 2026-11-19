@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { merchantPartyGroups } from "../../../runtime/party-groups";
+import { scopeGroups } from "../../../runtime/tasks/api.ts";
 import type { PartyState } from "./party-state";
 
 export function SendToPartyControl({state, onSend}: {state: PartyState; onSend: (group?: string) => Promise<void>;
@@ -12,7 +12,7 @@ export function SendToPartyControl({state, onSend}: {state: PartyState; onSend: 
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
   // Manual requests must not depend on this panel receiving fresh presence data.
   // The coordinator validates live recipients when the request arrives.
-  const groups = merchantPartyGroups(state, Object.keys(state.characters));
+  const groups = scopeGroups(state, Object.keys(state.characters));
   async function send(group?: string) {
     if (submitting.current) return;
     submitting.current = true; setBusy(true);
@@ -25,7 +25,7 @@ export function SendToPartyControl({state, onSend}: {state: PartyState; onSend: 
       <Users className="mr-1.5 h-3.5 w-3.5" />Send to party
     </Button>
     <Dialog open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }}>
-      <DialogContent className="border-amber-700 bg-[#081713] text-emerald-50">
+      <DialogContent data-area="send-to-party" className="border-amber-700 bg-[#081713] text-emerald-50">
         <DialogHeader><DialogTitle>Select party group</DialogTitle></DialogHeader>
         <div className="grid gap-2">
           {groups.map((group) => (

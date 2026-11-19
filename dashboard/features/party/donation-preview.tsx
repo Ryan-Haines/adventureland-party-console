@@ -1,8 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
+import { donationXpPerGold } from '../../../runtime/items/api.ts';
 import type { Char } from './char';
-/** Native G.levels is the XP requirement indexed by current level. */
+/** Native G.levels is the XP requirement indexed by current level. The rate is the merchant's
+ * reported donationXpPerGold (the items owner's rule over the server's donated gold, market.ts donationRate).
+ * Before a merchant report arrives the preview reads the game's lowest rate, 3.2 XP per gold at
+ * over 1,000M donated gold (G node/server.js:8636-8639); the merchant starts from the same rate
+ * until Ron answers, and b9b5c91e's preview read 3.2 the same way. */
 export function DonationPreview({
   amount,
   onAmountChange,
@@ -15,7 +20,7 @@ export function DonationPreview({
     'level' | 'xp' | 'donationXpPerGold' | 'donationLevelXp'
   >;
 }) {
-  const rate = character?.donationXpPerGold || 3.2,
+  const rate = character?.donationXpPerGold || donationXpPerGold(Infinity),
     levels = character?.donationLevelXp;
   let level = character?.level || 0,
     xp = (character?.xp || 0) + Math.floor((Number(amount) || 0) * rate);

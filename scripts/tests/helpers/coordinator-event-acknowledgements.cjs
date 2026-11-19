@@ -1,4 +1,4 @@
-const {createEventAcknowledgementRoutes}=require('../../../runtime/coordinator/http/event-acknowledgements.ts');
+const {createEventAcknowledgementRoutes}=require('../../../runtime/events/coordinator/routes.ts');
 function acknowledgementRoutes(context){
  const {party,farmingNavigation:nav}=context;
  return createEventAcknowledgementRoutes(party,{

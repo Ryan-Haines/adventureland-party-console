@@ -140,10 +140,10 @@ The browser E2E suite cannot yet replace game movement/geometry, multi-character
 | `hunt-mode-reset.test.cjs` | Retain | Coverage absent from console E2E: off/on resets runtime while retaining live quests: completed=${completed}, event=${event}. |
 | `hunt-retreat-restart.test.cjs` | Retain | Coverage absent from console E2E: fresh cycle retains pending loot and waits for a dead member without another reset. |
 | `hunt-return-recovery.test.cjs` | Retain | Coverage absent from console E2E: explicit return retry retains native fallback and pending rewards. |
-| `hunt-return-regression.test.cjs` | Retain | Coverage absent from console E2E: Hunt planning diagnostics retain both candidate failures. |
+| `hunt-return-regression.test.cjs` | Retain | Coverage absent from console E2E: Hunt planning diagnostics retain both candidate failures. Removed: the movement rewrite deleted the file. |
 | `hunt-return-town.test.cjs` | Retain | Coverage absent from console E2E: the first interrupted Town round selects walking, deduplicates members, and resets only after everyone changes map. |
 | `hunt-route-acquisition.test.cjs` | Retain | Coverage absent from console E2E: Hunt route rejects early handoff during . |
-| `hunt-route-recovery.test.cjs` | Retain | Coverage absent from console E2E: ALClient execution failure gets one native attempt, then another spawn. |
+| `hunt-route-recovery.test.cjs` | Retain | Coverage absent from console E2E: ALClient execution failure gets one native attempt, then another spawn; when every spawn has failed, the round of spawns starts over (`climbSpawn` in `runtime/hunting/coordinator/hunt.ts`) instead of holding the Hunt. |
 | `hunt-safety.test.cjs` | Retain | Coverage absent from console E2E: starting Hunt follows only the leader quest without visiting Daisy for followers. |
 | `hunt-selector.test.cjs` | Retain | Coverage absent from console E2E: ordinary farming without Hunt history does not show an empty Hunt panel. |
 | `hunt-settings.test.cjs` | Retain | Coverage absent from console E2E: settings endpoint validates atomically, preserves disabled counts, evaluates changes and cancels pending conflict. |
@@ -169,7 +169,6 @@ The browser E2E suite cannot yet replace game movement/geometry, multi-character
 | `merchant-exchange.test.cjs` | Retain | Coverage absent from console E2E: token purchases preserve selected rewards through checkpoints and charge bundle cost. |
 | `merchant-idle-return.test.cjs` | Retain | Coverage absent from console E2E: ready collection and ready gathering retain priority over stand return. |
 | `merchant-inventory-stacks.test.cjs` | Retain | Coverage absent from console E2E: plans Nightberry 434 followed by Tiny Ruby 44 without moving unrelated slots. |
-| `merchant-job-label.test.cjs` | Retain | Coverage absent from console E2E: giveaway names retain host and item capitalization and omit unavailable details. |
 | `merchant-marketplace-timeout.test.cjs` | Trim | Removed source-only timeout/stop case; retained execution of blacklist classification for distinct failure codes. |
 | `merchant-npc-sales.test.cjs` | Retain | Coverage absent from console E2E: durable orphan sale is runnable without a new automatic mark. |
 | `merchant-party-realm.test.cjs` | Retain | Coverage absent from console E2E: offline target cannot starve eligible purchases. |
@@ -243,7 +242,7 @@ The browser E2E suite cannot yet replace game movement/geometry, multi-character
 | `steam-recovery.test.cjs` | Trim | Removed literal bootstrap-string duplication; retained executed bootstrap/recovery and saved-code preservation scenarios. |
 | `successor-handoff.test.cjs` | Retain | Coverage absent from console E2E: locked red/yellow survive distance changes while third is optimized and acknowledgements survive. |
 | `tracktrix-bonuses.test.cjs` | Retain | Coverage absent from console E2E: Tracktrix totals only unlocked stat rewards and prefers reported stats. |
-| `tracktrix-refresh.test.cjs` | Trim | Removed listener-registration source regexes; retained executed retry timers, late packets and inventory transitions. |
+| `tracktrix-refresh.test.cjs` | Trim | Keeps only its dashboard score test. The call budget owner moved the Tracktrix request into runtime/characters/call-budget-reads.ts, so the two tests that ran shared.js's request code went; e2e/call-budget-rows.ts row A checks their retry, inventory and silent render goals. |
 | `travel-defense-client.test.cjs` | Retain | Coverage absent from console E2E: travel rejects a passive retained bee but allows a current follower attacker; grouped=. |
 | `travel-defense.test.cjs` | Retain | Coverage absent from console E2E: visible historic fight and recent outgoing evidence do not block normal travel. |
 | `ui-cleanup-behavior.test.cjs` | Retain | Coverage absent from console E2E: only follower mode saves use the preference route; merchants and inherited settings stay protected. |

@@ -2,7 +2,8 @@
 param([switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
 $installRoot = $PSScriptRoot
-$nodeVersion = '26.12.1'
+# The private runtime is package.json's Node floor, declared once.
+$nodeVersion = ((Get-Content -Raw -LiteralPath (Join-Path $installRoot 'app\package.json') | ConvertFrom-Json).engines.node) -replace '^>=', ''
 $runtimeRoot = Join-Path $installRoot "runtime\node-v$nodeVersion-win-x64"
 $nodeExe = Join-Path $runtimeRoot 'node.exe'
 if (-not (Test-Path -LiteralPath $nodeExe)) {

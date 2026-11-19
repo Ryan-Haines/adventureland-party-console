@@ -1,31 +1,23 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { hostAction } from './query-actions';
+import { polls } from './query-cache';
+import { debugQueryKey, useConsoleDebug, type DebugState } from './debug-browser';
 import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-type State = { phase: string; message: string; error?: string; port?: number; token?: string; project?: string; insideDebug?: boolean };
 const colors = 'border border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white';
 export function DebugInstanceSettings() {
-  const [state, setState] = useState<State | null>(null), [error, setError] = useState(''), [pending, setPending] = useState(false);
-  useEffect(() => {
-    let alive = true, busy = false;
-    const refresh = async () => {
-      if (busy) return; busy = true;
-      try {
-        const response = await fetch('/console-debug');
-        if (!response.ok) throw Error('Debug service is starting or unavailable.');
-        const value = await response.json() as State; if (alive) { setState(value); setError(''); }
-      } catch (e) { if (alive) setError((e as Error).message); }
-      finally { busy = false; }
-    };
-    void refresh(); const timer = setInterval(() => void refresh(), 1500);
-    return () => { alive = false; clearInterval(timer); };
-  }, []);
+  const query = useConsoleDebug(polls.debug!.interval), state = query.data ?? null;
+  // An action's refusal shows until the next good read, as the poll's own reset did.
+  const [actionError, setError] = useState({ message: '', at: 0 }), [pending, setPending] = useState(false);
+  const error = (actionError.at > query.dataUpdatedAt ? actionError.message : '') || (query.isError ? 'Debug service is starting or unavailable.' : '');
+  const client = useQueryClient();
   const action = async (name: 'start' | 'stop') => {
-    setPending(true); setError('');
+    setPending(true); setError({ message: '', at: 0 });
     try {
-      const response = await fetch('/console-debug/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const value = await response.json() as State; if (!response.ok) throw Error(value.error || 'Debug request failed'); setState(value);
-    } catch (e) { setError((e as Error).message); }
+      client.setQueryData(debugQueryKey, await hostAction<DebugState>(client, '/console-debug/' + name));
+    } catch (e) { setError({ message: (e as Error).message, at: Date.now() }); }
     finally { setPending(false); }
   };
   const busy = pending || state?.phase === 'starting' || state?.phase === 'stopping';

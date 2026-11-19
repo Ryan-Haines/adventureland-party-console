@@ -21,7 +21,11 @@ test('October event settings persist monster exclusions and cipher policy', asyn
   await expect(dialog.getByRole('button',{name:'Manually enter solution',exact:true})).toBeVisible();
   await info.attach('october-cipher-settings',{body:await page.screenshot(),contentType:'image/png'});
   await dialog.getByRole('button',{name:'Save event settings'}).click();
+  // The restart reads what the save wrote, so the row waits for the saved cipher policy first;
+  // after it both events' settings must come back.
+  await expect.poll(async()=>(await app.state()).eventLimitsByCharacter?.W?.witchcipher?.cipher).toMatchObject({minClues:4,automatic:false});
   await app.restartCoordinator();
-  await expect.poll(async()=> (await app.state()).eventLimitsByCharacter?.W?.witchcipher?.cipher).toMatchObject({minClues:4,automatic:false});
+  await expect.poll(async()=>{const limits=(await app.state()).eventLimitsByCharacter?.W;return {monsters:limits?.graveyard?.monsters,cipher:limits?.witchcipher?.cipher};})
+    .toMatchObject({monsters:['zombie','ghoul'],cipher:{minClues:4,automatic:false}});
   await info.attach('october-event-persistence',{body:JSON.stringify((await app.state()).eventLimitsByCharacter),contentType:'application/json'});
 });

@@ -32,9 +32,10 @@ services:
     build:
       context: .
       args:
-        GAME_REV: ${E2E_GAME_REV:-90052162eb3ebda36c893e1eb4af643913c8f984}
-        COMMON_REV: ${E2E_COMMON_REV:-fa74fabf5d3782503712621e037bfb934ecb8439}
-        CONFIG_REV: ${E2E_CONFIG_REV:-6b3493be30abe367cfaf879a2d5ad370742e0866}
+        # tools/sim/pins.json holds the revisions; e2e/game/manage.mjs passes them.
+        GAME_REV: ${E2E_GAME_REV:?tools/sim/pins.json game}
+        COMMON_REV: ${E2E_COMMON_REV:?tools/sim/pins.json common}
+        CONFIG_REV: ${E2E_CONFIG_REV:?tools/sim/pins.json config}
         NODE_IMAGE: ${E2E_NODE_IMAGE:-node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe}
     network_mode: "service:database"
     depends_on:

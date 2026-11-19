@@ -4,12 +4,14 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { classes, digest, verifyManifest, type GameManifest, type Artifact } from "./manifest.ts";
-import { adaptLegacyRuntime } from "./legacy-boundary.ts";
 import { withBuildLock, readJson } from '../build-store.ts';
 import { gameStore, rememberCurrent, rememberGame, cleanGame } from './history.ts';
-import { steamBridgeVersion } from '../../runtime/steam/connection.ts';
+import { steamBridgeVersion } from '../../runtime/lifecycle/roster/connection.ts';
+import { writeInstalled } from '../../runtime/hooks/build/installed.mts';
 
 export async function buildGame(root: string, publish = false): Promise<GameManifest> {
+  // The add-on folders the class bundles import.
+  writeInstalled(root);
   return withBuildLock(gameStore(root), () => buildLocked(root, publish));
 }
 async function buildLocked(root: string, publish: boolean): Promise<GameManifest> {
@@ -28,7 +30,7 @@ async function buildLocked(root: string, publish: boolean): Promise<GameManifest
         metafile: true,
         plugins: [
           {
-            name: "shared-lifecycle-boundary",
+            name: "source-snapshot",
             setup(builder) {
               builder.onLoad({ filter: /\.[cm]?[jt]s$/ }, async (args) => {
                 const source = await readFile(args.path, "utf8");
@@ -37,9 +39,7 @@ async function buildLocked(root: string, publish: boolean): Promise<GameManifest
                   throw new Error("Source changed during class build: " + args.path);
                 inputs.set(args.path, hash);
                 return {
-                  contents: /[\\/]characters[\\/]shared\.js$/.test(args.path)
-                    ? adaptLegacyRuntime(source)
-                    : source,
+                  contents: source,
                   loader: args.path.endsWith(".ts") ? "ts" : "js",
                 };
               });

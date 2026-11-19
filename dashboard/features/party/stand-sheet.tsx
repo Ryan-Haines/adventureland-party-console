@@ -1,6 +1,9 @@
 'use client';
+import { AddonSlot, useAddonListView } from '../../../runtime/hooks/dashboard/slots';
+import type { ClassifiedsRow, MarketBuyRow, MarketRow, PontyRow } from './addon-kit';
 import {IgnoreMarketItemButton,IgnoredMarketItems,MarketSettingsSection} from './market-preferences';
-import {marketItemKey,marketListingFresh,type MarketIgnoredItem,type MarketItemIdentity} from '../../../runtime/market-preferences';
+import {bidAcceptsLevel, defaultStandPrice, itemGrade, marketItemKey, marketListingFresh, ownedStockKey} from '../../../runtime/items/api.ts';
+import {type MarketIgnoredItem,type MarketItemIdentity} from '../../../runtime/items/api.ts';
 import { ActiveWTBFields } from './active-wtb-fields';
 
 
@@ -42,7 +45,7 @@ import {
 
 } from '@/components/ui/tooltip';
 
-import { Check, ChevronDown, ChevronRight, Settings, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Settings, X } from 'lucide-react';
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -66,7 +69,7 @@ import { Item } from './item';
 
 import { ItemMeta } from './item-meta';
 
-import { ItemSprite } from './item-sprite';
+import { SpriteCrop } from './sprite-crop';
 
 import { MerchantBlacklistEntry } from './merchant-blacklist-entry';
 
@@ -79,16 +82,20 @@ import { MluckClover } from './mluck-clover';
 import { PontyListing } from './ponty-listing';
 
 import { PontyState } from './ponty-state';
+import { marketAge } from './market-age';
+import { API } from './api';
 
-import { standSaleRows, standBuyRows, standOccupancy } from './stand-inspection';
+import { standSaleRows, standBuyRows } from './stand-inspection';
+import { standIsFull } from './stand-capacity';
 
 import { StandBid } from './stand-bid';
+import { saveActiveBidField, saveStandPriorityDraft } from './stand-bid-save';
 
 import { StandListing } from './stand-listing';
 
 import { StandPriceHistory } from './stand-price-history';
 
-import { statBadgeClass } from './stat-badge-class';
+import { statBadgeClass, statBadgeStyle } from './stat-badge-class';
 
 import { SuggestedPriceDetails } from './suggested-price-details';
 
@@ -113,6 +120,10 @@ import {
 import { WTBPriorityInput } from './wtbpriority-input';
 import { WTBUnconfirmedPurchase } from './wtb-unconfirmed-purchase';
 
+// A Market row's realm as an add-on's list view reads it (addon-kit.ts AddonListRow).
+const realmOf = (row: { serverRegion?: string; serverIdentifier?: string }) =>
+  row.serverRegion && row.serverIdentifier ? `${row.serverRegion} ${row.serverIdentifier}` : undefined;
+
 export const StandSheet = memo(function StandSheet({
 
   open,
@@ -124,8 +135,10 @@ export const StandSheet = memo(function StandSheet({
   onMarketOpenChange,
 
   merchant,
+  stand,
 
   bank,
+  ownedStock,
   bankGold,
 
   listings,
@@ -183,8 +196,12 @@ export const StandSheet = memo(function StandSheet({
   onMarketOpenChange: (open: boolean) => void;
 
   merchant?: Char;
+  // The items owner's stand count in the core section.
+  stand: PartyState['standSlots'];
 
   bank?: BankSnapshot | null;
+  // The bank section's copies the merchant may sell, by `ownedStockKey`, with the cells counted.
+  ownedStock?: PartyState['ownedStock'];
   bankGold?: number | null;
 
   listings: StandListing[];
@@ -206,8 +223,6 @@ export const StandSheet = memo(function StandSheet({
 
   ponty?: PontyState;
 
-  automaticWTBEnabled: boolean;
-
   nativeStand?: PartyState['nativeStand'];
 
   autoStandBuys: boolean;
@@ -217,7 +232,7 @@ export const StandSheet = memo(function StandSheet({
   onAutoStandBuys(enabled: boolean): Promise<void>;
 
   onEdit: (listing: StandListing) => void;
-  onEditBuy: (item: Item, meta?: ItemMeta | null) => void;
+  onEditBuy: (item: Item, meta?: ItemMeta | null, price?: number) => void;
 
   onRemove: (listing: StandListing) => Promise<void>;
 
@@ -270,6 +285,14 @@ export const StandSheet = memo(function StandSheet({
 }) {
 
   const now = useClock();
+  // The coordinator's market feeds refresh while a viewer holds the market watch, which this
+  // stream is for as long as the market or stand panel is open (the status owner's status streams.ts).
+  const watching = open || marketOpen;
+  useEffect(() => {
+    if (!watching) return;
+    const watch = new EventSource(`${API}/market-watch`);
+    return () => watch.close();
+  }, [watching]);
 
   const replacement = useWTBReplacement(catalog);
 
@@ -283,15 +306,13 @@ export const StandSheet = memo(function StandSheet({
     if(priority===(bid.priorityOverride ?? null)) return;
     savingStandPriority.current=true;setSavingBid(id);setBidError('');
     try {
-      await onBid(id,bid.price,bid.quantity,bid.minimumQuality,false,priority,{editField:'priorityOverride',value:priority,bidRevision:bid.revision || 0});
+      await saveStandPriorityDraft(id,bid,draft,onBid);
       setStandPriorityDrafts(previous=>{const next={...previous};delete next[id];return next;});
     } catch(error) {setBidError(error instanceof Error?error.message:'Could not save priority');}
     finally {savingStandPriority.current=false;setSavingBid(null);}
   }
 
   const saleRows = standSaleRows(listings, merchant, nativeStand);
-  const occupancy = standOccupancy(listings, nativeStand, merchant, bids);
-
   const buyRows = standBuyRows(bids, nativeStand, merchant, listings);
 
   const [marketQuantities, setMarketQuantities] = useState<
@@ -369,7 +390,8 @@ export const StandSheet = memo(function StandSheet({
   const [confirmBlacklistClear, setConfirmBlacklistClear] = useState(false);
 
   const [settingsError, setSettingsError] = useState('');
-
+  // A refused market buy or sell, shown in its confirmation as Ponty's refusal is.
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
 
   const [bidsOpen, setBidsOpen] = useState(false);
@@ -443,6 +465,10 @@ export const StandSheet = memo(function StandSheet({
   const [savingBid, setSavingBid] = useState<string | null>(null);
 
   const allALData = useMemo(() => aldata?.listings || [], [aldata?.listings]);
+  // Each Market tab's add-on views (the `list-view` slot); an unset control keeps every row in the
+  // tab's own order. A tab builds its rows for the slot only when an installed add-on views it.
+  const wtsFilter = useAddonListView('market:wts'), wtbFilter = useAddonListView('market:wtb');
+  const classifiedsFilter = useAddonListView('market:classifieds'), pontyFilter = useAddonListView('market:ponty');
 
   const allBuyOrders = (aldata?.buyOrders || []).filter(
 
@@ -457,6 +483,20 @@ export const StandSheet = memo(function StandSheet({
     [catalog],
 
   );
+  // Each Market tab's rows as an add-on's list view reads them (addon-kit.ts AddonListRows). The
+  // grade reads the catalog's flags and grades, as the item card does (item-card-lines.ts).
+  const marketItem = (item: { name: string; level?: number }) => {
+    const known = catalogById.get(item.name);
+    const grades = (known?.meta as { definition?: { grades?: unknown } } | null | undefined)?.definition?.grades;
+    return { item: item.name, level: item.level, grade: itemGrade({ upgrade: known?.upgradeable || known?.meta?.upgradeable,
+      compound: known?.compoundable || known?.meta?.compoundable, grades }, item.level ?? 0) };
+  };
+  const wtsRow = (entry: ALDataListing): MarketRow => ({ ...marketItem(entry.item), price: entry.price, seen: entry.seenAt, realm: realmOf(entry),
+    key: entry.key, quantity: entry.quantity, seller: entry.seller, map: entry.map });
+  const wtbRow = (order: ALDataBuyOrder): MarketBuyRow => ({ ...marketItem(order.item), price: order.price, seen: order.seenAt, realm: realmOf(order),
+    key: order.key, quantity: order.quantity, buyer: order.buyer, map: order.map });
+  const pontyRow = (listing: PontyListing): PontyRow => ({ ...marketItem(listing.item), price: listing.unitPrice, seen: listing.seenAt, realm: realmOf(listing),
+    key: listing.key, quantity: listing.quantity, total: listing.price });
 
   const visibleBids = Object.entries(bids).filter(([id]) =>
 
@@ -478,7 +518,7 @@ export const StandSheet = memo(function StandSheet({
 
         const definition = item.meta?.definition || {};
 
-        const defaultPrice = Math.max(1, Number(definition.g) || 1);
+        const defaultPrice = defaultStandPrice(definition);
 
         const candidates = (item.meta?.world?.suggestedPrices || []).map(
 
@@ -507,8 +547,6 @@ export const StandSheet = memo(function StandSheet({
     );
 
   }, [catalog, buyable]);
-
-  const marketCutoff = Math.floor(now / 30000) * 30000;
 
   const groupedALData = useMemo(() => {
 
@@ -576,13 +614,12 @@ export const StandSheet = memo(function StandSheet({
 
         (a, b) =>
 
-          Number(b.seenAt >= marketCutoff - 120000) -
-
-            Number(a.seenAt >= marketCutoff - 120000) || a.price - b.price,
+          Number(marketListingFresh(b.seenAt, now)) -
+            Number(marketListingFresh(a.seenAt, now)) || a.price - b.price,
 
       );
 
-  }, [groupedALData, aldataFilter, marketCutoff, catalogById]);
+  }, [groupedALData, aldataFilter, now, catalogById]);
 
   const listingValue = (entry: ALDataListing) => {
 
@@ -626,7 +663,7 @@ export const StandSheet = memo(function StandSheet({
 
   };
 
-  const expandedALData = filteredALData.filter(
+  const expandedALData = wtsFilter.sort(filteredALData.filter(
 
     (entry) =>
 
@@ -647,9 +684,9 @@ export const StandSheet = memo(function StandSheet({
 
           entry.serverIdentifier,
 
-        )),
+        )) && wtsFilter.keep(wtsRow(entry)),
 
-  );
+  ), wtsRow);
 
   const ownOwner = merchant?.owner == null ? '' : String(merchant.owner);
 
@@ -665,71 +702,15 @@ export const StandSheet = memo(function StandSheet({
 
   );
 
-  const bankOwned = new Map<string, number>();
+  const owned = (item: Item) => ownedStock?.[ownedStockKey(item)]?.count || 0;
 
-  const ownedKey = (item: Item) =>
+  // The bank section's first counted cell, so List and Add to stand never offer a claimed copy.
+  const ownedSource = (item: Item): { entry: InventoryEntry; bankPack?: string } | null =>
+    (ownedStock?.[ownedStockKey(item)]?.sources[0] as { entry: InventoryEntry; bankPack?: string } | undefined) ?? null;
 
-    `${item.name}@${item.level || 0}@${item.p || ''}`;
-
-  const ownedSource = (
-
-    item: Item,
-
-  ): { entry: InventoryEntry; bankPack?: string } | null => {
-
-    const merchantEntry = (merchant?.items || []).find(
-
-      (entry) => entry?.item && ownedKey(entry.item) === ownedKey(item),
-
-    );
-
-    if (merchantEntry) return { entry: merchantEntry };
-
-    for (const [bankPack, entries] of Object.entries(bank?.packs || {})) {
-
-      const entry = entries.find(
-
-        (candidate) =>
-
-          candidate?.item && ownedKey(candidate.item) === ownedKey(item),
-
-      );
-
-      if (entry) return { entry, bankPack };
-
-    }
-
-    return null;
-
-  };
-
-  Object.values(bank?.packs || {})
-
-    .flat()
-
-    .forEach((entry) => {
-
-      if (!entry?.item) return;
-
-      const key = ownedKey(entry.item);
-
-      bankOwned.set(key, (bankOwned.get(key) || 0) + Number(entry.item.q || 1));
-
-    });
-
-  (merchant?.items || []).forEach((entry) => {
-
-    if (!entry?.item) return;
-
-    const key = ownedKey(entry.item);
-
-    bankOwned.set(key, (bankOwned.get(key) || 0) + Number(entry.item.q || 1));
-
-  });
-
-  const filteredBuyOrders = allBuyOrders
+  const filteredBuyOrders = wtbFilter.sort(allBuyOrders
     .filter(order=>!ignoredKeys.has(marketItemKey(order.item))&&(!hideStale||marketListingFresh(order.seenAt,now)))
-    .filter((order) => !hideUnowned || (bankOwned.get(ownedKey(order.item)) || 0) > 0)
+    .filter((order) => (!hideUnowned || owned(order.item) > 0) && wtbFilter.keep(wtbRow(order)))
 
     .filter((order) =>
 
@@ -745,20 +726,22 @@ export const StandSheet = memo(function StandSheet({
 
       (a, b) =>
 
-        Number(b.seenAt >= marketCutoff - 120000) -
+        Number(marketListingFresh(b.seenAt, now)) -
+          Number(marketListingFresh(a.seenAt, now)) || b.price - a.price,
 
-          Number(a.seenAt >= marketCutoff - 120000) || b.price - a.price,
-
-    );
+    ), wtbRow);
 
   const bankWTB = filteredBuyOrders.filter((order) =>
 
-    bankOwned.has(ownedKey(order.item)),
+    owned(order.item) > 0,
 
   );
 
-  const filteredClassifieds = publicTrades.filter(({ owner, listing }) =>
-    !ignoredKeys.has(marketItemKey(listing)) && (!hideStale||marketListingFresh(aldata?.tradesUpdatedAt,now)) &&
+  const offer = (side?: { price?: number; quantity?: number; priceNegotiable?: boolean }) => side && { price: side.price, quantity: side.quantity, negotiable: !!side.priceNegotiable };
+  const classifiedsRow = ({ owner, listing }: (typeof publicTrades)[number]): ClassifiedsRow => ({ ...marketItem(listing), price: listing.wts?.price ?? listing.wtb?.price,
+    seen: aldata?.tradesUpdatedAt, owner: owner.owner, label: owner.label, characters: owner.characters ?? [], note: listing.note, wts: offer(listing.wts), wtb: offer(listing.wtb) });
+  const filteredClassifieds = classifiedsFilter.sort(publicTrades.filter(({ owner, listing }) =>
+    !ignoredKeys.has(marketItemKey(listing)) && (!hideStale||marketListingFresh(aldata?.tradesUpdatedAt,now)) && classifiedsFilter.keep(classifiedsRow({ owner, listing })) &&
 
     `${catalogById.get(listing.name)?.name || ''} ${listing.name} ${owner.label || ''} ${owner.characters?.join(' ') || ''}`
 
@@ -766,9 +749,9 @@ export const StandSheet = memo(function StandSheet({
 
       .includes(aldataFilter.trim().toLowerCase()),
 
-  );
+  ), classifiedsRow);
 
-  const filteredPonty = (ponty?.listings || [])
+  const filteredPonty = pontyFilter.sort((ponty?.listings || [])
 
     .filter((listing) => {
 
@@ -777,7 +760,7 @@ export const StandSheet = memo(function StandSheet({
       return (
 
         !ignoredKeys.has(marketItemKey(listing.item)) && (!hideStale||marketListingFresh(listing.seenAt,now)) &&
-        listing.serverIdentifier !== 'PVP' &&
+        listing.serverIdentifier !== 'PVP' && pontyFilter.keep(pontyRow(listing)) &&
 
         `${item?.name || ''} ${listing.item.name}`
 
@@ -795,7 +778,7 @@ export const StandSheet = memo(function StandSheet({
 
         a.unitPrice - b.unitPrice || a.item.name.localeCompare(b.item.name),
 
-    );
+    ), pontyRow);
 
 
 
@@ -884,16 +867,7 @@ export const StandSheet = memo(function StandSheet({
     const bid = bids[listing.item.name];
 
     const satisfiesBid =
-
-      !!bid &&
-
-      listing.unitPrice <= bid.price &&
-
-      (bid.acceptHigherLevels === false
-
-        ? level === Number(bid.minimumQuality || 0)
-
-        : level >= Number(bid.minimumQuality || 0));
+      !!bid && listing.unitPrice <= bid.price && bidAcceptsLevel(bid, listing.item);
 
     return (
 
@@ -923,7 +897,7 @@ export const StandSheet = memo(function StandSheet({
 
           <div className="relative h-10 w-10 shrink-0">
 
-            {item?.sprite && <ItemSprite sprite={item.sprite} />}
+            {item?.sprite && <SpriteCrop sprite={item.sprite} />}
 
           </div>
 
@@ -1077,48 +1051,16 @@ export const StandSheet = memo(function StandSheet({
 
     };
 
-  const saveBid = async (id: string, clear = false) => {
-
-    const draft = draftFor(id),
-
-      price = Number(draft.price),
-
-      quantity = Number(draft.quantity),
-
-      minimumQuality = Number(draft.minimumQuality || 0);
-
-    if (
-
-      !clear &&
-
-      (!Number.isSafeInteger(price) ||
-
-        price < 1 ||
-
-        !Number.isSafeInteger(quantity) ||
-
-        quantity < 1)
-
-    )
-
-      return;
-
+  // The WTB picker and the order editor save through onEditBuy; this sheet only clears an order.
+  const clearBid = async (id: string) => {
+    const draft = draftFor(id);
     setSavingBid(id);
-
     try {
-
-      await onBid(id, price, quantity, minimumQuality, clear);
-
-      if (clear)
-
-        setBidDrafts((old) => ({
-
-          ...old,
-
-          [id]: { price: '', quantity: '', minimumQuality: '0' },
-
-        }));
-
+      await onBid(id, Number(draft.price), Number(draft.quantity), Number(draft.minimumQuality || 0), true);
+      setBidDrafts((old) => ({
+        ...old,
+        [id]: { price: '', quantity: '', minimumQuality: '0' },
+      }));
     } finally {
 
       setSavingBid(null);
@@ -1139,7 +1081,7 @@ export const StandSheet = memo(function StandSheet({
 
     cancelling.current = true;
 
-    try { await saveBid(id, true); setConfirmBidCancel(null); }
+    try { await clearBid(id); setConfirmBidCancel(null); }
 
     catch (error) { setBidError(error instanceof Error ? error.message : 'Could not cancel WTB order'); }
 
@@ -1161,33 +1103,15 @@ export const StandSheet = memo(function StandSheet({
 
   );
 
+  // The Keep on stand control of the stand dialog's buy card and the market's active WTB row.
+  const keepOnStand = (id: string, bid: StandBid, disabled = false) => (
+    <WTBPreference label="Keep on stand" description={standBuyExplanation} checked={bid.useStandSlot === true} disabled={disabled}
+      onChange={(useStandSlot) => void replacement.save((replaceStandEntry) => onBid(id, bid.price, bid.quantity, bid.minimumQuality, false,
+        bid.priorityOverride, { useStandSlot, replaceStandEntry, preferencesOnly: true }))} />
+  );
   const bidFailure = bidError ? <p role="alert" className="text-sm text-rose-200">{bidError}</p> : null;
 
-  const toggleActiveBids = () =>
-
-    setActiveBidsOpen((open) => {
-
-      const next = !open;
-
-      try {
-
-        window.localStorage.setItem(
-
-          'adventure-land-active-wtb-open',
-
-          String(next),
-
-        );
-
-      } catch {
-
-        /* ignored */
-
-      }
-
-      return next;
-
-    });
+  const toggleActiveBids = () => setActiveBidsOpen((open) => !open);
 
   const filteredCatalog = catalog.filter((item) =>
 
@@ -1255,16 +1179,13 @@ export const StandSheet = memo(function StandSheet({
 
   const action = usePartyAction();
 
+  // Answers whether the save went through; a refusal shows in settingsError.
   const saveMarketSetting = async (save: () => Promise<unknown>) => {
-
     setSettingsSaving(true);
-
     setSettingsError('');
-
     try {
-
       await save();
-
+      return true;
     } catch (failure) {
 
       setSettingsError(
@@ -1274,9 +1195,8 @@ export const StandSheet = memo(function StandSheet({
           ? failure.message
 
           : 'Could not save marketplace settings',
-
       );
-
+      return false;
     } finally {
 
       setSettingsSaving(false);
@@ -1317,9 +1237,8 @@ export const StandSheet = memo(function StandSheet({
 
       const suggested = listingValue(entry);
 
-      const deal = entry.price < suggested * 0.5;
-
-      const badDeal = entry.price > suggested * 2;
+      const deal = isDeal(entry);
+      const badDeal = isBadDeal(entry);
 
       const dealDiscount = Math.max(
 
@@ -1385,7 +1304,7 @@ export const StandSheet = memo(function StandSheet({
 
             <div className="relative h-10 w-10 shrink-0">
 
-              {item?.sprite && <ItemSprite sprite={item.sprite} />}
+              {item?.sprite && <SpriteCrop sprite={item.sprite} />}
 
             </div>
 
@@ -1443,91 +1362,17 @@ export const StandSheet = memo(function StandSheet({
 
               <>
 
-                <Input
-
-                  aria-label={`Quantity of ${entry.item.name}`}
-
-                  inputMode="numeric"
-
-                  value={marketQuantities[key] || '1'}
-
-                  onChange={(event) =>
-
-                    setMarketQuantities((old) => ({
-
-                      ...old,
-
-                      [key]: event.target.value.replace(/[^0-9]/g, ''),
-
-                    }))
-
-                  }
-
-                  className="h-8 w-16 border-cyan-900 bg-black/30 px-2 font-mono text-xs"
-
+                <QuantityAction
+                  label={`Quantity of ${entry.item.name}`}
+                  value={marketQuantities[key]}
+                  maximum={entry.quantity}
+                  tone="buy"
+                  busy={buying === key}
+                  allDisabled={buying === key}
+                  actionLabel={buying === key ? 'Queuing…' : 'Buy'}
+                  onChange={(value) => setMarketQuantities((old) => ({ ...old, [key]: value }))}
+                  onAction={(quantity) => setPurchaseConfirmation({ listing: entry, quantity })}
                 />
-
-                <Button
-
-                  size="sm"
-
-                  variant="outline"
-
-                  disabled={buying === key}
-
-                  onClick={() =>
-
-                    setMarketQuantities((old) => ({
-
-                      ...old,
-
-                      [key]: String(entry.quantity),
-
-                    }))
-
-                  }
-
-                  className="border-cyan-600 bg-black text-cyan-100 hover:bg-cyan-950 hover:text-white"
-
-                >
-
-                  All
-
-                </Button>
-
-                <Button
-
-                  size="sm"
-
-                  disabled={buying === key}
-
-                  onClick={() => {
-
-                    const quantity = Number(marketQuantities[key] || 1);
-
-                    if (
-
-                      !Number.isSafeInteger(quantity) ||
-
-                      quantity < 1 ||
-
-                      quantity > entry.quantity
-
-                    )
-
-                      return;
-
-                    setPurchaseConfirmation({ listing: entry, quantity });
-
-                  }}
-
-                  className="bg-cyan-500 text-cyan-950 hover:bg-cyan-400"
-
-                >
-
-                  {buying === key ? 'Queuing…' : 'Buy'}
-
-                </Button>
 
               </>
 
@@ -1589,7 +1434,7 @@ export const StandSheet = memo(function StandSheet({
 
         key = order.key;
 
-      const owned = bankOwned.get(ownedKey(order.item)) || 0;
+      const have = owned(order.item);
 
       const source = ownedSource(order.item);
 
@@ -1597,7 +1442,7 @@ export const StandSheet = memo(function StandSheet({
 
       const fresh = marketListingFresh(order.seenAt,now) && order.serverIdentifier !== 'PVP';
 
-      const maximum = Math.min(owned, order.quantity);
+      const maximum = Math.min(have, order.quantity);
 
       return (
 
@@ -1605,7 +1450,7 @@ export const StandSheet = memo(function StandSheet({
 
           key={key}
 
-          className={`flex items-center gap-3 rounded border p-2 ${owned ? 'border-emerald-900 bg-emerald-950/15' : 'border-violet-950 bg-violet-950/10'} ${fresh ? '' : 'opacity-60'}`}
+          className={`flex items-center gap-3 rounded border p-2 ${have ? 'border-emerald-900 bg-emerald-950/15' : 'border-violet-950 bg-violet-950/10'} ${fresh ? '' : 'opacity-60'}`}
 
         >
 
@@ -1627,7 +1472,7 @@ export const StandSheet = memo(function StandSheet({
 
             <div className="relative h-10 w-10 shrink-0">
 
-              {item?.sprite && <ItemSprite sprite={item.sprite} />}
+              {item?.sprite && <SpriteCrop sprite={item.sprite} />}
 
             </div>
 
@@ -1667,11 +1512,11 @@ export const StandSheet = memo(function StandSheet({
 
           <span
 
-            className={`whitespace-nowrap font-mono text-[10px] ${owned ? 'text-emerald-300' : 'text-slate-500'}`}
+            className={`whitespace-nowrap font-mono text-[10px] ${have ? 'text-emerald-300' : 'text-slate-500'}`}
 
           >
 
-            You have {owned}
+            You have {have}
 
           </span>
 
@@ -1679,89 +1524,16 @@ export const StandSheet = memo(function StandSheet({
 
             <>
 
-              <Input
-
-                aria-label={`Quantity of ${order.item.name} to sell`}
-
-                inputMode="numeric"
-
-                value={saleQuantities[key] || '1'}
-
-                onChange={(event) =>
-
-                  setSaleQuantities((old) => ({
-
-                    ...old,
-
-                    [key]: event.target.value.replace(/[^0-9]/g, ''),
-
-                  }))
-
-                }
-
-                className="h-8 w-16 border-violet-900 bg-black/30 px-2 font-mono text-xs"
-
+              <QuantityAction
+                label={`Quantity of ${order.item.name} to sell`}
+                value={saleQuantities[key]}
+                maximum={maximum}
+                tone="sell"
+                busy={selling === key}
+                actionLabel="Sell"
+                onChange={(value) => setSaleQuantities((old) => ({ ...old, [key]: value }))}
+                onAction={(quantity) => setSaleConfirmation({ order, quantity })}
               />
-
-              <Button
-
-                size="sm"
-
-                variant="outline"
-
-                onClick={() =>
-
-                  setSaleQuantities((old) => ({
-
-                    ...old,
-
-                    [key]: String(maximum),
-
-                  }))
-
-                }
-
-                className="border-violet-600 bg-black text-violet-100 hover:bg-violet-950 hover:text-white"
-
-              >
-
-                All
-
-              </Button>
-
-              <Button
-
-                size="sm"
-
-                disabled={selling === key}
-
-                onClick={() => {
-
-                  const quantity = Number(saleQuantities[key] || 1);
-
-                  if (
-
-                    !Number.isSafeInteger(quantity) ||
-
-                    quantity < 1 ||
-
-                    quantity > maximum
-
-                  )
-
-                    return;
-
-                  setSaleConfirmation({ order, quantity });
-
-                }}
-
-                className="bg-violet-500 text-black hover:bg-violet-400"
-
-              >
-
-                Sell
-
-              </Button>
 
             </>
 
@@ -1821,7 +1593,7 @@ export const StandSheet = memo(function StandSheet({
 
       <Dialog open={open} onOpenChange={onOpenChange}>
 
-        <DialogContent showCloseButton={false} className="flex max-h-[92dvh] w-[96vw] flex-col overflow-hidden border border-amber-800 bg-[#0b1916] text-emerald-50 sm:max-w-5xl">
+        <DialogContent data-area="stand" showCloseButton={false} className="flex max-h-[92dvh] w-[96vw] flex-col overflow-hidden border border-amber-800 bg-[#0b1916] text-emerald-50 sm:max-w-5xl">
 
           <DialogHeader className="relative shrink-0 pr-12">
 
@@ -1830,7 +1602,7 @@ export const StandSheet = memo(function StandSheet({
             <DialogDescription className="sr-only">Manage sales and buy orders.</DialogDescription>
 
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-base font-semibold text-amber-200">Items for sale · {occupancy.sales}/16 slots</h2>
+              <h2 className="text-base font-semibold text-amber-200">Items for sale · {saleRows.filter(row => row.occupied).length}/{stand?.slots ?? '-'} slots</h2>
               <span className={`text-xs font-semibold ${merchant?.standOpen ? 'text-emerald-300' : 'text-red-300'}`}>
                 {merchant?.standOpen === true ? 'Stand open' : merchant?.standOpen === false ? 'Stand closed' : 'Stand status unknown'}
               </span>
@@ -1914,7 +1686,7 @@ export const StandSheet = memo(function StandSheet({
 
                           {itemMeta?.sprite && (
 
-                            <ItemSprite sprite={itemMeta.sprite} />
+                            <SpriteCrop sprite={itemMeta.sprite} />
 
                           )}
 
@@ -1945,6 +1717,7 @@ export const StandSheet = memo(function StandSheet({
                             <span
 
                               className={`absolute right-1 top-1 z-10 rounded px-1 font-mono text-[8px] uppercase ring-1 ${statBadgeClass(String(liveEntry?.item.stat_type || configured.item.stat_type))}`}
+                              style={statBadgeStyle(String(liveEntry?.item.stat_type || configured.item.stat_type))}
 
                             >
 
@@ -2066,6 +1839,8 @@ export const StandSheet = memo(function StandSheet({
 
                         buyable={buyable}
 
+                        catalog={catalog}
+
                         observed={priceHistory[configured.item.name]}
 
                       />
@@ -2091,13 +1866,13 @@ export const StandSheet = memo(function StandSheet({
           </div>
 
           </section>)}
-          <h2 className="text-base font-semibold text-violet-200">Buy orders · {occupancy.buys}/16 slots</h2>
+          <h2 className="text-base font-semibold text-violet-200">Buy orders · {buyRows.length}/{stand?.slots ?? '-'} slots</h2>
 
           {bidFailure}
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
 
-            {buyRows.map(({ key, id, bid, offer, observed, level, price, quantity }) => {
+            {buyRows.map(({ key, id, bid, observed, level, price, quantity }) => {
 
               const item = catalogById.get(id);
 
@@ -2105,7 +1880,7 @@ export const StandSheet = memo(function StandSheet({
 
                 <button type="button" onClick={() => onInspect({ name: id, level }, item?.meta, 'Your stand buy order')} className="flex w-full items-center gap-3 pr-12 text-left text-emerald-50 hover:text-violet-200">
 
-                  <div className="relative h-12 w-12 shrink-0">{(item?.sprite || item?.meta?.sprite) && <ItemSprite sprite={(item?.sprite || item?.meta?.sprite)!} />}</div>
+                  <div className="relative h-12 w-12 shrink-0">{(item?.sprite || item?.meta?.sprite) && <SpriteCrop sprite={(item?.sprite || item?.meta?.sprite)!} />}</div>
 
                   <span>{item?.name || id}{item?.upgradeable || item?.compoundable || item?.meta?.upgradeable || item?.meta?.compoundable ? ` +${level}` : ''}</span>
 
@@ -2126,7 +1901,7 @@ export const StandSheet = memo(function StandSheet({
 
                 {bid && <div className="flex flex-wrap items-center justify-between gap-3">
 
-                  <WTBPreference label="Keep on stand" description={standBuyExplanation} checked={bid.useStandSlot === true} disabled={Boolean(savingBid)} onChange={(useStandSlot) => void replacement.save((replaceStandEntry) => onBid(id, bid.price, bid.quantity, bid.minimumQuality, false, bid.priorityOverride, { useStandSlot, replaceStandEntry, preferencesOnly: true }))} />
+                  {keepOnStand(id, bid, Boolean(savingBid))}
 
                   {cancelControl(id)}
 
@@ -2144,13 +1919,14 @@ export const StandSheet = memo(function StandSheet({
 
 
 
+          <AddonSlot name="dialog-section" part="stand" />
         </DialogContent>
 
       </Dialog>
 
       <Dialog open={marketOpen} onOpenChange={onMarketOpenChange}>
 
-        <DialogContent
+        <DialogContent data-area="market"
 
           showCloseButton={false}
 
@@ -2227,6 +2003,7 @@ export const StandSheet = memo(function StandSheet({
               Browse live offers and player-published classifieds. Public
 
               browsing requires no ALData key.
+              <span className="ml-2 text-xs text-slate-400">{marketAge(now, aldata?.merchantsUpdatedAt, ponty?.updatedAt)}</span>
 
             </DialogDescription>
 
@@ -2397,7 +2174,7 @@ export const StandSheet = memo(function StandSheet({
 
                               {item?.sprite && (
 
-                                <ItemSprite sprite={item.sprite} />
+                                <SpriteCrop sprite={item.sprite} />
 
                               )}
 
@@ -2422,57 +2199,12 @@ export const StandSheet = memo(function StandSheet({
                               onSave={async (field, value) => {
                                 setSavingBid(itemId);
                                 try {
-                                  await onBid(itemId, field === 'price' ? value! : bid.price,
-                                    field === 'quantity' ? value! : bid.quantity, bid.minimumQuality, false,
-                                    field === 'priority' ? value : bid.priorityOverride,
-                                    {editField:field === 'priority' ? 'priorityOverride' : field,value,bidRevision:bid.revision || 0});
+                                  await saveActiveBidField(itemId, bid, field, value, onBid);
                                 } finally { setSavingBid(null); }
                               }} />
                             <div className="flex shrink-0 items-center gap-2">
 
-                              <WTBPreference
-
-                                label="Keep on stand"
-
-                                description={standBuyExplanation}
-
-                                checked={bid.useStandSlot === true}
-
-                                onChange={(useStandSlot) =>
-
-                                  void replacement.save((replaceStandEntry) =>
-
-                                    onBid(
-
-                                      itemId,
-
-                                      bid.price,
-
-                                      bid.quantity,
-
-                                      bid.minimumQuality,
-
-                                      false,
-
-                                      bid.priorityOverride,
-
-                                      {
-
-                                        useStandSlot,
-
-                                        replaceStandEntry,
-
-                                        preferencesOnly: true,
-
-                                      },
-
-                                    ),
-
-                                  )
-
-                                }
-
-                              />
+                              {keepOnStand(itemId, bid)}
 
 
 
@@ -2756,6 +2488,10 @@ export const StandSheet = memo(function StandSheet({
                   Hide unowned
                 </label>
               ) : null}
+              {marketTab === 'wts' && wtsFilter.declared ? <AddonSlot name="list-view" part="market:wts" rows={filteredALData.map(wtsRow)} view={wtsFilter} search /> : null}
+              {marketTab === 'wtb' && wtbFilter.declared ? <AddonSlot name="list-view" part="market:wtb" rows={allBuyOrders.map(wtbRow)} view={wtbFilter} search /> : null}
+              {marketTab === 'classifieds' && classifiedsFilter.declared ? <AddonSlot name="list-view" part="market:classifieds" rows={publicTrades.map(classifiedsRow)} view={classifiedsFilter} search /> : null}
+              {marketTab === 'ponty' && pontyFilter.declared ? <AddonSlot name="list-view" part="market:ponty" rows={(ponty?.listings ?? []).map(pontyRow)} view={pontyFilter} search /> : null}
 
             </div>
 
@@ -2881,7 +2617,7 @@ export const StandSheet = memo(function StandSheet({
 
                             {item?.sprite && (
 
-                              <ItemSprite sprite={item.sprite} />
+                              <SpriteCrop sprite={item.sprite} />
 
                             )}
 
@@ -2961,7 +2697,7 @@ export const StandSheet = memo(function StandSheet({
 
                             variant="outline"
 
-                            disabled={listings.length >= 16}
+                            disabled={standIsFull({ standSlots: stand })}
 
                             onClick={() =>
 
@@ -3061,7 +2797,7 @@ export const StandSheet = memo(function StandSheet({
 
       >
 
-        <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden border-slate-700 bg-[#07120f] text-emerald-50 sm:max-w-2xl">
+        <DialogContent data-area="market-settings" className="flex max-h-[85vh] flex-col overflow-hidden border-slate-700 bg-[#07120f] text-emerald-50 sm:max-w-2xl">
 
           <DialogHeader>
 
@@ -3169,25 +2905,12 @@ export const StandSheet = memo(function StandSheet({
 
                   onClick={async () => {
 
-                    try {
-
-                      await updateBlacklist({
-
-                        action: 'add',
-
-                        seller: blacklistName.trim(),
-
-                        minutes: Number(blacklistMinutes),
-
-                      });
-
-                      setBlacklistName('');
-
-                    } catch {
-
-                      /* state refresh displays API errors elsewhere */
-
-                    }
+                    const saved = await updateBlacklist({
+                      action: 'add',
+                      seller: blacklistName.trim(),
+                      minutes: Number(blacklistMinutes),
+                    });
+                    if (saved) setBlacklistName('');
 
                   }}
 
@@ -3315,6 +3038,7 @@ export const StandSheet = memo(function StandSheet({
 
           )}
 
+          <AddonSlot name="dialog-section" part="market-settings" />
           <DialogFooter className="shrink-0 border-t border-slate-700 bg-[#07120f] pt-3">
 
 
@@ -3351,13 +3075,12 @@ export const StandSheet = memo(function StandSheet({
 
         onOpenChange={(nextOpen) => {
 
-          if (!nextOpen && !buying) setPurchaseConfirmation(null);
-
+          if (!nextOpen && !buying) { setPurchaseConfirmation(null); setConfirmationError(null); }
         }}
 
       >
 
-        <DialogContent className="border-cyan-700 bg-[#07120f] text-emerald-50 sm:max-w-md">
+        <DialogContent data-area="market-purchase" className="border-cyan-700 bg-[#07120f] text-emerald-50 sm:max-w-md">
 
           <DialogHeader>
 
@@ -3375,6 +3098,11 @@ export const StandSheet = memo(function StandSheet({
 
           </DialogHeader>
 
+          {confirmationError && (
+            <p role="alert" className="rounded border border-rose-700 bg-[#260d16] p-3 text-sm text-rose-100">
+              {confirmationError}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
 
             <Button
@@ -3408,7 +3136,7 @@ export const StandSheet = memo(function StandSheet({
                 const { listing, quantity } = purchaseConfirmation;
 
                 setBuying(listing.key);
-
+                setConfirmationError(null);
                 try {
 
                   let remaining = quantity;
@@ -3446,7 +3174,8 @@ export const StandSheet = memo(function StandSheet({
                     );
 
                   setPurchaseConfirmation(null);
-
+                } catch (failure) {
+                  setConfirmationError(failure instanceof Error ? failure.message : 'Could not queue the purchase');
                 } finally {
 
                   setBuying(null);
@@ -3475,13 +3204,12 @@ export const StandSheet = memo(function StandSheet({
 
         onOpenChange={(nextOpen) => {
 
-          if (!nextOpen && !selling) setSaleConfirmation(null);
-
+          if (!nextOpen && !selling) { setSaleConfirmation(null); setConfirmationError(null); }
         }}
 
       >
 
-        <DialogContent className="border-violet-700 bg-[#07120f] text-emerald-50 sm:max-w-md">
+        <DialogContent data-area="market-sale" className="border-violet-700 bg-[#07120f] text-emerald-50 sm:max-w-md">
 
           <DialogHeader>
 
@@ -3499,6 +3227,11 @@ export const StandSheet = memo(function StandSheet({
 
           </DialogHeader>
 
+          {confirmationError && (
+            <p role="alert" className="rounded border border-rose-700 bg-[#260d16] p-3 text-sm text-rose-100">
+              {confirmationError}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
 
             <Button
@@ -3532,13 +3265,12 @@ export const StandSheet = memo(function StandSheet({
                 const { order, quantity } = saleConfirmation;
 
                 setSelling(order.key);
-
+                setConfirmationError(null);
                 try {
-
                   await onSellALData(order, quantity);
-
                   setSaleConfirmation(null);
-
+                } catch (failure) {
+                  setConfirmationError(failure instanceof Error ? failure.message : 'Could not queue the sale');
                 } finally {
 
                   setSelling(null);
@@ -3573,7 +3305,7 @@ export const StandSheet = memo(function StandSheet({
 
       >
 
-        <DialogContent className="border-fuchsia-700 bg-[#07120f] text-emerald-50 sm:max-w-md">
+        <DialogContent data-area="ponty-purchase" className="border-fuchsia-700 bg-[#07120f] text-emerald-50 sm:max-w-md">
 
           <DialogHeader>
 
@@ -3685,7 +3417,7 @@ export const StandSheet = memo(function StandSheet({
 
       <Dialog open={bidsOpen} onOpenChange={setBidsOpen}>
 
-        <DialogContent className="flex max-h-[85vh] w-[calc(100vw-2rem)] flex-col border-violet-800 bg-[#0b1916] text-emerald-50 sm:max-w-md">
+        <DialogContent data-area="wtb-orders" className="flex max-h-[85vh] w-[calc(100vw-2rem)] flex-col border-violet-800 bg-[#0b1916] text-emerald-50 sm:max-w-md">
 
           <DialogHeader>
 
@@ -3716,13 +3448,14 @@ export const StandSheet = memo(function StandSheet({
               <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-emerald-950 px-3 py-2">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="relative h-9 w-9 shrink-0">
-                    {item.sprite && <ItemSprite sprite={item.sprite} />}
+                    {item.sprite && <SpriteCrop sprite={item.sprite} />}
                   </div>
                   <span className="min-w-0 truncate text-sm" title={item.name}>{item.name}</span>
                 </div>
                 <Button size="sm" onClick={() => {
                   setBidsOpen(false);
-                  onEditBuy({name: item.id, level: Number(draftFor(item.id).minimumQuality) || 0}, item.meta);
+                  // A WTB made from a listing opens with the listing's price, still editable.
+                  onEditBuy({name: item.id, level: Number(draftFor(item.id).minimumQuality) || 0}, item.meta, Number(draftFor(item.id).price) || undefined);
                 }} className="border border-violet-500 bg-violet-700 text-white hover:bg-violet-600 hover:text-white">
                   Add
                 </Button>
@@ -3730,6 +3463,7 @@ export const StandSheet = memo(function StandSheet({
             ))}
           </div>
 
+          <AddonSlot name="dialog-section" part="wtb-orders" />
           <DialogFooter className="shrink-0 border-t border-violet-800 bg-[#0b1916] pt-3">
 
             <Button
@@ -3757,3 +3491,26 @@ export const StandSheet = memo(function StandSheet({
   );
 
 });
+
+const QUANTITY_TONES = {
+  buy: { input: 'border-cyan-900', all: 'border-cyan-600 bg-black text-cyan-100 hover:bg-cyan-950 hover:text-white', action: 'bg-cyan-500 text-cyan-950 hover:bg-cyan-400' },
+  sell: { input: 'border-violet-900', all: 'border-violet-600 bg-black text-violet-100 hover:bg-violet-950 hover:text-white', action: 'bg-violet-500 text-black hover:bg-violet-400' },
+};
+// The market buy row's and the WTB sell row's quantity box, All button and action button. The action
+// takes a whole quantity from 1 to `maximum`; any other draft does nothing.
+function QuantityAction({ label, value, maximum, tone, busy, allDisabled = false, actionLabel, onChange, onAction }: {
+  label: string; value: string | undefined; maximum: number; tone: keyof typeof QUANTITY_TONES; busy: boolean;
+  allDisabled?: boolean; actionLabel: string; onChange: (value: string) => void; onAction: (quantity: number) => void;
+}) {
+  const colors = QUANTITY_TONES[tone];
+  return <>
+    <Input aria-label={label} inputMode="numeric" value={value || '1'}
+      onChange={(event) => onChange(event.target.value.replace(/[^0-9]/g, ''))}
+      className={`h-8 w-16 ${colors.input} bg-black/30 px-2 font-mono text-xs`} />
+    <Button size="sm" variant="outline" disabled={allDisabled} onClick={() => onChange(String(maximum))} className={colors.all}>All</Button>
+    <Button size="sm" disabled={busy} className={colors.action} onClick={() => {
+      const quantity = Number(value || 1);
+      if (Number.isSafeInteger(quantity) && quantity >= 1 && quantity <= maximum) onAction(quantity);
+    }}>{actionLabel}</Button>
+  </>;
+}

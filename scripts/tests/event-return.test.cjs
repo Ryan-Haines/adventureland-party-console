@@ -1,264 +1,208 @@
-const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
 
-const source = fs.readFileSync(path.join(__dirname, '../../characters/shared.js'), 'utf8');
-const handler = source.slice(source.indexOf('    if (command.type === "event-return-town")'),
-  source.indexOf('    if (command.type === "character-travel"'));
-const routeHelper = source.slice(source.indexOf('  async function exitEventMapForRecovery('),
-  source.indexOf('  function anniversaryWithTimeout('));
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
+const { exitScenario } = require('./fixtures/event-exit-scenario.cjs');
+const moves = (calls, kinds) => calls.filter(c => kinds.includes(c[0])).map(c => c.slice(0, 2));
+const completes = calls => calls.filter(c => c[0] === 'request' && c[1] === '/event-return-complete').length;
 
-test('dedicated instance exit rejects unchanged-map success and persists a bounded retry budget', async () => {
-  const t=runtime('ship0',{leave:async()=>{},transport:async()=>{}});
-  for(let i=0;i<3;i++) await assert.rejects(t.run('pirateship'),/no observed map change/);
-  const attempts=t.calls.filter(c=>c[0]==='leave').length;
-  t.r.root.__partyEventReturnTravel=null; // replacement runtime retains coordinator progress
-  await assert.rejects(t.run('pirateship'),/after three attempts/);
-  assert.equal(t.calls.filter(c=>c[0]==='leave').length,attempts);
-  assert.equal(t.calls.filter(c=>c[0]==='request' && c[1]==='/event-return-complete').length,0);
-});
-
-test('superseded instance exit cannot transport or acknowledge the old command', async()=>{
-  const t=runtime('abtesting',{leave:async r=>{r.navigationIntent.revision++;}});
+// The exit is one climb of movement's ladder over K1's `exit` rungs,
+// with no count or deadline, and it reports only a real arrival in Main's Town.
+scenarioTable('an event exit leaves its instance by its own rungs and acknowledges only real arrival', exitScenario, [
+ ['an instance exit whose leave and transport never move the character climbs with no count until its cycle ends', async t => {
+  await t.run('pirateship');
+  // v1.5.0 stopped "after three attempts"; the climb still tries the exit on its
+  // fifth round.
+  assert.ok(t.calls.filter(c => c[0] === 'leave').length >= 5, 'the leave rung comes round again');
+  assert.ok(t.calls.filter(c => c[0] === 'transport').length >= 5, 'and the transport after it');
+  assert.equal(completes(t.calls), 0, 'no arrival is reported');
+  assert.ok(t.calls.some(c => c[0] === 'release' && c[1] === 'event-exit:1'), 'the next cycle retires the exit');
+ }, 'ship0', { leave: async () => {}, transport: async () => {}, townReady: false }],
+ ['a boss event off an event map walks to Main, then casts Town there', async t => {
+  await t.run('franky');
+  // The boss exit's departure clears targeting's target and the attendance's event types as it
+  // starts.
+  assert.deepEqual(moves(t.calls, ['prepare', 'walk', 'town', 'departing', 'clearTarget', 'eventTargets']), [['departing', true], ['clearTarget'], ['eventTargets', []],
+    ['prepare', 'level2w'], ['walk', 'level2w'], ['town', 'main'], ['departing', false]]);
+  assert.equal(completes(t.calls), 1);
+  // The arrival carries the walk's runtime id, which the coordinator's exit check compares.
+  assert.equal(t.calls.find(c => c[1] === '/event-return-complete')[2].runtimeId, 'runtime-1');
+  assert.equal(t.state().phase, 'town-ready');
+ }, 'level2w'],
+ ['A/B Testing leaves its instance with no Town or walk', async t => {
   await t.run('abtesting');
-  assert.equal(t.calls.filter(c=>c[0]==='transport').length,0);
-  assert.equal(t.calls.filter(c=>c[0]==='request' && c[1]==='/event-return-complete').length,0);
-  assert.equal(t.r.eventReturnPending,false);
-});
-
-test('unknown dedicated event maps report a blocker without speculative transport',async()=>{
-  const t=runtime('future');t.r.G.maps.future={event:'future'};
-  await assert.rejects(t.run('future'),/No verified event exit mechanism/);
-  assert.equal(t.calls.filter(c=>['leave','transport'].includes(c[0])).length,0);
-});
-
-function runtime(map, options = {}) {
-  let now = 0, pendingRoute = null;
-  const calls = [];
-  const character = { name: 'Fighter', map, x: 800, y: 400, rip: false };
-  const r = vm.createContext({
-    escapeOwns: () => false, huntTurnInPriority: false, runtimeCurrent:()=>true, parent:{},
-    character, root: {}, Date: { now: () => now },
-    navigationIntent: { revision: 0, cancelled: false },
-    G: { npcs: { transporter: { places: { main: 9 } } }, maps: { main: {}, level2w: {}, level2: {}, winterland: {},
-      goobrawl: { event: 'goobrawl', npcs: [{ id: 'transporter', position: [-347,-483] }] }, abtesting: { event: 'abtesting' }, ship0: { event: 'pirateship' } } },
-    eventRecoveryRetryAt: 0,
-    afterCombat: async action => { calls.push(['afterCombat']); await action(); },
-    sleep: async ms => { now += ms; options.onSleep?.(r, ms, calls); },
-    anniversaryWithTimeout: async promise => promise,
-    stop: async kind => {
-      calls.push(['stop', kind]);
-      if (kind === 'smart' && pendingRoute) {
-        const reject = pendingRoute;
-        pendingRoute = null;
-        reject(new Error('route stopped'));
-      }
-    },
-    smart_move: destination => {
-      calls.push(['route', character.map, now]);
-      if (options.route) return options.route(r, destination);
-      if (destination.map === 'goobrawl') { Object.assign(character, destination); return Promise.resolve(); }
-      return new Promise((resolve, reject) => { pendingRoute = reject; });
-    },
-    // Walking is a separate convoy service now. These workflow tests retain a
-    // controllable route completion port; shared-convoy tests exercise the runner.
-    sharedPartyWalk: async (destination,activity,key,parentCommand,current) => {
-      calls.push(['shared-walk',activity,key]);
-      if(destination.map==='goobrawl')return r.smart_move(destination);
-      return r.eventReturnRouteToMain(destination,now+25000,current);
-    },
-    town: async () => {
-      calls.push(['town', character.map]);
-      if (options.town) return options.town(r, calls);
-      if (character.map === 'main') Object.assign(character, { x: 0, y: 0 });
-    },
-    leave: async () => {
-      calls.push(['leave', character.map]);
-      if (options.leave) return options.leave(r);
-      Object.assign(character, { map: 'main', x: 0, y: 0 });
-    },
-    transport: async (map, spawn) => {
-      calls.push(['transport', map, spawn]);
-      if (options.transport) return options.transport(r, map);
-      Object.assign(character, { map, x: 0, y: 0 });
-    },
-    is_on_cooldown: () => options.cooldown?.(r) || false,
-    respawn: async () => { calls.push(['respawn']); character.rip = false; },
-    request: async (url, payload) => calls.push(['request', url, payload.body]),
-    game_log() {},
-  });
-  const progressHelper=source.slice(source.indexOf('  function returnPhaseRecord('),source.indexOf('  async function enforcePartyTownOverride('));
-  const eventKindHelper=source.slice(source.indexOf('  function halloweenEvent('),source.indexOf('  function halloweenFeedCurrent('));
-  const eventCombatHelper=source.slice(source.indexOf('  async function afterEventCombat('),source.indexOf('  function inFarmArea('));
-  vm.runInContext(progressHelper + routeHelper + eventKindHelper + eventCombatHelper + '\nasync function run(command) {\n' + handler + '\n}', r);
-  return { r, calls, character, pending: () => pendingRoute,
-    run: (event = 'franky', cycleId = 'cycle-1') => r.run({ type: 'event-return-town', event, cycleId }) };
-}
-
-test('Crab uses Town directly, after combat, without leave or a walking route', async () => {
-  const t = runtime('main');
+  assert.deepEqual(moves(t.calls, ['leave', 'transport', 'town', 'walk']), [['leave', 'abtesting']]);
+  assert.equal(completes(t.calls), 1);
+ }, 'abtesting'],
+ ['the ship0 instance leaves by its own exit with no Town or walk', async t => {
+  await t.run('pirateship');
+  assert.deepEqual(moves(t.calls, ['leave', 'transport', 'town', 'walk']), [['leave', 'ship0']]);
+  assert.equal(completes(t.calls), 1);
+ }, 'ship0'],
+ ['a leave that fails gives way to the transport to Main', async t => {
+  await t.run('abtesting');
+  assert.deepEqual(t.calls.find(c => c[0] === 'transport'), ['transport', 'main', 0]);
+  assert.equal(t.state().phase, 'town-ready');
+ }, 'abtesting', { leave: async () => { throw new Error('instance ended'); } }],
+ ['Goo Brawl walks to its Transporter and asks it for Main', async t => {
+  await t.run('goobrawl');
+  assert.deepEqual(moves(t.calls, ['approach', 'transport', 'town']), [['approach', 'goobrawl'], ['transport', 'main']]);
+  assert.equal(t.calls.find(c => c[0] === 'transport')[2], 9, "the Transporter's Main spawn from G.npcs");
+ }, 'goobrawl'],
+ ['a reply naming another return cycle retires the running exit (E3.1 row 15)', async t => {
+  const running = t.run('pirateship');
+  t.exit.observe({ eventReturnCycleId: 'other', serverNow: 5 });
+  await running;
+  assert.equal(completes(t.calls), 0);
+  assert.equal(t.exit.pending(), false);
+  assert.equal(t.exit.accepts({ cycleId: 'cycle-1' }), false, 'a Town command of the old cycle is not taken');
+ }, 'ship0', { leave: async () => {}, transport: async () => {} }],
+ // v1.5.0's exit rows cut with no removal line.
+ ['Crab casts Town after its fight, with no leave or walk', async t => {
   await t.run('crabxx');
-  assert.equal(t.calls[0][0], 'afterCombat');
-  assert.deepEqual(t.calls.filter(c => ['town', 'leave', 'route'].includes(c[0])), [['town', 'main']]);
-  assert.equal(t.r.eventRecoveryState.phase, 'town-ready');
-  assert.equal(t.calls.filter(c => c[0] === 'request' && c[1] === '/event-return-complete').length, 1);
-});
-
-for (const [event, map] of [['franky', 'level2w'], ['icegolem', 'winterland']]) {
-  test(`${event} stops its pending route on entering Main and then casts Town`, async () => {
-    const t = runtime(map, { onSleep(r, ms) {
-      if (ms === 100) Object.assign(r.character, { map: 'main', x: 1937, y: -12 });
-    } });
-    await t.run(event);
-    const travel = t.calls.filter(c => ['town', 'route', 'stop', 'leave'].includes(c[0]));
-    assert.deepEqual(travel.map(c => c.slice(0, 2)), [
-      ['stop', 'smart'], ['stop', 'move'], ['town', map], ['route', map],
-      ['stop', 'smart'], ['stop', 'move'], ['town', 'main'],
-    ]);
-    assert.equal(t.pending(), null);
-    assert.equal(t.character.x, 0);
-  });
-}
-
-for (const event of ['abtesting', 'ship0']) {
-  test(`${event} leaves its instance without unnecessary Town or walking`, async () => {
-    const t = runtime(event);
-    await t.run(event);
-    assert.deepEqual(t.calls.filter(c => ['town', 'route', 'leave'].includes(c[0])), [['leave', event]]);
-  });
-
-  test(`${event} falls back to direct Main transport if leave fails`, async () => {
-    const t = runtime(event, { leave: async () => { throw new Error('instance ended'); } });
-    await t.run(event);
-    assert.deepEqual(t.calls.find(c => c[0] === 'transport'), ['transport', 'main', 0]);
-    assert.equal(t.r.eventRecoveryState.phase, 'town-ready');
-  });
-}
-
-test('instance exit away from the square uses Town', async () => {
-  const t = runtime('abtesting', { leave: async r => { r.character.map = 'main'; } });
-  await t.run('goobrawl');
-  assert.deepEqual(t.calls.filter(c => c[0] === 'town'), [['town', 'main']]);
-});
-
-test('Goobrawl walks to the Transporter before requesting Main and never calls leave', async () => {
-  const t=runtime('goobrawl',{transport:async r=>{
-    assert.ok(Math.hypot(r.character.x+347,r.character.y+483)<70);
-    Object.assign(r.character,{map:'main',x:0,y:0});
-  }});
-  await t.run('goobrawl');
-  assert.deepEqual(t.calls.filter(c=>['route','transport','leave'].includes(c[0])).map(c=>c[0]),['route','transport']);
-  assert.deepEqual(t.calls.find(c=>c[0]==='transport'),['transport','main',9]);
-  assert.equal(t.r.eventRecoveryState.phase,'town-ready');
-});
-
-test('Goobrawl waits for the actual map transition after an early transport acknowledgement', async () => {
-  let waits=0;
-  const t=runtime('goobrawl',{transport:async()=>({in_progress:true}),onSleep(r){
-    if(++waits===5)Object.assign(r.character,{map:'main',x:0,y:0});
-  }});
-  await t.run('goobrawl');
-  assert.equal(waits,5);assert.equal(t.calls.filter(c=>c[0]==='transport').length,1);
-  assert.equal(t.calls.filter(c=>c[0]==='request' && c[1]==='/event-return-complete').length,1);
-});
-
-test('Goobrawl does not acknowledge recovery if approach or transport never reaches the destination', async () => {
-  const far=runtime('goobrawl',{route:async()=>{}});
-  await assert.rejects(far.run('goobrawl'),/not in range/);
-  assert.equal(far.calls.some(c=>c[0]==='transport'),false);
-  const stuck=runtime('goobrawl',{transport:async()=>{throw {reason:'transport_in_progress'};}});
-  await assert.rejects(stuck.run('goobrawl'),/did not reach Main/);
-  assert.equal(stuck.calls.filter(c=>c[0]==='transport').length,1);
-  assert.equal(stuck.calls.some(c=>c[0]==='request'),false);
-});
-
-test('Town retries interruptions and waits for cooldown before acknowledging arrival', async () => {
-  let attempts = 0, cooldownChecks = 0;
-  const t = runtime('main', {
-    cooldown: () => ++cooldownChecks === 1,
-    town: async r => {
-      if (++attempts === 1) throw new Error('damage interrupted Town');
-      Object.assign(r.character, { x: 0, y: 0 });
-    },
-  });
-  await t.run('crabxx');
-  assert.equal(attempts, 2);
-  assert.equal(cooldownChecks, 3);
-  assert.equal(t.calls.at(-1)[2].x, 0);
-});
-
-test('already near the square acknowledges without Town or routing', async () => {
-  const t = runtime('main');
+  assert.deepEqual(t.calls[0], ['afterCombat']);
+  assert.deepEqual(moves(t.calls, ['town', 'leave', 'walk', 'transport']), [['town', 'main']]);
+  assert.equal(completes(t.calls), 1);
+  assert.equal(t.state().phase, 'town-ready');
+ }, 'main'],
+ ['an instance exit that lands away from the square casts Town in Main', async t => {
+  await t.run('abtesting');
+  assert.deepEqual(moves(t.calls, ['leave', 'transport', 'town']), [['leave', 'abtesting'], ['town', 'main']]);
+  assert.equal(completes(t.calls), 1);
+ }, 'abtesting', { leave: async c => Object.assign(c, { map: 'main', x: 800, y: 400 }) }],
+ ['a member already near the square reports its arrival with no Town or walk', async t => {
   Object.assign(t.character, { x: 50, y: 20 });
   await t.run('crabxx');
-  assert.equal(t.calls.filter(c => ['town', 'route', 'leave'].includes(c[0])).length, 0);
-});
+  assert.deepEqual(moves(t.calls, ['town', 'leave', 'walk', 'transport']), []);
+  assert.equal(completes(t.calls), 1);
+ }, 'main'],
+ ['Town waits for its cooldown and comes again after an interruption before the arrival is reported', async t => {
+  let casts = 0;
+  t.t.town = async c => { if (++casts === 1) throw new Error('damage interrupted Town'); Object.assign(c, { x: 0, y: 0 }); };
+  t.t.onReport = (_c, seen) => { t.calls.push(['report']); if (seen === 2) t.t.townReady = true; };
+  await t.run('crabxx');
+  assert.equal(casts, 2, 'the interrupted cast comes round again');
+  assert.deepEqual(moves(t.calls, ['report', 'town']).slice(0, 3), [['report'], ['report'], ['town', 'main']], 'no cast before the cooldown ends');
+  assert.equal(completes(t.calls), 1);
+  assert.equal(t.calls.find(c => c[1] === '/event-return-complete')[2].x, 0);
+ }, 'main', { townReady: false }],
+ ['a member that dies on the way waits to live again before it goes on', async t => {
+  t.t.walk = c => { c.rip = true; };
+  // The respawn lands in Main's Town on the second report the member spends dead.
+  let dead = 0;
+  t.t.onReport = c => { if (c.rip && ++dead === 2) Object.assign(c, { rip: false, map: 'main', x: 0, y: 0 }); };
+  await t.run('franky');
+  assert.equal(t.calls.filter(c => c[0] === 'walk').length, 1, 'no rung runs while dead');
+  assert.equal(completes(t.calls), 1);
+  assert.equal(t.exit.pending(), false);
+ }, 'level2w'],
+ // Observed live on the death rows: the exit's Town claim lasts two report gaps, and a member
+ // dead for longer stood with its climb and no hold until the event return took it.
+ ['a dead member keeps its claim on each report until it lives', async t => {
+  t.character.rip = true;
+  let dead = 0;
+  t.t.onReport = c => { t.calls.push(['report']); if (c.rip && ++dead === 4) Object.assign(c, { rip: false, map: 'main', x: 0, y: 0 }); };
+  await t.run('franky');
+  const trail = moves(t.calls, ['report', 'claim']).map(c => c[0]);
+  assert.deepEqual(trail.slice(0, 8), ['claim', 'claim', 'report', 'claim', 'report', 'claim', 'report', 'claim'], 'a claim before each report the member spends dead');
+  assert.equal(completes(t.calls), 1);
+ }, 'main'],
+ ['a Goo Brawl exit cancelled during its transport never casts Town', async t => {
+  t.t.transport = () => { t.exit.observe({ eventReturnCycleId: 'other', serverNow: 1 }); };
+  await t.run('goobrawl');
+  assert.equal(t.calls.filter(c => c[0] === 'town').length, 0);
+  assert.equal(completes(t.calls), 0);
+ }, 'goobrawl'],
+]);
 
-test('route timeouts and command retries retain progress and attempt remote Town once per cycle', async () => {
-  const t = runtime('level2w');
-  await assert.rejects(t.run(), /deadline/);
-  assert.equal(t.pending(), null);
-  assert.equal(t.r.eventReturnPending, false);
-  assert.equal(t.calls.filter(c => c[0] === 'request' && c[1] === '/event-return-complete').length, 0);
-  t.character.map = 'level2';
-  await assert.rejects(t.run(), /deadline/);
-  assert.equal(t.calls.filter(c => c[0] === 'town').length, 1);
-  assert.equal(t.pending(), null);
-  await assert.rejects(t.run('franky', 'cycle-2'), /deadline/);
-  assert.equal(t.calls.filter(c => c[0] === 'town').length, 2);
-});
+// (row 4b): a member an ended A/B round does not release leaves by one reconnect to its realm,
+// marked on the return's progress first; a live feed keeps the rung shut.
+scenarioTable('the A/B exit reconnects once, after its other rungs, and only once the round is over', exitScenario, [
+ ['a stranded member reconnects after leave, transport and Town, once per return cycle', async t => {
+  await t.run('abtesting');
+  const marks = t.calls.filter(c => c[0] === 'request' && c[1] === '/return-progress' && c[2].exitReconnectAttempted);
+  assert.equal(marks.length, 1, 'one reconnect mark');
+  assert.deepEqual(moves(t.calls, ['leave', 'transport', 'town']).slice(0, 3).map(c => c[0]), ['leave', 'transport', 'town']);
+  assert.ok(t.calls.findIndex(c => c[0] === 'town') < t.calls.indexOf(marks[0]), 'the reconnect comes after the Town');
+ }, 'abtesting', { leave: async () => {}, transport: async () => {}, town: async () => {} }],
+ ['a reload with the mark set skips the rung', async t => {
+  await t.run('abtesting');
+  assert.equal(t.calls.filter(c => c[2]?.exitReconnectAttempted).length, 0);
+ }, 'abtesting', { leave: async () => {}, transport: async () => {}, town: async () => {}, progress: { revision: 0, phase: 'exiting-map', exitMap: 'abtesting', exitReconnectAttempted: true } }],
+ ['a current feed that lists A/B Testing live keeps the rung shut', async t => {
+  await t.run('abtesting');
+  assert.equal(t.calls.filter(c => c[2]?.exitReconnectAttempted).length, 0);
+ }, 'abtesting', { leave: async () => {}, transport: async () => {}, town: async () => {}, feedLive: true }],
+]);
 
-test('route rejection cleans up and retries without repeating remote Town', async () => {
-  let routes = 0;
-  const t = runtime('winterland', { route: async r => {
-    if (++routes === 1) throw new Error('path failed');
-    Object.assign(r.character, { map: 'main', x: 0, y: 0 });
-  } });
-  await t.run('icegolem');
-  assert.equal(routes, 2);
-  assert.deepEqual(t.calls.filter(c => c[0] === 'town'), [['town', 'winterland']]);
-  assert.equal(t.calls.filter(c => c[0] === 'stop' && c[1] === 'move').length, 3);
-});
+// The exit never stops while a rung is left. Goo Brawl's Transporter that never moves the
+// character gives way to its Town rung, and the climb comes back to the Transporter, until the
+// cycle ends.
+scenarioTable('an exit with a rung left keeps climbing', exitScenario, [
+ ['a Transporter that never moves the character climbs to Town and back', async t => {
+  await t.run('goobrawl');
+  assert.ok(t.calls.filter(c => c[0] === 'town').length >= 1, 'the Town rung is reached');
+  assert.ok(t.calls.filter(c => c[0] === 'transport').length >= 2, 'the Transporter comes round again');
+  assert.equal(completes(t.calls), 0, 'no arrival is reported while the character stays');
+ }, 'goobrawl', { transport: async () => {}, town: async () => {} }],
+]);
 
-test('Ice Golem recovery deadline retains the underlying shared walking failure', async () => {
-  const t=runtime('winterland');
-  t.r.sharedPartyWalk=async()=>{throw new Error('Convoy unavailable');};
-  await assert.rejects(t.run('icegolem'),/deadline: Convoy unavailable/);
-  assert.equal(t.calls.filter(c=>c[0]==='town').length,1);
-  assert.equal(t.calls.some(c=>c[0]==='request' && c[1]==='/event-return-complete'),false);
-});
-
-test('death during the route stops movement and respawns before continuing', async () => {
-  let died = false;
-  const t = runtime('level2w', { onSleep(r, ms) {
-    if (ms !== 100) return;
-    if (!died) { r.character.rip = true; died = true; }
-    else r.character.map = 'main';
-  } });
-  await t.run();
-  assert.equal(t.calls.filter(c => c[0] === 'respawn').length, 1);
-  assert.equal(t.pending(), null);
-});
-
-
-test('Goobrawl NPC approach does not depend on a collision-blocked convoy rally',async()=>{
- const t=runtime('goobrawl');t.r.sharedPartyWalk=()=>assert.fail('exit must not request shared rendezvous');
- await t.run('goobrawl');assert.equal(t.r.character.map,'main');
-});
-
-
-test('unreachable Goobrawl position uses Town once then walks to the transporter',async()=>{
- const t=runtime('goobrawl');let walks=0,towns=0;
- t.r.smart_move=async destination=>{if(++walks===1)throw Error('Native planner found no route');Object.assign(t.r.character,destination);};
- t.r.town=async()=>{towns++;t.r.character.x=0;t.r.character.y=0;};
- await t.run('goobrawl');assert.equal(t.r.character.map,'main');assert.equal(walks,2);assert.equal(towns,1);
- assert.equal(t.r.root.__partyEventReturnTravel.goobrawlTownAttempted,true);
-});
-
-test('Goobrawl cancellation never casts recovery Town',async()=>{
- const t=runtime('goobrawl');let towns=0;t.r.town=async()=>{towns++;};
- t.r.smart_move=async()=>{throw Error('Movement cancelled');};
- await assert.rejects(t.run('goobrawl'),/Movement cancelled/);assert.equal(towns,0);
-});
+// The event marker is derived (attend.ts `joined`), so an escape and a reload leave no stale marker:
+// off the event's map with no action of this load it reads none, and it comes back only with the
+// attendance assignment's own next action.
+const { attendScenario } = require('./fixtures/event-attend-scenario.cjs');
+scenarioTable('no stale event marker after an escape and a reload', () => attendScenario({ event: 'franky', map: 'level2w' }), [
+ ['a reload under an escape reads no marker, and the next poll after it marks again', async ({ t }) => {
+  const escape = { kind: 'escape', owner: 'escape:1', tier: 'escape' };
+  const reloaded = attendScenario({ event: 'franky', map: 'level2w', task: escape });
+  reloaded.character.map = 'main';
+  assert.equal(reloaded.attend.joined(), null, 'the reload under the escape keeps no marker');
+  reloaded.t.task = t.task;
+  await reloaded.attend.poll();
+  assert.equal(reloaded.attend.joined(), 'franky', 'the assignment\'s own join marks it again');
+ }],
+]);
+// (b): the exit has no stop in its movement port. It releases only its own owners and claims only
+// its own requests, so a walk another owner holds, such as the merchant job owner's job walk for the
+// merchant, keeps going.
+scenarioTable('(b): an exit never stops a walk it does not own', exitScenario, [
+ ['a finished exit releases and claims only its own owners', async t => {
+  await t.run('franky');
+  assert.equal(completes(t.calls), 1);
+  const own = owner => /^event-(exit|return):|^franky$/.test(owner);
+  const released = t.calls.filter(c => c[0] === 'release').map(c => c[1]);
+  assert.ok(released.every(own), 'released: ' + released);
+  assert.ok(t.calls.filter(c => c[0] === 'claim').every(c => own(c[1])), 'every claim names the exit or the return');
+ }, 'level2w'],
+]);
+// The marks with no e2e run (attend.ts `suspends`, `eventName`, `leave`, `traveling`). A join in
+// flight is the event travel; off the event's map, a request above event attendance keeps the
+// member's own join mark, a lower task drops it, and a player command off the event (`leave`)
+// clears it; `eventName` is the joined event, else the live one.
+scenarioTable('K7: the event travel and the join mark', over => attendScenario({ event: 'franky', map: 'level2w', ...over }), [
+ ['a join in flight is the event travel', async ({ attend, calls }) => {
+  let during = null, named = null;
+  calls.push = (...entries) => { during = attend.traveling(); named = attend.eventName(); return Array.prototype.push.apply(calls, entries); };
+  await attend.poll();
+  assert.equal(during, 'franky', 'the join goes out under the travel');
+  assert.equal(named, 'franky', 'the live event names the member before the join lands');
+ }, { joinLost: true }],
+ ['a higher request keeps the join mark, a lower task drops it', async ({ attend, character, t }) => {
+  await attend.poll();
+  assert.equal(attend.traveling(), null, 'the travel ends with the join');
+  character.map = 'main';
+  const own = t.task;
+  t.task = { kind: 'death-recovery', owner: 'survival:1', tier: 'death-recovery' };
+  assert.equal(attend.joined(), 'franky', 'the death recovery suspends the attendance');
+  assert.equal(attend.eventName(), 'franky');
+  t.task = { kind: 'farming', owner: 'farm:1', tier: 'farming' };
+  assert.equal(attend.joined(), null, 'a farming task ends it');
+  t.task = own;
+ }],
+ ['a player command off the event clears the mark', async ({ attend, character }) => {
+  await attend.poll();
+  character.map = 'main';
+  assert.equal(attend.joined(), 'franky');
+  attend.leave();
+  assert.equal(attend.joined(), null);
+ }],
+]);

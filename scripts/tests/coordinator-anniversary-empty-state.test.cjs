@@ -1,9 +1,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {initialAnniversaryState}=require('../../runtime/coordinator/anniversary/initial-state.ts');
-const {createAnniversaryReturns}=require('../../runtime/coordinator/anniversary/returns.ts');
-const {createAnniversaryNavigationRoutes}=require('../../runtime/coordinator/http/anniversary-navigation.ts');
-const {anniversaryHolding,newAnniversaryRound,lostCombatHandoff}=require('../../runtime/coordinator/events/return-guards.ts');
-const {createEventReturns}=require('../../runtime/coordinator/events/returns.ts');
+const {initialAnniversaryState}=require('../../runtime/events/coordinator/anniversary.ts');
+const {createAnniversaryReturns}=require('../../runtime/events/coordinator/anniversary.ts');
+const {createAnniversaryNavigationRoutes}=require('../../runtime/events/coordinator/routes.ts');
+const {anniversaryHolding,newAnniversaryRound,lostCombatHandoff}=require('../../runtime/events/coordinator/returns.ts');
+const {createEventReturns}=require('../../runtime/events/coordinator/returns.ts');
 
 test('combat recovery accepts absent anniversary cycles and unselected targets without holding travel',()=>{
  const calls=[];

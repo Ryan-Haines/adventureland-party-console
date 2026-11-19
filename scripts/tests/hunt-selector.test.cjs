@@ -9,6 +9,11 @@ const ts = require('typescript');
 const code = ts.transpileModule(fs.readFileSync('dashboard/features/party/farming-mode-control.tsx', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
+// The two mode rows' core entries with their declared buttons (runtime/hooks/core.ts),
+// and the pair a single old mode loads as.
+const entries = slot => require('../../runtime/hooks/core.ts').coreRegistrations.flatMap(r => (r.slots ?? []).filter(s => s.slot === slot)
+  .map(s => ({ mode: s.mode, addon: r.name, button: s.button })));
+const pair = policy => policy === 'hunt' ? { combatMode: 'auto', targetMode: 'hunt' } : { combatMode: policy, targetMode: 'farming' };
 function render(policy, hunt, characterHunt) {
   const selected = [];
   const exports = {};
@@ -16,12 +21,13 @@ function render(policy, hunt, characterHunt) {
   vm.runInNewContext(code, { exports, require(id) {
     if (id === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (id === 'react') return { useId: () => 'follow-description', useState: initial => [initial === false ? true : initial, () => {}], memo: fn => fn };
-    if (id.endsWith('/passive-settings')) return require('../../runtime/coordinator/navigation/passive-settings.ts');
+    if (id.endsWith('/hunting/api.ts')) return require('../../runtime/hunting/api.ts');
     if (id === './duration-label') return { durationLabel: () => '10m' };
     if (id === './hunt-blacklist-label') return require('../../dashboard/features/party/hunt-blacklist-label.ts');
     return new Proxy({}, { get: (_, key) => String(key) });
   }});
   const tree = exports.FarmingModeControl({ policy, hunt, characterHunt, effectiveMode: 'default',
+    combatEntries: entries('combat-mode'), targetEntries: entries('target-mode'), ...pair(policy),
     blacklist: { bbpompom: { deaths: 2 } }, catalog: [], onSelect: mode => selected.push(mode), onClearBlacklist: async () => {} });
   const nodes = [];
   function visit(node) {
@@ -39,7 +45,8 @@ test('Hunt remains clickable and explains blacklist fallback after returning to 
   assert.ok(button);
   assert.ok(!button.props.disabled);
   button.props.onClick();
-  assert.deepEqual(view.selected, ['hunt']);
+  // The choice is built in the component's own context, so it compares by its JSON.
+  assert.equal(JSON.stringify(view.selected), JSON.stringify([{ targetMode: 'hunt' }]));
   assert.match(view.text, /Last Hunt status/);
   assert.match(view.text, /no eligible quests remain/);
   assert.match(view.text, /Blacklisted — skipped for Hunt/);

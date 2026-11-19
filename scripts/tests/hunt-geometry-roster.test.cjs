@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {reconcileCurrentHuntParty}=require('../../runtime/coordinator/hunt/current-party.ts');
+const {reconcileCurrentHuntParty}=require('../../runtime/hunting/coordinator/hunt.ts');
 for(const phase of ['waiting','failed'])test('Hunt retains its reloading member during geometry '+phase,()=>{
  const hunt={participants:['W','M'],owner:'W',missions:[],stage:'returning'};
  const state={leader:'W',followers:{M:true},commands:{},statuses:{W:{seenAt:20000,ctype:'warrior',server:'USII'},M:{seenAt:1000,ctype:'mage',server:'USII'}},

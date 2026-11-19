@@ -8,6 +8,19 @@ import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react';
 
 const Select = SelectPrimitive.Root;
 
+// For a select that writes a setting: it hands on a value
+// only when you choose an item, by pointer or Enter. A keyboard typeahead over the closed control
+// changes nothing, so no setting writes while you type past it. Every other select keeps the
+// typeahead.
+function SettingSelect<Value, Multiple extends boolean | undefined = false>({ onValueChange, ...props }: SelectPrimitive.Root.Props<Value, Multiple>) {
+  return (
+    <SelectPrimitive.Root<Value, Multiple>
+      {...props}
+      onValueChange={(value, details) => { if (details.reason === 'item-press') onValueChange?.(value, details); }}
+    />
+  );
+}
+
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
     <SelectPrimitive.Group
@@ -190,6 +203,7 @@ function SelectScrollDownButton({
 
 export {
   Select,
+  SettingSelect,
   SelectContent,
   SelectGroup,
   SelectItem,

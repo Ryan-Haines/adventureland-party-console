@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {projectMerchantJob,projectBankbois}=require('../../runtime/coordinator/telemetry/merchant-projection.ts');
+const {projectMerchantJob,projectBankbois}=require('../../runtime/status/coordinator/state.ts');
 test('public jobs redact credentials and explain collection thresholds without mutating intent',()=>{
  const job={reason:'marked items',target:'F',aldataKey:'secret'},ports={stamp:job=>({...job,priority:90}),slots:()=>2,threshold:()=>5,nearby:()=>true};
  const view=projectMerchantJob(job,ports);assert.equal(view.aldataKey,undefined);assert.equal(job.aldataKey,'secret');assert.equal(view.collectionLabel,'nearby collection');assert.equal(view.collectionSlots,2);assert.equal(view.collectionNearby,true);assert.equal(view.priority,90);

@@ -1,4 +1,4 @@
-const {mitigation}=require('../../../runtime/characters/skills/runtime.ts');
+const {damageMultiplier}=require('../../../runtime/protocol/hold-check.ts');
 function fixture(ctype='ranger') {
  const actor={id:'Hero',name:'Hero',ctype,type:'character',level:80,hp:10000,max_hp:10000,mp:10000,max_mp:10000,
   attack:1000,armor:100,resistance:0,frequency:2,range:200,mp_cost:10,mp_reduction:0,crit:0,critdamage:0,int:100,
@@ -32,11 +32,13 @@ function fixture(ctype='ranger') {
  const cooldowns=new Set(),calls=[],diagnostics=[],evidence=[];
  const w={actor,skills,now:10000,context:{leader:'Hero',allies:[actor],monsters:[],mode:'scatter',event:null,observedAt:10000},
   item:name=>({wtype:name,type:name}),condition:id=>({cleansable:['poisoned','stunned'].includes(id),debuff:['cursed','marked'].includes(id),bad:['cursed','marked'].includes(id)}),
-  cooldown:id=>cooldowns.has(id),range:()=>true,allowed:t=>t.authorized!==false,incoming:()=>0,damageMultiplier:mitigation};
+  cooldown:id=>cooldowns.has(id),range:()=>true,allowed:t=>t.authorized!==false,incoming:()=>0,damageMultiplier};
  const add=(id,extra={})=>{const m={id,type:'monster',mtype:'goo',hp:10000,max_hp:10000,armor:0,resistance:0,attack:10,frequency:1,s:{},x:10,y:0,...extra};w.context.monsters.push(m);return m;};
  const ally=(name,extra={})=>{const a={...actor,id:name,name,s:{},...extra};w.context.allies.push(a);return a;};
- const ports={world:()=>w,cast:async d=>{calls.push(d);actor.mp-=skills[d.skill].mp||0;cooldowns.add(skills[d.skill].share||d.skill);return {targets:d.targets.map(t=>t.id)};},
+ // The turns executor's ledger: `inFlight` is the MP of the spends it holds.
+ const ledger={inFlight:0,flying:new Set()};
+ const ports={world:()=>w,ledger:{mp:()=>ledger.inFlight,flying:family=>ledger.flying.has(family)},
   evidence:(t,state,action)=>{const id=action||'action-'+evidence.length;evidence.push({id:t.id,state,action:id});return id;},diagnostic:d=>diagnostics.push(d)};
- return {w,actor,add,ally,cooldowns,calls,diagnostics,evidence,ports};
+ return {w,actor,add,ally,cooldowns,calls,diagnostics,evidence,ports,ledger};
 }
 module.exports={fixture};

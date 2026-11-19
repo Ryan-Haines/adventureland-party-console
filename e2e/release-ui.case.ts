@@ -1,6 +1,5 @@
 import { test, expect } from "./fixtures";
-import { build } from "esbuild";
-import path from "node:path";
+import { mountComponent } from "./fixtures/component-harness";
 // Failure inventory: offline snapshots accidentally permit commands or imply online;
 // donation previews use the wrong XP curve/rate or disagree in opposite directions;
 // item selection loses modifier ranges or applies unsupported batch actions.
@@ -8,31 +7,8 @@ test("merchant donation previews target level and progress in both directions", 
   page,
   app,
 }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `import React from 'react';import{createRoot}from'react-dom/client';import{DonationPreview}from'./features/party/donation-preview';function App(){const[a,s]=React.useState('');return <DonationPreview amount={a} onAmountChange={s} character={{level:2,xp:25,donationXpPerGold:4,donationLevelXp:[0,100,200,400,800]}}/>}createRoot(document.getElementById('root')).render(<App/>);`,
-    },
-  });
-  await page.goto(app.url);
-  const styles = await page
-    .locator('style,link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((n) => n.outerHTML).join(""));
-  await page.route("**/donation-preview-harness", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: `<head>${styles}</head><body><div id="root"></div></body>`,
-    }),
-  );
-  await page.goto(app.url + "/donation-preview-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await mountComponent(page, app, "donation-preview-harness",
+    `import React from 'react';import{createRoot}from'react-dom/client';import{DonationPreview}from'./features/party/donation-preview';function App(){const[a,s]=React.useState('');return <DonationPreview amount={a} onAmountChange={s} character={{level:2,xp:25,donationXpPerGold:4,donationLevelXp:[0,100,200,400,800]}}/>}createRoot(document.getElementById('root')).render(<App/>);`, null);
   await page.getByRole("spinbutton", { name: "Merchant level after donation" }).fill("3");
   await expect(page.getByRole("textbox", { name: "Donation amount" })).toHaveValue("44");
   await expect(page.getByText(/Level 3 .*0.25%/)).toBeVisible();
@@ -83,38 +59,13 @@ test("offline account inspection exposes saved inventory and comparison without 
       },
     },
   };
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `import React from'react';import{createRoot}from'react-dom/client';import{QueryClient,QueryClientProvider}from'@tanstack/react-query';import{AccountSettings}from'./features/party/account-settings';createRoot(document.getElementById('root')).render(<QueryClientProvider client={new QueryClient()}><AccountSettings state={window.fixture}/></QueryClientProvider>);`,
-    },
-  });
-  await page.goto(app.url);
-  const styles = await page
-    .locator('style,link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((n) => n.outerHTML).join(""));
-  await page.route("**/offline-inspection-harness", (r) =>
-    r.fulfill({
-      contentType: "text/html",
-      body: `<head>${styles}</head><body><div id="root"></div></body>`,
-    }),
-  );
-  await page.goto(app.url + "/offline-inspection-harness");
-  await page.evaluate((c) => {
-    (window as any).fixture = {
-      characters: {},
-      roster: [{ name: c.name, ctype: c.ctype, level: c.level }],
-      characterSnapshots: { [c.name]: c },
-    };
-  }, character);
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  const fixture = {
+    characters: {},
+    roster: [{ name: character.name, ctype: character.ctype, level: character.level }],
+    characterSnapshots: { [character.name]: character },
+  };
+  await mountComponent(page, app, "offline-inspection-harness",
+    `import React from'react';import{createRoot}from'react-dom/client';import{QueryClient,QueryClientProvider}from'@tanstack/react-query';import{AccountSettings}from'./features/party/account-settings';createRoot(document.getElementById('root')).render(<QueryClientProvider client={new QueryClient()}><AccountSettings state={${JSON.stringify(fixture)}}/></QueryClientProvider>);`, null);
   await page.getByRole("button", { name: "Inspect OfflineMage", exact: true }).click();
   await expect(page.getByText("Offline · saved observation")).toBeVisible();
   await expect(page.getByRole("button", { name: "Inspect Coat +2", exact: true })).toBeVisible();
@@ -136,31 +87,8 @@ test("item batches support control and range selection and hide incompatible com
   page,
   app,
 }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `import React from'react';import{createRoot}from'react-dom/client';import{ContextMenu,ContextMenuTrigger,ContextMenuContent}from'./components/ui/context-menu';import{useItemSelection,BatchItemActions}from'./features/party/item-selection';const entries=[{slot:0,item:{name:'coat',level:1},meta:{upgradeable:true,maxLevel:9,definition:{}}},{slot:1,item:{name:'coat',level:3},meta:{upgradeable:true,maxLevel:9,definition:{}}},{slot:2,item:{name:'hpot0'},meta:{definition:{}}}];window.commands=[];function App(){const selection=useItemSelection(entries,e=>String(e.slot));return <>{entries.map(e=><ContextMenu key={e.slot}><ContextMenuTrigger render={<button type="button"/>} aria-label={'Slot '+e.slot} aria-pressed={selection.has(e)} onClick={event=>selection.click(event,e)} onContextMenu={()=>selection.context(e)}>Slot {e.slot}</ContextMenuTrigger><ContextMenuContent><BatchItemActions entries={selection.forEntry(e)} merchant onCommand={(type,entry,extra)=>window.commands.push({type,item:entry.item,...extra})}/></ContextMenuContent></ContextMenu>)}</>}createRoot(document.getElementById('root')).render(<App/>);`,
-    },
-  });
-  await page.goto(app.url);
-  const styles = await page
-    .locator('style,link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((n) => n.outerHTML).join(""));
-  await page.route("**/batch-harness", (r) =>
-    r.fulfill({
-      contentType: "text/html",
-      body: `<head>${styles}</head><body><div id="root"></div></body>`,
-    }),
-  );
-  await page.goto(app.url + "/batch-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await mountComponent(page, app, "batch-harness",
+    `import React from'react';import{createRoot}from'react-dom/client';import{ContextMenu,ContextMenuTrigger,ContextMenuContent}from'./components/ui/context-menu';import{useItemSelection,BatchItemActions}from'./features/party/item-selection';const entries=[{slot:0,item:{name:'coat',level:1},meta:{upgradeable:true,maxLevel:9,definition:{}}},{slot:1,item:{name:'coat',level:3},meta:{upgradeable:true,maxLevel:9,definition:{}}},{slot:2,item:{name:'hpot0'},meta:{definition:{}}}];window.commands=[];function App(){const selection=useItemSelection(entries,e=>String(e.slot));return <>{entries.map(e=><ContextMenu key={e.slot}><ContextMenuTrigger render={<button type="button"/>} aria-label={'Slot '+e.slot} aria-pressed={selection.has(e)} onClick={event=>selection.click(event,e)} onContextMenu={()=>selection.context(e)}>Slot {e.slot}</ContextMenuTrigger><ContextMenuContent><BatchItemActions entries={selection.forEntry(e)} merchant onCommand={(type,entry,extra)=>window.commands.push({type,item:entry.item,...extra})}/></ContextMenuContent></ContextMenu>)}</>}createRoot(document.getElementById('root')).render(<App/>);`, null);
   await page.getByRole("button", { name: "Slot 0" }).click({ modifiers: ["Control"] });
   await page.getByRole("button", { name: "Slot 1" }).click({ modifiers: ["Control"] });
   await page.getByRole("button", { name: "Slot 0" }).click({ button: "right" });
@@ -184,31 +112,8 @@ test("bank selections preserve physical sources and offer exchange and compound 
   page,
   app,
 }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `import React from'react';import{createRoot}from'react-dom/client';import{QueryClient,QueryClientProvider}from'@tanstack/react-query';import{BankSheet}from'./features/party/bank-sheet';const coat=(slot,level)=>({slot,item:{name:'coat',level},meta:{upgradeable:true,maxLevel:9,definition:{name:'Coat '+level,type:'chest'}}});const gem={slot:2,item:{name:'gem',level:0},meta:{compoundable:true,maxLevel:7,definition:{name:'Gem',e:1}}};window.actions=[];const props={open:true,onOpenChange:()=>{},bank:{gold:0,seenAt:1,character:'Merchant',packs:{items0:[coat(0,1),coat(1,3),gem]}},bankbois:[],bankboiQueue:[],merchant:'Merchant',vaults:[],withdrawals:{},onSelect:()=>{},onWithdraw:()=>{},onWithdrawAll:()=>{},onCreateBankboi:async()=>'',onDeleteBankboi:async()=>{},buyable:[],catalog:[],priceHistory:{},standListings:[],onStand:()=>{},onUnstand:()=>{},onNpcSale:()=>{},onDeconstruction:()=>{},onUpgrade:()=>{},onClearMarks:()=>{},onAutoStand:()=>{},onAutoNpcSale:()=>{},deconstructionCatalog:{},npcSaleMarks:[],onUnlock:async()=>{},exchangeCatalog:[{id:'gem',level:0}],onExchange:(pack,entry,auto)=>window.actions.push({type:'exchange',pack,slot:entry.slot,auto}),onCompound:(pack,entry,tier,auto)=>window.actions.push({type:'compound',pack,slot:entry.slot,tier,auto}),onBatchError:message=>window.actions.push({error:message}),onBatchCommand:async(type,pack,entry,extra)=>window.actions.push({type,pack,slot:entry.slot,...extra})};createRoot(document.getElementById('root')).render(<QueryClientProvider client={new QueryClient()}><BankSheet {...props}/></QueryClientProvider>);`,
-    },
-  });
-  await page.goto(app.url);
-  const styles = await page
-    .locator('style,link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((n) => n.outerHTML).join(""));
-  await page.route("**/bank-selection-harness", (r) =>
-    r.fulfill({
-      contentType: "text/html",
-      body: `<head>${styles}</head><body><div id="root"></div></body>`,
-    }),
-  );
-  await page.goto(app.url + "/bank-selection-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await mountComponent(page, app, "bank-selection-harness",
+    `import React from'react';import{createRoot}from'react-dom/client';import{QueryClient,QueryClientProvider}from'@tanstack/react-query';import{BankSheet}from'./features/party/bank-sheet';const coat=(slot,level)=>({slot,item:{name:'coat',level},meta:{upgradeable:true,maxLevel:9,definition:{name:'Coat '+level,type:'chest'}}});const gem={slot:2,item:{name:'gem',level:0},meta:{compoundable:true,maxLevel:7,definition:{name:'Gem',e:1}}};window.actions=[];const props={open:true,onOpenChange:()=>{},bank:{gold:0,seenAt:1,character:'Merchant',packs:{items0:[coat(0,1),coat(1,3),gem]}},bankbois:[],bankboiQueue:[],merchant:'Merchant',vaults:[],withdrawals:{},onSelect:()=>{},onWithdraw:()=>{},onWithdrawAll:()=>{},onCreateBankboi:async()=>'',onDeleteBankboi:async()=>{},buyable:[],catalog:[],priceHistory:{},standListings:[],onStand:()=>{},onUnstand:()=>{},onNpcSale:()=>{},onDeconstruction:()=>{},onUpgrade:()=>{},onClearMarks:()=>{},onAutoStand:()=>{},onAutoNpcSale:()=>{},deconstructionCatalog:{},npcSaleMarks:[],onUnlock:async()=>{},exchangeCatalog:[{id:'gem',level:0}],onExchange:(pack,entry,auto)=>window.actions.push({type:'exchange',pack,slot:entry.slot,auto}),onCompound:(pack,entry,tier,auto)=>window.actions.push({type:'compound',pack,slot:entry.slot,tier,auto}),onBatchError:message=>window.actions.push({error:message}),onBatchCommand:async(type,pack,entry,extra)=>window.actions.push({type,pack,slot:entry.slot,...extra})};createRoot(document.getElementById('root')).render(<QueryClientProvider client={new QueryClient()}><BankSheet {...props}/></QueryClientProvider>);`, null);
   await page.getByRole("button", { name: "Coat 1", exact: true }).click({ modifiers: ["Control"] });
   await page.getByRole("button", { name: "Coat 3", exact: true }).click({ modifiers: ["Shift"] });
   await page.getByRole("button", { name: "Coat 1", exact: true }).click({ button: "right" });
@@ -236,31 +141,8 @@ test("exchange reward selections apply common automatic actions across mixed upg
   page,
   app,
 }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `import React from'react';import{createRoot}from'react-dom/client';import{ExchangeItemSelection}from'./features/party/exchange-item-selection';import{ExchangeRewardTile}from'./features/party/exchange-reward-tile';window.actions=[];const model={state:{merchantCharacter:'Merchant',merchantCatalog:{allItems:[{id:'coat',meta:{upgradeable:true,maxLevel:9,definition:{name:'Coat'}}},{id:'hpot0',meta:{definition:{name:'Potion',e:1}}}],buyable:[],exchangeable:[]}},post:async(path,body)=>window.actions.push(body),command:async()=>{},setActionError:message=>window.actions.push({error:message}),setAutoNpcSaleItem:()=>{},setStandItem:()=>{}};const rewards=[{id:'coat',level:1,name:'Coat',detail:'1/10'},{id:'coat',level:3,name:'Coat',detail:'1/20'},{id:'hpot0',level:0,name:'Potion',detail:'1/2'}];createRoot(document.getElementById('root')).render(<ExchangeItemSelection>{rewards.map(reward=><ExchangeRewardTile key={reward.detail} reward={{...reward,quantity:1,onInspect:()=>{throw Error('Modifier click must not inspect')}}} model={model}/>)}</ExchangeItemSelection>);`,
-    },
-  });
-  await page.goto(app.url);
-  const styles = await page
-    .locator('style,link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((n) => n.outerHTML).join(""));
-  await page.route("**/exchange-selection-harness", (r) =>
-    r.fulfill({
-      contentType: "text/html",
-      body: `<head>${styles}</head><body><div id="root"></div></body>`,
-    }),
-  );
-  await page.goto(app.url + "/exchange-selection-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await mountComponent(page, app, "exchange-selection-harness",
+    `import React from'react';import{createRoot}from'react-dom/client';import{ExchangeItemSelection}from'./features/party/exchange-item-selection';import{ExchangeRewardTile}from'./features/party/exchange-reward-tile';window.actions=[];const model={state:{merchantCharacter:'Merchant',merchantCatalog:{allItems:[{id:'coat',meta:{upgradeable:true,maxLevel:9,definition:{name:'Coat'}}},{id:'hpot0',meta:{definition:{name:'Potion',e:1}}}],buyable:[],exchangeable:[]}},post:async(path,body)=>window.actions.push(body),command:async()=>{},setActionError:message=>window.actions.push({error:message}),setAutoNpcSaleItem:()=>{},setStandItem:()=>{}};const rewards=[{id:'coat',level:1,name:'Coat',detail:'1/10'},{id:'coat',level:3,name:'Coat',detail:'1/20'},{id:'hpot0',level:0,name:'Potion',detail:'1/2'}];createRoot(document.getElementById('root')).render(<ExchangeItemSelection>{rewards.map(reward=><ExchangeRewardTile key={reward.detail} reward={{...reward,quantity:1,onInspect:()=>{throw Error('Modifier click must not inspect')}}} model={model}/>)}</ExchangeItemSelection>);`, null);
   const first = page.getByRole("button", { name: "Exchange reward: coat +1", exact: true }),
     second = page.getByRole("button", { name: "Exchange reward: coat +3", exact: true });
   await first.click({ modifiers: ["Control"] });
@@ -302,31 +184,8 @@ test("player and merchant inventory batches preserve owner and mixed upgrade lev
   page,
   app,
 }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `import React from'react';import{createRoot}from'react-dom/client';import{QueryClient,QueryClientProvider}from'@tanstack/react-query';import{InventoryPanel}from'./features/party/inventory-panel';const root=createRoot(document.getElementById('root'));window.actions=[];const entries=[{slot:0,item:{name:'coat',level:1},meta:{upgradeable:true,maxLevel:9,definition:{name:'Coat one',type:'chest'}}},{slot:1,item:{name:'coat',level:3},meta:{upgradeable:true,maxLevel:9,definition:{name:'Coat three',type:'chest'}}},{slot:2,item:{name:'hpot0'},meta:{definition:{name:'Potion',e:1}}}];window.mountInventory=name=>{const character={name,ctype:name==='Merchant'?'merchant':'warrior',level:50,xp:0,max_xp:100,hp:100,max_hp:100,mp:100,max_mp:100,gold:0,map:'main',x:0,y:0,seenAt:1,rip:false,banking:false,items:entries,slots:{}};const command=async(character,type,item,extra)=>window.actions.push({character,type,item,...extra});const props={character,characters:[character],merchant:'Merchant',marked:[],merchantMarked:[],autoItemMarks:{},autoUpgradeMarks:{},allAutoUpgradeMarks:{},merchantDeliveries:{},standListings:[],autoNpcSales:{},autoStandMarks:{},buyable:[],catalog:[],priceHistory:{},upgradeMarks:[],statScrollMarks:[],statScrollInventory:{},compoundGroups:[],autoCompoundMarks:[],allAutoCompoundMarks:{},autoExchanges:{},onSelect:()=>{},onCompare:()=>{},onCommand:command,onBatchCommand:command,onBatchError:message=>window.actions.push({error:message}),onTravel:()=>{},onStand:()=>{},onNpcSale:()=>{},onAutoNpcSale:()=>{},onAutoStand:()=>{},onClearAutomaticSales:()=>{},onRemoveAutomaticSale:()=>{}};root.render(<QueryClientProvider client={new QueryClient()}><InventoryPanel key={name} {...props}/></QueryClientProvider>);};`,
-    },
-  });
-  await page.goto(app.url);
-  const styles = await page
-    .locator('style,link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((n) => n.outerHTML).join(""));
-  await page.route("**/inventory-selection-harness", (r) =>
-    r.fulfill({
-      contentType: "text/html",
-      body: `<head>${styles}</head><body><div id="root"></div></body>`,
-    }),
-  );
-  await page.goto(app.url + "/inventory-selection-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await mountComponent(page, app, "inventory-selection-harness",
+    `import React from'react';import{createRoot}from'react-dom/client';import{QueryClient,QueryClientProvider}from'@tanstack/react-query';import{InventoryPanel}from'./features/party/inventory-panel';const root=createRoot(document.getElementById('root'));window.actions=[];const entries=[{slot:0,item:{name:'coat',level:1},meta:{upgradeable:true,maxLevel:9,definition:{name:'Coat one',type:'chest'}}},{slot:1,item:{name:'coat',level:3},meta:{upgradeable:true,maxLevel:9,definition:{name:'Coat three',type:'chest'}}},{slot:2,item:{name:'hpot0'},meta:{definition:{name:'Potion',e:1}}}];window.mountInventory=name=>{const character={name,ctype:name==='Merchant'?'merchant':'warrior',level:50,xp:0,max_xp:100,hp:100,max_hp:100,mp:100,max_mp:100,gold:0,map:'main',x:0,y:0,seenAt:1,rip:false,banking:false,items:entries,slots:{}};const command=async(character,type,item,extra)=>window.actions.push({character,type,item,...extra});const props={character,characters:[character],merchant:'Merchant',marked:[],merchantMarked:[],autoItemMarks:{},autoUpgradeMarks:{},allAutoUpgradeMarks:{},merchantDeliveries:{},standListings:[],autoNpcSales:{},autoStandMarks:{},buyable:[],catalog:[],priceHistory:{},upgradeMarks:[],statScrollMarks:[],statScrollInventory:{},compoundGroups:[],autoCompoundMarks:[],allAutoCompoundMarks:{},autoExchanges:{},onSelect:()=>{},onCompare:()=>{},onCommand:command,onBatchCommand:command,onBatchError:message=>window.actions.push({error:message}),onTravel:()=>{},onStand:()=>{},onNpcSale:()=>{},onAutoNpcSale:()=>{},onAutoStand:()=>{},onClearAutomaticSales:()=>{},onRemoveAutomaticSale:()=>{}};root.render(<QueryClientProvider client={new QueryClient()}><InventoryPanel key={name} {...props}/></QueryClientProvider>);};`, null);
   for (const name of ["Fighter", "Merchant"]) {
     await page.evaluate((name) => (window as any).mountInventory(name), name);
     const first = page.getByRole("button", { name: "Coat one", exact: true }),
@@ -462,7 +321,9 @@ test.describe('offline comparison picker',()=>{
  test.use({merchantConnected:false});
  test('item comparison can select a never-loaded owned character from the roster',async({page,app},info)=>{
   const initial=await app.state(),coat=initial.merchantCatalog.allItems.find((entry:any)=>entry.id==='coat');
-  const bundle=await build({bundle:true,write:false,format:'iife',platform:'browser',jsx:'automatic',tsconfig:path.resolve('dashboard/tsconfig.json'),stdin:{resolveDir:path.resolve('dashboard'),loader:'tsx',contents:`import React from'react';import{createRoot}from'react-dom/client';import{ItemDetails}from'./features/party/item-details';import{GearComparisonDialog}from'./features/party/gear-comparison-dialog';import{loadCharacterInspection}from'./features/party/load-character-inspection';function App(){const[c,s]=React.useState(null);return c?<GearComparisonDialog comparison={c} currentCharacter={c.character} onOpenChange={()=>s(null)}/>:<ItemDetails selected={{character:'Catalog',entry:{slot:-1,item:{name:'coat',level:2},meta:window.coat.meta}}} catalog={[window.coat]} monsters={[]} characters={[]} offlineCharacters={[{name:'M',ctype:'merchant'}]} onLoadCharacter={loadCharacterInspection} achievements={{}} standFull={false} onNavigate={()=>{}} onAddWTB={()=>{}} onAddStand={()=>{}} onCompare={(character,entry,slot)=>{window.selectedComparison={name:character.name,items:character.items,slot};s({character,entry,slot});}} onCompareCatalog={()=>{}} onOpenChange={()=>{}}/>;}createRoot(document.getElementById('root')).render(<App/>);`}});
-  await page.goto(app.url);const styles=await page.locator('style,link[rel="stylesheet"]').evaluateAll(nodes=>nodes.map(n=>n.outerHTML).join(''));await page.route('**/offline-comparison-harness',r=>r.fulfill({contentType:'text/html',body:`<head>${styles}</head><body><div id="root"></div></body>`}));await page.goto(app.url+'/offline-comparison-harness');await page.evaluate(coat=>(window as any).coat=coat,coat);await page.addScriptTag({content:bundle.outputFiles[0].text});await page.getByRole('button',{name:'Compare',exact:true}).click();await page.getByRole('button',{name:/M.*merchant.*offline/}).click();await expect(page.getByRole('dialog',{name:'Equipment comparison',exact:true})).toBeVisible();expect(await page.evaluate(()=>(window as any).selectedComparison.name)).toBe('M');expect((await app.state()).characters.M).toBeUndefined();await expect(page.getByText('Derived stats unavailable for this saved profile.',{exact:true})).toHaveCount(3);await info.attach('never-loaded-character-comparison',{body:await page.screenshot(),contentType:'image/png'});
+  // The saved inspection reads through the action client, so the loader takes the page's query
+  // client as party-item-details.tsx hands it (92814bdd3).
+  await mountComponent(page,app,'offline-comparison-harness',`import React from'react';import{createRoot}from'react-dom/client';import{ItemDetails}from'./features/party/item-details';import{GearComparisonDialog}from'./features/party/gear-comparison-dialog';import{loadCharacterInspection}from'./features/party/load-character-inspection';import{QueryClient}from'@tanstack/react-query';const client=new QueryClient();const coat=${JSON.stringify(coat)};function App(){const[c,s]=React.useState(null);return c?<GearComparisonDialog comparison={c} currentCharacter={c.character} onOpenChange={()=>s(null)}/>:<ItemDetails selected={{character:'Catalog',entry:{slot:-1,item:{name:'coat',level:2},meta:coat.meta}}} catalog={[coat]} monsters={[]} characters={[]} offlineCharacters={[{name:'M',ctype:'merchant'}]} onLoadCharacter={name=>loadCharacterInspection(client,name)} achievements={{}} standFull={false} onNavigate={()=>{}} onAddWTB={()=>{}} onAddStand={()=>{}} onCompare={(character,entry,slot)=>{window.selectedComparison={name:character.name,items:character.items,slot};s({character,entry,slot});}} onCompareCatalog={()=>{}} onOpenChange={()=>{}}/>;}createRoot(document.getElementById('root')).render(<App/>);`,null);
+  await page.getByRole('button',{name:'Compare',exact:true}).click();await page.getByRole('button',{name:/M.*merchant.*offline/}).click();await expect(page.getByRole('dialog',{name:'Equipment comparison',exact:true})).toBeVisible();expect(await page.evaluate(()=>(window as any).selectedComparison.name)).toBe('M');expect((await app.state()).characters.M).toBeUndefined();await expect(page.getByText('Derived stats unavailable for this saved profile.',{exact:true})).toHaveCount(3);await info.attach('never-loaded-character-comparison',{body:await page.screenshot(),contentType:'image/png'});
  });
 });
