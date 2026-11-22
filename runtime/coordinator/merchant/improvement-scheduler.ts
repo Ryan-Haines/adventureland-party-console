@@ -1,3 +1,5 @@
+import { sameMarkedItem } from "../inventory/item-identity.ts";
+import { exchangeStorageWorkers } from "../inventory/exchange-storage.ts";
 import { ruleOwner, sharedMember, itemRuleConflicts } from "../inventory/shared-rules.ts";
 import { pendingProduction, type ProductionState } from '../inventory/production.ts';
 import { sharedCompoundRules, improvementItems, runnableBankUpgrades, localBankUpgrades, planUpgradeStorage, type BankImprovementState } from "./banked-improvements.ts";
@@ -52,11 +54,6 @@ interface Status {
   items?: (InventoryEntry | null)[];
 }
 
-/** The native withdrawal runner reserves three inventory slots. */
-function canReceiveCompoundInputs(status: Status): boolean {
-  return (status.items || []).filter(entry => !entry?.item).length > 3;
-}
-
 /** Translate inventory evaluations into durable rules and serialized merchant work. */
 export function createImprovementScheduler(state: SchedulerState, ports: SchedulerPorts) {
   let reservationError = "";
@@ -74,22 +71,29 @@ export function createImprovementScheduler(state: SchedulerState, ports: Schedul
       local.concat(workers.flatMap((worker) => worker.items || [])));
     return result;
   }
-  function stageCompound(name: string, rules: CompoundRule[],
-    local: (InventoryEntry | null | undefined)[], workers: BankboiInventory[]): void {
-    // Wait for current work and its storage handoff to settle before planning another batch.
-    if (state.merchantCurrent || state.bankboiTransaction || state.withdrawals?.[name]?.length) return;
-    const requests = planCompoundStorage(rules, local, workers).map(request => ({ ...request, improvement: "auto compound" }));
-    if (!requests.length) return;
-    (state.withdrawals ||= {})[name] = requests;
+  function stageCompound(name: string, inputs: StorageReference[]): void {
+    if (state.merchantCurrent || state.bankboiTransaction) return;
+    const pending = state.withdrawals?.[name] || [];
+    const retained = pending.filter(mark => {
+      if (mark.improvement !== "auto compound") return true;
+      if (mark.pack?.startsWith("bankboi:")) return false;
+      const physical = state.bankSnapshot?.packs?.[String(mark.pack)];
+      return !physical || sameMarkedItem(physical[Number(mark.slot)]?.item, mark.item);
+    });
+    const next = retained.concat(inputs.map(input => ({...input, improvement: "auto compound"})));
+    if (JSON.stringify(next) === JSON.stringify(pending)) return;
+    (state.withdrawals ||= {})[name] = next;
     ports.persist();
   }
   function exchangeInventory(items: (InventoryEntry | null)[]) {
     const bank = Object.values(state.bankSnapshot?.packs || {}).flatMap((pack) => pack || []);
-    return planAutoExchanges(
-      state.autoExchanges || {},
-      state.merchantCatalog?.exchangeable || [],
-      items.concat(bank),
-    );
+    const rules = state.autoExchanges || {};
+    const catalog = state.merchantCatalog?.exchangeable || [];
+    const local = items.concat(bank);
+    const plan = planAutoExchanges(rules, catalog, local);
+    if (plan.lines.length || !Object.keys(rules).length || !Object.keys(state.bankbois || {}).length) return plan;
+    const remote = exchangeStorageWorkers(state).flatMap(worker => worker.items);
+    return planAutoExchanges(rules, catalog, local, remote);
   }
   function canStage(name: string): boolean {
     return !state.merchantCurrent && !state.bankboiTransaction && !state.withdrawals?.[name]?.length;
@@ -112,19 +116,21 @@ export function createImprovementScheduler(state: SchedulerState, ports: Schedul
     const available = availableCraftStock(stock.concat(allWorkers.flatMap(worker => (worker.items || []).map(entry =>
       entry && {...entry, craftLocation: "bankboi:" + worker.name}))).map(entry =>
         entry?.item && itemRuleConflicts(state,entry.item).length ? null : entry), craftProtection(state));
-    const local = available.slice(0, stock.length);
+    const reserved = Object.values(state.withdrawals || {}).flat().filter(mark => mark && mark.improvement !== "auto compound");
+    const usable = available.map(entry => entry && reserved.some(mark => mark?.pack === entry.craftLocation && mark.slot === entry.slot) ? null : entry);
+    const local = usable.slice(0, stock.length);
     let offset = stock.length;
     const workers = allWorkers.map(worker => {
-      const items = available.slice(offset, offset + (worker.items || []).length);
+      const items = usable.slice(offset, offset + (worker.items || []).length);
       offset += (worker.items || []).length;
       return {...worker, items};
     });
     const rules = evaluateAutoCompounds(sharedCompoundRules(state), improvementItems(state)).remaining;
-    const result = evaluateAutoCompounds(rules, local.concat(workers.flatMap(worker => worker.items || [])));
     const carried = local.slice(0, inventory.length);
-    const receivesInputs = canReceiveCompoundInputs(status);
-    if (receivesInputs) stageCompound(name, result.remaining, local, workers);
-    return evaluateAutoCompounds(rules, carried).runnable || (receivesInputs && evaluateAutoCompounds(rules, local).runnable) || compoundStorageLeftovers(rules, carried,
+    const free = (status.items || []).filter(entry => !entry?.item).length;
+    const plan = planCompoundStorage(rules, local, workers, carried, free);
+    stageCompound(name, plan || []);
+    return plan?.length === 0 || compoundStorageLeftovers(rules, carried,
       local.concat(workers.flatMap(worker => worker.items || []))).length > 0;
   }
   function compound(name: string, status: Status | null | undefined): boolean {
@@ -163,12 +169,9 @@ export function createImprovementScheduler(state: SchedulerState, ports: Schedul
     if (state.merchantAutomations['automatic exchange'] === false) return false;
     const merchant = state.merchantCharacter;
     if (!merchant || status?.name !== merchant || !Array.isArray(status.items)) return false;
+    if ([state.merchantCurrent, ...state.merchantQueue].some(job => job?.reason === "exchange")) return false;
     const { lines, keys } = exchangeInventory(status.items);
-    if (
-      !lines.length ||
-      [state.merchantCurrent, ...state.merchantQueue].some((job) => job?.reason === "exchange")
-    )
-      return false;
+    if (!lines.length) return false;
     state.merchantQueue.push(
       ports.stamp({
         id: "merchant-" + ports.now() + "-" + ports.nextCommand(),

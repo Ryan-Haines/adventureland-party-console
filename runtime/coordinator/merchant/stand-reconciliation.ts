@@ -1,7 +1,9 @@
+import { activeStandSale } from "../../../dashboard/lib/stand-sale-price.ts";
 import type { Item, InventoryEntry } from "../contracts/item.ts";
 
 export interface ReconciledListing {
   id: string;
+  price?: number;
   item?: Item | null;
   state: string;
   slot?: number;
@@ -31,7 +33,7 @@ export function createStandReconciliation(
     const claimed = new Set<number>(),
       missing: ReconciledListing[] = [];
     state.standListings = state.standListings.filter((listing) => {
-      if (listing.state === "paused") return true;
+      if (!activeStandSale(listing)) return true;
       if (live.has(listing.id)) {
         listing.state = "live";
         listing.tradeSlot = live.get(listing.id);
@@ -73,6 +75,7 @@ export function createStandReconciliation(
     for (const listing of state.standListings) {
       if (
         listing.state !== "waiting" ||
+        !activeStandSale(listing) ||
         !listing.bankPack ||
         pending.some((entry) => entry.standListingId === listing.id)
       )
@@ -91,5 +94,5 @@ export function createStandReconciliation(
 }
 
 export function activeStandSales<T extends { state?: string }>(listings: T[]): T[] {
-  return listings.some(listing => listing.state === "paused") ? listings.filter(listing => listing.state !== "paused") : listings;
+  return listings.filter(activeStandSale);
 }

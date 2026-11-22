@@ -1,3 +1,4 @@
+import { npcWithdrawalStillPresent } from "../inventory/item-identity.ts";
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import type { Item, InventoryEntry } from "../contracts/item.ts";
 import {
@@ -84,6 +85,14 @@ export function createBankboiStorageRoutes<Transaction extends { bankboi: string
     const completed = new Set(body.completed || []);
     state.bankboiQueue = state.bankboiQueue.filter((request) => !completed.has(request.id));
     references.deposited(body.deposited || []);
+    // Native sorting can move every unsent stack. Release old automatic sale
+    // slots before restoration can dispatch another worker from this snapshot.
+    if (!body.error && Array.isArray(body.items)) {
+      const merchant = String(state.merchantCharacter);
+      const pending = state.withdrawals[merchant];
+      if (pending) state.withdrawals[merchant] = pending.filter(mark => !mark.autoNpcRuleKey ||
+        mark.pack !== 'bankboi:' + entry.name || npcWithdrawalStillPresent(mark, body.items));
+    }
     persistCraftDeposits(body.deposited);
   }
   function persistCraftDeposits(deposits: StorageDeposit[] = []): void {

@@ -8,7 +8,7 @@ const coordinator = require('./helpers/coordinator-source.cjs').coordinatorSourc
 function runtime(bank) {
   const calls = [];
   const character = { bank, items: Array(42).fill(null), level: 1 };
-  const r = vm.createContext({ character, G: { items: { leather: { e: 40, name: 'Leather' } } },
+  const r = vm.createContext({ character, runtimeCurrent: () => true, root: {__merchantActiveJob: {}}, freeInventorySlots: () => character.items.filter(item => !item).length, G: { items: { leather: { e: 40, name: 'Leather' } } },
     merchantMassBuff:async()=>{},itemQuantity: item => item && (item.q || 1),
     merchantVisitBank: async () => calls.push('bank'),
     bank_retrieve: async (pack, slot) => {
@@ -160,7 +160,9 @@ test('confirmed exchanges checkpoint remaining work before returning to bank', a
   const checkpoint = calls.findIndex(call => call.url === '/merchant/exchange-progress');
   assert.ok(checkpoint > 0);
   assert.equal(calls[checkpoint].body.remaining.length, 0);
-  assert.equal(calls[checkpoint + 1], 'bank');
+  const returnToBank = calls.lastIndexOf('bank');
+  assert.ok(returnToBank > checkpoint);
+  assert.ok(calls.slice(checkpoint, returnToBank).every(call => call.url === '/merchant/exchange-progress' && !call.body.remaining.length));
 });
 
 test('completed exchange resumes reward banking without repeating NPC exchange', async () => {

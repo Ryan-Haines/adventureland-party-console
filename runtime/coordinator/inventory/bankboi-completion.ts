@@ -6,6 +6,7 @@ export interface StorageReference extends InventoryEntry {
   pack?: string;
   bankPack?: string;
   bankSlot?: number;
+  improvement?: string;
   mailJobId?: string;
   craftJobId?: string;
   allocationId?: string;

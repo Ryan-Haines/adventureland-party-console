@@ -53,11 +53,9 @@ export function evaluateAutoCompounds(rules: readonly CompoundRule[], entries: E
   return { remaining, completed, runnable };
 }
 
-function exchangeQuantity(entries: Entries, rule: ExchangeRule, level: number): number {
-  return entries.reduce((sum, entry) => {
-    if (entry?.item?.name !== rule.name || itemLevel(entry) !== level || entry.item.l) return sum;
-    return sum + (Number(entry.item.q) || 1);
-  }, 0);
+function exchangeQuantity(entry: Entries[number], rule: ExchangeRule, level: number): number {
+  if (entry?.item?.name !== rule.name || itemLevel(entry) !== level || entry.item.l || entry.item.b) return 0;
+  return Number(entry.item.q) || 1;
 }
 
 /** Plans only available complete exchanges; queue ownership stays with the scheduler. */
@@ -65,6 +63,7 @@ export function planAutoExchanges(
   rules: Readonly<Record<string, ExchangeRule>>,
   catalog: readonly ExchangeChoice[],
   entries: Entries,
+  remote: Entries = [],
 ) {
   const lines: ExchangeLine[] = [],
     keys: string[] = [];
@@ -74,12 +73,18 @@ export function planAutoExchanges(
       (entry) => !entry.reward && entry.id === rule.name && (Number(entry.level) || 0) === level,
     );
     if (!choice) continue;
-    const quantity = Math.floor(
-      exchangeQuantity(entries, rule, level) / Math.max(1, Number(choice.required) || 1),
-    );
+    const required = Math.max(1, Number(choice.required) || 1);
+    let available = entries.reduce((sum, entry) => sum + exchangeQuantity(entry, rule, level), 0);
+    // Retrieve only through the first whole stack that completes a batch.
+    for (const entry of remote) {
+      if (available >= required) break;
+      available += exchangeQuantity(entry, rule, level);
+    }
+    const quantity = Math.floor(available / required);
     if (quantity <= 0) continue;
     lines.push({ id: rule.name, level, quantity });
     keys.push(key);
+    if (remote.length) break; // Finish this storage handoff before requesting another item.
   }
   return { lines, keys };
 }

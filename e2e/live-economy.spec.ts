@@ -1506,3 +1506,34 @@ for(const automatic of [false,true]) test(`${automatic?'automatic':'manual'} com
   await live.admin(`output=(()=>{const hook=globalThis.__manualBankCompoundHook;if(hook){hook.socket.removeListener('compound',hook.wrapped);hook.socket.on('compound',hook.original);delete globalThis.__manualBankCompoundHook;}return true;})()`).catch(()=>{});
  }
 });
+
+test('ready Amulet of Spooks triplet proceeds past stale bank compound receipts', async ({live}, info) => {
+  test.setTimeout(240_000);
+  const amulet = {name:'spookyamulet', level:1};
+  const skull = {name:'talkingskull', level:3};
+  const stale = {id:'group-1', name:'Group 1', items:[35,36,37].map(slot =>
+    ({slot, item:skull, storage:{pack:'items1', slot}, storageReceived:true}))};
+  await live.post('/merchant/force-stand',{enabled:true});
+  await live.restoreHistoricalSettings(() => ({compounds:{[merchant]:[stale]}}));
+  await seed(live, {10:amulet, 11:amulet, 12:amulet, 13:{name:'cscroll1', q:3}});
+  await live.post('/command',{character:merchant,type:'compound-mark',slot:10,item:amulet});
+  const state = await live.state(), groups = state.compounds[merchant];
+  expect(groups).toHaveLength(2);
+  await live.clients[merchant].run(`(()=>{globalThis.__amuletReceipts=[];parent.socket.on('game_response',data=>{
+    const response=data?.response||data;if(['compound_success','compound_fail'].includes(response))globalThis.__amuletReceipts.push(response);
+  });return true;})()`);
+  const before=await economy(live);
+  try {
+    await live.post('/merchant/force-stand',{enabled:false});
+    await expect.poll(async()=>{
+      const s=await live.state(), receipts=await live.clients[merchant].run('globalThis.__amuletReceipts');
+      const bag=(await economy(live)).characters[merchant].items;
+      return {groups:s.compounds[merchant],receipts:receipts.length,
+        inputs:bag.filter(item=>item?.name===amulet.name&&item.level===1).length,
+        resultMatchesReceipt:bag.filter(item=>item?.name===amulet.name&&item.level===2).length===(receipts[0]==='compound_success'?1:0),
+        scrolls:quantity(bag,'cscroll1')};
+    },{timeout:150_000}).toEqual({groups:[stale], receipts:1, inputs:0, resultMatchesReceipt:true, scrolls:2});
+  } finally {
+    await record(live,info,'native-amulet-compound-with-stale-bank-group',before,{groups,receipts:await live.clients[merchant].run('globalThis.__amuletReceipts')});
+  }
+});

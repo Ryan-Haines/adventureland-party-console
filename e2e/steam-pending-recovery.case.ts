@@ -15,7 +15,12 @@ test('waiting Steam primary exposes retry and connection setup', async ({ page }
     } });
   });
   await page.route('**/party-api/steam/action', async route => {
-    requests.push(route.request().postDataJSON());
+    const request = route.request().postDataJSON();
+    requests.push(request);
+    if (request.action === 'headless') {
+      await route.fulfill({ json: { ok: true } });
+      return;
+    }
     await route.fulfill({ status: 409, json: { error: 'Adventure Land is already running without its automation connection. Close it once, then retry.' } });
   });
   await page.goto('/');
@@ -23,8 +28,12 @@ test('waiting Steam primary exposes retry and connection setup', async ({ page }
   await expect(card.getByRole('link', { name: 'Open connection setup' })).toHaveAttribute('href', '/setup');
   await card.getByRole('button', { name: 'Retry Steam connection' }).click();
   await expect(page.getByText(/already running without its automation connection/).first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
   await expect(card.getByRole('button', { name: 'Retry Steam connection' })).toBeEnabled();
-  expect(requests).toEqual([{ character: 'GDroidPT', action: 'primary' }]);
+  await card.getByRole('button', { name: 'Load headless' }).click();
+  await expect(card.getByRole('button', { name: 'Load headless' })).toBeEnabled();
+  expect(requests).toEqual([{ character: 'GDroidPT', action: 'primary' }, { character: 'GDroidPT', action: 'headless' }]);
   await info.attach('steam-pending-recovery', { body: await page.screenshot(), contentType: 'image/png' });
   await info.attach('steam-retry-requests', { body: Buffer.from(JSON.stringify(requests)), contentType: 'application/json' });
 });

@@ -1,4 +1,5 @@
 "use client";
+import { activeStandSale } from "../../lib/stand-sale-price";
 import { ExchangeItemSelection } from './exchange-item-selection';
 import {loadCharacterInspection} from "./load-character-inspection";
 import { createContext, lazy, useContext, useEffect, useState, type ReactNode } from "react";
@@ -82,7 +83,7 @@ function PartyItemDetailsConnected({ base }: { base: PartyConsoleModel }) {
                 same(mark.item, entry.item)
               : !mark.bankPack && mark.slot === entry.slot && same(mark.item, entry.item),
           );
-          if (!existing && (state.standListings || []).length >= 16)
+          if (!existing && (state.standListings || []).filter(activeStandSale).length >= 16)
             return setActionError("Merchant stand is full (16/16)");
           setStandItem({
             id: existing?.id,

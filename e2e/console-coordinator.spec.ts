@@ -1,5 +1,40 @@
 import { test, expect } from './fixtures';
 
+test.describe('reserved bank compound recovery',()=>{
+  test.use({merchantManaged:true,savedRecords:[{party_dashboard_settings_state_v1:{
+    merchantQueue:[{id:'historical-compound',target:'M',reason:'manual compounds',queuedAt:1,priority:101}],
+    compounds:{M:[{id:'group-1',name:'Group 1',items:[0,1,2].map(slot=>({slot,item:{name:'talkingskull',level:3},storage:{pack:'items1',slot:35+slot},storageReceived:true}))}]},
+  }}]});
+  test('missing reserved compound inputs pause instead of immediately dispatching again',async({app},info)=>{
+    // Declared historical marks and worker failure reproduce stale withdrawal
+    // receipts. The real coordinator must retain intent and reject re-admission
+    // across fresh heartbeat pulses; no native compound outcome is fabricated.
+    const initial=await app.state();
+    const configured=await fetch(app.url+'/party-api/merchant/routine-priorities',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.url},body:JSON.stringify({priorities:{},enabled:Object.fromEntries(Object.keys(initial.merchantAutomations).filter(name=>name!=='manual compounds').map(name=>[name,false]))})});
+    expect(configured.ok).toBe(true);
+    if(initial.merchantCurrent && initial.merchantCurrent.reason!=='manual compounds')
+      await app.deliverMerchantCompletion({jobId:initial.merchantCurrent.id,commandId:initial.merchantCurrent.commandId,success:true});
+    await expect.poll(async()=>(await app.state()).merchantCurrent?.reason).toBe('manual compounds');
+    const before=await app.state(),job=before.merchantCurrent;
+    const error='Reserved bank compound input moved before production';
+    await app.deliverMerchantCompletion({jobId:job.id,commandId:job.commandId,success:false,error});
+    const samples:any[]=[];
+    await expect.poll(async()=>{
+      const s=await app.state();samples.push({at:Date.now(),current:s.merchantCurrent,queue:s.merchantQueue,activity:s.merchantActivity});
+      return s.merchantActivity.some((entry:any)=>entry.message==='Compound recovery paused; waiting for matching inventory or compound intent to change');
+    }).toBe(true);
+    const seenAt=(await app.state()).characters.M.seenAt;
+    await expect.poll(async()=>{
+      const s=await app.state();
+      expect(s.merchantCurrent?.reason).not.toBe('manual compounds');
+      expect(s.merchantQueue.filter((j:any)=>j.reason==='manual compounds')).toHaveLength(0);
+      expect(s.compounds.M).toEqual(before.compounds.M);
+      return s.characters.M.seenAt>=seenAt+3000;
+    }).toBe(true);
+    await info.attach('reserved-compound-recovery-ledger',{body:JSON.stringify({before,samples,after:await app.state()}),contentType:'application/json'});
+  });
+});
+
 // Coordinator hot paths through the real coordinator (docs/efficiency.md, Coordinator).
 
 test.describe('Hunt event realm ownership',()=>{

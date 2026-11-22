@@ -45,7 +45,7 @@ export function loadCoordinatorDependencies(require: NodeRequire) {
   const createFarmingNavigation: import("./navigation-platform.ts").CreateFarmingNavigation = require("../../scripts/farming-navigation.cjs");
   const legacyConvoy: import("./convoy-platform.ts").ConvoyNavigationPlatform = require("../../scripts/convoy-navigation.cjs");
   const merchantInventoryStacks: import("./storage-platform.ts").InventoryStacksPlatform = require("../../scripts/merchant-inventory-stacks.cjs");
-  const bankStackRouting: import("./storage-platform.ts").BankStackRoutingPlatform = require("../../scripts/bank-stack-routing.cjs");
+  const bankStackRouting: import("./storage-platform.ts").BankStackRoutingPlatform = require("../../.build/runtime/bank-stack-routing.cjs");
   const createMailInbox: import("./mail-platform.ts").CreateMailInbox = require("../../scripts/mail-inbox.cjs");
   const {
     validFarmingLocation,

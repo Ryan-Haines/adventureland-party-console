@@ -1,3 +1,16 @@
+Reserved bank compound input failures use an inventory/intent recovery block.
+Unchanged marks cannot immediately recreate the failed manual-compound job;
+gold, potion and heartbeat changes do not release it. Keep the unresolved marks
+for review instead of selecting other matching copies. Validate the console
+reserved-compound recovery journey. Stage the completed candidate; activation
+remains explicit.
+
+An outbound BankBoi staging reservation blocks new retrievals, but permits an
+inbound-only drain of the other unreserved transfer cells. This breaks the full
+merchant/full transfer-row capacity deadlock while retaining the pending source.
+Validate the persisted-timeout reserve-drain journeys, including an outbound
+reservation and restart. Stage the completed candidate; activation remains explicit.
+
 Cipher gathering chooses an ordinary farmable spawn using the same map and
 geometry restrictions as the farming catalog. Instanced templates such as
 `dungeon0` must never become a Goo gathering destination. Validate the native
@@ -1098,6 +1111,16 @@ with repeatable artifacts; see [the testing guide](../../docs/testing.md).
 Write failure modes before any necessary isolated test. Remaining named-function fixtures derive their source from maintained
 TypeScript, never the installed host. Full-host tests cover both source and bundle;
 launcher tests execute the bundle with Windows and Linux directory inputs.
+
+## Windows sign-in startup
+
+Run `scripts/install-console-startup.ps1` to install a hidden, current-user
+Windows Startup shortcut, or pass `-Remove` to uninstall it. Run the ordinary
+launcher interactively once first to save the Windows-user-encrypted session.
+Automatic startup runs after sign-in, skips an occupied console port, and uses
+the supported launcher (including its newest-completed-candidate selection).
+Diagnostics append to `.build/startup/logon.log`. Reinstall the shortcut if the
+checkout moves. This does not configure a pre-login Windows service.
 
 ## Manual edit, build and restart
 
@@ -2410,6 +2433,17 @@ Older candidates fall back to the updater label, which refreshes checkout metada
 while running. Validate `console-build-release-menu`, `console-build-version-label`,
 and `console-build-artifact-header`, plus the existing deployment menu journey.
 Build and stage the completed candidate; activation remains explicit.
+
+## Merchant reserve and BankBoi creation
+
+Automatic exchanges preserve three inventory cells across input retrieval, native
+splits and reward handling. Manual exchange orders retain their physical-capacity
+rules. Merchant withdrawal, threshold collection and automatic NPC retrieval wait
+for capacity above the reserve. Authorized deposit recovery can clear space and
+a confirmed full-bank trip with no completed marks waits for changed contents
+or deposit marks. BankBoi creation waits for current merchant work and a fresh
+exit from the bank before using the account API. Validate these journeys in
+live-exchange-capacity. Stage the completed candidate for explicit activation.
 
 ## Exchange inventory capacity
 

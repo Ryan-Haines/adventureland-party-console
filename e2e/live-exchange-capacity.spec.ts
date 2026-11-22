@@ -42,11 +42,12 @@ test('merchant capacity sells before higher priority upgrades when only the luck
   }
 });
 
-for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRewards?'preserves protected rewards and resumes after space changes':'banks rewards mid-order and resumes across restart'}`,async({live},info)=>{
+for(const mode of ['bank','protected','automatic'])test(`exchange capacity ${mode==='automatic'?'reserves three cells for automatic rewards':mode==='protected'?'preserves protected rewards and resumes after space changes':'banks rewards mid-order and resumes across restart'}`,async({live},info)=>{
   // Failure inventory: split into a full bag; rewards banked only at order end;
   // duplicate/lost consumption after restart; banked protected gear; dropped
   // manual intent or an immediate retry loop when no safe deposit exists.
   test.setTimeout(480_000);
+  const automatic=mode==='automatic', protectedRewards=mode!=='bank', locked=automatic?36:39;
   const checkpoints:any[]=[];
   await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'automatic exchange':false,'auto upgrade':false,'inventory cleanout':false}});
   if(protectedRewards)await live.restoreHistoricalSettings(()=>({autoUpgradeMarks:{[merchant]:{'jacko@+0':{tiers:1,quantity:-1}}}}));
@@ -54,9 +55,9 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
   const seeded=await live.admin(`output=(()=>{const p=get_player('${merchant}');
     if(p.isize!==42)throw Error('Scenario requires the reported 42-slot inventory');
     globalThis.__capacityCandyDrops=D.drops.candy0;D.drops.candy0=[[1,'jacko',1]];
-    p.items=Array(42).fill(null);for(let i=0;i<39;i++)p.items[i]={name:'helmet',level:0,l:'l'};
+    p.items=Array(42).fill(null);for(let i=0;i<${locked};i++)p.items[i]={name:'helmet',level:0,l:'l'};
     p.items[0]={name:'stand0',l:'l'};p.items[1]={name:'hpot1',q:9999,l:'l'};p.items[2]={name:'mpot1',q:9999,l:'l'};
-    p.items[39]={name:'candy0',q:6};cache_player_items(p);resend(p,'reopen+cid');
+    p.items[${locked}]={name:'candy0',q:6};cache_player_items(p);resend(p,'reopen+cid');
     return {items:p.items,exchanges:p.p.stats.exchanges.candy0||0,table:D.drops.candy0};})()`);
   const native=()=>live.admin(`output=(async()=>{const p=get_player('${merchant}'),u=p.user||(await db.collection('user').findOne({_id:p.owner})).info;
     const bank=Object.entries(u).filter(([k,v])=>/^items[0-9]+$/.test(k)&&Array.isArray(v)).flatMap(([,v])=>v);
@@ -64,7 +65,7 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
     return {candy:count(p.items,'candy0'),jacko:count(p.items,'jacko'),bankJacko:count(bank,'jacko'),
       locked:p.items.filter(i=>i?.l).length,exchanges:p.p.stats.exchanges.candy0||0,map:p.map,free:p.items.filter(i=>!i).length};})()`);
   const before=await native();
-  await expect.poll(async()=>(await live.state()).characters[merchant]?.items?.filter((entry:any)=>entry?.item).length).toBe(40);
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.items?.filter((entry:any)=>entry?.item).length).toBe(locked+1);
   await live.clients[merchant].page.context().route('**/party-api/merchant/exchange-progress',async route=>{
     const body=route.request().postDataJSON(),response=await route.fetch();
     checkpoints.push({at:Date.now(),body,status:response.status()});
@@ -72,7 +73,10 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
   });
   let order:any;
   try{
-    order=await live.post('/merchant/exchange-order',{exchanges:[{id:'candy0',level:0,quantity:6}]});
+    if(automatic){
+      await live.post('/command',{character:merchant,type:'auto-exchange',slot:-1,item:{name:'candy0',level:0}});
+      order=await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'automatic exchange':true}});
+    }else order=await live.post('/merchant/exchange-order',{exchanges:[{id:'candy0',level:0,quantity:6}]});
     if(protectedRewards){
       await expect.poll(async()=>{
         const s=await live.state();
@@ -83,7 +87,7 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
       const pending=blocked.merchantQueue.filter((job:any)=>job.reason==='exchange');
       expect(pending).toHaveLength(1);expect(pending[0].exchanges).toEqual([{id:'candy0',level:0,quantity:4}]);
       expect(typeof pending[0].exchangeCapacitySignature).toBe('string');
-      expect(physical).toMatchObject({candy:4,jacko:2,bankJacko:before.bankJacko,exchanges:before.exchanges+2,locked:39});
+      expect(physical).toMatchObject({candy:4,jacko:2,bankJacko:before.bankJacko,exchanges:before.exchanges+2,locked,free:automatic?3:0});
       await live.restartCoordinator();
       await expect.poll(async()=>{
         const s=await live.state(),job=s.merchantQueue.find((entry:any)=>entry.reason==='exchange');
@@ -114,7 +118,7 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
     const after=await native();
     expect(after.exchanges-before.exchanges).toBe(6);
     expect(after.jacko+after.bankJacko-before.jacko-before.bankJacko).toBe(6);
-    expect(after.locked).toBe(protectedRewards?35:39);
+    expect(after.locked).toBe(protectedRewards?locked-4:locked);
     if(protectedRewards){expect(after.jacko).toBe(6);expect(after.bankJacko).toBe(before.bankJacko);}
     else{expect(after.jacko).toBe(0);expect(after.bankJacko-before.bankJacko).toBe(6);}
   }finally{
@@ -122,4 +126,55 @@ for(const protectedRewards of [false,true])test(`exchange capacity ${protectedRe
     await info.attach('native-exchange-capacity-ledger',{body:JSON.stringify({seeded,before,order,checkpoints,after:await native(),state:await live.state()}),contentType:'application/json'});
     await live.admin('D.drops.candy0=globalThis.__capacityCandyDrops;delete globalThis.__capacityCandyDrops;output=true');
   }
+});
+
+test('BankBoi creation takes a banked merchant outside and confirms one new character',async({live},info)=>{
+  test.setTimeout(240_000);
+  const prefix='ExitVault';
+  await live.post('/dashboard-preferences',{bankboiPrefix:prefix});
+  const spawn=await live.admin('output=G.maps.bank.spawns[0]');
+  await live.post('/command',{character:merchant,type:'character-travel',location:{map:'bank',x:spawn[0],y:spawn[1]}});
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.map,{timeout:90_000}).toBe('bank');
+  const before=await live.state();
+  expect(await live.admin(`output=!!get_player('${merchant}').user`)).toBe(true);
+  const result=await live.post('/bankbois/create',{});
+  expect(result.bankboi.name).toMatch(/^ExitVault[0-9]+$/);
+  const after=await live.state();
+  expect(after.characters[merchant].map).not.toMatch(/^bank(?:_b|_u)?$/);
+  expect(after.bankbois.filter((b:any)=>b.name===result.bankboi.name)).toHaveLength(1);
+  const owned=await live.admin(`output=(async()=>{const p=get_player('${merchant}'),u=await db.collection('user').findOne({_id:p.owner});return u.info.characters.map(c=>c.name)})()`);
+  expect(owned.filter((name:string)=>name===result.bankboi.name)).toHaveLength(1);
+  await info.attach('bank-exit-and-creation',{body:JSON.stringify({before:before.characters[merchant].map,after:after.characters[merchant].map,result,owned}),contentType:'application/json'});
+});
+
+test('marked withdrawal waits at the three-slot reserve and resumes after capacity changes',async({live},info)=>{
+  test.setTimeout(240_000);
+  await live.admin(`output=(async()=>{const p=get_player('${merchant}');const pack=Array.from({length:42},()=>({name:'coat',level:0}));const first=pack.slice();first[0]={name:'leather',q:13};await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items0':first,'info.items1':pack}});return true})()`);
+  await live.post('/command',{character:merchant,type:'bank'});
+  const leather=(s:any)=>Object.entries(s.bank?.packs||{}).flatMap(([pack,entries])=>
+    (entries as any[]).filter(entry=>entry?.item?.name==='leather').map(entry=>({pack,...entry})))[0];
+  await expect.poll(async()=>leather(await live.state())?.item.q,{timeout:90_000}).toBe(13);
+  const source=leather(await live.state());
+  await live.admin(`output=(()=>{const p=get_player('${merchant}');p.items[35]={name:'jacko',level:0};for(let i=0;i<39;i++)if(!p.items[i])p.items[i]={name:'helmet',level:0,l:'l'};cache_player_items(p);resend(p,'reopen+cid');return true})()`);
+  await expect.poll(async()=>(await live.state()).characters[merchant].items.filter((e:any)=>e?.item).length).toBeGreaterThanOrEqual(39);
+  await live.post('/command',{character:merchant,type:'mark',slot:35,item:{name:'jacko',level:0}});
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{withdrawals:true}});
+  await live.post('/command',{character:merchant,type:'withdraw',pack:source.pack,slot:source.slot,item:source.item});
+  const fullTrips=(s:any)=>s.merchantActivity.filter((a:any)=>a.message.startsWith('Bank full; deferred deposit of jacko'));
+  await expect.poll(async()=>fullTrips(await live.state()).length,{timeout:90_000}).toBe(1);
+  const blocked=await live.state(),start=blocked.characters[merchant].seenAt;
+  const dispatches=(s:any)=>s.merchantActivity.filter((a:any)=>a.message==='Merchant dispatched to retrieve marked bank withdrawals');
+  await expect.poll(async()=>{
+    const s=await live.state();
+    expect(fullTrips(s)).toHaveLength(1);
+    expect(dispatches(s)).toHaveLength(0);
+    expect(s.withdrawals[merchant]).toHaveLength(1);
+    return s.characters[merchant].seenAt-start;
+  },{timeout:100_000}).toBeGreaterThan(70_000);
+  await live.admin(`output=(()=>{const p=get_player('${merchant}');for(let i=0,n=0;i<39&&n<6;i++)if(p.items[i]?.name==='helmet'&&p.items[i].l){p.items[i]=null;n++}cache_player_items(p);resend(p,'reopen+cid');return true})()`);
+  await expect.poll(async()=>{
+    const s=await live.state();
+    return !s.withdrawals[merchant]?.length && s.characters[merchant].items.some((e:any)=>e?.item?.name==='leather'&&e.item.q===13) && dispatches(s).length===1;
+  },{timeout:90_000}).toBe(true);
+  await info.attach('withdrawal-reserve-recovery',{body:JSON.stringify({blocked,after:await live.state()}),contentType:'application/json'});
 });

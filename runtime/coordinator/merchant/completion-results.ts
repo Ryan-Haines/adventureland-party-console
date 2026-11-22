@@ -1,3 +1,4 @@
+import { compoundRequestKey } from './upgrade-recovery.ts';
 import { acknowledgeDelivery, deliveryMatches, deliveryReady } from './delivery-recovery.ts';
 import { pruneLuckCasts } from "./luck.ts";
 import { requestObject, requestText } from "../http/contracts.ts";
@@ -100,7 +101,12 @@ export function createCompletionResults(state: CompletionState, ports: Completio
         type: "apply-stat-scrolls",
         items: state.statScrolls[String(name)] || [],
       };
-    if (body.compoundsResolved) state.compounds[String(name)] = [];
+    if (body.compoundsResolved) {
+      const selected = state.merchantCurrent?.compoundRequestKeys;
+      state.compounds[String(name)] = Array.isArray(selected)
+        ? (state.compounds[String(name)] || []).filter(group => !selected.includes(compoundRequestKey(group)))
+        : [];
+    }
   }
   function success(name: string | null, body: CompletionReport): void {
     luck(body);

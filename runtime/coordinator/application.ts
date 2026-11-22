@@ -13,7 +13,8 @@ import { realmOperationOwnsCharacter } from "./characters/realm-switch.ts";
 import type { CatalogDefinitions } from './status/catalog-validation.ts';
 import type { WebMiddleware, WebRouter, WebMonitor } from "./infrastructure/web-platform.ts";
 import type { CoordinatorApplicationPlatform } from "./infrastructure/application-platform.ts";
-import { installProductionRoutes } from "./inventory/production.ts";
+import { merchantEventReserved } from "./merchant/event-control.ts";
+import { installProductionRoutes, pendingProduction } from "./inventory/production.ts";
 import { migrateSharedRules, installSharedRuleRoutes, sharedMember } from "./inventory/shared-rules.ts";
 import { loadCoordinatorGeometry } from './navigation/planner-geometry.ts';
 import { initializeStandLocation, standLocationRoute } from './merchant/stand-location.ts';
@@ -374,6 +375,7 @@ export function startCoordinatorApplication(
         anniversary: merchantAnniversaryControl,
         routinePriority: merchantRoutinePriority,
         priority: merchantJobPriority,
+        capacitySignature: merchantCapacitySignature,
         capacityBlocked: merchantTransferCapacityBlocked,
         collectionReady: markedCollectionReady,
         pick: pickJobByPriority,
@@ -654,6 +656,56 @@ export function startCoordinatorApplication(
           return postage.mailPostage(html);
         },
       });
+    let bankboiCreationHold = false;
+    async function createBankboiOutsideBank(create: () => Promise<string>) {
+      const merchant = party.merchantCharacter;
+      const inBank = (map?: string) => !!map && ["bank","bank_b","bank_u"].includes(map);
+      if (!merchant) return create();
+      const initial = party.statuses[merchant];
+      if (!inBank(initial?.map) || initial.seenAt < Date.now() - 10_000) {
+        try { return await create(); }
+        catch (error) {
+          if (!(error instanceof Error) || error.message !== 'cant_make_changes_while_in_bank') throw error;
+        }
+      }
+      bankboiCreationHold = true;
+      let exitId: number | undefined;
+      try {
+        merchantLog("Waiting for merchant to leave the bank for BankBoi creation", "info");
+        const started = Date.now(), deadline = started + 90_000;
+        let rejectedAt = 0;
+        while (Date.now() < deadline && party.merchantCharacter === merchant) {
+          const status = party.statuses[merchant];
+          const fresh = status?.map && status.seenAt >= started && status.seenAt >= Date.now() - 10_000;
+          if (fresh && !status.rip && !party.merchantCurrent && !party.bankboiTransaction && !bankboiService.busy()) {
+            if (!inBank(status.map)) {
+              if (status.seenAt > rejectedAt) {
+                try { return await create(); }
+                catch (error) {
+                  if (!(error instanceof Error) || error.message !== 'cant_make_changes_while_in_bank') throw error;
+                  if (rejectedAt) throw new Error("The account is still banked. Move any other banked character outside and retry BankBoi creation.");
+                  rejectedAt = Date.now();
+                }
+              }
+              await new Promise(resolve => setTimeout(resolve, 250));
+              continue;
+            }
+            const command = party.commands[merchant];
+            if (exitId === undefined && !status.upgradeInventoryBusy && !pendingProduction(party.production).length &&
+                !consoleUpdate.blocksMerchant() && !realmOwnsMerchant() && !dungeonOwns(party, merchant) &&
+                !merchantEventReserved(party, Date.now()) && (!command || command.type === 'merchant-idle' || command.id === status.lastCommandId)) {
+              exitId = party.nextCommandId++;
+              party.commands[merchant] = {id: exitId, type: "bankboi-exit-bank"};
+            }
+          }
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        throw new Error("Merchant bank exit was not confirmed in time. Check its location and retry BankBoi creation.");
+      } finally {
+        if (exitId !== undefined && party.commands[merchant]?.id === exitId) delete party.commands[merchant];
+        bankboiCreationHold = false;
+      }
+    }
     const { creation: characterCreationRoutes, deletion: bankboiDeleteRoute } =
       coordinatorPolicies.createCoordinatorAccountCharacterActions(party, {
         now: () => Date.now(),
@@ -670,6 +722,7 @@ export function startCoordinatorApplication(
         assign: assignHeadlessSlot,
         persistBank: () => { adoptReservedBankboiCargo(); persistBankState(); },
         serviceBank: maybeStartBankboiService,
+        outsideBank: createBankboiOutsideBank,
         log: merchantLog,
       });
     const {
@@ -886,6 +939,7 @@ export function startCoordinatorApplication(
       fulfill: fulfillStandBid,
       clearUpgrades: clearResolvedUpgradeMarks,
       clearIncoming: clearIncomingCompoundReservation,
+      bankDepositBlocked: merchantDispatcher.bankDepositBlocked,
       capacitySignature: merchantCapacitySignature,
       persistALData,
       fetchMarket: aldataFetch,
@@ -1662,7 +1716,7 @@ export function startCoordinatorApplication(
       if (consoleUpdate.blocksMerchant() || realmOwnsMerchant()) return;
       merchantRecovery.expire(String(party.merchantCharacter));
       if (coordinatorPolicies.pruneIneligibleCollections(party, () => Date.now())) persistSettings();
-      merchantDispatcher.dispatch();
+      if (!bankboiCreationHold || pendingProduction(party.production).length) merchantDispatcher.dispatch();
     }
 
     function merchantAnniversaryControl() {
@@ -1679,7 +1733,7 @@ export function startCoordinatorApplication(
 
     function dispatchMerchantIdle() {
       if (consoleUpdate.blocksMerchant() || realmOwnsMerchant()) return;
-      merchantIdle.idle();
+      if (!bankboiCreationHold) merchantIdle.idle();
     }
 
     function stagingEventLive(name: string, event?: string): boolean {
@@ -2454,6 +2508,7 @@ export function startCoordinatorApplication(
     }
 
     async function maybeStartBankboiService() {
+      if (bankboiCreationHold && !party.bankboiTransaction) return;
       return bankboiService.start();
     }
     //attempts to softkill child processes

@@ -2,6 +2,7 @@ import { migrateRoutinePriorities, routineFor } from './routines.ts';
 export interface PrioritizedJob {
   /** A retained exchange waits for a physical capacity change, including after restart. */
   exchangeCapacitySignature?: string;
+  exchangeStorageSources?: import("../inventory/exchange-storage.ts").ExchangeStorageSource[];
   retryCount?: number;
   rendezvousRetryCount?: number;
   recoveryAttempts?: number;

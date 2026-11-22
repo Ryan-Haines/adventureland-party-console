@@ -118,8 +118,13 @@ export function ownMerchantCommand(
     ...purchaseDetails(job, inputs),
     ...marketplaceDetails(job, inputs),
     ...merchantSupplies(inputs),
+    ...(job.reason === 'auto compound' ? {
+      compoundStorageMarks: work.withdrawals,
+      merchantWithdrawals: [],
+    } : {}),
     ...(job.reason === 'auto npc withdrawals' ? {
-      merchantWithdrawals: work.withdrawals.filter(mark => requestObject(mark).autoNpcRuleKey),
+      npcSalePickup: true,
+      merchantWithdrawals: work.withdrawals.filter(mark => requestObject(mark).autoNpcRuleKey && !String(requestObject(mark).pack).startsWith('bankboi:')),
     } : {}),
     ...reasonDetails[job.reason]?.(job, inputs),
     ...improvements(work, status, true, inputs.bankboiItems),

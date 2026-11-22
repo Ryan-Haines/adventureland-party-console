@@ -15,6 +15,7 @@ interface CreationRoutePorts extends CharacterCreationPorts {
   assign(slot: number, name: string): void;
   persistBank(): void;
   serviceBank(): void;
+  outsideBank?(create: () => Promise<string>): Promise<string>;
   log(message: string, level: string, details?: unknown): void;
 }
 
@@ -88,7 +89,13 @@ export function createCharacterCreationRoutes(state: CreationState, ports: Creat
     bankboiBusy = true;
     ports.log("Creating the next available bankboi", "info");
     try {
-      const name = await creation.bankboi(state.bankboiPrefix);
+      const prefix = state.bankboiPrefix;
+      const create = () => {
+        if (ports.characterCount() >= ports.includedSlots)
+          throw new Error("all eight free character slots are occupied; no Shells were spent");
+        return creation.bankboi(prefix);
+      };
+      const name = await (ports.outsideBank ? ports.outsideBank(create) : create());
       state.bankbois[name] = {
         name,
         state: "provisioning",

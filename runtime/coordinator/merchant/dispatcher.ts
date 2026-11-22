@@ -1,3 +1,5 @@
+import { compoundRequestKey, nextCompoundBatch } from './upgrade-recovery.ts';
+import {createHash} from 'node:crypto';
 import { buyUpgradeOrder } from './commerce-progress.ts';
 import { hasMarkedWithdrawals } from './marked-withdrawals.ts';
 import { merchantJobReady } from './priority.ts';
@@ -49,6 +51,7 @@ export interface DispatchPorts {
   gatheringCooldown(mode: string): number | undefined;
   routinePriority(reason: string): number;
   priority(job: MerchantWork): number;
+  capacitySignature(name: string): string;
   capacityBlocked(job: MerchantWork): boolean;
   collectionReady(job: MerchantWork): boolean;
   pick(): MerchantWork | null;
@@ -70,18 +73,25 @@ export interface DispatchPorts {
 /** Assigns one job while preserving storage, event, gathering, and realm ownership. */
 export function createMerchantDispatcher(state: DispatchState, ports: DispatchPorts) {
   const realmCheck = createPartyRealmCheck(state, ports);
+  let lastCapacityBank: string | undefined;
   let capacityBankAt = -Infinity;
   let productionHold = '';
   let productionProbeAt = -Infinity;
   function clearCollectionCapacity(): boolean {
-    if (!state.queue.some(job => ports.capacityBlocked(job))) return false;
+    if (!state.queue.some(job => ports.capacityBlocked(job))) {
+      lastCapacityBank = undefined;
+      return false;
+    }
     const merchant = ports.merchant()!, work = ports.inputs().work(merchant);
     if (!work.marked.length || ports.now() - capacityBankAt < 60000) return false;
     const existing = state.queue.find(job => job.target === merchant && job.reason === "manual bank exchange");
     if (existing && !ready(existing)) return false;
     capacityBankAt = ports.now();
+    const signature = createHash('sha256').update(JSON.stringify(work.marked)).update(ports.capacitySignature(merchant)).digest('hex');
+    if (signature === lastCapacityBank) return false;
     if (existing) state.queue = state.queue.filter(job => job !== existing);
     const job = existing || ports.stamp({ id: "capacity-" + ports.nextCommand(), target: merchant, reason: "manual bank exchange", capacityRecovery: true });
+    job.capacityBankAttempt = signature;
     ports.log("Freeing merchant inventory for queued party cleanouts", "info");
     dispatchJob(job);
     return true;
@@ -218,7 +228,13 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
       });
     } else if (job.target === merchant) {
       planPonty(job);
-      ports.command(merchant, ownMerchantCommand(commandId, job, status, inputs));
+      const command = ownMerchantCommand(commandId, job, status, inputs);
+      if (job.reason === 'manual compounds' && Array.isArray(command.compounds)) {
+        const groups = nextCompoundBatch(command.compounds, status.items || []);
+        command.compounds = groups;
+        state.current.compoundRequestKeys = groups.map(compoundRequestKey);
+      }
+      ports.command(merchant, command);
       ports.log(ownCommandDescription(job), "info");
     } else {
       ports.command(merchant, partyMerchantCommand(commandId, job, status, inputs));
@@ -286,8 +302,9 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
     if (realmCheck.advance()) return;
     state.queue.forEach(realmCheck.eligibility);
     if (!available()) return;
-    if (clearCollectionCapacity()) return;
     const jobs = state.queue.filter(ready);
+    if (!jobs.some(job => job.reason === 'auto npc withdrawals' || job.reason === 'auto npc sales' || job.reason === 'npc sales') &&
+        clearCollectionCapacity()) return;
     if (gatherBefore(jobs)) return;
     if (!jobs.length) {
       ports.idle();
@@ -307,5 +324,5 @@ export function createMerchantDispatcher(state: DispatchState, ports: DispatchPo
     if (status && !realmCheck.begin(job, status)) assign(job, status);
   }
 
-  return { dispatch };
+  return { dispatch, bankDepositBlocked: (signature: string) => { lastCapacityBank = signature; } };
 }

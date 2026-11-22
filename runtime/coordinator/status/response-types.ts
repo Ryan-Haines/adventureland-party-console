@@ -62,7 +62,6 @@ export const heartbeatStateFields = [
   "luckySlotCharacterIds",
   "gatheringNoTool",
   "gatheringCooldowns",
-  "standListings",
   "scatterMonsterTypes",
   "scatterEpoch",
   "partyFarmingMonsterType",
@@ -73,6 +72,7 @@ export const heartbeatStateFields = [
 ] as const;
 
 export interface HeartbeatState extends Record<(typeof heartbeatStateFields)[number], unknown> {
+  standListings?: { state?: string; price?: number }[];
   nextCommandId: number;
   eventLimitsByCharacter?: import('../../../dashboard/lib/event-policy.ts').EventFormation['eventLimitsByCharacter'];
   eventSelectionsByCharacter?: Record<string, string[]>;

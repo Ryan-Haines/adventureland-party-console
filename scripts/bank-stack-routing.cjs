@@ -2,6 +2,8 @@ const {stackDepositPlan} = require('../runtime/bank-stacks.ts');
 const {bankStagingReserved} = require('../runtime/coordinator/inventory/reserved-cargo.ts');
 const {entryMeta} = require('../runtime/coordinator/inventory/catalog-meta.ts');
 const {retryableStorageError} = require('../runtime/coordinator/inventory/storage-retry.ts');
+const {matchesExchangeSource} = require('../runtime/coordinator/inventory/exchange-storage.ts');
+const {outgoingStagingDrain} = require('../runtime/coordinator/inventory/staging-drain.ts');
 // Reports carry per-copy meta, so the stack size comes from merchantCatalog.
 const stackLimit = (entry, catalog) => Number(entryMeta(catalog, entry)?.definition?.s) || 1;
 // A partial stack has one preferred home across physical and virtual panes.
@@ -79,11 +81,34 @@ function servicePlan(party, { includeCoolingDown = false } = {}) {
     (requests || []).some(request => request.pack === 'items1' && request.slot === slot));
   const staged = (party.bankboiQueue || []).filter(request => request.state === 'staged' && !reserved(request.slot));
   const reserve = party.bankSnapshot?.packs?.items1;
-  const freeReserve = Array.from({length:7},(_,i)=>35+i).filter(slot => !reserve?.[slot]).length;
+  const freeReserve = Array.from({length:7},(_,i)=>35+i).filter(slot => !reserve?.[slot] && !reserved(slot)).length;
   const outgoing = Array.from({length:7},(_,i)=>35+i).some(slot => reserve?.[slot] && reserved(slot));
-  // The merchant must finish the outbound handoff before any other worker
-  // borrows its slot, even when other staging slots still have free space.
-  if (outgoing) return null;
+  if (outgoing || !freeReserve) {
+    const drain = outgoingStagingDrain(workers, staged, routes, available, accepts);
+    if (drain) return drain;
+    // A specialized reservation may stay occupied across jobs. Stage only the
+    // sources an exchange actually needs, and leave the occupied cell alone.
+    const sources = [party.merchantCurrent, ...(party.merchantQueue || [])]
+      .filter(job => job?.reason === 'exchange' && job.target === merchant &&
+        !(job.autoExchangeKeys?.length && party.merchantAutomations?.['automatic exchange'] === false))
+      .flatMap(job => job.exchangeStorageSources || []);
+    const localSale = withdrawals.some(request => request.autoNpcRuleKey && !request.pack.startsWith('bankboi:'));
+    const bag = party.statuses?.[merchant]?.items;
+    const canStageSale = party.merchantAutomations?.['auto npc sales'] !== false && !localSale &&
+      Array.isArray(bag) && (bag.some(entry => !entry?.item) || (party.marked?.[merchant] || []).length > 0);
+    const compoundInput = request => request.improvement === "auto compound" && party.merchantAutomations?.["auto compound"] !== false;
+    const needed = withdrawals.filter(request => compoundInput(request) || sources.some(source => matchesExchangeSource(source, request)) ||
+      (canStageSale && request.autoNpcRuleKey && party.autoNpcSales?.[request.autoNpcRuleKey]));
+    const candidate = workers.find(worker => available(worker) && needed.some(request => request.pack === 'bankboi:' + worker.name));
+    if (!freeReserve) {
+      // Exchange full worker and transfer cells in one bank operation.
+      const sale = candidate && needed.find(request => (request.autoNpcRuleKey || compoundInput(request)) && request.pack === 'bankboi:' + candidate.name);
+      const inbound = sale && staged.find(request => identity(request.item) !== identity(sale.item) &&
+        !request.item.l && !request.item.b && (!routes[identity(request.item)] || routes[identity(request.item)].owner === candidate.name));
+      if (inbound) return {candidate, routes, requests: [inbound], retrievals: [sale]};
+      if (outgoing) return null;
+    } else return candidate ? {candidate, routes, requests: [], retrievals: needed.filter(request => request.pack === 'bankboi:' + candidate.name).slice(0, freeReserve)} : null;
+  }
   // Drain staging first: retrievals need the same seven transfer slots.
   const candidate = workers.find(entry => entry.state === 'provisioning') ||
     workers.find(entry => available(entry) && staged.some(request => accepts(entry, request, routes))) ||

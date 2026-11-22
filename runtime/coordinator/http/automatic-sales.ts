@@ -1,3 +1,4 @@
+import { validStandSalePrice, standSalePriceError } from "../../../dashboard/lib/stand-sale-price.ts";
 import { type SharedScope } from "../inventory/shared-rules.ts";
 import { requestObject, requestText, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import type { Item } from "../contracts/item.ts";
@@ -131,7 +132,7 @@ export function createAutomaticSaleRoutes(state: AutomaticSaleState, ports: Auto
       delete state.autoStandMarks[key];
       discardStand(listing => listing.autoRuleKey === key);
     } else {
-      if (!Number.isSafeInteger(price) || price < 1) return "enter a valid fixed stand price";
+      if (!validStandSalePrice(price)) return standSalePriceError;
       ports.selectAction?.(item, String(state.merchantCharacter), 'stand');
       state.autoStandMarks[key] = { item, price, createdAt: ports.now() };
       if (state.merchantRules) return null;

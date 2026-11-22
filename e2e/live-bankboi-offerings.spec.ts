@@ -125,21 +125,34 @@ test('automatic NPC sales retrieve BankBoi stock and preserve kept and locked co
     await info.attach('automatic-bankboi-npc-sales',{body:JSON.stringify({observations,native:await native(),state:await live.state()}),contentType:'application/json'});
   }
 });
-test('BankBoi compound inputs admit merchant work only after native bank delivery',async({live},info)=>{
+for (const constrained of [false,true]) test(`BankBoi compound inputs admit merchant work only after native bank delivery (constrained ${constrained})`,async({live},info)=>{
   test.setTimeout(360_000);
   await live.post('/steam/action',{character:merchant,action:'logout'});
   await expect.poll(async()=>!(await live.state()).activeSlots.some((slot:any)=>slot.character===merchant),{timeout:90_000}).toBe(true);
   await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
   await live.post('/slots/1/spawn',{character:merchant});
   await expect.poll(async()=>{const c=(await live.state()).characters[merchant];return c?.runtime==='headless'&&Date.now()-c.seenAt<3000;},{timeout:90_000}).toBe(true);
+  const workerItems = Array.from({length:constrained?42:3},(_,slot)=>({name:slot < (constrained?1:3)?'stramulet':'coat',level:0}));
   await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'});
-    c.info.items=[{name:'stramulet',level:0},{name:'stramulet',level:0},{name:'stramulet',level:0}];
+    c.info.items=${JSON.stringify(workerItems)};
     await db.collection('character').replaceOne({_id:c._id},c);return true;})()`);
+  const reserved = {pack:'items1',slot:35,item:{name:'talkingskull',level:3},improvement:'manual compounds'};
+  if (constrained) {
+    const bank=await live.admin(`output=(async()=>{const p=get_player('${merchant}'),u=await db.collection('user').findOne({_id:p.owner});
+      const pane=Array(42).fill({name:'coat',level:0});pane[35]=${JSON.stringify(reserved.item)};pane[41]=null;
+      await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items1':pane}});if(p.user)p.user.items1=pane;
+      p.items=Array.from({length:42},()=>({name:'helmet',level:0,l:'l'}));
+      p.items[0]={name:'stand0',l:'l'};p.items[1]={name:'hpot1',q:9999,l:'l'};p.items[2]={name:'mpot1',q:9999,l:'l'};
+      p.items[3]=p.items[4]={name:'stramulet',level:0};p.items[5]={name:'cscroll0',q:3};
+      for(const i of [39,40,41])p.items[i]=null;cache_player_items(p);resend(p,'reopen+cid');
+      return {gold:0,packs:{items1:pane.map((item,slot)=>item?{slot,item}:null)}};})()`);
+    await live.post('/bankboi/checkpoint',{character:merchant,bank});
+  }
   const observations:any[]=[];
   let sawRemote=false,native:any;
   try{
-    await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'ready',items:[0,1,2].map(slot=>({slot,item:{name:'stramulet',level:0}}))}},
-      autoCompounds:{[merchant]:[{name:'stramulet',targetTier:1,quantity:1}]}}));
+    await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'ready',items:workerItems.map((item,slot)=>({slot,item}))}},
+      withdrawals:constrained?{[merchant]:[reserved]}:{},autoCompounds:{[merchant]:[{name:'stramulet',targetTier:1,quantity:1}]}}));
     await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto compound':true}});
     await expect.poll(async()=>{
       const state=await live.state();
@@ -153,7 +166,7 @@ test('BankBoi compound inputs admit merchant work only after native bank deliver
       // must not start an improvement visit. Other merchant work stays allowed.
       if(remote&&!native?.bank.length&&!native?.items.length)
         expect(job?.reason).not.toBe('auto compound');
-      return native&&[...native.bank,...native.items].filter((i:any)=>(i.level||0)===0).length===0&&
+      return native&&(!constrained ? [...native.bank,...native.items].filter((i:any)=>(i.level||0)===0).length===0 : (state.withdrawals[merchant]||[]).some((r:any)=>r.pack==='items1'&&r.slot===35) && !(state.withdrawals[merchant]||[]).some((r:any)=>r.improvement==='auto compound'))&&
         state.merchantActivity.some((a:any)=>a.message==='Auto compounded stramulet to +1'||a.message==='Auto compound failed for stramulet');
     },{timeout:270_000,intervals:[250,500]}).toBe(true);
     expect(sawRemote).toBe(true);
@@ -274,7 +287,8 @@ for(const source of ['carried','native bank','optional absent','required absent'
 
 
 
-test('BankBoi drains all seven reserve cells after a persisted movement timeout', async ({live}, info) => {
+for (const scenario of ['retry', 'reserved retry', 'provision'] as const) test(scenario === 'provision' ? 'New BankBoi provisions and drains six cells beside a reserved withdrawal' : `BankBoi drains reserve cells after a persisted movement timeout${scenario === 'reserved retry' ? ' with a pending outbound reservation' : ''}`, async ({live}, info) => {
+  const outgoing = scenario !== 'retry', provision = scenario === 'provision';
   test.setTimeout(300_000);
   // Failure inventory: an expired transport error permanently excludes the worker;
   // retry ignores its cooldown; cargo is lost/duplicated; native completion arrives
@@ -291,31 +305,146 @@ test('BankBoi drains all seven reserve cells after a persisted movement timeout'
     u.info.items1=Array.from({length:42},(_,i)=>({name:i<35?'coat':'helmet',level:0}));
     await db.collection('user').updateOne({_id:p.owner},{$set:{'info.items0':u.info.items0,'info.items1':u.info.items1}});
     const c=await db.collection('character').findOne({'info.name':'${storage}'});c.info.items=Array(42).fill(null);
+    if(${provision}){c.info.items[0]={name:'hpot0',q:2};c.info.slots={mainhand:{name:'staff',level:0}};}
     await db.collection('character').replaceOne({_id:c._id},c);
     return {gold:0,packs:Object.fromEntries(['items0','items1'].map(pack=>[pack,u.info[pack].map((item,slot)=>({slot,item}))]))};
   })()`);
-  await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,state:'error',error:'POST /movement-plan · timeout',retryAt:0,items:[]}}}));
+  // A full merchant cannot collect the outbound cell. Inbound storage must
+  // still drain the other six, without stealing the reservation or staging
+  // another retrieval. Keep withdrawals disabled to observe that exact boundary.
+  if(outgoing) await live.post('/merchant/routine-priorities',{priorities:{},enabled:{withdrawals:false}});
   await live.post('/bankboi/checkpoint',{character:merchant,bank});
+  await live.restoreHistoricalSettings(()=>({bankbois:{[storage]:{name:storage,...(provision?{state:'provisioning'}:{state:'error',error:'POST /movement-plan · timeout',retryAt:0}),items:[]}},
+    ...(outgoing?{withdrawals:{[merchant]:[{pack:'items1',slot:35,item:{name:'helmet',level:0},improvement:'manual compounds'}]}}:{})}));
   const observations:any[]=[];
-  const native=()=>live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'}),u=await db.collection('user').findOne({_id:c.owner});return {items:c.info.items,bank:u?.info.items1};})()`);
+  const native=()=>live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'}),u=await db.collection('user').findOne({_id:c.owner});return {items:c.info.items,slots:c.info.slots,bank:u?.info.items1};})()`);
   try {
     await expect.poll(async()=>{
       const s=await live.state(),n=await native();
       observations.push({at:Date.now(),queue:s.bankboiQueue,transaction:s.bankboiTransaction,workers:s.bankbois,native:n});
       if(observations.length>128)observations.shift();
       const worker=s.bankbois.find((w:any)=>w.name===storage);
-      return n.items.filter((i:any)=>i?.name==='helmet').length===7 &&
-        n.bank.slice(35,42).every((i:any)=>!i) && s.bankboiQueue.length===0 &&
+      return (!provision || !Object.values(n.slots).some(Boolean) && n.items.filter(Boolean).length===6) &&
+        n.items.filter((i:any)=>i?.name==='helmet').length===(outgoing?6:7) &&
+        n.bank.slice(outgoing?36:35,42).every((i:any)=>!i) &&
+        (!outgoing || n.bank[35]?.name==='helmet' && s.withdrawals[merchant]?.length===1 && s.withdrawals[merchant][0].slot===35) && s.bankboiQueue.length===0 &&
         !s.bankboiTransaction && worker?.state==='ready' &&
         s.activeSlots.some((slot:any)=>slot.character===merchant);
     },{timeout:180_000,intervals:[250,500]}).toBe(true);
     await live.restartCoordinator();
     await expect.poll(async()=>{
       const s=await live.state(),n=await native();
-      return s.bankboiQueue.length===0 && !s.bankboiTransaction && n.items.filter((i:any)=>i?.name==='helmet').length===7;
+      return s.bankboiQueue.length===0 && !s.bankboiTransaction && n.items.filter((i:any)=>i?.name==='helmet').length===(outgoing?6:7) &&
+        (!outgoing || n.bank[35]?.name==='helmet' && s.withdrawals[merchant]?.length===1);
     }).toBe(true);
   } finally {
     await info.attach('bankboi-reserve-timeout-recovery',{body:JSON.stringify({observations,native:await native(),state:await live.state()}),contentType:'application/json'});
   }
 });
 
+for (const reserved of [false,true]) test(`automatic exchange retrieves BankBoi Rare Candy and preserves locked stock${reserved?' beside a reserved compound input':''}`,async({live},info)=>{
+  test.setTimeout(300_000);
+  await live.post('/steam/action',{character:merchant,action:'logout'});
+  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
+  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
+  await live.post('/slots/1/spawn',{character:merchant});
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{withdrawals:false,'automatic exchange':false}});
+  const skull={name:'talkingskull',level:3};
+  const reservation={pack:'items1',slot:35,item:skull,improvement:'manual compounds'};
+  const items=[{name:'candy0',q:1,l:'l'},{name:'candy0',q:2}];
+  const before=await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'});
+    c.info.items=${JSON.stringify(items)};await db.collection('character').replaceOne({_id:c._id},c);
+    const p=get_player('${merchant}'),items0=Array.from({length:42},()=>({name:'coat',level:0})),
+      items1=Array.from({length:42},(_,i)=>i<35?{name:'coat',level:0}:i===35?${JSON.stringify(reserved?skull:null)}:null);
+    await db.collection('user').updateOne({_id:c.owner},{$set:{'info.items0':items0,'info.items1':items1}});
+    if(p.user){p.user.items0=items0;p.user.items1=items1;}
+    return {count:p.p.stats.exchanges.candy0||0,bank:{gold:0,packs:{items0:items0.map((item,slot)=>({item,slot})),
+      items1:items1.map((item,slot)=>item?{item,slot}:null)}}};})()`);
+  await live.post('/bankboi/checkpoint',{character:merchant,bank:before.bank});
+  await live.restoreHistoricalSettings(()=>({...(reserved?{withdrawals:{[merchant]:[reservation]}}:{}),bankbois:{[storage]:{name:storage,state:'ready',items:items.map((item,slot)=>({slot,item}))}}}));
+  await expect.poll(async()=>(await live.state(true)).merchantCatalog?.exchangeable?.some((e:any)=>e.id==='candy0')).toBe(true);
+  await live.post('/command',{character:merchant,type:'auto-exchange',slot:-1,item:{name:'candy0',level:0}});
+  const samples:any[]=[];
+  try{
+    const disabled=await live.state();
+    expect(disabled.withdrawals[merchant]||[]).toEqual(reserved?[reservation]:[]);
+    expect([disabled.merchantCurrent,...disabled.merchantQueue].some(j=>j?.reason==='exchange')).toBe(false);
+    await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'automatic exchange':true}});
+    await expect.poll(async()=>{
+      const s=await live.state();
+      const native=await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'}),p=get_player('${merchant}');
+        const u=await db.collection('user').findOne({_id:c.owner});
+        return {storage:c.info.items.filter(i=>i?.name==='candy0'),exchanges:p?.p.stats.exchanges.candy0||0,staged:(p?.user||u.info).items1?.[35]};})()`);
+      samples.push({at:Date.now(),native,withdrawals:s.withdrawals[merchant],job:s.merchantCurrent?.reason,transaction:s.bankboiTransaction?.bankboi});
+      if(samples.length>128)samples.shift();
+      return native.exchanges===before.count+2 && native.storage.length===1 && native.storage[0].l==='l' &&
+        !s.bankboiTransaction && (s.withdrawals[merchant]||[]).length===(reserved?1:0) &&
+        (!reserved || native.staged?.name===skull.name && native.staged.level===3 &&
+          s.withdrawals[merchant][0].pack==='items1' && s.withdrawals[merchant][0].slot===35 &&
+          s.withdrawals[merchant][0].improvement==='manual compounds') && !!s.autoExchanges['candy0@0'] &&
+        ![s.merchantCurrent,...s.merchantQueue].some(j=>j?.reason==='exchange') &&
+        s.merchantActivity.filter((a:any)=>a.message.startsWith('Exchanged 1 × Rare Candy')).length===2;
+    },{timeout:200_000,intervals:[300,600]}).toBe(true);
+  }finally{
+    await info.attach('bankboi-automatic-exchange',{body:JSON.stringify({before,samples,state:await live.state()}),contentType:'application/json'});
+  }
+});
+
+for (const freeSlots of [0, 3]) test(`Auto NPC sales recover a full bank and ${freeSlots} free merchant cells with a remote backlog`,async({live},info)=>{
+  test.setTimeout(420_000);
+  const stars={name:'throwingstars',level:0},skull={name:'talkingskull',level:3};
+  const key=JSON.stringify({...stars,p:null,stat_type:null});
+  const workerItems=Array.from({length:42},(_,i)=>i<10?stars:{name:'coat',level:0});
+  const reserved={pack:'items1',slot:35,item:skull,improvement:'manual compounds'};
+  await live.post('/steam/action',{character:merchant,action:'logout'});
+  await expect.poll(async()=>!(await live.state()).activeSlots.some((s:any)=>s.character===merchant),{timeout:90_000}).toBe(true);
+  await expect.poll(async()=>{const op=(await live.state()).steamSwitch;return !op||op.phase==='complete';},{timeout:90_000}).toBe(true);
+  await live.post('/slots/1/spawn',{character:merchant});
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.runtime,{timeout:90_000}).toBe('headless');
+  await live.post('/merchant/force-stand',{enabled:true});
+  await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto npc sales':false,'auto compound':false,withdrawals:true}});
+  const bank=await live.admin(`output=(async()=>{const c=await db.collection('character').findOne({'info.name':'${storage}'});
+    c.info.items=${JSON.stringify(workerItems)};await db.collection('character').replaceOne({_id:c._id},c);
+    const p=get_player('${merchant}'),coat={name:'coat',level:0},items0=Array(42).fill(coat),items1=Array(42).fill(coat);
+    items1[35]=${JSON.stringify(skull)};items1[36]=items1[37]=${JSON.stringify(stars)};
+    if (${freeSlots}===0) for(const i of [3,4,5])items0[i]={name:'ringsj',level:0};
+    await db.collection('user').updateOne({_id:c.owner},{$set:{'info.items0':items0,'info.items1':items1}});
+    if(p.user){p.user.items0=items0;p.user.items1=items1;}
+    p.items=Array.from({length:42},()=>({name:'helmet',level:0,l:'l'}));
+    p.items[0]={name:'stand0',l:'l'};p.items[1]={name:'hpot1',q:9999,l:'l'};p.items[2]={name:'mpot1',q:9999,l:'l'};
+    p.items[5]={name:'xhelmet',level:0};p.items[6]={name:'cscroll0',q:5};
+    if (${freeSlots}===3) for(const i of [10,11,12])p.items[i]={name:'ringsj',level:0};
+    for(const i of [7,39,40])p.items[i]=${freeSlots}===3?null:{name:'xhelmet',level:0};cache_player_items(p);resend(p,'reopen+cid');
+    const entries=items=>items.map((item,slot)=>({item,slot}));return {gold:0,packs:{items0:entries(items0),items1:entries(items1)}};})()`);
+  await live.post('/bankboi/checkpoint',{character:merchant,bank});
+  await live.restoreHistoricalSettings(()=>({
+    autoItemMarks:{[merchant]:{'throwingstars@+0':'bank','xhelmet@+0':'bank'}},
+    autoNpcSales:{[key]:{item:stars,keep:0,createdAt:Date.now()}},
+    bankbois:{[storage]:{name:storage,state:'ready',items:workerItems.map((item,slot)=>({item,slot}))}},
+    withdrawals:{[merchant]:[reserved,...workerItems.slice(0,10).map((item,slot)=>({pack:'bankboi:'+storage,slot,item,autoNpcRuleKey:key}))]},
+    autoCompounds:{[merchant]:[{name:'ringsj',targetTier:1,quantity:1}]}
+  }));
+  const samples:any[]=[];
+  try{
+    await expect.poll(async()=>(await live.state()).characters[merchant]?.items?.filter((e:any)=>!e).length).toBe(freeSlots);
+    await live.post('/merchant/routine-priorities',{priorities:{'auto npc sales':98},enabled:{'auto npc sales':true}});
+    await live.post('/merchant/force-stand',{enabled:false});
+    await expect.poll(async()=>{
+      const s=await live.state(),activity=s.merchantActivity.map((a:any)=>a.message);
+      const native=await live.admin(`output=(async()=>{const p=get_player('${merchant}'),c=await db.collection('character').findOne({'info.name':'${storage}'}),u=await db.collection('user').findOne({_id:c.owner});
+        const b=p?.user||u.info,w=get_player('${storage}');return {stars:[...(p?.items||[]),...(w?.items||c.info.items),...b.items0,...b.items1].filter(i=>i?.name==='throwingstars').length,
+          skull:b.items1[35],free:p?.items.filter(i=>!i).length};})()`);
+      const sold=activity.filter((m:string)=>/^Sold 1 × throwingstars to NPC for [1-9]/.test(m)).length;
+      samples.push({at:Date.now(),native,sold,job:s.merchantCurrent?.reason,withdrawals:s.withdrawals[merchant]});
+      if(samples.length>96)samples.shift();
+      return native.stars===0 && sold===12 && native.skull?.name==='talkingskull' && native.free>3 &&
+        !s.bankboiTransaction && !s.npcSaleMarks.length && !s.withdrawals[merchant].some((r:any)=>r.autoNpcRuleKey) &&
+        !activity.some((m:string)=>m==='Banked throwingstars from merchant inventory');
+    },{timeout:280_000,intervals:[500,1000]}).toBe(true);
+    await live.post('/merchant/routine-priorities',{priorities:{},enabled:{'auto compound':true}});
+    await expect.poll(async()=>(await live.state()).merchantActivity.some((a:any)=>/^Auto compound(ed ringsj to \+1| failed for ringsj)$/.test(a.message)),{timeout:90_000}).toBe(true);
+  }finally{
+    await info.attach('full-bank-npc-sale-recovery',{body:JSON.stringify({samples,state:await live.state()}),contentType:'application/json'});
+  }
+});

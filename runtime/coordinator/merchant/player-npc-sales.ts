@@ -15,6 +15,7 @@ export const npcSaleRuleKey = (item: Item, character?: string) =>
     ? JSON.stringify([character, automaticCommerceRuleKey(item)])
     : automaticCommerceRuleKey(item);
 export interface PlayerSaleState extends ConflictState {
+  bankbois?: Record<string, unknown>;
   merchantAutomations?: Record<string, boolean | undefined>;
   merchantCharacter: string | null;
   npcSaleMarks: NpcSale[];
@@ -165,7 +166,14 @@ export function reconcilePlayerSales(
   const name = status.name,
     before = JSON.stringify([state.npcSaleMarks, state.merchantMarked?.[name]]);
   if (!state.merchantCharacter) return false;
-  if (autoSalesEnabled(state)) automatic(state, status, ports);
+  if (state.bankbois?.[name]) {
+    // Storage workers supply automatic sales through bank withdrawals, including while logged in.
+    state.npcSaleMarks = state.npcSaleMarks.filter(mark => {
+      if (!mark.auto || mark.source !== "character" || mark.character !== name) return true;
+      releasePlayerSale(state, mark);
+      return false;
+    });
+  } else if (autoSalesEnabled(state)) automatic(state, status, ports);
   const used = new Set<number>();
   const collect = new Set<string>();
   for (const mark of state.npcSaleMarks.filter(

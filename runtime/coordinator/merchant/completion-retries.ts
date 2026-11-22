@@ -2,7 +2,7 @@ import { buyUpgradeOrder, commerceRouteFailure, commerceRetryDelay } from './com
 import { requestText } from "../http/contracts.ts";
 import { communicationReason } from '../navigation/communication-failure.ts';
 import { failNpcSales } from "./npc-sales.ts";
-import {upgradeRecoverySignature} from './upgrade-recovery.ts';
+import {upgradeRecoverySignature,compoundRecoverySignature} from './upgrade-recovery.ts';
 import type {
   CompletionState,
   CompletionPorts,
@@ -121,6 +121,14 @@ function completionLevel(body: CompletionReport, decision: RetryDecision): strin
 }
 
 export function createCompletionRetries(state: CompletionState, ports: CompletionPorts) {
+  function compoundRecoveryBlock(job: CompletionJob, body: CompletionReport): void {
+    if (body.success || !/^Reserved bank compound (?:input moved before production|item changed)|^Bank compound (?:withdrawal unconfirmed|destination was not uniquely observed)/.test(requestText(body.error))) return;
+    state.merchantJobBlocks[job.target + '\n' + job.reason] = {
+      error: requestText(body.error),
+      compoundRecoverySignature: compoundRecoverySignature(state.compounds[String(job.target)] || [],state.statuses[String(state.merchantCharacter)]?.items || []),
+    };
+    ports.log('Compound recovery paused; waiting for matching inventory or compound intent to change','error',body.error);
+  }
   function upgradeRecoveryBlock(job: CompletionJob, body: CompletionReport): boolean {
     if (!body.success && /^(?:Upgrade inventory recovery ambiguous:|Automatic upgrade survivor is ambiguous)/.test(requestText(body.error))) {
       state.merchantJobBlocks[job.target + "\n" + job.reason] = {
@@ -177,6 +185,7 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
     }
   }
   function decide(job: CompletionJob, body: CompletionReport): RetryDecision {
+    compoundRecoveryBlock(job, body);
     upgradeRecoveryBlock(job, body);
     resourceBlock(job, body);
     const decision = classify(job, body);

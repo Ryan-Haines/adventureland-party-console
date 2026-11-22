@@ -1,3 +1,4 @@
+import {activeStandSale} from "../../../dashboard/lib/stand-sale-price.ts";
 import {collectPassing} from '../../combat/passing.ts';
 import {eventLimits} from '../../../dashboard/lib/event-policy.ts';
 import {cipherIngredients, type CipherGatheringPlan, type CipherGatheringContext} from '../../events/october.ts';
@@ -294,6 +295,7 @@ export function createHeartbeatResponse(state: HeartbeatState, ports: HeartbeatR
     const command = commandFor(name);
     return {
       ...Object.fromEntries(heartbeatStateFields.map((field) => [field, state[field]])),
+      standListings: (state.standListings || []).filter(activeStandSale),
       serverNow: ports.now(),
       travelCombat,
       ...realmErrors(name),
