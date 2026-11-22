@@ -153,7 +153,13 @@ test('marked withdrawal waits at the three-slot reserve and resumes after capaci
   await live.post('/command',{character:merchant,type:'bank'});
   const leather=(s:any)=>Object.entries(s.bank?.packs||{}).flatMap(([pack,entries])=>
     (entries as any[]).filter(entry=>entry?.item?.name==='leather').map(entry=>({pack,...entry})))[0];
-  await expect.poll(async()=>leather(await live.state())?.item.q,{timeout:90_000}).toBe(13);
+  // The first bank snapshot precedes cosmetic sorting. Do not mark a slot
+  // until the setup visit has finished and telemetry agrees with native stock.
+  await expect.poll(async()=>{
+    const s=await live.state(), source=leather(s);
+    if(s.merchantCurrent || !s.merchantActivity.some((a:any)=>a.message==='Merchant job completed for '+merchant) || source?.item.q!==13) return false;
+    return live.admin(`output=(async()=>{const u=await db.collection('user').findOne({_id:get_player('${merchant}').owner});const item=u.info[${JSON.stringify(source.pack)}]?.[${Number(source.slot)}];return item?.name==='leather'&&item.q===13})()`);
+  },{timeout:90_000}).toBe(true);
   const source=leather(await live.state());
   await live.admin(`output=(()=>{const p=get_player('${merchant}');p.items[35]={name:'jacko',level:0};for(let i=0;i<39;i++)if(!p.items[i])p.items[i]={name:'helmet',level:0,l:'l'};cache_player_items(p);resend(p,'reopen+cid');return true})()`);
   await expect.poll(async()=>(await live.state()).characters[merchant].items.filter((e:any)=>e?.item).length).toBeGreaterThanOrEqual(39);

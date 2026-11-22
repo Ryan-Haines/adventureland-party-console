@@ -17,6 +17,18 @@ async function forwardPublishedPort(published, native) {
   return server;
 }
 async function main() {
+  // The pinned game is a Halloween release. Its native season loader checks
+  // this deadline before building maps, drops and the seven-day realm lineup.
+  // Give each disposable test world a complete lineup regardless of run date.
+  if (process.env.AL_DEBUG_INSTANCE !== '1') {
+    const fs = require('node:fs');
+    const file = '/game/design/event_flags.js';
+    const flags = fs.readFileSync(file, 'utf8');
+    const deadline = new Date(Date.now() + 30 * 86400000).toISOString();
+    const rule = /halloween: "[^"]+", \/\/ last day:/g;
+    if ([...flags.matchAll(rule)].length !== 1) throw Error('Expected one native Halloween deadline');
+    fs.writeFileSync(file, flags.replace(rule, 'halloween: "' + deadline + '", // last day:'));
+  }
   require('./configure.cjs');
   const client = new MongoClient(require('../secretsandconfig/keys.js').mongodb_uri);
   await client.connect();
