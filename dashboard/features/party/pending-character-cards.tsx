@@ -3,7 +3,8 @@ import { CharacterPortrait } from './character-portrait';
 import { useState } from 'react';
 
 function SteamConnectionRecovery({ model, name }: { model: PartyConsoleModel; name: string }) {
-  const [busy, setBusy] = useState(false);
+  const [action, setAction] = useState<'steam' | 'headless' | 'recover' | null>(null);
+  const busy = action !== null;
   const phase = model.state.steamSwitch?.phase;
   const pending = !!phase && phase !== 'complete';
   const controls = 'rounded border border-cyan-700 bg-[#071315] px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-950 hover:text-white disabled:opacity-50';
@@ -11,13 +12,17 @@ function SteamConnectionRecovery({ model, name }: { model: PartyConsoleModel; na
     <p className="text-sm text-slate-200">If Steam is open but cannot connect, close the Adventure Land game window, then retry here so Party Console can launch it with its connection enabled.</p>
     <div className="flex flex-wrap gap-2">
       <button type="button" className={controls} disabled={busy || pending} onClick={async () => {
-        setBusy(true);
-        try { await model.switchSteam(name); } finally { setBusy(false); }
-      }}>{busy ? 'Connecting to Steam…' : 'Retry Steam connection'}</button>
+        setAction('steam');
+        try { await model.switchSteam(name); } finally { setAction(null); }
+      }}>{action === 'steam' ? 'Connecting to Steam…' : 'Retry Steam connection'}</button>
+      <button type="button" className={controls} disabled={busy || pending} onClick={async () => {
+        setAction('headless');
+        try { await model.moveSteamToHeadless(name); } finally { setAction(null); }
+      }}>{action === 'headless' ? 'Loading headless…' : 'Load headless'}</button>
       <a className={controls} href="/setup">Open connection setup</a>
       {phase === 'failed' && <button type="button" className={controls} disabled={busy} onClick={async () => {
-        setBusy(true);
-        try { await model.recoverSteamHandoff(); } finally { setBusy(false); }
+        setAction('recover');
+        try { await model.recoverSteamHandoff(); } finally { setAction(null); }
       }}>Recover Steam handoff after characters are offline</button>}
     </div>
     {pending && <p className="text-sm text-amber-200">{model.state.steamSwitch?.error || 'A Steam handoff is in progress. Wait for it to finish before retrying.'}</p>}

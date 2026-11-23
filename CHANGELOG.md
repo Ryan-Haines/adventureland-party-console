@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### 1.6 (in development)
+
+- Resume displaced manual upgrades using interchangeable matching copies instead of blocking the whole batch when several identical items exist; preserve targets and protected variants.
+- Let merchant sales and banking free packed inventories before upgrades; check production space before starting and avoid unnecessary lucky-slot tidying in cleanup jobs.
+- Fence exchange checkpoints and completion by worker command so an interrupted pre-restart bank trip cannot fail or rewind a resumed order.
+- Manage auto-exchange rules in the merchant card, including item details, individual removal, and clear-all without needing carried stock. (#155)
+- Exchange orders bank eligible rewards when inventory fills, retain unfinished quantities across capacity blocks/restarts, and deposit every matching reward copy.
+- Combine release notifications and local build loading into one refresh menu, with direct release download/restart actions for managed installations.
+- Refresh the displayed release base and development branch while the console runs, instead of retaining the host's startup version label.
+- Fix cross-realm event hints that could keep Hunt paused after its local event ended. Event corroboration now requires a fresh, connected report from the same realm.
+- Record the event reports responsible when Hunt enters an event pause, making future recovery failures diagnosable.
+
 ### 1.5 changes since v1.4.0
 
 Only changes verified against the v1.4.0 source are listed in this summary.

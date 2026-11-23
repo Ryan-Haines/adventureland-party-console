@@ -2,7 +2,7 @@ import { buyUpgradeOrder, commerceRouteFailure, commerceRetryDelay } from './com
 import { requestText } from "../http/contracts.ts";
 import { communicationReason } from '../navigation/communication-failure.ts';
 import { failNpcSales } from "./npc-sales.ts";
-import {upgradeRecoverySignature} from './upgrade-recovery.ts';
+import {upgradeRecoverySignature,compoundRecoverySignature} from './upgrade-recovery.ts';
 import type {
   CompletionState,
   CompletionPorts,
@@ -44,6 +44,7 @@ function classify(job: CompletionJob, body: CompletionReport): RetryDecision {
   const rendezvous = failed && retryRendezvous(job, error);
   const realm = realmFailure(body), movement = commerceRouteFailure(job, body) ||
     improvementCommunicationFailure(job, body);
+  const exchangeCapacity = failed && job.reason === 'exchange' && /^(cant_space|inventory_full|no_space|bank_full)$/.test(error);
   return {
     death: merchantDeath(body),
     movementOwned: failed && body.failureKind === "hunt_movement_owned",
@@ -53,7 +54,7 @@ function classify(job: CompletionJob, body: CompletionReport): RetryDecision {
     anniversaryYield,
     rendezvous,
     interruptedCommerce: preserveCommerce(job, failed, interrupted),
-    retry: preserveOrder(job, body) || retryDecision(job, {movementOwned: failed && body.failureKind === "hunt_movement_owned", movement, realm, storageYield, anniversaryYield, rendezvous}, interrupted),
+    retry: exchangeCapacity || preserveOrder(job, body) || retryDecision(job, {movementOwned: failed && body.failureKind === "hunt_movement_owned", movement, realm, storageYield, anniversaryYield, rendezvous}, interrupted),
   };
 }
 function improvementCommunicationFailure(job: CompletionJob, body: CompletionReport): boolean {
@@ -103,7 +104,7 @@ function resourceLimited(
   return (
     !body.success &&
     (capacity || /insufficient (?:bank )?gold/i.test(error)) &&
-    ["upgrades and compounds", "manual upgrades", "auto upgrade", "manual compounds", "auto compound", "merchant commerce"].includes(job.reason)
+    ["upgrades and compounds", "manual upgrades", "auto upgrade", "manual compounds", "auto compound", "merchant commerce", "exchange"].includes(job.reason)
   );
 }
 function retryIncrement(decision: RetryDecision): number {
@@ -120,6 +121,14 @@ function completionLevel(body: CompletionReport, decision: RetryDecision): strin
 }
 
 export function createCompletionRetries(state: CompletionState, ports: CompletionPorts) {
+  function compoundRecoveryBlock(job: CompletionJob, body: CompletionReport): void {
+    if (body.success || !/^Reserved bank compound (?:input moved before production|item changed)|^Bank compound (?:withdrawal unconfirmed|destination was not uniquely observed)/.test(requestText(body.error))) return;
+    state.merchantJobBlocks[job.target + '\n' + job.reason] = {
+      error: requestText(body.error),
+      compoundRecoverySignature: compoundRecoverySignature(state.compounds[String(job.target)] || [],state.statuses[String(state.merchantCharacter)]?.items || []),
+    };
+    ports.log('Compound recovery paused; waiting for matching inventory or compound intent to change','error',body.error);
+  }
   function upgradeRecoveryBlock(job: CompletionJob, body: CompletionReport): boolean {
     if (!body.success && /^(?:Upgrade inventory recovery ambiguous:|Automatic upgrade survivor is ambiguous)/.test(requestText(body.error))) {
       state.merchantJobBlocks[job.target + "\n" + job.reason] = {
@@ -133,7 +142,7 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
   }
   function resourceBlock(job: CompletionJob, body: CompletionReport): void {
     const error = requestText(body.error || ""),
-      capacity = !transientUpgradeInput(error) && /^(bank_full|inventory_full|no_space)$|^Couldn't use lucky slot:/i.test(error);
+      capacity = !transientUpgradeInput(error) && /^(bank_full|inventory_full|no_space|cant_space)$|^Couldn't use lucky slot:/i.test(error);
     if (!resourceLimited(job, body, capacity, error)) return;
     state.merchantJobBlocks[job.target + "\n" + job.reason] = {
       error: requestText(body.error),
@@ -143,7 +152,7 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
     };
     ports.log(
       capacity
-        ? "Improvement paused until inventory or bank contents change"
+        ? job.reason === 'exchange' ? "Exchange paused until inventory or bank contents change" : "Improvement paused until inventory or bank contents change"
         : "Improvement paused until more gold is available",
       "error",
       { target: job.target, reason: job.reason, error: requestText(body.error) },
@@ -176,6 +185,7 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
     }
   }
   function decide(job: CompletionJob, body: CompletionReport): RetryDecision {
+    compoundRecoveryBlock(job, body);
     upgradeRecoveryBlock(job, body);
     resourceBlock(job, body);
     const decision = classify(job, body);
@@ -189,6 +199,8 @@ export function createCompletionRetries(state: CompletionState, ports: Completio
     if (!decision.retry) return;
     const retry: CompletionJob = {
       ...job,
+      ...(job.reason === 'exchange' && state.merchantJobBlocks[String(job.target)+'\nexchange']?.capacitySignature !== undefined
+        ? {exchangeCapacitySignature:state.merchantJobBlocks[String(job.target)+'\nexchange'].capacitySignature} : {}),
       id: retryIdentity(job,decision),
       resumedFrom: job.id,
       retryCount: (Number(job.retryCount) || 0) + retryIncrement(decision),

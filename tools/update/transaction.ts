@@ -1,17 +1,26 @@
-import { cp, mkdir, rm, chown, readdir } from 'node:fs/promises';
+import { cp, mkdir, rm, chown, readdir, stat } from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { atomic, exists, readJson } from './files.ts';
 export const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 export interface Driver {
   current(): Promise<string>;
   stop(): Promise<void>;
+  prepareBackup?(): Promise<void>;
   start(target: string): Promise<void>;
   healthy(): Promise<boolean>;
   maintenance(): Promise<{ id?: string; ready?: boolean; waiting?: string[] }>;
 }
-interface Journal { previous: string; target: string; backup: string; phase: 'prepared' | 'stopped' | 'backed-up' | 'started' | 'committed' }
-const dataNames = ['localStorage', 'config.json', 'session.txt', 'access.json'];
+interface Journal { previous: string; target: string; backup: string; journalHash?: string | null; phase: 'prepared' | 'stopped' | 'backed-up' | 'started' | 'committed' }
+const dataNames = ['localStorage', 'config.json', 'session.txt', 'access.json', 'established-journal'];
+async function journalHash(data: string) {
+  const file = path.join(data, 'localStorage/caraGarage.jsonl');
+  if (!(await exists(file))) return null;
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
+}
 export async function pause(driver: Driver, data: string) {
   const id = randomUUID(), file = path.join(data, 'updates/pause.json');
   await atomic(file, { id, expires: Date.now() + 180000 });
@@ -28,7 +37,11 @@ export async function copyState(from: string, to: string) {
   for (const name of dataNames) if (await exists(path.join(from, name)))
     await cp(path.join(from, name), path.join(to, name), { recursive: true, filter: source => !source.endsWith('.writer.lock') });
 }
-async function restoreState(backup: string, data: string) {
+async function restoreState(backup: string, data: string, expected: string | null | undefined) {
+  if (!(await stat(backup)).isDirectory()) throw new Error('Update backup directory is missing: ' + backup);
+  const saved = await journalHash(backup);
+  if (expected !== undefined ? saved !== expected : !saved && await exists(path.join(data, 'localStorage/caraGarage.jsonl')))
+    throw new Error('Update backup journal is missing or changed. Restore the backup before rollback: ' + backup);
   // Both roots are fixed installation directories, not request-provided paths.
   for (const name of dataNames) await rm(path.join(data, name), { recursive: true, force: true });
   await copyState(backup, data);
@@ -64,7 +77,14 @@ export class Installation {
       await atomic(this.journal, state);
       journalWritten = true;
       await this.driver.stop(); state.phase = 'stopped'; await atomic(this.journal, state);
-      await copyState(this.data, state.backup); state.phase = 'backed-up'; await atomic(this.journal, state);
+      await this.driver.prepareBackup?.();
+      state.journalHash = await journalHash(this.data);
+      if (await exists(path.join(this.data, 'established-journal')) &&
+          (!state.journalHash || !(await stat(path.join(this.data, 'localStorage/caraGarage.jsonl'))).size))
+        throw new Error('The established party journal is missing or empty before upgrade');
+      await copyState(this.data, state.backup);
+      if (await journalHash(state.backup) !== state.journalHash) throw new Error('Party journal backup verification failed');
+      state.phase = 'backed-up'; await atomic(this.journal, state);
       await this.driver.start(target); state.phase = 'started'; await atomic(this.journal, state);
       let healthy = false;
       for (let i = 0; i < this.healthAttempts; i++) { if (await this.driver.healthy()) { healthy = true; break; } await this.sleep(1000); }
@@ -80,7 +100,7 @@ export class Installation {
   }
   private async rollback(state: Journal) {
     await this.driver.stop();
-    if (['backed-up', 'started'].includes(state.phase)) await restoreState(state.backup, this.data);
+    if (['backed-up', 'started'].includes(state.phase)) await restoreState(state.backup, this.data, state.journalHash);
     await this.driver.start(state.previous);
     await atomic(this.journal, { ...state, target: state.previous, phase: 'committed' });
     await this.release();

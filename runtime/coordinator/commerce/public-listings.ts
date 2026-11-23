@@ -1,3 +1,4 @@
+import { activeStandSale } from "../../../dashboard/lib/stand-sale-price.ts";
 import type { Item } from "../contracts/item.ts";
 import type { StandBid } from "./bids.ts";
 
@@ -70,6 +71,6 @@ export function publishedMarketListings(
 ): PublishedListing[] {
   const listings = barterListings(anniversary);
   for (const [name, bid] of Object.entries(bids || {})) listings.push(publishedBid(name, bid));
-  for (const sale of sales || []) if (sale?.item?.name && sale.state !== "paused") listings.push(configuredSale(sale));
+  for (const sale of sales || []) if (sale?.item?.name && activeStandSale(sale)) listings.push(configuredSale(sale));
   return listings;
 }

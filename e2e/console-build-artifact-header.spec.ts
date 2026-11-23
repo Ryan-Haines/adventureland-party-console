@@ -1,5 +1,18 @@
 import {test,expect} from './fixtures';
 
+test('header uses the loaded build release and branch instead of stale host metadata',async({page},info)=>{
+  const old='a'.repeat(64),next='b'.repeat(64);let active=old;
+  await page.route('**/console-update',route=>route.fulfill({json:{managed:false,current:'1.4.0',displayVersion:'1.4.0 + 1.5-feature-branch',available:'1.5.0',automatic:false,phase:'available'}}));
+  await page.route('**/console-build',route=>route.fulfill({json:{active,available:active===old?next:undefined,builds:[{id:old,displayVersion:'1.4.0 + 1.5-feature-branch'},{id:next,displayVersion:'1.5.0 + codex/1.6-release'}].map(build=>({...build,createdAt:'2026-10-31T00:00:00Z',sourceHash:build.id,components:{dashboard:build.id,coordinator:build.id,characters:build.id}}))}}));
+  await page.goto('/');
+  await expect(page.locator('header')).toContainText('Console v1.4.0 + 1.5-feature-branch');
+  await expect(page.locator('header')).not.toContainText('Console v1.5.0');
+  active=next;
+  await expect(page.locator('header')).toContainText('Console v1.5.0 + codex/1.6-release');
+  await expect(page.getByRole('button',{name:'Update Party Console',exact:true})).toHaveCount(0);
+  await info.attach('loaded-build-release-label',{body:await page.screenshot(),contentType:'image/png'});
+});
+
 // Failure inventory: candidate shown instead of deployed build; stale hash after
 // activation; added flow height shifting header/content; overflow on small screens.
 test('deployed artifact hash updates below the version without moving the header',async({page},info)=>{

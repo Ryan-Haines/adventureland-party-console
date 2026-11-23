@@ -1,4 +1,5 @@
 "use client";
+import { activeStandSale } from "../../lib/stand-sale-price";
 import { HostingSettings } from "./hosting-settings";
 import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
 import { ConsoleUpdateSettings } from './console-updates';
@@ -175,7 +176,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           mark.bankSlot === entry.slot &&
           same(mark.item, entry.item),
       );
-      if (!existing && standListings.length >= 16)
+      if (!existing && standListings.filter(activeStandSale).length >= 16)
         return setActionError('Merchant stand is full (16/16)');
       const value = {
         defaultPrice: Math.max(1, Number(valuedEntry.meta?.definition.g) || 1),

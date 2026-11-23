@@ -1,5 +1,6 @@
 import { availableCraftStock, craftProtection, type CraftReservationState } from "../merchant/craft-reservations.ts";
 import { ruleOwner, itemRuleConflicts, processingPending, type ConflictState } from "./shared-rules.ts";
+import { automaticCommerceRuleKey } from "./item-identity.ts";
 import { reconcileCollectionMarks } from "./collection-marks.ts";
 import { reconcileUpgradeMarks, clearResolvedUpgradeMarks } from "./upgrade-marks.ts";
 import type { InventoryEntry, ItemMark } from "../contracts/item.ts";
@@ -32,12 +33,17 @@ export function reconcileCoordinatorCollectionMarks(
   name: string,
   status?: InventoryStatus | null,
 ): boolean {
+  const kept = name === state.merchantCharacter ? keptNpcSaleCopies(state) : undefined;
   const result = reconcileCollectionMarks(
     state.marked[name] || [],
     state.merchantMarked[name] || [],
     state.autoItemMarks[ruleOwner(state, name)] || {},
     inventory(status),
-    name === state.merchantCharacter ? keptNpcSaleCopies(state) : undefined,
+    entry => {
+      if (!entry.item || !state.autoNpcSales?.[automaticCommerceRuleKey(entry.item)]) return undefined;
+      if (kept) return kept(entry);
+      return state.merchantRules ? false : undefined;
+    },
   );
   if (state.merchantRules) {
     const allowed = (mark: ItemMark) => !mark.auto || !mark.item || !itemRuleConflicts(state, mark.item).length;

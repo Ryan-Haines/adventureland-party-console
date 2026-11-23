@@ -1,4 +1,5 @@
 'use client';
+import { activeStandSale, validStandSalePrice, standSalePriceError } from "../../lib/stand-sale-price";
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -255,7 +256,11 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
                 )
               }
               placeholder="Price"
+              aria-invalid={!!standItem?.price && !validStandSalePrice(Number(standItem.price))}
             />
+            {!!standItem?.price && !validStandSalePrice(Number(standItem.price)) && (
+              <p role="alert" className="text-sm text-rose-200">{standSalePriceError}</p>
+            )}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <StandPriceButton
                 label="NPC sale +10%"
@@ -421,9 +426,10 @@ function PartyManagementPanelsConnected({ base }: { base: PartyConsoleModel }) {
             </Button>
             <Button
               disabled={
-                !standItem?.id &&
+                !validStandSalePrice(Number(standItem?.price)) ||
+                (!standItem?.id &&
                 !standItem?.auto &&
-                (state.standListings || []).length >= 16
+                (state.standListings || []).filter(activeStandSale).length >= 16)
               }
               onClick={() => void saveStandListing()}
               className="border border-slate-600 bg-black text-slate-100 hover:border-slate-400 hover:bg-slate-900 hover:text-white disabled:border-slate-700 disabled:bg-black disabled:text-slate-600"

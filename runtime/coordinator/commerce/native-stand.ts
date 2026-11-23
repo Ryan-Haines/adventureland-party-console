@@ -1,3 +1,4 @@
+import { activeStandSale } from "../../../dashboard/lib/stand-sale-price.ts";
 import type { StandBid } from "./bids.ts";
 import type { Item } from "../contracts/item.ts";
 
@@ -39,7 +40,7 @@ export function nativeAllocation(state: NativeStandState): { itemId: string; aut
   const priority = (bid: StandBid) => bid.priorityOverride ?? state.merchantRoutinePriorities?.["stand bid purchases"] ?? 75;
   entries.sort(([a, first], [b, second]) => priority(second) - priority(first) || a.localeCompare(b));
   const explicit = entries.filter(([, bid]) => bid.useStandSlot).map(([itemId]) => ({ itemId, auto: false }));
-  const sales = (state.standListings || []).filter(sale => sale.state !== "paused").length;
+  const sales = (state.standListings || []).filter(activeStandSale).length;
   const spare = Math.max(0, 16 - sales - explicit.length);
   const automatic = state.autoStandBuys ? entries.filter(([, bid]) => !bid.useStandSlot && !bid.standSuppressed)
     .slice(0, spare).map(([itemId]) => ({ itemId, auto: true })) : [];
@@ -47,7 +48,7 @@ export function nativeAllocation(state: NativeStandState): { itemId: string; aut
 }
 export function nativeOccupants(state: NativeStandState, except: string) {
   return [
-    ...(state.standListings || []).filter(sale => sale.state !== "paused").map(sale => ({ id: "sale:" + sale.id, itemId: sale.item?.name, kind: "sale", price: sale.price, quantity: sale.quantity })),
+    ...(state.standListings || []).filter(activeStandSale).map(sale => ({ id: "sale:" + sale.id, itemId: sale.item?.name, kind: "sale", price: sale.price, quantity: sale.quantity })),
     ...Object.entries(state.standBids).filter(([id, bid]) => id !== except && bid?.useStandSlot)
       .map(([id, bid]) => ({ id: "buy:" + id, itemId: id, kind: "buy", price: bid!.price, quantity: bid!.quantity })),
   ];

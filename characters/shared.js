@@ -1192,6 +1192,12 @@
     if (!data || data.failed) return;
     partyMetrics.goldMovement(data);
     if (data.success === true) {
+      if (data.place === 'sell' && data.response === 'gold_received' && data.item && data.item.name) {
+        var sold = data.item, definition = G.items[sold.name];
+        var label = definition && definition.name ? definition.name + ' (' + sold.name + ')' : sold.name;
+        if (Number.isInteger(sold.level)) label += ' +' + sold.level;
+        game_log('Sold ' + (sold.q || 1) + ' × ' + label + ' for ' + data.gold.toLocaleString('en-US') + ' gold');
+      }
       var usedName = data.used && G.items[data.used] ? data.used :
         data.response === 'elixir' && character.slots.elixir ? character.slots.elixir.name : null;
       var usedDefinition = usedName && G.items[usedName];
@@ -4161,7 +4167,10 @@
         }
       }
       if (bankStaging && !destination && !compatibleStack && Array.isArray(character.bank.items1)) {
-        for (var reserveSlot = 35; reserveSlot < 42; reserveSlot += 1) {
+        // Keep one transfer cell available for outbound BankBoi stock.
+        var freeTransferCells = 0;
+        for (var cell = 35; cell < 42; cell++) if (!character.bank.items1[cell]) freeTransferCells++;
+        for (var reserveSlot = 35; freeTransferCells > 1 && reserveSlot < 42; reserveSlot += 1) {
           if (!character.bank.items1[reserveSlot]) { destination = { pack: "items1", slot: reserveSlot }; break; }
         }
       }
@@ -4665,6 +4674,20 @@
     }finally{root.__partyConsoleAtomic--;}
   }
 
+  async function swapBankCargo(inventorySlot, cargo, pack, slot, stored) {
+    var bankBefore = bankSortItemState(stored), bagBefore = bankSortItemState(cargo);
+    if (bankSortItemState(character.items[inventorySlot]) !== bagBefore ||
+        bankSortItemState(character.bank[pack][slot]) !== bankBefore) return false;
+    await bank_store(inventorySlot, pack, slot);
+    var settleBy = Date.now() + 5000;
+    while (bankSortItemState(character.items[inventorySlot]) !== bankBefore ||
+           bankSortItemState(character.bank[pack][slot]) !== bagBefore) {
+      if (Date.now() >= settleBy) throw Error("Bank cargo swap was not confirmed");
+      await sleep(100);
+    }
+    return true;
+  }
+
   async function bankStageConfirmed(inventorySlot, pack, slot) {
     await consoleAtomicBoundary();root.__partyConsoleAtomic=(root.__partyConsoleAtomic||0)+1;
     try{
@@ -4680,6 +4703,29 @@
     }
     throw new Error("Bank transfer deposit was not confirmed: " + item.name);
     }finally{root.__partyConsoleAtomic--;}
+  }
+
+  // New merchants receive these three level-zero gifts. Only sell a copy
+  // observed moving from its starter equipment slot into a previously empty bag slot.
+  function isBankboiStarterGear(item, name) {
+    return item && item.name === name && item.level === 0 && item.gift === 1 &&
+      Object.keys(item).every(function (key) { return key === "name" || key === "level" || key === "gift"; });
+  }
+
+  async function sellBankboiStarterGear() {
+    if (character.ctype !== "merchant") return;
+    var starter = { mainhand: "staff", helmet: "helmet", shoes: "shoes" };
+    for (var equipSlot of Object.keys(starter)) {
+      var name = starter[equipSlot];
+      if (!isBankboiStarterGear(character.slots[equipSlot], name)) continue;
+      var empty = [];
+      for (var i = 0; i < character.items.length; i++) if (!character.items[i]) empty.push(i);
+      if (!empty.length) continue;
+      await unequip(equipSlot);
+      var filled = empty.filter(function (slot) { return !!character.items[slot]; });
+      if (!character.slots[equipSlot] && filled.length === 1 && isBankboiStarterGear(character.items[filled[0]], name))
+        await sell(filled[0], 1);
+    }
   }
 
   async function runBankboiService(command) {
@@ -4738,13 +4784,7 @@
     try {
       if (command.provision) {
         await smart_move("potions");
-        var equipmentSlots = Object.keys(character.slots || {});
-        for (var e = 0; e < equipmentSlots.length; e += 1) {
-          if (character.slots[equipmentSlots[e]]) await unequip(equipmentSlots[e]);
-        }
-        for (var sellSlot = 0; sellSlot < character.items.length; sellSlot += 1) {
-          if (character.items[sellSlot]) await sell(sellSlot, character.items[sellSlot].q || 1);
-        }
+        await sellBankboiStarterGear();
       }
       await smart_move("bank");
       // smart_move can resolve on the map transition before the bank proxy is
@@ -4782,7 +4822,22 @@
           return item && bankStackIdentity(item) === bankStackIdentity(staged) &&
             Number(item.q || 1) + Number(staged.q || 1) <= stackLimit;
         });
-        if (freeInventorySlots() <= 0 && !mergeFits) break;
+        if (freeInventorySlots() <= 0 && !mergeFits) {
+          var outbound = (command.retrievals || []).find(function (mark) {
+            var item = character.items[mark.slot];
+            return (mark.autoNpcRuleKey || mark.improvement === "auto compound") && item && !item.b && !item.l &&
+              bankStackIdentity(item) === bankStackIdentity(mark.item) &&
+              bankStackIdentity(item) !== bankStackIdentity(staged);
+          });
+          if (!outbound || (command.reservedLocations || []).some(function (mark) {
+            return mark.pack === requestItem.pack && mark.slot === requestItem.slot;
+          })) break;
+          var outgoingItem = character.items[outbound.slot];
+          if (!await swapBankCargo(outbound.slot, outgoingItem, requestItem.pack, requestItem.slot, staged)) break;
+          completed.push(requestItem.id);
+          deposited.push({request:outbound, pack:requestItem.pack, slot:requestItem.slot, item:fingerprint(outgoingItem)});
+          break;
+        }
         var bankHome = normalBankStackFits(staged);
         var beforeSlots = character.items.map(function (item) { return item && JSON.stringify(item); });
         await bankRetrieveConfirmed(requestItem.pack, requestItem.slot);
@@ -4796,8 +4851,13 @@
       }
       await unloadNormalBank();
       for (var depositIndex = 0; depositIndex < (command.retrievals || []).length; depositIndex += 1) {
-        var retrieval = command.retrievals[depositIndex], inventorySlot = findItem(retrieval.item), reserve = -1;
-        for (var candidate = 35; candidate < 42; candidate += 1) if (!character.bank.items1[candidate]) { reserve = candidate; break; }
+        var retrieval = command.retrievals[depositIndex], reserve = -1;
+        if (deposited.some(function (receipt) { return receipt.request === retrieval; })) continue;
+        var wantedIdentity = bankStackIdentity(retrieval.item);
+        var inventorySlot = bankStackIdentity(character.items[retrieval.slot]) === wantedIdentity ? retrieval.slot :
+          character.items.findIndex(function (item) { return item && bankStackIdentity(item) === wantedIdentity; });
+        for (var candidate = 35; candidate < 42; candidate += 1) if (!character.bank.items1[candidate] &&
+          !(command.reservedLocations || []).some(function (mark) { return mark.pack === "items1" && mark.slot === candidate; })) { reserve = candidate; break; }
         var destination = retrieval.craftJobId && craftDepositLocation() ||
           (reserve >= 0 ? { pack: "items1", slot: reserve } : null);
         if (inventorySlot < 0 || !destination) break;
@@ -6011,7 +6071,10 @@
       activity.push({ level: "success", message: "Deposited " + deposit.toLocaleString() + " merchant gold" });
     }
     for (var i = 0; i < (command.merchantWithdrawals || []).length; i += 1) {
-      if (freeInventorySlots() <= 3) {
+      var withdrawal = command.merchantWithdrawals[i];
+      var reservePickup = command.npcSalePickup && withdrawal.autoNpcRuleKey &&
+        !command._merchantWithdrawalsCompleted.length;
+      if (freeInventorySlots() <= 3 && !reservePickup) {
         if (command.type === "merchant-self-improve") {
           command._capacityDeferredWithdrawals = command.merchantWithdrawals.slice(i).filter(function (entry) {
             return String(entry.pack || "").indexOf("bankboi:") !== 0;
@@ -6020,9 +6083,13 @@
         activity.push({ level: "info", message: "Deferred withdrawals; three inventory slots are reserved" });
         break;
       }
-      var withdrawal = command.merchantWithdrawals[i];
       if (String(withdrawal.pack || "").indexOf("bankboi:") === 0) continue;
       var found = findBankItem(withdrawal.item, withdrawal.pack, withdrawal.slot);
+      if (withdrawal.autoNpcRuleKey) {
+        var source = character.bank[withdrawal.pack] && character.bank[withdrawal.pack][withdrawal.slot];
+        found = source && !source.l && !source.b && bankStackIdentity(source) === bankStackIdentity(withdrawal.item)
+          ? {pack: withdrawal.pack, slot: withdrawal.slot} : null;
+      }
       if (!found) {
         // The full bank is authoritative while standing inside it. If an item
         // is absent, its old pack/slot reservation is stale and must not haunt
@@ -6032,12 +6099,25 @@
         activity.push({ level: "info", message: "Removed stale merchant withdrawal: " + withdrawal.item.name });
         continue;
       }
-      await bankRetrieveConfirmed(found.pack, found.slot);
+      if (!freeInventorySlots() && reservePickup) {
+        var swapped = false;
+        for (var depositMark of command.merchantBankMarked || []) {
+          var depositSlot = depositMark.slot, cargo = character.items[depositSlot];
+          if (!cargo || cargo.l || cargo.b || !sameItemState(cargo, depositMark.item) ||
+              bankStackIdentity(cargo) === bankStackIdentity(source) || await reservedForCrafting(depositSlot)) continue;
+          if (!await swapBankCargo(depositSlot, cargo, found.pack, found.slot, source)) break;
+          command._merchantBankedCompleted.push(depositMark);
+          swapped = true;
+          break;
+        }
+        if (!swapped) break;
+      } else await bankRetrieveConfirmed(found.pack, found.slot);
       command._merchantWithdrawalsCompleted.push(withdrawal);
       activity.push({ level: "success", message: "Withdrew " + withdrawal.item.name + " for merchant" });
     }
     for (var markedIndex = 0; markedIndex < (command.merchantBankMarked || []).length; markedIndex += 1) {
       var mark = command.merchantBankMarked[markedIndex];
+      if (command._merchantBankedCompleted.includes(mark)) continue;
       var bankingItem = mark.item || mark;
       // Persistent storage preferences yield only for the lifetime of this job.
       var improvementReserved = (command.type === "merchant-self-improve" || command.type === "merchant-service") && ((command.upgrades || []).some(function (work) {
@@ -6070,6 +6150,7 @@
         await bankStoreFully(slot);
       } catch (error) {
         if (String(error && (error.reason || error.message) || error) !== "bank_full") throw error;
+        command._bankDepositFull = true;
         // A scroll-supply visit also runs these optional errands. A full bank
         // must not prevent improvements using items already in inventory.
         // Do not acknowledge this mark: the item still needs to be deposited.
@@ -6136,10 +6217,25 @@
     var start = Number(mark.item.level) || 0;
     var target = Math.min(maximumItemLevel(G.items[mark.item.name]), start + (Number(mark.tiers) || 1));
     var slot = Number.isInteger(mark.liveSlot) ? mark.liveSlot : mark.slot, item = Number.isInteger(slot) && character.items[slot];
+    if (!mark.auto) {
+      // A manual request owns a quantity and target, not the physical copy's
+      // former cell. Equivalent unfinished copies can satisfy distinct marks.
+      // Preserve stat/special properties and never borrow protected stock.
+      function equivalent(candidate, index) {
+        return candidate && !used[index] && !candidate.l && !candidate.b &&
+          (Number(candidate.level) || 0) >= start && (Number(candidate.level) || 0) <= target &&
+          sameItemState(Object.assign({}, candidate, {level:start}), Object.assign({}, mark.item, {level:start}));
+      }
+      if (equivalent(item, slot) && (Number(item.level) || 0) < target) return slot;
+      var unfinished = character.items.findIndex(function (candidate, index) {
+        return equivalent(candidate, index) && (Number(candidate.level) || 0) < target;
+      });
+      return unfinished >= 0 ? unfinished : equivalent(item, slot) ? slot : -1;
+    }
     if (item && !used[slot] && (Number(item.level) || 0) >= start &&
         (Number(item.level) || 0) <= target &&
         sameItem(Object.assign({}, item, { level: mark.item.level }), mark.item)) return slot;
-    if (mark.auto && mark.passId || !mark.auto && mark.requestId) {
+    if (mark.passId) {
       var survivors = [];
       character.items.forEach(function (candidate, index) {
         if (!used[index] && candidate && (Number(candidate.level) || 0) >= start &&
@@ -6472,24 +6568,36 @@
     Object.keys(character.bank || {}).forEach(function (pack) {
       if (!Array.isArray(character.bank[pack])) return;
       character.bank[pack].forEach(function (item, slot) {
-        if (item) stock.push({ pack: pack, slot: slot, craftLocation: pack, item: Object.assign({}, item, {craftLocation: pack}) });
+        if (item && !item.b && !(command.compoundStorageMarks || []).some(function (mark) {
+          return mark.pack === pack && mark.slot === slot && mark.improvement !== "auto compound";
+        })) stock.push({ pack: pack, slot: slot, craftLocation: pack, item: Object.assign({}, item, {craftLocation: pack}) });
       });
     });
     // Replace stale estimates with the authoritative bank view on each visit.
     command._autoCompoundBankItems = stock.map(function (entry) { return entry.item; });
     var matches = compoundAvailableStock(command, stock).slice(character.items.length).filter(function (entry) {
-      return entry && !entry.item.l && entry.item.name === name && (entry.item.level || 0) === level;
+      return entry && !entry.item.l && !entry.item.b && entry.item.name === name && (entry.item.level || 0) === level;
     });
     if (matches.length < needed) return;
+    function stagedInput(entry) {
+      return (command.compoundStorageMarks || []).some(function (mark) {
+        return mark.improvement === "auto compound" && mark.pack === entry.pack && mark.slot === entry.slot;
+      });
+    }
+    matches.sort(function (a,b) { return Number(stagedInput(b)) - Number(stagedInput(a)); });
     var scroll = "cscroll" + item_grade({ name: name, level: level });
     var reserve = findInventoryItemByName(scroll) < 0 ? 1 : 0;
-    if (character.esize < needed + reserve) throw new Error("inventory_full");
+    if (character.esize < needed + reserve) return;
     for (var index = 0; index < needed; index += 1) {
       await refreshCompoundProtection(command);
       if (!autoCompoundLevelAllowed(command, name, level)) return;
       var available = compoundAvailableStock(command, stock).slice(character.items.length);
       if (!available.some(function (entry) { return entry && entry.pack === matches[index].pack && entry.slot === matches[index].slot; })) return;
-      await bank_retrieve(matches[index].pack, matches[index].slot);
+      await bankRetrieveConfirmed(matches[index].pack, matches[index].slot);
+      var taken = (command.compoundStorageMarks || command.merchantWithdrawals || []).find(function (mark) {
+        return mark.improvement === "auto compound" && mark.pack === matches[index].pack && mark.slot === matches[index].slot && sameItemState(mark.item, matches[index].item);
+      });
+      if (taken) (command._merchantWithdrawalsCompleted ||= []).push(taken);
       stock = stock.filter(function (entry) { return entry !== matches[index]; });
       var saved = command._autoCompoundBankItems.findIndex(function (item) {
         return !item.l && item.name === name && (item.level || 0) === level && item.craftLocation === matches[index].pack;
@@ -6529,7 +6637,7 @@
   function compoundInventorySlots(command, name, level) {
     if (!autoCompoundLevelAllowed(command, name, level)) return [];
     return compoundAvailableStock(command).slice(0, character.items.length).filter(function (entry) {
-      return entry && !entry.item.l && entry.item.name === name && (entry.item.level || 0) === level;
+      return entry && !entry.item.l && !entry.item.b && entry.item.name === name && (entry.item.level || 0) === level;
     }).map(function (entry) { return entry.slot; });
   }
 
@@ -8299,7 +8407,7 @@
       if (!Array.isArray(entries)) continue;
       for (var slot = 0; slot < entries.length; slot += 1) {
         var item = entries[slot];
-        if (item && item.name === name && (Number(item.level) || 0) === (Number(level) || 0))
+        if (item && !item.l && !item.b && item.name === name && (Number(item.level) || 0) === (Number(level) || 0))
           return { pack: packs[p], slot: slot };
       }
     }
@@ -8319,6 +8427,13 @@
 
   async function merchantExchange(command) {
     var activity = [], lines = [], rewards = (command.exchangeRewards || []).slice();
+    var reservedSlots = command.autoExchangeKeys && command.autoExchangeKeys.length ? 3 : 0;
+    function hasExchangeRoom(extraSlots) {
+      return freeInventorySlots() >= reservedSlots + extraSlots;
+    }
+    function ownsExchange() {
+      return runtimeCurrent() && root.__merchantActiveJob && root.__merchantActiveJob.commandId === command.id;
+    }
     (command.exchanges || []).forEach(function (line) {
       var existing = lines.find(function (candidate) { return candidate.id === line.id &&
         candidate.reward === line.reward &&
@@ -8343,22 +8458,78 @@
       });
       return npc;
     }
-    async function splitExact(slot, quantity) {
+    async function splitExact(slot, quantity, remaining) {
+      if (!ownsExchange()) throw Error('interrupted');
       var item = character.items[slot], available = itemQuantity(item);
       if (available <= quantity) return slot;
+      if (!hasExchangeRoom(1)) throw new Error('inventory_full');
       var before = character.items.map(function (entry) { return JSON.stringify(fingerprint(entry)); });
-      await split(slot, quantity);
-      await new Promise(function (resolve) { setTimeout(resolve, 250); });
-      var result = character.items.findIndex(function (entry, index) {
-        return index !== slot && before[index] !== JSON.stringify(fingerprint(entry)) &&
-          sameItem(entry, item) && itemQuantity(entry) === quantity;
-      });
-      if (result < 0) throw new Error("Could not split exchange quantity for " + item.name);
-      return result;
+      try { await split(slot, quantity); }
+      catch (error) {
+        // Native split rejects before consuming anything. One capacity recovery
+        // is safe here; an uncertain exchange receipt is never replayed.
+        if (!/^(cant_space|inventory_full|no_space)$/.test(String(error.reason || error.message || error))) throw error;
+        await bankExchangeRewards(remaining);
+        if (!hasExchangeRoom(1)) throw new Error('inventory_full');
+        slot = exchangeSlot(item.name, Number(item.level) || 0, quantity);
+        if (slot < 0) throw new Error('Exchange stack changed for ' + item.name);
+        item = character.items[slot];
+        if (itemQuantity(item) <= quantity) return slot;
+        before = character.items.map(function (entry) { return JSON.stringify(fingerprint(entry)); });
+        await split(slot, quantity);
+      }
+      var deadline = Date.now() + 2500;
+      while (true) {
+        var result = character.items.findIndex(function (entry, index) {
+          return index !== slot && before[index] !== JSON.stringify(fingerprint(entry)) &&
+            sameItem(entry, item) && itemQuantity(entry) === quantity;
+        });
+        if (result >= 0) return result;
+        if (Date.now() >= deadline) throw new Error('Could not split exchange quantity for ' + item.name);
+        await sleep(50);
+      }
     }
+    function exchangeSlot(id, level, required) {
+      return character.items.findIndex(function (item) {
+        return item && item.name === id && (Number(item.level) || 0) === level && !item.l && !item.b && itemQuantity(item) >= required;
+      });
+    }
+    function remainingLines(lineIndex, consumed) {
+      return lines.slice(lineIndex).map(function (line, index) {
+        return {id:line.id,level:line.level,...(line.reward ? {reward:line.reward} : {}),quantity:line.quantity-(index===0?consumed:0)};
+      }).filter(function (line) { return line.quantity > 0; });
+    }
+    async function bankExchangeRewards(remaining) {
+      // Persist unfinished consumption before movement; recovery resumes this
+      // order rather than discovering a new automatic order from its leftovers.
+      await request('/merchant/exchange-progress',{method:'POST',body:{jobId:command.jobId,commandId:command.id,remaining:remaining,rewards:rewards}});
+      await merchantVisitBank(command, activity);
+      if (!ownsExchange()) throw Error('interrupted');
+      var routing = await request('/merchant/exchange-progress',{method:'POST',body:{jobId:command.jobId,commandId:command.id,remaining:remaining,rewards:rewards}});
+      var actions = routing.rewardActions || [], banked = 0;
+      for (var rewardIndex=0;rewardIndex<rewards.length;rewardIndex+=1) {
+        if (!actions[rewardIndex] || actions[rewardIndex].action !== 'bank') continue;
+        // A reward may share the input identity. Never deposit remaining inputs.
+        if (remaining.some(function (line) { return rewards[rewardIndex].name===line.id && (Number(rewards[rewardIndex].level)||0)===(Number(line.level)||0); })) continue;
+        for (var slot=0;slot<character.items.length;slot+=1) {
+          var item=character.items[slot];
+          if (!item || item.l || item.b || !sameItemState(item,rewards[rewardIndex])) continue;
+          var checkpoint=await request('/merchant/checkpoint',{method:'POST',body:{jobId:command.jobId,commandId:command.id,protectionOnly:true}});
+          if (!checkpoint?.craftProtection || checkpoint.craftProtection.error) throw Error('Craft reservations unavailable; exchange banking deferred');
+          var stock=character.items.map(function (entry,index) { return entry ? {item:entry,slot:index,craftLocation:'inventory:'+character.name} : null; });
+          var available=globalThis.partyAvailableCraftStock(stock,checkpoint.craftProtection);
+          if (!available[slot] || itemQuantity(available[slot].item)<itemQuantity(item)) continue;
+          if (!ownsExchange()) throw Error('interrupted');
+          await bankStoreFully(slot);banked+=1;
+        }
+      }
+      activity.push({level:'info',message:remaining.length?'Banked exchange rewards to free inventory':'Exchange rewards routed through merchant rules',details:{banked:banked,actions:actions,remaining:remaining}});
+      return banked;
+    }
+
     function exactInventoryQuantity(itemId, level) {
       return character.items.reduce(function (sum, item) {
-        return sum + (item && item.name === itemId && (Number(item.level) || 0) === (Number(level) || 0)
+        return sum + (item && !item.l && !item.b && item.name === itemId && (Number(item.level) || 0) === (Number(level) || 0)
           ? itemQuantity(item) : 0);
       }, 0);
     }
@@ -8387,6 +8558,12 @@
         while (exactInventoryQuantity(retrieveLine.id, retrieveLine.level) < needed) {
           var found = findExchangeBankItem(retrieveLine.id, retrieveLine.level);
           if (!found) break;
+          if (reservedSlots && !hasExchangeRoom(1)) {
+            await bankExchangeRewards(lines);
+            if (!hasExchangeRoom(1)) throw new Error('inventory_full');
+            found = findExchangeBankItem(retrieveLine.id, retrieveLine.level);
+            if (!found) break;
+          }
           var beforeQuantity = exactInventoryQuantity(retrieveLine.id, retrieveLine.level);
           await bank_retrieve(found.pack, found.slot);
           var deadline = Date.now() + 2500;
@@ -8397,7 +8574,7 @@
         var missing = needed - exactInventoryQuantity(retrieveLine.id, retrieveLine.level);
         if (missing > 0) {
           var supply = await request("/merchant/exchange-supply", { method: "POST", body: {
-            jobId: command.jobId, shortages: [{ id: retrieveLine.id, level: retrieveLine.level, quantity: missing }],
+            jobId: command.jobId, commandId: command.id, shortages: [{ id: retrieveLine.id, level: retrieveLine.level, quantity: missing }],
           }});
           if (supply && supply.pending) throw new Error("bankboi_pending");
           throw new Error("Not enough " + (definition.name || retrieveLine.id) + " to exchange");
@@ -8419,70 +8596,65 @@
           // Long jobs must also compress stock received after admission.
           await compressMerchantInventory(command);
           if (bankStacks && bankStacks.pending()) await bankStacks.recover();
-          var slot = character.items.findIndex(function (item) {
-            return item && item.name === line.id && (Number(item.level) || 0) === (Number(line.level) || 0) &&
-              !item.l && itemQuantity(item) >= required;
-          });
+          if (!ownsExchange()) throw Error('interrupted');
+          var slot = exchangeSlot(line.id,Number(line.level)||0,required);
+          if (slot < 0) throw new Error('Exchange stack changed for ' + line.id);
+          var extraSlots = line.reward || itemQuantity(character.items[slot]) > required ? 1 : 0;
+          if (!hasExchangeRoom(extraSlots)) {
+            await bankExchangeRewards(remainingLines(lineIndex,count));
+            if (!hasExchangeRoom(extraSlots)) throw new Error('inventory_full');
+            await smart_move(find_npc(line.reward ? itemDefinition.npc || line.id + 's' : exchangeNpc(line.id)));
+          }
+          slot = exchangeSlot(line.id,Number(line.level)||0,required);
           if (slot < 0) throw new Error("Exchange stack changed for " + line.id);
           var result, held = character.items.map(fingerprint);
+          if (!ownsExchange()) throw Error('interrupted');
           if (line.reward) {
             // Select the verified stack explicitly; exchange_buy() otherwise
             // chooses the first stack, which may be locked or too small.
+            if (!hasExchangeRoom(1)) throw new Error('inventory_full');
             var purchase = parent.push_deferred("exchange_buy");
             parent.socket.emit("exchange_buy", {num:slot, name:line.reward, q:character.items[slot].q});
             result = await purchase;
           } else {
-            slot = await splitExact(slot, required);
+            slot = await splitExact(slot, required, remainingLines(lineIndex,count));
+            held = character.items.map(fingerprint);
+            // A rejected split may have made a recovery bank visit.
+            if (['bank','bank_b','bank_u'].indexOf(character.map)>=0) await smart_move(find_npc(exchangeNpc(line.id)));
             await merchantMassBuff("massexchange");
             await verifyMerchantItemMarks();
+            if (!ownsExchange()) throw Error('interrupted');
+            if (!hasExchangeRoom(0)) throw new Error('inventory_full');
             result = await exchange(slot);
           }
           exchangeGains(held).forEach(function (gain) {
-            if (!rewards.some(function (reward) { return sameItem(gain, reward); })) rewards.push(gain);
+            if (!rewards.some(function (reward) { return sameItemState(gain, reward); })) rewards.push(gain);
           });
-          var remaining = lines.slice(lineIndex).map(function (pendingLine, index) {
-            return { id: pendingLine.id, level: pendingLine.level,
-              ...(pendingLine.reward ? {reward:pendingLine.reward} : {}),
-              quantity: pendingLine.quantity - (index === 0 ? count + 1 : 0) };
-          }).filter(function (pendingLine) { return pendingLine.quantity > 0; });
+          var remaining = remainingLines(lineIndex,count+1);
           await request("/merchant/exchange-progress", { method: "POST", body: {
-            jobId: command.jobId, remaining: remaining, rewards: rewards,
+            jobId: command.jobId, commandId: command.id, remaining: remaining, rewards: rewards,
           }});
           activity.push({ level: "success", message: "Exchanged " + required + " × " +
             (itemDefinition.name || line.id) + (line.reward ? " for " + line.reward : result && result.reward ? " and received " + result.reward : "") });
         }
       }
-      await merchantVisitBank(command, activity);
-      // Read current shared rules after the exchange and bank travel. A reward
-      // with a processing/sale rule stays carried for the normal merchant queue.
-      var routing = await request("/merchant/exchange-progress", { method: "POST", body: {
-        jobId: command.jobId, remaining: [], rewards: rewards,
-      }});
-      var rewardActions = routing.rewardActions || [];
-      var bankedRewards = 0;
-      for (var rewardIndex = 0; rewardIndex < rewards.length; rewardIndex += 1) {
-        var rewardSlot = findItem(rewards[rewardIndex]);
-        if (rewardSlot >= 0 && rewardActions[rewardIndex] && rewardActions[rewardIndex].action === "bank") {
-          await verifyMerchantItemMarks();
-          await bankStoreFully(rewardSlot);
-          bankedRewards += 1;
-        }
-      }
-      activity.push({ level: "success", message: "Exchange rewards routed through merchant rules", details: {
-        banked: bankedRewards, actions: rewardActions,
-      } });
+      await bankExchangeRewards([]);
       await request("/merchant/complete", { method: "POST", body: {
-        jobId: command.jobId, success: true, autoExchangesResolved: command.autoExchangeKeys || [],
+        jobId: command.jobId, commandId: command.id, success: true, autoExchangesResolved: command.autoExchangeKeys || [],
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [], activity: activity,
       }});
     } catch (error) {
+      // Recovery can interrupt this worker's bank walk while dispatching a new
+      // command for the same durable order. Its stop is not the new job's failure.
+      if (!ownsExchange()) return;
+      var capacity = /^(cant_space|inventory_full|no_space|bank_full)$/.test(String(error.reason || error.message || error));
       try { await request("/merchant/complete", { method: "POST", body: {
-        jobId: command.jobId, success: false, error: String(error.reason || error.message || error),
+        jobId: command.jobId, commandId: command.id, success: false, error: String(error.reason || error.message || error),
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [],
-        activity: activity.concat([{ level: String(error.reason || error.message || error) === "bankboi_pending" ? "info" : "error",
-          message: String(error.reason || error.message || error) === "bankboi_pending" ? "Exchange waiting for BankBoi materials" : "Exchange failed",
+        activity: activity.concat([{ level: capacity || String(error.reason || error.message || error) === "bankboi_pending" ? "info" : "error",
+          message: capacity ? "Exchange paused for inventory capacity" : String(error.reason || error.message || error) === "bankboi_pending" ? "Exchange waiting for BankBoi materials" : "Exchange failed",
           details: String(error.reason || error.message || error) }]),
       }}); } catch (_completeError) {}
       throw error;
@@ -8523,7 +8695,7 @@
     var heartbeatTimer = setInterval(heartbeat, 5000), suspendedGathering = null, actionStarted = false;
     try {
       // Delivery owns movement too: retire an idle return or gathering path before starting it.
-      if (["merchant-service", "merchant-npc-sale", "merchant-deconstruct", "merchant-commerce", "merchant-upgrade-preview"].indexOf(command.type) >= 0) {
+      if (["merchant-service", "merchant-self-improve", "merchant-self-bank", "merchant-self-restock", "merchant-npc-sale", "merchant-deconstruct", "merchant-commerce", "merchant-exchange", "merchant-upgrade-preview"].indexOf(command.type) >= 0) {
         suspendedGathering = gatheringMode;
         gatheringGeneration += 1; root.__merchantGatheringGeneration = gatheringGeneration;
         if (gatheringTimer) clearInterval(gatheringTimer);
@@ -8543,9 +8715,16 @@
       luckyUpgradeSlot = command.luckyUpgradeSlot;
       if (luckyUpgradeService && luckyUpgradeService.pending()) await luckyUpgradeService.recover();
       else if (character.ctype === "merchant" && root.localStorage.getItem("party-lucky-upgrade:" + character.name)) await merchantLuckyUpgrade().recover();
-      if (command.type !== "merchant-upgrade-preview" && command.commerceProgressVersion !== 2 && freeInventorySlots() > 0) await merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
       await compressMerchantInventory(command);
       if (bankStacks && bankStacks.pending()) await bankStacks.recover();
+      // Recover native journals first, but don't make sales/banking/exchanges
+      // tidy the lucky layout. They must be able to free a packed inventory.
+      // Recheck production admission locally: loot can arrive after dispatch.
+      if (command.type === "merchant-self-improve" &&
+          ["upgrades", "statScrolls", "compounds", "autoCompounds", "bankUpgradeRules"].some(function (key) { return (command[key] || []).length > 0; })) {
+        if (freeInventorySlots() < 2) throw new Error("inventory_full");
+        await merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
+      }
       actionStarted = true;
       return await action();
     } catch (error) {
@@ -9113,7 +9292,8 @@
       }
       activity.push({ level: "success", message: "Merchant bank balance set to " + target.toLocaleString() + " gold" });
       await request("/merchant/complete", { method: "POST", body: {
-        jobId: command.jobId, success: true,
+        jobId: command.jobId, commandId: command.id, success: true,
+        bankDepositFull: command._bankDepositFull === true,
         merchantWithdrawalsDelivered: command._merchantWithdrawalsCompleted || [],
         merchantBanked: command._merchantBankedCompleted || [], activity: activity,
       }});
@@ -9303,7 +9483,7 @@
     var activity = [], resolved = [], blocked = [], marks = command.npcSales || [];
     try {
       for (var index = 0; index < marks.length; index += 1) {
-        var mark = marks[index], inventorySlot = findItem(mark.item);
+        var mark = marks[index], inventorySlot = mark.auto && mark.source === "merchant" ? findMarkedInventoryItem(mark) : findItem(mark.item);
         if (inventorySlot < 0) {
           if (mark.source === "merchant") {
             blocked.push({id:mark.id,error:"Marked item is not in merchant inventory"});
@@ -9318,7 +9498,7 @@
             continue;
           }
           await bank_retrieve(found.pack, found.slot);
-          inventorySlot = findItem(mark.item);
+          inventorySlot = mark.auto && mark.source === "merchant" ? findMarkedInventoryItem(mark) : findItem(mark.item);
         }
         if (inventorySlot < 0 || !sameItem(character.items[inventorySlot], mark.item)) {
           blocked.push({id:mark.id,error:"NPC-sale item changed before sale"});
@@ -9329,7 +9509,7 @@
         var quantity = Math.min(Number(mark.quantity) || 1, Number(character.items[inventorySlot].q) || 1);
         // Named NPC destinations include the walkable interaction offset.
         await smart_move("fancypots");
-        inventorySlot = findItem(mark.item);
+        inventorySlot = mark.auto && mark.source === "merchant" ? findMarkedInventoryItem(mark) : findItem(mark.item);
         if (inventorySlot < 0 || !sameItem(character.items[inventorySlot], mark.item))
           throw new Error("NPC-sale item moved before confirmation: " + mark.item.name);
         if (character.items[inventorySlot].l) { blocked.push({id:mark.id,error:"Item is locked"}); continue; }
@@ -9692,7 +9872,7 @@
         liveListings.push({ id: listing.id, tradeSlot: emptyTrade });
       }
       if (typeof nativeStandSync === "function") await nativeStandSync(command, false);
-      if (!command.inPlace && ownsIdle() && !root.__merchantActiveJob) {
+      if (!command.inPlace && ownsIdle() && !root.__merchantActiveJob && freeInventorySlots() >= 2) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot);
         try { await root.__merchantInventoryTidy; }
         catch (tidyError) {
@@ -10830,6 +11010,10 @@
     if (command.type === "upgrade") return afterCombat(function () {
       return upgradeMarked(command.items || [], command.compounds || [], command.purchases || [], command.returnLocation);
     }, "upgrading");
+    if (command.type === "bankboi-exit-bank") {
+      if (["bank", "bank_b", "bank_u"].includes(character.map)) await smart_move("main");
+      return;
+    }
     if (command.type === "travel" && command.location) {
       partyLocation = command.location;
       return afterCombat(async function () {
@@ -11586,7 +11770,7 @@
         }
         if (!error.movementReported) game_log("Party command failed: " + (error.reason || error.message || error), "red");
       });
-      if (character.ctype === "merchant" && !state.command && !root.__merchantActiveJob && !root.__merchantInventoryTidy &&
+      if (character.ctype === "merchant" && freeInventorySlots() >= 2 && !state.command && !root.__merchantActiveJob && !root.__merchantInventoryTidy &&
           !merchantEventWorkReserved() &&
           !banking && !upgrading && !stocking && !gatheringActive && !merchantIdleActive && !anniversaryBusy && !character.rip) {
         root.__merchantInventoryTidy = merchantLuckyUpgrade().tidy(luckyUpgradeSlot).catch(function (error) {

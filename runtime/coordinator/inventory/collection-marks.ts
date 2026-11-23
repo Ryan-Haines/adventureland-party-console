@@ -4,7 +4,7 @@ import { autoItemRuleMode, markedItem, sameMarkedItem } from "./item-identity.ts
 type Mode = "bank" | "merchant";
 type Inventory = readonly (InventoryEntry | null)[];
 /** Copies with no item rule that still belong in the bank (#116: kept NPC-sale stock). */
-type BankKept = (entry: InventoryEntry) => boolean;
+type BankKept = (entry: InventoryEntry) => boolean | undefined;
 
 interface MarkState {
   bank: ItemMark[];
@@ -45,7 +45,11 @@ function retainMark(
   return entryMode(live, rules, bankKept) === mode;
 }
 function entryMode(entry: InventoryEntry, rules: Readonly<Record<string, string>>, bankKept?: BankKept): string | undefined {
-  return autoItemRuleMode(rules, entry.item) || (bankKept?.(entry) ? "bank" : undefined);
+  const mode = autoItemRuleMode(rules, entry.item);
+  if (mode === 'merchant') return mode;
+  const saleDisposition = bankKept?.(entry);
+  if (saleDisposition !== undefined) return saleDisposition ? "bank" : undefined;
+  return mode;
 }
 
 function pruneMarks(

@@ -34,6 +34,7 @@ function dispatchRuntime(overrides={}) {
     manualEquipmentPending:()=>['equip','unequip'].includes(party.commands[party.merchantCharacter]?.type),
     gatheringModes:()=>party.gatheringModes,gatheringCooldown:mode=>party.gatheringCooldowns[mode],
     routinePriority:reason=>r.merchantRoutinePriority(reason),priority:job=>r.merchantJobPriority(job),
+    capacitySignature:name=>r.coordinatorPolicies.coordinatorMerchantCapacitySignature(party,name),
     capacityBlocked:job=>r.merchantTransferCapacityBlocked(job),collectionReady:job=>r.markedCollectionReady(job),
     pick:()=>r.pickJobByPriority(),stamp:job=>r.stampMerchantJob(job),status:name=>party.statuses[name],
     planPonty:(...args)=>r.pontyMarket.planPurchase(...args),

@@ -5,6 +5,8 @@ import {createServer} from 'node:net';
 import path from 'node:path';
 import {ConsoleBuildStore} from './store.ts';
 import type {Candidate, CandidateManifest} from './contracts.ts';
+import {consoleVersion} from '../update/version-label.ts';
+import type {Release} from '../update/contracts.ts';
 
 // Maintained debug hosting imports the native fixture client/bootstrap boundary.
 const roots = ['runtime', 'characters', 'dashboard', 'tools', 'scripts', 'patches', 'e2e', '.caracal'];
@@ -183,9 +185,16 @@ export async function buildCandidate(root:string,store:ConsoleBuildStore,signal?
   await command(app,['tools/dashboard/build.mts'],{AL_DASHBOARD_OUT_DIR:'.build/container'},signal);
   await validateDashboard(app,signal);
   signal?.throwIfAborted();
+  const release=await readFile(path.join(root,'release.json'),'utf8').then(value=>JSON.parse(value) as Release)
+    .catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return undefined;throw error;});
+  const {displayVersion}=await consoleVersion(root,release);
+  // Include version provenance in the artifact identity. An older running host
+  // can build the same sources without the new manifest metadata; never reuse
+  // that artifact when the current builder captures the release/branch label.
+  await writeFile(path.join(app,'console-version.json'),JSON.stringify({displayVersion}));
   const files=await inventory(app,true),components=componentHashes(files,dependencyId);
   const id=digest(JSON.stringify({sourceHash,dependencyId,files,components}));
-  return await store.complete(stage,{schema:1,id,sourceHash,dependencyId,createdAt:new Date().toISOString(),components,files});
+  return await store.complete(stage,{schema:1,id,sourceHash,dependencyId,displayVersion,createdAt:new Date().toISOString(),components,files});
   }
   finally{await store.pinDependencies([]);}
   }finally{await removeOwnedStage(path.join(store.directory,'staging'),stage);}

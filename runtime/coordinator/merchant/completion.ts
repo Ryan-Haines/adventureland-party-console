@@ -75,6 +75,9 @@ export function createMerchantCompletion(state: CompletionState, ports: Completi
   }
   function complete(job: CompletionJob, body: CompletionReport): void {
     const name = job.target;
+    if (body.success && body.bankDepositFull && typeof job.capacityBankAttempt === 'string' &&
+        !body.merchantBanked?.length && !body.merchantWithdrawalsDelivered?.length)
+      ports.bankDepositBlocked?.(job.capacityBankAttempt);
     results.resolve(job, body);
     const decision = retries.decide(job, body);
     const repeatCleanout = job.reason === "inventory cleanout" && job.handoff?.cleanoutRemaining;

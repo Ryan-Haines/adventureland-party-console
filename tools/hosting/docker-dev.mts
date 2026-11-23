@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { grantDockerSocket } from '../debug/docker-access.ts';
+import {preparePartyStorage} from './windows-party-storage.ts';
 
 const seed = '/opt/party-seed';
 const root = '/app';
@@ -23,17 +24,24 @@ async function populate(relative: string) {
   // These paths are dedicated named volumes, never the source tree or saved data.
   const { readdir } = await import('node:fs/promises');
   await mkdir(destination, { recursive: true });
-  for (const name of await readdir(destination)) await rm(path.join(destination, name), { recursive: true, force: true });
-  await cp(path.join(seed, relative), destination, { recursive: true, verbatimSymlinks: true });
+  const preserveStorage = relative === '.caracal';
+  for (const name of await readdir(destination)) {
+    if (preserveStorage && name === 'localStorage') continue;
+    await rm(path.join(destination, name), { recursive: true, force: true });
+  }
+  const source = path.join(seed, relative);
+  await cp(source, destination, { recursive: true, verbatimSymlinks: true,
+    filter: file => !preserveStorage || file !== path.join(source, 'localStorage') });
   await writeFile(marker, identity);
   run('chown', ['-R', `${uid}:${gid}`, destination]);
 }
+await preparePartyStorage(root, '/data');
 await populate('node_modules');
 await populate('dashboard/node_modules');
 await populate('.caracal');
 await mkdir('/app/.build', { recursive: true });
 await cp(path.join(seed, '.build/caddy'), '/app/.build/caddy', { recursive: true });
-for (const name of ['localStorage', 'game_files', 'logs']) {
+for (const name of ['game_files', 'logs']) {
   await mkdir('/data/' + name, { recursive: true });
   await rm('/app/.caracal/' + name, { recursive: true, force: true });
   await symlink('/data/' + name, '/app/.caracal/' + name);

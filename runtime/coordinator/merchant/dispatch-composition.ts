@@ -66,6 +66,7 @@ type CompositionPorts = Pick<
   | "anniversary"
   | "routinePriority"
   | "priority"
+  | "capacitySignature"
   | "capacityBlocked"
   | "collectionReady"
   | "pick"

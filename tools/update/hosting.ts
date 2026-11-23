@@ -37,9 +37,21 @@ export async function updateHosting(root: string, data: string): Promise<UpdateR
   // Branch/dirty labels are display metadata; compare the same resolved base
   // version without pretending a source checkout is a managed installation.
   Object.assign(updates.state, await consoleVersion(root, release));
+  let versionCheckedAt=Date.now(),versionRefresh:Promise<void>|undefined;
+  async function refreshVersion() {
+    if(release||Date.now()-versionCheckedAt<5000)return;
+    versionRefresh??=consoleVersion(root).then(value=>{
+      Object.assign(updates.state,value);
+      versionCheckedAt=Date.now();
+    }).finally(()=>{versionRefresh=undefined;});
+    await versionRefresh;
+  }
   await updates.load(); void updates.poll();
   setInterval(() => void updates.poll(), 6 * 3600000).unref();
-  return { route: (req, res, pathname) => updateRoute(updates, req, res, pathname.replace('/console-update', '') || '/') };
+  return { async route(req, res, pathname) {
+    await refreshVersion();
+    await updateRoute(updates, req, res, pathname.replace('/console-update', '') || '/');
+  } };
 }
 export async function updateRoute(updates: Updates, req: IncomingMessage, res: ServerResponse, pathname: string) {
   if (pathname === '/' && req.method === 'GET') { json(res, 200, updates.state); return; }

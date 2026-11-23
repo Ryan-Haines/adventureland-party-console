@@ -20,6 +20,8 @@ for (const entry of [
   { source: "coordinator/navigation/rare-hunting.ts", output: "rare-hunting.cjs", browser: false },
   { source: "coordinator/navigation/convoy-defense.ts", output: "convoy-defense.cjs", browser: false },
   { source: "coordinator/index.ts", output: "coordinator-policies.cjs", browser: false },
+  // Include the routing script and its TypeScript imports in the coordinator deployment hash.
+  { source: "../scripts/bank-stack-routing.cjs", output: "bank-stack-routing.cjs", browser: false },
   { source: "coordinator/application.ts", output: "coordinator-application.cjs", browser: false },
   { source: "coordinator/navigation/planner-worker.ts", output: "movement-planner.cjs", browser: false },
   { source: "steam/entry.ts", output: "steam-bridge.js", browser: true },

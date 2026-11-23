@@ -75,14 +75,22 @@ export function createMerchantItemCommands(state: MerchantItemState, ports: Port
     ports.persist();
     return null;
   }
-  function exchange(item: Item & { name: string }, status: Status | undefined): CommandOutcome {
+  function exchange(item: Item & { name: string }, status: Status | undefined, remove = false): CommandOutcome {
     const level = Number(item.level) || 0;
     const choice = state.merchantCatalog?.exchangeable?.find(
       (entry) => !entry.reward && entry.id === item.name && (Number(entry.level) || 0) === level,
     );
-    if (!choice) return failure("this item cannot be exchanged");
+    if (!choice && !remove) return failure("this item cannot be exchanged");
     const key = item.name + "@" + level;
-    if (state.autoExchanges[key]) delete state.autoExchanges[key];
+    if (remove || state.autoExchanges[key]) {
+      delete state.autoExchanges[key];
+      state.merchantQueue=state.merchantQueue.filter(job=>{
+        if(job.reason!=='exchange'||!job.autoExchangeKeys?.includes(key))return true;
+        job.autoExchangeKeys=job.autoExchangeKeys.filter(entry=>entry!==key);
+        job.exchanges=job.exchanges?.filter(line=>line.id!==item.name||(Number(line.level)||0)!==level);
+        return job.autoExchangeKeys.length>0;
+      });
+    }
     else {
       ports.selectAction?.(item, String(state.merchantCharacter));
       state.autoExchanges[key] = { name: item.name, level };
@@ -121,11 +129,11 @@ export function createMerchantItemCommands(state: MerchantItemState, ports: Port
       return undefined;
     const status = state.statuses[String(state.merchantCharacter)],
       entry = state.statuses[String(body.character)]?.items?.find((candidate) => candidate?.slot === body.slot);
-    if (prospectiveExchange(state, body)) return exchange(item, status);
+    if (prospectiveExchange(state, body)) return exchange(item, status, body.remove === true);
     if (!entry || JSON.stringify(entry.item) !== JSON.stringify(item))
       return failure("merchant inventory item changed; refresh and try again", 409);
     if (body.type === "exchange") return once(body, entry);
-    return body.type === "merchant-weapon" ? weapon(body, entry) : exchange(item, status);
+    return body.type === "merchant-weapon" ? weapon(body, entry) : exchange(item, status, body.remove === true);
   }
   function handle(body: Request): CommandOutcome {
     const item = requestObject(body.item);

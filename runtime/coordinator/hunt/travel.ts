@@ -23,7 +23,18 @@ export function createHuntTravel(state: HuntTickState, ports: HuntTickPorts) {
     hunt.stage = "paused-event";
     hunt.message = "Paused for combat event";
     ports.cancelHuntConvoy();
-    if (changed) ports.persist();
+    if (changed) {
+      if (state.combatLogs) (state.combatLogs[String(state.leader)] ||= []).push({
+        at: ports.now(), type: 'navigation', message: hunt.message,
+        details: { cycleId: hunt.cycleId, resumeStage: hunt.resumeStage,
+          participants: hunt.participants.map(name => {
+            const s = state.statuses[name];
+            return { name, server: s?.server, seenAt: s?.seenAt,
+              activeEvent: s?.activeEvent, joinedEvent: s?.joinedEvent };
+          }) },
+      });
+      ports.persist();
+    }
     return true;
   }
 

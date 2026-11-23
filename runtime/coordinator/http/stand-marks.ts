@@ -1,3 +1,4 @@
+import { validStandSalePrice, standSalePriceError } from "../../../dashboard/lib/stand-sale-price.ts";
 import { requestObject, type HttpRequest, type HttpResponse } from "./contracts.ts";
 import { createStandMarks, type StandMarkState } from "../merchant/stand-marks.ts";
 import { storagePack } from "../inventory/storage-source.ts";
@@ -14,11 +15,8 @@ interface StandPorts {
   syncStand(): boolean;
   idle(): void;
 }
-function validPrice(price: number, quantity: number): boolean {
+function validQuantity(quantity: number): boolean {
   return (
-    Number.isSafeInteger(price) &&
-    price >= 1 &&
-    price <= 1000000000000 &&
     Number.isSafeInteger(quantity) &&
     quantity >= 1 &&
     quantity <= 9999
@@ -65,7 +63,8 @@ export function createStandMarkRoute(state: StandMarkState, ports: StandPorts) {
     }
     const price = Number(body.price),
       quantity = Number(body.quantity || 1);
-    if (!validPrice(price, quantity)) return "invalid stand price or quantity";
+    if (!validStandSalePrice(price)) return standSalePriceError;
+    if (!validQuantity(quantity)) return "invalid stand quantity";
     if (body.markAll === true) marks.markAll(item, price);
     else if (!marks.single(index, id, pack, slot, item, price, quantity))
       return "merchant stand is full (16/16)";

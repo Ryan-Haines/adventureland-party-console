@@ -3,7 +3,7 @@ const {migrateCoordinatorLegacyStorage: migrate} = require('../../runtime/coordi
 
 function fixture(contents) {
   const calls = [], path = './localStorage/storage.json';
-  const storage = {set: (key, value) => calls.push(['set', key, value])};
+  const storage = {get: () => undefined, set: (key, value) => calls.push(['set', key, value])};
   const ports = {read: file => {assert.equal(file, path); return contents;},
     remove: file => calls.push(['remove', file]), info: (...args) => calls.push(['info', ...args])};
   return {calls, path, storage, ports, run: () => migrate(path, storage, ports)};
@@ -18,9 +18,11 @@ test('legacy storage transfers all entries in order before deletion and retains 
   ]);
 });
 
-test('legacy storage preserves the read-error fallback without deleting unread data', () => {
-  const t = fixture(''); t.ports.read = () => {throw Error('access denied');}; t.run();
+test('missing legacy storage skips migration; unreadable storage stops startup', () => {
+  const t = fixture(''); t.ports.read = () => {throw Object.assign(Error('missing'), {code:'ENOENT'});}; t.run();
   assert.deepEqual(t.calls, [['info', {type: 'ls_migration_none', path: t.path}, 'localStorage migration unnecessary']]);
+  t.ports.read = () => {throw Object.assign(Error('access denied'), {code:'EACCES'});};
+  assert.throws(t.run, /access denied/);
 });
 
 test('empty legacy storage is removed without a transfer log', () => {

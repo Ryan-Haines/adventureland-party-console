@@ -15,7 +15,7 @@ import { PartyGold } from "./party-gold";
 import type { PartyConsoleModel } from "./use-party-console";
 import { MailCount } from "./mail-count";
 import { StandCount } from "./stand-count";
-import { ConsoleUpdateIndicator, useUpdates } from './console-updates';
+import { openConsoleUpdateSettings, useUpdates } from './console-updates';
 import { ConsoleBuildControl } from './console-build-control';
 
 function HornedMonster({ className }: { className: string }) {
@@ -39,7 +39,9 @@ function ListCode({className}:{className:string}) { return (
 export function PartyHeader({ model, onLogs, metricsActive, onMetrics }: { model: PartyConsoleModel; onLogs: () => void; metricsActive: boolean; onMetrics: () => void;
 }) {
   const [artifact,setArtifact]=useState<string>();
-  const { state: updates } = useUpdates();
+  const [artifactVersion,setArtifactVersion]=useState<string>();
+  const updateControl = useUpdates();
+  const updates=updateControl.state;
   const {
     state,
     setMailOpen,
@@ -58,9 +60,9 @@ export function PartyHeader({ model, onLogs, metricsActive, onMetrics }: { model
     <>
       <header className="border-b border-emerald-900/70 bg-[#091614] px-5 py-5 md:px-10">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-5">
-          <div className="relative"><div className="flex items-center"><h1 className="text-3xl font-semibold">Party Console</h1><ConsoleBuildControl onActiveChange={setArtifact} /><ConsoleUpdateIndicator open={() => setSettingsOpen(true)} /></div>
+          <div className="relative"><div className="flex items-center"><h1 className="text-3xl font-semibold">Party Console</h1><ConsoleBuildControl onActiveChange={setArtifact} onVersionChange={setArtifactVersion} updates={updateControl} onReleaseSettings={() => openConsoleUpdateSettings(() => setSettingsOpen(true))} /></div>
             <span className="mt-1 block font-mono text-[10px] leading-3 text-emerald-100/70">{state.gameVersion ? `Game v${state.gameVersion} · ` : ''}Console{' '}
-              {updates
+              {artifactVersion?`v${artifactVersion}`:updates
                 ? `v${updates.displayVersion || updates.current}`
                 : 'loading…'}
             </span>

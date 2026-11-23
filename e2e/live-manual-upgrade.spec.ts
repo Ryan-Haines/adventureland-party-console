@@ -1,5 +1,46 @@
 import {test,expect} from './live-fixtures';
 
+test('displaced identical manual upgrades share available copies and allow unrelated gear to finish',async({live},info)=>{
+  // Failure inventory: multiple unfinished duplicates block the whole batch;
+  // completed copies satisfy unrelated requests; one copy receives two marks;
+  // locked/stat variants are substituted; restart resets targets or replays rolls.
+  test.setTimeout(240_000);const merchant='E2EMerchant';
+  await live.post('/merchant/force-stand',{enabled:true});
+  await live.admin(`output=(()=>{const p=get_player('${merchant}');
+    for(const slot of [7,8,9])p.items[slot]={name:'wcap',level:0};
+    for(const slot of [10,11,12])p.items[slot]=null;
+    p.items[13]={name:'wcap',level:0,l:'l'};p.items[14]={name:'wcap',level:0,stat_type:'int'};
+    p.items[15]={name:'wcap',level:1};p.items[16]={name:'coat',level:0};p.items[20]={name:'scroll0',q:100};
+    cache_player_items(p);resend(p,'reopen+cid');return true})()`);
+  await expect.poll(async()=>(await live.clients[merchant].snapshot()).items[7]?.name).toBe('wcap');
+  for(const slot of [7,8,9])await live.post('/command',{character:merchant,type:'upgrade-mark',slot,item:{name:'wcap',level:0},tiers:1});
+  await live.post('/command',{character:merchant,type:'upgrade-mark',slot:16,item:{name:'coat',level:0},tiers:1});
+  await live.clients[merchant].run('(async()=>{await swap(7,10);await swap(8,11);await swap(9,12);return true})()');
+  await expect.poll(async()=>(await live.clients[merchant].snapshot()).items[12]?.name).toBe('wcap');
+  await live.restartCoordinator();
+  const before=await live.state();expect(before.upgrades[merchant]).toHaveLength(4);
+  await live.post('/merchant/force-stand',{enabled:false});
+  try{
+    await expect.poll(async()=>{
+      const s=await live.state();return !(s.upgrades[merchant]||[]).length && !s.merchantCurrent &&
+        !s.merchantQueue.some((j:any)=>j.reason==='manual upgrades') &&
+        !s.characters[merchant].items.some((e:any)=>e?.item?.name==='coat'&&e.item.level===0);
+    },{timeout:180_000}).toBe(true);
+    const items=(await live.clients[merchant].snapshot()).items,events=await live.clients[merchant].events();
+    expect(events.filter((e:any)=>e.event==='game_response'&&['upgrade_success','upgrade_fail'].includes(e.data?.response))).toHaveLength(4);
+    expect(items.filter((i:any)=>i?.name==='scroll0').reduce((n:number,i:any)=>n+i.q,0)).toBe(96);
+    expect(items.filter((i:any)=>i?.name==='wcap'&&i.l)).toEqual([{name:'wcap',level:0,l:'l'}]);
+    expect(items.filter((i:any)=>i?.name==='wcap'&&i.stat_type)).toEqual([{name:'wcap',level:0,stat_type:'int'}]);
+    expect(items.filter((i:any)=>i?.name==='wcap'&&!i.l&&!i.stat_type&&i.level===0)).toHaveLength(0);
+    expect(items.filter((i:any)=>i?.name==='wcap'&&i.level===1).length).toBeGreaterThanOrEqual(1);
+    expect((await live.state()).merchantActivity.filter((e:any)=>/recovery ambiguous|recovery paused/.test(JSON.stringify(e)))).toHaveLength(0);
+    await live.restartCoordinator();
+    expect((await live.state()).upgrades[merchant]||[]).toHaveLength(0);
+  }finally{
+    await info.attach('interchangeable-manual-upgrade-ledger',{body:JSON.stringify({before,after:await live.state(),items:(await live.clients[merchant].snapshot()).items,events:await live.clients[merchant].events()}),contentType:'application/json'});
+  }
+});
+
 test('interrupted automatic broom resumes from +2 until +7 or native destruction',async({live},info)=>{
   // Failure modes: lost relocation, reset target (+9), replay after restart,
   // completed stock claimed as the survivor, or queue/telemetry preceding native completion.

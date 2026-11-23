@@ -9,6 +9,8 @@
 
 # Coordinator development
 
+- Before removing a Windows worktree, inspect nested junctions and symbolic links without following them. Unlink any shared directory junction itself before handing the tree to recursive removal, including `git worktree remove`. A clean Git status says nothing about ignored game data. Preserve private configuration, sessions and journals, and verify the live coordinator's canonical storage path and health after cleanup.
+
 - Read [the coordinator README](runtime/coordinator/README.md) before changing coordinator behavior or build/deployment wiring. It maps domains and documents manual validation and activation.
 - Edit maintained TypeScript under `runtime/coordinator/`; do not edit generated `.build/runtime/coordinator-*.cjs` bundles or the installed caracAL launcher. The launcher template lives under `tools/caracal/`.
 - Building and activating are different operations. Follow the README's supported restart workflow; do not claim a build has reloaded the live coordinator without verifying it. Preserve current character assets when deploying coordinator-only changes.
@@ -23,6 +25,8 @@
 - Document verified upstream gaps alongside compatibility extensions and review them when upgrading the package. Do not add casts solely to hide incompatible contracts.
 
 # Testing
+
+- For CI investigations, stream or extract the needed attachment from one shard into a task-owned temporary directory. Keep compact evidence and its run ID, and discard owned downloads and extracted copies when finished. Reuse the current Playwright report. Avoid timestamped full report copies under `.build/ci-recovery` or `.build/green-loop`. Reuse the checkout when possible and release task-owned worktrees after preserving their changes and evidence.
 
 - For rising game ping or runtime slowdown, read [performance investigation lessons](docs/performance-investigations.md). Verify local callback delay and growing history work before changing cooldown compensation.
 

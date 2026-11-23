@@ -7,6 +7,7 @@ import { type Driver, Installation } from './transaction.ts';
 import { type UpdateAdapter } from './service.ts';
 import { type GitHubReleases } from './github.ts';
 import { run } from './process.ts';
+import {preparePartyStorage} from '../hosting/windows-party-storage.ts';
 
 export class WindowsInstallation implements Driver, UpdateAdapter {
   readonly home: string;
@@ -43,6 +44,9 @@ export class WindowsInstallation implements Driver, UpdateAdapter {
     const { rename } = await import('node:fs/promises'); await rename(payload, stage);
   }
   async install(release: PublishedRelease, startup: boolean) { await this.transaction.install(`versions/${release.version}`, startup); }
+  async prepareBackup() {
+    await preparePartyStorage(contained(this.home, await this.current()), this.data);
+  }
   async start(target: string) {
     const root = contained(this.home, target);
     await run(process.execPath, ['--check', path.join(root, '.build/runtime/coordinator-application.cjs')], root);

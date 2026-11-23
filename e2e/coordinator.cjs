@@ -31,6 +31,9 @@ const characters = [
   { name: 'P', type: 'priest', level: 80, id: 'fixture-priest', home: 'USII' },
   { name: 'M', type: 'merchant', level: 80, id: 'fixture-merchant', home: 'USII' },
 ];
+// A restored scenario may predate a character on its external game account.
+const accountFile = path.join(directory, 'additional-account-characters.json');
+if (fs.existsSync(accountFile)) characters.push(...JSON.parse(fs.readFileSync(accountFile, 'utf8')));
 const servers = [{ key: 'SR_USII', region: 'US', name: 'II', players: 3 }];
 const account = {
   response: { characters, servers },

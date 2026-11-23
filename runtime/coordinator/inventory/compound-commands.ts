@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {protectedMerchantStorageStock} from './merchant-storage-stock.ts';
 import { entryMeta } from "./catalog-meta.ts";
 import { ruleOwner, type SharedScope } from "./shared-rules.ts";
@@ -11,6 +12,7 @@ interface Entry extends InventoryEntry {
   storage?: {pack:string;slot:number};
 }
 interface Group {
+  requestId?: string;
   id: string;
   name?: string;
   items: Entry[];
@@ -117,7 +119,7 @@ export function createCompoundCommands(state: CompoundState, ports: CompoundPort
       return reply({error:'Need three available matching compoundable bank items'},409);
     const triplet=[selected,...matches.filter(entry=>entry!==selected).slice(0,2)];
     const next=nextGroup(groups);
-    groups.push({id:'group-'+next,name:'Group '+next,items:triplet.map((entry,index)=>({slot:-1-index,item:entry.item!,storage:{pack:entry.craftLocation,slot:entry.slot!}}))});
+    groups.push({requestId:randomUUID(),id:'group-'+next,name:'Group '+next,items:triplet.map((entry,index)=>({slot:-1-index,item:entry.item!,storage:{pack:entry.craftLocation,slot:entry.slot!}}))});
     stageRemoteCompounds(name, triplet);
     ports.persist();ports.queue?.([name],'manual compounds');return null;
   }
@@ -135,6 +137,7 @@ export function createCompoundCommands(state: CompoundState, ports: CompoundPort
     const next = nextGroup(groups),
       triplet = [selected, ...matches.filter((entry) => entry.slot !== slot).slice(0, 2)];
     groups.push({
+      requestId: randomUUID(),
       id: "group-" + next,
       name: "Group " + next,
       items: triplet.map((entry) => ({ slot: entry.slot, item: entry.item })),

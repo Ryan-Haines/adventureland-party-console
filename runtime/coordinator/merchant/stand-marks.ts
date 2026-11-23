@@ -1,3 +1,4 @@
+import { activeStandSale } from "../../../dashboard/lib/stand-sale-price.ts";
 import type { Item, InventoryEntry } from "../contracts/item.ts";
 export interface StandMark extends InventoryEntry {
   id: string;
@@ -41,7 +42,7 @@ function sourceKey(source: StandSource): string {
 
 export function createStandMarks(state: StandMarkState, ports: StandMarkPorts) {
   function occupied(): number {
-    return state.standListings.filter(listing => listing.state !== "paused").length + Object.values(state.standBids || {}).filter(bid => bid?.useStandSlot).length;
+    return state.standListings.filter(activeStandSale).length + Object.values(state.standBids || {}).filter(bid => bid?.useStandSlot).length;
   }
   function ensureWithdrawal(listing: StandMark): void {
     if (!listing.bankPack || !state.merchantCharacter) return;
@@ -94,9 +95,10 @@ export function createStandMarks(state: StandMarkState, ports: StandMarkPorts) {
         bankPack: existing.bankPack,
       };
       const updated = make(source, price, existing.id);
+      if (!activeStandSale(existing) && occupied() >= 16) updated.state = "paused";
       state.standListings[index] = updated;
       if (existing.state !== "live" && !existing.tradeSlot) covered.add(sourceKey(source));
-      ensureWithdrawal(updated);
+      if (activeStandSale(updated)) ensureWithdrawal(updated);
     });
     return covered;
   }
@@ -149,7 +151,7 @@ export function createStandMarks(state: StandMarkState, ports: StandMarkPorts) {
     price: number,
     quantity: number,
   ): boolean {
-    if ((index < 0 || state.standListings[index].state === "paused") && occupied() >= 16) return false;
+    if ((index < 0 || !activeStandSale(state.standListings[index])) && occupied() >= 16) return false;
     const listing = make({ slot, item, bankPack: pack || undefined }, price, id || undefined);
     listing.quantity = quantity;
     if (index >= 0) state.standListings[index] = listing;

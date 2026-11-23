@@ -1692,3 +1692,39 @@ test.describe('stand buy order item levels',()=>{
 import './metrics-history.case';
 
 import './mailbox-enhancements.case';
+
+test.describe('stand sale price recovery', () => {
+test.use({merchantDialogs:true,savedRecords:[{party_dashboard_settings_state_v1:{
+  merchantCharacter:'M',standListings:[{id:'legacy-price',slot:28,item:{name:'evasionscroll'},quantity:1,price:104_999_999_999,state:'waiting'}]
+}}]});
+test('stand sale prices accept the native maximum and reject the next gold', async ({ page, app }, info) => {
+  await page.goto('/');
+  const merchant = page.locator('article').filter({ has: page.getByRole('heading', { name: 'M', exact: true }) });
+  await expect(merchant).toBeVisible();
+  await page.getByRole('button', { name:/^Stand ·/ }).click();
+  await expect(page.getByText('Edit price', {exact:true})).toBeVisible();
+  await page.getByRole('button', {name:'Edit sale price for evasionscroll'}).click();
+  const editor = page.getByRole('dialog');
+  const input = editor.getByPlaceholder('Price', {exact:true});
+  const submit = editor.getByRole('button', {name:'Mark for stand', exact:true});
+  await input.fill('100000000000');
+  await expect(submit).toBeDisabled();
+  await expect(editor.getByRole('alert')).toContainText('99,999,999,999');
+  await info.attach('stand-sale-limit', {body:await editor.screenshot(),contentType:'image/png'});
+  await input.fill('99999999999');
+  await expect(submit).toBeEnabled();
+  const saved = page.waitForResponse(response => response.url().endsWith('/merchant/stand') && response.request().method() === 'POST');
+  await submit.click();
+  const manual = await saved;
+  expect(manual.status()).toBe(200);
+  const listing = (await manual.json()).standListings.find((entry: {price:number}) => entry.price === 99_999_999_999);
+  expect(listing).toBeTruthy();
+  for (const route of ['stand', 'auto-stand']) {
+    const rejected = await page.request.post('/party-api/merchant/' + route, {headers:{Origin:app.url},data:{...listing,price:100_000_000_000}});
+    expect(rejected.status()).toBe(400);
+    expect((await rejected.json()).error).toContain('99,999,999,999');
+  }
+  const automatic = await page.request.post('/party-api/merchant/auto-stand', {headers:{Origin:app.url},data:{item:listing.item,price:99_999_999_999}});
+  expect(automatic.status()).toBe(200);
+});
+});

@@ -1,4 +1,4 @@
-import type { Item, ItemMark } from "../contracts/item.ts";
+import type { InventoryEntry, Item, ItemMark } from "../contracts/item.ts";
 
 const transientProperties = new Set(["q", "price", "rid", "b", "giveaway"]);
 
@@ -41,4 +41,11 @@ export function automaticCommerceRuleKey(item: Item | null | undefined): string 
     p: item?.p || null,
     stat_type: item?.stat_type || null,
   });
+}
+
+/** An offline worker snapshot owns slot identity until its next storage receipt. */
+export function npcWithdrawalStillPresent(mark: {slot?: number; autoNpcRuleKey?: unknown}, items?: readonly (InventoryEntry | null)[]): boolean {
+  if (!items) return true;
+  const item = items.find((entry, index) => entry && (entry.slot ?? index) === mark.slot)?.item;
+  return !!item && !item.l && !item.b && automaticCommerceRuleKey(item) === mark.autoNpcRuleKey;
 }

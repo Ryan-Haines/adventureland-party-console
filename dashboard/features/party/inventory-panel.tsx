@@ -244,7 +244,7 @@ export const InventoryPanel = memo(function InventoryPanel({
   const luckySlotLabel = luckySlotLocked ? "Locked lucky upgrade position" :
     validLuckySlot(luckyUpgradeSlot) && !luckySlotResuming ? "Verified lucky upgrade slot" : "Next upgrade will test for lucky upgrade";
   type AutomaticSection =
-    | "npc" | "stand" | "upgrade" | "compound" | "merchant" | "bank" | "deconstruction";
+    | "npc" | "stand" | "upgrade" | "compound" | "exchange" | "merchant" | "bank" | "deconstruction";
   const [openAutomaticSections, setOpenAutomaticSections] = useState<
     Partial<Record<AutomaticSection, boolean>>
   >({});
@@ -628,6 +628,10 @@ export const InventoryPanel = memo(function InventoryPanel({
       await onCommand(character.name, 'clear-auto-compounds');
     else if (section === 'upgrade')
       await onCommand(character.name, 'clear-auto-upgrades');
+    else if (section === 'exchange') {
+      for (const rule of Object.values(autoExchanges))
+        await onCommand(character.name, 'auto-exchange', rule, {slot:-1,remove:true});
+    }
     else if (section === 'deconstruction') {
       for (const rule of Object.values(autoDeconstruction))
         onDeconstruction?.({ slot: -1, item: rule.item }, true, true);
@@ -1729,6 +1733,16 @@ export const InventoryPanel = memo(function InventoryPanel({
               ),
             )}
             <UpgradeOfferingRules />
+            {automaticSection(
+              'exchange',
+              'Auto exchanges',
+              <ArrowRightLeft className="h-4 w-4" />,
+              'border-emerald-800 text-emerald-300',
+              Object.entries(autoExchanges).map(([key,rule])=>({
+                key,item:rule,detail:'All available stock',
+                onRemove:()=>void onCommand(character.name,'auto-exchange',rule,{slot:-1,remove:true}),
+              })),
+            )}
             {automaticSection(
               'compound',
               'Auto compounds',

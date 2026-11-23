@@ -1,3 +1,4 @@
+import { matchesExchangeSource, type WithdrawalRequest } from '../inventory/exchange-storage.ts';
 import { routineFor } from './routines.ts';
 import { bankStagingReserved } from '../inventory/reserved-cargo.ts';
 import { hasMarkedWithdrawals } from './marked-withdrawals.ts';
@@ -16,6 +17,9 @@ interface PriorityState<Bid extends { priorityOverride?: number }> extends BankC
   withdrawals: Record<string, { pack?: string; slot?: number; improvement?: string; autoNpcRuleKey?: string }[] | undefined>;
 }
 interface InventoryCapacity extends BankCapacity {
+  marked?: Record<string, readonly unknown[] | undefined>;
+  npcSaleMarks?: readonly {source?: string; state?: string}[];
+  withdrawals?: Record<string, Partial<WithdrawalRequest>[] | undefined>;
   statuses: Record<string, { items?: unknown } | undefined>;
 }
 
@@ -46,6 +50,13 @@ export function coordinatorMerchantPriority<Bid extends { priorityOverride?: num
     completesStorageHandoff: (candidate: PrioritizedJob) => completesStorageHandoff(state, candidate),
   };
   const priority = merchantJobPriority(job, policy);
+  if (job.reason === "auto compound" && job.target === state.merchantCharacter) {
+    const packs = Object.entries(state.bankSnapshot?.packs || {});
+    const staging = bankStagingReserved(state);
+    const full = packs.length > 0 && packs.every(([pack, slots]) =>
+      Array.from({length: staging && pack === "items1" ? 35 : 42}, (_, slot) => slots?.[slot]).every(Boolean));
+    if (full) return Math.max(priority, 100);
+  }
   // Retrieval is a dependency of the sale. Keep the withdrawal/threshold
   // enable gates intact, but do not let unrelated party work invert priority.
   if (job.target !== state.merchantCharacter || !['withdrawals', 'bank collection'].includes(job.reason) ||
@@ -69,13 +80,31 @@ export function coordinatorMerchantTransferBlocked(
   state: InventoryCapacity,
   job: PrioritizedJob | null | undefined,
 ): boolean {
+  if (job?.reason === 'exchange' && job.exchangeStorageSources?.length) {
+    const requests = state.withdrawals?.[String(job.target)] || [];
+    if (job.exchangeStorageSources.every(source => requests.some(request => matchesExchangeSource(source, request)))) return true;
+  }
+  if (job?.reason === 'exchange' && job.exchangeCapacitySignature !== undefined &&
+      job.exchangeCapacitySignature === coordinatorMerchantCapacitySignature(state, job.target || null)) return true;
+  const items = state.statuses[String(state.merchantCharacter)]?.items;
+  if (job?.target === state.merchantCharacter && ['withdrawals','bank collection','auto npc withdrawals'].includes(job.reason) && Array.isArray(items)) {
+    const free = items.filter(entry => !entry).length;
+    const canSwap = state.marked?.[String(job.target)]?.length && state.withdrawals?.[String(job.target)]?.some(mark => mark.autoNpcRuleKey && /^items\d+$/.test(String(mark.pack)));
+    if (free <= 3) return job.reason !== 'auto npc withdrawals' || (free === 0 && !canSwap) ||
+      !!state.npcSaleMarks?.some(mark => mark.source === 'merchant' && mark.state === 'queued');
+  }
+  // Improvement staging needs both the lucky cell and a separate movement
+  // buffer. Leave freeing work eligible even when its configured priority is
+  // lower: it is a dependency, not another production attempt.
+  if (job?.target === state.merchantCharacter &&
+      ['upgrades and compounds','manual upgrades','auto upgrade','manual compounds','auto compound'].includes(job.reason) &&
+      Array.isArray(items) && items.filter(entry => !entry).length < 2) return true;
   if (
     !job ||
     job.target === state.merchantCharacter ||
     !["marked items", "inventory cleanout", "exchange pickup"].includes(job.reason)
   )
     return false;
-  const items = state.statuses[String(state.merchantCharacter)]?.items;
   return Array.isArray(items) && items.filter((entry) => !entry).length <= 3;
 }
 

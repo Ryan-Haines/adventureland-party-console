@@ -1,4 +1,5 @@
 'use client';
+import { activeStandSale } from "../../lib/stand-sale-price";
 import { UpgradeOfferingProvider } from './upgrade-offering-controls';
 import { SharedRuleConflicts } from './shared-rule-conflicts';
 import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
@@ -80,7 +81,7 @@ export const ConnectedInventory = memo(function ConnectedInventory({
       const existing = standListings.find(
         (mark) => mark.slot === entry.slot && same(mark.item, entry.item),
       );
-      if (!existing && standListings.length >= 16)
+      if (!existing && standListings.filter(activeStandSale).length >= 16)
         return setActionError('Merchant stand is full (16/16)');
       const value = { defaultPrice: Math.max(1, Number(entry.meta?.definition.g) || 1) };
       setStandItem({

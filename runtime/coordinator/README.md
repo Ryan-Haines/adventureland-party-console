@@ -1,3 +1,16 @@
+Reserved bank compound input failures use an inventory/intent recovery block.
+Unchanged marks cannot immediately recreate the failed manual-compound job;
+gold, potion and heartbeat changes do not release it. Keep the unresolved marks
+for review instead of selecting other matching copies. Validate the console
+reserved-compound recovery journey. Stage the completed candidate; activation
+remains explicit.
+
+An outbound BankBoi staging reservation blocks new retrievals, but permits an
+inbound-only drain of the other unreserved transfer cells. This breaks the full
+merchant/full transfer-row capacity deadlock while retaining the pending source.
+Validate the persisted-timeout reserve-drain journeys, including an outbound
+reservation and restart. Stage the completed candidate; activation remains explicit.
+
 Cipher gathering chooses an ordinary farmable spawn using the same map and
 geometry restrictions as the farming catalog. Instanced templates such as
 `dungeon0` must never become a Goo gathering destination. Validate the native
@@ -1098,6 +1111,16 @@ with repeatable artifacts; see [the testing guide](../../docs/testing.md).
 Write failure modes before any necessary isolated test. Remaining named-function fixtures derive their source from maintained
 TypeScript, never the installed host. Full-host tests cover both source and bundle;
 launcher tests execute the bundle with Windows and Linux directory inputs.
+
+## Windows sign-in startup
+
+Run `scripts/install-console-startup.ps1` to install a hidden, current-user
+Windows Startup shortcut, or pass `-Remove` to uninstall it. Run the ordinary
+launcher interactively once first to save the Windows-user-encrypted session.
+Automatic startup runs after sign-in, skips an occupied console port, and uses
+the supported launcher (including its newest-completed-candidate selection).
+Diagnostics append to `.build/startup/logon.log`. Reinstall the shortcut if the
+checkout moves. This does not configure a pre-login Windows service.
 
 ## Manual edit, build and restart
 
@@ -2386,3 +2409,74 @@ or return command must remain untouched. Skipped and already-returning replies
 do not authorize a local stop. Validate live-hunt-anniversary-preemption and the
 original Anniversary restart/reward/return journeys on ChronAL and native.
 Build and stage character/coordinator assets together; activation remains explicit.
+
+## Hunt event hint realm ownership
+
+Party event hints require a fresh (three-second), connected event-feed report on
+the recipient's own realm. A merchant visiting a live Crab on another realm must
+not corroborate a locally ended Crab: that hint otherwise reactivates the client's
+event selection and leaves Hunt at `paused-event`. Unknown realms do not admit
+hints. Same-realm corroboration and ordinary event exit barriers remain intact.
+Validate the Crab realm/restart journey in `console-coordinator.spec.ts`; it uses
+real coordinator HTTP responses with declared external game observations. Hunt
+pause transitions also retain the responsible member/event/realm reports in the
+navigation log. Build and stage a completed candidate; activation remains explicit.
+
+## Console release and build refresh control
+
+The header has one refresh menu for published releases and completed local builds.
+Managed release download and restart use the existing updater; local load modes
+retain their deployment journal and safety barriers. Development checkouts remain
+on their branch. Completed candidates capture the release/branch display label;
+the header uses the active candidate's label rather than cached host metadata.
+Older candidates fall back to the updater label, which refreshes checkout metadata
+while running. Validate `console-build-release-menu`, `console-build-version-label`,
+and `console-build-artifact-header`, plus the existing deployment menu journey.
+Build and stage the completed candidate; activation remains explicit.
+
+## Merchant reserve and BankBoi creation
+
+Automatic exchanges preserve three inventory cells across input retrieval, native
+splits and reward handling. Manual exchange orders retain their physical-capacity
+rules. Merchant withdrawal, threshold collection and automatic NPC retrieval wait
+for capacity above the reserve. Authorized deposit recovery can clear space and
+a confirmed full-bank trip with no completed marks waits for changed contents
+or deposit marks. BankBoi creation waits for current merchant work and a fresh
+exit from the bank before using the account API. Validate these journeys in
+live-exchange-capacity. Stage the completed candidate for explicit activation.
+
+## Exchange inventory capacity
+
+Manual upgrade requests may use an equivalent unfinished inventory copy after
+relocation. Each batch consumes a distinct copy per mark, retains the original
+target level, and excludes locked, blocked or differing stat/special variants.
+Automatic continuation and pending native receipt recovery retain their existing
+identity fences. Manual ambiguity blocks are in-memory and clear on ordinary
+candidate activation. Validate the displaced-identical manual batch journey in
+live-manual-upgrade, including unrelated gear, native scroll counts and restart.
+
+Merchant-owned upgrades and compounds require two empty cells at admission:
+the lucky cell and a separate layout buffer. Sales and bank deposits remain
+eligible regardless of that production reserve. Native journal recovery still
+precedes all work; optional lucky tidying belongs only to improvement jobs.
+The client repeats the space check after compression and before production
+staging, because inventory may change after coordinator dispatch. Validate the
+one-empty-lucky-slot sale-before-upgrade journey in live-exchange-capacity.
+
+Exchange consumption checkpoints precede each capacity bank trip. A bulk input
+needs an empty native split cell; a complete one-exchange stack can consume its
+own cell. Route all unlocked, unblocked matching reward copies through fresh
+reward rules and craft/delivery protection, retaining outstanding input stock.
+Only a definitely rejected split can retry once after banking; uncertain exchange
+receipts must not be replayed. A bank or inventory capacity failure preserves
+the unfinished exchange behind the ordinary resource signature block, allowing
+other merchant work and resuming after resources change.
+Exchange reports include the worker command ID as well as the durable job ID.
+A replaced worker cannot rewind progress or fail the resumed order, and retires
+quietly when its old bank walk is interrupted. Validate rejected stale progress
+and completion reports during the capacity-bank restart journey.
+Validate live-exchange-capacity on ChronAL, plus merged/default/chained exchange
+reward routing. The manual release workflow's local_grep input also selects one
+focused hosted ChronAL allocation without console validation or publication;
+blank retains the existing complete manual run. Stage a completed immutable
+candidate; activation remains explicitly requested.

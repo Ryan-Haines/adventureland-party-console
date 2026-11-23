@@ -17,6 +17,7 @@ export interface CompletionJob extends RecoverableWork {
   rendezvousRetryCount?: number;
 }
 export interface CompletionReport {
+  bankDepositFull?: boolean;
   pendingImprovedDeliveries?: DeliveryReceipt[];
   jobId?: string;
   commandId?: number;
@@ -86,6 +87,7 @@ export interface CompletionState {
 export interface CompletionPorts {
   now(): number;
   nextCommand(): number;
+  bankDepositBlocked?(signature: string): void;
   mailSent?(id:string,mail:unknown):void;
   mailComplete(id: string, success: boolean, error: unknown): void;
   fulfill(item: Item, quantity: number): void;

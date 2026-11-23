@@ -6,6 +6,18 @@ import type { UpdateStatus } from '../../../tools/update/contracts';
 import { useHidden } from './query-cache';
 
 const colors = 'border border-slate-500 bg-slate-950 text-slate-100 hover:bg-slate-800 hover:text-white';
+export function openConsoleUpdateSettings(open:()=>void) {
+  open();
+  let attempts=0;
+  const timer=setInterval(()=>{
+    const target=document.getElementById('console-updates');
+    if(target||++attempts>20){
+      clearInterval(timer);
+      target?.scrollIntoView({behavior:'smooth',block:'end'});
+      target?.focus({preventScroll:true});
+    }
+  },50);
+}
 export function useUpdates() {
   const [state, setState] = useState<UpdateStatus | null>(null), [error, setError] = useState('');
   // The status only refreshes this view. A hidden tab stops polling, and a
@@ -26,26 +38,20 @@ export function useUpdates() {
     return () => { alive = false; clearInterval(timer); };
   }, [hidden]);
   async function action(name: string, value = {}) {
+    const previousPhase=state?.phase;
+    const phase=name==='download'?'downloading':name==='restart'?'restarting':name==='check'?'checking':null;
+    if(phase)setState(previous=>previous&&{...previous,phase});
     try {
       setError('');
       const response = await fetch(`/console-update/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
       const reply = await response.json() as { error?: string };
       if (!response.ok) throw new Error(reply.error || 'Update request failed');
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) {
+      setError((e as Error).message);
+      if(previousPhase)setState(previous=>previous&&previous.phase===phase?{...previous,phase:previousPhase}:previous);
+    }
   }
   return { state, error, action };
-}
-export function ConsoleUpdateIndicator({ open }: { open(): void }) {
-  const { state } = useUpdates();
-  if (!state?.available) return null;
-  return <button type="button" title="New version available" aria-label="New version available" onClick={() => {
-    open();
-    let attempts = 0;
-    const timer = setInterval(() => {
-      const target = document.getElementById('console-updates');
-      if (target || ++attempts > 20) { clearInterval(timer); target?.scrollIntoView({ behavior: 'smooth', block: 'end' }); target?.focus({ preventScroll: true }); }
-    }, 50);
-  }} className="ml-3 inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-emerald-300 bg-emerald-700 text-base font-bold text-white hover:bg-emerald-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-200">!</button>;
 }
 export function ConsoleUpdateSettings() {
   const { state, error, action } = useUpdates();

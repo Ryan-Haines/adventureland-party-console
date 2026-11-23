@@ -1,3 +1,4 @@
+import { validStandSalePrice, activeStandSale } from "../../lib/stand-sale-price";
 import type { Char } from './char';
 import type { StandListing } from './stand-listing';
 import type { StandBid } from './stand-bid';
@@ -32,11 +33,11 @@ export function standSaleRows(listings: StandListing[], merchant?: Char, native?
   const occupants = standOccupants(listings,native,merchant);
   const used = new Set<string>();
   const rows = listings.map((configured, index) => {
-    const match = configured.state !== 'paused' ? slots.find(([slot, entry]) => !used.has(slot) && identity(configured.item, entry!.item) && (!configured.tradeSlot || configured.tradeSlot === slot)) : undefined;
-    const stored = !match && configured.state === 'live' && configured.tradeSlot && !used.has(configured.tradeSlot) && occupants.get(configured.tradeSlot)?.listing === configured;
+    const match = activeStandSale(configured) ? slots.find(([slot, entry]) => !used.has(slot) && identity(configured.item, entry!.item) && (!configured.tradeSlot || configured.tradeSlot === slot)) : undefined;
+    const stored = activeStandSale(configured) && !match && configured.state === 'live' && configured.tradeSlot && !used.has(configured.tradeSlot) && occupants.get(configured.tradeSlot)?.listing === configured;
     if (match) used.add(match[0]);
     else if (stored && configured.tradeSlot) used.add(configured.tradeSlot);
-    return { occupied: !!match || !!stored, configured, liveEntry: match?.[1], editable: true, key: configured.id || `configured-${index}`, status: configured.state === 'paused' ? 'Paused' : merchant?.standOpen && match && Number(match[1]!.item.price) === configured.price ? 'Live' : 'Queued' };
+    return { occupied: !!match || !!stored, configured, liveEntry: match?.[1], editable: true, key: configured.id || `configured-${index}`, status: !validStandSalePrice(configured.price) ? 'Edit price' : configured.state === 'paused' ? 'Paused' : merchant?.standOpen && match && Number(match[1]!.item.price) === configured.price ? 'Live' : 'Queued' };
   });
   for (const [slot, entry] of slots) {
     if (!entry || used.has(slot)) continue;

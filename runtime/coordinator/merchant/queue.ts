@@ -10,6 +10,7 @@ export interface MerchantJob extends PrioritizedJob {
 }
 
 export interface ResourceBlock {
+  compoundRecoverySignature?: string;
   upgradeRecoverySignature?: string;
   capacitySignature?: string;
   bankGold?: number;
@@ -24,6 +25,7 @@ interface QueueState {
 }
 
 interface QueuePorts {
+  compoundRecoverySignature?(name: string): string;
   upgradeRecoverySignature?(name: string): string;
   collectionReady?(job: PrioritizedJob): boolean;
   enabled?(reason: string): boolean;
@@ -50,6 +52,8 @@ export function createMerchantQueue(state: QueueState, ports: QueuePorts) {
   let lastStandAttempt: string | undefined;
   let changed = false;
   function resourcesUnchanged(name: string, block: ResourceBlock): boolean {
+    if (block.compoundRecoverySignature !== undefined)
+      return !ports.compoundRecoverySignature || ports.compoundRecoverySignature(name) === block.compoundRecoverySignature;
     if (block.upgradeRecoverySignature !== undefined)
       return !ports.upgradeRecoverySignature || ports.upgradeRecoverySignature(name) === block.upgradeRecoverySignature;
     if (block.capacitySignature !== undefined)

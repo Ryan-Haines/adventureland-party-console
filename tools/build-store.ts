@@ -50,7 +50,7 @@ export async function inspectRemoval(root: string, relative: string): Promise<Re
   }
   return {path: target, bytes: await treeBytes(target)};
 }
-async function treeBytes(file: string): Promise<number> {
+export async function treeBytes(file: string): Promise<number> {
   const info = await lstat(file);
   if (info.isSymbolicLink()) throw new Error('Cleanup refuses links: ' + file);
   if (!info.isDirectory()) return info.size;

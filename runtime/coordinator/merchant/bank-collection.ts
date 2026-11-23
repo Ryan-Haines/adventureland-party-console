@@ -6,6 +6,7 @@ export interface BankCollectionState {
   withdrawals?: Record<string, readonly unknown[] | undefined>;
   merchantAutomations?: Record<string, boolean | undefined>;
   itemCollectionThreshold?: number;
+  statuses?: Record<string, {items?: readonly unknown[]} | undefined>;
 }
 
 /** Count bank cells, not stack quantities or duplicate requests. Specialized
@@ -30,6 +31,8 @@ function automaticNpcRetrieval(state: BankCollectionState): boolean {
 export function bankCollectionReason(state: BankCollectionState): 'withdrawals' | 'bank collection' | 'auto npc withdrawals' | null {
   const count = markedBankSlots(state);
   if (!count) return null;
+  const items = state.statuses?.[String(state.merchantCharacter)]?.items;
+  if (items && items.filter(entry => !entry).length <= 3 && automaticNpcRetrieval(state)) return 'auto npc withdrawals';
   if (state.merchantAutomations?.withdrawals !== false) return 'withdrawals';
   // Auto NPC owns its bank prerequisite, even when ordinary retrieval is off.
   if (automaticNpcRetrieval(state)) return 'auto npc withdrawals';

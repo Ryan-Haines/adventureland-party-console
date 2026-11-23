@@ -18,7 +18,8 @@ export function createCoordinatorPartyConfiguration(
   const focus = createFocusRoute(state, ports);
   const formation = createFormationRoute(state, {
     ...ports,
-    managed: (name) => Object.prototype.hasOwnProperty.call(workers, name),
+    managed: (name) => Object.prototype.hasOwnProperty.call(workers, name) ||
+      (!!ports.owned(name) && ports.active().includes(name)),
   });
   const actions = createPartyActionRoutes(state, {
     ...ports,

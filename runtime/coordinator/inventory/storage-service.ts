@@ -1,4 +1,4 @@
-import { queueExchangeStorage } from "./exchange-storage.ts";
+import { type ExchangeStorageSource, exchangeStorageWorkers, queueExchangeStorage } from "./exchange-storage.ts";
 import {protectedMerchantStorageStock} from './merchant-storage-stock.ts';
 import type {UpgradeOffering} from '../../upgrade-offerings.ts';
 
@@ -13,19 +13,20 @@ interface StorageState {
 export function createCoordinatorStorageService(state: StorageState, persist: () => void) {
   return {
     queueExchange(
-      job: { exchanges?: ExchangeArguments[0] | null },
+      job: { exchanges?: ExchangeArguments[0] | null; exchangeStorageSources?: ExchangeStorageSource[] },
       shortages?: ExchangeArguments[1] | null,
     ): boolean {
       const requests =
         state.withdrawals[String(state.merchantCharacter)] ||
         (state.withdrawals[String(state.merchantCharacter)] = []);
+      const sources: ExchangeStorageSource[] = [];
       const pending = queueExchangeStorage(
         job.exchanges || [],
         shortages || [],
-        Object.values(state.bankbois || {}),
-        requests,
+        exchangeStorageWorkers(state),
+        requests, sources,
       );
-      if (pending) persist();
+      if (pending) { job.exchangeStorageSources = sources; persist(); }
       return pending;
     },
     queueOffering(offering:UpgradeOffering,quantity=1):boolean {

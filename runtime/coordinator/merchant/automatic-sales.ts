@@ -1,9 +1,10 @@
+import { activeStandSale, validStandSalePrice } from "../../../dashboard/lib/stand-sale-price.ts";
 import { itemRuleConflicts } from "../inventory/shared-rules.ts";
 import type { DeconstructionMark } from "./deconstruction.ts";
 import type { Item, InventoryEntry } from "../contracts/item.ts";
 import type { BankboiInventory } from '../inventory/bankboi-completion.ts';
 import { availableCraftStock, craftProtection, type CraftReservationState } from "./craft-reservations.ts";
-import { automaticCommerceRuleKey, sameMarkedItem } from "../inventory/item-identity.ts";
+import { automaticCommerceRuleKey, sameMarkedItem, npcWithdrawalStillPresent } from "../inventory/item-identity.ts";
 import { reconcileNpcSales, type NpcSale } from "./npc-sales.ts";
 import type { StandMark } from "./stand-marks.ts";
 import { reconcilePlayerSales, type PlayerSaleState } from "./player-npc-sales.ts";
@@ -24,6 +25,7 @@ interface SalesState extends PlayerSaleState, CraftReservationState {
   bankSnapshot?: { packs?: Record<string, (InventoryEntry | null)[] | undefined> } | null;
   withdrawals?: Record<string, { pack?: string; slot?: number; item?: Item | null; standListingId?: string; autoNpcRuleKey?: string }[] | undefined>;
   itemCollectionThreshold?: number;
+  bankboiTransaction?: unknown;
   standBids?: Record<string, { useStandSlot?: boolean } | undefined>;
   deconstructionMarks?: DeconstructionMark[];
   merchantAutomations?: Record<string, boolean | undefined>;
@@ -86,12 +88,12 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
 
   function standReserved(item: Item): boolean {
     if (state.standListings.some(listing => listing.state === "paused" && sameMarkedItem(item, listing.item))) return true;
-    const sales = state.standListings.filter(listing => listing.state !== "paused").length;
+    const sales = state.standListings.filter(activeStandSale).length;
     return sales + Object.values(state.standBids || {}).filter(bid => bid?.useStandSlot).length >= 16;
   }
   function markStandSale(entry: SaleEntry, key: string, pack?: string): boolean {
     const rule = state.autoStandMarks[key];
-    if (!rule || !Number.isSafeInteger(Number(rule.price)) || Number(rule.price) < 1) return false;
+    if (!rule || !validStandSalePrice(Number(rule.price))) return false;
     const existing = state.standListings.find(
       (listing) =>
         listing.state !== "live" &&
@@ -118,7 +120,7 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
 
   type BankEntry = InventoryEntry & SaleEntry & {craftLocation:string};
   function bankEntry(entry: (InventoryEntry & {craftLocation:string}) | null): entry is BankEntry {
-    return !!entry?.item && !entry.item.l && Number.isSafeInteger(entry.slot);
+    return !!entry?.item && !entry.item.l && !entry.item.b && Number.isSafeInteger(entry.slot);
   }
   function bankNpcEligible(entry: BankEntry, key: string): boolean {
     return !!state.autoNpcSales[key] && !state.autoStandMarks[key] && !saleConflict(entry.item) &&
@@ -141,22 +143,46 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
   function bankStandPending():boolean {
     return !!state.withdrawals?.[String(state.merchantCharacter)]?.some(mark=>mark.standListingId);
   }
+  function pruneMovedNpcWithdrawals(): boolean {
+    if (state.bankboiTransaction) return false;
+    const merchant = String(state.merchantCharacter), pending = state.withdrawals?.[merchant];
+    if (!pending) return false;
+    const retained = pending.filter(mark => {
+      if (!mark.autoNpcRuleKey || !mark.pack?.startsWith('bankboi:')) return true;
+      const items = state.bankbois?.[mark.pack.slice('bankboi:'.length)]?.items;
+      return npcWithdrawalStillPresent(mark, items);
+    });
+    if (retained.length === pending.length) return false;
+    state.withdrawals![merchant] = retained;
+    return true;
+  }
+
   function markBankStock(): boolean {
     if (!bankStockReady()) return false;
-    let changed = false, npcStacks = bankNpcStacks();
-    const allow = saleAllowance();
+    let changed = pruneMovedNpcWithdrawals(), npcStacks = bankNpcStacks();
+    const allow = saleAllowance(), limit = bankNpcLimit();
+    const pending = state.withdrawals?.[String(state.merchantCharacter)] || [];
+    // Keep one physical sale reachable when the entire budget is waiting on
+    // remote stock. Only replace an unsent automatic withdrawal.
+    let replaceable = !state.bankboiTransaction && npcStacks >= limit &&
+      !pending.some(mark => mark.autoNpcRuleKey && !mark.pack?.startsWith('bankboi:'))
+      ? pending.find(mark => mark.autoNpcRuleKey && mark.pack?.startsWith('bankboi:')) : undefined;
     for (const entry of availableBankStock()) {
       if (!bankEntry(entry)) continue;
-      if (npcStacks < bankNpcLimit() && markBankNpc(entry, allow)) {
-        npcStacks++; changed = true;
+      if ((npcStacks < limit || replaceable && !entry.craftLocation.startsWith('bankboi:')) && markBankNpc(entry, allow)) {
+        if (replaceable) {
+          pending.splice(pending.indexOf(replaceable), 1);
+          replaceable = undefined;
+        } else npcStacks++;
+        changed = true;
         continue;
       }
       if (!bankStandEntry(entry)) continue;
       const key = automaticCommerceRuleKey(entry.item);
       if (!markStandSale(entry, key, entry.craftLocation)) continue;
       const listing = state.standListings[state.standListings.length - 1];
-      const pending = ((state.withdrawals ||= {})[state.merchantCharacter!] ||= []);
-      pending.push({ pack: listing.bankPack, slot: listing.bankSlot, item: listing.item, standListingId: listing.id });
+      const standRequests = ((state.withdrawals ||= {})[state.merchantCharacter!] ||= []);
+      standRequests.push({ pack: listing.bankPack, slot: listing.bankSlot, item: listing.item, standListingId: listing.id });
       changed = true;
     }
     return changed;
@@ -189,10 +215,10 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
   }
   function resumeDisplacedSales(items: readonly (SaleEntry | null)[]): boolean {
     const explicitBuys = Object.values(state.standBids || {}).filter(bid => bid?.useStandSlot).length;
-    let available = 16 - explicitBuys - state.standListings.filter(listing => listing.state !== "paused").length;
-    const claimed = new Set(state.standListings.filter(listing => listing.state !== "paused" && listing.state !== "live" && !listing.bankPack).map(listing => listing.slot));
+    let available = 16 - explicitBuys - state.standListings.filter(activeStandSale).length;
+    const claimed = new Set(state.standListings.filter(listing => activeStandSale(listing) && listing.state !== "live" && !listing.bankPack).map(listing => listing.slot));
     let changed = false;
-    for (const listing of state.standListings.filter(entry => entry.state === "paused")) {
+    for (const listing of state.standListings.filter(entry => entry.state === "paused" && validStandSalePrice(entry.price))) {
       if (available <= 0) break;
       const entry = items.find(candidate => resumableSale(candidate, listing, claimed));
       if (!entry) continue;
@@ -223,7 +249,7 @@ export function createAutomaticMerchantSales(state: SalesState, ports: SalesPort
       standChanged = changed;
     const allow = saleAllowance();
     for (const entry of items) {
-      if (!entry?.item || !Number.isSafeInteger(entry.slot) || entry.item.l) continue;
+      if (!entry?.item || !Number.isSafeInteger(entry.slot) || entry.item.l || entry.item.b) continue;
       if (saleConflict(entry.item)) continue;
       const key = automaticCommerceRuleKey(entry.item);
       if (state.autoNpcSales[key]) {
