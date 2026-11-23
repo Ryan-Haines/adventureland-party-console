@@ -22,7 +22,7 @@ export function createDashboardImportRoutes(state: State, ports: ImportPorts) {
     return res.json({
       filename: "caraGarage.jsonl",
       canonicalPath: ports.canonicalPath(),
-      localPath: "<installation>/.caracal/localStorage/caraGarage.jsonl",
+      localPath: process.env.AL_PARTY_STORAGE_DIR ? ports.canonicalPath() : "<installation>/.caracal/localStorage/caraGarage.jsonl",
       dockerPath: "/data/localStorage/caraGarage.jsonl",
       maxBytes: 128 * 1024 * 1024,
     });

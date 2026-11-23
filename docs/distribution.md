@@ -103,6 +103,10 @@ existing volume when adopting the release Compose file. Do not silently accept a
 new project name, which would create an empty volume. Back up the old volume first.
 Custom source mounts and edited application containers require manual updates.
 
+Production and development use `/data/localStorage/caraGarage.jsonl`. A replacement container opens that journal in place. On a legacy installation with a separate caracAL journal and an empty destination, startup copies the journal and its sidecar files before starting the coordinator. If both locations contain conflicting data on first migration, startup reports both paths for reconciliation. The development image preserves the legacy directory during cache refresh.
+
+Managed Docker installation checks that the updater and console share their writable data mount. The updater verifies the stopped journal's SHA-256 after backup and checks it again before restoring a failed update. These checks require the updated updater image. Keep the existing Compose project and data volume when replacing either service.
+
 ## Update behavior
 
 A green ! beside Party Console announces a newer compatible stable release. Click

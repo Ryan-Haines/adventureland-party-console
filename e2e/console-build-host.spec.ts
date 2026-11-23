@@ -15,8 +15,58 @@ import type {Candidate, CandidateManifest} from '../tools/console-build/contract
 import {startupCandidate, deployStartupCandidate} from '../tools/console-build/startup';
 import {loadManagedConsole} from '../tools/console-build/bootstrap';
 import type {Services} from '../tools/hosting/services';
+import {migrateHostingData, preparePackagedStorage, windowsPartyStorage} from '../tools/hosting/windows-party-storage';
+import {spawnSync} from 'node:child_process';
+
+test('Windows launcher preserves party and hosting state across build cleanup and refuses a missing journal', async ({}, info) => {
+  const checkout = info.outputPath('checkout'), appData = info.outputPath('appdata');
+  const native = path.join(checkout, '.caracal'), build = path.join(checkout, '.build');
+  const journal = 'caraGarage.jsonl', contents = '{"bankbois":["bankboi0","bankboi1"]}\n';
+  const legacyHosting = path.join(build, 'hosting-data');
+  await mkdir(legacyHosting, {recursive:true});
+  await mkdir(path.join(native, 'localStorage'), {recursive:true});
+  await writeFile(path.join(legacyHosting, 'access.json'), '{"pairing":"fixture"}');
+  await writeFile(path.join(native, 'localStorage', journal), contents);
+  const storage = await windowsPartyStorage(checkout, appData);
+  const hosting = await migrateHostingData(checkout, path.dirname(storage));
+  await filesystem.rename(build, path.join(checkout, 'retired-build'));
+  const entry = path.join(native, 'standalones', 'CharacterCoordinator.js');
+  await mkdir(path.dirname(entry), {recursive:true});
+  await mkdir(path.join(native, 'src'));
+  await writeFile(path.join(native, 'src', 'CONSTANTS.js'), 'module.exports = {};');
+  await writeFile(entry, "process.stdout.write(require('node:fs').readFileSync(require('../src/CONSTANTS.js').LOCALSTORAGE_PATH));");
+  const launch = () => spawnSync(process.execPath, ['--require', path.resolve('tools/hosting/windows-storage-preload.cjs'), entry],
+    {encoding:'utf8', env:{...process.env, NODE_OPTIONS:'', AL_CONSOLE_NATIVE_DIR:native, AL_PARTY_STORAGE_DIR:storage}});
+  const receipt = launch();
+  expect(receipt.status, receipt.stderr).toBe(0);
+  expect(receipt.stdout).toBe(contents);
+  expect(await migrateHostingData(checkout, path.dirname(storage))).toBe(hosting);
+  expect(await readFile(path.join(hosting, 'access.json'), 'utf8')).toBe('{"pairing":"fixture"}');
+  await filesystem.rename(path.join(storage, journal), path.join(storage, journal + '.saved'));
+  expect(launch().stderr).toContain('Expected the established party journal');
+  await expect(windowsPartyStorage(checkout, appData)).rejects.toThrow('Restore it before startup');
+  await info.attach('surviving-party-state', {body:receipt.stdout, contentType:'application/json'});
+});
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+test('packaged Windows upgrade finds state owned by the previous version', async ({}, info) => {
+  const home = info.outputPath('installation'), data = path.join(home, 'data');
+  const original = path.join(home,'app/.caracal/localStorage'), next = path.join(home,'versions/2.0.0');
+  const journal = 'caraGarage.jsonl', before = '{"roster":["bankboi0","bankboi1"]}\n';
+  await mkdir(original,{recursive:true});
+  await mkdir(next,{recursive:true});
+  await mkdir(path.join(data,'updates'),{recursive:true});
+  await writeFile(path.join(original,journal),before);
+  await writeFile(path.join(data,'updates/transaction.json'),JSON.stringify({previous:'app',target:'versions/2.0.0',phase:'backed-up'}));
+  const storage = await preparePackagedStorage(next,data,home);
+  expect(await readFile(path.join(storage,journal),'utf8')).toBe(before);
+  const after = before + '{"newVersion":true}\n';
+  await writeFile(path.join(storage,journal),after);
+  await preparePackagedStorage(next,data,home);
+  expect(await readFile(path.join(storage,journal),'utf8')).toBe(after);
+  expect(await readFile(path.join(original,journal),'utf8')).toBe(before);
+  await info.attach('upgraded-journal',{body:after,contentType:'application/x-ndjson'});
+});
 async function port() {
   const server = createServer();
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));

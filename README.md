@@ -168,9 +168,12 @@ State is local data; cloning or pushing Git does not transfer it.
 
 | Installation | State file |
 | --- | --- |
-| Windows/local | `.caracal/localStorage/caraGarage.jsonl` inside the checkout |
-| Native Linux | `.build/hosting-data/localStorage/caraGarage.jsonl` by default; an existing `.caracal/localStorage` directory is preserved and used if present |
+| Windows source launcher | `%LOCALAPPDATA%\AdventureLandPartyConsole\instances\<installation-id>\localStorage\caraGarage.jsonl`. The ID comes from the checkout’s absolute path. First startup copies existing journals from the stopped installation. Later builds share the external journal, including rollback to an older build. |
+| Packaged Windows release | `data/localStorage/caraGarage.jsonl` under the installation, shared by all application versions |
+| Native Linux | `$XDG_DATA_HOME/adventureland-party-console/instances/<installation-id>/hosting-data/localStorage/caraGarage.jsonl`. The default data home is `~/.local/share`. The first startup copies the previous hosting directory and imports an installation-local journal if present. Explicit `AL_DATA_DIR` selects the hosting directory directly. |
 | Docker | `/data/localStorage/caraGarage.jsonl` inside the container |
+
+On Windows the source launcher also keeps its default hosting data (pairing, Steam bridge and TLS settings) in the same AppData instance under `hosting-data`. At host startup it copies the legacy `.build/hosting-data` directory before opening those files. An explicit `AL_DATA_DIR` takes precedence for hosting data. Once startup has observed a nonempty external journal, a missing or empty journal stops the next host startup and reports the path to restore. Moving or renaming the checkout changes its instance ID. Back up the instance before moving it.
 
 1. Stop the old installation and copy its state file. Keep the original as a backup.
 2. Start the destination with the **same Adventure Land account**.

@@ -1192,6 +1192,12 @@
     if (!data || data.failed) return;
     partyMetrics.goldMovement(data);
     if (data.success === true) {
+      if (data.place === 'sell' && data.response === 'gold_received' && data.item && data.item.name) {
+        var sold = data.item, definition = G.items[sold.name];
+        var label = definition && definition.name ? definition.name + ' (' + sold.name + ')' : sold.name;
+        if (Number.isInteger(sold.level)) label += ' +' + sold.level;
+        game_log('Sold ' + (sold.q || 1) + ' × ' + label + ' for ' + data.gold.toLocaleString('en-US') + ' gold');
+      }
       var usedName = data.used && G.items[data.used] ? data.used :
         data.response === 'elixir' && character.slots.elixir ? character.slots.elixir.name : null;
       var usedDefinition = usedName && G.items[usedName];
@@ -4699,6 +4705,29 @@
     }finally{root.__partyConsoleAtomic--;}
   }
 
+  // New merchants receive these three level-zero gifts. Only sell a copy
+  // observed moving from its starter equipment slot into a previously empty bag slot.
+  function isBankboiStarterGear(item, name) {
+    return item && item.name === name && item.level === 0 && item.gift === 1 &&
+      Object.keys(item).every(function (key) { return key === "name" || key === "level" || key === "gift"; });
+  }
+
+  async function sellBankboiStarterGear() {
+    if (character.ctype !== "merchant") return;
+    var starter = { mainhand: "staff", helmet: "helmet", shoes: "shoes" };
+    for (var equipSlot of Object.keys(starter)) {
+      var name = starter[equipSlot];
+      if (!isBankboiStarterGear(character.slots[equipSlot], name)) continue;
+      var empty = [];
+      for (var i = 0; i < character.items.length; i++) if (!character.items[i]) empty.push(i);
+      if (!empty.length) continue;
+      await unequip(equipSlot);
+      var filled = empty.filter(function (slot) { return !!character.items[slot]; });
+      if (!character.slots[equipSlot] && filled.length === 1 && isBankboiStarterGear(character.items[filled[0]], name))
+        await sell(filled[0], 1);
+    }
+  }
+
   async function runBankboiService(command) {
     banking = true;
     var activity = [], completed = [], deposited = [], relocated = [];
@@ -4755,13 +4784,7 @@
     try {
       if (command.provision) {
         await smart_move("potions");
-        var equipmentSlots = Object.keys(character.slots || {});
-        for (var e = 0; e < equipmentSlots.length; e += 1) {
-          if (character.slots[equipmentSlots[e]]) await unequip(equipmentSlots[e]);
-        }
-        for (var sellSlot = 0; sellSlot < character.items.length; sellSlot += 1) {
-          if (character.items[sellSlot]) await sell(sellSlot, character.items[sellSlot].q || 1);
-        }
+        await sellBankboiStarterGear();
       }
       await smart_move("bank");
       // smart_move can resolve on the map transition before the bank proxy is

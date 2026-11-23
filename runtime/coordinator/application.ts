@@ -192,6 +192,18 @@ export function startCoordinatorApplication(
         } };
       }
     })();
+    // Older saves can predate an existing overflow merchant. Reuse the creation
+    // naming contract, but only a newly created character may be provisioned.
+    const prefix = party.bankboiPrefix;
+    let recoveredBankbois = false;
+    if (/^[A-Za-z0-9_]{3,11}$/.test(prefix)) {
+      for (const {name, type} of my_acc.response.characters) {
+        if (type !== 'merchant' || name === party.merchantCharacter || party.bankbois[name] ||
+            !name.startsWith(prefix) || !/^(0|[1-9]\d{0,3})$/.test(name.slice(prefix.length))) continue;
+        party.bankbois[name] = {name, state: 'awaiting-inspection', createdAt: Date.now()};
+        recoveredBankbois = true;
+      }
+    }
     migrateSharedRules(party, Object.keys(character_manage).filter(name => !party.bankbois[name]));
     const farmingScopes = coordinatorPolicies.createFarmingScopes(party);
     const soloServices = new Map<string, ReturnType<typeof createSoloServices>>();
@@ -214,6 +226,7 @@ export function startCoordinatorApplication(
       persistHistory,
     });
     const persistence = coordinatorPolicies.createCoordinatorPersistence(party, localStorage);
+    if (recoveredBankbois) persistence.bank();
     pruneSavedFarmAreas(party, farmAreaControl);
     if (initializeStandLocation(party, Object.keys(persistedSettings).length === 0, canStand)) persistence.settings();
     const storageService = coordinatorPolicies.createCoordinatorStorageService(
@@ -992,6 +1005,7 @@ export function startCoordinatorApplication(
       party,
       character_manage,
       {
+        activeCombatMember: name => !!ownedCharacter(name) && isCombatCharacter(name) && rosterProjection.participants().includes(name),
         navigation: body => {
           try {
             if (["party-monster-travel", "character-travel", "travel", "force-travel", "return-leader"].includes(String(body.type)) &&

@@ -24,6 +24,7 @@ type CommandState = FocusState & Parameters<typeof createOfferingCommands>[0] & 
 type CompoundPorts = Parameters<typeof createCompoundCommands>[1];
 type MerchantItemPorts = Parameters<typeof createMerchantItemCommands>[1];
 interface CharacterActionPorts {
+  activeCombatMember(name: string): boolean;
   farmingState?(name: string): FocusState;
   navigation: (body: Record<string, unknown>) => CommandOutcome;
   farmingLocation: Parameters<typeof createCharacterCommandRoute>[1]["farmingLocation"];
@@ -52,7 +53,9 @@ export function createCoordinatorCharacterCommands(
   ports: CharacterActionPorts,
 ) {
   const managed = (name: unknown, body?: Record<string, unknown>) =>
-    Object.prototype.hasOwnProperty.call(workers, name as PropertyKey) || merchantRuleSelection(state, name, body);
+    Object.prototype.hasOwnProperty.call(workers, name as PropertyKey) || merchantRuleSelection(state, name, body) ||
+    (typeof name === 'string' && Array.isArray(body?.farmingMonsterIds) &&
+      (body.type === 'character-travel' || body.type === 'party-monster-travel') && ports.activeCombatMember(name));
   const selectAction = (item: Item, name: string, action: AutomaticAction) => {
     const hadStandRule = !!state.autoStandMarks?.[automaticCommerceRuleKey(item)];
     replaceAutomaticAction(state, name, item, action);

@@ -1,4 +1,6 @@
 import { migrateCoordinatorLegacyStorage } from "./persistence/legacy-storage.ts";
+import path from "node:path";
+import {existsSync, writeFileSync} from "node:fs";
 
 interface EnvironmentConfig {
   cull_versions?: boolean;
@@ -6,6 +8,7 @@ interface EnvironmentConfig {
   characters: Record<string, { realm?: unknown; version?: unknown } | null | undefined>;
 }
 interface Storage {
+  get: (key: string) => unknown;
   set: (key: string, value: unknown) => unknown;
 }
 type MigrationPorts = Parameters<typeof migrateCoordinatorLegacyStorage>[2];
@@ -28,9 +31,16 @@ export async function initializeCoordinatorEnvironment<
   Account,
 >(ports: EnvironmentPorts<Store, Version, Config, Account>) {
   const localStorage = ports.createStorage();
-  migrateCoordinatorLegacyStorage("./localStorage/storage.json", localStorage, ports.migration);
+  const legacyStorage = process.env.AL_PARTY_STORAGE_DIR
+    ? path.join(process.env.AL_PARTY_STORAGE_DIR, "storage.json")
+    : "./localStorage/storage.json";
+  migrateCoordinatorLegacyStorage(legacyStorage, localStorage, ports.migration);
   const sessionStorage = new Map<string, unknown>();
   localStorage.set("caracAL", "Yeah");
+  if (process.env.AL_PARTY_STORAGE_DIR) {
+    const marker = path.join(path.dirname(process.env.AL_PARTY_STORAGE_DIR), 'established-journal');
+    if (!existsSync(marker)) writeFileSync(marker, 'caraGarage.jsonl\n');
+  }
   sessionStorage.set("caracAL", "Yup");
   const version = await ports.ensureLatest();
   const configuration = ports.configuration();

@@ -69,7 +69,7 @@ import type { createImprovementScheduler } from "./merchant/improvement-schedule
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
-type Store = { set: (key: string, value: unknown) => void };
+type Store = { get: (key: string) => unknown; set: (key: string, value: unknown) => void };
 type Environment = Awaited<
   ReturnType<
     typeof initializeCoordinatorEnvironment<

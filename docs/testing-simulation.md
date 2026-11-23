@@ -4,6 +4,8 @@ All 206 gameplay scenarios in the `live` Playwright project use the shared Chron
 
 ## Commands
 
+The benchmark checks a 20 GiB budget before copying Playwright evidence into `.build/e2e-benchmarks`. If the copy would exhaust the budget, it stops with the current run's evidence in the standard report and results directories. Move the completed archives you want to retain to another location before running another comparison.
+
 - `npm test`: complete console, debug and gameplay suite.
 - `npm run test:e2e:live` or `npm run test:e2e:simulation`: complete gameplay project with ChronAL.
 - `E2E_GAMEPLAY_BACKEND=native npm test`: explicit real-time parity run (set the environment variable using your shell).

@@ -27,6 +27,7 @@ interface Container {
   Id: string; Name: string;
   Config: { Image: string; Labels: Record<string, string>; Env: string[]; [key: string]: unknown };
   HostConfig: Record<string, unknown>;
+  Mounts: {Type: string; Name?: string; Source: string; Destination: string; RW: boolean}[];
   NetworkSettings: { Networks: Record<string, { Aliases?: string[] }> };
 }
 export class DockerInstallation implements Driver, UpdateAdapter {
@@ -41,8 +42,15 @@ export class DockerInstallation implements Driver, UpdateAdapter {
     if (!project) throw new Error('Managed Docker updates require the release Compose configuration');
     const filters = encodeURIComponent(JSON.stringify({ label: [`com.docker.compose.project=${project}`, 'com.docker.compose.service=party-console'] }));
     const entries = await docker<{ Id: string }[]>('GET', `/containers/json?all=true&filters=${filters}`);
+    if (!entries.length) throw new Error('Party Console container is absent');
     if (entries.length !== 1) throw new Error('Expected exactly one Party Console container');
-    this.container = await docker<Container>('GET', `/containers/${entries[0].Id}/json`);
+    const console = await docker<Container>('GET', `/containers/${entries[0].Id}/json`);
+    const mount = console.Mounts.find(entry => entry.Destination === '/data');
+    const backup = self.Mounts.find(entry => entry.Destination === '/data');
+    if (!mount?.RW || !backup?.RW || mount.Type !== backup.Type || !['volume','bind'].includes(mount.Type) ||
+        !mount.Source || mount.Source !== backup.Source)
+      throw new Error('The managed console and updater must share the same writable /data volume before an upgrade');
+    this.container = console;
     await atomic(path.join(this.data, 'updates/container.json'), this.container);
     return this.container;
   }
@@ -60,7 +68,10 @@ export class DockerInstallation implements Driver, UpdateAdapter {
     const image = await docker<{ RepoDigests: string[] }>('GET', `/images/${encodeURIComponent(release.image)}/json`);
     if (!image.RepoDigests?.includes(release.image)) throw new Error('Pulled image digest does not match release');
   }
-  async install(release: PublishedRelease, startup: boolean) { await this.transaction.install(release.image, startup); }
+  async install(release: PublishedRelease, startup: boolean) {
+    await this.locate();
+    await this.transaction.install(release.image, startup);
+  }
   async stop() {
     const container = this.container || await this.locate();
     try { await docker('POST', `/containers/${container.Id}/stop?t=30`); }
@@ -88,7 +99,10 @@ export class DockerInstallation implements Driver, UpdateAdapter {
   }
   async recover() {
     if (await exists(path.join(this.data, 'updates/container.json'))) this.container = await readJson<Container>(path.join(this.data, 'updates/container.json'));
-    try { await this.locate(); } catch { /* First Compose startup or interrupted replacement; retained config supports recovery. */ }
+    try { await this.locate(); } catch (error) {
+      // Only an absent container is expected between remove and create.
+      if (!String(error).includes('Party Console container is absent')) throw error;
+    }
     await this.transaction.recover();
   }
   async installedVersion() {

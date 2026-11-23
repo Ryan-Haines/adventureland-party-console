@@ -1,8 +1,9 @@
 // Compare the same existing gameplay assertions plus unchanged browser/deployment journeys.
 import { verifyCodeParity } from "./e2e-code-parity.mts";
 import {sourceFingerprint} from '../console-build/builder.ts';
+import {archiveBenchmarkReports, checkBenchmarkSpace} from './benchmark-archive.ts';
 import { spawnSync } from "node:child_process";
-import { readFileSync, mkdirSync, writeFileSync, cpSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,12 +37,13 @@ const grep = expected.map((title) => title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"
 const npm =
   process.env.npm_execpath ||
   path.join(path.dirname(process.execPath), "node_modules/npm/bin/npm-cli.js");
+const archiveRoot = path.join(root, ".build/e2e-benchmarks");
 const out = path.join(
-  root,
-  ".build/e2e-benchmarks",
+  archiveRoot,
   new Date().toISOString().replace(/[:.]/g, "-"),
 );
-mkdirSync(out, { recursive: true });
+mkdirSync(archiveRoot, { recursive: true });
+await checkBenchmarkSpace(archiveRoot);
 // Both measured runs use prepared dependencies and Docker layers. Otherwise a
 // cold debug image build would be mistaken for a gameplay clock improvement.
 const preparationStarted = performance.now();
@@ -93,11 +95,7 @@ for (const backend of ["accelerated", "native"]) {
   );
   const wallMs = performance.now() - started;
   const archive = path.join(out, backend);
-  mkdirSync(path.join(archive, ".build"), { recursive: true });
-  for (const directory of ["e2e-report", "e2e-results"])
-    cpSync(path.join(root, ".build", directory), path.join(archive, ".build", directory), {
-      recursive: true,
-    });
+  await archiveBenchmarkReports(root, archiveRoot, archive);
   const manifest = JSON.parse(
     readFileSync(path.join(archive, ".build/e2e-report/manifest.json"), "utf8"),
   ) as { tests: Outcome[]; workers:number; dashboardCandidate:{sourceHash:string;components:unknown}; gamePools:unknown };

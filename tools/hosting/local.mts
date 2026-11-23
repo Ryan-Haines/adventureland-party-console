@@ -12,10 +12,17 @@ import { configureDashboardGateway } from '../dashboard/gateway-access.ts';
 import { createLocalSteam } from '../steam/service.ts';
 import { DebugInstances } from '../debug/service.ts';
 import { loadManagedConsole } from '../console-build/bootstrap.ts';
+import { migrateHostingData, windowsPartyStorage } from './windows-party-storage.ts';
 configureDashboardGateway();
 const root = fileURLToPath(new URL("../../", import.meta.url)),
   services = new Services();
-const data = path.resolve(process.env.AL_DATA_DIR || path.join(root, ".build/hosting-data"));
+let storage: string | undefined;
+if (process.platform === 'win32') {
+  if (!process.env.LOCALAPPDATA) throw new Error('Windows local application data directory is unavailable');
+  storage = await windowsPartyStorage(root, process.env.LOCALAPPDATA);
+}
+const data = path.resolve(process.env.AL_DATA_DIR || (storage
+  ? await migrateHostingData(root, path.dirname(storage)) : path.join(root, ".build/hosting-data")));
 await mkdir(data, { recursive: true });
 const access = new Access(path.join(data, "access.json"));
 await access.load();
@@ -23,11 +30,17 @@ const tls = new LocalTLS(root, data);
 let steamServer: string | undefined;
 const steam = createLocalSteam(root, data, 924, async () => steamServer ??= (process.platform === 'linux'
   ? `https://localhost:${tls.publicPort}` : `http://127.0.0.1:${process.env.AL_PORT || 3010}`) + '/bridge/' + await access.steam());
-const managed = await loadManagedConsole(root, services, { dashboardPort: 3030, apiPort: 924 });
+const managed = await loadManagedConsole(root, services, { dashboardPort: 3030, apiPort: 924, coordinatorEnv: {AL_DATA_DIR: data} });
 const server = gateway({ builds: managed.routes, steam, tls, access, debug: await new DebugInstances(root, path.join(data, 'debug')).load(), updates: await updateHosting(root, data), configured: () => true, healthy: () => servicesHealthy(true), dashboardPort: 3030, publicUrl: process.env.AL_PUBLIC_URL || undefined });
 await listen(server, access);
 await tls.start();
-await managed.startGame({...process.env, AL_DATA_DIR: data});
+const gameEnv = {...process.env, AL_DATA_DIR: data} as NodeJS.ProcessEnv;
+if (storage) {
+  gameEnv.AL_PARTY_STORAGE_DIR = storage;
+  const preload = path.join(root, 'tools/hosting/windows-storage-preload.cjs').replaceAll('\\', '/');
+  gameEnv.NODE_OPTIONS = [gameEnv.NODE_OPTIONS, '--require=' + JSON.stringify(preload)].filter(Boolean).join(' ');
+}
+await managed.startGame(gameEnv);
 const stop = () => {
   steam.stop();
   tls.stop();

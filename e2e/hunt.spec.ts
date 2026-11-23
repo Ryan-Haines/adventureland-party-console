@@ -1,5 +1,41 @@
 import { test, expect } from './fixtures';
 import { fetchFullState } from './state-route';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+test.describe('restored party', () => {
+  test.use({savedRecords: [{party_dashboard_settings_state_v1: {bankboiPrefix: 'Bank'}}]});
+  test('rediscovers an existing BankBoi and routes a Steam leader to Dino', async ({page, app}, info) => {
+    await app.crashCoordinator(() => writeFileSync(path.join(path.dirname(app.journal), 'additional-account-characters.json'),
+      JSON.stringify([{name: 'Bank1', type: 'merchant', id: 'existing-bank-worker', level: 1}])));
+    const recovered = (await app.state()).bankbois;
+    expect(recovered.map((entry: {name: string}) => entry.name)).toEqual(['Bank1']);
+    const formation = await page.request.post(app.url + '/party-api/formation', {headers: {Origin: app.url}, data: {leader: 'W'}});
+    expect(formation.status(), await formation.text()).toBe(200);
+    await page.goto('/');
+    const warrior = page.locator('article').filter({has: page.getByRole('heading', {name: 'W', exact: true})});
+    await warrior.getByRole('button', {name: /No monsters selected|All monsters|Goo/i}).first().click();
+    await page.getByRole('checkbox', {name: /Goo · goo/}).uncheck();
+    await page.getByRole('checkbox', {name: /Dino · odino/}).check();
+    await page.keyboard.press('Escape');
+    await warrior.getByRole('button', {name: 'Find selected monster'}).click();
+    const picker = page.getByRole('dialog', {name: 'Choose a farming area'});
+    await picker.locator('button[aria-pressed]').first().click();
+    const posted = page.waitForResponse(r => r.url().endsWith('/party-api/command') && r.request().method() === 'POST');
+    await picker.getByRole('button', {name: 'Start farming'}).click();
+    const result = await posted;
+    expect(result.status(), await result.text()).toBe(200);
+    const command = result.request().postDataJSON();
+    expect(command).toMatchObject({character: 'W', type: 'party-monster-travel', location: {map: 'mforest'}, farmingMonsterIds: ['odino']});
+    await expect.poll(async () => (await app.state()).farmingProfiles.W.monsterFocus).toEqual(['odino']);
+    const unknown = await page.request.post(app.url + '/party-api/command', {headers: {Origin: app.url}, data: {...command, character: 'Unknown'}});
+    expect(unknown.status()).toBe(400);
+    await app.restartCoordinator();
+    expect((await app.state()).bankbois.map((entry: {name: string; createdAt: number}) => [entry.name, entry.createdAt]))
+      .toEqual([['Bank1', recovered[0].createdAt]]);
+    await info.attach('restored-party', {body: JSON.stringify({bankboi: recovered[0].name, command, unknownStatus: unknown.status()}), contentType: 'application/json'});
+  });
+});
 
 test('passive level caps save and preferred spawns show their map area', async ({page,app},info) => {
   // Failure modes: legacy caps lack a default; zero/fractions save; positive caps

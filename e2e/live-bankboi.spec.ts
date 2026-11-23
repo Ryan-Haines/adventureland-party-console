@@ -2,6 +2,39 @@ import { test, expect } from './live-fixtures';
 
 test.use({ merchantDefault: null });
 
+test('BankBoi provisioning sells only equipped unmodified starter gifts', async ({live}, info) => {
+  test.setTimeout(240_000);
+  const name = 'E2EMerchant';
+  await live.admin(`output=(async()=>{
+    const p=get_player('${name}');
+    p.slots.mainhand={name:'staff',level:0,gift:1};
+    p.slots.helmet={name:'helmet',level:1,gift:1};
+    p.slots.shoes={name:'shoes',level:0};
+    p.items[12]={name:'staff',level:0,gift:1};
+    p.items[13]={name:'offeringp',q:7};
+    cache_player_items(p);resend(p,'reopen+cid');return true;
+  })()`);
+  await expect.poll(async () => (await live.clients[name].snapshot()).items[13]?.q).toBe(7);
+  await live.restoreHistoricalSettings(() => ({
+    merchantCharacter:null, bankbois:{[name]:{name,state:'provisioning',items:[]}},
+    bankboiTransaction:{id:'provision-starter-gear',bankboi:name,mode:'provision',phase:'waiting-for-bankboi',
+      slot:2,requestIds:[],retrievals:[],startedAt:Date.now()},
+  }));
+  await expect.poll(async () => (await live.state()).bankbois.find((worker:any)=>worker.name===name)?.state,
+    {timeout:90_000}).toBe('ready');
+  const sales=(await live.clients[name].events()).filter(event=>event.event==='game_response' && event.data?.place==='sell' && event.data.success);
+  expect(sales.map(event=>event.data.item.name)).toEqual(['staff']);
+  const receipt = live.clients[name].page.getByText(/E2EMerchant: Sold 1 × Staff \(staff\) \+0 for 1 gold$/);
+  await expect(receipt).toHaveCount(1);
+  const stock=await live.admin(`output=(()=>{const p=get_player('${name}');return {helmet:p.slots.helmet,shoes:p.slots.shoes,
+    items:[...p.items,...Object.values(p.user).filter(Array.isArray).flat()].filter(Boolean)};})()`);
+  expect(stock.helmet).toMatchObject({name:'helmet',level:1,gift:1});
+  expect(stock.shoes).toMatchObject({name:'shoes',level:0});
+  expect(stock.items.filter((item:any)=>item.name==='staff' && item.gift===1)).toHaveLength(1);
+  expect(stock.items.filter((item:any)=>item.name==='offeringp').reduce((q:number,i:any)=>q+i.q,0)).toBe(7);
+  await info.attach('provisioning-stock-and-sales',{body:JSON.stringify({stock,sales,receipt:await receipt.textContent()}),contentType:'application/json'});
+});
+
 test('BankBoi storage bypasses merchant production admission and combines native stacks', async ({ live }, info) => {
   test.setTimeout(240_000);
   // Failure modes: a storage merchant is rejected by production-owner checks;

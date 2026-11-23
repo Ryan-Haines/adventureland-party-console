@@ -41,6 +41,11 @@ function createGameFixture(directory) {
     x: (boundary[0] + boundary[2]) / 2, y: (boundary[1] + boundary[3]) / 2 };
   const spawnRecords = [{ ...location, sourceMap: 'main', count: gooSpawn.count, restrictions: [] }];
   const monsterChoices = [{ id: 'goo', name: game.monsters.goo.name || 'goo', locations: [location], spawnRecords }];
+  const dino = game.maps.mforest.monsters.find(spawn => spawn.type === 'odino');
+  const [left, top, right, bottom] = dino.boundary;
+  const forest = {map: 'mforest', mapName: game.maps.mforest.name, x: (left + right) / 2, y: (top + bottom) / 2, boundary: dino.boundary};
+  monsterChoices.push({id: 'odino', name: game.monsters.odino.name, locations: [forest],
+    spawnRecords: [{...forest, sourceMap: 'mforest', count: dino.count, restrictions: []}]});
   const bestiaryCatalog = Object.entries(game.monsters).map(([id, definition]) => ({
     ...definition, id, name: definition.name || id, definition, threat: 0, drops: [], spawnRecords: id === 'goo' ? spawnRecords : [],
   }));
