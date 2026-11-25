@@ -7274,6 +7274,7 @@
     tracktrix: lean("Tracktrix status and bonuses.", all),
     items: lean("Bag entries with item fingerprints and metadata.", [...all, "metrics"], large("117 to 273 KB")),
     slots: lean("Equipped entries with item fingerprints and metadata.", [...all, "metrics"], large("457 to 484 KB")),
+    emptySlots: debug("The game's empty slots of the character, which bound a telemetry slot change beside `slots` (status/coordinator/streams.ts `receive`)."),
     nearbyStandListings: debug("Player stand listings near the character.", large("up to 1.9 MB")),
     nearbyGiveaways: debug("Giveaways near the character."),
     bank: consumed("Bank snapshot; 10's items row moves it to bankSnapshot (items/coordinator/storage.ts writeBankSnapshot; a null report stays on the status).", large("all bank packs with item metadata")),
@@ -21935,19 +21936,28 @@ ${hook}`, was = errors.get(key3);
       const character2 = me(), upgrade4 = p.activeUpgrade(), known2 = p.catalogKnown();
       const key3 = JSON.stringify([character2.items, character2.slots || null, character2.bank || null, upgrade4 && [upgrade4.slot, upgrade4.item]]);
       if (known2 && statusCache?.key === key3) return statusCache;
-      const slots = {};
-      for (const [slot, item2] of Object.entries(character2.slots || {})) if (item2) slots[slot] = { item: fingerprint(item2), meta: itemDefinition(item2) };
+      const slots = {}, emptySlots = [];
+      for (const [slot, item2] of Object.entries(character2.slots || {}))
+        if (item2) slots[slot] = { item: fingerprint(item2), meta: itemDefinition(item2) };
+        else emptySlots.push(slot);
       return statusCache = {
         key: known2 ? key3 : null,
         revision: statusSession + "." + ++statusCount,
         items: (character2.items || []).map(inventoryOperationEntry),
         slots,
+        emptySlots,
         bank: bankSnapshot()
       };
     }
     function withStatusInventory(status5) {
       const inventory = statusInventory();
-      return Object.assign(status5, { inventoryRevision: inventory.revision, items: inventory.items, slots: inventory.slots, bank: inventory.bank });
+      return Object.assign(status5, {
+        inventoryRevision: inventory.revision,
+        items: inventory.items,
+        slots: inventory.slots,
+        emptySlots: inventory.emptySlots,
+        bank: inventory.bank
+      });
     }
     function attachStatusInventory(status5) {
       const inventory = statusInventory();
