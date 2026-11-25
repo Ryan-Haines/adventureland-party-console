@@ -23,8 +23,6 @@ async function publish(output: URL, content: string): Promise<void> {
 }
 for (const entry of [
   { source: "lifecycle/index.ts", output: "lifecycle.cjs", browser: false },
-  { source: "lifecycle/roster/index.ts", output: "roster.cjs", browser: false },
-  { source: "coordinator/targeting/queue.ts", output: "grouped-combat.cjs", browser: false },
   { source: "coordinator/application.ts", output: "coordinator-application.cjs", browser: false },
   { source: "movement/coordinator/planner-worker.ts", output: "movement-planner.cjs", browser: false },
   { source: "lifecycle/roster/entry.ts", output: "steam-bridge.js", browser: true },
@@ -40,12 +38,18 @@ for (const entry of [
     platform: entry.browser ? "browser" : "node",
     target: entry.browser ? "es2022" : "node22",
     write: false,
-    sourcemap: entry.source.startsWith("coordinator/") ? "inline" : false,
+    // The coordinator's map is a file beside its bundle, named by the bundle's sourceMappingURL. V8
+    // holds a loaded script's whole source for the life of the process, so an inline map cost the
+    // coordinator about 4 bytes of working set per map character (docs/efficiency.md "The source
+    // map stays on disk").
+    outfile: fileURLToPath(new URL(entry.output, destination)),
+    sourcemap: entry.source.startsWith("coordinator/") ? "linked" : false,
     banner: {
       js: "// Generated from TypeScript; run npm run build:runtime -- --publish. Do not edit.",
     },
   });
-  const content = result.outputFiles[0].text;
+  const content = result.outputFiles.find(file => !file.path.endsWith(".map"))!.text;
+  const map = result.outputFiles.find(file => file.path.endsWith(".map"));
   if (checked) {
     const committed = new URL("characters/" + entry.output, checked);
     // A checkout with core.autocrlf holds the copies with CRLF line ends; git stores them as the build writes them.
@@ -54,6 +58,7 @@ for (const entry of [
     continue;
   }
   await publish(new URL(entry.output, destination), content);
+  if (map) await publish(new URL(entry.output + ".map", destination), map.text);
   if (entry.browser && process.argv.includes("--publish"))
     await publish(new URL("characters/" + entry.output, root), content);
 }

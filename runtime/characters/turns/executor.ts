@@ -293,7 +293,7 @@ export function createExecutor(root: CombatRoot & { __partyTurns?: Turns }, port
     const rtt = Date.now() - flight.sentAt;
     familyOwn(flight.family, Date.now()).push({ at: Date.now(), rtt });
     const current = flights.get(flight.family) === flight;
-    if (current) flights.delete(flight.family);
+    if (current) { flights.delete(flight.family); updateRead = null; }
     const s = flight.spend, reason = ok ? 'accepted' : errorReason(value), ms = Number((value as { ms?: unknown } | null)?.ms);
     const row = replyRow(ok, reason, ms, current && flight.epoch === ports.epoch() && running);
     // The server measured `ms` when the call arrived, and its reply took the way back, so a resend
@@ -378,7 +378,7 @@ export function createExecutor(root: CombatRoot & { __partyTurns?: Turns }, port
   // b9b5c91e's acknowledgement timeout rejected every unanswered cast.
   function leave(f: Flight, reason: 'lost reply' | 'stale' | 'turns stopped') {
     const now = Date.now();
-    flights.delete(f.family);
+    flights.delete(f.family); updateRead = null;
     // A stale flight's call reached the server, which holds its cooldown from the send whatever the
     // epoch, so its family waits that out; a second potion sent across the reset reads `not_ready`.
     // The attack goes at the new target at once, and its `cooldown` reply carries the server's wait.
@@ -401,23 +401,28 @@ export function createExecutor(root: CombatRoot & { __partyTurns?: Turns }, port
   function expire(now: number) {
     for (const [fam, f] of flights) if (now >= f.sentAt + f.cooldownMs + familyMargin(fam, now)) leave(f, 'lost reply');
   }
+  // The view is the same whatever woke the pass, so the update's one pass asks what the role loop and
+  // the passive pulse each ask.
   function view(kind: PassKind, h: Hold): TurnsView {
-    return { kind, now: Date.now(), character, role: ports.role(), roleLoop: kind !== 'pulse' && h.roleLoop, pulse: kind === 'pulse',
-      attack: kind !== 'pulse' && h.attack, combat: h.combat, potions: h.potions,
+    return { kind, now: Date.now(), character, role: ports.role(), roleLoop: h.roleLoop,
+      attack: h.attack, combat: h.combat, potions: h.potions,
       target: null, healFirstBelow: healFirstBelowOf(ports.healFirstBelow()), world: lazyWorld,
       inFlightMp: inFlightMp(), flying: fam => flights.has(fam) };
   }
   // One pass. A push from the escape runs whatever the spend table holds, as the escape pulse does today.
   // The open pass's spend table read, which `hold()` answers until the pass returns.
   let passHold: Hold | null = null;
-  // The update the last pass ran in. Every pass reads all the families at its update, so an edge
-  // inside an update already passed adds nothing until the game moves: it runs once at the next
-  // update (`edgeWaiting`), as the role loop's and the pulse's wakes do.
-  let passedIn: number | null = null, edgeWaiting = false;
+  // The update the last pass ran in, and that pass's read. Every pass reads all the families at its
+  // update, so the update gets one pass: a wake inside an update already passed runs one pass at the
+  // next update (`edgeWaiting`), which reads what woke it, and the role loop's or the pulse's wake,
+  // at the same epoch, gets this update's read. A flight that leaves clears the read, since its reply
+  // is news that pass did not read. A push runs its own pass, since it carries a spend.
+  let passedIn: number | null = null, edgeWaiting = false, updateRead: PassRead | null = null, readEpoch: number | null = null;
   function pass(kind: PassKind, push?: Spend): PassRead | null {
-    if (kind === 'edge' && running && update() === passedIn) {
-      if (!edgeWaiting) { edgeWaiting = true; afterNextUpdate(() => { edgeWaiting = false; pass('edge'); }); }
-      return null;
+    if (kind !== 'push' && running && update() === passedIn && (kind === 'edge' || updateRead && readEpoch === ports.epoch())) {
+      // A wake of the next update that passes first serves this one too.
+      if (!edgeWaiting) { edgeWaiting = true; afterNextUpdate(() => { edgeWaiting = false; if (update() !== passedIn) pass('edge'); }); }
+      return kind === 'edge' ? null : updateRead;
     }
     const outer = passHold;
     try { return passOnce(kind, push); } finally { passHold = outer; }
@@ -431,13 +436,15 @@ export function createExecutor(root: CombatRoot & { __partyTurns?: Turns }, port
     passedIn = update();
     const h = passHold = ports.hold(), v = view(kind, h);
     const asks: { spend: Spend; cap: SpendRank }[] = push ? [{ spend: push, cap: push.rank }] : [];
-    if (kind === 'pulse' ? h.pulse : h.asks) {
+    // The requesters ask unless H1 or H2 holds (the spend table's pulse column); the role loop's own
+    // sources read `roleLoop`.
+    if (h.pulse) {
       // The pass's one target answer: the attack source, the drop below and the other sources
       // read it, so they never disagree inside a pass.
       const answer = ports.hooks.turns.target(v) as TargetAnswer | undefined;
       v.target = answer?.target ? answer : null;
       // A passing attack goes where the spend table's passing column lets it.
-      v.attack = kind !== 'pulse' && (h.attack || h.passing && !!v.target?.passing);
+      v.attack = h.attack || h.passing && !!v.target?.passing;
       for (const { registration, requester, answer: ask } of ports.hooks.skillRequests(v))
         asks.push({ spend: { ...(ask as CoreAsk), by: `${registration}/${requester.name}`, family: family(ask.skill) }, cap: requester.rank });
     }
@@ -495,7 +502,8 @@ export function createExecutor(root: CombatRoot & { __partyTurns?: Turns }, port
     meter.passes++; meter.totalMs += took; meter.maxMs = Math.max(meter.maxMs, took);
     meter.byKind[kind] = (meter.byKind[kind] ?? 0) + 1;
     if (update() !== meteredUpdate) { meteredUpdate = update(); meter.updates++; }
-    return { hold: h, target: v.target };
+    updateRead = { hold: h, target: v.target }; readEpoch = epochSeen;
+    return updateRead;
   }
   // The attack family's edge (3.3, 3.4): one timer at the family's ready time, or at a flight's
   // lost-reply time, never later than one already armed.

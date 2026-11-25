@@ -13,20 +13,28 @@ function idText(value: unknown): value is string {
   return metricText(value, METRIC_ID_CHARS);
 }
 
+/** A run of frame sequences that one collector runtime sent: character, runtime, first, last. */
+export type ReceiptRun = [character: string, runtime: string, first: number, last: number];
+
 export interface StoredBucket extends MetricPoint {
   width: number;
-  receipts: string[];
+  // A finest bucket's receipts and event ids dedupe a resent frame or event; a rollup drops both.
+  receipts: ReceiptRun[];
   events: { id: string; at: number }[];
-  sources: string[];
+  // A v1.5.0 rollup listed each finer bucket it had merged, so a crash between its write and the
+  // source's delete could resume. rollUp reads the list and writes none.
+  sources?: string[];
 }
 
 const history = STATUS_PICKS.metricHistory;
 /** Each width the history holds, finest first, with the age at which its buckets move on. */
 export const HISTORY_ROWS = [METRIC_BUCKET_MS, ...history.merges.map(row => row.width)].map((width, index) =>
   ({ width, until: history.merges[index]?.after ?? HISTORY_KEPT_MS }));
-/** The coarsest width: the retention pass runs as each bucket of it starts, so a finer bucket is
- * read past its row's age by at most this long. */
+/** The coarsest width: the account gold history thins its points as each bucket of it starts. */
 export const RETENTION_WIDTH = HISTORY_ROWS[HISTORY_ROWS.length - 1].width;
+/** The span of one day file: the age of the finest row, so memory holds the finest row and at most
+ * one span of the next row (service.ts). Every coarser width divides it. */
+export const DAY_SPAN = HISTORY_ROWS[0].until;
 
 export function resetKind(value: unknown): value is MetricResetKind {
   return METRIC_RESET_KINDS.some(kind => kind === value);
@@ -34,21 +42,71 @@ export function resetKind(value: unknown): value is MetricResetKind {
 export const bucketKey =(width: number, at: number) => `${width}:${at}`;
 export function copy<T>(value: T): T { return structuredClone(value); }
 export function emptyBucket(at: number, width: number): StoredBucket {
-  return { at, width, values: [], kills: [], bounds: [], receipts: [], events: [], sources: [] };
+  return { at, width, values: [], kills: [], bounds: [], receipts: [], events: [] };
 }
 
 /** The width that holds a point of this age, or null once the history no longer keeps it. */
 export function widthAt(age: number): number | null {
   return HISTORY_ROWS.find(row => age <= row.until)?.width ?? null;
 }
-/** The next coarser width a bucket of this width merges into, or null for the coarsest. */
-export function parentWidth(width: number): number | null {
-  const index = HISTORY_ROWS.findIndex(row => row.width === width);
-  return HISTORY_ROWS[index + 1]?.width ?? null;
+
+export function hasReceipt(runs: ReceiptRun[], character: string, runtime: string, sequence: number): boolean {
+  return runs.some(([name, run, first, last]) => name === character && run === runtime && sequence >= first && sequence <= last);
 }
-/** The age past which a bucket of this width leaves its row. */
-export function rowUntil(width: number): number {
-  return HISTORY_ROWS.find(row => row.width === width)?.until ?? HISTORY_KEPT_MS;
+/** Adds sequences to the run they extend or touch, or as a run of their own. A collector numbers its
+ * frames in order, so a bucket holds one run per character and runtime. */
+export function addReceipt(runs: ReceiptRun[], character: string, runtime: string, first: number, last = first) {
+  const run = runs.find(([name, value, start, end]) => name === character && value === runtime && first <= end + 1 && last >= start - 1);
+  if (!run) { runs.push([character, runtime, first, last]); return; }
+  run[2] = Math.min(run[2], first); run[3] = Math.max(run[3], last);
+}
+
+/** Adds a bucket's measurements to the target: its rows, kills and bound firings. */
+export function mergeMeasures(target: StoredBucket, source: Pick<StoredBucket, 'values' | 'kills' | 'bounds'>) {
+  for (const value of source.values) mergeTotals(target.values, value);
+  mergeDeaths(target.kills, source.kills);
+  mergeBounds(target.bounds, source.bounds);
+}
+/** Adds one saved part of a finest bucket (service.ts writes one per commit) with its receipts and
+ * event ids. */
+export function mergePart(target: StoredBucket, part: StoredBucket) {
+  mergeMeasures(target, part);
+  target.events.push(...part.events);
+  for (const [character, runtime, first, last] of part.receipts) addReceipt(target.receipts, character, runtime, first, last);
+}
+/**
+ * Merges every bucket finer than `width` into the bucket of `width` that holds it, starting from the
+ * bucket of that time already there. A bucket that another lists in its v1.5.0 `sources` is already
+ * inside that one, so it is left out. The result lists no sources and drops receipts and event ids.
+ */
+export function rollUp(input: StoredBucket[], width: number): StoredBucket[] {
+  const merged = new Set(input.flatMap(bucket => bucket.sources ?? []));
+  const result = new Map<string, StoredBucket>();
+  const kept = input.filter(bucket => !merged.has(bucketKey(bucket.width, bucket.at)));
+  for (const bucket of kept) if (bucket.width >= width) {
+    const { sources: _merged, ...rest } = bucket;
+    result.set(bucketKey(bucket.width, bucket.at), { ...rest, receipts: [], events: [] });
+  }
+  for (const bucket of kept) if (bucket.width < width) {
+    const at = Math.floor(bucket.at / width) * width, key = bucketKey(width, at);
+    const target = result.get(key) ?? emptyBucket(at, width);
+    result.set(key, target);
+    mergeMeasures(target, bucket);
+  }
+  return [...result.values()].sort((a, b) => a.at - b.at || a.width - b.width);
+}
+/** Merges buckets into one per `width`, each spanning from its first bucket's start to its last
+ * bucket's end, so a reader of starts and ends sees the span its buckets covered. */
+export function binBuckets(input: StoredBucket[], width: number): StoredBucket[] {
+  const bins = new Map<number, StoredBucket>();
+  for (const bucket of input) {
+    const at = Math.floor(bucket.at / width) * width, bin = bins.get(at) ?? emptyBucket(bucket.at, bucket.width);
+    const end = Math.max(bin.at + bin.width, bucket.at + bucket.width);
+    bin.at = Math.min(bin.at, bucket.at); bin.width = end - bin.at;
+    mergeMeasures(bin, bucket);
+    bins.set(at, bin);
+  }
+  return [...bins.values()];
 }
 
 function mergeMeasurements(row: MetricTotals, incoming: MetricTotals) {
@@ -140,11 +198,26 @@ function storedTotals(value: Record<string, unknown>): MetricTotals {
     ...(value.goldStart === undefined ? {} : { goldStart: storedGoldStart(value.goldStart) }) };
 }
 
+/** A saved receipt run, or a v1.5.0 receipt id (`JSON.stringify([character, runtime, sequence])`) as a run of one. */
+function receiptRun(entry: unknown): ReceiptRun {
+  const run = typeof entry === 'string' ? JSON.parse(entry) as unknown : entry;
+  if (!Array.isArray(run) || !metricText(run[0]) || !metricText(run[1]) || !metricNumber(run[2])) throw Error('Invalid metrics history receipt');
+  const last: unknown = run.length === 4 ? run[3] : run[2];
+  if (!metricNumber(last)) throw Error('Invalid metrics history receipt');
+  return [run[0], run[1], run[2], last];
+}
+function storedReceipts(value: unknown): ReceiptRun[] {
+  if (!Array.isArray(value)) throw Error('Invalid metrics history envelope');
+  const runs: ReceiptRun[] = [];
+  for (const entry of value) addReceipt(runs, ...receiptRun(entry));
+  return runs;
+}
+
 /** A saved bucket, refused whole when any field is malformed. */
 export function storedBucket(value: unknown): StoredBucket {
   const row = requestObject(value);
   const strings = (list: unknown) => Array.isArray(list) && list.every(entry => typeof entry === 'string');
-  if (!metricNumber(row.at) || !metricNumber(row.width) || !strings(row.receipts) || !strings(row.sources))
+  if (!metricNumber(row.at) || !metricNumber(row.width) || (row.sources !== undefined && !strings(row.sources)))
     throw Error('Invalid metrics history envelope');
   const values = storedList(row.values, 'Invalid metrics history envelope', storedTotals);
   const kills = storedList(row.kills, 'Invalid kill history', kill => metricText(kill.server) && metricText(kill.monster) && metricText(kill.actor) && metricNumber(kill.count)
@@ -155,5 +228,6 @@ export function storedBucket(value: unknown): StoredBucket {
       ? { bound: firing.bound, owner: firing.owner, count: firing.count } : null);
   const events = storedList(row.events, 'Invalid metrics event identity', event => idText(event.id) && metricNumber(event.at)
     ? { id: event.id, at: event.at } : null);
-  return { at: row.at, width: row.width, values, kills, bounds, events, receipts: row.receipts as string[], sources: row.sources as string[] };
+  return { at: row.at, width: row.width, values, kills, bounds, events, receipts: storedReceipts(row.receipts),
+    ...(row.sources === undefined ? {} : { sources: row.sources as string[] }) };
 }

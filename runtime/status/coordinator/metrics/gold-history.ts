@@ -1,6 +1,6 @@
-import { GOLD_YIELD_BUCKETS, chartWidth } from '../../rules.ts';
+import { GOLD_YIELD_BUCKETS } from '../../rules.ts';
 import { capReached } from '../bounds.ts';
-import { METRIC_BUCKET_MS, type GoldHistoryResponse, type GoldSample, type MetricSample, type MetricTotals } from '../../api.ts';
+import { type GoldHistoryResponse, type GoldSample, type MetricSample, type MetricTotals } from '../../api.ts';
 
 interface Bucket { at: number; width: number; values: MetricTotals[] }
 const sample = (value: MetricSample): GoldSample => ({ at: value.at, gold: value.gold,
@@ -20,11 +20,10 @@ function mergeBalance(values: Map<string, Row>, incoming: MetricTotals) {
   if (incoming.goldStart && (!row.goldStart || incoming.goldStart.at < row.goldStart.at)) row.goldStart = { ...incoming.goldStart };
 }
 
-/** Read balance endpoints only. Yield during long histories so socket/status work can run; `yieldTurn`
- * is the metrics service's turn on the status owner's run scope (service.ts). */
-export async function goldHistory(buckets: Bucket[], from: number, to: number, yieldTurn: () => Promise<void>) {
-  const largest = buckets.reduce((width, bucket) => Math.max(width, bucket.width), METRIC_BUCKET_MS);
-  const width = chartWidth(from, to, largest);
+/** Read balance endpoints only, one point per `width` (the service's chart width for the range). Yield
+ * during long histories so socket/status work can run; `yieldTurn` is the metrics service's turn on
+ * the status owner's run scope (service.ts). */
+export async function goldHistory(buckets: Bucket[], from: number, to: number, width: number, yieldTurn: () => Promise<void>) {
   const points = new Map<number, Map<string, Row>>();
   let processed = 0;
   for (const bucket of buckets) {

@@ -8,7 +8,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { MonsterChoice } from "./monster-choice";
 import { Sprite } from "./sprite";
 import { SpriteCrop } from "./sprite-crop";
-import { MONSTER_PRIORITY } from '../../../runtime/characters/targeting/api.ts';
+import { MONSTER_PRIORITY } from '../../../runtime/hooks/addon-api.ts';
 
 export const MonsterFocusPicker = memo(function MonsterFocusPicker({
   monsters,

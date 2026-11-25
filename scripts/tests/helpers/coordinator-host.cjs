@@ -20,8 +20,6 @@ const applicationFile=path.join(root,'runtime/coordinator/application.ts');
 // publishes them under, so a run loads each the way the installed coordinator does.
 const BUNDLES={
   '../../.build/runtime/coordinator-application.cjs':'runtime/coordinator/application.ts',
-  '../../.build/runtime/grouped-combat.cjs':'runtime/coordinator/targeting/queue.ts',
-  '../../.build/runtime/roster.cjs':'runtime/lifecycle/roster/index.ts',
 };
 
 // application.ts's own relative imports resolve through hostImport, so a row replaces one by its
@@ -65,9 +63,7 @@ function buildSources() {
 
 // A row replaces a launcher require by its name with a value, and one of application.ts's imports
 // by its specifier with a function of the bundled module (hostImports). A bundled run evaluates the
-// published bundles in the run's scope too, so grouped-combat.cjs reads the same globalThis hooks
-// registry the application bundle's start published the core answers into, as one installed
-// coordinator process does.
+// published bundle in the run's scope, as one installed coordinator process does.
 const published=name=>{const filename=name.replace(/^(\.\.\/)+/,'');return {text:fs.readFileSync(path.join(root,filename),'utf8'),filename};};
 async function run(now, overrides = {}, bundled = false, launcherDirectory) {
   const doors=new Map();

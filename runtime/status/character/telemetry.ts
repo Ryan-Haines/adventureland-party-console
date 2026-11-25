@@ -482,9 +482,10 @@ export function installPartyMetrics(ports: MetricPorts) {
       current.loot.push({ id, at, item: item.name, variant, quantity: item.q || 1 });
     });
   }
-  // The coordinator answers before its commit writes a frame (docs/efficiency.md, Metrics history).
-  // A frame stays in the outbox until an answer from the process that accepted it names a
-  // durableCommit at or above the commit that took the frame. flush sends each due frame of one
+  // The coordinator writes a POST's frames before it answers (docs/metrics.md, Delivery and
+  // retention), so an answer's durableCommit covers its frames. A frame stays in the outbox until an
+  // answer from the process that accepted it names a durableCommit at or above the commit that
+  // took the frame. flush sends each due frame of one
   // server once and, while accepted frames wait, an empty batch that reads durableCommit. An answer
   // from another process (commitEpoch) means a restart may have lost the waiting frames, so flush
   // sends them again; the coordinator ignores a frame it already holds by its receipt. While the

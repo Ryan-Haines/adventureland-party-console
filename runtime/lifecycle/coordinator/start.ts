@@ -7,6 +7,11 @@ import { convoyDefenseStep, createSharedConvoyNavigation, sharedCommand, type Sh
 // The hunting owner's farm location rule from its door's source, so an edit to areas.ts reaches the coordinator with no
 // republished runtime/hunting/farming-areas.cjs.
 import { validFarmingLocation } from '../../hunting/api.ts';
+// The targeting queue and the roster routes come from this bundle's own modules. After the owners
+// build, grouped-combat.cjs and roster.cjs each bundled most of the console, so the coordinator held
+// three copies of its modules (docs/efficiency.md, Coordinator, One copy of the modules).
+import { evaluateGroup } from '../../coordinator/targeting/api.ts';
+import { installRosterRoutes, publicHandoff } from '../roster/index.ts';
 import { memberHolds } from './lease.ts';
 import { confirmOffline, type OwnershipPorts } from '../roster/ownership.ts';
 import type { Question } from '../rules.ts';
@@ -173,13 +178,6 @@ export async function initializeCoordinatorEnvironment<
 /** The start's dependencies, resolved through the installed launcher, preserving load order and getter
  * evaluation (L1.1 start.ts: the start composition); moved from runtime/coordinator/infrastructure/dependencies.ts. */
 export function loadCoordinatorDependencies(require: NodeRequire) {
-  const {
-    evaluateGroup,
-  }: typeof import("../../coordinator/targeting/api.ts") = require("../../.build/runtime/grouped-combat.cjs");
-  const {
-    installRosterRoutes,
-    publicHandoff,
-  }: typeof import("../roster/index.ts") = require("../../.build/runtime/roster.cjs");
   const child_process: typeof import("node:child_process") = require("node:child_process");
   const account_info: (
     session: string | undefined,

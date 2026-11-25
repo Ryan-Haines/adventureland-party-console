@@ -22,7 +22,12 @@ function canvasBlock(){
 function steamOverlay(host,{character={map:'main',in:'main'},get_entity},run){
  const keys=['parent','character','get_entity'],saved=Object.fromEntries(keys.map(k=>[k,global[k]]));
  const graphics=[],frame=[];
- class Graphics{constructor(){this.calls=[];graphics.push(this);}clear(){this.calls=[];}lineStyle(...a){this.calls.push(['style',...a]);}drawCircle(...a){this.calls.push(['circle',...a]);}destroy(){this.destroyed=true;}}
+ // A Graphics is also a container (PIXI 4), so the marker layer holds its rings as children;
+ // `clears` counts the geometry rebuilds.
+ class Graphics{constructor(){this.calls=[];this.clears=0;this.children=[];this.position={set:(x,y)=>{this.x=x;this.y=y;}};graphics.push(this);}
+  clear(){this.calls=[];this.clears++;}lineStyle(...a){this.calls.push(['style',...a]);}drawCircle(...a){this.calls.push(['circle',...a]);}
+  addChild(child){child.parent=this;this.children.push(child);return child;}
+  destroy(options){this.destroyed=true;if(options?.children)this.children.forEach(child=>child.destroy());}}
  host.PIXI={Graphics};host.draw_trigger=fn=>frame.push(fn);
  Object.assign(global,{parent:host,character,get_entity});
  // shared.js creates the lifecycle owner's run scope on the game window before the overlay installs (helpers/run-scope.cjs).
@@ -83,19 +88,25 @@ test('a resumed global reset epoch is acknowledged before fresh nominations, wit
  c.acceptCombatControl({groupedCombat:{resetAt:122}});assert.equal(c.root.__partyCombatResetAt,123);assert.equal(resets,1);
 });
 scenarioTable('the Steam overlay draws the queue on its own layer', ()=>steamOverlay, [
+ // A ring keeps its geometry while its look stays: a frame where only the monster moved moves the
+ // ring, and the renderer uploads no new geometry (the per-frame redraw rebuilt every ring).
  ['it owns four circles, follows live positions, and disposes only its layer', overlay=>{
   const entities={A:{x:10,y:20,visible:true},B:{x:30,y:40,visible:true},C:{x:50,y:60,visible:true}};
   const unrelated={},host={map:{scale:{x:2},addChild(e){e.parent=this;}},drawings:[unrelated]};
   overlay(host,{character:{map:'cave',in:'cave'},get_entity:id=>entities[id]},o=>{
    const api=installQueueMarkers(()=>['A','B','C'].map(id=>({id,map:'cave',in:'cave',radius:18})));
-   o.draw();const [layer]=o.graphics;assert.deepEqual(layer.calls.filter(c=>c[0]==='circle').map(c=>c[3]),[18,18,18,21]);
-   assert.deepEqual(layer.calls.filter(c=>c[0]==='style').map(c=>c[2]),[0xef4444,0xfacc15,0xfacc15]);
-   entities.A.x=15;o.draw();assert.equal(layer.calls.find(c=>c[0]==='circle')[1],15);
-   entities.B.visible=false;o.draw();assert.equal(layer.calls.filter(c=>c[0]==='circle').length,3);
+   o.draw();const [layer]=o.graphics,rings=()=>layer.children.filter(r=>r.visible!==false),calls=kind=>rings().flatMap(r=>r.calls.filter(c=>c[0]===kind));
+   assert.deepEqual(calls('circle').map(c=>c[3]),[18,18,18,21]);
+   assert.deepEqual(calls('style').map(c=>c[2]),[0xef4444,0xfacc15,0xfacc15]);
+   assert.deepEqual(rings().map(r=>[r.x,r.y]),[[10,20],[30,40],[50,60]]);
+   const built=layer.children.map(r=>r.clears);
+   entities.A.x=15;o.draw();assert.equal(rings()[0].x,15);
+   assert.deepEqual(layer.children.map(r=>r.clears),built,'a frame where only a monster moved rebuilt a ring');
+   entities.B.visible=false;o.draw();assert.equal(calls('circle').length,3);
    // Each draw frame queues the next; a stopped overlay draws on no later frame.
    assert.equal(o.frame.length,1);
    api.stop();assert.equal(layer.destroyed,true);assert.deepEqual(host.drawings,[unrelated]);
-   o.draw();assert.equal(o.frame.length,0);assert.equal(o.graphics.length,1);
+   o.draw();assert.equal(o.frame.length,0);assert.equal(o.graphics.length,4);
   });
  }],
  ['it draws an event target without grouped farming and disposes the ring when event selection ends', overlay=>{
@@ -103,7 +114,7 @@ scenarioTable('the Steam overlay draws the queue on its own layer', ()=>steamOve
   overlay({map:{addChild(e){e.parent=this;}}},{get_entity:()=>({visible:true,x:1,y:2})},o=>{
    const api=installQueueMarkers(()=>markers);
    try{o.draw();assert.equal(o.graphics.at(-1).calls.find(c=>c[0]==='style')[2],0xef4444);
-    markers=[];o.draw();assert.equal(o.graphics.at(-1).destroyed,true);}finally{api.stop();}
+    markers=[];o.draw();assert.equal(o.graphics[0].destroyed,true);}finally{api.stop();}
   });
  }],
  // The game's draw_trigger (functions.js) runs a callback at once while its draw frame is on
@@ -137,7 +148,7 @@ scenarioTable('the Steam overlay draws the queue on its own layer', ()=>steamOve
     for(let i=0;i<20;i++)o.draw();
     assert.equal(computed,0);assert.equal(o.graphics.length,0);
     delete host.PIXI;host.no_graphics='';o.draw();assert.equal(computed,0);
-    host.PIXI={Graphics:o.Graphics};o.draw();assert.equal(computed,1);assert.equal(o.graphics[0].calls.filter(c=>c[0]==='circle').length,1);
+    host.PIXI={Graphics:o.Graphics};o.draw();assert.equal(computed,1);assert.equal(o.graphics[1].calls.filter(c=>c[0]==='circle').length,1);
     host.socket.disconnected=true;o.draw();assert.equal(computed,1);assert.equal(o.graphics[0].destroyed,true);
    }finally{api.stop();}
   });

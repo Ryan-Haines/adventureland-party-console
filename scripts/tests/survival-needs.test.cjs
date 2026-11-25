@@ -151,6 +151,21 @@ scenarioTable('the heal choice and the emergency Stomp on a planted party', need
   // Two members below 80%: partyheal, although it restores 1600 against a 21189 heal.
   assert.ok(skills(t).includes('partyheal'), 'two members below the line get partyheal');
  }, 'priest', { hp: 5000, max_hp: 5000, mp: 5000, max_mp: 5000, heal: 21189 }],
+ // A game update gets one pass, so outside the role loop (an occupied row or the A/B rows) that pass
+ // asks what the role loop's pass and the passive pulse's each asked: partyheal only below the line,
+ // and the single heal as the top-off.
+ ['outside the role loop the top-off is the single heal and partyheal goes only below the line', t => {
+  // The warrior misses 2500 at 87.5%: a single heal's top-off; with the mage and the priest a
+  // partyheal restores 2400, above the line.
+  const warrior = t.add('Warrior', 17500, { max_hp: 20000 }); const mage = t.add('Mage', 4100, { ctype: 'mage', max_hp: 5000 });
+  t.add('Priest', 5000, { ctype: 'priest', max_hp: 5000 });
+  t.g.character.hp = 4000;
+  assert.ok(skills(t).includes('partyheal'), 'the role loop tops off with partyheal');
+  t.view.roleLoop = false;
+  assert.deepEqual(skills(t), ['heal'], 'outside the role loop the top-off is the single heal');
+  warrior.hp = 15000; mage.hp = 3900;
+  assert.deepEqual(skills(t), ['partyheal', 'heal'], 'two members below the line outside the role loop');
+ }, 'priest', { hp: 5000, max_hp: 5000, mp: 5000, max_mp: 5000, heal: 2000 }],
  // The emergency Stomp.
  ['low ally HP asks the Stomp on every pass and stops at 60%', t => {
   const w = stompWorld(t);

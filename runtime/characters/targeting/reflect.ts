@@ -3,10 +3,15 @@
 // nothing changes in play until a player edits a list. The choices are the monsters game data rates:
 // `reflection` above 0 for the magic list and `dreturn` above 0 for the physical list, so a new
 // reflector in the next game data is a choice with no code change.
-import { defaultLists, type ReflectLists } from './gates.ts';
+// The file imports no other module at run time, so the dashboard's Combat section reads the defaults
+// and the choices without the character's targeting runtime (docs/efficiency.md "The dashboard reads
+// targeting's values through the add-on API").
 import type { HookRegistry } from '../../hooks/registry.ts';
 
-export type { ReflectLists };
+// The two reflect lists a character's attacks read. The defaults are v1.5.0's
+// hand-kept monsters: slenderman, tiger and goblin for magic, porcupine for physical.
+export interface ReflectLists { magic: readonly string[]; physical: readonly string[] }
+export const defaultLists: ReflectLists = { magic: ["slenderman", "tiger", "goblin"], physical: ["porcupine"] };
 // The coordinator's game data, movement's published read, asked through the realm's registry. Null
 // until it loads.
 const gameMonsters = () => (globalThis as { __partyHooks?: HookRegistry }).__partyHooks?.movement.gameMonsters() ?? null;

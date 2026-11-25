@@ -55,7 +55,7 @@ export function regenerationOrder(c: { hp: number; max_hp: number; mp: number; m
 // every `skills.request` answer.
 // `target` is the targeting hook's answer for the pass (`targeting.target`), which the turns
 // owner puts in the view before it asks the requests.
-export interface NeedsView { character: typeof character; roleLoop: boolean; pulse: boolean; healFirstBelow: number;
+export interface NeedsView { character: typeof character; roleLoop: boolean; healFirstBelow: number;
   target?: { target: unknown; passing: boolean } | null }
 // A party member as the heartbeat reports it (the targeting owner's `targeting.positions`, or the Cave's members).
 export interface Member { name: string; ctype?: string; map?: string; in?: string; rip?: boolean; hp: number; max_hp: number; team?: unknown;
@@ -255,10 +255,10 @@ export function createNeeds(ports: NeedsPorts) {
       if (!['cooldown', 'not_ready', 'no_item', 'not_found', 'full', 'waiting', 'lost reply'].includes(reason)) game_log('Potion failed: ' + reason, 'red');
     } } };
   }
-  // The `regeneration` need: on the role loop and on the passive pulse while it is eligible, as
-  // today, with A9's wait in front. Rank `maintenance`, so a due potion of the table goes first.
+  // The `regeneration` need: on every pass while it is eligible, with A9's wait in front. A pass asks
+  // its requests only where the spend table's pulse column lets them, as the passive pulse did. Rank
+  // `maintenance`, so a due potion of the table goes first.
   function regeneration(v: NeedsView): Ask | undefined {
-    if (!v.roleLoop && !v.pulse) return undefined;
     if (!settled() || character.rip || regenerationWaits(v)) return undefined;
     const core = regenerationOrder(character);
     if (!core) return undefined;
@@ -271,16 +271,19 @@ export function createNeeds(ports: NeedsPorts) {
   }
   // The `heal` need: below "Heal first below" it asks on every pass, whatever the travel hold, at
   // `survival`, which outranks the basic attack at the attack family's edge (A7); above it, a
-  // top-off at `maintenance` on the role loop and the pulse, as today. Partyheal has its own
-  // cooldown family and the heal shares the attack's (game data `heal.share`), so a pass that asks
-  // partyheal also asks the single heal: with partyheal alone the attack family had no heal request,
-  // and the attack took its edge while a member read below "Heal first below" (the gate runs' TC1
-  // and SV8, every other tick while partyheal's 200 ms cooldown was free).
+  // top-off at `maintenance`. Outside the role loop the top-off is the single heal, as the passive
+  // pulse's was, so a partyheal there asks only below the line. Partyheal has its own cooldown
+  // family and the heal shares the attack's (game data `heal.share`), so a pass that asks partyheal
+  // also asks the single heal: with partyheal alone the attack family had no heal request, and the
+  // attack took its edge while a member read below "Heal first below" (the gate runs' TC1 and SV8,
+  // every other tick while partyheal's 200 ms cooldown was free).
   function heal(v: NeedsView): Ask[] | undefined {
     if (character.ctype !== 'priest' || !settled()) return undefined;
-    const regularOnly = v.pulse && !v.roleLoop, first = healChoice({ healFirstBelow: v.healFirstBelow, regularOnly });
-    const single = first?.skill === 'partyheal' ? healChoice({ healFirstBelow: v.healFirstBelow, regularOnly: true }) : null;
-    const asks = [first, single].filter((c): c is NonNullable<typeof c> => !!c && (c.urgent || v.roleLoop || v.pulse)).map(healAsk);
+    const regular = () => healChoice({ healFirstBelow: v.healFirstBelow, regularOnly: true });
+    const open = healChoice({ healFirstBelow: v.healFirstBelow, regularOnly: false });
+    const first = open?.skill === 'partyheal' && !open.urgent && !v.roleLoop ? regular() : open;
+    const single = first?.skill === 'partyheal' ? regular() : null;
+    const asks = [first, single].filter((c): c is NonNullable<typeof c> => !!c).map(healAsk);
     return asks.length ? asks : undefined;
   }
   function healAsk(choice: NonNullable<ReturnType<typeof healChoice>>): Ask {
@@ -403,8 +406,8 @@ export function endangered(w: SkillWorld, ally: Combatant): boolean {
 }
 
 // The passive pulse's tick (b9b5c91e shared.js `passiveRegenerationTick`) waits while an escape owns
-// the character outside its settled stages; otherwise the turns owner runs its pulse pass, whose the
-// spend table pulse column decides whether regeneration and the top-off heal ask.
+// the character outside its settled stages; otherwise it wakes the turns owner's pass for its game
+// update, whose spend table pulse column decides whether regeneration and the top-off heal ask.
 export function pulseHeld(escapeStage: string | null): boolean {
   return escapeStage !== null && !(ESCAPE_SETTLED as readonly string[]).includes(escapeStage);
 }

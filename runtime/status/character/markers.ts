@@ -4,8 +4,12 @@ import type {QueueMarker} from "./telemetry.ts";
 /** Owned PIXI layer: never clears other CODE drawings. `queue` is the status owner's marker view (shared.js `partyStatus.character`). */
 export function installQueueMarkers(queue:()=>QueueMarker[]|null){
   const host=parent as any;host.__partyQueueMarkers?.stop();
-  let graphics:any=null;
-  const clear=()=>{if(graphics){graphics.destroy();graphics=null;}};
+  // The layer holds one ring per drawn marker. A ring keeps its circle geometry while its radius,
+  // style and the map scale stay, and each frame only moves it to its monster, so the renderer
+  // rebuilds and uploads a ring's geometry only when its look changes. `shapes` is each ring's
+  // look, by its place in the layer.
+  let layer:any=null;const shapes:string[]=[];
+  const clear=()=>{if(layer){layer.destroy({children:true});layer=null;shapes.length=0;}};
   function draw(){
     // Headless caracAL clients set no_graphics, and the game then loads a stub
     // PIXI whose Graphics draws nothing, so draw skips the queue computation
@@ -14,18 +18,27 @@ export function installQueueMarkers(queue:()=>QueueMarker[]|null){
     if(host.no_graphics||!host.PIXI?.Graphics||!host.map||host.socket?.disconnected){clear();return;}
     const markers=queue()||[];
     if(!markers.length){clear();return;}
-    if(!graphics||graphics.destroyed||graphics.parent!==host.map){clear();graphics=new host.PIXI.Graphics();host.map.addChild(graphics);}
-    graphics.clear();
+    if(!layer||layer.destroyed||layer.parent!==host.map){clear();layer=new host.PIXI.Graphics();host.map.addChild(layer);}
     const scale=Math.abs(host.map.scale?.x)||1;
+    let drawn=0;
     markers.forEach((t:any,index:number)=>{
       const e=get_entity(t.id) as any;
       if(!e||!e.visible||e.dead||t.visible===false||t.map!==character.map||t.in!==character.in)return;
       const radius=t.radius||markerRadius(e);
-      const style=markerStyle(t,index);
-      graphics.lineStyle(3/scale,style.color);
-      graphics.drawCircle(e.real_x??e.x,e.real_y??e.y,radius);
-      if(style.double)graphics.drawCircle(e.real_x??e.x,e.real_y??e.y,radius+6/scale);
+      const style=markerStyle(t,index),shape=[radius,style.color,style.double,scale].join('|');
+      const ring=layer.children[drawn]??layer.addChild(new host.PIXI.Graphics());
+      if(shapes[drawn]!==shape){
+        ring.clear();
+        ring.lineStyle(3/scale,style.color);
+        ring.drawCircle(0,0,radius);
+        if(style.double)ring.drawCircle(0,0,radius+6/scale);
+        shapes[drawn]=shape;
+      }
+      ring.position.set(e.real_x??e.x,e.real_y??e.y);
+      ring.visible=true;
+      drawn++;
     });
+    for(let i=drawn;i<layer.children.length;i++)layer.children[i].visible=false;
   }
   // The status owner's `observe` registration: the markers draw through a Pause.
   // The circles follow live entity positions and the queue's current entries, so they redraw on each

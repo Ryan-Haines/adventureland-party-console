@@ -101,9 +101,9 @@ export function collectPassing(members: Member[], previous: PassingEncounter[], 
 export { MONSTER_PRIORITY, validMonsterPriorities } from './saved-fields.ts';
 export { installPorcupineEquipment } from './porcupine.ts';
 export { installTargeting } from './install.ts';
-export { createCrabRangeRecovery, defaultLists, effectiveAttackDamageType } from './gates.ts';
+export { createCrabRangeRecovery, effectiveAttackDamageType } from './gates.ts';
 export { installQueueClient } from './queue-client.ts';
-export { reflectChoices } from './reflect.ts';
+export { defaultLists, reflectChoices } from './reflect.ts';
 export type { SelectionPass } from './selection.ts';
 // The shapes the turns owner's role types read of the targeting owner's module (turns/role-types.ts SharedCombat, CombatState, CombatRoot).
 export type { TargetingMap } from './install.ts';

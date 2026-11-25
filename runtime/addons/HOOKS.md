@@ -1321,6 +1321,8 @@ An add-on holds its store through `AddonStoreHandle`, and reads what the coordin
 - `export type { ChangedNotice, PassedNotice } from '../../characters/targeting/api.ts';`: The payloads of `targeting.changed` and `targeting.passed`.
 - `export type { RingNotice } from '../../characters/targeting/api.ts';`: The payload of `targeting.refused`, `skipped`, `retired` and `cleared`.
 - `export type { NominatedNotice, FightStateNotice, GrantNotice } from '../../characters/targeting/api.ts';`: The payloads of `targeting.nominated`, `fightState`, `granted` and `revoked`.
+- `export { MONSTER_PRIORITY } from '../../characters/targeting/saved-fields.ts';`: `targeting.monsterPriority`: the bounds and the unset value of a saved monster priority.
+- `export { defaultLists, reflectChoices, type ReflectLists, type ReflectChoices } from '../../characters/targeting/reflect.ts';`: `targeting.defaultReflectLists` and `targeting.reflectChoices`: the lists a character with no saved entry plays, and the monsters each list can hold in a game data monster table.
 
 ### runtime/hooks/api/05-survival.ts
 

@@ -145,9 +145,10 @@ export function installSurvivalCharacter(realm: object, hooks: Hooks, shared: Su
     // The spend table's death recovery row: the party's recovery holds the character
     // outside its `finishing` phase.
     occupies: () => shared.recoveryHolds() && shared.taskPhase() !== 'finishing',
-    // The passive pulse: the turns owner's pulse pass now, on each game packet that carries what its
-    // needs read (`player` for the character's own HP and MP, `entities` for the members' HP and the
-    // monsters on them, `death` for a fight's end), and at the turns owner's next turn edge, the time the next
+    // The passive pulse wakes the turns owner's pass for the game update, which the role loop's wake
+    // in the same update also reads. It wakes on each game packet that carries what its needs read
+    // (`player` for the character's own HP and MP, `entities` for the members' HP and the monsters on
+    // them, `death` for a fight's end), and at the turns owner's next turn edge, the time the next
     // spent family readies. Its registrations are survival's `act` handle, which the run
     // scope disposes with the generation.
     // The pulse reads one game update, as the role loop does: a packet inside an update it already

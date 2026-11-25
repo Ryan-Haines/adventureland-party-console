@@ -104,10 +104,10 @@ export type TurnsRecord = { part: 'turns'; kind: 'refusal' | 'wait' | 'lost' | '
 // A pass's cause: a role loop event, the attack edge, a push, or the passive pulse.
 export type PassKind = 'event' | 'edge' | 'push' | 'pulse';
 // What each requester sees on one pass: the spend table's read of it. `roleLoop` is false while the spend table row holds
-// the role loop, `pulse` marks the passive pulse's pass, `attack` lets the attack family ask;
-// `world` builds the skill engine's world, with its combat context, on first read.
+// the role loop, `attack` lets the attack family ask; `world` builds the skill engine's world, with
+// its combat context, on first read.
 export interface TurnsView {
-  kind: PassKind; now: number; character: typeof character; role: Role; roleLoop: boolean; pulse: boolean; attack: boolean;
+  kind: PassKind; now: number; character: typeof character; role: Role; roleLoop: boolean; attack: boolean;
   combat: boolean; potions: boolean; target: TargetAnswer | null; healFirstBelow: number; world(): SkillWorld;
   inFlightMp: number; flying(family: string): boolean;
 }

@@ -43,7 +43,7 @@ function needsWorld(kind = 'priest', stats = {}) {
     partyhealAllowed: () => true, isLeader: () => false, partyAttacker: () => null, fighting: () => false, lines: () => ({ hp: 50, mp: 20 }),
     state: () => state, stomp: { franky: () => world.franky, mode: () => world.mode, ask: (hook, ...args) => (world.reads[hook] ?? reads[hook])(...args) },
     kiting: () => world.kiting, roster: () => roster });
-  const view = { character: g.character, roleLoop: true, pulse: false, healFirstBelow: 80 };
+  const view = { character: g.character, roleLoop: true, healFirstBelow: 80 };
   return { g, world, members, state, needs, view,
     add(name, hp, extra = {}) {
       const member = { name, ctype: 'warrior', hp, max_hp: 100, map: 'main', ...extra };

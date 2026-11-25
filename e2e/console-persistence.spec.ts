@@ -103,10 +103,13 @@ function journalRecords(journal: string): [string, string][] {
   });
 }
 const saved = (journal: string, key: string) => journalRecords(journal).filter(([name]) => name === key).map(([name, line]) => JSON.parse(line)[name]);
-// The metrics journal's lines, and every receipt its buckets hold.
+// The metrics journal's lines, and every receipt its records hold. A record keeps its receipts as
+// runs of sequences, [character, runtime, first, last] (metrics/history.ts `ReceiptRun`).
 const metricsLines = (journal: string) => existsSync(journal) ? readFileSync(journal, 'utf8').split('\n').filter(Boolean) : [];
 const receipts = (journal: string) => new Set(metricsLines(journal).flatMap(line => Object.values(JSON.parse(line))
-  .flatMap((bucket: any) => Array.isArray(bucket?.receipts) ? bucket.receipts : [])));
+  .flatMap((bucket: any) => Array.isArray(bucket?.receipts) ? bucket.receipts : [])
+  .flatMap(([character, runtime, first, last]: [string, string, number, number]) =>
+    Array.from({ length: last - first + 1 }, (_, index) => JSON.stringify([character, runtime, first + index])))));
 const settingsKey = 'party_dashboard_settings_state_v1';
 const mailSettings = (page: import('@playwright/test').Page, url: string, settings: { autoCollect: boolean; autoDelete: boolean }) =>
   page.request.post(`${url}/party-api/mail/settings`, { headers: { Origin: url }, data: settings });
@@ -227,9 +230,9 @@ test('offline snapshots save on an inventory change, not on each report', async 
     .some(record => record.characterSnapshots?.P?.items?.[5]?.item?.name === 'coat')).toBe(true);
 });
 
-test('metrics frames answer at once, reach disk within one commit and survive a restart', async ({ page, app }, info) => {
-  // Metrics history (docs/efficiency.md, Persistence): a POST answers without
-  // waiting for the commit, and one shared commit writes each bucket once.
+test('metrics frames reach disk before their answer, one part per bucket span, and survive a restart', async ({ page, app }, info) => {
+  // Metrics history (docs/efficiency.md, Metrics history compaction): a POST writes its frames as
+  // one append before it answers, and the next bucket start replaces those batch parts with one part.
   const journal = app.journal + '.metrics.jsonl', characters = ['W', 'P', 'M'];
   const lines = () => metricsLines(journal);
   await page.waitForTimeout(1000);
@@ -253,19 +256,24 @@ test('metrics frames answer at once, reach disk within one commit and survive a 
         data: { character, server: 'USII', runtime, frames: [frame(sequence)] } });
       expect(response.status(), await response.text()).toBe(200);
       ackMs.push(Date.now() - sent);
-      acknowledged.push(JSON.stringify([character, runtime, sequence]));
+      const receipt = JSON.stringify([character, runtime, sequence]);
+      acknowledged.push(receipt);
+      expect(receipts(journal).has(receipt), 'the frame is on disk when its POST answers').toBe(true);
     }));
     await page.waitForTimeout(300);
   }
-  // Each acknowledged frame reaches the journal at the commit as the next metrics bucket starts.
-  await expect.poll(() => { const held = receipts(journal); return acknowledged.filter(receipt => !held.has(receipt)); },
-    { timeout: bucketMs + 1000, intervals: [100] }).toEqual([]);
-  const appended = lines().length - before;
-  await report(info, 'metrics-acknowledgement', { ...summary(ackMs), appended, frames: 9 });
-  // A POST no longer waits for the commit window.
+  // As the next metrics bucket starts, the bucket's nine batch parts give way to one part.
+  const live = () => {
+    const kept = new Map<string, any>();
+    for (const line of lines().slice(before)) for (const [key, value] of Object.entries(JSON.parse(line))) {
+      if (value === null) kept.delete(key); else kept.set(key, value);
+    }
+    return [...kept].filter(([key, value]) => key.startsWith('part:') && value.at === at).length;
+  };
+  await expect.poll(live, { timeout: bucketMs + 1000, intervals: [100] }).toBe(1);
+  await report(info, 'metrics-acknowledgement', { ...summary(ackMs), appended: lines().length - before, frames: 9 });
+  // The append runs inside the POST and holds no other request.
   expect(Math.max(...ackMs)).toBeLessThan(500);
-  // Frames that wait for the same commit share one write of their bucket.
-  expect(appended).toBeLessThan(9);
   await app.restartCoordinator();
   const metrics = await (await page.request.get(`${app.url}/party-api/metrics?from=${at - 60_000}&to=${Date.now()}`)).json();
   const samples = Object.fromEntries(characters.map(character => [character, metrics.points
@@ -274,11 +282,11 @@ test('metrics frames answer at once, reach disk within one commit and survive a 
   expect(samples).toEqual({ W: 3, P: 3, M: 3 });
 });
 
-test('the metrics collector keeps acknowledged frames until a commit writes them, across a coordinator crash', async ({ page, app }, info) => {
-  // Failure modes: the collector drops a frame on the acknowledgement while its
-  // commit is still waiting, so a crash before the next bucket's commit loses it; the
-  // collector never sends a frame again after the restart; a resent frame counts
-  // twice; a POST waits for the commit.
+test('the metrics collector drops a frame on its answer, and a coordinator crash after it loses none', async ({ page, app }, info) => {
+  // Failure modes: an answer names a frame the journal does not hold yet, so a crash right after
+  // it loses the frame; the collector keeps an answered frame in its outbox (a localStorage key the
+  // game walks every 16 ms); the collector never sends a frame again after the restart; a resent
+  // frame counts twice; a POST waits for a commit.
   test.setTimeout(120_000);
   const { installPartyMetrics } = await import('../runtime/status/character/telemetry.ts');
   const journal = app.journal + '.metrics.jsonl', runtime = { value: '' };
@@ -300,8 +308,9 @@ test('the metrics collector keeps acknowledged frames until a commit writes them
       const body = await response.json();
       exchanges.push({ sent, ms: Date.now() - sent, status: response.status, sequences: batch.frames.map(frame => frame.sequence), body });
       if (!response.ok) throw Error(`metrics POST ${response.status}`);
-      // Crash right after the first acknowledgement whose commit has not run yet.
-      if (!crashing && batch.frames.length && body.commit > body.durableCommit) {
+      // Crash right after the first acknowledgement.
+      if (!crashing && batch.frames.length) {
+        crash.durable = body.durableCommit >= body.commit;
         crash.acknowledged = batch.frames.map(frame => JSON.stringify(['W', batch.runtime, frame.sequence]));
         crashing = app.crashCoordinator(() => {
           const held = receipts(journal);
@@ -317,8 +326,9 @@ test('the metrics collector keeps acknowledged frames until a commit writes them
   try {
     await expect.poll(() => !!crashing, { timeout: 20_000 }).toBe(true);
     await crashing;
-    // The crash came inside the commit window: the acknowledged frames were not on disk.
-    expect(crash.onDiskAfterKill).toEqual([]);
+    // The answer named a commit on disk, and the journal held the acknowledged frames at the kill.
+    expect(crash.durable).toBe(true);
+    expect(crash.onDiskAfterKill).toEqual(crash.acknowledged);
     // Every frame sealed by a moment after the restart reaches the journal and leaves the outbox.
     await page.waitForTimeout(3000);
     sealed = header().sequence;
@@ -331,8 +341,6 @@ test('the metrics collector keeps acknowledged frames until a commit writes them
     ackMs: summary(exchanges.map(exchange => exchange.ms)), exchanges });
   expect(expected.filter(receipt => !held.has(receipt))).toEqual([]);
   // A frame sent to both coordinator processes counts once: the query returns one sample per frame on disk.
-  // The commit writes the last acknowledged frames at the next metrics bucket's start, so the check
-  // waits for the journal to hold every frame the coordinator acknowledged.
   const onDiskW = () => [...receipts(journal)].filter(receipt => JSON.parse(receipt)[0] === 'W').length;
   const acknowledged = () => new Set(exchanges.filter(exchange => exchange.status === 200).flatMap(exchange => exchange.sequences)).size;
   await expect.poll(() => onDiskW() - acknowledged(), { timeout: METRIC_BUCKET_MS + 5_000, intervals: [250] }).toBe(0);

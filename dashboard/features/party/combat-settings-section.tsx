@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { useAddonSlots } from "../../../runtime/hooks/dashboard/slots";
-import { defaultLists, reflectChoices } from "../../../runtime/characters/targeting/api.ts";
+import { defaultLists, reflectChoices } from "../../../runtime/hooks/addon-api.ts";
 import { MonsterListPicker, type PickableMonster } from "./monster-list-picker";
 import { useSettingsWrite } from "./settings-write";
 

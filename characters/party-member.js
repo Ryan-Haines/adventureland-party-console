@@ -13788,6 +13788,133 @@ ${hook}`, was = errors.get(key3);
     return best2 && !fighting(input) ? best2 : null;
   }
 
+  // runtime/characters/targeting/reflect.ts
+  var defaultLists = { magic: ["slenderman", "tiger", "goblin"], physical: ["porcupine"] };
+  var gameMonsters = () => globalThis.__partyHooks?.movement.gameMonsters() ?? null;
+  var names = (value) => Array.isArray(value) && value.every((v) => typeof v === "string") ? value : void 0;
+  function reflectLists(magic, physical, name2) {
+    const entry = (saved) => saved && typeof saved === "object" ? saved[name2] : void 0;
+    return { magic: names(entry(magic)) ?? defaultLists.magic, physical: names(entry(physical)) ?? defaultLists.physical };
+  }
+  function reflectChoices(monsters3) {
+    const rated = (field) => Object.entries(monsters3).filter(([, m]) => Number(m?.[field]) > 0).map(([type]) => type).sort();
+    return { magic: rated("reflection"), physical: rated("dreturn") };
+  }
+  function reflectCheck(list4) {
+    return (value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+      const loaded = gameMonsters(), choices = loaded ? new Set(reflectChoices(loaded)[list4]) : null;
+      return Object.values(value).every((entry) => {
+        const types = names(entry);
+        return !!types && (!choices || types.every((type) => choices.has(type)));
+      });
+    };
+  }
+
+  // runtime/characters/targeting/saved-fields.ts
+  var MONSTER_PRIORITY = { min: 0, max: 1e3, unset: 50 };
+  var validMonsterPriorities = (value) => object(value) && Object.entries(value).every(([id2, v]) => /^[a-z0-9_]+$/i.test(id2) && typeof v === "number" && Number.isFinite(v) && v >= MONSTER_PRIORITY.min && v <= MONSTER_PRIORITY.max);
+  var targetingSavedFields = {
+    name: "core:targeting",
+    settings: {
+      // Per character, the monsters it never hits with magic, and the ones it hits
+      // with a physical attack only from a range of 75 or more. A character with no entry keeps
+      // b9b5c91e's monsters (reflect.ts). Each list takes only the monsters game data rates for it. It
+      // reaches the character with each report reply and takes effect at its next attack.
+      reflectMagicByCharacter: {
+        label: "Don't hit with magic",
+        kind: "value",
+        default: {},
+        scope: "character",
+        check: reflectCheck("magic"),
+        deliver: ["characters"]
+      },
+      reflectPhysicalByCharacter: {
+        label: "Don't hit with physical",
+        kind: "value",
+        default: {},
+        scope: "character",
+        check: reflectCheck("physical"),
+        deliver: ["characters"]
+      },
+      monsterPrioritiesByCharacter: {
+        label: "Monster priorities",
+        kind: "value",
+        default: {},
+        scope: "character",
+        document: "selections",
+        importable: true,
+        check: mapOf(validMonsterPriorities),
+        refusal: "invalid monster priorities",
+        deliver: ["dashboard"]
+      },
+      // V3.3's hidden picks, each kept at today's value: no game fact gives the window, so each is the
+      // console's own choice, named once here. A pick the
+      // character reads is delivered with the reply (`pick` below).
+      // W5: how long an unreachable target stays set aside, today's `now + 10000`.
+      setAsideMs: { label: "Set-aside time of an unreachable target (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 1e4, hidden: true, deliver: ["characters"] },
+      // The selection timer's interval, today's 1 s, so every empty pass still closes on a leader who walks away.
+      targetPassMs: { label: "Selection pass interval (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 1e3, hidden: true, deliver: ["characters"] },
+      // How long after its send a `too_far` reply still belongs to the crab range recovery, today's 2000.
+      crabReplyMs: { label: "Crab range reply window (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 2e3, hidden: true, deliver: ["characters"] },
+      // How long a fight stays live after an accepted or engaged attack (A28's margin, the neutral reset, the entity refresh's stall), today's 5000.
+      attackStallMs: { label: "Live fight window after an attack (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 5e3, hidden: true, deliver: ["characters"] },
+      // How long a pursuit may make no progress before it ends, today's 5000.
+      pursuitStallMs: { label: "Pursuit stall window (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 5e3, hidden: true },
+      // W7: how long every fresh member must miss a target before it is gone, today's 8000.
+      unseenGoneMs: { label: "Unseen target window (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 8e3, hidden: true },
+      // The gap between two entity snapshot requests, today's 10000; the game allows two a second.
+      snapshotGapMs: { label: "Entity snapshot gap (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 1e4, hidden: true, deliver: ["characters"] },
+      // How long a successor grant lives, today's 3000.
+      successorGrantMs: { label: "Successor grant life (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 3e3, hidden: true, deliver: ["characters"] },
+      // How long a passing encounter is remembered, today's 60000.
+      passingMemoryMs: { label: "Passing encounter memory (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 6e4, hidden: true, deliver: ["characters"] },
+      // How long the group's readiness and recovery must hold before they count, today's 500.
+      groupReadyMs: { label: "Group readiness hold (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 500, hidden: true },
+      // The queue client's tick, today's 100; it carries state no event announces.
+      queueTickMs: { label: "Queue client tick (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 100, hidden: true, deliver: ["characters"] },
+      // The distance within which a same-type monster replaces a lost target, today's 180; no game field gives it.
+      lostTargetRadius: { label: "Lost target replacement radius", kind: "value", check: wholeFrom(1, Infinity), default: 180, hidden: true }
+    },
+    // The grouped queue's reset stamp, its saved fight and the event boundary, which play writes, so
+    // each is a record. They moved here from the settings owner's held block
+    // (stand-in S53) with no change to a field.
+    records: {
+      groupedCombatResetAt: { default: 0, scope: "scope" },
+      groupedCombat: { default: null, scope: "scope", profileOnly: true },
+      eventBoundary: { default: null }
+    }
+  };
+  var PICKS = [
+    "setAsideMs",
+    "targetPassMs",
+    "crabReplyMs",
+    "attackStallMs",
+    "pursuitStallMs",
+    "unseenGoneMs",
+    "snapshotGapMs",
+    "successorGrantMs",
+    "passingMemoryMs",
+    "groupReadyMs",
+    "queueTickMs",
+    "lostTargetRadius"
+  ];
+  var declaredPick = (name2) => targetingSavedFields.settings[name2].default;
+  var source = declaredPick;
+  function readPicks(read5) {
+    source = read5;
+  }
+  var pick = (name2) => source(name2);
+  function deliveredPicks() {
+    const held = Object.fromEntries(PICKS.map((name2) => [name2, declaredPick(name2)]));
+    return {
+      read: (name2) => held[name2],
+      take(state) {
+        for (const name2 of PICKS) if (name2 in state && targetingSavedFields.settings[name2].check(state[name2])) held[name2] = state[name2];
+      }
+    };
+  }
+
   // runtime/hooks/addon-api.ts
   function delivered(name2) {
     return globalThis.__partyHooks?.delivered(name2);
@@ -17652,7 +17779,10 @@ ${hook}`, was = errors.get(key3);
       const rtt = Date.now() - flight.sentAt;
       familyOwn(flight.family, Date.now()).push({ at: Date.now(), rtt });
       const current = flights.get(flight.family) === flight;
-      if (current) flights.delete(flight.family);
+      if (current) {
+        flights.delete(flight.family);
+        updateRead = null;
+      }
       const s = flight.spend, reason4 = ok ? "accepted" : errorReason(value), ms = Number(value?.ms);
       const row4 = replyRow(ok, reason4, ms, current && flight.epoch === ports.epoch() && running);
       if ((row4 === "cooldown" || row4 === "stale-cooldown") && Number.isFinite(ms)) {
@@ -17730,6 +17860,7 @@ ${hook}`, was = errors.get(key3);
     function leave(f, reason4) {
       const now = Date.now();
       flights.delete(f.family);
+      updateRead = null;
       if (reason4 === "stale" && f.family !== "attack" && f.cooldownMs > 0)
         waitUntil.set(f.family, Math.max(waitUntil.get(f.family) ?? 0, f.sentAt + f.cooldownMs - (smallestPing() ?? 0)));
       record3({ kind: reason4 === "lost reply" ? "lost" : "stale", family: f.family, skill: f.spend.skill, by: f.spend.by, reason: reason4, waitedMs: now - f.sentAt });
@@ -17760,9 +17891,8 @@ ${hook}`, was = errors.get(key3);
         now: Date.now(),
         character,
         role: ports.role(),
-        roleLoop: kind !== "pulse" && h.roleLoop,
-        pulse: kind === "pulse",
-        attack: kind !== "pulse" && h.attack,
+        roleLoop: h.roleLoop,
+        attack: h.attack,
         combat: h.combat,
         potions: h.potions,
         target: null,
@@ -17773,17 +17903,17 @@ ${hook}`, was = errors.get(key3);
       };
     }
     let passHold = null;
-    let passedIn = null, edgeWaiting = false;
+    let passedIn = null, edgeWaiting = false, updateRead = null, readEpoch = null;
     function pass(kind, push) {
-      if (kind === "edge" && running && update() === passedIn) {
+      if (kind !== "push" && running && update() === passedIn && (kind === "edge" || updateRead && readEpoch === ports.epoch())) {
         if (!edgeWaiting) {
           edgeWaiting = true;
           afterNextUpdate(() => {
             edgeWaiting = false;
-            pass("edge");
+            if (update() !== passedIn) pass("edge");
           });
         }
-        return null;
+        return kind === "edge" ? null : updateRead;
       }
       const outer = passHold;
       try {
@@ -17808,10 +17938,10 @@ ${hook}`, was = errors.get(key3);
       passedIn = update();
       const h = passHold = ports.hold(), v = view(kind, h);
       const asks = push ? [{ spend: push, cap: push.rank }] : [];
-      if (kind === "pulse" ? h.pulse : h.asks) {
+      if (h.pulse) {
         const answer = ports.hooks.turns.target(v);
         v.target = answer?.target ? answer : null;
-        v.attack = kind !== "pulse" && (h.attack || h.passing && !!v.target?.passing);
+        v.attack = h.attack || h.passing && !!v.target?.passing;
         for (const { registration: registration6, requester, answer: ask3 } of ports.hooks.skillRequests(v))
           asks.push({ spend: { ...ask3, by: `${registration6}/${requester.name}`, family: family(ask3.skill) }, cap: requester.rank });
       }
@@ -17870,7 +18000,9 @@ ${hook}`, was = errors.get(key3);
         meteredUpdate = update();
         meter2.updates++;
       }
-      return { hold: h, target: v.target };
+      updateRead = { hold: h, target: v.target };
+      readEpoch = epochSeen;
+      return updateRead;
     }
     function arm(at4) {
       if (!running) return;
@@ -19651,7 +19783,6 @@ ${hook}`, was = errors.get(key3);
       } } };
     }
     function regeneration(v) {
-      if (!v.roleLoop && !v.pulse) return void 0;
       if (!settled() || character.rip || regenerationWaits(v)) return void 0;
       const core = regenerationOrder(character);
       if (!core) return void 0;
@@ -19663,9 +19794,11 @@ ${hook}`, was = errors.get(key3);
     }
     function heal2(v) {
       if (character.ctype !== "priest" || !settled()) return void 0;
-      const regularOnly = v.pulse && !v.roleLoop, first = healChoice({ healFirstBelow: v.healFirstBelow, regularOnly });
-      const single = first?.skill === "partyheal" ? healChoice({ healFirstBelow: v.healFirstBelow, regularOnly: true }) : null;
-      const asks = [first, single].filter((c) => !!c && (c.urgent || v.roleLoop || v.pulse)).map(healAsk);
+      const regular = () => healChoice({ healFirstBelow: v.healFirstBelow, regularOnly: true });
+      const open = healChoice({ healFirstBelow: v.healFirstBelow, regularOnly: false });
+      const first = open?.skill === "partyheal" && !open.urgent && !v.roleLoop ? regular() : open;
+      const single = first?.skill === "partyheal" ? regular() : null;
+      const asks = [first, single].filter((c) => !!c).map(healAsk);
       return asks.length ? asks : void 0;
     }
     function healAsk(choice) {
@@ -20970,9 +21103,10 @@ ${hook}`, was = errors.get(key3);
       // The spend table's death recovery row: the party's recovery holds the character
       // outside its `finishing` phase.
       occupies: () => shared.recoveryHolds() && shared.taskPhase() !== "finishing",
-      // The passive pulse: the turns owner's pulse pass now, on each game packet that carries what its
-      // needs read (`player` for the character's own HP and MP, `entities` for the members' HP and the
-      // monsters on them, `death` for a fight's end), and at the turns owner's next turn edge, the time the next
+      // The passive pulse wakes the turns owner's pass for the game update, which the role loop's wake
+      // in the same update also reads. It wakes on each game packet that carries what its needs read
+      // (`player` for the character's own HP and MP, `entities` for the members' HP and the monsters on
+      // them, `death` for a fight's end), and at the turns owner's next turn edge, the time the next
       // spent family readies. Its registrations are survival's `act` handle, which the run
       // scope disposes with the generation.
       // The pulse reads one game update, as the role loop does: a packet inside an update it already
@@ -30537,11 +30671,13 @@ ${hook}`, was = errors.get(key3);
   function installQueueMarkers(queue2) {
     const host4 = parent;
     host4.__partyQueueMarkers?.stop();
-    let graphics = null;
+    let layer = null;
+    const shapes = [];
     const clear2 = () => {
-      if (graphics) {
-        graphics.destroy();
-        graphics = null;
+      if (layer) {
+        layer.destroy({ children: true });
+        layer = null;
+        shapes.length = 0;
       }
     };
     function draw() {
@@ -30554,22 +30690,31 @@ ${hook}`, was = errors.get(key3);
         clear2();
         return;
       }
-      if (!graphics || graphics.destroyed || graphics.parent !== host4.map) {
+      if (!layer || layer.destroyed || layer.parent !== host4.map) {
         clear2();
-        graphics = new host4.PIXI.Graphics();
-        host4.map.addChild(graphics);
+        layer = new host4.PIXI.Graphics();
+        host4.map.addChild(layer);
       }
-      graphics.clear();
       const scale = Math.abs(host4.map.scale?.x) || 1;
+      let drawn = 0;
       markers.forEach((t, index) => {
         const e = get_entity(t.id);
         if (!e || !e.visible || e.dead || t.visible === false || t.map !== character.map || t.in !== character.in) return;
         const radius = t.radius || markerRadius(e);
-        const style = markerStyle(t, index);
-        graphics.lineStyle(3 / scale, style.color);
-        graphics.drawCircle(e.real_x ?? e.x, e.real_y ?? e.y, radius);
-        if (style.double) graphics.drawCircle(e.real_x ?? e.x, e.real_y ?? e.y, radius + 6 / scale);
+        const style = markerStyle(t, index), shape = [radius, style.color, style.double, scale].join("|");
+        const ring = layer.children[drawn] ?? layer.addChild(new host4.PIXI.Graphics());
+        if (shapes[drawn] !== shape) {
+          ring.clear();
+          ring.lineStyle(3 / scale, style.color);
+          ring.drawCircle(0, 0, radius);
+          if (style.double) ring.drawCircle(0, 0, radius + 6 / scale);
+          shapes[drawn] = shape;
+        }
+        ring.position.set(e.real_x ?? e.x, e.real_y ?? e.y);
+        ring.visible = true;
+        drawn++;
       });
+      for (let i = drawn; i < layer.children.length; i++) layer.children[i].visible = false;
     }
     const observe = scope("12", "observe");
     let stopped = false;
@@ -37680,6 +37825,74 @@ ${hook}`, was = errors.get(key3);
   }
   Object.assign(globalThis, { installEventOctober });
 
+  // runtime/characters/targeting/attack-bookings.ts
+  function createAttackBookings(ports) {
+    const m = ports.module;
+    let action = null;
+    const context = (notice3) => notice3.context;
+    return {
+      sent(notice3) {
+        const c = context(notice3);
+        if (c) action = c.passing ? null : m.queueEvidence(c.target, "pending") ?? null;
+      },
+      settled(notice3) {
+        const c = context(notice3);
+        if (!c) return;
+        if (notice3.outcome === "accepted") {
+          if (!c.passing && c.current()) m.noteAttack(c.target);
+          return;
+        }
+        if (notice3.outcome !== "rejected" && notice3.outcome !== "lost") return;
+        if (action) m.queueEvidence(c.target, "rejected", action);
+        if (notice3.reason === "too_far" && c.range && Date.now() - Number(notice3.sentAt) <= pick("crabReplyMs") && c.current()) {
+          ports.recovery.reject(c.range, notice3.reply, Date.now());
+          ports.state().rangeRecovery = ports.recovery.diagnostic();
+        }
+      }
+    };
+  }
+
+  // runtime/characters/targeting/death.ts
+  function createTargetingDeath(p) {
+    const release = (id2) => {
+      p.report(id2);
+      p.invalidate(id2);
+    };
+    return {
+      disappear(data) {
+        if (data && data.id && (data.death === true || data.reason === "death" || data.reason === "dead")) release(data.id);
+      },
+      entities(data) {
+        if (!data || data.in !== p.instance() || !Array.isArray(data.monsters)) return;
+        p.entitiesSeen();
+        for (const e of data.monsters) if (e && e.id && (e.dead === true || e.hp === 0)) release(e.id);
+      },
+      death(data) {
+        if (data && data.id && data.id !== p.self()) release(data.id);
+      },
+      // shared.js's hit readers hand each `hit` here in their order, so a kill is released here too.
+      hit(data) {
+        if (data && data.id && (data.kill || data.dead)) release(data.id);
+      }
+    };
+  }
+  function installTargetingDeath(scope2, socket, ports) {
+    const listeners = createTargetingDeath(ports);
+    scope2.on(socket, "disappear", (data) => listeners.disappear(data));
+    scope2.on(socket, "entities", (data) => listeners.entities(data));
+    scope2.on(socket, "death", (data) => listeners.death(data));
+    return listeners;
+  }
+  function createDeathActs(p) {
+    function invalidate(id2) {
+      if (p.root.partyRoleRunner) p.root.partyRoleRunner.invalidateTarget(id2);
+    }
+    function entitiesSeen() {
+      p.root.__partyEntitiesObservedAt = Date.now() + p.walkState.clockOffset;
+    }
+    return { invalidate, entitiesSeen };
+  }
+
   // runtime/characters/targeting/rules.ts
   var rules_exports8 = {};
   __export(rules_exports8, {
@@ -37935,8 +38148,130 @@ ${hook}`, was = errors.get(key3);
     return { allowRows, membershipRows, priorityRows, sourceRows, exclusiveCombat, sourceTarget, recoveryRefuses, escaping, currentQueue: currentQueue2, monsterPriority, isAllowedTarget, pullOnly, leaderLockAllows, isExternallyClaimedMonster, excludedGraveyardTarget, graveyardAreaAttackAllowed };
   }
 
+  // runtime/characters/targeting/events.ts
+  function createEvents(t, p, s) {
+    function dungeonTargetAllowed(target) {
+      return !!target && target.type === "monster" && target.visible !== false && !target.dead && target.hp > 0 && (!target.map || target.map === character.map) && (target.in == null || target.in === character.in) && !t.isKnownDead(target.id) && (target.cave && (["enemy", "predator"].includes(target.cave.side) || ["duel_left", "duel_right"].includes(target.cave.side) && (get_entity(target.target)?.cave?.side === "ally" || t.dungeonEncounterEnemy(target))) || target.target === character.name || p.hunting.cave.partyNames().includes(target.target));
+    }
+    function getDungeonTarget() {
+      if (!character.cave || character.cave.paused || !t.groupedFresh() || !s.groupedCombat.target) return null;
+      var target = get_entity(s.groupedCombat.target.id);
+      var committed = s.groupedCombat.caveScope === character.cave.run + ":" + character.cave.floor && s.groupedCombat.committed === true && s.groupedCombat.target.state === "engaged";
+      return t.dungeonTargetAllowed(target) && (committed || t.dungeonCombatThreat(target)) ? target : null;
+    }
+    function dungeonCombatThreat(target) {
+      if (!t.dungeonTargetAllowed(target)) return false;
+      if (p.hunting.cave.partyNames().includes(target.target)) return true;
+      if (t.dungeonEncounterEnemy(target) && distance(character, target) <= 400 && can_move_to(target.x, target.y)) return true;
+      return distance(character, target) <= Math.max(80, Number(target.range || 0) + 25) && can_move_to(target.x, target.y);
+    }
+    function dungeonEncounterEnemy(target) {
+      var choice = character.cave?.choice, scene = choice?.scene || [];
+      if (!choice?.resolved) return false;
+      var actor = scene.find(function(a) {
+        return String(a.id) === String(target.id);
+      });
+      return !!actor && (actor.side === "enemy" || actor.side === "predator" || ["duel_left", "duel_right"].includes(actor.side) && scene.some(function(a) {
+        return a.side === "ally";
+      }));
+    }
+    function frankyTargetAllowed(target) {
+      if (eventFacts().fightsAdds("franky") && eventFacts().bossAdd("franky", target) && target.visible !== false && !target.dead && target.hp !== 0 && (!target.map || target.map === character.map) && (target.in == null || target.in === character.in)) return true;
+      return !!target && target.type === "monster" && (target.mtype === "franky" || t.frankyAttacker(target)) && target.visible !== false && !target.dead && target.hp !== 0 && (!target.map || target.map === character.map) && (target.in == null || target.in === character.in);
+    }
+    function frankyAttacker(target) {
+      return !!target && target.target === character.name && eventFacts().attackers("franky").includes(target.mtype);
+    }
+    function nearestEventTarget() {
+      var events = eventFacts(), travelling = events.travellingEventName();
+      if (t.view().joinedEventNow && !events.selected(t.view().joinedEventNow) || travelling && !events.selected(travelling)) return null;
+      if (t.view().frankyCombatActive) {
+        var bosses = Object.values(parent.entities || {}).filter(t.frankyTargetAllowed);
+        var attackers2 = bosses.filter(t.frankyAttacker);
+        if (attackers2.length) bosses = attackers2;
+        var retained2 = bosses.find(function(target) {
+          return target.id === s.combatTargetId;
+        });
+        bosses.sort(function(a, b) {
+          return nearerFirst(a, b) || String(a.id).localeCompare(String(b.id));
+        });
+        return retained2 || bosses[0] || null;
+      }
+      if (events.liveAbtesting()) return events.nearestOpponent();
+      var targets = Object.keys(parent.entities || {}).map(function(id2) {
+        return parent.entities[id2];
+      }).filter(function(entity) {
+        return entity && entity.type === "monster" && entity.visible !== false && !entity.dead && entity.hp !== 0 && (!entity.map || entity.map === character.map) && (entity.in == null || entity.in === character.in) && t.view().eventTypesHere.indexOf(entity.mtype) >= 0;
+      });
+      if (t.view().joinedEventNow === "mrgreen" || t.view().joinedEventNow === "mrpumpkin" || t.view().joinedEventNow === "horseman") {
+        var boss = targets.find(function(entry) {
+          return entry.mtype === t.view().joinedEventNow;
+        });
+        var sight = boss || events.freshSighting(t.view().joinedEventNow);
+        var adds = targets.filter(function(entry) {
+          if (t.view().joinedEventNow === "horseman") return entry.mtype === "jackowalker";
+          return entry.mtype !== t.view().joinedEventNow && !t.isExternallyClaimedMonster(entry) && (entry.master != null ? boss && String(entry.master) === String(boss.id) : sight && Math.hypot(entry.x - sight.x, entry.y - sight.y) <= 400);
+        });
+        if (adds.length) {
+          var leaderReport = s.partyPositions.find(function(member2) {
+            return member2.name === p.tasks.membership.leader() && member2.server === t.view().reunionRealm && member2.map === character.map && member2.in === character.in && p.movement.fresh(member2.seenAt, Date.now() + p.walkState.clockOffset);
+          });
+          var leaderAdd = leaderReport && s.leaderTarget && adds.find(function(entry) {
+            return entry.id === s.leaderTarget.id;
+          });
+          var retainedAdd = adds.find(function(entry) {
+            return entry.id === s.combatTargetId;
+          });
+          adds.sort(function(a, b) {
+            return String(a.id).localeCompare(String(b.id));
+          });
+          return leaderAdd || retainedAdd || adds[0];
+        }
+      }
+      var gooBrawl = t.view().joinedEventNow === "goobrawl" || events.eventTargets().area === "goobrawl";
+      if (gooBrawl) {
+        var rainbow = targets.filter(function(target) {
+          return target.mtype === "rgoo";
+        });
+        if (rainbow.length) {
+          rainbow.sort(nearerFirst);
+          return rainbow[0];
+        }
+        targets = targets.filter(function(target) {
+          return target.mtype !== "rgoo";
+        });
+        var leaderChoice = s.leaderTarget && targets.find(function(target) {
+          return target.id === s.leaderTarget.id;
+        });
+        if (leaderChoice) return leaderChoice;
+        var partyCounts = {};
+        s.partyTargets.forEach(function(partyTarget) {
+          if (partyTarget && partyTarget.id) partyCounts[partyTarget.id] = (partyCounts[partyTarget.id] || 0) + 1;
+        });
+        var partyChoices = targets.filter(function(target) {
+          return partyCounts[target.id];
+        });
+        partyChoices.sort(function(a, b) {
+          return partyCounts[b.id] - partyCounts[a.id] || String(a.id).localeCompare(String(b.id));
+        });
+        if (partyChoices.length) return partyChoices[0];
+        var current = s.combatTargetId && targets.find(function(target) {
+          return target.id === s.combatTargetId;
+        });
+        if (current) return current;
+        targets.sort(nearerFirst);
+        return targets[0] || null;
+      }
+      targets.sort(function(a, b) {
+        var typePriority = t.view().eventTargetTypesNow.indexOf(a.mtype) - t.view().eventTargetTypesNow.indexOf(b.mtype);
+        return typePriority || nearerFirst(a, b);
+      });
+      return targets[0] || null;
+    }
+    return { dungeonTargetAllowed, getDungeonTarget, dungeonCombatThreat, dungeonEncounterEnemy, frankyTargetAllowed, frankyAttacker, nearestEventTarget };
+  }
+
   // runtime/characters/targeting/gates.ts
-  var defaultLists = { magic: ["slenderman", "tiger", "goblin"], physical: ["porcupine"] };
   function knownDamageType(value) {
     return value === "physical" || value === "magical" || value === "pure" ? value : void 0;
   }
@@ -38198,323 +38533,6 @@ ${hook}`, was = errors.get(key3);
         return true;
       }
     };
-  }
-
-  // runtime/characters/targeting/reflect.ts
-  var gameMonsters = () => globalThis.__partyHooks?.movement.gameMonsters() ?? null;
-  var names = (value) => Array.isArray(value) && value.every((v) => typeof v === "string") ? value : void 0;
-  function reflectLists(magic, physical, name2) {
-    const entry = (saved) => saved && typeof saved === "object" ? saved[name2] : void 0;
-    return { magic: names(entry(magic)) ?? defaultLists.magic, physical: names(entry(physical)) ?? defaultLists.physical };
-  }
-  function reflectChoices(monsters3) {
-    const rated = (field) => Object.entries(monsters3).filter(([, m]) => Number(m?.[field]) > 0).map(([type]) => type).sort();
-    return { magic: rated("reflection"), physical: rated("dreturn") };
-  }
-  function reflectCheck(list4) {
-    return (value) => {
-      if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-      const loaded = gameMonsters(), choices = loaded ? new Set(reflectChoices(loaded)[list4]) : null;
-      return Object.values(value).every((entry) => {
-        const types = names(entry);
-        return !!types && (!choices || types.every((type) => choices.has(type)));
-      });
-    };
-  }
-
-  // runtime/characters/targeting/saved-fields.ts
-  var MONSTER_PRIORITY = { min: 0, max: 1e3, unset: 50 };
-  var validMonsterPriorities = (value) => object(value) && Object.entries(value).every(([id2, v]) => /^[a-z0-9_]+$/i.test(id2) && typeof v === "number" && Number.isFinite(v) && v >= MONSTER_PRIORITY.min && v <= MONSTER_PRIORITY.max);
-  var targetingSavedFields = {
-    name: "core:targeting",
-    settings: {
-      // Per character, the monsters it never hits with magic, and the ones it hits
-      // with a physical attack only from a range of 75 or more. A character with no entry keeps
-      // b9b5c91e's monsters (reflect.ts). Each list takes only the monsters game data rates for it. It
-      // reaches the character with each report reply and takes effect at its next attack.
-      reflectMagicByCharacter: {
-        label: "Don't hit with magic",
-        kind: "value",
-        default: {},
-        scope: "character",
-        check: reflectCheck("magic"),
-        deliver: ["characters"]
-      },
-      reflectPhysicalByCharacter: {
-        label: "Don't hit with physical",
-        kind: "value",
-        default: {},
-        scope: "character",
-        check: reflectCheck("physical"),
-        deliver: ["characters"]
-      },
-      monsterPrioritiesByCharacter: {
-        label: "Monster priorities",
-        kind: "value",
-        default: {},
-        scope: "character",
-        document: "selections",
-        importable: true,
-        check: mapOf(validMonsterPriorities),
-        refusal: "invalid monster priorities",
-        deliver: ["dashboard"]
-      },
-      // V3.3's hidden picks, each kept at today's value: no game fact gives the window, so each is the
-      // console's own choice, named once here. A pick the
-      // character reads is delivered with the reply (`pick` below).
-      // W5: how long an unreachable target stays set aside, today's `now + 10000`.
-      setAsideMs: { label: "Set-aside time of an unreachable target (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 1e4, hidden: true, deliver: ["characters"] },
-      // The selection timer's interval, today's 1 s, so every empty pass still closes on a leader who walks away.
-      targetPassMs: { label: "Selection pass interval (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 1e3, hidden: true, deliver: ["characters"] },
-      // How long after its send a `too_far` reply still belongs to the crab range recovery, today's 2000.
-      crabReplyMs: { label: "Crab range reply window (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 2e3, hidden: true, deliver: ["characters"] },
-      // How long a fight stays live after an accepted or engaged attack (A28's margin, the neutral reset, the entity refresh's stall), today's 5000.
-      attackStallMs: { label: "Live fight window after an attack (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 5e3, hidden: true, deliver: ["characters"] },
-      // How long a pursuit may make no progress before it ends, today's 5000.
-      pursuitStallMs: { label: "Pursuit stall window (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 5e3, hidden: true },
-      // W7: how long every fresh member must miss a target before it is gone, today's 8000.
-      unseenGoneMs: { label: "Unseen target window (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 8e3, hidden: true },
-      // The gap between two entity snapshot requests, today's 10000; the game allows two a second.
-      snapshotGapMs: { label: "Entity snapshot gap (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 1e4, hidden: true, deliver: ["characters"] },
-      // How long a successor grant lives, today's 3000.
-      successorGrantMs: { label: "Successor grant life (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 3e3, hidden: true, deliver: ["characters"] },
-      // How long a passing encounter is remembered, today's 60000.
-      passingMemoryMs: { label: "Passing encounter memory (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 6e4, hidden: true, deliver: ["characters"] },
-      // How long the group's readiness and recovery must hold before they count, today's 500.
-      groupReadyMs: { label: "Group readiness hold (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 500, hidden: true },
-      // The queue client's tick, today's 100; it carries state no event announces.
-      queueTickMs: { label: "Queue client tick (ms)", kind: "value", check: wholeFrom(1, Infinity), default: 100, hidden: true, deliver: ["characters"] },
-      // The distance within which a same-type monster replaces a lost target, today's 180; no game field gives it.
-      lostTargetRadius: { label: "Lost target replacement radius", kind: "value", check: wholeFrom(1, Infinity), default: 180, hidden: true }
-    },
-    // The grouped queue's reset stamp, its saved fight and the event boundary, which play writes, so
-    // each is a record. They moved here from the settings owner's held block
-    // (stand-in S53) with no change to a field.
-    records: {
-      groupedCombatResetAt: { default: 0, scope: "scope" },
-      groupedCombat: { default: null, scope: "scope", profileOnly: true },
-      eventBoundary: { default: null }
-    }
-  };
-  var PICKS = [
-    "setAsideMs",
-    "targetPassMs",
-    "crabReplyMs",
-    "attackStallMs",
-    "pursuitStallMs",
-    "unseenGoneMs",
-    "snapshotGapMs",
-    "successorGrantMs",
-    "passingMemoryMs",
-    "groupReadyMs",
-    "queueTickMs",
-    "lostTargetRadius"
-  ];
-  var declaredPick = (name2) => targetingSavedFields.settings[name2].default;
-  var source = declaredPick;
-  function readPicks(read5) {
-    source = read5;
-  }
-  var pick = (name2) => source(name2);
-  function deliveredPicks() {
-    const held = Object.fromEntries(PICKS.map((name2) => [name2, declaredPick(name2)]));
-    return {
-      read: (name2) => held[name2],
-      take(state) {
-        for (const name2 of PICKS) if (name2 in state && targetingSavedFields.settings[name2].check(state[name2])) held[name2] = state[name2];
-      }
-    };
-  }
-
-  // runtime/characters/targeting/attack-bookings.ts
-  function createAttackBookings(ports) {
-    const m = ports.module;
-    let action = null;
-    const context = (notice3) => notice3.context;
-    return {
-      sent(notice3) {
-        const c = context(notice3);
-        if (c) action = c.passing ? null : m.queueEvidence(c.target, "pending") ?? null;
-      },
-      settled(notice3) {
-        const c = context(notice3);
-        if (!c) return;
-        if (notice3.outcome === "accepted") {
-          if (!c.passing && c.current()) m.noteAttack(c.target);
-          return;
-        }
-        if (notice3.outcome !== "rejected" && notice3.outcome !== "lost") return;
-        if (action) m.queueEvidence(c.target, "rejected", action);
-        if (notice3.reason === "too_far" && c.range && Date.now() - Number(notice3.sentAt) <= pick("crabReplyMs") && c.current()) {
-          ports.recovery.reject(c.range, notice3.reply, Date.now());
-          ports.state().rangeRecovery = ports.recovery.diagnostic();
-        }
-      }
-    };
-  }
-
-  // runtime/characters/targeting/death.ts
-  function createTargetingDeath(p) {
-    const release = (id2) => {
-      p.report(id2);
-      p.invalidate(id2);
-    };
-    return {
-      disappear(data) {
-        if (data && data.id && (data.death === true || data.reason === "death" || data.reason === "dead")) release(data.id);
-      },
-      entities(data) {
-        if (!data || data.in !== p.instance() || !Array.isArray(data.monsters)) return;
-        p.entitiesSeen();
-        for (const e of data.monsters) if (e && e.id && (e.dead === true || e.hp === 0)) release(e.id);
-      },
-      death(data) {
-        if (data && data.id && data.id !== p.self()) release(data.id);
-      },
-      // shared.js's hit readers hand each `hit` here in their order, so a kill is released here too.
-      hit(data) {
-        if (data && data.id && (data.kill || data.dead)) release(data.id);
-      }
-    };
-  }
-  function installTargetingDeath(scope2, socket, ports) {
-    const listeners = createTargetingDeath(ports);
-    scope2.on(socket, "disappear", (data) => listeners.disappear(data));
-    scope2.on(socket, "entities", (data) => listeners.entities(data));
-    scope2.on(socket, "death", (data) => listeners.death(data));
-    return listeners;
-  }
-  function createDeathActs(p) {
-    function invalidate(id2) {
-      if (p.root.partyRoleRunner) p.root.partyRoleRunner.invalidateTarget(id2);
-    }
-    function entitiesSeen() {
-      p.root.__partyEntitiesObservedAt = Date.now() + p.walkState.clockOffset;
-    }
-    return { invalidate, entitiesSeen };
-  }
-
-  // runtime/characters/targeting/events.ts
-  function createEvents(t, p, s) {
-    function dungeonTargetAllowed(target) {
-      return !!target && target.type === "monster" && target.visible !== false && !target.dead && target.hp > 0 && (!target.map || target.map === character.map) && (target.in == null || target.in === character.in) && !t.isKnownDead(target.id) && (target.cave && (["enemy", "predator"].includes(target.cave.side) || ["duel_left", "duel_right"].includes(target.cave.side) && (get_entity(target.target)?.cave?.side === "ally" || t.dungeonEncounterEnemy(target))) || target.target === character.name || p.hunting.cave.partyNames().includes(target.target));
-    }
-    function getDungeonTarget() {
-      if (!character.cave || character.cave.paused || !t.groupedFresh() || !s.groupedCombat.target) return null;
-      var target = get_entity(s.groupedCombat.target.id);
-      var committed = s.groupedCombat.caveScope === character.cave.run + ":" + character.cave.floor && s.groupedCombat.committed === true && s.groupedCombat.target.state === "engaged";
-      return t.dungeonTargetAllowed(target) && (committed || t.dungeonCombatThreat(target)) ? target : null;
-    }
-    function dungeonCombatThreat(target) {
-      if (!t.dungeonTargetAllowed(target)) return false;
-      if (p.hunting.cave.partyNames().includes(target.target)) return true;
-      if (t.dungeonEncounterEnemy(target) && distance(character, target) <= 400 && can_move_to(target.x, target.y)) return true;
-      return distance(character, target) <= Math.max(80, Number(target.range || 0) + 25) && can_move_to(target.x, target.y);
-    }
-    function dungeonEncounterEnemy(target) {
-      var choice = character.cave?.choice, scene = choice?.scene || [];
-      if (!choice?.resolved) return false;
-      var actor = scene.find(function(a) {
-        return String(a.id) === String(target.id);
-      });
-      return !!actor && (actor.side === "enemy" || actor.side === "predator" || ["duel_left", "duel_right"].includes(actor.side) && scene.some(function(a) {
-        return a.side === "ally";
-      }));
-    }
-    function frankyTargetAllowed(target) {
-      if (eventFacts().fightsAdds("franky") && eventFacts().bossAdd("franky", target) && target.visible !== false && !target.dead && target.hp !== 0 && (!target.map || target.map === character.map) && (target.in == null || target.in === character.in)) return true;
-      return !!target && target.type === "monster" && (target.mtype === "franky" || t.frankyAttacker(target)) && target.visible !== false && !target.dead && target.hp !== 0 && (!target.map || target.map === character.map) && (target.in == null || target.in === character.in);
-    }
-    function frankyAttacker(target) {
-      return !!target && target.target === character.name && eventFacts().attackers("franky").includes(target.mtype);
-    }
-    function nearestEventTarget() {
-      var events = eventFacts(), travelling = events.travellingEventName();
-      if (t.view().joinedEventNow && !events.selected(t.view().joinedEventNow) || travelling && !events.selected(travelling)) return null;
-      if (t.view().frankyCombatActive) {
-        var bosses = Object.values(parent.entities || {}).filter(t.frankyTargetAllowed);
-        var attackers2 = bosses.filter(t.frankyAttacker);
-        if (attackers2.length) bosses = attackers2;
-        var retained2 = bosses.find(function(target) {
-          return target.id === s.combatTargetId;
-        });
-        bosses.sort(function(a, b) {
-          return nearerFirst(a, b) || String(a.id).localeCompare(String(b.id));
-        });
-        return retained2 || bosses[0] || null;
-      }
-      if (events.liveAbtesting()) return events.nearestOpponent();
-      var targets = Object.keys(parent.entities || {}).map(function(id2) {
-        return parent.entities[id2];
-      }).filter(function(entity) {
-        return entity && entity.type === "monster" && entity.visible !== false && !entity.dead && entity.hp !== 0 && (!entity.map || entity.map === character.map) && (entity.in == null || entity.in === character.in) && t.view().eventTypesHere.indexOf(entity.mtype) >= 0;
-      });
-      if (t.view().joinedEventNow === "mrgreen" || t.view().joinedEventNow === "mrpumpkin" || t.view().joinedEventNow === "horseman") {
-        var boss = targets.find(function(entry) {
-          return entry.mtype === t.view().joinedEventNow;
-        });
-        var sight = boss || events.freshSighting(t.view().joinedEventNow);
-        var adds = targets.filter(function(entry) {
-          if (t.view().joinedEventNow === "horseman") return entry.mtype === "jackowalker";
-          return entry.mtype !== t.view().joinedEventNow && !t.isExternallyClaimedMonster(entry) && (entry.master != null ? boss && String(entry.master) === String(boss.id) : sight && Math.hypot(entry.x - sight.x, entry.y - sight.y) <= 400);
-        });
-        if (adds.length) {
-          var leaderReport = s.partyPositions.find(function(member2) {
-            return member2.name === p.tasks.membership.leader() && member2.server === t.view().reunionRealm && member2.map === character.map && member2.in === character.in && p.movement.fresh(member2.seenAt, Date.now() + p.walkState.clockOffset);
-          });
-          var leaderAdd = leaderReport && s.leaderTarget && adds.find(function(entry) {
-            return entry.id === s.leaderTarget.id;
-          });
-          var retainedAdd = adds.find(function(entry) {
-            return entry.id === s.combatTargetId;
-          });
-          adds.sort(function(a, b) {
-            return String(a.id).localeCompare(String(b.id));
-          });
-          return leaderAdd || retainedAdd || adds[0];
-        }
-      }
-      var gooBrawl = t.view().joinedEventNow === "goobrawl" || events.eventTargets().area === "goobrawl";
-      if (gooBrawl) {
-        var rainbow = targets.filter(function(target) {
-          return target.mtype === "rgoo";
-        });
-        if (rainbow.length) {
-          rainbow.sort(nearerFirst);
-          return rainbow[0];
-        }
-        targets = targets.filter(function(target) {
-          return target.mtype !== "rgoo";
-        });
-        var leaderChoice = s.leaderTarget && targets.find(function(target) {
-          return target.id === s.leaderTarget.id;
-        });
-        if (leaderChoice) return leaderChoice;
-        var partyCounts = {};
-        s.partyTargets.forEach(function(partyTarget) {
-          if (partyTarget && partyTarget.id) partyCounts[partyTarget.id] = (partyCounts[partyTarget.id] || 0) + 1;
-        });
-        var partyChoices = targets.filter(function(target) {
-          return partyCounts[target.id];
-        });
-        partyChoices.sort(function(a, b) {
-          return partyCounts[b.id] - partyCounts[a.id] || String(a.id).localeCompare(String(b.id));
-        });
-        if (partyChoices.length) return partyChoices[0];
-        var current = s.combatTargetId && targets.find(function(target) {
-          return target.id === s.combatTargetId;
-        });
-        if (current) return current;
-        targets.sort(nearerFirst);
-        return targets[0] || null;
-      }
-      targets.sort(function(a, b) {
-        var typePriority = t.view().eventTargetTypesNow.indexOf(a.mtype) - t.view().eventTargetTypesNow.indexOf(b.mtype);
-        return typePriority || nearerFirst(a, b);
-      });
-      return targets[0] || null;
-    }
-    return { dungeonTargetAllowed, getDungeonTarget, dungeonCombatThreat, dungeonEncounterEnemy, frankyTargetAllowed, frankyAttacker, nearestEventTarget };
   }
 
   // runtime/characters/targeting/api.ts

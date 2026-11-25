@@ -351,6 +351,27 @@ test('cadence: passes inside one game update send each family at most once',()=>
   }finally{w.restore();}
 });
 
+// The passive pulse and the role loop wake on the same game packets, and survival's pulse listens
+// first. A game update gets one pass: the role loop's wake reads the pulse's pass and runs its class
+// decisions on it.
+test("cadence: the role loop's wake inside an update the pulse passed reads that pass",async()=>{
+  const w=attackWorld();
+  const settle=()=>new Promise(resolve=>setImmediate(resolve));
+  try{
+    const drawn=Date.now();
+    global.parent.last_draw=new Date(drawn);
+    const passes=w.turns.meter().passes;
+    const pulsed=w.turns.pass('pulse'),read=w.turns.pass('event');
+    await settle();
+    assert.equal(w.turns.meter().passes,passes+1,'the role loop ran a second pass inside the update');
+    assert.ok(read&&read===pulsed,'the role loop wake reads the update pass');
+    global.parent.last_draw=new Date(drawn+16);
+    w.turns.pass('pulse');
+    await settle();
+    assert.equal(w.turns.meter().passes,passes+2,'a pulse in the next update runs its pass');
+  }finally{w.restore();}
+});
+
 // The e2e stack's game clock stands still for each 250 ms window, while the browser draws at the
 // renderer's pace, and its server answered `ms: 9` to 44 resends inside one window. These rows freeze
 // the clock: a `cooldown` reply holds the family to the next update, on every host.

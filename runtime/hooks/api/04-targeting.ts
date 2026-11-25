@@ -16,3 +16,8 @@ export type { ChangedNotice, PassedNotice } from '../../characters/targeting/api
 export type { RingNotice } from '../../characters/targeting/api.ts';
 // The payloads of `targeting.nominated`, `fightState`, `granted` and `revoked`.
 export type { NominatedNotice, FightStateNotice, GrantNotice } from '../../characters/targeting/api.ts';
+// `targeting.monsterPriority`: the bounds and the unset value of a saved monster priority.
+export { MONSTER_PRIORITY } from '../../characters/targeting/saved-fields.ts';
+// `targeting.defaultReflectLists` and `targeting.reflectChoices`: the lists a character with no saved
+// entry plays, and the monsters each list can hold in a game data monster table.
+export { defaultLists, reflectChoices, type ReflectLists, type ReflectChoices } from '../../characters/targeting/reflect.ts';

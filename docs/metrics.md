@@ -127,8 +127,9 @@ counter still follows the header's live core updates.
 Each graph has a reset button. Kills and credits are permanently erased together.
 DPS permanently erases damage history. These
 durable cutoffs prevent older queued frames from restoring deleted data.
-The append journal is compacted after deletion, and interrupted erasure resumes
-from its persisted checkpoint. Ingestion waits in the character outbox during
+The erasure resets each saved record on its own (a commit's part, a 1-minute
+bucket, a day file), the append journal is compacted after deletion, and
+interrupted erasure resumes from its persisted checkpoint. Ingestion waits in the character outbox during
 the erasure so new observations cannot race with cleanup.
 
 Gold, Total account gold, Items acquired, and Ping resets temporarily clear the
@@ -198,18 +199,43 @@ Older lost/expired data marks subsequent coverage incomplete. An unsealed
 frame can lose up to about one second on an
 abrupt runtime termination. Collection ends with its CODE generation.
 
-Each accepted frame writes measurements and its retry receipt in one bucket
-record. A lost HTTP acknowledgement can resend the same frame without adding
-its measurements again. Party death/chest identities are scoped to server,
+Each POST writes its frames before it answers, one part record per 10-second
+bucket: those frames' measurements, their retry receipts and their kill and
+loot ids. The collector drops a frame from its outbox on that answer. From the
+service's close at shutdown on, a POST answers 503 and writes nothing, so its
+frames stay in the outbox for the next coordinator process. As the
+next bucket starts, each bucket's frames since the last start become one part
+and their POSTs' parts are deleted, so a bucket keeps one part per span and a
+late frame adds a part; nothing rewrites an earlier one. A receipt is a run of frame sequences per character
+and collector runtime, so a bucket holds a few runs.
+A lost HTTP acknowledgement can resend the same frame without adding its
+measurements again. Party death/chest identities are scoped to server,
 map/instance and native IDs, with short-lived death deduplication to accommodate
 native IDs being reused after a server restart.
 
 History retains 10-second buckets for 24 hours, 1-minute buckets for 30 days,
-and 15-minute buckets for 180 days. Rollup checkpoints are written before source
-deletion so interruptions can resume without adding the same source twice.
+and 15-minute buckets for 180 days. A minute becomes one 1-minute bucket once
+its last 10-second bucket is 24 hours old; the coordinator writes that bucket
+once and then deletes the minute's parts. A UTC day closes once all its
+minutes have rolled: its 1-minute buckets leave the journal for one
+gzip-compressed file, `<LOCALSTORAGE_PATH>.metrics.jsonl.days/<date>.60000.jsonl.gz`,
+and the journal keeps a `day:` record with the day's kill, damage and loot sums
+and its character and server names. A day file becomes 15-minute buckets, whole,
+once the day's end is 30 days old, and leaves the history once the day's end is
+180 days old; its kills then join the saved lifetime base (`killTotals`).
+Each step writes its result before it deletes its source, and startup removes
+what a crash left of either side, so nothing counts twice.
 Rollups preserve sums, sample counts, exposure and chronological balance
 endpoints. Queries align ranges to stored buckets and return roughly 600 points.
 Resolution cannot recover details already merged into older buckets.
+
+The coordinator's memory holds the 10-second buckets and the 1-minute buckets of
+days not yet closed. A query reads a closed day from its file, merges its
+buckets into the chart's points, and keeps that merge while the latest query of
+the same route reads it, so a live chart's next poll reads only memory. A
+v1.5.0 journal loads as it is: its receipt ids become runs, its `sources` lists
+mark what a rollup already merged, its saved lifetime list becomes the base,
+and its closed days move to day files after startup.
 
 `GET /party-api/metrics?from=<epoch_ms>&to=<epoch_ms>` returns the versioned
 metrics contract, collection start, resolution, available characters/servers,
@@ -220,8 +246,8 @@ hidden or the browser is not visible.
 `GET /party-api/metrics/kills` accepts the selected `from`/`to` range and the
 calendar day's `dayFrom`/`dayTo`, plus optional `characters`/`servers` filters.
 It returns per-monster selected-range counts, retained totals and daily counts.
-Retained totals use an in-memory index rebuilt from durable buckets at startup
-and updated after accepted deaths, expiry and resets. Range/day aggregates read
+Retained totals use an in-memory index rebuilt at startup from the day records
+and the buckets in memory, and updated after accepted deaths, expiry and resets. Range/day aggregates read
 the existing bucket index rather than transmitting full history to the browser.
 
 `GET /party-api/metrics/bars` accepts `metric=damage|loot`, grouping by
@@ -241,6 +267,8 @@ index, maintained through ingestion, expiry and resets.
   each event's id, storage in the coordinator's journal store
   (`runtime/settings/coordinator/persistence/jsonl-store.ts`), retention and
   queries; a retention pass that writes again ends a storage outage.
+- `runtime/status/coordinator/metrics/history.ts`: the bucket shape, receipt runs,
+  merges and rollups; `days.ts`: the day files and their journal records.
 - `dashboard/features/party/party-view-switch.tsx`: workspace navigation.
 - `dashboard/features/party/metrics-*.tsx` and `metrics-series.ts`: graphs,
   filtering and projections.

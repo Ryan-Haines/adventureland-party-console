@@ -11,11 +11,7 @@ import type { TargetingMap, TargetingPorts, TargetingState } from './install.ts'
 import type { CallAnswer, CallQuestion } from '../../hooks/registry.ts';
 import type { Target } from '../turns/api.ts';
 import type { TargetingEntry } from './records.ts';
-
-// The two reflect lists a character's attacks read. The defaults are v1.5.0's
-// hand-kept monsters: slenderman, tiger and goblin for magic, porcupine for physical.
-export interface ReflectLists { magic: readonly string[]; physical: readonly string[] }
-export const defaultLists: ReflectLists = { magic: ["slenderman", "tiger", "goblin"], physical: ["porcupine"] };
+import { defaultLists, type ReflectLists } from './reflect.ts';
 
 function knownDamageType(value: unknown): DamageType | undefined {
   return value === "physical" || value === "magical" || value === "pure" ? value : undefined;

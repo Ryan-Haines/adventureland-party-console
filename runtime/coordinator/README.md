@@ -1078,11 +1078,14 @@ bundle includes startup wiring and imported services, and the launcher loads it
 directly. `application.ts` imports each owner from its coordinator door (for example
 `runtime/items/coordinator/api.ts`), never from an owner's own files.
 
-Inline source maps include debugging information and original TypeScript. As an
-illustrative snapshot, the application bundle was approximately 631 KB JavaScript
-plus 1.89 MB source map (2.53 MB total); policies were 598 KB plus 1.77 MB (2.37 MB).
-Sizes change as code changes. Roughly three quarters of those files was source-map
-data, not additional executable logic.
+The application's source map, with the debugging information and the original
+TypeScript, is the file `coordinator-application.cjs.map` beside the bundle, named by
+the bundle's `sourceMappingURL`. The inspector and `--enable-source-maps` read it
+when they need it. V8 holds a loaded script's whole source for the life of the
+process, and an inline map cost the coordinator about 38 MB of working set
+([efficiency](../../docs/efficiency.md) "The source map stays on disk"). The map
+ships with the bundle: `tools/console-build/builder.ts` takes every file under
+`.build/runtime/` into the coordinator part.
 
 ## Finding the code
 

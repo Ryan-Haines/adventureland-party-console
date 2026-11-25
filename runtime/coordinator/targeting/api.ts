@@ -80,7 +80,7 @@ export interface HuntTravelControl {
 // The door movement's travel defense asks: one walk's Hunt travel encounter reconcile.
 export { updateHuntTravel } from './hunt-travel.ts';
 export type { RareRejections } from './queue.ts';
-// The grouped queue's evaluation, which the lifecycle owner's start loads from the built bundle (start.ts
+// The grouped queue's evaluation, which the lifecycle owner's start hands the application (start.ts
 // `loadCoordinatorDependencies`).
 export { evaluateGroup } from './queue.ts';
 // A target's one identity, which survival's recovery keys its foes by.

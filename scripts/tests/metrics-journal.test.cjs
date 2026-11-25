@@ -8,6 +8,19 @@
 //    comes round, and a credit with no covering death marks its frame partial with no bound firing.
 // 6. A sample counts the login handshake as ping for a fixed time after connect, not until the
 //    game has measured a round trip since its login.
+// 7. A next-row bucket is written more than once: once per finest bucket it takes in.
+// 8. A commit rewrites its whole bucket, frames from earlier commits included, when one more frame arrives.
+// 14. An acknowledged frame waits in the character's outbox, a localStorage key each, for a later
+//     commit; or a crash between a bucket start's part and its batch parts' delete counts them twice.
+// 9. Memory and the journal keep a closed day's buckets uncompressed.
+// 10. Moving history to day files loses or doubles a measurement: a query, the lifetime kill total or
+//     the retained totals answer differently, or a v1.5.0 journal (receipt ids, `sources` lists, a
+//     crash leftover listed in a rollup, the saved lifetime list) does not load as it was.
+// 11. A day's expiry drops its kills from the lifetime total, or keeps its damage in the retained total.
+// 12. A frame resent after a restart counts again when its receipt was saved as a v1.5.0 receipt id.
+// 13. A kills reset leaves kills in a day file or in the lifetime total.
+// 15. A POST that the shutdown's HTTP server takes after the close writes into the closed store and
+//     warns "Metrics retention failed: Storage is closed".
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {createMetricsService}=require('../../runtime/status/coordinator/metrics/service.ts');
 const {METRIC_BUCKET_MS}=require('../../runtime/status/rules.ts');
@@ -133,4 +146,106 @@ test('B81: one malformed saved bucket costs that record, and the metrics routes 
  // service's start.
  const {storedBucket}=require('../../runtime/status/coordinator/metrics/history.ts');
  assert.throws(()=>storedBucket({at:'broken'}),/Invalid metrics history envelope/);
+});
+
+const DAY=86_400_000;
+function clockService(t,file,clock){
+ const ticks=[],handlers=new Map(),warnings=[];
+ const metrics=createMetricsService(file,{owned:()=>true,now:()=>clock.now,warn:error=>warnings.push(error),accountGold:()=>5,
+  timers:{setTimeout:(run,ms)=>{if(!ms){setImmediate(run);return 0;}ticks.push(run);return ticks.length;},clearTimeout(){}}});
+ metrics.install({get:(route,handler)=>handlers.set('GET '+route,handler),post:(route,handler)=>handlers.set('POST '+route,handler)});
+ const call=async(key,body,query={})=>{let status=200,value;await handlers.get(key)({body,query},{status(code){status=code;return this;},json(v){value=v;return this;}});return {status,value};};
+ // The bucket timer's latest callback: a bucket start on the simulated clock.
+ const tick=()=>ticks.splice(0).forEach(run=>run());
+ return {metrics,call,tick,warnings};
+}
+const records=file=>fs.readFileSync(file,'utf8').split('\n').filter(Boolean).map(line=>{const key=Object.keys(JSON.parse(line))[0];return [key,JSON.parse(line)[key]];});
+const row=(character,at,extra={})=>({character,server:'USII',observedMs:METRIC_BUCKET_MS,partial:false,first:{...sample(at),gold:100},last:{...sample(at+9000),gold:150},
+ samples:10,luckSum:1000,pingSum:0,pingSamples:0,damage:[{monster:'goo',skill:'attack',amount:40,hits:2}],credits:[],loot:[],...extra});
+const bucket=(at,width,extra={})=>({at,width,values:[row('W',at)],kills:[{server:'USII',monster:'goo',actor:'W',count:2}],bounds:[],receipts:[],events:[],sources:[],...extra});
+
+test('(7, 8, 14): a next-row bucket is written once, a POST writes its frames before it answers, and a bucket start writes one part per span',async t=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'metrics-service-')),file=path.join(directory,'party.metrics.jsonl');
+ t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ const minute=Math.floor((Date.UTC(2026,10,20,12)-DAY-120_000)/60_000)*60_000,clock={now:Date.UTC(2026,10,20,12)};
+ fs.writeFileSync(file,[{startedAt:minute-DAY},...[0,1,2,3,4,5].map(i=>({['bucket:10000:'+(minute+i*METRIC_BUCKET_MS)]:bucket(minute+i*METRIC_BUCKET_MS,METRIC_BUCKET_MS)}))].map(line=>JSON.stringify(line)).join('\n')+'\n');
+ const {metrics,call,tick}=clockService(t,file,clock);
+ assert.equal(records(file).filter(([key])=>key==='bucket:60000:'+minute).length,1,'one record of the minute, written once');
+ const at=Math.floor(clock.now/METRIC_BUCKET_MS)*METRIC_BUCKET_MS;
+ const batch=sequence=>({character:'W',server:'USII',runtime:'r1',frames:[frame(at,sequence,{damage:[{monster:'goo',skill:'attack',amount:7,hits:1}]})]});
+ const live=()=>{const kept=new Map();for(const [key,value] of records(file))if(value===null)kept.delete(key);else kept.set(key,value);
+  return [...kept.values()].filter(value=>value.at===at&&value.width===METRIC_BUCKET_MS);};
+ const first=(await call('POST /party-api/metrics',batch(1))).value;
+ assert.ok(first.durableCommit>=first.commit,'the answer names a commit already on disk');
+ assert.deepEqual(live().map(value=>value.receipts),[[['W','r1',1,1]]],'the frame is on disk when the POST answers');
+ clock.now+=METRIC_BUCKET_MS;tick();
+ await call('POST /party-api/metrics',batch(2));clock.now+=METRIC_BUCKET_MS;tick();
+ const written=live();
+ assert.equal(written.length,2,'one part per span between bucket starts');
+ assert.deepEqual(written.map(value=>value.values[0].samples),[1,1],'each part holds only its own span\'s frame');
+ await metrics.close();
+ // A crash between a bucket start's part and the delete of its batch parts: the batch part's frame counts once.
+ fs.appendFileSync(file,JSON.stringify({['part:'+at+':crashed:1']:written[0]})+'\n');
+ const again=clockService(t,file,clock);
+ const history=(await again.call('GET /party-api/metrics',undefined,{from:String(at),to:String(clock.now)})).value;
+ assert.equal(history.points.flatMap(point=>point.values).reduce((sum,row)=>sum+row.samples,0),2,'a leftover batch part counts again');
+ await again.metrics.close();
+});
+
+test('(9-13): a closed day lives in one compressed file, and a v1.5.0 journal moves there losslessly',async t=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'metrics-service-')),file=path.join(directory,'party.metrics.jsonl');
+ t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ const now=Date.UTC(2026,10,22,12),clock={now};
+ const recent=Math.floor((now-3_600_000)/METRIC_BUCKET_MS)*METRIC_BUCKET_MS;
+ const closed=Date.UTC(2026,10,18,6),old=Date.UTC(2026,9,10,6),expired=Date.UTC(2026,4,1,6);
+ // v1.5.0's layout: a 10 s bucket with receipt ids, a 1-min bucket of a closed day, a 15-min rollup
+ // that lists a 1-min source a crash left behind, a bucket past the 180 days, and the lifetime list.
+ const lines=[{startedAt:expired},
+  {['bucket:10000:'+recent]:bucket(recent,METRIC_BUCKET_MS,{receipts:[JSON.stringify(['W','r1',3])],events:[{id:'k1',at:recent}]})},
+  {['bucket:60000:'+closed]:bucket(closed,60_000,{sources:['10000:'+closed]})},
+  {['bucket:900000:'+old]:bucket(old,900_000,{sources:['60000:'+old]})},
+  {['bucket:60000:'+old]:bucket(old,60_000)},
+  {['bucket:900000:'+expired]:bucket(expired,900_000,{sources:[]})},
+  {killTotals:[{server:'USII',monster:'goo',actor:'W',count:2*4+5}]}];
+ fs.writeFileSync(file,lines.map(line=>JSON.stringify(line)).join('\n')+'\n');
+ let service=clockService(t,file,clock);
+ // Close waits for the day work; the restart reads the result.
+ await service.metrics.close();
+ service=clockService(t,file,clock);
+ const journal=records(file).map(([key])=>key);
+ assert.deepEqual(journal.filter(key=>key.startsWith('bucket:')&&!key.startsWith('bucket:'+METRIC_BUCKET_MS+':')),[],'no bucket of a closed day stays in the journal');
+ const files=fs.readdirSync(file+'.days').sort();
+ assert.deepEqual(files,['2026-10-10.900000.jsonl.gz','2026-11-18.60000.jsonl.gz'],'one compressed file per closed day');
+ const zlib=require('node:zlib');
+ assert.equal(zlib.gunzipSync(fs.readFileSync(path.join(file+'.days',files[1]))).toString().trim().split('\n').length,1);
+ const range={from:String(now-180*DAY),to:String(now),dayFrom:String(now-12*3_600_000),dayTo:String(now)};
+ const history=(await service.call('GET /party-api/metrics',undefined,{from:range.from,to:range.to})).value;
+ const damage=history.points.flatMap(point=>point.values).flatMap(value=>value.damage).reduce((sum,hit)=>sum+hit.amount,0);
+ assert.equal(damage,40*3,'the recent, closed and old buckets each count once; the expired one is gone');
+ const kills=(await service.call('GET /party-api/metrics/kills',undefined,range)).value.monsters[0];
+ assert.deepEqual([kills.count,kills.total,kills.today],[6,13,2],'the lifetime total keeps the expired day and the v1.5.0 list');
+ const bars=(await service.call('GET /party-api/metrics/bars',undefined,{...range,metric:'damage'})).value.rows[0];
+ assert.equal(bars.total,120,'the retained damage drops the expired day');
+ const resent={character:'W',server:'USII',runtime:'r1',frames:[frame(recent,3,{damage:[{monster:'goo',skill:'attack',amount:7,hits:1}]})]};
+ await service.call('POST /party-api/metrics',resent);
+ const again=(await service.call('GET /party-api/metrics',undefined,{from:range.from,to:range.to})).value;
+ assert.equal(again.points.flatMap(point=>point.values).flatMap(value=>value.damage).reduce((sum,hit)=>sum+hit.amount,0),120,'a v1.5.0 receipt id still refuses its frame');
+ assert.equal((await service.call('POST /party-api/metrics/reset',{metric:'kills'})).status,200);
+ const day=zlib.gunzipSync(fs.readFileSync(path.join(file+'.days','2026-11-18.60000.jsonl.gz'))).toString().trim().split('\n').map(line=>JSON.parse(line));
+ assert.deepEqual(day.map(value=>value.kills),[[]],'the reset clears the kills in the day file');
+ assert.equal((await service.call('GET /party-api/metrics/kills',undefined,range)).value.monsters.length,0);
+ await service.metrics.close();
+});
+
+test('(15): a POST after the close answers 503, writes nothing and warns nothing',async t=>{
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'metrics-service-')),file=path.join(directory,'party.metrics.jsonl');
+ t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ const clock={now:Date.UTC(2026,10,20,12)},{metrics,call,warnings}=clockService(t,file,clock);
+ const at=Math.floor(clock.now/METRIC_BUCKET_MS)*METRIC_BUCKET_MS;
+ await metrics.close();
+ const size=fs.statSync(file).size;
+ const answer=await call('POST /party-api/metrics',{character:'W',server:'USII',runtime:'r1',frames:[frame(at,1)]});
+ assert.equal(answer.status,503,'the collector keeps the frame for the next process');
+ assert.deepEqual(warnings.map(error=>String(error?.message??error)),[],'no storage warning at shutdown');
+ assert.equal(fs.statSync(file).size,size,'the closed journal takes no write');
 });

@@ -43,3 +43,27 @@ test('the coordinator bundle evaluates defense.ts once',()=>{
   assert.equal(built.split('function travelObservationIssue(').length-1,1);
   assert.doesNotMatch(built,/convoy-defense\.cjs/);
 });
+
+// The coordinator process holds one copy of the console's modules. The targeting queue and the
+// roster routes come from the application bundle's own modules; grouped-combat.cjs and roster.cjs
+// each bundled most of the console beside it. The movement planner runs in its own worker.
+test('the coordinator bundle requires no second build of the console',async()=>{
+  const {build}=require('esbuild');
+  const built=(await build({entryPoints:['runtime/coordinator/application.ts'],bundle:true,write:false,format:'cjs',platform:'node',
+    target:'node22',external:['alpathfinder','bot-web-interface','express','../monitoring_util','../src/*'],logLevel:'silent'})).outputFiles[0].text;
+  const required=[...built.matchAll(/\(\s*["'](\.\.\/\.\.\/\.build\/runtime\/[^"']+)["']\s*\)/g)].map(m=>m[1]);
+  assert.deepEqual(required,[]);
+});
+
+// The bundle names its source map file beside it (tools/build-runtime.mts says why). Inline, the
+// map cost the coordinator 38 MB of working set at an idle start (docs/efficiency.md "The source
+// map stays on disk").
+test('the coordinator bundle links its source map from a file beside it',()=>{
+  const bundle=fs.readFileSync('.build/runtime/coordinator-application.cjs','utf8');
+  assert.doesNotMatch(bundle,/sourceMappingURL=data:/);
+  assert.match(bundle.slice(-200),/\/\/# sourceMappingURL=coordinator-application\.cjs\.map\s*$/);
+  const map=JSON.parse(fs.readFileSync('.build/runtime/coordinator-application.cjs.map','utf8'));
+  const entry=map.sources.findIndex(source=>source.endsWith('runtime/coordinator/application.ts'));
+  assert.ok(entry>=0);
+  assert.equal(map.sourcesContent[entry],fs.readFileSync('runtime/coordinator/application.ts','utf8'));
+});

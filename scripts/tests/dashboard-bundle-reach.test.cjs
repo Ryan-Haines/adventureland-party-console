@@ -19,3 +19,21 @@ test('the dashboard page bundle lands no coordinator file and no Node builtin', 
   const builtins = [...new Set(output.imports.filter(i => i.external && i.path.startsWith('node:')).map(i => i.path))];
   assert.deepEqual({ landed, builtins }, { landed: [], builtins: [] });
 });
+
+// The dashboard page bundle lands no hook table and no character targeting runtime. An import of the
+// targeting owner's character door (runtime/characters/targeting/api.ts) evaluates every module the
+// door re-exports, its installs among them, and through them runtime/hooks/index.ts, the registry and
+// every owner's row file: 430 KB in the page chunk, which the dashboard server held for its whole run.
+// The dashboard takes targeting's published values through runtime/hooks/addon-api.ts, whose
+// api/04-targeting.ts re-exports them from the files that hold them (docs/efficiency.md "The
+// dashboard reads targeting's values through the add-on API").
+test('the dashboard page bundle lands no hook table and no character targeting runtime', async () => {
+  const result = await esbuild.build({ absWorkingDir: ROOT, entryPoints: ['dashboard/app/page.tsx'], bundle: true, write: false, metafile: true,
+    platform: 'browser', format: 'esm', jsx: 'automatic', logLevel: 'silent', alias: { '@': path.join(ROOT, 'dashboard') }, packages: 'external',
+    loader: { '.css': 'empty', '.png': 'empty', '.svg': 'empty' } });
+  const output = Object.values(result.metafile.outputs)[0];
+  const landed = Object.entries(output.inputs).filter(([, input]) => input.bytesInOutput > 0)
+    .map(([file]) => file.split(path.sep).join('/'))
+    .filter(file => /^runtime\/hooks\/(rows\/|registry\.ts$)|^runtime\/characters\/targeting\/(install|selection|queue-client|passing)\.ts$/.test(file));
+  assert.deepEqual(landed, []);
+});

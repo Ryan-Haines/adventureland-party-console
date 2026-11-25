@@ -1,6 +1,7 @@
 // The bow swap for a porcupine: which bow the character holds while its target is a porcupine, and
 // the runtime that equips it, holding each weapon by the items owner's copy identity.
-import { monsterAttackBlock, type ReflectLists } from './gates.ts';
+import { monsterAttackBlock } from './gates.ts';
+import type { ReflectLists } from './reflect.ts';
 import type { CombatRoot } from '../turns/api.ts';
 import { bagKey, copyKey, fingerprint } from '../../items/api.ts';
 import { partyHooks } from '../../hooks/index.ts';

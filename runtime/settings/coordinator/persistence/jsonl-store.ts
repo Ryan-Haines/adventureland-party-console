@@ -7,8 +7,8 @@ import {LOCK_HELPER_TIMEOUT_MS} from '../../rules.ts';
 import {boundFired} from '../../../status/coordinator/api.ts';
 
 /**
- * One saved value. `json` is the exact text of its last record; replayed
- * values get it on first comparison. get() parses `value` on first read.
+ * One saved value. `json` is the exact text of its last record. get() parses
+ * `value` on first read and keeps it; peek() parses without keeping it.
  */
 interface StoredValue { json?: string; value?: unknown; parsed: boolean; bytes: number }
 
@@ -170,7 +170,17 @@ export class CoordinatorJsonlStore implements CoordinatorFileStore {
     const [key,value]=entry;
     this.liveBytes-=this.values.get(key)?.bytes||0;
     if(value===null)this.values.delete(key);
-    else {this.values.set(key,{value,parsed:true,bytes});this.liveBytes+=bytes;}
+    else {this.values.set(key,{json:CoordinatorJsonlStore.valueText(line,key,value),parsed:false,bytes});this.liveBytes+=bytes;}
+  }
+  /**
+   * The value's text inside a replayed record. Replay keeps the text, a fraction of a parsed
+   * value's memory, and a reader that keeps its own copy (the metrics history) parses each record
+   * once with peek(). A record in the store's own layout yields its slice; any other layout is
+   * serialized again.
+   */
+  private static valueText(line:string,key:string,value:unknown):string {
+    const text=line.trim(),start='{'+JSON.stringify(key)+':';
+    return text.startsWith(start) && text.endsWith('}') ? text.slice(start.length,-1) : JSON.stringify(value);
   }
   private json(stored:StoredValue):string {
     return stored.json??=JSON.stringify(stored.value);
@@ -228,6 +238,12 @@ export class CoordinatorJsonlStore implements CoordinatorFileStore {
       if(this.grown())this.refactor();
     });
   }
+  /** A fresh parse of the saved value, kept by nobody but the caller, for a reader that keeps its own copy. */
+  peek(key:string):unknown {
+    const stored=this.values.get(key);
+    return stored && JSON.parse(this.json(stored));
+  }
+  keys():IterableIterator<string> {return this.values.keys();}
   get(key:string):unknown {
     const stored=this.values.get(key);
     if(stored && !stored.parsed){stored.value=JSON.parse(stored.json!);stored.parsed=true;}
