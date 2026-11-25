@@ -89,6 +89,24 @@ scenarioTable("the targeting owner's ring, overkill skip, retire and scope",targ
     w.fighting=false;w.retire.pass();w.fighting=true;w.retire.pass();
     assert.deepEqual(Object.keys(w.marks),[],'the fight after it starts clear');
   })],
+  // e2e/live-targeting-hooks.spec.ts "targeting.cleared": the fight ended and started again between
+  // two passes, with movement's notice in the gap. The notice reads the fight fact, so the start
+  // after it clears the marks; a notice in a fight that started since the last pass clears the
+  // marks from before it and its own mark holds.
+  ['a notice between two passes reads the fight, so the next start clears the marks',w=>w.as('W',()=>{
+    w.fighting=true;
+    w.retire.notice({character:'W',target:'ghost1',why:'approach'});w.retire.pass();
+    assert.deepEqual(Object.keys(w.marks),['ghost1'],'a mark set inside the fight holds');
+    w.fighting=false;
+    w.retire.notice({character:'W',target:'ghost2',why:'approach'});
+    w.fighting=true;w.retire.pass();
+    assert.deepEqual(Object.keys(w.marks),[],'the fight that started after the notice clears every mark');
+    w.retire.notice({character:'W',target:'ghost3',why:'approach'});w.retire.pass();
+    w.fighting=false;w.retire.pass();
+    w.marks.old=Date.now()+10000;w.fighting=true;
+    w.retire.notice({character:'W',target:'ghost4',why:'approach'});w.retire.pass();
+    assert.deepEqual(Object.keys(w.marks),['ghost4'],"a notice at a fight's start clears the marks from before it and its own holds");
+  })],
   // e2e/live-targeting-hooks.spec.ts "the walled goo is retired once": movement repeats its
   // unreachable notice for the same goo across passes and fights; each repeat renews the mark and
   // the drop, and the ring and its notice hold one retired entry per goo.

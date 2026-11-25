@@ -39752,6 +39752,14 @@ ${hook}`, was = errors.get(key3);
   }
   function createRetire(ports) {
     let fought = false;
+    function read5() {
+      const now = ports.fighting();
+      if (now && fought === false) {
+        ports.marks.clear();
+        ports.record({ kind: "marks-cleared", why: "a fight started" });
+      }
+      fought = now;
+    }
     let unreachableLock = null;
     const retired = /* @__PURE__ */ new Set();
     function report() {
@@ -39762,8 +39770,8 @@ ${hook}`, was = errors.get(key3);
       notice(notice3) {
         if (notice3.character !== character.name || notice3.target === void 0 || notice3.target === null) return;
         const id2 = String(notice3.target);
+        read5();
         const until = ports.marks.fail(id2);
-        if (fought === null) fought = ports.fighting();
         if (!retired.has(id2)) {
           retired.add(id2);
           if (retired.size > MOVEMENT_RING_SIZE) retired.delete(retired.values().next().value);
@@ -39788,12 +39796,7 @@ ${hook}`, was = errors.get(key3);
           fought = null;
           return;
         }
-        const now = ports.fighting();
-        if (now && fought === false) {
-          ports.marks.clear();
-          ports.record({ kind: "marks-cleared", why: "a fight started" });
-        }
-        fought = now;
+        read5();
       }
     };
   }

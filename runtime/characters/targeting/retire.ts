@@ -44,8 +44,9 @@ export type OverkillSkip = ReturnType<typeof createOverkillSkip>;
 // An unreachable target: movement's notice at its approach's last level or its sight search's end sets the
 // target aside on the targeting owner's own list (install.ts `setAsideFor`) and drops it as this character's
 // selection, so the finders that read the mark pick another or none. The id never goes on the killed list,
-// which would refuse it as a confirmed death. Every mark clears at each fight's start: the pass where
-// survival's fight fact turns true after a pass where it was false. Inside one fight a mark keeps its 10 s.
+// which would refuse it as a confirmed death. Every mark clears at each fight's start: the read where
+// survival's fight fact turns true after a read where it was false. A pass and a notice each read it.
+// Inside one fight a mark keeps its 10 s.
 export interface RetirePorts {
   // `fail` sets the mark and answers its expiry on the character's clock; `any` answers whether a
   // mark that has not expired is set.
@@ -67,10 +68,19 @@ export interface RetirePorts {
 // mark. The report carries it while that target is still the lock, so the queue retires it once.
 export interface UnreachableLock { id: string; map: string; in?: string | number; at: number; until?: number }
 export function createRetire(ports: RetirePorts) {
-  // The fight fact the last pass read, or null while no mark was set, when the pass asks nothing:
+  // The fight fact the last read saw, or null while no mark was set, when the pass asks nothing:
   // with no mark there is nothing to clear, and survival's fight test is the target timer's largest
   // cost. A mark then reads the fight it starts in, so a mark set inside a fight holds.
   let fought: boolean | null = false;
+  // One read of the fight fact: a fight that started since the last read clears every mark. The
+  // notice reads it too, so a fight that ends and starts again between two passes still counts as a
+  // start when a notice came in the gap (e2e/live-targeting-hooks.spec.ts "targeting.cleared": the
+  // notice went off the farm, and the party stood at the farm again before the next pass).
+  function read(): void {
+    const now = ports.fighting();
+    if (now && fought === false) { ports.marks.clear(); ports.record({ kind: 'marks-cleared', why: 'a fight started' }); }
+    fought = now;
+  }
   let unreachableLock: UnreachableLock | null = null;
   // The targets this character has retired. Movement repeats its notice for the same target on
   // later approaches, and each repeat renews the mark and the drop; only the first writes the ring
@@ -85,8 +95,8 @@ export function createRetire(ports: RetirePorts) {
     notice(notice: { character?: unknown; target?: unknown; why?: unknown }): void {
       if (notice.character !== character.name || notice.target === undefined || notice.target === null) return;
       const id = String(notice.target);
+      read();
       const until = ports.marks.fail(id);
-      if (fought === null) fought = ports.fighting();
       if (!retired.has(id)) {
         retired.add(id);
         if (retired.size > MOVEMENT_RING_SIZE) retired.delete(retired.values().next().value!);
@@ -110,9 +120,7 @@ export function createRetire(ports: RetirePorts) {
     },
     pass(): void {
       if (!ports.marks.any()) { fought = null; return; }
-      const now = ports.fighting();
-      if (now && fought === false) { ports.marks.clear(); ports.record({ kind: 'marks-cleared', why: 'a fight started' }); }
-      fought = now;
+      read();
     },
   };
 }

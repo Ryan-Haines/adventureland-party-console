@@ -155,8 +155,8 @@ test('targeting hooks: one fixture add-on registers every hook and event', async
       expect(retired.every(h => h.payload.by === 'core:targeting'), 'each names its by').toBe(true);
       expect(new Set(retired.map(h => `${h.payload.character}|${h.payload.target}`)).size, 'once per character and goo').toBe(retired.length);
     });
-    // retire.ts `pass` clears the marks when survival's fight fact turns true after a pass where it
-    // was false. The fact holds while the party stands at its farm (needs.ts `partyUnderAttack`), and
+    // retire.ts clears the marks when survival's fight fact turns true after a read where it was
+    // false; a pass and movement's notice each read it. The fact holds while the party stands at its farm (needs.ts `partyUnderAttack`), and
     // the row ends with the party at the bee field and the walled goo removed, so its mark lapses with
     // no fight start. The step takes the party off the farm to town, renews the walled goo's mark with
     // movement's notice (the row's own way of sending it), and brings the party back to a planted bee
