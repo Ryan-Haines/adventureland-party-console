@@ -34949,6 +34949,7 @@ ${hook}`, was = errors.get(key3);
       return ports.followMe()?.location ?? ports.partyLocation();
     }
     function shouldFollowLeader() {
+      if (manualHolds()) return false;
       const f = ports.followMe();
       if (f) return f.name !== ports.name();
       if (ports.cancelled() && !ports.combatEvent()) return false;

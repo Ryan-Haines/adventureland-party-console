@@ -53,4 +53,15 @@ scenarioTable('a navigation cancellation stops the owned farm walk, a queued far
   t.r.navigationIntent.cancelled = false;
   assert.equal(t.r.shouldFollowLeader(), true);
  }],
+ // W07a M2b (final-gate-closing6): the priest on Manual under Follows me is the follow anchor, so its
+ // reply's `followMe` is null and the leader rules answered true. Its follow of the warrior started,
+ // Manual paused the walk 21 ms later, the follow mover kept `following` set while it waited, and
+ // the spend table's O16 refused the priest's damage for the rest of the play.
+ ['a character on Manual never follows its leader',t=>{
+  Object.assign(t.r, { followLeader: true, leader: 'L', followMe: null, eventAttend: { active: () => null }, groupedFarming: () => false, escapeOwns: () => false });
+  require('./helpers/requesters.cjs').installHolds(t.r);
+  assert.equal(t.r.shouldFollowLeader(), true, 'off Manual it follows');
+  t.r.handReply({ handControl: { by: 'manual', usePotions: true, combat: true } });
+  assert.equal(t.r.shouldFollowLeader(), false, 'on Manual it stays where the player put it');
+ }],
 ]);

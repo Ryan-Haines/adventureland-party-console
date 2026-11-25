@@ -56,7 +56,11 @@ export function installCharacterHolds(ports: CharacterHoldPorts) {
   function targetScope() { return ports.followMe()?.location ?? ports.partyLocation(); }
   // Whether this character follows its leader now. Follows me is the player's own walk, so a
   // navigation the player cancelled, such as a party Town, does not stop it.
+  // A character on Manual follows no one: the movement owner pauses every walk it holds, so a follow
+  // started under Manual waits forever and keeps the spend table's O16 shut (W07a M2b). Under Follows
+  // me the anchor's own `followMe` is null, which is why this reads the hold first.
   function shouldFollowLeader() {
+    if (manualHolds()) return false;
     const f = ports.followMe();
     if (f) return f.name !== ports.name();
     if (ports.cancelled() && !ports.combatEvent()) return false;
