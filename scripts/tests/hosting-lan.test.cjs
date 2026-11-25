@@ -179,9 +179,14 @@ test('setup bounds connection requests, rechecks on focus, and starts only one i
  
  try{
   await flush();
+  // The first connection check starts the request and its bound timer together (setup-client.js
+  // watchConnection), and a focus while it is pending starts neither, so the one timer added is the
+  // request's bound.
+  const before=new Set(timers.keys());
   el('placement').value='same';el('client').value='windows-steam';el('client').onchange();await flush();
   dom.window.dispatchEvent(new dom.window.Event('focus'));assert.equal(requests,1);
-  [...timers.values()].find(t=>t.ms===8000).fn();await flush();assert.match(el('linkStatus').textContent,/retry/);
+  const bound=[...timers].filter(([id])=>!before.has(id));assert.equal(bound.length,1,'one bound per request');
+  bound[0][1].fn();await flush();assert.match(el('linkStatus').textContent,/retry/);
   connected=true;dom.window.dispatchEvent(new dom.window.Event('focus'));await flush();
   assert.equal(requests,2);assert.equal(countdowns,1);assert.match(el('linkStatus').textContent,/dashboard in 5/);
   dom.window.dispatchEvent(new dom.window.Event('focus'));dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));await flush();

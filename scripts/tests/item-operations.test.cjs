@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { productionHarness, planted, emptyCheckpoint } = require('./helpers/items-character.cjs');
 const { createBagReads } = require('../../runtime/items/character/bag.ts');
+const { settle } = require('./helpers/settle.cjs');
 test('upgrade and compound placeholders expose real server chance, smoke and level transition', () => {
   const G = { items: { placeholder: { skin: 'placeholder' }, wshoes: {} }, positions: { placeholder: ['pack_20', 3, 4] },
     imagesets: { pack_20: { file: '/images/pack_20.png', size: 20, columns: 50, rows: 50 } } };
@@ -150,8 +151,13 @@ test('IT57: a compound waits for its queue entry to end before it counts', async
 // after its queue time, which production's own wait reads, so it gets no such bound.
 test('G11: an item call with no reply ends not_confirmed; an upgrade waits on its queue time', async () => {
   const saved = { hooks: globalThis.__partyHooks, parent: globalThis.parent, buy: globalThis.buy, upgrade: globalThis.upgrade };
-  const handle = { sleep: ms => new Promise(resolve => setTimeout(resolve, ms)), setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: id => clearTimeout(id) };
-  globalThis.__partyHooks = { calls: { band: () => 'send', window: () => 1, margin: () => 5 } };
+  // The run scope's timers, fired by hand: a timer the call sets is its only way to end without a reply.
+  const timers = [];
+  const handle = { sleep: ms => new Promise(resolve => timers.push({ cb: resolve, ms })), setTimeout: (cb, ms) => timers.push({ cb, ms }), clearTimeout: id => { if (id && timers[id - 1]) timers[id - 1].cb = null; } };
+  const fire = () => { for (const t of timers) { const cb = t.cb; t.cb = null; cb?.(); } };
+  const pending = () => timers.filter(t => t.cb);
+  const margin = 5;
+  globalThis.__partyHooks = { calls: { band: () => 'send', window: () => 1, margin: () => margin } };
   globalThis.parent = { ...(saved.parent || {}), __partyRunScope: { scope: () => handle } };
   globalThis.buy = () => new Promise(() => {});
   globalThis.upgrade = () => new Promise(() => {});
@@ -159,11 +165,19 @@ test('G11: an item call with no reply ends not_confirmed; an upgrade waits on it
     const { bankGame, productionGame } = require('../../runtime/items/character/calls.ts');
     const { boundsPending, boundsSent } = require('../../runtime/status/api.ts');
     boundsSent(boundsPending().length);
-    await assert.rejects(bankGame.buy('hpot0', 1), error => error.code === 'not_confirmed' && /buy was not confirmed/.test(error.message));
+    const bought = bankGame.buy('hpot0', 1);
+    await settle();
+    const [bound] = pending();
+    assert.deepEqual(pending().map(t => t.ms), [2 * margin], 'the lost reply waits two round trips (calls.ts itemCall)');
+    fire();
+    await assert.rejects(bought, error => error.code === 'not_confirmed' && /buy was not confirmed/.test(error.message));
     // itemReplyBound (bigcheck/bounds.md): the lost reply queues its firing for the next report.
-    assert.deepEqual(boundsPending().map(f => [f.bound, f.owner, f.state.method, f.state.ms]), [['itemReplyBound', '10', 'buy', 10]]);
+    assert.deepEqual(boundsPending().map(f => [f.bound, f.owner, f.state.method, f.state.ms]), [['itemReplyBound', '10', 'buy', bound.ms]]);
     boundsSent(1);
-    const upgrade = productionGame.upgrade(0, 1);
-    assert.equal(await Promise.race([upgrade.then(() => 'settled', () => 'settled'), new Promise(resolve => setTimeout(() => resolve('pending'), 50))]), 'pending');
+    let upgraded = 'pending';
+    productionGame.upgrade(0, 1).then(() => { upgraded = 'settled'; }, () => { upgraded = 'settled'; });
+    await settle();
+    assert.deepEqual(pending(), [], 'an upgrade sets no reply bound');
+    assert.equal(upgraded, 'pending');
   } finally { Object.assign(globalThis, { __partyHooks: saved.hooks, parent: saved.parent, buy: saved.buy, upgrade: saved.upgrade }); }
 });

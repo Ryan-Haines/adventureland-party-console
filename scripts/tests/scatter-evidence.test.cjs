@@ -77,5 +77,5 @@ test('death and rejection both promote the visible successor instead of restorin
 test('evidence diagnostics stay bounded',()=>fixture(f=>{
  const action=f.client.evidence(target,'pending');f.scatter();
  for(let i=0;i<40;i++)f.client.evidence(target,'engaged',action);
- assert.equal(f.root.__partyQueueEvidenceTrace.length,32);
+ assert.equal(f.root.__partyQueueEvidenceTrace.length,require('../../runtime/characters/targeting/rules.ts').LIST_BOUNDS.clientTrace);
 }));

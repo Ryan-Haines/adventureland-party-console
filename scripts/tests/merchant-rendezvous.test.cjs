@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-const {runtime}=require('./fixtures/merchant-rendezvous-scenario.cjs');
+const {runtime,STALL_MS}=require('./fixtures/merchant-rendezvous-scenario.cjs');
 // Step 12: the direct leg asks the movement owner as the errand, as the route does, so both
 // are smart_move calls; the direct legs follow the recipient (e2e/movement-owner-failures.md
 // "Step 12" item 1).
@@ -56,7 +56,9 @@ scenarioTable('a merchant rendezvous reaches a moving recipient and fails on the
  await assert.rejects(t.r.rendezvous('job','F'),error=>/rendezvous timed out$/.test(error.message)&&error.details.recoveries>2);
  const other=t.calls.find(c=>c.kind==='smart'&&c.native===true);
  assert.ok(other,'the other route plans natively');
- assert.ok(other.at<10000,'the stalled try climbs when it ends, at '+other.at+' ms');
+ // The direct leg stalls, the route stalls, then the other route goes out: each rung starts at the
+ // stall that ended the try before it.
+ assert.equal(other.at,2*STALL_MS,'the stalled try climbs when it ends');
  // Step 12: direct legs are owner requests too, so the count of smart_move calls is no longer
  // the route count; every leg names the errand and no native move goes out.
  assert.ok(t.calls.filter(c=>c.kind==='smart').every(c=>c.request==='errand'));

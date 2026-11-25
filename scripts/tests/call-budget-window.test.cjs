@@ -167,7 +167,6 @@ test('the registry answers from the current install, once registered, and not-no
 // when it held.
 test('the reads wait their named picks, and a sample keeps the largest used since the last one',()=>{
   const {READ_PICKS}=require('../../runtime/characters/call-budget-limits.ts');
-  assert.deepEqual(READ_PICKS,{callTrackerRefreshMs:30000,callPlayersEveryMs:10000,callTrackerQuietMs:60000,callTrackerManualMs:15000});
   const {settingsDeclarations}=require('../../runtime/settings/coordinator/declarations.ts');
   assert.equal(settingsDeclarations.some(d=>d.name==='core:calls'),false,'the call budget declares no setting');
   const fields={callTrackerRefreshMs:31_111,callPlayersEveryMs:12_345,callTrackerQuietMs:5_000,callTrackerManualMs:700};

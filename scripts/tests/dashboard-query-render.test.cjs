@@ -6,6 +6,7 @@ const { createRequire } = require('node:module');
 const dashboardRequire = createRequire(require('node:path').resolve('dashboard/package.json'));
 const { QueryClientProvider } = dashboardRequire('@tanstack/react-query');
 const load = require('./helpers/dashboard-query-module.cjs');
+const { notified } = require('./helpers/settle.cjs');
 const { createDashboardClient } = load('query-cache.tsx');
 const { useCharacterData, characterKey } = load('dashboard-live.tsx');
 const { usePanelModel } = load('use-panel-model.ts');
@@ -28,7 +29,7 @@ test('panel merges retain unchanged characters and handle roster and subscriptio
     assert.equal(latest.chars, first.chars);
     await act(async () => {
       client.setQueryData(characterKey('A', 'inventory'), { items: [{ slot: 0, item: { name: 'coat' } }], slots: {} });
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await notified();
     });
     assert.notEqual(latest.state.characters.A, first.state.characters.A);
     assert.equal(latest.state.characters.B, first.state.characters.B);
@@ -60,11 +61,11 @@ test('map consumers share reads, release closed observers, pause hidden tabs and
     React.createElement(Maps, { open, map }), React.createElement(Maps, { open, map }));
   let tree;
   try {
-    await act(async () => { tree = create(render(true, 'main')); await new Promise(done => setTimeout(done, 10)); });
+    await act(async () => { tree = create(render(true, 'main')); await notified(); });
     assert.equal(calls, 1);
     await act(async () => tree.update(render(true, 'cave')));
     assert.equal(shown.at(-1), undefined, 'no previous map placeholder');
-    await act(async () => { finish({ ok: true, status: 200, json: async () => ({ name: 'cave' }) }); await new Promise(done => setTimeout(done, 5)); });
+    await act(async () => { finish({ ok: true, status: 200, json: async () => ({ name: 'cave' }) }); await notified(); });
     await act(async () => tree.update(render(false, 'cave')));
     assert.equal(client.getQueryCache().find({ queryKey: ['party', 'reference', 'r1', 'map', 'cave'] }).getObserversCount(), 0);
     await act(async () => { document.hidden = true; document.dispatchEvent(new Event('visibilitychange')); tree.update(render(true, 'new-map')); });
@@ -87,7 +88,7 @@ test('a failed reference read retries on the next core answer and then waits', a
     useReferenceRetry(query);
     return null;
   }
-  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+  const settle = () => act(notified);
   try {
     await act(async () => { tree = create(React.createElement(QueryClientProvider, { client }, React.createElement(Reader))); });
     await settle();

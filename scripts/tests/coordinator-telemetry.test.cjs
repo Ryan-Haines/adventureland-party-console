@@ -4,7 +4,7 @@ const {createMapStreams,createMarketWatch}=require('../../runtime/status/coordin
 const {createCombatLogRoutes}=require('../../runtime/status/coordinator/logs.ts');
 const {httpFixture}=require('./helpers/coordinator-http.cjs');
 
-test('map streams replay the latest frame, heartbeat every fifteen seconds, and release subscribers on close',()=>{
+test('map streams replay the latest frame, heartbeat every streamHeartbeatMs, and release subscribers on close',()=>{
  const timers=[],cancelled=[],http=httpFixture();
  const streams=createMapStreams({owned:name=>name==='P',definition:()=>null,every:(callback,ms)=>{const timer={callback,ms};timers.push(timer);return timer;},cancel:timer=>cancelled.push(timer)});
  streams.install(http.router);
@@ -13,7 +13,7 @@ test('map streams replay the latest frame, heartbeat every fifteen seconds, and 
  const first=http.invoke('GET','/party-api/map-stream/:character',undefined,{character:'P'});
  const second=http.invoke('GET','/party-api/map-stream/:character',undefined,{character:'P'});
  assert.equal(streams.count('P'),2);assert.deepEqual(first.response.chunks,['data: '+JSON.stringify(frame)+'\n\n']);
- assert.equal(timers[0].ms,5000);timers[0].callback();assert.equal(first.response.chunks.at(-1),': keepalive\n\n');
+ assert.equal(timers[0].ms,require('../../runtime/status/rules.ts').STATUS_PICKS.streamHeartbeatMs);timers[0].callback();assert.equal(first.response.chunks.at(-1),': keepalive\n\n');
  first.request.close();assert.equal(streams.count('P'),1);second.request.close();assert.equal(streams.count('P'),0);assert.equal(cancelled.length,2);
 });
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { test, expect } from './fixtures';
 import { declaredInDocument, unsetByDefault } from './settings-samples';
 import { METRIC_BUCKET_MS } from '../runtime/status/api';
+import { hiddenValue } from '../runtime/settings/coordinator/table';
 
 // Failure inventory: docs/efficiency.md (Persistence). These journeys cover the
 // items that need the real coordinator and dashboard; the rest are unit tests.
@@ -22,15 +23,11 @@ async function report(info: import('@playwright/test').TestInfo, name: string, v
   await info.attach(name, { contentType: 'application/json', body: JSON.stringify(value, null, 2) });
 }
 async function openDashboardLogs(page: import('@playwright/test').Page) {
+  // The console fixture serves a verified production candidate (fixtures.ts), so the page loads once.
   await page.goto('/');
-  // A shared development server may finish initial module discovery and reload.
-  await page.waitForTimeout(2000);
   const sidebar = page.getByRole('complementary', { name: 'Live logs' });
-  // The first click can land before hydration on a cold development server.
-  await expect(async () => {
-    if (!await sidebar.isVisible()) await page.getByRole('button', { name: 'Show logs' }).click();
-    await expect(sidebar).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Show logs' }).click();
+  await expect(sidebar).toBeVisible();
   await sidebar.getByRole('tab', { name: 'Dashboard logs' }).click();
   return sidebar;
 }
@@ -53,8 +50,8 @@ test('combat lines show at once, save once per window and survive a restart', as
   }
   const elapsed = Date.now() - started, appended = savedRecords(app.journal, historyKey) - before;
   await report(info, 'combat-line-dashboard-latency', { ...summary(latency), elapsed, historyRecordsAppended: appended });
-  // One save per 5 s window, plus one for a window already open at the start.
-  expect(appended).toBeLessThanOrEqual(Math.ceil(elapsed / 5000) + 1);
+  // One save per historySaveMs window, plus one for a window already open at the start.
+  expect(appended).toBeLessThanOrEqual(Math.ceil(elapsed / hiddenValue('historySaveMs')) + 1);
   await app.restartCoordinator();
   const saved = (await app.state()).combatLogs.W.map((entry: { message: string }) => entry.message)
     .filter((message: string) => message.startsWith('Persistence probe'));
@@ -200,7 +197,6 @@ test.describe('saved entries past their window', () => {
   test('load drops expired luck casts and keeps every rare pursuit', async ({ page, app }, info) => {
     // A saved journal through the real coordinator load. A pursuit record
     // leaves when a member reports its rare killed, so the load keeps all 101 with no count cap.
-    await page.waitForTimeout(2000);
     expect((await mailSettings(page, app.url, { autoCollect: true, autoDelete: false })).ok()).toBe(true);
     await expect.poll(() => saved(app.journal, settingsKey).at(-1)?.mailbox?.settings?.autoCollect, { intervals: [100] }).toBe(true);
     const record = saved(app.journal, settingsKey).at(-1);

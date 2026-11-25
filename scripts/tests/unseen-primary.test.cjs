@@ -2,6 +2,8 @@ const assert=require('node:assert/strict');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {reconcileQueue}=require('../../runtime/coordinator/targeting/queue.ts');
 const {targetIdentity}=require('../../runtime/characters/targeting/rules.ts');
+// The declared window a fresh absence must last before the primary is released.
+const GONE=()=>require('../../runtime/characters/targeting/saved-fields.ts').pick('unseenGoneMs');
 function fixture(){
  const primary={id:'225',mtype:'tinyp',server:'USII',map:'halloween',in:'halloween',x:1000,y:1000,state:'engaged',fighter:'W',startedAt:1};
  const ghost={...primary,id:'ghost',mtype:'ghost',x:20,y:0,state:'planned'};
@@ -12,8 +14,10 @@ function fixture(){
 }
 scenarioTable('the unseen primary yields to a visible alternative only after a bounded fresh absence',fixture,[
  ['invisible engaged Tiny P yields to visible Ghost after bounded fresh absence, outside last-position coverage',f=>{
- for(let t=10000;t<18000;t+=1000)assert.equal(f.step(t).target.id,'225');
- const g=f.step(18000);assert.equal(g.target.id,'ghost');assert.equal(g.deaths.length,0);
+ // The absence starts at 10000 and ends at the declared unseenGoneMs.
+ const gone=10000+GONE();
+ for(let t=10000;t<gone;t+=1000)assert.equal(f.step(t).target.id,'225');
+ const g=f.step(gone);assert.equal(g.target.id,'ghost');assert.equal(g.deaths.length,0);
  assert.match(g.lostTargets[0].reason,/visible alternative/);assert.equal(g.evidence.length,0);
  assert.equal(g.queue[0].id,'ghost');assert.equal(g.searches[targetIdentity(f.primary)],undefined);
  }],
@@ -32,10 +36,12 @@ scenarioTable('the unseen primary yields to a visible alternative only after a b
   assert.equal(f.group.target.id,'225');assert.equal(f.group.lostTargets.length,0);
  }]),
  ['stale intervals and restart gaps do not advance the eight-second absence clock',f=>{for(let t=10000;t<=13000;t+=1000)f.step(t);f.restart();
- f.step(50000);for(let t=51000;t<55000;t+=1000)assert.equal(f.step(t).target.id,'225');
- assert.equal(f.step(55000).target.id,'ghost');
+ // 3000 ms of absence counted before the restart; the rest of unseenGoneMs counts from 50000.
+ const gone=50000+GONE()-3000;
+ f.step(50000);for(let t=51000;t<gone;t+=1000)assert.equal(f.step(t).target.id,'225');
+ assert.equal(f.step(gone).target.id,'ghost');
  }],
- ['delayed evidence cannot resurrect released primary, but a living newly seen monster can return',f=>{for(let t=10000;t<=18000;t+=1000)f.step(t);
+ ['delayed evidence cannot resurrect released primary, but a living newly seen monster can return',f=>{for(let t=10000;t<=10000+GONE();t+=1000)f.step(t);
  assert.equal(f.step(19000,m=>{m[0].status.groupedCombat.evidence=[{...f.primary,action:'late',at:19000,startedAt:1}];}).target.id,'ghost');
  const g=f.step(20000,m=>{m[0].status.groupedCombat.sightings.push(f.primary);m[0].status.groupedCombat.candidates.push({...f.primary,priority:200});});
  assert.ok(g.queue.some(t=>t.id==='225'));assert.equal(g.deaths.length,0);

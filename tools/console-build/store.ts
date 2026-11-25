@@ -14,7 +14,7 @@ export const newer = (latest: {createdAt: string}, active?: {createdAt: string})
 // directoryStale reclaims it once it is this old and logs that it did (tools/BUILD-HISTORY.md).
 const OWNERLESS_LOCK: HostBound = {name: 'ownerlessLockMs', ms: 30_000};
 // A lock wait lasts while the holder's pid runs; the waiter reads the holder again every LOCK_POLL_MS.
-const LOCK_POLL_MS = 50;
+export const LOCK_POLL_MS = 50;
 const validId = (id: string) => /^[a-f0-9]{64}$/.test(id);
 async function fileHash(file: string): Promise<string> {
   const hash = createHash('sha256');

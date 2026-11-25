@@ -44,7 +44,7 @@ test('stale destination reports do not satisfy the sixty-second arrival deadline
   const {operation,service,statuses,effects}=fixture();
   for(const name of operation.participants) statuses[name]={seenAt:999,server:'EUI'};
   await service.run(operation);
-  assert.equal(operation.phase,'failed');assert.equal(operation.completedAt,61000);
+  assert.equal(operation.phase,'failed');assert.equal(operation.completedAt,operation.startedAt+ARRIVAL_WINDOW_MS);
   assert.match(operation.error,/No straggler made progress/);assert.equal(effects.includes('dispatch'),false);
 });
 
@@ -65,7 +65,7 @@ test('a window with no straggler progress ends the switch, whatever another memb
  f.ports.nextReport=async bound=>{const ms=Math.min(REPORT_MS,bound);elapsed+=ms;f.statuses.M={seenAt:1000+elapsed,server:elapsed>=10000?'EUI':'USI'};
   f.statuses.P={seenAt:999,server:'EUI'};f.statuses.S={seenAt:1000+Math.min(elapsed,30000),server:'USI'};};
  f.ports.now=()=>1000+elapsed;
- await f.service.run(f.operation);assert.equal(f.operation.phase,'failed');assert.equal(f.operation.completedAt,61000);
+ await f.service.run(f.operation);assert.equal(f.operation.phase,'failed');assert.equal(f.operation.completedAt,f.operation.startedAt+ARRIVAL_WINDOW_MS);
  assert.match(f.operation.error,/P, S/);assert.equal(f.effects.includes('dispatch'),false);
 });
 

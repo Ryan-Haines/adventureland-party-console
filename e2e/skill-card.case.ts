@@ -86,7 +86,7 @@ test("skills show the game's skill card beside an extras box in both dialogs", a
   await expect.poll(async () => {
     const card = (await zap.card.boundingBox())!, extras = (await zap.extras.boundingBox())!;
     return extras.y >= card.y + card.height - 1;
-  }, { timeout: 5_000 }).toBe(true);
+  }).toBe(true);
   expect(await zap.card.evaluate((node) => node.parentElement!.scrollWidth <= node.parentElement!.clientWidth)).toBe(true);
   await page.setViewportSize({ width: 1600, height: 1000 });
 

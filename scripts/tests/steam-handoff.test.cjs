@@ -2,6 +2,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { reservedForSteam } = require('../../runtime/lifecycle/roster/handoff.ts');
 const { scenarioTable } = require('./fixtures/scenarios.cjs');
+// The fixture's clock reads 100; a reading one past the declared phase expiry has expired the phase.
+const expired = () => 100 + require('../../runtime/settings/coordinator/api.ts').hiddenValue('steamHandoffExpiryMs') + 1;
 const { handoffFixture: fixture, groupFixture, merchantMove } = require('./fixtures/steam-roster-scenario.cjs');
 
 test('Steam switch reciprocally transfers the target slot only after confirmed native release', async () => {
@@ -62,7 +64,7 @@ test('a late native arrival completes a confirmed handoff without starting anoth
   await f.service.released(op.id, 'Priest');
   assert.equal(reservedForSteam(f.state, 'Priest'), false);
   assert.equal(reservedForSteam(f.state, 'Mage'), true);
-  f.ports.now = () => 200000;
+  f.ports.now = expired;
   f.service.expire();
   assert.equal(op.phase, 'failed');
   assert.equal(f.service.reconcileArrival('Warrior'), false);
@@ -87,7 +89,7 @@ test('concurrent operations, stale acknowledgements and externally online target
 test('timeout never starts a duplicate; recovery requires authoritative offline confirmation', async () => {
   const f = fixture();
   const op = await f.service.begin('Mage');
-  f.ports.now = () => 100000;
+  f.ports.now = expired;
   f.service.expire();
   assert.equal(op.phase, 'failed');
   assert.equal(f.state.native, 'Priest');

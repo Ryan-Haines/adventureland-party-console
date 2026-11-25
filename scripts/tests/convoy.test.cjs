@@ -105,8 +105,8 @@ scenarioTable('the character convoy runner holds, caps speed and walks the share
   m.hold=function(request){holds.push(request.owner);return hold.apply(this,arguments);};
   c.character.c={town:{ms:3000}};
   const cast=c.townCast({kind:'town',owner:'town:e2e'});
-  await new Promise(resolve=>setTimeout(resolve,600));
-  assert.deepEqual(holds,['town:e2e'],'no renewal over 600 ms without a report');
+  await settle();
+  assert.deepEqual(holds,['town:e2e'],'no renewal without a report');
   assert.equal(r.timers.length,timers,'the cast registers no timer of its own');
   c.reportSucceeded();c.reportSucceeded();
   assert.deepEqual(holds,['town:e2e','town:e2e','town:e2e'],'one renewal per report');

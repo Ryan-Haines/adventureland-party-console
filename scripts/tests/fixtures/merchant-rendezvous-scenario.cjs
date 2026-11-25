@@ -7,14 +7,15 @@ const {installErrandWalk} = require('../helpers/errands.cjs');
 // The fake movement owner keeps a request for the place its live journey walks to (design 2.2), and
 // a `stuck` character's try ends one second in with the executor's walking stall (R2F3), as the
 // owner's journey rejects to its requester. The merchant reports on each 200 ms tick, or every
-// `reportEvery` ticks.
+// `reportEvery` ticks. STALL_MS is that one second: STALL_TICKS ticks of TICK_MS.
+const TICK_MS=200,STALL_TICKS=5,STALL_MS=TICK_MS*STALL_TICKS;
 function runtime(options={}) {
  let now=0,goal=null,smart=false,ticks=0,live=null;
  const calls=[],player={name:'F',map:'main',x:1000,y:0,visible:true};
  const r=createMovementContext({root:{},Date:{now:()=>now},coordinatorClockOffset:0,character:{ctype:'merchant',map:'main',x:0,y:0},lastCommand:1,navigationIntent:{revision:1},runtimeCurrent:()=>true,
   eventMerchant:{anniversaryReserved:()=>false},get_player:()=>options.invisible?null:player,can_move_to:()=>!options.wall,reunionRealm:()=> 'USII',
-  setTimeout:callback=>{now+=200;ticks++;if(options.tick)options.tick(r,player,ticks);
-   if(options.stuck&&live&&ticks-live.since>=5){const stalled=live;live=null;stalled.reject(Error('Stalled walking movement (stopped short after its step was sent again)'));}
+  setTimeout:callback=>{now+=TICK_MS;ticks++;if(options.tick)options.tick(r,player,ticks);
+   if(options.stuck&&live&&ticks-live.since>=STALL_TICKS){const stalled=live;live=null;stalled.reject(Error('Stalled walking movement (stopped short after its step was sent again)'));}
    if(goal&&!options.stuck&&!(r.smart&&r.smart.moving&&!r.smart.found)){const dx=goal.x-r.character.x,dy=goal.y-r.character.y,d=Math.hypot(dx,dy)||1;r.character.x+=dx/d*Math.min(60,d);r.character.y+=dy/d*Math.min(60,d);}
    if(ticks%(options.reportEvery||1)===0){r.reports=(r.reports||0)+1;r.reportSucceeded();}callback();},
   move:(x,y)=>{calls.push({kind:'move',x,y});goal={x,y};},
@@ -41,4 +42,4 @@ function runtime(options={}) {
  require('../helpers/merchant-visits.cjs').installVisits(r);
  return {r,player,calls};
 }
-module.exports = { runtime };
+module.exports = { runtime, STALL_MS };

@@ -80,7 +80,7 @@ test('diagnostics survive reload, deduplicate repeats, stay bounded and retry on
   assert.equal(f.r.root.__partyStatusDiagnostics[0].delivered,true);
   await reloaded.flushStatusFailures();assert.equal(f.requests.length,2);
   for(let i=0;i<25;i++)reloaded.statusFailure(new Error('failure '+i),'request status');
-  assert.equal(f.r.root.__partyStatusDiagnostics.length,20);
+  assert.equal(f.r.root.__partyStatusDiagnostics.length,require('../../runtime/status/rules.ts').STATUS_FAILURES_KEPT);
   // A failure that keeps repeating stays one entry and one red line however long it lasts; when a
   // different failure follows, the delivered entry goes again once with its final repeat count.
   const g=fixture(),realNow=Date.now;let clock=1e6;Date.now=()=>clock;

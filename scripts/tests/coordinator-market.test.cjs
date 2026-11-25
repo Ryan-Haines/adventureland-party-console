@@ -72,7 +72,7 @@ test('stand price history takes each level from the first lowest listing in one 
  let reads=0;
  const counted=new Proxy(listings,{get(target,key,receiver){if(typeof key==='string'&&/^\d+$/.test(key))reads++;return Reflect.get(target,key,receiver);}});
  assert.equal(service.observe(counted),true);
- assert.ok(reads<=3*listings.length,'listing reads '+reads+' for '+listings.length+' listings');
+ assert.equal(reads,listings.length,'one pass reads each listing once');
  assert.deepEqual(state.standPriceHistory.wcap,{lowest:40,lowestLevel:6,recent:40,recentLevel:6,seenAt:100});
  assert.deepEqual(state.standPriceHistory.coat,{lowest:30,lowestLevel:0,recent:30,recentLevel:0,seenAt:100});
  assert.equal(state.standPriceHistory.item13.lowestLevel,0);assert.equal(state.standPriceHistory.item13.lowest,994);

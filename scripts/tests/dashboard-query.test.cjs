@@ -2,15 +2,15 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const load = require('./helpers/dashboard-query-module.cjs');
 const { QueryObserver } = require('../../dashboard/node_modules/@tanstack/react-query');
-const { createDashboardClient, domainOptions, key } = load('query-cache.tsx');
+const { createDashboardClient, domainOptions, key, polls, reportPeriod } = load('query-cache.tsx');
 const { affectedDomains, performAction } = load('query-actions.ts');
 
 test('configuration polls slowly but successful actions refresh active configuration immediately', async () => {
  const client=createDashboardClient(), original=global.fetch;
  let reads=0, value=1;
  const options=domainOptions(client,'config');
- assert.equal(options.refetchInterval,15000);
- assert.equal(domainOptions(client,'core').refetchInterval,1000);
+ assert.equal(options.refetchInterval,polls.config.interval);
+ assert.equal(domainOptions(client,'core').refetchInterval,reportPeriod);
  client.setQueryData(key('config'),{threshold:1});
  const observer=new QueryObserver(client,{...options,queryFn:async()=>{reads++;return {threshold:value};}});
  const stop=observer.subscribe(()=>{});

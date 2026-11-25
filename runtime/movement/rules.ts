@@ -149,6 +149,17 @@ export const GEOMETRY_REPAIR_DEADLINE_MS = 60000; // runtime/coordinator/navigat
 // console's 2048 grid expansions. A search that ends on it reports through boundFired, so a cut
 // search shows in the bound record apart from a door with no reachable approach.
 export const DOOR_DETOUR_EXPANSIONS = 2048;
+// A fighter's approach and a supporter's regroup aim RANGE_MARGIN inside the range they need,
+// b9b5c91e's 10 (characters/shared.js:16720 and :14630). The game's check is hitbox to hitbox
+// (G js/runner_functions.js:824 `is_in_range`, js/old_common_functions.js:732 `distance`), and the
+// console measures centre to centre, which is never shorter, so the margin holds on top of the
+// hitbox gap. No game rule sets the 10; the end run's too_far refusals are its measure (QUESTIONS.md
+// U4, carried in test-windows/BUILD-LOG.md).
+export const RANGE_MARGIN = 10;
+/** The distance RANGE_MARGIN inside `range`, never under `floor`. */
+export function insideRange(range: unknown, floor: number): number {
+  return Math.max(floor, (Number(range) || 1) - RANGE_MARGIN);
+}
 // The shared walk's arrival radii (route-store.ts): a Hunt walk arrives within HUNT_TARGET_ARRIVAL
 // of its route's end, and an area walk inside the area or within AREA_ARRIVAL_MARGIN of its edge.
 export const HUNT_TARGET_ARRIVAL = 50; // runtime/coordinator/navigation/shared-route-store.ts:171

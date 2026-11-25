@@ -2,6 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {createMerchantIdleRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
 const {createMerchantBidRoute}=require('../../runtime/items/coordinator/routes/market.ts');
 const {createStackMergeRoute}=require('../../runtime/items/coordinator/routes/inventory.ts');
+const {ageOf}=require('../../runtime/protocol/reports.ts');
 function invoke(handler,body){const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;}};handler({body},res);return res;}
 function idleFixture(){
  const state={merchantCharacter:'M',commands:{M:{id:5,type:'merchant-idle'}},standListings:[],withdrawals:{}};
@@ -63,5 +64,6 @@ test('stack merge plans the sent bag and fences reservations and stale observati
  assert.equal(send(),merge);assert.equal(send({character:'M'}),null);assert.equal(send({character:'F',items}),null);
  busy=true;assert.equal(send(),null);busy=false;
  anniversary={reserved:true};assert.equal(send(),null);anniversary={busy:true};assert.equal(send(),null);anniversary={};
- state.statuses.M.seenAt=89999;assert.equal(send(),null);
+ // The merchant's report is one past the presence age (storage.ts createMergePermission).
+ state.statuses.M.seenAt=100000-ageOf('presence')-1;assert.equal(send(),null);
 });

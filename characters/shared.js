@@ -1236,7 +1236,7 @@
   function gatheringPorts() {
     return {
       root: function () { return root; }, runner: function () { return merchantRunner; },
-      character: function () { return character; }, parent: function () { return parent; }, current: run.current,
+      character: function () { return character; }, parent: function () { return parent; }, current: run.current, now: Date.now,
       protectedSlots: function () { return bag.protectedSlots(); },
       request: function (url, options) { return request(url, options); }, sleep: scopes.act08.sleep,
       log: function (message, color) { game_log(message, color); },

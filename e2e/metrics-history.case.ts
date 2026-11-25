@@ -67,14 +67,15 @@ test('metrics outbox keeps ring keys only for unconfirmed frames across a reload
   const install=(deliver:boolean)=>installCollector(page,script,'BrowserOutboxE2E',{gold:deliver?999:1,...SAMPLE},deliver);
   await install(false);
   expect(await ringKeys(),'install removes the confirmed 1.5 frame keys and keeps the queued frame').toEqual([key+':frame:41']);
-  await expect.poll(async()=>(await header()).queue.length,{timeout:15_000}).toBeGreaterThanOrEqual(3);
+  // The undelivered collector queues new frames behind 41; one of them is enough to check a resend.
+  await expect.poll(async()=>(await header()).queue.some((sequence:number)=>sequence!==41)).toBe(true);
   const pendingSnapshot=await snapshot(),pending=pendingSnapshot.header;
   expect(pendingSnapshot.ringKeys).toEqual(pending.queue.map((sequence:number)=>key+':frame:'+sequence).sort());
   await page.reload();await install(true);
   await expect.poll(()=>page.evaluate(sequences=>{
     const sent=(window as any).metricsReceived.flatMap((batch:any)=>batch.frames.map((frame:any)=>frame.sequence));
     return sequences.every((sequence:number)=>sent.includes(sequence));
-  },pending.queue),{timeout:15_000}).toBe(true);
+  },pending.queue)).toBe(true);
   const received=await page.evaluate(()=>(window as any).metricsReceived);
   const frames=received.flatMap((batch:any)=>batch.frames);
   for(const sequence of pending.queue)expect(frames.filter((frame:any)=>frame.sequence===sequence),'frame '+sequence+' sent once').toHaveLength(1);
@@ -83,8 +84,8 @@ test('metrics outbox keeps ring keys only for unconfirmed frames across a reload
   const original=frames.find((frame:any)=>frame.sequence===41);
   expect(original.first.gold).toBe(4242);expect(original.damage).toEqual(queued.damage);
   expect(received.every((batch:any)=>batch.runtime==='outbox-e2e')).toBe(true);
-  // Every confirmed frame leaves the store; at most the frames still queued keep a key.
-  await expect.poll(async()=>{const current=await snapshot(),queue=current.header.queue;return JSON.stringify(current.ringKeys)===JSON.stringify(queue.map((sequence:number)=>key+':frame:'+sequence).sort())&&queue.length<=2;},{timeout:15_000}).toBe(true);
+  // Every confirmed frame leaves the queue and the store; only the frames still queued keep a key.
+  await expect.poll(async()=>{const current=await snapshot(),queue=current.header.queue;return JSON.stringify(current.ringKeys)===JSON.stringify(queue.map((sequence:number)=>key+':frame:'+sequence).sort())&&!queue.some((sequence:number)=>pending.queue.includes(sequence));}).toBe(true);
   expect(await page.evaluate(()=>localStorage.getItem('cm_BrowserOutboxE2E_other'))).toBe('["fixture"]');
   await info.attach('metrics-outbox-ring-keys',{body:JSON.stringify({pending,received,ringKeys:await ringKeys()}),contentType:'application/json'});
 });

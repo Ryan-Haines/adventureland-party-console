@@ -1,4 +1,5 @@
 const {settle}=require('./helpers/settle.cjs');
+const {CHARACTER_PICKS}=require('../../runtime/lifecycle/fields.ts');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {loaderWindow,loaderSource,manifestFor,sha}=require('./fixtures/loader-scenario.cjs');
@@ -81,9 +82,9 @@ test('a request the coordinator never answers ends at its kept bound and queues 
   await l.until(()=>l.w.installed==='lease-1');
   host.hang='console-deployment';await l.tick();
   // The coordinator answers again before the next stall, so the poll that follows is not left hanging.
-  l.bounds.filter(b=>b.ms===3000).at(-1).trip();host.hang=null;await l.tick();
+  l.bounds.filter(b=>b.ms===CHARACTER_PICKS.loaderLeaseFetchMs).at(-1).trip();host.hang=null;await l.tick();
   host.hang='activation.json';await l.tick();
-  l.bounds.filter(b=>b.ms===6000).at(-1).trip();await l.tick();
+  l.bounds.filter(b=>b.ms===CHARACTER_PICKS.loaderFetchMs).at(-1).trip();await l.tick();
   // The bounds owner queues each firing on the window's global for the next report (status/character/bounds.ts).
   const fired=Array.from(l.w.__partyBoundQueue.firings,f=>[f.bound,f.owner,f.state.what]);
   assert.deepEqual(fired.filter(f=>f[0]==='loaderLeaseFetchMs'),[['loaderLeaseFetchMs','13','console-deployment']]);

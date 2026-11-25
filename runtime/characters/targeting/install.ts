@@ -307,7 +307,7 @@ export function installTargeting(realm: object, ports: RunnerTargetingPorts): Ta
     leader: () => !!module.isLeader(), lock: () => lockTarget(root) });
   module.adopt({ changeTarget: answers.changeTarget,
     correctedDistance: (target: Target) => ports.recovery.distance(module.describeAttackRange(target) ?? null, Date.now()) });
-  const bookings = createAttackBookings({ recovery: ports.recovery, state: ports.state, module });
+  const bookings = createAttackBookings({ recovery: ports.recovery, state: ports.state, module, now: Date.now });
   const targeting: Targeting = { answers, reflect, skip, retire, threat: () => threat(module), records: ring.entries, bookings,
     // The target call stays adopted after a stop, as shared.js keeps running until the loader
     // stops it too.

@@ -25,8 +25,8 @@ import type { InventoryEntry } from "./inventory-entry";
 
 // Mounting every row of the catalog (hundreds, each with a sprite, labels and a compare button)
 // froze the tab for seconds on open, so the dialog renders ROW_BATCH rows and adds more as you
-// scroll.
-const ROW_BATCH = 120;
+// scroll. The next batch mounts once the panel is within NEAR_BOTTOM_PX of its end.
+export const ROW_BATCH = 120, NEAR_BOTTOM_PX = 400;
 
 export const EquipmentCatalogDialog = memo(function EquipmentCatalogDialog({
   open,
@@ -285,7 +285,7 @@ export const EquipmentCatalogDialog = memo(function EquipmentCatalogDialog({
         <div className="min-h-0 flex-1 overflow-y-auto" onScroll={(event) => {
           const panel = event.currentTarget;
           if (open && visibleCount < rows.length &&
-              panel.scrollHeight - panel.scrollTop - panel.clientHeight <= 400)
+              panel.scrollHeight - panel.scrollTop - panel.clientHeight <= NEAR_BOTTOM_PX)
             setVisibleCount(Math.min(visibleCount + ROW_BATCH, rows.length));
         }}>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">

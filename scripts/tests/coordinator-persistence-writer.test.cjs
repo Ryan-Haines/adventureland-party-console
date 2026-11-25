@@ -14,9 +14,10 @@ test('settings persist selections, market and production before settings and exc
  state.monsterFocus=['bat'];writer.settings();assert.deepEqual(writes.find((write,index)=>index>3&&write[0]==='party_dashboard_selections_state_v1')[1].monsterFocus,['bat']);
 });
 test('persistence writes separate roster, bank, capped history and authentication documents',()=>{
- const writes=[],state={headlessSlots:['F'],bankbois:{B:{}},merchantActivity:Array.from({length:501},(_,i)=>i),settingsChanges:[],combatLogs:{F:Array.from({length:501},(_,i)=>i)},aldata:{key:'key',auth:'YES',requestTimes:[1]}};
+ const kept=hidden('historyKept');
+ const writes=[],state={headlessSlots:['F'],bankbois:{B:{}},merchantActivity:Array.from({length:kept+1},(_,i)=>i),settingsChanges:[],combatLogs:{F:Array.from({length:kept+1},(_,i)=>i)},aldata:{key:'key',auth:'YES',requestTimes:[1]}};
  const writer=createCoordinatorPersistence(state,recordingStorage(writes),{setTimeout,clearTimeout});writer.roster();writer.bank();writer.historyNow();writer.aldata();
- assert.deepEqual(writes.map(x=>x[0]),['party_dashboard_roster_state_v1','party_dashboard_bank_state_v1','party_dashboard_history_state_v1','party_dashboard_aldata_state_v1']);assert.deepEqual(writes[0][1],{headlessSlots:['F']});assert.deepEqual(writes[1][1],{bankbois:{B:{}}});assert.equal(writes[2][1].merchantActivity[0],1);assert.equal(writes[2][1].combatLogs.F.length,500);assert.deepEqual(writes[3][1],{key:'key',auth:'YES'});
+ assert.deepEqual(writes.map(x=>x[0]),['party_dashboard_roster_state_v1','party_dashboard_bank_state_v1','party_dashboard_history_state_v1','party_dashboard_aldata_state_v1']);assert.deepEqual(writes[0][1],{headlessSlots:['F']});assert.deepEqual(writes[1][1],{bankbois:{B:{}}});assert.equal(writes[2][1].merchantActivity[0],1);assert.equal(writes[2][1].combatLogs.F.length,kept);assert.deepEqual(writes[3][1],{key:'key',auth:'YES'});
 });
 test('failed first settings write prevents the second write',()=>{
  let calls=0;const writer=createCoordinatorPersistence({aldata:{}},{set(){calls++;throw Error('disk');}},{setTimeout,clearTimeout});
@@ -102,7 +103,6 @@ test('the run stop clears a pending history save',()=>{
  assert.deepEqual(cleared,started);
 });
 // Settings layout 2: docs/efficiency.md (Persistence), failure inventory P3 items 4-11.
-const SETTINGS_LIVENESS_MS=hiddenValue('settingsLivenessMs');
 function settingsFixture(t){
  const fs=require('node:fs'),path=require('node:path');
  const {CoordinatorJsonlStore}=require('../../runtime/settings/coordinator/persistence/jsonl-store.ts');
@@ -130,19 +130,21 @@ function liveness(state){
 test('liveness timestamps save at most once per window and never rewrite market or production',t=>{
  const {state,writer,records}=settingsFixture(t);
  writer.settings();const base={settings:records('settings').length,market:records('market').length,production:records('production').length};
+ // A liveness change each second for two settingsLivenessMs windows and a few seconds more. Mocked
+ // time starts at 1_000_000 ms: each save lands as its window opens, carrying the second before it.
+ const window=hidden('settingsLivenessMs'),seconds=2*window/1000+5;
  let lastSeen=0;
- for(let second=1;second<=65;second++){liveness(state);writer.scheduleSettings();t.mock.timers.tick(1000);if(second===29)lastSeen=Date.now();}
+ for(let second=1;second<=seconds;second++){liveness(state);writer.scheduleSettings();t.mock.timers.tick(1000);if(second===window/1000-1)lastSeen=Date.now();}
  const saved=records('settings').slice(base.settings);
- // Mocked time starts at 1_000_000 ms: the saves land when the 30 s window opens after second 29 and second 59.
- assert.deepEqual(saved.map(doc=>doc.eventAttendance.F.mrpumpkin.lastLiveAt),[1_000_000+29_000,1_000_000+59_000],'one save per 30 s window');
- assert.equal(lastSeen,1_000_000+29_000);
+ assert.deepEqual(saved.map(doc=>doc.eventAttendance.F.mrpumpkin.lastLiveAt),[1_000_000+window-1000,1_000_000+2*window-1000],'one save per settingsLivenessMs window');
+ assert.equal(lastSeen,1_000_000+window-1000);
  assert.equal(records('market').length,base.market);assert.equal(records('production').length,base.production);
 });
 test('a material change saves within a second and carries pending timestamps',t=>{
  const {state,writer,records}=settingsFixture(t);
  writer.settings();const before=records('settings').length;
- liveness(state);writer.scheduleSettings();t.mock.timers.tick(1000);assert.equal(records('settings').length,before);
- liveness(state);const at=Date.now();state.threshold=2;writer.scheduleSettings();t.mock.timers.tick(1000);
+ liveness(state);writer.scheduleSettings();t.mock.timers.tick(hidden('settingsSaveDelayMs'));assert.equal(records('settings').length,before);
+ liveness(state);const at=Date.now();state.threshold=2;writer.scheduleSettings();t.mock.timers.tick(hidden('settingsSaveDelayMs'));
  const saved=records('settings');assert.equal(saved.length,before+1);
  assert.equal(saved.at(-1).threshold,2);assert.equal(saved.at(-1).eventAttendance.F.mrpumpkin.lastLiveAt,at);
 });
@@ -156,7 +158,7 @@ test('other changes inside liveness fields save within a second',t=>{
   ()=>{state.eventSessions.F.participants.push('G');},
   ()=>{state.standPriceHistory.coat.recent=11;},
  ]){
-  t.mock.timers.tick(1000);change();writer.scheduleSettings();t.mock.timers.tick(1000);
+  t.mock.timers.tick(hidden('settingsSaveDelayMs'));change();writer.scheduleSettings();t.mock.timers.tick(hidden('settingsSaveDelayMs'));
   assert.equal(records('settings').length,++count);
  }
 });

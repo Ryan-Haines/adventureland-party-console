@@ -136,12 +136,12 @@ export function createGathering(p: GatheringPorts) {
     await untilGame(act, OWN_UPDATE, () => channelling() || serverCooldownUntil(m) > castAt || !current(), CAST_APPEAR_MS);
     if (!current()) return false;
     const end = castAt + (Number((G as any).skills[m] && (G as any).skills[m].duration_max) || 15000) + CAST_OVERRUN_MS;
-    await untilGame(act, OWN_UPDATE, () => !channelling() || !current(), Math.max(0, end - Date.now()));
+    await untilGame(act, OWN_UPDATE, () => !channelling() || !current(), Math.max(0, end - p.now()));
     if (!current()) return false;
     if (channelling()) bound('CAST_OVERRUN_MS', { mode: m, castAt });
-    await untilGame(act, OWN_UPDATE, () => serverCooldownUntil(m) > Date.now() || !current(), CAST_SETTLE_MS);
+    await untilGame(act, OWN_UPDATE, () => serverCooldownUntil(m) > p.now() || !current(), CAST_SETTLE_MS);
     if (!current()) return false;
-    return serverCooldownUntil(m) > Date.now();
+    return serverCooldownUntil(m) > p.now();
   }
 
   // Gathering's notices: each phase of the attempt's holder,
@@ -184,14 +184,14 @@ export function createGathering(p: GatheringPorts) {
     if (p.moving()) await p.stop('move');
     // Stillness counts from the last position the character's update moved; with no update since,
     // the wait ends SETTLE_STILL_MS after it.
-    let stillSince = Date.now(), previousX = Number(c.x), previousY = Number(c.y);
+    let stillSince = p.now(), previousX = Number(c.x), previousY = Number(c.y);
     const settled = () => {
       if (!current()) return true;
       const x = Number(c.x), y = Number(c.y);
-      if (p.moving() || Math.abs(x - previousX) >= 0.05 || Math.abs(y - previousY) >= 0.05) stillSince = Date.now();
+      if (p.moving() || Math.abs(x - previousX) >= 0.05 || Math.abs(y - previousY) >= 0.05) stillSince = p.now();
       previousX = x;
       previousY = y;
-      return !p.moving() && Date.now() - stillSince >= SETTLE_STILL_MS;
+      return !p.moving() && p.now() - stillSince >= SETTLE_STILL_MS;
     };
     const still = await untilGame(act, OWN_UPDATE, settled, SETTLE_WITHIN_MS, () => stillSince + SETTLE_STILL_MS);
     if (!current()) throw itemFailure('interrupted');
@@ -320,11 +320,11 @@ export function createGathering(p: GatheringPorts) {
     waitMessage = null;
     const m = mode, s = session, c = p.character();
     let release!: () => void;
-    const holder: GatheringHolder = { kind: 'gathering', id: Date.now() + ':' + Math.random().toString(36).slice(2), mode: m,
-      phase: 'travel', owner: runner.runtimeId, startedAt: Date.now(), cancelled: null, done: new Promise<void>(resolve => { release = resolve; }) };
+    const holder: GatheringHolder = { kind: 'gathering', id: p.now() + ':' + Math.random().toString(36).slice(2), mode: m,
+      phase: 'travel', owner: runner.runtimeId, startedAt: p.now(), cancelled: null, done: new Promise<void>(resolve => { release = resolve; }) };
     // The rest at the open stand needs no holder: the next tick reads it from the game again.
     s.cooldownUntil = Math.max(Number(s.cooldownUntil) || 0, syncGatheringCooldown(m));
-    const cooling = s.cooldownUntil > Date.now() || p.onCooldown(m);
+    const cooling = s.cooldownUntil > p.now() || p.onCooldown(m);
     if (cooling && resting(s)) return;
     if (!runner.take(holder, true)) return;
     tell('merchant.gathering.phase', { mode: m, phase: holder.phase });
@@ -398,7 +398,7 @@ export function createGathering(p: GatheringPorts) {
           await p.sleep(hooks.calls.window());
           if (!current()) return;
         }
-        const castAt = Date.now();
+        const castAt = p.now();
         const gatheringResult = await use_skill(m as any);
         if (!current()) return;
         const caught = await gatheringOutcome(m, gatheringResult, castAt, current);
@@ -408,8 +408,8 @@ export function createGathering(p: GatheringPorts) {
         // The server starts the reuse cooldown (skill_timeout) only on a success; a miss costs MP and
         // can be cast again at once.
         const serverCooldown = serverCooldownUntil(m);
-        s.cooldownUntil = !caught ? 0 : serverCooldown > Date.now() ? serverCooldown :
-          Date.now() + (Number((G as any).skills[m] && (G as any).skills[m].reuse_cooldown) || 0);
+        s.cooldownUntil = !caught ? 0 : serverCooldown > p.now() ? serverCooldown :
+          p.now() + (Number((G as any).skills[m] && (G as any).skills[m].reuse_cooldown) || 0);
         cooldowns[m] = s.cooldownUntil;
         phase(holder, 'travel');
         if (p.freeSlots() <= p.protectedSlots()) {
@@ -424,7 +424,7 @@ export function createGathering(p: GatheringPorts) {
         // The server's own cooldown answer, else the skill's reuse_cooldown, else COOLDOWN_FALLBACK_MS (3.12).
         const reuse = Number((G as any).skills[m] && (G as any).skills[m].reuse_cooldown);
         if (!(reportedCooldown > 0) && !reuse) bound('COOLDOWN_FALLBACK_MS', { mode: m, error: String(error.reason || error.message) });
-        s.cooldownUntil = Math.max(serverCooldownUntil(m), Date.now() + (reportedCooldown > 0 ? reportedCooldown : reuse || COOLDOWN_FALLBACK_MS));
+        s.cooldownUntil = Math.max(serverCooldownUntil(m), p.now() + (reportedCooldown > 0 ? reportedCooldown : reuse || COOLDOWN_FALLBACK_MS));
         cooldowns[m] = s.cooldownUntil;
         gatheringStatus(label(m) + ' cooldown detected; returning to stand', 'info');
         return;
@@ -443,9 +443,9 @@ export function createGathering(p: GatheringPorts) {
       const needed = Number((G as any).skills[m] && (G as any).skills[m].level) || 0;
       if (c.level < needed) retry = () => c.level >= needed;
       else {
-        const at = Date.now() + FAILURE_RETRY_MS;
+        const at = p.now() + FAILURE_RETRY_MS;
         retry = () => {
-          if (Date.now() < at) return false;
+          if (p.now() < at) return false;
           bound('FAILURE_RETRY_MS', { mode: m, reason });
           return true;
         };
@@ -499,7 +499,7 @@ export function createGathering(p: GatheringPorts) {
     const holding = runner.record();
     if (holding && !(holding.kind === 'idle' && holding.phase === 'open')) return;
     if (!enabled.length) { if (mode) setGathering(null); return; }
-    const ready = enabled.filter(m => syncGatheringCooldown(m) <= Date.now() && !p.onCooldown(m));
+    const ready = enabled.filter(m => syncGatheringCooldown(m) <= p.now() && !p.onCooldown(m));
     const choice = ready[0] || enabled.slice().sort((a, b) => syncGatheringCooldown(a) - syncGatheringCooldown(b))[0];
     if (choice !== mode) setGathering(choice);
   }
@@ -515,8 +515,8 @@ export function createGathering(p: GatheringPorts) {
       // The hands go back to normal under a gathering holder in its `restoring` phase, so no command
       // runs beside the swap; a holder already there met `settle`, which restored them.
       let done!: () => void;
-      const restoring: GatheringHolder = { kind: 'gathering', id: 'restore:' + Date.now(), mode: oldSession ? oldSession.mode : '', phase: 'restoring',
-        owner: runner.runtimeId, startedAt: Date.now(), cancelled: null, done: new Promise<void>(resolve => { done = resolve; }) };
+      const restoring: GatheringHolder = { kind: 'gathering', id: 'restore:' + p.now(), mode: oldSession ? oldSession.mode : '', phase: 'restoring',
+        owner: runner.runtimeId, startedAt: p.now(), cancelled: null, done: new Promise<void>(resolve => { done = resolve; }) };
       if (runner.take(restoring)) p.restoreEquipment(() => !mode && runner.record() === restoring && !restoring.cancelled)
         .catch(() => { /* The restore reports its own status. */ }).finally(() => { runner.release(restoring); done(); });
       return;
@@ -528,7 +528,7 @@ export function createGathering(p: GatheringPorts) {
         baseline: gatheringBaseline(), cooldownUntil: Number(cooldowns[next]) || 0 };
     // The cooldown notice is written once per cooldown, keyed by the game's cooldown end.
     const until = Number(session.cooldownUntil) || 0;
-    if (!runner.holder() && until > Date.now()) {
+    if (!runner.holder() && until > p.now()) {
       if (noticedCooldown !== until) { noticedCooldown = until; gatheringStatus(label(next) + ' cooling down; will resume automatically', 'info', undefined, true); }
     } else if (!runner.holder()) gatheringStatus('Preparing to go ' + next, 'info');
     gatheringTick();

@@ -122,17 +122,23 @@ test('source-derived likelihoods do not treat one zero or a low average as proof
  assert.notEqual(ordinary.slot,7);assert.equal(ordinary.inferred,false);
 });
 test('rotating search converges on a simulated lucky slot using only scheduled attempts',()=>{
- const {luckySlotSearch,emptyRolls}=require('../../runtime/items/rules.ts');
+ const {luckySlotSearch,emptyRolls,LUCKY_CONFIDENCE,LUCKY_HIGH_ROLL}=require('../../runtime/items/rules.ts');
+ const {performance}=require('node:perf_hooks'),{ROW_TIMEOUT_MS}=require('./fixtures/scenarios.cjs');
  let seed=12345;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
  const tracking={version:1,slots:{}};let decision=luckySlotSearch(tracking);
- for(let attempt=0;attempt<25000 && !decision.inferred;attempt++){
+ // Slot 23 rolls as the server's lucky slot: 60% of its rolls take max(U/10000, 0.975R - 0.012)
+ // (rules.ts LUCKY_HIGH_ROLL's source). The seeded search ends on its own; ROW_TIMEOUT_MS, the
+ // harness's hang guard, only stops a search that never infers.
+ const end=performance.now()+ROW_TIMEOUT_MS;
+ for(let attempt=0;!decision.inferred;attempt++){
+  assert.ok(performance.now()<end,'the search never inferred a slot');
   const slot=decision.nextSlot;let roll=random();if(slot===23 && random()<0.6)roll=Math.max(random()/10000,roll*0.975-0.012);
   roll=Math.floor(roll*10000)/10000;const stats=tracking.slots[slot]??=emptyRolls();
-  stats.totalRolls++;stats.sumRolls+=roll;if(roll===0)stats.perfectRolls++;if(roll>0.963)stats.rollsAbove96_3++;
+  stats.totalRolls++;stats.sumRolls+=roll;if(roll===0)stats.perfectRolls++;if(roll>LUCKY_HIGH_ROLL)stats.rollsAbove96_3++;
   tracking.cursor={slot:(slot+1)%42,at:attempt+1,rolls:attempt+1};
   decision=luckySlotSearch(tracking);
  }
- assert.equal(decision.inferred,true);assert.equal(decision.slot,23);assert.ok(decision.confidence>=0.999);
+ assert.equal(decision.inferred,true);assert.equal(decision.slot,23);assert.ok(decision.confidence>=LUCKY_CONFIDENCE);
  assert.deepEqual(luckySlotSearch(JSON.parse(JSON.stringify(tracking))),decision);
 });
 test('the character records listener packets, persists data and ignores retired runtime packets',t=>{

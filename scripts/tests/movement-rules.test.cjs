@@ -15,6 +15,8 @@ const rankOf=request=>require('../../runtime/protocol/ranks.ts').TIERS[tierOf(re
 
 
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
+// The lifecycle owner's stale bound for a silent runtime, as runtime/lifecycle/coordinator/lost.ts reads it.
+const STALE_MS=require('../../runtime/lifecycle/fields.ts').lifecycleSavedFields.settings.steamRunnerStaleMs.default;
 // The walk's cruise asks the call budget (executor.ts sendCruise), which answers send here.
 require('./helpers/planted-calls.cjs').plantCalls();
 const {r,decision,task}=require('./fixtures/movement-rules-scenario.cjs');
@@ -1779,7 +1781,7 @@ scenarioTable('a walk never waits on silence', () => {
  // `runtime-lost`, movement's own rule, lets the member go and
  // names itself; `member.holder` answers no lost runtime (reads only `consoleMaintenance`).
  // The user's decision of 2026-11-17: every member silent at once holds the walk until 13 judges them
- // lost on its stale bound (steamRunnerStaleMs, 20 s), and then the walk lets them go. The live Boo
+ // lost on its stale bound (steamRunnerStaleMs), and then the walk lets them go. The live Boo
  // Boo row dropped both report channels and both left the walk at 1.9 s.
  ['every member silent at once holds the walk until 13 judges them lost, then lets them go (red: all leave at once)', ({ p, c, step, told }) => {
   for (const n of c.participants) p.statuses[n].reportIntervalMs = 1000;
@@ -1787,7 +1789,7 @@ scenarioTable('a walk never waits on silence', () => {
   step(1000); told.length = 0; step(3500, all);
   assert.deepEqual(c.participants, all, 'the walk keeps every member while 13 has not judged them lost');
   assert.equal(p.activeConvoy, c);
-  step(1000 + 20_000, all);
+  step(1000 + STALE_MS, all);
   assert.equal(p.activeConvoy, null, 'at the stale bound the walk lets them go');
   assert.deepEqual(told.filter(n => n.change === 'left').map(n => n.member).sort(), [...all].sort());
  }],
@@ -1802,7 +1804,7 @@ scenarioTable('a walk never waits on silence', () => {
   step(4000, [leader]);
   assert.deepEqual(c.participants, all, 'the silent leader stays while 13 has not judged it lost');
   assert.equal(c.leader, leader);
-  step(1000 + 20_000, [leader]);
+  step(1000 + STALE_MS, [leader]);
   assert.ok(!c.participants.includes(leader), 'at the stale bound the silent leader leaves');
  }],
  // The rerun of that row on this fix: the priest's last report came a second before the warrior's,
@@ -1813,7 +1815,7 @@ scenarioTable('a walk never waits on silence', () => {
   step(1000); step(1800, [first]);
   step(3100, all);
   assert.deepEqual(c.participants, all, 'the first silent member stays while the others are a report late');
-  step(1800 + 20_000, all);
+  step(1800 + STALE_MS, all);
   assert.equal(p.activeConvoy, null, 'at the stale bound the walk lets them go');
  }],
  // The end run on a699982a7: the hold began with the warrior alone, the priest fell silent a report

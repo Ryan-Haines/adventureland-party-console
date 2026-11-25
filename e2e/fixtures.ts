@@ -256,11 +256,10 @@ export async function runRows<World>(world: World, info: TestInfo, page: Page, r
 }
 // A scenario table on the console fixture: the real coordinator and dashboard, no game server.
 // `start` reads the table's start once, before the first row, and returns the reset to it.
-export function consoleScenarioTable(title: string, timeoutMs: number,
+export function consoleScenarioTable(title: string,
   start: (app: App) => Promise<(app: App, info: TestInfo) => Promise<void>>, rows: TableRow<App>[]) {
   rows = onlyRows(title, rows);
   test(title, async ({app, page}, info) => {
-    test.setTimeout(timeoutMs);
     await runRows(app, info, page, rows, await start(app));
   });
 }

@@ -1,7 +1,7 @@
 const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {estimateUpgradeBatch}=require('../../runtime/items/rules.ts');
+const {estimateUpgradeBatch,ESTIMATE_YIELD_ROLLS}=require('../../runtime/items/rules.ts');
 const {createMerchantOrderRoute}=require('../../runtime/items/coordinator/routes/production.ts');
 // Numeric references use the native server grace expressions and native design/upgrades tables, independently of the shared estimator.
 const fixtures=require('./fixtures/upgrade-estimates.json');
@@ -16,7 +16,7 @@ test('an upgrade estimate counts its yields under ESTIMATE_YIELD_ROLLS once per 
  const example=fixtures.reduce((most,entry)=>entry.target>most.target?entry:most),cuts=[];
  const cut=(cap,owner,count)=>cuts.push([cap,owner,count]),line=[{choice:example.choice,quantity:example.quantity+1,target:example.target}];
  const [result]=await estimateUpgradeBatch(line,undefined,()=>new Promise(resolve=>setImmediate(resolve)),cut);
- assert.ok(result.rolls>=32768,'the batch rolls past one yield');
+ assert.ok(result.rolls>=ESTIMATE_YIELD_ROLLS,'the batch rolls past one yield');
  assert.deepEqual(cuts.map(([cap,owner])=>[cap,owner]),[['ESTIMATE_YIELD_ROLLS','10']]);
  assert.ok(cuts[0][2]>=1);
  await estimateUpgradeBatch(line,undefined,()=>new Promise(resolve=>setImmediate(resolve)),cut);

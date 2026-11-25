@@ -19,7 +19,8 @@ export type LuckPorts = Record<string, any>;
 // (`next_skill.mluck`), which a party trip can reach before it clears; READY_WAIT_MS bounds that
 // wait against a cooldown the game never ends, and the next cast goes out once the game answers
 // the last one (`use_skill`'s promise).
-const REFRESH_BELOW_MS = 600_000, READY_WAIT_MS = 5_000, PUBLIC_LIMIT = 12, WALKING_LIMIT = 4;
+const REFRESH_BELOW_MS = 600_000, PUBLIC_LIMIT = 12, WALKING_LIMIT = 4;
+export const READY_WAIT_MS = 5_000;
 const { range: RANGE, level: LUCK_LEVEL } = MERCHANT_LUCK;
 // The game's answers that mean "not this player now", which are no failure.
 const QUIET_REFUSALS = ['cooldown', 'too_far', 'not_found', 'already'];

@@ -33,7 +33,7 @@ function fixture(mode = 'fishing') {
  return {c,g,cast,logs};
 }
 // The settle waits for 500 ms of stillness by the clock (3.12), so a cast starts about 0.5 s in.
-async function phase(c,want) { for(let i=0;i<300 && c.root.__merchantHolder?.phase!==want;i++) await new Promise(r=>setTimeout(r,5)); assert.equal(c.root.__merchantHolder?.phase,want); }
+async function phase(c,want) { await until(()=>c.root.__merchantHolder?.phase===want,'the holder phase '+want); }
 async function casting(c) { await phase(c,'cast'); }
 
 test('both gathering modes approach precisely despite a nearby client access indicator',async()=>{
@@ -144,8 +144,10 @@ test('a code reload ends the old attempt, and its release leaves a newer holder 
 
 test('movement rejection reconciles server cooldown and releases ownership',async()=>{
  const {c,g,cast,logs}=fixture();const work=g.gatheringTick();await casting(c);
- c.parent={next_skill:{fishing:new Date(Date.now()+20000)}};cast.reject({reason:'moving'});await work;g.halt();
- assert.ok(c.root.__merchantGatheringSession.cooldownUntil>Date.now());assert.equal(c.root.__merchantHolder,null);
+ // From the cast on the planted clock stands still; the server's cooldown is 20 s past it.
+ const now=Date.now();c.now=()=>now;
+ c.parent={next_skill:{fishing:new Date(now+20000)}};cast.reject({reason:'moving'});await work;g.halt();
+ assert.equal(c.root.__merchantGatheringSession.cooldownUntil,now+20000);assert.equal(c.root.__merchantHolder,null);
  assert.ok(logs.some(x=>typeof x==='string'&&x.includes('during cast: movement')));
 });
 
@@ -356,7 +358,7 @@ test('one command id runs once, a command letting go runs the pass at once, and 
  await g.gatheringTick();assert.equal(casts,0);
  // The release to none runs the pass with no tick between.
  c.merchantRunner.releaseCommand(31);assert.equal(c.merchantRunner.admit(31),true);c.merchantRunner.releaseCommand(31);
- for(let i=0;i<300 && !casts;i++) await new Promise(r=>setTimeout(r,5));
+ await until(()=>casts,'the cast after the release');
  assert.equal(casts,1);
  await until(()=>!c.root.__merchantHolder,'the gathering holder lets go');
  // A mode choice while a command holds waits: the session keeps its mode and catch baseline, and the
@@ -410,7 +412,7 @@ test('manual inventory ownership survives gathering mode rotation at cast releas
  assert.equal(await c.merchantRunner.accept({type:'equip',id:22}),true);await work;
  assert.deepEqual([c.root.__merchantGatheringSession.mode,c.root.__merchantHolder.kind,c.root.__merchantHolder.commandId],['fishing','command',22]);
  c.merchantRunner.releaseCommand(22);
- for(let i=0;i<300 && c.root.__merchantGatheringSession.mode!=='mining';i++) await new Promise(r=>setTimeout(r,5));
+ await until(()=>c.root.__merchantGatheringSession.mode==='mining','the rotation at the equip release');
  g.halt();assert.equal(c.root.__merchantGatheringSession.mode,'mining');
 });
 
@@ -429,12 +431,16 @@ test('gathering status goes out on change, a level failure retries at the level,
  let castDone;c.use_skill=()=>new Promise(resolve=>{castDone=resolve;});
  try{
   const work=g.gatheringTick();assert.equal(c.root.__merchantGatheringBlockedReason,null);await casting(c);
-  for(let i=0;i<300&&!castDone;i++) await new Promise(r=>setTimeout(r,5));
-  // The older client resolves the cast at the channel's start, with no `found`.
-  c.character.c={fishing:{ms:5000}};castDone(undefined);await new Promise(r=>setTimeout(r,20));socket.emit('player',{});
-  const ended=Date.now();c.character.c={};c.parent={next_skill:{fishing:new Date(Date.now()+10000)}};socket.emit('player',{});
+  await until(()=>castDone,'the cast');
+  // The older client resolves the cast at the channel's start, with no `found`. From here the clock
+  // stands still, so only the game's update can end the cast's wait.
+  const frozen=Date.now();c.now=()=>frozen;
+  let finished=false;work.then(()=>{finished=true;});
+  c.character.c={fishing:{ms:5000}};castDone(undefined);await settle();socket.emit('player',{});
+  c.character.c={};c.parent={next_skill:{fishing:new Date(c.now()+10000)}};socket.emit('player',{});
+  await settle();
+  assert.equal(finished,true,'the outcome follows the update, not a timer');
   await work;g.halt();
-  assert.ok(Date.now()-ended<500,'the outcome follows the update, not a timer');
   assert.ok(logs.includes('Caught an item'));
  }finally{window.socket=previous;}
 });

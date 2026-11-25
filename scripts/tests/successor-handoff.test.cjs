@@ -4,6 +4,8 @@ require('./helpers/requesters.cjs').publishPresence();
 const {fightSelection}=require('../../runtime/coordinator/targeting/queue.ts');
 const {authorizeSuccessor}=require('../../runtime/coordinator/targeting/queue.ts');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
+// One past the declared grant life, at which a grant has lapsed.
+const lapsed=()=>require('../../runtime/characters/targeting/saved-fields.ts').pick('successorGrantMs')+1;
 const {fixture,clientFixture}=require('./fixtures/successor-handoff-scenario.cjs');
 const monster=(id,x=80)=>({id,mtype:'stoneworm',map:'cave',in:'cave',x,y:0,priority:50});
 scenarioTable("the coordinator grants a successor target only while the fight and the Hunt allow it", ()=>fixture, [
@@ -17,7 +19,7 @@ scenarioTable("the coordinator grants a successor target only while the fight an
  ['count decrement and death in one report do not double-count kill', fixture=>{
  const f=fixture(3);f.death('A');f.policy.hunt.count=2;f.tick();f.tick();assert.equal(f.group.successorGrant.successor.id,'C');}],
  ['partial acknowledgements never create a grant', fixture=>{
- const f=fixture();f.advance(3100);f.policy.allowed=false;f.tick();f.policy.allowed=true;
+ const f=fixture();f.advance(lapsed());f.policy.allowed=false;f.tick();f.policy.allowed=true;
  f.members[0].status.groupedCombat.handoff.pairAck=null;f.tick(false);assert.equal(f.group.successorGrant,undefined);}],
  ['revocation waits for every recipient or expiry before an incompatible grant', fixture=>{
  const f=fixture(),id=f.group.successorGrant.id;f.policy.allowed=false;f.tick();
@@ -64,7 +66,7 @@ scenarioTable("the coordinator grants a successor target only while the fight an
  for(const m of f.members)m.status.groupedCombat.handoff.revokedAck=id;
  f.members[0].status.combatSelection.runtimeId='new';
  assert.equal(f.tick().successorGrant.revoking,true);
- f.advance(3100);assert.equal(f.tick().successorGrant,undefined);}],
+ f.advance(lapsed());assert.equal(f.tick().successorGrant,undefined);}],
  ...[0,1,2,3].map((count)=>['Hunt remaining count reserves current kill: '+count, fixture=>{
  const f=fixture(count);assert.equal(!!f.group.successorGrant,count>=2);
 }]),

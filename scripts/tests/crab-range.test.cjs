@@ -41,15 +41,16 @@ test('the attack bookings hand a fresh too_far reply to the crab range recovery'
   const rejected=[],evidence=[],state={},range=sample();
   const recovery={reject:(r,reply,at)=>rejected.push([r,reply,at]),diagnostic:()=>({rejected:rejected.length})};
   const module={queueEvidence:(target,s,action)=>(evidence.push([s,action??null]),'send-1'),noteAttack(){}};
-  const bookings=createAttackBookings({recovery,state:()=>state,module});
+  // The bookings read their clock port; the planted clock stands still.
+  const now=1_000_000,bookings=createAttackBookings({recovery,state:()=>state,module,now:()=>now});
   let current=true;const context={target:{id:'crab-1'},range,passing:false,current:()=>current};
   bookings.sent({context});
-  bookings.settled({context,outcome:'rejected',reason:'too_far',sentAt:Date.now()-pick('crabReplyMs')-1,reply:{}});
+  bookings.settled({context,outcome:'rejected',reason:'too_far',sentAt:now-pick('crabReplyMs')-1,reply:{}});
   assert.equal(rejected.length,0,'a reply outside the window is not this send');
-  bookings.settled({context,outcome:'rejected',reason:'too_far',sentAt:Date.now(),reply:{dist:1}});
-  assert.equal(rejected.length,1);assert.equal(rejected[0][0],range);
+  bookings.settled({context,outcome:'rejected',reason:'too_far',sentAt:now-pick('crabReplyMs'),reply:{dist:1}});
+  assert.equal(rejected.length,1);assert.deepEqual([rejected[0][0],rejected[0][2]],[range,now]);
   assert.deepEqual(state.rangeRecovery,{rejected:1},'the card shows the recovery');
-  current=false;bookings.settled({context,outcome:'rejected',reason:'too_far',sentAt:Date.now(),reply:{}});
+  current=false;bookings.settled({context,outcome:'rejected',reason:'too_far',sentAt:now,reply:{}});
   assert.equal(rejected.length,1,'a target the selection no longer holds is not corrected');
   assert.deepEqual(evidence,[['pending',null],['rejected','send-1'],['rejected','send-1'],['rejected','send-1']]);
 });

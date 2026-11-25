@@ -447,7 +447,8 @@ export function endingOf(facts: EndingFacts): EndingRow | null {
 // job, doubling to its cap. Both backoffs are bounds against an outside failure, and each one booked
 // goes to the status owner's bound record. `cleanout-repeat` is a partial cleanout's next pickup.
 const ENDING_RETRY_MS = 10_000;
-const COMMERCE_RETRY_MS = [10_000, 30_000, 60_000, 300_000] as const;
+// b9b5c91e's schedule; QUESTIONS.md U3 queues its progress rule for owner 08 (REVIEW-QUEUE.md).
+export const COMMERCE_RETRY_MS = [10_000, 30_000, 60_000, 300_000] as const;
 const RECOVERY_RETRY_MS = 20_000, RECOVERY_RETRY_CAP_MS = 300_000;
 export function endingWaitMs(wait: EndingWait | 'recovery' | 'cleanout-repeat', attempt = 1): number {
   if (wait === 'none') return 0;
@@ -695,8 +696,9 @@ function validOverride(value: number | undefined): value is number {
 }
 
 export function merchantJobPriority(job: PrioritizedJob, policy: PriorityPolicy): number {
-  // An outbound handoff must release staging before optional merchant work.
-  if (policy.completesStorageHandoff(job)) return 101;
+  // An outbound handoff must release staging before optional merchant work, so it ranks one above
+  // the highest routine priority.
+  if (policy.completesStorageHandoff(job)) return ROUTINE_PRIORITY.max + 1;
   if (validOverride(job.priorityOverride)) return job.priorityOverride;
   const override = job.manual !== true && job.bidItemId ? policy.bids[job.bidItemId]?.priorityOverride : undefined;
   return validOverride(override) ? override : merchantRoutinePriority(migrateRoutinePriorities(policy.routines), routineFor(job));

@@ -3,6 +3,8 @@ require('./fixtures/coordinator-core.cjs');
 const {formationRecovery}=require('../../runtime/movement/coordinator/recovery.ts');
 const {evaluateGroup}=require('../../runtime/coordinator/targeting/queue.ts');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
+// The client rows wait on the planner's answer by its state, bounded by the row (helpers/settle.cjs).
+const {until}=require('./helpers/settle.cjs');
 const {identity,recoveryFixture:fixture,blockedCoverageFixture}=require('./fixtures/formation-recovery-scenario.cjs');
 const {recoveryClient}=require('./fixtures/formation-recovery-client.cjs');
 // The staging goals are the rungs of the owner's progress ladder. Without progress each
@@ -147,7 +149,7 @@ scenarioTable("the recovery client walks the mover's route and certifies followe
  const alternative={x:80,y:0},blocked={x:240,y:0};
  const c=client({segmentClear:(a,b)=>b.x!==blocked.x,safe:()=>true});
  c.control.goal=blocked;c.control.goals=[blocked,alternative];c.api.accept(c.control);
- for(let i=0;i<10&&c.journey.driver;i++){c.journey.driver.tick();await new Promise(setImmediate);}
+ await until(()=>{if(!c.journey.driver)return true;c.journey.driver.tick();},'the driver ends');
  assert.equal(c.api.report().outcome,'arrived');assert.deepEqual({x:c.self.x,y:c.self.y},alternative);assert.equal(c.starts,1);}],
  ['certified role terminal may stay outside follow forty while inside the existing healing envelope', client=>{
  const goal={x:240,y:0},terminal={x:120,y:0};
@@ -159,11 +161,9 @@ scenarioTable("the recovery client walks the mover's route and certifies followe
   const t=length?Math.max(0,Math.min(1,((monster.x-a.x)*dx+(monster.y-a.y)*dy)/length)):0;
   return gap({x:a.x+dx*t,y:a.y+dy*t})>=Math.min(gap(a),193)-0.01;};
  const c=client({segmentClear:clear,endpointSafe:p=>gap(p)>193});Object.assign(c.self,{x:-344.13,y:-437.24});
- let point;for(let i=0;i<300&&!point;i++){point=c.api.followPoint({x:-427,y:-334});await new Promise(setImmediate);}
- assert.ok(point);Object.assign(c.self,point);assert.equal(c.api.followPoint({x:-427,y:-334}),undefined);
+ const point=await until(()=>c.api.followPoint({x:-427,y:-334}),'a follow point');Object.assign(c.self,point);assert.equal(c.api.followPoint({x:-427,y:-334}),undefined);
  const shifted={x:-442,y:-319};assert.ok(Math.hypot(c.self.x-shifted.x,c.self.y-shifted.y)>40);
- let next;for(let i=0;i<300&&!next;i++){next=c.api.followPoint(shifted);await new Promise(setImmediate);}
- assert.ok(next,'A completed terminal outside current follow40 must not leave the follower stuck');
+ const next=await until(()=>c.api.followPoint(shifted),'A completed terminal outside current follow40 must not leave the follower stuck');
  assert.ok(clear(c.self,next));assert.ok(gap(next)>193);assert.ok(Math.hypot(next.x-shifted.x,next.y-shifted.y)<=40);}],
  ['coverage-blocked report is specific to the actual owned mover gate and clears when coverage resumes', client=>{
  let covered=false;const c=client({coveredStep:()=>covered,segmentClear:()=>true,stepSize:12});c.api.accept(c.control);
@@ -173,12 +173,13 @@ scenarioTable("the recovery client walks the mover's route and certifies followe
  const wall=(a,b)=>!((a.x<100&&b.x>=100||b.x<100&&a.x>=100)&&a.y+(b.y-a.y)*(100-a.x)/(b.x-a.x)<200);
  let c;c=client({segmentClear:wall,safe:p=>wall(c.self,p),stepSize:12});c.api.accept(c.control);assert.equal(c.starts,1);
  let farthest=0,headings=new Set();
- for(let i=0;i<400&&c.journey.driver;i++){
+ await until(()=>{
+  if(!c.journey.driver)return true;
   const before={...c.self};c.journey.driver.tick();
   if(c.self.x!==before.x||c.self.y!==before.y)headings.add(Math.round(Math.atan2(c.self.y-before.y,c.self.x-before.x)*10));
   farthest=Math.max(farthest,Math.hypot(c.self.x-240,c.self.y));
-  for(let j=0;j<3;j++)c.api.tick();await new Promise(setImmediate);
- }
+  for(let j=0;j<3;j++)c.api.tick();
+ },'the driver ends');
  assert.ok(farthest>240,'the route moves away from the target to get around the wall');assert.ok(headings.size>1,'the route turns at corners');
  assert.equal(c.api.report().outcome,'arrived');assert.equal(c.journey.driver,null);assert.equal(c.starts,1);}],
  ['pending follower search is planning rather than an unreachable report', client=>{
@@ -206,17 +207,17 @@ scenarioTable("the recovery client walks the mover's route and certifies followe
    return gap({x:a.x+dx*t,y:a.y+dy*t})>=Math.min(gap(a),safety)-0.01;};
   assert.ok(gap(leader)<safety,'Captured native leader endpoint is unsafe for the follower');
   const c=client({segmentClear:clear,endpointSafe:p=>gap(p)>safety});Object.assign(c.self,origin);
-  let point;for(let i=0;i<300&&!point;i++){point=c.api.followPoint(leader);await new Promise(setImmediate);}
-  assert.ok(point,'A certified safe follow terminal point must be found');assert.ok(clear(origin,point));
+  const point=await until(()=>c.api.followPoint(leader),'A certified safe follow terminal point must be found');assert.ok(clear(origin,point));
   assert.ok(gap(point)>safety);assert.ok(Math.hypot(point.x-leader.x,point.y-leader.y)<=40);
  }}],
  ['recovery planner and follower route around the same blocked segment without native failed-path retries', async client=>{
  const clear=(a,b)=>!((a.x<100&&b.x>=100||b.x<100&&a.x>=100) && a.y+(b.y-a.y)*(100-a.x)/(b.x-a.x)<60);
  let c;c=client({segmentClear:clear,safe:p=>clear(c.self,p),stepSize:12,plan(){throw Error('terrain-only planner used');}});
  c.api.accept(c.control);
- for(let i=0;i<150&&c.journey.driver;i++){
-  const previous={...c.self};c.journey.driver.tick();assert.ok(clear(previous,c.self));await Promise.resolve();
- }
+ await until(()=>{
+  if(!c.journey.driver)return true;
+  const previous={...c.self};c.journey.driver.tick();assert.ok(clear(previous,c.self));
+ },'the driver ends');
  assert.equal(c.api.report().outcome,'arrived');assert.equal(c.starts,1);
  c.self.x=0;c.self.y=0;
  let highest=0,clock=0;
@@ -224,13 +225,14 @@ scenarioTable("the recovery client walks the mover's route and certifies followe
  const exhausted=test.mock.method(performance,'now',()=>clock+=5);
  try{assert.equal(c.api.followPoint({x:240,y:0}),undefined);assert.deepEqual(c.self,previous);}
  finally{exhausted.mock.restore();}
- for(let i=0;i<150&&c.self.x<240;i++){
+ await until(()=>{
+  if(Math.hypot(c.self.x-240,c.self.y)<=40)return true;
   const point=c.api.followPoint({x:240,y:0});
-  if(!point){await new Promise(setImmediate);continue;}
+  if(!point)return;
   assert.ok(clear(c.self,point));
   c.self.x=point.x;c.self.y=point.y;highest=Math.max(highest,point.y);
- }
- assert.ok(highest>=60,'follower takes the opening instead of waiting at the wall');assert.ok(Math.hypot(c.self.x-240,c.self.y)<=40,'follower ends inside the follow ring');}],
+ },'follower ends inside the follow ring');
+ assert.ok(highest>=60,'follower takes the opening instead of waiting at the wall');}],
  ['role terminal callbacks cannot waive the independent live enemy endpoint certificate', client=>{
  const c=client({segmentClear:()=>true,endpointSafe:()=>false,followGoals:()=>[{x:120,y:0}],followTerminalValid:()=>true});
  assert.equal(c.api.followPoint({x:240,y:0}),undefined);}],

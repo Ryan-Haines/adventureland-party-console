@@ -45,7 +45,7 @@ test('doll opens locally without workspace renders or requests; equipment stays 
     assert.equal(observers('B'), 0, 'other characters do not get stats subscriptions');
     await act(async () => {
       client.setQueryData(characterKey('A', 'inventory'), { slots: { mainhand: { meta: { properties: { attack: 25 } } } } });
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await require('./helpers/settle.cjs').notified();
     });
     assert.equal(tree.root.findByType('stats-dialog').props.character.slots.mainhand.meta.properties.attack, 25);
     await act(async () => tree.update(render({ ...a, hp: 50 })));

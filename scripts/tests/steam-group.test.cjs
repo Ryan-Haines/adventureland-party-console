@@ -156,7 +156,7 @@ test('bulk completion waits for headless CODE and can finish without another Ste
 
 test('bulk recovery retains the failed subject and unprocessed queue',async()=>{
  const f=fixture(['P','M'],['Trader',null,null,null]);
- await f.service.allHeadless();f.advance(180001);f.service.expire();assert.equal(f.state.handoff.phase,'failed');
+ await f.service.allHeadless();f.advance(BOUND()+1);f.service.expire();assert.equal(f.state.handoff.phase,'failed');
  await f.service.recover();assert.equal(f.state.handoff.multi.subject,'M');assert.deepEqual(f.state.handoff.bulkRemaining,['P']);
  await f.release();f.service.observe('P',['P']);f.service.expire();await new Promise(r=>setImmediate(r));
  assert.equal(f.state.handoff.multi.subject,'P');
@@ -177,7 +177,8 @@ test('wrong-realm login waits without releasing ownership; Stay is scoped to eac
  f.ports.observedRealm=()=> 'SR_USIV';
  const op=await f.service.begin('primary','M');
  assert.equal(op.phase,'awaiting-realm-choice');assert.deepEqual(f.stopped,[]);
- f.advance(240000);f.service.expire();assert.equal(op.phase,'awaiting-realm-choice');
+ // The realm prompt outlives both the handoff bound and the phase expiry.
+ f.advance(BOUND()+hiddenValue('steamHandoffExpiryMs')+1);f.service.expire();assert.equal(op.phase,'awaiting-realm-choice');
  await f.service.chooseRealm(op.id,'stay');assert.deepEqual(f.stopped,['M']);assert.equal(op.destinationRealm,'SR_USIV');
  await f.release();f.service.observe('M',['P','M']);assert.equal(op.phase,'complete');
  f.online.delete('W');const next=await f.service.begin('login','W');assert.equal(next.phase,'awaiting-realm-choice');

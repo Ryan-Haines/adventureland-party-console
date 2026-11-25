@@ -565,6 +565,7 @@
   }
   var PONTY_RANGE = 500;
   var LOOT_RADIUS = 400;
+  var CHEST_OPENING_MS = 5e3;
   var COMPOUND_TARGET_MAX = 7;
   function maximumItemLevel(definition) {
     return definition?.compound ? COMPOUND_TARGET_MAX : definition?.upgrade ? UPGRADE_LEVEL_MAX : 0;
@@ -3626,6 +3627,7 @@
     "who may stop a journey": { at: "runtime/movement/rules.ts#judgeStop", core: "safety", cite: "runtime/movement/rules.ts:215, escape and death recovery always stop" },
     "a combat step during a journey, its point": { at: "runtime/movement/rules.ts#stepAllowed", hook: "step.point" },
     "a combat step during a journey, its safety": { at: "runtime/movement/rules.ts#stepAllowed", hook: "step.safety" },
+    "how far inside its range an approach aims": { at: "runtime/movement/rules.ts#insideRange", hook: "step.point" },
     "maps a route may cross": { site: "runtime/movement/coordinator/planner-service.ts:109", hook: "route.avoid" },
     "a crossing may go": { site: "runtime/movement/character/owner.ts:1293", hook: "crossing.allows" },
     "formation slot": { site: "runtime/movement/character/formation.ts:840", hook: "formation.routine" },
@@ -10748,6 +10750,7 @@ ${hook}`, was = errors.get(key3);
     NATIVE_FRONTIER_WINDOW_MS: () => NATIVE_FRONTIER_WINDOW_MS,
     PLANNER_POOL_SIZE: () => PLANNER_POOL_SIZE,
     PLANNER_QUEUE_CAP: () => PLANNER_QUEUE_CAP,
+    RANGE_MARGIN: () => RANGE_MARGIN,
     REPORT_STALL_DISTANCE: () => REPORT_STALL_DISTANCE,
     RETURN_ARRIVAL_RADIUS: () => RETURN_ARRIVAL_RADIUS,
     STOP_AND_STEP_BAND: () => STOP_AND_STEP_BAND,
@@ -10776,6 +10779,7 @@ ${hook}`, was = errors.get(key3);
     groupWalkActive: () => groupWalkActive,
     handsCombatOver: () => handsCombatOver,
     heldLabel: () => heldLabel,
+    insideRange: () => insideRange,
     isSafeAt: () => isSafeAt,
     journeyDeparture: () => journeyDeparture,
     judgeStop: () => judgeStop,
@@ -12306,6 +12310,10 @@ ${hook}`, was = errors.get(key3);
   var NATIVE_FRONTIER_WINDOW_MS = 15e3;
   var GEOMETRY_REPAIR_DEADLINE_MS = 6e4;
   var DOOR_DETOUR_EXPANSIONS = 2048;
+  var RANGE_MARGIN = 10;
+  function insideRange(range, floor) {
+    return Math.max(floor, (Number(range) || 1) - RANGE_MARGIN);
+  }
   var HUNT_TARGET_ARRIVAL = 50;
   var AREA_ARRIVAL_MARGIN = 100;
   function ownerOfTier(tier) {
@@ -12534,7 +12542,7 @@ ${hook}`, was = errors.get(key3);
       }
       let approach = desired == null ? desiredCombatRange() : desired;
       if (!host4.is_in_range(target) && Number(character2.range) > 0)
-        approach = Math.min(approach, Math.max(1, Number(character2.range) - 10));
+        approach = Math.min(approach, insideRange(character2.range, 1));
       const radius = approach + Math.max(0, length2 - combatDistance(target));
       if (!center && !host4.is_in_range(target))
         center = ports.interceptCenter(target, approach);
@@ -13258,7 +13266,7 @@ ${hook}`, was = errors.get(key3);
         const allowed = !!(!foreignOwned && (!ports.convoyActive() || farmingHandoff) && (!travel || farmingHandoff && travel.defensePaused) && !occupied() && (coordinated || !ports.grouped()) && ports.current() && (!host4.parent.socket || host4.parent.socket.connected !== false) && !ports.dungeonOwned() && !!!eventFacts().travellingEventName() && character2.ctype !== "merchant" && !navigationIntent.cancelled && !character2.rip && !movement.consolePaused() && !host4.__partyMovementPaused && !knownDead && (!observed || !observed.dead && !(Number(observed.hp) <= 0)) && Number.isFinite(e.x) && Number.isFinite(e.y) && (coordinated || e.visible && !e.dead && e.hp > 0) && (!coordinated || t.map === character2.map && t.in === character2.in && t.server === ports.realm()) && !Object.values(host4.parent.entities || {}).some(function(other) {
           return other && other.type === "monster" && !other.dead && (other.target === character2.name || other.id !== e.id && ports.attacking(other));
         }));
-        const prediction = {}, radius = Math.max(1, (Number(character2.range) || 1) - 10), point2 = combatInterceptCenter(e, radius, prediction);
+        const prediction = {}, radius = insideRange(character2.range, 1), point2 = combatInterceptCenter(e, radius, prediction);
         return {
           allowed,
           retiring,
@@ -13291,7 +13299,7 @@ ${hook}`, was = errors.get(key3);
           const c = context(), e = c && host4.get_entity(c.target);
           if (!e || !host4.is_in_range(e)) return false;
           const character2 = ports.character(), gap = host4.distance(character2, e);
-          return gap <= Math.max(1, (Number(character2.range) || 1) - 10);
+          return gap <= insideRange(character2.range, 1);
         },
         clear: function(goal) {
           const character2 = ports.character();
@@ -23214,6 +23222,7 @@ ${hook}`, was = errors.get(key3);
     AT_STAND: () => AT_STAND,
     BACKGROUND_REFUSED: () => BACKGROUND_REFUSED,
     COMMERCE_PROGRESS_VERSION: () => COMMERCE_PROGRESS_VERSION,
+    COMMERCE_RETRY_MS: () => COMMERCE_RETRY_MS,
     ENDINGS: () => ENDINGS,
     GATHERING_MODES: () => GATHERING_MODES,
     HANDOFF: () => HANDOFF,
@@ -23909,7 +23918,7 @@ ${hook}`, was = errors.get(key3);
     return typeof value === "number" && Number.isInteger(value) && value >= ROUTINE_PRIORITY.min && value <= ROUTINE_PRIORITY.max;
   }
   function merchantJobPriority(job2, policy) {
-    if (policy.completesStorageHandoff(job2)) return 101;
+    if (policy.completesStorageHandoff(job2)) return ROUTINE_PRIORITY.max + 1;
     if (validOverride(job2.priorityOverride)) return job2.priorityOverride;
     const override = job2.manual !== true && job2.bidItemId ? policy.bids[job2.bidItemId]?.priorityOverride : void 0;
     return validOverride(override) ? override : merchantRoutinePriority(migrateRoutinePriorities(policy.routines), routineFor(job2));
@@ -27604,7 +27613,7 @@ ${hook}`, was = errors.get(key3);
         progress.error = "waiting for a refused chest to change";
         return false;
       }
-      ids2 = ids2.filter((id2) => !(chests[id2]?.openning && p.now() - +new Date(chests[id2].openning) < 5e3));
+      ids2 = ids2.filter((id2) => !(chests[id2]?.openning && p.now() - +new Date(chests[id2].openning) < CHEST_OPENING_MS));
       if (!ids2.length) {
         progress.error = "waiting for an opening chest";
         return false;
@@ -37844,8 +37853,9 @@ ${hook}`, was = errors.get(key3);
         }
         if (notice3.outcome !== "rejected" && notice3.outcome !== "lost") return;
         if (action) m.queueEvidence(c.target, "rejected", action);
-        if (notice3.reason === "too_far" && c.range && Date.now() - Number(notice3.sentAt) <= pick("crabReplyMs") && c.current()) {
-          ports.recovery.reject(c.range, notice3.reply, Date.now());
+        const now = ports.now();
+        if (notice3.reason === "too_far" && c.range && now - Number(notice3.sentAt) <= pick("crabReplyMs") && c.current()) {
+          ports.recovery.reject(c.range, notice3.reply, now);
           ports.state().rangeRecovery = ports.recovery.diagnostic();
         }
       }
@@ -40884,7 +40894,7 @@ ${hook}`, was = errors.get(key3);
       changeTarget: answers.changeTarget,
       correctedDistance: (target) => ports.recovery.distance(module.describeAttackRange(target) ?? null, Date.now())
     });
-    const bookings = createAttackBookings({ recovery: ports.recovery, state: ports.state, module });
+    const bookings = createAttackBookings({ recovery: ports.recovery, state: ports.state, module, now: Date.now });
     const targeting = {
       answers,
       reflect,
@@ -41831,7 +41841,7 @@ ${hook}`, was = errors.get(key3);
       const covered = fresh3 && groupedCovered();
       const visible = anchor && (anchor.name === character2.name || ports.anchorVisible());
       const together = anchor && samePlace(anchor, character2);
-      const separated = anchor && (!together || (!visible || groupedCombat.formationRecovery) && Math.hypot(character2.x - anchor.x, character2.y - anchor.y) > Math.max(10, groupedCombat.range - 10));
+      const separated = anchor && (!together || (!visible || groupedCombat.formationRecovery) && Math.hypot(character2.x - anchor.x, character2.y - anchor.y) > insideRange(groupedCombat.range, RANGE_MARGIN));
       const recovering = groupedCombat.recovering && groupedCombat.recovering.indexOf(character2.name) >= 0;
       if (fresh3 && (!separated && !recovering || covered && visible) && !groupedCombat.formationRecovery) {
         cancelGroupRoute();
@@ -41874,7 +41884,7 @@ ${hook}`, was = errors.get(key3);
       if (live2 && live2.visible) anchor = Object.assign({}, anchor, { x: live2.x, y: live2.y });
       const same = samePlace(anchor, character2);
       const dist = same ? Math.hypot(character2.x - anchor.x, character2.y - anchor.y) : Infinity;
-      const inner = Math.max(10, groupedCombat.range - 10);
+      const inner = insideRange(groupedCombat.range, RANGE_MARGIN);
       if (anchor.name === character2.name || dist <= inner) {
         cancelGroupRoute();
         movement.holdStep();
@@ -42097,7 +42107,7 @@ ${hook}`, was = errors.get(key3);
     function formationDesiredRange(reference, priest, selfPriest, members, step2) {
       const character2 = ports.character();
       let desired = ports.desiredCombatRange();
-      if (!host4.is_in_range(reference)) desired = Math.min(desired, Math.max(1, (Number(character2.range) || 1) - 10));
+      if (!host4.is_in_range(reference)) desired = Math.min(desired, insideRange(character2.range, 1));
       if (!selfPriest) return desired;
       const safeRange = safeHealingRange(priest);
       members.forEach(function(ally) {
@@ -42786,7 +42796,7 @@ ${hook}`, was = errors.get(key3);
       return {
         key: g && g.key,
         target: t && JSON.stringify([t.server, t.map, t.in, t.id]),
-        covered: !!(g && g.anchor && Math.hypot(character2.x - g.anchor.x, character2.y - g.anchor.y) <= Math.max(10, g.range - 10)),
+        covered: !!(g && g.anchor && Math.hypot(character2.x - g.anchor.x, character2.y - g.anchor.y) <= insideRange(g.range, RANGE_MARGIN)),
         allowed: !!(!ports.dungeonOwned() && t && t.state === "planned" && ports.grouped() && ports.fresh() && !ports.intent().cancelled && !character2.rip && t.map === character2.map && t.in === character2.in && t.server === ports.realm() && !ports.unfinishedFight() && (!ports.convoyActive() || !!host4.__partyFarmingEngagement) && !walk2.groupWalk.travel && !walk2.travelCombatActive() && !eventFacts().travellingEventName() && !ports.joinedEvent() && !ports.activeEvent() && !occupied() && !ports.recoveryHolds() && !walk2.currentTravelAttackers().length && !(host4.partyLootClient && host4.partyLootClient.huntPending()))
       };
     }
@@ -42890,7 +42900,7 @@ ${hook}`, was = errors.get(key3);
       if (!priest) return !g.priest && Math.hypot(point2.x - goal.x, point2.y - goal.y) <= 40;
       const reach = safeHealingRange(priest);
       if (!Number.isFinite(reach) || reach <= 0) return false;
-      const centerReach = Math.max(10, (Number.isFinite(Number(g.range)) ? Number(g.range) : reach) - 10);
+      const centerReach = insideRange(Number.isFinite(Number(g.range)) ? Number(g.range) : reach, RANGE_MARGIN);
       const healer = formationBody(priest, priest.name === character2.name ? point2 : priest.name === mover.name ? goal : void 0);
       return members.every(function(m) {
         const body = formationBody(m, m.name === character2.name ? point2 : m.name === mover.name ? goal : void 0);
@@ -42909,7 +42919,7 @@ ${hook}`, was = errors.get(key3);
       if (!priest && g.priest) return [];
       const reach = priest ? safeHealingRange(priest) : 40;
       if (!Number.isFinite(reach) || reach <= 0) return [];
-      const centerReach = priest ? Math.max(10, (Number.isFinite(Number(g.range)) ? Number(g.range) : reach) - 10) : 40;
+      const centerReach = priest ? insideRange(Number.isFinite(Number(g.range)) ? Number(g.range) : reach, RANGE_MARGIN) : 40;
       const goals = terrainRecoveryGoals(g.target, ports.desiredCombatRange());
       [Math.min(39, centerReach - 1), centerReach - 1].forEach(function(radius) {
         for (let i = 0; i < 16; i++) {
@@ -45809,12 +45819,12 @@ ${hook}`, was = errors.get(key3);
       await untilGame(act2, OWN_UPDATE, () => channelling() || serverCooldownUntil(m) > castAt || !current(), CAST_APPEAR_MS);
       if (!current()) return false;
       const end = castAt + (Number(G.skills[m] && G.skills[m].duration_max) || 15e3) + CAST_OVERRUN_MS;
-      await untilGame(act2, OWN_UPDATE, () => !channelling() || !current(), Math.max(0, end - Date.now()));
+      await untilGame(act2, OWN_UPDATE, () => !channelling() || !current(), Math.max(0, end - p.now()));
       if (!current()) return false;
       if (channelling()) bound2("CAST_OVERRUN_MS", { mode: m, castAt });
-      await untilGame(act2, OWN_UPDATE, () => serverCooldownUntil(m) > Date.now() || !current(), CAST_SETTLE_MS);
+      await untilGame(act2, OWN_UPDATE, () => serverCooldownUntil(m) > p.now() || !current(), CAST_SETTLE_MS);
       if (!current()) return false;
-      return serverCooldownUntil(m) > Date.now();
+      return serverCooldownUntil(m) > p.now();
     }
     function tell(notice3, payload) {
       partyHooks().notify(notice3, { character: p.character().name, ...payload, by: "core:merchant-jobs" });
@@ -45851,14 +45861,14 @@ ${hook}`, was = errors.get(key3);
       const c = p.character();
       await p.stop("smart");
       if (p.moving()) await p.stop("move");
-      let stillSince = Date.now(), previousX = Number(c.x), previousY = Number(c.y);
+      let stillSince = p.now(), previousX = Number(c.x), previousY = Number(c.y);
       const settled = () => {
         if (!current()) return true;
         const x = Number(c.x), y = Number(c.y);
-        if (p.moving() || Math.abs(x - previousX) >= 0.05 || Math.abs(y - previousY) >= 0.05) stillSince = Date.now();
+        if (p.moving() || Math.abs(x - previousX) >= 0.05 || Math.abs(y - previousY) >= 0.05) stillSince = p.now();
         previousX = x;
         previousY = y;
-        return !p.moving() && Date.now() - stillSince >= SETTLE_STILL_MS;
+        return !p.moving() && p.now() - stillSince >= SETTLE_STILL_MS;
       };
       const still = await untilGame(act2, OWN_UPDATE, settled, SETTLE_WITHIN_MS, () => stillSince + SETTLE_STILL_MS);
       if (!current()) throw itemFailure("interrupted");
@@ -45967,18 +45977,18 @@ ${hook}`, was = errors.get(key3);
       let release;
       const holder2 = {
         kind: "gathering",
-        id: Date.now() + ":" + Math.random().toString(36).slice(2),
+        id: p.now() + ":" + Math.random().toString(36).slice(2),
         mode: m,
         phase: "travel",
         owner: runner.runtimeId,
-        startedAt: Date.now(),
+        startedAt: p.now(),
         cancelled: null,
         done: new Promise((resolve2) => {
           release = resolve2;
         })
       };
       s.cooldownUntil = Math.max(Number(s.cooldownUntil) || 0, syncGatheringCooldown(m));
-      const cooling = s.cooldownUntil > Date.now() || p.onCooldown(m);
+      const cooling = s.cooldownUntil > p.now() || p.onCooldown(m);
       if (cooling && resting(s)) return;
       if (!runner.take(holder2, true)) return;
       tell("merchant.gathering.phase", { mode: m, phase: holder2.phase });
@@ -46048,7 +46058,7 @@ ${hook}`, was = errors.get(key3);
             await p.sleep(hooks.calls.window());
             if (!current()) return;
           }
-          const castAt = Date.now();
+          const castAt = p.now();
           const gatheringResult = await use_skill(m);
           if (!current()) return;
           const caught = await gatheringOutcome(m, gatheringResult, castAt, current);
@@ -46056,7 +46066,7 @@ ${hook}`, was = errors.get(key3);
           await reportGatheringResult(m, beforeGathering, { found: caught }, current);
           if (!current()) return;
           const serverCooldown = serverCooldownUntil(m);
-          s.cooldownUntil = !caught ? 0 : serverCooldown > Date.now() ? serverCooldown : Date.now() + (Number(G.skills[m] && G.skills[m].reuse_cooldown) || 0);
+          s.cooldownUntil = !caught ? 0 : serverCooldown > p.now() ? serverCooldown : p.now() + (Number(G.skills[m] && G.skills[m].reuse_cooldown) || 0);
           cooldowns[m] = s.cooldownUntil;
           phase(holder2, "travel");
           if (p.freeSlots() <= p.protectedSlots()) {
@@ -46070,7 +46080,7 @@ ${hook}`, was = errors.get(key3);
           const reportedCooldown = Number(error.ms || error.cooldown || error.remaining);
           const reuse = Number(G.skills[m] && G.skills[m].reuse_cooldown);
           if (!(reportedCooldown > 0) && !reuse) bound2("COOLDOWN_FALLBACK_MS", { mode: m, error: String(error.reason || error.message) });
-          s.cooldownUntil = Math.max(serverCooldownUntil(m), Date.now() + (reportedCooldown > 0 ? reportedCooldown : reuse || COOLDOWN_FALLBACK_MS));
+          s.cooldownUntil = Math.max(serverCooldownUntil(m), p.now() + (reportedCooldown > 0 ? reportedCooldown : reuse || COOLDOWN_FALLBACK_MS));
           cooldowns[m] = s.cooldownUntil;
           gatheringStatus(label(m) + " cooldown detected; returning to stand", "info");
           return;
@@ -46102,9 +46112,9 @@ ${hook}`, was = errors.get(key3);
         const needed = Number(G.skills[m] && G.skills[m].level) || 0;
         if (c.level < needed) retry = () => c.level >= needed;
         else {
-          const at4 = Date.now() + FAILURE_RETRY_MS;
+          const at4 = p.now() + FAILURE_RETRY_MS;
           retry = () => {
-            if (Date.now() < at4) return false;
+            if (p.now() < at4) return false;
             bound2("FAILURE_RETRY_MS", { mode: m, reason: reason4 });
             return true;
           };
@@ -46151,7 +46161,7 @@ ${hook}`, was = errors.get(key3);
         if (mode) setGathering(null);
         return;
       }
-      const ready2 = enabled.filter((m) => syncGatheringCooldown(m) <= Date.now() && !p.onCooldown(m));
+      const ready2 = enabled.filter((m) => syncGatheringCooldown(m) <= p.now() && !p.onCooldown(m));
       const choice = ready2[0] || enabled.slice().sort((a, b) => syncGatheringCooldown(a) - syncGatheringCooldown(b))[0];
       if (choice !== mode) setGathering(choice);
     }
@@ -46166,11 +46176,11 @@ ${hook}`, was = errors.get(key3);
         let done;
         const restoring = {
           kind: "gathering",
-          id: "restore:" + Date.now(),
+          id: "restore:" + p.now(),
           mode: oldSession ? oldSession.mode : "",
           phase: "restoring",
           owner: runner.runtimeId,
-          startedAt: Date.now(),
+          startedAt: p.now(),
           cancelled: null,
           done: new Promise((resolve2) => {
             done = resolve2;
@@ -46191,7 +46201,7 @@ ${hook}`, was = errors.get(key3);
           cooldownUntil: Number(cooldowns[next]) || 0
         };
       const until = Number(session.cooldownUntil) || 0;
-      if (!runner.holder() && until > Date.now()) {
+      if (!runner.holder() && until > p.now()) {
         if (noticedCooldown !== until) {
           noticedCooldown = until;
           gatheringStatus(label(next) + " cooling down; will resume automatically", "info", void 0, true);
@@ -46276,9 +46286,9 @@ ${hook}`, was = errors.get(key3);
 
   // runtime/merchant-jobs/character/luck.ts
   var REFRESH_BELOW_MS = 6e5;
-  var READY_WAIT_MS = 5e3;
   var PUBLIC_LIMIT = 12;
   var WALKING_LIMIT = 4;
+  var READY_WAIT_MS = 5e3;
   var { range: RANGE, level: LUCK_LEVEL } = MERCHANT_LUCK;
   var QUIET_REFUSALS = ["cooldown", "too_far", "not_found", "already"];
   function createMerchantLuck(p) {

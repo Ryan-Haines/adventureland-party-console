@@ -59,8 +59,10 @@ for(const reason of ['cooldown','openning'])test('walking retries transient '+re
  assert.deepEqual(r.calls,['drop','drop']);assert.equal(r.chests.drop,undefined);
 });
 
+// The window is the game client's (items/rules.ts CHEST_OPENING_MS).
 test('a chest the game opened in the last 5 s is not asked again, so no admission goes unsent',async()=>{
- const r=setup();r.setFree(10);r.chests={drop:{x:0,y:0,openning:new Date(0)},gold:{items:0,x:30,y:0}};
+ const {CHEST_OPENING_MS}=require('../../runtime/items/rules.ts');
+ const r=setup();r.setFree(10);r.chests={drop:{x:0,y:0,openning:new Date(1-CHEST_OPENING_MS)},gold:{items:0,x:30,y:0}};
  await r.market.smartLoot();assert.deepEqual(r.calls,['gold']);
- r.chests.drop.openning=new Date(-6000);await r.market.smartLoot();assert.deepEqual(r.calls,['gold','drop']);
+ r.chests.drop.openning=new Date(-CHEST_OPENING_MS);await r.market.smartLoot();assert.deepEqual(r.calls,['gold','drop']);
 });

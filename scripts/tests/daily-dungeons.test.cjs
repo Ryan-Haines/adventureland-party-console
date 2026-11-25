@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 require('./helpers/core-hooks.cjs');
 const { createCave: createDungeons } = require('../../runtime/hunting/coordinator/cave.ts');
 const { installDungeonRuntime, createDungeonJournal } = require('../../runtime/hunting/character/cave.ts');
+const { ageOf } = require('../../runtime/protocol/reports.ts');
 const { createDeathRecovery } = require('../../runtime/characters/survival/recovery-member.ts');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {fixture,eligibilityRuntime,cave}=require('./fixtures/daily-dungeons-scenario.cjs');
@@ -40,7 +41,8 @@ test('a dungeon route pauses for local combat, a paused Cave or a stale control'
   ready=false;assert.equal(runtime.canMove(),false,'local aggro blocks travel before next heartbeat');
   ready=true;assert.equal(runtime.canMove(),true);
   raw.paused=true;assert.equal(runtime.canMove(),false);
-  raw.paused=false;now+=3001;assert.equal(runtime.canMove(),false,'stale control must hold route');
+  // The control is fresh while younger than the report age (cave.ts canMove), so at that age it holds.
+  raw.paused=false;now+=ageOf('report');assert.equal(runtime.canMove(),false,'stale control must hold route');
   runtime.receive({owned:true,movementReady:true});assert.equal(runtime.canMove(),true);
  });
 
@@ -340,7 +342,6 @@ scenarioTable('the Cave visit advances on the report tick only', fixture, [
 // offline from the party's slots and worker records.
 const { createCave } = require('../../runtime/hunting/coordinator/cave.ts');
 const { createRosterProjection } = require('../../runtime/lifecycle/roster/roster-projection.ts');
-const { ageOf } = require('../../runtime/protocol/reports.ts');
 const { partyHooks } = require('../../runtime/hooks/index.ts');
 const { publishTasks } = require('../../runtime/tasks/api.ts');
 // An add-on that keeps a member on its own task out of the Cave, and hears every `cave.member`

@@ -83,9 +83,12 @@ test('a travel command while the Cave visit refuses its release replies 409 and 
 test('every navigation command type asks the Cave release, as status/rules.ts navigational names them',()=>{
  const {installedTasks}=require('./fixtures/task-owner-scenario.cjs');
  const asked=[],t=installedTasks({releaseVisit:()=>{asked.push(true);return null;}});
- for(const type of ['travel','force-travel','character-travel','party-monster-travel','event-resume-travel','return-leader','town'])
-  t.tasks.travelCommand({type,character:'L'},()=>({ok:true}));
- assert.equal(asked.length,6);
+ const {navigational}=require('../../runtime/status/rules.ts');
+ // Each type asks the release once exactly when the status owner names it navigational; town asks nothing.
+ for(const type of ['travel','force-travel','character-travel','party-monster-travel','event-resume-travel','return-leader','town']){
+  const before=asked.length;t.tasks.travelCommand({type,character:'L'},()=>({ok:true}));
+  assert.equal(asked.length-before,navigational({type})?1:0,type);
+ }
 });
 
 // An app key's /travel runs as its app's caller, so the party walk, the trip

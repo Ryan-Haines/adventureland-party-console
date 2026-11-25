@@ -22,6 +22,7 @@ import { approachFan, occupied, stepLength, stepStalled, stepWindowMs } from './
 import { eventFacts } from '../../events/api.ts';
 import { boundFired, capReached } from '../../status/api.ts';
 import { DEFAULT_MONSTER_RANGE } from '../geometry/step-safety.ts';
+import { RANGE_MARGIN, insideRange } from '../rules.ts';
 
 // The movement service, the game objects and the group and formation records are shared.js's
 // untyped values.
@@ -241,7 +242,7 @@ export function installGroupMovement(host: FormationHost, walk: WalkClient, port
     const covered = fresh && groupedCovered();
     const visible = anchor && (anchor.name === character.name || ports.anchorVisible());
     const together = anchor && samePlace(anchor, character);
-    const separated = anchor && (!together || (!visible || groupedCombat.formationRecovery) && Math.hypot(character.x-anchor.x,character.y-anchor.y) > Math.max(10,groupedCombat.range-10));
+    const separated = anchor && (!together || (!visible || groupedCombat.formationRecovery) && Math.hypot(character.x-anchor.x,character.y-anchor.y) > insideRange(groupedCombat.range,RANGE_MARGIN));
     const recovering = groupedCombat.recovering && groupedCombat.recovering.indexOf(character.name) >= 0;
     if (fresh && (!separated && !recovering || covered && visible) && !groupedCombat.formationRecovery) {
       cancelGroupRoute();
@@ -275,7 +276,7 @@ export function installGroupMovement(host: FormationHost, walk: WalkClient, port
     if (live && live.visible) anchor = Object.assign({}, anchor, {x:live.x,y:live.y});
     const same = samePlace(anchor, character);
     const dist = same ? Math.hypot(character.x-anchor.x,character.y-anchor.y) : Infinity;
-    const inner = Math.max(10,groupedCombat.range-10);
+    const inner = insideRange(groupedCombat.range,RANGE_MARGIN);
     if (anchor.name === character.name || dist <= inner) {
       cancelGroupRoute();
       // Arriving stops only the regroup step (design section 2.4 rule 6).
@@ -547,7 +548,7 @@ export function createFormationSolver(host: SolverHost, walk: WalkClient, ports:
   function formationDesiredRange(reference: Value, priest: Value, selfPriest: boolean, members: Value[], step: number) {
     const character = ports.character();
     let desired=ports.desiredCombatRange();
-    if(!host.is_in_range(reference))desired=Math.min(desired,Math.max(1,(Number(character.range)||1)-10));
+    if(!host.is_in_range(reference))desired=Math.min(desired,insideRange(character.range,1));
     if(!selfPriest)return desired;
     const safeRange=safeHealingRange(priest);
     members.forEach(function(ally){
@@ -1135,7 +1136,7 @@ export function createFormationSolver(host: SolverHost, walk: WalkClient, ports:
   function terrainRecoveryContext() {
     const g=ports.groupedCombat(),t=g && g.target,character=ports.character();
     return {key:g && g.key,target:t && JSON.stringify([t.server,t.map,t.in,t.id]),
-      covered:!!(g && g.anchor && Math.hypot(character.x-g.anchor.x,character.y-g.anchor.y)<=Math.max(10,g.range-10)),
+      covered:!!(g && g.anchor && Math.hypot(character.x-g.anchor.x,character.y-g.anchor.y)<=insideRange(g.range,RANGE_MARGIN)),
       allowed:!!(!ports.dungeonOwned() && t && t.state==='planned' && ports.grouped() && ports.fresh() && !ports.intent().cancelled && !character.rip &&
         t.map===character.map && t.in===character.in && t.server===ports.realm() && !ports.unfinishedFight() &&
         (!ports.convoyActive() || !!host.__partyFarmingEngagement) && !walk.groupWalk.travel && !walk.travelCombatActive() && !eventFacts().travellingEventName() && !ports.joinedEvent() && !ports.activeEvent() &&
@@ -1234,7 +1235,7 @@ export function createFormationSolver(host: SolverHost, walk: WalkClient, ports:
     if(!priest)return !g.priest && Math.hypot(point.x-goal.x,point.y-goal.y)<=40;
     const reach=safeHealingRange(priest);
     if(!Number.isFinite(reach)||reach<=0)return false;
-    const centerReach=Math.max(10,(Number.isFinite(Number(g.range))?Number(g.range):reach)-10);
+    const centerReach=insideRange(Number.isFinite(Number(g.range))?Number(g.range):reach,RANGE_MARGIN);
     const healer=formationBody(priest,priest.name===character.name?point:priest.name===mover.name?goal:undefined);
     return members.every(function(m){
       const body=formationBody(m,m.name===character.name?point:m.name===mover.name?goal:undefined);
@@ -1249,7 +1250,7 @@ export function createFormationSolver(host: SolverHost, walk: WalkClient, ports:
     if(!priest && g.priest)return [];
     const reach=priest?safeHealingRange(priest):40;
     if(!Number.isFinite(reach)||reach<=0)return [];
-    const centerReach=priest?Math.max(10,(Number.isFinite(Number(g.range))?Number(g.range):reach)-10):40;
+    const centerReach=priest?insideRange(Number.isFinite(Number(g.range))?Number(g.range):reach,RANGE_MARGIN):40;
     const goals=terrainRecoveryGoals(g.target,ports.desiredCombatRange());
     [Math.min(39,centerReach-1),centerReach-1].forEach(function(radius){
       for(let i=0;i<16;i++){

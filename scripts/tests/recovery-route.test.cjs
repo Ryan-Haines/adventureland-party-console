@@ -18,8 +18,11 @@ scenarioTable("the recovery route search finds a clear multi-goal route or fails
   const clear=(a,b)=>index(a)>=0&&index(b)>=0&&Math.abs(index(a)-index(b))<=1;
   assert.ok(complete(recoveryRoute(start,goal,clear))?.length);}}],
  // The probe counts bound the native can_move calls one search makes, a per-call cost the
- // rule "no more per-tick work than b9b5c91e" holds the search to.
- ['a multi-corner approach over captured level1 geometry makes fewer than 600 collision probes', (complete,t)=>{
+ // rule "no more per-tick work than b9b5c91e" holds the search to. B9_PROBES is b9b5c91e's
+ // runtime/combat/recovery-route.ts on this same search and geometry, measured 2026-11-23
+ // (test-windows BUILD-LOG.md, unit track step 5).
+ ['a multi-corner approach over captured level1 geometry makes no more collision probes than b9b5c91e', (complete,t)=>{
+  const B9_PROBES={21:200,161.5:195};
   for(const reach of [21,161.5]){
    const start={x:0,y:395.76},target={x:-11,y:115};
    const c=vm.createContext({G:{},character:{map:'level1',...start,base:{h:8,v:7,vn:2}}});
@@ -33,7 +36,7 @@ scenarioTable("the recovery route search finds a clear multi-goal route or fails
    }
    probes=0;const path=complete(recoveryRoute(start,goals,clear));
    assert.ok(path?.length,'a real terrain-safe path must be found');
-   assert.ok(probes<600,`${reach}-range approach made ${probes} redundant native probes`);
+   assert.ok(probes<=B9_PROBES[reach],`${reach}-range approach made ${probes} native probes, b9b5c91e ${B9_PROBES[reach]}`);
    let previous=start;for(const point of path){assert.ok(clear(previous,point));previous=point;}
    assert.ok(goals.some(goal=>goal.x===previous.x&&goal.y===previous.y),'endpoint remains an authorized goal');
   }}],

@@ -57,14 +57,16 @@ test("U: the add-on's rare row is listed with its rule", () => {
 
 test('U: a planted Fairy sighting starts and ends an encounter', () => {
   // The rare service over the shared rare fixture (fixtures/rare-hunting-scenario.cjs), which the end
-  // run ports to rares.ts `createRares`: the sighting starts the encounter, and 3 s without a fresh
-  // sighting before the party engages ends it `claimed`.
+  // run ports to rares.ts `createRares`: the sighting starts the encounter, and one report from each
+  // member after the last sighting, without it, ends it `claimed` before the party engages (rares.ts
+  // `unseen`).
   const heard = listen('hunting-rare-fixture');
   const { fixture } = require('./fixtures/rare-hunting-scenario.cjs');
   const f = fixture();
   f.sight('tinyp');
   for (const s of Object.values(f.party.statuses)) s.rareSightings = [];
-  f.advance(3500);
+  // Each member's next report, stamped one clock step after the sighting.
+  f.advance(1);
   f.controller.tick();
   const encounter = heard.filter(h => h.hook === 'rare.encounter');
   assert.deepEqual(encounter.map(h => h.payload.change), ['started', 'ended']);

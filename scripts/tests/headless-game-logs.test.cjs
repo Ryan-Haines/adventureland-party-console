@@ -2,6 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {RunnerScope}=require('../../runtime/lifecycle/character/run.ts');
 const {installGameLogs,installHostGameLogs}=require('../../runtime/status/character/telemetry.ts');
 const {classifyGameLog,showGameLog}=require('../../runtime/status/game-log.ts');
+const {GAME_LOG_BATCH,STATUS_PICKS}=require('../../runtime/status/rules.ts');
 test('routine messages are Info independently of errors and gold',()=>{
  for(const message of ['bankboi0: bankboi0 loaded generic merchant behavior','bankboi1: Searching for a path...','Get closer','GoldMajesty: Get closer','Waiting in line']){
   assert.equal(classifyGameLog(message),'info');
@@ -92,7 +93,7 @@ test('headless logging uses host hook without recursive facade dispatch and surv
  host.caracAL.install_game_logs=send=>installHostGameLogs(host,send);
  const firstScope=new RunnerScope(),first=installGameLogs(firstScope.facade(host),async e=>batches.push(e));
  for(let i=0;i<1500;i++)host.add_log('message '+i);
- await first.pulse();assert.equal(rendered.length,1500);assert.equal(batches[0].length,100,'a report posts the oldest GAME_LOG_BATCH lines');assert.equal(host.__partyGameLogCapture.queue.length,900);
+ await first.pulse();assert.equal(rendered.length,1500);assert.equal(batches[0].length,GAME_LOG_BATCH,'a report posts the oldest GAME_LOG_BATCH lines');assert.equal(host.__partyGameLogCapture.queue.length,STATUS_PICKS.gameLogLines-GAME_LOG_BATCH,'the capture keeps the newest gameLogLines');
  firstScope.dispose();const secondScope=new RunnerScope();let newBatches=0;
  const second=installGameLogs(secondScope.facade(host),async()=>newBatches++);
  host.add_log('after reload');await second.pulse();assert.equal(rendered.at(-1),'after reload');assert.equal(newBatches,1);

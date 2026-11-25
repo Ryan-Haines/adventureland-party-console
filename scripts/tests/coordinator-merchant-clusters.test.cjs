@@ -23,7 +23,7 @@ test('Luck cluster excludes merchants, dead members and other realms while prese
  assert.equal(t.state.merchantQueue[0].castMerchantLuck,true);assert.equal(t.state.merchantQueue[0].expandLuckCluster,false);assert.equal(t.state.merchantQueue[0].batchId,'job');
 });
 test('MJ14: the luck cast leaves strong and fresh luck alone, asks the job band, casts when the server cooldown ends, and reports a cooldown that never ends',async()=>{
- const {createMerchantLuck}=require('../../runtime/merchant-jobs/character/luck.ts');
+ const {createMerchantLuck,READY_WAIT_MS}=require('../../runtime/merchant-jobs/character/luck.ts');
  const {boundsPending,boundsSent}=require('../../runtime/status/api.ts');
  const clearBounds=()=>boundsSent(boundsPending().length);
  const calls=[],answers=['wait','send','send'],previous=globalThis.__partyHooks,realSkill=globalThis.use_skill;let cooling=false,readyAt=0;
@@ -41,12 +41,14 @@ test('MJ14: the luck cast leaves strong and fresh luck alone, asks the job band,
   assert.equal(await luck.castMerchantLuck(player('Fresh',10,{f:'M',ms:Infinity})),false);
   assert.equal(await luck.castMerchantLuck(player('Far',250)),false);
   assert.equal(await luck.castMerchantLuck(player('Near',10,{f:'M',ms:1000})),true);
-  // The cooldown ends at `next_skill.mluck`: the cast goes out at that time, with no poll.
-  cooling=true;readyAt=Date.now()+40_000;const soon=luck.castMerchantLuck(player('Soon',10));
-  await new Promise(r=>setImmediate(r));const wake=timers.find(t=>t.cb&&t.ms!==5000);assert.ok(wake&&wake.ms>35_000,'the wait wakes at the cooldown end');
+  // The cooldown ends at `next_skill.mluck`: the cast goes out at that time, with no poll. The planted
+  // cooldown outlasts READY_WAIT_MS, so the wake is the cooldown's and not the bound's.
+  cooling=true;const asked=Date.now();readyAt=asked+2*READY_WAIT_MS;const soon=luck.castMerchantLuck(player('Soon',10));
+  await new Promise(r=>setImmediate(r));const wake=timers.find(t=>t.cb&&t.ms!==READY_WAIT_MS);
+  assert.ok(wake&&wake.ms<=readyAt-asked&&wake.ms>=readyAt-Date.now(),'the wait wakes at the cooldown end');
   cooling=false;const cb=wake.cb;wake.cb=null;cb();assert.equal(await soon,true);
   // A cooldown the game never ends runs out READY_WAIT_MS and reports it.
-  cooling=true;readyAt=0;const late=luck.castMerchantLuck(player('Late',10));await fire(5000);assert.equal(await late,false);
+  cooling=true;readyAt=0;const late=luck.castMerchantLuck(player('Late',10));await fire(READY_WAIT_MS);assert.equal(await late,false);
   // The cast asks for the `skill` call use_skill emits, so the budget matches the two.
   assert.deepEqual(calls,['band skill mluck','band skill mluck','mluck Near','band skill mluck','mluck Soon']);
   assert.deepEqual(boundsPending().map(f=>[f.bound,f.owner,f.state.player]),[['READY_WAIT_MS','08','Late']]);

@@ -1,5 +1,6 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {scenarioTable,ROW_TIMEOUT_MS}=require('./fixtures/scenarios.cjs');
+const {performance}=require('node:perf_hooks');
 const {fixture}=require('./fixtures/merchant-convoy-interruption-scenario.cjs');
 // The rows from 'merchant collection waits for communication recovery' to 'collection during
 // assembly' are rows cut with no removal line. A replaced member's walk now ends by `owner-lost`
@@ -57,8 +58,10 @@ scenarioTable('a merchant collection resumes the convoy only after every member 
   f.ack();Object.assign(s.statuses.F.convoyNavigation,{phase:'communication-hold',communication:{operation:'/status',kind:'expired-signal'}});
   f.tick();assert.equal(s.activeConvoy.phase,'communication-hold');
   assert.equal(f.send('handoff').body.waiting,true);assert.equal(s.activeConvoy.merchantInterruption,undefined);
-  for(let time=1000;time<=8000;time+=1000){f.ack();f.tick(time);}
-  assert.equal(s.activeConvoy.communicationHold,undefined);
+  // The hold ends once every member reports held and fresh (defense.ts `resume`): fresh acks, one
+  // report step apart, until it does. ROW_TIMEOUT_MS only stops a hold that never ends.
+  const end=performance.now()+ROW_TIMEOUT_MS;
+  for(let time=1000;s.activeConvoy.communicationHold;time+=1000){assert.ok(performance.now()<end,'the hold never ended');f.ack();f.tick(time);}
   assert.equal(f.send('handoff').body.waiting,true);assert.equal(s.activeConvoy.merchantInterruption.resumePhase,'shared-prepare');
  }],
  ['legacy merchant continuation captured during communication recovery prepares a new route', f=>{

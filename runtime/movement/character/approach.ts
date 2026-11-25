@@ -16,6 +16,7 @@ import { ageOf, currentQueue, fresh, reportClockError } from '../../protocol/rep
 import { samePlace } from '../../protocol/place.ts';
 import { copyPrediction, occupied, predictCombatIntercept, stepStalled, type CombatPrediction } from './steps.ts';
 import { eventFacts } from '../../events/api.ts';
+import { insideRange } from '../rules.ts';
 
 // The movement service, the game objects and the grouped record are shared.js's untyped values.
 type Value = any;
@@ -330,7 +331,7 @@ export function createApproach(host: ApproachHost, walk: WalkClient, ports: Appr
         (coordinated || e.visible && !e.dead && e.hp>0) && (!coordinated || t.map===character.map && t.in===character.in && t.server===ports.realm()) &&
         !Object.values(host.parent.entities||{}).some(function(other: Value){return other && other.type==='monster' && !other.dead &&
           (other.target===character.name || other.id!==e.id && ports.attacking(other));}));
-      const prediction: Value={},radius=Math.max(1,(Number(character.range)||1)-10),point=combatInterceptCenter(e,radius,prediction);
+      const prediction: Value={},radius=insideRange(character.range,1),point=combatInterceptCenter(e,radius,prediction);
       return {allowed:allowed,retiring:retiring,planned:coordinated?t.state==='planned':true,selection:coordinated?groupedCombat.selection:undefined,committed:coordinated?!!groupedCombat.committed:true,confirmation:coordinated && groupedCombat.independentConfirmation && groupedCombat.independentConfirmation.selection===groupedCombat.selection && groupedCombat.independentConfirmation.target===String(t.id)?groupedCombat.independentConfirmation.id:undefined,target:String(t.id),
         key:JSON.stringify([t.id,character.map,character.in,ports.realm(),navigationIntent.revision,coordinated?[groupedCombat.key,groupedCombat.selection,groupedCombat.resetAt]:ports.joinedEvent()]),point:point,prediction:prediction.at!==undefined?prediction:undefined,radius:radius,
         update:observed && observed.visible ? observed.move_num : undefined};
@@ -342,7 +343,7 @@ export function createApproach(host: ApproachHost, walk: WalkClient, ports: Appr
       ready:function(){const c=context(),e=c && host.get_entity(c.target);return !!(c && c.allowed && e && e.visible && !e.dead && e.hp>0 && host.is_in_range(e));},
       buffered:function(){const c=context(),e=c && host.get_entity(c.target);if(!e || !host.is_in_range(e))return false;
         const character=ports.character(),gap=host.distance(character,e);
-        return gap<=Math.max(1,(Number(character.range)||1)-10);},
+        return gap<=insideRange(character.range,1);},
       clear:function(goal: Point){const character=ports.character();return host.can_move({map:character.map,x:character.real_x,y:character.real_y,going_x:goal.x,going_y:goal.y,base:character.base});},
       goal:function(point: Point,radius: number){
         const c=context(),observed=c && host.get_entity(c.target),groupedCombat=ports.groupedCombat(),e=observed && observed.visible?observed:groupedCombat && groupedCombat.target;

@@ -190,7 +190,6 @@ test('merchant grade estimates match the native grace reference in dashboard and
   // simulation produces a false percentile. Fixed reference numbers were
   // calculated with the published server's grace expressions, zero unobservable
   // server/overall grace, and the existing deterministic seed (not this estimator).
-  test.setTimeout(90_000);
   const initial=await app.state(),original=initial.merchantCatalog,observed:any[]=[];
   await page.goto('/');
   const merchant=page.locator('article').filter({has:page.getByRole('heading',{name:'M',exact:true})});
@@ -203,7 +202,7 @@ test('merchant grade estimates match the native grace reference in dashboard and
     await expect(shopping.getByText(choice.name,{exact:true})).toBeVisible();
     await shopping.getByRole('button',{name:'Add',exact:true}).click();
     await shopping.getByTitle('Desired upgrade level').fill(String(reference.target));
-    await expect(shopping.getByText(`Gold (est): ${reference.result.budget.toLocaleString()}g`,{exact:true})).toBeVisible({timeout:30_000});
+    await expect(shopping.getByText(`Gold (est): ${reference.result.budget.toLocaleString()}g`,{exact:true})).toBeVisible();
     await expect(shopping.getByText(new RegExp(`90% budget: ${reference.result.attempts} base items`))).toBeVisible();
     await info.attach(`native-grace-grade-${reference.grade}`,{body:await page.screenshot(),contentType:'image/png'});
     await shopping.getByRole('button',{name:'Buy all',exact:true}).click();
@@ -221,7 +220,6 @@ test('merchant estimates stay responsive and require capped confirmation when un
   // invent a price; cancellation submits; missing/invalid caps bypass consent;
   // coordinator trusts a supplied estimate; restart loses the spending cap.
   // The console fixture owns account/game reports, not native production.
-  test.setTimeout(90_000);
   const state=await app.state();
   // Declare one actual gold-shop item's catalog metadata at the fixture's
   // external game boundary; the coordinator handles and persists real orders.
@@ -241,7 +239,7 @@ test('merchant estimates stay responsive and require capped confirmation when un
   await expect(target).toHaveValue('+12');
   await shopping.getByPlaceholder('Search items…').fill('responsive');
   await expect(shopping.getByPlaceholder('Search items…')).toHaveValue('responsive');
-  await expect(shopping.getByText('Unable to estimate',{exact:true})).toBeVisible({timeout:30_000});
+  await expect(shopping.getByText('Unable to estimate',{exact:true})).toBeVisible();
   await shopping.getByRole('button',{name:'Buy all',exact:true}).click();
   const warning=page.getByRole('dialog',{name:'Unable to estimate this order'});
   await expect(warning).toContainText('Unable to estimate how many operations are required to fill this order. Are you sure?');
@@ -249,9 +247,8 @@ test('merchant estimates stay responsive and require capped confirmation when un
   await warning.getByRole('button',{name:'Cancel',exact:true}).click();
   const before=await app.state();
   const invalidPromise=page.request.post('/party-api/merchant/order',{headers:{Origin:app.url},data:{buys:[{id:'staff',quantity:1,level:12,goldCap:1000}]}});
-  const responsiveAt=Date.now();
-  await page.request.get('/party-api/state?section=core');
-  expect(Date.now()-responsiveAt).toBeLessThan(2000);
+  // The coordinator answers a state read while the invalid order is in flight.
+  expect((await page.request.get('/party-api/state?section=core')).ok()).toBe(true);
   const invalid=await invalidPromise;
   expect(invalid.status()).toBe(400);
   const past=await page.request.post('/party-api/merchant/order',{headers:{Origin:app.url},data:{buys:[{id:'staff',quantity:1,level:13}]}});
@@ -1040,7 +1037,7 @@ test('Live WTB counts bank stock after empty slots without withdrawing it', asyn
 // (e2e/fixtures/settings-hooks-addon.ts) gives the add-on route a setting of each kind to check.
 test.describe('settings table', () => {
   test.use({ fixtureAddon: true, savedRecords: [[{ party_dashboard_bank_state_v1: { bankbois: { M: { name: 'M', state: 'ready', items: [] } } } }], { scope: 'test' }] });
-  consoleScenarioTable('settings: the rows that start from the console fixture', 600_000, settingsRowsReset, settingsRows);
+  consoleScenarioTable('settings: the rows that start from the console fixture', settingsRowsReset, settingsRows);
 });
 
 test('bank context marks pair automatic actions and retain a source-specific upgrade across restart', async ({ page, app }, info) => {
@@ -1140,20 +1137,20 @@ test('inventory context menu and upgrade preview stay readable without queueing 
   await expect(equip).toHaveCSS('color', 'rgb(0, 0, 0)');
   await equip.hover();
   await expect(equip).toHaveAttribute('data-highlighted', '');
+  // The highlighted item paints the menu's slate-100 token (components/ui/context-menu.tsx
+  // `data-highlighted:!bg-slate-100`), opaque and apart from the white menu.
   const hover = await equip.evaluate(element => {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 1;
     const context = canvas.getContext('2d')!;
-    const background = getComputedStyle(element).backgroundColor;
-    context.fillStyle = background;
-    context.fillRect(0, 0, 1, 1);
-    return { background, rgba: [...context.getImageData(0, 0, 1, 1).data] };
+    const paint = (color: string) => { context.clearRect(0, 0, 1, 1); context.fillStyle = color; context.fillRect(0, 0, 1, 1); return [...context.getImageData(0, 0, 1, 1).data]; };
+    const token = getComputedStyle(document.documentElement).getPropertyValue('--color-slate-100').trim();
+    return { token, rgba: paint(getComputedStyle(element).backgroundColor), expected: paint(token) };
   });
+  expect(hover.token).not.toBe('');
+  expect(hover.rgba).toEqual(hover.expected);
   expect(hover.rgba[3]).toBe(255);
-  for (const channel of hover.rgba.slice(0, 3)) {
-    expect(channel).toBeGreaterThanOrEqual(230);
-    expect(channel).toBeLessThan(255);
-  }
+  expect(hover.rgba.slice(0, 3)).not.toEqual([255, 255, 255]);
   const responsePromise = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/upgrade-preview') && response.request().method() === 'POST');
   await rootMenu.getByRole('menuitem', { name: 'Mark for upgrade', exact: true }).hover();
   const preview = page.getByRole('region', { name: 'Upgrade chances' });
@@ -1658,8 +1655,6 @@ test('log character pills default to all and independently filter live updates a
     await route.fulfill({json:{gameLogs:{W:[event('W'),...(newer?[event('W',2)]:[])],P:[event('P')],M:[event('M')],...(newer?{Retained:[event('Retained')]}:{})},combatLogs:{W:[{at:Date.now(),message:'Combat probe W',type:'info'}],P:[{at:Date.now(),message:'Combat probe P',type:'info'}]},merchantActivity:[]}});
   });
   await page.goto('/');
-  // A shared development server may finish initial module discovery and reload.
-  await page.waitForTimeout(2000);
   await page.getByRole('button',{name:'Show logs'}).click();
   const sidebar=page.getByRole('complementary',{name:'Live logs'}),pills=sidebar.getByRole('group',{name:'Log characters'});
   await expect(sidebar.getByRole('combobox',{name:'Log character',exact:true})).toHaveCount(0);

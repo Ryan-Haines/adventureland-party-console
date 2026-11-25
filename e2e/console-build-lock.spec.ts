@@ -4,7 +4,7 @@ import {promisify} from 'node:util';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {ConsoleBuildStore} from '../tools/console-build/store';
+import {ConsoleBuildStore,LOCK_POLL_MS} from '../tools/console-build/store';
 
 test('console lock cleanup retries its detached generation without deleting the successor',async({},info)=>{
   const root=info.outputPath('real-store'),script=info.outputPath('cleanup-race.mts'),report=info.outputPath('cleanup-race.json');
@@ -62,14 +62,17 @@ test('console lock cleanup retries its detached generation without deleting the 
 test('console lock release preserves a live recovery auditor until its inspection finishes',async({},info)=>{
   const store=new ConsoleBuildStore(info.outputPath('auditor-store'));
   const lock=path.join(store.directory,'operation.lock'),claim=path.join(lock,'recovery');
-  let audit!:Promise<unknown>,owner:unknown;
+  let audit!:Promise<unknown>,owner:unknown,returned!:()=>void;
+  const bodyReturned=new Promise<void>(resolve=>returned=resolve);
   const result=await store.locked(async()=>{
     owner=JSON.parse(await readFile(path.join(lock,'owner.json'),'utf8'));
     await mkdir(claim);await writeFile(path.join(claim,'owner.json'),JSON.stringify({pid:process.pid,token:'live-auditor'}));
-    audit=(async()=>{await new Promise(resolve=>setTimeout(resolve,100));
+    // The auditor reads once the release has met its claim: after the body returns and one release
+    // poll (store.ts releaseLock waits LOCK_POLL_MS while the claim exists).
+    audit=(async()=>{await bodyReturned;await new Promise(resolve=>setTimeout(resolve,LOCK_POLL_MS));
       const observed=JSON.parse(await readFile(path.join(lock,'owner.json'),'utf8'));
       const {rm}=await import('node:fs/promises');await rm(claim,{recursive:true});return observed;})().catch(error=>({error:String(error)}));
-    return 'audited';
+    returned();return 'audited';
   });
   const observed=await audit;
   await info.attach('real-filesystem-auditor-generation',{body:JSON.stringify({owner,observed,result}),contentType:'application/json'});

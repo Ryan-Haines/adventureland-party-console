@@ -1,6 +1,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createMerchantCompletionRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
 const {fixture}=require('./helpers/coordinator-completion.cjs');
+const {COMMERCE_RETRY_MS}=require('../../runtime/merchant-jobs/rules.ts');
 
 test('unresolved upgrade ambiguity installs an inventory recovery block rather than immediate retry',()=>{
  const f=fixture({job:{reason:'manual upgrades'}});
@@ -15,7 +16,7 @@ test('upgrade and compound communication failures preserve work with escalating 
  for(const reason of ['upgrades and compounds','manual upgrades','auto upgrade','manual compounds','auto compound']) {
   const f=fixture({job:{reason}}),retries=createCompletionRetries(f.state,f.ports);
   let job=f.state.merchantCurrent;
-  for(const delay of [10000,30000,60000,300000,300000]) {
+  for(const delay of [...COMMERCE_RETRY_MS,COMMERCE_RETRY_MS.at(-1)]) {
    const body={success:false,error:'POST /movement-plan · timeout'};
    const decision=retries.decide(job,body);assert.equal(decision.retry,true);
    retries.enqueue(job,decision);job=f.state.merchantQueue.shift();

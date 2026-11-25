@@ -4,7 +4,7 @@
 // outlast them until the step that reads it.
 const assert = require('node:assert/strict');
 const { scenarioTable } = require('./fixtures/scenarios.cjs');
-const { targetingHooks, CHARACTER_NOTICES } = require('../../e2e/fixtures/targeting-hooks-addon.ts');
+const { targetingHooks, CHARACTER_NOTICES, HEARD_PER_NOTICE } = require('../../e2e/fixtures/targeting-hooks-addon.ts');
 
 // The character half on a registry whose reads answer nothing.
 function characterHalf() {
@@ -23,7 +23,8 @@ scenarioTable("the targeting hooks fixture's heard list", characterHalf, [
       hooks['targeting.passed']({ character: 'W', target: 'bee', row: 'S3', by: 'core:targeting' });
     }
     assert.deepEqual(state.heard.filter(h => h.hook === 'targeting.retired').map(h => h.payload.target), ['goo']);
-    assert.ok(state.heard.length <= 2001, `the list stays bounded (${state.heard.length})`);
+    // The changed and passed notices each keep their newest HEARD_PER_NOTICE, beside the one retired.
+    assert.ok(state.heard.length <= 2 * HEARD_PER_NOTICE + 1, `the list stays bounded (${state.heard.length})`);
     assert.equal(state.heard.at(-1).hook, 'targeting.passed', 'the newest pass is kept');
   }],
 ]);

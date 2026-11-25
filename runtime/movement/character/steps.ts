@@ -10,7 +10,7 @@
 
 import type { WalkClient } from './walk-client.ts';
 import type { RecoveryPoint } from '../geometry/contracts.ts';
-import { MOVEMENT_TICK_MS } from '../rules.ts';
+import { MOVEMENT_TICK_MS, insideRange } from '../rules.ts';
 import { eventFacts } from '../../events/api.ts';
 import { partyHooks } from '../../hooks/index.ts';
 // The request table's occupied rows: the turns owner's published ask, which the formation and the
@@ -122,7 +122,7 @@ export function createCombatSteps(host: StepsHost, walk: WalkClient, ports: Step
     // Translate the engine's hitbox-aware attack distance into a center radius.
     let approach=desired==null?desiredCombatRange():desired;
     if(!host.is_in_range(target) && Number(character.range)>0)
-      approach=Math.min(approach,Math.max(1,Number(character.range)-10));
+      approach=Math.min(approach,insideRange(character.range,1));
     const radius = approach + Math.max(0, length - combatDistance(target));
     if(!center && !host.is_in_range(target))
       center=ports.interceptCenter(target,approach);

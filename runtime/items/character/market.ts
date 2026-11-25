@@ -2,7 +2,7 @@
 // sells, the stand search and buy, the native stand and its holder, the NPC purchase and sale,
 // deconstruction, the donation, mail, the restock, the dashboard's use, equip and give and the loot
 // pass with its timer. shared.js builds it once at load over `MarketPorts`.
-import { ALDATA_AUTH_MAIL, ALDATA_RATE_WINDOW_MS, DISMANTLE_FREE_SLOTS, LOOT_RADIUS, MAIL_POSTAGE, PONTY_RANGE, SEND_MEET_MS, donationXpPerGold, freeSlots, itemFailure, pontyPrice as lotPrice } from '../rules.ts';
+import { ALDATA_AUTH_MAIL, ALDATA_RATE_WINDOW_MS, CHEST_OPENING_MS, DISMANTLE_FREE_SLOTS, LOOT_RADIUS, MAIL_POSTAGE, PONTY_RANGE, SEND_MEET_MS, donationXpPerGold, freeSlots, itemFailure, pontyPrice as lotPrice } from '../rules.ts';
 import { sameItem, type ItemCopy } from '../identity.ts';
 import { SEND_REACH } from '../../protocol/reports.ts';
 import { settles, type BagAnswers, type BagPorts } from './bag.ts';
@@ -1145,9 +1145,8 @@ export function createMarket(p: MarketPorts) {
         return { id, map: c.map, in: c.in, x: c.x, y: c.y, items: c.items, skin: c.skin, deleted: !!c.to_delete, refused: refused[id]?.reason ?? null }; }) };
     ids = ids.filter(id => !refused[id]);
     if (!ids.length) { progress.error = 'waiting for a refused chest to change'; return false; }
-    // The game answers open_chest for a chest opened in the last 5 s with no emit, so the job band
-    // would admit a call that sends nothing. The pass leaves that chest for the next one.
-    ids = ids.filter(id => !(chests[id]?.openning && p.now() - +new Date(chests[id].openning) < 5000));
+    // A chest inside CHEST_OPENING_MS sends nothing, so the job band would admit a call with no emit.
+    ids = ids.filter(id => !(chests[id]?.openning && p.now() - +new Date(chests[id].openning) < CHEST_OPENING_MS));
     if (!ids.length) { progress.error = 'waiting for an opening chest'; return false; }
     // A chest id passes loot()'s client bag check; the server checks the actual items, including a
     // merge into a carried stack, and hands them to party members who can carry them.

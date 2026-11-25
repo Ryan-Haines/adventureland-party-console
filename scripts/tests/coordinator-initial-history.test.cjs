@@ -1,9 +1,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {initialCoordinatorHistory}=require('../../runtime/status/coordinator/logs.ts');
 test('history documents take precedence and arrays retain only the latest 500 entries',()=>{
- const entries=Array.from({length:501},(_,at)=>({message:'hit',at}));
+ const kept=require('./helpers/declared.cjs').hidden('historyKept'),entries=Array.from({length:kept+1},(_,at)=>({message:'hit',at}));
  const result=initialCoordinatorHistory({merchantActivity:entries,combatLogs:{F:entries}},{merchantActivity:['old'],combatLogs:{Old:[]}});
- assert.equal(result.merchantActivity.length,500);assert.equal(result.combatLogs.F[0],entries[1]);assert.equal(result.combatLogs.Old,undefined);assert.equal(entries.length,501);
+ assert.equal(result.merchantActivity.length,kept);assert.equal(result.combatLogs.F[0],entries[1]);assert.equal(result.combatLogs.Old,undefined);assert.equal(entries.length,kept+1);
  assert.deepEqual(initialCoordinatorHistory({merchantActivity:[],combatLogs:{}},{merchantActivity:['old']}),{merchantActivity:[],combatLogs:{}});
 });
 test('legacy potion and invalid kill entries are removed and a line with a kept id is kept once',()=>{

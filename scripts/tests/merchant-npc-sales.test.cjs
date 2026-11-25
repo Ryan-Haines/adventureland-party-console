@@ -2,7 +2,7 @@ const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const {reconcileNpcSales, readyNpcSales, failNpcSales, blockNpcSales} = require('../../runtime/items/coordinator/market.ts');
+const {reconcileNpcSales, readyNpcSales, failNpcSales, blockNpcSales, NPC_SALE_RETRY_MS} = require('../../runtime/items/coordinator/market.ts');
 const mark = (id='sale') => ({id,source:'merchant',slot:18,item:{name:'hpamulet',level:0},quantity:1,state:'queued'});
 const inventory = [{slot:18,item:{name:'hpamulet',level:0}}];
 test('durable orphan sale is runnable without a new automatic mark', () => {
@@ -10,10 +10,11 @@ test('durable orphan sale is runnable without a new automatic mark', () => {
  assert.equal(result.runnable,true); assert.equal(result.marks.length,1);
  assert.equal(reconcileNpcSales(result.marks,inventory,false,1000).changed,false);
 });
-// The sale retry restores v1.5.0's backoff: a failed sale retries 5 s, 15 s, 30 s, then every 60
-// s, with the bag unchanged.: a bank-sourced sale retries as a bag-sourced one does.
+// The sale retry restores v1.5.0's backoff (NPC_SALE_RETRY_MS), its last step repeating, with the bag
+// unchanged; a bank-sourced sale retries as a bag-sourced one does.
 test('sale retries back off indefinitely and survive reconciliation', () => {
- const BACKOFF_MS=[5000,15000,30000,60000,60000,60000]; // scripts/tests/merchant-npc-sales.test.cjs:15
+ // The schedule, then its last step twice more: the retries never stop.
+ const BACKOFF_MS=[...NPC_SALE_RETRY_MS,NPC_SALE_RETRY_MS.at(-1),NPC_SALE_RETRY_MS.at(-1)];
  let marks=[mark(),{...mark('bank'),source:'bank'}]; let now=1;
  for(const delay of BACKOFF_MS){
   marks=failNpcSales(marks,['sale','bank'],'interrupted',now);

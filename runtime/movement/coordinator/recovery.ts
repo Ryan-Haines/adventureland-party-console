@@ -6,6 +6,7 @@ import type { Fight, Group, Member } from '../../coordinator/targeting/api.ts';
 import type { FormationRecovery, FormationRecoveryReport, RecoveryPoint } from '../geometry/contracts.ts';
 import { fresh, reportClockError, type WalkReading } from '../../protocol/reports.ts';
 import { createOwnerLadder, type LadderState, type Rung } from '../../protocol/ladder.ts';
+import { RANGE_MARGIN, insideRange } from '../rules.ts';
 
 // The round's tries climb the one climber
 // (runtime/protocol/ladder.ts `createOwnerLadder`): each untried staging
@@ -107,7 +108,7 @@ function regroupStalled(r:Recovery,members:Member[],now:number):boolean {
 function regroup(r:Recovery,members:Member[],target:Fight,now:number,range:number):Recovery|undefined {
   const anchor=members.find(m=>m.ctype==='priest')||members.find(m=>m.name===r.mover)!;
   const gaps=members.map(m=>Math.hypot(m.status!.x-anchor.status!.x,m.status!.y-anchor.status!.y));
-  const covered=gaps.every(g=>g<=Math.max(10,range-10));
+  const covered=gaps.every(g=>g<=insideRange(range,RANGE_MARGIN));
   if(!covered)delete r.coveredAt;else r.coveredAt??=now;
   if(r.coveredAt!==undefined && members.every(m=>Number(m.status!.seenAt)>r.coveredAt!))return;
   return !covered && regroupStalled(r,members,now) ? tryFailed(r,members,target,now,'the members made no progress toward the anchor'):r;

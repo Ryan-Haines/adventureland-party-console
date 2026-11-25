@@ -183,7 +183,8 @@ test('a journal with nothing new is never rewritten by reopen or shutdown',async
  const [main,rotation]=fixture(t);let s=new Store(main,rotation,{setTimeout,clearTimeout});s.set('a',{value:1});s.set('b','x');s.close();
  const renames=countRenames(t);
  s=new Store(main,rotation,{setTimeout,clearTimeout});
- await new Promise(resolve=>setTimeout(resolve,150));
+ // The compaction a reopen could schedule runs on a timer turn of the store's own setTimeout.
+ await turn();
  s.set('a',{value:1});s.close();
  assert.equal(renames.count,0,'a compact journal stays as it is');
  const r=new Store(main,rotation,{setTimeout,clearTimeout});try{assert.deepEqual(r.get('a'),{value:1});assert.equal(r.get('b'),'x');}finally{r.close();}

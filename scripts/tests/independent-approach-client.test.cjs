@@ -3,6 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const {fixture,snapshotPorts,approachPointContext}=require('./fixtures/independent-approach-scenario.cjs');
 const {formationScenario}=require('./fixtures/formation-scenario.cjs');
+const {RANGE_MARGIN}=require('../../runtime/movement/rules.ts');
 scenarioTable("the independent approach client launches, re-aims, halves its radius and reports readiness (MOV-093)", ()=>fixture, [
  ['late caster begins own route after shared target engagement', fixture=>{const f=fixture();f.ctx.planned=false;assert.equal(f.client.tick(),true);assert.equal(f.routes.length,1);assert.equal(f.client.report().target,'target');}],
  // The approach's last level
@@ -88,16 +89,17 @@ scenarioTable("the independent approach ports walk each fighter's own journey in
  ['projected target center actually drives the native-clear independent goal ring', snapshotPorts=>{
  const f=snapshotPorts(),point={x:400,y:100};f.entity={id:'boss',x:400,y:0,visible:true,hp:100};
  const goal=f.ports.goal(point,197);assert.ok(Math.abs(Math.hypot(goal.x-point.x,goal.y-point.y)-197)<1e-7);}],
- ['new approaches aim ten units inside range without changing native readiness', snapshotPorts=>{
- const f=snapshotPorts();for(const [range,radius] of [[200,190],[36,26],[8,1]]){f.c.character.range=range;assert.equal(f.ports.context().radius,radius);}
- f.c.character.range=200;f.entity={id:'boss',x:195,y:0,visible:true,hp:100};assert.equal(f.ports.ready(),true,'Native ready does not wait for the ten-unit aim');}],
+ ['new approaches aim RANGE_MARGIN inside range without changing native readiness', snapshotPorts=>{
+ const f=snapshotPorts();for(const [range,radius] of [[200,200-RANGE_MARGIN],[36,36-RANGE_MARGIN],[RANGE_MARGIN-2,1]]){f.c.character.range=range;assert.equal(f.ports.context().radius,radius);}
+ f.c.character.range=200;f.entity={id:'boss',x:195,y:0,visible:true,hp:100};assert.equal(f.ports.ready(),true,'Native ready does not wait for the RANGE_MARGIN aim');}],
 ]);
 // combatApproachPoint leads a moving target only while the character is out of its native range.
 scenarioTable('the combat approach point leads a target only while native attack range is missing (MOV-095)', approachPointContext, [
- ['out of range the approach keeps a ten-unit buffer, and ready melee keeps its spacing', c=>{
-  assert.equal(c.combatApproachPoint({x:100,y:0}).x,74);c.is_in_range=()=>true;assert.equal(c.combatApproachPoint({x:100,y:0}).x,66);
+ ['out of range the approach keeps RANGE_MARGIN, and ready melee keeps its spacing', c=>{
+  // The fixture's range is 36 and its desired range 34.
+  assert.equal(c.combatApproachPoint({x:100,y:0}).x,100-(36-RANGE_MARGIN));c.is_in_range=()=>true;assert.equal(c.combatApproachPoint({x:100,y:0}).x,100-34);
   // The formation's desired range keeps the same buffer: a ranger settled at it publishes it on the hold.
-  for(const [inRange,x,desired] of [[false,160,26],[true,152,34]]){
+  for(const [inRange,x,desired] of [[false,160,36-RANGE_MARGIN],[true,152,34]]){
    const r=formationScenario();Object.assign(r.warrior,{ctype:'ranger',range:36,x});r.monster.target=null;
    r.c.desiredCombatRange=()=>34;r.c.is_in_range=()=>inRange;r.c.formationMove(r.monster);
    assert.equal(r.c.partyCombatPosition.mode,'formation-hold');assert.equal(r.c.partyCombatPosition.desiredRange,desired);}},

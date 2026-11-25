@@ -24,4 +24,9 @@ async function until(check,what=String(check)){
  }
 }
 
-module.exports={settle,until};
+// TanStack Query's notifyManager flushes its batched notices on a zero timer (query-core
+// notifyManager.js defaultScheduler, systemSetTimeoutZero). `notified` waits for that flush, after
+// the promise chains settle, so an observer has its new state when it returns.
+function notified(){return new Promise(resolve=>setTimeout(resolve,0));}
+
+module.exports={settle,until,notified};

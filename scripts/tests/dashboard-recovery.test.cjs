@@ -1,7 +1,7 @@
 const {settle}=require('./helpers/settle.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {startRecovery, recoveryDelay, probeDashboard, clearRecoveryHistory, clearWhenUp, recoveryStoragePrefix} = require('../../dashboard/lib/dashboard-recovery.ts');
+const {startRecovery, recoveryDelay, PROBE_TIMEOUT_MS, probeDashboard, clearRecoveryHistory, clearWhenUp, recoveryStoragePrefix} = require('../../dashboard/lib/dashboard-recovery.ts');
 // The probe times for `count` failed probes in a row: each waits recoveryDelay of the failures before it.
 const schedule = count => Array.from({length:count},(_,i)=>Array.from({length:i+1},(_,k)=>recoveryDelay(k)).reduce((a,b)=>a+b));
 function fixture(probe = async () => null, claimed = () => false, claim = null) {
@@ -52,9 +52,10 @@ test('a storage that refuses the claim shows the manual reload instead of probin
 test('requests timeout without overlap and cleanup aborts the active probe',async()=>{
   let aborted=0;
   const f=fixture(signal=>new Promise((_,reject)=>signal.addEventListener('abort',()=>{aborted++;reject(Error('timeout'));})));
-  await f.advance(5000);assert.equal(f.attempts.length,1);
+  // The first probe starts at recoveryDelay(0), and its bound ends PROBE_TIMEOUT_MS after that.
+  await f.advance(PROBE_TIMEOUT_MS);assert.equal(f.attempts.length,1);
   f.recovery.retry();assert.equal(f.attempts.length,1);
-  await f.advance(1000);assert.equal(aborted,1);assert.equal(f.statuses.at(-1).timedOut,true);
+  await f.advance(recoveryDelay(0));assert.equal(aborted,1);assert.equal(f.statuses.at(-1).timedOut,true);
   await f.advance(2000);assert.equal(f.attempts.length,2);
   f.recovery.dispose();await f.advance(100000);assert.equal(aborted,2);assert.equal(f.timers.size,0);
 });

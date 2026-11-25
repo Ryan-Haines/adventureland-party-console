@@ -3,6 +3,12 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { JSDOM } = require('../../.caracal/node_modules/jsdom');
 const { createSteamRecovery } = require('../../runtime/lifecycle/roster/recovery.ts');
+// The recovery's declared waits (lifecycle/fields.ts): the first restart after steamRecoveryFirstMs,
+// then each wait doubling from it up to steamRecoveryMaxMs. `restarts` is the gap before each of
+// five restarts, past the cap.
+const recoveryPick = require('../../runtime/lifecycle/fields.ts').lifecycleSavedFields.settings;
+const FIRST_MS = recoveryPick.steamRecoveryFirstMs.default;
+const restarts = [FIRST_MS, ...[1, 2, 3, 4].map(attempt => Math.min(recoveryPick.steamRecoveryMaxMs.default, FIRST_MS * 2 ** (attempt - 1)))];
 const { steamBootstrap, previousSteamBootstrap, steamBridgeVersion } = require('../../runtime/lifecycle/roster/connection.ts');
 const { installSteamBridge } = require('../../runtime/lifecycle/roster/bridge.ts');
 const { hidden } = require('./helpers/declared.cjs');
@@ -45,7 +51,7 @@ test('primary and connected companion recover after grace and confirm healthy st
   t.mock.method(Date,'now',()=>1000); const f=fixture();
   try {
     await f.supervisor.tick(f.reply); assert.deepEqual(f.starts,[]);
-    Date.now.mock.mockImplementation(()=>6000); await f.supervisor.tick(f.reply);
+    Date.now.mock.mockImplementation(()=>1000+FIRST_MS); await f.supervisor.tick(f.reply);
     assert.deepEqual(f.starts,['P','C']); await f.supervisor.tick(f.reply); assert.equal(f.starts.length,2);
     f.host.code_active=true; f.host.document.getElementById('maincode').contentWindow.__partyStatusSuccessAt=6001;
     Date.now.mock.mockImplementation(()=>7000); await f.supervisor.tick(f.reply);
@@ -126,7 +132,7 @@ test('one pending restart, capped backoff, and disposal during persistence', asy
     const pending=f.supervisor.tick(f.reply); await f.supervisor.tick(f.reply); assert.deepEqual(f.starts,[]);
     f.supervisor.dispose(); release('100'); await pending; assert.deepEqual(f.starts,[]);
     f.install(async()=>{throw Error('offline');}); await f.supervisor.tick(f.reply);
-    for (const delta of [5000,5000,10000,20000,30000]) {now+=delta;await f.supervisor.tick(f.reply);}
+    for (const delta of restarts) {now+=delta;await f.supervisor.tick(f.reply);}
     assert.equal(f.logs.filter(s=>/recovery failed/.test(s)).length,5);
     assert.ok(f.logs.some(s=>s.includes('prolonged recovery failure')));
   } finally {f.close();}
@@ -175,7 +181,7 @@ test('steamRecoveryAttemptsBound: a CODE that never reports healthy trips the bo
   try {
     boundsSent(boundsPending().length);
     f.reply.steam=['P']; await f.supervisor.tick(f.reply);
-    for (const delta of [5000,5000,10000,20000,30000]) {now+=delta;await f.supervisor.tick(f.reply);}
+    for (const delta of restarts) {now+=delta;await f.supervisor.tick(f.reply);}
     const firings=boundsPending();
     assert.equal(firings.length,1); assert.equal(firings[0].bound,'steamRecoveryAttemptsBound'); assert.equal(firings[0].subject,'P');
     const {BridgeSession}=require('../../runtime/lifecycle/roster/bridge-session.ts');

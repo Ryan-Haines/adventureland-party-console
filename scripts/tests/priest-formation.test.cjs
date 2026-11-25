@@ -56,7 +56,9 @@ scenarioTable('formation solver: grouped defense and the shared nomination (MOV-
 scenarioTable('formation solver: priest-centred coverage and holds (MOV-085b)', formationScenario, [
 ['unchanged movement requests cannot walk a warrior beyond a stationary priest',()=>{
  const f=approachParty();for(let i=0;i<80;i++)f.tick(false);
- const r=f.contexts[0];assert.ok(r.moves.every(p=>Math.hypot(p.x,p.y)<=174.61));
+ // The bound is the solver's own safe healing range, which the hold publishes, inside the priest's range.
+ const r=f.contexts[0],cover=r.c.partyCombatPosition.healingRange;assert.ok(cover>0 && cover<f.members[1].range);
+ assert.ok(r.moves.every(p=>Math.hypot(p.x,p.y)<=cover+1e-9));
  assert.ok(f.members.every(a=>a.x<200));
 }],
  ['coverage takes priority over max weapon range; scatter and events retain their own movement',({c,warrior,monster,moves})=>{
@@ -74,9 +76,9 @@ scenarioTable('formation solver: warrior approach and arcs (MOV-085c)', formatio
 ...[false,true].map(invisible=>['three-character approach advances priest and reaches melee; shared-only sight='+invisible,()=>{
  const f=approachParty(invisible);let previous=f.members.map(a=>a.x),reversals=0;
  for(let i=0;i<150;i++){
-  f.tick();const [w,p,m]=f.members;
-  assert.ok(Math.hypot(w.x-p.x,w.y-p.y)<=174.61,'warrior stays within preferred coverage');
-  assert.ok(Math.hypot(m.x-p.x,m.y-p.y)<=174.61,'mage stays within preferred coverage');
+  f.tick();const [w,p,m]=f.members,cover=f.contexts[0].c.partyCombatPosition.healingRange;assert.ok(cover>0);
+  assert.ok(Math.hypot(w.x-p.x,w.y-p.y)<=cover+1e-9,'warrior stays within preferred coverage');
+  assert.ok(Math.hypot(m.x-p.x,m.y-p.y)<=cover+1e-9,'mage stays within preferred coverage');
   f.members.forEach((a,j)=>{if(a.x<previous[j]-0.5)reversals++;previous[j]=a.x;});
  }
  assert.ok(f.members[1].x>100,'priest advances');
@@ -277,8 +279,8 @@ scenarioTable('formation solver: real game geometry runs (MOV-085g)', () => form
   for(const r of f.contexts){const actor=r.c.character;if(!actor.moving)continue;
    assert.ok(r.c.can_move_to(actor.going_x,actor.going_y),'issued movement stays collision safe');}
   const [w,p,m]=f.members;
-  assert.ok(Math.hypot(w.x-p.x,w.y-p.y)<195,'warrior stays in healing range');
-  assert.ok(Math.hypot(m.x-p.x,m.y-p.y)<195,'mage stays in healing range');
+  assert.ok(Math.hypot(w.x-p.x,w.y-p.y)<=p.range,'warrior stays in healing range');
+  assert.ok(Math.hypot(m.x-p.x,m.y-p.y)<=p.range,'mage stays in healing range');
  }
  assert.ok(f.contexts[0].c.is_in_range(f.target),'warrior must approach the stationary BBPom '+JSON.stringify(f.contexts.map(r=>({x:r.c.character.x,y:r.c.character.y,position:r.c.partyCombatPosition}))));
  assert.equal(f.contexts[0].c.groupedAttackAllowed(f.target),true,'basic attack authorization resumes');

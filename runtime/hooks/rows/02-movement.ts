@@ -359,6 +359,7 @@ export const DECISIONS = {
   'who may stop a journey': { at: 'runtime/movement/rules.ts#judgeStop', core: 'safety', cite: 'runtime/movement/rules.ts:215, escape and death recovery always stop' },
   'a combat step during a journey, its point': { at: 'runtime/movement/rules.ts#stepAllowed', hook: 'step.point' },
   'a combat step during a journey, its safety': { at: 'runtime/movement/rules.ts#stepAllowed', hook: 'step.safety' },
+  'how far inside its range an approach aims': { at: 'runtime/movement/rules.ts#insideRange', hook: 'step.point' },
   'maps a route may cross': { site: 'runtime/movement/coordinator/planner-service.ts:109', hook: 'route.avoid' },
   'a crossing may go': { site: 'runtime/movement/character/owner.ts:1293', hook: 'crossing.allows' },
   'formation slot': { site: 'runtime/movement/character/formation.ts:840', hook: 'formation.routine' },

@@ -8,7 +8,7 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const {createMerchantProgressRoutes} = require('../../runtime/merchant-jobs/coordinator/routes.ts');
 const {createCompletionRetries} = require('../../runtime/merchant-jobs/coordinator/endings.ts');
 const {currentMerchantReport} = require('../../runtime/merchant-jobs/coordinator/endings.ts');
-const {COMMERCE_PROGRESS_VERSION} = require('../../runtime/merchant-jobs/rules.ts');
+const {COMMERCE_PROGRESS_VERSION, COMMERCE_RETRY_MS} = require('../../runtime/merchant-jobs/rules.ts');
 const {craftProtection} = require('../../runtime/items/coordinator/production.ts');
 const {availableCraftStock, PROTECTED_FREE_SLOTS_DEFAULT} = require('../../runtime/items/rules.ts');
 const {publishTasks} = require('../../runtime/tasks/api.ts');
@@ -138,7 +138,7 @@ test('movement retries retain allowances, grow backoff, and leave invalid orders
   const state={merchantQueue:[],merchantJobBlocks:{},statuses:{M:{}},merchantCharacter:'M',npcSaleMarks:[],commands:{}};
   const retries=createCompletionRetries(state,{now:()=>1000,nextCommand:()=>1,stamp:j=>j,log(){}});
   let job={id:'j',target:'M',reason:'merchant commerce',order:{buys:[{level:8}]},resumeState:{spent:42,attempts:9}};
-  for(const delay of [10000,30000,60000,300000,300000]){
+  for(const delay of [...COMMERCE_RETRY_MS,COMMERCE_RETRY_MS.at(-1)]){
     retries.enqueue(job,retries.decide(job,{success:false,error:'ALClient found no route',failureKind:'commerce_movement'}));
     job=state.merchantQueue.shift();assert.equal(job.retryAt,1000+delay);assert.deepEqual(job.resumeState,{spent:42,attempts:9});
   }

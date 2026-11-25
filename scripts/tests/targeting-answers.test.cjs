@@ -207,11 +207,12 @@ const test=require('node:test');
 test('a delivered hidden pick reaches the character and a refused value leaves it as it was',()=>{
   const {deliveredPicks,pick,readPicks}=require('../../runtime/characters/targeting/saved-fields.ts');
   const picks=deliveredPicks();readPicks(picks.read);
-  assert.equal(pick('setAsideMs'),10000,'the declared default before any reply');
+  const {targetingSavedFields}=require('../../runtime/characters/targeting/saved-fields.ts'),declared=targetingSavedFields.settings;
+  assert.equal(pick('setAsideMs'),declared.setAsideMs.default,'the declared default before any reply');
   const saved=2*pick('setAsideMs');
   picks.take({setAsideMs:saved,crabReplyMs:-1});
   assert.equal(pick('setAsideMs'),saved);
-  assert.equal(pick('crabReplyMs'),2000,'a value the check refuses is not taken');
+  assert.equal(pick('crabReplyMs'),declared.crabReplyMs.default,'a value the check refuses is not taken');
 });
 
 // A member's stamp counts no further ahead than the clock difference the console measured for it

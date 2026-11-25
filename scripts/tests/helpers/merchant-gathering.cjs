@@ -24,6 +24,8 @@ exports.installGathering = (context, overrides = {}) => {
   const gathering = createGathering({
     root: () => context.root, runner: () => context.merchantRunner,
     character: () => context.character, parent: () => context.parent || {}, current: () => context.runtimeCurrent ? context.runtimeCurrent() : true,
+    // The clock port: a row plants `context.now`, else the real clock runs.
+    now: () => context.now ? context.now() : Date.now(),
     request: (url, options) => context.request ? context.request(url, options) : Promise.resolve({}),
     sleep: ms => context.sleep ? context.sleep(ms) : Promise.resolve(), log: (message, color) => context.game_log?.(message, color),
     stop: action => context.stop ? context.stop(action) : Promise.resolve(),

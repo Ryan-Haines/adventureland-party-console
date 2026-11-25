@@ -16,22 +16,22 @@ test('command ownership clears only a matching current job and retains the under
   assert.deepEqual(state.combatLogs, {});
 });
 
-// The log keeps the settings owner's historyKept (500 by default), the bound the history document
-// saves, where this writer kept 200 of its own.
+// The log keeps the settings owner's historyKept, the bound the history document saves, where this
+// writer kept 200 of its own.
 test('convoy ownership logs are bounded and omit command payloads', () => {
-  const state = {commands: {}, combatLogs: {}};
+  const state = {commands: {}, combatLogs: {}}, kept = require('./helpers/declared.cjs').hidden('historyKept');
   const ownership = createOwnership(state);
-  for (let id = 1; id <= 505; id++) {
+  for (let id = 1; id <= kept + 5; id++) {
     state.commands.A = {id, type: 'party-monster-travel', convoyId: 'convoy', items: ['private inventory']};
   }
-  assert.equal(state.combatLogs.A.length, 500);
+  assert.equal(state.combatLogs.A.length, kept);
   assert.equal(state.combatLogs.A[0].details.after.id, 6);
   ownership.clear('A', command => command.convoyId === 'convoy');
   const last = state.combatLogs.A.at(-1);
-  assert.equal(last.details.before.id, 505);
+  assert.equal(last.details.before.id, kept + 5);
   assert.equal(last.details.after, null);
   // v1.5.0's convoy-defense test checked that a command change names its caller.
   assert.ok(last.details.source.length);
-  assert.equal(state.combatLogs.A.length, 500);
+  assert.equal(state.combatLogs.A.length, kept);
   assert.equal(JSON.stringify(state.combatLogs).includes('private inventory'), false);
 });

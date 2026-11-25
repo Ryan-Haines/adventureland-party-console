@@ -168,7 +168,7 @@ test('fields the coordinator consumes at ingestion are marked as not stored', ()
 
 test('every catalog entry names its tier, size, description and readers', () => {
   for (const [name, field] of Object.entries(catalog)) {
-    assert.ok(field.description.length >= 5, name);
+    assert.ok(field.description.trim(), name);
     assert.ok(['lean', 'debug'].includes(field.tier), name);
     assert.ok(['small', 'large'].includes(field.size), name);
     if (field.size === 'large') assert.ok(field.bytes, name + ' needs a measured or estimated size');

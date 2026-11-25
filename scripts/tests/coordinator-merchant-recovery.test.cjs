@@ -107,9 +107,9 @@ test("only the lifecycle owner's offline answer recovers a silent job, and a sal
 // Every ending's wait holds v1.5.0's values (252, commerce-progress.ts:21,
 // recovery.ts:96), and the stopped job's requeue reads its wait from it.
 test('J4 answers each ending wait and the stopped job requeue reads row 9 from it',()=>{
- const {ENDINGS,endingWaitMs}=require('../../runtime/merchant-jobs/rules.ts');
+ const {ENDINGS,endingWaitMs,COMMERCE_RETRY_MS}=require('../../runtime/merchant-jobs/rules.ts');
  for(const row of ENDINGS)assert.equal(typeof endingWaitMs(row.retryAt,1),'number',row.ending);
- assert.deepEqual([1,2,3,4,5].map(n=>endingWaitMs('commerce',n)),[10000,30000,60000,300000,300000]);
+ assert.deepEqual([1,2,3,4,5].map(n=>endingWaitMs('commerce',n)),[...COMMERCE_RETRY_MS,COMMERCE_RETRY_MS.at(-1)]);
  assert.deepEqual([1,2,5,6].map(n=>endingWaitMs('recovery',n)),[20000,40000,300000,300000]);
  assert.equal(endingWaitMs('ten-seconds'),10000);assert.equal(endingWaitMs('realm'),10000);assert.equal(endingWaitMs('none'),0);
  const f=fixture({id:'quiet',target:'M',reason:'upgrades and compounds',phase:'processing',heartbeatAt:79999,startedAt:70000,recoveryAttempts:2});

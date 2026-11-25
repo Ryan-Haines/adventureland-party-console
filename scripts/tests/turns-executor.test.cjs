@@ -62,7 +62,8 @@ test('TC5: a slow reply leaves the family margin once it is older than the 4 s w
     step(8000);
     const lost=w.turns.records().filter(r=>r.kind==='lost').at(-1);
     assert.ok(lost,'the unanswered attack is counted lost');
-    assert.ok(lost.waitedMs<=4000+200,`lost after ${lost.waitedMs} ms: the 2000 ms reply of 10 s before no longer counts`);
+    // One cooldown (frequency 0.25), the 50 ms replies the test answered, and one 10 ms clock step.
+    assert.ok(lost.waitedMs<=1000/0.25+50+10,`lost after ${lost.waitedMs} ms: the 2000 ms reply of 10 s before no longer counts`);
   }finally{w?.restore();mock.timers.reset();}
 });
 

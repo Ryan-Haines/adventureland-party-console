@@ -34,7 +34,6 @@ test('candidate preparation keeps gameplay unpaused and failure preserves the se
 });
 
 test('prepared native publication matches validated legacy installation and measures its cost',async({},info)=>{
-  test.setTimeout(180000);
   const source=process.env.E2E_PREPARED_ARTIFACT||process.cwd();
   const root=info.outputPath('runtime'),app=path.join(root,'artifact');await mkdir(app,{recursive:true});
   await cp(path.resolve('tools/caracal'),path.join(app,'tools/caracal'),{recursive:true});
@@ -51,17 +50,16 @@ test('prepared native publication matches validated legacy installation and meas
     child.stdout.on('data',data=>output+=String(data));child.stderr.on('data',data=>output+=String(data));child.once('error',reject);child.once('exit',code=>code===0?resolve():reject(Error(output)));
   });return {ms:performance.now()-start,output};}
   const buildPreparation=await run([native]);
-  const runs=[];
-  for(let round=0;round<3;round++){
-    const targets=[path.join(root,'legacy-'+round),path.join(root,'prepared-'+round)];
-    for(const target of targets){await mkdir(target,{recursive:true});await writeFile(path.join(target,'config.json'),'account sentinel');await mkdir(path.join(target,'localStorage'));await writeFile(path.join(target,'localStorage/state.json'),'state sentinel');}
-    const legacy=await run([targets[0],'--artifact-native',native]);
-    const prepared=await run([targets[1],'--artifact-native',native,'--prepared-native']);
-    async function hashes(target:string,relative=''):Promise<Record<string,string>>{const result:Record<string,string>={};for(const entry of await readdir(path.join(target,relative),{withFileTypes:true})){
-      const name=relative?relative+'/'+entry.name:entry.name;if(entry.isDirectory())Object.assign(result,await hashes(target,name));else result[name]=createHash('sha256').update(await readFile(path.join(target,name))).digest('hex');}return result;}
-    const actual=await hashes(targets[1]);expect(actual).toEqual(await hashes(targets[0]));
-    for(const target of targets){expect(await readFile(path.join(target,'config.json'),'utf8')).toBe('account sentinel');expect(await readFile(path.join(target,'localStorage/state.json'),'utf8')).toBe('state sentinel');}
-    runs.push({round,legacy,prepared,savedMs:legacy.ms-prepared.ms,files:actual});
-  }
-  await info.attach('prepared-native-benchmark',{body:JSON.stringify({buildPreparation,runs},null,2),contentType:'application/json'});
+  // One install of each kind proves they match (BUILD-RULES: every test runs once); the attached
+  // times are one reading, not a bound.
+  const targets=[path.join(root,'legacy'),path.join(root,'prepared')];
+  for(const target of targets){await mkdir(target,{recursive:true});await writeFile(path.join(target,'config.json'),'account sentinel');await mkdir(path.join(target,'localStorage'));await writeFile(path.join(target,'localStorage/state.json'),'state sentinel');}
+  const legacy=await run([targets[0],'--artifact-native',native]);
+  const prepared=await run([targets[1],'--artifact-native',native,'--prepared-native']);
+  async function hashes(target:string,relative=''):Promise<Record<string,string>>{const result:Record<string,string>={};for(const entry of await readdir(path.join(target,relative),{withFileTypes:true})){
+    const name=relative?relative+'/'+entry.name:entry.name;if(entry.isDirectory())Object.assign(result,await hashes(target,name));else result[name]=createHash('sha256').update(await readFile(path.join(target,name))).digest('hex');}return result;}
+  const actual=await hashes(targets[1]);expect(actual).toEqual(await hashes(targets[0]));
+  for(const target of targets){expect(await readFile(path.join(target,'config.json'),'utf8')).toBe('account sentinel');expect(await readFile(path.join(target,'localStorage/state.json'),'utf8')).toBe('state sentinel');}
+  const install={legacy,prepared,savedMs:legacy.ms-prepared.ms,files:actual};
+  await info.attach('prepared-native-benchmark',{body:JSON.stringify({buildPreparation,install},null,2),contentType:'application/json'});
 });

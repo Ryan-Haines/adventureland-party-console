@@ -19,6 +19,8 @@ export interface Heard { hook: string; at: number; payload: Record<string, unkno
 // The answers: the candidates it keeps, the goo it prefers (the nearer or the farther), the aggro
 // owner it names and the target id it refuses.
 export interface Answers { keep?: string[]; prefer?: 'near' | 'far'; aggroOwner?: string; refuse?: string }
+// The entries `heard` keeps per notice.
+export const HEARD_PER_NOTICE = 1000;
 export interface FixtureState { heard: Heard[]; asked: Record<string, number>; answers: Answers }
 
 // The hooks of one realm. The function is page source too (`registerCharacterHalf`), so it uses no
@@ -44,7 +46,7 @@ export function targetingHooks(state: FixtureState, realm: 'character' | 'coordi
   // targeting.retired, before the step that reads it.
   const keep = (hook: string, payload: Record<string, unknown>) => {
     state.heard.push({ hook, at: Date.now(), payload, reads: reads(payload) });
-    if (state.heard.filter(h => h.hook === hook).length > 1000) state.heard.splice(state.heard.findIndex(h => h.hook === hook), 1);
+    if (state.heard.filter(h => h.hook === hook).length > HEARD_PER_NOTICE) state.heard.splice(state.heard.findIndex(h => h.hook === hook), 1);
   };
   const heard = Object.fromEntries(notices.map(hook => [hook, (payload: Record<string, unknown>) => keep(hook, payload)]));
   // `targeting.prefers` runs on both realms: the character's own selection and the grouped queue,

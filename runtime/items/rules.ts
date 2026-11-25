@@ -106,6 +106,10 @@ export const PONTY_RANGE = 500;
 // A chest farther than 400 from the looter loots dry (G node/server.js:11329-11331), so the
 // loot pass opens only the chests within it.
 export const LOOT_RADIUS = 400;
+// The game client answers loot() for a chest it opened in the last 5 s with `in_progress` and sends
+// no open_chest (G js/functions.js:4358 `ssince(chest.openning) < 5`), so the loot pass leaves such a
+// chest for its next pass.
+export const CHEST_OPENING_MS = 5000;
 // The game's compound tables reach +10, and the console offers compound targets to +7 only
 // (the odds make +8 to +10 unreachable).
 export const COMPOUND_TARGET_MAX = 7;
@@ -973,7 +977,7 @@ const ESTIMATE_RUNS = 3000;
 const ESTIMATE_RUNS_MIN = 30;
 export const ESTIMATE_QUANTILE = 0.9;
 const ESTIMATE_ROLL_BUDGET = 60_000_000;
-const ESTIMATE_YIELD_ROLLS = 32768;
+export const ESTIMATE_YIELD_ROLLS = 32768;
 const ESTIMATE_CACHE_BATCHES = 256;
 export type EstimateCap = 'ESTIMATE_ROLL_BUDGET' | 'ESTIMATE_YIELD_ROLLS' | 'ESTIMATE_CACHE_BATCHES';
 interface EstimateBudget { remaining: number; signal?: AbortSignal; yieldToIO(): Promise<void>; yields: number }

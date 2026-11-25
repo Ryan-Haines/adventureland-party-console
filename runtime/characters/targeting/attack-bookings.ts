@@ -15,7 +15,7 @@ type Notice = Record<string, unknown>;
 // The crab recovery reacts only to a reply of this send: a `too_far` that comes within W12's
 // `crabReplyMs` of it (b9b5c91e attack-controller.ts:86).
 
-export function createAttackBookings(ports: { recovery: Recovery; state(): CombatState; module: TargetingMap }) {
+export function createAttackBookings(ports: { recovery: Recovery; state(): CombatState; module: TargetingMap; now(): number }) {
   const m = ports.module;
   // The evidence action of the attack in flight; the attack family has one flight at a time.
   let action: string | null = null;
@@ -34,8 +34,9 @@ export function createAttackBookings(ports: { recovery: Recovery; state(): Comba
       }
       if (notice.outcome !== 'rejected' && notice.outcome !== 'lost') return;
       if (action) m.queueEvidence(c.target, "rejected", action);
-      if (notice.reason === 'too_far' && c.range && Date.now() - Number(notice.sentAt) <= pick('crabReplyMs') && c.current()) {
-        ports.recovery.reject(c.range, notice.reply, Date.now());
+      const now = ports.now();
+      if (notice.reason === 'too_far' && c.range && now - Number(notice.sentAt) <= pick('crabReplyMs') && c.current()) {
+        ports.recovery.reject(c.range, notice.reply, now);
         ports.state().rangeRecovery = ports.recovery.diagnostic();
       }
     },

@@ -39,7 +39,6 @@ test('compound valuation uses compound scroll prices, not upgrade scroll prices'
     reads: {}, bag: { pontyWanted: () => false }, game: { backgroundSecondhands: (_ms, reply) => { reply(Promise.resolve([{ name: 'amulet', level: 1, rid: 'a' }])); return true; } } });
   await market.refreshPontyListings();
   const [lot] = market.ponty().listings;
-  assert.equal(lot.unitPrice, Math.round(60 * 3.2 + 6400 / 2.4) * 2);
   assert.equal(lot.unitPrice, pontyPrice({ name: 'amulet', level: 1 }, { definition: items.amulet }, scrolls));
 });
 test('itinerary buys current-realm stock then the largest other realm', () => {

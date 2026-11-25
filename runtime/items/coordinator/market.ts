@@ -1866,7 +1866,9 @@ export function inventorySignature(inventory: readonly ({ slot?: number; item?: 
 }
 // A failed sale waits v1.5.0's backoff, 5 s after its first failure up to 60 s from its
 // fourth, whatever its source.
-const NPC_SALE_RETRY_MS = [5000, 15000, 30000, 60000] as const; // b9b5c91e:runtime/coordinator/merchant/npc-sales.ts:132
+// b9b5c91e:runtime/coordinator/merchant/npc-sales.ts:132; QUESTIONS.md U3 queues its progress rule
+// for owner 10 (REVIEW-QUEUE.md).
+export const NPC_SALE_RETRY_MS = [5000, 15000, 30000, 60000] as const;
 export const readyNpcSales = (marks: NpcSale[], now: number) =>
   marks.filter((mark) => mark.source !== "character" && mark.state !== "blocked" && (mark.retryAt || 0) <= now);
 

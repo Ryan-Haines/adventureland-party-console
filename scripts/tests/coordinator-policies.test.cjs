@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { commerceRuleKey, markMatches, markedItem, ruleMode } = require('../../runtime/items/api.ts');
 const { createALDataClient } = require('../../runtime/items/coordinator/market.ts');
 const { queueExchangeStorage } = require('../../runtime/items/coordinator/storage.ts');
-const { merchantJobPriority } = require('../../runtime/merchant-jobs/rules.ts');
+const { merchantJobPriority, merchantRoutinePriority, migrateRoutinePriorities, routineFor, ROUTINE_PRIORITY } = require('../../runtime/merchant-jobs/rules.ts');
 const { collectionSlotCount, markedCollectionReady, merchantCollectionNearby } = require('../../runtime/merchant-jobs/coordinator/owner.ts');
 const { mluckRemaining, mluckTravelLead } = require('../../runtime/merchant-jobs/coordinator/sources.ts');
 const { resolveABStrategy } = require('../../runtime/events/coordinator/api.ts');
@@ -53,11 +53,12 @@ test('nearby collection requires fresh matching realm and instance, not merely m
 
 test('storage handoffs outrank explicit priorities and live bid overrides include zero', () => {
   const priorities = { routines: { 'stand bid purchases': 40 }, bids: { leather: { priorityOverride: 0 } }, completesStorageHandoff: job => job.reason === 'manual bank exchange' };
-  assert.equal(merchantJobPriority({ reason: 'manual bank exchange', priorityOverride: 100 }, priorities), 101);
+  assert.equal(merchantJobPriority({ reason: 'manual bank exchange', priorityOverride: ROUTINE_PRIORITY.max }, priorities), ROUTINE_PRIORITY.max + 1);
   assert.equal(merchantJobPriority({ reason: 'Ponty purchases', bidItemId: 'leather' }, priorities), 0);
   priorities.bids.leather.priorityOverride = 90;
   assert.equal(merchantJobPriority({ reason: 'Ponty purchases', bidItemId: 'leather' }, priorities), 90);
-  assert.equal(merchantJobPriority({ reason: 'Ponty purchases' }, priorities), 76);
+  // With no bid override the job takes its routine's saved priority.
+  assert.equal(merchantJobPriority({ reason: 'Ponty purchases' }, priorities), merchantRoutinePriority(migrateRoutinePriorities(priorities.routines), routineFor({ reason: 'Ponty purchases' })));
 });
 
 test('exchange shortages retrieve matching BankBoi stacks once and never consume a different level', () => {
@@ -129,7 +130,7 @@ test("ALData waits the 429 reply's retry-after and no fixed window", async () =>
   const before = boundFirings().counts.ALDATA_RATE_WINDOW_MS || 0;
   limited = {}; await assert.rejects(client.request('/market'), /ALData rate limit reached/); limited = null;
   await client.request('/market');
-  assert.deepEqual(sleeps.slice(1), [60000]); assert.equal(boundFirings().counts.ALDATA_RATE_WINDOW_MS, before + 1);
+  assert.deepEqual(sleeps.slice(1), [require('../../runtime/items/rules.ts').ALDATA_RATE_WINDOW_MS]); assert.equal(boundFirings().counts.ALDATA_RATE_WINDOW_MS, before + 1);
   // An HTTP-date retry-after waits until that date; an unreadable one waits the window.
   const seconds = 5; limited = { 'retry-after': new Date(now + seconds * 1e3).toUTCString() }; await assert.rejects(client.request('/market')); limited = null;
   await client.request('/market'); assert.equal(sleeps.at(-1), seconds * 1e3);

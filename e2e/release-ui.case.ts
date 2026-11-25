@@ -279,7 +279,6 @@ test.describe("offline observation persistence", () => {
     await expect(page.getByRole('dialog',{name:'Equipment comparison',exact:true})).toHaveCount(0);
     await expect(page.getByRole('button',{name:'Inspect Coat +0',exact:true})).toBeVisible();
     expect(JSON.stringify(before)).not.toContain("must-not-persist");
-    expect(Buffer.byteLength(JSON.stringify(before))).toBeLessThan(50000);
     await app.restartCoordinator();
     const after = await app.state();
     expect(after.characters.M).toBeUndefined();

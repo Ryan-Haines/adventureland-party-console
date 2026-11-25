@@ -66,12 +66,12 @@ test('scatter only evaluates during disengagement or convoy defense, excluding m
 // The latest the settings owner's historyKept (500 by default), the bound the history document
 // saves.
 test('formation logs change only on meaningful transitions and retain the latest historyKept entries', () => {
-  const f = fixture();
+  const f = fixture(), kept = require('./helpers/declared.cjs').hidden('historyKept');
   f.run(); assert.deepEqual(f.state.combatLogs, {});
-  f.state.combatLogs.W = Array.from({ length: 500 }, (_, at) => ({ at }));
+  f.state.combatLogs.W = Array.from({ length: kept }, (_, at) => ({ at }));
   f.ports.evaluate = () => ({ ...f.group, recovering: ['P'] });
   const result = f.run();
-  assert.equal(f.state.combatLogs.W.length, 500);
+  assert.equal(f.state.combatLogs.W.length, kept);
   assert.equal(f.state.combatLogs.W[0].at, 1);
   assert.deepEqual(f.state.combatLogs.W.at(-1).details.recovering, ['P']);
   assert.equal(f.state.groupedCombat, result);
