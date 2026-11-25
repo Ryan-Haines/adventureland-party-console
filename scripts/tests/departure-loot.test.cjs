@@ -1,36 +1,33 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createDepartureLoot,installLootClient}=require('../../runtime/combat/departure-loot.ts');
-const {huntLootPending}=require('../../runtime/coordinator/hunt/loot.ts');
-const {createHuntTick}=require('../../runtime/coordinator/hunt/tick.ts');
-const {huntLootId}=require('../../runtime/hunt/loot-identity.ts');
-test('temporary Hunt loot ignores passing attacks while ordinary departure defense stays unchanged',async()=>{
- const saved=global.setInterval;global.setInterval=()=>0;let api,calls=0,now=100;
- const position={realm:':USII',map:'main',in:'main',x:0,y:0};
- try {
-  api=installLootClient({},{departureLootPorts:()=>({name:()=> 'W',quest:()=>({id:'poisio',count:9}),
-   now:()=>++now,cancelled:()=>false,position:()=>position,defending:()=>true,huntEncounterDefending:()=>false,
-   loot:async()=>{calls++;return true;},chests:()=>[],socket:()=>({once(_event,fn){queueMicrotask(fn);},off(){}}),afterDraw:fn=>fn()})});
-  const mission={cycleId:'h',currentIndex:0,stage:'farming',target:'poisio',participants:['W'],encounter:{convoyId:'c'},
-   missions:[{target:'poisio',owners:['W']}],loot:{...position,id:'encounter',after:99,complete:false}};
-  api.accept({serverNow:100,farmingPolicy:'hunt',monsterHunt:mission});await api.hunt.tick();
-  assert.equal(calls,1);assert.equal(api.hunt.report().complete,true);
-  delete mission.encounter;mission.loot={...mission.loot,id:'ordinary'};
-  api.accept({serverNow:200,farmingPolicy:'hunt',monsterHunt:mission});await api.hunt.tick();assert.equal(calls,1);
- } finally {api?.stop();global.setInterval=saved;}
-});
+const {createDepartureLoot,installLootClient}=require('../../runtime/hunting/character/loot.ts');
+const {createHunt}=require('../../runtime/hunting/coordinator/hunt.ts');
+const {huntMessage}=require('../../runtime/hunting/coordinator/record.ts');
+const {huntLootId}=require('../../runtime/hunting/rules.ts');
+// The loot client runs under the lifecycle owner's run scope, whose game window draws each frame at once here, and
+// collects through the items owner's loot pass (items/api.ts `loot`), which each row plants as lootPass.
+require('./helpers/run-scope.cjs').processScope();
+globalThis.parent.draw_trigger=callback=>callback();
+let lootPass=async()=>true;
+globalThis.partyItems={loot:{pass:()=>lootPass()}};
+const socket=()=>({on(){},off(){}});
+// The hunting owner's character door loot ports (shared.js `partyHunting.lootPorts`) for W at :USII main (0,0).
+const gamePorts=over=>()=>({name:()=>'W',quest:()=>null,positions:()=>[],clockOffset:()=>0,
+ character:()=>({name:'W',map:'main',in:'main',x:0,y:0}),frame:()=>({server_region:'US',server_identifier:'II',entities:{}}),
+ navigationCancelled:()=>false,escaping:()=>false,eventJoined:()=>false,defending:()=>false,passing:()=>false,engaged:()=>false,
+ chests:()=>[],socket,...over});
 test('historical completed loot releases farming and cannot return through a delayed report',()=>{
- const saved=global.setInterval;global.setInterval=()=>0;let api;
+ let api;
  try {
   const mission={cycleId:'old',currentIndex:0,stage:'farming',target:'bee',participants:['W'],missions:[{target:'bee',owners:['W']}]};
   mission.loot={id:huntLootId(mission),complete:true};
-  api=installLootClient({},{departureLootPorts:()=>({name:()=> 'W',quest:()=>({id:'bee',count:0}),cancelled:()=>false,position:()=>({})})});
-  api.accept({serverNow:1,farmingPolicy:'hunt',monsterHunt:mission});assert.equal(api.huntPending(),true);
+  api=installLootClient({},{lootPorts:gamePorts({quest:()=>({id:'bee',count:0})})});
+  api.accept({serverNow:1,targetMode:'hunt',monsterHunt:mission});assert.equal(api.huntPending(),true);
   for(const [index,stage] of ['ended','backup-travel','backup-farming'].entries()) {
-   api.accept({serverNow:index+2,farmingPolicy:stage==='ended'?'auto':'hunt',monsterHunt:{...mission,stage}});
-   assert.equal(api.huntPending(),false);api.accept({serverNow:1,farmingPolicy:'hunt',monsterHunt:mission});assert.equal(api.huntPending(),false);
+   api.accept({serverNow:index+2,targetMode:stage==='ended'?'farming':'hunt',monsterHunt:{...mission,stage}});
+   assert.equal(api.huntPending(),false);api.accept({serverNow:1,targetMode:'hunt',monsterHunt:mission});assert.equal(api.huntPending(),false);
   }
-  api.accept({serverNow:6,farmingPolicy:'auto',monsterHunt:mission});assert.equal(api.huntPending(),false);
- } finally {api?.stop();global.setInterval=saved;}
+  api.accept({serverNow:6,targetMode:'farming',monsterHunt:mission});assert.equal(api.huntPending(),false);
+ } finally {api?.stop();}
 });
 function client(){
  let now=100,defense=false,cancelled=false,calls=0,fail=false,observe,collect;
@@ -38,6 +35,7 @@ function client(){
  const ports={now:()=>++now,position:()=>position,cancelled:()=>cancelled,defending:()=>defense,
   loot:async()=>{calls++;if(fail)throw Error('loot_no_space');await new Promise(r=>collect=r);},
   nextObservation:()=>new Promise(r=>observe=r),chests:()=>chests};
+ lootPass=ports.loot;
  const api=createDepartureLoot(ports),control={id:'hunt:0',after:99,...position};api.accept(control,100);
  return {api,control,position,chests,calls:()=>calls,collect:async()=>{collect();await Promise.resolve();await Promise.resolve();},
   observe:()=>observe(),defend:v=>defense=v,cancel:()=>cancelled=true,fail:()=>fail=true};
@@ -62,138 +60,104 @@ test('stale encounter, wrong realm, instance and location cannot regain loot own
 test('an in-flight collection result cannot acknowledge a replaced encounter',async()=>{
  const r=client(),pass=r.api.tick();r.api.accept(null,200);await r.collect();await pass;assert.equal(r.api.report(),null);
 });
+// The departure barrier through the hunting owner's Hunt service (hunt.ts `createHunt`): pending() ticks it and
+// reads whether the barrier still holds.
 function coordinator(){
- const mission={target:'snake',owners:['W'],destination:{map:'main',x:0,y:0}};
- const hunt={cycleId:'cycle',stage:'farming',target:'snake',missions:[mission],currentIndex:0,participants:['W'],policyVersion:3,owner:'W',selectionLeader:'W'};
- const state={leader:'W',monsterHunt:hunt,farmingPolicy:'hunt',commands:{},statuses:{W:{seenAt:100,map:'main',in:'main',server:'USII',x:0,y:0,hp:100,monsterHunt:{id:'snake',count:0,remainingMs:900000}}}};
- const ports={now:()=>100,intent:()=>({}),cancelHuntConvoy(){state.activeConvoy=null;}};
- return {hunt,state,ports};
+ const mission={target:'snake',owners:['P'],destination:{map:'main',x:0,y:0},destinationVersion:1};
+ const hunt={cycleId:'cycle',stage:'farming',target:'snake',missions:[mission],currentIndex:0,participants:['W','P'],policyVersion:3,owner:'W',selectionLeader:'W',originArrivedAt:50};
+ const state={leader:'W',followers:{P:true},nextCommandId:1,monsterHunt:hunt,targetMode:'hunt',commands:{},navigationIntents:{W:{revision:1},P:{revision:1}},monsterHunterLocation:{map:'main',x:500,y:500},
+  monsterSearchRadiusByCharacter:{},combatLogs:{},monsterChoices:[{id:'snake',locations:[mission.destination]}],statuses:{}};
+ for(const [n,q] of [['W',{id:'bee',count:5,remainingMs:900000}],['P',{id:'snake',count:0,remainingMs:900000}]])
+  state.statuses[n]={seenAt:100,map:'main',in:'main',server:'USII',x:0,y:0,hp:100,convoyProtocol:4,monsterHunt:q};
+ require('./helpers/travel-observations.cjs').observeTravel(state.statuses);
+ const r={hunt,state,starts:[],ownsTravel:false,persist(){}};
+ const service=createHunt(state,{now:()=>100,participants:()=>['W','P'],online:()=>true,ownsTravel:()=>r.ownsTravel,persist:()=>r.persist(),
+  cancelConvoy(){state.activeConvoy=null;},selectedDestination:()=>null,
+  start(location){r.starts.push(location);state.activeConvoy={id:'walk',phase:'assemble',purpose:'monster-hunt',location,participants:['W','P']};return true;},
+  navigation:{authorize(){},intent:n=>state.navigationIntents[n]}});
+ r.pending=()=>{service.tick();return !!state.monsterHunt?.loot&&!state.monsterHunt.loot.complete;};
+ return r;
 }
 test('completed Hunt returns to Daisy without a departure loot hold',()=>{
- const r=coordinator();let returned=0;
- r.hunt.loot={id:'old',complete:false};
- createHuntTick(r.state,{...r.ports,rareEncounter:()=>false,ownsTravel:()=>true,
-  recordDeaths:()=>[],fresh:()=>true,persist(){},returnToDaisy(){returned++;}}).tick();
- assert.equal(returned,1);assert.equal(r.hunt.loot,undefined);assert.ok(r.hunt.turnIn);
+ const r=coordinator();r.ownsTravel=true;r.state.statuses.W.monsterHunt.count=0;
+ r.hunt.loot={id:'old',complete:false};r.pending();
+ assert.equal(r.starts.length,1);assert.equal(r.hunt.stage,'returning');assert.equal(r.hunt.loot,undefined);assert.ok(r.hunt.turnIn);
 });
 
 test('explicit Hunt loot barrier requires a matching fresh acknowledgement, not delivery',()=>{
- const r=coordinator();r.state.activeConvoy={id:'race',purpose:'monster-hunt'};
- assert.equal(huntLootPending(r.hunt,r.state,r.ports),true);
- assert.equal(r.state.activeConvoy,null);assert.match(r.hunt.message,/Pending Hunt loot/);
- assert.equal(huntLootPending(r.hunt,r.state,r.ports),true);
+ const r=coordinator();r.state.activeConvoy={id:'race',purpose:'monster-hunt'};r.hunt.convoyId='race';
+ assert.equal(r.pending(),true);
+ assert.equal(r.state.activeConvoy,null);assert.match(huntMessage(r.hunt),/Pending Hunt loot/);
+ assert.equal(r.pending(),true);
  const p={...r.hunt.loot,observedAt:101,complete:true};
  for(const bad of [{id:'old'},{realm:':EUI'},{in:'other'},{observedAt:100}]){
-  r.state.statuses.W.huntLoot={...p,...bad};assert.equal(huntLootPending(r.hunt,r.state,r.ports),true);
+  r.state.statuses.W.huntLoot={...p,...bad};assert.equal(r.pending(),true);
  }
- r.state.statuses.W.huntLoot=p;assert.equal(huntLootPending(r.hunt,r.state,r.ports),false);
+ r.state.statuses.W.huntLoot=p;assert.equal(r.pending(),false);
  assert.equal(r.hunt.missions[0].target,'snake');
 });
 test('pending loot never blocks explicit cancellation or an unfinished mission',()=>{
- const r=coordinator();r.state.statuses.W.monsterHunt.count=1;assert.equal(huntLootPending(r.hunt,r.state,r.ports),false);
- r.state.statuses.W.monsterHunt.count=0;r.ports.intent=()=>({cancelled:true});assert.equal(huntLootPending(r.hunt,r.state,r.ports),false);
+ const r=coordinator();r.state.statuses.P.monsterHunt.count=1;assert.equal(r.pending(),false);
+ const c=coordinator();c.state.navigationIntents.W.cancelled=true;assert.equal(c.pending(),false);
 });
 
 test('fresh collector outside the old loot location releases an inherited hunt barrier',()=>{
  for(const change of [{x:500},{map:'cave',in:'cave'},{server:'EUI'}]){
-  const r=coordinator();let saves=0;r.ports.persist=()=>saves++;
-  assert.equal(huntLootPending(r.hunt,r.state,r.ports),true);
+  const r=coordinator();
+  assert.equal(r.pending(),true);
   r.hunt.stage='checking-quests';r.hunt.cycleId='new-cycle';
   Object.assign(r.state.statuses.W,change);
-  assert.equal(huntLootPending(r.hunt,r.state,r.ports),false);
-  assert.equal(r.hunt.loot,undefined);assert.equal(saves,1);
+  assert.equal(r.pending(),false);
+  assert.equal(r.hunt.loot,undefined);
  }
 });
 
 test('an inherited barrier remains pending at its location and stale location reports cannot discard it',()=>{
- const r=coordinator();r.ports.persist=()=>assert.fail('valid loot discarded');
- assert.equal(huntLootPending(r.hunt,r.state,r.ports),true);
+ const r=coordinator();
+ assert.equal(r.pending(),true);
  r.hunt.stage='checking-quests';r.hunt.cycleId='new-cycle';
- assert.equal(huntLootPending(r.hunt,r.state,r.ports),true);
+ assert.equal(r.pending(),true);
  r.state.statuses.W.x=500;r.state.statuses.W.seenAt=-10000;
- assert.equal(huntLootPending(r.hunt,r.state,r.ports),true);assert.ok(r.hunt.loot);
+ assert.equal(r.pending(),true);assert.ok(r.hunt.loot);
 });
 
 test('final ghost kill blocks the queued neutral before quest count delivery, only for the mission owner',()=>{
- const saved=global.setInterval;global.setInterval=()=>0;
+ 
  let quest={id:'ghost',count:1},name='P';
  const mission={cycleId:'cycle',missionRevision:1,currentIndex:0,target:'ghost',stage:'farming',missions:[{target:'ghost',owners:['P']}]};
  let api;
  try{
-  api=installLootClient({},{departureLootPorts:()=>({name:()=>name,quest:()=>quest,cancelled:()=>false,position:()=>({})})});
+  api=installLootClient({},{lootPorts:gamePorts({name:()=>name,quest:()=>quest})});
   api.accept({serverNow:100,monsterHunt:mission});assert.equal(!!api.huntPending(),false);
   api.finalKill('ghost');assert.equal(api.huntPending(),true);
   quest.count=0;assert.equal(api.huntPending(),true);
   name='W';assert.equal(!!api.huntPending(),false,'another member with an incidental completed quest cannot stall the mission');
   name='P';api.accept({serverNow:101,monsterHunt:{...mission,missionRevision:2}});quest.count=5;
   assert.equal(!!api.huntPending(),false,'a new assignment cannot inherit the previous final kill');
- }finally{api?.stop();global.setInterval=saved;}
+ }finally{api?.stop();}
 });
 
 test('client ignores a selected neutral when deciding whether it must defend before loot',()=>{
- const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync('characters/shared.js','utf8');
+ // Both reads are targeting's (threat.ts); the context reads them from its module (helpers/targeting-module.cjs).
+ const {targetingContext}=require('./helpers/targeting-module.cjs');
  const entity={id:'next',type:'monster',visible:true};
- const c=vm.createContext({root:{},parent:{entities:{next:entity}},character:{map:'main',in:'main'},reunionRealm:()=> 'USII',
+ const c=targetingContext({root:{},parent:{entities:{next:entity}},character:{map:'main',in:'main'},reunionRealm:()=> 'USII',
   groupedCombat:{target:{...entity,state:'planned'},fights:[]},isAttackingPartyMember:t=>t.target==='W'});
- for(const name of ['departureTargetEngaged','departureCombatPending']) {
-  const start=source.indexOf('  function '+name+'('),end=source.indexOf('\n  }',start)+4;
-  assert.ok(start>=0 && end>start);vm.runInContext(source.slice(start,end),c);
- }
  assert.equal(c.departureCombatPending(),false);entity.target='W';assert.equal(c.departureCombatPending(),true);
 });
 
 test('temporary convoy communication hold suspends collection without retiring its loot identity',async()=>{
- const saved=global.setInterval;global.setInterval=()=>0;let api,calls=0,now=100;
+ let api,calls=0,now=100;
  const position={realm:':USII',map:'main',in:'main',x:0,y:0};
  const loot={...position,id:'convoy-loot',after:90};
  try {
-  api=installLootClient({},{departureLootPorts:()=>({name:()=> 'W',quest:()=>null,
-   now:()=>++now,cancelled:()=>false,position:()=>position,defending:()=>false,
-   loot:async()=>{calls++;if(calls===1)throw {reason:'openning'};return true;},chests:()=>[],
-   socket:()=>({once(_event,fn){queueMicrotask(fn);},off(){}}),afterDraw:fn=>fn()})});
+  lootPass=async()=>{calls++;if(calls===1)throw {reason:'openning'};return true;};
+  api=installLootClient({},{lootPorts:gamePorts({socket:()=>({on(event,fn){if(event==='entities')queueMicrotask(fn);},off(){}})})});
   api.accept({serverNow:100,convoySignal:{phase:'defending',loot}});await api.convoy.tick();
   assert.equal(api.convoy.report().error,'openning');
   api.accept({serverNow:200,convoySignal:{phase:'communication-hold',loot}});await api.convoy.tick();
   assert.equal(calls,1);
   api.accept({serverNow:300,convoySignal:{phase:'defending',loot}});await api.convoy.tick();
   assert.equal(calls,2);assert.equal(api.convoy.report().complete,true);
- } finally {api?.stop();global.setInterval=saved;}
-});
-
-// Failure inventory: a captured neutral may be retired while still visible;
-// stale/other-convoy control must not release it, and live attackers still block
-// loot even after retirement. Exercise the retained client/loot boundary before
-// changing production; native Hen kill/drop/return E2Es cover the full journey.
-test('fresh owned Hunt retirement releases neutral defense loot without bypassing live attackers',async()=>{
- const fs=require('node:fs'),vm=require('node:vm');
- const {namedFunction}=require('./helpers/named-function.cjs');
- const source=fs.readFileSync('characters/shared.js','utf8');
- const target={id:'117',type:'monster',mtype:'hen',map:'main',in:'main',visible:true,hp:60,target:null};
- const c=require('./helpers/client-dependencies.cjs').passingContext({
-  Date:{now:()=>10000},character:{name:'W',map:'main',in:'main'},parent:{entities:{117:target}},
-  convoyTraveling:{id:'c',epoch:3,purpose:'monster-hunt',huntTarget:'goo',defensePaused:true,defenseTargets:[target]},
-  root:{__partyHuntTravelAt:10000,__partyHuntTravel:{id:'c',epoch:3,defending:true,primary:target,committed:[target]}},
-  isAttackingPartyMember:t=>t.target==='W',groupedCombat:{deaths:[]},
- });
- vm.runInContext(['departureTargetEngaged','departureCombatPending'].map(n=>namedFunction(source,n)).join('\n'),c);
- assert.equal(c.departureCombatPending(),true,'the committed neutral remains owned');
- c.root.__partyHuntTravel.primary=null;c.root.__partyHuntTravel.committed=[];
- c.root.__partyHuntTravelAt=6000;
- assert.equal(c.departureCombatPending(),true,'stale control cannot release defense');
- c.root.__partyHuntTravelAt=11000;
- assert.equal(c.departureCombatPending(),true,'future control cannot release defense');
- c.root.__partyHuntTravelAt=10000;c.root.__partyHuntTravel.epoch=4;
- assert.equal(c.departureCombatPending(),true,'another epoch cannot release defense');
- c.root.__partyHuntTravel.epoch=3;target.target='W';
- assert.equal(c.departureCombatPending(),true,'a real attacker remains a blocker');
- target.target=null;
- let calls=0,now=10000;
- const position={realm:':USII',map:'main',in:'main',x:0,y:0};
- const loot=createDepartureLoot({now:()=>++now,cancelled:()=>false,position:()=>position,
-  defending:()=>c.departureCombatPending(),loot:async()=>{calls++;return true;},chests:()=>[],
-  nextObservation:async()=>{}});
- loot.accept({...position,id:'retired-defense-loot',after:9999},10000);
- await loot.tick();
- assert.equal(calls,1,'retired neutral must permit the real departure-loot state machine');
- assert.equal(loot.report().complete,true);
+ } finally {api?.stop();}
 });

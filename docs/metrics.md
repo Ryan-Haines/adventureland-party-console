@@ -71,8 +71,9 @@ Kills and DPS have separate searchable monster filters. DPS also filters skills
 and groups bars by character or skill. Items acquired has a searchable item filter
 and rate units. Gold shows cumulative net gold gained with a character selector.
 Loot breakdown shows all acquired items as horizontal bars, with scrolling when
-needed. It defaults to today in America/Toronto and offers yesterday, a selected
-day or an inclusive date range. Calendar boundaries follow EST/EDT automatically.
+needed. It defaults to today and offers yesterday, a selected day or an inclusive
+date range. Kills, damage, items and loot all count calendar days from the browser's
+midnight, daylight saving included, and each view says so.
 It ignores the shared time range and temporary item resets so selected days keep
 their complete loot totals. Its reset button restores today's date filter.
 There is no Damage breakdown graph. Ping shows a time series.
@@ -126,8 +127,9 @@ counter still follows the header's live core updates.
 Each graph has a reset button. Kills and credits are permanently erased together.
 DPS permanently erases damage history. These
 durable cutoffs prevent older queued frames from restoring deleted data.
-The append journal is compacted after deletion, and interrupted erasure resumes
-from its persisted checkpoint. Ingestion waits in the character outbox during
+The erasure resets each saved record on its own (a commit's part, a 1-minute
+bucket, a day file), the append journal is compacted after deletion, and
+interrupted erasure resumes from its persisted checkpoint. Ingestion waits in the character outbox during
 the erasure so new observations cannot race with cleanup.
 
 Gold, Total account gold, Items acquired, and Ping resets temporarily clear the
@@ -197,18 +199,43 @@ Older lost/expired data marks subsequent coverage incomplete. An unsealed
 frame can lose up to about one second on an
 abrupt runtime termination. Collection ends with its CODE generation.
 
-Each accepted frame writes measurements and its retry receipt in one bucket
-record. A lost HTTP acknowledgement can resend the same frame without adding
-its measurements again. Party death/chest identities are scoped to server,
+Each POST writes its frames before it answers, one part record per 10-second
+bucket: those frames' measurements, their retry receipts and their kill and
+loot ids. The collector drops a frame from its outbox on that answer. From the
+service's close at shutdown on, a POST answers 503 and writes nothing, so its
+frames stay in the outbox for the next coordinator process. As the
+next bucket starts, each bucket's frames since the last start become one part
+and their POSTs' parts are deleted, so a bucket keeps one part per span and a
+late frame adds a part; nothing rewrites an earlier one. A receipt is a run of frame sequences per character
+and collector runtime, so a bucket holds a few runs.
+A lost HTTP acknowledgement can resend the same frame without adding its
+measurements again. Party death/chest identities are scoped to server,
 map/instance and native IDs, with short-lived death deduplication to accommodate
 native IDs being reused after a server restart.
 
 History retains 10-second buckets for 24 hours, 1-minute buckets for 30 days,
-and 15-minute buckets for 180 days. Rollup checkpoints are written before source
-deletion so interruptions can resume without adding the same source twice.
+and 15-minute buckets for 180 days. A minute becomes one 1-minute bucket once
+its last 10-second bucket is 24 hours old; the coordinator writes that bucket
+once and then deletes the minute's parts. A UTC day closes once all its
+minutes have rolled: its 1-minute buckets leave the journal for one
+gzip-compressed file, `<LOCALSTORAGE_PATH>.metrics.jsonl.days/<date>.60000.jsonl.gz`,
+and the journal keeps a `day:` record with the day's kill, damage and loot sums
+and its character and server names. A day file becomes 15-minute buckets, whole,
+once the day's end is 30 days old, and leaves the history once the day's end is
+180 days old; its kills then join the saved lifetime base (`killTotals`).
+Each step writes its result before it deletes its source, and startup removes
+what a crash left of either side, so nothing counts twice.
 Rollups preserve sums, sample counts, exposure and chronological balance
 endpoints. Queries align ranges to stored buckets and return roughly 600 points.
 Resolution cannot recover details already merged into older buckets.
+
+The coordinator's memory holds the 10-second buckets and the 1-minute buckets of
+days not yet closed. A query reads a closed day from its file, merges its
+buckets into the chart's points, and keeps that merge while the latest query of
+the same route reads it, so a live chart's next poll reads only memory. A
+v1.5.0 journal loads as it is: its receipt ids become runs, its `sources` lists
+mark what a rollup already merged, its saved lifetime list becomes the base,
+and its closed days move to day files after startup.
 
 `GET /party-api/metrics?from=<epoch_ms>&to=<epoch_ms>` returns the versioned
 metrics contract, collection start, resolution, available characters/servers,
@@ -219,8 +246,8 @@ hidden or the browser is not visible.
 `GET /party-api/metrics/kills` accepts the selected `from`/`to` range and the
 calendar day's `dayFrom`/`dayTo`, plus optional `characters`/`servers` filters.
 It returns per-monster selected-range counts, retained totals and daily counts.
-Retained totals use an in-memory index rebuilt from durable buckets at startup
-and updated after accepted deaths, expiry and resets. Range/day aggregates read
+Retained totals use an in-memory index rebuilt at startup from the day records
+and the buckets in memory, and updated after accepted deaths, expiry and resets. Range/day aggregates read
 the existing bucket index rather than transmitting full history to the browser.
 
 `GET /party-api/metrics/bars` accepts `metric=damage|loot`, grouping by
@@ -232,10 +259,16 @@ index, maintained through ingestion, expiry and resets.
 
 ## Maintained source
 
-- `runtime/characters/metrics.ts`: capture, outbox and retry lifecycle.
-- `runtime/metrics/`: shared protocol and boundary parsers.
-- `runtime/coordinator/metrics/service.ts`: ingestion, deduplication, storage,
-  retention and queries.
+- `runtime/status/character/telemetry.ts`: capture, outbox and retry lifecycle.
+- `runtime/status/api.ts` (the wire shapes) and `runtime/status/rules.ts` (the
+  reset kinds, the outbox keys and the frame parsers): the shared protocol, which
+  the characters, the coordinator and the dashboard load without coordinator code.
+- `runtime/status/coordinator/metrics/service.ts`: ingestion, deduplication by
+  each event's id, storage in the coordinator's journal store
+  (`runtime/settings/coordinator/persistence/jsonl-store.ts`), retention and
+  queries; a retention pass that writes again ends a storage outage.
+- `runtime/status/coordinator/metrics/history.ts`: the bucket shape, receipt runs,
+  merges and rollups; `days.ts`: the day files and their journal records.
 - `dashboard/features/party/party-view-switch.tsx`: workspace navigation.
 - `dashboard/features/party/metrics-*.tsx` and `metrics-series.ts`: graphs,
   filtering and projections.
@@ -244,7 +277,7 @@ index, maintained through ingestion, expiry and resets.
 - `dashboard/features/party/metrics-measurements.tsx`: DPS and acquisition bars.
 - `dashboard/features/party/metrics-gold.tsx`: per-character balance baselines
   and cumulative net gold gains.
-- `runtime/metrics/luck.ts`: native Encouragement parsing and the independent
+- `runtime/status/rules.ts` `encouragementLuck`, `projectDirectDrop`: native Encouragement parsing and the independent
   ordinary/bonus drop model.
 
 Later additions can extend acquisition sources and transaction attribution,
@@ -259,4 +292,4 @@ Retried acknowledged frames must survive coordinator restart exactly once. Compa
 
 The metrics journal now queues ordered asynchronous appends and compacts one record at a time with asynchronous file writes; coordinator combat callbacks no longer synchronously rewrite retained history. Delivery acknowledgements wait for their queued writes, and graceful shutdown drains them. Receipt identities and totals remain one record, preserving retry deduplication. Startup still replays the journal before accepting metrics.
 
-Character retries persist each immutable frame once in a bounded 1,024-slot ring and rewrite a small header containing at most 720 retained sequence numbers. The collector removes a frame's ring key once the frame leaves the queue, and installation removes every ring key the restored header does not list, so the store holds only unconfirmed frames. In a headless worker the coordinator keeps the outbox keys in its journal and sends them only to the owning character's worker (`runtime/coordinator/characters/storage.ts`); the game's `local_cm_logic` walks every localStorage key every 16 ms. Existing full-frame journals migrate on their next persistence. Native startup ping samples are gaps for the first ten seconds of each observed connection. Assigned offline characters retain their last known carried gold in account totals; an unknown balance yields a gap rather than fabricated zero.
+Character retries persist each immutable frame once in a bounded 1,024-slot ring and rewrite a small header containing at most 720 retained sequence numbers. The collector removes a frame's ring key once the frame leaves the queue, and installation removes every ring key the restored header does not list, so the store holds only unconfirmed frames. In a headless worker the coordinator keeps the outbox keys in its journal and sends them only to the owning character's worker (`runtime/settings/coordinator/persistence/worker-storage.ts`); the game's `local_cm_logic` walks every localStorage key every 16 ms. Existing full-frame journals migrate on their next persistence. Native startup ping samples are gaps for the first ten seconds of each observed connection. Assigned offline characters retain their last known carried gold in account totals; an unknown balance yields a gap, not a zero.

@@ -40,7 +40,13 @@ function createGameFixture(directory) {
   const location = { map: 'main', mapName: game.maps.main.name || 'main', boundary,
     x: (boundary[0] + boundary[2]) / 2, y: (boundary[1] + boundary[3]) / 2 };
   const spawnRecords = [{ ...location, sourceMap: 'main', count: gooSpawn.count, restrictions: [] }];
-  const monsterChoices = [{ id: 'goo', name: game.monsters.goo.name || 'goo', locations: [location], spawnRecords }];
+  // The game's Phoenix spawn is five separate regions; the settings rows need them to build a valid patrol order.
+  const phoenixSpawn = game.maps.main.monsters.find(spawn => spawn.type === 'phoenix');
+  const phoenixLocations = phoenixSpawn.boundaries.map(([map, ...area]) => ({ map, mapName: game.maps[map].name || map,
+    boundary: area, x: (area[0] + area[2]) / 2, y: (area[1] + area[3]) / 2 }));
+  const monsterChoices = [{ id: 'goo', name: game.monsters.goo.name || 'goo', locations: [location], spawnRecords },
+    { id: 'phoenix', name: game.monsters.phoenix.name || 'phoenix', locations: phoenixLocations,
+      spawnRecords: phoenixLocations.map(place => ({ ...place, sourceMap: place.map, count: phoenixSpawn.count, restrictions: [] })) }];
   const bestiaryCatalog = Object.entries(game.monsters).map(([id, definition]) => ({
     ...definition, id, name: definition.name || id, definition, threat: 0, drops: [], spawnRecords: id === 'goo' ? spawnRecords : [],
   }));
@@ -57,8 +63,11 @@ function createGameFixture(directory) {
       statusSequence: sample, connected: true, map: 'main', in: 'main', server: 'USII',
       ...(name === 'W' && process.env.E2E_MAP_CAPTURE === 'true' ? {map:'zone_abc123_0',in:'zone_abc123_0',x:31,y:47} : {x:0,y:0}), moving: false, rip: false, hp: 1000, max_hp: 1000, mp: 1000, max_mp: 1000,
       gold: 1000000, speed: 50, range: 100, attack: 100, frequency: 1,
-      gameParty: ['W', 'P'], threats: [], conditions: [], slots: name === 'M' && process.env.E2E_MARKET_STAND === 'true' ? {trade1:{slot:1,item:{name:'sword',level:8,b:true,price:1000,q:3},meta:reportMeta('sword')}} : name === 'M' && process.env.E2E_STAND_BUY_ORDERS === 'true' ? Object.fromEntries(['spidersilk','bkey','helmet','stramulet'].map((id,index)=>['trade'+(index+1),{slot:index+1,item:{name:id,b:true,...(['helmet','stramulet'].includes(id)?{level:id==='stramulet'?2:0}:{}),price:1000,q:1},meta:reportMeta(id)}])) : {},
+      gameParty: ['W', 'P'], threats: [], conditions: name === 'W' && process.env.E2E_STATUS_CONDITIONS === 'true' ? [{ id: 'warcry', name: 'War Cry', remainingMs: 8000, definition: {}, live: {} }] : [], slots: name === 'M' && process.env.E2E_MARKET_STAND === 'true' ? {trade1:{slot:1,item:{name:'sword',level:8,b:true,price:1000,q:3},meta:reportMeta('sword')}} : name === 'M' && process.env.E2E_STAND_BUY_ORDERS === 'true' ? Object.fromEntries(['spidersilk','bkey','helmet','stramulet'].map((id,index)=>['trade'+(index+1),{slot:index+1,item:{name:id,b:true,...(['helmet','stramulet'].includes(id)?{level:id==='stramulet'?2:0}:{}),price:1000,q:1},meta:reportMeta(id)}])) : {},
       monsterHunt: name === 'W' ? { id: 'goo', count: 10, remainingMs: 600000, server: 'USII' } : null,
+      // Every character reports the gap between its reports; the fixture reports
+      // its own heartbeat cadence (e2e/coordinator.cjs refresh, one second).
+      reportIntervalMs: 1000,
       navigationState: 'idle', standOpen: name === 'M',
       items: Array.from({ length: 42 }, (_, slot) => (name === 'M' || name === 'W' && process.env.E2E_PLAYER_INVENTORY === 'true') && slot === 0
         ? { slot, item: { name: 'sword', level: 0 }, meta: reportMeta('sword') } : name === 'M' && slot === 1

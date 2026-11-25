@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createAnniversarySupplies,anniversaryTradeIdentity}=require('../../runtime/coordinator/anniversary/supplies.ts');
+const {createAnniversarySupplies,anniversaryTradeIdentity}=require('../../runtime/events/coordinator/anniversary.ts');
 const item=(name,q)=>({item:{name,q}});
 
 test('anniversary supply totals prefer BankBoi snapshots over duplicate live inventories and read replacement state',()=>{
@@ -11,9 +11,9 @@ test('anniversary supply totals prefer BankBoi snapshots over duplicate live inv
  assert.equal(service.counts().slice_citrus,0);assert.equal(service.counts().slice_mint,1);
 });
 
-test('reciprocal trade identities preserve account coercion and character fallback rules',()=>{
+test('reciprocal trade identities trim the account and fall back to the character',()=>{
  for(const [owner,sender,expected] of [[0,'Mage','account:0'],[' 123 ','Mage','account:123'],[null,'MaGe','character:mage'],
-  [undefined,' Mage ','character: mage '],['  ',null,'character:'],[false,'Mage','account:false'],[{},'Mage','account:[object Object]']])
+  [undefined,' Mage ','character: mage '],['  ',null,'character:']])
   assert.equal(anniversaryTradeIdentity(owner,sender),expected);
 });
 

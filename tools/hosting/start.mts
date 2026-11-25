@@ -6,20 +6,20 @@ import { DebugInstances } from '../debug/service.ts';
 import { listen } from "./listen.ts";
 import { gateway } from "./gateway.ts";
 import { accountConfig, sessionValue } from "./account.ts";
-import { Services } from "./services.ts";
-import { servicesHealthy } from "./health.ts";
+import { Services, stopHost } from "./services.ts";
+import { internalPorts, servicesHealthy, startFailure } from "./health.ts";
 import { updateHosting } from '../update/hosting.ts';
 import { notifyBoot, waitForRelease } from '../update/boot.ts';
 import { LocalTLS } from './tls.ts';
-import { configureDashboardGateway } from '../dashboard/gateway-access.ts';
+import { publicPort } from './defaults.ts';
+import { configureDashboardGateway } from '../dashboard/api.ts';
 import { createLocalSteam } from '../steam/service.ts';
 import { loadManagedConsole } from '../console-build/bootstrap.ts';
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const data = path.resolve(process.env.AL_DATA_DIR || path.join(root, ".build/hosting-data"));
 const caracal = path.join(root, ".caracal");
-const dashboardPort = Number(process.env.AL_INTERNAL_DASHBOARD_PORT) || 3030;
-const apiPort = Number(process.env.AL_INTERNAL_API_PORT) || 924;
+const { dashboard: dashboardPort, api: apiPort } = internalPorts();
 await mkdir(data, { recursive: true });
 const access = new Access(path.join(data, "access.json"));
 await access.load();
@@ -88,7 +88,7 @@ else services.launch(path.join(root, "tools/dashboard/supervisor.mts"), path.joi
 await notifyBoot(data);
 let steamServer: string | undefined;
 const steam = createLocalSteam(root, data, apiPort, async () => steamServer ??=
-  (process.platform === 'linux' ? `https://localhost:${tls.publicPort}` : `http://127.0.0.1:${process.env.AL_PORT || 3010}`) + '/bridge/' + await access.steam());
+  (process.platform === 'linux' ? `https://localhost:${tls.publicPort}` : `http://127.0.0.1:${publicPort()}`) + '/bridge/' + await access.steam());
 const server = gateway({
   builds: managed?.routes,
   code:managed?.code,
@@ -100,6 +100,7 @@ const server = gateway({
   configure,
   configured: () => configured,
   healthy: () => servicesHealthy(configured, dashboardPort, apiPort),
+  startFailed: () => startFailure(apiPort),
   apiPort,
   dashboardPort,
   publicUrl: process.env.AL_PUBLIC_URL || undefined,
@@ -110,12 +111,7 @@ void startGame().catch(error => {
   if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Game startup failed:', error.message);
 });
 function shutdown() {
-  steam.stop();
-  tls.stop();
-  server.close();
-  services.stop();
-  void managed?.stop();
-  setTimeout(() => process.exit(0), 15000).unref();
+  stopHost({ steam, tls, server, services, managed });
 }
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);

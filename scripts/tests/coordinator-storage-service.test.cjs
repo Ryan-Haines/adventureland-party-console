@@ -1,5 +1,6 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { createCoordinatorStorageService, coordinatorStorageIdentity, coordinatorRestockPolicy } = require('../../runtime/coordinator/inventory/storage-service.ts');
+const { createCoordinatorStorageService } = require('../../runtime/items/coordinator/storage.ts');
+const { storageKey } = require('../../runtime/items/identity.ts');
 
 test('exchange storage initializes the current merchant queue and persists pending existing supply', () => {
   const item = { name: 'leather', q: 10 }, state = { merchantCharacter: 'M', withdrawals: {},
@@ -16,7 +17,7 @@ test('exchange storage initializes the current merchant queue and persists pendi
 });
 
 test('storage identity preserves coercion and only distinguishes name, level and stat', () => {
-  assert.equal(coordinatorStorageIdentity(null), '["",0,null]');
-  assert.equal(coordinatorStorageIdentity({ name: 'ring', level: '2', stat_type: 'int', q: 9 }), '["ring",2,"int"]');
-  assert.equal(coordinatorStorageIdentity({ name: 'ring', level: 'invalid', stat_type: '' }), '["ring",0,null]');
+  assert.equal(storageKey(null), '["",0,null]');
+  assert.equal(storageKey({ name: 'ring', level: '2', stat_type: 'int', q: 9 }), '["ring",2,"int"]');
+  assert.equal(storageKey({ name: 'ring', level: 'invalid', stat_type: '' }), '["ring",0,null]');
 });

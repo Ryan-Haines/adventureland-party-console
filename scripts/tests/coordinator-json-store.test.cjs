@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {createJsonStore} = require('../../runtime/coordinator/persistence/json-store.ts');
+const {createJsonStore} = require('../../runtime/settings/coordinator/persistence/json-store.ts');
 
-test('shared storage retains JSON.parse coercion and falsey snapshot defaults', () => {
+test('shared storage reads a falsy snapshot as empty', () => {
   const values = new Map(), errors = [];
   const store = createJsonStore(values, {invalid: (key, error) => errors.push([key, error])});
   const state = {key: 'snapshot', decode: value => value, empty: () => 'invalid'};
@@ -10,14 +10,6 @@ test('shared storage retains JSON.parse coercion and falsey snapshot defaults', 
     values.set(state.key, value);
     assert.deepEqual(store.read(state), {});
   }
-  for (const value of [42, true, 7n]) {
-    values.set(state.key, value);
-    assert.equal(store.read(state), JSON.parse(value));
-  }
-  let conversions = 0;
-  values.set(state.key, {toString() {conversions++; return '{"saved":true}';}});
-  assert.deepEqual(store.read(state), {saved: true});
-  assert.equal(conversions, 1);
   assert.deepEqual(errors, []);
 });
 

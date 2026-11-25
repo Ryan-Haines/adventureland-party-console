@@ -2,7 +2,7 @@
 import { cp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { grantDockerSocket } from '../debug/docker-access.ts';
+import { grantDockerSocket } from './docker-access.ts';
 
 const seed = '/opt/party-seed';
 const root = '/app';
@@ -45,6 +45,6 @@ for (const directory of ['/app/.build', '/app/dashboard/.build', '/data']) {
   run('chown', ['-R', `${uid}:${gid}`, directory]);
 }
 process.env.AL_CONSOLE_MANAGED = '1';
-console.log('Starting development with the newest completed candidate. Later source builds stay staged until loaded or the next startup.');
+console.log('Starting development with the newest completed build. Later source builds stay staged until loaded or the next start.');
 // Replace this bootstrap so Tini forwards shutdown to the regular host.
 process.execve!('/usr/sbin/gosu', ['gosu', `${uid}:${gid}`, 'node', 'tools/hosting/start.mts'], process.env as Record<string, string>);

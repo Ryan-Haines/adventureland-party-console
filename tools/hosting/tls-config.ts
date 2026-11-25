@@ -1,14 +1,8 @@
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
-export function localAddress(value: string): boolean {
- return value === '::1' || /^(fc|fd)[0-9a-f]{2}:/i.test(value) || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(value);
-}
-function originURL(origin: string) {
- const url = new URL(origin);
- if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash)
-  throw new Error('Use a LAN server address without a path or credentials');
- return url;
-}
+import { bareOrigin, localAddress } from './defaults.ts';
+export { localAddress };
+const originURL = (origin: string) => bareOrigin(origin, 'Use a LAN server address without a path or credentials');
 export async function tlsHost(origin: string): Promise<string> {
  const url = originURL(origin);
  const host = url.hostname.replace(/^\[|\]$/g, '');

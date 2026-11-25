@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {eventPolicy, eventEnabled, selectedEvents}=require('../../.build/shared/event-policy.cjs');
+const {eventPolicy, eventEnabled, selectedEvents}=require('../../runtime/events/api.ts');
 function party(){return {leader:'W',merchantCharacter:'Merchant',followers:{M:true,P:true},eventsByCharacter:{W:true,M:false,P:false,Merchant:false}};}
 test('followers display and use leader events even when their saved preference differs',()=>{const p=party();assert.deepEqual(eventPolicy(p,'M'),{inherited:true,source:'W',enabled:true});p.eventsByCharacter.W=false;p.eventsByCharacter.M=true;assert.equal(eventPolicy(p,'M').enabled,false);});
 test('unfollowing restores the saved preference; changing leader updates inheritance immediately',()=>{const p=party();p.followers.M=false;assert.equal(eventPolicy(p,'M').enabled,false);p.followers.M=true;p.leader='P';assert.equal(eventPolicy(p,'M').source,'P');assert.equal(eventPolicy(p,'M').enabled,false);});
@@ -21,4 +21,18 @@ test('specific event selections inherit and restore independent choices',()=>{
 test('migration retains anniversary even when combat was disabled; merchants cannot inherit combat',()=>{
  const p=party();assert.deepEqual(selectedEvents(p,'Merchant'),['anniversary']);
  p.eventSelectionsByCharacter={Merchant:['anniversary','franky']};assert.deepEqual(selectedEvents(p,'Merchant'),['anniversary','franky']);
+});
+// The anniversary routes order rounds through rules.ts `roundOrder`. The game's slot ids order by
+// number; a character's fallback id (target, map and expiry) is the same round only as itself and
+// orders against no other id, so an aborted fallback round is still skipped.
+test('anniversary round ids order by the game slot, a fallback id only against itself',()=>{
+ const {roundOrder}=require('../../runtime/events/rules.ts');
+ assert.ok(roundOrder('12','13')<0);assert.ok(roundOrder(14,'13')>0);assert.equal(roundOrder('13',13),0);
+ assert.equal(roundOrder('franky:main:9','franky:main:9'),0);assert.equal(roundOrder('franky:main:9','13'),null);
+});
+// K1's `priority` column names the events whose target a joined member takes first, the three
+// v1.5.0 listed.
+test('the priority events are the K1 rows with the priority column',()=>{
+ const {eventKinds}=require('../../runtime/events/rules.ts');
+ assert.deepEqual(eventKinds().filter(row=>row.priority).map(row=>row.name),['mrgreen','mrpumpkin','horseman']);
 });

@@ -4,20 +4,24 @@ import { abbreviatedGold } from './abbreviated-gold';
 import { exactLevelPrice } from './exact-level-price';
 import { InventoryEntry } from './inventory-entry';
 import { MerchantBuyItem } from './merchant-buy-item';
+import type { MerchantCatalogItem } from './merchant-catalog-item';
 import { SpriteCrop } from './sprite-crop';
 import { StandPriceHistory } from './stand-price-history';
 import { useSuggestedItemValue } from './suggested-item-value';
+import { ESTIMATE_QUANTILE } from '../../../runtime/items/api.ts';
 
 export function SuggestedPriceDetails({
   entry,
   buyable,
+  catalog,
   observed,
 }: {
   entry: InventoryEntry;
   buyable: MerchantBuyItem[];
+  catalog: readonly MerchantCatalogItem[];
   observed?: StandPriceHistory;
 }) {
-  const valuation = useSuggestedItemValue(entry, buyable);
+  const valuation = useSuggestedItemValue(entry, buyable, catalog);
   const itemLevel = Number(entry.item.level) || 0;
   const observedPrice = (
     price: number | undefined,
@@ -33,7 +37,7 @@ export function SuggestedPriceDetails({
         <output>Estimating replacement price…</output>
       ) : null}
       {valuation.unavailable ? (
-        <output>Unable to estimate replacement price</output>
+        <output>Unable to estimate replacement price{valuation.failure ? `: ${valuation.failure}` : ''}</output>
       ) : null}
       <span className="mb-3 block border-b border-amber-950/80 pb-2">
         {itemLevel === 0 && (
@@ -99,7 +103,7 @@ export function SuggestedPriceDetails({
                 {source.purchase ? (
                   Number(entry.item.level || 0) > 0 ? (
                     <span className="block text-emerald-100/55">
-                      90% chance of producing +{entry.item.level} within this
+                      {ESTIMATE_QUANTILE * 100}% chance of producing +{entry.item.level} within this
                       budget · approximately{' '}
                       {(source.attempts || 0).toLocaleString()} base items ·{' '}
                       {(source.scrolls || [])
@@ -145,7 +149,7 @@ export function SuggestedPriceDetails({
       !valuation.unavailable &&
       valuation.sources.length ? (
         <span className="mt-1 block text-violet-300/80">
-          Includes the +{entry.item.level} 90%-confidence replacement estimate.
+          Includes the +{entry.item.level} {ESTIMATE_QUANTILE * 100}%-confidence replacement estimate.
         </span>
       ) : null}
     </>

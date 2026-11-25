@@ -3,9 +3,8 @@
 // run, and two lockstep socket servers on the main thread's hub: the caracAL IPC between the coordinator and each
 // character, and CODE's HTTP into the coordinator's captured Express app (dispatched as transport.cjs does).
 const path = require("node:path");
-const { EventEmitter } = require("node:events");
-const { PassThrough } = require("node:stream");
-const { dispatch } = require("./transport.cjs");
+const { dispatch, recordRequest, recordResponse } = require("./transport.cjs");
+const { simWorker } = require("./character-worker.cjs");
 
 const IPC_PATH = "/sim-caracal-ipc/",
   HTTP_PATH = "/sim-party-api/";
@@ -17,26 +16,6 @@ const IPC_PATH = "/sim-caracal-ipc/",
  * @param {object} o.stats      transport stats to add the characters' requests to
  * @param {(level:string, message:string)=>void} o.log
  */
-function recordRequest(stats, parsed, body) {
-  const kind =
-    body && /"combatWait":true/.test(body)
-      ? " [combatWait]"
-      : body && /"combatOnly":true/.test(body)
-        ? " [combatOnly]"
-        : "";
-  stats.requests++;
-  stats.byPath.set(parsed.pathname + kind, (stats.byPath.get(parsed.pathname + kind) || 0) + 1);
-  if (body && body.length > stats.largestBody) stats.largestBody = body.length;
-  if (stats.observe) stats.observe(parsed.pathname, body);
-}
-function recordResponse(stats, parsed, body, result) {
-  const tag = parsed.pathname + " " + result.statusCode;
-  stats.byStatus.set(tag, (stats.byStatus.get(tag) || 0) + 1);
-  if (result.statusCode >= 400 && !stats.firstFailure.has(tag))
-    stats.firstFailure.set(tag, result.body.slice(0, 300));
-  if (stats.observeResponse) stats.observeResponse(parsed.pathname, body, result.body);
-}
-
 function threadedHost(o) {
   const { sim } = o,
     clock = sim.clock;
@@ -107,31 +86,8 @@ function threadedHost(o) {
   /** The coordinator's fork(): bound to a character's thread once process_args names it. */
   let forks = 0;
   function fork() {
-    const worker = new EventEmitter();
-    worker.stdout = new PassThrough();
-    worker.stderr = new PassThrough();
-    worker.connected = true;
-    worker.pid = 6000 + forks++;
-    worker.exitCode = null;
+    const worker = simWorker(clock, 6000 + forks++);
     let name = null;
-    worker.exit = (code) => {
-      if (!worker.connected) return;
-      worker.connected = false;
-      worker.exitCode = code;
-      clock.at(
-        clock.now,
-        () => {
-          worker.emit("disconnect");
-          worker.emit("exit", code, null);
-        },
-        "worker exit",
-      );
-    };
-    worker.kill = () => {
-      worker.exit(null);
-      return true;
-    };
-    worker.disconnect = () => worker.exit(0);
     worker.send = (message) => {
       if (message.type === "process_args") {
         name = message.arguments.cname;

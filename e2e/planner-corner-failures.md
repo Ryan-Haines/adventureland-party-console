@@ -1,7 +1,8 @@
 # Planner corner edges: failure inventory
 
 Written before the fix for [#147](https://github.com/Ryan-Haines/adventureland-party-console/issues/147).
-The journey is `live-planner-corner.spec.ts`.
+The journey is W10f (`e2e/windows/W10f-planner-corner.spec.ts`), from `live-planner-corner.spec.ts`
+at 21fe30a2b.
 
 1. **The planner returns an edge the game rejects (seen live, 10-18).**
    `alpathfinder` 0.6.0 accepts main (135, 72) → (153, -51) through the

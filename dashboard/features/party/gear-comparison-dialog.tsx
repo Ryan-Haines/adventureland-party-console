@@ -1,4 +1,5 @@
 'use client';
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,8 +16,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
-import { Fragment, useMemo, useState } from 'react';
-import { sanitizeDollHtml } from './sanitize-doll-html';
+import { Fragment, useState } from 'react';
+import { CharacterPortrait } from './character-portrait';
 import { Char } from './char';
 import { comparisonSlotsFor } from './comparison-slots-for';
 import { EquippedEntry } from './equipped-entry';
@@ -24,11 +25,12 @@ import { InventoryEntry } from './inventory-entry';
 import { itemMaximumLevel } from './item-maximum-level';
 import { ItemSetInfo } from './item-set-info';
 import { propertiesAtLevel } from './properties-at-level';
-import { statBadgeClass } from './stat-badge-class';
+import { statBadgeClass, statBadgeStyle } from './stat-badge-class';
 import { STAT_SCROLLS } from './stat-scrolls';
 import { GameBox } from './item-card';
 import { titledName } from './item-title';
 import { GAIN, LOSS, STAT_COLORS as S } from './stat-colors';
+import { gearProjection } from '@/lib/gear-projection';
 
 // docs/comparison-card.md: stat labels in their game colors, and changes in the game's
 // success and failure colors.
@@ -40,22 +42,37 @@ const STAT_COLORS: Record<string, string> = {
   dreturn: S.dreturn, mp_cost: S.mp, output: S.output,
 };
 
+// The slot the compared item replaces: the slot named, else a candidate holding the same item, else
+// an empty candidate, else the first; an item with no candidate compares against its own type.
+function replacementSlotFor(comparison: { entry: InventoryEntry; slot?: string }, character: Char): string {
+  const candidates = comparisonSlotsFor(comparison.entry.meta, character);
+  if (!candidates.length) candidates.push(String(comparison.entry.meta?.definition.type || ''));
+  return comparison.slot ||
+    candidates.find((slot) => character.slots[slot]?.item.name === comparison.entry.item.name) ||
+    candidates.find((slot) => !character.slots[slot]) ||
+    candidates[0];
+}
+
 export function GearComparisonDialog({
   comparison,
   currentCharacter,
+  savedDollHtml,
   onOpenChange,
 }: {
   comparison: { character: Char; entry: InventoryEntry; slot?: string } | null;
   currentCharacter?: Char | null;
+  // The doll the coordinator saved for the character, which the card shows while its report
+  // carries none, as a headless character's does.
+  savedDollHtml?: string | null;
   onOpenChange: (open: boolean) => void;
 }) {
-  const dollHtml =
-    currentCharacter?.characterDollHtml ||
-    comparison?.character.characterDollHtml;
-  const dollMarkup = useMemo(
-    () => ({ __html: sanitizeDollHtml(dollHtml) }),
-    [dollHtml],
-  );
+  // A headless character reports no doll and may have none saved, so the header falls back to its
+  // sprite and then its skin name, as every other CharacterPortrait does (fork 161fac38).
+  const appearance = {
+    html: currentCharacter?.characterDollHtml || comparison?.character.characterDollHtml || savedDollHtml,
+    sprite: currentCharacter?.characterSprite || comparison?.character.characterSprite,
+    skin: currentCharacter?.skin || comparison?.character.skin,
+  };
   const [leftLevel, setLeftLevel] = useState(0);
   const [rightLevel, setRightLevel] = useState(0);
   const [leftStatType, setLeftStatType] = useState('none');
@@ -78,23 +95,7 @@ export function GearComparisonDialog({
     (() => {
       if (!comparison) return;
       setIncludeOffhand(true);
-      const candidates = comparisonSlotsFor(
-        comparison.entry.meta,
-        comparison.character,
-      );
-      if (!candidates.length)
-        candidates.push(String(comparison.entry.meta?.definition.type || ''));
-      const slot =
-        comparison.slot ||
-        candidates.find(
-          (candidate) =>
-            comparison.character.slots[candidate]?.item.name ===
-            comparison.entry.item.name,
-        ) ||
-        candidates.find(
-          (candidate) => !comparison.character.slots[candidate],
-        ) ||
-        candidates[0];
+      const slot = replacementSlotFor(comparison, comparison.character);
       setLeftLevel(
         Math.max(0, Number(comparison.character.slots[slot]?.item.level) || 0),
       );
@@ -108,16 +109,7 @@ export function GearComparisonDialog({
   if (!comparison) return null;
   const { entry } = comparison;
   const character = currentCharacter || comparison.character;
-  const candidates = comparisonSlotsFor(entry.meta, character);
-  if (!candidates.length)
-    candidates.push(String(entry.meta?.definition.type || ''));
-  const replacementSlot =
-    comparison.slot ||
-    candidates.find(
-      (slot) => character.slots[slot]?.item.name === entry.item.name,
-    ) ||
-    candidates.find((slot) => !character.slots[slot]) ||
-    candidates[0];
+  const replacementSlot = replacementSlotFor(comparison, character);
   const equipped = character.slots[replacementSlot];
   const removesOffhand =
     replacementSlot === 'mainhand' &&
@@ -144,10 +136,6 @@ export function GearComparisonDialog({
     rightLevel,
     rightStatType === 'none' ? null : rightStatType,
   );
-  const prop = (
-    source: Record<string, string | number | boolean>,
-    key: string,
-  ) => Number(source[key] || 0);
   const actualEquipment = Object.entries(character.slots).filter(
     ([slot, value]) => !slot.startsWith('trade') && !!value,
   ) as [string, EquippedEntry][];
@@ -214,126 +202,9 @@ export function GearComparisonDialog({
   const actualSets = setState(actualEquipment),
     currentSets = setState(currentEquipment),
     proposedSets = setState(proposedEquipment);
-  const equipmentTotals = (equipment: [string, EquippedEntry][]) => {
-    const totals: Record<string, number> = {};
-    equipment.forEach(([, value]) =>
-      Object.entries(value.meta?.properties || {}).forEach(([key, amount]) => {
-        const numeric = Number(amount);
-        if (Number.isFinite(numeric))
-          totals[key] = (totals[key] || 0) + numeric;
-      }),
-    );
-    return totals;
-  };
-  // Character stats already include actual gear and active sets. Anchor both
-  // previews there so removing an offhand also removes its set contributions.
-  const actualTotals = equipmentTotals(actualEquipment);
-  const strArmor = (value: number) =>
-    Math.min(value, 160) + Math.max(0, value - 160) * 0.25;
-  const intRes = (value: number) =>
-    Math.min(value, 180) + Math.max(0, value - 180) * 0.25;
-  const statSpeed = (str: number, dex: number) =>
-    Math.min(str, 256) / 64 + Math.min(dex, 256) / 32;
-  const statFrequency = (intelligence: number, dexterity: number) =>
-    intelligence / 1575 +
-    Math.min(160, dexterity) / 640 +
-    Math.max(0, dexterity - 160) / 925;
-  const oldWeaponAttack = actualEquipment
-    .filter(([slot]) => slot === 'mainhand' || slot === 'offhand')
-    .reduce(
-      (sum, [, value]) => sum + Number(value?.meta?.properties?.attack || 0),
-      0,
-    );
-  const primary = String(character.primaryStat || '').toLowerCase();
-  const divisor = character.ctype === 'paladin' && primary === 'int' ? 40 : 20;
-  const oldPrimary = Number(
-    (character as unknown as Record<string, unknown>)[primary] || 0,
-  );
-  const project = (
-    totals: Record<string, string | number | boolean>,
-    setTotals: Record<string, number>,
-  ) => {
-    const delta = (key: string) =>
-      prop(totals, key) -
-      prop(actualTotals, key) +
-      Number(setTotals[key] || 0) -
-      Number(actualSets.totals[key] || 0);
-    const result = { ...character };
-    result.str = Number(character.str || 0) + delta('str');
-    result.int = Number(character.int || 0) + delta('int');
-    result.dex = Number(character.dex || 0) + delta('dex');
-    result.vit = Number(character.vit || 0) + delta('vit');
-    result.luck = Number(character.luck || 0) + delta('luck');
-    result.fortitude = Number(character.fortitude || 0) + delta('for');
-    result.goldBonus = Number(character.goldBonus || 0) + delta('gold');
-    result.xpBonus = Number(character.xpBonus || 0) + delta('xp');
-    result.max_hp =
-      Number(character.max_hp) +
-      delta('hp') +
-      delta('str') * 21 +
-      delta('vit') * (48 + character.level / 3);
-    result.max_mp = Number(character.max_mp) + delta('mp') + delta('int') * 15;
-    result.armor =
-      Number(character.armor || 0) +
-      delta('armor') +
-      strArmor(result.str) -
-      strArmor(Number(character.str || 0));
-    result.resistance =
-      Number(character.resistance || 0) +
-      delta('resistance') +
-      intRes(result.int) -
-      intRes(Number(character.int || 0));
-    result.speed =
-      (character.ctype === 'merchant'
-        ? (character.unrestrictedSpeed ??
-          (character.standOpen ? NaN : Number(character.speed || 0)))
-        : Number(character.speed || 0)) +
-      delta('speed') +
-      statSpeed(result.str, result.dex) -
-      statSpeed(Number(character.str || 0), Number(character.dex || 0));
-    // Equipment and set frequency use hundredths of an attack per second.
-    result.frequency =
-      Number(character.frequency || 0) +
-      delta('frequency') / 100 +
-      statFrequency(result.int, result.dex) -
-      statFrequency(Number(character.int || 0), Number(character.dex || 0));
-    result.range = Number(character.range || 0) + delta('range');
-    const weaponAttack = Math.max(0, oldWeaponAttack + delta('attack'));
-    const newPrimary = Number(
-      (result as unknown as Record<string, unknown>)[primary] || 0,
-    );
-    result.attack =
-      Number(character.attack || 0) +
-      weaponAttack * (1 + newPrimary / divisor) -
-      oldWeaponAttack * (1 + oldPrimary / divisor);
-    const combat = character.combatStats || {};
-    const projectedRecord = result as unknown as Record<string, number>;
-    projectedRecord.evasion = Number(combat.evasion || 0) + delta('evasion');
-    projectedRecord.reflection =
-      Number(combat.reflection || 0) + delta('reflection');
-    projectedRecord.lifesteal =
-      Number(combat.lifesteal || 0) + delta('lifesteal');
-    projectedRecord.manasteal =
-      Number(combat.manasteal || 0) + delta('manasteal');
-    projectedRecord.rpiercing =
-      Number(combat.resistancePiercing || 0) + delta('rpiercing');
-    projectedRecord.apiercing =
-      Number(combat.armorPiercing || 0) + delta('apiercing');
-    projectedRecord.crit = Number(combat.crit || 0) + delta('crit');
-    projectedRecord.dreturn =
-      Number(combat.damageReturn || 0) + delta('dreturn');
-    projectedRecord.mp_cost = Number(combat.mpCost || 0) + delta('mp_cost');
-    projectedRecord.output = Number(combat.output || 0) + delta('output');
-    return result;
-  };
-  const currentPreview = project(
-    equipmentTotals(currentEquipment),
-    currentSets.totals,
-  );
-  const projected = project(
-    equipmentTotals(proposedEquipment),
-    proposedSets.totals,
-  );
+  const project = gearProjection(character, actualEquipment, actualSets.totals);
+  const currentPreview = project(currentEquipment, currentSets.totals);
+  const projected = project(proposedEquipment, proposedSets.totals);
   const rows: [string, string, (value: number) => string][] = [
     ['HP', 'max_hp', (v) => Math.round(v).toLocaleString()],
     ['MP', 'max_mp', (v) => Math.round(v).toLocaleString()],
@@ -391,6 +262,7 @@ export function GearComparisonDialog({
             size="sm"
             variant="outline"
             aria-pressed={selected === statType}
+            style={selected === statType ? statBadgeStyle(statType) : undefined}
             onClick={() => select(statType)}
             className={`h-8 min-w-10 border px-2 font-mono text-[9px] uppercase ${
               selected === statType
@@ -434,17 +306,14 @@ export function GearComparisonDialog({
   // Each panel spans the same four shared rows (header, notice, level slider, stats), so a
   // notice or slider on one side only never pushes its stats out of line with the other.
   const panel = (candidate: Char, proposed: boolean) => (
-    <section
+    <section data-area="gear-comparison-side"
       aria-label={proposed ? 'Proposed equipment' : 'Equipped equipment'}
       className={`row-span-4 grid grid-rows-subgrid gap-y-3 rounded-lg border p-4 ${proposed ? 'border-cyan-800 bg-cyan-950/10' : 'border-emerald-900 bg-black/20'}`}
     >
       <div className="flex items-center gap-3">
-        <div
-          className="h-20 w-16 shrink-0 overflow-hidden"
-          dangerouslySetInnerHTML={
-            character.characterDollHtml ? dollMarkup : undefined
-          }
-        />
+        <div data-comparison-portrait className="relative h-20 w-16 shrink-0 overflow-hidden">
+          <CharacterPortrait html={appearance.html} sprite={appearance.sprite} skin={appearance.skin} />
+        </div>
         <div className="min-w-0">
           <p className="font-semibold">
             {proposed
@@ -541,7 +410,7 @@ export function GearComparisonDialog({
   );
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border-cyan-800 bg-[#0b1916] text-emerald-50 sm:max-w-5xl">
+      <DialogContent data-area="gear-comparison" className="max-h-[90vh] overflow-y-auto border-cyan-800 bg-[#0b1916] text-emerald-50 sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>Equipment comparison</DialogTitle>
           <DialogDescription>
@@ -594,6 +463,7 @@ export function GearComparisonDialog({
             </div>
           </GameBox>
         ) : null}
+        <AddonSlot name="dialog-section" part="gear-comparison" />
       </DialogContent>
     </Dialog>
   );

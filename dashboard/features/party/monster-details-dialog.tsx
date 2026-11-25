@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,7 +42,7 @@ export function MonsterDetailsDialog({
 }) {
   return (
     <Dialog open={!!monster} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto border border-rose-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
+      <DialogContent data-area="monster" className="max-h-[90vh] overflow-y-auto border border-rose-800 bg-[#0b1916] text-emerald-50 sm:max-w-2xl">
         {monster ? (
           <>
             <DialogHeader>
@@ -86,6 +87,7 @@ export function MonsterDetailsDialog({
             </section>
           </>
         ) : null}
+        <AddonSlot name="dialog-section" part="monster" subject={monster} />
       </DialogContent>
     </Dialog>
   );

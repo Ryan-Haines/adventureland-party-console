@@ -1,54 +1,47 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const path=require('node:path'),Module=require('node:module'),{buildSync}=require('esbuild');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const loadModule=require('./helpers/dashboard-query-module.cjs');
 const React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
-function load(name,action) {
- const filename=path.resolve('dashboard/features/party',name+'.tsx');
- const bundle=buildSync({entryPoints:[filename],bundle:true,packages:'external',external:['@/components/ui/*','./query-actions'],platform:'node',format:'cjs',write:false});
- const compiled=new Module(filename,module);compiled.filename=filename;compiled.paths=Module._nodeModulePaths(path.dirname(filename));
- compiled.require=function(id){
-  if(id==='./query-actions')return {usePartyAction:action};
-  if(id.startsWith('@/components/ui/'))return new Proxy({},{get:(_,name)=>String(name)});
-  return Module.prototype.require.call(this,id);
- };
- compiled._compile(bundle.outputFiles[0].text,filename);return compiled.exports;
-}
+const load=(name,action)=>loadModule(name+'.tsx',{'./query-actions':{usePartyAction:action},'@/components/ui/*':new Proxy({},{get:(_,name)=>String(name)})});
 const text=node=>typeof node==='string'?node:(node.children||[]).map(text).join('');
 
-test('delivery checkbox defaults on, saves only its setting, blocks pending edits and reports failure inline',async()=>{
+// Each row's assertions drive the save callbacks its own render captures, so each row renders its own harness.
+scenarioTable('a merchant trip checkbox saves only its own setting and reports a failed save inline',null,['deliveries','withdrawals'].map(routine=>[`${routine} checkbox defaults on, saves only its setting, shows the asked value while saving, blocks pending edits and reports failure inline`,async()=>{
  let finish,fail=true,saved,updates;
  function action(){
   const [isPending,pending]=React.useState(false),[error,setError]=React.useState(null);
-  return {isPending,error,reset:()=>setError(null),mutate:request=>{
-   saved=request;pending(true);finish=()=>{pending(false);if(fail)setError(Error('Save rejected'));else updates(false);};
+  return {isPending,error,reset:()=>setError(null),mutate:(request,options)=>{
+   saved=request;pending(true);finish=()=>{pending(false);if(fail)setError(Error('Save rejected'));else updates(false);options?.onSettled?.();};
   }};
  }
- const {DeliveryTripSetting}=load('delivery-trip-setting',action);
- function Harness(){const [enabled,setEnabled]=React.useState(undefined);updates=setEnabled;return React.createElement(DeliveryTripSetting,{enabled});}
+ const {MerchantTripSetting}=load('merchant-trip-setting',action);
+ function Harness(){const [enabled,setEnabled]=React.useState(undefined);updates=setEnabled;return React.createElement(MerchantTripSetting,{routine,enabled});}
  let view;await act(async()=>{view=create(React.createElement(Harness));});
  assert.equal(view.root.findByType('input').props.checked,true);
- assert.match(text(view.root),/Send to party/);assert.match(text(view.root),/specific character/);
+ if(routine==='deliveries'){assert.match(text(view.root),/Send to party/);assert.match(text(view.root),/specific character/);}
  await act(async()=>view.root.findByType('input').props.onChange({target:{checked:false}}));
- assert.deepEqual(saved,{path:'/merchant/routine-priorities',body:{priorities:{},enabled:{deliveries:false}}});
+ assert.deepEqual(saved,{path:'/merchant/routine-priorities',body:{priorities:{},enabled:{[routine]:false}}});
  assert.equal(view.root.findByType('fieldset').props.disabled,true);
+ assert.equal(view.root.findByType('input').props.checked,false,'the box reads the asked value while the save is pending');
  await act(async()=>finish());assert.equal(view.root.findByType('input').props.checked,true);
  assert.equal(view.root.findByProps({role:'alert'}).children[0],'Save rejected');
  fail=false;await act(async()=>view.root.findByType('input').props.onChange({target:{checked:false}}));
  assert.equal(view.root.findAllByProps({role:'alert'}).length,0);
  await act(async()=>finish());assert.equal(view.root.findByType('input').props.checked,false);
  await act(async()=>view.unmount());
-});
+}]));
 
 test('disabled delivery routine stays visible and inaccessible to edits, reordering or stale saves',async()=>{
  const previous=global.window;global.window={matchMedia:()=>({matches:true})};
- const {RoutinePrioritiesDialog}=load('routine-priorities-dialog');let view,saved;
- const props={open:true,onOpenChange(){},priorities:{deliveries:90,fishing:20,mining:10},enabled:{deliveries:true},onSave:async(...args)=>{saved=args;}};
+ const {RoutinePrioritiesSection}=load('routine-priorities-section');let view,saved;
+ const props={priorities:{deliveries:90,fishing:20,mining:10},enabled:{deliveries:true},onSave:async(...args)=>{saved=args;}};
  try {
-  await act(async()=>{view=create(React.createElement(RoutinePrioritiesDialog,props));});
+  await act(async()=>{view=create(React.createElement(RoutinePrioritiesSection,props));});
   assert.equal(view.root.findByProps({'aria-label':'Marked deliveries priority'}).props.disabled,false);
   assert.equal(view.root.findAllByProps({'aria-label':'Enable Marked deliveries'}).length,0);
   await act(async()=>view.root.findByProps({'aria-label':'Marked deliveries priority'}).props.onChange({target:{value:'97'}}));
-  await act(async()=>view.update(React.createElement(RoutinePrioritiesDialog,{...props,enabled:{deliveries:false}})));
+  await act(async()=>view.update(React.createElement(RoutinePrioritiesSection,{...props,enabled:{deliveries:false}})));
   const row=view.root.findByProps({'data-routine':'deliveries'});
   assert.equal(row.props['aria-disabled'],true);assert.match(text(row),/Enable in Merchant settings/);
   assert.equal(row.findByType('Input').props.disabled,true);assert.equal(row.findByType('Input').props.value,90);
@@ -58,7 +51,7 @@ test('disabled delivery routine stays visible and inaccessible to edits, reorder
   assert.equal(row.findByType('Input').props.value,90);
   await act(async()=>view.root.findAllByType('Button').find(node=>text(node)==='Save routines').props.onClick());
   assert.equal('deliveries' in saved[0],false);assert.equal('deliveries' in saved[1],false);
-  await act(async()=>view.update(React.createElement(RoutinePrioritiesDialog,props)));
+  await act(async()=>view.update(React.createElement(RoutinePrioritiesSection,props)));
   assert.equal(view.root.findByProps({'aria-label':'Marked deliveries priority'}).props.disabled,false);
  }finally{if(view)await act(async()=>view.unmount());global.window=previous;}
 });

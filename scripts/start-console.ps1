@@ -8,22 +8,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Keep the check in PowerShell: Windows PowerShell strips embedded quotes from
-# JavaScript passed through node -e using its legacy native argument handling.
-$nodeVersionText = & node --version
-$nodeVersion = $null
-if ($LASTEXITCODE -ne 0 -or
-    -not [version]::TryParse(([string]$nodeVersionText).Trim().TrimStart('v'), [ref]$nodeVersion) -or
-    $nodeVersion -lt [version]'26.12.1') {
-    throw 'Install Node 26.12.1 or later before starting the console.'
-}
-
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $caracalRoot = Join-Path $repoRoot ".caracal"
 $configPath = Join-Path $caracalRoot "config.js"
 $configTemplate = Join-Path $PSScriptRoot "caracal.config.js"
 $sessionPath = Join-Path $caracalRoot "session.clixml"
 $dashboardRoot = Join-Path $repoRoot "dashboard"
+. (Join-Path $PSScriptRoot 'node-floor.ps1')
 & node (Join-Path $repoRoot 'tools/hosting/install-caddy.mts')
 if ($LASTEXITCODE -ne 0) { throw 'HTTPS service installation failed.' }
 

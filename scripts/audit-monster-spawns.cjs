@@ -2,15 +2,12 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
+const { spawnCatalog } = require('../runtime/hunting/api.ts');
 
+// The catalog the console farms from: the hunting owner's `spawnCatalog` through its door (runtime/hunting/api.ts),
+// with no sprites.
 function catalog(G) {
-  const source = fs.readFileSync(path.join(__dirname, '../characters/shared.js'), 'utf8');
-  const start = source.indexOf('  function monsterChoices(');
-  const end = source.indexOf('  function bestiaryCatalog()', start);
-  if (start < 0 || end < 0) throw new Error('Monster catalog source boundary missing');
-  const context = { G, monsterSpriteDefinition: () => null };
-  vm.runInNewContext(source.slice(start, end) + ';result = monsterChoices();', context);
-  return JSON.parse(JSON.stringify(context.result));
+  return JSON.parse(JSON.stringify(spawnCatalog(G)));
 }
 
 function audit(G) {

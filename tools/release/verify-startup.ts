@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 export async function verifyFirstRun(base: string, internal: string) {
   const state = await fetch(base + '/setup/state');
   assert.equal(state.status, 200, 'Setup state unavailable');
-  assert.equal((await state.json() as { configured: boolean }).configured, false);
+  assert.equal((await state.json() as { configured: boolean }).configured, false, 'Console already configured');
   for (const entry of [base, internal]) {
     const page = await fetch(entry + '/');
     assert.equal(new URL(page.url).pathname, '/setup', 'Fresh installation skipped setup');

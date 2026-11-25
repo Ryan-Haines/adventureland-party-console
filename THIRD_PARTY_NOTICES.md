@@ -10,7 +10,7 @@ Our original code is distributed under [MIT](LICENSE). Dependencies retain their
   [Source](https://github.com/numbereself/caracAL). Modified through our compatibility patch and runtime adapters.
   Full notice: [licenses/caracal.txt](licenses/caracal.txt).
 - **thmsn / thmsndk's caracAL script discovery**, MIT under the fork's license.
-  Our `scripts/client-files.cjs` adapts the approach from [commit 30ead440bdafc6279acaed23c78b275203fc4e02](https://github.com/thmsndk/caracAL/commit/30ead440bdafc6279acaed23c78b275203fc4e02),
+  Our `runtime/lifecycle/coordinator/client-files.cjs` adapts the approach from [commit 30ead440bdafc6279acaed23c78b275203fc4e02](https://github.com/thmsndk/caracAL/commit/30ead440bdafc6279acaed23c78b275203fc4e02),
   “Derive client scripts from official HTML to survive new game.js helpers.”
   We added staged downloads, validation, and complete-cache fallback. Full fork notice: [licenses/caracal-thmsndk.txt](licenses/caracal-thmsndk.txt).
 - **ALData**, copyright 2022 Kent Rasmussen, MIT. [Source and service documentation](https://github.com/earthiverse/ALData).

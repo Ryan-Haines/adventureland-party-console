@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createCoordinatorBankActions}=require('../../runtime/coordinator/http/bank-actions.ts');
+const {createCoordinatorBankActions}=require('../../runtime/items/coordinator/routes/storage.ts');
 function fixture(){
  const state={merchantCharacter:'M',bankbois:{B:{name:'B',items:[]}},bankSnapshot:null,bankboiQueue:[],bankboiTransaction:null,commands:{},
   standListings:[],npcSaleMarks:[],merchantQueue:[],withdrawals:{},bankVaults:[{pack:'items1',floor:'bank',gold:100}],statuses:{},merchantCurrent:null,
@@ -20,7 +20,7 @@ test('BankBoi completion retains empty slots and anniversary supplies find the r
  t.state.bankboiTransaction={bankboi:'B',phase:'processing'};
  assert.equal(t.invoke(t.service.storage.complete,{character:'B',items,completed:[],relocated:[]}).code,200);
  assert.equal(t.state.bankbois.B.items,items);
- const {createAnniversarySuppliesRoute}=require('../../runtime/coordinator/http/anniversary-supplies.ts');
+ const {createAnniversarySuppliesRoute}=require('../../runtime/events/coordinator/routes.ts');
  const supplies=createAnniversarySuppliesRoute(t.state,{counts:()=>({slice_citrus:2}),persist:()=>{},log:()=>{}});
  assert.deepEqual(t.invoke(supplies,{character:'M',missing:['slice_citrus']}).body,{ok:true,pending:['slice_citrus'],missing:[]});
  assert.deepEqual(t.state.withdrawals.M,[{pack:'bankboi:B',slot:6,item:{name:'slice_citrus',q:2}}]);

@@ -1,5 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createRosterProjection,coordinatorRealmLabel}=require('../../runtime/coordinator/characters/roster-projection.ts');
+const {createRosterProjection}=require('../../runtime/lifecycle/roster/roster-projection.ts');
+const {realmLabel}=require('../../runtime/protocol/realm.ts');
 function fixture(){let account={characters:[{name:'M',type:'merchant',home:'USII',server:'SR_USIII'},{name:'F',type:'priest',server:'SR_USII'},{name:'B',type:'merchant'}],servers:[{key:'SR_USI',players:'42'},{key:'SR_EUPVP'}]};
  const state={bankbois:{B:{}},statuses:{},headlessSlots:['F','B',null,null],steamMembers:['M'],nativeOwner:'M',lifecycle:{F:'starting'},activeRealm:'SR_USII',realmSwitch:{phase:'arriving'}};
  return {state,service:createRosterProjection(state,()=>account,()=>100000),replace:value=>account=value};}
@@ -19,14 +20,24 @@ test('slots preserve Steam ownership, lifecycle state, empty capacity, and heart
  f.state.statuses.M.seenAt++;assert.equal(f.service.slots()[0].state,'online');assert.deepEqual(f.service.participants(),['M','F']);
  f.state.steamMembers.push('F');assert.deepEqual(f.service.participants(),['M','F']);assert.equal(f.service.slots().length,4);
 });
+// A realm-control member reads online from its slot's connection state, not from a report age: a
+// worker reports while it is still starting, and a connected worker whose reports stopped without
+// a disconnect reads offline and fires the realm-view bound once.
 test('realm control ignores merchant travel when detecting split combat realms',()=>{
- const f=fixture();f.state.statuses.F={name:'F',seenAt:85000,server:'EUI',ctype:'priest'};
+ const f=fixture();f.state.lifecycle.F='online';f.state.statuses.F={name:'F',seenAt:85000,server:'EUI',ctype:'priest'};
  const control=f.service.control();assert.equal(control.currentRealm,'SR_EUI');assert.equal(control.merchantRealm,'SR_USIII');assert.equal(control.split,false);assert.equal(control.characters[1].online,true);
  assert.deepEqual(control.realms[0],{key:'SR_USI',label:'US I',players:42,pvp:false});assert.equal(control.realms[1].pvp,true);assert.equal(control.operation,f.state.realmSwitch);
+ f.state.lifecycle.F='starting';assert.equal(f.service.control().characters[1].online,false,'a fresh report from a worker not yet connected');
+ f.state.lifecycle.F='online';
+ const {boundFirings}=require('../../runtime/status/coordinator/api.ts'),fired=()=>boundFirings().counts.REALM_VIEW_REPORT_MS||0,before=fired();
  f.state.statuses.F.seenAt--;assert.equal(f.service.control().currentRealm,'SR_USII');assert.equal(f.service.control().characters[1].online,false);
- f.state.headlessSlots[2]='Other';f.state.statuses.Other={name:'Other',ctype:'warrior',seenAt:100000,server:'EUI'};
+ assert.equal(fired(),before+1,'a connected member whose reports stopped fires the bound once');
+ f.state.statuses.F.seenAt++;f.service.control();f.state.statuses.F.seenAt--;f.service.control();assert.equal(fired(),before+2,'and again after its reports came back');
+ f.state.headlessSlots[2]='Other';f.state.lifecycle.Other='online';f.state.statuses.Other={name:'Other',ctype:'warrior',seenAt:100000,server:'EUI'};
  assert.equal(f.service.control().split,true);assert.equal(f.service.control().currentRealm,null);
- assert.equal(coordinatorRealmLabel('SR_ASIAIII'),'ASIA III');
- assert.equal(coordinatorRealmLabel('SR_ASIAIV'),'ASIA IV');
- assert.equal(coordinatorRealmLabel('SR_USV'),'US V');
+ assert.equal(realmLabel('SR_ASIAIII'),'ASIA III');
+ assert.equal(realmLabel(null),'');
+ assert.equal(realmLabel(null,'unknown'),'unknown','the Steam dialog names a missing realm');
+ assert.equal(realmLabel('SR_ASIAIV'),'ASIA IV');
+ assert.equal(realmLabel('SR_USV'),'US V');
 });

@@ -1,12 +1,15 @@
-const {createHuntModeRoute}=require('../../../runtime/coordinator/http/hunt-mode.ts');
-function huntMode(context){
- const {party,farmingNavigation:nav}=context;
- return createHuntModeRoute(party,{
-  participants:()=>context.huntParticipants(),cancelled:name=>nav.intent(name).cancelled,release:()=>context.escapeControl.release(),
-  authorize:(...args)=>nav.authorize(...args),monsterDestination:id=>context.monsterDestination(id),clear:()=>context.clearMonsterHuntState(),
-  selectedDestination:name=>context.selectedMonsterDestination(name),convoy:(...args)=>context.startPartyMonsterConvoy(...args),
-  returnToDaisy:hunt=>context.returnHuntToDaisy(hunt),begin:(...args)=>context.beginMonsterHuntCycle(...args),
-  waypoint:name=>nav.waypoint(name),validLocation:(focus,location)=>context.validFarmingLocation(party.monsterChoices||[],focus,location),persist:()=>context.persistSettings(),
+// The hunting owner's Hunt routes (runtime/hunting/coordinator/routes.ts `createHuntRoutes`) over a fixture's
+// party. `ports` plants createHuntRoutes's own ports by name; the rest hold nothing. `huntMode` answers the
+// farming-mode route.
+const {createHuntRoutes}=require('../../../runtime/hunting/coordinator/routes.ts');
+const {settingsWriter}=require('./settings-writer.cjs');
+function huntRoutes(party,ports){
+ return createHuntRoutes(party,{
+  participants:()=>[],release(){},authorize(){},monsterDestination:()=>undefined,clear(){},selectedDestination:()=>null,convoy(){},
+  begin(){},now:()=>Date.now(),fighting:()=>false,intent:()=>null,waypoint:()=>null,write:settingsWriter(party).write,owned:()=>null,
+  ownsTravel:()=>false,fresh:()=>true,cancelConvoy(){},start:()=>false,persist(){},group:()=>null,
+  ...ports,
  });
 }
-module.exports={huntMode};
+const huntMode=(party,ports)=>huntRoutes(party,ports).mode;
+module.exports={huntMode,huntRoutes};

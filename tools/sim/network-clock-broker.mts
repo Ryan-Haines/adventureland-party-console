@@ -25,22 +25,31 @@ function clockRequest(raw: string | undefined) {
 export async function startNetworkClock(rate: number) {
   if (!Number.isFinite(rate) || rate <= 1 || rate > 1024) throw Error("ChronAL clock rate must be greater than 1 and at most 1024; use E2E_GAMEPLAY_BACKEND=native for real time");
   const windowMs=Number(process.env.E2E_CLOCK_WINDOW_MS||250);
-  if(!Number.isInteger(windowMs)||windowMs<25||windowMs>250)throw Error('ChronAL network window must be 25–250 ms');
+  if(!Number.isInteger(windowMs)||windowMs<25||windowMs>250)throw Error('ChronAL network window must be 25 to 250 ms');
   const epoch = wallNow(),
     token = randomUUID(),
-    members = new Map<string, { now: number; scope: string; label: string; sent: number; count: number; total: number; max: number; nativeIo?:boolean; timing?: {count:number;receiveMs:number;workMs:number;returnMs:number} }>();
+    members = new Map<string, { now: number; scope: string; label: string; sent: number; count: number; total: number; max: number; nativeIo?:boolean; startup?:boolean; timing?: {count:number;receiveMs:number;workMs:number;returnMs:number} }>();
   const retired = new Set<string>();
   let now = epoch,
     closed = false,
     lastWall = epoch,
     budget = 0,nativeIoActive=false,nativeIoSince=0,nativeIoWallMs=0;
+  // Credit accrues at the rate of the mode it was earned in, so a mode change pays out the wall
+  // time since the last pacing tick before it starts the new rate.
+  function accrue(wall:number){
+    budget=Math.min(windowMs,budget+Math.max(0,wall-lastWall)*(nativeIoActive?1:rate));
+    lastWall=wall;
+  }
   function reconcileNativeIo(){
     const active=[...members.values()].some(member=>member.nativeIo),wall=wallNow();
     if(active===nativeIoActive)return;
     if(nativeIoActive)nativeIoWallMs+=wall-nativeIoSince;
+    // The credit carries across the change. The windowMs cap above keeps it to one window, so no
+    // catch-up burst follows the I/O. A CODE frame sends its /party-api/status reports 60-110 ms
+    // apart with a few ms between them. When each change zeroed the credit, no window came due,
+    // and a live row froze all 28 participants for 30 s ("shared clock stalled").
+    accrue(wall);
     nativeIoActive=active;nativeIoSince=active?wall:0;
-    // Discard credit from the previous mode; no post-I/O catch-up burst.
-    budget=0;lastWall=wall;
   }
   const sockets = new Map<string, ClockSocket>();
   const connections=new Set<Socket>();
@@ -56,6 +65,11 @@ export async function startNetworkClock(rate: number) {
       members.delete(id);
       retired.add(id);
       sockets.get(id)?.close();
+    } else if (url.pathname === "/resume" && id) {
+      // A node participant joins in startup and leaves it here, with the window it runs up to
+      // (tools/sim/network-clock.cjs resume).
+      const member=members.get(id);
+      if(member)member.startup=false;
     } else if (url.pathname === "/scope") {
       for (const [key, value] of members)
         if (value.scope === scope) {
@@ -105,7 +119,7 @@ export async function startNetworkClock(rate: number) {
     }
     ws.handleUpgrade(req, socket, head, (connection: ClockSocket) => {
       sockets.set(id, connection);
-      members.set(id, { now, scope: url.searchParams.get("scope") || "", label: url.searchParams.get("label") || id, sent: wallNow(), count: 0, total: 0, max: 0 });
+      members.set(id, { now, scope: url.searchParams.get("scope") || "", label: url.searchParams.get("label") || id, sent: wallNow(), count: 0, total: 0, max: 0, startup: url.searchParams.get("startup") === "1" });
       connection.on("message", (bytes: Buffer) => {
         let value: { now?: number; kind?:string; active?:boolean; receivedWall?:number; completedWall?:number; workMs?:number };
         try {
@@ -158,13 +172,12 @@ export async function startNetworkClock(rate: number) {
     const wall = wallNow();
     // Real XHR is not accelerated. Preserve its original timeout budget while
     // it is in flight; ordinary gameplay timers resume the requested rate.
-    budget = Math.min(windowMs, budget + Math.max(0, wall - lastWall) * (nativeIoActive?1:rate));
-    lastWall = wall;
+    accrue(wall);
     if (
       closed ||
       budget < windowMs ||
       !members.size ||
-      [...members.values()].some((member) => member.now < now)
+      [...members.values()].some((member) => !member.startup && member.now < now)
     )
       return;
     // Keep sockets responsive and avoid charging gameplay time for slow asset,

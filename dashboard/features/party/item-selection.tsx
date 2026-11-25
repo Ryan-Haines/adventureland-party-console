@@ -63,7 +63,6 @@ export function useItemSelection<T>(entries: T[], key: (entry: T) => string) {
 }
 export function BatchItemActions({
   entries,
-  merchant,
   onCommand,
   onBank,
   onMerchant,
@@ -74,7 +73,6 @@ export function BatchItemActions({
   onError,
 }: {
   entries: InventoryEntry[];
-  merchant?: boolean;
   onCommand?: (
     type:
       | 'auto-item-mark'
@@ -104,7 +102,7 @@ export function BatchItemActions({
     entries.every(
       (e) =>
         e.meta?.compoundable &&
-        (e.item.level || 0) < Math.min(7, itemMaximumLevel(e.meta)),
+        (e.item.level || 0) < itemMaximumLevel(e.meta),
     ) &&
     entries.every((entry) =>
       entries

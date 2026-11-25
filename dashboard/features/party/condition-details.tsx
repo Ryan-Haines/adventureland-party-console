@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,7 @@ export function ConditionDetails({
   const details = Object.entries(merged).filter(([key]) => !ignored.has(key));
   return (
     <Dialog open={!!selected} onOpenChange={onOpenChange}>
-      <DialogContent className="border border-cyan-800 bg-[#0b1916] text-emerald-50 sm:max-w-lg">
+      <DialogContent data-area="condition" className="border border-cyan-800 bg-[#0b1916] text-emerald-50 sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-4">
             {condition?.sprite && (
@@ -54,6 +55,7 @@ export function ConditionDetails({
             </div>
           ))}
         </dl>
+        <AddonSlot name="dialog-section" part="condition" subject={condition} />
       </DialogContent>
     </Dialog>
   );

@@ -1,7 +1,6 @@
 'use client';
 import { Component, createRef } from 'react';
-
-type Entry = { at: number; message: string; level: string; details?: unknown };
+import type { MerchantActivity as Entry } from '@/features/party/merchant-activity';
 type Snapshot = { key: string; offset: number; top: number } | null;
 
 export class MerchantActivityLog extends Component<

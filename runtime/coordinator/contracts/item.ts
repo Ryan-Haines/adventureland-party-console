@@ -7,6 +7,9 @@ export interface Item extends Pick<ItemInfo, 'level' | 'q'> {
   name?: string;
   p?: string;
   stat_type?: string;
+  // The player's lock and the bound flag, which rules.ts `usableCopy` reads.
+  l?: unknown;
+  b?: unknown;
 }
 
 export interface InventoryEntry {
@@ -14,8 +17,8 @@ export interface InventoryEntry {
   slot?: number;
   item?: Item | null;
   // Per-copy meta once the coordinator holds merchantCatalog; read the
-  // per-type fields through inventory/catalog-meta.ts entryMeta().
-  meta?: import('../inventory/catalog-meta.ts').ItemMetaRecord | null;
+  // per-type fields through runtime/items/catalog-meta.ts entryMeta().
+  meta?: import('../../items/coordinator/api.ts').ItemMetaRecord | null;
 }
 
 export interface ItemMark extends Item {

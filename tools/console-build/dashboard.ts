@@ -2,9 +2,14 @@ import { createServer, request, type ServerResponse, type IncomingMessage } from
 import { createServer as portServer } from 'node:net';
 import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
-import { launch, stop } from '../dashboard/process.ts';
-import { gatewayHeaders } from '../dashboard/gateway-access.ts';
+import { gatewayHeaders, launch, stop } from '../dashboard/api.ts';
 import type { Candidate } from './contracts.ts';
+import { lifecycleSavedFields } from '../../runtime/lifecycle/fields.ts';
+import { waitForHealthy } from '../hosting/process-tree.ts';
+import type { HostBound } from '../hosting/http.ts';
+// The immutable dashboard's readiness: a candidate dashboard that starts and never serves ends at
+// READY, which hosting/process-tree.ts waitForHealthy logs.
+const READY: HostBound = { name: 'dashboardReadyMs', ms: 120_000 };
 
 interface Running { candidate: Candidate; port: number; child: ChildProcess }
 
@@ -66,7 +71,8 @@ export class ImmutableDashboard {
   }
   private scheduleRespawn(value: Running) {
     if (this.stopped || this.selecting || this.active !== value || this.respawnTimer || this.respawnAbort) return;
-    const delay = Math.min(60_000, 3000 * 2 ** Math.min(this.respawnAttempts++, 5));
+    const { dashboardRespawnMs, dashboardRespawnMaxMs } = lifecycleSavedFields.settings;
+    const delay = Math.min(dashboardRespawnMaxMs.default, dashboardRespawnMs.default * 2 ** Math.min(this.respawnAttempts++, 5));
     this.respawnTimer = setTimeout(() => {
       this.respawnTimer = undefined;
       if (this.stopped || this.active !== value) return;
@@ -101,34 +107,11 @@ export class ImmutableDashboard {
     const next: Running = {candidate, child, port};
     this.children.add(next);
     child.once('exit', () => this.scheduleRespawn(next));
-    let spawnError: Error | undefined;
-    child.on('error', error => { spawnError = error; });
     try {
-      await this.ready(next, signal, () => spawnError);
+      await waitForHealthy(child, `http://127.0.0.1:${port}/`, 'Immutable dashboard', READY, { headers: gatewayHeaders(), signal });
       signal.throwIfAborted();
       this.prepared.set(hash,next);return next;
     } catch (error) { await this.retire(next); throw error; }
-  }
-  private async ready(next: Running, signal: AbortSignal, failure: () => Error | undefined) {
-    const deadline = Date.now() + 120_000;
-    while (true) {
-      signal.throwIfAborted();
-      const error = failure();
-      if (error) throw error;
-      if (!this.alive(next)) throw new Error('Immutable dashboard exited before readiness');
-      if (await this.probe(next.port, signal)) return;
-      if (Date.now() >= deadline) throw new Error('Immutable dashboard readiness timed out');
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-  }
-  private async probe(port: number, signal: AbortSignal) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/`, {
-        headers: gatewayHeaders(), signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
-      });
-      await response.body?.cancel();
-      return response.ok;
-    } catch { signal.throwIfAborted(); return false; }
   }
   private async handoff(next: Running) {
     const oldActive = this.active;

@@ -7,7 +7,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
  * functions (and small state-setter wrappers) on every render; passing those
  * directly into a memoized child defeats the memoization since the prop
  * identity always differs. This returns wrappers that never change identity,
- * so a `memo()`ed consumer only re-renders when the data it actually reads
+ * so a `memo()`ed consumer only re-renders when the data it reads
  * (passed separately) changes.
  */
 export function useForwardingActions<M extends object, K extends keyof M>(

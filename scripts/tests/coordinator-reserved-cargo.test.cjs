@@ -1,7 +1,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createReservedBankboiCargo}=require('../../runtime/coordinator/inventory/reserved-cargo.ts');
+const {createReservedBankboiCargo}=require('../../runtime/items/coordinator/storage.ts');
+const {stackKey}=require('../../runtime/items/identity.ts');
 function fixture(){const slots=Array(42).fill(null),state={bankbois:{B:{name:"B"}},bankSnapshot:{packs:{items1:slots}},bankboiQueue:[],bankboiReservedMigrated:false,withdrawals:{}};let saves=0;
- const service=createReservedBankboiCargo(state,{identity:item=>item.name,now:()=>100,persist:()=>saves++});
+ const service=createReservedBankboiCargo(state,{now:()=>100,persist:()=>saves++});
  return {state,slots,service,saves:()=>saves};}
 test('last worker removal prunes reserved cargo without a bank observation and preserves ordinary requests',()=>{
  const f=fixture();f.slots[35]={item:{name:'sword'}};f.service.reconcile();
@@ -24,7 +25,7 @@ test('merchant retrieval cancels overflow intent and cannot be immediately recap
 });
 test('stale staging requests are removed while ordinary bank requests survive',()=>{
  const f=fixture();f.state.bankboiQueue=[{id:'old',pack:'items1',slot:35,item:{name:'old'}},{id:'normal',pack:'items1',slot:1,item:{name:'normal'}},{id:'other',pack:'items2',slot:35,item:{name:'other'}}];
- f.slots[35]={item:{name:'new'}};f.service.reconcile();assert.deepEqual(f.state.bankboiQueue.map(x=>x.id),['normal','other','items1:35:new']);
+ f.slots[35]={item:{name:'new'}};f.service.reconcile();assert.deepEqual(f.state.bankboiQueue.map(x=>x.id),['normal','other','items1:35:'+stackKey({name:'new'})]);
  f.slots[35]=null;f.service.reconcile();assert.equal(f.state.bankboiQueue.length,2);
 });
 test('missing bank snapshot does not finalize migration; an empty known pane does',()=>{

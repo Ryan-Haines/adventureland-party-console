@@ -22,7 +22,7 @@
     "57": {
       "source": [
         "characters/shared.js:isPassingEncounter",
-        "runtime/combat/queue.ts:tombstoneIds"
+        "runtime/coordinator/targeting/queue.ts:tombstoneIds"
       ],
       "behavior": "WeakMap caches key by array/length/context; retained tombstones Set; randomized invalid/duplicate timestamp equivalence and warm-cache operation count passed",
       "e2e": "armadillo passing scene in live-hunt.spec.ts",
@@ -45,7 +45,7 @@
     },
     "106": {
       "ancestorCommit": "4677651f7feee18bd9075349e5dfed33e7f23190",
-      "source": "runtime/characters/native-planner.ts:sliceProfile",
+      "source": "runtime/movement/character/planner.ts:sliceProfile",
       "behavior": "raw own-data descriptor saves native is_hidden, finally restores; normal/throw/cancel + CODE retirement isolated regressions passed",
       "e2e": "existing terrain scenarios exercise actual native planner",
       "status": "validated: retained regressions and focused browser/native gameplay E2E passed",

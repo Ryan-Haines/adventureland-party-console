@@ -17,8 +17,10 @@ if [[ "${PARTY_TEST_FAIL:-}" == 1 ]]; then exit 7; fi
 mkdir -p node_modules
 EOF
 chmod +x "$fixture/bin/npm"
+# start-console.sh reads engines.node from the root package.json for the Node floor check.
+cp "$source_root/package.json" "$fixture/package.json"
+echo '{}' > "$fixture/dashboard/package.json"
 for directory in "$fixture" "$fixture/dashboard"; do
-  echo '{}' > "$directory/package.json"
   echo '{}' > "$directory/package-lock.json"
 done
 cat > "$fixture/tools/caracal/setup.mts" <<'EOF'
@@ -49,14 +51,16 @@ echo '{"changed":true}' > "$fixture/dashboard/package-lock.json"
 launch --production
 [[ $(grep -c '^dependencies:' "$PARTY_TEST_LOG") == 4 ]]
 grep -q '^production$' "$PARTY_TEST_LOG"
-grep -q '^tools/dashboard/build.mts$' "$PARTY_TEST_LOG"
+# native.mts builds nothing itself: each launch installs Caddy and starts the host on the newest
+# completed build (tools/hosting/native.mts), so the three launches log three Caddy steps.
+[[ $(grep -c '^tools/hosting/install-caddy.mts$' "$PARTY_TEST_LOG") == 3 ]]
 echo '{"changed":true}' > "$fixture/package-lock.json"
 if PARTY_TEST_FAIL=1 launch; then echo 'Expected dependency failure'; exit 1; fi
 grep -q 'startup stopped' "$fixture/output"
 PARTY_TEST_HOLD=1 launch &
 launcher=$!
 for attempt in {1..100}; do
-  if grep -q 'Party Console built' "$fixture/output"; then break; fi
+  if grep -q 'Starting Party Console with the newest completed build' "$fixture/output"; then break; fi
   sleep 0.1
 done
 # Open the same lock in a separate process to verify it stays held after exec.

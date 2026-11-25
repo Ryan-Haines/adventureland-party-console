@@ -1,8 +1,10 @@
-const {createMerchantDispatcher}=require('../../../runtime/coordinator/merchant/dispatcher.ts');
+const {createMerchantDispatcher}=require('../../../runtime/merchant-jobs/coordinator/dispatch.ts');
 
+// The merchant dispatcher over a fixture state. `r.ports` holds the plants a test swaps, under the
+// dispatcher's own port names (dispatch.ts `createMerchantDispatcher`); `r.dispatch` runs one pass.
 function dispatchRuntime(overrides={}) {
   const effects=[];
-  const party={merchantCharacter:'M',merchantQueue:[],merchantCurrent:null,merchantHomeReturnAt:0,
+  const party={merchantCharacter:'M',merchantQueue:[],merchantCurrent:null,
     bankbois:{},bankboiTransaction:null,gatheringModes:[],gatheringCooldowns:{},commands:{},nextCommandId:100,
     statuses:{M:{seenAt:100000,server:'USII',map:'main',x:1,y:2,gold:500,items:Array(42).fill(null)},
       Q:{seenAt:100000,server:'USII',map:'main',x:3,y:4,gold:50,items:[{slot:1,item:{name:'ring',level:2}}]}},
@@ -13,36 +15,44 @@ function dispatchRuntime(overrides={}) {
     activeRealm:'SR_USII',aldata:{key:'fixture-key'},npcSaleMarks:[{slot:7,item:{name:'helmet'}}],
     standListings:[{id:'stand',item:{name:'coat'}}],merchantCargo:{bank:[],gold:0},threshold:100000,
     ...overrides};
-  const r={party,Date:{now:()=>100000},effects,coordinatorPolicies:require('../../../runtime/coordinator/index.ts'),bankboiService:{busy:()=>false},bankStackRouting:{servicePlan:()=>null},
-    ensureMerchantHome:()=>true,maybeStartBankboiService:async()=>effects.push('storage'),
-    merchantAnniversaryControl:()=>({featured:false,reserved:false,kissDue:false,busy:false}),
-    dispatchMerchantIdle:()=>effects.push('idle'),merchantRoutinePriority:()=>50,merchantJobPriority:job=>job.priority||50,
-    merchantTransferCapacityBlocked:()=>false,markedCollectionReady:()=>true,
-    pickJobByPriority:()=>party.merchantQueue.shift()||null,merchantRoutineNeedsHome:()=>false,
-    stampMerchantJob:job=>job,policyFor:()=>({hp:{min:5,max:20,item:'hpot0'},mp:{min:0,max:0,item:'mpot0'}}),
-    merchantLog:(message,level,details)=>effects.push({message,level,details}),persistSettings:()=>effects.push('persist'),
-    pontyMarket:{planPurchase:listings=>listings.slice().reverse()}};
+  const now=()=>100000,busy=()=>false;
+  const ports={ensureHome:()=>true,storage:async()=>effects.push('storage'),
+    anniversary:()=>({featured:false,reserved:false,kissDue:false,busy:false}),
+    idle:()=>effects.push('idle'),routinePriority:()=>50,priority:job=>job.priority||50,
+    capacityBlocked:()=>false,collectionReady:()=>true,pick:()=>party.merchantQueue.shift()||null,
+    stamp:job=>job,restock:()=>({hp:{min:5,max:20,item:'hpot0'},mp:{min:0,max:0,item:'mpot0'}}),
+    log:(message,level,details)=>effects.push({message,level,details}),persist:()=>effects.push('persist'),
+    planPonty:listings=>listings.slice().reverse()};
+  const r={party,effects,ports};
   const work=name=>({marked:party.marked[name]||[],upgrades:party.upgrades[name]||[],purchases:party.purchases[name]||[],
     compounds:party.compounds[name]||[],autoCompounds:party.autoCompounds[name]||[],withdrawals:party.withdrawals[name]||[],
     statScrolls:party.statScrolls[name]||[],deliveries:party.merchantDeliveries[name]||[],goldTarget:party.goldTargets[name]});
+  require('./coordinator-merchant.cjs').itemsDoor(party,{busy,start:async()=>{await ports.storage();}});
   r.merchantDispatcher=createMerchantDispatcher({get queue(){return party.merchantQueue;},set queue(v){party.merchantQueue=v;},
     get current(){return party.merchantCurrent;},set current(v){party.merchantCurrent=v;}},{
-    now:()=>r.Date.now(),nextCommand:()=>party.nextCommandId++,merchant:()=>party.merchantCharacter,
-    returningHome:()=>!!party.merchantHomeReturnAt,ensureHome:reason=>r.ensureMerchantHome(reason),routineNeedsHome:reason=>r.merchantRoutineNeedsHome(reason),
-    bankboi:name=>!!party.bankbois[name],storagePending:()=>!!(r.bankboiService.busy()||party.bankboiTransaction||r.bankStackRouting.servicePlan(party)),
-    startStorage:()=>r.maybeStartBankboiService(),anniversary:()=>r.merchantAnniversaryControl(),forcedStand:()=>!!party.merchantForceStand,
+    now,nextCommand:()=>party.nextCommandId++,merchant:()=>party.merchantCharacter,
+    returningHome:()=>!!party.realmReturningHome,ensureHome:reason=>ports.ensureHome(reason),
+    bankboi:name=>!!party.bankbois[name],anniversary:()=>ports.anniversary(),forcedStand:()=>!!party.merchantForceStand,
     manualEquipmentPending:()=>['equip','unequip'].includes(party.commands[party.merchantCharacter]?.type),
-    gatheringModes:()=>party.gatheringModes,gatheringCooldown:mode=>party.gatheringCooldowns[mode],
-    routinePriority:reason=>r.merchantRoutinePriority(reason),priority:job=>r.merchantJobPriority(job),
-    capacityBlocked:job=>r.merchantTransferCapacityBlocked(job),collectionReady:job=>r.markedCollectionReady(job),
-    pick:()=>r.pickJobByPriority(),stamp:job=>r.stampMerchantJob(job),status:name=>party.statuses[name],
-    planPonty:(...args)=>r.pontyMarket.planPurchase(...args),
+    gatheringModes:()=>party.gatheringModes,gathering:()=>require('../../../runtime/merchant-jobs/coordinator/dispatch.ts').gatheringReady(party,now()),
+    routinePriority:reason=>ports.routinePriority(reason),priority:job=>ports.priority(job),
+    readyFacts:()=>({now:now(),enabled:()=>true,waits:job=>!!require('../../../runtime/hooks/index.ts').partyHooks().ask('items.needs',{...job}).blockedBy,
+      capacityBlocked:job=>ports.capacityBlocked(job),collectionReady:job=>ports.collectionReady(job)}),
+    pick:facts=>ports.pick(facts),stamp:job=>ports.stamp(job),status:name=>party.statuses[name],
+    // `jobs.enqueue` adds the job to the fixture's queue; `jobs.pause` hands back the job it paused.
+    enqueue:ask=>{party.merchantQueue.push({reason:ask.reason,target:ask.target,queuedAt:now(),...ask.fields});return 'queued';},
+    pause:job=>job,
+    planPonty:(...args)=>ports.planPonty(...args),
     inputs:()=>({merchant:party.merchantCharacter,activeRealm:party.activeRealm,aldataKey:party.aldata.key,threshold:party.threshold,
-      gatheringModes:party.gatheringModes,cargo:party.merchantCargo,npcSales:r.coordinatorPolicies.readyNpcSales(party.npcSaleMarks,r.Date.now()),standListings:party.standListings,
-      statScrolls:party.statScrolls,work,restock:name=>r.policyFor(name)}),
-    command:(name,command)=>{party.commands[name]=command;},idle:()=>r.dispatchMerchantIdle(),persist:()=>r.persistSettings(),
-    log:(...args)=>r.merchantLog(...args)});
-  r.dispatchMerchant=r.merchantDispatcher.dispatch;
+      gatheringModes:party.gatheringModes,cargo:party.merchantCargo,npcSales:require('../../../runtime/items/coordinator/api.ts').readyNpcSales(party.npcSaleMarks,now()),standListings:party.standListings,
+      statScrolls:party.statScrolls,work,restock:name=>ports.restock(name),
+      visitWithdrawals:job=>require('../../../runtime/items/coordinator/api.ts').visitWithdrawals(party,job)}),
+    command:(_owner,command)=>{party.commands[party.merchantCharacter]=command;},idle:()=>ports.idle(),persist:()=>ports.persist(),
+    log:(...args)=>ports.log(...args)});
+  r.dispatch=r.merchantDispatcher.dispatch;
+  // The merchant jobs owner's job source, as the coordinator publishes it: needs.ts visitWithdrawals reads jobs.ready.
+  const {merchantJobSource}=require('../../../runtime/merchant-jobs/coordinator/registrations.ts');
+  require('../../../runtime/hooks/index.ts').partyHooks().publish(merchantJobSource(()=>party.merchantCurrent,name=>party.statuses[name],()=>r.merchantDispatcher.ready()));
   return r;
 }
 

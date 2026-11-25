@@ -1,4 +1,5 @@
 const { test } = require('node:test');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
 const assert = require('node:assert/strict');
 const load = require('./helpers/dashboard-query-module.cjs');
 const { QueryObserver } = require('../../dashboard/node_modules/@tanstack/react-query');
@@ -18,9 +19,9 @@ function server(sections) {
     const parsed = new URL(url, 'http://dashboard');
     const section = parsed.searchParams.get('section'), current = sections[section];
     requests.push({ section, revision: parsed.searchParams.get('revision') });
-    if (current.status && current.status !== 200) return { ok: false, status: current.status, redirected: false, headers: new Headers(), json: async () => ({}) };
-    if (parsed.searchParams.get('revision') === current.revision) return { ok: false, status: 304, redirected: false, headers: new Headers({ ETag: `"${current.revision}"` }), json: async () => { throw new Error('304 has no body'); } };
-    return { ok: true, status: 200, redirected: false, headers: new Headers({ ETag: `"${current.revision}"` }), json: async () => JSON.parse(JSON.stringify(current.body)) };
+    if (current.status && current.status !== 200) return { ok: false, status: current.status, redirected: false, headers: new Headers(), json: async () => ({}), text: async () => '{}' };
+    if (parsed.searchParams.get('revision') === current.revision) return { ok: false, status: 304, redirected: false, headers: new Headers({ ETag: `"${current.revision}"` }), json: async () => { throw new Error('304 has no body'); }, text: async () => '' };
+    return { ok: true, status: 200, redirected: false, headers: new Headers({ ETag: `"${current.revision}"` }), json: async () => JSON.parse(JSON.stringify(current.body)), text: async () => JSON.stringify(current.body) };
   };
   return { requests, fetch };
 }
@@ -29,11 +30,13 @@ async function withFetch(fake, run) {
   try { return await run(); } finally { global.fetch = original; }
 }
 
-for (const domain of ['bank', 'logs', 'market']) test(`${domain}: 304 keeps the cached data object and later changes arrive`, async () => {
+scenarioTable('a cached bank, logs or market section keeps its object on a 304 and takes later changes', domain => {
   const client = createDashboardClient();
   client.setQueryData(key('core'), { referenceRevision: 'catalog-1' });
   const sections = { [domain]: { revision: 'r1', body: { value: 1, nested: { items: [1, 2] } } } };
   const fake = server(sections);
+  return { client, sections, fake };
+}, ['bank', 'logs', 'market'].map(domain => [`${domain}: 304 keeps the cached data object and later changes arrive`, async ({ client, sections, fake }) => {
   await withFetch(fake.fetch, async () => {
     const fetch = async () => { await client.fetchQuery({ ...domainOptions(client, domain), staleTime: 0 }); return client.getQueryData(key(domain)); };
     const first = await fetch();
@@ -50,7 +53,7 @@ for (const domain of ['bank', 'logs', 'market']) test(`${domain}: 304 keeps the 
     assert.deepEqual(fake.requests.map((entry) => entry.revision), [null, 'r1', 'r1', 'r2']);
   });
   client.clear();
-});
+}, domain]));
 
 test('a replaced or cleared cache entry is fetched in full, never answered from a 304', async () => {
   const client = createDashboardClient();
@@ -77,7 +80,7 @@ test('a mutation still refetches an active bank query at once, and a changed ban
   const fake = server(sections);
   const observer = new QueryObserver(client, { ...domainOptions(client, 'bank'), refetchInterval: false });
   const stop = observer.subscribe(() => {});
-  await withFetch(async (url, init) => String(url).includes('/state?') ? fake.fetch(url, init) : { ok: true, status: 200, json: async () => ({}) }, async () => {
+  await withFetch(async (url, init) => String(url).includes('/state?') ? fake.fetch(url, init) : { ok: true, status: 200, json: async () => ({}), text: async () => '{}' }, async () => {
     await observer.refetch();
     sections.bank = { revision: 'r2', body: { bank: { gold: 2 } } };
     await performAction(client, '/bank/unlock', {});
@@ -89,11 +92,13 @@ test('a mutation still refetches an active bank query at once, and a changed ban
 test('auth loss and server errors behave as before', async () => {
   const client = createDashboardClient();
   client.setQueryData(key('core'), { referenceRevision: 'catalog-1' });
+  client.setQueryData(['party', 'character', 'A', 'inventory'], { items: [{ name: 'coat' }] });
   const failing = server({ logs: { status: 503, revision: 'x', body: {} } });
   await withFetch(failing.fetch, () => assert.rejects(client.fetchQuery({ ...domainOptions(client, 'logs'), staleTime: 0 }), /Reconnecting/));
   // Auth loss clears every cache, which also cancels the read in flight.
   const lost = server({ logs: { status: 401, revision: 'x', body: {} } });
   await withFetch(lost.fetch, () => assert.rejects(client.fetchQuery({ ...domainOptions(client, 'logs'), staleTime: 0 })));
   assert.equal(client.getQueryData(key('core')), undefined);
+  assert.equal(client.getQueryData(['party', 'character', 'A', 'inventory']), undefined, 'a character cache goes too');
   client.clear();
 });

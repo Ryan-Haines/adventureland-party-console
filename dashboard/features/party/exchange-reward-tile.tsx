@@ -1,18 +1,28 @@
 'use client';
+import { activeRules, commerceRuleKey, defaultStandPrice, exchangeKey, exchangeResultIsItem, ruleKey, ruleMode, type ActiveRule } from '../../../runtime/items/api.ts';
 import { useEffect } from 'react';
 import { useExchangeItemSelection } from './exchange-item-selection';
 import { BatchItemActions } from './item-selection';
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { AutomaticItemActions } from './automatic-item-actions';
-import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
 import { upgradeRuleTiers } from './upgrade-rule-tiers';
-import { upgradeRuleQuantity } from './upgrade-rule-quantity';
 import { itemActionBanner } from './item-action-banner';
-import { ItemSprite } from './item-sprite';
+import { SpriteCrop } from './sprite-crop';
 import type { Sprite } from './sprite';
 import type { PartyConsoleModel } from './use-party-console';
 import { itemMaximumLevel } from './item-maximum-level';
 import type { ExchangeMarkMode } from './exchange-mark-controls';
+import type { BankItemRules } from './bank-item-banner';
+
+// The reward banner's label for each active item rule.
+const REWARD_LABELS: Record<ActiveRule['action'], (level: number, rule: ActiveRule) => string> = {
+  exchange: () => 'Auto exchange',
+  npc: () => 'Auto sell to NPC',
+  stand: () => 'Auto stand',
+  upgrade: (level, rule) => `Auto upgrade → +${level + (rule.tiers || 0)}`,
+  compound: (_, rule) => `Auto compound → +${rule.targetTier}`,
+  deconstruction: () => 'Auto deconstruction',
+};
 
 export interface ExchangeRewardTileData {
   id: string; level: number; name: string; quantity: number; sprite?: Sprite | null; detail: string;
@@ -24,7 +34,8 @@ export interface ExchangeRewardTileData {
 export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTileData; model: PartyConsoleModel;
 }) {
   const { state } = model, merchant = state.merchantCharacter;
-  const passive = !!reward.kind && ['empty', 'gold', 'shells', 'cx', 'cxbundle', 'open'].includes(reward.kind);
+  const rules: BankItemRules = state;
+  const passive = !!reward.kind && !exchangeResultIsItem(reward.kind);
   const name = reward.kind === 'empty' ? 'No reward' : reward.name;
   const sprite = reward.kind === 'gold' || reward.kind === 'empty'
     ? { url: `/images/exchange/${reward.kind === 'gold' ? 'gold-coins' : 'no-reward'}.png`,
@@ -36,6 +47,11 @@ export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTi
         }
       : reward.sprite;
   const item = { name: reward.id, level: reward.level };
+  // The merchant's catalog lists each exchangeable item at its level; an item with no level is +0.
+  const exchangeable = (candidate: { name: string; level?: number }) =>
+    !!state.merchantCatalog?.exchangeable?.some(
+      (choice) => !choice.reward && choice.id === candidate.name && choice.level === (candidate.level || 0),
+    );
   const entry = {
     slot: -1,
     item,
@@ -53,26 +69,19 @@ export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTi
   useEffect(() => {
     if (!passive && register) return register(JSON.parse(selectionIdentity));
   }, [register, selectionIdentity, passive]);
-  const key = `${item.name}@+${item.level}`,
-    commerce = automaticCommerceRuleKey(item);
+  const key = ruleKey(item),
+    commerce = commerceRuleKey(item);
   const bank =
-    state.autoItemMarks?.[String(merchant)]?.[key] ||
-    (!item.level
-      ? state.autoItemMarks?.[String(merchant)]?.[item.name]
-      : undefined);
+    ruleMode(state.autoItemMarks?.[String(merchant)] || {}, item);
   const upgradeTiers = upgradeRuleTiers(
     state.autoUpgradeMarks?.[String(merchant)]?.[key],
   );
-  const upgradePending =
-    !!upgradeTiers &&
-    upgradeRuleQuantity(state.autoUpgradeMarks?.[String(merchant)]?.[key]) !==
-      0;
   const compound = state.autoCompounds?.[String(merchant)]?.find(
     (rule) => rule.name === item.name,
   );
   const npc = !!state.autoNpcSales?.[commerce],
     stand = !!state.autoStandMarks?.[commerce];
-  const exchange = !!state.autoExchanges?.[`${item.name}@${item.level}`];
+  const exchange = !!state.autoExchanges?.[exchangeKey(item.name, item.level)];
   const bulkUnsupported =
     reward.markMode?.action === 'upgrade' &&
     (!entry.meta?.upgradeable ||
@@ -100,30 +109,12 @@ export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTi
     stagedBanner
       ? [stagedBanner]
       : [
-          exchange && {
-            action: 'exchange',
+          // The items owner's active rules for the merchant's rule owner (items/rules.ts activeRules).
+          ...activeRules(rules, item).map((rule) => ({
+            action: rule.action,
             automatic: true,
-            label: 'Auto exchange',
-          },
-          npc && { action: 'npc', automatic: true, label: 'Auto sell to NPC' },
-          stand && { action: 'stand', automatic: true, label: 'Auto stand' },
-          upgradePending && {
-            action: 'upgrade',
-            automatic: true,
-            label: `Auto upgrade → +${item.level + upgradeTiers}`,
-          },
-          !!compound &&
-            compound.quantity !== 0 &&
-            item.level < compound.targetTier && {
-              action: 'compound',
-              automatic: true,
-              label: `Auto compound → +${compound.targetTier}`,
-            },
-          !!state.autoDeconstruction?.[String(merchant)]?.[commerce] && {
-            action: 'deconstruction',
-            automatic: true,
-            label: 'Auto deconstruction',
-          },
+            label: REWARD_LABELS[rule.action](item.level, rule),
+          })),
           {
             action: 'bank',
             label: bank === 'bank' ? 'Auto bank' : 'Auto bank (default)',
@@ -160,7 +151,7 @@ export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTi
         <span className={`relative h-14 w-14 shrink-0 overflow-hidden rounded border bg-black p-1 ${passive ? 'border-slate-600' : banner.border}`}
         >
           <span className="absolute inset-1">
-            {sprite && <ItemSprite sprite={sprite} />}
+            {sprite && <SpriteCrop sprite={sprite} />}
           </span>
           {!passive && (
             <span
@@ -195,7 +186,6 @@ export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTi
         selection.forEntry(selectedEntry).length > 1 ? (
           <BatchItemActions
             entries={selection.forEntry(selectedEntry)}
-            merchant
             onError={model.setActionError}
             onCommand={(type, entry, extra) =>
               model.post('/command', {
@@ -206,14 +196,7 @@ export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTi
                 slot: -1,
               })
             }
-            exchangeable={(entry) =>
-              !!state.merchantCatalog?.exchangeable?.some(
-                (choice) =>
-                  !choice.reward &&
-                  choice.id === entry.item.name &&
-                  choice.level === (entry.item.level || 0),
-              )
-            }
+            exchangeable={(entry) => exchangeable(entry.item)}
           />
         ) : (
           <>
@@ -228,14 +211,7 @@ export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTi
                 upgradeTiers={upgradeTiers}
                 compoundTier={compound?.targetTier}
                 buyable={state.merchantCatalog?.buyable || []}
-                exchangeable={
-                  !!state.merchantCatalog?.exchangeable?.some(
-                    (choice) =>
-                      !choice.reward &&
-                      choice.id === item.name &&
-                      choice.level === item.level,
-                  )
-                }
+                exchangeable={exchangeable(item)}
                 onCommand={(type, extra) =>
                   model.command(merchant, type, item, extra)
                 }
@@ -243,7 +219,7 @@ export function ExchangeRewardTile({ reward, model }: { reward: ExchangeRewardTi
                 onStand={() => {
                   const price =
                     state.autoStandMarks?.[commerce]?.price ||
-                    Math.max(1, Number(entry.meta?.definition.g) || 1);
+                    defaultStandPrice(entry.meta?.definition);
                   model.setStandItem({
                     entry,
                     defaultPrice: price,

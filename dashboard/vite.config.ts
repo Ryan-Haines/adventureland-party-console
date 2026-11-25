@@ -4,6 +4,7 @@ import vinext from 'vinext';
 import { defineConfig } from 'vite';
 import path from 'node:path';
 import hostingConfig from './.openai/hosting.json';
+import { DASHBOARD_PORT } from '../tools/dashboard/gateway-access.ts';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   '00000000-0000-4000-8000-000000000000';
@@ -61,7 +62,7 @@ export default defineConfig(async ({ command }) => {
     },
     css: { postcss: { plugins: [tailwindcss()] } },
     server: {
-      port: Number(process.env.AL_DASHBOARD_PORT) || 3010,
+      port: Number(process.env.AL_DASHBOARD_PORT) || DASHBOARD_PORT,
       strictPort: true,
       ...(isCodexSeatbeltSandbox || process.env.AL_WATCH_POLL === '1'
         ? { watch: { useFsEvents: false, usePolling: true } }

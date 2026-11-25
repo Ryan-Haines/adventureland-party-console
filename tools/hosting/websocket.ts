@@ -2,7 +2,7 @@ import { connect } from "node:net";
 import type { Server } from "node:http";
 import type { Options } from "./setup-routes.ts";
 import { sameBrowserOrigin, validBrowser } from "./authorize.ts";
-import { gatewayHeaders } from '../dashboard/gateway-access.ts';
+import { gatewayHeaders } from '../dashboard/api.ts';
 export function websocket(server: Server, options: Options) {
   server.on("upgrade", (req, socket, head) => {
     if (!sameBrowserOrigin(req, options) || (options.access.required && !validBrowser(req, options)) || /^\/(bridge|setup|party-api|CODE)(\/|$)/.test(req.url || "")) {

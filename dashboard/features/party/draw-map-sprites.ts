@@ -1,14 +1,24 @@
 import { cachedMapImage } from './cached-map-image';
 import type { MapSpriteLayer } from '../../../runtime/map-sprites';
-let tintedPixels = 0;
-const tintedCells = new Map<string, HTMLCanvasElement>();
+// The tinted cells each map canvas's last frame drew. endMapSpriteFrame drops each cell the frame
+// did not draw, so a canvas's cache holds what its map shows now.
+type TintedCells = Map<string, { cell: HTMLCanvasElement; drawn: boolean }>;
+const tinted = new WeakMap<CanvasRenderingContext2D, TintedCells>();
+export function endMapSpriteFrame(ctx: CanvasRenderingContext2D) {
+  for (const [key, entry] of tinted.get(ctx) || []) {
+    if (entry.drawn) entry.drawn = false;
+    else tinted.get(ctx)!.delete(key);
+  }
+}
 /** Native atlas cells remain readable through the existing game image proxy. */
 export function drawMapSprites(
   ctx: CanvasRenderingContext2D,
   layers: MapSpriteLayer[],
 ): boolean {
   let drawn = false;
-  for (const layer of layers.slice(0, 32)) {
+  let tintedCells = tinted.get(ctx);
+  if (!tintedCells) tinted.set(ctx, tintedCells = new Map());
+  for (const layer of layers) {
     const image = cachedMapImage(layer.url);
     if (
       !image?.complete ||
@@ -39,7 +49,7 @@ export function drawMapSprites(
         layer.sh,
         layer.tint,
       ].join(':');
-      let cell = tintedCells.get(key);
+      let cell = tintedCells.get(key)?.cell;
       if (!cell) {
         cell = document.createElement('canvas');
         cell.width = layer.sw;
@@ -71,15 +81,8 @@ export function drawMapSprites(
           layer.sw,
           layer.sh,
         );
-        tintedCells.set(key, cell);
-        tintedPixels += cell.width * cell.height;
-        while (tintedCells.size > 64 || tintedPixels > 1048576) {
-          const first = tintedCells.keys().next().value!;
-          const expired = tintedCells.get(first)!;
-          tintedPixels -= expired.width * expired.height;
-          tintedCells.delete(first);
-        }
       }
+      tintedCells.set(key, { cell, drawn: true });
       ctx.drawImage(cell, layer.dx, layer.dy);
     } else
       ctx.drawImage(

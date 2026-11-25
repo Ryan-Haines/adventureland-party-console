@@ -1,18 +1,23 @@
 "use client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { memo, useEffect, useId, useRef, useState } from "react";
-import {useStoredBoolean} from "@/hooks/use-stored-boolean";
+import { memo, useEffect, useRef, useState } from "react";
 import {CharacterSectionToggle} from "./character-section-toggle";
 import {MetricsItemPicker} from "./metrics-item-picker";
 import {useDomain} from "./query-cache";
 import { RestockPolicy } from "./restock-policy";
+import { RESTOCK_DEFAULT, RESTOCK_ELIXIR_DEFAULT } from "../../../runtime/items/api.ts";
 
-const defaults: RestockPolicy = {
-  hp: { min: 5, max: 20, item: "hpot1" },
-  mp: { min: 0, max: 0, item: "mpot1" },
-};
+// The card's "Merchant restock" line keeps its place and look in the inventory and opens the
+// character's Restock section of the settings menu.
+export const RestockButton = memo(function RestockButton({ onOpen }: { onOpen: () => void }) {
+  return <section data-area="restock" className="mt-4 border-y border-emerald-900/70">
+    <CharacterSectionToggle label="Merchant restock" open={false} onToggle={onOpen}/>
+  </section>;
+});
 
+// A character's Restock section of the settings menu: the potion thresholds and the elixir
+// restock the merchant delivers.
 export const RestockControls = memo(function RestockControls({
   character,
   value,
@@ -22,19 +27,17 @@ export const RestockControls = memo(function RestockControls({
   value?: RestockPolicy;
   onSave: (character: string, value: RestockPolicy) => Promise<void>;
 }) {
-  const [open,setOpen]=useStoredBoolean(`party-section:${character}:restock`,false);
-  const id=useId();
-  const catalog=useDomain("catalog",open);
+  const catalog=useDomain("catalog",true);
   const elixirs=(catalog.data?.merchantCatalog?.allItems || []).filter(item=>item.meta?.definition.type === "elixir");
-  function draftElixir() { return draft?.elixir || {item:"",min:1,max:2,autoConsume:true,autoAcquire:false}; }
-  const [draft, setDraft] = useState<RestockPolicy>(value || defaults),
+  function draftElixir() { return draft?.elixir || {item:"",...RESTOCK_ELIXIR_DEFAULT,autoConsume:true,autoAcquire:false}; }
+  const [draft, setDraft] = useState<RestockPolicy>(value || RESTOCK_DEFAULT),
     dirty = useRef(false);
   const elixir=draftElixir();
   function updateElixir(patch: Partial<typeof elixir>) { dirty.current=true; setDraft({...draft,elixir:{...elixir,...patch}}); }
   // Character status polling returns a new policy object on every refresh.
   // Reconcile it only while the user has no unsaved local edits.
   useEffect(() => {
-    if (!dirty.current) setDraft(value || defaults);
+    if (!dirty.current) setDraft(value || RESTOCK_DEFAULT);
   }, [value]);
   const field = (kind: "hp" | "mp", key: "min" | "max", label: string) => (
     <label className="grid gap-1 font-mono text-[10px] uppercase text-emerald-100/45">
@@ -57,9 +60,8 @@ export const RestockControls = memo(function RestockControls({
     </label>
   );
   return (
-    <section className="mt-4 border-y border-emerald-900/70">
-      <CharacterSectionToggle label="Merchant restock" open={open} controls={id} onToggle={()=>setOpen(value=>!value)}/>
-      <div id={id} hidden={!open} className="pb-4">
+    <section data-area="restock-settings">
+      <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="font-mono text-[10px] text-emerald-100/65">Potion thresholds</span>
         <Button

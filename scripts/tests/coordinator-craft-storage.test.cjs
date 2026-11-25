@@ -1,8 +1,9 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createMerchantOrderRoute } = require('../../runtime/coordinator/http/merchant-order.ts');
-const { createStorageReferenceUpdates } = require('../../runtime/coordinator/inventory/bankboi-completion.ts');
-const { coordinatorStorageIdentity } = require('../../runtime/coordinator/inventory/storage-service.ts');
+const { createMerchantOrderRoute } = require('../../runtime/items/coordinator/routes/production.ts');
+const { createStorageReferenceUpdates } = require('../../runtime/items/coordinator/storage.ts');
+const { storageKey } = require('../../runtime/items/coordinator/needs.ts');
 function fixture() {
  const entry = (name, slot, q = 1, level = 0) => ({slot, item:{name,q,level}});
  const state = {merchantCharacter:'M', merchantCatalog:{buyable:[{id:'vitscroll',cost:1}],craftable:[{id:'tristone',materials:['intring','strring','dexring','vitscroll'].map(id=>({id,quantity:1,level:0}))}]},
@@ -11,7 +12,7 @@ function fixture() {
  bankbois:{B:{items:[entry('intring',0),entry('intring',1),entry('intring',2),entry('intring',3,20,1)]},C:{items:[entry('vitscroll',4,20)]}},
  withdrawals:{},merchantQueue:[],merchantCurrent:null,standListings:[],npcSaleMarks:[]};
  const effects=[];let sequence=0;
- const route=createMerchantOrderRoute(state,{now:()=>100,nextCommand:()=>++sequence,activeNames:()=>['M','P','B'],log(){},persist(){},persistBank(){effects.push('bank')},dispatch(){effects.push('dispatch')},bankboi:async()=>effects.push('storage')});
+ const route=createMerchantOrderRoute(state,withDoor(state,{now:()=>100,nextCommand:()=>++sequence,activeNames:()=>['M','P','B'],log(){},persist(){},persistBank(){effects.push('bank')},dispatch(){effects.push('dispatch')},bankboi:async()=>effects.push('storage')}));
  const post=async(quantity=4)=>{const res={code:200,status(code){this.code=code;return this},json(body){this.body=body;return this}};await route.handle({body:{crafts:[{id:'tristone',quantity}]}},res);return res};
  return {state,effects,post};
 }
@@ -29,30 +30,30 @@ test('exact levels and total cart shortages survive structured 409; NPC deficits
  assert.equal((await f.post()).code,200);assert.deepEqual(f.state.merchantQueue[0].order.materialBuys,[{id:'vitscroll',level:0,quantity:4}]);
 });
 test('partial multi-worker receipts, relocated slots, repeated receipts and cancellation are safe',async()=>{
- const f=fixture();await f.post();const job=f.state.merchantQueue[0];const update=createStorageReferenceUpdates(f.state,coordinatorStorageIdentity);
+ const f=fixture();await f.post();const job=f.state.merchantQueue[0];const update=createStorageReferenceUpdates(f.state,storageKey);
  const requests=[...f.state.withdrawals.M];const deposit=(r,i)=>({request:r,pack:'items2',slot:20+i,item:r.item});
  update.deposited([deposit(requests[0],0)]);assert.equal(job.blockedOnBankboi,true);const count=job.order.bank.length;
  update.deposited([deposit(requests[0],0)]);assert.equal(job.order.bank.length,count);
  update.deposited(requests.slice(1).map((r,i)=>deposit(r,i+1)));assert.equal(job.blockedOnBankboi,false);assert.equal(f.state.withdrawals.M.length,0);
  assert.equal(job.order.bank.at(-1).quantity,4);assert.equal(job.order.bank.at(-1).slot,23);
  const cancelled=fixture();await cancelled.post();const request=cancelled.state.withdrawals.M[0];cancelled.state.merchantQueue=[];
- createStorageReferenceUpdates(cancelled.state,coordinatorStorageIdentity).deposited([deposit(request,0)]);
+ createStorageReferenceUpdates(cancelled.state,storageKey).deposited([deposit(request,0)]);
  assert.equal(cancelled.state.merchantQueue.length,0);assert.equal(cancelled.state.withdrawals.M.length,3);
 });
 test('unconfirmed wrong-level and undersized deposits cannot release crafting',async()=>{
  const f=fixture();await f.post();const job=f.state.merchantQueue[0],request=f.state.withdrawals.M.at(-1);
- const update=createStorageReferenceUpdates(f.state,coordinatorStorageIdentity);
+ const update=createStorageReferenceUpdates(f.state,storageKey);
  for(const item of [{name:'vitscroll',level:1,q:20},{name:'vitscroll',level:0,q:2}]) update.deposited([{request,pack:'items1',slot:35,item}]);
  assert.equal(job.blockedOnBankboi,true);assert.equal(f.state.withdrawals.M.length,4);
 });
 
 test('craft deposits keep staging cargo reserved until its job leaves the queue',async()=>{
- const {createReservedBankboiCargo}=require('../../runtime/coordinator/inventory/reserved-cargo.ts');
+ const {createReservedBankboiCargo}=require('../../runtime/items/coordinator/storage.ts');
  const f=fixture();await f.post();const request=f.state.withdrawals.M[0];
- createStorageReferenceUpdates(f.state,coordinatorStorageIdentity).deposited([{request,pack:'items1',slot:35,item:request.item}]);
+ createStorageReferenceUpdates(f.state,storageKey).deposited([{request,pack:'items1',slot:35,item:request.item}]);
  f.state.bankSnapshot.packs.items1=Array(42).fill(null);f.state.bankSnapshot.packs.items1[35]={slot:35,item:request.item};
  f.state.bankboiQueue=[];f.state.bankboiReservedMigrated=true;
- const cargo=createReservedBankboiCargo(f.state,{identity:coordinatorStorageIdentity,now:()=>100,persist(){}});
+ const cargo=createReservedBankboiCargo(f.state,{identity:storageKey,now:()=>100,persist(){}});
  cargo.reconcile();assert.equal(f.state.bankboiQueue.length,0);
  f.state.merchantQueue=[];cargo.reconcile();assert.equal(f.state.bankboiQueue.length,1);
 });

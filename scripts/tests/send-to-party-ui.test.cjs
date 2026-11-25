@@ -1,18 +1,11 @@
-const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),Module=require('node:module');
-const {buildSync}=require('esbuild'),React=require('../../dashboard/node_modules/react');
+const test=require('node:test'),assert=require('node:assert/strict'),load=require('./helpers/dashboard-query-module.cjs');
+const React=require('../../dashboard/node_modules/react');
 const {create,act}=require('../../dashboard/node_modules/react-test-renderer');
-const filename=path.resolve('dashboard/features/party/send-to-party-control.tsx');
-const bundle=buildSync({entryPoints:[filename],bundle:true,packages:'external',external:['@/components/ui/dialog','@/hooks/use-clock','./query-actions'],platform:'node',format:'cjs',write:false});
-const compiled=new Module(filename,module);compiled.filename=filename;compiled.paths=Module._nodeModulePaths(path.dirname(filename));
 let calls=[],finish;
 const action={isPending:false,error:null,reset(){},mutateAsync(value){calls.push(value);return new Promise(resolve=>{finish=resolve})}};
-compiled.require=function(id){
- if(id==='@/components/ui/dialog')return Object.fromEntries(['Dialog','DialogContent','DialogHeader','DialogTitle'].map(name=>[name,props=>React.createElement('section',props)]));
- if(id==='@/hooks/use-clock')return {useClock:()=>100000};
- if(id==='./query-actions')return {usePartyAction:()=>action};
- return Module.prototype.require.call(this,id);
-};
-compiled._compile(bundle.outputFiles[0].text,filename);
+const compiled={exports:load('send-to-party-control.tsx',{
+ '@/components/ui/dialog':Object.fromEntries(['Dialog','DialogContent','DialogHeader','DialogTitle'].map(name=>[name,props=>React.createElement('section',props)])),
+ '@/hooks/use-clock':{useClock:()=>100000},'./query-actions':{usePartyAction:()=>action}})};
 global.IS_REACT_ACT_ENVIRONMENT=true;
 test('one group sends all members directly; independent groups require a choice',async()=>{
  let tree;const sent=[];
@@ -29,11 +22,9 @@ test('one group sends all members directly; independent groups require a choice'
  assert.ok(!tree.root.findAllByType('button').some(button=>button.children.includes('M')));
  await act(async()=>tree.unmount());
 });
-for (const characters of [{L:{name:'L',seenAt:0},F:{name:'F'},M:{name:'M'}},{}])
-test('manual send remains enabled with stale or missing presence: '+Object.keys(characters).join(','),async()=>{
- let tree,complete;const sent=[];
- const state={leader:'L',followers:{F:true},merchantCharacter:'M',characters,merchantCurrent:{id:'busy'}};
- const onSend=group=>{sent.push(group);return new Promise(resolve=>{complete=resolve;});};
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const sendsOnce=async({characters,state,onSend,sent,complete})=>{
+ let tree;
  await act(async()=>{tree=create(React.createElement(compiled.exports.SendToPartyControl,{state,onSend}));});
  const send=()=>tree.root.findAllByType('button').find(button=>button.children.includes('Send to party'));
  assert.equal(send().props.disabled,false);
@@ -42,4 +33,13 @@ test('manual send remains enabled with stale or missing presence: '+Object.keys(
  assert.equal(send().props.disabled,true);
  await act(async()=>complete());assert.equal(send().props.disabled,false);
  await act(async()=>tree.unmount());
-});
+};
+scenarioTable('the Send to party button stays usable while a merchant job runs, whatever the presence reports',characters=>{
+ let complete;const sent=[];
+ const state={leader:'L',followers:{F:true},merchantCharacter:'M',characters,merchantCurrent:{id:'busy'}};
+ const onSend=group=>{sent.push(group);return new Promise(resolve=>{complete=resolve;});};
+ return {characters,state,onSend,sent,complete:()=>complete()};
+},[
+ ['manual send remains enabled with stale or missing presence: L,F,M',sendsOnce,{L:{name:'L',seenAt:0},F:{name:'F'},M:{name:'M'}}],
+ ['manual send remains enabled with stale or missing presence: ',sendsOnce,{}],
+]);

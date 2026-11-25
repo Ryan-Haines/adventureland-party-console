@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {installProductionRoutes}=require('../../runtime/coordinator/inventory/production.ts');
+const {installProductionRoutes}=require('../../runtime/items/coordinator/routes/production.ts');
 const {httpFixture}=require('./helpers/coordinator-http.cjs');
 
 test('production inspection is read-only and explicit unknown resolution survives replay and late completion',()=>{
@@ -19,4 +19,23 @@ test('production inspection is read-only and explicit unknown resolution survive
  call({...body,action:'complete',success:true});call({...body,action:'resolve-unknown',reason:'duplicate'});
  assert.equal(JSON.stringify(state.production),saved);assert.equal(state.autoUpgradeMarks.M['cap@+0'].quantity,2);
  assert.equal(call(body).body.attempt.completed,true);assert.equal(call({...body,id:'next'}).code,200);
+});
+
+test('a checkpoint moves the journal phase forward, and pending lists the unfinished attempt with its journal',()=>{
+ const http=httpFixture(),state={merchantCharacter:'M',statuses:{},production:{attempts:{}},autoUpgradeMarks:{},autoCompounds:{}};
+ installProductionRoutes(http.router,state,()=>{});
+ const call=value=>http.invoke('POST','/party-api/merchant/production',value).response;
+ const body={character:'M',id:'a1',kind:'upgrade',item:{name:'cap',level:0}};
+ const journal=phase=>({id:'a1',item:{name:'cap',level:0},phase,slots:[0]});
+ assert.equal(call(body).code,200);
+ assert.equal(call({...body,action:'checkpoint',journal:journal('prepared')}).code,200);
+ assert.equal(call({...body,action:'checkpoint',journal:journal('running')}).code,200);
+ assert.equal(state.production.attempts.a1.journal.phase,'running');
+ assert.equal(call({...body,action:'checkpoint',journal:journal('prepared')}).code,200);
+ assert.equal(state.production.attempts.a1.journal.phase,'running','an earlier phase never replaces a later one');
+ assert.equal(call({...body,action:'checkpoint',journal:{...journal('running'),id:'other'}}).code,409);
+ const pending=call({character:'M',action:'pending'}).body;
+ assert.deepEqual(pending.pending.map(entry=>[entry.id,entry.journal.phase]),[['a1','running']]);
+ call({...body,action:'complete',success:true});
+ assert.deepEqual(call({character:'M',action:'pending'}).body.pending,[],'a completed attempt is no longer pending');
 });

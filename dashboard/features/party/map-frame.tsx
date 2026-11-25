@@ -16,7 +16,6 @@ export type MapFrame = {
   target?: string | null;
   grouped?: boolean;
   eventCombat?: boolean;
-  queueRevision?: string | null;
   queue?: {id:string;map:string;in?:string|number;state?:string;role?:string;server?:string;radius?:number;visible?:boolean}[];
   entities: MapEntity[];
   events?: MapEvent[];

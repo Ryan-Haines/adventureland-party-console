@@ -6,19 +6,18 @@ import { memo, useEffect, useRef, useState } from "react";
 import { abbreviatedGold } from "./abbreviated-gold";
 
 export const GoldTargetControl = memo(function GoldTargetControl({
-  character,
   gold,
   target,
   onSave,
   onBank,
 }: {
-  character: string;
   gold: number;
   target: number;
   onSave: (amount: number) => Promise<void>;
   onBank: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState(String(target));
+  const [error, setError] = useState("");
   const editing = useRef(false);
   useEffect(() => {
     if (!editing.current) setDraft(String(target));
@@ -27,10 +26,19 @@ export const GoldTargetControl = memo(function GoldTargetControl({
     const amount = Number(draft);
     return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
   };
+  // A refused save shows its reason beside the field and puts the draft back to the saved target.
   const save = async () => {
     const amount = parsed();
-    if (amount === null) return;
-    await onSave(amount);
+    if (amount === null) return true;
+    setError("");
+    try {
+      await onSave(amount);
+      return true;
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+      setDraft(String(target));
+      return false;
+    }
   };
   return (
     <div className="mt-4 flex min-w-0 items-center gap-2">
@@ -64,12 +72,12 @@ export const GoldTargetControl = memo(function GoldTargetControl({
         aria-label="Exchange gold and items with bank"
         className="h-8 w-8 shrink-0 border-amber-800 bg-amber-950/30 text-amber-300 hover:bg-amber-900/40"
         onClick={async () => {
-          await save();
-          await onBank();
+          if (await save()) await onBank();
         }}
       >
         <Landmark className="h-4 w-4" />
       </Button>
+      {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
     </div>
   );
 });

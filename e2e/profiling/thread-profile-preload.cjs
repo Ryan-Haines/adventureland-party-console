@@ -1,9 +1,16 @@
 // Profiling preload for CharacterThread.js and live-coordinator.cjs, on the disposable
-// game stack only. Load it with NODE_OPTIONS="--require <absolute path>" and PROF_DIR set;
-// every other process ignores it. SIGUSR2 starts a window and the next SIGUSR2 writes
-// <PROF_DIR>/<name>-<pid>.cpuprofile and <name>-<pid>.json. PROF_LIGHT=1 records only
-// CPU time, event-loop delay, request counts and the reaction samples, with no profiler
-// or timer wrappers.
+// game stack only (docs/efficiency.md, Coordinator and Character threads). Load it with
+// NODE_OPTIONS="--require <absolute path>" and PROF_DIR set; every other process ignores it.
+// SIGUSR2 starts a window and the next SIGUSR2 writes <PROF_DIR>/<name>-<pid>.cpuprofile and
+// <name>-<pid>.json. PROF_LIGHT=1 records only CPU time, event-loop delay, request counts and the
+// reaction samples, with no profiler or timer wrappers.
+//
+// The coordinator's extra is its request timing: each status report records the handler time
+// (request body received to response end, which covers JSON parse, every ingestion stage and the
+// response serialization) and the per-stage times the coordinator put in that response's
+// transportTiming.statusStages; GET /party-api/state records its handler time per section. A
+// response whose timing does not parse counts in parseFailures, so a short reports list shows
+// whether the window was quiet or the reader failed.
 const path = require('node:path');
 const fs = require('node:fs');
 const script = String(process.argv[1] || '');
@@ -26,11 +33,51 @@ if (role && process.env.PROF_DIR) {
   const rec = (map, key, ms) => { let r = map.get(key); if (!r) map.set(key, r = { calls: 0, ms: 0, max: 0 }); r.calls++; r.ms += ms; if (ms > r.max) r.max = ms; };
   const contexts = [];
   const light = process.env.PROF_LIGHT === '1';
+  let wrapFailures = 0, parseFailures = 0;
+  let reports = [], combat = 0, reads = [];
+  if (role === 'coordinator') {
+    const http = require('node:http');
+    const emit = http.Server.prototype.emit;
+    http.Server.prototype.emit = function (event, req, res) {
+      if (event === 'request' && active) {
+        req.profileStartedAt = performance.now();
+        req.once('end', () => { req.profileBodyAt = performance.now(); });
+      }
+      return emit.apply(this, arguments);
+    };
+    const end = http.ServerResponse.prototype.end;
+    http.ServerResponse.prototype.end = function (chunk, ...rest) {
+      const req = this.req;
+      if (active && req && req.profileStartedAt !== undefined) {
+        const at = performance.now(), url = String(req.originalUrl || req.url || '');
+        if (req.method === 'POST' && url.split('?')[0] === '/party-api/status') {
+          const body = req.body || {};
+          if (body.combatOnly === true || body.combatWait === true) combat++;
+          else {
+            const text = chunk ? String(chunk) : '';
+            const index = text.lastIndexOf('"transportTiming":');
+            let stages = null;
+            if (index >= 0) try {
+              const timing = JSON.parse(text.slice(index + 18, text.length - 1));
+              stages = Object.fromEntries(Object.entries(timing.statusStages || {}).map(([key, value]) => [key, value.lastMs]));
+            } catch (_) { parseFailures++; }
+            reports.push({ name: body.name, at: Date.now(), handlerMs: at - (req.profileBodyAt ?? req.profileStartedAt),
+              totalMs: at - req.profileStartedAt, inBytes: Number(req.headers['content-length']) || 0, outBytes: text.length, stages });
+          }
+        } else if (req.method === 'GET' && url.startsWith('/party-api/state')) {
+          const section = new URL(url, 'http://local').searchParams.get('section') || 'full';
+          reads.push({ section, ms: at - (req.profileBodyAt ?? req.profileStartedAt) });
+        }
+      }
+      return end.call(this, chunk, ...rest);
+    };
+  }
   if (role === 'thread') {
     const original = vm.createContext;
     vm.createContext = function (object, ...rest) {
       const result = original.call(this, object, ...rest);
-      try { if (!light) wrapTimers(object, contexts.length ? 'code' : 'game'); contexts.push(object); } catch (_) {}
+      try { if (!light) wrapTimers(object, contexts.length ? 'code' : 'game'); } catch (_) { wrapFailures++; }
+      contexts.push(object);
       return result;
     };
   }
@@ -113,6 +160,7 @@ if (role && process.env.PROF_DIR) {
       session.post('Profiler.start');
     }
     timers.clear(); events.clear(); requests.clear();
+    reports = []; reads = []; combat = 0; parseFailures = 0;
     Object.assign(speed, { attacks: [], moves: 0, attacksTotal: 0, heals: 0, deathToAction: [], kills: 0 });
     eld = monitorEventLoopDelay({ resolution: 2 }); eld.enable();
     started = performance.now(); cpu0 = process.cpuUsage(); active = true;
@@ -132,7 +180,8 @@ if (role && process.env.PROF_DIR) {
         cpuPercent: (cpu.user + cpu.system) / 10 / wall,
         eventLoopDelay: { p50: pct(50), p90: pct(90), p99: pct(99), max: eld.max / 1e6, mean: eld.mean / 1e6 },
         timers: table(timers), events: table(events), speed, requests: Object.fromEntries(requests),
-        rss: process.memoryUsage().rss,
+        rss: process.memoryUsage().rss, wrapFailures,
+        ...(role === 'coordinator' ? { combatReports: combat, reports, reads, parseFailures } : {}),
       }, null, 1));
       s.disconnect();
     };

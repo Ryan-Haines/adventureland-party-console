@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'node-floor.ps1')
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
 try {

@@ -12,6 +12,4 @@ export type NpcSaleMark = {
   quantity: number;
   state?: string;
   error?: string | null;
-  retryAt?: number;
-  retryCount?: number;
 };

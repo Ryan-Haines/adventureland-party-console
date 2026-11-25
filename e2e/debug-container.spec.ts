@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
 import { docker } from '../tools/debug/process';
+import { untilRunning } from './debug-running';
 
 test('Docker-hosted console launches and destroys a sibling debug server without host source mounts', async ({ request }, info) => {
   test.setTimeout(1_800_000);
@@ -22,11 +23,7 @@ test('Docker-hosted console launches and destroys a sibling debug server without
     const start = await request.post(url + '/console-debug/start', { headers: { Origin: url }, data: {} });
     expect(start.ok()).toBe(true);
     project = (await start.json()).project;
-    await expect.poll(async () => {
-      const current = await state();
-      if (current.phase === 'error') throw Error(current.error);
-      return current.phase;
-    }, { timeout: 1_500_000, intervals: [2000] }).toBe('running');
+    await untilRunning(state);
     const running = await state(); project = running.project;
     expect(running.port).not.toBe(3010);
     const health = await request.get('http://127.0.0.1:' + running.port + '/health');

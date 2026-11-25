@@ -1,5 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { test, expect } from './fixtures';
+import { declaredInDocument, unsetByDefault } from './settings-samples';
+import { METRIC_BUCKET_MS } from '../runtime/status/api';
+import { hiddenValue } from '../runtime/settings/coordinator/table';
 
 // Failure inventory: docs/efficiency.md (Persistence). These journeys cover the
 // items that need the real coordinator and dashboard; the rest are unit tests.
@@ -19,15 +23,11 @@ async function report(info: import('@playwright/test').TestInfo, name: string, v
   await info.attach(name, { contentType: 'application/json', body: JSON.stringify(value, null, 2) });
 }
 async function openDashboardLogs(page: import('@playwright/test').Page) {
+  // The console fixture serves a verified production candidate (fixtures.ts), so the page loads once.
   await page.goto('/');
-  // A shared development server may finish initial module discovery and reload.
-  await page.waitForTimeout(2000);
   const sidebar = page.getByRole('complementary', { name: 'Live logs' });
-  // The first click can land before hydration on a cold development server.
-  await expect(async () => {
-    if (!await sidebar.isVisible()) await page.getByRole('button', { name: 'Show logs' }).click();
-    await expect(sidebar).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 60_000 });
+  await page.getByRole('button', { name: 'Show logs' }).click();
+  await expect(sidebar).toBeVisible();
   await sidebar.getByRole('tab', { name: 'Dashboard logs' }).click();
   return sidebar;
 }
@@ -50,46 +50,25 @@ test('combat lines show at once, save once per window and survive a restart', as
   }
   const elapsed = Date.now() - started, appended = savedRecords(app.journal, historyKey) - before;
   await report(info, 'combat-line-dashboard-latency', { ...summary(latency), elapsed, historyRecordsAppended: appended });
-  // One save per 5 s window, plus one for a window already open at the start.
-  expect(appended).toBeLessThanOrEqual(Math.ceil(elapsed / 5000) + 1);
+  // One save per historySaveMs window, plus one for a window already open at the start.
+  expect(appended).toBeLessThanOrEqual(Math.ceil(elapsed / hiddenValue('historySaveMs')) + 1);
   await app.restartCoordinator();
   const saved = (await app.state()).combatLogs.W.map((entry: { message: string }) => entry.message)
     .filter((message: string) => message.startsWith('Persistence probe'));
   expect(saved).toEqual(messages);
 });
 
-test('status reports reach the dashboard without waiting for saves', async ({ page, app }, info) => {
-  // Speed requirement: saves never sit between a status report and the DOM.
-  // The fixture heartbeat replaces W every second, so each probe repeats
-  // until the dashboard shows it; latency counts from the first send.
+test('status reports reach the dashboard without waiting for saves', async ({ page, app }) => {
+  // The wiring row: a status report shows on the dashboard. Its latency is a measure of the speed
+  // project (console-speed.spec.ts).
   await page.goto('/');
-  await page.waitForTimeout(2000);
-  const base = (await app.state()).characters.W;
   await expect(page.getByText('1,000 / 1,000').first()).toBeVisible();
-  const latency: number[] = [], response: number[] = [];
-  for (let index = 0; index < 20; index++) {
-    const hp = 501 + index, target = `${hp} / 1,000`;
-    await page.evaluate(text => {
-      const probe = window as unknown as { probeSeenAt?: number };
-      delete probe.probeSeenAt;
-      const check = () => {
-        if (document.body.textContent?.includes(text)) probe.probeSeenAt = Date.now();
-        else requestAnimationFrame(check);
-      };
-      requestAnimationFrame(check);
-    }, target);
-    const first = Date.now();
-    for (;;) {
-      const sent = performance.now();
-      await app.deliverStatus({ ...base, name: 'W', hp });
-      response.push(performance.now() - sent);
-      const seen = await page.evaluate(() => (window as unknown as { probeSeenAt?: number }).probeSeenAt);
-      if (seen) { latency.push(seen - first); break; }
-      if (Date.now() - first > 10_000) throw Error('Dashboard never showed ' + target);
-      await page.waitForTimeout(150);
-    }
-  }
-  await report(info, 'status-dashboard-latency', { dom: summary(latency), statusResponseMs: summary(response.map(ms => Math.round(ms * 100) / 100)) });
+  const base = (await app.state()).characters.W;
+  // The fixture heartbeat replaces W every second, so the probe repeats until the dashboard shows it.
+  await expect.poll(async () => {
+    await app.deliverStatus({ ...base, name: 'W', hp: 501 });
+    return await page.getByText('501 / 1,000').first().isVisible();
+  }).toBe(true);
 });
 
 // Journal records as [key, JSON text] pairs, in file order.
@@ -100,6 +79,13 @@ function journalRecords(journal: string): [string, string][] {
   });
 }
 const saved = (journal: string, key: string) => journalRecords(journal).filter(([name]) => name === key).map(([name, line]) => JSON.parse(line)[name]);
+// The metrics journal's lines, and every receipt its records hold. A record keeps its receipts as
+// runs of sequences, [character, runtime, first, last] (metrics/history.ts `ReceiptRun`).
+const metricsLines = (journal: string) => existsSync(journal) ? readFileSync(journal, 'utf8').split('\n').filter(Boolean) : [];
+const receipts = (journal: string) => new Set(metricsLines(journal).flatMap(line => Object.values(JSON.parse(line))
+  .flatMap((bucket: any) => Array.isArray(bucket?.receipts) ? bucket.receipts : [])
+  .flatMap(([character, runtime, first, last]: [string, string, number, number]) =>
+    Array.from({ length: last - first + 1 }, (_, index) => JSON.stringify([character, runtime, first + index])))));
 const settingsKey = 'party_dashboard_settings_state_v1';
 const mailSettings = (page: import('@playwright/test').Page, url: string, settings: { autoCollect: boolean; autoDelete: boolean }) =>
   page.request.post(`${url}/party-api/mail/settings`, { headers: { Origin: url }, data: settings });
@@ -110,9 +96,12 @@ test.describe('saves through the mail settings route', () => {
   test('saves that repeat the last record append nothing, and a restart reads the same state', async ({ page, app }, info) => {
     // P1 items 1 and 4. Native status reports save the roster on every fixture
     // heartbeat, and each mail settings POST saves settings with unchanged content.
-    await page.waitForTimeout(3000);
+    // coordinator-persistence-writer.test.cjs holds the no-repeat rule on its clock; this row reads
+    // the real journal once the change has saved, and the restart's read-back.
+    expect((await mailSettings(page, app.url, { autoCollect: true, autoDelete: false })).ok()).toBe(true);
+    await expect.poll(() => saved(app.journal, settingsKey).at(-1)?.mailbox?.settings?.autoCollect, { intervals: [100] }).toBe(true);
     for (let index = 0; index < 5; index++) expect((await mailSettings(page, app.url, { autoCollect: false, autoDelete: false })).ok()).toBe(true);
-    await page.waitForTimeout(8000);
+    await expect.poll(() => saved(app.journal, settingsKey).at(-1)?.mailbox?.settings?.autoCollect, { intervals: [100] }).toBe(false);
     const last = new Map<string, string>(), repeats: string[] = [], appended: Record<string, number> = {};
     for (const [key, line] of journalRecords(app.journal)) {
       if (last.get(key) === line) repeats.push(key);
@@ -131,7 +120,17 @@ test.describe('saves through the mail settings route', () => {
   test('settings save in layout 2 within a second of a change, and in the v1.4.0 layout at shutdown', async ({ page, app }, info) => {
     // P3 items 7 and 9 through the real coordinator; layout 2 keeps the market
     // cache and production under their own keys while the console runs.
-    await page.waitForTimeout(2000);
+    // The coordinator never writes the console configuration file.
+    const configFile = path.join(import.meta.dirname, '..', '.caracal', 'config.js');
+    const configBefore = existsSync(configFile) ? readFileSync(configFile) : null;
+    // One combat line, so the run saves the history document too.
+    expect((await page.request.post('/party-api/combat-log', { headers: { Origin: app.url },
+      data: { character: 'W', events: [{ type: 'info', message: 'SF2 history probe' }] } })).ok()).toBe(true);
+    // One bank checkpoint, so the run saves the bank document too. M's report carries the sword.
+    let sword: any;
+    await expect.poll(async () => (sword = (await app.state()).characters.M?.items?.find((entry: any) => entry?.item?.name === 'sword'))).toBeTruthy();
+    expect((await page.request.post('/party-api/bankboi/checkpoint', { headers: { Origin: app.url },
+      data: { character: 'M', bank: { gold: 100000, packs: { items0: [{ ...sword, slot: 0, item: { ...sword.item, level: 0 } }] } } } })).ok()).toBe(true);
     const changed = Date.now();
     expect((await mailSettings(page, app.url, { autoCollect: true, autoDelete: false })).ok()).toBe(true);
     await expect.poll(() => saved(app.journal, settingsKey).at(-1)?.mailbox?.settings?.autoCollect, { intervals: [100] }).toBe(true);
@@ -143,12 +142,32 @@ test.describe('saves through the mail settings route', () => {
     expect(saved(app.journal, 'party_dashboard_market_state_v1').length).toBeGreaterThan(0);
     await app.restartCoordinator();
     const shutdown = saved(app.journal, settingsKey).filter(record => 'production' in record && 'aldataMarketListings' in record);
+    // coordinator-persistence-writer.test.cjs holds "within a second" on its clock; saveMs is reported.
     await report(info, 'settings-layout', { saveMs, runningRecords: running.length, shutdownRecords: shutdown.length });
-    // A material change saves within a second, plus the poll.
-    expect(saveMs).toBeLessThan(2500);
     expect(shutdown.length).toBeGreaterThan(0);
     expect(shutdown.at(-1)).toMatchObject({ persistenceLayout: 2, mailbox: { settings: { autoCollect: true } } });
     expect((await (await page.request.get(`${app.url}/party-api/mail`)).json()).settings).toEqual({ autoCollect: true, autoDelete: false });
+    // SF2: each saved document holds only its declared fields, and every one of them but a field
+    // whose declared default is unset (dailyDungeons, until the dungeon service first runs).
+    const unset = unsetByDefault();
+    const market = ['aldataMarketListings', 'aldataMarketBuyOrders', 'aldataTrades', 'aldataMerchantsUpdatedAt', 'aldataTradesUpdatedAt'];
+    const documents = {
+      'running settings': [running.at(-1), [...declaredInDocument('settings').filter(field => field !== 'production'), 'persistenceLayout']],
+      'shutdown settings': [shutdown.at(-1), [...declaredInDocument('settings'), 'persistenceLayout', ...market]],
+      selections: [saved(app.journal, 'party_dashboard_selections_state_v1').at(-1), declaredInDocument('selections')],
+      roster: [saved(app.journal, 'party_dashboard_roster_state_v1').at(-1), declaredInDocument('roster')],
+      bank: [saved(app.journal, 'party_dashboard_bank_state_v1').at(-1), declaredInDocument('bank')],
+      history: [saved(app.journal, historyKey).at(-1), declaredInDocument('history')],
+    } as const;
+    await report(info, 'saved-documents', Object.fromEntries(Object.entries(documents).map(([name, [record]]) => [name, record ? Object.keys(record).length : 'not written'])));
+    for (const [name, [record, declared]] of Object.entries(documents)) {
+      expect(record, `${name} is saved`).toBeTruthy();
+      expect(Object.keys(record).filter(key => !declared.includes(key)), `${name}: keys no declaration names`).toEqual([]);
+      expect(declared.filter(field => !(field in record) && !unset.includes(field)), `${name}: declared fields it lacks`).toEqual([]);
+    }
+    await app.crashCoordinator();
+    await app.restartCoordinator();
+    expect(existsSync(configFile) ? readFileSync(configFile) : null, 'config.js is unchanged').toEqual(configBefore);
   });
 });
 
@@ -156,106 +175,116 @@ test.describe('saved entries past their window', () => {
   const now = Date.now(), hour = 3_600_000;
   const rare = Object.fromEntries(Array.from({ length: 101 }, (_, index) => [`USII|main|1|rare-${index}`, { start: now - hour, progress: index, lowHp: 0 }]));
   test.use({ mailbox: true, savedRecords: [{ [settingsKey]: { mluckCastAt: { Expired: now - 2 * hour, Current: now - 60_000 }, rarePursuitProgress: rare } }] });
-  test('load drops expired luck casts and keeps the newest 100 rare pursuits', async ({ page, app }, info) => {
-    // P5 items 3, 4 and 6 through a saved journal and the real coordinator load.
-    await page.waitForTimeout(2000);
+  test('load drops expired luck casts and keeps every rare pursuit', async ({ page, app }, info) => {
+    // A saved journal through the real coordinator load. A pursuit record
+    // leaves when a member reports its rare killed, so the load keeps all 101 with no count cap.
     expect((await mailSettings(page, app.url, { autoCollect: true, autoDelete: false })).ok()).toBe(true);
     await expect.poll(() => saved(app.journal, settingsKey).at(-1)?.mailbox?.settings?.autoCollect, { intervals: [100] }).toBe(true);
     const record = saved(app.journal, settingsKey).at(-1);
     await report(info, 'retained-entries', { mluckCastAt: record.mluckCastAt, rare: Object.keys(record.rarePursuitProgress).length });
     expect(Object.keys(record.mluckCastAt)).toEqual(['Current']);
-    expect(Object.keys(record.rarePursuitProgress)).toHaveLength(100);
-    expect(record.rarePursuitProgress).not.toHaveProperty(['USII|main|1|rare-0']);
-    expect(record.rarePursuitProgress).toHaveProperty(['USII|main|1|rare-100']);
+    expect(Object.keys(record.rarePursuitProgress).sort()).toEqual(Object.keys(rare).sort());
   });
 });
 
-test('offline snapshots save on an inventory change, not on each 30 s refresh', async ({ page, app }, info) => {
+test('offline snapshots save on an inventory change, not on each report', async ({ page, app }, info) => {
   // Offline character snapshots (docs/efficiency.md, Persistence): nativeOwnership
-  // saves the roster on every native fixture report, and a refresh that is not
-  // due stays in memory until the 5 min save.
+  // saves the roster on every native fixture report, and a snapshot is taken
+  // only when its save is due (an inventory change or the 5 min save).
+  // coordinator-persistence-writer.test.cjs holds the save rule (rosterSnapshotSaveMs) on its clock.
+  // This row is the wiring: unchanged reports through the real coordinator, then one change, and the
+  // change's record is the first roster record after them, since the journal appends in order.
   const rosterKey = 'party_dashboard_roster_state_v1';
-  await page.waitForTimeout(5000);
-  const before = saved(app.journal, rosterKey).length, watched = Date.now();
-  // Every character's snapshot refreshes once in this window.
-  await page.waitForTimeout(36_000);
-  const memory = (await app.state()).characterSnapshots;
-  const refreshes = saved(app.journal, rosterKey).slice(before);
-  await report(info, 'roster-records-during-refreshes', { records: refreshes.length,
-    refreshedAt: Object.fromEntries(Object.entries(memory).map(([name, snapshot]: [string, any]) => [name, snapshot.updatedAt - watched])) });
-  for (const snapshot of Object.values(memory) as { updatedAt: number }[]) expect(snapshot.updatedAt).toBeGreaterThan(watched);
-  expect(refreshes).toEqual([]);
+  await expect.poll(() => saved(app.journal, rosterKey).some(record => record.characterSnapshots?.P)).toBe(true);
+  const before = saved(app.journal, rosterKey).length;
   const priest = { ...(await app.state()).characters.P };
   for (const field of ['seenAt', 'inventorySeenAt']) delete priest[field];
+  for (let index = 0; index < 3; index++) await app.deliverStatus(priest);
   priest.items = priest.items.map((entry: unknown, slot: number) => slot === 5 ? { slot, item: { name: 'coat', level: 1 }, meta: { properties: {} } } : entry);
   await app.deliverStatus(priest);
   await expect.poll(() => saved(app.journal, rosterKey).slice(before)
     .some(record => record.characterSnapshots?.P?.items?.[5]?.item?.name === 'coat')).toBe(true);
+  const refreshes = saved(app.journal, rosterKey).slice(before);
+  await report(info, 'roster-records-after-unchanged-reports', { records: refreshes.length });
+  expect(refreshes[0].characterSnapshots.P.items[5]?.item?.name, 'no roster record before the inventory change').toBe('coat');
 });
 
-test('metrics frames answer at once, reach disk within one commit and survive a restart', async ({ page, app }, info) => {
-  // Metrics history (docs/efficiency.md, Persistence): a POST answers without
-  // waiting for the commit, and one shared commit writes each bucket once.
+test('metrics frames reach disk before their answer, one part per bucket span, and survive a restart', async ({ page, app }, info) => {
+  // Metrics history (docs/efficiency.md, Metrics history compaction): a POST writes its frames as
+  // one append before it answers, and the next bucket start replaces those batch parts with one part.
   const journal = app.journal + '.metrics.jsonl', characters = ['W', 'P', 'M'];
-  const lines = () => existsSync(journal) ? readFileSync(journal, 'utf8').split('\n').filter(Boolean) : [];
-  const receipts = () => new Set(lines().flatMap(line => Object.values(JSON.parse(line))
-    .flatMap((bucket: any) => Array.isArray(bucket?.receipts) ? bucket.receipts : [])));
-  await page.waitForTimeout(1000);
-  // Every frame lands in the bucket that is open now, so all nine share it.
-  while (Date.now() % 10_000 > 4000) await page.waitForTimeout(200);
-  const start = Date.now(), at = Math.floor(start / 10_000) * 10_000, before = lines().length;
-  const frame = (sequence: number) => {
-    const sample = { at: Math.min(at + 9000, Date.now()), gold: 1_000_000, luck: 100, ping: 40, level: 80, xp: 1000 + sequence, maxXp: 90_000_000 };
+  const lines = () => metricsLines(journal);
+  // Every frame lands in the bucket that is open now, so all nine share it: the row starts its three
+  // rounds of posts as a bucket starts, and the coordinator commits that bucket at the next start.
+  const bucketMs = METRIC_BUCKET_MS;
+  await page.waitForTimeout(bucketMs - Date.now() % bucketMs);
+  const start = Date.now(), at = Math.floor(start / bucketMs) * bucketMs, before = lines().length;
+  // W's first frame carries one native kill, which a resent batch must not count again.
+  const kill = { id: 'metrics-native-death', at, monster: 'goo', actor: 'W' };
+  const frame = (sequence: number, character: string) => {
+    const sample = { at: Math.min(at + bucketMs - 1, Date.now()), gold: 1_000_000, luck: 100, ping: 40, level: 80, xp: 1000 + sequence, maxXp: 90_000_000 };
     return { at, sequence, observedMs: 1000, partial: false, first: sample, last: sample,
-      damage: [{ monster: 'goo', skill: 'attack', amount: 100, hits: 1 }], credits: [{ monster: 'goo', count: 1 }], kills: [], loot: [] };
+      damage: [{ monster: 'goo', skill: 'attack', amount: 100, hits: 1 }], credits: [{ monster: 'goo', count: 1 }],
+      kills: character === 'W' && sequence === 1 ? [kill] : [], loot: [] };
   };
+  const post = (character: string, sequence: number) => page.request.post(`${app.url}/party-api/metrics`, { headers: { Origin: app.url },
+    data: { character, server: 'USII', runtime: 'e2e-metrics-' + character, frames: [frame(sequence, character)] } });
   const ackMs: number[] = [], acknowledged: string[] = [];
   for (let sequence = 1; sequence <= 3; sequence++) {
     await Promise.all(characters.map(async character => {
       const sent = Date.now(), runtime = 'e2e-metrics-' + character;
-      const response = await page.request.post(`${app.url}/party-api/metrics`, { headers: { Origin: app.url },
-        data: { character, server: 'USII', runtime, frames: [frame(sequence)] } });
+      const response = await post(character, sequence);
       expect(response.status(), await response.text()).toBe(200);
       ackMs.push(Date.now() - sent);
-      acknowledged.push(JSON.stringify([character, runtime, sequence]));
+      const receipt = JSON.stringify([character, runtime, sequence]);
+      acknowledged.push(receipt);
+      expect(receipts(journal).has(receipt), 'the frame is on disk when its POST answers').toBe(true);
     }));
-    await page.waitForTimeout(300);
   }
-  // Each acknowledged frame reaches the journal within one 750 ms commit.
-  await expect.poll(() => { const held = receipts(); return acknowledged.filter(receipt => !held.has(receipt)); },
-    { timeout: 2000, intervals: [100] }).toEqual([]);
-  const appended = lines().length - before;
-  await report(info, 'metrics-acknowledgement', { ...summary(ackMs), appended, frames: 9 });
-  // A POST no longer waits for the commit window.
-  expect(Math.max(...ackMs)).toBeLessThan(500);
-  // Frames that wait for the same commit share one write of their bucket.
-  expect(appended).toBeLessThan(9);
+  // As the next metrics bucket starts, the bucket's nine batch parts give way to one part.
+  const live = () => {
+    const kept = new Map<string, any>();
+    for (const line of lines().slice(before)) for (const [key, value] of Object.entries(JSON.parse(line))) {
+      if (value === null) kept.delete(key); else kept.set(key, value);
+    }
+    return [...kept].filter(([key, value]) => key.startsWith('part:') && value.at === at).length;
+  };
+  // The posts end inside the bucket, so the next bucket start, at most one bucket away, commits it.
+  await expect.poll(live, { timeout: 2 * bucketMs, intervals: [100] }).toBe(1);
+  // The acknowledgement time is a measure (a speed bound needs a measured spread, QUESTIONS U8).
+  await report(info, 'metrics-acknowledgement', { ...summary(ackMs), appended: lines().length - before, frames: 9 });
   await app.restartCoordinator();
+  // The same batch sent again after the restart adds no sample and no kill.
+  expect((await post('W', 1)).status()).toBe(200);
   const metrics = await (await page.request.get(`${app.url}/party-api/metrics?from=${at - 60_000}&to=${Date.now()}`)).json();
   const samples = Object.fromEntries(characters.map(character => [character, metrics.points
     .flatMap((point: any) => point.values).filter((row: any) => row.character === character)
     .reduce((total: number, row: any) => total + row.samples, 0)]));
   expect(samples).toEqual({ W: 3, P: 3, M: 3 });
+  // The kill total is the saved lifetime count, so the restart keeps it.
+  const day = new Date(at); day.setHours(0, 0, 0, 0);
+  const kills = await (await page.request.get(`${app.url}/party-api/metrics/kills?from=${at - 60_000}&to=${Date.now()}&dayFrom=${day.getTime()}&dayTo=${Date.now()}`)).json();
+  expect(kills.monsters.find((row: any) => row.monster === 'goo')?.total).toBe(1);
 });
 
-test('the metrics collector keeps acknowledged frames until a commit writes them, across a coordinator crash', async ({ page, app }, info) => {
-  // Failure modes: the collector drops a frame on the acknowledgement while its
-  // commit is still waiting, so a crash in the 750 ms window loses it; the
-  // collector never sends a frame again after the restart; a resent frame counts
-  // twice; a POST waits for the commit.
+test('the metrics collector drops a frame on its answer, and a coordinator crash after it loses none', async ({ page, app }, info) => {
+  // Failure modes: an answer names a frame the journal does not hold yet, so a crash right after
+  // it loses the frame; the collector keeps an answered frame in its outbox (a localStorage key the
+  // game walks every 16 ms); the collector never sends a frame again after the restart; a resent
+  // frame counts twice; a POST waits for a commit.
   test.setTimeout(120_000);
-  const { installPartyMetrics } = await import('../runtime/characters/metrics.ts');
+  const { installPartyMetrics } = await import('../runtime/status/character/telemetry.ts');
   const journal = app.journal + '.metrics.jsonl', runtime = { value: '' };
-  const receipts = () => new Set((existsSync(journal) ? readFileSync(journal, 'utf8').split('\n').filter(Boolean) : [])
-    .flatMap(line => Object.values(JSON.parse(line)).flatMap((bucket: any) => Array.isArray(bucket?.receipts) ? bucket.receipts : [])));
   const storage = new Map<string, string>(), exchanges: any[] = [], crash: any = {};
   let running = true, crashing: Promise<void> | undefined;
-  installPartyMetrics({
+  // The lifecycle owner's report timer drives the collector's pulse in the character (character/telemetry.ts).
+  const collector = installPartyMetrics({
     now: () => Date.now(), current: () => running, connected: () => true, name: () => 'W',
     own: actor => actor === 'W', ownedCharacter: name => ['W', 'P', 'M'].includes(name),
     context: () => ({ server: 'USII', map: 'main', instance: 'main', party: ['W', 'P', 'M'] }),
     sample: () => ({ gold: 1_000_000, luck: 100, ping: 40, level: 80, xp: 1000, maxXp: 90_000_000 }),
-    storage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => { storage.set(key, value); }, removeItem: key => { storage.delete(key); } },
+    storage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => { storage.set(key, value); }, removeItem: key => { storage.delete(key); },
+      get length() { return storage.size; }, key: index => [...storage.keys()][index] ?? null },
     async send(batch) {
       runtime.value = batch.runtime;
       const sent = Date.now();
@@ -264,61 +293,68 @@ test('the metrics collector keeps acknowledged frames until a commit writes them
       const body = await response.json();
       exchanges.push({ sent, ms: Date.now() - sent, status: response.status, sequences: batch.frames.map(frame => frame.sequence), body });
       if (!response.ok) throw Error(`metrics POST ${response.status}`);
-      // Crash right after the first acknowledgement whose commit has not run yet.
-      if (!crashing && batch.frames.length && body.commit > body.durableCommit) {
+      // Crash right after the first acknowledgement.
+      if (!crashing && batch.frames.length) {
+        crash.durable = body.durableCommit >= body.commit;
         crash.acknowledged = batch.frames.map(frame => JSON.stringify(['W', batch.runtime, frame.sequence]));
         crashing = app.crashCoordinator(() => {
-          const held = receipts();
+          const held = receipts(journal);
           crash.onDiskAfterKill = crash.acknowledged.filter((receipt: string) => held.has(receipt));
         });
       }
       return body;
     },
   });
+  const pulses = setInterval(collector.pulse, 1000);
   const header = () => JSON.parse(storage.get('party-metrics-v1:W') || '{"sequence":0,"queue":[]}') as { sequence: number; queue: number[] };
   let sealed = 0;
+  // The collector seals a frame as each metrics bucket ends and sends it on the next pulse, so a
+  // frame's answer comes within one bucket plus a pulse; the waits below allow two buckets.
+  const frameWait = 2 * METRIC_BUCKET_MS;
   try {
-    await expect.poll(() => !!crashing, { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => !!crashing, { timeout: frameWait }).toBe(true);
     await crashing;
-    // The crash came inside the commit window: the acknowledged frames were not on disk.
-    expect(crash.onDiskAfterKill).toEqual([]);
-    // Every frame sealed by a moment after the restart reaches the journal and leaves the outbox.
-    await page.waitForTimeout(3000);
+    // The answer named a commit on disk, and the journal held the acknowledged frames at the kill.
+    expect(crash.durable).toBe(true);
+    expect(crash.onDiskAfterKill).toEqual(crash.acknowledged);
+    // Every frame sealed after the restart, up to the first one sealed then, reaches the journal and
+    // leaves the outbox.
+    const atCrash = header().sequence;
+    await expect.poll(() => header().sequence, { timeout: frameWait }).toBeGreaterThan(atCrash);
     sealed = header().sequence;
     await expect.poll(() => header().queue.filter(sequence => sequence <= sealed),
-      { timeout: 30_000, intervals: [250] }).toEqual([]);
-  } finally { running = false; }
+      { timeout: frameWait, intervals: [250] }).toEqual([]);
+  } finally { running = false; clearInterval(pulses); }
   const expected = Array.from({ length: sealed }, (_, index) => JSON.stringify(['W', runtime.value, index + 1]));
-  const held = receipts();
+  const held = receipts(journal);
   await report(info, 'metrics-crash-durability', { sealed, crash, missing: expected.filter(receipt => !held.has(receipt)),
     ackMs: summary(exchanges.map(exchange => exchange.ms)), exchanges });
   expect(expected.filter(receipt => !held.has(receipt))).toEqual([]);
   // A frame sent to both coordinator processes counts once: the query returns one sample per frame on disk.
-  await page.waitForTimeout(2000);
-  const onDisk = [...receipts()].filter(receipt => JSON.parse(receipt)[0] === 'W').length;
+  const onDiskW = () => [...receipts(journal)].filter(receipt => JSON.parse(receipt)[0] === 'W').length;
+  const acknowledged = () => new Set(exchanges.filter(exchange => exchange.status === 200).flatMap(exchange => exchange.sequences)).size;
+  await expect.poll(() => onDiskW() - acknowledged(), { timeout: frameWait, intervals: [250] }).toBe(0);
+  const onDisk = onDiskW();
   const metrics = await (await page.request.get(`${app.url}/party-api/metrics?from=${Date.now() - 600_000}&to=${Date.now()}`)).json();
   const samples = metrics.points.flatMap((point: any) => point.values).filter((row: any) => row.character === 'W')
     .reduce((total: number, row: any) => total + row.samples, 0);
   expect(samples).toBe(onDisk);
-  expect(Math.max(...exchanges.filter(exchange => exchange.status === 200).map(exchange => exchange.ms))).toBeLessThan(500);
 });
 
 test.describe('mail read marks', () => {
   const old = Array.from({ length: 2100 }, (_, index) => `old-mail-${index}`);
   test.use({ mailbox: true, savedRecords: [{ [settingsKey]: { mailbox: { settings: { autoCollect: false, autoDelete: false }, seenIds: old, outbox: [] } } }] });
-  test('opening the mail keeps the newest 2000 read marks, including every listed mail', async ({ page, app }, info) => {
-    // Mail read marks (docs/efficiency.md, Persistence): seenIds keeps the newest SEEN_IDS_KEPT ids.
+  test('opening the mail keeps a read mark for each listed mail only', async ({ page, app }, info) => {
+    // Mail read marks (docs/efficiency.md, Persistence): seenIds keeps the listed mail's ids (runtime/items/coordinator/mail.ts).
     await page.goto('/');
     await expect(page.getByLabel('New mail')).toBeVisible();
     await page.getByRole('button', { name: /^Mail/ }).click();
     await expect(page.getByRole('dialog', { name: 'Mail', exact: true })).toBeVisible();
     await expect(page.getByLabel('New mail')).toHaveCount(0);
-    await expect.poll(() => saved(app.journal, settingsKey).at(-1)?.mailbox?.seenIds?.length).toBe(2000);
+    await expect.poll(() => saved(app.journal, settingsKey).at(-1)?.mailbox?.seenIds?.some((id: string) => id.startsWith('old-mail-'))).toBe(false);
     const seen: string[] = saved(app.journal, settingsKey).at(-1).mailbox.seenIds;
     await report(info, 'mail-read-marks', { kept: seen.length, first: seen[0], last: seen.slice(-4) });
     expect(seen).toEqual(expect.arrayContaining(['mail-unclaimed', 'mail-pending', 'mail-text']));
-    expect(seen).not.toContain('old-mail-0');
-    expect(seen).toContain('old-mail-2099');
     await app.restartCoordinator();
     expect((await (await page.request.get(`${app.url}/party-api/mail`)).json()).newCount).toBe(0);
   });

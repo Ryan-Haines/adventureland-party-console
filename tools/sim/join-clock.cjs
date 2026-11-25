@@ -18,4 +18,16 @@ function joinClock(clock, at) {
   clock.now = at;
   return { from, at, offset, rebasedTimers: timers.filter(timer => !timer.cancelled).length };
 }
-module.exports = { joinClock };
+/** The performance a clocked actor reads: `now` and `timeOrigin` on the virtual clock's epoch, every
+ * other member the native one's. The browser and network clocks both install it. */
+function clockPerformance(native, clock, config) {
+  return new Proxy(native, {
+    get(target, key) {
+      if (key === "now") return () => clock.now - config.epoch;
+      if (key === "timeOrigin") return config.epoch;
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+module.exports = { joinClock, clockPerformance };

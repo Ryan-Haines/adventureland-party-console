@@ -5,7 +5,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { debugGateway } from './gateway.ts';
 import { Access } from '../hosting/access.ts';
-import { configureDashboardGateway } from '../dashboard/gateway-access.ts';
+import { internalPorts, servicesHealthy } from '../hosting/health.ts';
+import { configureDashboardGateway } from '../dashboard/api.ts';
+import { DEFAULT_PUBLIC_PORT } from '../hosting/defaults.ts';
 import { seedLoadout } from '../../e2e/game/loadouts.ts';
 import { launchGameClient } from '../../e2e/live-game-client.ts';
 import { startDesktop } from './desktop.ts';
@@ -24,8 +26,15 @@ const children: ChildProcess[] = [];
 let ready = false;
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 const access = new Access(path.join(directory, 'access.json')); await access.load();
-const server = debugGateway(access, token, () => ready);
-server.listen(3010, '0.0.0.0');
+// The instance is healthy once its party connected and while the console's own readiness answers
+// yes, as the main host reads it (tools/hosting/health.ts); a quiet character shows in the console.
+// The instance's two ports, from the host's one port rule (tools/hosting/health.ts internalPorts): the
+// gateway proxies to them and the children start on them, so the two cannot disagree.
+const ports = internalPorts();
+const coordinator = `http://127.0.0.1:${ports.api}`;
+const server = debugGateway(access, token, async () => ready && await servicesHealthy(true, ports.dashboard, ports.api),
+  { dashboardPort: ports.dashboard, apiPort: ports.api });
+server.listen(DEFAULT_PUBLIC_PORT, '0.0.0.0');
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function wait(check: () => Promise<boolean>, timeout = 180000) {
   const until = Date.now() + timeout; let error;
@@ -59,14 +68,14 @@ try {
   await seedLoadout(game.admin, 'god');
   await game.admin("output=db.collection('character').updateMany({owner:data.owner},{$set:{'info.x':816,'info.y':1180}})", { owner: manifest.auth.split('-')[0] });
   child('e2e/live-coordinator.cjs', { ...process.env, E2E_DATA_DIR: directory, E2E_GAME_WEB_URL: manifest.webUrl,
-    E2E_GAME_AUTH: manifest.auth, E2E_COORDINATOR_PORT: '924' });
-  await wait(async () => (await fetch('http://127.0.0.1:924/party-api/state')).ok);
-  child('tools/dashboard/supervisor.mts', { ...process.env, AL_DASHBOARD_PUBLIC_PORT: '3030', AL_DASHBOARD_PREBUILT: '.build/container', NODE_ENV: 'production' }, ['--production']);
+    E2E_GAME_AUTH: manifest.auth, E2E_COORDINATOR_PORT: String(ports.api) });
+  await wait(async () => (await fetch(coordinator + '/party-api/state')).ok);
+  child('tools/dashboard/supervisor.mts', { ...process.env, AL_DASHBOARD_PUBLIC_PORT: String(ports.dashboard), AL_DASHBOARD_PREBUILT: '.build/container', NODE_ENV: 'production' }, ['--production']);
   const post = async (route: string, value: unknown) => {
-    const response = await fetch('http://127.0.0.1:924/party-api' + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+    const response = await fetch(coordinator + '/party-api' + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
     if (!response.ok) throw Error(route + ': ' + await response.text()); return response.json();
   };
-  const current = await (await fetch('http://127.0.0.1:924/party-api/state')).json();
+  const current = await (await fetch(coordinator + '/party-api/state')).json();
   await post('/merchant/routine-priorities', { priorities: {}, enabled: Object.fromEntries(Object.keys(current.merchantAutomations).map(name => [name, false])) });
   await post('/formation', { leader: null });
   for (const name of ['E2EWarrior', 'E2EPriest', 'E2EMerchant']) await post('/formation', { character: name, follow: false, eventSelections: [] });
@@ -77,21 +86,15 @@ try {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   await context.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort());
   await context.addCookies([{ name: 'auth', value: manifest.auth, url: manifest.webUrl }]);
-  const primary = await launchGameClient(context, { webUrl: manifest.webUrl, coordinatorUrl: 'http://127.0.0.1:924', name: 'E2EWarrior', region: 'US', server: 'I' });
+  const primary = await launchGameClient(context, { webUrl: manifest.webUrl, coordinatorUrl: coordinator, name: 'E2EWarrior', region: 'US', server: 'I' });
   for (const name of ['E2EPriest', 'E2EMerchant']) {
-    await wait(async () => (await (await fetch('http://127.0.0.1:924/party-api/steam/connection')).json()).ready);
+    await wait(async () => (await (await fetch(coordinator + '/party-api/steam/connection')).json()).ready);
     const login = await post('/steam/action', { character: name, action: 'login' });
     if (login.operation?.phase === 'awaiting-realm-choice') await post('/steam/realm-choice', { operationId: login.operation.id, choice: 'stay' });
-    await launchGameClient(context, { webUrl: manifest.webUrl, coordinatorUrl: 'http://127.0.0.1:924', name, region: 'US', server: 'I', primary });
-    await wait(async () => (await (await fetch('http://127.0.0.1:924/party-api/state')).json()).steamSwitch?.phase === 'complete');
+    await launchGameClient(context, { webUrl: manifest.webUrl, coordinatorUrl: coordinator, name, region: 'US', server: 'I', primary });
+    await wait(async () => (await (await fetch(coordinator + '/party-api/state')).json()).steamSwitch?.phase === 'complete');
   }
-  await wait(async () => (await (await fetch('http://127.0.0.1:3030/__dashboard/state')).json()).ready);
+  await wait(async () => (await (await fetch(`http://127.0.0.1:${ports.dashboard}/__dashboard/state`)).json()).ready);
   await writeFile('/data/debug-ready.json', JSON.stringify({ god: true, unlimited: true, characters: manifest.characters.map((c: {name: string}) => c.name) }));
   ready = true; console.log('Debug god party connected; unlimited native Cave visits enabled.');
-  setInterval(async () => {
-    try {
-      const state = await (await fetch('http://127.0.0.1:924/party-api/state')).json();
-      ready = ['E2EWarrior', 'E2EPriest', 'E2EMerchant'].every(name => Date.now() - Number(state.characters[name]?.seenAt) < 15000);
-    } catch { ready = false; }
-  }, 3000);
 } catch (error) { console.error(error); await stop(1); }

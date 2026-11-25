@@ -1,20 +1,19 @@
 // Compare the same real gameplay at doubling requested rates, stopping at a confirmed plateau.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {readFileSync,writeFileSync,mkdirSync,cpSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {npmCli as npm,runDirectory,archiveReport} from './benchmark-run.mts';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {performance} from 'node:perf_hooks';
 import {sourceFingerprint} from '../console-build/builder.ts';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-const out=path.join(root,'.build/e2e-rate-benchmarks',new Date().toISOString().replace(/[:.]/g,'-'));
-mkdirSync(out,{recursive:true});
+const out=runDirectory(root,'e2e-rate-benchmarks');
 const sourceHash=await sourceFingerprint(root);
-const npm=process.env.npm_execpath||path.join(path.dirname(process.execPath),'node_modules/npm/bin/npm-cli.js');
 const title='armadillo Hunt kills passing goos outbound and returning before claiming Daisy';
 const startRate=Number(process.env.E2E_RATE_SWEEP_START||4);
-assert(Number.isInteger(startRate)&&startRate>=4&&startRate<=512&&(startRate&(startRate-1))===0,'Sweep start must be a power of two from4 through512');
+assert(Number.isInteger(startRate)&&startRate>=4&&startRate<=512&&(startRate&(startRate-1))===0,'Sweep start must be a power of two from 4 through 512');
 type Sample={wallSeconds:number;gameplaySeconds:number;cpuSeconds:number;logicalProcessors:number;renderer:string;accountingComplete:boolean;requestedClockRate:number;achievedClockRate:number};
 type Run={rate:number;tag:string;archive:string;commandWallSeconds:number;medianBodySeconds:number;achievedClockRate:number;browserMachinePercent:number;samples:Sample[]};
 const runs:Run[]=[];
@@ -33,8 +32,7 @@ async function run(rate:number,tag:string){
   });
   const commandWallSeconds=(performance.now()-started)/1000;
   const archive=path.join(out,tag);
-  mkdirSync(path.join(archive,'.build'),{recursive:true});
-  for(const name of ['e2e-report','e2e-results'])cpSync(path.join(root,'.build',name),path.join(archive,'.build',name),{recursive:true});
+  archiveReport(root,archive);
   assert.equal(command(['e2e/verify-artifacts.cjs',archive]),0,'Evidence verification or gameplay failed');
   assert.equal(status,0,'Focused gameplay command failed');
   assert.equal(await sourceFingerprint(root),sourceHash,'Sources changed during gameplay');
@@ -48,6 +46,7 @@ async function run(rate:number,tag:string){
   const samples:Sample[]=rows.map(row=>{
     assert.equal(row.status,'passed');assert(row.title.endsWith(title));
     const attachment=row.attachments.find((a:{name:string})=>a.name==='browser-rendering-cpu');
+    assert(attachment,`${row.title} has no browser-rendering-cpu attachment`);
     const sample=JSON.parse(readFileSync(path.resolve(archive,attachment.path),'utf8')) as Sample;
     assert(sample.accountingComplete,'Browser process turnover makes CPU accounting incomplete');
     assert(!/swiftshader|llvmpipe|software/i.test(sample.renderer),'Hardware renderer required');

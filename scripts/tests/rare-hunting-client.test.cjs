@@ -1,106 +1,41 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const vm = require('node:vm'), fs = require('node:fs');
-const source = fs.readFileSync('characters/shared.js','utf8');
-function fixture() {
-  let time=10000, equips=0, moves=0, stops=0;
-  const entity={id:'fairy',mtype:'tinyp',type:'monster',map:'main',x:100,y:0,hp:5600,visible:true};
-  const c = require('./helpers/client-dependencies.cjs').passingContext({ character:{name:'M',ctype:'merchant',map:'main',in:'main',x:0,y:0,items:[{name:'fieldgen0'}],slots:{}},
-    G:{classes:{merchant:{}},items:{},skills:{}},
-    parent:{entities:{fairy:entity}},get_entity:id=>c.parent.entities[id], Date:{now:()=>time},
-    navigationIntent:{revision:1},rareControlAt:time, rarePath:null,rareNavigation:null,rareDeployment:null,
-    passiveRareHunts:{tinyp:true,phoenix:true,goldenbat:true,cutebee:true,hen:true,rooster:true},rareKnown:{},rareKills:[],rareLoot:null,rareLootPending:false, leader:'W',partyTownActive:false,eventTraveling:false,joinedEvent:null,
-    escapeOwns:()=>false,isExternallyClaimedMonster:()=>false,convoyTraveling:null,partyConvoyActive:false,
-    banking:false,stocking:false,upgrading:false,forceTraveling:false,townTraveling:false,groupedFarming:()=>false,
-    rareControlState:{id:'e1',kind:'encounter',revision:1,target:{...entity,in:'main'},destination:entity,deployer:'M'},
-    equip:()=>{equips++;return Promise.resolve();},smart:{},
-    stop:()=>{stops++;return Promise.resolve();},smart_move:()=>{moves++;c.smart.on_done=()=>{};return new Promise(()=>{});},
-  });
-  vm.runInContext(source.slice(source.indexOf('  function rareSightings('),source.indexOf('  function mapEntity(')),c);
-  vm.runInContext(source.slice(source.indexOf('  function eligibleDepartureChests('),source.indexOf('  async function smartLoot(')),c);
-  return {c,entity,advance:ms=>time+=ms,equips:()=>equips,moves:()=>moves,stops:()=>stops};
-}
-test('active assistance permission survives the first grouped fight handoff but expires with its revision or heartbeat',()=>{
-  const {c,advance}=fixture();c.rareControlState={kind:'patrol',allowPhoenixAssist:true,revision:1};
-  c.unfinishedFight=()=>true;c.groupedCombat={target:{id:'phoenix'}};
-  assert.equal(c.rareActive(),false,'local patrol movement yields to grouped combat');
-  assert.equal(c.rareControlCurrent(),true,'assistance stays authorized while encounter control catches up');
-  c.navigationIntent.revision=2;assert.equal(c.rareControlCurrent(),false);
-  c.navigationIntent.revision=1;advance(3501);assert.equal(c.rareControlCurrent(),false);
-});
+const {fixture}=require('./fixtures/rare-hunting-client-scenario.cjs');
+const {taskLadder}=require('./helpers/task-ladder.cjs');
 
-test('carried generator is consumed at most once and only inside deployment range',()=>{
-  const r=fixture();r.entity.x=400;r.c.pollRareHunting();assert.equal(r.equips(),0);assert.equal(r.moves(),1);
-  r.entity.x=100;r.c.pollRareHunting();r.c.pollRareHunting();assert.equal(r.equips(),1);
-  assert.equal(r.c.rareDeployment.encounterId,'e1');
-});
-test('inventory changes fail deployment safely, and field confirmation releases only basic attacks',()=>{
-  const r=fixture();r.c.character.items=[];r.c.pollRareHunting();assert.equal(r.equips(),0);assert.equal(r.c.rareDeployment.failed,true);
-  assert.equal(r.c.rareAttackAllowed(r.entity,'attack'),false);
-  r.c.rareControlState.deployer=null;assert.equal(r.c.rareAttackAllowed(r.entity,'attack'),true);
-  for(const skill of ['burst','cburst','curse','taunt','stomp']) assert.equal(r.c.rareAttackAllowed(r.entity,skill),false);
-  assert.equal(r.c.rareAttackAllowed({mtype:'fieldgen0'},'attack'),false);
-});
-test('stale instructions, wrong instance and changed navigation cannot attack Fairy',()=>{
-  const r=fixture();r.c.rareControlState.deployer=null;r.c.character.in='other';assert.equal(r.c.rareTarget(),null);
-  r.c.character.in='main';r.c.navigationIntent.revision=2;assert.equal(r.c.rareTarget(),null);
-  r.c.navigationIntent.revision=1;r.advance(3501);assert.equal(r.c.rareTarget(),null);
-});
-test('new movement owner is not stopped by cancellation of the old rare path',()=>{
-  const r=fixture();r.entity.x=400;r.c.pollRareHunting();r.c.smart.on_done=()=>{};
-  r.c.rareControlState=null;r.c.pollRareHunting();assert.equal(r.stops(),0);assert.equal(r.c.rarePath,null);
-});
+// A failed rare walk climbs a task walk's ladder while the rare
+// control lives, and the climb ends with the control. The task round starts its rung's journey
+// on the next turn of the event loop.
+test('a failed rare walk keeps trying while the control lives and ends with it', async ()=>{
+  const r=fixture();r.entity.x=600;r.c.G={...r.c.G,maps:{main:{spawns:[[0,0]],doors:[]}}};
+  const {ladders,ended,released}=taskLadder(r.c);
+  let walks=0;r.c.smart_move=()=>{walks++;return Promise.reject(Error('no route'));};
+  for(let i=0;i<4;i++){r.client.poll();await new Promise(resolve=>setImmediate(resolve));}
+  // The round: the walk, the other route, the walk again, then the next report (no exit nearby).
+  assert.equal(walks,3,'each failed rung starts the next one; no failed flag stops the walk');
+  assert.equal(ladders['rare:e1'].report().rung,'wait');
+  r.endControl();r.client.poll();
+  assert.deepEqual(ended,['rare:e1']);assert.ok(released.includes('rare:e1'),'the climb releases its own journey');
+ });
 
-test('patrol control never starts independent smart movement, including short approaches',()=>{
- const r=fixture();r.c.character.name='W';
- r.c.rareControlState={id:'scan',kind:'patrol',revision:1,destination:{map:'main',x:80,y:0}};
- for(const active of [false,true,false]){r.c.partyConvoyActive=active;assert.equal(r.c.pollRareHunting(),true);}
- assert.equal(r.moves(),0);assert.equal(r.stops(),0);
-});
-
-test('fast encounter handoff releases only the patrol convoy and ignores older controls',()=>{
- const r=fixture();r.c.root={};let released=0;
- r.c.releaseConvoyCruise=()=>released++;
- const old={purpose:'phoenix-patrol',release(){released++;},detachRoute(){released++;}};
- r.c.convoyTraveling=old;r.c.partyConvoyActive=true;
- const control={id:'phoenix',kind:'encounter',revision:1,target:{...r.entity,in:'main'},destination:r.entity};
- r.c.acceptRareCombatControl({serverNow:200,rareControl:control,convoySignal:null});
- assert.equal(old.cancelled,true);assert.equal(r.c.convoyTraveling,null);assert.equal(r.c.partyConvoyActive,false);
- assert.equal(released,3);assert.equal(r.stops(),1);
- r.c.acceptRareCombatControl({serverNow:199,rareControl:null});assert.equal(r.c.rareControlState.id,'phoenix');
-});
-test('hidden field generators are reported without dashboard map subscriptions',()=>{
-  const r=fixture();r.c.parent.entities.field={id:'field',mtype:'fieldgen0',visible:false,hp:6400,x:50,y:50};
-  assert.equal(r.c.rareFields().length,1);assert.equal(r.c.rareSightings()[0].id,'fairy');
-});
-
-test('loot failures do not report success and remain retryable',async()=>{
-  const r=fixture();r.c.character.x=100;r.c.rareControlState.kind='loot';
-  r.c.rareControlState.deployer=null;r.c.smartLoot=async()=>{throw new Error('loot_no_space');};
-  r.c.pollRareHunting();await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(r.c.rareLoot.complete,false);assert.equal(r.c.rareLootPending,false);
-});
-
-test('grouped rare uses shared combat movement even when unseen; Fairy lock still permits basic attacks',()=>{
- const r=fixture();r.c.groupedFarming=()=>true;r.c.rareControlState.deployer=null;
- r.c.unfinishedFight=()=>true;r.c.groupedCombat={target:{id:'fairy'}};
- assert.equal(r.c.rareAttackAllowed(r.entity,'attack'),true);
- r.entity.visible=false;assert.equal(r.c.pollRareHunting(),false);assert.equal(r.moves(),0);
- r.c.groupedCombat.target.id='boar';assert.equal(r.c.rareActive(),false);
-});
-test('grouped Fairy deployer recovers locally when out of range and consumes generator nearby',()=>{
- const r=fixture();r.c.groupedFarming=()=>true;r.entity.x=400;
- assert.equal(r.c.pollRareHunting(),false);assert.equal(r.moves(),0);
- r.entity.x=100;r.c.pollRareHunting();assert.equal(r.equips(),1);
-});
-
-test('owned committed Fairy permits basic attacks without a separate rare controller',()=>{
- const r=fixture(),c=r.c,t={...r.entity,in:'main',server:'USII'};
- c.rareControlState=null;c.convoyTraveling={phase:'defending',navigationRevision:1};c.groupedFresh=()=>true;c.groupedCombat={target:t};c.reunionRealm=()=> 'USII';
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+scenarioTable('the character follows its rare control only while it is current and attacks only what it may (MOV-149)', fixture, [
+ ['owned committed Fairy permits basic attacks without a separate rare controller', r=>{
+ const c=r.c,t={...r.entity,in:'main',server:'USII'};
+ r.endControl();r.doors.walks.groupWalk.travel={phase:'defending',navigationRevision:1};c.groupedFresh=()=>true;c.groupedCombat={target:t};
  c.passingKey=e=>JSON.stringify([e.server,e.map,e.in,e.id]);
- const control={defending:true,committed:[t]};c.huntTravelControl=()=>control;
+ const control={defending:true,committed:[t]};r.doors.hunt.control=()=>control;
  assert.equal(c.rareTarget(),r.entity);assert.equal(c.rareAttackAllowed(r.entity,'attack'),true);
  assert.equal(c.rareAttackAllowed(r.entity,'burst'),false);
  control.committed=[];assert.equal(c.rareTarget(),null);
  control.committed=[t];c.groupedFresh=()=>false;assert.equal(c.rareTarget(),null);
-});
+ }],
+ ['a wrong instance, changed navigation or a reply with no control cannot attack Fairy', r=>{
+ r.control.deployer=null;assert.equal(r.c.rareTarget(),r.entity);
+ r.c.character.in='other';assert.equal(r.c.rareTarget(),null);
+  r.c.character.in='main';r.c.navigationIntent.revision=2;assert.equal(r.c.rareTarget(),null);
+  // The control holds until the next reply supersedes it, with no age of its own.
+  r.c.navigationIntent.revision=1;r.advance(3501);assert.equal(r.c.rareTarget(),r.entity);
+  r.endControl();assert.equal(r.c.rareTarget(),null);
+ }],
+]);

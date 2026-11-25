@@ -87,6 +87,20 @@ restock, it stays in place and retries every five seconds as its gold increases.
 Combat and leader-following pause during the trip; the dashboard shows
 **STOCKING UP**.
 
+An Ancient Computer (`computer`) or a Super Computer (`supercomputer`) in a
+character's bag networks it to the NPCs: the server skips the NPC distance check
+for `buy`, `sell`, `upgrade`, `compound`, `exchange`, `exchange_buy`, `craft` and
+`dismantle` (game node/server.js). Every console walk to an NPC before one of those
+calls goes through the items owner's one trip (`runtime/items/character/npc-trip.ts`,
+rule `reachesWithoutWalking` in `runtime/items/rules.ts`), so a carrier buys, sells,
+upgrades, compounds, exchanges, crafts and dismantles where it stands, and the
+stock-up and the stat-scroll application skip their walk back. The bank map is the
+exception: every networked call refuses there, so a carrier in the bank still walks
+out. Ponty, the Lost and Found, Daisy's hunt and the bank itself have no network
+clause, so their walks stay. A computer counts only in the bag, never equipped, and
+collection and cleanout never take one. A Super Computer also answers the Tracktrix
+read, and a merchant with a computer and no stand opens a `cstand`.
+
 Upgradeable inventory and equipped items have a **Mark for upgrade** submenu that
 selects how many tiers to attempt, capped at the game's +12 maximum. Equipped
 items are unequipped into inventory when their upgrade run begins. Marks

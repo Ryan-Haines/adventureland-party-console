@@ -3,12 +3,9 @@ import { useId, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FarmingAreaPreview } from './farming-area-preview';
-import type { Zone } from '../../lib/farming-zones';
-import { zones } from '../../lib/farming-zones';
-import { huntSpawnKey } from '../../../runtime/coordinator/hunt/spawn-preferences';
-import type { HuntSettings } from '../../../runtime/coordinator/hunt/settings';
+import { defaultSearchRadius, huntSpawnKey, zones, type HuntSettings, type Zone } from '../../../runtime/hunting/api.ts';
 import type { MonsterChoice } from './monster-choice';
-import { ItemSprite } from './item-sprite';
+import { SpriteCrop } from './sprite-crop';
 
 export function HuntSpawnSettings({ catalog, value, onSave, disabled }: {
   catalog: MonsterChoice[];
@@ -44,7 +41,7 @@ export function HuntSpawnSettings({ catalog, value, onSave, disabled }: {
       Set preferred hunt spawns
     </Button>
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-5xl">
+      <DialogContent data-area="hunt-spawns" className="max-h-[85vh] overflow-y-auto border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>Preferred hunt spawns</DialogTitle>
           <DialogDescription className="text-emerald-100/80">
@@ -60,7 +57,7 @@ export function HuntSpawnSettings({ catalog, value, onSave, disabled }: {
             return <details onToggle={e=>{if(e.currentTarget.open)setPreview(monster.spawns.find(spawn=>huntSpawnKey(spawn)===selected) || monster.spawns[0]);}} key={monster.id} className="rounded border border-emerald-800 bg-[#07110f]">
               <summary className="cursor-pointer rounded p-3 text-emerald-50 hover:bg-emerald-950 focus-visible:outline-2 focus-visible:outline-cyan-300">
                 <span className="inline-flex items-center gap-2 align-middle">
-                  {monster.sprite && <span className="relative h-8 w-8"><ItemSprite sprite={monster.sprite}/></span>}
+                  {monster.sprite && <span className="relative h-8 w-8"><SpriteCrop sprite={monster.sprite}/></span>}
                   <span>{monster.name} <span className="text-xs text-emerald-200">· {monster.spawns.length} spawns{selected ? ' · Custom' : ' · Default'}</span></span>
                 </span>
               </summary>
@@ -83,7 +80,7 @@ export function HuntSpawnSettings({ catalog, value, onSave, disabled }: {
             </details>;
           })}
         </div>
-          <div className="min-h-72" aria-label="Preferred hunt spawn map preview">{preview ? <FarmingAreaPreview area={{...preview,id:preview.id || huntSpawnKey(preview)}} radius={400}/> : <p className="p-5 text-sm text-emerald-100">Expand a monster to preview its spawn areas.</p>}</div>
+          <div className="min-h-72" aria-label="Preferred hunt spawn map preview">{preview ? <FarmingAreaPreview area={{...preview,id:preview.id || huntSpawnKey(preview)}} radius={defaultSearchRadius}/> : <p className="p-5 text-sm text-emerald-100">Expand a monster to preview its spawn areas.</p>}</div>
         </div>
         {busy && <p role="status" className="text-sm text-cyan-100">Saving preference…</p>}
         {saved && <p role="status" className="text-sm text-cyan-100">{saved}</p>}

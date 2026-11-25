@@ -1,5 +1,6 @@
 import { newer, type Release, type PublishedRelease, type UpdateStatus } from './contracts.ts';
-import { atomic, exists, readJson } from './files.ts';
+import { exists } from './files.ts';
+import { atomicJson, requiredJson } from '../build-store.ts';
 import { GitHubReleases } from './github.ts';
 export interface UpdateAdapter {
   inspect(): Promise<void>;
@@ -22,7 +23,7 @@ export class Updates {
   }
   async load() {
     if (await exists(this.file)) {
-      const saved = await readJson<{ automatic?: boolean; failedVersion?: string }>(this.file);
+      const saved = await requiredJson<{ automatic?: boolean; failedVersion?: string }>(this.file);
       this.state.automatic = saved.automatic === true;
       this.failedVersion = saved.failedVersion;
     }
@@ -30,7 +31,7 @@ export class Updates {
   async preference(automatic: unknown) {
     if (typeof automatic !== 'boolean') throw new Error('automatic must be a boolean');
     if (!this.adapter) throw new Error('Development checkouts are notification-only; use a managed installation for updates');
-    await atomic(this.file, { automatic, failedVersion: this.failedVersion }); this.state.automatic = automatic;
+    await atomicJson(this.file, { automatic, failedVersion: this.failedVersion }); this.state.automatic = automatic;
   }
   private async operation(work: () => Promise<void>) {
     if (this.busy) throw new Error('An update operation is already running');
@@ -68,12 +69,12 @@ export class Updates {
       try { await this.adapter.install(this.selected, startup); }
       catch (error) {
         this.failedVersion = this.selected.version;
-        await atomic(this.file, { automatic: this.state.automatic, failedVersion: this.failedVersion });
+        await atomicJson(this.file, { automatic: this.state.automatic, failedVersion: this.failedVersion });
         throw error;
       }
       this.state.current = this.selected.version; delete this.state.available; this.state.phase = 'idle';
       this.failedVersion = undefined;
-      await atomic(this.file, { automatic: this.state.automatic });
+      await atomicJson(this.file, { automatic: this.state.automatic });
     });
   }
   async poll(startup = false) {

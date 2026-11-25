@@ -1,11 +1,11 @@
 // Native merchant status always reports all 42 inventory slots.
 const nativeInventory=(items=[])=>items.concat(Array(42-items.length).fill(null));
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {compoundStorageLeftovers}=require('../../runtime/compound-storage.ts');
-const {storeCompoundLeftovers}=require('../../runtime/characters/compound-storage.ts');
-const {createImprovementScheduler}=require('../../runtime/coordinator/merchant/improvement-scheduler.ts');
-const {beginProduction,finishProduction}=require('../../runtime/coordinator/inventory/production.ts');
-const {availableCraftStock}=require('../../runtime/craft-reservations.ts');
+const {compoundStorageLeftovers}=require('../../runtime/items/rules.ts');
+const {storeCompoundLeftovers}=require('../../runtime/items/character/bank.ts');
+const {createImprovementScheduler}=require('../../runtime/items/coordinator/production.ts');
+const {beginProduction,finishProduction}=require('../../runtime/items/coordinator/production.ts');
+const {availableCraftStock}=require('../../runtime/items/rules.ts');
 const item=(slot,level=0,extra={})=>({slot,item:{name:'intearring',level,...extra}});
 const rules=[{name:'intearring',targetTier:2,quantity:-1}];
 
@@ -63,10 +63,10 @@ test('craft allocations protect items from automatic compound storage',()=>{
 });
 
 test('compound checkpoint reports live rules and excludes bank preferences from conflicts',()=>{
- const {createMerchantProgressRoutes}=require('../../runtime/coordinator/http/merchant-progress.ts');
+ const {createMerchantProgressRoutes}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
  const state={merchantCharacter:'M',merchantRules:{members:['M']},merchantCurrent:{id:'job',reason:'auto compound'},merchantQueue:[],
   autoCompounds:{M:rules},autoItemMarks:{M:{'intearring@+1':'bank'}},statuses:{},gatheringModes:[],gatheringCooldowns:{},commands:{}};
- const routes=createMerchantProgressRoutes(state,{});let response;
+ const routes=createMerchantProgressRoutes(state,{offline:()=>false,});let response;
  const res={json:value=>response=value,status(){return this;}};
  routes.checkpoint({body:{jobId:'job',protectionOnly:true}},res);
  assert.equal(response.compoundRules.length,1);assert.deepEqual(response.compoundBlocked,[]);

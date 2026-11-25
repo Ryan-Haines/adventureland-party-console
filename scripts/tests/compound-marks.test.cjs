@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const {reconcileCoordinatorCompoundMarks: reconcile} = require('../../runtime/coordinator/inventory/compound-marks.ts');
+const {reconcileCoordinatorCompoundMarks: reconcile} = require('../../runtime/items/coordinator/production.ts');
 const item = {name: 'ringsj', level: 0};
 const group = (id, slots, identity = item) => ({id, items: slots.map(slot => ({slot, item: {...identity}}))});
 const inventory = slots => ({items: slots.map(slot => ({slot, item: {...item}}))});

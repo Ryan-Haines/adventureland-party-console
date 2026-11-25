@@ -14,6 +14,7 @@ export const gameplayNow = (world: GameplayWorld) => (world.now ? world.now() : 
 /** Same predicate/assertions on both backends, bounded by gameplay time and a wall watchdog. */
 export function poll<T>(world: GameplayWorld, observe: () => Promise<T>, options: Options = {}) {
   if (!world.advance) return expect.poll(observe, options);
+  const advance = world.advance;
   async function until(assert: (value: T) => void) {
     const timeout = options.timeout ?? 15000,
       deadline = gameplayNow(world) + timeout;
@@ -32,8 +33,7 @@ export function poll<T>(world: GameplayWorld, observe: () => Promise<T>, options
       if (remaining <= 0 || Date.now() >= wallDeadline)
         throw new Error(`${options.message || "Gameplay poll expired"}: ${String(failure)}`);
       const step = Math.min(remaining, intervals[Math.min(attempt++, intervals.length - 1)]);
-      if (world.advance) await world.advance(step);
-      else await new Promise((resolve) => setTimeout(resolve, step));
+      await advance(step);
     }
   }
   return {

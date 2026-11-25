@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -8,12 +9,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { farmingAreas, defaultPhoenixOrder, type FarmingArea } from "@/lib/farming-areas";
+import { farmingAreas, defaultPhoenixOrder, type FarmingArea } from "../../../runtime/hunting/api.ts";
 import { Maximize2 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Char } from "./char";
 import { FarmingAreaPreview } from "./farming-area-preview";
-import { ItemSprite } from "./item-sprite";
+import { SpriteCrop } from "./sprite-crop";
 import { Location } from "./location";
 import { MonsterChoice } from "./monster-choice";
 import { MonsterSpawns } from "./monster-spawns";
@@ -48,7 +49,7 @@ export function FarmingAreaPicker({
   const routeAreas = areas;
   const [order, setOrder] = useState<string[]>(() => {
     const saved = (phoenixRouteOrder || []).filter(id => routeAreas.some(a => a.id === id));
-    return saved.length === 5 && new Set(saved).size === 5 ? saved : defaultPhoenixOrder(routeAreas);
+    return saved.length === routeAreas.length && new Set(saved).size === routeAreas.length ? saved : defaultPhoenixOrder(routeAreas);
   });
   const [choice, setChoice] = useState<string | null>(null),
     [large, setLarge] = useState(false),
@@ -94,7 +95,7 @@ export function FarmingAreaPicker({
         if (!open && !busy) onClose();
       }}
     >
-      <DialogContent className="max-h-[92vh] overflow-y-auto border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-5xl">
+      <DialogContent data-area="farming-area" className="max-h-[92vh] overflow-y-auto border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>
             {phoenix ? "Choose Phoenix search order" : preparation ? "Getting ready to hunt" : "Choose a farming area"}
@@ -109,7 +110,7 @@ export function FarmingAreaPicker({
           </DialogDescription>
         </DialogHeader>
         {phoenix && <Button type="button" disabled={busy} onClick={() => setOrder([])}
-          className="border border-slate-500 bg-[#07110f] text-slate-100 hover:bg-slate-800">Clear order ({order.length}/5)</Button>}
+          className="border border-slate-500 bg-[#07110f] text-slate-100 hover:bg-slate-800">Clear order ({order.length}/{routeAreas.length})</Button>}
         {preparation}
         <div className="grid gap-4 md:grid-cols-[minmax(240px,1fr)_minmax(0,1.4fr)]">
           <div className="max-h-[55vh] space-y-2 overflow-y-auto">
@@ -152,7 +153,7 @@ export function FarmingAreaPicker({
                       return (
                         <span key={id} className="flex items-center gap-1 text-sm">
                           <span className="relative h-7 w-7">
-                            {monster?.sprite && <ItemSprite sprite={monster.sprite} />}
+                            {monster?.sprite && <SpriteCrop sprite={monster.sprite} />}
                           </span>
                           {monster?.name || id}
                         </span>
@@ -188,6 +189,7 @@ export function FarmingAreaPicker({
             {error}
           </p>
         )}
+        <AddonSlot name="dialog-section" part="farming-area" />
         <DialogFooter>
           <Button
             type="button"
@@ -199,7 +201,7 @@ export function FarmingAreaPicker({
           </Button>
           <Button
             type="button"
-            disabled={busy || (phoenix ? order.length !== 5 : !selected)}
+            disabled={busy || (phoenix ? order.length !== routeAreas.length : !selected)}
             onClick={async () => {
               const starting = phoenix ? routeAreas.find(a => a.id === order[0]) : selected;
               if (!starting) return;
@@ -216,7 +218,7 @@ export function FarmingAreaPicker({
           </Button>
         </DialogFooter>
         <Dialog open={large} onOpenChange={setLarge}>
-          <DialogContent className="border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-6xl">
+          <DialogContent data-area="farming-area-map" className="border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-6xl">
             <DialogHeader>
               <DialogTitle>{selected?.mapName || selected?.map} farming area</DialogTitle>
             </DialogHeader>

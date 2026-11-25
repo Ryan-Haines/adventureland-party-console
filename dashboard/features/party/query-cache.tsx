@@ -1,5 +1,6 @@
 'use client';
 import {
+  hashKey,
   QueryClient,
   QueryClientProvider,
   replaceEqualDeep,
@@ -12,8 +13,9 @@ import { API } from './api';
 import type { PartyState } from './party-state';
 import type { ALDataState } from './aldata-state';
 import type { MapDefinition } from './map-definition';
-import { synchronizeDashboardClock } from './live-metrics';
 import { writeVitals } from './character-cache';
+import { STATUS_PICKS } from '../../../runtime/status/rules.ts';
+import { CHARACTER_PICKS } from '../../../runtime/lifecycle/api.ts';
 
 export type Domain =
   | 'core'
@@ -81,8 +83,10 @@ export function DashboardQueries({ children }: { children: ReactNode }) {
     </QueryClientProvider>
   );
 }
-export function authenticationLost(client: QueryClient) {
-  client.clear();
+// DashboardQueries clears the page's client on 'party-auth-loss', so a report sent with no client
+// (query-actions.ts reportAction) still ends the page's session.
+export function authenticationLost(client?: QueryClient) {
+  client?.clear();
   if (typeof window !== 'undefined')
     window.dispatchEvent(new Event('party-auth-loss'));
 }
@@ -102,12 +106,11 @@ async function respond(
     throw new ReadError(401, 'Session expired. Reconnect this browser.');
   }
   if (!response.ok && !(unchanged && response.status === 304))
-    throw new ReadError(
-      response.status,
-      'Reconnecting — showing last received data',
-    );
+    throw new ReadError(response.status, RECONNECTING_NOTICE);
   return response;
 }
+// The words a failed read carries, which the header's connection line shows too.
+export const RECONNECTING_NOTICE = 'Reconnecting — showing last received data';
 export async function read<T>(
   client: QueryClient,
   path: string,
@@ -116,7 +119,7 @@ export async function read<T>(
   return (await respond(client, path, signal)).json() as Promise<T>;
 }
 // The coordinator answers 304 for these sections while their serialized body
-// is unchanged (runtime/coordinator/telemetry/section-revision.ts). Each
+// is unchanged (runtime/status/coordinator/state.ts, table S). Each
 // revision belongs to the cached data object it arrived with, so the dashboard
 // reads a section in full after setQueryData replaces its data or the cache
 // removes it.
@@ -169,23 +172,25 @@ export function useHidden() {
   const visible = useVisible();
   return typeof document !== 'undefined' && !visible;
 }
-export const policies = {
-  core: [1000, 1000, 300000],
-  // Configuration/rules/marks the dashboard rarely needs fresher than a few
-  // seconds old, split out of 'core' so the fast-changing majority there
-  // doesn't force a full structural diff of this much larger, slower-changing
-  // payload on every 1s poll (and vice versa).
-  config: [15000, 15000, 300000],
-  fast: [250, 0, 60000],
-  inventory: [2000, 0, 60000],
-  logs: [1000, 1000, 60000],
-  bank: [2000, 2000, 300000],
-  market: [10000, 10000, 120000],
-  catalog: [0, Infinity, 1800000],
-  mail: [2000, 2000, 300000],
-} as const;
+// The polls of each section (the status owner's `dashboardPolls`, runtime/status/rules.ts `STATUS_PICKS`). Core and logs change
+// only when a character reports, so they poll at the lifecycle owner's character report period; the catalog
+// follows its reference revision and never goes stale. Configuration, rules and marks sit apart
+// from core, so the fast-changing majority there does not force a structural diff of that much
+// larger payload on every core poll.
+export const polls = STATUS_PICKS.dashboardPolls;
+// A view the coordinator answers from the characters' reports (the Cave run, the escape, the upgrade
+// preview) changes only when one reports, so it polls at the lifecycle owner's report period too.
+export const reportPeriod = CHARACTER_PICKS.lifecycleReportMs;
+// The rows outside table S that the dashboard reads through `pollOf`.
+export type PollRow = Domain | 'mailCount' | 'metrics';
+export function pollOf(domain: PollRow): { interval: number; staleTime: number; gcTime: number | undefined } {
+  const row = polls[domain] ?? {};
+  if (domain === 'core' || domain === 'logs') return { interval: reportPeriod, staleTime: reportPeriod, gcTime: row.gc };
+  if (domain === 'catalog') return { interval: 0, staleTime: Infinity, gcTime: row.gc };
+  return { interval: row.interval ?? 0, staleTime: row.stale ?? 0, gcTime: row.gc };
+}
 export function domainOptions(client: QueryClient, domain: Domain) {
-  const [interval, staleTime, gcTime] = policies[domain];
+  const { interval, staleTime, gcTime } = pollOf(domain);
   return {
     queryKey:
       domain === 'catalog'
@@ -216,7 +221,6 @@ export function domainOptions(client: QueryClient, domain: Domain) {
         'party',
         'connection',
       ])?.version;
-      const sentAt = Date.now();
       if (revisionDomains.has(domain))
         return readRevision<Partial<PartyState>>(
           client,
@@ -226,8 +230,7 @@ export function domainOptions(client: QueryClient, domain: Domain) {
         );
       const result = await read<
         Partial<PartyState> & {
-          serverNow?: number;
-          characterDetails?: Record<string, Partial<import('./char').Char>>;
+          characterDetails?: Record<string, Partial<import('./char').Char> & { online?: boolean }>;
         }
       >(client, `/state?catalog=0&dashboard=1&section=${domain}`, signal);
       if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
@@ -254,9 +257,6 @@ export function domainOptions(client: QueryClient, domain: Domain) {
           if (typeof window !== 'undefined')
             window.dispatchEvent(new Event('party-account-change'));
         }
-        if (result.serverNow)
-          synchronizeDashboardClock(result.serverNow, sentAt, Date.now());
-        delete result.serverNow;
         if (!result.characters)
           result.characters = client.getQueryData<Partial<PartyState>>(
             key('core'),
@@ -271,11 +271,9 @@ export function domainOptions(client: QueryClient, domain: Domain) {
         for (const [name, data] of Object.entries(
           result.characterDetails || {},
         ))
+          // The coordinator answers online by its one presence rule.
           client.setQueryData(['party', 'character', name, 'presence'], {
-            seenAt:
-              Date.now() - Number(data.seenAt || 0) < 10000
-                ? Number.MAX_SAFE_INTEGER
-                : 0,
+            seenAt: data.online ? Number.MAX_SAFE_INTEGER : 0,
           });
         delete result.characterDetails;
       }
@@ -335,37 +333,50 @@ export function domainOptions(client: QueryClient, domain: Domain) {
 export function useDomain(domain: Domain, needed = true) {
   const client = useQueryClient();
   const visible = useVisible();
-  return useQuery({
+  const result = useQuery({
     ...domainOptions(client, domain),
     enabled: visible && needed,
     ...(domain === 'catalog'
-      ? {
-          retry: transientRetry,
-          retryDelay: 1000,
-          refetchOnWindowFocus: true,
-          refetchOnReconnect: true,
-        }
+      ? { refetchOnWindowFocus: true, refetchOnReconnect: true }
       : {}),
   });
+  useReferenceRetry(domain === 'catalog' ? result : undefined);
+  return result;
 }
-export function transientRetry(count: number, error: Error) {
+// A reference read (the catalog, a map, the postage) changes only with the core section's
+// referenceRevision, which its query key holds. A failed read reruns on the next core answer, and a
+// second failure under the same revision waits for the revision to change, which starts a new query.
+// The hook listens to the cache only while its read is failed.
+export function useReferenceRetry(
+  query: { isError: boolean; errorUpdateCount: number; refetch(options: { cancelRefetch: boolean }): unknown } | undefined,
+) {
+  const client = useQueryClient();
+  const waiting = !!query && query.isError && query.errorUpdateCount < 2;
+  const refetch = query?.refetch;
+  useEffect(() => {
+    if (!waiting || !refetch) return;
+    const core = hashKey(key('core'));
+    return client.getQueryCache().subscribe((event) => {
+      if (event.type === 'updated' && event.action.type === 'success' && event.query.queryHash === core)
+        void refetch({ cancelRefetch: false });
+    });
+  }, [client, waiting, refetch]);
+}
+/** The core section's reference revision, which keys every reference read. */
+export function useReferenceRevision(): string {
+  const client = useQueryClient();
   return (
-    count < 1 &&
-    (!(error instanceof ReadError) ||
-      error.status >= 500 ||
-      error.status === 408 ||
-      error.status === 429)
+    useQuery({
+      ...domainOptions(client, 'core'),
+      enabled: false,
+      select: (data) => data.referenceRevision || '0',
+    }).data || '0'
   );
 }
 export function useMapDefinition(map: string, enabled = true) {
   const client = useQueryClient();
   const visible = useVisible();
-  const revision =
-    useQuery({
-      ...domainOptions(client, 'core'),
-      enabled: false,
-      select: (data) => data.referenceRevision || '0',
-    }).data || '0';
+  const revision = useReferenceRevision();
   const result = useQueries({
     queries: [
       {
@@ -377,13 +388,12 @@ export function useMapDefinition(map: string, enabled = true) {
             signal,
           ),
         staleTime: Infinity,
-        gcTime: 1800000,
-        retry: transientRetry,
-        retryDelay: 1000,
+        gcTime: pollOf('catalog').gcTime,
         refetchOnWindowFocus: true,
         refetchOnReconnect: true,
       },
     ].filter(() => visible && enabled && !!map),
   })[0];
+  useReferenceRetry(result);
   return { data: result?.data, isError: result?.isError || false };
 }

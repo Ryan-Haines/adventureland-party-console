@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { DEFAULT_PUBLIC_PORT, publicPort } from '../hosting/api.ts';
 
+// The dashboard's public port when neither AL_PORT nor a --port names one is the gateway's
+// (hosting/defaults.ts), which the supervisor binds and the dashboard's children redirect to.
+export const DASHBOARD_PORT = DEFAULT_PUBLIC_PORT;
 /** Child dashboard servers are implementation details, not onboarding entry points. */
 export function configureDashboardGateway() {
-  process.env.AL_DASHBOARD_GATEWAY_URL = process.env.AL_PUBLIC_URL || `http://localhost:${Number(process.env.AL_PORT) || 3010}`;
+  process.env.AL_DASHBOARD_GATEWAY_URL = process.env.AL_PUBLIC_URL || `http://localhost:${publicPort()}`;
   process.env.AL_DASHBOARD_GATEWAY_TOKEN = randomUUID();
 }
 export function gatewayHeaders(): Record<string, string> {

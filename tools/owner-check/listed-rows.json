@@ -1,0 +1,12 @@
+{
+  "standIns": {
+    "S74": "the say, join and use_skill calls of owner 06 that do not ask calls.band"
+  },
+  "placement": {
+    "02": { "count": 1, "kinds": ["timer"] },
+    "06": { "count": 6, "kinds": ["timer", "game-call"] }
+  },
+  "asks": [
+    { "row": "S74", "owners": ["06", "12"], "count": 5 }
+  ]
+}

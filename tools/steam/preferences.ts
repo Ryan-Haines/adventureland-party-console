@@ -1,15 +1,15 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { validSteamSetup, type SteamClient, type SteamPlacement } from './clients.ts';
 
 export interface SteamPreferences {
-  placement: 'same' | 'remote';
-  client: 'windows-steam' | 'linux-steam' | 'windows-browser' | 'linux-browser';
+  placement: SteamPlacement;
+  client: SteamClient;
 }
 export function parsePreferences(input: Record<string, unknown>): SteamPreferences {
-  if (!['same', 'remote'].includes(String(input.placement)) ||
-      !['windows-steam', 'linux-steam', 'windows-browser', 'linux-browser'].includes(String(input.client)))
+  if (!validSteamSetup(input))
     throw Error('Choose where Adventure Land runs and which client you use in setup.');
-  return { placement: input.placement, client: input.client } as SteamPreferences;
+  return { placement: input.placement, client: input.client };
 }
 export function assertLocalSteam(preferences: SteamPreferences | null, platform: string) {
   if (!preferences) throw Error('Open setup and choose whether Adventure Land and Party Console run on the same computer.');

@@ -335,7 +335,7 @@ All cases remain retained. Native anniversary completion does not trigger the sp
 - Genuine cross-map cave return, already-arrived no-convoy return, distinct per-member waypoints, one-member cancellation during flight: new native scenarios exercise a shared Goo Hunt only, not these topologies.
 - Cancelled/superseded returns, lost return using its original destination, offline return invalidation, failed convoy bounded retry, and persisted individual-reunion deadlock: each creates a separate historical failure state not introduced by successful Goobrawl/Franky completion.
 - Stale individual completion versus newer command/deferred return: an actual reordered receipt has not been tested.
-- Previous-round buffs, exact one-minute featured hold, and completed visits waiting through temporary competing movement: the seeded native anniversary clock deliberately does not claim these timing contracts.
+- Previous-round buffs, the featured hold that lasts while a party member's visit ticket is unclaimed, and completed visits waiting through temporary competing movement: the seeded native anniversary clock deliberately does not claim these timing contracts.
 - Dead/wrong-instance arrival and offline-before-initial-dispatch durable waypoint: keep negative observations until native fault injection exercises them.
 - Legacy empty-backup cancellation across anniversary then Goobrawl, with manual Town still blocking: retain; existing native event cycles start with current settings and do not reproduce the legacy cancellation reason.
 

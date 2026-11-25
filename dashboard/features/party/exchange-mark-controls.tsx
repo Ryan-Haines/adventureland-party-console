@@ -2,6 +2,7 @@
 import { Landmark, Store, Swords, DollarSign } from 'lucide-react';
 import { AutoActionIcon } from './auto-action-icon';
 import { Button } from '@/components/ui/button';
+import { UPGRADE_LEVEL_MAX } from '../../../runtime/items/api.ts';
 export type ExchangeMarkMode = { action: 'bank' | 'stand' | 'npc' | 'upgrade'; targetLevel?: number };
 export function ExchangeMarkControls({ enabled, mode, saving, onMode }: {
   enabled: boolean; mode: ExchangeMarkMode | null; saving: boolean; onMode: (mode: ExchangeMarkMode) => void;
@@ -19,7 +20,7 @@ export function ExchangeMarkControls({ enabled, mode, saving, onMode }: {
       {enabled && mode?.action === 'upgrade' && <label className="flex items-center gap-2 text-xs text-violet-100">Target level
         <select aria-label="Bulk upgrade target level" value={mode.targetLevel} onChange={event => onMode({ action: 'upgrade', targetLevel: Number(event.target.value) })}
           className="rounded border border-violet-400 bg-slate-950 p-2 text-white">
-          {Array.from({ length: 13 }, (_, index) => index + 1).map(level => <option key={level} value={level}>+{level}</option>)}
+          {Array.from({ length: UPGRADE_LEVEL_MAX }, (_, index) => index + 1).map(level => <option key={level} value={level}>+{level}</option>)}
         </select>
       </label>}
 

@@ -1,21 +1,34 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { installRosterRoutes } = require('../../runtime/roster/routes.ts');
-const {createCoordinatorOwnershipPorts}=require('../../runtime/coordinator/characters/ownership.ts');
+const { installRosterRoutes } = require('../../runtime/lifecycle/roster/routes.ts');
+const { BRIDGE_MULTI_VERSION } = require('../../runtime/lifecycle/rules.ts');
+const {createCoordinatorOwnershipPorts}=require('../../runtime/lifecycle/roster/ownership.ts');
+const { createCoordinatorRun } = require('../../runtime/lifecycle/character/run.ts');
+// A bridge post counts its window online for the one presence reading.
+const presenceMs = require('../../runtime/protocol/reports.ts').ageOf('presence');
+// The roster's expiry check registers on the lifecycle owner's coordinator handle; `dispose` stops the run.
+function lifecycleRun() { const run = createCoordinatorRun({ setTimeout, clearTimeout, setInterval, clearInterval }); return { timers: run.scope('13', 'act'), dispose: run.stop }; }
 
-for(const [scenario,expected] of [['unrelated merchant',200],['added character busy',502],['bankboi transaction',502]])
-test('spawn admission during '+scenario,async()=>{
- const ownership={steamMembers:[],headlessSlots:['Merchant',null,null,null],nativeOwner:null,steamSwitch:null,
-  statuses:{Merchant:{seenAt:100,runtime:'headless'}},bankbois:{},bankboiTransaction:scenario==='bankboi transaction'?{}:null,
-  merchantCharacter:'Merchant',merchantCurrent:{id:'running-job'},leader:null,lifecycle:{}};
- if(scenario==='added character busy')ownership.statuses.Ranger={seenAt:100,upgrading:true};
- const realPorts=createCoordinatorOwnershipPorts(ownership,{}, {now:()=>100,id:()=>'',save(){},owned:()=>({}),configuredRealm:'SR_USII',roster:()=>[]});
- const f=fixture({validateParticipants:realPorts.validateParticipants});f.state.native=null;f.state.steam=[];f.state.slots=['Merchant',null,null,null];
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const admitsSpawn=async({f,expected})=>{
  try{
   const response=await f.request('/slots/:slot/spawn',{character:'Ranger'},'2');assert.equal(response.code,expected);
   assert.equal(f.state.slots[1],expected===200?'Ranger':null);assert.equal(f.online.has('Ranger'),expected===200);
  }finally{f.installed.dispose();}
-});
+};
+scenarioTable('a spawn into a free slot is admitted only while no added character or BankBoi transaction is busy',(scenario,expected)=>{
+ const ownership={steamMembers:[],headlessSlots:['Merchant',null,null,null],nativeOwner:null,steamSwitch:null,
+  statuses:{Merchant:{seenAt:100,runtime:'headless'}},bankbois:{},bankboiTransaction:scenario==='bankboi transaction'?{}:null,
+  merchantCharacter:'Merchant',merchantCurrent:{id:'running-job'},leader:null,lifecycle:{}};
+ if(scenario==='added character busy')ownership.statuses.Ranger={seenAt:100,upgrading:true};
+ const realPorts=createCoordinatorOwnershipPorts(ownership,{}, {now:()=>100,id:()=>'',commit(){},owned:()=>({}),configuredRealm:'SR_USII',roster:()=>[]});
+ const f=fixture({validateParticipants:realPorts.validateParticipants});f.state.native=null;f.state.steam=[];f.state.slots=['Merchant',null,null,null];
+ return {f,expected};
+},[
+ ['spawn admission during unrelated merchant',admitsSpawn,'unrelated merchant',200],
+ ['spawn admission during added character busy',admitsSpawn,'added character busy',502],
+ ['spawn admission during bankboi transaction',admitsSpawn,'bankboi transaction',502],
+]);
 
 function fixture(overrides = {}) {
   const state = { native: 'Priest', slots: ['Mage', 'Warrior', 'Merchant', null], handoff: null };
@@ -28,26 +41,29 @@ function fixture(overrides = {}) {
     async stopHeadless(name) { online.delete(name); },
     startHeadless(name) { assert.ok(!online.has(name)); online.add(name); },
     async confirmOffline(name) { return !online.has(name); },
-    nativeBusy: () => false, bridgeChanged() {}, realm: () => 'SR_USII', members: () => [],
+    busy: () => null, bridgeChanged() {}, realm: () => 'SR_USII', members: () => [],
     ...overrides,
   };
-  const installed = installRosterRoutes({ get: (route, handler) => routes.set(route, handler), post: (route, handler) => routes.set(route, handler) }, state, ports);
+  const installed = lifecycleRun();
+  installRosterRoutes({ get: (route, handler) => routes.set(route, handler), post: (route, handler) => routes.set(route, handler) }, state, ports, installed.timers);
   const request = async (path, body = {}, slot = '') => {
     const response = { code: 200, body: undefined, status(code) { this.code = code; return this; }, json(body) { this.body = body; } };
     await routes.get('/party-api' + path)({ body, params: { slot } }, response);
     return response;
   };
-  const bridge = (body = {}) => request('/steam/bridge', { version: 1, clientId: 'window', character: 'Priest', ...body });
+  const bridge = (body = {}) => request('/steam/bridge', { version: BRIDGE_MULTI_VERSION, clientId: 'window', character: 'Priest', ...body });
   return { state, ports, online, installed, request, bridge, advance: value => { now += value; } };
 }
 test('startup preserves explicit failed handoff errors',()=>{
  const state={native:'Priest',steam:['Priest'],slots:[null,null,null,null],handoff:{phase:'failed',error:'stop_runner failed'}};
- const installed=installRosterRoutes({get(){},post(){}},state,{save(){},now:()=>100});
+ const installed=lifecycleRun();installRosterRoutes({get(){},post(){}},state,{save(){},now:()=>100},installed.timers);
  try { assert.equal(state.handoff.error,'stop_runner failed'); }
  finally { installed.dispose(); }
 });
-test('selection-screen bridge readiness permits a headless transfer without claiming a connected character',async()=>{
- const f=fixture();f.state.native=null;
+// Rows whose run takes no parameter build their own fixtures.
+scenarioTable('the roster routes over a four-slot fixture hand characters between Steam and headless slots',fixture,[
+['selection-screen bridge readiness permits a headless transfer without claiming a connected character',async f=>{
+ f.state.native=null;
  try {
   assert.deepEqual((await f.request('/steam/connection')).body,{connected:false,ready:false});
   await f.bridge({version:2,character:null,running:[]});
@@ -55,12 +71,13 @@ test('selection-screen bridge readiness permits a headless transfer without clai
   const response=await f.request('/steam/action',{action:'primary',character:'Mage'});
   assert.equal(response.code,200);assert.equal(f.online.has('Mage'),false);
   assert.equal(f.state.handoff.phase,'release');
-  f.advance(8000);assert.equal((await f.request('/steam/connection')).body.ready,false);
+  f.advance(presenceMs-1);assert.equal((await f.request('/steam/connection')).body.ready,true);
+  f.advance(1);assert.equal((await f.request('/steam/connection')).body.ready,false);
  }finally{f.installed.dispose();}
-});
+}],
 
-test('bridge realm recovers an unknown-realm operation without a CODE heartbeat',async()=>{
- const f=fixture();f.ports.realmContext=()=>({current:null,home:'SR_USII'});
+['bridge realm recovers an unknown-realm operation without a CODE heartbeat',async f=>{
+ f.ports.realmContext=()=>({current:null,home:'SR_USII'});
  try {
   await f.bridge({version:2});
   await f.request('/steam/action',{action:'primary',character:'Mage'});
@@ -74,38 +91,38 @@ test('bridge realm recovers an unknown-realm operation without a CODE heartbeat'
   assert.equal(f.state.handoff.destinationRealm,'SR_USII');
   assert.equal(f.online.has('Mage'),false);
  }finally{f.installed.dispose();}
-});
+}],
 
-test('fresh bridge realm overrides telemetry and expires with the accepted session',async()=>{
- const f=fixture();f.ports.realmContext=()=>({current:'SR_USII',home:'SR_USII'});
+['fresh bridge realm overrides telemetry and expires with the accepted session',async f=>{
+ f.ports.realmContext=()=>({current:'SR_USII',home:'SR_USII'});
  try {
   await f.bridge({version:2,realm:'SR_USIV'});
   await f.request('/steam/action',{action:'primary',character:'Mage'});
   assert.equal(f.state.handoff.realmChoice.current,'SR_USIV');
   assert.equal((await f.bridge({version:2,clientId:'other',realm:'SR_USII'})).code,409);
   assert.equal(f.state.handoff.realmChoice.current,'SR_USIV');
-  f.advance(8001);
+  f.advance(presenceMs);
   await f.request('/steam/realm-choice',{operationId:'op',choice:'stay'});
   assert.equal(f.state.handoff.realmChoice.current,'SR_USII');
   assert.equal(f.state.handoff.phase,'awaiting-realm-choice');
  }finally{f.installed.dispose();}
-});
+}],
 
-test('connection status requires a live bridge, its current character, and a fresh code heartbeat',async()=>{
- const f=fixture();let fresh=false;f.ports.codeRunning=()=>fresh;
+['connection status requires a live bridge, its current character, and a fresh code heartbeat', async f => {
+ let fresh=false;f.ports.codeRunning=()=>fresh;
  try {
   const connected=async()=>(await f.request('/steam/connection')).body.connected;
   assert.equal(await connected(),false);
   await f.bridge();assert.equal(await connected(),false);
   fresh=true;assert.equal(await connected(),true);
   fresh=false;assert.equal(await connected(),false);
-  fresh=true;f.advance(9000);assert.equal(await connected(),false);
+  fresh=true;f.advance(presenceMs);assert.equal(await connected(),false);
   await f.bridge({character:null});assert.equal(await connected(),false);
  }finally{f.installed.dispose();}
-});
+}],
 
-test('roster endpoints reject primitive and empty request bodies without changing ownership',async()=>{
-  const f=fixture(),before=JSON.stringify(f.state);
+['roster endpoints reject primitive and empty request bodies without changing ownership',async f=>{
+  const before=JSON.stringify(f.state);
   try {
     for(const body of [null,false,0,'Mage',[],{}]) {
       const result=await f.request('/steam/switch',body);
@@ -113,11 +130,11 @@ test('roster endpoints reject primitive and empty request bodies without changin
     }
     assert.equal(JSON.stringify(f.state),before);
   } finally {f.installed.dispose();}
-});
+}],
 
-test('explicit Steam login releases a BankBoi reservation before capacity and inventory checks',async()=>{
- const f=fixture();let storageBusy=true,calls=0;f.state.slots[2]='BankBoi';f.online.delete('Merchant');
- f.ports.characterBusy=()=>storageBusy;
+['explicit Steam login releases a BankBoi reservation before capacity and inventory checks',async f=>{
+ let storageBusy=true,calls=0;f.state.slots[2]='BankBoi';f.online.delete('Merchant');
+ f.ports.busy=()=>storageBusy?'Wait for Merchant: the bag is sorting (core:items-bag) to finish':null;
  f.ports.prepareSteam=async name=>{assert.equal(name,'Merchant');calls++;storageBusy=false;f.state.slots[2]=null;};
  try {
   assert.equal((await f.request('/steam/action',{action:'login',character:'Merchant'})).code,409);
@@ -127,9 +144,9 @@ test('explicit Steam login releases a BankBoi reservation before capacity and in
   assert.equal(result.code,200);assert.equal(calls,1);assert.ok(f.state.handoff.multi.desired.includes('Merchant'));
   assert.equal(f.state.slots[2],null);
  } finally {f.installed.dispose();}
-});
-test('headless logout action retains its slot until offline confirmation succeeds',async()=>{
-  const f=fixture(),calls=[];
+}],
+['headless logout action retains its slot until offline confirmation succeeds',async f=>{
+  const calls=[];
   try {
     f.ports.stopHeadless=async name=>calls.push(['stop',name]);
     f.ports.confirmOffline=async name=>{calls.push(['confirm',name]);return false;};
@@ -143,21 +160,19 @@ test('headless logout action retains its slot until offline confirmation succeed
     assert.equal(f.state.slots[0],null);
     assert.deepEqual(calls,[['stop','Mage'],['confirm','Mage'],['save']]);
   } finally {f.installed.dispose();}
-});
-test('bridge ownership survives stale heartbeats and rejects a second active window', async () => {
-  const f = fixture();
+}],
+['bridge ownership survives stale heartbeats and rejects a second active window', async f => {
   try {
     assert.equal((await f.bridge()).code, 200);
     assert.equal((await f.bridge({ clientId: 'other' })).code, 409);
-    f.advance(9000);
+    f.advance(presenceMs);
     assert.equal((await f.request('/steam/headless')).code, 409);
     assert.equal(f.state.native, 'Priest');
     await f.bridge({ character: null });
     assert.equal(f.state.native, 'Priest');
   } finally { f.installed.dispose(); }
-});
-test('slot is retained until logout is confirmed and becomes reusable for an offline character', async () => {
-  const f = fixture();
+}],
+['slot is retained until logout is confirmed and becomes reusable for an offline character', async f => {
   try {
     f.ports.stopHeadless = async () => {};
     assert.equal((await f.request('/slots/:slot/logout', {}, '1')).code, 409);
@@ -169,9 +184,8 @@ test('slot is retained until logout is confirmed and becomes reusable for an off
     assert.equal(f.state.slots[0], 'Ranger');
     assert.ok(f.online.has('Ranger'));
   } finally { f.installed.dispose(); }
-});
-test('a pending spawn reserves its slot and serializes competing roster mutations', async () => {
-  const f = fixture();
+}],
+['a pending spawn reserves its slot and serializes competing roster mutations', async f => {
   try {
     f.state.native = null;
     f.state.steam = [];
@@ -184,10 +198,9 @@ test('a pending spawn reserves its slot and serializes competing roster mutation
     assert.equal((await spawning).code, 409);
     assert.equal(f.state.slots[3], null);
   } finally { f.installed.dispose(); }
-});
+}],
 
-test('arrival without navigation storage recovers a timed-out legacy handoff', async () => {
-  const f = fixture();
+['arrival without navigation storage recovers a timed-out legacy handoff', async f => {
   try {
     await f.bridge();
     await f.request('/steam/switch', { character: 'Mage' });
@@ -203,9 +216,9 @@ test('arrival without navigation storage recovers a timed-out legacy handoff', a
     assert.equal(f.state.native, 'Mage');
     assert.deepEqual(f.state.slots, ['Priest', 'Warrior', 'Merchant', null]);
   } finally { f.installed.dispose(); }
-});
+}],
 
-test('a fresh Steam Engage supersedes a pending logout without replaying release or navigation', async () => {
+['a fresh Steam Engage supersedes a pending logout without replaying release or navigation', async () => {
   for (const phase of ['release', 'confirm-release', 'navigate', 'failed']) {
     for (const character of ['Priest', 'Ranger']) {
       const f = fixture();
@@ -225,10 +238,9 @@ test('a fresh Steam Engage supersedes a pending logout without replaying release
       } finally { f.installed.dispose(); }
     }
   }
-});
+}],
 
-test('ordinary polls and bridge reloads still execute a newly requested logout', async () => {
-  const f = fixture();
+['ordinary polls and bridge reloads still execute a newly requested logout', async f => {
   try {
     await f.bridge({ version: 2, sessionId: 'game', running: ['Priest'] });
     await f.request('/steam/action', { action: 'logout', character: 'Priest' });
@@ -244,27 +256,27 @@ test('ordinary polls and bridge reloads still execute a newly requested logout',
     await f.bridge({ version: 2, sessionId: 'new-game', running: ['Priest'] });
     assert.equal(f.state.native, 'Priest');
   } finally { f.installed.dispose(); }
-});
+}],
 
-test('legacy release receipts and failed logouts can recover a connected Engage', async () => {
-  for (const version of [1, 2]) {
-    for (const failed of [false, true]) {
-      const f = fixture();
-      try {
-        await f.bridge({ version });
-        if (version === 1) await f.request('/slots/:slot/logout', {}, '0');
-        else await f.request('/steam/action', { action: 'logout', character: 'Priest' });
-        if (failed) f.state.handoff.phase = 'failed';
-        await f.bridge({ version, running: ['Priest'], ...(failed ? {} : { operationId: 'op', released: true, from: 'Priest' }) });
-        assert.equal(f.state.handoff, null);
-        assert.equal(f.state.native, 'Priest');
-        assert.deepEqual(f.state.steam, ['Priest']);
-      } finally { f.installed.dispose(); }
-    }
+// QUESTIONS.md U6: bridge v1 is gone, so its post is refused and only the multi bridge's receipts recover.
+['release receipts and failed logouts can recover a connected Engage, and a v1 bridge is refused', async () => {
+  for (const failed of [false, true]) {
+    const f = fixture();
+    try {
+      await f.bridge();
+      await f.request('/steam/action', { action: 'logout', character: 'Priest' });
+      if (failed) f.state.handoff.phase = 'failed';
+      await f.bridge({ running: ['Priest'], ...(failed ? {} : { operationId: 'op', released: true, from: 'Priest' }) });
+      assert.equal(f.state.handoff, null);
+      assert.equal(f.state.native, 'Priest');
+      assert.deepEqual(f.state.steam, ['Priest']);
+    } finally { f.installed.dispose(); }
   }
-});
+  const f = fixture();
+  try { assert.equal((await f.bridge({ version: 1 })).code, 409); } finally { f.installed.dispose(); }
+}],
 
-test('new Steam sessions cannot cancel transfers or take a headless assignment', async () => {
+['new Steam sessions cannot cancel transfers or take a headless assignment', async () => {
   for (const action of ['primary', 'headless', 'logout']) {
     const f = fixture();
     try {
@@ -277,10 +289,9 @@ test('new Steam sessions cannot cancel transfers or take a headless assignment',
       assert.deepEqual(f.state.slots, ['Mage', 'Warrior', 'Merchant', null]);
     } finally { f.installed.dispose(); }
   }
-});
+}],
 
-test('a disconnected bridge yields to a new connected CODE window and rejects its old poll', async () => {
-  const f = fixture();
+['a disconnected bridge yields to a new connected CODE window and rejects its old poll', async f => {
   try {
     await f.bridge({ version: 2, sessionId: 'old-game' });
     await f.request('/steam/action', { action: 'logout', character: 'Priest' });
@@ -291,9 +302,9 @@ test('a disconnected bridge yields to a new connected CODE window and rejects it
     assert.equal((await f.bridge({ version: 2, character: null })).code, 409);
     assert.equal(f.state.native, 'Priest');
   } finally { f.installed.dispose(); }
-});
+}],
 
-test('logout recovery retires an account lookup already in flight', async () => {
+['logout recovery retires an account lookup already in flight', async () => {
   let finish;
   const f = fixture({ confirmOffline: () => new Promise(resolve => { finish = resolve; }) });
   try {
@@ -308,10 +319,9 @@ test('logout recovery retires an account lookup already in flight', async () => 
     assert.equal(f.state.native, 'Priest');
     assert.deepEqual(f.state.steam, ['Priest']);
   } finally { f.installed.dispose(); }
-});
+}],
 
-test('re-engaging the logged-out primary cancels stale navigation and retains its Steam companions', async () => {
-  const f = fixture();
+['re-engaging the logged-out primary cancels stale navigation and retains its Steam companions', async f => {
   try {
     f.state.slots[0] = null;
     f.state.steam = ['Priest', 'Mage'];
@@ -327,4 +337,5 @@ test('re-engaging the logged-out primary cancels stale navigation and retains it
     assert.deepEqual(f.state.steam, ['Mage', 'Priest']);
     assert.deepEqual(f.state.slots, [null, 'Warrior', 'Merchant', null]);
   } finally { f.installed.dispose(); }
-});
+}],
+]);

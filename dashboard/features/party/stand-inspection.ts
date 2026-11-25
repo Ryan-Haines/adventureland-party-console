@@ -3,9 +3,10 @@ import type { StandListing } from './stand-listing';
 import type { StandBid } from './stand-bid';
 import type { PartyState } from './party-state';
 import type { Item } from './item';
+import { markMatches } from '../../../runtime/items/api.ts';
 
-const validStandSlot = (slot: string) => /^trade(?:[1-9]|1[0-6])$/.test(slot);
-const identity = (a: Item, b: Item) => a.name === b.name && Number(a.level || 0) === Number(b.level || 0) && a.p === b.p && a.stat_type === b.stat_type && JSON.stringify(a.data) === JSON.stringify(b.data);
+// A stand cell is any trade cell the game reports; its count is the items owner's `standSlots`.
+const validStandSlot = (slot: string) => /^trade[1-9]\d*$/.test(slot);
 function standOccupants(listings: StandListing[], native: PartyState['nativeStand'], merchant?: Partial<Char>) {
   const slots = new Map<string, { kind: 'sale' | 'buy'; item?: Item; itemId?: string; listing?: StandListing; offer?: NonNullable<PartyState['nativeStand']>['offers'][string] }>();
   for (const [slot, entry] of Object.entries(merchant?.slots || {}))
@@ -19,20 +20,12 @@ function standOccupants(listings: StandListing[], native: PartyState['nativeStan
   }
   return slots;
 }
-export function standOccupancy(listings: StandListing[], native: PartyState['nativeStand'], merchant?: Partial<Char>, _bids: Record<string, StandBid> = {}) {
-  const slots = standOccupants(listings,native,merchant);
-  const sales = [...slots.values()].filter(entry=>entry.kind === 'sale').length;
-  return {sales, buys:slots.size-sales, total:slots.size};
-}
-export function occupiedStandSlots(listings: StandListing[], native: PartyState['nativeStand'], merchant?: Partial<Char>, bids: Record<string, StandBid> = {}) {
-  return standOccupancy(listings,native,merchant,bids).total;
-}
 export function standSaleRows(listings: StandListing[], merchant?: Char, native?: PartyState['nativeStand']) {
   const slots = Object.entries(merchant?.slots || {}).filter(([slot, entry]) => validStandSlot(slot) && entry && !entry.item.b);
   const occupants = standOccupants(listings,native,merchant);
   const used = new Set<string>();
   const rows = listings.map((configured, index) => {
-    const match = configured.state !== 'paused' ? slots.find(([slot, entry]) => !used.has(slot) && identity(configured.item, entry!.item) && (!configured.tradeSlot || configured.tradeSlot === slot)) : undefined;
+    const match = configured.state !== 'paused' ? slots.find(([slot, entry]) => !used.has(slot) && markMatches(entry!.item, configured.item) && (!configured.tradeSlot || configured.tradeSlot === slot)) : undefined;
     const stored = !match && configured.state === 'live' && configured.tradeSlot && !used.has(configured.tradeSlot) && occupants.get(configured.tradeSlot)?.listing === configured;
     if (match) used.add(match[0]);
     else if (stored && configured.tradeSlot) used.add(configured.tradeSlot);

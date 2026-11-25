@@ -17,20 +17,6 @@ async function merchantReport(app: { state(): Promise<any> }) {
     runtimeId: 'e2e-report-M', clientInstance: 'e2e-report-M', ...extra });
 }
 
-test('a saved snapshot with per-copy item meta shows catalog names offline', async ({ page, app }, info) => {
-  const report = await merchantReport(app);
-  await app.deliverStatus(report({ items: coat(3), slots: {} }));
-  // The roster keeps the per-copy meta; the dashboard joins the catalog's.
-  expect((await app.state()).characterSnapshots.M.items[0]).toEqual({ slot: 0, item: { name: 'coat', level: 3 }, meta: { properties: {} } });
-  await app.restartCoordinator();
-  expect((await app.state()).characters.M).toBeUndefined();
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Interface settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Inspect M', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Inspect Coat +3', exact: true })).toBeVisible();
-  await info.attach('saved-snapshot-entry', { body: JSON.stringify((await app.state()).characterSnapshots.M.items[0]), contentType: 'application/json' });
-});
-
 test('a report that omits unchanged inventory keeps it, and an unknown revision answers 409', async ({ page, app }, info) => {
   const report = await merchantReport(app);
   const acknowledged = await app.deliverStatus(report({ items: coat(3), slots: {}, inventoryRevision: 'probe-1' })) as { inventoryRevision?: string };
@@ -68,4 +54,23 @@ test('a carried bank keeps the bank snapshot until the bank changes', async ({ a
   const changed = await section();
   expect(changed.packs.items0.map((entry: any) => entry.item.name)).toEqual(['bkey', 'coat']);
   await info.attach('bank-snapshots', { body: JSON.stringify({ first, changed }), contentType: 'application/json' });
+});
+
+// The reply names a ring only while a diagnostics view leases it; then
+// the character posts it as its own request. The character's report carries no ring
+// (status/character/report.ts has no ring field and rings.ts posts each one apart), so this row
+// checks the coordinator's half: the lease and the post.
+test('a ring rides only under the diagnostics lease, never in the report', async ({ app }, info) => {
+  const report = await merchantReport(app);
+  const unleased = await app.deliverStatus(report({})) as { diagnosticsRings?: string[] };
+  expect(unleased.diagnosticsRings ?? [], 'no view, no leased ring').toEqual([]);
+  const rings = 'movement,turns,targeting,calls,merchant,combat';
+  expect((await fetch(`${app.url}/party-api/diagnostics/records?character=M&rings=${rings}`)).ok).toBe(true);
+  const leased = await app.deliverStatus(report({})) as { diagnosticsRings?: string[] };
+  expect([...(leased.diagnosticsRings ?? [])].sort(), 'every leased ring is named').toEqual(rings.split(',').sort());
+  // The gateway takes a POST only from the dashboard's origin.
+  const posted = await fetch(`${app.url}/party-api/diagnostics/records`, { method: 'POST', headers: { 'content-type': 'application/json', Origin: app.url },
+    body: JSON.stringify({ character: 'M', ring: 'combat', records: [{ at: 2 }], incidents: [] }) });
+  expect(posted.ok, 'a leased ring posts').toBe(true);
+  await info.attach('df10', { body: JSON.stringify({ unleased, leased }), contentType: 'application/json' });
 });

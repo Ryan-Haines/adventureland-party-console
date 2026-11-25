@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { JSDOM } = require('../../.caracal/node_modules/jsdom');
 const jquery = require('../../.caracal/node_modules/jquery');
-const { installNativeAjax } = require('../../runtime/lifecycle/native-ajax.ts');
+const { installNativeAjax } = require('../../runtime/lifecycle/character/host.ts');
 
 // Failure inventory: docs/efficiency.md, Character threads follow-ups, CT9.
 function codeWindow(url = 'https://adventure.land/') {

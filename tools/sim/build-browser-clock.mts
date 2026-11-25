@@ -27,13 +27,15 @@ await build({
         }));
         builder.onLoad({ filter: /vclock\.js$/ }, async (args) => {
           const { readFile } = await import("node:fs/promises");
+          // The browser shim drains microtasks after every timer. A pin whose vclock.js holds the
+          // patched text other than once fails the build.
+          const source = await readFile(args.path, "utf8"), patched = "if (each || promiseActivity) return true;";
+          const matches = source.split(patched).length - 1;
+          if (matches !== 1) throw Error(`ChronAL vclock.js holds the microtask drain text ${matches} times; the patch needs it once`);
           return {
             contents:
               `const process={_tickCallback(){}};const {postTask:setImmediate}=require(${JSON.stringify(path.join(root,"tools/sim/browser-task-queue.cjs"))});\n` +
-              (await readFile(args.path, "utf8")).replace(
-                "if (each || promiseActivity) return true;",
-                "return true; // Browser shim: drain microtasks after every timer.",
-              ),
+              source.replace(patched, "return true; // Browser shim: drain microtasks after every timer."),
             loader: "js",
           };
         });

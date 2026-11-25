@@ -1,18 +1,28 @@
 import {isLoopback} from './game/addresses.cjs';
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect, type Page, type TestInfo } from '@playwright/test';
 import {cleanupWorkspace} from './workspace';
 import { fork, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 import { appendFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gateway } from '../tools/hosting/gateway';
 import { Access } from '../tools/hosting/access';
 import { DebugInstances } from '../tools/debug/service';
+import { stopTree } from '../tools/hosting/process-tree';
+import { lifecycleSavedFields } from '../runtime/lifecycle/fields';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Each fixture wait that ends in time records how long it took, one JSON line per wait in the run's
+// output directory. The bounds below come from the slowest of these readings over a whole console
+// run, so each bound has a measured source and a later run's file shows when one should move.
+const waits = path.join(root, '.build/e2e-results/fixture-waits.jsonl');
+function recordWait(wait: string, began: number) {
+  mkdirSync(path.dirname(waits), { recursive: true });
+  appendFileSync(waits, JSON.stringify({ wait, ms: Date.now() - began }) + '\n');
+}
 export async function unusedPort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -31,50 +41,60 @@ export function child(file: string, args: string[], cwd: string, env: NodeJS.Pro
   process.stderr!.on('data', bytes => appendFileSync(log, bytes));
   return process;
 }
+// stop() ends an owned child the way the host stops the console (tools/hosting/services.ts
+// stopHost): the stop gets hostExitGraceMs (runtime/lifecycle/fields.ts), and a stop still running
+// then ends with its whole tree through stopTree, since the coordinator's caracAL workers are its
+// own children. The wait after the tree kill ends on the child's exit; the test timeout bounds it.
 export async function stop(process: ChildProcess, graceful = false) {
   if (process.exitCode !== null || process.signalCode !== null) return;
+  const began = Date.now(), exited = new Promise<void>(resolve => process.once('exit', () => resolve()));
   if (graceful && process.connected) process.send({ type: 'coordinator_shutdown' });
   else process.kill('SIGTERM');
-  const deadline = Date.now() + 10_000;
-  while (process.exitCode === null && process.signalCode === null && Date.now() < deadline) await delay(50);
-  if (process.exitCode === null && process.signalCode === null) {
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Owned E2E child did not terminate')), 5000);
-      process.once('exit', () => { clearTimeout(timer); resolve(); });
-      process.kill('SIGKILL');
-    });
-  }
+  const grace = lifecycleSavedFields.settings.hostExitGraceMs.default;
+  let timer: NodeJS.Timeout | undefined;
+  const ended = await Promise.race([exited.then(() => true), new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), grace); })]);
+  clearTimeout(timer);
+  if (ended) { recordWait(graceful ? 'stop-graceful' : 'stop', began); return; }
+  console.warn(`[bound] hostExitGraceMs (${grace} ms) ended the stop of owned E2E child pid ${process.pid}; its tree is killed`);
+  await stopTree(process.pid!);
+  await exited;
 }
 async function ready(process: ChildProcess, url: string, log: string) {
-  const deadline = Date.now() + 90_000;
+  const began = Date.now(), deadline = began + 90_000;
   while (Date.now() < deadline) {
     if (process.exitCode !== null || process.signalCode !== null) break;
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
       await response.body?.cancel();
-      if (response.ok) return;
+      if (response.ok) { recordWait('ready', began); return; }
     } catch { /* The owned server is still starting. */ }
     await delay(200);
   }
   throw new Error(`E2E service failed readiness at ${url}\n${existsSync(log) ? readFileSync(log, 'utf8').slice(-12000) : 'No output'}`);
 }
-type App = { url: string; journal: string; restartCoordinator(): Promise<void>; crashCoordinator(whileDown?: () => unknown): Promise<void>; state(): Promise<any>; deliverStatus(report: unknown): Promise<unknown>; deliverMerchantCompletion(report: unknown): Promise<unknown> };
+export type App = { url: string; journal: string; restartCoordinator(): Promise<void>; crashCoordinator(whileDown?: () => unknown): Promise<void>; state(): Promise<any>; deliverStatus(report: unknown): Promise<unknown>; deliverMerchantCompletion(report: unknown): Promise<unknown> };
 
-export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantConnected: boolean; merchantManaged: boolean; playerInventory: boolean; marketStand: boolean; bankboiOfferings: boolean; mapCapture: boolean; standBuyOrders: boolean; mailbox:boolean; savedRecords: Record<string, unknown>[]; stateFields: string }, { dashboard: { port: number; log: string } }>({
+export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantConnected: boolean; merchantManaged: boolean; playerInventory: boolean; marketStand: boolean; bankboiOfferings: boolean; mapCapture: boolean; standBuyOrders: boolean; mailbox:boolean; statusConditions:boolean; fixtureAddon: boolean; savedRecords: Record<string, unknown>[]; stateFields: string }, { dashboard: { port: number; log: string }; dashboardImport: string }>({
   // Journal records a scenario saved before this start, appended after the other seeds.
   savedRecords: [[], {option:true}],
   // PARTY_STATE_FIELDS for the coordinator (docs/state-field-registry.md, Rollout).
   stateFields: ['', {option:true}],
   mailbox: [false, {option:true}],
+  // W reports one condition, so the card's status icon row has an icon to show.
+  statusConditions: [false, {option:true}],
   standBuyOrders: [false, {option:true}],
   mapCapture: [false, {option:true}],
+  fixtureAddon: [false, {option:true}],
   bankboiOfferings: [false, {option:true}],
   merchantDialogs: [false, {option:true}],
   merchantConnected: [true, {option:true}],
   merchantManaged: [false, {option:true}],
   playerInventory: [false, {option:true}],
   marketStand: [false, {option:true}],
-  dashboard: [async ({}, use) => {
+  // A module the dashboard server imports before it starts, for a file whose rows need the server's
+  // own outside fetches changed (console-image-stall.spec.ts stalls adventure.land).
+  dashboardImport: ['', {option:true, scope:'worker'}],
+  dashboard: [async ({dashboardImport}, use) => {
     const directory = path.join(root, '.build/e2e', `dashboard-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
     const port = await unusedPort(), log = path.join(directory, 'dashboard.log');
@@ -82,7 +102,8 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
     if(!candidate||!candidate.directory.startsWith(path.join(root,'.build/console/releases')+path.sep))throw Error('Verified E2E dashboard candidate required');
     const process = child(path.join(candidate.directory,'tools/dashboard/node-server.mts'),
       [String(port),path.join(candidate.directory,'dashboard/.build/container')],path.join(candidate.directory,'dashboard'),
-      environment({NODE_ENV:'production',AL_DASHBOARD_PORT:String(port)}),log);
+      environment({NODE_ENV:'production',AL_DASHBOARD_PORT:String(port),
+        ...dashboardImport ? {NODE_OPTIONS:[globalThis.process.env.NODE_OPTIONS,'--import='+pathToFileURL(dashboardImport).href].filter(Boolean).join(' ')} : {}}),log);
     let used=false;
     try {
       await ready(process, `http://127.0.0.1:${port}`, log);
@@ -90,7 +111,7 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
       used=true;
     } finally { await stop(process);if(used)cleanupWorkspace(root,directory); }
   }, { scope: 'worker', timeout: 120_000 }],
-  app: async ({ dashboard, merchantDialogs, merchantConnected, merchantManaged, playerInventory, marketStand, bankboiOfferings, mapCapture, standBuyOrders, mailbox, savedRecords, stateFields }, use, testInfo) => {
+  app: async ({ dashboard, merchantDialogs, merchantConnected, merchantManaged, playerInventory, marketStand, bankboiOfferings, mapCapture, standBuyOrders, mailbox, statusConditions, fixtureAddon, savedRecords, stateFields }, use, testInfo) => {
     const directory = path.join(root, '.build/e2e', `scenario-${randomUUID()}`);
     mkdirSync(directory, { recursive: true });
     if(mailbox){
@@ -110,8 +131,8 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
     let coordinator: ChildProcess | undefined;
     async function start() {
       coordinator = child(path.join(root, 'e2e/coordinator.cjs'), [], root,
-        environment({ E2E_MAILBOX:String(mailbox), E2E_STAND_BUY_ORDERS: String(standBuyOrders), E2E_MAP_CAPTURE: String(mapCapture), E2E_MARKET_STAND: String(marketStand), E2E_COORDINATOR_PORT: String(port), E2E_DATA_DIR: directory, E2E_MERCHANT_DIALOGS: String(merchantDialogs), E2E_MERCHANT_CONNECTED: String(merchantConnected), E2E_MANAGED_MERCHANT: String(merchantManaged), E2E_PLAYER_INVENTORY: String(playerInventory), ...(stateFields ? { PARTY_STATE_FIELDS: stateFields } : {}) }), log);
-      const started = coordinator;
+        environment({ E2E_MAILBOX:String(mailbox), E2E_STATUS_CONDITIONS:String(statusConditions), E2E_FIXTURE_ADDON: String(fixtureAddon), E2E_STAND_BUY_ORDERS: String(standBuyOrders), E2E_MAP_CAPTURE: String(mapCapture), E2E_MARKET_STAND: String(marketStand), E2E_COORDINATOR_PORT: String(port), E2E_DATA_DIR: directory, E2E_MERCHANT_DIALOGS: String(merchantDialogs), E2E_MERCHANT_CONNECTED: String(merchantConnected), E2E_MANAGED_MERCHANT: String(merchantManaged), E2E_PLAYER_INVENTORY: String(playerInventory), ...(stateFields ? { PARTY_STATE_FIELDS: stateFields } : {}) }), log);
+      const started = coordinator, began = Date.now();
       await new Promise<void>((resolve, reject) => {
         const output = () => existsSync(log) ? readFileSync(log, 'utf8') : 'No coordinator output';
         const cleanup = () => {
@@ -122,7 +143,7 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
         const exited = (code: number | null) => failed(new Error(`Coordinator exited (${code})\n${output()}`));
         const message = (message: any) => {
           if (message?.type !== 'ready') return;
-          cleanup(); resolve();
+          cleanup(); recordWait('coordinator-start', began); resolve();
         };
         const timeout = setTimeout(() => failed(new Error(`Coordinator startup timed out\n${output()}`)), 30_000);
         started.once('exit', exited); started.once('error', failed); started.on('message', message);
@@ -213,3 +234,60 @@ export const test = base.extend<{ app: App; merchantDialogs: boolean; merchantCo
   },
 });
 export { expect };
+
+// The row loop of a scenario table: rows that share
+// one run are steps of one test. `reset` runs between rows and puts the world back to the table's
+// start. A failed row is recorded and the next rows still run after the reset; the loop fails at
+// the end and names every failed row. `evidence` runs after a failed row or reset, before the
+// next reset clears the world. E2E_ROWS (a substring of row names, `|` between several) runs only
+// those rows, so a failed row runs once more without the rows that passed.
+export type TableRow<World> = [name: string, run: (world: World, info: TestInfo, page: Page) => Promise<void>];
+export function onlyRows<R extends [string, ...unknown[]]>(title: string, rows: R[]): R[] {
+  const names = new Set<string>();
+  for (const [name] of rows) { if (names.has(name)) throw Error(`Scenario table "${title}" repeats the row "${name}"`); names.add(name); }
+  const only = globalThis.process.env.E2E_ROWS?.split('|').filter(Boolean);
+  return only?.length ? rows.filter(([name]) => only.some(part => name.includes(part))) : rows;
+}
+export async function runRows<World>(world: World, info: TestInfo, page: Page, rows: TableRow<World>[],
+  reset: (world: World, info: TestInfo) => Promise<void>, evidence?: (world: World, info: TestInfo, label: string) => Promise<void>) {
+  const failed: {name: string; error: unknown}[] = [];
+  const keep = async (label: string) => {
+    if (evidence) await evidence(world, info, label).catch(error => info.attach(`${label}-evidence-failed`, {body: String(error), contentType: 'text/plain'}));
+  };
+  for (const [index, [name, run]] of rows.entries()) {
+    if (index) await base.step(`reset before ${name}`, () => reset(world, info).catch(async error => { await keep(`reset-failed-${index}`); throw error; }));
+    try { await base.step(name, () => run(world, info, page)); }
+    catch (error) { failed.push({name, error}); console.log(`ROW-FAILED ${index} ${name}: ${String((error as Error)?.message ?? error).slice(0, 600)}`);
+      await info.attach(`row-failed-${index}`, {body: String((error as Error)?.stack ?? error), contentType: 'text/plain'}); await keep(`row-failed-${index}`); }
+  }
+  if (failed.length === 1) throw failed[0].error;
+  if (failed.length) throw new AggregateError(failed.map(f => f.error), `Rows failed: ${failed.map(f => f.name).join('; ')}`);
+}
+// A scenario table on the console fixture: the real coordinator and dashboard, no game server.
+// `start` reads the table's start once, before the first row, and returns the reset to it.
+export function consoleScenarioTable(title: string,
+  start: (app: App) => Promise<(app: App, info: TestInfo) => Promise<void>>, rows: TableRow<App>[]) {
+  rows = onlyRows(title, rows);
+  test(title, async ({app, page}, info) => {
+    await runRows(app, info, page, rows, await start(app));
+  });
+}
+
+// The settings table's start and reset. The
+// start is every declared setting's value as the fixture loads it, read from GET
+// /party-api/settings; the reset plays a Pause a row left on and writes those values back through
+// the settings route, which leaves an unchanged one alone. A secret setting's value stays on the
+// coordinator, so the reset leaves it.
+export async function settingsRowsReset(app: App) {
+  const read = async () => (await (await fetch(`${app.url}/party-api/settings`, { signal: AbortSignal.timeout(10_000) })).json()) as
+    { settings: { field: string; value?: unknown; secret?: boolean }[] };
+  const values = (await read()).settings.filter(s => !s.secret).map(s => ({ field: s.field, value: s.value }));
+  return async (app: App) => {
+    const post = (route: string, body: unknown) => fetch(`${app.url}/party-api/${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: app.url },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
+    const control = await (await fetch(`${app.url}/party-api/console-control`, { signal: AbortSignal.timeout(10_000) })).json() as { paused?: boolean };
+    if (control.paused) expect((await post('console-control/play', {})).ok, 'the reset plays the Pause a row left on').toBe(true);
+    const written = await post('settings', { changes: values });
+    expect(written.status, await written.text()).toBe(200);
+  };
+}

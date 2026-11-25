@@ -16,4 +16,4 @@ controlled non-loopback target. Retain allowed/blocked receipts and repeated
 hundred-request timing for the old interception and owned local denial proxy
 with explicit loopback bypass. No gameplay success or timeout is fabricated.
 
-Run `node scripts/native-network-isolation.cjs` to repeat the browser experiment. It retains allowed and blocked receipts and three timing trials per mode in `.build/native-network-proof.json`. The proxy binds a port it owns and destroys HTTP, CONNECT and WebSocket requests without resolving or forwarding the destination. Native CI must verify any gameplay improvement; the isolated benchmark alone does not establish its cause.
+Run `node tools/testing/native-network-isolation.cjs` to repeat the browser experiment. It retains allowed and blocked receipts and three timing trials per mode in `.build/native-network-proof.json`. The proxy binds a port it owns and destroys HTTP, CONNECT and WebSocket requests without resolving or forwarding the destination. Native CI must verify any gameplay improvement; the isolated benchmark alone does not establish its cause.

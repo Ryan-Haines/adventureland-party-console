@@ -1,52 +1,42 @@
-const test=require('node:test'),assert=require('node:assert/strict');
-const {createCaveTravel}=require('../../runtime/coordinator/dungeons/travel.ts');
-function setup(){
- const origin={id:'assembly',label:'Party assembly',map:'cave0',x:0,y:0};
- const target={id:'boss',label:'Lockbreaker',map:'cave0',x:1000,y:0};
- const d={run:'r',phase:'active',participants:['W','P'],commands:{},travel:{origin,target,stage:'assembling',serial:4}};
- const party={dailyDungeons:d,statuses:{}};let calls=[];
- for(const name of d.participants){d.commands[name]={id:'gather:'+name,action:'gather',run:'r',target:origin};party.statuses[name]={seenAt:100,map:'cave0',x:0,y:0,dungeon:{alive:true,ready:true,cave:{run:'r',floor:0},action:{id:d.commands[name].id,status:'complete'}}};}
- party.statuses.P.x=100;
- const travel=createCaveTravel(party,{fresh:name=>party.statuses[name].seenAt===100,persist(){},issue(names,action,id,extra){calls.push({names,action,id});for(const name of names)d.commands[name]={...extra,action,id:id+':'+name};}});
- return {d,party,travel,calls};
-}
-test('completed Cave gather displaced by combat receives a new owned gather before departure',()=>{
- const f=setup(),old=f.d.commands.P.id;f.travel.tick();
+const assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {setup,destinationFixture}=require('./fixtures/cave-assembly-drift-scenario.cjs');
+scenarioTable('a Cave assembly regroups drifted members on the Cave ladder (MOV-203)', setup, [
+ ['completed Cave gather displaced by combat receives a new owned gather before departure', f=>{
+ const old=f.d.commands.P.id;f.travel.tick();
  assert.equal(f.calls.length,1);assert.deepEqual(f.calls[0].names,['P']);assert.equal(f.calls[0].action,'gather');assert.notEqual(f.d.commands.P.id,old);assert.equal(f.d.travel.stage,'assembling');
  f.travel.tick();assert.equal(f.calls.length,1,'old completion cannot reissue the new in-flight gather');
  f.party.statuses.P.x=0;f.party.statuses.P.dungeon.action={id:f.d.commands.P.id,status:'complete'};f.travel.tick();assert.equal(f.d.travel.stage,'travelling');
-});
-test('Cave regroup rejects stale, combat-busy, wrong-run and superseded gather evidence',()=>{
+ }],
+ ['Cave regroup rejects stale, combat-busy, wrong-run and superseded gather evidence', ()=>{
  for(const change of [f=>f.party.statuses.P.seenAt=0,f=>f.party.statuses.W.dungeon.ready=false,f=>f.party.statuses.P.dungeon.cave.run='other',f=>f.party.statuses.P.map='other',f=>f.d.commands.P.action='vote',f=>f.party.statuses.P.dungeon.action.id='old']){const f=setup();change(f);f.travel.tick();assert.equal(f.calls.length,0);}
-});
-test('repeated completed assembly drift is bounded and retains the selected target',()=>{
- const f=setup();f.d.travel.assemblyRepairs=3;f.travel.tick();
- assert.equal(f.calls.length,0);assert.match(f.d.error,/assembly.*displaced/i);assert.equal(f.d.travel.target.id,'boss');
-});
-
-function destinationFixture(){
- const f=setup();f.d.travel.stage='travelling';f.d.travel.target.down=true;
- for(const name of f.d.participants){f.d.commands[name]={id:'move:'+name,action:'move',run:'r',target:f.d.travel.target,cruiseSpeed:79};
- Object.assign(f.party.statuses[name],{x:1000,y:0});f.party.statuses[name].dungeon.action={id:'move:'+name,status:'complete'};}
- f.party.statuses.W.x=1219;return f;
-}
-test('completed Cave destination displaced by combat resumes before stairs',()=>{
+ }],
+ ['completed Cave destination displaced by combat resumes before stairs', ()=>{
  const f=destinationFixture();f.party.statuses.W.dungeon.ready=false;f.travel.tick();assert.equal(f.calls.length,0);
  f.party.statuses.W.dungeon.ready=true;f.travel.tick();
  assert.equal(f.calls.length,1);assert.deepEqual(f.calls[0].names,['W']);assert.equal(f.calls[0].action,'move');
- assert.equal(f.d.commands.W.cruiseSpeed,79);assert.equal(f.d.commands.W.independent,true);assert.equal(f.d.travel.destinationRepairs,1);
+ assert.equal(f.d.commands.W.cruiseSpeed,79);assert.equal(f.d.commands.W.independent,true);assert.match(f.d.commands.W.id,/:regroup:/);
  f.travel.tick();assert.equal(f.calls.length,1);
  f.party.statuses.W.x=1000;f.party.statuses.W.dungeon.action={id:f.d.commands.W.id,status:'complete'};f.travel.tick();
  assert.equal(f.calls.at(-1).action,'stairs');assert.equal(f.d.travel,undefined);
-});
-test('destination repair preserves current run, fresh readiness and owned command',()=>{
+ }],
+ ['destination repair preserves current run, fresh readiness and owned command', ()=>{
  for(const change of [f=>f.party.statuses.P.seenAt=0,f=>f.party.statuses.P.dungeon.ready=false,
  f=>f.party.statuses.W.dungeon.cave.run='other',f=>f.party.statuses.W.map='other',
  f=>f.d.commands.W.action='vote',f=>f.party.statuses.W.dungeon.action.id='old',
  f=>f.d.commands.W.target={...f.d.travel.target,x:2000},f=>f.party.statuses.P.dungeon.cave.paused=true]){
  const f=destinationFixture();change(f);f.travel.tick();assert.equal(f.calls.length,0);}
-});
-test('destination drift is bounded without replaying completed transport or changing target',()=>{
- const f=destinationFixture();f.d.travel.destinationRepairs=3;f.travel.tick();
- assert.equal(f.calls.length,0);assert.match(f.d.error,/destination.*displaced/i);assert.equal(f.d.travel.target.id,'boss');
-});
+ }],
+ // HN26: no repair count stops Cave travel; each failed repair climbs the tasks owner's ladder for as long
+ // as the run lasts, so an old save's count far past the cap of three still sends the next repair.
+ ['Cave travel keeps repairing past any count (HN26)', ()=>{
+ const f=destinationFixture();f.d.travel.destinationRepairs=50;f.d.travel.repairs=50;f.d.travel.assemblyRepairs=50;f.travel.tick();
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0].action,'move');assert.equal(f.d.error,undefined);assert.notEqual(f.d.phase,'held');
+ }],
+ ['destination drift climbs the ladder without replaying completed transport or changing target', ()=>{
+ const f=destinationFixture();f.travel.tick();
+ assert.equal(f.calls.length,1);assert.equal(f.calls[0].action,'move');assert.equal(f.d.error,undefined);assert.match(f.d.travel.trying,/^W: walking to the destination/);
+  assert.equal(f.calls.some(c=>c.action==='stairs'),false);assert.equal(f.d.travel.target.id,'boss');
+ }],
+]);
+

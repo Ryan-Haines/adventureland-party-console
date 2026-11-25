@@ -1,8 +1,8 @@
 "use client";
-import { GameBox, GameLine } from "./item-card";
+import { ExtrasBox, GameBox, GameLine } from "./item-card";
 import { useState } from "react";
 import { Slider } from "@/components/ui/slider";
-import { monsterAtLevel, monsterCardLines, monsterExtras } from "./item-card-lines";
+import { MONSTER_GROWTH_LEVEL, monsterAtLevel, monsterCardLines, monsterExtras } from "./item-card-lines";
 
 // Extras labels colored by meaning from the game's palette; anything else reads light gray.
 const EXTRA_COLORS: Record<string, string> = {
@@ -46,7 +46,7 @@ export function MonsterCards({ definition, skillName, monsterName, onMonster, on
           onValueChange={(value) => setLevel(typeof value === "number" ? value : value[0] || 1)} />
         <p className="mt-2 text-[11px] text-emerald-100/55">
           {level > 1 ? `Gold and drop chance ×${level}. ` : ""}
-          Monsters level up while nobody fights them. Damage, speed and attack speed stop growing at level 12, and grow
+          Monsters level up while nobody fights them. Damage, speed and attack speed stop growing at level {MONSTER_GROWTH_LEVEL}, and grow
           more slowly on maps whose packs keep spawning.
         </p>
       </fieldset>
@@ -58,11 +58,7 @@ export function MonsterCards({ definition, skillName, monsterName, onMonster, on
           return <GameLine key={line.key} line={line.key} label={line.label} value={value} color={line.color} />;
         })}
       </GameBox>
-      {!!extras.length && (
-        <GameBox label="Monster extras" className="min-w-[14rem] flex-1">
-          {extras.map(([key, label, value]) => <GameLine key={key} line={key} label={label} value={value} color={EXTRA_COLORS[key] || "#C3C3C3"} />)}
-        </GameBox>
-      )}
+      <ExtrasBox label="Monster extras" extras={extras} colors={EXTRA_COLORS} />
     </div>
   );
 }

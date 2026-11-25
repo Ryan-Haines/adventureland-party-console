@@ -1,0 +1,497 @@
+// The plays of e2e/live-october-events.spec.ts, one exported function per old test. Every old spec
+// this file cites is at 21fe30a2b. The W30, W31 and W38-W40 windows run them (test-windows DESIGN.md 2.2).
+import {test,expect} from './live-fixtures';
+import {holdHalloweenSeason} from './game/hunt-events';
+import {cipherIngredients,trickOrTreatRoute} from '../runtime/events/october';
+import {supportedEvents} from '../runtime/events/rules';
+import {killNativeCharacter} from './hunt-interruption-helpers';
+import {prepareHunt,start} from './game/hunt-lifecycle';
+import type {Page, TestInfo} from '@playwright/test';
+import type {LiveGame} from './live-fixtures';
+
+
+export async function publishedCipherStock(live:import('./live-fixtures').LiveGame,name:string){
+  const state=await live.state(),report=state.characters[name];
+  const cipher=report?.eventSchedules?.find((event:{id:string})=>event.id==='witchcipher')?.cipher;
+  return Object.fromEntries(cipherIngredients.map(id=>[id,cipher?.runtime?.stock?.[id]??0]));
+}
+
+export async function doorTourPlay({live}: {live: LiveGame}, info: TestInfo){
+  
+  const name='E2EWarrior';
+  await live.post('/formation',{leader:name});
+  await live.post('/formation',{character:'E2EPriest',follow:true});
+  await live.post('/formation',{character:'E2EMerchant',eventSelections:[]});
+  await holdHalloweenSeason(live);
+  const initial=await live.admin(`output=(()=>{const p=get_player('${name}');p.p.trickortreat=null;p.trickortreat=trick_or_treat_status(p);resend(p,'u+cid');broadcast_e();return {at:Date.now(),map:p.map,x:p.x,y:p.y,doors:G.events.trickortreat.doors}})()`);
+  await info.attach('october-door-initial-native',{body:JSON.stringify(initial),contentType:'application/json'});
+  await expect.poll(async()=>{const s=await live.state(),c=s.characters[name];return c?.map===initial.map&&Math.hypot(c.x-initial.x,c.y-initial.y)<5;},{timeout:30_000}).toBe(true);
+  const checkpoint=await live.post('/checkpoint',{});
+  expect(checkpoint.ok).toBe(true);
+  expect(checkpoint.partyLocation.map).toBe(initial.map);
+  await live.post('/formation',{character:name,eventSelections:['trickortreat']});
+  await expect.poll(async()=>Promise.all([name,'E2EPriest'].map(n=>live.clients[n].run('character.trickortreat?.doors?.length??0'))),{timeout:300_000}).toEqual([7,7]);
+  const receipts=await live.clients[name].run(`get('party-october-${name}')`);
+  expect(receipts.doors).toEqual([...trickOrTreatRoute]);
+  const followerReceipts=await live.clients.E2EPriest.run("get('party-october-E2EPriest')");
+  expect(followerReceipts.doors).toEqual([...trickOrTreatRoute]);
+  const returnSamples:any[]=[];
+  const observeReturn=async()=>{
+    const s=await live.state();
+    returnSamples.push({at:Date.now(),recovery:s.eventReturn,convoy:s.activeConvoy,
+      characters:[name,'E2EPriest'].map(n=>({name:n,map:s.characters[n]?.map,x:s.characters[n]?.x,y:s.characters[n]?.y,
+        seenAt:s.characters[n]?.seenAt,joinedEvent:s.characters[n]?.joinedEvent,convoyNavigation:s.characters[n]?.convoyNavigation}))});
+    return s;
+  };
+  try{
+    // Exiting the final door's map and returning to the saved checkpoint are
+    // separate native journeys. Require the exit milestone before timing return.
+    await expect.poll(async()=>{
+      const s=await observeReturn();
+      const members=[name,'E2EPriest'].map(n=>s.characters[n]);
+      return members.every(c=>c&&c.joinedEvent==null)&&
+        (s.eventReturn?s.eventReturn.phase==='checkpoint'&&s.eventReturn.pending.length===0:
+          !s.activeConvoy&&members.every(c=>c.map===checkpoint.partyLocation.map&&Math.hypot(c.x-checkpoint.partyLocation.x,c.y-checkpoint.partyLocation.y)<100));
+    },{timeout:120_000,message:'Both door-tour participants must finish the event exit'}).toBe(true);
+    await expect.poll(async()=>{const s=await observeReturn();return !s.eventSessions?.[name]&&!s.eventReturn&&s.characters[name]?.joinedEvent==null;},
+      {timeout:120_000,message:'The dispatched checkpoint return must finish and clear recovery'}).toBe(true);
+  }finally{
+    await info.attach('october-door-return-milestones',{body:JSON.stringify(returnSamples),contentType:'application/json'});
+  }
+  await expect.poll(async()=>{const actual=await live.clients[name].snapshot();return actual.map===checkpoint.partyLocation.map&&Math.hypot(actual.x-checkpoint.partyLocation.x,actual.y-checkpoint.partyLocation.y)<100;},{timeout:120_000}).toBe(true);
+  const final=await live.clients[name].snapshot();
+  await live.restartCoordinator();
+  const after=await live.admin(`output=(()=>{const p=get_player('${name}');return {doors:p.p.trickortreat,items:p.items,map:p.map,x:p.x,y:p.y}})()`);
+  expect(after.doors.doors).toHaveLength(7);
+  await info.attach('october-native-door-tour',{body:JSON.stringify({initial,receipts,followerReceipts,final,after,state:await live.state()}),contentType:'application/json'});
+}
+
+export async function cipherMerchantPlay({live,page}: {live: LiveGame; page: Page}, info: TestInfo){
+  
+  const merchant='E2EMerchant',secret=Array(5).fill('verdantspore');
+  for(const name of ['E2EWarrior','E2EPriest',merchant])await live.post('/formation',{character:name,eventSelections:[],follow:false});
+  const seed=await live.admin(`output=(()=>{
+    const p=get_player('${merchant}');
+    const names=${JSON.stringify(cipherIngredients)};
+    for(let i=0;i<names.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:names[i],q:25};}
+    cache_player_items(p);calculate_player_stats(p);resend(p,'reopen+cid');
+    witch_cipher_start({id:'e2e-october-cipher'});
+    // The merchant walks to the Witch for a mix it cannot brew yet only from gather_end, so the
+    // round's gathering ends at the seed for the clue count to decide at the Witch.
+    witch_cipher.gather_end=Date.now();
+    witch_cipher.secret=${JSON.stringify(secret)};
+    witch_cipher.history=Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'frostscale':name),right:4}));
+    witch_cipher_publish();
+    return {board:witch_cipher_public(),items:p.items,position:{map:p.map,x:p.x,y:p.y}};
+  })()`);
+  await info.attach('october-cipher-declared-initial-board',{body:JSON.stringify(seed),contentType:'application/json'});
+  await expect.poll(async()=>{const s=await live.state();return s.characters[merchant]?.eventSchedules?.find((entry:{id:string})=>entry.id==='witchcipher')?.cipher?.board?.id;},{timeout:30_000}).toBe(seed.board.id);
+  // A plan the journal keeps from an earlier round stays there unread: october-runtime.ts planFor
+  // matches a saved plan on its round id (W39's priority round leaves one), so the check reads
+  // this board's plan.
+  expect(await live.clients[merchant].run(`(g=>g?.round===${JSON.stringify(seed.board.id)}?g:null)(get('party-october-${merchant}')?.gathering)`)).toBeNull();
+  await live.post('/formation',{character:merchant,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:0,minClues:6,automatic:true}}}});
+  await expect.poll(async()=>{const s=await live.state();return s.eventSchedules?.find((entry:{id:string})=>entry.id==='witchcipher')?.cipher?.runtime?.phase;},{timeout:90_000}).toBe('waiting for clues');
+  expect(await live.clients[merchant].run('character.witchcipher?.mixes??0')).toBe(0);
+  await live.post('/formation',{character:merchant,eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:0,minClues:5,automatic:true}}}});
+  await expect.poll(async()=>await live.clients[merchant].run("character.witchcipher?.mixes??0"),{timeout:180_000}).toBe(1);
+  const native=await live.admin(`output=(()=>{const p=get_player('${merchant}');return {day:p.witchcipher,board:witch_cipher_public(),items:p.items,position:{map:p.map,x:p.x,y:p.y}}})()`);
+  expect(native.board.cracks).toBe(1);expect(native.board.cracked.recipe).toEqual(secret);
+  // The mix spends the secret's five verdantspore. final-gate-closing7's merchant held an earlier
+  // round's single verdantspore in cell 2 and stacked cell 20 into it, so the bag's total is the read.
+  const held=(items:any[])=>items.reduce((n,x)=>n+(x?.name==='verdantspore'?Number(x.q??1):0),0);
+  expect(held(native.items)).toBe(held(seed.items)-secret.length);
+  await expect.poll(async()=>await live.clients[merchant].run(`get('party-october-${merchant}')?.last?.result?.cracked`),{timeout:30_000}).toBe(true);
+  await live.restartCoordinator();
+  const ledger=await live.clients[merchant].run(`get('party-october-${merchant}')`);
+  expect(ledger.pending).toBeUndefined();expect(ledger.last.result.mixes_left).toBe(4);
+  expect(await live.clients[merchant].run('character.witchcipher.mixes')).toBe(1);
+  await expect.poll(async()=>{const s=await live.state(true);return s.bestiaryCatalog?.some((entry:{id:string})=>entry.id==='horseman')&&s.merchantCatalog?.allItems?.some((entry:{id:string})=>entry.id==='witchparcel')&&s.skillCatalog?.some((entry:{id:string})=>entry.id==='conditions');},{timeout:90_000}).toBe(true);
+  const catalogs=await live.state(true);
+  for(const id of ['horseman','jackowalker','zombie','ghoul','gargoyle'])expect(catalogs.bestiaryCatalog.some((entry:{id:string})=>entry.id===id)).toBe(true);
+  for(const id of ['witchparcel','horsemanpumpkin',...cipherIngredients])expect(catalogs.merchantCatalog.allItems.some((entry:{id:string})=>entry.id===id)).toBe(true);
+  const conditions=catalogs.skillCatalog.find((group:{id:string})=>group.id==='conditions');
+  const nativeCatalog=await live.clients[merchant].run('({conditions:Object.keys(G.conditions),skills:Object.keys(G.skills),monsters:Object.keys(G.monsters),items:Object.keys(G.items)})');
+  expect(conditions.skills.map((entry:{id:string})=>entry.id).sort()).toEqual(nativeCatalog.conditions.sort());
+  expect([...new Set(catalogs.skillCatalog.filter((group:{id:string})=>group.id!=="conditions").flatMap((group:{skills:{id:string}[]})=>group.skills.map(entry=>entry.id)))].sort()).toEqual(nativeCatalog.skills.sort());
+  expect(catalogs.bestiaryCatalog.map((entry:{id:string})=>entry.id).sort()).toEqual(nativeCatalog.monsters.sort());
+  expect(catalogs.merchantCatalog.allItems.map((entry:{id:string})=>entry.id).sort()).toEqual(nativeCatalog.items.sort());
+  await info.attach('october-native-cipher-result',{body:JSON.stringify({seed,native,ledger,state:await live.state()}),contentType:'application/json'});
+  await live.post('/formation',{character:merchant,eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:0,minClues:5,automatic:false}}}});
+  // The leader owns party Cipher settings; the merchant popup must submit to
+  // that same policy instead of saving an ineffective merchant-only request.
+  // One request moves the lead and sets the new leader's Cipher settings, so the merchant never
+  // plays under the new leader's default settings (automatic, one clue).
+  await live.post('/formation',{leader:'E2EWarrior',character:'E2EWarrior',eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:0,minClues:5,automatic:false}}}});
+  // The merchant takes the settings from the reply to its next report and applies them before the
+  // report after that. Until then it still brews automatically at five clues, so the seed below
+  // waits for that second report: an automatic brew would crack the seeded recipe and empty the board.
+  const posted=Date.now();let replied=0;
+  await expect.poll(async()=>{const seen=Number((await live.state()).characters[merchant]?.seenAt)||0;if(!replied&&seen>posted)replied=seen;return replied>0&&seen>replied;},{timeout:30_000}).toBe(true);
+  // With automatic off and no manual request its Cipher activity ends and its report leaves the event.
+  await expect.poll(async()=>(await live.state()).characters[merchant]?.joinedEvent??null,{timeout:30_000}).toBeNull();
+  const manualSeed=await live.admin(`output=(()=>{witch_cipher.secret=Array(5).fill('frostscale');witch_cipher.history=Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'embercoal':name),right:4}));witch_cipher_publish();return witch_cipher_public();})()`);
+  // The dashboard fixture blocks external requests. Serve the actual pinned
+  // native image bytes from this test's game host, just like the Cave journey.
+  await page.route('https://adventure.land/images/**',async route=>{
+    const response=await page.request.get(new URL(live.clients[merchant].page.url()).origin+new URL(route.request().url()).pathname);
+    expect(response.ok()).toBe(true);
+    await route.fulfill({response,headers:{...response.headers(),'access-control-allow-origin':'*'}});
+  });
+  await page.goto(live.url);
+  const card=page.locator('article').filter({has:page.getByRole('heading',{name:merchant,exact:true})});
+  await card.getByRole('button',{name:/^Events \(/}).click();
+  await expect(page.getByText('Realm schedule confirmed',{exact:true}).first()).toBeVisible();
+  await page.getByRole('button',{name:"Witch's Cipher settings",exact:true}).click();
+  const board=page.getByRole('region',{name:'Shared realm board',exact:true});
+  await expect(board.getByText('5 clues · 1 possible recipes · recipe 2',{exact:true})).toBeVisible();
+  const spriteUrls=(await live.state()).eventSchedules.find((entry:{id:string})=>entry.id==='witchcipher').cipher.ingredients.map((entry:{sprite:{url:string}})=>entry.sprite.url);
+  const decoded=await page.evaluate(async(urls:string[])=>Promise.all([...new Set(urls)].map(async url=>{const image=new Image();image.src=url;await image.decode();return {url,width:image.naturalWidth,height:image.naturalHeight};})),spriteUrls);
+  expect(decoded.every(image=>image.width>100&&image.height>100)).toBe(true);
+  await board.scrollIntoViewIfNeeded();
+  await info.attach('october-native-cipher-board',{body:await page.screenshot({animations:'disabled'}),contentType:'image/png'});
+  // A crack since the manual seed empties the board, and a copied clue then has no mix.
+  await live.admin('output=(()=>{if(!witch_cipher.history.length)throw Error("The manual seed board was cracked before its sixth clue");witch_cipher.history.push({...witch_cipher.history[0]});witch_cipher_publish();return witch_cipher_public();})()');
+  await expect(board.getByText('6 clues · 1 possible recipes · recipe 2',{exact:true})).toBeVisible({timeout:30_000});
+  const sources=page.getByRole('combobox',{name:'verdantspore farming monster',exact:true});
+  await sources.click();
+  await expect(page.getByRole('option',{name:/Goo.*%/i})).toBeVisible();
+  await info.attach('october-ingredient-source-sprites-and-rates',{body:await page.screenshot({animations:'disabled'}),contentType:'image/png'});
+  await page.keyboard.press('Escape');
+  const settings=page.getByRole('region',{name:"Witch's Cipher settings",exact:true});
+  await settings.getByRole('spinbutton',{name:'Minimum clues',exact:true}).fill('7');
+  for(const ingredient of ['Verdant Spore','Frost Scale','Ember Coal','Gloom Feather']){
+    await settings.getByRole('button',{name:`View ${ingredient} details`,exact:true}).first().click();
+    const details=page.getByRole('dialog',{name:ingredient,exact:true});
+    await expect(details).toBeVisible();
+    await expect(details.getByText('Buy from NPC',{exact:true})).toBeVisible();
+    await expect(details.getByRole('heading',{name:'Monster drops',exact:true})).toBeVisible();
+    if(ingredient==='Verdant Spore')await info.attach('october-clickable-ingredient-details',{body:await page.screenshot({animations:'disabled'}),contentType:'image/png'});
+    await details.getByRole('button',{name:'Close',exact:true}).click();
+    await expect(settings.getByRole('spinbutton',{name:'Minimum clues',exact:true})).toHaveValue('7');
+  }
+  await page.getByRole('button',{name:'Manually enter solution',exact:true}).click();
+  const manual=page.getByRole('dialog',{name:'Enter a five-ingredient solution',exact:true});
+  for(let i=1;i<=5;i++)await manual.getByRole('combobox',{name:`Ingredient ${i}`,exact:true}).selectOption('frostscale');
+  await expect(manual.getByText('Fits every known clue.',{exact:true})).toBeVisible();
+  await info.attach('october-manual-solution-preview',{body:await page.screenshot({animations:'disabled'}),contentType:'image/png'});
+  await manual.getByRole('button',{name:'Send solution to merchant',exact:true}).click();
+  await expect.poll(async()=>await live.clients[merchant].run('character.witchcipher.mixes'),{timeout:90_000}).toBe(2);
+  await expect.poll(async()=>await live.clients[merchant].run(`get('party-october-${merchant}')?.last?.result?.mix`),{timeout:30_000}).toEqual(Array(5).fill('frostscale'));
+  const manualReceipt=await live.clients[merchant].run(`get('party-october-${merchant}')`);
+  await live.restartCoordinator();
+  expect(await live.clients[merchant].run('character.witchcipher.mixes')).toBe(2);
+  await info.attach('october-manual-native-result',{body:JSON.stringify({manualSeed,manualReceipt,state:await live.state()}),contentType:'application/json'});
+}
+
+export async function horsemanWalkPlay({live}: {live: LiveGame}, info: TestInfo){
+  
+  const name='E2EWarrior';
+  await live.post('/formation',{leader:name});
+  await live.post('/formation',{character:'E2EPriest',follow:true});
+  live.undo('the declared Horseman calendar entry',()=>live.admin('output=(()=>{const c=globalThis.__e2eHorsemanCalendar;if(c){broadcast_e=c.original;delete globalThis.__e2eHorsemanCalendar;broadcast_e();}return true;})()'));
+  const seed=await live.admin(`output=(()=>{
+    // The pinned server's Halloween season ends on 2026-11-03 (design/event_flags.js), after which its
+    // calendar lists no Horseman. The row declares one scheduled occurrence at the server_info
+    // boundary, so the published lineup does not depend on the run's date.
+    const occurrence={id:'e2e-horseman-calendar',event:'horseman',at:Date.now()+3600000,status:'scheduled'};
+    globalThis.__e2eHorsemanCalendar??={original:broadcast_e,occurrence};
+    broadcast_e=function(dontSend){if(dontSend)return;const schedule=E.schedule||{};
+      broadcast('server_info',{...E,schedule:{...schedule,events:[...(schedule.events||[]).filter(entry=>entry.event!=='horseman'),occurrence]}});};
+    globalThis.__e2eHorsemanWalkCatalog=G.monsters.horseman;
+    G.monsters.horseman={...G.monsters.horseman,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true,spawns:[]};
+    const m=new_monster('halloween',{type:'horseman',count:1,boundary:[-405,-1640,-405,-1640]},{temp:1});
+    E.horseman={live:true,id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();
+    return {id:String(m.id),map:m.map,x:m.x,y:m.y,occurrence};
+  })()`);
+  // The walk's catalog has no add spawns; the round puts the game's back, so a later round's
+  // Horseman carries its Jack-o-Walker waves (W30a: the waves round read 0 adds).
+  try{
+  await live.post('/formation',{character:name,eventSelections:['horseman']});
+  let lineup:any;
+  await expect.poll(async()=>{lineup=await live.clients[name].run('server.status.schedule');
+    return [...lineup.events,...lineup.repeats].some((entry:{id?:string})=>entry.id===seed.occurrence.id);},{timeout:15_000}).toBe(true);
+  const horseman=[...lineup.events,...lineup.repeats].filter((entry:{event:string;status:string})=>entry.event==='horseman'&&entry.status==='scheduled').map((entry:{at:number})=>entry.at);
+  expect(horseman).toEqual([seed.occurrence.at]);
+  await expect.poll(async()=>{const s=await live.state();return s.eventSchedules?.find((entry:{id:string})=>entry.id==='horseman')?.occurrences?.map((entry:{at:number})=>entry.at);},{timeout:30_000}).toEqual(horseman);
+  await expect.poll(async()=>{const hits=await live.clients[name].events();return ['E2EWarrior','E2EPriest'].every(name=>hits.some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.id&&e.data?.hid===name&&e.data?.damage>0));},{timeout:180_000}).toBe(true);
+  const position=await live.clients[name].snapshot();
+  expect(position.map).toBe('halloween');expect(Math.hypot(position.x-seed.x,position.y-seed.y)).toBeLessThan(250);
+  await info.attach('october-native-horseman-combat',{body:JSON.stringify({seed,position,lineup,events:await live.clients[name].events(),state:await live.state()}),contentType:'application/json'});
+  }finally{await live.admin('output=(()=>{const c=globalThis.__e2eHorsemanWalkCatalog;if(c)G.monsters.horseman=c;delete globalThis.__e2eHorsemanWalkCatalog;return true;})()');}
+}
+
+export async function horsemanWavesPlay({live}: {live: LiveGame}, info: TestInfo){
+    
+    const names=['E2EWarrior','E2EPriest'];
+    await live.post('/formation',{leader:names[0]});
+    await live.post('/formation',{character:names[1],follow:true});
+    const seed=await live.admin(`output=(()=>{
+      const dps=${JSON.stringify(names)}.reduce((sum,name)=>{const p=get_player(name);return sum+p.attack*p.frequency;},0);
+      const original={horseman:G.monsters.horseman,jackowalker:G.monsters.jackowalker};
+      global.e2eHorsemanPriority={original,spawner:new_monster,adds:[]};
+      G.monsters.horseman={...original.horseman,hp:Math.ceil(dps*45),attack:1,speed:0,charge:0,range:1,armor:0,resistance:0,phresistance:0};
+      G.monsters.jackowalker={...original.jackowalker,hp:Math.ceil(dps*6),attack:1,speed:0,charge:0,range:1,armor:0,resistance:0};
+      // The W30a fixture's peaceful declaration stops a new monster's pursuit, and the game removes a
+      // spawned add whose pursuit stops (server.js stop_pursuit, monster.spawn), so each wave add
+      // (its definition names the boss as master, server.js "HP threshold spawns") comes from the
+      // game's own constructor.
+      new_monster=function(...args){const own=args[1]?.master&&globalThis.__e2eInitialPeacefulAmbient?globalThis.__e2eInitialPeacefulAmbient.construct:e2eHorsemanPriority.spawner;
+        const m=own.apply(this,args);if(m?.type==='jackowalker'&&m.master){e2eHorsemanPriority.adds.push({id:String(m.id),master:String(m.master),at:Date.now()});}return m;};
+      const m=new_monster('halloween',{type:'horseman',count:1,boundary:[-405,-1640,-405,-1640]},{temp:1});
+      // A window whose fixture makes the Halloween packs peaceful (live-fixtures.ts
+      // initialPeacefulAmbientMaps, W30a) declares every new monster there peaceful too; the boss's
+      // threshold waves spawn only while it has a target (server.js "HP threshold spawns"), so the
+      // boss keeps its catalog aggro and peace, as the game spawns it.
+      m.peaceful=!!G.monsters.horseman.peaceful;m.aggro=G.monsters.horseman.aggro;
+      E.horseman={live:true,id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};broadcast_e();
+      return {id:String(m.id),spawns:original.horseman.spawns,dps,bossHp:m.hp,addHp:G.monsters.jackowalker.hp};
+    })()`);
+    const observations:any[]=[];
+    const sample=()=>live.admin(`output=(()=>{const s=e2eHorsemanPriority,monsters=instances.halloween.monsters,boss=monsters[${JSON.stringify(seed.id)}];return {at:Date.now(),boss:boss?{hp:boss.hp,max_hp:boss.max_hp}:null,adds:s.adds.map(a=>({...a,alive:!!monsters[a.id]&&!monsters[a.id].dead&&monsters[a.id].hp>0}))};})()`);
+    try{
+      await live.post('/formation',{character:names[0],eventSelections:['horseman']});
+      await expect.poll(async()=>{const events=await live.clients[names[0]].events();return names.every(name=>events.some((e:any)=>e.event==='hit'&&e.data.hid===name&&String(e.data.id)===seed.id&&e.data.damage>0));},{timeout:90_000}).toBe(true);
+      let total=0;
+      for(const spawn of seed.spawns.filter((entry:any)=>entry[1]==='jackowalker')){
+        const start=total;total+=spawn[2];
+        await expect.poll(async()=>{const s=await sample();observations.push(s);return s.adds.filter((a:any)=>a.master===seed.id).length;},{timeout:180_000}).toBe(total);
+        const wave=(await sample()).adds.filter((a:any)=>a.master===seed.id).slice(start,total);
+        expect(wave).toHaveLength(4);
+        await expect.poll(async()=>{const s=await live.state();return names.every(name=>wave.some((a:any)=>a.id===String(s.characters[name]?.target?.id)));},{timeout:30_000,message:'Both fighters must leave Horseman for a live Jack-o-Walker'}).toBe(true);
+        await expect.poll(async()=>{const s=await sample();observations.push(s);expect(s.boss,'Boss must survive while the party clears its wave').not.toBeNull();return s.adds.filter((a:any)=>wave.some((w:any)=>w.id===a.id)&&a.alive).length;},{timeout:180_000}).toBe(0);
+        const cleared=await sample();
+        await expect.poll(async()=>{const events=await live.clients[names[0]].events();return names.every(name=>events.some((e:any)=>e.event==='hit'&&e.at>=cleared.at&&e.data.hid===name&&String(e.data.id)===seed.id&&e.data.damage>0));},{timeout:45_000,message:'Both fighters must resume actual boss damage after clearing the wave'}).toBe(true);
+        observations.push({wave,cleared,state:await live.state()});
+      }
+      expect(total).toBe(8);
+    }finally{
+      await info.attach('horseman-native-add-priority',{body:JSON.stringify({seed,observations,native:await sample(),events:await live.clients[names[0]].events(),state:await live.state()}),contentType:'application/json'});
+      await live.admin('output=(()=>{const s=e2eHorsemanPriority;new_monster=s.spawner;Object.assign(G.monsters,s.original);return true;})()');
+    }
+  }
+
+export async function gargoylePlay({live}: {live: LiveGame}, info: TestInfo){
+    
+    const name='E2EWarrior';
+    await live.post('/formation',{leader:name});
+    await live.post('/formation',{character:'E2EPriest',follow:true});
+    const seed=await live.admin(`output=(()=>{
+      // This exclusion journey needs exactly its two declared targets. Ambient
+      // Gargoyles otherwise keep Priest healing against unrelated attackers,
+      // preventing the required offensive hits on the declared Zombie.
+      const result={removed:[]};for(const m of Object.values(instances.spookytown.monsters)){
+        result.removed.push(String(m.id));remove_monster(m,{method:'disappear',nospawn:true});
+      }
+      globalThis.__e2eGraveyardCatalog={zombie:G.monsters.zombie,gargoyle:G.monsters.gargoyle};
+      for(const [type,x] of [['zombie',235],['gargoyle',275]]){
+        G.monsters[type]={...G.monsters[type],hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
+        const m=new_monster('spookytown',{type,count:1,boundary:[x,-1440,x,-1440]},{temp:1});result[type]=String(m.id);
+      }
+      E.graveyard={live:true,start:Date.now(),map:'spookytown',x:255,y:-1545,wave:1,left:2};broadcast_e();return result;
+    })()`);
+    await info.attach('declared-graveyard-exclusion-targets',{body:JSON.stringify(seed),contentType:'application/json'});
+    // The play puts back what it planted, so the next window starts with no Graveyard live, no
+    // planted target and the catalog's own zombie and gargoyle (W31b's run 1 left all three).
+    try{
+    await live.post('/formation',{character:name,eventSelections:['graveyard'],eventLimits:{event:'graveyard',limits:{deathLimit:null,timeLimitMinutes:null,monsters:['zombie','ghoul']}}});
+    await expect.poll(async()=>{const hits=await live.clients[name].events();return ['E2EWarrior','E2EPriest'].every(name=>hits.filter((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.zombie&&e.data?.hid===name&&e.data?.damage>0).length>=3);},{timeout:90_000}).toBe(true);
+    const excluded=await live.admin(`output=(()=>{const m=instances.spookytown.monsters[${JSON.stringify(seed.gargoyle)}];return {hp:m.hp,max_hp:m.max_hp,target:m.target}})()`);
+    expect(excluded.hp).toBe(excluded.max_hp);expect(excluded.target||null).toBeNull();
+    expect((await live.clients[name].events()).some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.gargoyle)).toBe(false);
+    await live.post('/formation',{character:name,eventLimits:{event:'graveyard',limits:{deathLimit:null,timeLimitMinutes:null,monsters:['gargoyle']}}});
+    await live.admin(`output=(()=>{const m=instances.spookytown.monsters[${JSON.stringify(seed.zombie)}];if(m)remove_monster(m,{silent:true});return true;})()`);
+    await expect.poll(async()=>{const hits=await live.clients[name].events();return ['E2EWarrior','E2EPriest'].every(name=>hits.some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.gargoyle&&e.data?.hid===name&&e.data?.damage>0));},{timeout:90_000}).toBe(true);
+    await info.attach('october-native-graveyard-exclusion',{body:JSON.stringify({seed,excluded,events:await live.clients[name].events(),state:await live.state()}),contentType:'application/json'});
+    }finally{
+      await live.post('/formation',{character:name,eventSelections:[]});
+      await live.admin(`output=(()=>{for(const id of [${JSON.stringify(seed.zombie)},${JSON.stringify(seed.gargoyle)}]){const m=instances.spookytown.monsters[id];if(m)remove_monster(m,{silent:true});}
+        Object.assign(G.monsters,globalThis.__e2eGraveyardCatalog);delete globalThis.__e2eGraveyardCatalog;delete E.graveyard;broadcast_e();return true;})()`);
+    }
+  }
+
+// The Cipher plays' undo: the arcticbee game data read before their edit goes back, and the
+// gathering plant goes with its monster_c count (W08b-unreachable-plant.spec.ts `replant`). The test
+// process holds both, since the window's eventScrub deletes a play's __e2e server globals before the
+// window undo runs. It reads the game data before the play edits it, and the play names its plant once
+// planted.
+async function arcticbeeUndo(live: LiveGame) {
+  const original = await live.admin('output=G.monsters.arcticbee');
+  let plant: string | null = null;
+  live.undo('the arcticbee catalog edit and the gathering plant', () => live.admin(`output=(()=>{G.monsters.arcticbee=${JSON.stringify(original)};
+    const id=${JSON.stringify(plant)},m=id&&Object.values(instances).map(i=>i.monsters[id]).find(Boolean);if(m)remove_monster(m,{method:'disappear'});return true;})()`));
+  return (id: string) => { plant = id; };
+}
+
+export async function cipherGatherPlay({live}: {live: LiveGame}, info: TestInfo){
+    
+    const name='E2EWarrior',priest='E2EPriest',merchant='E2EMerchant',fighters=[name,priest];
+    const seeded=Object.fromEntries(cipherIngredients.map(id=>[id,id==='frostscale'?1:3]));
+    await live.post('/formation',{leader:name});
+    await live.post('/formation',{character:priest,follow:true});
+    // The plant and the catalog edit outlive the play: the final gate's next window on W40's stack
+    // (W41a) failed its reset proof on the planted arcticbee.
+    const planted=await arcticbeeUndo(live);
+    const seed=await live.admin(`output=(()=>{
+      const p=get_player('${name}');
+      const ingredients=${JSON.stringify(cipherIngredients)},seeded=${JSON.stringify(seeded)};
+      for(let i=0;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:ingredients[i],q:seeded[ingredients[i]]};}
+      cache_player_items(p);resend(p,'reopen+cid');
+      G.monsters.arcticbee={...G.monsters.arcticbee,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
+      const m=new_monster(p.map,{type:'arcticbee',count:1,boundary:[p.x,p.y,p.x,p.y]},{temp:1});
+      witch_cipher_start({id:'e2e-october-gathering'});
+      // Declare a shorter native drop window up front; retain six minutes of
+      // actual gathering and exercise the same published cutoff without a sleep.
+      witch_cipher.gather_end=Date.now()+7*60_000;witch_cipher_publish();
+      return {id:String(m.id),map:p.map,x:p.x,y:p.y,board:witch_cipher_public()};
+    })()`);
+    planted(String((seed as {id: string}).id));
+    const cipher={gatherMinutes:20,minClues:99,automatic:true};
+    await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher}}});
+    // Rule 1: both fighters attend and fight the gathering monster.
+    await expect.poll(async()=>{const s=await live.state();return fighters.every(n=>s.characters[n]?.joinedEvent==='witchcipher');},{timeout:60_000}).toBe(true);
+    await expect.poll(async()=>{const hits=await live.clients[name].events();return fighters.every(n=>hits.some((e:any)=>e.event==='hit'&&String(e.data?.id)===seed.id&&e.data?.hid===n&&e.data?.damage>0));},{timeout:60_000}).toBe(true);
+    // Rule 4: the merchant affords no mix, so it does not wait at the Witch this far before its lead.
+    expect((await live.state()).characters[merchant]?.joinedEvent,'the merchant does not gather').not.toBe('witchcipher');
+    const plans=await Promise.all([...fighters,merchant].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
+    expect(plans.every(plan=>plan?.mode==='brewing'&&plan?.owner===name)).toBe(true);
+    await live.restartCoordinator();
+    // A settings change keeps the plan; frostscale's pick stays the arcticbee, since a brewing plan's
+    // fighter gathers the scarcest ingredient's pick.
+    await live.post('/formation',{character:name,eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{...cipher,gatherMonsters:['goo','arcticbee','plantoid','snake']}}}});
+    // Rule 3: the merchant reaches the Witch by gather_end.
+    let merchantArrivedAt=0;
+    await expect.poll(async()=>{
+      const at=await live.admin(`output=(()=>{const p=get_player('${merchant}'),w=(G.maps.halloween.npcs||[]).find(n=>n.id==='witch');
+        return p&&w&&p.map==='halloween'&&Math.hypot(p.x-w.position[0],p.y-w.position[1]-30)<=60?Date.now():0;})()`);
+      if(at&&!merchantArrivedAt)merchantArrivedAt=at;return merchantArrivedAt>0;
+    },{timeout:480_000}).toBe(true);
+    expect(merchantArrivedAt,'the merchant arrives by gather_end').toBeLessThanOrEqual(seed.board.gather_end);
+    await expect.poll(()=>live.admin('output=Date.now()'),{timeout:120_000}).toBeGreaterThan(seed.board.gather_end);
+    const retained=await Promise.all([...fighters,merchant].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
+    expect(retained).toEqual(plans);
+    // Rule 1: the fighters kept gathering into the last minute before gather_end.
+    const late=(await live.clients[name].events()).filter((entry:any)=>entry.event==='hit'&&String(entry.data?.id)===seed.id&&entry.data?.hid===name&&entry.data?.damage>0&&entry.at>=seed.board.gather_end-60_000);
+    expect(late.length).toBeGreaterThan(0);
+    // Rule 2: from gather_end each fighter hands every ingredient to the merchant at the Witch.
+    const held=(n:string)=>live.clients[n].run(`Object.fromEntries(${JSON.stringify(cipherIngredients)}.map(name=>[name,character.items.reduce((n,item)=>n+(item?.name===name?(item.q||1):0),0)]))`);
+    await expect.poll(async()=>(await Promise.all(fighters.map(held))).every(stock=>cipherIngredients.every(id=>stock[id]===0)),{timeout:240_000}).toBe(true);
+    const merchantStock=await held(merchant);
+    for(const id of cipherIngredients)expect(merchantStock[id],id).toBeGreaterThanOrEqual(seeded[id]);
+    // Rule 2: a fighter that handed everything over leaves the Witch for its farming.
+    await expect.poll(async()=>{const s=await live.state();return fighters.every(n=>s.characters[n]?.joinedEvent!=='witchcipher');},{timeout:120_000}).toBe(true);
+    expect(await live.clients[merchant].run('character.witchcipher?.mixes??0')).toBe(0);
+    await info.attach('october-native-gathering-and-transfer',{body:JSON.stringify({seed,plans,retained,merchantArrivedAt,merchantStock,merchant:await live.clients[merchant].snapshot(),events:await live.clients[name].events(),state:await live.state()}),contentType:'application/json'});
+  }
+
+export async function cipherHuntPlay({live}: {live: LiveGame}, info: TestInfo){
+    
+    const name='E2EWarrior',priest='E2EPriest';
+    const hunt=await prepareHunt(live,{monster:'armadillo',count:1});await start(live,name,hunt.monster,hunt.location);
+    await expect.poll(async()=>(await live.state()).monsterHunt?.stage,{timeout:120_000}).toBeTruthy();
+    await arcticbeeUndo(live);
+    const seed=await live.admin(`output=(()=>{
+      G.monsters.arcticbee={...G.monsters.arcticbee,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,peaceful:true};
+      witch_cipher_start({id:'e2e-cipher-hunt'});witch_cipher.gather_end=Date.now()+7*60_000;witch_cipher_publish();
+      return {board:witch_cipher_public()};
+    })()`);
+    await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{gatherMinutes:20,minClues:1,automatic:false}}}});
+    await expect.poll(async()=>{const s=await live.state();return [name,priest].every(n=>s.characters[n]?.joinedEvent==='witchcipher');},{timeout:120_000}).toBe(true);
+    const deathAt=Date.now(),death=await killNativeCharacter(live,priest);
+    // The trip goes on: the priest's attendance stays (no limit), and both reach the gathering monster.
+    await expect.poll(async()=>{
+      const s=await live.state();
+      const attendance=s.eventAttendance?.[priest]?.witchcipher;
+      return !!attendance&&!attendance.ignored&&[name,priest].every(n=>s.characters[n]?.joinedEvent==='witchcipher'&&!s.characters[n]?.rip);
+    },{timeout:240_000}).toBe(true);
+    await expect.poll(async()=>{const hits=await live.clients[name].events();return [name,priest].every(n=>hits.some((e:any)=>e.event==='hit'&&e.data?.hid===n&&e.data?.damage>0&&e.at>deathAt));},{timeout:240_000}).toBe(true);
+    const plans=await Promise.all([name,priest].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
+    expect(plans.every(plan=>plan?.mode==='gathering'||plan?.mode==='brewing'),'the Cipher plan stands after the death').toBe(true);
+    await info.attach('october-cipher-hunt-death',{body:JSON.stringify({hunt,seed,death,plans,state:await live.state()}),contentType:'application/json'});
+  }
+
+export async function cipherEarlyBrewPlay({live}: {live: LiveGame}, info: TestInfo){
+    
+    const name='E2EWarrior',merchant='E2EMerchant';
+    await live.post('/formation',{leader:name});
+    await live.post('/formation',{character:'E2EPriest',follow:true});
+    live.undo('the witch_cipher_brew receipt wrap',()=>live.admin('output=(()=>{if(global.e2eCipherBrew){witch_cipher_brew=global.e2eCipherBrew;delete global.e2eCipherBrew;}return true;})()'));
+    live.undo('the Witch loot and calendar collision of the cutoff row',()=>live.admin(`output=(()=>{if('e2eCipherLoot' in global){G.events.witchcipher.loot=global.e2eCipherLoot;delete global.e2eCipherLoot;}
+      const list=event_schedule_state().state().occurrences,at=list.findIndex(o=>o.id==='e2e-ambient-calendar-cipher');if(at>=0)list.splice(at,1);return true;})()`));
+    const seed=await live.admin(`output=(()=>{
+      const p=get_player('${merchant}'),ingredients=${JSON.stringify(cipherIngredients)};
+      for(let i=1;i<ingredients.length;i++){if(p.items[20+i])throw Error('Seed slot occupied');p.items[20+i]={name:ingredients[i],q:25};}
+      cache_player_items(p);resend(p,'reopen+cid');
+      // Guaranteed native ingredient rolls from real goo kills; no fabricated
+      // inventory, action result, or runtime deadline transition after setup.
+      global.e2eCipherLoot??=G.events.witchcipher.loot;G.events.witchcipher.loot=100;
+      witch_cipher_start({id:'e2e-cutoff-complete'});witch_cipher.gather_end=Date.now()+3*60_000;
+      witch_cipher.secret=Array(5).fill('frostscale');
+      witch_cipher.history=Array.from({length:5},(_,i)=>({mix:witch_cipher.secret.map((name,j)=>j===i?'embercoal':name),right:4}));witch_cipher_publish();
+      // Reproduce a realm-calendar collision on every date, not only 06:00 (aac30d45
+      // live-october-events.spec.ts:409-413): the background schedule must not replace this round.
+      // The server's own Cipher occurrences carry no season (its November lineup lists them), and
+      // the Halloween season the pinned server gates on ended on 2026-11-03, so the declared
+      // occurrence carries none either.
+      const collision={id:'e2e-ambient-calendar-cipher',event:'witchcipher',at:Date.now(),status:'scheduled'};
+      event_schedule_state().state().occurrences.push(collision);
+      global.e2eCipherReceipts=[];const original=global.e2eCipherBrew||=witch_cipher_brew;
+      witch_cipher_brew=async function(player,names){const at=Date.now(),result=await original(player,names);e2eCipherReceipts.push({at,player:player.name,mix:names.slice(),result});return result;};
+      return {board:witch_cipher_public(),calendarCollision:collision};
+    })()`);
+    await live.post('/formation',{character:name,eventSelections:['witchcipher'],eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{minClues:5,automatic:true}}}});
+    await expect.poll(()=>live.clients[name].run(`get('party-october-${name}')?.gathering`),{timeout:60_000}).toMatchObject({round:seed.board.id,mode:'gathering',ingredient:'verdantspore',monster:'goo'});
+    // The fighters carry the merchant's Merchant's Luck from the loadout, so the game may hand the
+    // merchant its own copy of a fighter's loot, marked `m` with the finder (one run: one copy at the
+    // priest's first chest). A handover sends the fighter's own item, which carries no `m`.
+    const verdantspore=()=>live.clients[merchant].run("character.items.filter(item=>item?.name==='verdantspore'&&!item.m).reduce((n,item)=>n+(item.q||1),0)");
+    await expect.poll(()=>live.admin('output=e2eCipherReceipts[0]||null'),{timeout:150_000}).toMatchObject({mix:Array(5).fill('frostscale'),result:{success:true,cracked:true}});
+    const before=await live.admin('output={at:Date.now(),receipts:e2eCipherReceipts}');
+    expect(before.receipts[0].at).toBeLessThan(seed.board.gather_end);
+    expect(await verdantspore()).toBe(0);
+    const receipts=await live.admin('output=e2eCipherReceipts');
+    const journal=await live.clients[name].run(`get('party-october-${name}')`);
+    // Explicit calendar coverage still uses the native scheduler and publication; the default
+    // fixture isolates only unrelated automatic starts (e2e/game/bootstrap.cjs).
+    try{
+      await live.admin('globalThis.__e2eAllowScheduledEvents=true;event_schedule_tick(Date.now());output=true');
+      await expect.poll(async()=>{
+        const s=await live.state();return s.eventSchedules.find((event:{id:string})=>event.id==='witchcipher')?.cipher?.board?.id;
+      },{timeout:30_000}).toBe(seed.calendarCollision.id);
+      await info.attach('october-native-cutoff-complete',{body:JSON.stringify({seed,before,receipts,journal,state:await live.state()}),contentType:'application/json'});
+    }finally{await live.admin('globalThis.__e2eAllowScheduledEvents=false;output=true');}
+  }
+
+export async function cipherPriorityPlay({live}: {live: LiveGame}, info: TestInfo){
+  
+  const fighters=['E2EWarrior','E2EPriest'];
+  await live.post('/formation',{leader:fighters[0]});
+  await live.post('/formation',{character:fighters[1],follow:true});
+  const seed=await live.admin(`output=(()=>{
+    G.monsters.mrgreen={...G.monsters.mrgreen,hp:100000000,attack:1,speed:0,charge:0,range:1,aggro:0,rage:0,peaceful:true,spawns:[]};
+    const m=new_monster('halloween',{type:'mrgreen',count:1,boundary:[-495,650,-495,650]},{temp:1});
+    E.mrgreen={live:true,id:String(m.id),map:m.map,x:m.x,y:m.y,hp:m.hp,max_hp:m.max_hp};
+    const p=get_player('E2EWarrior');if(p.items[20])throw Error('Seed slot occupied');p.items[20]={name:'frostscale',q:2};cache_player_items(p);resend(p,'reopen+cid');
+    global.e2eCipherSpawner=new_monster;
+    global.e2eCipherSpiders=new Set(Object.values(instances.main.monsters).filter(m=>m.type==='spider').map(m=>String(m.id)));
+    new_monster=function(...args){const m=e2eCipherSpawner.apply(this,args);if(m?.type==='spider'&&m.map==='main')e2eCipherSpiders.add(String(m.id));return m;};
+    broadcast_e();return {id:String(m.id),spiders:G.maps.main.monsters.filter(s=>s.type==='spider'),spiderIds:Object.values(instances.main.monsters).filter(m=>m.type==='spider').map(m=>String(m.id))};
+  })()`);
+  await live.post('/formation',{character:fighters[0],eventSelections:['mrgreen','witchcipher'],eventPriorities:['witchcipher','mrgreen',...supportedEvents.filter(id=>!['witchcipher','mrgreen'].includes(id))],
+    eventLimits:{event:'witchcipher',limits:{deathLimit:null,timeLimitMinutes:null,cipher:{minClues:0,automatic:true,gatherMonsters:['spider','wolfie','gscorpion','ghost']}}}});
+  const observations:any[]=[];
+  try{
+    await expect.poll(async()=>{const hits=await live.clients[fighters[0]].events();return fighters.every(name=>hits.some((e:any)=>e.event==='hit'&&e.data.hid===name&&String(e.data.id)===seed.id&&e.data.damage>0));},{timeout:150_000}).toBe(true);
+    const board=await live.admin("output=(()=>{witch_cipher_start({id:'e2e-cipher-green-handoff'});return witch_cipher_public();})()");
+    await expect.poll(async()=>{
+      const s=await live.state();observations.push({at:Date.now(),characters:Object.fromEntries(Object.entries(s.characters).map(([n,c]:[string,any])=>[n,{map:c.map,x:c.x,y:c.y,joinedEvent:c.joinedEvent,activeEvent:c.activeEvent,plan:c.eventSchedules?.find((e:any)=>e.id==='witchcipher')?.cipher?.runtime,convoy:c.convoyNavigation}])),convoy:s.activeConvoy});
+      return fighters.every(name=>s.characters[name]?.joinedEvent==='witchcipher');
+    },{timeout:90_000}).toBe(true);
+    await expect.poll(async()=>{const [hits,s,spiderIds]=await Promise.all([live.clients[fighters[0]].events(),live.state(),live.admin('output=[...e2eCipherSpiders]')]);observations.push({at:Date.now(),spiderIds,characters:Object.fromEntries(fighters.map(n=>[n,{map:s.characters[n]?.map,x:s.characters[n]?.x,y:s.characters[n]?.y,target:s.characters[n]?.target,sighting:s.characters[n]?.eventCombatSighting,movement:s.characters[n]?.movement?.reason}])),convoy:s.activeConvoy});return fighters.every(name=>s.characters[name]?.map==='main'&&hits.some((e:any)=>e.event==='hit'&&e.at>=board.start&&e.data.hid===name&&e.data.damage>0&&spiderIds.includes(String(e.data.id))));},{timeout:240_000}).toBe(true);
+    const plans=await Promise.all([...fighters,'E2EMerchant'].map(n=>live.clients[n].run(`get('party-october-${n}')?.gathering`)));
+    for(const plan of plans)expect(plan).toMatchObject({round:board.id,mode:'gathering',ingredient:'verdantspore',monster:'spider',owner:fighters[0]});
+  }finally{
+    await info.attach('cipher-green-handoff-observations',{body:JSON.stringify({seed,observations,state:await live.state(),events:await live.clients[fighters[0]].events(),journals:await Promise.all([...fighters,'E2EMerchant'].map(n=>live.clients[n].run(`get('party-october-${n}')`)))}),contentType:'application/json'});
+    await live.admin('new_monster=e2eCipherSpawner;output=true');
+  }
+}

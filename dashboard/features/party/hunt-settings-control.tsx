@@ -1,10 +1,54 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { BlacklistThresholdRow } from './blacklist-threshold-row';
 import {
   defaultHuntSettings,
+  validHuntSettings,
   type HuntSettings,
-} from '../../../runtime/coordinator/hunt/settings';
+} from '../../../runtime/hunting/saved-fields';
+
+// The root relocation switch: one for the whole party, read in every target mode, so every card writes it
+// through the settings route, a follower's included.
+export function RelocationControl({
+  value,
+  onSave,
+}: {
+  value?: boolean;
+  onSave: (on: boolean) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  async function save(on: boolean) {
+    setBusy(true);
+    setError('');
+    try {
+      await onSave(on);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the relocation switch');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section data-area="hunt-settings" className="space-y-2 rounded border border-emerald-700 bg-[#07110f] p-3">
+      <label className="flex items-center gap-3 text-sm text-emerald-50">
+        <Checkbox
+          className="border-cyan-400 bg-[#07110f] text-white data-checked:bg-cyan-700"
+          checked={value !== false}
+          disabled={busy}
+          onCheckedChange={(v) => void save(!!v)}
+        />
+        Relocate to different spawn if competing
+      </label>
+      <p className="text-xs text-emerald-200">
+        Relocate only when everyone’s search radius is empty and a competing
+        farmer is nearby. The switch holds for the whole party in every mode.
+      </p>
+      {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
+    </section>
+  );
+}
 
 export function HuntSettingsControl({
   value,
@@ -40,85 +84,41 @@ export function HuntSettingsControl({
     key: 'deathThreshold' | 'expirationThreshold',
     text: string,
   ) {
+    // The hunting owner's validHuntSettings is the threshold's one check, the same the settings route runs.
     const n = Number(text);
-    if (!text.trim() || !Number.isSafeInteger(n) || n < 1) {
+    if (!text.trim() || !validHuntSettings({ [key]: n })) {
       setError('Thresholds must be positive whole numbers.');
       return;
     }
     if (n !== settings[key]) void save({ [key]: n });
   }
-  const checkbox =
-    'border-cyan-400 bg-[#07110f] text-white data-checked:bg-cyan-700';
-  const input =
-    'w-16 rounded border border-cyan-700 bg-[#07110f] px-2 py-1 text-emerald-50 disabled:border-slate-600 disabled:text-slate-400';
+  // A blacklist rule: its switch, then its count.
+  const thresholdRow = (
+    rule: 'blacklistDeaths' | 'blacklistExpirations',
+    key: 'deathThreshold' | 'expirationThreshold',
+    label: string,
+    draft: string,
+    setDraft: (value: string) => void,
+    unit: string,
+  ) => (
+    <BlacklistThresholdRow
+      label="Blacklist hunts after"
+      inputLabel={label}
+      unit={unit}
+      checked={settings[rule]}
+      value={draft}
+      min={1}
+      disabled={busy || !onSave}
+      onToggle={(on) => void save({ [rule]: on })}
+      onDraft={setDraft}
+      onCommit={() => threshold(key, draft)}
+    />
+  );
   return (
-    <section className="space-y-3 rounded border border-emerald-700 bg-[#07110f] p-3">
+    <section data-area="hunt-thresholds" className="space-y-3 rounded border border-emerald-700 bg-[#07110f] p-3">
       <h3 className="font-semibold text-emerald-50">Hunt settings</h3>
-      <label className="flex items-center gap-3 text-sm text-emerald-50">
-        <Checkbox
-          className={checkbox}
-          checked={settings.relocateIfCompeting}
-          disabled={busy || !onSave}
-          onCheckedChange={(v) => void save({ relocateIfCompeting: !!v })}
-        />
-        Relocate to different spawn if competing
-      </label>
-      <p className="text-xs text-emerald-200">
-        Relocate only when everyone’s hunt radius is empty and a competing
-        farmer is nearby.
-      </p>
-      <div className="flex flex-wrap items-center gap-2 text-sm text-emerald-50">
-        <label className="flex items-center gap-3">
-          <Checkbox
-            className={checkbox}
-            checked={settings.blacklistDeaths}
-            disabled={busy || !onSave}
-            onCheckedChange={(v) => void save({ blacklistDeaths: !!v })}
-          />
-          Blacklist hunts after
-        </label>
-        <input
-          aria-label="Deaths before blacklisting"
-          className={input}
-          type="number"
-          min="1"
-          step="1"
-          value={deaths}
-          disabled={busy || !onSave || !settings.blacklistDeaths}
-          onChange={(e) => setDeaths(e.target.value)}
-          onBlur={() => threshold('deathThreshold', deaths)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-        />
-        <span>deaths</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 text-sm text-emerald-50">
-        <label className="flex items-center gap-3">
-          <Checkbox
-            className={checkbox}
-            checked={settings.blacklistExpirations}
-            disabled={busy || !onSave}
-            onCheckedChange={(v) => void save({ blacklistExpirations: !!v })}
-          />
-          Blacklist hunts after
-        </label>
-        <input
-          aria-label="Expired hunts before blacklisting"
-          className={input}
-          type="number"
-          min="1"
-          step="1"
-          value={expirations}
-          disabled={busy || !onSave || !settings.blacklistExpirations}
-          onChange={(e) => setExpirations(e.target.value)}
-          onBlur={() => threshold('expirationThreshold', expirations)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-        />
-        <span>hunts expire</span>
-      </div>
+      {thresholdRow('blacklistDeaths', 'deathThreshold', 'Deaths before blacklisting', deaths, setDeaths, 'deaths')}
+      {thresholdRow('blacklistExpirations', 'expirationThreshold', 'Expired hunts before blacklisting', expirations, setExpirations, 'hunts expire')}
       <p className="text-xs text-emerald-200">
         Failures accumulate per monster across Hunts. Clearing its blacklist
         entry resets its counts. Turning a rule off keeps counts and existing

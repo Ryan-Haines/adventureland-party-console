@@ -65,11 +65,11 @@ their existing handling.
 | Coordinator defense and local latch | Corrected passing causes rebuild only the current owned convoy. Tests cover both a local stop and an already-issued coordinator defense, plus genuine attackers and replacement/manual commands. |
 | Queue, threat nomination and evidence | Existing identity filters remain. Reservations reach these filters before attack admission. Existing passive-hunting and travel-defense tests cover queue exclusion. |
 | Combat movement, kiting and following | Existing convoy ownership gates remain; preventing the false defensive handoff prevents normal combat movement from acquiring the route. Existing combat-movement/shared-convoy tests cover these gates. |
-| Preparation, assembly and transitions | Protocol 4 optional attacks now require the owned travelling signal. Town casts and movement transitions continue suppressing passing attacks. Genuine incoming damage can still interrupt Town. |
+| Preparation, assembly and transitions | Optional attacks on a group walk require the owned travelling signal. Town casts and movement transitions continue suppressing passing attacks. Genuine incoming damage can still interrupt Town. |
 | Projectiles and death | Projectile tracking records damage/expiry, not movement. Tests vary hit delay and invalidate dead/reused identities. No projectile-based convoy stop was found. |
-| Loot | Corrected passing-only stops create no defensive loot hold. Normal defensive kills and required map-transition loot barriers remain covered by convoy-defense, departure-loot and continuous-return tests. |
+| Loot | Corrected passing-only stops create no defensive loot hold. Normal defensive kills and required map-transition loot barriers remain covered by convoy-defense and departure-loot tests. |
 | Hunt travel and return | Continuous return/outbound travel ownership remains. The deferred outbound-Hunt defensive behavior redesign is outside this change. Existing return-town and Hunt travel regressions remain required. |
-| Hunt expiration | `runtime/hunt/policy.ts` returns on completion, expiry or missing quest, without a three-minute cutoff. Existing farm-walk, fallback-owner and safety tests include 180000, 179999 and 1 ms remaining. |
+| Hunt expiration | `runtime/hunting/coordinator/hunt.ts` returns on completion, expiry or missing quest, without a three-minute cutoff. Existing farm-walk, fallback-owner and safety tests include 180000, 179999 and 1 ms remaining. |
 | Transport/departure/geometry failures | Separate failure paths. No evidence that they should be classified as passing combat; retained diagnostics distinguish them. |
 
 ## Validation and activation

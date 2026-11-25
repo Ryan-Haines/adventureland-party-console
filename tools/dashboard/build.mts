@@ -1,10 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createBuilder } from "../../dashboard/node_modules/vite/dist/node/index.js";
-import { withBuildLock } from '../build-store.ts';
+import { withBuildLock } from '../hosting/api.ts';
 import {readFile,writeFile,readdir} from 'node:fs/promises';
+import { writeInstalled } from '../../runtime/hooks/build/installed.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dashboard");
+// The add-on sections the dashboard imports.
+writeInstalled(path.dirname(root));
 process.chdir(root);
 process.env.AL_DASHBOARD_OUT_DIR ||= ".build/validation";
 // Vinext's CLI always cleans dashboard/dist. Use Vite's application builder

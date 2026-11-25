@@ -2,14 +2,23 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Updates } from './service.ts';
-import { exists, readJson } from './files.ts';
+import { exists } from './files.ts';
+import { requiredJson } from '../build-store.ts';
 import type { Release } from './contracts.ts';
-import { body, json } from '../hosting/http.ts';
+import { body, bounded, json, type HostBound } from '../hosting/http.ts';
+import { DRAIN_READ } from './transaction.ts';
+// An update route forwarded to the updater process (port 925) that never answers.
+const UPDATER_FORWARD: HostBound = { name: 'updaterForwardMs', ms: 10000 };
 import { consoleVersion } from './version-label.ts';
+import { hiddenValue } from '../../runtime/settings/coordinator/api.ts';
+import { internalPorts } from '../hosting/health.ts';
 
 export interface UpdateRoutes {
   route(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void>;
   control?(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void>;
+  // The startup poll; the host starts without waiting on GitHub, and a caller that reads
+  // the first answer awaits this.
+  polled?: Promise<void>;
 }
 export async function updateHosting(root: string, data: string): Promise<UpdateRoutes> {
   const upstream = process.env.AL_UPDATER_URL;
@@ -19,27 +28,29 @@ export async function updateHosting(root: string, data: string): Promise<UpdateR
       if (req.headers.authorization !== `Bearer ${token}` || req.method !== 'GET' || pathname !== '/console-control/maintenance') {
         json(res, 403, { error: 'Updater authentication required' }); return;
       }
-      const response = await fetch(`http://127.0.0.1:${Number(process.env.AL_INTERNAL_API_PORT) || 924}/party-api/console-maintenance`, { signal: AbortSignal.timeout(3000) });
+      const response = await bounded(DRAIN_READ, 'the gateway drain read', signal => fetch(`http://127.0.0.1:${internalPorts().api}/party-api/console-maintenance`, { signal }));
       json(res, response.status, await response.json());
     },
     async route(req, res, pathname) {
       const token = (await readFile(path.join(data, 'updates/token'), 'utf8')).trim();
-      const response = await fetch(new URL(pathname.replace('/console-update', '' ) || '/', upstream), {
+      const payload = req.method === 'POST' ? { body: JSON.stringify(await body(req)) } : {};
+      const response = await bounded(UPDATER_FORWARD, 'an update route forward', signal => fetch(new URL(pathname.replace('/console-update', '' ) || '/', upstream), {
         method: req.method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        ...(req.method === 'POST' ? { body: JSON.stringify(await body(req)) } : {}), signal: AbortSignal.timeout(10000),
-      });
+        ...payload, signal,
+      }));
       json(res, response.status, await response.json());
     },
   };
-  const release = process.env.AL_DOCKER_DEV !== '1' && await exists(path.join(root, 'release.json')) ? await readJson<Release>(path.join(root, 'release.json')) : undefined;
-  const config = await readJson<{ repository: string }>(path.join(root, 'distribution.json'));
+  const release = process.env.AL_DOCKER_DEV !== '1' && await exists(path.join(root, 'release.json')) ? await requiredJson<Release>(path.join(root, 'release.json')) : undefined;
+  const config = await requiredJson<{ repository: string }>(path.join(root, 'distribution.json'));
   const updates = new Updates(release, path.join(data, 'updates/preferences.json'), undefined, config.repository);
   // Branch/dirty labels are display metadata; compare the same resolved base
   // version without pretending a source checkout is a managed installation.
   Object.assign(updates.state, await consoleVersion(root, release));
-  await updates.load(); void updates.poll();
-  setInterval(() => void updates.poll(), 6 * 3600000).unref();
-  return { route: (req, res, pathname) => updateRoute(updates, req, res, pathname.replace('/console-update', '') || '/') };
+  await updates.load();
+  const polled = updates.poll();
+  setInterval(() => void updates.poll(), hiddenValue('updateCheckMs')).unref();
+  return { polled, route: (req, res, pathname) => updateRoute(updates, req, res, pathname.replace('/console-update', '') || '/') };
 }
 export async function updateRoute(updates: Updates, req: IncomingMessage, res: ServerResponse, pathname: string) {
   if (pathname === '/' && req.method === 'GET') { json(res, 200, updates.state); return; }
@@ -50,6 +61,8 @@ export async function updateRoute(updates: Updates, req: IncomingMessage, res: S
     '/check': () => updates.check(), '/download': () => updates.download(), '/restart': () => updates.restart(),
   };
   if (!actions[pathname]) { json(res, 404, { error: 'Unknown update action' }); return; }
+  // The 202 goes out first, so the browser never waits on GitHub; the route settles when its
+  // operation does.
   json(res, 202, { accepted: true });
-  void actions[pathname]().catch(() => { /* The current operation owns progress; duplicate clicks do not replace it. */ });
+  await actions[pathname]().catch(() => { /* The current operation owns progress; duplicate clicks do not replace it. */ });
 }

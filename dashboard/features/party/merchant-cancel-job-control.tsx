@@ -4,8 +4,7 @@ import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { automaticRoutineKeys } from "./automatic-routine-keys";
-import { routineLabels } from "./routine-labels";
+import { automaticRoutine, ROUTINE_DIALOG_LABELS } from '../../../runtime/merchant-jobs/api.ts';
 
 export function MerchantCancelJobControl({ id, reason, label, onCancel }: {
   id?: string;
@@ -17,7 +16,7 @@ export function MerchantCancelJobControl({ id, reason, label, onCancel }: {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const busy = useRef(false);
-  const disablesRoutine = automaticRoutineKeys.has(reason);
+  const disablesRoutine = automaticRoutine(reason);
 
   async function cancelJob() {
     if (!id || busy.current) return;
@@ -43,9 +42,9 @@ export function MerchantCancelJobControl({ id, reason, label, onCancel }: {
       <X className="h-2.5 w-2.5" />
     </button>
     <Dialog open={open} onOpenChange={value => { if (!busy.current) setOpen(value); }}>
-      <DialogContent showCloseButton={false} className="border border-rose-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
+      <DialogContent data-area="cancel-job" showCloseButton={false} className="border border-rose-800 bg-zinc-950 text-zinc-100 sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Cancel {routineLabels[reason] || reason}?</DialogTitle>
+          <DialogTitle>Cancel {ROUTINE_DIALOG_LABELS[reason] || reason}?</DialogTitle>
           <DialogDescription className="text-zinc-300">
             Canceling this job will also disable this routine until you re-enable it in Routines.
           </DialogDescription>

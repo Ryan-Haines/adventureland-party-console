@@ -1,8 +1,8 @@
 import {test, expect} from './fixtures';
-import {automaticCommerceRuleKey} from '../runtime/coordinator/inventory/item-identity';
+import {commerceRuleKey} from '../runtime/items/identity';
 
 test.describe('automatic NPC reserve controls', () => {
-  const item = {name:'sword',level:0}, key = automaticCommerceRuleKey(item);
+  const item = {name:'sword',level:0}, key = commerceRuleKey(item);
   test.use({merchantDialogs:true, savedRecords:[{party_dashboard_settings_state_v1:{
     autoNpcSales:{[key]:{item,createdAt:1}}, merchantAutomations:{'auto npc sales':false},
     npcSaleMarks:[{id:'old-zero-reserve-sale',source:'merchant',slot:0,item,quantity:1,
@@ -42,7 +42,7 @@ test.describe('automatic NPC reserve controls', () => {
     await expect(dialog.getByLabel('Number to keep reserved')).toHaveValue('0');
     await dialog.getByLabel('Number to keep reserved').fill('4');
     await dialog.getByRole('button',{name:'Enable auto sale',exact:true}).click();
-    const bankKey=automaticCommerceRuleKey({name:'bkey'});
+    const bankKey=commerceRuleKey({name:'bkey'});
     await expect.poll(async()=>(await app.state()).autoNpcSales[bankKey]?.keep).toBe(4);
     expect((await app.state()).autoNpcSales[bankKey].character).toBeUndefined();
     await info.attach('reserve-controls-state',{body:JSON.stringify(await app.state()),contentType:'application/json'});

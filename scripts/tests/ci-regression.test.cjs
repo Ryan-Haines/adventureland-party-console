@@ -19,13 +19,16 @@ test('CI rejects failures, cancellations, skips, TODOs and incomplete reports', 
     assert.throws(() => checkRegression(output));
 });
 
-function temporary() {
+// Each run directory goes when its test ends, so repeated runs leave none behind.
+function temporary(t) {
   fs.mkdirSync('.build/ci-fixture-tests', { recursive: true });
-  return fs.mkdtempSync(path.resolve('.build/ci-fixture-tests/run-'));
+  const directory = fs.mkdtempSync(path.resolve('.build/ci-fixture-tests/run-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  return directory;
 }
 
-test('CI restores all pinned game versions offline and can repeat safely', () => {
-  const target = temporary();
+test('CI restores all pinned game versions offline and can repeat safely', t => {
+  const target = temporary(t);
   assert.deepEqual(restoreGameFixtures(target), ['16846', '17083', '17175']);
   assert.deepEqual(restoreGameFixtures(target), ['16846', '17083', '17175']);
   for (const version of ['16846', '17083', '17175']) {
@@ -36,16 +39,16 @@ test('CI restores all pinned game versions offline and can repeat safely', () =>
   }
 });
 
-test('CI fixture restoration rejects corruption before writing any game files', () => {
-  const source = temporary(), target = path.join(source, 'restored');
+test('CI fixture restoration rejects corruption before writing any game files', t => {
+  const source = temporary(t), target = path.join(source, 'restored');
   fs.cpSync(path.resolve('scripts/tests/fixtures/game'), source, { recursive: true });
   fs.appendFileSync(path.join(source, '17083.json.gz'), 'corruption');
   assert.throws(() => restoreGameFixtures(target, source), /checksum mismatch/);
   assert.equal(fs.existsSync(target), false);
 });
 
-test('CI fixture restoration refuses to overwrite a different existing game cache', () => {
-  const target = temporary(), file = path.join(target, '17083/data.js');
+test('CI fixture restoration refuses to overwrite a different existing game cache', t => {
+  const target = temporary(t), file = path.join(target, '17083/data.js');
   fs.mkdirSync(path.dirname(file));
   fs.writeFileSync(file, 'different live data');
   assert.throws(() => restoreGameFixtures(target), /Existing game cache differs/);

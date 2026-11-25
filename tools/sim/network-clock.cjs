@@ -10,7 +10,7 @@ const realImmediate = setImmediate;
 const realClearImmediate = clearImmediate;
 const http = require("node:http");
 const { randomUUID } = require("node:crypto");
-const { joinClock } = require("./join-clock.cjs");
+const { joinClock, clockPerformance } = require("./join-clock.cjs");
 const { createNativeIo } = require('./native-io.cjs');
 const chronalDirectory = () =>
   process.env.E2E_CHRONAL_DIR || path.resolve(__dirname, "../../.build/sim/chronal");
@@ -27,18 +27,9 @@ function socketUrl(broker, id, scope) {
   url.searchParams.set("id", id);
   url.searchParams.set("scope", scope);
   url.searchParams.set("label", `${process.argv[1]}:thread-${require("node:worker_threads").threadId}`);
+  // The broker leaves this participant out of its barrier until resume() below.
+  url.searchParams.set("startup", "1");
   return url;
-}
-function clockPerformance(clock, config, dateOnly) {
-  if (dateOnly) return realPerformance;
-  return new Proxy(realPerformance, {
-    get(target, key) {
-      if (key === "now") return () => clock.now - config.epoch;
-      if (key === "timeOrigin") return config.epoch;
-      const value = Reflect.get(target, key, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
 }
 
 function configuration(env = process.env) {
@@ -116,7 +107,7 @@ function install({ dateOnly = false } = {}) {
   clock.installInto(globalThis, {
     vmContext: vm.createContext({ Date: realDate, Math: Object.create(Math) }),
   });
-  globalThis.performance = clockPerformance(clock, config, dateOnly);
+  globalThis.performance = dateOnly ? realPerformance : clockPerformance(realPerformance, clock, config);
   const { createNodeTimers, installNodeTimers, installWindowTimers } = require("./network-timers.cjs");
   const timers = createNodeTimers(clock);
   if (dateOnly) {
@@ -179,6 +170,27 @@ function install({ dateOnly = false } = {}) {
     socket.on('open',notifyNativeIo);
     const windows=[];
     let advancing=false;
+    // A participant joins, then its main module loads synchronously: a character process requires
+    // jsdom, 0.5 s idle and 36 s under load (liveb-step11-run10.log, W54 A16). The broker leaves it
+    // out of the barrier from its join, so the load holds no other participant. resume() runs in
+    // the timers phase of the first loop turn after the load, before any socket callback. It reads
+    // the broker's window synchronously, which puts the participant back in the barrier, and runs
+    // its own timers up to that window. The others stop at that window until it acknowledges, so
+    // no message it handles afterwards carries a later time than its clock.
+    function resume(){
+      try{
+        const url=new URL('/resume',broker);
+        for(const [key,value] of Object.entries({id,scope,token:process.env.E2E_CLOCK_TOKEN||''}))url.searchParams.set(key,value);
+        const read=`require('node:http').get(process.argv[1],res=>{let body='';res.on('data',d=>body+=d);res.on('end',()=>{if(res.statusCode!==200)process.exit(1);process.stdout.write(body);});}).on('error',()=>process.exit(1));`;
+        const {now}=JSON.parse(require('node:child_process').execFileSync(process.execPath,['-e',read,url.href],
+          {env:{...process.env,NODE_OPTIONS:'',E2E_CLOCK_PRELOAD:''},windowsHide:true,encoding:'utf8'}));
+        transport.phase='resume';transport.window=now;transport.resumed=now;transport.startedWall=realDate.now();
+        clock.runSync({before:now});
+        while(clock.events_({},now,false,true))process._tickCallback();
+        if(socket.readyState===1)socket.send(JSON.stringify({now:clock.now}));
+        transport.phase='idle';transport.window=null;
+      }catch(error){failed(error);}
+    }
     const failed=error=>{
       errors.push(String(error.stack||error));readyReject(error);
       console.error('[ChronAL clock]',error);
@@ -192,6 +204,7 @@ function install({ dateOnly = false } = {}) {
         try{
           const next=windows.shift();
           transport.phase='advancing';transport.window=next.now;transport.startedWall=realDate.now();
+          const joined=first;
           if(first){Object.assign(join,joinClock(clock,next.now));first=false;}
           else{
             clock.runSync({before:next.now});
@@ -203,6 +216,10 @@ function install({ dateOnly = false } = {}) {
           // Retain a native I/O turn for socket and persistence completions.
           transport.phase='native-io';
           nativeTurn(()=>{
+            // Queued before ready lets the preload finish, so the main module's synchronous load
+            // runs first. The 0 ms timeout is a native one and bounds nothing: it reaches the timers
+            // phase, which comes before the loop's first poll.
+            if(joined)realTimeout(resume,0);
             readyResolve();
             if(socket.readyState===1)socket.send(JSON.stringify({now:clock.now}));
             transport.completed++;transport.phase='idle';transport.window=null;
@@ -281,5 +298,5 @@ function install({ dateOnly = false } = {}) {
   globalThis.__e2eChronalClock = receipt;
   return receipt;
 }
-module.exports = { configuration, install };
+module.exports = { install };
 if (process.env.E2E_CLOCK_PRELOAD === "1") install();

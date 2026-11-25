@@ -5,7 +5,12 @@ An eligible survivor must be alive, on the same realm and farm map, within 800
 units of the authorized farm waypoint, and have a status less than 10 seconds old.
 This is independent of the monster search radius. Merchants and bankbois are excluded.
 
-Event re-entry, anniversary staging, Town overrides and convoys keep priority.
+Event re-entry, anniversary staging, Town overrides and convoys keep priority. A
+group walk the coordinator or the member runs holds the reunion whenever no request
+of the walk is live, after the walk's own journey arrives and between the walk's
+commands (`runtime/movement/rules.ts` `farmWalkHeld`, which reads movement's
+`groupWalkActive`), so neither the tick nor a
+merchant handoff starts a reunion the walk's next journey would wait behind.
 New navigation commands cancel the old recovery. Pending recovery survives shared
 code hot reloads; `farmReunion` in character status reports its phase and last error.
 
@@ -25,6 +30,7 @@ Reunion requires actual proximity within 150 units of the eligible teammate.
 Individual event-return commands additionally require the saved destination's
 arrival check before completion is reported. Magiport never completes a convoy.
 
-Potion thresholds are unchanged: mage/priest HP below 50%, MP below 20%, with HP
-priority and the existing shared cooldown. Occupied recovery continues passive
+Every class drinks HP below its "HP potion below" setting (50%, the merchant 20%) and MP
+below its "MP potion below" setting (20%), HP first, during reunion travel too, with the
+shared potion cooldown. Occupied recovery continues passive
 regeneration; it does not assume an MP potion can be consumed immediately.

@@ -1,18 +1,18 @@
 import {type Frame,type CDPSession} from '@playwright/test';
+import {describeError,startCdpProfile} from './native-observer-kit';
 // Passive, case-owned diagnostics. Poll callers supply the clock; no timers.
 export function nativePlannerCpuProfile(frame:Frame){
-  let session:CDPSession|undefined,used=false,startedAt=0,stopped=false;
+  let session:CDPSession|undefined,cpu:Awaited<ReturnType<typeof startCdpProfile>>|undefined,used=false,startedAt=0,stopped=false;
   let pending:Promise<void>|undefined;
   const evidence:any={errors:[],probes:[]};
-  const record=(error:unknown)=>{evidence.errors.push(String(error));};
+  const record=(error:unknown)=>{evidence.errors.push(describeError(error));};
   async function stop(){
-    if(stopped||!session||!startedAt)return;
+    if(stopped||!session||!cpu||!startedAt)return;
     stopped=true;
     try{
       evidence.after=await session.send('Performance.getMetrics');
-      evidence.profile=(await session.send('Profiler.stop')).profile;
+      evidence.profile=await cpu.stop();
       evidence.stoppedAt=Date.now();
-      for(const node of evidence.profile.nodes){const f=node.callFrame;if(f?.url)f.url=f.url.split(/[?#]/,1)[0];}
       const before=new Map<string,number>((evidence.before.metrics||[]).map((m:any)=>[m.name,m.value]));
       evidence.deltas=Object.fromEntries((evidence.after.metrics||[]).filter((m:any)=>['TaskDuration','ScriptDuration','LayoutDuration','RecalcStyleDuration'].includes(m.name)).map((m:any)=>[m.name,m.value-(before.get(m.name)||0)]));
       const nodes=new Map<number,any>(evidence.profile.nodes.map((n:any)=>[n.id,n.callFrame]));
@@ -30,10 +30,9 @@ export function nativePlannerCpuProfile(frame:Frame){
       pending=(async()=>{
         try{
           session=await frame.page().context().newCDPSession(frame);
-          await session.send('Performance.enable');await session.send('Profiler.enable');
-          await session.send('Profiler.setSamplingInterval',{interval:10000});
+          await session.send('Performance.enable');
           evidence.before=await session.send('Performance.getMetrics');
-          await session.send('Profiler.start');startedAt=Date.now();evidence.startedAt=startedAt;
+          cpu=await startCdpProfile(session,10000);startedAt=Date.now();evidence.startedAt=startedAt;
         }catch(error){record(error);await session?.detach().catch(record);session=undefined;}
       })();
     },

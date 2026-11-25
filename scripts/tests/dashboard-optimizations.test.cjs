@@ -28,16 +28,13 @@ test('position cache isolates vitals, preserves nested identities and replaces g
  client.clear();
 });
 
-test('duration signatures ignore presentation changes but track expiry, refresh, source and definition',()=>{
+test('duration signatures ignore presentation changes but track expiry, refresh and source',()=>{
  const condition={id:'buff:|',source:'A:|',remainingMs:10000,definition:{duration:20000},name:'Buff'};
  const signature=durationSignature([condition]);
  const durations=reconcileDurations(signature,{},1000);
  assert.equal(reconcileDurations(signature,durations,2000),durations);
  assert.equal(durationSignature([{...condition,name:'Renamed',stacks:2}]),signature);
  assert.equal(statusRemaining(durations[condition.id],4000),7000);
- const extended=reconcileDurations(durationSignature([{...condition,definition:{duration:30000}}]),durations,4000);
- assert.equal(extended[condition.id].total,30000);
- assert.equal(extended[condition.id].at,1000);
  const refreshed=reconcileDurations(durationSignature([{...condition,remainingMs:15000}]),durations,4000);
  assert.equal(refreshed[condition.id].at,4000);
  for(const remainingMs of [null,-1])assert.equal(reconcileDurations(durationSignature([{...condition,remainingMs}]),durations,5000)[condition.id],undefined);

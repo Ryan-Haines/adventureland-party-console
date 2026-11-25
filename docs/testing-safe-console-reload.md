@@ -1,5 +1,23 @@
 # Safe console reload failure inventory
 
+## Console Pause, Play and the clean shutdown
+
+The safe reload row (`e2e/console-reload-rows.ts`, in the Arena table of `e2e/live-farm-death-escape.spec.ts`) runs these rows after the safe reload,
+on the same farming party; the card and top bar journey (`e2e/addon-console.case.ts`) runs PP10.
+
+| # | Failure mode | Row |
+|---|---|---|
+| PP1 | Pause lets a character take a new target or walk | a goo spawned while paused gets no hit for 4 s; W and P stay within 1 px and stop moving |
+| PP2 | Something acts while paused (a pause stops all console code) | a bee that targets W gets no hit for 6 s; every group holds `by: 'user'` |
+| PP3 | A paused character recovers or respawns | W at 30% HP casts neither regen_hp nor use_hp for 6 s; W killed while paused stays dead, and respawns after Play |
+| PP4 | Play writes back a setting changed while paused | the focus posted while paused is the focus after Play and after the automatic resume |
+| PP5 | A restart drops the Pause | after a coordinator restart the same lease id is paused, with no resume, and every character holds it again |
+| PP6 | Play leaves a character held, or farming does not resume | the Pause file is gone, every character drops the lease, and W attacks the goo that waited |
+| PP7 | The clean shutdown leaves the writer lock or no safe mark | Safe to stop shows the stop command; the stopped coordinator leaves no state.jsonl.writer.lock and the file has safeAt |
+| PP8 | The next start does not resume, or resumes twice | the console resumes once the characters connect, logs "Automatic resume", consumes the file, and a second restart stays unpaused |
+| PP9 | A deploy during the Pause hides it | a deploy lease while paused reaches W as it is, with its own id, and W stays held by the hold field `user`; the Pause holds again when it goes |
+| PP10 | The top bar icons do not call the routes | Pause, Play, Start clean shutdown and Cancel shutdown each send their POST; the Paused badge follows the coordinator |
+
 A live safe-load investigation found empty current selections and no attackers
 while the drain still owned a visible previously engaged target. An eligible
 Trick or Treat candidate paused Hunt even though event polling was parked by

@@ -66,19 +66,6 @@ function coordinatorProcess({ clock, cwd, env }) {
   });
 }
 
-/**
- * @param {object} o
- * @param {import('./types').Clock} o.clock   ChronAL's VirtualClock
- * @param {string} o.root     the repository
- * @param {string} o.runDir   this simulation's caracAL-shaped directory (process.cwd() of the host)
- * @param {object} o.account  caracal.account(...)
- * @param {object} o.game     caracal.gameFiles(...)
- * @param {object} o.config   caracal.config(...)
- * @param {(level:string, message:string, details?:unknown)=>void} o.log
- * @param {() => EventEmitter} o.fork   a character worker stand-in (character-worker.cjs)
- * @param {Map<number, object>} o.apps   receives the Express app per port at listen()
- * @param {Record<string,string>} o.env
- */
 /** A Worker for the movement planner bundle that runs on the main thread, on the virtual clock. */
 function plannerWorker(clock) {
   return class PlannerWorker extends EventEmitter {
@@ -142,6 +129,19 @@ function plannerWorker(clock) {
   };
 }
 
+/**
+ * @param {object} o
+ * @param {object} o.clock     ChronAL's VirtualClock
+ * @param {string} o.root     the repository
+ * @param {string} o.runDir   this simulation's caracAL-shaped directory (process.cwd() of the host)
+ * @param {object} o.account  caracal.account(...)
+ * @param {object} o.game     caracal.gameFiles(...)
+ * @param {object} o.config   caracal.config(...)
+ * @param {(level:string, message:string, details?:unknown)=>void} o.log
+ * @param {() => EventEmitter} o.fork   a character worker stand-in (character-worker.cjs)
+ * @param {Map<number, object>} o.apps   receives the Express app per port at listen()
+ * @param {Record<string,string>} o.env
+ */
 function startCoordinator(o) {
   const { clock, root } = o;
   const logging = caracal.logging(o.log);

@@ -1,6 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Char } from './char';
-import { receivedLiveRecord } from './live-metrics';
 
 export type CharacterDomain = 'vitals' | 'position' | 'inventory' | 'diagnostics' | 'presence';
 export type CharacterPosition = Pick<Char, 'x' | 'y' | 'map' | 'in'>;
@@ -15,16 +14,14 @@ export function splitPosition(value: Partial<Char>) {
 
 // Query's structural sharing retains equal nested values. Skip the entire write
 // when the receiver has preserved all top-level field references.
-export function writeCharacter(client: QueryClient, name: string, kind: CharacterDomain, value: Record<string, unknown> | null, sampledAt?: number) {
+export function writeCharacter(client: QueryClient, name: string, kind: CharacterDomain, value: Record<string, unknown> | null) {
   const previous = client.getQueryData<Record<string, unknown> | null>(characterKey(name, kind));
   if (previous === value || previous && value && Object.keys(previous).length === Object.keys(value).length &&
       Object.keys(value).every(key => Object.is(previous[key], value[key]))) return;
-  const stored = client.setQueryData(characterKey(name, kind), value);
-  if (sampledAt && stored !== previous && (kind === 'vitals' || kind === 'position' || kind === 'inventory'))
-    receivedLiveRecord(name, sampledAt, kind);
+  client.setQueryData(characterKey(name, kind), value);
 }
-export function writeVitals(client: QueryClient, name: string, value: Partial<Char>, sampledAt?: number) {
+export function writeVitals(client: QueryClient, name: string, value: Partial<Char>) {
   const { position, vitals } = splitPosition(value);
-  writeCharacter(client, name, 'position', position, sampledAt);
-  writeCharacter(client, name, 'vitals', vitals, sampledAt);
+  writeCharacter(client, name, 'position', position);
+  writeCharacter(client, name, 'vitals', vitals);
 }

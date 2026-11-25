@@ -1,14 +1,30 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { performAction } from './query-actions';
 import { ContextMenuItem } from '@/components/ui/context-menu';
-import { API } from './api';
 import { useUpgradeOfferings, type OfferingSource } from './upgrade-offering-controls';
-import { upgradeOfferings } from '../../../runtime/upgrade-offerings';
-import { previewOptions, type UpgradePreviewResult } from '../../../runtime/upgrade-preview';
+import { upgradeOfferings } from '../../../runtime/items/api.ts';
+import { previewOptions, type UpgradePreviewResult } from '../../../runtime/items/api.ts';
 import type { Item } from './item';
-import { useHidden } from './query-cache';
+import { domainOptions, useHidden } from './query-cache';
+import { characterKey } from './character-cache';
+
+type PreviewJob = { id?: unknown; reason?: unknown } | null | undefined;
+/**
+ * What the stored preview answer is read from, as the dashboard's core read carries it: the stored
+ * results, the preview job that runs and the ones queued. The open panel reads the answer again
+ * when this changes, so a result shows once the merchant's estimate writes it to the store.
+ */
+export function previewSignal(core: unknown): string {
+  const state = (core || {}) as { upgradePreviewResults?: unknown; merchantCurrent?: PreviewJob; merchantQueue?: PreviewJob[] };
+  const preview = (job: PreviewJob) => job?.reason === 'upgrade preview';
+  return JSON.stringify([state.upgradePreviewResults ?? null, preview(state.merchantCurrent) ? state.merchantCurrent!.id : null,
+    (state.merchantQueue || []).filter(preview).map(job => job!.id)]);
+}
 
 export function UpgradePreviewPanel({ item, source }: { item: Item; source?: OfferingSource }) {
+  const client = useQueryClient();
   const controls = useUpgradeOfferings();
   const refreshBody = useRef<string | null>(null);
   const [revision, refresh] = useState(0);
@@ -16,39 +32,34 @@ export function UpgradePreviewPanel({ item, source }: { item: Item; source?: Off
   const body = JSON.stringify({ character:controls?.character, ...source, item });
   const key = `${body}:${controls?.executor}:${revision}`;
   const hidden = useHidden();
+  const signal = useQuery({ ...domainOptions(client, 'core'), enabled: false, select: previewSignal }).data;
+  // The executor's bag: an upgrade it starts begins a new preview revision, which invalidates the
+  // stored results.
+  const bagAt = useQuery({ queryKey: characterKey(controls?.executor || '', 'inventory'), enabled: false, staleTime: Infinity,
+    gcTime: 60000, queryFn: () => ({}) }).dataUpdatedAt;
   const unavailable = !controls?.executor ? 'No merchant configured'
     : !source || source.equipped || controls.character !== controls.executor ? 'Item not in merchant inventory' : '';
   useEffect(() => {
-    // Ticks only read the stored preview (refresh:false). A hidden tab stops
-    // them, and a tab that becomes visible reads at once.
+    // A read on a changed signal only reads the stored preview (refresh:false). A hidden tab
+    // stops them, and a tab that becomes visible reads at once.
     if (unavailable || hidden) return;
     const controller = new AbortController();
-    let polling = false;
     async function read(queue = false) {
-      if (polling) return;
-      polling = true;
       try {
-        const response = await fetch(API + '/upgrade-preview', {method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({...JSON.parse(body),refresh:queue}),signal:controller.signal});
-        if (response.status === 401 || response.status === 403 || response.redirected) {
-          window.dispatchEvent(new Event('party-auth-loss'));
-          throw Error('Session expired. Reconnect this browser.');
-        }
-        const value = await response.json() as {error?:string;result?:UpgradePreviewResult;status?:string};
-        if (!response.ok) throw Error(value.error || 'Server preview unavailable');
+        // A session loss is the action client's; the preview shows its error for every status.
+        const value = await performAction<{result?:UpgradePreviewResult;status?:string}>(client, '/upgrade-preview', {...JSON.parse(body),refresh:queue}, {signal:controller.signal});
         if (!controller.signal.aborted) setState({key,result:value.result,status:value.status});
       } catch(error) {
         if (!controller.signal.aborted) setState({key,error:error instanceof Error ? error.message : 'Server preview unavailable'});
-      } finally { polling = false; }
+      }
     }
     const queue = refreshBody.current === body;
     refreshBody.current = null;
     void read(queue);
-    const timer = setInterval(() => void read(), 2000);
-    return () => { clearInterval(timer); controller.abort(); };
-  }, [body, key, unavailable, hidden]);
+    return () => controller.abort();
+  }, [body, key, unavailable, hidden, client, signal, bagAt]);
   const current = state?.key === key ? state : undefined;
-  return <section aria-label="Upgrade chances" className="w-64 max-w-full border-t border-slate-300 !bg-white p-3 text-sm !text-black sm:border-l sm:border-t-0">
+  return <section data-area="upgrade-preview" aria-label="Upgrade chances" className="w-64 max-w-full border-t border-slate-300 !bg-white p-3 text-sm !text-black sm:border-l sm:border-t-0">
     <p className="font-semibold">Next attempt: +{item.level || 0} → +{(item.level || 0)+1}</p>
     <p className="mt-1 text-xs text-black">Server preview{controls?.executor ? ` · ${controls.executor}` : ''}</p>
     <p role="status" className="mt-2 text-xs text-black">{unavailable || current?.error ||

@@ -3,7 +3,8 @@
 This harness compares the installed native `smart_move` planner with ALClient at
 commit `853cf80279b761ecbea238c4b3acd9caab102e11`. That revision wraps
 `alpathfinder@0.6.0`. It is different from both the older JavaScript ALClient
-implementation and this repository's existing `alpathfinder@0.5.0` collision benchmark.
+implementation and this repository's collision benchmark (`npm run benchmark:movement`,
+which runs the alpathfinder the root package.json pins).
 
 From the repository root:
 
@@ -30,14 +31,18 @@ under `.build/benchmarks/alclient-source` and hashes are recorded. Upstream decl
 MIT in its package metadata but does not include a license file at this revision.
 
 The optional `.build/benchmarks/config-snapshot.json` accepts `gameVersion` and
-`partyLocation: {map,x,y}` from a read-only dashboard snapshot. Otherwise configured
-farm fixtures are omitted. No credentials are needed. Results and plots are under
+`partyLocation: {map,x,y}` and `merchantStandLocation: {map,x,y}` from a read-only
+dashboard snapshot. Otherwise configured farm fixtures are omitted. Without a game
+version argument or snapshot version, run.cjs plans on 16846, the client CI
+restores (`GAME_VERSION` in native.cjs), and benchmark-pathfinder.mts on the newest downloaded
+client. No credentials are needed. Results and plots are under
 `.build/benchmarks/alclient-comparison`; `results.json` is authoritative, while the
 append-only progress JSONL file may contain earlier runs. `--smoke` uses separate
 output names, one cold run, and one measurement pass.
 
-Merchant stand coordinates are read from `merchantMarketLocation` in
-`characters/shared.js`; NPC positions and map spawns come from the selected game data.
+The merchant stand is the snapshot's saved `merchantStandLocation`, or the merchant
+jobs owner's default stand (`legacyStandLocation` in runtime/merchant-jobs/rules.ts)
+without one; NPC positions and map spawns come from the selected game data.
 For a targeted rerun, use `--routes=stand-bank,stand-potions` and a separate
 `--label=merchant-check`; use the same flags for its smoke and bounded runs. This
 keeps the targeted results separate from the full comparison.

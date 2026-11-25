@@ -1,14 +1,16 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createStandMarkRoute}=require('../../runtime/coordinator/http/stand-marks.ts');
-const {createNpcSaleRoute}=require('../../runtime/coordinator/http/npc-sale.ts');
-const {createAutomaticSaleRoutes}=require('../../runtime/coordinator/http/automatic-sales.ts');
-const {createStaleOrderRoute}=require('../../runtime/coordinator/http/stale-orders.ts');
+const {settingsWriter}=require('./helpers/settings-writer.cjs');
+const {createStandMarkRoute}=require('../../runtime/items/coordinator/routes/market.ts');
+const {createNpcSaleRoute}=require('../../runtime/items/coordinator/routes/market.ts');
+const {createAutomaticSaleRoutes}=require('../../runtime/items/coordinator/routes/market.ts');
+const {createStaleOrderRoute}=require('../../runtime/items/coordinator/routes/inventory.ts');
 function fixture(){
  const item={name:'leather',q:7},state={merchantCharacter:'M',statuses:{M:{items:[{slot:2,item}]}},bankSnapshot:{packs:{}},bankbois:{},standListings:[],npcSaleMarks:[],withdrawals:{},
   merchantCurrent:null,merchantQueue:[],autoNpcSales:{},autoStandMarks:{},merchantDeliveries:{},marked:{}};
- let id=1;const calls=[],ports={now:()=>100,nextCommand:()=>id++,persist:()=>calls.push('persist'),persistBank:()=>calls.push('bank'),publish:()=>calls.push('publish'),
+ let id=1;const calls=[],ports={now:()=>100,nextCommand:()=>id++,write:settingsWriter(state).write,persist:()=>calls.push('persist'),persistBank:()=>calls.push('bank'),publish:()=>calls.push('publish'),
   bankService:async()=>calls.push('service'),log(){},queue:(...args)=>calls.push(args),syncStand:()=>false,idle:()=>calls.push('idle'),stamp:job=>job,key:item=>item.name,reconcile:()=>calls.push('reconcile')};
- const automatic=createAutomaticSaleRoutes(state,ports),routes={stand:createStandMarkRoute(state,ports),npc:createNpcSaleRoute(state,ports),autoNpc:automatic.npc,autoStand:automatic.stand,clear:createStaleOrderRoute(state,ports.persist)};
+ const automatic=createAutomaticSaleRoutes(state,ports),routes={stand:createStandMarkRoute(state,ports),npc:createNpcSaleRoute(state,withDoor(state,ports)),autoNpc:automatic.npc,autoStand:automatic.stand,clear:createStaleOrderRoute(state,ports.persist)};
  function send(route,body={}){const res={code:200,status(code){this.code=code;return this;},json(body){this.body=body;return this;}};routes[route]({body},res);return res;}
  return {state,item,calls,send};
 }
@@ -59,4 +61,16 @@ test('stale-order cleanup preserves every delivery even when stock is missing',(
  const t=fixture();t.state.merchantDeliveries={L:[{item:{name:'leather',q:1}}],F:[{item:{name:'leather',q:3}}]};
  t.state.marked.M=[{item:{name:'leather',q:999}},{item:{name:'sword'}}];
  const result=t.send('clear').body;assert.equal(result.deliveriesRemoved,0);assert.equal(result.bankMarksRemoved,1);assert.equal(t.state.merchantDeliveries.L.length,1);assert.equal(t.state.merchantDeliveries.F.length,1);
+});
+
+// The apps send the viewing character with a merchant or bank mark's remove; the mark names
+// none, so the id finds it. A character mark still needs its own character.
+test('removing a merchant or bank NPC sale mark ignores the character the app fills in',()=>{
+ const {createNpcSaleRequest}=require('../../runtime/items/coordinator/market.ts');
+ const item={name:'ring'},state={merchantCharacter:'M',merchantCurrent:null,statuses:{},bankbois:{},
+  npcSaleMarks:[{id:'m',source:'merchant',slot:1,item,quantity:1},{id:'c',source:'character',character:'P',slot:2,item,quantity:1}]};
+ const sale=createNpcSaleRequest(state,{persist(){},now:()=>1,nextCommand:()=>1,log(){}});
+ assert.equal(sale({remove:true,id:'m',character:'Viewer'}).body.ok,true);
+ assert.equal(sale({remove:true,id:'c',character:'Viewer'}).status,409);
+ assert.deepEqual(state.npcSaleMarks.map(mark=>mark.id),['c']);
 });

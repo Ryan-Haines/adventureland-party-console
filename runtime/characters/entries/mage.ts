@@ -1,4 +1,4 @@
 import "../common.ts";
-import { role } from "../classes/mage.ts";
-import { installRoleRunner } from "../roles/runner.ts";
+import { mage as role } from "../turns/api.ts";
+import { installRoleRunner } from "../../lifecycle/character/roles.ts";
 installRoleRunner(role).start();

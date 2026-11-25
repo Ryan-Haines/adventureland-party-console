@@ -1,13 +1,12 @@
 'use client';
 import { levelPriceHistory } from './level-price-history';
-import { occupiedStandSlots } from './stand-inspection';
 import { useQueries, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import { domainOptions, useVisible } from './query-cache';
 import { characterKey } from './dashboard-live';
 import { STAT_SCROLLS } from './stat-scrolls';
 import { aggregateMonsterAchievements } from './monster-achievements';
-import { emptyArray } from './empty-values';
+import { marketListingFresh } from '../../../runtime/hooks/addon-api.ts';
 import type { Char } from './char';
 import type { PartyConsoleModel } from './use-party-console';
 import type { Item } from './item';
@@ -100,12 +99,13 @@ export function usePanelModel<T extends Pick<PartyConsoleModel, 'state' | 'chars
         Number(model.standItem.entry.item.level) || 0,
       )
     : undefined;
+  // b9b5c91e's "Current number on market": the fresh non-PVP listings of the stand item's copy.
   const marketAt = queries.updatedAt[domains.indexOf('market')] || 0;
   const standMarketCount = model.standItem
     ? (state.aldata?.listings || [])
         .filter(
           (listing) =>
-            listing.seenAt >= marketAt - 120000 &&
+            marketListingFresh(listing.seenAt, marketAt) &&
             listing.serverIdentifier !== 'PVP' &&
             listing.item.name === model.standItem!.entry.item.name &&
             Number(listing.item.level || 0) ===
@@ -124,11 +124,6 @@ export function usePanelModel<T extends Pick<PartyConsoleModel, 'state' | 'chars
     () => aggregateMonsterAchievements(characters),
     [characters],
   );
-  const standListings = state.standListings || emptyArray();
-  const occupiedSlots = useMemo(
-    () => occupiedStandSlots(standListings, state.nativeStand, merchant, state.standBids),
-    [standListings, state.nativeStand, merchant, state.standBids],
-  );
   return {
     ...model,
     state,
@@ -139,7 +134,6 @@ export function usePanelModel<T extends Pick<PartyConsoleModel, 'state' | 'chars
       standObserved?.marketLow || standObserved?.lowest || 0,
     statScrollInventory: quantities,
     monsterAchievements,
-    occupiedStandSlots: occupiedSlots,
   };
 }
 

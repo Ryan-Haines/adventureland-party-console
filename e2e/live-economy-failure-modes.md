@@ -1,6 +1,6 @@
 # Real-game economic failure modes
 
-Written before implementing `live-economy.spec.ts`.
+Written before implementing `live-economy.spec.ts` (at 21fe30a2b).
 
 - A queued NPC purchase never executes on the native client, purchases the wrong
   quantity, charges twice, or loses its result when the coordinator restarts.

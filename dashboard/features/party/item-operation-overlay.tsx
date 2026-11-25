@@ -1,7 +1,7 @@
 "use client";
 import { InventoryEntry } from "./inventory-entry";
 import { itemLevelLabelClass } from "./item-level-label-class";
-import { ItemSprite } from "./item-sprite";
+import { SpriteCrop } from "./sprite-crop";
 
 export function ItemOperationOverlay({
   operation,
@@ -18,7 +18,7 @@ export function ItemOperationOverlay({
     >
       {operation.sprite ? (
         <span className="absolute inset-0 opacity-70 motion-safe:animate-pulse">
-          <ItemSprite sprite={operation.sprite} />
+          <SpriteCrop sprite={operation.sprite} />
         </span>
       ) : null}
       {percent ? (

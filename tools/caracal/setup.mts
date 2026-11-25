@@ -6,7 +6,7 @@ import {isCoordinatorApplicationLauncher} from "./coordinator-launcher.mts";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const target = path.resolve(process.argv[2] || path.join(root, ".caracal"));
-export const revision = "234af745d59807be4da49f13430b91980d3e98c9";
+const revision = "234af745d59807be4da49f13430b91980d3e98c9";
 function run(command: string, args: string[], cwd = root) {
   const result = spawnSync(command, args, { cwd, stdio: "inherit", windowsHide: true });
   if (result.error) throw result.error;

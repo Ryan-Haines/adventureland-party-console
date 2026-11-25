@@ -1,8 +1,9 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { read, useVisible } from './query-cache';
-import { METRIC_BUCKET_MS, type MetricSample, type MetricsResponse, type GoldHistoryResponse } from '../../../runtime/metrics/contracts.ts';
+import { pollOf, read, useVisible } from './query-cache';
+import { METRIC_KEPT_WORDS } from './metrics-days';
+import { METRIC_BUCKET_MS, type MetricSample, type MetricsResponse, type GoldHistoryResponse } from '../../../runtime/status/api.ts';
 import { MetricsChart } from './metrics-chart';
 import { MetricsSelect } from './metrics-controls';
 import type { GraphPoint } from './metrics-series';
@@ -13,7 +14,7 @@ const profitBalance = (sample: Pick<MetricSample, 'gold' | 'goldMovement' | 'con
  * not count existing wealth as income. Missing/offline characters retain their
  * last known gain instead of invalidating every party point.
  */
-export function goldGainSeries(data: GoldHistoryResponse, characters: string[], server: string, accountConsumables = false) {
+function goldGainSeries(data: GoldHistoryResponse, characters: string[], server: string, accountConsumables = false) {
   const start = Math.max(data.from, data.startedAt, data.resets?.gold || 0);
   const balances = new Map<string, { baseline: number; balance: number; at: number }>();
   const points: GraphPoint[] = [];
@@ -40,7 +41,7 @@ export function MetricsGold({ data: sharedData, active, clock, live, resetAt, ch
   const query = useQuery({
     queryKey: ['party', 'metrics', 'gold', resetAt, historyClock],
     queryFn: ({ signal }) => read<GoldHistoryResponse>(client, '/metrics?sinceReset=gold&resetAt=' + resetAt + '&to=' + historyClock, signal),
-    enabled: active && visible && !resetDisabled && historyClock > resetAt, staleTime: live ? METRIC_BUCKET_MS : Infinity, gcTime: 10_000, placeholderData: keepPreviousData, retry: false,
+    enabled: active && visible && !resetDisabled && historyClock > resetAt, staleTime: live ? METRIC_BUCKET_MS : Infinity, gcTime: pollOf('metrics').gcTime, placeholderData: keepPreviousData, retry: false,
   });
   const data = useMemo(() => {
     const source = query.data;
@@ -58,6 +59,6 @@ export function MetricsGold({ data: sharedData, active, clock, live, resetAt, ch
     yLabel="Gold gained (net)" currentValue={{ amount: latest, unit: 'gold gained', label: 'Net gold gained since reset' }}
     empty={query.isError ? 'Metrics unavailable' : query.isPending ? 'Loading…' : 'No data since reset'}
     onReset={onReset} resetting={resetting} resetDisabled={resetDisabled} resetTitle={resetTitle}
-    optionDetails={<p className="text-sm text-[#aabfb6]">History since the last reset, up to 180 days. Internal transfers and bank movements are excluded. When enabled, confirmed potion and elixir use is charged at catalog replacement value; their purchases are added back to avoid charging purchase and consumption twice. Older samples without consumption tracking cannot be adjusted.{legacy ? ' Older history predates transfer tracking.' : ''}</p>}
+    optionDetails={<p className="text-sm text-[#aabfb6]">History since the last reset, up to {METRIC_KEPT_WORDS}. Internal transfers and bank movements are excluded. When enabled, confirmed potion and elixir use is charged at catalog replacement value; their purchases are added back to avoid charging purchase and consumption twice. Older samples without consumption tracking cannot be adjusted.{legacy ? ' Older history predates transfer tracking.' : ''}</p>}
     controls={<div className="flex flex-wrap items-center gap-3"><label className="flex items-center gap-2 text-sm text-emerald-100"><input type="checkbox" checked={accountConsumables} onChange={event=>setAccountConsumables(event.target.checked)}/>Account for potion and elixir use</label><MetricsSelect label="Gold character" value={selected} onChange={setCharacter} options={[{ value: '', label: 'All characters' }, ...available.map(name => ({ value: name, label: name }))]} className="w-48 max-w-none" /></div>} />;
 }

@@ -1,15 +1,25 @@
-const {createFarmAreaNavigation}=require('../../../runtime/coordinator/navigation/farm-areas.ts');
+// The hunting owner's farm area service (runtime/hunting/coordinator/farm.ts `createFarm`) over a context that
+// plants the old application names. `farmAreaTick` runs one leader report's pass.
+const {createFarm}=require('../../../runtime/hunting/coordinator/farm.ts');
+const {partyHooks}=require('../../../runtime/hooks/index.ts');
+const {settingsWriter}=require('./settings-writer.cjs');
+// farm.ts reads the relocation switch through the settings owner's `settings.read`; the one
+// registration answers from the newest fixture's writer.
+let settings;
+if(!partyHooks().map().registrations.some(r=>r.name==='core:farm-settings-fixture'))
+ partyHooks().register({name:'core:farm-settings-fixture',folder:'core',author:'test',summary:'test',
+  hooks:{'settings.read':query=>settings.read(query),'settings.write':batch=>settings.write(batch)}});
 function farmAreaService(context){
  const party=context.party;
- const service=createFarmAreaNavigation(party,{
+ settings=settingsWriter(party);
+ const service=createFarm(party,context.character_manage,{
   now:()=>context.Date.now(),rareOwns:()=>context.rareControl?.owns()||false,members:()=>context.farmingNavigation.members(),
-  areas:ids=>context.farmingAreas(party.monsterChoices||[],ids),resolve:(ids,location)=>context.farmZones.resolve(party.monsterChoices||[],ids,location),areaId:area=>context.farmZones.id(area),
-  record:(state,reports,areas,now)=>context.farmAreaControl.record(state,reports,Object.keys(context.character_manage),areas,now),
-  intent:name=>context.farmingNavigation.intent(name),contains:(...args)=>context.farmZones.contains(...args),huntOwns:hunt=>context.huntTurnInOwnsTravel(hunt),
-  eventOwns:hunt=>context.huntPolicy.eventOwnsTravel(hunt,party),cancelConvoy:()=>context.cancelActiveConvoy(),alternatives:(...args)=>context.farmAreaControl.alternatives(...args),
-  advanceHunt:hunt=>context.advanceHuntMission(hunt),fighting:(...args)=>context.farmAreaControl.fighting(...args),startHunt:(...args)=>context.startHuntConvoy(...args),
-  authorize:(...args)=>context.farmingNavigation.authorize(...args),startConvoy:(...args)=>context.startPartyMonsterConvoy(...args),persist:()=>context.persistSettings(),
+  intent:name=>context.farmingNavigation.intent(name),huntOwns:hunt=>context.huntTurnInOwnsTravel(hunt),
+  cancelConvoy:()=>context.cancelActiveConvoy(),farmingLive:()=>false,
+  hunt:{relocate(){},promote(){},skipMission:()=>context.advanceHuntMission(party.monsterHunt)},
+  // A shared walk's authorize saves the party's spot, as farm.ts createFarmingIntents `authorize` does.
+  authorize:(names,location,shared)=>{if(shared)party.location=location;context.farmingNavigation.authorize(names,location,shared);},startConvoy:(...args)=>context.startPartyMonsterConvoy(...args),persist:()=>context.persistSettings(),
  });
- return {farmAreaNavigation:service,farmAreaTick:service.tick};
+ return {farmAreaNavigation:service,farmAreaTick:()=>service.tick(party.leader),settings};
 }
 module.exports={farmAreaService};

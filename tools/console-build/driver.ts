@@ -1,6 +1,7 @@
 import type { Candidate, Component, DeploymentDriver, DeploymentJournal } from './contracts.ts';
+import { lifecycleSavedFields } from '../../runtime/lifecycle/fields.ts';
 
-export interface ActivationObservation {
+interface ActivationObservation {
   coordinator?: { artifactId: string; hash: string };
   dashboardHash?: string;
   /** Host freezes the required connected roster before applying CODE changes. */
@@ -9,7 +10,7 @@ export interface ActivationObservation {
 export interface ActivationPorts {
   /** Capture required connected roster once, before any component stops. */
   prepare?(signal: AbortSignal): Promise<void>;
-  stage?(candidate:Candidate,previous:Candidate|undefined,operation:DeploymentJournal,signal:AbortSignal):Promise<void>;
+  stage?(candidate:Candidate,previous:Candidate|undefined,signal:AbortSignal):Promise<void>;
   stopCoordinator(signal: AbortSignal): Promise<void>;
   startCoordinator(directory: string, signal: AbortSignal): Promise<void>;
   activateDashboard(directory: string, signal: AbortSignal): Promise<void>;
@@ -23,7 +24,8 @@ function delay(signal: AbortSignal): Promise<void> {
   check(signal);
   return new Promise((resolve, reject) => {
     const abort = () => { clearTimeout(timer); reject(signal.reason); };
-    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, 200);
+    // The driver asks the acknowledgement each hostPollMs: the coordinator answers on request.
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, lifecycleSavedFields.settings.hostPollMs.default);
     signal.addEventListener('abort', abort, { once: true });
   });
 }
@@ -60,7 +62,7 @@ export function createDeploymentDriver(ports: ActivationPorts): DeploymentDriver
     }
   }
   return {
-    async prepare(candidate,previous,operation,signal){await ports.stage?.(candidate,previous,operation,signal);},
+    async prepare(candidate,previous,operation,signal){await ports.stage?.(candidate,previous,signal);},
     async activate(candidate, previous, signal) {
       await ports.prepare?.(signal);
       attempted = candidate;

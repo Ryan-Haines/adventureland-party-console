@@ -2,11 +2,20 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { performance } = require("node:perf_hooks");
+// The benchmark harness's shared facts, which every benchmark file reads from here: the character
+// collision base (game.js character bases), the seeded LCG every seeded draw uses, the engines a run
+// compares, and the game client run.cjs plans on by default (the version CI restores,
+// docs/ci.md:11). benchmark-pathfinder.mts defaults to the newest downloaded client instead.
 const BASE = { h: 8, v: 7, vn: 2 };
+const ENGINES = ["native-visible", "native-hidden", "alclient"];
+const GAME_VERSION = "16846";
+function seededRandom(seed) {
+  return () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+}
 function createNative(directory, hidden = false) {
-  let seed = 42;
+  let random = seededRandom(42);
   const math = Object.create(Math);
-  math.random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  math.random = () => random();
   const forbidden = () => {
     throw new Error("Offline benchmark forbids movement, timers, and network");
   };
@@ -68,7 +77,7 @@ function createNative(directory, hidden = false) {
       );
     },
     query(route, querySeed = 42, timeout = 30000) {
-      seed = querySeed;
+      random = seededRandom(querySeed);
       context.input = route;
       vm.runInContext(
         `character.map=input.from.map; character.real_x=input.from.x; character.real_y=input.from.y;
@@ -108,4 +117,4 @@ function createNative(directory, hidden = false) {
     },
   };
 }
-module.exports = { createNative, BASE };
+module.exports = { createNative, BASE, ENGINES, GAME_VERSION, seededRandom };

@@ -1,7 +1,7 @@
 "use client";
 import { Plus } from "lucide-react";
 import type { ActiveSlot } from "./active-slot";
-import type { SteamSwitch } from "./steam-switch";
+import type { SteamSwitch } from "../../../runtime/lifecycle/api.ts";
 
 export function RosterControls({
   slots,

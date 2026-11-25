@@ -6,7 +6,8 @@ export type SupervisorState = {
   instance?: string | null;
   ready?: boolean;
 };
-export type RecoveryStatus = { seconds: number; checking: boolean; blocked: boolean };
+// `timedOut` is the probe bound's report: the last check passed PROBE_TIMEOUT_MS.
+export type RecoveryStatus = { seconds: number; checking: boolean; blocked: boolean; timedOut: boolean };
 export const recoveryStoragePrefix = "party-dashboard-recovery:";
 export function clearRecoveryHistory(storage: Pick<Storage, "length" | "key" | "removeItem">): void {
   for (let index = storage.length - 1; index >= 0; index--) {
@@ -14,9 +15,25 @@ export function clearRecoveryHistory(storage: Pick<Storage, "length" | "key" | "
     if (key?.startsWith(recoveryStoragePrefix)) storage.removeItem(key);
   }
 }
-export function recoveryDelay(attempt: number): number {
-  return attempt < 10 ? 1000 : Math.min(60000, 1000 * 2 ** Math.min(6, attempt - 9));
+/**
+ * The page clears the render-loop guard once Home commits a render that holds a successful status
+ * read: the page is up, so a later error on the same server can recover again. A render error
+ * before that leaves the guard in place, which blocks the reload loop.
+ */
+export function clearWhenUp(storage: () => Pick<Storage, "length" | "key" | "removeItem">): (up: boolean) => void {
+  let cleared = false;
+  return (up) => {
+    if (cleared || !up) return;
+    cleared = true;
+    try { clearRecoveryHistory(storage()); } catch { /* Storage may be disabled. */ }
+  };
 }
+// The delay doubles from 1 s on each failed probe up to 60 s.
+export function recoveryDelay(attempt: number): number {
+  return Math.min(60000, 1000 * 2 ** Math.min(6, attempt));
+}
+// The bound on one probe against an unavailable or hung dashboard server.
+export const PROBE_TIMEOUT_MS = 5000;
 interface Ports {
   now(): number;
   later(callback: () => void, ms: number): unknown;
@@ -28,10 +45,10 @@ interface Ports {
   update(status: RecoveryStatus): void;
 }
 export function startRecovery(ports: Ports) {
-  let attempt = 0, disposed = false, checking = false, blocked = false, manual = false;
+  let attempt = 0, disposed = false, checking = false, blocked = false, manual = false, timedOut = false;
   let timer: unknown, timeout: unknown, controller: AbortController | undefined;
   let due = ports.now() + recoveryDelay(attempt);
-  function publish() { ports.update({ seconds: Math.max(0, Math.ceil((due - ports.now()) / 1000)), checking, blocked }); }
+  function publish() { ports.update({ seconds: Math.max(0, Math.ceil((due - ports.now()) / 1000)), checking, blocked, timedOut }); }
   function tick() {
     if (disposed) return;
     publish();
@@ -42,22 +59,29 @@ export function startRecovery(ports: Ports) {
     if (checking || disposed) return;
     checking = true; publish();
     controller = new AbortController();
-    timeout = ports.later(() => controller?.abort(), 5000);
+    timeout = ports.later(() => controller?.abort(), PROBE_TIMEOUT_MS);
     try {
       const instance = await ports.probe(controller.signal);
-      if (disposed || controller.signal.aborted) return;
+      if (disposed) return;
+      timedOut = controller.signal.aborted;
+      if (timedOut) return;
       if (instance) {
         blocked = !manual && ports.claimed(instance);
         // A healthy page blocked by loop protection is not a failed poll.
         attempt = -1;
         if (!blocked) {
-          // Store before navigating so a persistent render error cannot loop.
-          try { ports.claim(instance); } catch (error) { if (!manual) throw error; }
-          disposed = true;
-          ports.reload();
+          // Store before navigating so a persistent render error cannot loop. A storage that refuses
+          // the claim cannot guard the loop, so the automatic check stops on the manual reload.
+          let stored = true;
+          try { ports.claim(instance); } catch { stored = false; }
+          blocked = !stored && !manual;
+          if (!blocked) { disposed = true; ports.reload(); }
         }
       } else blocked = false;
-    } catch { /* Keep checking after unavailable servers or timed-out requests. */ }
+    } catch {
+      // An unavailable server, or the probe bound fired; the countdown checks again.
+      timedOut = !disposed && !!controller?.signal.aborted;
+    }
     finally {
       ports.cancel(timeout);
       checking = false; manual = false;
@@ -75,28 +99,22 @@ export function startRecovery(ports: Ports) {
   };
 }
 
-export async function probeDashboard(fetcher: typeof fetch, url: string, signal: AbortSignal,
-  report?: (state: SupervisorState) => void, waitForBuild = false): Promise<string | null> {
+export async function probeDashboard(fetcher: typeof fetch, url: string, signal: AbortSignal): Promise<string | null> {
   const options = { signal, cache: "no-store" as const };
   async function state() {
     try {
       const response = await fetcher("/__dashboard/state", options);
       if (!response.ok) return null;
-      const value = await response.json() as SupervisorState;
-      report?.(value);
-      return value;
+      return await response.json() as SupervisorState;
     } catch { return null; }
   }
   const before = await state();
-  // Requested builds must finish before refreshing. Error recovery instead
-  // checks whether the currently served page works, including a retained build.
-  if (waitForBuild && (!before?.ready || before.busy || before.error || !before.instance)) return null;
+  // Error recovery checks whether the served page works, including a retained build.
   const page = await fetcher(url, { ...options, headers: { Accept: "text/html" } });
   const healthy = page.ok && (page.headers.get("content-type") || "").includes("text/html");
   await page.body?.cancel();
   if (!healthy) return null;
   const after = await state();
-  if (waitForBuild && (!after?.ready || after.busy || after.error)) return null;
   if (before?.instance && after?.instance && before.instance !== after.instance) return null;
   return after?.instance || before?.instance || "direct-dashboard";
 }

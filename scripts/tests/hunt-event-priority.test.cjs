@@ -1,154 +1,142 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const fs = require('node:fs'), vm = require('node:vm');
-const source = fs.readFileSync('characters/shared.js', 'utf8');
-const permissionCode = source.slice(source.indexOf('  async function eventTravelAllowed('), source.indexOf('  async function preemptConvoyForAnniversary('));
-const pollCode = source.slice(source.indexOf('  async function joinCombatEvent('), source.indexOf('  function reunionRealm('));
-function fixture() {
-  const actions = [];
-  const r = vm.createContext({ lastDeathInfo:null,eventPrizeSpaceAvailable:()=>true,character: { name: 'Mage', ctype: 'mage', map: 'main' },
-    eventSelected: () => true, eventSelectionRevision: 0, travellingEventName: null,
-    huntTurnInPriority: false, convoyTraveling: null, runtimeCurrent: () => true, navigationIntent:{revision:0},
-    request: async () => ({ allowed: true }), escapeOwns: () => false,
-    eventPollBusy: false, eventsEnabled: true, anniversaryBusy: false, anniversaryStaging: false,
-    joinedEvent: null, eventTraveling: false, eventReturnPending: false, banking: false, stocking: false, upgrading: false,
-    departurePending: false, bankQueued: false, eventMissingSince: 0, eventTargetTypes: [], root: {},
-    G: { maps: { main: {}, goobrawl: { event: 'goobrawl' } }, events: { goobrawl: { join: true } } },
-    activeCombatEvent: () => ({ name: 'goobrawl', types: ['goo'], state: {}, kind: 'pve' }),
-    is_in_range: () => true, nearestEventTarget: () => null, eventDestination: () => ({ map: 'goobrawl', x: 0, y: 0 }),
-    eventRequiresJoin: () => true, join: async name => { actions.push(['join', name]); r.character.map = r.eventDestination().map; },
-    smart_move: async point => { actions.push(['move', point.map]); }, game_log() {},
-    sharedPartyWalk: async point => { actions.push(['move', point.map]); },
-  });
-  const exitOwnerCode=source.slice(source.indexOf('  function eventExitOwnsMovement('),source.indexOf('  function reunionBlocked('));
-  const reachabilityCode=source.slice(source.indexOf('  function eventCombatReachable('),source.indexOf('  function eventCombatSighting('));
-  vm.runInContext(permissionCode + pollCode + exitOwnerCode + reachabilityCode, r);
-  return { r, actions };
-}
+const {fixture}=require('./fixtures/anniversary-kiss-scenario.cjs');
 
-function delayedCrab() {
- const f=fixture(),r=f.r;let visible=false,live=true;
- Object.assign(r,{leader:'Mage',followLeader:true,runtimeGeneration:1,convoyRuntimeId:'runtime',
-  activeCombatEvent:()=>live?{name:'crabxx',types:['crabxx'],state:{},kind:'monster'}:null,
-  eventDestination:()=>({map:'main',x:-1000,y:1700}),
-  parent:{entities:{}},isLiveAbtesting:()=>false,
-  setTimeout:done=>{visible=true;r.parent.entities.boss={id:'boss',mtype:'crabxx',type:'monster',visible:true,hp:100,x:-1000,y:1700};done();},
-  request:async(path,options)=>{if(path==='/shared-travel'){f.actions.push(['walk',!!options.body.cancel]);return {phase:'waiting'};}return {allowed:true};}
- });
- vm.runInContext(source.slice(source.indexOf('  function nearestEventTarget('),source.indexOf('  function isAggressiveEventCombat(')),r);
- vm.runInContext(source.slice(source.indexOf('  async function sharedPartyWalk('),source.indexOf('  function sharedConvoyPoint(')),r);
- return {...f,visible:()=>visible,end:()=>{live=false;}};
+const { installEventAttendance } = require('../../runtime/events/character/attend.ts');
+// Event travel reads the answer the reply carries, behind the Cave and movement's rank half.
+function travel(over = {}) {
+ const t = { admission: null, current: true, cave: false, held: false, ctype: 'mage', ...over };
+ return installEventAttendance({ character: () => ({ map: 'main', ctype: t.ctype }),
+  travel: { admission: () => t.admission, current: () => t.current, caveOwns: () => t.cave, held: () => t.held } }).allowed;
 }
-
-test('Gigacrab teleport releases travel before boss visibility without any convoy request',async()=>{
- const {r,actions}=delayedCrab();
- r.sharedPartyWalk=async()=>assert.fail('joinable event must not walk');
- await r.pollEvents();
- assert.equal(r.joinedEvent,'crabxx'); assert.equal(r.nearestEventTarget(),null);
- assert.equal(r.eventTraveling,false);assert.equal(r.eventPollBusy,false);
- assert.deepEqual(actions,[['join','crabxx']]);
- await r.pollEvents(); assert.deepEqual(actions,[['join','crabxx']]);
+// The character half of the kiss rule: the kiss report reaches the coordinator only after the
+// kiss starts, so the character's own intake keeps an event walk's command off it while it kisses.
+test("a kissing character defers an event attendance walk's command and takes every other", () => {
+ const t = { kiss: null };
+ const defers = installEventAttendance({ kiss: () => t.kiss }).defers;
+ const walk = { id: 9, type: 'party-monster-travel', phase: 'assemble', requester: { kind: 'group-walk', tier: 'event-attendance' } };
+ assert.equal(defers(walk), null, 'no kiss runs');
+ t.kiss = { round: 'r1', startedAt: 5 };
+ assert.equal(defers(walk), 'anniversary kiss');
+ assert.equal(defers({ ...walk, requester: { kind: 'group-walk', tier: 'farming' } }), null, 'a farming walk is a newer command (row 32)');
+ assert.equal(defers({ id: 10, type: 'town-party' }), null);
+ assert.equal(defers(null), null);
 });
 
-test('event ending during join releases travel and preserves unconfirmed reentry',async()=>{
- const f=delayedCrab();f.r.join=async()=>{f.end();};
- await f.r.pollEvents();assert.equal(f.r.eventTraveling,false);assert.equal(f.r.eventPollBusy,false);
- assert.equal(f.r.joinedEvent,null); assert.deepEqual(f.actions,[]);
-});
-
-test('dead or other-instance event entities cannot trigger the combat handoff',()=>{
- const {r}=delayedCrab();r.eventTargetTypes=['crabxx'];r.character.in='main';
- const boss={id:'boss',mtype:'crabxx',type:'monster',visible:true,hp:100,x:0,y:0,map:'main',in:'main'};
- for(const change of [{hp:0},{dead:true},{visible:false},{map:'cave'},{in:'other'}]){
-  r.parent.entities={boss:{...boss,...change}};assert.equal(r.nearestEventTarget(),null);
+test("event travel moves only with the coordinator's admission, and a denied preemption stops nothing (MOV-054)", async ()=>{
+ {
+  assert.equal(travel()('crabxx'), false, 'no reply carries an admission');
+  assert.equal(travel({ ctype: 'merchant' })('crabxx'), true, "the merchant's own group asks no admission");
+  const admitted = { event: 'crabxx', allowed: true };
+  assert.equal(travel({ admission: admitted })('crabxx'), true);
+  assert.equal(travel({ admission: admitted })('franky'), false, 'the admission names its event');
+  assert.equal(travel({ admission: { event: 'crabxx', allowed: false } })('crabxx'), false);
+  for (const held of [{ held: true }, { cave: true }, { current: false }]) assert.equal(travel({ admission: admitted, ...held })('crabxx'), false);
  }
- r.parent.entities={boss};assert.equal(r.nearestEventTarget().id,'boss');
+ {
+  // The anniversary's preemption (character/anniversary.ts `preempt`): the Hunt hand-in answer
+  // stops nothing of the convoy it found.
+  const t = fixture({ convoy: true, preempt: { huntTurnIn: true } });
+  await t.run();
+  const before = t.calls.findIndex(c => c[0] === '/anniversary/attempt');
+  assert.ok(before >= 0, 'the kiss reaches its attempt');
+  assert.deepEqual(t.calls.slice(0, before).filter(c => c[0] === 'stop' || c[0] === 'release-convoy' || c[0] === 'convoy-stopped'), []);
+ }
 });
 
-test('joinable entry does not depend on coordinator walking availability',async()=>{
- const f=delayedCrab();f.r.request=async path=>path==='/shared-travel'?{error:'unauthorized walking leg'}:{allowed:true};
- f.r.setTimeout=()=>assert.fail('rejected route must not keep polling');
- await f.r.pollEvents();assert.equal(f.r.eventTraveling,false);assert.equal(f.r.eventPollBusy,false);
+// The poll (attend.ts `poll`): it acts only on the member's attendance assignment, which
+// the tasks owner's rank table gives only while no higher task holds the group.
+const {attendScenario}=require('./fixtures/event-attend-scenario.cjs');
+test('the poll joins only for its attendance assignment, and a member on an ended occurrence asks for its return at its first current feed without it', async () => {
+ {
+  const { attend, calls, t } = attendScenario({ task: null });
+  await attend.poll();
+  assert.deepEqual(calls, [], 'no assignment, no join');
+  t.task = { kind: 'cave', owner: 'cave:1', tier: 'cave' };
+  await attend.poll();
+  assert.deepEqual(calls, [], 'a higher task holds the group');
+  t.task = { kind: 'event-attendance', owner: 'attend:goobrawl:1', tier: 'event-attendance', event: 'goobrawl' };
+  await attend.poll();
+  assert.deepEqual(calls, [['join', 'goobrawl']]);
+  assert.equal(attend.joined(), 'goobrawl', 'the map names the assigned event');
+ }
+ {
+  const { attend, calls, t } = attendScenario({ feed: {}, task: { kind: 'event-return', owner: 'event-return:ended:goobrawl:1', tier: 'event-return', phase: 'awaiting-return', goal: { event: 'goobrawl', occurrence: '1' } } });
+  await attend.poll(); await attend.poll();
+  assert.deepEqual(calls, [['request', '/event-ended', { character: 'P', event: 'goobrawl' }]], 'one post per hold');
+ }
 });
-test('Goobrawl cannot join or move when coordinator protects the Daisy claim gap', async () => {
-  const { r, actions } = fixture(); r.request = async () => ({ allowed: false });
-  await r.pollEvents(); assert.deepEqual(actions, []); assert.equal(r.eventTraveling, false);
+// The search (attend.ts `searchFor`): one pass over the `search` maps' points, the feed's map
+// first; a sighting ends the pass at its walk, and a pass with no sighting ends the occurrence's search.
+// event-search.test.cjs holds the walking order.
+test('the Slenderman search walks each point once and ends at a sighting', async () => {
+ const game = { maps: { main: {}, halloween: { spawns: [[1, 1], [1, 1]] }, spookytown: { spawns: [[2, 2]], npcs: [{ position: [3, 3] }] }, cave: { spawns: [[4, 4]] } }, events: {} };
+ const { attend, calls, t } = attendScenario({ event: 'slenderman', joins: false, map: 'halloween', game, feed: { slenderman: { live: true, id: 's1', map: 'spookytown' } } });
+ await attend.poll();
+ assert.deepEqual(calls.map(call => call[1]), ['spookytown', 'spookytown', 'halloween', 'cave'], 'the feed map first, each point once');
+ calls.length = 0; await attend.poll();
+ assert.deepEqual(calls, [], 'an ended pass does not walk again in the occurrence');
+ t.feed = { slenderman: { live: true, id: 's2', map: 'halloween' } }; await attend.poll();
+ assert.equal(calls[0][1], 'halloween', 'a new occurrence searches again, from its own feed map');
 });
-test('a permission response cannot revive an event poll after local turn-in begins', async () => {
-  const { r, actions } = fixture(); let resolve;
-  r.request = () => new Promise(done => { resolve = done; });
-  const pending = r.pollEvents(); r.huntTurnInPriority = true; resolve({ allowed: true });
-  await pending; assert.deepEqual(actions, []);
-});
-test('event travel rechecks priority after joining and resumes normally once released', async () => {
-  const { r, actions } = fixture();
-  r.join = async () => { actions.push(['join']); r.character.map = 'goobrawl'; r.huntTurnInPriority = true; };
-  await r.pollEvents(); assert.deepEqual(actions, [['join']]);
-  r.huntTurnInPriority = false;
-  await r.pollEvents(); assert.deepEqual(actions, [['join']]);
-});
-test('coordinator outage denies event movement without interfering with merchant work', async () => {
-  const { r } = fixture(); r.request = async () => { throw new Error('offline'); };
-  assert.equal(await r.eventTravelAllowed(), false);
-  r.character.ctype = 'merchant'; assert.equal(await r.eventTravelAllowed(), false);
-});
-test('anniversary preemption denial cannot stop the active hunt route', async () => {
-  const { r, actions } = fixture();
-  r.anniversaryRoundAborted = () => false; r.partyConvoyActive = true;
-  r.convoyTraveling = { id: 'turn-in', cancelled: false };
-  r.navigationIntent = { revision: 1 };r.anniversaryEpoch = value => value;
-  r.releaseConvoyCruise = () => actions.push(['release']);r.stop = async () => actions.push(['stop']);
-  r.request = async path => path === '/hunt-event-permission' ? { allowed: true } : { huntTurnIn: true };
-  vm.runInContext(source.slice(source.indexOf('  async function preemptConvoyForAnniversary('), source.indexOf('  function anniversaryRoundAborted(')), r);
-  await r.preemptConvoyForAnniversary({ live: true, expires: 500000 });
-  assert.deepEqual(actions, []);assert.equal(r.convoyTraveling.cancelled, false);
-});
-
-test('coordinator refuses anniversary preemption after the return convoy has completed', () => {
-  const coordinator = require('./helpers/coordinator-source.cjs').coordinatorSource();
-  let route, response, mutations = 0;
-  const huntPolicy = require('../../runtime/hunt/policy.ts');
-  const hunt = JSON.parse(JSON.stringify({ owner: 'Warrior', stage: 'at-daisy', participants: ['Warrior'],
-    turnIn: { owner: 'Warrior', phase: 'claiming' } }));
-  const context = { party: { monsterHunt: hunt, merchantCharacter: 'Merchant', activeConvoy: null,
-      anniversary: { eventCycle: { startsAt: 1 } } }, ownedCharacter: () => true,
-    huntTurnInOwnsTravel: huntPolicy.priority,
-    farmingNavigation: { intent: () => ({ revision: 1 }), supersede: () => mutations++ },
-    cancelActiveConvoy: () => mutations++, persistSettings: () => mutations++,
-    express_inst: { post: (_, handler) => { route = handler; } },
-  };
-  route=require('./helpers/coordinator-anniversary-navigation.cjs').navigationRoutes(context).preempt;
-  route({ body: { character: 'Warrior', navigationRevision: 1, startsAt: 9999999 } },
-    { json: value => { response = value; }, status() { return this; } });
-  assert.equal(response.huntTurnIn, true);assert.equal(mutations, 0);
-});
-
-
-test('anniversary staging yields to an enabled combat event',async()=>{
- const {r,actions}=fixture();r.anniversaryStaging=true;
- await r.pollEvents();assert.equal(r.anniversaryStaging,false);
- assert.deepEqual(actions,[['join','goobrawl']]);
-});
-test('denied handoff leaves anniversary movement intact',async()=>{
- const {r,actions}=fixture();r.anniversaryStaging=true;r.request=async()=>({allowed:false});
- await r.pollEvents();assert.equal(r.anniversaryStaging,true);assert.deepEqual(actions,[]);
-});
-test('preempting an owned staging route invalidates its continuation',async()=>{
- const {r,actions}=fixture();const operation={revision:3,cancelled:false};
- r.anniversaryBusy=true;r.root.__partyAnniversaryStagingOperation=operation;
- r.navigationIntent={revision:3};r.townTraveling=false;r.forceTraveling=false;
- r.stop=async()=>{};await r.pollEvents();
- assert.equal(operation.cancelled,true);assert.equal(r.root.__partyAnniversaryStagingOperation,null);
- assert.deepEqual(actions,[['join','goobrawl']]);
-});
-test('an active kiss stays protected until its operation ends',async()=>{
- const {r,actions}=fixture();r.root.__partyAnniversaryKissOperation={startedAt:1};
- await r.pollEvents();assert.deepEqual(actions,[]);
- r.root.__partyAnniversaryKissOperation=null;await r.pollEvents();assert.equal(actions[0][0],'join');
+// A monster walk the player picked by hand leaves the live event first (attend.ts `leaveForManualWalk`):
+// it exits an event area's map and leaves a joined event elsewhere, and any other walk keeps the event.
+test('a manual monster walk leaves the live event by the map exit or the leave, and no other walk does', async () => {
+ {
+  const { attend, calls } = attendScenario({});
+  await attend.poll();
+  assert.equal(attend.joined(), 'goobrawl');
+  await attend.leaveForManualWalk({ id: 1 }, 'walk');
+  assert.equal(attend.joined(), 'goobrawl', 'a walk the player did not pick by hand keeps the event');
+  assert.equal(calls.filter(c => c === 'exit-map' || c === 'leave-event').length, 0);
+  await attend.leaveForManualWalk({ id: 1, manualMonsterOverride: true }, 'walk');
+  assert.deepEqual(calls.filter(c => c === 'exit-map' || c === 'leave-event'), ['exit-map'], 'on the event area map the walk exits the map');
+ }
+ {
+  const { attend, calls } = attendScenario({ map: 'main' });
+  await attend.poll();
+  assert.equal(attend.joined(), 'goobrawl');
+  await attend.leaveForManualWalk({ id: 1, manualMonsterOverride: true }, 'walk');
+  assert.deepEqual(calls.filter(c => c === 'exit-map' || c === 'leave-event'), ['leave-event'], 'off the area map a joined event is left');
+ }
 });
 
-test('a late departure permission cannot cancel a newer navigation intent',async()=>{
- const {r,actions}=fixture();r.anniversaryStaging=true;
- const operation=r.root.__partyAnniversaryStagingOperation={revision:0,cancelled:false};
- r.request=async()=>{r.navigationIntent.revision++;return {allowed:true};};
- await r.pollEvents();assert.equal(operation.cancelled,false);assert.deepEqual(actions,[]);
+// Fixed-end event timer row (live run on a4884e05f): the warrior's combat approach to the declared
+// Mr. Pumpkin needed a planned route, so the straight-walk reach test read false, and every poll
+// asked the party's event walk. The walk's command cancelled the approach about 800 ms in, the
+// coordinator let the warrior go from the walk, and the next approach started, every 2 s, with no
+// hit. A live approach to the event's target is already the character's way to it: the poll asks no
+// walk while it runs.
+test('an event poll asks no walk while the combat approach walks to the event target', async () => {
+ const boss = { id: '737', mtype: 'mrpumpkin' };
+ const scenario = over => attendScenario({ event: 'mrpumpkin', joins: false, map: 'halloween', walkBoss: true, attendance: () => ({ event: 'mrpumpkin' }),
+   feed: { mrpumpkin: { live: true, map: 'halloween', x: -495, y: 685 } }, target: boss, reachable: false, ...over });
+ {
+  const { attend, calls } = scenario({ approaching: '737' });
+  await attend.poll(); await attend.poll();
+  assert.deepEqual(calls.filter(call => call[0] === 'walk'), [], 'the approach keeps the journey');
+ }
+ {
+  const { attend, calls } = scenario({ approaching: null });
+  await attend.poll();
+  assert.equal(calls.filter(call => call[0] === 'walk').length, 1, 'with no approach the poll walks');
+ }
+});
+
+// The event checks follow the game's state update: targeting and the skill gates ask the active
+// event many times in one pass, and the character, the entities and the feed it reads change only
+// when the game applies an update or a new feed arrives. Isolated: a live run counts no reads.
+test('the active event reads the game state once per update and again on a new update or feed', () => {
+ const { attendScenario } = require('./fixtures/event-attend-scenario.cjs');
+ const { attend, t } = attendScenario({ updates: 1, feed: { goobrawl: { live: true } } });
+ const first = attend.active(), reads = t.reads;
+ assert.equal(first?.name, 'goobrawl');
+ for (let i = 0; i < 5; i++) assert.equal(attend.active(), first, 'the same update answered differently');
+ assert.equal(t.reads, reads, 'a check with nothing changed read the game state again');
+ t.feed = { goobrawl: { live: true } };
+ attend.active();
+ assert.ok(t.reads > reads, 'a new feed kept the last answer');
+ const fed = t.reads;
+ t.updates = 2;
+ attend.active();
+ assert.ok(t.reads > fed, 'a new update kept the last answer');
 });

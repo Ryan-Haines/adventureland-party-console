@@ -90,9 +90,6 @@ const logger = {
   error: (...args) => { startupError = new Error(args.map(String).join(' ')); console.error(...args); },
 };
 const adapters = {
-  // Test the freshly built maintained policy rather than a previous live
-  // deployment's published catalog; E2E builds must not activate live assets.
-  '../../dashboard/lib/event-policy.cjs': require(path.join(root, '.build/shared/event-policy.cjs')),
   // Map references resolve against the launcher directory. Read the same pinned
   // catalog from this scenario, without modifying the installed game cache.
   'node:fs': { ...fs, readFileSync(file, ...args) {
@@ -123,7 +120,23 @@ const adapters = {
   'node:child_process': { fork: () => forbidden('character worker launch') },
   'bot-web-interface': function() { return forbidden('legacy monitor'); },
   '../monitoring_util': {},
-  express: Object.assign((...args) => express(...args), express, {
+  // With the settings fixture add-on, the app answers its table route before the coordinator's own
+  // routes: `heard` returns the notices the add-on heard
+  // from `since` on, and `ask` asks a settings hook as the add-on asks it.
+  express: Object.assign((...args) => {
+    const app = express(...args);
+    if (process.env.E2E_FIXTURE_ADDON === 'true') app.post('/party-api/e2e-settings-hooks', express.json(), (req, res) => {
+      const { heardSince } = require('./fixtures/settings-hooks-addon.ts');
+      const { op, since = 0, hook, args: question = [] } = req.body || {};
+      try {
+        if (op === 'heard') return res.json(heardSince(since));
+        if (op === 'now') return res.json({ now: Date.now() });
+        if (op === 'ask' && /^settings\.(read|write)$/.test(hook)) return res.json({ answer: globalThis.__partyHooks.askRow(hook, question) ?? null });
+      } catch (error) { return res.status(400).json({ error: String(error) }); }
+      return res.status(400).json({ error: 'Unknown op ' + op });
+    });
+    return app;
+  }, express, {
     static(file, ...args) {
       const isolated = path.resolve(file) === path.resolve(launcherDirectory, '../CODE')
         ? path.join(directory, 'CODE') : file;
@@ -139,6 +152,13 @@ async function main() {
     loadFetch: async () => gameFetch,
   });
   if (startupError) throw startupError;
+  // The settings rows' fixture add-on (e2e/fixtures/settings-hooks-addon.ts) joins the
+  // coordinator's registry before the fixture reports ready.
+  if (process.env.E2E_FIXTURE_ADDON === 'true') {
+    const { settingsKindsAddon } = require('./fixtures/settings-hooks-addon.ts');
+    const registered = globalThis.__partyHooks.register(settingsKindsAddon);
+    if (!registered.ok) throw new Error(registered.message);
+  }
   await new Promise((resolveReady, reject) => {
     const request = http.get('http://127.0.0.1:' + port + '/party-api/state?section=core', response => {
       let body = '';
@@ -154,16 +174,16 @@ async function main() {
     request.on('error', reject);
     request.setTimeout(10000, () => request.destroy(new Error('Coordinator readiness timed out')));
   });
-  // Like characters/shared.js attachStatusInventory: items, slots and bank go
-  // out on a change, on a refusal and at least every 10 s.
+  // Like runtime/items/character/bag.ts attachStatusInventory: items, slots and
+  // bank go out on a change, on a refusal and while the reply acknowledged another revision.
   const inventories = {};
   function inventoryDelta(report) {
     const fields = ['items', 'slots', 'bank'].filter(field => Object.hasOwn(report, field));
     const key = JSON.stringify(fields.map(field => report[field]));
-    const held = inventories[report.name] ||= { count: 0, fullAt: 0 };
+    const held = inventories[report.name] ||= { count: 0 };
     if (held.key !== key) { held.key = key; held.revision = 'e2e-' + report.name + '.' + (++held.count); }
     const delta = { ...report, inventoryRevision: held.revision };
-    if (held.acknowledged === held.revision && Date.now() - held.fullAt < 10000) for (const field of fields) delete delta[field];
+    if (held.acknowledged === held.revision) for (const field of fields) delete delta[field];
     return { full: { ...report, inventoryRevision: held.revision }, delta, held };
   }
   function post(report) {
@@ -183,11 +203,10 @@ async function main() {
   async function heartbeat(catalogs = false) {
     for (const report of game.reports(catalogs)) {
       const { full, delta, held } = inventoryDelta(report);
-      let sent = delta, reply = await post(delta);
-      if (reply.status === 409 && !Object.hasOwn(delta, 'items')) reply = await post(sent = full);
+      let reply = await post(delta);
+      if (reply.status === 409 && !Object.hasOwn(delta, 'items')) reply = await post(full);
       if (reply.status !== 200) throw new Error('Game fixture heartbeat failed: ' + reply.status + ' ' + reply.result);
       held.acknowledged = JSON.parse(reply.result).inventoryRevision;
-      if (Object.hasOwn(sent, 'items')) held.fullAt = Date.now();
     }
   }
   await heartbeat(true);

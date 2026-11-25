@@ -7,7 +7,7 @@ type Purchases = NonNullable<NonNullable<PartyState['nativeStand']>['purchases']
 
 /**
  * A purchase whose merchant job ended without confirming it blocks this WTB. The player
- * decides: bought counts it toward the order, not bought just releases it.
+ * decides: bought counts it toward the order, not bought releases it.
  */
 export function WTBUnconfirmedPurchase({ itemId, name, purchases }: { itemId: string; name: string; purchases?: Purchases }) {
   const action = usePartyAction();

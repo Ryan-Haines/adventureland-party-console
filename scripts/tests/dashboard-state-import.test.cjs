@@ -1,6 +1,7 @@
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const policy=require('../../runtime/coordinator/persistence/dashboard-import.ts');
-const {stateKeys}=require('../../runtime/coordinator/persistence/snapshots.ts');
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const policy=require('../../runtime/settings/coordinator/persistence/dashboard-import.ts');
+const {stateKeys}=require('../../runtime/settings/coordinator/persistence/snapshots.ts');
+const {settingsWriter}=require('./helpers/settings-writer.cjs');
 const record=(key,value)=>JSON.stringify({[key]:value===null?null:JSON.stringify(value)});
 const source=value=>record(stateKeys.settings,value);
 
@@ -17,9 +18,9 @@ test('deleted characters are skipped, including empty maps, while owned and shar
  const parsed=policy.parseDashboardImport(source({threshold:30,marked:{W:[],Deleted:[]},upgrades:{Deleted:[]},
   deconstructionMarks:[{id:'old',owner:'Deleted',origin:'character',item:{name:'coat'},quantity:1}]}),name=>name==='W');
  assert.deepEqual(parsed.values,{marked:{W:[]},threshold:30});
- assert.deepEqual(parsed.skippedCharacters,{Deleted:['marked','upgrades','deconstructionMarks']});
+ assert.deepEqual(parsed.skippedCharacters,{Deleted:['deconstructionMarks','marked','upgrades']});
  const state={upgrades:{W:[{item:{name:'coat'},tiers:1}]}};
- policy.applyDashboardImport(state,parsed);
+ assert.equal(policy.applyDashboardImport(state,parsed,settingsWriter(state).write),null);
  assert.equal(state.upgrades.W.length,1);
  assert.deepEqual(policy.parseDashboardImport(source({marked:{}}),()=>true).values.marked,{});
  assert.throws(()=>policy.parseDashboardImport(source({threshold:30,marked:{Deleted:123}}),()=>false),/Invalid saved marked/);
@@ -29,7 +30,7 @@ test('character-specific sale rules are skipped without dropping shared item rul
  const parsed=policy.parseDashboardImport(source({autoNpcSales:{shared:{item:{name:'coat'}},old:{character:'Deleted',item:{name:'coat'}}},
   npcSaleMarks:[{id:'old',character:'Deleted',item:{name:'coat'}}]}),()=>false);
  assert.deepEqual(parsed.values,{autoNpcSales:{shared:{item:{name:'coat'}}}});
- assert.deepEqual(parsed.skippedCharacters,{Deleted:['npcSaleMarks','autoNpcSales']});
+ assert.deepEqual(parsed.skippedCharacters,{Deleted:['autoNpcSales','npcSaleMarks']});
  const f=routes(),data=source({marked:{Deleted:[]}}),preview=f.call('/party-api/dashboard-state/preview',data);
  assert.deepEqual(preview.body.fields,[]);assert.deepEqual(preview.body.skippedCharacters,{Deleted:['marked']});
  assert.equal(f.call('/party-api/dashboard-state/import',data,preview.body.digest).status,400);
@@ -41,7 +42,7 @@ test('imports marks and preferences while preserving credentials, roster, queues
   leader:'Current',anniversary:{blacklist:['old'],round:123},secret:'keep'};
  const parsed=policy.parseDashboardImport(source({marked:{W:[{name:'coat'}]},threshold:10,
   merchantQueue:[{id:'old'}],activeConvoy:{id:'old'},leader:'Old',secret:'discard',anniversary:{blacklist:['new'],round:5}}),()=>true);
- policy.applyDashboardImport(state,parsed);
+ assert.equal(policy.applyDashboardImport(state,parsed,settingsWriter(state).write),null);
  assert.equal(state.threshold,10);assert.equal(state.secret,'keep');assert.equal(state.leader,'Current');
  assert.deepEqual(state.merchantQueue,[{id:'live'}]);assert.deepEqual(state.activeConvoy,{id:'travel'});
  assert.deepEqual(state.anniversary,{blacklist:['old'],round:123});
@@ -55,17 +56,16 @@ test('invalid JSON, malformed marks and unsafe keys reject the entire upload',()
 });
 
 function routes() {
- const source=require('./helpers/coordinator-source.cjs').coordinatorSource();
  const handlers={},writes=[],saved=[];
  const party={threshold:10,anniversary:{blacklist:[],round:7},merchantQueue:[{id:'keep'}]};
- const c={party,coordinatorPolicies:policy,ownedCharacter:n=>n==='W',LOCALSTORAGE_PATH:'state.jsonl',
+ const c={party,ownedCharacter:n=>n==='W',LOCALSTORAGE_PATH:'state.jsonl',
   crypto:require('node:crypto'),express:{text:()=>null},
   express_inst:{get:(p,f)=>handlers[p]=f,post:(p,...f)=>handlers[p]=f.at(-1)},
   fs_regular:{realpathSync:()=>'/data/localStorage/caraGarage.jsonl',constants:{COPYFILE_EXCL:1},copyFileSync:(...args)=>writes.push(args)},
   persistSettings:()=>saved.push(party.threshold)};
- const routes=require('../../runtime/coordinator/http/dashboard-import-composition.ts').createCoordinatorDashboardImport(party,c.LOCALSTORAGE_PATH,{
-  owned:name=>c.ownedCharacter(name),rosterReady:()=>c.ready !== false,crypto:{...c.crypto,randomBytes:size=>{assert.equal(size,4);return Buffer.from('01020304','hex');}},
-  files:c.fs_regular,header:(req,name)=>req.get(name),now:()=>1234,persist:()=>c.persistSettings(),
+ const routes=require('../../runtime/settings/coordinator/routes/import.ts').createCoordinatorDashboardImport(party,c.LOCALSTORAGE_PATH,{
+  owned:name=>c.ownedCharacter(name),roster:()=>c.ready===false?[]:['W'],hooks:{registrations:()=>[],notify(){}},crypto:{...c.crypto,randomBytes:size=>{assert.equal(size,4);return Buffer.from('01020304','hex');}},
+  files:c.fs_regular,header:(req,name)=>req.get(name),now:()=>1234,persist:()=>c.persistSettings(),write:settingsWriter(party).write,
  });
  handlers['/party-api/dashboard-state']=routes.metadata;
  handlers['/party-api/dashboard-state/preview']=routes.preview;
@@ -106,11 +106,17 @@ test('import metadata resolves the current installation path at request time',()
  assert.equal(metadata.canonicalPath,'C:/installation/localStorage/caraGarage.jsonl');
  assert.equal(metadata.dockerPath,'/data/localStorage/caraGarage.jsonl');assert.equal(metadata.maxBytes,128*1024*1024);
 });
-test('a persistence failure restores in-memory settings and reports the recovery backup',()=>{
+
+// v1.5.0's failed apply answered 500 with no cause, and its
+// restore persisted again in a catch that dropped a second failure (http/dashboard-import.ts:41-50,
+// 68-74). The reply names the apply's cause, and the restore is the assignment alone, with nothing
+// to drop.
+test('X1: a failed import names its cause and restores without another save',()=>{
  const f=routes(),data=source({threshold:25});const preview=f.call('/party-api/dashboard-state/preview',data);
- f.c.persistSettings=()=>{throw Error('disk full');};
+ let saves=0;f.c.persistSettings=()=>{saves++;throw Error('disk full');};
  const failed=f.call('/party-api/dashboard-state/import',data,preview.body.digest);
- assert.equal(failed.status,500);assert.equal(f.party.threshold,10);assert.match(failed.body.error,/Backup:/);
+ assert.equal(failed.status,500);assert.match(failed.body.error,/\(disk full\)/);assert.match(failed.body.error,/Backup:/);
+ assert.equal(saves,1,'the restore saves nothing after the failed save');assert.equal(f.party.threshold,10);
 });
 
 test('import refuses to mutate settings if its exclusive backup fails',()=>{
@@ -127,35 +133,121 @@ test('legacy blacklist-only import is ignored without changing runtime state',()
  assert.deepEqual(f.party.anniversary,{blacklist:[],round:7});assert.deepEqual(f.party.merchantQueue,[{id:'keep'}]);
 });
 
-for(const metadataFailure of [false,true])test(metadataFailure ? 'loading import settings cannot claim a file import failed' : 'Settings import previews a file before confirmation and shows its canonical path and backup',async()=>{
- const ts=require('../../node_modules/typescript');
- const code=ts.transpileModule(fs.readFileSync('dashboard/features/party/dashboard-state-import.tsx','utf8')
-  .replace(/^import .*;\r?\n/gm,'').replace('export function','function'),
-  {compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText;
- const slots=[],effects=[],requests=[];let cursor=0;
- const c=vm.createContext({API:'/party-api',Button:'Button',StateExportButton:'StateExportButton',AbortController,
-  useState:v=>{const i=cursor++;if(!(i in slots))slots[i]=v;return[slots[i],v=>slots[i]=v];},
-  useRef:v=>{const i=cursor++;return slots[i] ||= {current:v};},useEffect:fn=>{const i=cursor++;if(!slots[i]){slots[i]=true;effects.push(fn);}},
-  React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})},
-  fetch:async(url,options)=>{requests.push({url,options});if(metadataFailure)return {ok:false,text:async()=>JSON.stringify({error:'Service unavailable'})};const data=url.endsWith('/preview')?
-   {fields:['marked'],characters:['W'],digest:'hash'}:url.endsWith('/import')?
-   {fields:['marked'],characters:['W'],digest:'hash',backupPath:'/data/localStorage/backup.jsonl'}:
-   {canonicalPath:'/data/localStorage/caraGarage.jsonl',maxBytes:128*1024*1024};return {ok:true,json:async()=>data,text:async()=>JSON.stringify(data)};}});
- vm.runInContext(code,c);const render=()=>{cursor=0;return c.DashboardStateImport();};
- const nodes=t=>t&&typeof t==='object'?[t,...t.children.flatMap(nodes)]:[];
- const flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};
- let tree=render();effects.forEach(fn=>fn());await flush();tree=render();
- if(metadataFailure){
-  const alert=nodes(tree).find(n=>n.props.role==='alert');assert.ok(alert);
-  assert.match(alert.children.join(''),/Could not load import\/export settings: Service unavailable/);
-  assert.doesNotMatch(alert.children.join(''),/Error importing state file/);return;
- }
- assert.ok(nodes(tree).some(n=>n.children.includes('/data/localStorage/caraGarage.jsonl')));
- const input=nodes(tree).find(n=>n.type==='input');input.props.ref.current={value:''};
- input.props.onChange({target:{files:[{name:'caraGarage.jsonl',size:10,text:async()=>source({marked:{W:[]}})}]}});
- await flush();tree=render();assert.equal(requests.filter(r=>r.url.endsWith('/import')).length,0);
- const confirm=nodes(tree).find(n=>n.type==='Button'&&n.children.includes('Import dashboard state'));assert.ok(confirm);
- confirm.props.onClick();await flush();tree=render();
- assert.equal(requests.at(-1).options.headers['X-State-Preview'],'hash');
- assert.ok(nodes(tree).some(n=>n.type==='output'));
+// The import view on the real dashboard loader and react-test-renderer. It sends through the real
+// query-actions.ts performAction on a dashboard query client, which calls the process fetch; each
+// row plants its fetch there. `limits` answers the route's GET, and a row that holds it open leaves
+// the limits unread.
+async function importView(t,{limits,failure}={}){
+ const {load,queryRoot,dashboardRequire}=require('./helpers/dashboard-query-module.cjs');
+ const React=dashboardRequire('react'),{create,act}=dashboardRequire('react-test-renderer');
+ require('./helpers/test-registry.cjs').restoreGlobals(t,['fetch','IS_REACT_ACT_ENVIRONMENT']);globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+ const requests=[],reply=(ok,data)=>({ok,status:ok?200:503,redirected:false,json:async()=>data,text:async()=>JSON.stringify(data)});
+ globalThis.fetch=async(url,options)=>{requests.push({url:String(url),options});
+  if(String(url).endsWith('/preview'))return reply(true,{fields:['marked'],characters:['W'],digest:'hash'});
+  if(String(url).endsWith('/import'))return reply(true,{fields:['marked'],characters:['W'],digest:'hash',backupPath:'/data/localStorage/backup.jsonl'});
+  if(failure)return reply(false,{error:'Service unavailable'});
+  return limits?reply(true,limits):new Promise(()=>{});};
+ const tags=new Proxy({},{get:(_,key)=>String(key)});
+ const {DashboardStateImport}=load('dashboard-state-import.tsx',{'@/components/ui/*':tags,'./state-export-button':{StateExportButton:'StateExportButton'}});
+ const {wrap}=queryRoot();let view;
+ await act(async()=>{view=create(wrap(React.createElement(DashboardStateImport)));});
+ t.after(()=>act(async()=>view.unmount()));
+ const text=node=>typeof node==='string'?node:(node.children||[]).map(text).join('');
+ const choose=file=>act(async()=>view.root.findByProps({'aria-label':'Import state file'}).props.onChange({target:{files:[file]}}));
+ return {requests,act,root:view.root,text:()=>text(view.root),alert:()=>view.root.findAll(n=>n.props.role==='alert').map(text).join(''),choose};
+}
+const limits={canonicalPath:'/data/localStorage/caraGarage.jsonl',localPath:'/install/caraGarage.jsonl',dockerPath:'/volume/caraGarage.jsonl',maxBytes:1024*1024};
+const stateFile=(size=10)=>({name:'caraGarage.jsonl',size,text:async()=>source({marked:{W:[]}})});
+
+test('loading import settings cannot claim a file import failed',async t=>{
+ const v=await importView(t,{failure:true});
+ assert.match(v.alert(),/Could not load import\/export settings: Service unavailable/);
+ assert.doesNotMatch(v.alert(),/Error importing state file/);
+});
+
+test('Settings import previews a file before confirmation and shows its canonical path and backup',async t=>{
+ const v=await importView(t,{limits});
+ assert.ok(v.text().includes('/data/localStorage/caraGarage.jsonl'));
+ await v.choose(stateFile());
+ assert.equal(v.requests.filter(r=>r.url.endsWith('/import')).length,0);
+ const confirm=v.root.find(n=>n.type==='Button'&&n.props.children==='Import dashboard state');
+ await v.act(async()=>confirm.props.onClick());
+ assert.equal(v.requests.at(-1).options.headers['X-State-Preview'],'hash');
+ assert.ok(v.root.findAllByType('output').length);
+});
+
+// The import shows the server's Docker path, checks the server's size limit, and waits for them.
+test('the import reads the route\'s path and size limit',async t=>{
+ const waiting=await importView(t);
+ await waiting.choose(stateFile());
+ assert.match(waiting.alert(),/Waiting for the server's import limits\./);
+ assert.ok(waiting.text().includes('Loading…'),'the Docker path waits for the route');
+ const v=await importView(t,{limits});
+ assert.ok(v.text().includes('/volume/caraGarage.jsonl'));
+ await v.choose(stateFile(limits.maxBytes+1));
+ assert.match(v.alert(),/Choose a state file smaller than 1 MB\./);
+ assert.equal(v.requests.filter(r=>r.url.endsWith('/preview')).length,0,'an oversized file is not previewed');
+ assert.equal(waiting.requests.filter(r=>r.url.endsWith('/preview')).length,0);
+});
+
+// The preferences route answers a refused value with its declaration's refusal line,
+// v1.5.0's words (http/dashboard-import.ts:90:92), and writes neither field.
+test('the preferences route refuses with each declaration\'s words and writes neither field',()=>{
+ const {createDashboardImportRoutes}=require('../../runtime/settings/coordinator/routes/import.ts');
+ const state={bankboiPrefix:'Bank',anniversaryAutoChat:false};
+ const {preferences}=createDashboardImportRoutes(state,{write:settingsWriter(state).write});
+ const answer=body=>{const out={};preferences({body},{status(code){out.code=code;return this;},json(value){out.value=value;return this;}});return out;};
+ assert.deepEqual(answer({bankboiPrefix:'a',anniversaryAutoChat:true}),{code:400,value:{error:'Use 3–11 letters, numbers, or underscores'}});
+ assert.deepEqual(answer({anniversaryAutoChat:'yes'}),{code:400,value:{error:'Invalid chat setting'}});
+ assert.deepEqual([state.bankboiPrefix,state.anniversaryAutoChat],['Bank',false]);
+ // Any other writer of the field, as the settings route and the import, answers the same words.
+ assert.equal(settingsWriter(state).write({by:'dashboard:settings',changes:[{field:'bankboiPrefix',value:'a'}]}).error,'Use 3–11 letters, numbers, or underscores');
+});
+
+// An imported item collection threshold past the bag reads as the bag, as the load holds a saved one
+// (v1.5.0's import took any positive count); a count below 1 still refuses the import.
+test('an imported item collection threshold above 42 reads as 42, and 0 still refuses',()=>{
+ assert.equal(policy.parseDashboardImport(source({itemCollectionThreshold:60}),()=>true).values.itemCollectionThreshold,42);
+ assert.equal(policy.parseDashboardImport(source({itemCollectionThreshold:7}),()=>true).values.itemCollectionThreshold,7);
+ assert.throws(()=>policy.parseDashboardImport(source({itemCollectionThreshold:0}),()=>true),/itemCollectionThreshold/);
+});
+
+// An add-on setting declares its own import fit, as a core field does. The registry's load check
+// takes the declaration, and the import reads a level past the add-on's max as its fit; the fitted
+// value still goes to the writer's check by kind.
+test('an add-on setting past its max imports as its fit',()=>{
+ const {addonSettingProblem}=require('../../runtime/settings/rules.ts');
+ const settings={level:{label:'Level',kind:'number',default:1,min:1,max:10,importable:true,fit:v=>typeof v==='number'&&v>10?10:v}};
+ assert.equal(addonSettingProblem({name:'cap',folder:'addons',settings}),undefined);
+ const file=v=>source({addons:{cap:{settings:{level:v}}}});
+ assert.equal(policy.parseDashboardImport(file(60),()=>true,[{name:'cap',settings}]).values.addons.cap.settings.level,10);
+ assert.equal(policy.parseDashboardImport(file(4),()=>true,[{name:'cap',settings}]).values.addons.cap.settings.level,4);
+});
+
+// Each field's import rule sits on its owner's declaration, and the import reads it there.
+test('the import reads character keys and conversions from the declarations',()=>{
+ const {table}=require('../../runtime/settings/coordinator/table.ts').coordinatorSettings();
+ assert.deepEqual(['deconstructionMarks','npcSaleMarks','autoNpcSales'].map(f=>table.fields.get(f).setting.characterKey),['owner','character','character']);
+ assert.deepEqual(['merchantRoutinePriorities','farmingProfiles','passiveHunting','passiveRareHunts'].map(f=>typeof table.fields.get(f).setting.imported),['function','function','function','function']);
+ const state={farmingProfiles:{W:{huntSettings:{keep:1},farmingPolicy:'own'}}};
+ const file={merchantRoutinePriorities:{'npc sales':40},passiveRareHunts:{},farmingProfiles:{W:{huntBlacklist:{}}}};
+ const parsed=policy.parseDashboardImport(source(file),()=>true);
+ assert.equal(policy.applyDashboardImport(state,parsed,settingsWriter(state).write),null);
+ assert.equal(state.merchantRoutinePriorities['auto npc sales'],40,'the routine priorities migrate their older keys');
+ assert.equal(state.passiveHunting?.version,1,'the passive switches derive the rules beside them');
+ assert.deepEqual(Object.keys(state.farmingProfiles.W).sort(),['farmingPolicy','huntBlacklist','huntSettings'],'an imported profile merges into the saved one');
+ assert.deepEqual(policy.exportDashboardSettings({farmingProfiles:{W:{huntBlacklist:{},farmingPolicy:'own'}}}).settings.farmingProfiles,{W:{huntBlacklist:{}}},'the export carries preferences only');
+});
+
+// A console that has its spawn catalog exports the empty Phoenix order it starts with; the import
+// carries it back through the writer's catalog check, which reads the empty default as no patrol.
+test('an exported empty Phoenix order imports back with the spawn catalog loaded',()=>{
+ const boxes=[['main',708,-300,1668,-86],['main',378,1686,904,1920]];
+ const spawns=[{id:'phoenix',locations:boxes.map(([map,...boundary])=>({map,boundary,x:(boundary[0]+boundary[2])/2,y:(boundary[1]+boundary[3])/2}))}];
+ const state={phoenixRouteOrder:[],threshold:10};
+ const parsed=policy.parseDashboardImport(JSON.stringify(policy.exportDashboardSettings(state)),()=>true);
+ assert.ok(parsed.fields.includes('phoenixRouteOrder'));
+ assert.equal(policy.applyDashboardImport(state,parsed,settingsWriter(state,{spawns:()=>spawns}).write),null);
+ // A saved order is still held to the catalog.
+ assert.equal(settingsWriter(state,{spawns:()=>spawns}).write({by:'test',changes:[{field:'phoenixRouteOrder',value:['nowhere']}]}).ok,false);
 });

@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {migrateSharedMonsterFocus}=require('../../runtime/coordinator/navigation/migrate-focus.ts');
-const {migrateEmptyFocusIntents}=require('../../runtime/coordinator/navigation/migrate-focus.ts');
+const {migrateSharedMonsterFocus}=require('../../runtime/hunting/coordinator/record.ts');
+const {migrateEmptyFocusIntents}=require('../../runtime/hunting/coordinator/record.ts');
 test('empty focus migration cancels shared then independent return intent only without saved navigation',()=>{
  const state={leader:'L',monsterFocus:[],monsterFocusByCharacter:{L:[],F:[],Solo:['bat'],Bad:null}},calls=[];
  const navigation={members:()=>['L','F'],invalidate:(...args)=>calls.push(args)};

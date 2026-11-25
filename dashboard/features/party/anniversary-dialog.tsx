@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { useClock } from "@/hooks/use-clock";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,19 +39,16 @@ export function AnniversaryDialog({
   const live = anniversary?.live;
   const schedule = anniversary?.schedule;
   const deadline = Number(live?.expires || schedule?.next || 0);
-  const normalizedDeadline = deadline > 0 && deadline < 1e12 ? deadline * 1000 : deadline;
-  const countdown = normalizedDeadline ? Math.max(0, normalizedDeadline - now) : null;
-  const countdownText =
-    countdown === null
-      ? null
-      : `${Math.floor(countdown / 60000)}:${String(Math.floor(countdown / 1000) % 60).padStart(2, "0")}`;
+  // The report's anniversary times are milliseconds through the events owner's one epoch conversion (report.ts).
+  const countdown = deadline ? Math.max(0, deadline - now) : null;
+  // The merchant leaves the events owner's measured walk lead before the round (the report's `eventLeads`).
+  const departLead = Number((merchant && characters[merchant]?.eventLeads?.anniversary) || 0);
+  const clock = (ms: number | null) => ms === null ? null : `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+  const countdownText = clock(countdown);
   const cycle = anniversary?.eventCycle;
   const failsafeRemaining =
     cycle && !cycle.returnDispatchedAt ? Math.max(0, Number(cycle.endsAt) - now) : null;
-  const failsafeText =
-    failsafeRemaining === null
-      ? null
-      : `${Math.floor(failsafeRemaining / 60000)}:${String(Math.floor(failsafeRemaining / 1000) % 60).padStart(2, "0")}`;
+  const failsafeText = clock(failsafeRemaining);
   const anniversaryActivityClass = (entry: { level?: string; message?: string }) => {
     const message = String(entry.message || "");
     // Keep the activity log deliberately simple: rewards are green, failures
@@ -63,7 +61,7 @@ export function AnniversaryDialog({
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] w-[min(900px,calc(100vw-2rem))] max-w-none overflow-y-auto border-pink-800 bg-[#0b1110] text-emerald-50 sm:max-w-none">
+      <DialogContent data-area="anniversary" className="max-h-[90vh] w-[min(900px,calc(100vw-2rem))] max-w-none overflow-y-auto border-pink-800 bg-[#0b1110] text-emerald-50 sm:max-w-none">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3 text-pink-200">10 Years of Adventure
 
@@ -86,7 +84,7 @@ export function AnniversaryDialog({
               {live
                 ? `Expires in ${countdownText || "unknown"} · ${live.map} [${live.x}, ${live.y}]`
                 : countdownText
-                  ? `Next round: ${eventTimeLabel(normalizedDeadline, now)} · Depart ${eventTimeLabel(normalizedDeadline - 90000, now)}`
+                  ? `Next round: ${eventTimeLabel(deadline, now)}${departLead ? ` · Depart ${eventTimeLabel(deadline - departLead, now)}` : ""}`
                   : "Next round time unavailable"}
             </p>
             {cycle ? (
@@ -180,6 +178,7 @@ export function AnniversaryDialog({
             )}
           </div>
         </section>
+        <AddonSlot name="dialog-section" part="anniversary" />
       </DialogContent>
     </Dialog>
   );

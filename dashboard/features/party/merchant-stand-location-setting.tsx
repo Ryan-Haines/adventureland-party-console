@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import type { MerchantStandLocation } from '../../../runtime/coordinator/merchant/stand-location';
+import type { MerchantStandLocation } from '../../../runtime/merchant-jobs/api.ts';
 import { usePartyAction } from './query-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

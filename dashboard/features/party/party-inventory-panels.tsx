@@ -1,12 +1,9 @@
 "use client";
-import { HostingSettings } from "./hosting-settings";
-import { automaticCommerceRuleKey } from './automatic-commerce-rule-key';
-import { ConsoleUpdateSettings } from './console-updates';
-import { AccountSettings } from "./account-settings";
+import { commerceRuleKey, defaultStandPrice, markMatches } from '../../../runtime/items/api.ts';
+import { standDraft, standIsFull } from './stand-capacity';
 import { lazy, useCallback, useState } from "react";
 import { DeconstructionConfirmation, type DeconstructionSelection } from "./deconstruction-confirmation";
 import { DeferredPanel } from "./deferred-panel";
-import { DashboardStateImport } from "./dashboard-state-import";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -17,20 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Copy, Eye, EyeOff, RefreshCw, UserPlus } from "lucide-react";
 const BankSheet = lazy(() =>
   import("./bank-sheet").then((module) => ({ default: module.BankSheet })),
 );
-import { same } from "./same";
-import { bankSaleCopies } from "./bank-sale-copies";
 const StandSheet = lazy(() =>
   import("./stand-sheet").then((module) => ({ default: module.StandSheet })),
 );
@@ -53,13 +39,16 @@ const forwardedActions = ['setStandItem', 'setNpcSaleItem', 'setAutoNpcSaleItem'
   'saveStandBid', 'buyALDataListing', 'buyPontyListing', 'sellALDataOrder'] as const;
 
 export function PartyInventoryPanels({ model }: { model: PartyConsoleModel }) {
-  return model.realmConfirmOpen || model.bankOpen || model.standOpen || model.marketOpen || model.settingsOpen ? (
+  return model.realmConfirmOpen || model.bankOpen || model.standOpen || model.marketOpen ? (
     <PartyInventoryPanelsConnected base={model} />
   ) : null;
 }
 function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
   const [deconstructionSelection, setDeconstructionSelection] = useState<DeconstructionSelection | null>(null);
-  const model = usePanelModel(base, { inventory: true, vitals: true, bank: base.bankOpen, market: base.marketOpen || base.standOpen });
+  // Live WTB, a tab of the Market dialog, and the stand count the bank stock as owned, so the
+  // bank section loads while either is open.
+  const market = base.marketOpen || base.standOpen;
+  const model = usePanelModel(base, { inventory: true, vitals: true, bank: base.bankOpen || market, market });
   const { setStandItem, setNpcSaleItem, setAutoNpcSaleItem, removeStandListing, saveStandBid, buyALDataListing,
     buyPontyListing, sellALDataOrder } = useForwardingActions(base, forwardedActions);
   const {
@@ -74,18 +63,10 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     setStandOpen,
     marketOpen,
     setMarketOpen,
-    settingsOpen,
-    setSettingsOpen,
+    openSettings,
     realmDestination,
-    setRealmDestination,
     setRealmSetHome,
     setRealmConfirmOpen,
-    setCreateOpen,
-    aldataBusy,
-    aldataAction,
-    aldataKeyVisible,
-    aldataKey,
-    setALDataKeyVisible,
     realmConfirmOpen,
     realmBusy,
     realmSetHome,
@@ -141,7 +122,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
         (mark) =>
           mark.bankPack === pack &&
           mark.bankSlot === entry.slot &&
-          same(mark.item, entry.item),
+          markMatches(mark.item, entry.item),
       );
       if (listing)
         void removeStandListing(listing).catch((error: unknown) =>
@@ -155,7 +136,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     [standListings, removeStandListing, setActionError],
   );
   const onBankStand = useCallback(
-    (pack: string, entry: InventoryEntry, all = false) => {
+    (pack: string, entry: InventoryEntry) => {
       const knownMeta = catalogAllItems.find(
         (item) => item.id === entry.item.name,
       )?.meta;
@@ -169,53 +150,22 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
             }
           : entry.meta,
       };
-      const existing = standListings.find(
-        (mark) =>
-          mark.bankPack === pack &&
-          mark.bankSlot === entry.slot &&
-          same(mark.item, entry.item),
-      );
-      if (!existing && standListings.length >= 16)
-        return setActionError('Merchant stand is full (16/16)');
-      const value = {
-        defaultPrice: Math.max(1, Number(valuedEntry.meta?.definition.g) || 1),
-      };
-      setStandItem({
-        id: existing?.id,
-        entry: valuedEntry,
-        bankPack: pack,
-        defaultPrice: value.defaultPrice,
-        markAll: all,
-        price: String(existing?.price || value.defaultPrice),
-        quantity: String(existing?.quantity || entry.item.q || 1),
-      });
+      const press = standDraft({ standSlots: state.standSlots, standListings }, valuedEntry, pack);
+      if ('refused' in press) return setActionError(press.refused);
+      setStandItem(press.draft);
     },
-    [catalogAllItems, standListings, setActionError, setStandItem],
+    [catalogAllItems, standListings, state.standSlots, setActionError, setStandItem],
   );
   const onBankNpcSale = useCallback(
-    (pack: string, entry: InventoryEntry, all = false) => {
-      const targets = all
-        ? bankSaleCopies(state.bank, state.bankbois || [], entry)
-        : undefined;
-      if (targets && !targets.length)
-        return setActionError('No unlocked matching bank items available');
+    (pack: string, entry: InventoryEntry) =>
       setNpcSaleItem({
         source: 'bank',
         pack,
         entry,
-        targets,
-        quantity: String(
-          targets
-            ? targets.reduce(
-                (sum, target) => sum + Number(target.entry.item.q || 1),
-                0,
-              )
-            : entry.item.q || 1,
-        ),
+        quantity: String(entry.item.q || 1),
         acknowledged: false,
-      });
-    },
-    [state.bank, state.bankbois, setActionError, setNpcSaleItem],
+      }),
+    [setNpcSaleItem],
   );
   const onBankDeconstruction = useCallback(
     (pack: string, entry: InventoryEntry, all: boolean, auto = false) =>
@@ -245,10 +195,8 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
   const onBankAutoStand = useCallback(
     (entry: InventoryEntry) => {
       const valued = { ...entry, meta: detailMeta(entry.item, entry.meta) };
-      const rule = autoStandMarks[automaticCommerceRuleKey(entry.item)];
-      const price =
-        Number(rule?.price) ||
-        Math.max(1, Number(valued.meta?.definition.g) || 1);
+      const rule = autoStandMarks[commerceRuleKey(entry.item)];
+      const price = Number(rule?.price) || defaultStandPrice(valued.meta?.definition);
       setStandItem({
         entry: valued,
         price: String(price),
@@ -297,26 +245,18 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     [post, setActionError],
   );
 
-  const onAutoStandBuys = useCallback(
-    async (enabled: boolean) => {
-      await post('/merchant/native-stand', { action: 'configure', enabled });
-    },
-    [post],
-  );
+  const onMarketplaceSettings = useCallback(() => openSettings({ tab: 'account', section: 'marketplace' }), [openSettings]);
   const onStandEdit = useCallback(
     (listing: StandListing) => {
       const knownMeta = catalogAllItems.find(
         (item) => item.id === listing.item.name,
       )?.meta;
       const entry = { slot: listing.slot, item: listing.item, meta: knownMeta };
-      const value = {
-        defaultPrice: Math.max(1, Number(entry.meta?.definition.g) || 1),
-      };
       setStandItem({
         id: listing.id,
         entry,
         bankPack: listing.bankPack,
-        defaultPrice: value.defaultPrice,
+        defaultPrice: defaultStandPrice(entry.meta?.definition),
         price: String(listing.price),
         quantity: String(listing.quantity),
         markAll: false,
@@ -325,7 +265,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
     [catalogAllItems, setStandItem],
   );
   const onEditBuy = useCallback(
-    (item: Item, meta?: ItemMeta | null) => setWtbItem({ item, meta }),
+    (item: Item, meta?: ItemMeta | null, price?: number) => setWtbItem({ item, meta, price }),
     [setWtbItem],
   );
   const onListForWTB = useCallback(
@@ -343,17 +283,14 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
         (mark) =>
           mark.bankPack === bankPack &&
           mark.slot === entry.slot &&
-          same(mark.item, entry.item),
+          markMatches(mark.item, entry.item),
       );
-      const value = {
-        defaultPrice: Math.max(1, Number(valuedEntry.meta?.definition.g) || 1),
-      };
       setStandItem({
         id: existing?.id,
         entry: valuedEntry,
         bankPack,
         markAll: false,
-        defaultPrice: value.defaultPrice,
+        defaultPrice: defaultStandPrice(valuedEntry.meta?.definition),
         price: String(price),
         quantity: String(
           Math.max(1, Math.min(quantity, Number(entry.item.q || 1))),
@@ -372,8 +309,8 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
   );
   const onALDataSetup = useCallback(() => {
     setMarketOpen(false);
-    setSettingsOpen(true);
-  }, [setMarketOpen, setSettingsOpen]);
+    openSettings({ tab: 'account', section: 'aldata' });
+  }, [setMarketOpen, openSettings]);
 
   return (
     <>
@@ -400,9 +337,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           onWithdrawAll={onWithdrawAll}
           onCreateBankboi={onCreateBankboi}
           onDeleteBankboi={onDeleteBankboi}
-          buyable={catalogBuyable}
           catalog={catalogAllItems}
-          priceHistory={standPriceHistory}
           autoStandMarks={autoStandMarks}
           automaticRules={{
             merchantCharacter: state.merchantCharacter,
@@ -416,7 +351,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
             autoExchanges: state.autoExchanges,
           }}
           standListings={standListings}
-          standBids={standBids}
+          standFull={standIsFull(state)}
           onUnstand={onUnstand}
           onStand={onBankStand}
           onNpcSale={onBankNpcSale}
@@ -519,21 +454,22 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           onOpenChange={setStandOpen}
           marketOpen={marketOpen}
           onMarketOpenChange={setMarketOpen}
+          stand={state.standSlots}
           merchant={
             state.merchantCharacter
               ? state.characters[state.merchantCharacter]
               : undefined
           }
           bank={state.bank}
+          ownedStock={state.ownedStock}
           bankGold={state.bankGold}
           listings={standListings}
           catalog={catalogAllItems}
           buyable={catalogBuyable}
           bids={standBids}
           nativeStand={state.nativeStand}
-          autoStandBuys={state.autoStandBuys === true}
           autoBlacklistMerchants={state.autoBlacklistMerchants !== false}
-          onAutoStandBuys={onAutoStandBuys}
+          onMarketplaceSettings={onMarketplaceSettings}
           priceHistory={standPriceHistory}
           marketIgnoredItems={state.marketIgnoredItems || []}
           blacklist={state.merchantBlacklist || emptyRecord()}
@@ -545,285 +481,19 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
           aldata={state.aldata}
           onALDataSetup={onALDataSetup}
           ponty={state.ponty}
-          automaticWTBEnabled={
-            state.merchantAutomations?.['stand bid purchases'] !== false
-          }
           onBuyALData={buyALDataListing}
           onBuyPonty={buyPontyListing}
           onSellALData={sellALDataOrder}
           onInspect={onStandInspect}
         />
       </DeferredPanel>
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-h-[85dvh] overflow-y-auto border-slate-700 bg-[#0b1916] text-emerald-50 sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Interface settings</DialogTitle>
-            <DialogDescription>
-              Manage saved dashboard state, character connections, and market
-              access.
-            </DialogDescription>
-          </DialogHeader>
-          {state.steamSwitch?.phase === 'failed' && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void model.recoverSteamHandoff()}
-              className="border-amber-700 bg-[#171007] text-amber-100 hover:bg-amber-950 hover:text-white"
-            >
-              Recover Steam handoff after characters are offline
-            </Button>
-          )}
-          {settingsOpen && <DashboardStateImport />}
-          <div className="rounded border border-violet-800 bg-[#07090d] p-4 text-slate-100">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold text-violet-100">Realm</p>
-                <p
-                  className={`font-mono text-[10px] uppercase ${state.realmControl?.split ? "text-rose-300" : "text-slate-400"}`}
-                >
-                  Current:{' '}
-                  {state.realmControl?.split
-                    ? 'Mixed realms'
-                    : state.realmControl?.realms.find(
-                        (realm) =>
-                          realm.key === state.realmControl?.currentRealm,
-                      )?.label ||
-                      state.realmControl?.currentRealm ||
-                      'Unknown'}{' '}
-                  · Home:{' '}
-                  {state.realmControl?.realms.find(
-                    (realm) => realm.key === state.realmControl?.homeRealm,
-                  )?.label ||
-                    state.realmControl?.homeRealm ||
-                    'Unknown'}
-                </p>
-              </div>
-              {state.realmControl?.operation &&
-              !['complete', 'failed'].includes(
-                state.realmControl.operation.phase,
-              ) ? (
-                <RefreshCw className="h-4 w-4 animate-spin text-violet-300" />
-              ) : null}
-            </div>
-            {state.realmControl?.split ? (
-              <div className="mt-3 grid gap-1 rounded border border-rose-800 bg-rose-950/40 p-2 text-xs text-rose-100">
-                {state.realmControl.characters.map((member) => (
-                  <span key={member.name}>
-                    {member.name}: {member.realm || 'offline'}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            {!state.realmControl?.homeRealm &&
-            state.realmControl?.homeCharacters?.length ? (
-              <div className="mb-3 rounded border border-amber-700 bg-black p-2 text-xs text-amber-100">
-                <p>Home realms differ or are unconfirmed:</p>
-                {state.realmControl.homeCharacters.map((member) => (
-                  <p key={member.name}>
-                    {member.name}: {member.home || 'unconfirmed'}
-                  </p>
-                ))}
-              </div>
-            ) : null}
-            <div className="mt-4 flex gap-2">
-              <Select
-                value={realmDestination}
-                onValueChange={(value) => {
-                  if (value) setRealmDestination(value);
-                  setRealmSetHome(false);
-                }}
-              >
-                <SelectTrigger
-                  aria-label="Change realm"
-                  className="border-violet-600 bg-black text-violet-50 hover:border-violet-400"
-                >
-                  <SelectValue placeholder="Change realm…" />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false} className="border-violet-700 bg-[#07090d] text-violet-50">
-                  {(state.realmControl?.realms || []).map((realm) => (
-                    <SelectItem
-                      key={realm.key}
-                      value={realm.key}
-                      disabled={realm.pvp}
-                      className="focus:bg-violet-950 focus:text-white disabled:text-slate-600"
-                    >
-                      {realm.label} ({realm.players.toLocaleString()} players)
-                      {realm.pvp ? ' — disabled' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={
-                  !realmDestination ||
-                  (!state.realmControl?.split &&
-                    realmDestination === state.realmControl?.currentRealm &&
-                    realmDestination === state.realmControl?.homeRealm) ||
-                  Boolean(
-                    state.realmControl?.operation &&
-                    !['complete', 'failed'].includes(
-                      state.realmControl.operation.phase,
-                    ),
-                  )
-                }
-                onClick={() => setRealmConfirmOpen(true)}
-                className="shrink-0 border-violet-500 bg-black text-violet-100 hover:bg-violet-950 hover:text-white"
-              >
-                Change realm
-              </Button>
-            </div>
-            {state.realmControl?.operation ? (
-              <div
-                className={`mt-3 rounded border p-2 text-xs ${state.realmControl.operation.phase === "failed" ? "border-rose-700 bg-rose-950/40 text-rose-200" : state.realmControl.operation.phase === "complete" ? "border-emerald-700 bg-emerald-950/40 text-emerald-200" : "border-violet-700 bg-violet-950/30 text-violet-100"}`}
-              >
-                <p className="font-semibold capitalize">
-                  {state.realmControl.operation.phase.replace(/-/g, ' ')}
-                </p>
-                {state.realmControl.operation.error ? (
-                  <p>{state.realmControl.operation.error}</p>
-                ) : null}
-                {(state.realmControl.operation.characters || []).map(
-                  (member) => (
-                    <p key={member.name}>
-                      {member.name}: {member.realm || 'waiting'}
-                      {state.realmControl?.operation?.setHome
-                        ? member.homeConfirmed
-                          ? ' — home confirmed'
-                          : ' — waiting for home confirmation'
-                        : ''}
-                    </p>
-                  ),
-                )}
-              </div>
-            ) : null}
-          </div>
-          <div className="rounded border border-cyan-900/70 bg-black/20 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-semibold">Characters</p>
-                <p className="font-mono text-[10px] uppercase text-slate-400">
-                  Create and add characters to your account roster.
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSettingsOpen(false);
-                  setCreateOpen(true);
-                }}
-                className="border-cyan-600 bg-black text-cyan-100 hover:bg-cyan-950 hover:text-white"
-              >
-                <UserPlus className="mr-2 h-4 w-4" />
-                Create character
-              </Button>
-            </div>
-            <AccountSettings state={state} />
-          </div>
-          <div className="rounded border border-slate-800 bg-black/20 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-semibold">ALData</p>
-                {model.aldataAuthPending ? (
-                  <output className="block text-sm text-amber-200">
-                    Waiting for mail delivery and ALData verification… Do not
-                    resend; each message costs gold.
-                  </output>
-                ) : null}
-                <p className="font-mono text-[10px] uppercase text-slate-400">
-                  Auth: {model.aldataAuthStatus ?? state.aldata?.auth ?? 'NO'} ·
-                  Publish: {state.aldata?.publishStatus || 'idle'}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={aldataBusy}
-                onClick={() => void aldataAction('check')}
-                className="border-slate-500 bg-black text-slate-100 hover:bg-slate-800 hover:text-white"
-              >
-                Check status
-              </Button>
-            </div>
-            <div className="mt-4 flex gap-2">
-              <Input
-                readOnly
-                type={aldataKeyVisible ? 'text' : 'password'}
-                value={aldataKey}
-                placeholder={
-                  state.aldata?.hasKey
-                    ? 'Stored key — reveal to view'
-                    : 'No key generated'
-                }
-                className="border-slate-800 bg-black/40 font-mono text-xs"
-              />
-              <Button
-                size="icon"
-                variant="outline"
-                onClick={() => {
-                  if (!aldataKey) void aldataAction('reveal');
-                  setALDataKeyVisible((value) => !value);
-                }}
-                aria-label="Reveal key"
-                className="border-slate-500 bg-black text-slate-100 hover:bg-slate-800 hover:text-white"
-              >
-                {aldataKeyVisible ? (
-                  <EyeOff className="h-4 w-4" />
-                ) : (
-                  <Eye className="h-4 w-4" />
-                )}
-              </Button>
-              <Button
-                size="icon"
-                variant="outline"
-                disabled={!aldataKey}
-                onClick={() => void navigator.clipboard.writeText(aldataKey)}
-                aria-label="Copy key"
-                className="border-slate-500 bg-black text-slate-100 hover:bg-slate-800 hover:text-white"
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <Button
-                disabled={aldataBusy}
-                onClick={() => void aldataAction('generate')}
-                className="bg-slate-700 text-white hover:bg-slate-600"
-              >
-                Generate key
-              </Button>
-              <Button
-                disabled={aldataBusy || !state.aldata?.hasKey}
-                onClick={() => void aldataAction('send')}
-                className="bg-violet-700 text-white hover:bg-violet-600"
-              >
-                Prepare mail
-              </Button>
-            </div>
-            <p className="mt-3 text-xs text-slate-400">
-              Public market browsing needs no key or separate ALData server.
-              Publishing requires authentication: generate a unique key. Prepare
-              mail opens a prefilled authentication mail. Review the postage and
-              click Send; your merchant will send it. ALData stores this key in
-              plaintext; never reuse a password. Allow about a minute, then
-              check status.
-            </p>
-            {state.aldata?.error ? (
-              <p className="mt-2 text-xs text-rose-300">{state.aldata.error}</p>
-            ) : null}
-          </div>
-          <HostingSettings />
-          <ConsoleUpdateSettings />
-        </DialogContent>
-      </Dialog>
       <Dialog
         open={realmConfirmOpen}
         onOpenChange={(open) => {
           if (!realmBusy) setRealmConfirmOpen(open);
         }}
       >
-        <DialogContent className="border-violet-700 bg-[#080b10] text-slate-100 sm:max-w-lg">
+        <DialogContent data-area="realm-confirm" className="border-violet-700 bg-[#080b10] text-slate-100 sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {realmSetHome ? 'Change home realm?' : 'Switch realm?'}
@@ -880,6 +550,18 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
               </span>
             </label>
           ) : null}
+          {model.realmBlacklisted && (
+            <label className="flex items-start gap-3 rounded border border-amber-600 bg-amber-950/30 p-3 text-sm text-amber-100">
+              <Checkbox
+                checked={model.realmBlacklistConfirmed}
+                onCheckedChange={(checked) => model.setRealmBlacklistConfirmed(checked === true)}
+                className="border-amber-400 bg-black data-checked:bg-amber-600"
+              />
+              <span>
+                <strong>{model.realmBlacklisted}.</strong> Tick to send this order anyway; it confirms this one order only.
+              </span>
+            </label>
+          )}
           {model.realmError && (
             <p role="alert" className="text-sm text-rose-200">
               {model.realmError}
@@ -897,7 +579,7 @@ function PartyInventoryPanelsConnected({ base }: { base: PartyConsoleModel }) {
             </Button>
             <Button
               type="button"
-              disabled={realmBusy}
+              disabled={realmBusy || (!!model.realmBlacklisted && !model.realmBlacklistConfirmed)}
               onClick={() => void switchRealm()}
               className="bg-violet-600 text-white hover:bg-violet-500"
             >

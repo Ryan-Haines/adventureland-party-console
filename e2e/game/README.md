@@ -36,7 +36,10 @@ tested gameplay. `reset` requires the previous browser clients to have closed.
 
 The upstream game code is not modified. Initial characters receive level 80 and
 test currency so each journey can exercise its feature without hours of grinding.
-Their initial items and locations are restored between journeys. Tests must choose
+Their initial items and locations are restored between journeys. Reset also holds the
+Halloween season's own Mr. Pumpkin, Mr. Green and Slenderman timers and removes those bosses
+and their adds in both realms, so every scenario declares the event bosses it meets; the
+reset result lists what it removed (`seasonReset`). Tests must choose
 outcome assertions appropriate for genuine random combat and upgrade results.
 The disposable account is also seeded as verified, with upstream's legacy web
 access flag and a local entitlement marker. Upstream requires verified platform
@@ -44,10 +47,12 @@ ownership for ordinary rewards; the marker supplies that local fixture prerequis
 without calling Steam or representing a public account purchase. Gameplay handlers
 and their eligibility checks remain unchanged. The seed artifact records this state.
 
-Source pins and the Node base image digest are recorded in `Dockerfile`; the two
+The source pins are `tools/sim/pins.json` and the Node base image digest is in `Dockerfile`; the two
 package lock files pin upstream Node dependencies, installed with `npm ci`.
 The game license is
-[AdventureLandOnlyUse](https://github.com/kaansoral/adventureland_mongodb/blob/90052162eb3ebda36c893e1eb4af643913c8f984/LICENSE);
+AdventureLandOnlyUse, the `LICENSE` of
+[adventureland_mongodb](https://github.com/kaansoral/adventureland_mongodb) at the revision
+`tools/sim/pins.json` names;
 Adventure Land is by Kaan Soral: https://adventure.land.
 
 The realm-timeout scenario declares a coordinator status-transport fault with

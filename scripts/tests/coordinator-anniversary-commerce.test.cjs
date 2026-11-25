@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createAnniversaryCommerceRoutes}=require('../../runtime/coordinator/http/anniversary-commerce.ts');
-const {anniversarySlices:slices}=require('../../runtime/coordinator/anniversary/contracts.ts');
+const {createAnniversaryCommerceRoutes}=require('../../runtime/events/coordinator/routes.ts');
+const {anniversarySlices:slices}=require('../../runtime/events/rules.ts');
 function fixture(){
  const native=slices[0],incoming=slices[1],counts=Object.fromEntries(slices.map(name=>[name,name===native?9:1]));
  const state={nativeSlice:native,rounds:{r:{claims:{M:{}}}},advertisedRounds:{},chatAdvertisement:null,reciprocal:{},pendingReturns:{},crafted:0};

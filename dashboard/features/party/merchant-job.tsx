@@ -8,7 +8,7 @@ export type MerchantJob = {
   expectedItem?: { name?: string; level?: number };
   commandReport?: { state?: string; reason?: string | null };
   realmBlockedReason?: string;
-  realmRetryExhausted?: boolean;
+  realmAttempts?: number;
   collectionLabel?: string;
   collectionSlots?: number;
   collectionThreshold?: number;

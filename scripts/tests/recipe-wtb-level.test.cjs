@@ -1,37 +1,24 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
-const Module = require('node:module');
-const { buildSync } = require('esbuild');
+const loadModule = require('./helpers/dashboard-query-module.cjs');
 const React = require('../../dashboard/node_modules/react');
 const { create, act } = require('../../dashboard/node_modules/react-test-renderer');
 
 class TestActionError extends Error { constructor(details) { super(details.error); this.details=details; } }
-function load(name) {
-  const filename = path.resolve('dashboard/features/party', name + '.tsx');
-  const bundle = buildSync({ entryPoints: [filename], bundle: true, packages: 'external',
-    external: ['@/components/ui/*', './query-actions'], platform: 'node', format: 'cjs', write: false });
-  const compiled = new Module(filename, module);
-  compiled.filename = filename;
-  compiled.paths = Module._nodeModulePaths(path.dirname(filename));
-  compiled.require = function (id) {
-    // Keep the actual feature logic; only replace browser UI primitives.
-    if (id === './query-actions') return {PartyActionError:TestActionError};
-    if (id.startsWith('@/components/ui/')) return new Proxy({}, {
-      get: (_, name) => name === 'Button' ? 'button' : String(name),
-    });
-    return Module.prototype.require.call(this, id);
-  };
-  compiled._compile(bundle.outputFiles[0].text, filename);
-  return compiled.exports;
-}
+// The real feature logic with the browser UI primitives replaced.
+const load = name => loadModule(name + '.tsx', { './query-actions': { PartyActionError: TestActionError },
+  '@/components/ui/*': new Proxy({}, { get: (_, name) => name === 'Button' ? 'button' : String(name) }) });
 const { ItemDetails } = load('item-details');
 const { WTBOrderDialog } = load('wtborder-dialog');
-const { pontyPrice } = load('ponty-price');
+const { pontyPrice } = require('../../runtime/items/rules.ts');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const text = node => typeof node === 'string' ? node : (node.children || []).map(text).join('');
 
-test('recipe +7 cape keeps its level through inspection, WTB, Ponty price and saving', async () => {
+test('recipe +7 cape keeps its level through inspection, WTB, Ponty price and saving', async t => {
+  // ItemCard listens on the page for its "i" shortcut (item-card.tsx).
+  const previousDocument = global.document;
+  global.document = new EventTarget();
+  t.after(() => { global.document = previousDocument; });
   const meta = { definition: { name: 'Cape', type: 'cape', g: 10000, upgrade: {}, grades: [7, 9] }, upgradeable: true };
   const mantle = { character: 'Catalog', entry: { slot: -1, item: { name: 'beastmantle' }, meta: {
     definition: { name: 'Beast Mantle', type: 'cape' }, world: { recipe: { cost: 1000, materials: [
@@ -71,26 +58,26 @@ test('recipe +7 cape keeps its level through inspection, WTB, Ponty price and sa
 });
 
 test('merchant routines show gathering modes, include mail, count enabled routines and save keyboard priority changes',async()=>{
- const {RoutinePrioritiesDialog}=load('routine-priorities-dialog');let view,saved;
+ const {RoutinePrioritiesSection}=load('routine-priorities-section');let view,saved;
  const previousWindow=global.window;global.window={matchMedia:()=>({matches:true})};
  try {
-  await act(async()=>{view=create(React.createElement(RoutinePrioritiesDialog,{open:true,onOpenChange(){},priorities:{fishing:60,mining:50,'send mail':90},enabled:{fishing:false,mining:true},onSave:async(...args)=>{saved=args;}}));});
+  await act(async()=>{view=create(React.createElement(RoutinePrioritiesSection,{priorities:{fishing:60,mining:50,'send mail':90},enabled:{fishing:false,mining:true},onSave:async(...args)=>{saved=args;}}));});
   const control=label=>view.root.findAllByType('Checkbox').find(node=>node.props['aria-label']===label);
   assert.equal(control('Enable Fishing').props.checked,false);assert.equal(control('Enable Mining').props.checked,true);
   assert.ok(view.root.findAllByType('Input').some(node=>node.props['aria-label']==='Send mail priority'));
   await act(async()=>control('Enable Fishing').props.onCheckedChange(true));
   const fishing=view.root.findAllByType('button').find(node=>node.props['aria-label']==='Move Fishing');
   const rows=view.root.findAll(node=>Boolean(node.props['data-routine']));
-  const total=rows.length;assert.match(text(view.root.findByType('DialogTitle')),new RegExp(`${total}/${total} enabled`));
+  const total=rows.length;assert.match(text(view.root.findByType('h3')),new RegExp(`${total}/${total} enabled`));
   for(let i=0;i<total;i++)await act(async()=>fishing.props.onKeyDown({key:'ArrowDown',preventDefault(){}}));
   await act(async()=>view.root.findAllByType('button').find(node=>text(node)==='Save routines').props.onClick());
   assert.equal(saved[1].fishing,true);assert.equal(saved[1].mining,true);assert.ok(saved[0].fishing<saved[0].mining);
  } finally {await act(async()=>view?.unmount());global.window=previousWindow;}
 });
 
-for (const label of ['Automatically fill empty stand slots with highest priority buy order','Accept higher levels']) test(label+' can toggle in both directions after asynchronous saves',async()=>{
- const {WTBPreference}=load('wtb-preferences');let view,confirm;const calls=[];
- function Harness(){const [checked,setChecked]=React.useState(false);return React.createElement(WTBPreference,{label,description:'Help',checked,onChange:value=>{calls.push(value);confirm=()=>setChecked(value);}});}
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const togglesBothWays=async({Harness,calls,confirm})=>{
+ let view;
  try {
   await act(async()=>{view=create(React.createElement(Harness));});
   for(const checked of [true,false,true]) {
@@ -100,7 +87,15 @@ for (const label of ['Automatically fill empty stand slots with highest priority
   }
   assert.deepEqual(calls,[true,false,true]);
  } finally {await act(async()=>view?.unmount());}
-});
+};
+scenarioTable('a WTB preference checkbox follows each confirmed save in both directions',label=>{
+ const {WTBPreference}=load('wtb-preferences');let confirm;const calls=[];
+ function Harness(){const [checked,setChecked]=React.useState(false);return React.createElement(WTBPreference,{label,description:'Help',checked,onChange:value=>{calls.push(value);confirm=()=>setChecked(value);}});}
+ return {Harness,calls,confirm:()=>confirm()};
+},[
+ ['Automatically fill empty stand slots with highest priority buy order can toggle in both directions after asynchronous saves',togglesBothWays,'Automatically fill empty stand slots with highest priority buy order'],
+ ['Accept higher levels can toggle in both directions after asynchronous saves',togglesBothWays,'Accept higher levels'],
+]);
 test('full stand replacement shows catalog sprites and retains selection until confirmed',async()=>{
  const {useWTBReplacement}=load('wtb-preferences');let api,view;const calls=[];
  const catalog=[{id:'cape',name:'Cape',sprite:{url:'/cape.png',columns:1,rows:1,x:0,y:0,tileSize:20}}];

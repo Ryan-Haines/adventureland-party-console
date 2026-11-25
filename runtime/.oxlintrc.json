@@ -3,6 +3,7 @@
   "plugins": ["eslint", "typescript", "unicorn", "import"],
   "categories": { "correctness": "error" },
   "options": { "typeAware": true, "typeCheck": true },
+  "ignorePatterns": ["hunting/farming-areas.cjs"],
   "rules": {
     "complexity": ["error", 10],
     "no-var": "error",

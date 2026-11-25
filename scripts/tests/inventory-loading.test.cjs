@@ -5,7 +5,6 @@ const vm = require('node:vm');
 const ts = require('typescript');
 const React = require('../../dashboard/node_modules/react');
 const { create, act } = require('../../dashboard/node_modules/react-test-renderer');
-const { namedFunction } = require('./helpers/named-function.cjs');
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
 test('inventory waits for complete data across presence, reconnect and character removal', async () => {
@@ -14,7 +13,6 @@ test('inventory waits for complete data across presence, reconnect and character
     if (name === 'react') return React;
     if (name === 'react/jsx-runtime') return require('../../dashboard/node_modules/react/jsx-runtime');
     if (name === './use-panel-model') return { usePanelModel: model => model };
-    if (name === './live-metrics') return { committedLiveRecord() {} };
     if (name === './upgrade-offering-controls') return { UpgradeOfferingProvider: ({ children }) => children };
     if (name === './inventory-panel') return { InventoryPanel: ({ character }) => {
       panels.push(character.items.filter(Boolean).length);
@@ -43,25 +41,26 @@ test('inventory waits for complete data across presence, reconnect and character
   } finally { if (tree) await act(async () => tree.unmount()); }
 });
 
+// The item meta rows run bag.ts's reads (createBagReads) over a planted character, G and catalog flag.
+function bagReads({ G, character = {}, itemProperties = () => ({}) }) {
+  const { planted } = require('./helpers/items-character.cjs');
+  const { createBagReads } = require('../../runtime/items/character/bag.ts');
+  const flags = { known: false };
+  const reads = createBagReads(planted({ character: () => character, G: () => G, now: () => 0, bankPacks: () => ({}),
+    activeUpgrade: () => null, catalogKnown: () => flags.known, itemProperties, calculateItemProperties: null }));
+  return { reads, flags };
+}
+
 test('bank snapshots use cached world metadata and never calculate drop graphs', () => {
-  const source = fs.readFileSync('characters/shared.js', 'utf8');
-  const cached = { drops: [{ monsterId: 'bee' }] };
-  const context = vm.createContext({
-    G: { items: { coat: { name: 'Coat', skin: 'coat' } }, positions: {}, imagesets: {} },
-    character: { bank: { gold: 123, items0: [{ name: 'coat' }] } },
-    itemWorldCache: {}, fingerprint: item => ({ ...item }), catalogKnown: false,
-    safeItemDefinition: value => value, item_properties: () => ({}), itemSeller: () => null,
-    safeFields: value => value, maximumItemLevel: () => 0, itemUsage: () => ({}), itemBonuses: () => [],
-    itemWorldInfo: () => { throw Error('blocking world discovery in live report'); },
-  });
-  vm.runInContext(['itemSheetSprite', 'itemProperties', 'itemTitle', 'itemDefinition', 'bankSnapshot']
-    .map(name => namedFunction(source, name)).join('\n'), context);
-  const first = context.bankSnapshot();
+  const { reads } = bagReads({ G: { items: { coat: { name: 'Coat', skin: 'coat' } }, positions: {}, imagesets: {} },
+    character: { bank: { gold: 123, items0: [{ name: 'coat' }] } } });
+  const first = reads.bankSnapshot();
   assert.equal(first.packs.items0.length, 42);
   assert.equal(first.packs.items0[0].item.name, 'coat');
   assert.equal(first.packs.items0[0].meta.world, undefined);
-  context.itemWorldCache.coat = cached;
-  assert.equal(context.bankSnapshot().packs.items0[0].meta.world, cached);
+  assert.equal(reads.cachedWorld('coat'), undefined, 'the snapshot built no world entry');
+  const cached = reads.itemWorldInfo('coat');
+  assert.equal(reads.bankSnapshot().packs.items0[0].meta.world, cached);
 });
 
 // Failure inventory for per-copy reports: (1) a report sent after the
@@ -71,23 +70,16 @@ test('bank snapshots use cached world metadata and never calculate drop graphs',
 // sprite; (4) a level or stat change on one copy is lost; (5) a titled copy
 // loses its title (1.5, docs/item-titles.md).
 test('reports carry per-copy item meta once the coordinator holds the catalog', () => {
-  const source = fs.readFileSync('characters/shared.js', 'utf8');
-  const context = vm.createContext({
-    G: { items: { coat: { name: 'Coat', skin: 'coat', upgrade: { armor: 1 } } },
-      positions: { coat: ['pack_20', 1, 2], xmascoat: ['pack_20', 3, 4] },
-      imagesets: { pack_20: { file: '/pack.png', size: 20, columns: 10, rows: 10 } } },
-    itemWorldCache: { coat: { drops: [{ monsterId: 'bee' }] } }, catalogKnown: false,
-    safeItemDefinition: value => ({ ...value }), itemSeller: () => null,
-    item_properties: item => ({ armor: 10 + (item.level || 0), stat: item.stat_type ? 3 : 0 }),
-    safeFields: value => value, maximumItemLevel: () => 12, itemUsage: () => ({ classes: [], hands: [] }), itemBonuses: () => [],
-  });
-  vm.runInContext(['itemSheetSprite', 'itemProperties', 'itemTitle', 'itemDefinition']
-    .map(name => namedFunction(source, name)).join('\n'), context);
+  const G = { items: { coat: { name: 'Coat', skin: 'coat', upgrade: { armor: 1 } } },
+    positions: { coat: ['pack_20', 1, 2], xmascoat: ['pack_20', 3, 4] },
+    imagesets: { pack_20: { file: '/pack.png', size: 20, columns: 10, rows: 10 } } };
+  const { reads, flags } = bagReads({ G, itemProperties: item => ({ armor: 10 + (item.level || 0), stat: item.stat_type ? 3 : 0 }) });
+  const context = { itemDefinition: reads.itemDefinition, G };
   const full = context.itemDefinition({ name: 'coat', level: 2 });
   assert.deepEqual(Object.keys(full).sort(), ['bonuses', 'buyable', 'compoundable', 'definition', 'maxLevel',
     'properties', 'scaling', 'sprite', 'title', 'upgradeable', 'usage', 'world']);
   assert.equal(full.sprite.x, 1);
-  context.catalogKnown = true;
+  flags.known = true;
   assert.deepEqual(JSON.parse(JSON.stringify(context.itemDefinition({ name: 'coat', level: 2 }))),
     { properties: { armor: 12 } });
   assert.deepEqual(JSON.parse(JSON.stringify(context.itemDefinition({ name: 'coat', level: 5, stat_type: 'str' }))),

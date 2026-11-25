@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@source "../../runtime/addons";
+@source "../../runtime/hooks/dashboard";
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 

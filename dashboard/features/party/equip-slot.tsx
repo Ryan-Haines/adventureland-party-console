@@ -1,4 +1,5 @@
 "use client";
+import { ruleKey } from '../../../runtime/items/api.ts';
 import { itemActionBanner } from "./item-action-banner";
 import {
   ContextMenu,
@@ -16,38 +17,21 @@ import { Item } from "./item";
 import { MluckClover } from "./mluck-clover";
 
 import { SpriteCrop } from "./sprite-crop";
-import { statBadgeClass } from "./stat-badge-class";
+import { statBadgeClass, statBadgeStyle } from "./stat-badge-class";
 import { StatScrollMark } from "./stat-scroll-mark";
 
 import { UpgradeActions } from "./upgrade-actions";
 import { UpgradeMark } from "./upgrade-mark";
 import { upgradeRuleTiers } from "./upgrade-rule-tiers";
-import { memo, useEffect, useState } from "react";
-import {formatDuration} from './format-duration';
+import { memo } from "react";
+import { useClock } from "@/hooks/use-clock";
+import { timeLeft } from './duration-label';
 
-export const EquipSlot = memo(function EquipSlot({
-  slot,
-  equipped,
-  mark,
-  statScrollMark,
-  statScrollInventory: _statScrollInventory,
-  setProgress,
-  onSelect,
-  onUnequip,
-  onUpgrade,
-  onAutoUpgrade,
-  onClearMarks,
-  hasAutomaticMarks,
-  autoUpgradeMarks,
-  isMerchant,
-  onStatScroll: _onStatScroll,
-  onBuy,
-}: {
+type EquipSlotProps = {
   slot: string;
   equipped: EquippedEntry | null;
   mark?: UpgradeMark;
   statScrollMark?: StatScrollMark;
-  statScrollInventory: Record<string, number>;
   setProgress?: { current: number; total: number };
   onSelect: (entry: InventoryEntry) => void;
   onUnequip: (slot: string, item: Item) => void;
@@ -57,16 +41,41 @@ export const EquipSlot = memo(function EquipSlot({
   hasAutomaticMarks?: (item: Item) => boolean;
   autoUpgradeMarks: AutoUpgradeMarks;
   isMerchant: boolean;
-  onStatScroll: (slot: string, item: Item, remove?: boolean) => void;
   onBuy: (item: Item) => void;
-}) {
-  const [now,setNow]=useState(Date.now);
-  const expiry=slot==='elixir' && equipped?.item.expires ? new Date(equipped.item.expires).getTime() : 0;
-  useEffect(()=>{
-    if (!expiry) return;
-    const timer=setInterval(()=>{if(!document.hidden)setNow(Date.now());},1000);
-    return ()=>clearInterval(timer);
-  },[expiry]);
+};
+
+const elixirExpiry = (slot: string, equipped: EquippedEntry | null) =>
+  slot === 'elixir' && equipped?.item.expires ? new Date(equipped.item.expires).getTime() : 0;
+
+// An elixir's countdown reads the status row's one display clock. Only the elixir slot with
+// an expiry subscribes, so the other slots of a card render once per change, as b9b5c91e's did.
+function ElixirSlot(props: EquipSlotProps) {
+  const now=useClock();
+  return <SlotBody {...props} now={now} />;
+}
+
+export const EquipSlot = memo(function EquipSlot(props: EquipSlotProps) {
+  return elixirExpiry(props.slot, props.equipped) ? <ElixirSlot {...props} /> : <SlotBody {...props} now={0} />;
+});
+
+function SlotBody({
+  now,
+  slot,
+  equipped,
+  mark,
+  statScrollMark,
+  setProgress,
+  onSelect,
+  onUnequip,
+  onUpgrade,
+  onAutoUpgrade,
+  onClearMarks,
+  hasAutomaticMarks,
+  autoUpgradeMarks,
+  isMerchant,
+  onBuy,
+}: EquipSlotProps & { now: number }) {
+  const expiry = elixirExpiry(slot, equipped);
   const banner = itemActionBanner([
     !!statScrollMark && {action:'stat',label:'Stat scroll'},
     !!mark && {action:'upgrade',automatic:!!mark.auto,label:`${mark.auto ? 'Auto' : '+'+(mark.item.level || 0)} → +${Number(mark.item.level || 0)+Number(mark.tiers || 1)}`},
@@ -77,12 +86,13 @@ export const EquipSlot = memo(function EquipSlot({
         {equipped?.meta?.sprite && <SpriteCrop sprite={equipped.meta.sprite} size={40} />}
         {equipped && (
           <span className="absolute bottom-0.5 right-0.5 z-10 min-w-4 whitespace-nowrap rounded bg-black/85 px-1 text-center font-mono text-[10px] leading-4 text-emerald-300">
-            {slot === 'elixir' ? expiry ? formatDuration(Math.ceil(Math.max(0,expiry-now)/1000)*1000).split(' ')[0] : 'Active' : `+${equipped.item.level || 0}`}
+            {slot === 'elixir' ? expiry ? timeLeft(Math.max(0, expiry - now)).split(' ')[0] : 'Active' : `+${equipped.item.level || 0}`}
           </span>
         )}
         {equipped?.item.stat_type ? (
           <span
             className={`absolute left-0.5 top-0.5 z-10 rounded px-1 font-mono text-[8px] ring-1 ${statBadgeClass(equipped.item.stat_type)}`}
+            style={statBadgeStyle(equipped.item.stat_type)}
           >
             {equipped.item.stat_type}
           </span>
@@ -118,7 +128,7 @@ export const EquipSlot = memo(function EquipSlot({
     <ContextMenu>
       <ContextMenuTrigger
         aria-label={slot === "elixir" ? "Equipped elixir" : undefined}
-        title={slot === "elixir" && expiry ? formatDuration(Math.ceil(Math.max(0,expiry-now)/1000)*1000) : undefined}
+        title={slot === "elixir" && expiry ? timeLeft(Math.max(0, expiry - now)) : undefined}
         onClick={() => onSelect({ slot: -1, item: equipped.item, meta: equipped.meta })}
         className={classes}
       >
@@ -137,15 +147,15 @@ export const EquipSlot = memo(function EquipSlot({
           mark={mark}
           autoTiers={upgradeRuleTiers(
             autoUpgradeMarks[
-              `${equipped.item.name}@+${Math.max(0, Number(equipped.item.level) || 0)}`
+              ruleKey(equipped.item)
             ],
           )}
           onMark={(tiers, remove) => onUpgrade(slot, equipped.item, tiers, remove)}
           onAutoMark={(tiers, remove) => onAutoUpgrade(slot, equipped.item, tiers, remove)}
           onBuy={() => onBuy(equipped.item)}
         />
-        {(hasAutomaticMarks?.(equipped.item) || mark || statScrollMark || autoUpgradeMarks[`${equipped.item.name}@+${equipped.item.level || 0}`]) && <ClearItemMarks onClear={() => onClearMarks(slot, equipped.item)} />}
+        {(hasAutomaticMarks?.(equipped.item) || mark || statScrollMark || autoUpgradeMarks[ruleKey(equipped.item)]) && <ClearItemMarks onClear={() => onClearMarks(slot, equipped.item)} />}
       </ContextMenuContent>
     </ContextMenu>
   );
-});
+}

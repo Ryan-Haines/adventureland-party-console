@@ -71,8 +71,8 @@ device. Physical Pi testing and a live Steam-to-remote-host handoff remain manua
 
 1. On another device on the same private network, open the printed LAN URL.
    Check Windows Private-profile firewall access for TCP 3010 if unreachable.
-2. Open Interface settings and verify the dark pairing control below ALData is
-   readable. With pairing off, verify `/setup` omits browser pairing and, on
+2. Open the settings menu (the header's Interface settings gear), go to Account > Hosting and
+   verify the dark pairing control is readable. With pairing off, verify `/setup` omits browser pairing and, on
    Windows, account setup.
 3. Generate a loader using the LAN origin, paste into one Steam character's CODE,
    and verify reload and character switches retain that server address.

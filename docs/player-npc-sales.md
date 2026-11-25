@@ -11,4 +11,5 @@ sale status, and automatic rules. Use **Remove** to cancel a pending sale or
 The merchant collects the requested quantity, then queues its NPC sale work.
 Players never travel to an NPC or sell the items themselves. Existing merchant
 routine priorities remain in effect. Locked items and items reserved for other
-work are blocked; sale intent survives inventory sorting and restarts.
+work are blocked; sale intent survives inventory sorting and restarts. A sale the
+NPC refuses blocks until the merchant's bag changes, then runs again.

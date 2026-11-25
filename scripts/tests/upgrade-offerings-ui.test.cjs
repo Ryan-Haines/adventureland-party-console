@@ -1,15 +1,15 @@
-const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),Module=require('node:module');
-const {buildSync}=require('esbuild'),React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
+const {test,after}=require('node:test'),assert=require('node:assert/strict'),{load,queryRoot}=require('./helpers/dashboard-query-module.cjs');
+const React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
 global.IS_REACT_ACT_ENVIRONMENT=true;
-const filename=path.resolve('dashboard/features/party/upgrade-offerings-ui-fixture.cjs'),m=new Module(filename,module);
-m.filename=filename;m.paths=Module._nodeModulePaths(path.dirname(filename));
-m.require=function(id){if(id.startsWith('@/components/ui/'))return new Proxy({},{get:(_,key)=>String(key)});return Module.prototype.require.call(this,id);};
-m._compile(buildSync({stdin:{contents:"export {UpgradeActions} from './upgrade-actions'; export {UpgradeOfferingProvider, UpgradeOfferingRules} from './upgrade-offering-controls';",resolveDir:path.dirname(filename),loader:'tsx'},bundle:true,packages:'external',external:['@/components/ui/*'],platform:'node',format:'cjs',write:false}).outputFiles[0].text,filename);
-const {UpgradeActions,UpgradeOfferingProvider,UpgradeOfferingRules}=m.exports;
+const {UpgradeActions,UpgradeOfferingProvider,UpgradeOfferingRules}=load(['upgrade-actions','upgrade-offering-controls'],{'@/components/ui/*':new Proxy({},{get:(_,key)=>String(key)})});
 const text=n=>typeof n==='string'?n:(n.children||[]).map(text).join('');
+// An unmounted view's queries wait out their cache time on a timer; clearing each client ends
+// them, so the file exits when its rows finish.
+const roots=[];after(()=>roots.forEach(root=>root.client.clear()));
 async function render({rules=[],stock={offeringp:1},executor,post=async()=>{}}={}){
- let view;await act(async()=>{view=create(React.createElement(UpgradeOfferingProvider,{character:'M',executor,stock,rules,catalog:[{id:'sword',name:'Sword',meta:{upgradeable:true,maxLevel:13,definition:{}}}],post},
-  React.createElement(UpgradeActions,{item:{name:'sword',level:8},meta:{upgradeable:true,maxLevel:13,definition:{}},offeringSource:{slot:2},onMark(){},onAutoMark(){},onBuy(){}}),React.createElement(UpgradeOfferingRules)));});return view;
+ const root=queryRoot();roots.push(root);
+ let view;await act(async()=>{view=create(root.wrap(React.createElement(UpgradeOfferingProvider,{character:'M',executor,stock,rules,catalog:[{id:'sword',name:'Sword',meta:{upgradeable:true,maxLevel:13,definition:{}}}],post},
+  React.createElement(UpgradeActions,{item:{name:'sword',level:8},meta:{upgradeable:true,maxLevel:13,definition:{}},offeringSource:{slot:2},onMark(){},onAutoMark(){},onBuy(){}}),React.createElement(UpgradeOfferingRules))));});return view;
 }
 function button(view,label){return view.root.findAllByType('Button').find(n=>text(n)===label);}
 function menu(view,label){return view.root.findAllByType('ContextMenuItem').find(n=>text(n)===label);}
@@ -29,7 +29,7 @@ test('manual offering options are last and individually disabled; confirmation s
 
 test('preview opens stored results without queueing and explicit refresh queues a job',async()=>{
  const previous=global.fetch,calls=[];
- global.fetch=async(url,options)=>{calls.push([url,JSON.parse(options.body)]);return {ok:true,json:async()=>({status:'complete',result:{executor:'M',item:{name:'sword',level:8},options:{
+ global.fetch=async(url,options)=>{calls.push([url,JSON.parse(options.body)]);return {ok:true,status:200,text:async()=>JSON.stringify({status:'complete',result:{executor:'M',item:{name:'sword',level:8},options:{
   none:{preview:{chance:0.15321},observedAt:1000},offeringp:{preview:{chance:0.24256},observedAt:1000},
   offering:{reason:'Offering not in merchant inventory'},offeringx:{reason:'Offering not in merchant inventory'},
  }}})};};
@@ -51,10 +51,11 @@ test('overlap is visible before confirmation and adjacent ranges can be saved wi
   await act(async()=>menu(v,'Add upgrade rule').props.onClick());
   assert.match(text(v.root.findByProps({role:'alert'})),/already a rule.*\+7 to \+9/);assert.equal(button(v,'Confirm').props.disabled,true);
   await act(async()=>v.root.findByProps({'aria-label':'Starting level'}).props.onChange({target:{value:'9'}}));
-  await act(async()=>v.root.findByProps({'aria-label':'Ending level'}).props.onChange({target:{value:'13'}}));
+  // An upgrade rule ends at +12.
+  await act(async()=>v.root.findByProps({'aria-label':'Ending level'}).props.onChange({target:{value:'12'}}));
   await act(async()=>v.root.findByProps({'aria-label':'Upgrade offering'}).props.onChange({target:{value:'offering'}}));
   await act(async()=>v.root.findAllByType('input')[1].props.onChange());assert.equal(button(v,'Confirm').props.disabled,false);
-  await act(async()=>button(v,'Confirm').props.onClick());assert.deepEqual(calls[0][1].rule,{id:'',name:'sword',floor:9,ceiling:13,offering:'offering',required:false});
+  await act(async()=>button(v,'Confirm').props.onClick());assert.deepEqual(calls[0][1].rule,{id:'',name:'sword',floor:9,ceiling:12,offering:'offering',required:false});
   await act(async()=>v.root.findByProps({'aria-label':'Upgrade rules'}).props.onClick());assert.ok(button(v,'Edit'));assert.ok(button(v,'Remove'));assert.match(text(v.root),/Required/);
  }finally{await act(async()=>v.unmount());}
 });
@@ -66,7 +67,7 @@ test('server rejection remains visible in the dialog',async()=>{
 
 
 test('a failed calculation shows unavailable instead of a stored-preview success or loading text',async()=>{
- const previous=global.fetch;global.fetch=async()=>({ok:true,json:async()=>({status:'unavailable',result:{executor:'M',item:{name:'sword',level:8},options:Object.fromEntries(['none','offeringp','offering','offeringx'].map(k=>[k,{reason:'Missing scroll1 in merchant inventory or accessible bank'}]))}})});
+ const previous=global.fetch;global.fetch=async()=>({ok:true,status:200,text:async()=>JSON.stringify({status:'unavailable',result:{executor:'M',item:{name:'sword',level:8},options:Object.fromEntries(['none','offeringp','offering','offeringx'].map(k=>[k,{reason:'Missing scroll1 in merchant inventory or accessible bank'}]))}})});
  let v;try {
   v=await render({executor:'M'});await act(async()=>v.root.findAllByType('ContextMenuSub')[0].props.onOpenChange(true));
   const panel=v.root.findByProps({'aria-label':'Upgrade chances'});

@@ -107,8 +107,11 @@ Custom source mounts and edited application containers require manual updates.
 
 A green ! beside Party Console announces a newer compatible stable release. Click
 it to reach the bottom of settings. Download and install stages the update;
-Restart now pauses work and applies it. Characters that cannot safely acknowledge
-within 60 seconds defer installation. The dashboard reconnects after restart.
+Restart now pauses work and applies it: the characters finish their fight and hold,
+and the update installs once every one acknowledges. A character that stops reporting
+during the pause, or a coordinator that stops answering, ends the pause and the update
+waits for the next Restart now; the held characters play on. The dashboard reconnects
+after restart.
 
 Automatic updates default off. When enabled they download during a running
 session and wait for Restart now; on startup they install before characters start.
@@ -116,9 +119,10 @@ Checks run at startup and every six hours. Failed network checks leave the curre
 version usable. Drafts and prereleases are never offered.
 
 Before switching, the updater snapshots persistent settings and credentials while
-services are stopped. Candidate startup holds character launch until the dashboard
-health check passes. Failed pre-launch validation restores the previous code and
-snapshot. Once characters resume, state is not rolled back: game transactions may
+services are stopped. The update commits once the started console's `/health`
+reads ready (the dashboard, then the coordinator once an account is configured); a
+console that reports a failed start, a process that exits, or no ready answer within
+two minutes restores the previous code and snapshot. Once characters resume, state is not rolled back: game transactions may
 already have happened. Backups are private files under `data/updates/backups`.
 
 ## Promoting private development

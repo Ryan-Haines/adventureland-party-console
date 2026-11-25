@@ -1,5 +1,7 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { mapFrameFailure } from './map-render-buffer';
 import {
   Dialog,
   DialogContent,
@@ -9,8 +11,10 @@ import {
 } from '@/components/ui/dialog';
 import type {
   CaveObservation,
+  CavePoint,
   DungeonView,
-} from '../../../runtime/dungeons/contracts';
+} from '../../../runtime/hunting/api';
+import { caveFloorMap } from '../../../runtime/hunting/api.ts';
 import { API } from './api';
 import type { MapFrame } from './map-frame';
 import { MapCanvas } from './map-canvas';
@@ -19,6 +23,10 @@ import { MapCaptureButton, type MapCaptureState } from './map-capture-button';
 import type { MapDefinition } from './map-definition';
 import { useVisible } from './query-cache';
 
+// The fork's Cave destinations commit (34092356) picked 80 map units: a click that close to a room
+// or stairs pin selects it, and a click on open floor selects nothing.
+const PIN_PICK_RADIUS = 80;
+
 export function CaveMap({
   view,
   cave,
@@ -26,6 +34,10 @@ export function CaveMap({
   actionsReady,
   waitingForReports,
   error,
+  open,
+  onOpenChange,
+  destinations,
+  onSelectPoint,
 }: {
   view: DungeonView;
   cave: NonNullable<CaveObservation['cave']>;
@@ -33,8 +45,13 @@ export function CaveMap({
   actionsReady: boolean;
   waitingForReports: boolean;
   error: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  // DungeonPanel moves its one destination list in here while the map is open.
+  destinations: ReactNode;
+  onSelectPoint: (point: CavePoint) => void;
 }) {
-  const [open, setOpen] = useState(false),
+  const setOpen = onOpenChange,
     [adding, setAdding] = useState(false);
   const capture = useRef<MapCaptureState | null>(null);
   const [waypoint, setWaypoint] = useState<{ x: number; y: number } | null>(
@@ -47,13 +64,14 @@ export function CaveMap({
   const [busy, setBusy] = useState(false);
   const [nativeSize, setNativeSize] = useState(false);
   const names = view.state.participants.join(',');
-  const map = 'zone_' + cave.run + '_' + cave.floor;
+  const map = caveFloorMap(cave.run, cave.floor);
   useEffect(() => {
     if (!open || !visible) return;
     const streams = names.split(',').map((name) => {
       const stream = new EventSource(
         `${API}/map-stream/${encodeURIComponent(name)}`,
       );
+      const failed = mapFrameFailure(name);
       stream.onmessage = (event) => {
         try {
           const frame: MapFrame = JSON.parse(event.data);
@@ -61,8 +79,8 @@ export function CaveMap({
           const supplied = frame.definition;
           if (supplied?.name === map) setDefinition(supplied);
           setFrames((old) => ({ ...old, [name]: frame }));
-        } catch {
-          /* next frame */
+        } catch (error) {
+          failed(error);
         }
       };
       return stream;
@@ -72,9 +90,17 @@ export function CaveMap({
   const currentFrames = Object.fromEntries(Object.entries(frames).filter(([, frame]) => frame.map === map));
   const shown = definition?.name === map ? definition : null;
   const frame = shown ? currentFrames[view.state.participants[0]] || Object.values(currentFrames)[0] : undefined;
+  const floorPoints = cave.points.filter((p) => p.map === map && !p.exit);
+  // selectNear hands the nearest pin within the radius to the panel's own room pick.
+  const selectNear = (point: { x: number; y: number }) => {
+    const near = floorPoints
+      .map((p) => ({ p, d: Math.hypot(p.x - point.x, p.y - point.y) }))
+      .filter(({ d }) => d <= PIN_PICK_RADIUS)
+      .sort((a, b) => a.d - b.d)[0];
+    if (near) onSelectPoint(near.p);
+  };
   const pins = [
-    ...cave.points
-      .filter((p) => p.map === map && !p.exit)
+    ...floorPoints
       .map((p) => ({
         x: p.x,
         y: p.y,
@@ -95,7 +121,7 @@ export function CaveMap({
         View full map
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent aria-label={`Cave of Many Dreams — Floor ${cave.floor + 1}`} className="w-[min(1000px,calc(100vw-2rem))] max-w-none border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-none [&_[data-slot=dialog-close]]:border [&_[data-slot=dialog-close]]:border-emerald-600 [&_[data-slot=dialog-close]]:bg-slate-950 [&_[data-slot=dialog-close]]:text-emerald-50 [&_[data-slot=dialog-close]]:hover:bg-emerald-950">
+        <DialogContent data-area="cave-map" aria-label={`Cave of Many Dreams — Floor ${cave.floor + 1}`} className="max-h-[95vh] w-[min(1000px,calc(100vw-2rem))] max-w-none overflow-auto lg:w-[min(calc(1000px+18.75rem),calc(100vw-2rem))] border-emerald-700 bg-[#081713] text-emerald-50 sm:max-w-none [&_[data-slot=dialog-close]]:border [&_[data-slot=dialog-close]]:border-emerald-600 [&_[data-slot=dialog-close]]:bg-slate-950 [&_[data-slot=dialog-close]]:text-emerald-50 [&_[data-slot=dialog-close]]:hover:bg-emerald-950">
           <DialogHeader>
             <div className="flex items-center gap-3 pr-8">
               <DialogTitle>
@@ -108,8 +134,9 @@ export function CaveMap({
               · Pink: waypoint
             </DialogDescription>
           </DialogHeader>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="h-[min(600px,calc(100vh-16rem))] overflow-hidden rounded border border-emerald-800 bg-[#07110f]">
-            <MapCanvas
+            <AddonSlot name="map-layer" part="cave" map={shown?.name ?? ''} pins={pins}>{pins => <MapCanvas
               definition={shown}
               frame={
                 frame
@@ -117,7 +144,7 @@ export function CaveMap({
                       ...frame,
                       entities: Array.from(
                         new Map(
-                          Object.values(frames)
+                          Object.values(currentFrames)
                             .flatMap((f) => f.entities)
                             .map((e) => [e.id, e]),
                         ).values(),
@@ -140,9 +167,13 @@ export function CaveMap({
                       setWaypoint(point);
                       setAdding(false);
                     }
-                  : undefined
+                  : selectNear
               }
-            />
+            />}</AddonSlot>
+          </div>
+          <section aria-label="Cave destinations" className="lg:max-h-[min(600px,calc(100vh-16rem))] lg:overflow-auto">
+            {destinations}
+          </section>
           </div>
           <div className="flex flex-wrap gap-3 text-sm">
             {Object.values(frames).map((f) => (

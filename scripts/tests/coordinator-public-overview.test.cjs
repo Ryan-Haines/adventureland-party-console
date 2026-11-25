@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createCoordinatorPublicOverview}=require('../../runtime/coordinator/telemetry/public-composition.ts');
+const {createCoordinatorPublicOverview}=require('../../runtime/status/coordinator/state.ts');
 const {publicStateRuntime}=require('./helpers/coordinator-public-state.cjs');
 function fixture(){
  const {party,ports}=publicStateRuntime();
@@ -23,14 +23,12 @@ test('overview reads replaced event reports, leader, handoff and BankBoi transac
   {name:'B',items:[],transaction:{phase:'withdraw',mode:'drain'}}]);
  assert.equal(party.bankbois.B.items,null,'projection must not mutate stored inventory');
 });
-test('overview and external job projection share current collection thresholds without leaking credentials',()=>{
+// The projection's rows (redaction, labels, the threshold floor) live in coordinator-merchant-projection.test.cjs;
+// this row checks that the overview serves the same projection from the party's current threshold.
+test('overview and external job projection share the party threshold',()=>{
  const {party,overview,read}=fixture();
  const job={id:'j',reason:'marked items',target:'P',aldataKey:'private'};party.merchantQueue=[job];
- const first=read().merchantQueue[0];assert.equal(first.collectionLabel,'nearby collection');
- assert.equal(first.collectionThreshold,5);assert.equal(first.collectionNearby,true);
- assert.equal(Object.hasOwn(first,'aldataKey'),false);assert.equal(job.aldataKey,'private');
+ assert.deepEqual(read().merchantQueue[0],overview.job(job));assert.equal(read().merchantQueue[0].collectionThreshold,5);
  party.itemCollectionThreshold=2;
- const projected=overview.job(job);assert.equal(projected.collectionLabel,'marked items');
- assert.equal(projected.collectionThreshold,2);assert.deepEqual(read().merchantQueue[0],projected);
- assert.equal(overview.job(null),null);
+ assert.deepEqual(read().merchantQueue[0],overview.job(job));assert.equal(read().merchantQueue[0].collectionThreshold,2);
 });

@@ -55,7 +55,13 @@ test('lucky slot lock persists and unlock restores discovery', async ({page, app
   const report = state.characters.M;
   const characterId = state.roster.find((entry: {name: string}) => entry.name === 'M').id;
   const receipt = await app.deliverStatus({...report,name:'M',luckySlotCharacterId:characterId,luckySlotTracking:evidence});
+  // The row turns green only for the search's inferred slot, 99.9% confidence on 100 rolls
+  // (runtime/items/rules.ts LUCKY_CONFIDENCE, 104e909d2), so a leading candidate stays plain.
   await expect(details.getByText('Leading candidate: slot 0 · 97.37% model confidence · 100 rolls in that slot.',{exact:true})).toBeVisible();
+  await expect.poll(() => leadingRow.evaluate(greenBackground)).toBe(false);
+  const inferred = {...evidence,slots:{'0':{totalRolls:200,sumRolls:100,rollsAbove96_3:8,perfectRolls:4}}};
+  await app.deliverStatus({...report,name:'M',luckySlotCharacterId:characterId,luckySlotTracking:inferred});
+  await expect(details.getByText('Statistically inferred: slot 0 · 99.99% model confidence · 200 rolls in that slot.',{exact:true})).toBeVisible();
   await expect.poll(() => leadingRow.evaluate(greenBackground)).toBe(true);
   await expect.poll(() => otherRow.evaluate(greenBackground)).toBe(false);
   await info.attach('lucky-slot-confidence-ledger',{body:JSON.stringify({evidence,receipt,state:await app.state()}),contentType:'application/json'});

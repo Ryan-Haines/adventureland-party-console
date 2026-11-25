@@ -1,7 +1,6 @@
 export interface LiveRecord {
   generation: string;
   sample: number;
-  sampledAt: number;
   vitals: Record<string, unknown>;
   items: Record<string, unknown>;
   slots: Record<string, unknown>;
@@ -11,6 +10,9 @@ export interface LiveMessage {
   epoch: string;
   sequence: number;
   characters?: Record<string, LiveRecord | null>;
+  // The stream's heartbeat period, on the snapshot and each heartbeat (runtime/status/fields.ts
+  // `streamHeartbeatMs`).
+  heartbeatMs?: number;
 }
 export function createLiveReceiver(
   write: (name: string, record: LiveRecord | null) => void,

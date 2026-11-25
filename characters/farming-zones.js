@@ -20,13 +20,15 @@ var partyFarmingZones = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // dashboard/lib/farming-zones.ts
-  var farming_zones_exports = {};
-  __export(farming_zones_exports, {
+  // runtime/hunting/zones.ts
+  var zones_exports = {};
+  __export(zones_exports, {
     bounds: () => bounds,
     candidates: () => candidates,
     contains: () => contains,
+    defaultSearchRadius: () => defaultSearchRadius,
     distance: () => distance,
+    firstSpawn: () => firstSpawn,
     id: () => id,
     overlap: () => overlap,
     polygon: () => polygon,
@@ -37,6 +39,7 @@ var partyFarmingZones = (() => {
     withinRadius: () => withinRadius,
     zones: () => zones
   });
+  var defaultSearchRadius = 400;
   function polygon(shape) {
     if (shape.polygon && shape.polygon.length >= 3) return shape.polygon;
     const b = shape.boundary;
@@ -81,18 +84,18 @@ var partyFarmingZones = (() => {
       })
     );
   }
-  function contains(area, p, margin = 0, radius = 400) {
+  function contains(area, p, margin = 0, radius = defaultSearchRadius) {
     if (!area || !Number.isFinite(p && p.x) || !Number.isFinite(p && p.y))
       return false;
     const shaped = area.shapes || area.boundary || area.polygon || area.allOf;
-    return distance(area, p) <= (shaped ? (margin || 0) + 1e-3 : (radius || 400) + (margin || 0));
+    return distance(area, p) <= (shaped ? (margin || 0) + 1e-3 : (radius || defaultSearchRadius) + (margin || 0));
   }
-  function candidates(area, targets, radius = 400) {
+  function candidates(area, targets, radius = defaultSearchRadius) {
     if (!area) return targets;
     const bounded = targets.filter((target) => contains(area, target, 0, radius));
     return bounded.length ? bounded : targets.filter((target) => withinRadius(area, target, radius));
   }
-  function withinRadius(area, target, radius = 400) {
+  function withinRadius(area, target, radius = defaultSearchRadius) {
     return (!target.map || target.map === area.map) && Math.hypot(target.x - area.x, target.y - area.y) <= radius;
   }
   function bounds(area) {
@@ -137,6 +140,9 @@ var partyFarmingZones = (() => {
           }
       }
     return false;
+  }
+  function firstSpawn(catalog, type) {
+    return catalog.find((entry) => entry.id === type)?.locations?.[0] || null;
   }
   function id(area) {
     return JSON.stringify([
@@ -192,6 +198,6 @@ var partyFarmingZones = (() => {
         });
     return points.filter((p) => contains(area, p, 0, 1));
   }
-  return __toCommonJS(farming_zones_exports);
+  return __toCommonJS(zones_exports);
 })();
 if (typeof module === "object" && module.exports) module.exports = partyFarmingZones; else globalThis.partyFarmingZones = partyFarmingZones;

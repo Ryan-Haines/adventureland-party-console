@@ -1,9 +1,11 @@
+const {productionFunctions} = require('./helpers/production-functions.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
-const {classifyGameLog,showGameLog,defaultLogFilters}=require('../../runtime/game-log-filters.ts');
-const {installGameLogs}=require('../../runtime/characters/game-logs.ts');
-const {appendGameLogs,gameLogs}=require('../../runtime/coordinator/telemetry/game-logs.ts');
-const {exportDashboardSettings,parseDashboardImport}=require('../../runtime/coordinator/persistence/dashboard-import.ts');
-const {initialAnniversaryState}=require('../../runtime/coordinator/anniversary/initial-state.ts');
+const {classifyGameLog,showGameLog,defaultLogFilters}=require('../../runtime/status/game-log.ts');
+const {installGameLogs}=require('../../runtime/status/character/telemetry.ts');
+const {appendGameLogs,gameLogs}=require('../../runtime/status/coordinator/logs.ts');
+const {exportDashboardSettings,parseDashboardImport,applyDashboardImport}=require('../../runtime/settings/coordinator/persistence/dashboard-import.ts');
+const {settingsWriter}=require('./helpers/settings-writer.cjs');
+const {initialAnniversaryState}=require('../../runtime/events/coordinator/anniversary.ts');
 function response(){return {code:200,status(n){this.code=n;return this;},json(body){this.body=body;return this;}};}
 test('game filters prioritize errors and retain unmatched entries',()=>{
  assert.equal(classifyGameLog('Upgrade failed: not enough gold'),'errors');assert.equal(classifyGameLog('Found a ring'),'items');
@@ -29,23 +31,44 @@ test('settings JSON round trip includes new preferences without credentials or a
  assert.deepEqual(parsed.values,{bankboiPrefix:'MyBank',anniversaryAutoChat:false,threshold:10,autoCompounds:{M:[]}});
  assert.ok(!JSON.stringify(exported).includes('hide'));assert.ok(!JSON.stringify(exported).includes('blacklist'));
  assert.throws(()=>parseDashboardImport(JSON.stringify({...exported,version:99}),()=>true));
+ // An add-on setting declared importable
+ // travels under its add-on's name; the import sets it for the characters the account owns and
+ // keeps the add-on's switch; a setting the add-on does not mark importable stays out.
+ const addons=[{name:'planted',settings:{stance:{label:'Stance',kind:'per-character',choices:['near','far'],default:{},importable:true},
+  hidden:{label:'Hidden',kind:'boolean',default:false}}}];
+ const carried=exportDashboardSettings({...original,addons:{planted:{enabled:true,settings:{stance:{M:'far',Gone:'near'},hidden:true}}}},addons);
+ assert.deepEqual(carried.settings.addons,{planted:{settings:{stance:{M:'far',Gone:'near'}}}});
+ const back=parseDashboardImport(JSON.stringify(carried),n=>n==='M',addons);
+ assert.deepEqual(back.values.addons,{planted:{settings:{stance:{M:'far'}}}});
+ assert.deepEqual(back.skippedCharacters,{Gone:['addons']});
+ // Since the settings rework the writer checks each imported add-on value by its kind, as an
+ // addressed change per key and per fighter.
+ const {loaded}=require('./fixtures/hook-registry-scenario.cjs'),hooks=loaded();
+ hooks.register({...addons[0],folder:'addons',author:'test',summary:'test',hooks:{}});
+ const state={addons:{planted:{enabled:false,settings:{hidden:true}}}};
+ assert.equal(applyDashboardImport(state,back,settingsWriter(state,{hooks,fighters:()=>['M']}).write),null);
+ assert.deepEqual(state.addons,{planted:{enabled:false,settings:{hidden:true,stance:{M:'far'}}}});
+ const bad=parseDashboardImport(JSON.stringify({...carried,settings:{addons:{planted:{settings:{stance:{M:'sideways'}}}}}}),()=>true,addons);
+ const refused=applyDashboardImport(state,bad,settingsWriter(state,{hooks,fighters:()=>['M']}).write);
+ assert.equal(refused.error,'Stance takes one of near, far for each character');
+ assert.deepEqual(state.addons.planted.settings.stance,{M:'far'},'a refused import writes nothing');
 });
 test('blacklist migration drops blacklist aborts but preserves failed-round protection',()=>{
  const state=initialAnniversaryState({blacklist:['old'],abortedRounds:{a:{reason:'target-blacklisted'},b:{reason:'kiss-timeout'}}});
  assert.equal(Object.hasOwn(state,'blacklist'),false);assert.deepEqual(Object.keys(state.abortedRounds),['b']);
 });
 
+// Ported from v1.5.0 4cbaff64. The schedule report is the event clock's (runtime/events/character/clock.ts)
+// with movement's report clock offset as its `reportOffset`.
 test('published daily occurrences retain UTC day rollover without guessing legacy slots',()=>{
- const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync('characters/shared.js','utf8');
- const start=source.indexOf('  function eventScheduleSnapshot()'),end=source.indexOf('  var eventTargetTypes',start);
- const now=Date.UTC(2026,8,18,0,0),context={Date:class extends Date {static now(){return now;}},eventClockOffset:0,coordinatorClockOffset:0,
- nativeEventStatus:()=>({schedule:{time_offset:-5,events:[
+ const {installEventClock}=require('../../runtime/events/character/clock.ts');
+ const now=Date.UTC(2026,8,18,0,0);
+ const clock=installEventClock({now:()=>now,reportOffset:()=>0,names:()=>['franky','goobrawl'],
+  feed:()=>({schedule:{time_offset:-5,events:[
  {id:'old',event:'franky',at:now-1,status:'scheduled'},
  {id:'franky-next',event:'franky',at:Date.UTC(2026,8,18,4),status:'scheduled'},
- {id:'goo-next',event:'goobrawl',at:Date.UTC(2026,8,18,1),status:'scheduled'}]}}),anniversaryEpoch:x=>Number(x)||0,
- root:{partyOctoberEvents:require('../../runtime/events/october.ts')},supportedEventNames:()=>['franky','goobrawl'],
- G:{events:{franky:{name:'Franky'},goobrawl:{name:'Goobrawl'}}}};
- vm.createContext(context);vm.runInContext(source.slice(start,end),context);
- const schedule=context.eventScheduleSnapshot();assert.equal(schedule.find(e=>e.id==='franky').next,Date.UTC(2026,8,18,4));
+ {id:'goo-next',event:'goobrawl',at:Date.UTC(2026,8,18,1),status:'scheduled'}]}}),
+  game:()=>({events:{franky:{name:'Franky'},goobrawl:{name:'Goobrawl'}}}),doors:()=>null,cipher:()=>({merchant:null,gathering:null})});
+ const schedule=clock.schedule();assert.equal(schedule.find(e=>e.id==='franky').next,Date.UTC(2026,8,18,4));
  assert.equal(schedule.find(e=>e.id==='goobrawl').next,Date.UTC(2026,8,18,1));assert.equal(schedule[0].occurrences.length,1);
 });

@@ -1,8 +1,15 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { createCoordinatorEventObservations } = require('../../runtime/coordinator/events/observation-composition.ts');
+const { scenarioTable } = require('./fixtures/scenarios.cjs');
+const { createCoordinatorEventObservations } = require('../../runtime/events/coordinator/returns.ts');
+// The observation service over `state` with every event selected, at `location`: the checkpoint and the
+// navigation's place. `ports` replaces single answers, and its `navigation` single navigation answers.
+function observations(state,location,{navigation={},...ports}={}){
+ return createCoordinatorEventObservations(state,{now:()=>1000,nextCommand:()=>state.nextCommandId++,activeNames:()=>['A'],enabled:()=>true,admits:()=>true,
+  selected:()=>['franky','crabxx','goobrawl','mrpumpkin','anniversary'],checkpoint:()=>location,persist(){},log(){},goobrawlStillFighting:()=>false,begin(){},finishIfReady(){},
+  ...ports,navigation:{capture:()=>({}),location:()=>location,intent:()=>({revision:1}),...navigation}});
+}
 
-for(const observed of [false,true])for(const protection of ['none','new-revision','protected','unrelated'])
-test('anniversary staging handoff ownership; observed='+observed+' protection='+protection,()=>{
+scenarioTable('an anniversary staging walk hands off to a combat event only when the walk is the round\'s own',protection=>{
  const waypoint={revision:1,location:{map:'winterland',x:10,y:20}};
  const cycle={id:'round',participants:['A'],endsAt:10000,waypoints:{A:waypoint}};
  const convoy={id:'staging',purpose:'shared-walk',walkingActivity:'anniversary-staging',phase:'travel',
@@ -11,25 +18,24 @@ test('anniversary staging handoff ownership; observed='+observed+' protection='+
  const state={activeConvoy:convoy,eventSessions:{},eventReturn:null,deferredEventReturns:{},merchantCharacter:'M',
   anniversary:{eventCycle:cycle},statuses:{},commands:{A:{id:5,convoyId:'staging'}},nextCommandId:7};
  let released=0;
- const service=createCoordinatorEventObservations(state,{now:()=>1000,activeNames:()=>['A'],enabled:()=>true,
-  checkpoint:()=>waypoint.location,persist(){},log(){},goobrawlStillFighting:()=>false,begin(){},finishIfReady(){},
-  cancelConvoy(){state.activeConvoy=null;delete state.commands.A;},releaseAnniversary(){released++;},
-  navigation:{capture:()=>({A:{...waypoint,revision:protection==='new-revision'?2:1}}),location:()=>waypoint.location,intent:()=>({revision:1})}});
+ const service=observations(state,waypoint.location,{cancelConvoy(){state.activeConvoy=null;delete state.commands.A;},releaseAnniversary(){released++;},
+  navigation:{capture:()=>({A:{...waypoint,revision:protection==='new-revision'?2:1}})}});
+ return {waypoint,cycle,convoy,state,service,get released(){return released;}};
+},[false,true].flatMap(observed=>['none','new-revision','protected','unrelated'].map(protection=>['anniversary staging handoff ownership; observed='+observed+' protection='+protection,f=>{
+ const {waypoint,cycle,convoy,state,service}=f;
  if(observed)service.observe({name:'A',joinedEvent:'snowman',serverLiveEvents:[{name:'snowman'}]});
- else assert.equal(service.authorize('A','snowman').allowed,true);
+ else assert.equal(service.admit({name:'A',activeEvent:'snowman'}).allowed,true);
  assert.equal(state.activeConvoy,protection==='none'?null:convoy);
- assert.equal(released,1);assert.equal(cycle.combatEvent,'snowman');assert.equal(cycle.combatHandoffAt,1000);
+ assert.equal(f.released,1);assert.equal(cycle.combatEvent,'snowman');assert.equal(cycle.combatHandoffAt,1000);
  assert.equal(cycle.waypoints.A,waypoint);
-});
+},protection])));
 test('event observation composition writes live sessions and resumes deferred travel through current command ownership', () => {
   const state = { eventSessions: {}, eventReturn: null, deferredEventReturns: {}, merchantCharacter: 'M',
     anniversary: { eventCycle: null, returnReady: {}, returnDestination: null, partyHold: null }, statuses: {}, commands: {}, nextCommandId: 7 };
   const checkpoint = { map: 'cave', x: 10, y: 20 }, calls = [];
-  const service = createCoordinatorEventObservations(state, { now: () => 100, activeNames: () => ['A','M'], enabled: () => true,
-    checkpoint: () => checkpoint, persist: () => calls.push('persist'), log() {}, goobrawlStillFighting: () => false, begin() {}, finishIfReady() {},
-    navigation: { capture: () => ({}), location: () => checkpoint, intent: () => ({ revision: 1 }) } });
+  const service = observations(state, checkpoint, { now: () => 100, activeNames: () => ['A','M'], persist: () => calls.push('persist') });
   service.observe({ name: 'A', serverLiveEvents: [{ name: 'franky', id: 'round' }] });
-  service.authorize('A', 'franky');
+  service.admit({ name: 'A', activeEvent: 'franky' });
   assert.deepEqual(state.eventSessions.A.participants, ['A']); assert.equal(state.eventSessions.A.checkpoint, checkpoint);
   state.deferredEventReturns = { A: { event: 'franky', cycleId: 'recovery', checkpoint, navigationRevision: 1, phase: 'awaiting-reconnect' } };
   state.commands = { A: { type: 'manual' } }; service.observe({ name: 'A', map: 'cave' });
@@ -39,7 +45,7 @@ test('event observation composition writes live sessions and resumes deferred tr
   assert.equal(state.commands.A.checkpoint, checkpoint); assert.equal(state.nextCommandId, 8);
 });
 
-for(const protection of ['none','new-revision','protected','unrelated'])test('retired same-event owned walk cancellation persists once; protection='+protection,()=>{
+scenarioTable('a retired same-event return walk cancels and persists once when the walk is its own',protection=>{
  const checkpoint={map:'uhills',x:-550,y:-160};
  const deferred={event:'mrpumpkin',cycleId:'old',checkpoint,navigationRevision:1,phase:'returning-to-town'};
  const convoy={id:'walk',purpose:'shared-walk-return',walkingActivity:'event-return',participants:['A'],
@@ -49,12 +55,13 @@ for(const protection of ['none','new-revision','protected','unrelated'])test('re
   eventReturn:null,deferredEventReturns:{A:deferred},merchantCharacter:'M',anniversary:{eventCycle:null},
   statuses:{A:{seenAt:1000,serverLiveEvents:[{name:'mrpumpkin',id:'new'}]}},commands:{A:{id:1,type:'party-monster-travel',convoyId:'walk'}},nextCommandId:2};
  const saved=[];let cancelled=0;
- const service=createCoordinatorEventObservations(state,{now:()=>1000,activeNames:()=>['A'],enabled:()=>true,checkpoint:()=>checkpoint,
-  persist:()=>saved.push({activeConvoy:state.activeConvoy,phase:state.deferredEventReturns.A.phase}),log(){},goobrawlStillFighting:()=>false,begin(){},finishIfReady(){},
-  cancelConvoy(){cancelled++;state.activeConvoy=null;delete state.commands.A;},
-  navigation:{capture:()=>({}),location:()=>checkpoint,intent:()=>({revision:1})}});
+ const service=observations(state,checkpoint,{persist:()=>saved.push({activeConvoy:state.activeConvoy,phase:state.deferredEventReturns.A.phase}),
+  cancelConvoy(){cancelled++;state.activeConvoy=null;delete state.commands.A;}});
+ return {checkpoint,deferred,convoy,state,saved,service,get cancelled(){return cancelled;}};
+},['none','new-revision','protected','unrelated'].map(protection=>['retired same-event owned walk cancellation persists once; protection='+protection,f=>{
+ const {checkpoint,deferred,convoy,state,saved,service}=f;
  service.observe({name:'A',serverLiveEvents:[{name:'mrpumpkin',id:'new'}]});
- assert.equal(cancelled,protection==='none'?1:0);assert.equal(saved.length,protection==='none'?2:1);
+ assert.equal(f.cancelled,protection==='none'?1:0);assert.equal(saved.length,protection==='none'?2:1);
  if(protection==='none')assert.equal(saved[0].activeConvoy,null);
  assert.equal(saved.at(-1).phase,'awaiting-event-admission');
  assert.equal(saved.at(-1).activeConvoy,protection==='none'?null:convoy);
@@ -63,4 +70,4 @@ for(const protection of ['none','new-revision','protected','unrelated'])test('re
  assert.equal(state.deferredEventReturns.A,deferred);assert.deepEqual(state.eventSessions.A.participants,[]);
  service.observe({name:'A',serverLiveEvents:[{name:'mrpumpkin',id:'new'}]});
  assert.equal(saved.length,protection==='none'?2:1);
-});
+},protection]));

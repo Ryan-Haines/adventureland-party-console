@@ -1,15 +1,9 @@
 import { test, expect } from "./fixtures";
+import { mountComponent, color, rgb } from "./fixtures/component-harness";
 import type { Locator } from "@playwright/test";
-import { build } from "esbuild";
-import path from "node:path";
 
 // Failure inventory: docs/monster-card.md. Monster definitions are declared from the
 // live game data (17665); the maintained dialogs run in Chromium with the console styles.
-const color = (locator: Locator) => locator.evaluate((node) => getComputedStyle(node).color);
-const rgb = (hex: string) => {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
-};
 const monster = (id: string, definition: Record<string, unknown>) => ({
   id, name: String(definition.name), sprite: null, hp: Number(definition.hp), attack: Number(definition.attack), xp: Number(definition.xp),
   range: Number(definition.range), threat: 0, definition, drops: [],
@@ -32,17 +26,7 @@ const SKILLS = [{ id: "shared", name: "Shared / system", skills: [{ id: "weaknes
   definition: { name: "Weakness Aura", explanation: "Weakens nearby enemies.", type: "skill" } }] }];
 
 test("monsters show the game's monster card beside an extras box in both dialogs", async ({ page, app }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `
+  await mountComponent(page, app, "monster-card-harness", `
     import React from 'react';import {createRoot} from 'react-dom/client';
     import {MonsterDetailsDialog} from './features/party/monster-details-dialog';
     import {ItemDetails} from './features/party/item-details';
@@ -53,20 +37,7 @@ test("monsters show the game's monster card beside an extras box in both dialogs
       monsters={monsters} characters={[]} achievements={{}} standFull={false} onNavigate={()=>{}} onAddWTB={()=>{}} onAddStand={()=>{}}
       onCompare={()=>{}} onCompareCatalog={()=>{}} onOpenChange={()=>root.render(null)}/>);
     window.unmount=()=>root.render(null);
-  `,
-    },
-  });
-  await page.goto(app.url);
-  await expect(page.locator("body")).toContainText("Party");
-  const styles = await page
-    .locator('style, link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((node) => node.outerHTML).join("\n"));
-  await page.route("**/monster-card-harness", (route) =>
-    route.fulfill({ contentType: "text/html", body: `<!doctype html><head>${styles}</head><body><div id="root"></div></body>` }),
-  );
-  await page.setViewportSize({ width: 1400, height: 1000 });
-  await page.goto(app.url + "/monster-card-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  `);
   const lines = (box: Locator) => box.locator("[data-line]").evaluateAll((nodes) => nodes.map((node) => node.textContent));
   const show = async (value: unknown) => {
     await page.evaluate(() => (window as any).unmount());

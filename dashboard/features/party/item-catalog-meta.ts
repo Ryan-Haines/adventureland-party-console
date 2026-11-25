@@ -3,6 +3,7 @@ import type { MerchantCatalog } from './merchant-catalog';
 import type { BankSnapshot } from './bank-snapshot';
 import type { EquippedEntry } from './equipped-entry';
 import type { Item } from './item';
+import { catalogItemMeta, joinItemMeta as itemsJoin } from '../../../runtime/items/api.ts';
 
 /**
  * Status reports carry per-copy item meta (properties, a per-copy sprite);
@@ -11,51 +12,20 @@ import type { Item } from './item';
  */
 type Entry = { item?: Pick<Item, 'name'> | null; meta?: EquippedEntry['meta'] };
 
-// One index per catalog object, and the catalog query replaces that object
-// only on a new referenceRevision.
-const indexes = new WeakMap<object, Map<string, ItemMeta>>();
-// This module caches joins per live object, so React Query structural sharing
-// and memoized tiles see the same object until the report or catalog changes.
-const metaJoins = new WeakMap<object, { known: ItemMeta; joined: ItemMeta }>();
+// This module caches its entry, bank and inventory joins per live object, so React Query
+// structural sharing and memoized tiles see the same object until the report or catalog changes.
 const entryJoins = new WeakMap<object, { known: ItemMeta | undefined; joined: Entry }>();
 const bankJoins = new WeakMap<object, { catalog: unknown; joined: BankSnapshot }>();
 
-function catalogIndex(catalog: MerchantCatalog | null | undefined): Map<string, ItemMeta> | undefined {
-  if (!catalog) return undefined;
-  let index = indexes.get(catalog);
-  if (!index) {
-    index = new Map();
-    for (const entry of catalog.allItems || []) if (entry.meta) index.set(entry.id, entry.meta);
-    indexes.set(catalog, index);
-  }
-  return index;
-}
-
-/** Per-type meta for one item id. */
-export function catalogItemMeta(catalog: MerchantCatalog | null | undefined, name: string | undefined) {
-  return name ? catalogIndex(catalog)?.get(name) : undefined;
-}
-
-/** Catalog meta with live per-copy fields on top; full live meta from older clients wins. */
-export function joinItemMeta(
-  catalog: MerchantCatalog | null | undefined,
-  name: string | undefined,
-  live: ItemMeta | null | undefined,
-): ItemMeta | null | undefined {
-  const known = catalogItemMeta(catalog, name);
-  if (!known) return live;
-  if (!live) return known;
-  const cached = metaJoins.get(live);
-  if (cached?.known === known) return cached.joined;
-  const joined = { ...known, ...live, world: live.world || known.world };
-  metaJoins.set(live, { known, joined });
-  return joined;
+/** Catalog meta with live per-copy fields on top, through the items owner's one join (items/catalog-meta.ts). */
+export function joinItemMeta(catalog: MerchantCatalog | null | undefined, name: string | undefined, live: ItemMeta | null | undefined) {
+  return itemsJoin<ItemMeta>(catalog, name, live);
 }
 
 /** The same entry with joined meta, or the entry itself when nothing joins. */
-export function withCatalogMeta<T extends Entry | null | undefined>(catalog: MerchantCatalog | null | undefined, entry: T): T {
+function withCatalogMeta<T extends Entry | null | undefined>(catalog: MerchantCatalog | null | undefined, entry: T): T {
   if (!entry) return entry;
-  const known = catalogItemMeta(catalog, entry.item?.name || undefined);
+  const known = catalogItemMeta<ItemMeta>(catalog, entry.item?.name || undefined);
   if (!known) return entry;
   const cached = entryJoins.get(entry);
   if (cached && cached.known === known) return cached.joined as T;

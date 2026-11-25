@@ -71,24 +71,45 @@ test('Hunt saves a backup, accepts settings, and exits without losing preference
   expect(hunting.farmingProfiles.W.farmingPolicy).toBe('hunt');
 
   await warrior.getByRole('button', { name: 'Farming settings', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Farming settings · W', exact: true });
+  const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
   await expect(settings).toBeVisible();
   const relocate = settings.getByRole('checkbox', { name: 'Relocate to different spawn if competing', exact: true });
   await expect(relocate).toBeChecked();
-  const updated = responseFor('/hunt-settings');
+  // The switch is the party's root setting, written through the settings route.
+  const updated = responseFor('/settings');
   // This controlled checkbox changes only after the real save and query refresh complete.
   await relocate.click();
-  expect(await record(updated)).toMatchObject({ character: 'W', relocateIfCompeting: false });
+  expect(await record(updated)).toMatchObject({ changes: [{ field: 'relocateIfCompeting', value: false }] });
   await expect(relocate).not.toBeChecked();
   await page.keyboard.press('Escape');
 
-  const stopped = responseFor('/farming-mode');
+  // The mode rows: row 1 holds the combat modes and row 2 the target modes, each button from its
+  // slot entry's declared data, with one button pressed in each row. Scatter while hunting changes
+  // only the formation.
+  const combatRow = warrior.getByRole('group', { name: 'Combat mode' }), targetRow = warrior.getByRole('group', { name: 'Target mode' });
+  await expect(combatRow.getByRole('button')).toHaveText(['Auto', 'Default', 'Scatter']);
+  await expect(targetRow.getByRole('button')).toHaveText(['Farming', 'Hunt']);
+  const pressed = async () => [await combatRow.locator('[aria-pressed="true"]').allTextContents(), await targetRow.locator('[aria-pressed="true"]').allTextContents()];
+  const scatter = responseFor('/farming-mode');
+  await combatRow.getByRole('button', { name: 'Scatter', exact: true }).click();
+  expect(await record(scatter)).toEqual({ character: 'W', combatMode: 'scatter' });
+  await expect.poll(pressed).toEqual([['Scatter'], ['Hunt']]);
+  expect((await app.state()).farmingProfiles.W.targetMode).toBe('hunt');
+
+  // A mode button sends only its own slot's field (5498ac068):
+  // Default is a combat mode and keeps the Hunt; Farming is the target mode that ends it.
+  const combat = responseFor('/farming-mode');
   await warrior.getByRole('button', { name: 'Default', exact: true }).click();
-  expect(await record(stopped)).toMatchObject({ character: 'W', mode: 'default' });
+  expect(await record(combat)).toEqual({ character: 'W', combatMode: 'default' });
   await expect(warrior.getByRole('button', { name: 'Default', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(warrior.getByRole('button', { name: 'Hunt', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const stopped = responseFor('/farming-mode');
+  await warrior.getByRole('button', { name: 'Farming', exact: true }).click();
+  expect(await record(stopped)).toEqual({ character: 'W', targetMode: 'farming' });
+  await expect(warrior.getByRole('button', { name: 'Farming', exact: true })).toHaveAttribute('aria-pressed', 'true');
   const afterExit = await app.state();
   expect(afterExit.farmingProfiles.W.farmingPolicy).toBe('default');
-  expect(afterExit.farmingProfiles.W.huntSettings.relocateIfCompeting).toBe(false);
+  expect(afterExit.relocateIfCompeting).toBe(false);
   expect(afterExit.farmingProfiles.W.monsterFocus).toEqual(['goo']);
   expect(afterExit.farmingProfiles.W.monsterHunt).toBeNull();
 
@@ -96,6 +117,7 @@ test('Hunt saves a backup, accepts settings, and exits without losing preference
   await expect(warrior).toBeVisible();
   await modes.click();
   await expect(warrior.getByRole('button', { name: 'Default', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(warrior.getByRole('button', { name: 'Farming', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await warrior.getByRole('button', { name: 'Farming settings', exact: true }).click();
   await expect(settings).toBeVisible();
   await expect(relocate).not.toBeChecked();

@@ -12,7 +12,8 @@ are.
   while cursed, "[P]" on ATTSPD while poisoned).
 - **Character extras** holds every other entry from the console's stats grid in
   two columns: the attributes, the armor and resistance reductions, the
-  unrestricted run speed, luck and the combat stats. Each attribute, plus armor
+  unrestricted run speed, luck, the combat stats and the Gold line (the account's
+  gold bonus). Each attribute, plus armor
   and resistance, has a collapsible breakdown of its effects, each effect
   colored by the stat it changes. A breakdown starts open, and the dashboard
   remembers each one's open or closed state across characters and reloads
@@ -34,7 +35,7 @@ Written before the implementation; each line has a check in
 3. Conditions lose their tags. A cursed character shows "ATT: 33 [C]", a
    poisoned one "ATTSPD: 73 [P]".
 4. An entry from the old grid disappears. Every value and every effect in the
-   console's 26 entries must appear in the extras box: the attribute effects
+   console's 26 entries and the Gold line must appear in the extras box: the attribute effects
    with their per-point rates, the armor and resistance reductions with the
    100-damage example, and the unrestricted run speed.
 5. Effects lose their meaning. Each effect line must name and color the stat it

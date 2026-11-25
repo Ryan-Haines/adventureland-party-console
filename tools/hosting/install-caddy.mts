@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { bounded, type HostBound } from './http.ts';
+// The Caddy download from GitHub that never finishes.
+const CADDY_DOWNLOAD: HostBound = { name: 'caddyDownloadMs', ms: 120000 };
 
 export const caddyVersion = '2.11.4';
 const checksums: Record<string, string> = {
@@ -17,13 +20,15 @@ export function caddyPath(root: string) {
 }
 export async function installCaddy(root: string) {
  const destination = caddyPath(root);
- try { await readFile(destination); await readFile(path.join(path.dirname(destination), 'LICENSE')); return destination; } catch { /* first installation */ }
+ // Only a missing file means the first installation; any other read error is its own cause.
+ try { await readFile(destination); await readFile(path.join(path.dirname(destination), 'LICENSE')); return destination; }
+ catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
  const os = process.platform === 'win32' ? 'windows' : process.platform;
  const arch = process.arch === 'x64' ? 'amd64' : process.arch;
  const suffix = `${os}_${arch}.${os === 'windows' ? 'zip' : 'tar.gz'}`;
  const expected = checksums[suffix];
  if (!expected) throw new Error('Automatic HTTPS supports Windows/Linux x64 and arm64');
- const response = await fetch(`https://github.com/caddyserver/caddy/releases/download/v${caddyVersion}/caddy_${caddyVersion}_${suffix}`, { signal: AbortSignal.timeout(120000) });
+ const response = await bounded(CADDY_DOWNLOAD, 'the Caddy download', signal => fetch(`https://github.com/caddyserver/caddy/releases/download/v${caddyVersion}/caddy_${caddyVersion}_${suffix}`, { signal }));
  if (!response.ok) throw new Error(`Caddy download failed: HTTP ${response.status}`);
  const bytes = Buffer.from(await response.arrayBuffer());
  if (createHash('sha512').update(bytes).digest('hex') !== expected) throw new Error('Caddy download checksum mismatch');

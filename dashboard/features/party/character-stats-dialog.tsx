@@ -1,4 +1,5 @@
 "use client";
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import {
   Dialog,
   DialogClose,
@@ -15,6 +16,9 @@ import { XIcon } from 'lucide-react';
 import { GameBox, GameLine } from "./item-card";
 import { useStoredBoolean } from "@/hooks/use-stored-boolean";
 import { STAT_COLORS as S } from "./stat-colors";
+import {
+  attackDivisor, attributeStats, BASE_LUCK_PERCENT, critDamagePercent, damageMultiplier, fortitudeDefense, itemAttack,
+} from "@/lib/game-formulas";
 
 // docs/character-card.md: the game's character panel (render_character in the game's
 // js/html.js) beside every other entry the console computes.
@@ -93,105 +97,90 @@ export function CharacterStatsDialog({
 }) {
   if (!character) return null;
   const primary = String(character.primaryStat || '').toLowerCase();
-  const equippedWeaponAttack = Object.entries(character.slots || {})
-    .filter(([slot]) => slot === 'mainhand' || slot === 'offhand')
-    .reduce(
-      (sum, [, entry]) => sum + Number(entry?.meta?.properties?.attack || 0),
-      0,
-    );
+  // The weapons' attack as calculate_player_stats sums it (`item_attack`).
+  const weaponAttack = itemAttack(
+    Object.entries(character.slots || {}).filter((pair): pair is [string, NonNullable<(typeof pair)[1]>] => !!pair[1]),
+  );
+  // Each line shows the attribute's share of a stat and the change of one more point, both from
+  // the game's own lines in dashboard/lib/game-formulas.ts.
+  const perPoint = (share: (points: number) => number, value: number, digits: number, next = true) =>
+    `+${Number((share(value + 1) - share(value)).toFixed(digits))} per ${next ? 'next ' : ''}point`;
   const attributeEffects = (
     stat: 'str' | 'int' | 'dex',
     value: number,
   ): Effect[] => {
     const effects: Effect[] = [];
-    const attackDivisor =
-      character.ctype === 'paladin' && stat === 'int'
-        ? 40
-        : primary === stat
-          ? 20
-          : 0;
-    if (attackDivisor)
+    const divisor = attackDivisor(character.ctype, primary, stat);
+    if (divisor)
       effects.push({
         key: 'attack',
         color: ATTACK,
-        value: `+${((equippedWeaponAttack * value) / attackDivisor).toFixed(1)} Attack`,
-        detail: `+${(equippedWeaponAttack / attackDivisor).toFixed(2)} per point`,
+        value: `+${((weaponAttack * value) / divisor).toFixed(1)} Attack`,
+        detail: `+${(weaponAttack / divisor).toFixed(2)} per point`,
       });
     if (stat === 'str') {
+      const hp = (points: number) => attributeStats.maxHp(points, 0, character.level);
       effects.push({
         key: 'max_hp',
         color: HP,
-        value: `+${Math.round(value * 21).toLocaleString()} Max HP`,
-        detail: '+21 per point',
+        value: `+${Math.round(hp(value)).toLocaleString()} Max HP`,
+        detail: perPoint(hp, value, 2, false),
       });
       effects.push({
         key: 'armor',
         color: ARMOR,
-        value: `+${(Math.min(value, 160) + Math.max(0, value - 160) * 0.25).toLocaleString()} Armor`,
-        detail: `+${value < 160 ? "1" : "0.25"} per next point`,
+        value: `+${attributeStats.armor(value).toLocaleString()} Armor`,
+        detail: perPoint(attributeStats.armor, value, 2),
       });
+      const speed = (points: number) => attributeStats.runSpeed(points, 0);
       effects.push({
         key: 'run_speed',
         color: SPEED,
-        value: `+${(Math.min(value, 256) / 64).toFixed(2)} Run Speed`,
-        detail: `+${value < 256 ? "0.0156" : "0"} per next point`,
+        value: `+${speed(value).toFixed(2)} Run Speed`,
+        detail: perPoint(speed, value, 4),
       });
     } else if (stat === 'int') {
       effects.push({
         key: 'max_mp',
         color: MP,
-        value: `+${Math.round(value * 15).toLocaleString()} Max MP`,
-        detail: '+15 per point',
+        value: `+${Math.round(attributeStats.maxMp(value)).toLocaleString()} Max MP`,
+        detail: perPoint(attributeStats.maxMp, value, 2, false),
       });
       effects.push({
         key: 'resistance',
         color: RESISTANCE,
-        value: `+${(Math.min(value, 180) + Math.max(0, value - 180) * 0.25).toLocaleString()} Resistance`,
-        detail: `+${value < 180 ? "1" : "0.25"} per next point`,
+        value: `+${attributeStats.resistance(value).toLocaleString()} Resistance`,
+        detail: perPoint(attributeStats.resistance, value, 2),
       });
+      const frequency = (points: number) => attributeStats.frequency(points, 0);
       effects.push({
         key: 'attack_speed',
         color: S.frequency,
-        value: `+${(value / 1575).toFixed(3)} Attacks/sec`,
-        detail: '+0.000635 per point',
+        value: `+${frequency(value).toFixed(3)} Attacks/sec`,
+        detail: perPoint(frequency, value, 6, false),
       });
     } else {
+      const speed = (points: number) => attributeStats.runSpeed(0, points);
       effects.push({
         key: 'run_speed',
         color: SPEED,
-        value: `+${(Math.min(value, 256) / 32).toFixed(2)} Run Speed`,
-        detail: `+${value < 256 ? "0.0313" : "0"} per next point`,
+        value: `+${speed(value).toFixed(2)} Run Speed`,
+        detail: perPoint(speed, value, 4),
       });
+      const frequency = (points: number) => attributeStats.frequency(0, points);
       effects.push({
         key: 'attack_speed',
         color: S.frequency,
-        value: `+${(Math.min(160, value) / 640 + Math.max(value - 160, 0) / 925).toFixed(3)} Attacks/sec`,
-        detail: `+${value < 160 ? "0.00156" : "0.00108"} per next point`,
+        value: `+${frequency(value).toFixed(3)} Attacks/sec`,
+        detail: perPoint(frequency, value, 5),
       });
     }
     return effects;
   };
-  const damageMultiplier = (defense: number) =>
-    Math.min(
-      1.32,
-      Math.max(
-        0.05,
-        1 -
-          (Math.max(0, Math.min(100, defense)) * 0.001 +
-            Math.max(0, Math.min(100, defense - 100)) * 0.001 +
-            Math.max(0, Math.min(100, defense - 200)) * 0.00095 +
-            Math.max(0, Math.min(100, defense - 300)) * 0.0009 +
-            Math.max(0, Math.min(100, defense - 400)) * 0.00082 +
-            Math.max(0, Math.min(100, defense - 500)) * 0.0007 +
-            Math.max(0, Math.min(100, defense - 600)) * 0.0006 +
-            Math.max(0, Math.min(100, defense - 700)) * 0.0005 +
-            Math.max(0, defense - 800) * 0.0004),
-      ),
-    );
   const vitality = Number(character.vit || 0);
   const fortitude = Number(character.fortitude || 0);
-  const vitalityHp = vitality * (48 + character.level / 3);
-  const fortitudeMultiplier = damageMultiplier(fortitude * 5);
+  const vitalityHp = attributeStats.maxHp(0, vitality, character.level);
+  const fortitudeMultiplier = damageMultiplier(fortitudeDefense(fortitude));
   const armorMultiplier = damageMultiplier(Number(character.armor || 0));
   const resistanceMultiplier = damageMultiplier(
     Number(character.resistance || 0),
@@ -233,7 +222,7 @@ export function CharacterStatsDialog({
           key: 'max_hp',
           color: HP,
           value: `+${Math.round(vitalityHp).toLocaleString()} Max HP`,
-          detail: `${(48 + character.level / 3).toFixed(2)} HP per VIT at level ${character.level}`,
+          detail: `${attributeStats.maxHp(0, 1, character.level).toFixed(2)} HP per VIT at level ${character.level}`,
         },
       ],
     },
@@ -293,8 +282,9 @@ export function CharacterStatsDialog({
       'luck',
       'Luck',
       S.luck,
-      `${Number(character.luck || 100).toLocaleString()}%`,
+      `${Number(character.luck ?? BASE_LUCK_PERCENT).toLocaleString()}%`,
     ),
+    // The gold find bonus, the character's own reported stat, signed and in percent.
     plain(
       'gold',
       'Gold',
@@ -311,7 +301,7 @@ export function CharacterStatsDialog({
       'critdamage',
       'Crit Damage',
       S.critdamage,
-      `${(200 + Number(combat.critDamage || 0)).toLocaleString()}%`,
+      `${critDamagePercent(Number(combat.critDamage || 0)).toLocaleString()}%`,
     ),
     plain(
       'evasion',
@@ -420,7 +410,7 @@ export function CharacterStatsDialog({
   const heal = Number(combat.heal || 0);
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent data-area="character-stats"
         finalFocus={returnFocus}
         showCloseButton={false}
         className="max-h-[88vh] overflow-y-auto border-emerald-800 bg-[#0b1916] text-emerald-50 sm:max-w-5xl"
@@ -543,6 +533,7 @@ export function CharacterStatsDialog({
             ))}
           </GameBox>
         </div>
+        <AddonSlot name="dialog-section" part="character-stats" subject={character} />
       </DialogContent>
     </Dialog>
   );

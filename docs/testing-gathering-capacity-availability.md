@@ -1,6 +1,8 @@
 # Native gathering-capacity fixture availability
 
-Failure inventory recorded before changing the fixture:
+Failure inventory recorded before changing the fixture. Since the merchant job owner's
+gathering, a merchant at its protected free slots (default 3) that holds the
+session's catch banks it and casts again; the block below holds for a bag of other items:
 
 - Native login initializes missing `player.p.dt` skill timestamps to the current
   time and queues native cooldown updates. Resetting `player.last`, the browser's

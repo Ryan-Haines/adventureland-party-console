@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {createAnniversarySnapshot}=require('../../runtime/coordinator/anniversary/snapshot.ts');
+const {createAnniversarySnapshot}=require('../../runtime/events/coordinator/anniversary.ts');
 function fixture(){
  const state={nativeSlice:'slice_nightberry',eventCycle:{id:'cycle',target:null,endsAt:0},abortedRounds:{},partyHold:null,rounds:{},
   attempts:{},returnDestination:null,chatAdvertisement:null,activity:[],crafted:0,advertisedRounds:{}};
@@ -11,7 +11,7 @@ function fixture(){
 }
 
 test('complete slice sets never authorize automatic cake crafting',()=>{
- const f=fixture();const {anniversarySlices}=require('../../runtime/coordinator/anniversary/contracts.ts');
+ const f=fixture();const {anniversarySlices}=require('../../runtime/events/rules.ts');
  f.ports.counts=()=>Object.fromEntries(anniversarySlices.map(name=>[name,3]));
  const snapshot=f.snapshot();assert.equal(snapshot.completeSets,3);assert.equal(snapshot.craftReady,false);
 });
@@ -55,4 +55,14 @@ test('fresh fighter handoffs carry freshness and remain available between events
  f.statuses.P.items=[{item:{name:'slice_citrus',q:1}}];
  const [target]=f.snapshot().handoffTargets;
  assert.equal(target.name,'P');assert.equal(target.seenAt,100);assert.equal(target.ctype,'priest');
+});
+
+// The featured hold counts another member's unclaimed visit ticket while the lifecycle owner
+// holds that member online, whatever its report's age, and lets go once the lifecycle owner
+// answers it offline.
+test('the featured hold keeps a stalled member with a ticket until the lifecycle owner answers it offline',()=>{
+ const {featuredVisitsPending}=require('../../runtime/events/coordinator/anniversary.ts');
+ const statuses={P:{seenAt:0},W:{seenAt:0,anniversaryVisit:{id:'ticket'}}};
+ assert.equal(featuredVisitsPending(statuses,'P',['P','W'],()=>true),true);
+ assert.equal(featuredVisitsPending(statuses,'P',['P','W'],name=>name!=='W'),false);
 });

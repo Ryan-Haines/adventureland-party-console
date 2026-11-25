@@ -8,10 +8,11 @@ const loginPage = `<!doctype html><html><title>Debug instance</title><body style
 const token=new URLSearchParams(location.hash.slice(1)).get('debug');history.replaceState(null,'','/');
 fetch('/debug-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})}).then(r=>{if(!r.ok)throw Error();location.reload();}).catch(()=>document.getElementById('message').textContent='Open this instance using the link in your main console.');
 </script></body></html>`;
-export function debugGateway(access: Access, token: string, ready: () => boolean) {
+/** `ports` are the instance's dashboard and coordinator ports, which instance.mts starts its children on. */
+export function debugGateway(access: Access, token: string, ready: () => Promise<boolean>, ports: { dashboardPort: number; apiPort: number }) {
   const cookieName = 'debug_' + token.slice(0, 12);
   const authorized = (cookie = '') => cookie.split(';').some(value => value.trim() === cookieName + '=' + token);
-  const inner = gateway({ access, configured: () => true, dashboardPort: 3030, apiPort: 924 });
+  const inner = gateway({ access, configured: () => true, ...ports });
   const viewer = gameViewer(access);
   async function login(req: IncomingMessage, res: ServerResponse) {
     try {
@@ -38,7 +39,7 @@ export function debugGateway(access: Access, token: string, ready: () => boolean
   const server = createServer(async (req, res) => {
     res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('Cache-Control', 'no-store');
     const url = new URL(req.url || '/', 'http://internal');
-    if (url.pathname === '/health') { json(res, ready() ? 200 : 503, { ready: ready() }); return; }
+    if (url.pathname === '/health') { const answer = await ready(); json(res, answer ? 200 : 503, { ready: answer }); return; }
     if (url.pathname === '/debug-login' && req.method === 'POST') { await login(req, res); return; }
     if (!admission(req, res, url.pathname)) return;
     if (viewer.request(req, res)) return;

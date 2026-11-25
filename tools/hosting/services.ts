@@ -1,4 +1,24 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { lifecycleSavedFields } from '../../runtime/lifecycle/fields.ts';
+import { stopTree } from './process-tree.ts';
+// A service (the dashboard or the coordinator) that exits relaunches this long after, logged with
+// its exit code, so a crash loop shows in the host log once per relaunch.
+const RELAUNCH_MS = 3000;
+/** The host's stop (start.mts and local.mts): each part stops and the managed console's stop is
+ *  awaited, its failure logged. A stop that hangs ends at hostExitGraceMs, a bound against a process
+ *  that does not stop: the host logs it and exits 1. */
+export function stopHost(parts: { steam: { stop(): void }; tls: { stop(): void }; server: { close(): unknown }; services: Services; managed?: { stop(): Promise<unknown> } }): void {
+  parts.steam.stop();
+  parts.tls.stop();
+  parts.server.close();
+  parts.services.stop();
+  void parts.managed?.stop().catch(error => console.error('Managed console stop failed:', error));
+  const grace = lifecycleSavedFields.settings.hostExitGraceMs.default;
+  setTimeout(() => {
+    console.error(`[bound] hostExitGraceMs (${grace} ms) ended a host stop that did not finish`);
+    process.exit(1);
+  }, grace).unref();
+}
 export class Services {
   private children = new Set<ChildProcess>();
   private stopping = false;
@@ -27,8 +47,9 @@ export class Services {
       this.stopTree(child);
       if (!this.stopping&&!this.suppressed.has(child)) setTimeout(() => {
         if(this.stopping||this.suppressed.has(child)||name&&this.versions.get(name)!==version)return;
+        console.warn(`Service ${name || command} exited (code ${child.exitCode}, signal ${child.signalCode}); relaunching`);
         this.launchBinary(command, args, cwd, env,name,version);
-      }, 3000);
+      }, RELAUNCH_MS);
     };
     child.once("exit", exited);
     child.on("error", (error) => { console.error("Service startup failed:", error.message); exited(); });
@@ -53,20 +74,8 @@ export class Services {
     return child;
   }
   private stopTree(child: ChildProcess) {
-    if (!child.pid) return;
-    if (process.platform === "win32") {
-      const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-      killer.on("error", () => {});
-    } else {
-      try {
-        process.kill(-child.pid, "SIGTERM");
-      } catch {
-        /* Already stopped. */
-      }
-    }
+    const pid = child.pid;
+    if (pid) void stopTree(pid).catch(error => console.error(`Could not stop service pid ${pid}:`, error));
   }
   stop() {
     this.stopping = true;

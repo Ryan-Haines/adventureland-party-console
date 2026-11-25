@@ -47,6 +47,9 @@ Full-suite follow-up failure modes (recorded before the recovery change):
   1500 ms execution tolerance after an already accepted schedule, while retaining
   signal expiry, origin, speed and ownership checks. A newly received late schedule
   remains rejected; a 2500 ms injected timer stall must still force regrouping.
+  Superseded 2026-11-04: the walk departs at once and a member
+  departs on the first reply that carries the travel phase, so no departure window
+  or tolerance exists.
 - Keep-moving combat previously began its multi-party reservation exchange only
   once a monster entered attack range. On a moving party, ordinary network delay
   could consume that entire range window. Reserve a visible eligible monster

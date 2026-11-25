@@ -1,4 +1,6 @@
 'use client';
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
+import { exchangeKey, exchangeResultIsItem } from '../../../runtime/items/api.ts';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -25,13 +27,14 @@ import { Bankboi } from './bankboi';
 import { Char } from './char';
 import { CraftMaterial } from './craft-material';
 import { ItemMeta } from './item-meta';
-import { ItemSprite } from './item-sprite';
+import { SpriteCrop } from './sprite-crop';
 import { MerchantBuyItem } from './merchant-buy-item';
 import { MerchantCatalog } from './merchant-catalog';
 import { MerchantCraftRecipe } from './merchant-craft-recipe';
 import { MerchantExchangeItem } from './merchant-exchange-item';
 import { Sprite } from './sprite';
-import { highestUpgradeLevel, useUpgradeEstimates } from './upgrade-estimate';
+import { useUpgradeEstimates } from './upgrade-estimate';
+import { highestUpgradeLevel, STACK_SIZE_MAX } from '../../../runtime/items/api.ts';
 
 export function MerchantCommerceDialog({
   mode,
@@ -77,7 +80,6 @@ export function MerchantCommerceDialog({
       level?: number;
       reward?: string;
     }[],
-    removeAutoBankMark?: boolean,
   ) => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
@@ -106,11 +108,11 @@ export function MerchantCommerceDialog({
           marking,
           markMode,
           saving: savingMarks,
-          stagedMode: drafts[`${reward.id}@${reward.level}`]?.mode,
+          stagedMode: drafts[exchangeKey(reward.id, reward.level)]?.mode,
           onStage: (item, mode) =>
             setDrafts((current) => ({
               ...current,
-              [`${item.id}@${item.level}`]: {
+              [exchangeKey(item.id, item.level)]: {
                 id: item.id,
                 level: item.level,
                 mode,
@@ -252,7 +254,7 @@ export function MerchantCommerceDialog({
       const quantity = cart[recipe.id] || 0;
       if (quantity <= 0) return;
       recipe.materials.forEach((material) => {
-        const key = `${material.id}@${material.level || 0}`;
+        const key = exchangeKey(material.id, material.level);
         if (!required[key]) required[key] = { material, quantity: 0 };
         required[key].quantity += material.quantity * quantity;
       });
@@ -263,7 +265,7 @@ export function MerchantCommerceDialog({
     (material.level || 0) === 0 && !!buyableById[material.id];
   const canAddCraft = (recipe: MerchantCraftRecipe) =>
     recipe.materials.every((material) => {
-      const key = `${material.id}@${material.level || 0}`;
+      const key = exchangeKey(material.id, material.level);
       const needed =
         (craftRequirements[key]?.quantity || 0) + material.quantity;
       return needed <= (owned[key] || 0) || canPurchaseMaterial(material);
@@ -278,7 +280,7 @@ export function MerchantCommerceDialog({
   const additionalRecipeCost = (recipe: MerchantCraftRecipe) =>
     recipe.cost +
     recipe.materials.reduce((sum, material) => {
-      const key = `${material.id}@${material.level || 0}`;
+      const key = exchangeKey(material.id, material.level);
       const before = Math.max(
         0,
         (craftRequirements[key]?.quantity || 0) - (owned[key] || 0),
@@ -361,7 +363,7 @@ export function MerchantCommerceDialog({
       const exchangeItem = item as MerchantExchangeItem;
       return (
         exchangeRequired(exchangeItem.id, exchangeItem.level) <=
-        (exchangeOwned[`${exchangeItem.id}@${exchangeItem.level || 0}`] || 0)
+        (exchangeOwned[exchangeKey(exchangeItem.id, exchangeItem.level)] || 0)
       );
     });
   const add = (id: string) =>
@@ -380,14 +382,14 @@ export function MerchantCommerceDialog({
     mode === 'craft'
       ? setCraftCart((old) => {
           const next = { ...old };
-          if (quantity > 0) next[id] = Math.min(9999, quantity);
+          if (quantity > 0) next[id] = Math.min(STACK_SIZE_MAX, quantity);
           else delete next[id];
           return next;
         })
       : mode === 'exchange'
         ? setExchangeCart((old) => {
             const next = { ...old };
-            if (quantity > 0) next[id] = Math.min(9999, quantity);
+            if (quantity > 0) next[id] = Math.min(STACK_SIZE_MAX, quantity);
             else delete next[id];
             return next;
           })
@@ -395,7 +397,7 @@ export function MerchantCommerceDialog({
             const next = { ...old };
             if (quantity > 0)
               next[id] = {
-                quantity: Math.min(9999, quantity),
+                quantity: Math.min(STACK_SIZE_MAX, quantity),
                 level: old[id]?.level || 0,
               };
             else delete next[id];
@@ -496,7 +498,7 @@ export function MerchantCommerceDialog({
           }
         }}
       >
-        <DialogContent
+        <DialogContent data-area="commerce"
           className="flex max-h-[90vh] flex-col border-emerald-800 bg-[#0b1916] text-emerald-50"
           style={{ width: 'calc(100vw - 2rem)', maxWidth: '1500px' }}
         >
@@ -530,9 +532,7 @@ export function MerchantCommerceDialog({
                 const exchangeItem =
                   mode === 'exchange' ? (item as MerchantExchangeItem) : null;
                 const exchangeOwnedCount = exchangeItem
-                  ? exchangeOwned[
-                      `${exchangeItem.id}@${exchangeItem.level || 0}`
-                    ] || 0
+                  ? exchangeOwned[exchangeKey(exchangeItem.id, exchangeItem.level)] || 0
                   : 0;
                 const enabled = exchangeItem?.choices
                   ? true
@@ -594,7 +594,7 @@ export function MerchantCommerceDialog({
                       className="grid w-full flex-1 place-items-center"
                     >
                       <div className="relative h-12 w-12">
-                        {item.sprite && <ItemSprite sprite={item.sprite} />}
+                        {item.sprite && <SpriteCrop sprite={item.sprite} />}
                       </div>
                       <span className="mt-1 w-full break-words text-xs leading-tight">
                         {item.name}
@@ -651,7 +651,7 @@ export function MerchantCommerceDialog({
                   className="mb-2 flex items-center gap-2"
                 >
                   <div className="relative h-8 w-8 shrink-0">
-                    {item.sprite && <ItemSprite sprite={item.sprite} />}
+                    {item.sprite && <SpriteCrop sprite={item.sprite} />}
                   </div>
                   <span className="min-w-0 flex-1 truncate text-xs">
                     {item.name}
@@ -752,7 +752,7 @@ export function MerchantCommerceDialog({
                       >
                         <div className="relative h-6 w-6 shrink-0">
                           {requirement.material.sprite && (
-                            <ItemSprite sprite={requirement.material.sprite} />
+                            <SpriteCrop sprite={requirement.material.sprite} />
                           )}
                         </div>
                         <span className="min-w-0 flex-1 truncate text-[11px]">
@@ -798,6 +798,7 @@ export function MerchantCommerceDialog({
               {submitError}
             </p>
           )}
+          <AddonSlot name="dialog-section" part="commerce" />
           <DialogFooter className="shrink-0 border-t border-emerald-900 bg-[#0b1916] pt-3">
             <Button
               variant="outline"
@@ -854,7 +855,7 @@ export function MerchantCommerceDialog({
                       Complete recipe
                     </p>
                     {hoveredRecipe.materials.map((material) => {
-                      const key = `${material.id}@${material.level || 0}`;
+                      const key = exchangeKey(material.id, material.level);
                       const available = owned[key] || 0;
                       const purchasable = canPurchaseMaterial(material);
                       return (
@@ -864,7 +865,7 @@ export function MerchantCommerceDialog({
                         >
                           <div className="relative h-8 w-8 shrink-0">
                             {material.sprite && (
-                              <ItemSprite sprite={material.sprite} />
+                              <SpriteCrop sprite={material.sprite} />
                             )}
                           </div>
                           <span className="min-w-0 flex-1 text-xs">
@@ -899,7 +900,7 @@ export function MerchantCommerceDialog({
                 <div className="flex items-center gap-3">
                   <div className="relative h-12 w-12">
                     {selectedExchange.sprite && (
-                      <ItemSprite sprite={selectedExchange.sprite} />
+                      <SpriteCrop sprite={selectedExchange.sprite} />
                     )}
                   </div>
                   <div>
@@ -962,42 +963,38 @@ export function MerchantCommerceDialog({
               <div
                 className={`mt-2 min-h-0 flex-1 content-start gap-2 overflow-y-auto ${selectedExchange.choices ? 'flex flex-wrap items-start' : 'grid max-w-[1072px] grid-cols-[repeat(auto-fill,112px)] items-stretch'}`}
               >
-                {selectedExchange.choices?.map((choice) => (
+                {selectedExchange.choices?.map((choice) => {
+                  // A choice's reward is `id` or `id-level`; the dialog reads it here once.
+                  const rewardId = choice.reward?.replace(/-\d+$/, '') || choice.id;
+                  const rewardLevel = Number(choice.reward?.match(/-(\d+)$/)?.[1]) || 0;
+                  const inspectReward = () => {
+                    const reward = catalog.allItems?.find((item) => item.id === rewardId);
+                    if (reward) onInspect(reward, reward.meta);
+                  };
+                  return (
                   <div
                     key={choice.key}
                     className="flex items-center gap-3 rounded border border-cyan-800 bg-[#06110f] p-3 text-emerald-50"
                   >
                     {renderReward ? (
                       renderReward({
-                        id: choice.reward?.replace(/-\d+$/, '') || choice.id,
-                        level:
-                          Number(choice.reward?.match(/-(\d+)$/)?.[1]) || 0,
+                        id: rewardId,
+                        level: rewardLevel,
                         name: choice.name,
                         quantity: choice.rewardQuantity || 1,
                         sprite: choice.sprite,
                         detail: formatDropRate({ rate: 1, quantity: 1 }),
-                        onInspect: () => {
-                          const reward = catalog.allItems?.find(
-                            (item) =>
-                              item.id === choice.reward?.replace(/-\d+$/, ''),
-                          );
-                          if (reward) onInspect(reward, reward.meta);
-                        },
+                        onInspect: inspectReward,
                       })
                     ) : (
                       <button
                         type="button"
                         className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                        onClick={() => {
-                          const reward = catalog.allItems?.find(
-                            (item) => item.id === choice.reward?.split('-')[0],
-                          );
-                          if (reward) onInspect(reward, reward.meta);
-                        }}
+                        onClick={inspectReward}
                       >
                         <div className="relative h-10 w-10 shrink-0">
                           {choice.sprite && (
-                            <ItemSprite sprite={choice.sprite} />
+                            <SpriteCrop sprite={choice.sprite} />
                           )}
                         </div>
                         <span className="text-sm">
@@ -1014,7 +1011,7 @@ export function MerchantCommerceDialog({
                     >
                       <span className="relative h-6 w-6">
                         {choice.currencySprite && (
-                          <ItemSprite sprite={choice.currencySprite} />
+                          <SpriteCrop sprite={choice.currencySprite} />
                         )}
                       </span>
                       × {choice.required}
@@ -1023,7 +1020,7 @@ export function MerchantCommerceDialog({
                       disabled={
                         exchangeRequired(choice.id, choice.level) +
                           choice.required >
-                        (exchangeOwned[`${choice.id}@${choice.level}`] || 0)
+                        (exchangeOwned[exchangeKey(choice.id, choice.level)] || 0)
                       }
                       onClick={() => add(choice.key)}
                       className="border border-cyan-700 bg-black text-cyan-100 hover:bg-cyan-950 hover:text-white"
@@ -1031,21 +1028,16 @@ export function MerchantCommerceDialog({
                       Add
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
                 {selectedExchange.results.map((result, index) => {
-                  const reward = ![
-                    'gold',
-                    'shells',
-                    'cx',
-                    'empty',
-                    'open',
-                  ].includes(result.kind)
+                  const reward = exchangeResultIsItem(result.kind)
                     ? catalog.allItems?.find((entry) => entry.id === result.id)
                     : null;
                   const content = (
                     <>
                       <div className="relative h-10 w-10 shrink-0">
-                        {result.sprite && <ItemSprite sprite={result.sprite} />}
+                        {result.sprite && <SpriteCrop sprite={result.sprite} />}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs">
@@ -1110,7 +1102,7 @@ export function MerchantCommerceDialog({
         open={confirmUnavailable && mode === 'buy'}
         onOpenChange={setConfirmUnavailable}
       >
-        <DialogContent className="border-amber-800 bg-[#0b1916] text-emerald-50">
+        <DialogContent data-area="commerce-estimate" className="border-amber-800 bg-[#0b1916] text-emerald-50">
           <DialogHeader>
             <DialogTitle>Unable to estimate this order</DialogTitle>
             <DialogDescription className="text-emerald-100">

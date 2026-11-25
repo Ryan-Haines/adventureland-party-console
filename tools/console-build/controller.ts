@@ -1,8 +1,12 @@
 import {randomUUID} from 'node:crypto';
 import path from 'node:path';
 import {atomicJson,readJson} from '../build-store.ts';
+import {bounded,type HostBound} from '../hosting/http.ts';
+// recover's hold on the coordinator before it restores: a coordinator that never answers ends it.
+const RECOVER_MAINTENANCE:HostBound={name:'recoverMaintenanceMs',ms:10000};
 import {deploymentPending,type Candidate,type ConsoleBuildStatus,type DeploymentDriver,type DeploymentJournal,type DeploymentMode} from './contracts.ts';
-import {ConsoleBuildStore} from './store.ts';
+import {ConsoleBuildStore,newer} from './store.ts';
+import {lifecycleSavedFields} from '../../runtime/lifecycle/fields.ts';
 
 export class DeploymentConflict extends Error {
   readonly operation?:DeploymentJournal;
@@ -14,15 +18,29 @@ export class ConsoleBuildController {
   private admission?:Promise<DeploymentJournal>;
   private safeWait?:AbortController;
   private cleanup?:Promise<void>;
+  // The deploy run in flight, which launch waits on.
+  private running?:Promise<void>;
   private driver:DeploymentDriver;
   private timeoutMs:number;
-  constructor(store:ConsoleBuildStore,driver:DeploymentDriver,timeoutMs=120_000){this.store=store;this.driver=driver;this.timeoutMs=timeoutMs;}
+  constructor(store:ConsoleBuildStore,driver:DeploymentDriver,timeoutMs=lifecycleSavedFields.settings.activationMs.default){this.store=store;this.driver=driver;this.timeoutMs=timeoutMs;}
   async setBuildState(value:{building:boolean;error?:string}){await atomicJson(path.join(this.store.directory,'builder.json'),value);}
   async status():Promise<ConsoleBuildStatus>{
     const [refs,builder,builds,operation]=await Promise.all([this.store.references(),readJson<{building:boolean;error?:string}>(path.join(this.store.directory,'builder.json')),this.store.summaries(),this.store.journal()]);
     const latest=builds.find(b=>b.id===refs.latest),active=builds.find(b=>b.id===refs.active);
     return {...refs,builds,operation,building:builder?.building||false,buildError:builder?.error,
-      pendingBuildCount:await this.store.completedSince(refs.active,builds),available:latest&&latest.id!==refs.active&&(!active||latest.createdAt>=active.createdAt)?latest.id:undefined};
+      pendingBuildCount:await this.store.completedSince(refs.active,builds),available:latest&&latest.id!==refs.active&&newer(latest,active)?latest.id:undefined};
+  }
+  // A launch deploys the candidate bootstrap.ts read once
+  // (store.startupCandidate), through the deploy path every load takes, and returns when that deploy
+  // completes or fails. A build that completes after the read stays staged until you deploy it, and a
+  // launch of the active build deploys nothing.
+  async launch(id?:string):Promise<void>{
+    if(!id||(await this.store.references()).active===id)return;
+    const accepted=await this.deploy(id,'now');
+    await this.running;
+    const operation=await this.store.journal();
+    if(operation?.id!==accepted.id)throw Error('Startup console deployment was replaced');
+    if(operation.phase==='failed')throw Error('Startup console deployment failed: '+operation.error);
   }
   async deploy(id:string,mode:DeploymentMode='now'):Promise<DeploymentJournal>{
     if(mode!=='now'&&!this.driver.waitUntilSafe)throw Error('Safe reload is unavailable on this host');
@@ -42,7 +60,7 @@ export class ConsoleBuildController {
     let accepted:DeploymentJournal;
     try{accepted=await admission;}finally{if(this.admission===admission)this.admission=undefined;}
     if(accepted.phase==='preparing'&&this.operation?.id===accepted.id){
-      void this.run(this.operation).catch(error=>console.error('Console deployment journal failure:',error));
+      this.running=this.run(this.operation).catch(error=>console.error('Console deployment journal failure:',error));
     }
     return accepted;
   }
@@ -56,7 +74,7 @@ export class ConsoleBuildController {
   }
   private async timed(action:(signal:AbortSignal)=>Promise<void>,timeout=this.timeoutMs){
     const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
-    const expired=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('Console deployment readiness timed out'));},timeout);});
+    const expired=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{console.warn(`[bound] activationMs (${timeout} ms) ended a console deployment step`);controller.abort();reject(Error('Console deployment readiness timed out'));},timeout);});
     try{await Promise.race([action(controller.signal),expired]);}finally{clearTimeout(timer);controller.abort();}
   }
   private async run(operation:DeploymentJournal){
@@ -111,7 +129,7 @@ export class ConsoleBuildController {
       if(['preparing','waiting-safe','moving-main'].includes(journal.phase)){
         journal.error='The host stopped before activation; the running build was preserved.';
       }else{
-        await this.driver.beginMaintenance?.({...journal,mode:'now'},AbortSignal.timeout(10000));
+        await bounded(RECOVER_MAINTENANCE,'the recovery maintenance hold',async signal=>{await this.driver.beginMaintenance?.({...journal,mode:'now'},signal);});
         await this.phase(journal,'rolling-back');
         const previous=journal.previous?await this.store.verify(journal.previous):undefined;
         await this.timed(signal=>this.driver.restore(previous,signal));

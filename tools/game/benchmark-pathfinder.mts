@@ -1,14 +1,18 @@
 import * as pathfinder from "alpathfinder";
 import type { GData, MapKey } from "typed-adventureland";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import { BASE, seededRandom } from "./pathfinder-benchmark/native.cjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const version = process.argv[2] || "15650";
+// The default game version is the newest one downloaded, as the coordinator starts on the latest.
+const newest = async () => String(Math.max(...(await readdir(path.join(root, ".caracal/game_files"))).filter((name) => /^\d+$/.test(name)).map(Number)));
+const version = process.argv[2] || await newest();
 if (!/^\d+$/.test(version)) throw new Error("Expected a downloaded numeric game version");
 const directory = path.join(root, ".caracal/game_files", version);
+const installed = JSON.parse(await readFile(path.join(root, "node_modules/alpathfinder/package.json"), "utf8")) as { version: string };
 const context = vm.createContext({ console, Place: "client" });
 vm.runInContext(await readFile(path.join(directory, "data.js"), "utf8"), context, {
   timeout: 5000,
@@ -40,11 +44,8 @@ const beforeMemory = process.memoryUsage().rss;
 const preparationStart = performance.now();
 pathfinder.prepare(game, ignored);
 const preparationMs = performance.now() - preparationStart;
-let seed = 42;
-function random(): number {
-  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-  return seed / 4294967296;
-}
+const SEED = 42;
+const random = seededRandom(SEED);
 const samples: Segment[] = [];
 for (const map of maps) {
   const spawns = game.maps[map].spawns;
@@ -68,7 +69,7 @@ function measure(run: (segment: Segment) => boolean) {
   return { elapsedMs: performance.now() - began, values };
 }
 const point = measure((sample) => native(sample));
-const rectangle = measure((sample) => native({ ...sample, base: { h: 8, v: 7, vn: 2 } }));
+const rectangle = measure((sample) => native({ ...sample, base: BASE }));
 const wasm = measure((sample) =>
   pathfinder.canWalkPath(sample.map, sample.x, sample.y, sample.going_x, sample.going_y),
 );
@@ -79,12 +80,12 @@ const mismatch = (reference: boolean[]) => ({
 const routeStart = performance.now();
 const route = pathfinder.getPath("main", 0, 0, "halloween", 0, 0, { speed: 60 });
 const report = {
-  package: "alpathfinder@0.6.0",
+  package: `alpathfinder@${installed.version}`,
   gameVersion: version,
   node: process.version,
   maps,
   sampleCount: samples.length,
-  seed: 42,
+  seed: SEED,
   preparationMs,
   rssIncreaseBytes: process.memoryUsage().rss - beforeMemory,
   nativePointMs: point.elapsedMs,

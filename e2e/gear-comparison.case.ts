@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures";
-import { build } from "esbuild";
-import path from "node:path";
+import { mountComponent } from "./fixtures/component-harness";
+import { comparisonSource, staffForWand, gear, bookSet, character } from "./fixtures/comparison-equipment";
 
 // Failure modes: offhand stats/set membership survive a two-handed replacement;
 // edited set bonuses become the live baseline; opt-out changes the proposal;
@@ -10,91 +10,8 @@ test("equipment comparison removes two-handed offhands and recalculates both set
   page,
   app,
 }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `
-    import React from 'react';import {createRoot} from 'react-dom/client';
-    import {GearComparisonDialog} from './features/party/gear-comparison-dialog';
-    const root=createRoot(document.getElementById('root'));
-    window.mountComparison=(comparison)=>root.render(<GearComparisonDialog comparison={comparison} onOpenChange={()=>root.render(null)}/>);
-  `,
-    },
-  });
-  await page.goto(app.url);
-  await expect(page.locator("body")).toContainText("Party");
-  const styles = await page
-    .locator('style, link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((node) => node.outerHTML).join("\n"));
-  await page.route("**/comparison-harness", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: `<!doctype html><head>${styles}</head><body><div id="root"></div></body>`,
-    }),
-  );
-  await page.goto(app.url + "/comparison-harness");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  const set = (id: string, items: string[], int: number) => ({
-    id,
-    name: id,
-    items: items.map((id) => ({ id, name: id, quantity: 1, sprite: null })),
-    bonuses: [{ pieces: 2, stats: { int } }],
-  });
-  const bookSet = set("Book set", ["book", "helmet"], 10),
-    staffSet = set("Staff set", ["sparkstaff", "ring"], 20);
-  const gear = (
-    name: string,
-    properties: Record<string, number>,
-    hands: number | null,
-    setInfo?: ReturnType<typeof set>,
-  ) => ({
-    item: { name, level: 0 },
-    meta: {
-      definition: { name, type: hands ? "weapon" : "armor" },
-      properties,
-      usage: { classes: [{ id: "mage", hands }], hands: [hands] },
-      world: { set: setInfo },
-    },
-  });
-  const character = {
-    name: "Qwentina",
-    ctype: "mage",
-    level: 80,
-    primaryStat: "int",
-    int: 100,
-    str: 10,
-    dex: 10,
-    vit: 10,
-    hp: 1000,
-    max_hp: 1000,
-    mp: 2000,
-    max_mp: 2000,
-    attack: 600,
-    armor: 50,
-    resistance: 100,
-    frequency: 1,
-    speed: 30,
-    range: 100,
-    slots: {
-      mainhand: gear("wand", { attack: 100, int: 5 }, 1),
-      offhand: gear("book", { int: 15, armor: 40 }, null, bookSet),
-      helmet: gear("helmet", {}, null, bookSet),
-      ring1: gear("ring", {}, null, staffSet),
-    },
-    items: [],
-  };
-  const comparison = {
-    character,
-    slot: "mainhand",
-    entry: { slot: 0, ...gear("sparkstaff", { attack: 150, int: 10 }, 2, staffSet) },
-  };
+  await mountComponent(page, app, "comparison-harness", comparisonSource, null);
+  const comparison = staffForWand;
   const mount = async (value: unknown) =>
     page.evaluate((value) => (window as any).mountComparison(value), value);
   await mount(comparison);

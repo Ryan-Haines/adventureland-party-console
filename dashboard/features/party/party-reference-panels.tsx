@@ -1,6 +1,7 @@
 "use client";
 import { DonationPreview } from './donation-preview';
-import { API } from "./api";
+import { useQueryClient } from "@tanstack/react-query";
+import { performAction } from "./query-actions";
 
 import { lazy } from "react";
 import { DeferredPanel } from "./deferred-panel";
@@ -30,6 +31,7 @@ export function PartyReferencePanels({ model }: { model: PartyConsoleModel }) {
   ) : null;
 }
 function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
+  const client = useQueryClient();
   const model = usePanelModel(base, { inventory: true, vitals: true, diagnostics: true });
   const {
     bestiaryOpen,
@@ -62,17 +64,8 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
         open={bestiaryOpen}
         onOpenChange={setBestiaryOpen}
         monsters={state.bestiaryCatalog || []}
-        catalog={state.merchantCatalog?.allItems || []}
         achievements={Object.keys(monsterAchievements).length ? monsterAchievements : null}
         onInspectMonster={setSelectedBestiaryMonster}
-        onInspectDrop={(itemId, monsterName) => {
-          const item = state.merchantCatalog?.allItems?.find((entry) => entry.id === itemId);
-          if (item)
-            setSelected({
-              character: `Dropped by ${monsterName}`,
-              entry: { slot: -1, item: { name: itemId }, meta: item.meta },
-            });
-        }}
       />
       <MonsterDetailsDialog
         monster={selectedBestiaryMonster}
@@ -117,13 +110,7 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
         autoChat={state.anniversaryAutoChat}
         merchant={state.merchantCharacter}
         onAutoChatChange={async (enabled) => {
-          const response = await fetch(`${API}/dashboard-preferences`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ anniversaryAutoChat: enabled }),
-          });
-          if (!response.ok)
-            throw new Error('Could not save anniversary settings');
+          await performAction(client, '/dashboard-preferences', { anniversaryAutoChat: enabled });
         }}
         characters={state.characters}
         onSendChatAdvertisement={async () => {
@@ -141,6 +128,11 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
             gearComparison?.character || null,
             state.characters,
           )}
+          savedDollHtml={
+            gearComparison
+              ? state.characterAppearances?.[gearComparison.character.name]?.characterDollHtml
+              : undefined
+          }
           onOpenChange={(open) => {
             if (!open) setGearComparison(null);
           }}
@@ -152,7 +144,7 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
           if (!open) setActionError(null);
         }}
       >
-        <DialogContent
+        <DialogContent data-area="action-error"
           showCloseButton={false}
           className="border-rose-800 bg-[#0b1916] text-emerald-50"
         >
@@ -173,7 +165,7 @@ function PartyReferencePanelsConnected({ base }: { base: PartyConsoleModel }) {
         </DialogContent>
       </Dialog>
       <Dialog open={donationOpen} onOpenChange={setDonationOpen}>
-        <DialogContent className="border-amber-800 bg-[#0b1916] text-emerald-50">
+        <DialogContent data-area="donate" className="border-amber-800 bg-[#0b1916] text-emerald-50">
           <DialogHeader>
             <DialogTitle>Donate gold for merchant XP</DialogTitle>
             <DialogDescription>

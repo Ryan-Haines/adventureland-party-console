@@ -42,7 +42,7 @@ Removal criteria: implementation mirrors, exact property/read/callback order, tr
 | `coordinator-command-ownership.test.cjs` | Retain | E2E gap: command ownership clears only a matching current job and retains the underlying registry; convoy ownership logs are bounded and omit command payloads. |
 | `coordinator-compound-commands.test.cjs` | Retain | E2E gap: compound groups reserve disjoint triplets with the selected slot first; removing a compound member retains the partial group until its final member is removed. |
 | `coordinator-convoy-composition.test.cjs` | Retain | E2E gap: convoy composition resolves current Hunt target or shared focus and preserves command sequencing. |
-| `coordinator-convoy-routes.test.cjs` | Retain | E2E gap: unselected farming leader rejects recovery before querying navigation or authorizing travel; convoy failure validates ownership before recording a held route and preserves known failure codes. |
+| `coordinator-convoy-routes.test.cjs` | Retain | E2E gap: convoy failure validates ownership before recording a held route and preserves known failure codes. |
 | `coordinator-craft-storage.test.cjs` | Retain | E2E gap: craft deposits keep staging cargo reserved until its job leaves the queue. |
 | `coordinator-dashboard.test.cjs` | Delete (3 declarations) | Asserts registration token identity and installation order against a fake router. Browser/gateway/coordinator journeys exercise the real router and parser. |
 | `coordinator-dependencies.test.cjs` | Delete (2 declarations) | Replays the dependency require list and getter order against a Proxy, including ordinary JavaScript throw propagation. Full application startup uses the actual dependencies. |
@@ -54,7 +54,7 @@ Removal criteria: implementation mirrors, exact property/read/callback order, tr
 | `coordinator-event-observation.test.cjs` | Retain | E2E gap: stale kiss completion cannot erase a newer kiss, and cancelled movement cannot join combat; Goo Brawl combat postpones recovery even after the server announcement expires. |
 | `coordinator-event-routes.test.cjs` | Retain | E2E gap: late deferred acknowledgement preserves unrelated newer commands and leaves cleanup to reconciliation; authorized deferred returns resume the captured waypoint and reject stale revisions. |
 | `coordinator-exchange-routes.test.cjs` | Retain | E2E gap: exchange orders preserve level and reward choice and reject unavailable combinations; exchange shortage requests are delegated without transferring merchant ownership prematurely. |
-| `coordinator-farm-composition.test.cjs` | Retain | E2E gap: event ownership holds a pending Hunt relocation until the live owner releases travel; Hunt route recovery retains its spawn and budget instead of entering the farming retry owner. |
+| `coordinator-farm-composition.test.cjs` | Retain | E2E gap: a pending Hunt relocation moves the mission through the Hunt's own row; Hunt route recovery keeps its spawn and budget out of the farming retry; the empty spawn return walks only while farming holds the group and no walk runs. |
 | `coordinator-focus-routes.test.cjs` | Retain | E2E gap: focus validation rejects invalid priorities and radius before mutation; clearing independent focus invalidates only its checkpoint while a global clear invalidates party members. |
 | `coordinator-game-data.test.cjs` | Retain | E2E gap: invalid vault sources warn and return an empty list; failed game loads retry while an absent G caches an empty catalog. |
 | `coordinator-giveaway-scheduler.test.cjs` | Retain | E2E gap: ALData candidates require freshness and safe realms, obtain rid live, and retain deduplication across restart. |
@@ -129,7 +129,7 @@ Removal criteria: implementation mirrors, exact property/read/callback order, tr
 | `coordinator-policies.test.cjs` | Retain | E2E gap: luck uses authoritative absence and caster ownership before persisted cast time; persistence logs invalid input, preserves keys, and round-trips only the supplied snapshot. |
 | `coordinator-public-overview.test.cjs` | Retain | E2E gap: overview and external job projection share current collection thresholds without leaking credentials. |
 | `coordinator-public-state.test.cjs` | Trim (1 declaration) | Deletes legacy whole-response snapshot that ignored every newer field; retains privacy, payload partitioning, stale connection and live-state projection regressions. |
-| `coordinator-publication-scheduler.test.cjs` | Retain | E2E gap: publication releases the timer before invoking a failing publisher. |
+| `coordinator-publication-scheduler.test.cjs` | Removed | Publication runs on a market change (market-feeds.ts `publish`); the timer it tested is gone. |
 | `coordinator-purchases.test.cjs` | Retain | E2E gap: local and Ponty purchases share pending bids and the live command counter across queue replacement; local matching forwards bid priority and fulfillment preserves the level requirement before releasing work. |
 | `coordinator-queue-composition.test.cjs` | Retain | E2E gap: queue composition filters BankBois and sequences IDs/timestamps against replacement queues; collection eligibility is enforced before enqueue while explicit visits remain available. |
 | `coordinator-queue-selection.test.cjs` | Retain | E2E gap: collection combines current mark maps without counting duplicate marks or stack quantities. |
@@ -152,7 +152,6 @@ Removal criteria: implementation mirrors, exact property/read/callback order, tr
 | `coordinator-sale-routes.test.cjs` | Retain | E2E gap: mark-all reprices live copies, ignores transient stack fields, deduplicates sources and stages bank withdrawals; stale-order cleanup preserves every delivery even when stock is missing. |
 | `coordinator-scatter.test.cjs` | Retain | E2E gap: first learned kill supplies farming authority before a character has a target; off-type threat suspends automatic scatter and remains until absent for three seconds. |
 | `coordinator-schedule-reports.test.cjs` | Retain | E2E gap: schedule freshness and stale feed thresholds preserve strict boundaries. |
-| `coordinator-scheduling-composition.test.cjs` | Retain | E2E gap: scheduling composition preserves non-bank commands, reports storage failures and reads current gold. |
 | `coordinator-scheduling.test.cjs` | Retain | E2E gap: below-threshold collection is not scheduled; capacity reserve blocks collection and resets stale signatures; pending delivery equipment resumes after restart without overwriting another command. |
 | `coordinator-selected-destination.test.cjs` | Retain | E2E gap: party members use shared focus while independent empty selections remain empty; priority precedes distance and legacy zero priorities default to fifty. |
 | `coordinator-settings.test.cjs` | Retain | E2E gap: gathering toggles preserve other modes, clear no-tool status, and reject stale merchant reports; merchant configuration and activity validate ownership and the active job. |

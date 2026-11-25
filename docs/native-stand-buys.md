@@ -18,18 +18,21 @@ automatic buys and queues a bounded bank withdrawal batch. Active withdrawals,
 locked stock, conflicting rules, and crafting/delivery reservations are respected.
 Removing the auto-stand rule also cancels its pending stand withdrawals.
 
-`commerce/native-stand.ts` owns bounded offer batches, server offer IDs, order
+`runtime/items/coordinator/market.ts` owns bounded offer batches, server offer IDs, order
 revisions, acknowledged fills and placement problems. A same-offer decrease in
 quantity or a cumulative trade receipt acknowledges a fill once. Slot absence,
 stand closure, unrelated inventory changes and gold changes are not fill evidence.
-A missing or replaced offer without sufficient evidence blocks replenishment and
-shopping. Full fills require the character's trade receipt because the game
-removes a fully filled wishlist slot. Closed stands retain their offers.
+A live offer whose slot empties with no receipt is dropped, and the copies the
+merchant received since it was placed are booked as filled; the next
+plan places the remainder. Closed stands retain their offers. A buy order whose
+price is above the gold over the player's reserve is paused ("paused: gold") and
+placed again when gold arrives.
 
 The character reconciles buys before and after sale synchronization and leaves
-`b: true` slots out of sale matching. Ordinary native batches cap at 9,999;
-upgradeable/compoundable equipment batches cap at 99. Price and level limits are
-reported as placement problems. Placement never increases the merchant cash
+`b: true` slots out of sale matching. Every batch caps at the game's 9,999 copies
+(`WISHLIST_QUANTITY_MAX`). The stand plans to the trade slots the merchant
+reports, the game's 16, 24 or 30. Price and level limits are reported as
+placement problems. Placement never increases the merchant cash
 target. Shopping retains its existing bank/gold policy.
 
 Immediately before a shopping API call, the character suspends native offers,

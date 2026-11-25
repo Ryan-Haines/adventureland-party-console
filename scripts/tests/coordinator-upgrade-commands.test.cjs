@@ -1,8 +1,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createUpgradeCommands}=require('../../runtime/coordinator/inventory/upgrade-commands.ts');
-const {autoItemRuleKey}=require('../../runtime/coordinator/inventory/item-identity.ts');
+const {settingsWriter}=require('./helpers/settings-writer.cjs');
+const {createUpgradeCommands}=require('../../runtime/items/coordinator/production.ts');
+const {ruleKey}=require('../../runtime/items/identity.ts');
 function fixture(){const state={upgrades:{},autoUpgradeMarks:{},goldTargets:{},statuses:{F:{}}},calls=[];
- const service=createUpgradeCommands(state,{key:autoItemRuleKey,persist:()=>calls.push('persist'),queue:(...args)=>calls.push(['queue',...args]),reconcile:(...args)=>calls.push(['reconcile',...args])});
+ const service=createUpgradeCommands(state,{write:settingsWriter(state).write,key:ruleKey,persist:()=>calls.push('persist'),queue:(...args)=>calls.push(['queue',...args]),reconcile:(...args)=>calls.push(['reconcile',...args])});
  return {state,calls,send:body=>service.handle({character:'F',...body})};}
 test('upgrade intent retains starting item and distinguishes equipped slots',()=>{
  const f=fixture(),item={name:'cap',level:7};f.send({type:'upgrade-mark',item,slot:2,tiers:1});f.send({type:'upgrade-mark',item,slot:'helmet',equipped:true,tiers:1});
@@ -16,7 +17,7 @@ test('upgrade intent retains starting item and distinguishes equipped slots',()=
 });
 test('automatic mark is idempotent for the matching target without removing manual intent',()=>{
  const f=fixture(),item={name:'cap',level:7},body={type:'auto-upgrade-mark',item,slot:2,tiers:1};
- f.state.upgrades.F=[{slot:3,item,tiers:1}];f.send(body);const key=autoItemRuleKey(item);
+ f.state.upgrades.F=[{slot:3,item,tiers:1}];f.send(body);const key=ruleKey(item);
  assert.deepEqual(f.state.autoUpgradeMarks.F[key],{tiers:1,quantity:-1});assert.equal(f.state.upgrades.F.length,2);
  f.send({...body,remove:true});assert.equal(f.state.autoUpgradeMarks.F[key],undefined);assert.equal(f.state.upgrades.F.length,1);assert.equal(f.state.upgrades.F[0].slot,3);
  // Explicit removal does not schedule more production.
@@ -24,7 +25,7 @@ test('automatic mark is idempotent for the matching target without removing manu
  assert.ok(f.calls.filter(c=>c[0]==='queue').every(c=>c[2]==='auto upgrade'));
 });
 test('rule editing supports legacy scalar rules and updates only matching automatic marks',()=>{
- const f=fixture(),item={name:'cap',level:7},key=autoItemRuleKey(item);f.state.autoUpgradeMarks.F={[key]:1};
+ const f=fixture(),item={name:'cap',level:7},key=ruleKey(item);f.state.autoUpgradeMarks.F={[key]:1};
  f.state.upgrades.F=[{slot:1,item,tiers:1,auto:true},{slot:2,item,tiers:1}];
  assert.equal(f.send({type:'update-auto-upgrade-rule',ruleKey:key,tiers:2,quantity:3}),null);
  assert.deepEqual(f.state.autoUpgradeMarks.F[key],{tiers:2,quantity:3});assert.equal(f.state.upgrades.F[0].tiers,2);assert.equal(f.state.upgrades.F[1].tiers,1);
@@ -34,5 +35,7 @@ test('rule editing supports legacy scalar rules and updates only matching automa
 });
 test('gold target preserves zero and refuses nonnumeric or unsafe amounts',()=>{
  const f=fixture();assert.equal(f.send({type:'gold-target',amount:0}),null);assert.equal(f.state.goldTargets.F,0);
- for(const amount of ['10',-1,1.5,1000000000001])assert.equal(f.send({type:'gold-target',amount}),undefined);
+ for(const amount of ['10',-1,1.5,Number.MAX_SAFE_INTEGER+1])assert.equal(f.send({type:'gold-target',amount}),undefined);
+ // No cap below the safe integer limit.
+ assert.equal(f.send({type:'gold-target',amount:1000000000001}),null);assert.equal(f.state.goldTargets.F,1000000000001);
 });

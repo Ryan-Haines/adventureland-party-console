@@ -1,15 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { readFile, writeFile, rename, mkdir, readdir, lstat, chown } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { readFile, readdir, lstat } from 'node:fs/promises';
 import path from 'node:path';
 
-export async function atomic(file: string, value: unknown) {
-  await mkdir(path.dirname(file), { recursive: true });
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  await writeFile(temporary, JSON.stringify(value, null, 2), { mode: 0o600 });
-  if (process.env.AL_CONTAINER_UPDATER === '1') await chown(temporary, 1000, 1000);
-  await rename(temporary, file);
-}
-export async function readJson<T>(file: string): Promise<T> { return JSON.parse(await readFile(file, 'utf8')) as T; }
 export const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const excluded = new Set(['node_modules', '.git', '.build', '.next', '.wrangler', 'dist']);
 function ignored(prefix: string, name: string) {

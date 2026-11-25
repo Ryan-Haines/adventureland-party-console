@@ -1,5 +1,5 @@
 "use client";
-import { type FarmingArea } from "@/lib/farming-areas";
+import { type FarmingArea } from "../../../runtime/hunting/api.ts";
 import { useEffect, useRef, useState } from "react";
 import { useMapDefinition } from "./query-cache";
 import { MapCanvas } from "./map-canvas";

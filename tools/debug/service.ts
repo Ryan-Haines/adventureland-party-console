@@ -2,12 +2,19 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, rm, access } from 'node:fs/promises';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { json } from '../hosting/http.ts';
+import { setTimeout as delay } from 'node:timers/promises';
+import { bounded, json, type HostBound } from '../hosting/http.ts';
 import { docker } from './process.ts';
 
 type Phase = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
 interface State { phase: Phase; project?: string; token?: string; port?: number; message: string; error?: string }
 const label = 'party-console.debug';
+// Host bounds of the debug startup, each named for the failure it guards. A fired bound logs its name
+// through `bounded`, and the panel shows the timeout as the phase error.
+// A readiness step: the database election and each wait on Docker (b9b5c91e:tools/debug/service.ts:104).
+const STEP_BOUND: HostBound = { name: 'debugStepMs', ms: 120000 };
+// The debug console's health check after its container starts (b9b5c91e:tools/debug/service.ts:97).
+const CONSOLE_BOUND: HostBound = { name: 'debugConsoleMs', ms: 300000 };
 export class DebugInstances {
   private state: State = { phase: 'stopped', message: 'No debug instance running.' };
   private operation?: Promise<void>;
@@ -27,7 +34,12 @@ export class DebugInstances {
       if (!/^party-debug-[a-f0-9]{16}$/.test(stored.project || '')) throw Error('Invalid debug instance ownership record');
       this.state = stored;
       if (stored.phase !== 'running') Object.assign(this.state, { phase: 'error', error: 'Startup was interrupted. Stop running to remove the incomplete instance.' });
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return this;
+      // The console manages no project it cannot read or did not name. The refusal is the panel's
+      // error with no project, so the host starts and a new start replaces the record.
+      this.state = { phase: 'error', message: 'The debug instance record is unreadable. Starting a debug instance replaces it.', error: String(error) };
+    }
     return this;
   }
   private save() {
@@ -81,34 +93,44 @@ export class DebugInstances {
     if (!['0.0.0.0', '127.0.0.1'].includes(bind)) throw Error('AL_DEBUG_BIND must be 127.0.0.1 or 0.0.0.0');
     await run([...container('database'), '--network', project, '-p', `${bind}::3010`, '-v', project + '-database:/data/db',
       'mongo:7.0.16', 'mongod', '--replSet', 'e2e', '--bind_ip', '127.0.0.1']);
-    await this.until(async () => {
-      await run(['exec', project + '-database', 'mongosh', '--quiet', '--eval',
-        "try { rs.status() } catch(e) { rs.initiate({_id:'e2e',members:[{_id:0,host:'127.0.0.1:27017'}]}) }; if (!db.hello().isWritablePrimary) quit(1)"]); return true;
+    await this.until(STEP_BOUND, 'the database election', async step => {
+      await docker(['exec', project + '-database', 'mongosh', '--quiet', '--eval',
+        "try { rs.status() } catch(e) { rs.initiate({_id:'e2e',members:[{_id:0,host:'127.0.0.1:27017'}]}) }; if (!db.hello().isWritablePrimary) quit(1)"], { signal: step }); return true;
     }, signal);
     await run([...container('game'), '--network', 'container:' + project + '-database', '-e', 'AL_DEBUG_INSTANCE=1', project + '-game:local']);
     await this.checkpoint('Starting console and connecting the god party…');
     await run([...container('console'), '--network', 'container:' + project + '-database', '--shm-size=1g',
       '-v', project + '-console-data:/data', '-e', 'AL_DEBUG_INSTANCE=1', '-e', 'AL_DEBUG_TOKEN=' + this.state.token,
       project + '-console:local']);
-    await this.until(async () => {
-      const state = JSON.parse(await run(['inspect', '--format', '{{json .State}}', project + '-console']));
-      if (!state.Running) throw Error('Debug console exited during startup: ' + await docker(['logs', '--tail', '30', project + '-console'], { signal, combined: true }));
+    await this.until(CONSOLE_BOUND, 'the debug console health check', async step => {
+      const state = JSON.parse(await docker(['inspect', '--format', '{{json .State}}', project + '-console'], { signal: step }));
+      if (!state.Running) throw Error('Debug console exited during startup: ' + await docker(['logs', '--tail', '30', project + '-console'], { signal: step, combined: true }));
       return state.Health?.Status === 'healthy';
-    }, signal, 300000, false);
+    }, signal, false);
     const bindings = JSON.parse(await run(['inspect', '--format', '{{json .NetworkSettings.Ports}}', project + '-database']));
     const port = Number(bindings['3010/tcp']?.[0]?.HostPort);
     if (!port || port === 3010) throw Error('Debug console needs a separate published port');
     Object.assign(this.state, { phase: 'running', port, message: 'God party ready. Cave visits are unlimited.' });
     await this.save();
   }
-  private async until(check: () => Promise<boolean>, signal: AbortSignal, timeout = 120000, retryErrors = true) {
-    const deadline = Date.now() + timeout; let last = '';
-    while (Date.now() < deadline) {
-      signal.throwIfAborted();
-      try { if (await check()) return; } catch (error) { if (!retryErrors) throw error; last = String(error); }
-      await new Promise(resolve => setTimeout(resolve, 1000));
+  /** Repeats `check` once a second until it answers true, under `bound`. `check` gets the stop and
+   *  the bound together, so a Docker call that never answers ends with the wait. */
+  private async until(bound: HostBound, what: string, check: (signal: AbortSignal) => Promise<boolean>, signal: AbortSignal, retryErrors = true) {
+    let last = '', limit: AbortSignal | undefined;
+    try {
+      await bounded(bound, what, async boundSignal => {
+        limit = boundSignal;
+        const step = AbortSignal.any([signal, boundSignal]);
+        for (;;) {
+          step.throwIfAborted();
+          try { if (await check(step)) return; } catch (error) { if (!retryErrors || step.aborted) throw error; last = String(error); }
+          await delay(1000, undefined, { signal: step });
+        }
+      });
+    } catch (error) {
+      if (!signal.aborted && limit?.aborted) throw Error('Debug startup timed out. ' + last);
+      throw error;
     }
-    throw Error('Debug startup timed out. ' + last);
   }
   async stop() {
     if (this.stopping) return;

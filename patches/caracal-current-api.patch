@@ -514,7 +514,7 @@ index 8785424..4845b60 100644
 +      upper: game_context, createContext: make_context, evaluateFiles: ev_files,
 +      runnerFiles: game_files.get_runner_files().map(f => game_files.locate_game_file(f, proc_args.version)),
 +      codeFile: target_script, send: message => process.send(message),
-+      codeDependencies: ["farming-zones.js", "shared.js", "profiles.js", "roles.js"].map(file => "./CODE/adventure_land/" + file),
++      codeDependencies: ["farming-zones.js", "shared.js", "profiles.js"].map(file => "./CODE/adventure_land/" + file),
 +      connected: () => new Promise(resolve => {
 +        const listener = message => {
 +          if (message.type !== "siblings_and_acc") return;

@@ -20,8 +20,7 @@
   },
   "monsterHunt": {
     "version": 2,
-    "stage": "paused-event",
-    "resumeStage": "farming",
+    "stage": "farming",
     "participants": [
       "E2EWarrior"
     ],

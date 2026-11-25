@@ -1,15 +1,9 @@
 import { test, expect } from "./fixtures";
+import { mountComponent, color, rgb } from "./fixtures/component-harness";
 import type { Locator } from "@playwright/test";
-import { build } from "esbuild";
-import path from "node:path";
 
 // Failure inventory: docs/character-card.md. Character telemetry is a declared
 // boundary; the maintained CharacterStatsDialog runs in Chromium with the console styles.
-const color = (locator: Locator) => locator.evaluate((node) => getComputedStyle(node).color);
-const rgb = (hex: string) => {
-  const value = Number.parseInt(hex.slice(1), 16);
-  return `rgb(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255})`;
-};
 
 const patinder = {
   name: "Patinder", ctype: "merchant", primaryStat: "int", level: 61, hp: 4760, max_hp: 4760, mp: 2120, max_mp: 2700,
@@ -21,42 +15,16 @@ const patinder = {
 };
 
 test("character stats show the game's panel beside collapsible extras", async ({ page, app }, info) => {
-  const bundle = await build({
-    bundle: true,
-    write: false,
-    format: "iife",
-    platform: "browser",
-    jsx: "automatic",
-    tsconfig: path.resolve("dashboard/tsconfig.json"),
-    stdin: {
-      resolveDir: path.resolve("dashboard"),
-      loader: "tsx",
-      contents: `
+  const open = await mountComponent(page, app, "character-card-harness", `
     import React from 'react';import {createRoot} from 'react-dom/client';
     import {CharacterStatsDialog} from './features/party/character-stats-dialog';
     const root=createRoot(document.getElementById('root'));
     window.mountCharacter=(character)=>root.render(character ? <CharacterStatsDialog character={character} onOpenChange={()=>root.render(null)}/> : null);
-  `,
-    },
-  });
-  await page.goto(app.url);
-  await expect(page.locator("body")).toContainText("Party");
-  const styles = await page
-    .locator('style, link[rel="stylesheet"]')
-    .evaluateAll((nodes) => nodes.map((node) => node.outerHTML).join("\n"));
-  await page.route("**/character-card-harness", (route) =>
-    route.fulfill({ contentType: "text/html", body: `<!doctype html><head>${styles}</head><body><div id="root"></div></body>` }),
-  );
-  const open = async () => {
-    await page.goto(app.url + "/character-card-harness");
-    await page.addScriptTag({ content: bundle.outputFiles[0].text });
-  };
+  `);
   const mount = async (character: unknown) => {
     await page.evaluate(() => (window as any).mountCharacter(null));
     await page.evaluate((value) => (window as any).mountCharacter(value), character);
   };
-  await page.setViewportSize({ width: 1400, height: 1000 });
-  await open();
   await mount(patinder);
   const dialog = page.getByRole("dialog", { name: "Patinder", exact: true });
   const card = dialog.getByRole("region", { name: "Character card", exact: true });
@@ -153,4 +121,144 @@ test("character stats show the game's panel beside collapsible extras", async ({
   expect(narrowExtras.y).toBeGreaterThanOrEqual(narrowCard.y + narrowCard.height - 1);
   expect(await narrow.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await info.attach("character-card-narrow", { body: await narrow.screenshot(), contentType: "image/png" });
+
+  // The gold line shows the character's own reported bonus, signed, in percent,
+  // as Ryan's `Gold: +123.45%`; the dialog computes nothing.
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await mount({ ...patinder, goldBonus: 123.45 });
+  await expect(page.getByRole("dialog", { name: "Patinder", exact: true }).locator('[data-line="gold"]')).toContainText("+123.45%");
+  await mount({ ...patinder, goldBonus: -5 });
+  await expect(page.getByRole("dialog", { name: "Patinder", exact: true }).locator('[data-line="gold"]')).toContainText("-5%");
+});
+
+// The merchant card's gathering rows follow the merchant jobs owner's ready jobs, and the stand's
+// fullness reads the items owner's count from the core section's `standSlots`, not a count of its own.
+test("the merchant card's gathering rows read their owner's answers", async ({ page, app }) => {
+  await mountComponent(page, app, "component-harness", `
+    import React from 'react';import {createRoot} from 'react-dom/client';
+    import {QueryClientProvider} from '@tanstack/react-query';
+    import {createDashboardClient} from './features/party/query-cache';
+    import {MerchantCardControls} from './features/party/merchant-card-controls';
+    const root=createRoot(document.getElementById('root')), client=createDashboardClient(), none=async()=>{};
+    window.mount=(state)=>root.render(<QueryClientProvider client={client}><MerchantCardControls state={state}
+      onSettings={()=>{}}
+      onBank={none} onClear={none} onForceStand={none} onCancelJob={none} onRoutines={()=>{}} onGather={none} onBuy={()=>{}} onCraft={()=>{}}
+      onExchange={()=>{}} onDonate={()=>{}} onGiveaway={()=>{}}/></QueryClientProvider>);
+  `, null);
+  await page.evaluate(() => (window as any).mount({
+    characters: { M: { name: "M", ctype: "merchant", items: [], gatheringCooldowns: {} } }, merchantCharacter: "M",
+    gatheringModes: ["fishing", "mining"], merchantRoutinePriorities: {},
+    merchantQueue: [{ id: "f1", reason: "fishing", priority: 5 }, { id: "m1", reason: "mining", priority: 5 }],
+    merchantReady: [{ id: "f1", reason: "fishing", target: "", priority: 5, realm: null }],
+  }));
+  await page.getByText(/Merchant logistics · 2 queued/).click();
+  // A job's status is the span after the one its label titles (merchant-card-controls.tsx).
+  const status = (job: string) => page.locator(`span[title^="${job}" i] + span`);
+  // The ready fishing job is queued; mining, which the merchant jobs owner's plan has not listed ready, is held with
+  // the merchant jobs owner's reason.
+  await expect(status("Fishing")).toHaveText("queued");
+  await expect(status("Mining")).toHaveText("BLOCKED");
+  await expect(status("Mining")).toHaveAttribute("title", "Not ready in the merchant's plan");
+});
+
+// A pending Steam primary card offers Ryan 1.5's recovery (f48dfabb8,
+// aac30d45 pending-character-cards.tsx): a retry of the Steam connection, the /setup link and,
+// after a failed handoff, its recovery. A handoff in flight disables the retry. Each press goes
+// through the model's roster actions, whose requests the action client sends (use-party-console.tsx
+// `post`).
+test("a pending primary card offers its Steam recovery through the model's actions", async ({ page, app }) => {
+  await mountComponent(page, app, "component-harness", `
+    import React from 'react';import {createRoot} from 'react-dom/client';
+    import {PendingCharacterCards} from './features/party/pending-character-cards';
+    const root=createRoot(document.getElementById('root'));
+    window.calls=[];
+    window.mount=(state)=>root.render(<PendingCharacterCards model={{chars:[],state,
+      switchSteam:async(name)=>{window.calls.push(['switchSteam',name]);},
+      recoverSteamHandoff:async()=>{window.calls.push(['recoverSteamHandoff']);}}}/>);
+  `, null);
+  const mount = (state: unknown) => page.evaluate((state) => (window as any).mount(state), state);
+  const card = page.locator("article").filter({ has: page.getByRole("heading", { name: "Primary", exact: true }) });
+  const retry = card.getByRole("button", { name: "Retry Steam connection" });
+  const recover = card.getByRole("button", { name: "Recover Steam handoff after characters are offline" });
+  await mount({ characterConnections: [{ name: "Primary", status: "lost", primary: true, delayed: true }], activeSlots: [], roster: [] });
+  await retry.click();
+  await expect(card.getByRole("link", { name: "Open connection setup" })).toHaveAttribute("href", "/setup");
+  await expect(recover).toHaveCount(0);
+  await mount({ characterConnections: [{ name: "Primary", status: "loading", primary: true, delayed: true }], activeSlots: [], roster: [],
+    steamSwitch: { phase: "failed" } });
+  await expect(retry).toBeDisabled();
+  await recover.click();
+  expect(await page.evaluate(() => (window as any).calls)).toEqual([["switchSteam", "Primary"], ["recoverSteamHandoff"]]);
+  // A handoff in flight holds the retry; a companion's card and a headless primary's show no control.
+  await mount({ characterConnections: [{ name: "Primary", status: "loading", primary: true, delayed: true }], activeSlots: [], roster: [],
+    steamSwitch: { phase: "switching" } });
+  await expect(retry).toBeDisabled();
+  await expect(recover).toHaveCount(0);
+  await mount({ characterConnections: [{ name: "Primary", status: "lost", primary: false, delayed: true }], activeSlots: [], roster: [] });
+  await expect(card.getByRole("button")).toHaveCount(0);
+  await mount({ characterConnections: [{ name: "Primary", status: "loading", primary: true, delayed: true }],
+    activeSlots: [{ character: "Primary", kind: "headless", primary: true }], roster: [] });
+  await expect(card.getByRole("button")).toHaveCount(0);
+});
+
+// Each combat line of a character's Combat section in the settings menu writes its owner's field
+// through the settings route, and the settings owner's check refuses a value out of range with
+// nothing saved. The merchant's section has no heal line and no reflect lists, and the card face
+// holds none of them.
+test("the Combat section's lines write their owners' fields and stay inside 11's checks", async ({ page, app }) => {
+  const value = async (field: string) => {
+    const page_ = await (await page.request.get(app.url + "/party-api/settings")).json();
+    return (page_.settings as { field: string; value: any }[]).find((entry) => entry.field === field)?.value?.W;
+  };
+  await page.goto(app.url);
+  const card = page.locator("article").filter({ has: page.getByRole("heading", { name: "W", exact: true }) });
+  await expect(card.getByLabel("Heal first below (% HP) for W", { exact: true })).toHaveCount(0);
+  // The card's Farming settings gear opens W's tab; Combat is its next section.
+  await card.getByRole("button", { name: "Farming settings", exact: true }).click();
+  const menu = page.getByRole("dialog", { name: "Settings", exact: true });
+  await menu.getByRole("tab", { name: "Combat", exact: true }).click();
+  for (const [label, field, typed, saved] of [
+    ["Heal first below (% HP)", "healFirstBelow", "65", 65],
+    ["HP potion below (% HP)", "hpPotionBelow", "40", 40],
+    ["MP potion below (% MP)", "mpPotionBelow", "25", 25],
+  ] as const) {
+    const box = menu.getByLabel(`${label} for W`, { exact: true });
+    await expect(box).toBeEnabled();
+    await box.fill(typed);
+    await box.press("Enter");
+    await expect.poll(() => value(field), { message: field }).toEqual(saved);
+  }
+  // A reflect list offers only the monsters game data rates for it, reflection or dreturn above 0
+  // (runtime/characters/targeting/reflect.ts `reflectCheck`, d9edc4b6e). With no entry it shows the
+  // owner's default list; each change saves the whole list.
+  for (const [label, field, monster, rejected, defaults] of [
+    ["Don't hit with magic", "reflectMagicByCharacter", "slenderman", "porcupine", ["slenderman", "tiger", "goblin"]],
+    ["Don't hit with physical", "reflectPhysicalByCharacter", "porcupine", "slenderman", ["porcupine"]],
+  ] as const) {
+    const list = menu.getByRole("group", { name: label, exact: true });
+    await expect(list).toContainText("(default)");
+    await list.getByRole("button", { name: new RegExp(`^Remove .+ from ${label}$`) }).first().click();
+    const kept = defaults.slice(1);
+    await expect.poll(() => value(field), { message: field }).toEqual(kept);
+    await list.getByRole("button", { name: `Add a monster to ${label}`, exact: true }).click();
+    const search = page.getByRole("textbox", { name: `Search monsters for ${label}`, exact: true });
+    await search.fill(rejected);
+    await expect(page.getByText("No matching monsters.", { exact: true })).toBeVisible();
+    await search.fill(monster);
+    // The search results are their own group, apart from the "Add a monster to" trigger.
+    await page.getByRole("group", { name: `Monsters for ${label}`, exact: true }).getByRole("button", { name: new RegExp(`^Add .+ to ${label}$`) }).first().click();
+    await expect.poll(() => value(field), { message: field }).toEqual([...kept, monster]);
+    await page.keyboard.press("Escape");
+  }
+  // The settings owner's check: 1 to 100 for a line; the refusal shows and the saved value stays.
+  const heal = menu.getByLabel("Heal first below (% HP) for W", { exact: true });
+  await heal.fill("150");
+  await heal.press("Enter");
+  await expect(menu.getByRole("alert").filter({ hasText: /./ })).toBeVisible();
+  expect(await value("healFirstBelow")).toBe(65);
+  await menu.getByRole("tab", { name: "M", exact: true }).click();
+  await menu.getByRole("tab", { name: "Combat", exact: true }).click();
+  await expect(menu.getByLabel("Heal first below (% HP) for M", { exact: true })).toHaveCount(0);
+  await expect(menu.getByRole("group", { name: "Don't hit with magic", exact: true })).toHaveCount(0);
+  await expect(menu.getByLabel("HP potion below (% HP) for M", { exact: true })).toBeVisible();
 });

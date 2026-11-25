@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const files = require('../client-files.cjs');
+const files = require('../../runtime/lifecycle/coordinator/client-files.cjs');
 
 test('current game dependencies load in official order before socket initialization', () => {
   const game = files.scripts([

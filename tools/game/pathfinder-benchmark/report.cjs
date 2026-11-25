@@ -1,6 +1,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { createNative, seededRandom } = require("./native.cjs");
+const { SLOW_PILOT_MS, SLOW_ROUTE } = require("./sampling.cjs");
 const csvValue = (value) => '"' + String(value ?? "").replaceAll('"', '""') + '"';
 function median(values) {
   if (!values.length) return null;
@@ -13,8 +15,10 @@ function quantile(values, p) {
   const a = [...values].sort((x, y) => x - y);
   return a[Math.max(0, Math.ceil(a.length * p) - 1)];
 }
+// The latency columns read completed queries; a failed query is in the count and the errors.
+const completedMs = (rows) => rows.filter((r) => !r.error).map((r) => r.ms);
 function summarize(rows) {
-  const times = rows.map((r) => r.ms);
+  const times = completedMs(rows);
   return {
     count: rows.length,
     valid: rows.filter((r) => r.quality.valid && !r.error).length,
@@ -25,7 +29,7 @@ function summarize(rows) {
     unverified: rows.filter((r) => r.quality.unverified).length,
     medianMs: median(times),
     p95Ms: quantile(times, 0.95),
-    maxMs: Math.max(...times),
+    maxMs: times.length ? Math.max(...times) : null,
   };
 }
 function paired(rows, baseline = "native-visible") {
@@ -54,18 +58,9 @@ function paired(rows, baseline = "native-visible") {
   if (!groups.length) return { pairs: 0 };
   const geometric = (a) => Math.exp(a.reduce((s, x) => s + Math.log(x.ratio), 0) / a.length);
   const routeRatios = groups.map((group) => ({ ratio: geometric(group) }));
-  let seed = 9182;
+  const random = seededRandom(9182);
   const boot = Array.from({ length: 2000 }, () =>
-    geometric(
-      routeRatios.map(
-        () =>
-          routeRatios[
-            (((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296) *
-              routeRatios.length) |
-              0
-          ],
-      ),
-    ),
+    geometric(routeRatios.map(() => routeRatios[(random() * routeRatios.length) | 0])),
   );
   return {
     pairs: ratios.length,
@@ -79,19 +74,19 @@ function paired(rows, baseline = "native-visible") {
 const fmt = (x) => (x === null || x === undefined ? "—" : Number(x).toFixed(2));
 function report(data, output, name = "report") {
   const { metadata, cold, results } = data,
-    engines = ["native-visible", "native-hidden", "alclient"];
+    { engines } = metadata;
   const summaries = Object.fromEntries(
     engines.map((e) => [e, summarize(results.filter((r) => r.engine === e))]),
   );
   const comparisons = Object.fromEntries(
-    ["native-visible", "native-hidden"].map((e) => [e, paired(results, e)]),
+    engines.filter((e) => e !== "alclient").map((e) => [e, paired(results, e)]),
   );
   const lines = [
     `# Offline ALClient pathfinder comparison`,
     "",
-    `Game **${metadata.version}** · [ALClient ${metadata.provenance.revision}](https://github.com/earthiverse/ALClient/blob/${metadata.provenance.revision}/source/Pathfinder.ts) · alpathfinder **0.6.0**`,
+    `Game **${metadata.version}** · [ALClient ${metadata.provenance.revision}](https://github.com/earthiverse/ALClient/blob/${metadata.provenance.revision}/source/Pathfinder.ts) · alpathfinder **${metadata.provenance.alpathfinder}**`,
     "",
-    `${metadata.routes.length} routes; ${metadata.bounded ? "30 measured passes plus 5 warm-ups for pilot queries below 2 seconds; 3 measured passes for slower routes/timeouts, with no additional warm-ups" : `${metadata.passes} measured passes and ${metadata.warmups} warm-up passes per engine`}; ${metadata.coldRuns} isolated-process cold starts per engine. Seed 42. ${metadata.node}; ${metadata.cpu}.`,
+    `${metadata.routes.length} routes; ${metadata.bounded ? `${metadata.passes} measured passes plus ${metadata.warmups} warm-ups for pilot queries below ${SLOW_PILOT_MS / 1000} seconds; ${SLOW_ROUTE.passes} measured passes for slower or failed routes, with ${SLOW_ROUTE.warmups} warm-ups` : `${metadata.passes} measured passes and ${metadata.warmups} warm-up passes per engine`}; ${metadata.coldRuns} isolated-process cold starts per engine. Seed 42. ${metadata.node}; ${metadata.cpu}.`,
     "",
     "[Raw measurements and provenance](results.json) · [CSV](report.csv) · [Reproduction instructions](../../../tools/game/pathfinder-benchmark/README.md)",
     "",
@@ -122,7 +117,7 @@ function report(data, output, name = "report") {
   );
   lines.push(
     "",
-    "All attempts, including failures, are included above; errors do not count as fast successful routes. Categories include deliberate failure and access probes.",
+    "All attempts, including failures, are counted above; latency columns cover completed queries, and errors are counted beside them. Categories include deliberate failure and access probes.",
     "The chosen route mix and repetition counts are not production traffic frequencies. Validity percentages describe these fixtures, not estimated live reliability.",
     "Medians average the two middle observations when necessary; p95 uses the nearest-rank definition. Three-sample slow-route estimates are descriptive, not precise tail-latency estimates.",
     "",
@@ -160,7 +155,7 @@ function report(data, output, name = "report") {
   if (metadata.standCorrection)
     lines.push(
       "",
-      "The three stand fixtures were remeasured using the configured stand at main (-63, 100). Their earlier town-spawn measurements are excluded; the correction and source datasets are recorded in results.json.",
+      `The three stand fixtures were remeasured using the configured stand at ${metadata.merchantStand.map} (${metadata.merchantStand.x}, ${metadata.merchantStand.y}). Their earlier town-spawn measurements are excluded; the correction and source datasets are recorded in results.json.`,
     );
   lines.push(
     "",
@@ -234,21 +229,10 @@ function report(data, output, name = "report") {
   console.log(JSON.stringify({ summaries, comparisons }, null, 2));
 }
 function plot({ metadata, results }, output) {
-  const { createNative } = require("./native.cjs");
   const native = createNative(
     path.resolve(__dirname, "../../../.caracal/game_files", metadata.version),
   );
-  const routes = metadata.routes.filter((r) =>
-    [
-      "stand-bank",
-      "scrolls-upgrade",
-      "upgrade-craftsman",
-      "configured-party-farm",
-      "main-halloween",
-      "cave-bridge",
-      "fence-detour",
-    ].includes(r.id),
-  );
+  const routes = metadata.routes.filter((r) => r.plot);
   const panels = [];
   let index = 0;
   for (const route of routes) {
@@ -318,7 +302,7 @@ function appendRoutes(lines, metadata, results) {
     const a = r.filter((r) => r.engine === "alclient"),
       n = r.filter((r) => r.engine === "native-visible");
     lines.push(
-      `| ${route.id} | ${route.category} | ${fmt(median(n.map((r) => r.ms)))} | ${fmt(median(r.filter((r) => r.engine === "native-hidden").map((r) => r.ms)))} | ${fmt(median(a.map((r) => r.ms)))} | ${n.filter((r) => r.quality.valid).length}/${n.length} | ${a.filter((r) => r.quality.valid).length}/${a.length} | ${fmt(median(n.filter((r) => r.quality.valid).map((r) => r.quality.distance)))} | ${fmt(median(a.filter((r) => r.quality.valid).map((r) => r.quality.distance)))} |`,
+      `| ${route.id} | ${route.category} | ${fmt(median(completedMs(n)))} | ${fmt(median(completedMs(r.filter((r) => r.engine === "native-hidden"))))} | ${fmt(median(completedMs(a)))} | ${n.filter((r) => r.quality.valid).length}/${n.length} | ${a.filter((r) => r.quality.valid).length}/${a.length} | ${fmt(median(n.filter((r) => r.quality.valid).map((r) => r.quality.distance)))} | ${fmt(median(a.filter((r) => r.quality.valid).map((r) => r.quality.distance)))} |`,
     );
   }
 }

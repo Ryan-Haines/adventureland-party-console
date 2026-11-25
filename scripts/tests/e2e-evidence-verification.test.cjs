@@ -1,4 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {spawnSync}=require('node:child_process'),{createHash}=require('node:crypto');
 
@@ -22,10 +23,11 @@ function verify(change=()=>{}) {
   } finally {fs.rmSync(root,{recursive:true,force:true});}
 }
 test('native evidence accepts explicitly expected ChronAL transport exclusions',()=>assert.equal(verify().status,0));
-for(const [name,change] of [
+// verify writes and removes its own evidence folder, so the table builds nothing.
+scenarioTable('the evidence check over one native manifest rejects each changed manifest or receipt',null,[
   ['unexpected skip',m=>{m.tests[1].expectedStatus='passed';}],
   ['ordinary gameplay skip',m=>{m.tests[1].location='e2e/live-game.spec.ts';}],
   ['ChronAL backend skip',m=>{m.gameplayBackend='chronal';}],
   ['failed gameplay',m=>{m.tests[0].status='failed';}],
   ['modified receipt',(m,root)=>fs.writeFileSync(path.join(root,m.artifacts[0].path),'changed')],
-])test('evidence still rejects '+name,()=>assert.notEqual(verify(change).status,0));
+].map(([name,change])=>['evidence still rejects '+name,()=>assert.notEqual(verify(change).status,0)]));

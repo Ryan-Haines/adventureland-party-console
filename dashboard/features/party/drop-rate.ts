@@ -1,3 +1,5 @@
+import { ACQUISITION } from "../../../runtime/items/api.ts";
+
 interface DropRate {
   rate: number;
   quantity: number;
@@ -12,7 +14,7 @@ export function isDirectDrop(drop: { acquisitionPath?: string[] }): boolean {
   // and is not a drop of that final item. Keep compatibility with saved catalogs
   // that predate acquisition paths, plus the native world-table annotations.
   return (drop.acquisitionPath || []).slice(0, -1).every(step =>
-    step.startsWith("open ") || step === "World drop" || step === "HP-scaled world drop");
+    step.startsWith(ACQUISITION.open) || step === ACQUISITION.worldDrop || step === ACQUISITION.scaledWorldDrop);
 }
 
 export function effectiveDropRate(drop: DropRate): number {
@@ -33,9 +35,8 @@ export function formatDropRate(drop: DropRate): string {
 }
 
 function probabilityRatio(rate: number): [bigint, bigint] {
-  // Native tables include expressions such as 15/100000 and weighted nested
-  // tables. Recover their reduced ratio to floating-point precision rather than
-  // forcing a numerator of one and rounding a noninteger reciprocal.
+  // Native tables hold expressions such as 15/100000 and weighted nested tables; the continued
+  // fraction recovers their reduced ratio to floating point precision.
   let remainder = rate, previousNumerator = 0, numerator = 1,
     previousDenominator = 1, denominator = 0;
   for (let iteration = 0; iteration < 64; iteration++) {
@@ -51,8 +52,8 @@ function probabilityRatio(rate: number): [bigint, bigint] {
     if (!fraction) break;
     remainder = 1 / fraction;
   }
-  // Very small or complicated reported probabilities may exceed safe numeric
-  // convergents. Preserve their decimal value exactly, including exponents.
+  // Small or nested probabilities can pass the safe integer convergents, so the decimal value is
+  // kept exactly, exponent included.
   const [decimal, exponent = "0"] = rate.toString().split("e");
   const [integer, fractional = ""] = decimal.split(".");
   let top = BigInt(integer + fractional), bottom = BigInt(1);

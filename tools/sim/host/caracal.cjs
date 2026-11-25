@@ -1,6 +1,6 @@
 "use strict";
 // Stand-ins for the caracAL modules the coordinator loads through its platform require
-// (runtime/coordinator/infrastructure/dependencies.ts). Nothing here reads the user's .caracal
+// (runtime/lifecycle/coordinator/start.ts `loadCoordinatorDependencies`). Nothing here reads the user's .caracal
 // install or its config/session; a simulation gets its own run directory and account.
 const path = require("node:path");
 
@@ -33,7 +33,7 @@ function logging(write) {
   const text =
     (level) =>
     (...args) =>
-      write(level, args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+      write(level, args.map((a) => (typeof a === "string" ? a : a && typeof a.stack === "string" ? a.stack : JSON.stringify(a))).join(" "));
   const console = {
     log: text("info"),
     info: text("info"),
@@ -137,4 +137,4 @@ function BotWebInterface() {
   throw new Error("[sim] the bot web interface is not available in a simulation");
 }
 
-module.exports = { logging, account, gameFiles, config, BotWebInterface, ctype_to_clid };
+module.exports = { logging, account, gameFiles, config, BotWebInterface };

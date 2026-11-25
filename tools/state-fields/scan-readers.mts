@@ -45,12 +45,15 @@ const wrappers = new Set(["Partial", "Readonly", "Required", "Pick", "Omit", "No
 
 function scanner(ts: typeof TS, checker: TS.TypeChecker, targets: Set<string>) {
   const declarations = new Set<TS.Node>();
-  function targetType(type: TS.Type, depth = 0): boolean {
-    if (depth > 4) return false;
-    if (type.isUnionOrIntersection()) return type.types.some((part) => targetType(part, depth + 1));
+  // The walk keeps the types it visited, so a type that refers back to itself ends the recursion
+  // and a character type wrapped at any depth still reads as one.
+  function targetType(type: TS.Type, visited = new Set<TS.Type>()): boolean {
+    if (visited.has(type)) return false;
+    visited.add(type);
+    if (type.isUnionOrIntersection()) return type.types.some((part) => targetType(part, visited));
     if (named(type)) return true;
     const alias = type.aliasSymbol;
-    return !!alias && wrappers.has(alias.name) && !!type.aliasTypeArguments?.some((part) => targetType(part, depth + 1));
+    return !!alias && wrappers.has(alias.name) && !!type.aliasTypeArguments?.some((part) => targetType(part, visited));
   }
   function named(type: TS.Type): boolean {
     const alias = type.aliasSymbol, symbol = type.getSymbol();
@@ -176,8 +179,10 @@ function inspector(ts: typeof TS, checker: TS.TypeChecker, scan: ReturnType<type
 
 export function scanReaders(input: Options): Result {
   const ts = createRequire(input.project)("typescript") as typeof TS;
-  const config = ts.getParsedCommandLineOfConfigFile(input.project, {}, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} });
-  if (!config) throw Error("Unreadable project " + input.project);
+  let reason = "";
+  const config = ts.getParsedCommandLineOfConfigFile(input.project, {}, { ...ts.sys,
+    onUnRecoverableConfigFileDiagnostic: (diagnostic) => { reason = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"); } });
+  if (!config) throw Error("Unreadable project " + input.project + (reason ? ": " + reason : ""));
   const program = ts.createProgram({ rootNames: config.fileNames, options: config.options });
   const checker = program.getTypeChecker();
   const scan = scanner(ts, checker, input.types);

@@ -1,5 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createMarketplaceProgressRoutes}=require('../../runtime/coordinator/http/marketplace-progress.ts');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {createMarketplaceProgressRoutes}=require('../../runtime/items/coordinator/routes/market.ts');
 function fixture(blacklistingEnabled=true){
  const listing={key:'a',item:{name:'cap',level:8},quantity:1,price:100,seller:'Seller',serverRegion:'US',serverIdentifier:'II'};
  const state={merchantCharacter:'M',merchantCurrent:{id:'job',target:'M',reason:'ALData marketplace purchases',listings:[listing]},merchantQueue:[],commands:{M:{}},standBids:{cap:{quantity:4}}};
@@ -17,6 +18,11 @@ test('unavailable listing is not evidence to blacklist the seller or cancel othe
  const t=fixture();t.state.merchantCurrent.listings.push({...t.listing,key:'b'});
  assert.equal(t.send('aldata',{success:false,failureCode:'listing_not_available'}).body.cancelSeller,null);
  assert.deepEqual(t.state.merchantCurrent.completedListingKeys,['a']);assert.equal(t.calls.some(x=>x[0]==='blacklist'),false);
+ // An unreachable destination blacklists nothing either; a seller not visible or a closed stand does.
+ for(const failureCode of ['destination_unreachable','seller_not_visible','stand_not_open']){
+  const f=fixture();f.send('aldata',{success:false,failureCode});
+  assert.equal(f.calls.filter(x=>x[0]==='blacklist').length,failureCode==='destination_unreachable'?0:1,failureCode);
+ }
 });
 test('missing seller cancels that realm-specific seller in current and queued work while retaining other sellers',()=>{
  const t=fixture(),same={...t.listing,key:'b'},different={...same,key:'c',serverIdentifier:'I'};
@@ -29,15 +35,42 @@ test('Ponty progress dismisses once and fulfills the planned listing quantity',(
  t.send('ponty',{success:true});t.send('ponty',{success:true});assert.equal(t.state.standBids.cap.quantity,2);assert.equal(t.calls.filter(x=>x[0]==='dismiss').length,1);
  assert.equal(t.send('ponty',{listingKey:'missing'}).code,400);
 });
-for(const success of [true,false])test('purchase '+(success?'collection':'cancellation')+' retains unrelated and incomplete queued jobs by identity',()=>{
- const t=fixture(),fishing={reason:'fishing'},stand={reason:'stand purchases',listings:[{seller:'Seller'}]},incomplete={reason:'ALData marketplace purchases'};
+scenarioTable('a purchase report on the current ALData job keeps every other queued job by identity',fixture,[true,false].map(success=>['purchase '+(success?'collection':'cancellation')+' retains unrelated and incomplete queued jobs by identity',t=>{
+ const fishing={reason:'fishing'},stand={reason:'stand purchases',listings:[{seller:'Seller'}]},incomplete={reason:'ALData marketplace purchases'};
  t.state.merchantQueue=[fishing,stand,incomplete];
  t.send('aldata',{success,quantity:1,failureCode:'seller_not_visible'});
  assert.equal(t.state.merchantQueue[0],fishing);assert.equal(t.state.merchantQueue[1],stand);assert.equal(t.state.merchantQueue[2],incomplete);
-});
+}]));
 
 test('disabling automatic blacklisting skips an unavailable seller without adding a strike',()=>{
  const t=fixture(false);const result=t.send('aldata',{success:false,failureCode:'seller_not_visible'});
  assert.equal(result.code,200);assert.equal(result.body.cancelSeller.seller,'Seller');
  assert.equal(t.calls.some(call=>call[0]==='blacklist'),false);
+});
+
+test('a report for a job that is no longer current answers 409 and changes nothing',()=>{
+ const t=fixture();
+ for(const route of ['aldata','ponty'])assert.equal(t.send(route,{jobId:'cancelled'}).code,409,route);
+ t.state.merchantCurrent={...t.state.merchantCurrent,id:'next'};
+ assert.equal(t.send('aldata',{success:true,quantity:1}).code,409);
+ assert.equal(t.state.standBids.cap.quantity,4);assert.equal(t.calls.length,0);
+});
+
+test('an unknown ALData listing key answers 400 without fulfilling or completing anything',()=>{
+ const t=fixture(),response=t.send('aldata',{success:true,quantity:1,listingKey:'missing'});
+ assert.equal(response.code,400);assert.equal(t.state.standBids.cap.quantity,4);
+ assert.equal(t.state.merchantCurrent.completedListingKeys,undefined);assert.equal(t.calls.length,0);
+});
+
+test('a failed Ponty listing is dismissed and completed without fulfilling the bid',()=>{
+ const t=fixture();t.state.merchantCurrent.reason='Ponty purchases';
+ assert.equal(t.send('ponty',{success:false,error:'sold out'}).code,200);
+ assert.deepEqual(t.calls.filter(call=>call[0]!=='persist'),[['dismiss','a']]);
+ assert.equal(t.state.standBids.cap.quantity,4);assert.deepEqual(t.state.merchantCurrent.completedListingKeys,['a']);
+});
+
+test('a stand that is not open cancels that seller like a seller who is not visible',()=>{
+ const t=fixture(),same={...t.listing,key:'b'};t.state.merchantCurrent.listings.push(same);
+ const result=t.send('aldata',{success:false,failureCode:'stand_not_open'}).body;
+ assert.equal(result.cancelSeller.seller,'Seller');assert.deepEqual(t.state.merchantCurrent.completedListingKeys,['a','b']);
 });

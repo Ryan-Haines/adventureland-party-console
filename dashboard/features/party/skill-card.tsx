@@ -1,5 +1,5 @@
 "use client";
-import { GameBox, GameLine } from "./item-card";
+import { ExtrasBox, GameBox, GameLine } from "./item-card";
 import { prettyFloat, STAT_NAMES, WEAPON_TYPES } from "./item-card-lines";
 import type { SkillEntry } from "./skill-entry";
 import { STAT_COLORS as S } from "./stat-colors";
@@ -98,11 +98,7 @@ export function SkillCards({ skill, skillName }: { skill: SkillEntry; skillName:
             : <GameLine key={line.key} line={line.key} label={line.label} value={line.value} color={line.color} />)}
         </GameBox>
       )}
-      {!!extras.length && (
-        <GameBox label="Skill extras" className="min-w-[14rem] flex-1">
-          {extras.map(([key, label, value]) => <GameLine key={key} line={key} label={label} value={value} color={EXTRA_COLORS[key] || "#C3C3C3"} />)}
-        </GameBox>
-      )}
+      <ExtrasBox label="Skill extras" extras={extras} colors={EXTRA_COLORS} />
     </div>
   );
 }

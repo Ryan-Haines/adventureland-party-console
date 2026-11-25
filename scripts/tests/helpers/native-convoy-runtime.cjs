@@ -3,15 +3,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const {installPartyMovement}=require('../../../runtime/characters/movement.ts');
-const source = fs.readFileSync(path.join(__dirname, '../../../characters/shared.js'), 'utf8');
-const convoyCode = source.slice(source.indexOf('  function convoySignalExpired('), source.indexOf('  var kiteState ='));
-const cache = path.join(__dirname, '../../../.caracal/game_files');
-const versions = fs.readdirSync(cache).filter(x => /^\d+$/.test(x)).sort((a, b) => Number(a) - Number(b));
-const runner = fs.readFileSync(path.join(cache, versions.at(-1), 'runner_functions.js'), 'utf8');
+// The convoy code calls the movement owner's requester helpers (walkRequest, claim).
+const { createMovementContext } = require('../fixtures/movement-owner-callers.cjs');
+const {installPartyMovement}=require('../../../runtime/movement/character/owner.ts');
+const {contextScope}=require('./run-scope.cjs');
+const {downloadedGameSource}=require('./downloaded-game.cjs');
+// The pinned game fixtures keep these rows on one upstream version whatever the local cache holds.
+const runner = downloadedGameSource('runner_functions.js');
 const nativeCode = runner.slice(runner.indexOf('var smart = {'), runner.indexOf('function proxy('));
 const settle = () => new Promise(resolve => setImmediate(resolve));
-const command = { id: 2, convoyId: 'test', epoch: 7, phase: 'prepare',
+const command = { id: 2, convoyId: 'test', epoch: 7, phase: 'assemble',
   rally: { map: 'main', x: 0, y: 0 }, location: { map: 'main', x: 120, y: 0 }, slowestSpeed: 57 };
 
 function runtime(options = {}) {
@@ -19,13 +20,13 @@ function runtime(options = {}) {
   const calls = [], timers = [], deferred = [];
   const character = { name: 'F', map: 'main', x: 0, y: 0, speed: 57, moving: false, base: {} };
   Object.defineProperties(character, { real_x: { get: () => character.x }, real_y: { get: () => character.y } });
-  const context = vm.createContext({
+  const context = createMovementContext({
     code_settings: {}, // Native runner defaults live before the extracted smart-move functions.
     game: { graphics: false },
     setTimeout, clearTimeout, encodeURIComponent, Promise, Math, Number, String, Error, Date: class extends Date { static now() { return now; } },
     character, runtimeGeneration: 1, runtimeCurrent: () => true, convoyRuntimeId: 'runtime-1',
-    navigationIntent: { revision: 0, cancelled: false }, convoyTraveling: null, reunionRealm: () => 'USI',
-    convoySignal: { id: 'test', epoch: 7, commandId: 2, runtimeId: 'runtime-1', phase: 'prepare', validUntil: 5000 },
+    navigationIntent: { revision: 0, cancelled: false }, groupWalk: {travel:null}, reunionRealm: () => 'USI',
+    convoySignal: { id: 'test', epoch: 7, commandId: 2, runtimeId: 'runtime-1', phase: 'assemble', validUntil: 5000 },
     anniversaryWithTimeout: promise => promise, farmingEntryPoint: x => x, partyLocation: null, followingLeader: true, coordinatorClockOffset: 50, eventRecoveryState: {},
     setInterval: fn => { timers.push(fn); },
     console: { log() {} }, game_log: (...args) => calls.push(['log', ...args]),
@@ -53,6 +54,8 @@ function runtime(options = {}) {
   context.root = context;
   context.departureCombatPending=()=>false;
   context.eligibleDepartureChests=()=>[];
+  // The movement owner's sends ask the call budget, a planted one with no game socket.
+  require('./planted-calls.cjs').plantCalls();
   vm.runInContext(nativeCode, context);
   let searchStarts = 0;
   const start = context.start_pathfinding;
@@ -61,21 +64,32 @@ function runtime(options = {}) {
   context.character.items=[];context.G.version=16846;
   context.movement=installPartyMovement(context,{
     now:()=>now+ticks*80,
-    context:()=>({runtime:'fixture',revision:context.navigationIntent.revision,current:true,paused:false}),
+    current:()=>true,
+    pauses:{manual:()=>false,drainPark:()=>false,caveHolds:()=>false,held:()=>false},
+    // Movement's `act` handle on the context's run scope (shared.js `scopes.act02`).
+    scope:contextScope(context,'02','act'),
     request:async(url,request)=>{if(url==='/movement-plan') {
       if(options.plan)return options.plan(request.body);
       throw Error('Path not found: native fixture');
     }return context.request(url,request);},
-    diagnostic:(e,m)=>calls.push(['diagnostic',e,m]),
+    events:(type,m,e)=>calls.push(['diagnostic',e,m]),
+    departureChests:()=>context.eligibleDepartureChests(),
+    // Each runtime answers its own departure fight through the owner's port, so no answer lands on the
+    // process-wide core:targeting registration.
+    departureCombatPending:()=>context.departureCombatPending(),
   });
-  vm.runInContext(require('./named-function.cjs').namedFunction(source,'convoyDiagnosticClock'), context);
-  vm.runInContext(convoyCode.replace(/\bsmart\./g,'movement.state.'), context);
+  // The owner's walk state reads and writes the context's own variables (helpers/walk-state.cjs).
+  context.walkState=require('./walk-state.cjs').walkStateOf(context,context.movement.walkState);
+  // The walk, its travel and its reports are the walk client's (walk-client.ts `createWalkClient`).
+  require('./walk-reports.cjs').installWalkReports(context);
   return { context, calls, timers, setNow: x => { now = x; }, get searches() { return searchStarts; },
     tick: () => {ticks++;timers[0]();}, moves: () => calls.filter(x => x[0] === 'move'),
     async start(cmd = command) { const promise = context.coordinatedMonsterTravel(cmd); await settle(); return { promise }; },
-    async ready() { for (let i=0; i<200 && !context.convoyTraveling.routeReady; i++) { timers[0](); await settle(); }
-      assert.equal(context.convoyTraveling.routeReady, true); },
-    async cancel() { const c = context.convoyTraveling; if (!c) return; c.cancelled = true; if(c.release) c.release(); await context.stop('smart'); await settle(); },
+    async ready() { for (let i=0; i<200 && !context.groupWalk.travel.routeReady; i++) { timers[0](); await settle(); }
+      assert.equal(context.groupWalk.travel.routeReady, true); },
+    // The walk ends its own journey, as the client does when the coordinator drops it; a stop
+    // by anyone else never ends a ranked walk.
+    async cancel() { const c = context.groupWalk.travel; if (!c) return; c.cancelled = true; if(c.release) c.release(); await context.stop('smart', undefined, context.convoyRequest(c)); await settle(); },
   };
 }
 module.exports={runtime,settle,command};

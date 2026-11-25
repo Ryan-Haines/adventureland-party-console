@@ -5,6 +5,10 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 export const inspectorPort = 19245;
+// The OS process bounds: the Windows process list query and the game launcher's start. execFile
+// ends a child past its timeout with `killed` set, which the callers' errors carry.
+const PROCESS_LIST_MS = 5000;
+const LAUNCH_MS = 10000;
 export function automationEnvironment(platform: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (platform === 'win32') return { ...env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:
     `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${inspectorPort}` };
@@ -54,7 +58,7 @@ export async function findExecutable(platform = process.platform): Promise<strin
 export async function gameRunning(executable: string, platform = process.platform): Promise<boolean> {
   if (platform === 'win32') {
     const script = 'Get-CimInstance Win32_Process -Filter "Name=\'Adventure Land.exe\'" | Select-Object -ExpandProperty ExecutablePath';
-    const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 5000 });
+    const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: PROCESS_LIST_MS });
     return stdout.split(/\r?\n/).some(value => value.trim().toLowerCase() === executable.toLowerCase());
   }
   for (const pid of (await readdir('/proc')).filter(value => /^\d+$/.test(value))) {
@@ -69,7 +73,7 @@ export async function gameRunning(executable: string, platform = process.platfor
 export async function launchGame(executable: string, platform = process.platform): Promise<void> {
   if (platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
     throw Error('No Linux desktop session is available. Start Party Console from the same desktop session as Steam.');
-  const options = { cwd: path.dirname(executable), env: automationEnvironment(platform, process.env), windowsHide: true, timeout: 10000 };
+  const options = { cwd: path.dirname(executable), env: automationEnvironment(platform, process.env), windowsHide: true, timeout: LAUNCH_MS };
   // An intermediate launcher exits immediately: coordinator process-tree cleanup
   // must not own or terminate the player's Steam window on a later restart.
   if (platform === 'win32') {

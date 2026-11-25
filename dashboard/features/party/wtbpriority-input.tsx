@@ -1,5 +1,6 @@
 "use client";
 import { Input } from "@/components/ui/input";
+import { ROUTINE_PRIORITY } from "../../../runtime/merchant-jobs/api.ts";
 
 export function WTBPriorityInput({
   value,
@@ -18,7 +19,7 @@ export function WTBPriorityInput({
   return (
     <Input
       aria-label="Priority override"
-      title="0–100, higher first; blank uses routine priority"
+      title={`${ROUTINE_PRIORITY.min}–${ROUTINE_PRIORITY.max}, higher first; blank uses routine priority`}
       inputMode="numeric"
       placeholder="Default"
       value={value}
@@ -27,7 +28,7 @@ export function WTBPriorityInput({
       disabled={disabled}
       onChange={(event) => {
         const next = event.target.value.replace(/[^0-9]/g, "");
-        onChange(next === "" ? "" : String(Math.min(100, Number(next))));
+        onChange(next === "" ? "" : String(Math.min(ROUTINE_PRIORITY.max, Number(next))));
       }}
       className={`min-w-0 border-violet-600 bg-black text-violet-100 placeholder:text-violet-300 hover:border-violet-400 ${className}`}
     />

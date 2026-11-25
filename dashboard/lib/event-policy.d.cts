@@ -1,1 +1,0 @@
-export function eventPolicy(party: { leader?: string | null; merchantCharacter?: string | null; followers?: Record<string, boolean>; eventsByCharacter?: Record<string, boolean> }, name: string): { inherited: boolean; source: string; enabled: boolean };

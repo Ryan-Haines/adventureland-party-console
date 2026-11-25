@@ -17,7 +17,9 @@ export function MailboxControls({inbox,tab,onTab}:{inbox:MailInbox;tab:'inbox'|'
     </div>
     <div className="flex gap-2"><Button className={control} aria-pressed={tab==='inbox'} onClick={()=>onTab('inbox')}>Inbox</Button><Button className={control} aria-pressed={tab==='outbox'} onClick={()=>onTab('outbox')}>Outbox</Button></div>
     {error&&<p role="alert" className="text-amber-200">{error}</p>}
-    {tab==='outbox'&&<section aria-label="Sent mail" className="max-h-[65vh] space-y-3 overflow-y-auto">
+    {/* R12-10: why an automatic collect or delete failed, as v1.5 drew it (aac30d45 send-mail-dialog.tsx:225-228). */}
+    {inbox.automationError&&<p role="status" className="text-sm text-amber-200">{inbox.automationError}. Retrying automatically.</p>}
+    {tab==='outbox'&&<section data-area="mail-sent" aria-label="Sent mail" className="max-h-[65vh] space-y-3 overflow-y-auto">
       {!inbox.outbox?.length&&<p>No sent mail recorded.</p>}
       {inbox.outbox?.map(mail=><article key={mail.id} className="rounded border border-cyan-800 bg-[#07100f] p-3">
         <h3 className="font-semibold">{mail.subject}</h3><p className="text-sm text-cyan-200">To {mail.recipient} · {new Date(mail.sent).toLocaleString()}</p><p className="whitespace-pre-wrap text-sm">{mail.message}</p>

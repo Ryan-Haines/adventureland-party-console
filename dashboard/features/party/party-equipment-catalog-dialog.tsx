@@ -3,7 +3,7 @@ import { lazy, useCallback, useMemo, useState } from "react";
 import { emptyArray } from "./empty-values";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { CatalogComparison, comparisonEntry, comparisonButtonClass, type CatalogComparisonEntry } from "./catalog-comparison";
+import { CatalogComparison, COMPARISON_ALTERNATIVES, comparisonEntry, comparisonButtonClass, type CatalogComparisonEntry } from "./catalog-comparison";
 import { DeferredPanel } from "./deferred-panel";
 import type { MerchantCatalogItem } from "./merchant-catalog-item";
 import type { InventoryEntry } from "./inventory-entry";
@@ -57,10 +57,11 @@ function PartyEquipmentCatalogDialogConnected({ base }: { base: PartyConsoleMode
         comparisonSource={source}
         comparison={source && entries.length ? {
           selectedIds: entries.slice(1).map(({ entry }) => entry.item.name),
-          onAdd: (item) => setEntries((previous) => previous.length >= 4 || previous.slice(1).some(({ entry }) => entry.item.name === item.id) ? previous : [...previous, comparisonEntry(catalogEntry(item))]),
+          full: entries.length > COMPARISON_ALTERNATIVES,
+          onAdd: (item) => setEntries((previous) => previous.length > COMPARISON_ALTERNATIVES || previous.slice(1).some(({ entry }) => entry.item.name === item.id) ? previous : [...previous, comparisonEntry(catalogEntry(item))]),
           controls: <div className="flex flex-wrap items-center gap-2 rounded border border-cyan-700 bg-[#10251f] p-3 text-sm">
             <span className="mr-auto">A: {String(source.meta?.definition.name || source.item.name)} +{entries[0].level}</span>
-            <output>{entries.length - 1}/3 selected</output>
+            <output>{entries.length - 1}/{COMPARISON_ALTERNATIVES} selected</output>
             {entries.slice(1).map(({ entry }, index) => <Button key={entry.item.name} size="sm" variant="outline" className={comparisonButtonClass}
               aria-label={`Remove ${String(entry.meta?.definition.name || entry.item.name)}`}
               onClick={() => setEntries((previous) => previous.filter((_, i) => i !== index + 1))}>
@@ -73,12 +74,12 @@ function PartyEquipmentCatalogDialogConnected({ base }: { base: PartyConsoleMode
         onInspect={onInspect}
       />
       <Dialog open={catalogOpen && viewComparison} onOpenChange={(open) => { if (!open) finish(); }}>
-        <DialogContent className="flex max-h-[92vh] w-[96vw] flex-col border-cyan-800 bg-[#07120f] text-emerald-50 sm:max-w-[1400px]">
+        <DialogContent data-area="catalog-compare" className="flex max-h-[92vh] w-[96vw] flex-col border-cyan-800 bg-[#07120f] text-emerald-50 sm:max-w-[1400px]">
           <DialogHeader>
             <DialogTitle>Compare catalog items</DialogTitle>
-            <DialogDescription className="text-slate-300">Compare up to three alternatives against item A.</DialogDescription>
+            <DialogDescription className="text-slate-300">Compare up to {COMPARISON_ALTERNATIVES} alternatives against item A.</DialogDescription>
           </DialogHeader>
-          <div><Button variant="outline" className={comparisonButtonClass} onClick={() => setViewComparison(false)}>Back to catalog · {Math.max(0, entries.length - 1)}/3 selected</Button></div>
+          <div><Button variant="outline" className={comparisonButtonClass} onClick={() => setViewComparison(false)}>Back to catalog · {Math.max(0, entries.length - 1)}/{COMPARISON_ALTERNATIVES} selected</Button></div>
           <CatalogComparison entries={entries} onChange={(index, value) => setEntries((previous) => previous.map((entry, i) => i === index ? value : entry))}
             onRemove={(index) => setEntries((previous) => previous.filter((_, i) => i !== index))} />
         </DialogContent>

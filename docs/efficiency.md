@@ -37,7 +37,7 @@ disposable game stack.
 | Host health check | full state, 3.19 MB, 18.4-18.7 ms | `/party-api/ready`, 14 B, 0.37 ms |
 | Unknown section such as `section=mail` | full state, 3.19 MB, 17-19 ms | 400, 114 B, 0.46 ms |
 | `section=fast` with `PARTY_STATE_FIELDS=enforce` | see Field whitelist | see Field whitelist |
-| Fighter status report, game stack farming (Inventory deltas) | 611-649 KB each, every report with items | 204-206 KB each, 1 in 20-25 with items (30 s refresh; now 10 s, not remeasured) |
+| Fighter status report, game stack farming (Inventory deltas) | 611-649 KB each, every report with items | 204-206 KB each, 1 in 20-25 with items (30 s refresh; no refresh now, not remeasured) |
 | Merchant status report, game stack farming | 453 KB each | 69 KB each |
 | Headless fighter CPU, farming / steady combat (combined build profile) | 39.9% / 38.0% of a core | 14.8% / 14.4% |
 | Headless merchant CPU, farming | 16.0% | 6.9% |
@@ -68,11 +68,11 @@ Overlaps with 1.5 and how each keeps both sides:
 | `telemetry/character-fields.ts` | `cc` (stream), `donationLevelXp` | both registered (state-field-registry.md, Fields added on 1.5) |
 | `gear-comparison-dialog.tsx`, `merchant-card-controls.tsx` | #135 card imports and stat colors | 1.5's file; A's `audited()` wrap on the merchant merge |
 | `use-panel-model.ts`, `use-party-console.tsx` | none (A and C overlap) | A's audit wrap and C's catalog join |
-| `characters/shared.js` `itemDefinition` | `bonuses` and per-copy `title` | C's per-copy branch carries `title` when the copy has one; the full branch keeps `bonuses` and `title`; `bonuses` reaches per-copy entries through the catalog join |
+| `runtime/items/character/bag.ts` `itemDefinition` | `bonuses` and per-copy `title` | C's per-copy branch carries `title` when the copy has one; the full branch keeps `bonuses` and `title`; `bonuses` reaches per-copy entries through the catalog join |
 | `status/ingestion.ts` | `rememberCharacterSnapshot` | F's `inventory.complete()` runs first, so snapshots see the carried inventory |
 | `scripts/tests/coordinator-public-state.test.cjs` | "unknown sections retain full responses" | D's 400 replaces that expectation; the test helper accepts the 304 sections' text responses |
 | `scripts/tests/coordinator-section-revision.test.cjs` | none (C and D overlap) | the bank mutation replaces the snapshot object, as bank observation does |
-| `characters/shared.js` `departureTargetEngaged` | #87 checks ownership before the death list | 1.5's order; CT5's index serves the death check after it |
+| `runtime/characters/targeting/threat.ts` `departureTargetEngaged` | #87 checks ownership before the death list | 1.5's order; the targeting index serves the death check after it |
 | `telemetry/dashboard-stream.ts` | none (C and H3 overlap) | C's catalog join on every publish; H3's `difference()` compares the joined cells |
 | `docs/efficiency.md` | none | one file, a section per group |
 
@@ -88,11 +88,13 @@ metrics journal, the snapshots, the mail read marks and #87's metrics outbox
 ## Persistence
 
 The coordinator keeps its saved state in one append journal,
-`caraGarage.jsonl` (`runtime/coordinator/persistence/jsonl-store.ts`). Each
+`caraGarage.jsonl` (`runtime/settings/coordinator/persistence/jsonl-store.ts`). Each
 record is one whole document, for example `{"party_dashboard_history_state_v1": {...}}`,
 and replay keeps the last record per key. `createCoordinatorPersistence`
-(`runtime/coordinator/persistence/writer.ts`) decides when the writer saves
-each document.
+(`runtime/settings/coordinator/persistence/writer.ts`) decides when the writer saves
+each document. The persistence is part of the settings owner's module. Each save window below is a hidden setting of `core:settings`
+(`runtime/settings/coordinator/declarations.ts`), kept at the value this section measured and
+read from its declaration when the persistence starts.
 
 On a live v1.4.0 console the journal grew 0.9-7 MB/s, and history and settings
 rewrites made up 97% of it. This section records the failure inventory for each
@@ -116,9 +118,9 @@ combat-log POST (`telemetry/combat-log.ts`), merchant activity line
 second.
 
 `history()` now marks the document dirty and saves it at most once per
-`HISTORY_SAVE_MS` (5 s). `historyNow()` saves at once; the combat-log clear
+`historySaveMs` (5 s). `historyNow()` saves at once; the combat-log clear
 route uses it, so a cleared log stays cleared after a crash. `flush()` saves a
-pending document, and coordinator shutdown (`lifecycle/shutdown.ts`) calls it
+pending document, and coordinator shutdown (`runtime/lifecycle/coordinator/start.ts`) calls it
 before it closes the journal.
 
 Crash window: a crash or `SIGKILL` loses at most the last 5 s of history lines
@@ -182,10 +184,14 @@ writer and store for unchanged roster reports, and
 
 `party_dashboard_settings_state_v1` was one 1.23 MB document of about 90
 fields (`settingsSnapshot`, `snapshots.ts`), saved within a second of any
-change (`scheduleSettings`, `writer.ts`). Two parts are large and change on
+change (`scheduleSettings`, `writer.ts`). Each field it saves is one
+declaration in the registration of the owner that reads it, which names its
+document; the settings owner builds every document's field list and the
+liveness list below from the declarations at load (`runtime/settings/lists.ts`),
+so a new saved field is one declaration and no list. Two parts are large and change on
 their own schedule: the ALData market cache (`aldataMarketListings` 0.51 MB,
 `aldataMarketBuyOrders` 0.11 MB and three smaller fields), replaced on each
-ALData refresh (`commerce/aldata-service.ts`), and `production` (0.33 MB),
+ALData refresh (`runtime/items/coordinator/market.ts`), and `production` (0.33 MB),
 whose attempt phases change during upgrades. Most saves changed only liveness
 timestamps: on a live console 14 of 14 consecutive settings records differed
 in `eventAttendance.<character>.<event>.lastLiveAt` / `lastObservedAt`, and 13
@@ -201,7 +207,8 @@ Layout 2 saves three documents:
 
 Liveness timestamps keep their in-memory value at full rate. A settings save
 whose only changes are these values waits until 30 s after the previous
-settings record (`SETTINGS_LIVENESS_MS`):
+settings record (`settingsLivenessMs`). The fields that carry them are the
+records declared `liveness`:
 
 - `lastLiveAt`, `lastObservedAt`, `elapsedMs`, `authorizedAt` and `seenAt`
   numbers inside `eventAttendance`, `eventSessions`, `farmingProfiles`,
@@ -284,8 +291,10 @@ The journal now peaks near 40 MB, under the 90-130 MB it reached between
 compactions in v1.4.0. Every append checks the threshold, and the
 compaction runs in a `setImmediate` after the request or status report that
 crossed the threshold, so that save returns at its own cost. At 128 MB it still
-compacts inside the append. The 30 s timer only retries a compaction that a Windows sharing
-conflict deferred. Start-up compacts only a journal with superseded records,
+compacts inside the append. No timer runs: with no append the journal does not grow. A
+compaction that a Windows sharing conflict deferred waits until the journal grows by one more
+32 MB step, and at 128 MB it retries on every append, so the journal passes 128 MB only while
+the conflict lasts. Start-up compacts only a journal with superseded records,
 and `close()` compacts one at shutdown, so the next start replays a compact
 file. Compaction writes the JSON text kept since P1 and no longer stringifies
 each value.
@@ -296,8 +305,7 @@ gives the same values.
 
 Failure inventory:
 
-1. The timer, a restart or shutdown rewrites a journal with nothing
-   appended.
+1. A restart or shutdown rewrites a journal with nothing appended.
 2. Growth past the threshold does not compact, compacts before the minimum
    size, or compacts inside the save that crossed it.
 3. The live-set count drifts after deletes, replays or compactions, so
@@ -305,7 +313,8 @@ Failure inventory:
 4. Compaction loses a key or keeps a deleted one.
 5. The store never compacts a journal over 128 MB.
 6. A Windows `EPERM` / `EACCES` / `EBUSY` during the rename fails the write
-   instead of deferring 30 s.
+   where it should defer; a deferred compaction that never retries while appends continue; or one that
+   retries before one more growth step.
 7. close() compacts a store whose open failed (malformed journal) and overwrites its source.
 8. A compaction failure at shutdown keeps the writer lock.
 
@@ -322,35 +331,34 @@ Four collections keyed by game entity ids or player names had no expiry:
 
 | Collection | Live growth | Window derived from the code | Fix |
 |---|---|---|---|
-| `farmAreaState.seen`, `.quiet`, `.activity`, top level and in each `farmingProfiles` entry | `seen` 0 to 38 entries, then frozen | `record()` in `scripts/farm-area-control.cjs` ignores hits older than 10 s and drops `seen` after 15 s, finished `activity` after 10 s and `quiet` after `COOLDOWN` (120 s), but only while it runs, so a snapshot saved while it is idle keeps them | `prune()` holds those three rules; `record()` calls it, and the coordinator applies it at load (`application.ts`) |
+| `farmAreaState.seen`, `.quiet`, `.activity`, top level and in each `farmingProfiles` entry | `seen` 0 to 38 entries, then frozen | the previous release's `record()` in `scripts/farm-area-control.cjs` ignored hits older than 10 s and dropped `seen` after 15 s, finished `activity` after 10 s and `quiet` after `COOLDOWN` (120 s), but only while it ran | `recordFarmEvidence` (`runtime/hunting/coordinator/farm.ts`) clears a busy zone on the first pass whose reports do not list its player, takes the quiet observation of each current report, and keeps a quiet mark until a member observes its area again (a contest clears it, a quiet observation renews it), one entry per catalog area at most; the load drops `seen` (`pruneFarmEvidence`) |
 | `mluckCastAt` (player name) | 35 to 49 names | `mluckRemaining` (`merchant/luck.ts`) gives 0 for a cast older than `luckDurationMs` (1 h), the same as no cast | `pruneLuckCasts` drops casts at least 1 h old, on each new cast (`merchant/completion-results.ts`) and at load (`merchant/initial-gathering.ts`) |
-| `rarePursuitProgress` (monster instance id) | 1 to 25 | none: an entry matters while its monster lives, and `rare-hunting.ts` deletes it only on a kill or retry evidence | `keepNewestRare` keeps the newest 100 by `progress`, on each write (`rememberPursuit`) and at load for every scope (`navigation/initial-farming.ts`) |
-| `rareRetryEvidence` (monster instance id) | 0 to 5 | none: `rare-retry-evidence.ts` deletes an entry only when new evidence makes it eligible | the newest 100 by `sight.seenAt`, on each rejection and when the store loads a scope's evidence |
+| `rarePursuitProgress` (monster instance id) | 1 to 25 | none: an entry matters while its monster lives | the record keeps only the live encounter's start, under the rare's key, and clears it when the encounter ends (`runtime/hunting/coordinator/rares.ts`) |
+| `rareRetryEvidence` (monster instance id) | 0 to 5 | none: a rejection ends on a reported kill or an attack on a member, and a rare that dies out of sight sends neither | `keepRejections` keeps the newest `RARE_REJECTIONS_KEPT` by `sight.seenAt`, on each rejection and at load, and reports each one it drops through `boundFired` (`runtime/hunting/coordinator/rares.ts`) |
 
-Dropping a rare entry changes behavior only for an instance not touched
-since the 100 newest: its next pursuit starts with a fresh 300 s budget, and
-the coordinator can pursue a rejected instance once more.
+Dropping a rejection changes behavior only for an instance not touched since
+the 100 newest: the coordinator can pursue it once more.
 
 A cap, the account or the game data bounds every other saved collection:
 
 | Collection | Bound | Where |
 |---|---|---|
-| `history.combatLogs` | 500 per character | `telemetry/combat-log.ts`, `historySnapshot` (`persistence/snapshots.ts`) |
-| `history.merchantActivity`, `anniversary.activity` | 500 | `telemetry/activity.ts` |
-| `production.attempts` | 2048, plus receipt pruning | `pruneProductionReceipts` (`inventory/production.ts`) |
+| `history.combatLogs` | `historyKept` (500) per character | `runtime/status/coordinator/logs.ts`, `historySnapshot` (`persistence/snapshots.ts`) |
+| `history.merchantActivity`, `anniversary.activity` | `historyKept` (500) | `runtime/status/coordinator/logs.ts` |
+| `production.attempts` | every unfinished attempt plus each item's newest finished attempt | `pruneProductionReceipts` (`runtime/items/coordinator/production.ts`) |
 | `dailyDungeons.operations` | 200 | `dungeons/service.ts` |
 | `huntEventTrips` | 32 per character | `events/hunt-trip.ts` |
 | `standListingCache` (in memory) | 500 | `merchant/completion-results.ts` |
-| market cache (`aldata*`) | replaced on each refresh | `commerce/aldata-service.ts` |
-| `npcSaleMarks`, `deconstructionMarks`, `standListings` | filtered on completion | `http/automatic-sales.ts`, `inventory/automatic-action.ts`, `merchant/deconstruction.ts` |
+| market cache (`aldata*`) | replaced on each refresh | `runtime/items/coordinator/market.ts` |
+| `npcSaleMarks`, `deconstructionMarks`, `standListings` | filtered on completion | `runtime/items/coordinator/market.ts`, `runtime/items/coordinator/fates.ts`, `runtime/items/coordinator/market.ts` |
 | `standPriceHistory`, `autoNpcSales`, `autoExchanges`, `autoCompounds`, `autoDeconstruction` | one entry per item id or rule | game item list |
 | roster, selections, `characterLocations`, `navigationIntents`, `returnProgress`, `restockPolicies`, `goldTargets`, `eventAttendance`, `eventSessions`, `combatDeathSeen`, `convoyCompletionReceipts`, `luckySlotTracking` | one entry per account character, and per event name where keyed so | account roster, `G` events |
 | `merchantRoutinePriorities`, `merchantAutomations`, `huntFailures`, `huntBlacklist`, `passiveHunting.rules` | one entry per routine or monster type | code and game monster list |
-| rare `sightings` / `cooldowns` / `kills` (in memory) | 30 s / 3 s / 120 s | `navigation/rare-hunting.ts` |
-| rare diagnostics (in memory) | cleared above 100 | `navigation/rare-hunting.ts` |
-| Ponty `dismissed` (in memory) | 120 s | `commerce/ponty.ts` |
-| Bankboi `completedReports` (in memory) | 32 | `http/bankboi-storage.ts` |
-| grouped combat `deaths` / `evidence` / `transitionTrace` (in memory, sent in reports) | 512 / 256 and 60 s / 100 | `runtime/combat/queue.ts`, `runtime/combat/grouped.ts` |
+| rare `sightings` / `cooldowns` / `kills` (in memory) | the members' views and fresh reports / a newer sighting / the monster's respawn time | `runtime/hunting/coordinator/rares.ts` |
+| rare diagnostics (in memory) | cleared when a new encounter or patrol starts | `runtime/hunting/coordinator/rares.ts` |
+| Ponty `dismissed` (in memory) | until the next Ponty read of its realm | `runtime/items/coordinator/market.ts` |
+| Bankboi completion receipt | one, on its saved transaction, so a resent completion counts once across a restart | `runtime/items/coordinator/storage.ts` |
+| grouped combat `deaths` / `evidence` / `transitionTrace` (in memory, sent in reports) | 512 / 256 and 60 s / 100 | `runtime/coordinator/targeting/queue.ts` |
 
 Two remain unbounded, and this change leaves them as they are:
 
@@ -359,15 +367,14 @@ Two remain unbounded, and this change leaves them as they are:
   `anniversaryHandoffs` and `alreadyHandedOff` (`anniversary/handoffs.ts`)
   read `rounds` across every round to find unhanded slices, so trimming it
   changes handoff behavior. They grow only while the event runs.
-- Grouped combat `lostTargets` (`runtime/combat/queue.ts:34`) keeps every lost
+- Grouped combat `lostTargets` (`runtime/coordinator/targeting/queue.ts`, `reconcileQueue`) keeps every lost
   target since the last grouped combat reset, with no count cap. It is in
   memory and in each status report, not in the journal. It needs a combat
   E2E before a cap, so it is out of scope for persistence.
 
-Fields that exist only on the user's fork (`achievementHunt`,
-`achievementBlacklist`, `achievementTarget`, `achievementPassive`, `bossChase`,
-`realmHopBlacklist`, `gearSets`) are not in v1.4.0, and this review leaves
-them out.
+Fields that exist only on the user's fork (`bossChase`, `realmHopBlacklist`,
+`gearSets`) are not in v1.4.0, and an add-on's fields live in its own store
+(runtime/hooks/store.ts); this review leaves both out.
 
 Failure inventory:
 
@@ -522,9 +529,11 @@ until one more record would pass 128 MB, a stale lock left behind):
 failure it removes.
 
 - **Metrics journal (`<LOCALSTORAGE_PATH>.metrics.jsonl`,
-  `runtime/coordinator/metrics/jsonl-store.ts`).** #87's store is a copy of
+  then `runtime/settings/coordinator/persistence/jsonl-store.ts`).** #87's store is a copy of
   the v1.4.0 coordinator journal with asynchronous writes, so it kept two of
-  the problems P4 and P6 fixed.
+  the problems P4 and P6 fixed. The status owner removed the copy: the metrics service
+  writes through the coordinator journal store itself
+  (`runtime/settings/coordinator/persistence/jsonl-store.ts`).
   1. A torn last line made replay throw, `application.ts` installed the 503
      stub and the Metrics workspace stayed down until someone edited the file.
      Replay now drops a torn last line and keeps its bytes in a
@@ -539,11 +548,12 @@ failure it removes.
      holds or the journal holds superseded records.
   `scripts/tests/metrics-journal.test.cjs` holds the failure inventory and a
   test for each case.
-- **Bucket rewrites (`runtime/coordinator/metrics/service.ts`).** Every
+- **Bucket rewrites (`runtime/status/coordinator/metrics/service.ts`).** Every
   accepted frame rewrote its whole 10 s bucket: every character's row, every
   receipt and every event id. Accepted frames now update the bucket in memory
-  and mark it dirty; one shared commit, `METRICS_COMMIT_MS` (750 ms) after
-  the first accepted frame, writes each dirty bucket once and flushes. A POST
+  and mark it dirty; one shared commit, as the next metrics bucket starts,
+  writes each dirty bucket once and flushes; owner 12 reads the 750 ms window
+  it replaced as the bucket's own boundary. A POST
   answers once memory holds its frames, and queries read the in-memory bucket
   at once. A first version answered each POST after the flush; the characters
   in one browser share its connections to the coordinator, and the held POSTs
@@ -551,7 +561,7 @@ failure it removes.
   lost its target selection in 3-4 of 12 runs. Each answer names the commit
   that will write its frames (`commit`), the last commit on disk
   (`durableCommit`) and the coordinator process (`commitEpoch`). The
-  collector (`runtime/characters/metrics.ts`) keeps a frame in its outbox
+  collector (`runtime/status/character/telemetry.ts`) keeps a frame in its outbox
   until an answer from the process that accepted it shows that commit on
   disk; while frames wait, it sends an empty batch that reads `durableCommit`.
   An answer from another process means a restart may have lost the waiting
@@ -562,15 +572,16 @@ failure it removes.
   journal within one commit, that frames share bucket writes, that a restart
   returns every frame, and, with the real collector, that SIGKILL inside the
   commit window after an answer loses no frame and counts none twice.
-- **Offline character snapshots (`status/character-appearance.ts`, 1.5's
-  b5be1022).** `rememberCharacterSnapshot` refreshes each character's
+- **Offline character snapshots (`status/coordinator/intake.ts`, 1.5's
+  b5be1022).** `rememberCharacterSnapshot` refreshed each character's
   inspection snapshot at least every 30 s, and each refresh rewrote the
   roster key, which holds every character's items and slots. P1 never skips
-  it: `updatedAt` and `seenAt` change every time. The 30 s refresh still
-  updates memory, so the config section and the inspection dialog read the
-  same values as before. The coordinator saves a character's snapshot to the
+  it: `updatedAt` and `seenAt` change every time. The dashboard shows a
+  snapshot only for a character with no report since the coordinator
+  started, so the snapshot is taken when its save is due: the coordinator
+  refreshes and saves a character's snapshot to the
   roster when the physical inventory changes, or when that character's last
-  saved snapshot is `SNAPSHOT_SAVE_MS` (5 min) old. `nativeOwnership` saves
+  saved snapshot is `rosterSnapshotSaveMs` (5 min) old. `nativeOwnership` saves
   the roster on every native status report, so the roster carries each
   character's snapshot from its last due save (`rosterSnapshots`). After a
   restart a saved snapshot can be up to 5 min behind on vitals and stats;
@@ -578,8 +589,8 @@ failure it removes.
   36 s window with every character's refresh and no roster record. With
   C, the snapshot keeps per-copy item meta, and the dashboard joins the
   catalog meta onto it (`account-settings.tsx`, `party-item-details.tsx`).
-- **Metrics outbox in caracAL storage (P11, `runtime/characters/metrics.ts`,
-  `runtime/coordinator/characters/storage.ts`).** #87's collector writes a
+- **Metrics outbox in caracAL storage (P11, `runtime/status/character/telemetry.ts`,
+  `runtime/settings/coordinator/persistence/worker-storage.ts`).** #87's collector writes a
   frame (`party-metrics-v1:<name>:frame:<slot>`) and its header
   (`party-metrics-v1:<name>`) to localStorage every second. In a headless
   worker that is caracAL's IPC store: the coordinator appends each write to
@@ -612,11 +623,12 @@ failure it removes.
   and fails on the previous tree (40 stale keys);
   `scripts/tests/coordinator-workers.test.cjs` covers 3-5. Measurements:
   Combined build profile, below.
-- **Mail read marks (`commerce/mailbox.ts`, 1.5's 9454392e).** `seen()`
+- **Mail read marks (`runtime/items/coordinator/mail.ts`, 1.5's 9454392e).** `seen()`
   added every listed mail id to `seenIds` and never removed one. It now keeps
-  the newest `SEEN_IDS_KEPT` (2000). The sent-mail history (`outbox`) is user
-  data and stays uncapped. `e2e/console-persistence.spec.ts` opens the mail
-  with 2100 saved marks and checks the saved 2000 and every listed mail.
+  a mark for each listed mail only (the items owner's rework): the pull reads every page
+  of the inbox. The sent-mail history (`outbox`) is user data and stays
+  uncapped. `e2e/console-persistence.spec.ts` opens the mail with 2100 saved
+  marks of mail no longer listed and checks that only the listed mail stays.
 
 Not changed, with the reason:
 
@@ -669,14 +681,217 @@ The acknowledgement row measures the first version, which answered each POST
 after the shared write. A POST now answers before the commit; the commit
 itself is the same, and the benchmark has not been rerun since.
 
+### Metrics history compaction
+
+After 11 h live the metrics journal grew from 207 to 308 MB, the coordinator
+held 1.5 GB and the container's CPU crept from about 0.5 to 0.8 of a core. A
+copy of that journal (350 MB, 216 MB of it live) showed where the bytes went:
+157 MB of live 1-minute buckets (30 days of them), 54 MB of 10-second buckets,
+and superseded copies: the lifetime kill list rewritten on every commit with a
+death (56 MB of copies), each 1-minute bucket rewritten once per 10-second
+bucket it took in (and each 15-minute bucket once per minute), and each
+10-second bucket rewritten whole when a late frame arrived. The store kept
+every replayed value parsed and, after a compaction, its text as well, and the
+service kept a second parsed copy of every bucket.
+
+The history stays lossless: 10-second buckets for 24 hours, 1-minute for 30
+days, 15-minute for 180 days, nothing rolled up early.
+
+- **Written once.** A minute rolls into its 1-minute bucket once its last
+  10-second bucket is past the 24 hours, so the coordinator writes that bucket
+  once (`rollMinutes`). A day file moves to the next row whole, once the day's
+  end is past its row's age, so it never holds a half-rolled day.
+- **Parts instead of rewrites.** Each bucket start writes one `part:` record
+  per 10-second bucket that took frames since the last start, with only those
+  frames. A late frame adds a part. (Page script CPU, below: a POST now also
+  writes its own frames before it answers, and the bucket start's part
+  replaces them.) Receipts are runs of frame sequences per character and runtime
+  (`ReceiptRun`), a few per bucket instead of one id per frame.
+- **Memory holds today.** The service keeps the 10-second buckets and the
+  1-minute buckets of days not yet closed. A closed day is one gzip file beside
+  the journal and one `day:` record with its kill, damage and loot sums and its
+  names, so the lifetime kill total, the retained totals and the name lists
+  come from the records. The lifetime kill list is written only when a day
+  leaves the history (`killTotals`, a base plus `through`).
+- **Queries read the files.** A query merges a closed day's buckets into the
+  chart's points and keeps that merge while the latest query of the same route
+  reads it (`range`), so a live chart's next poll reads only memory. The
+  route's merges add up, so a merged bin answers as its buckets would.
+- **The store keeps text.** Replay keeps each record's text instead of a parsed
+  value (`jsonl-store.ts` `valueText`), and `peek()` parses for a reader that
+  keeps its own copy.
+
+Failure inventory (`scripts/tests/metrics-journal.test.cjs`, 7 to 13):
+
+7. A 1-minute bucket is written more than once.
+8. A commit rewrites its whole bucket when one more frame arrives.
+9. Memory and the journal keep a closed day's buckets uncompressed.
+10. The move loses or doubles a measurement, or a v1.5.0 journal (receipt
+    ids, `sources` lists, a crash leftover a rollup lists, the saved lifetime
+    list) does not load as it was.
+11. A day's expiry drops its kills from the lifetime total or keeps its damage
+    in the retained total.
+12. A frame resent after a restart counts again when its receipt was saved as
+    a v1.5.0 receipt id.
+13. A kills reset leaves kills in a day file or in the lifetime total.
+
+Each step writes its result before it deletes its source, and startup removes
+the leftover side: a day record at or before `through`, a closed day's
+buckets, a minute's parts once its 1-minute bucket is in the journal, a source
+a v1.5.0 rollup lists, a file no record names. The e2e receipt reader
+(`e2e/console-persistence.spec.ts` `receipts`) expands the runs.
+
+Measured with `tools/benchmark-metrics-history.mts` on a copy of the live
+journal (copied read-only out of the container on 2026-11-22), four characters
+at one frame a second on a simulated clock, base `08df8eff3` against this
+change:
+
+| Measure | `08df8eff3` | This change |
+|---|---:|---:|
+| Loading the live copy (350 MB journal): heap / RSS | 677 / 1,328 MB | 475 / 1,116 MB, before its one-time move to day files |
+| On disk after 12 simulated hours | 214.5 MB journal | 65.8 MB journal + 9.8 MB day files |
+| A fresh start on that history: CPU / heap / RSS | 1.33 s / 681 MB / 1,058 MB | 0.17 s / 148 MB / 369 MB |
+| Coordinator CPU, four characters, no dashboard | 0.34 s per hour | 0.14 s per hour |
+| Coordinator CPU, Metrics view open, 1 h on that history | 42.1 s/h, GC 2.3 s/h, peak RSS 3,127 MB | 32.0 s/h, GC 0.6 s/h, peak RSS 784 MB |
+| The first 3 h on the live copy, view open | 77.0 s/h | 35.1 s/h, the one-time move included |
+
+The Metrics view polls as the dashboard does: history, kills and both bar
+charts each second over the last hour, the gold history since the start and
+the account gold each 10 s. Its gold history on `08df8eff3` merges every
+bucket since the start on each poll.
+
+Compared on the same copy at the same clock
+(the whole history, a 10-day mid-history window point by point, the last 6
+hours point by point, kills with their lifetime and daily totals, both bar
+charts and the gold history), the two builds answer the same.
+
+## Page script CPU after the owners build
+
+PR #159 shipped with page script CPU about 1.1 s/min over v1.5.0 (farm 6.1
+against 5.0). A side-by-side run with the profiler (farm, hunt and merchant,
+5 game minutes each, `SBS_PROFILE=1`) on this branch and v1.5.0 named two
+causes. The run also counted the page's localStorage keys at the start and
+the end of each scenario.
+
+- **The outbox's keys.** The game's `local_cm_logic` walks every localStorage
+  key every 16 ms in every character, reading `character.name` through the CODE
+  runner's proxy for each key: 1.0 s/min here, 0.62 s/min on v1.5.0. Both
+  consoles held the same 16-17 keys plus the metrics outbox's frames: 9-30
+  here, 1-4 on v1.5.0. The collector keeps a frame until an answer shows it on
+  disk, and this branch's coordinator wrote frames only as the next 10 s bucket
+  started, where v1.5.0 wrote within its 750 ms window. A POST now writes its
+  frames as one part per bucket before it answers, one synchronous append, so
+  the answer's `durableCommit` covers them and the collector drops them at
+  once. The bucket start writes each bucket's frames since the last start as
+  one part and deletes that span's batch parts, so the journal keeps about two
+  parts per bucket. Restore merges a bucket's parts largest first and skips a
+  part whose every receipt is already held: the batch parts a crash left
+  between the two writes. On the copied live journal (Metrics history
+  compaction, above) 12 simulated hours of four characters cost 0.17 s of
+  coordinator CPU per hour against 0.14 s, and compact to the same 72 MB.
+- **Two passes per update.** The turns meter read about 2.13 passes per game
+  update for each fighter: a role-loop pass and a passive pulse pass, both
+  woken by the same `player` and `entities` packets. Every pass reads the whole
+  update, so the executor now gives the update one pass: the first wake runs
+  it, a later wake in the same update runs one pass at the next update (as an
+  edge inside a passed update already did), and the role loop's or the pulse's
+  wake, at the same epoch, gets this update's read (`executor.ts`
+  `updateRead`) for its class decisions. A reply that settles a flight clears
+  the read. The pass's view no longer depends on what woke it: its
+  requests ask wherever the spend table's pulse column lets them, and the role
+  loop's own sources read `roleLoop`. Outside the role loop (an occupied row,
+  the A/B rows) the heal's top-off is the single heal and partyheal asks only
+  below "Heal first below" (`survival/needs.ts` `heal`), which is what the two
+  passes asked between them.
+
+Failure inventory: `metrics-journal.test.cjs` row 14 (an answered frame waits
+for a later commit; a crash between the bucket start's part and its batch
+parts' delete counts them twice) , `turns-executor.test.cjs` "the role loop's wake
+inside an update the pulse passed reads that pass" and
+`survival-needs.test.cjs` "outside the role loop the top-off is the single
+heal and partyheal goes only below the line", each red before the change. `e2e/console-persistence.spec.ts`'s two metrics journeys check a frame
+on disk at its answer and a crash right after an answer losing nothing.
+
+Side by side on the first form of this change, where the pulse's pass stood
+aside for a role-loop pass of its update (base `08df8eff3`; `node sbs.mjs run
+--scenarios farm,hunt,merchant --minutes 5 --repeat 2`, both consoles at once
+on their own stacks, no profiler; mean of two runs; one browser page holds the
+party). The measurement on the post-PR tip follows the queue rings below.
+
+| Measure | v1.5.0 | This change |
+|---|---:|---:|
+| Page script CPU, s/min (farm / hunt / merchant) | 6.6 / 5.3 / 6.6 | 6.8 / 6.4 / 6.9 |
+| Page task CPU, s/min (farm / hunt / merchant) | 15.8 / 14.0 / 15.6 | 14.3 / 13.7 / 14.8 |
+| Page JS heap, MB (farm / hunt / merchant) | 135 / 194 / 138 | 126 / 169 / 174 |
+| Coordinator CPU, s/min (farm / hunt / merchant) | 0.6 / 0.7 / 0.6 | 0.4 / 0.7 / 0.4 |
+| Coordinator peak memory, MB (farm / hunt / merchant) | 359 / 430 / 369 | 394 / 378 / 403 |
+| Dashboard CPU, s/min / peak memory, MB | 0 / 91-103 | 0 / 94-105 |
+| Page localStorage keys at the end | 19-21 | 16-17 |
+| Turns passes per game update, fighters | (no meter) | 1.23-1.31, from 2.12-2.15 |
+
+Page script CPU on farm and merchant came within the run-to-run spread of
+v1.5.0's (0.7 s/min), from about +1 s/min; hunt stayed 1.1 s/min over, and
+the coordinator's peak memory 30-35 MB over on farm and merchant.
+
+### Queue rings
+
+A profiled side-by-side run on the pulse rework (one run each, farm / hunt /
+merchant) put the renderer's `updateGraphics` at 192 / 218 / 166 ms of page
+script per minute here against 48 / 46 / 51 on v1.5.0, and the rings' own
+frame callback at 160 / 183 / 157 against 80 / 78 / 58. The grouped queue's
+rings (`runtime/status/character/markers.ts`) redraw on every game draw
+frame, where v1.5.0 redrew them each 50 ms, and each redraw cleared the one
+Graphics layer and drew every circle again, so PIXI rebuilt and uploaded the
+whole layer's geometry each frame. The layer now holds one ring per marker;
+a ring keeps its circle while its radius, style and the map scale stay, and
+each frame only moves it to its monster. The rings still follow the monster
+on every frame. `queue-markers.test.cjs` "it owns four circles, follows live
+positions, and disposes only its layer" checks that a frame where only a
+monster moved rebuilds no ring; it fails on the earlier layer.
+
+The profile left no other single cause of the hunt gap. The status snapshot
+read the character through the CODE runner's proxy for 100 ms/min of the
+party page against 44 on v1.5.0 (hunt, profiled), but 4 ms/min of that is in
+the snapshot's own reads; the rest is spread over the owners it asks, the
+largest the turns report's skill world (17 ms/min). The snapshot keeps its
+reads.
+
+### Side by side on the post-PR tip
+
+All post-PR commits on fix/merged `120f623fd`, against v1.5.0 (`node sbs.mjs
+run --scenarios farm,hunt,merchant --minutes 5 --repeat 2`, both consoles at
+once on their own stacks, no profiler; mean [range] of two runs; the spread is
+the larger console's range):
+
+| Measure | v1.5.0 | Post-PR tip | Spread |
+|---|---:|---:|---:|
+| Page script CPU, s/min, farm | 7.8 [7.4-8.2] | 8.0 [7.6-8.4] | 0.8 |
+| Page script CPU, s/min, hunt | 7.0 [6.7-7.3] | 7.4 [7.2-7.6] | 0.6 |
+| Page script CPU, s/min, merchant | 7.6 [7.1-8.1] | 7.7 [7.3-8.0] | 0.9 |
+| Page task CPU, s/min (farm / hunt / merchant) | 18.6 / 17.7 / 17.9 | 16.8 / 15.9 / 16.7 | 1.5 / 0.7 / 1.7 |
+| Page JS heap, MB (farm / hunt / merchant) | 246 / 111 / 175 | 148 / 224 / 187 | 87 / 123 / 34 |
+| Coordinator CPU, s/min (farm / hunt / merchant) | 1.0 / 1.1 / 0.8 | 0.7 / 0.9 / 0.6 | 0.7 / 0.4 / 0.5 |
+| Coordinator peak memory, MB, farm | 372 [369-374] | 395 [390-401] | 11.8 |
+| Coordinator peak memory, MB, hunt | 441 [365-518] | 402 [402-403] | 153 |
+| Coordinator peak memory, MB, merchant | 364 [363-364] | 388 [386-390] | 3.7 |
+| Dashboard CPU, s/min / peak memory, MB | 0 / 94-105 | 0 / 95-107 | 0.5 |
+| Party kills per hour (farm / hunt / merchant) | 4962 / 1991 / 4854 | 5629 / 2126 / 5514 | |
+| Turns passes per game update, fighters | (no meter) | 1.00-1.03 | |
+
+Page script CPU is within the spread on all three, hunt 0.4 s/min over
+against a 0.6 spread, from 1.1 over on the first form of the pulse change.
+This run's machine ran both consoles about 1 s/min slower than the earlier
+runs, so the absolute figures do not compare across runs. The coordinator's
+peak memory is 23-24 MB over on farm and merchant (Coordinator, One copy of
+the modules). The dashboard reads 1-2 MB over with a 0.5 MB spread.
+
 ## Field whitelist
 
 `section=fast` sent every stored status field except a seven-entry omit list.
-`runtime/coordinator/telemetry/character-fields.ts` lists every field a
+Table F in `runtime/status/rules.ts` lists every field a
 status can carry and holds coded whitelists for the per-character sections;
-with `PARTY_STATE_FIELDS=enforce`, `section=fast` sends the 60 fields some
-client reads. The default, `shadow`, keeps 1.5's output so a console can audit
-reads first. The failure inventory, tiers, rollout, readers inventory, the
+`section=fast` sends the 60 fields some client reads. `PARTY_STATE_FIELDS=shadow`,
+the audit mode, keeps 1.5's output so an audit sees reads the whitelist drops. The failure inventory, tiers, rollout, readers inventory, the
 fields added on 1.5 and the speed measurements are in
 [state-field-registry.md](state-field-registry.md).
 
@@ -765,20 +980,19 @@ counts only):
   `skin` differs from its definition. Before that point it returns full meta,
   so a fresh coordinator, a coordinator after a game update and a coordinator
   that rejected the catalog keep every field they had.
-- **Coordinator join.** `runtime/coordinator/inventory/catalog-meta.ts`
+- **Coordinator join.** `runtime/items/coordinator/fates.ts`
   `entryMeta(catalog, entry)` returns catalog meta with the report's fields on
   top. It indexes `allItems` once per catalog object (O(1) per item) and caches
-  each join per report meta object. Readers: `merchant-item-commands.ts`
-  (merchant weapon), `stat-scroll-commands.ts`, `transfer-commands.ts`
-  (manual weapon, bank upgrades), `mark-reconciliation.ts` (auto upgrade
-  marks), `compound-commands.ts` (bank compound selection),
-  `scripts/bank-stack-routing.cjs` (stack homes and storage worker
-  unloads) and `scripts/merchant-inventory-stacks.cjs` (stack merges).
+  each join per report meta object. Readers in `runtime/items/coordinator/`:
+  `market.ts` (merchant weapon), `production.ts` (bank upgrades, compound
+  selection, the craft stock, stat scrolls), `storage.ts` (stack sizes for the stack homes
+  and storage worker unloads) and `fates.ts` (manual weapon); and
+  `runtime/status/coordinator/state.ts` (the inventory and bank sections).
 - **Public projections keep their shapes.** `compactEntry` joins before it
   selects its field list, so the `inventory` section and the dashboard stream
   send the same fields as before. The `bank` section sends those compact
   fields too, without `world` and `usage`. The unsectioned debug state joins
-  full meta (`telemetry/item-meta-projection.ts`). The stream joins a record
+  full meta (`runtime/status/coordinator/state.ts`). The stream joins a record
   published before the catalog arrived again on its next telemetry sample.
   After a coordinator restart the first reports carry per-copy meta before
   the catalog arrives, and `compactEntry` sends `meta: null` for them until
@@ -906,25 +1120,25 @@ Every status report carried the character's items, slots and, at the bank,
 every bank pack, although most reports repeat the previous one. With per-copy
 meta (above) that is still most of a report.
 
-- `characters/shared.js`: `statusInventory` keys the three builders on
-  `character.items`, `character.slots`, `character.bank` and the active
-  upgrade, and rebuilds them under a new revision only when one changes.
-  `attachStatusInventory` leaves them out while the coordinator acknowledged
-  that revision and a full report went out in the last 10 s. (A first
-  version used 30 s; `live-catalog.spec.ts` observes three ordinary reports
-  with items within 45 s of the catalog acceptance.) A pickup, an
-  equip or a bank deposit changes the key, so the next report carries it.
+- `runtime/items/character/bag.ts`: `statusInventory` keys the three
+  builders on `character.items`, `character.slots`, `character.bank` and the
+  active upgrade, and rebuilds them under a new revision only when one
+  changes. `attachStatusInventory` leaves them out while the coordinator's
+  last reply acknowledged that revision; no timer
+  sends a full report. A pickup, an equip or a bank deposit changes the key,
+  so the next report carries it.
   Reports before the catalog acknowledgement are always full. A coordinator
   built before this change never acknowledges, so it keeps receiving every
   report in full. On a 409 `inventory-required` refusal, `request()` sends the
   same report with the inventory and resolves with that reply.
-- `status/inventory-carry.ts`: per character, the items, slots and bank of
-  the last full report and the revision it named. A report naming that
+- `runtime/items/coordinator/storage.ts` `createInventoryCarry`: per character, the items, slots, empty
+  slots and bank of the last full report and the revision it named. The empty slots (`emptySlots`, the
+  slot names `slots` leaves out) bound the dashboard telemetry's slot changes. A report naming that
   revision without the fields gets them back on the raw body before any
   consumer runs, so merchant scheduling, bank observation, delivery recovery
   and the stored status all see a full report. An unknown revision (restart,
   another runtime) answers 409 before any consumer runs.
-- `status/bank.ts`: while a report carries the bank object the last
+- `runtime/items/coordinator/storage.ts` `consumeBankReport`: while a report carries the bank object the last
   comparison produced, the snapshot is still that one and the same character
   observes it, `consumeBankReport` skips the two `JSON.stringify` comparisons.
 
@@ -944,7 +1158,7 @@ Bytes are the request bodies each headless character sent to
 | Per character, farming | 1.5 (`1e12540e`) | This branch |
 |---|---:|---:|
 | Fighter status report (1/s) | 611-649 KB each, 607-645 KB/s | 204-206 KB each, 204-206 KB/s |
-| Fighter reports that carry items | 0.99/s (every report) | 0.04-0.05/s (30 s refresh; at least 0.1/s with the 10 s refresh, not remeasured) |
+| Fighter reports that carry items | 0.99/s (every report) | 0.04-0.05/s with a 30 s refresh; no refresh now, so only a change, a reload or a refusal sends them (not remeasured on the game stack) |
 | Merchant status report (1/s) | 453 KB each, 450 KB/s | 69 KB each, 69 KB/s |
 | Merchant reports that carry items | 0.99/s | 0.03/s |
 | Fighter combat reports | 22-23/s, 10-15 KB each, 227-336 KB/s | 24/s, 10.5-10.7 KB each, 252-258 KB/s |
@@ -996,7 +1210,7 @@ from the production `HEALTHCHECK`.
 4. it skips the dashboard check, or asks the API before the user configures the account.
 
 **Change.** The coordinator serves `GET /party-api/ready` (`{"ready":true}`)
-next to `/party-api/state` (`runtime/coordinator/http/dashboard.ts`), so it
+next to `/party-api/state` (`runtime/status/coordinator/routes.ts`), so it
 answers from the same moment. `servicesHealthy` asks it. A rollback can run a
 coordinator older than the host; it answers 404 there, and the check falls
 back to the state route.
@@ -1084,7 +1298,7 @@ each dashboard action keeps invalidating the domains in `actionDomains`
 **Change.**
 
 - **Coordinator.** `sendWithRevision`
-  (`runtime/coordinator/telemetry/section-revision.ts`) serializes the section
+  (`runtime/status/coordinator/state.ts`) serializes the section
   once, hashes it with SHA-1 (the hash Express computed for its ETag) and sets a
   strong ETag. A request whose `revision=` query or `If-None-Match` header
   matches answers 304 with no body. The revision is a hash of the whole body,
@@ -1168,7 +1382,7 @@ share of the loot, not a copy of another character's line.
 6. a phrase lookup that no `add_log` follows silences the next unrelated line;
 7. without a siblings list, or for lines without a phrase, anything stops printing.
 
-**Change.** `installGameLogEcho` (`runtime/characters/game-log-echo.ts`)
+**Change.** `installGameLogEcho` (`runtime/status/character/telemetry.ts`)
 replaces the hook. The game's `game_log` handler calls
 `ui_log(phrase.message(data, true), data.color)`, so the installer wraps
 `phrase.message` to read the event's own phrase arguments. A thread does not
@@ -1182,7 +1396,7 @@ print twice. A kill by the Steam client keeps printing from every thread, as
 before. Gold shares, other phrases and plain strings print as before.
 
 Every event still reaches `add_log`, so the console's capture
-(`installHostGameLogs`, `runtime/characters/game-logs.ts`) sees the same lines.
+(`installHostGameLogs`, `runtime/status/character/telemetry.ts`) sees the same lines.
 The unit test feeds one event stream through the upstream hook and through the
 new one, with the capture installed on top as `runner-host.ts` does, and
 compares the captured entries byte for byte. The metrics service counts kills
@@ -1253,7 +1467,7 @@ until someone reinstalls it.
 
 ### Activation record poll (H2)
 
-**Before.** The universal loader (`runtime/characters/universal-loader.ts`,
+**Before.** The universal loader (`runtime/lifecycle/character/loader.ts`,
 published as `characters/universal-loader.js`) asks for
 `CODE/adventure_land/activation.json` every 2 s. Only a managed console build
 deployment writes that record (`publishCode` in
@@ -1299,7 +1513,7 @@ Each plain `setInterval` in the breakdown, and what it does:
 | `console-build-control.tsx`, 1 s | `GET /console-build` | Shows build and deployment state. After the tab's own deployment completes with a new dashboard, it reloads the page. | Unchanged. It already returns early while `document.hidden` and refreshes on `visibilitychange`, so the post-deploy reload waits until the tab is visible, as in v1.4.0. The deployment itself runs on the host. |
 | `console-updates.tsx`, 3 s | `GET /console-update` | Shows update status in the header and in Settings. Download, restart and preference changes are click POSTs. | Paused while hidden; reads at once on return. |
 | `debug-instance.tsx`, 1.5 s | `GET /console-debug` | Shows the debug instance. The host's `status()` (`tools/debug/service.ts`) also marks a running instance as failed when its container turns unhealthy, so the read drives a state change. | Unchanged. It runs only while Settings is open. |
-| `upgrade-preview-panel.tsx`, 2 s | `POST /upgrade-preview` with `refresh: false` | Reads the stored preview (`createUpgradePreviews`, `request`); only the Refresh chances click queues one. | Paused while hidden; reads at once on return, still with `refresh: false`. |
+| `upgrade-preview-panel.tsx`, 2 s | `POST /upgrade-preview` with `refresh: false` | Reads the stored preview (`createUpgradePreviews`, `request`); only the Refresh chances click queues one. | Paused while hidden; reads at once on return, still with `refresh: false`. The timer is gone since: the panel reads on open and when the core read's stored results, preview jobs or the merchant's bag change. |
 
 No flow depends on a timer that now pauses. Browsers also throttle timers in
 hidden tabs, so a flow that needed one would already be unreliable there.
@@ -1392,7 +1606,7 @@ New tests: `native-host-health`, `coordinator-public-state` (400),
 Three hot spots from a 180 s farming profile of the coordinator on the
 disposable game stack (`e2e/profile-coordinator.spec.ts`, below):
 
-- **Lowest stand listings (`commerce/local-market.ts`).** `history()` ran
+- **Lowest stand listings (`runtime/items/coordinator/market.ts`).** `history()` ran
   `listings.find` inside the loop over each item's lowest price, O(items x
   listings) per merchant report. `lowestListings` keeps the first listing at
   the lowest price while it finds that price. `coordinator-market.test.cjs`:
@@ -1400,17 +1614,50 @@ disposable game stack (`e2e/profile-coordinator.spec.ts`, below):
   listing now, with the same history for every item.
   `e2e/console-coordinator.spec.ts` shows the rule through a merchant status
   report and the market section.
-- **Class file hashes (`runtime/lifecycle/generations.ts`).** `classScript` read the
+- **Class file hashes (`runtime/lifecycle/coordinator/code.ts`).** `classScript` read the
   class bundle and computed its SHA-256 on every call; the merchant home check
   reaches it through worker setup on each report. That was 1.6 s of the 2.4 s
   `merchantScheduling` spent in the profile. `classScript` hashes a file again
   only when its inode, size, mtime or ctime changes, for at most 32 files.
-- **Death lists in `collectPassing` (`runtime/combat/passing.ts`).** Each status and
+- **Death lists in `collectPassing` (`runtime/characters/targeting/api.ts`).** Each status and
   combat response calls it twice, and it copied every member's death list
   before looking at encounters: 1.1 s of the profile, for the usual report
   with no passing encounter. It now returns early without encounters and
   indexes the death times of the encounters' identities in one pass. 20,000
   random member sets give the v1.4.0 result.
+
+### One copy of the modules
+
+The side-by-side runs after the owners build read the coordinator's working
+set 30-50 MB over v1.5.0's on farm and merchant, already at the window's start
+(355-369 MB against 306-316 MB in the profiled run on the pulse rework). The
+bundle sizes did not move between PR #159 and the post-PR commits; the
+coordinator held three builds of the console. The start required
+`grouped-combat.cjs` (the targeting queue, `coordinator/targeting/queue.ts`)
+and `roster.cjs` (the roster routes) beside `coordinator-application.cjs`, as
+v1.5.0's start did, and after the owners each bundled most of the console:
+311 and 318 modules against the application's 330, where v1.5.0's
+`grouped-combat.cjs` was 48 KB. Loading the three in one Node process takes
+52.5 MB RSS and 18.8 MB heap; the application alone 41.7 MB and 13.2 MB.
+
+`start.ts` now imports `evaluateGroup` from targeting's door and the roster
+routes from the lifecycle owner's own modules, so they come from the
+application bundle, and `tools/build-runtime.mts` no longer builds the two
+bundles. The movement planner stays a bundle of its own, since it runs in a
+worker. `coordinator-application-launcher.test.cjs` "the coordinator bundle
+requires no second build of the console" was red before the change.
+
+On the post-PR tip (all post-PR commits on base `120f623fd`, two runs each)
+the coordinator's peak working set is 395 / 388 MB against v1.5.0's 372 / 364
+on farm and merchant, 23-24 MB over, from 34-35 MB over before. A run of the
+tip against its base (`120f623fd`, the fix/merged head without the post-PR
+commits, two runs each) read 381 against 381 MB on farm and 390 against 379
+on merchant, inside the 17-28 MB spread, so the post-PR commits add none of
+the rest; it was there at PR #159 too (377-384 against 363-366 MB). The
+working set at the window's start is 344-389 MB here against 331-366 on
+v1.5.0, before any scenario load, so the rest is the size of what the
+coordinator loads: its inline source map ("The source map stays on disk"
+below).
 
 `e2e/profile-coordinator.spec.ts` (config `playwright.coordinator-profile.config.ts`)
 runs a farm, bank or production scenario with one browser client and three
@@ -1419,6 +1666,131 @@ records coordinator CPU, event-loop delay, a V8 CPU profile and every status
 report's handler and stage times. The combined build profile (below) records
 the coordinator in the same runs as the character threads: farming 14.9% of a
 core on 1.5 and 8.5% on this branch, steady combat 10.8% and 7.4%.
+
+### Memory at an idle start
+
+The side by side reads the coordinator and the dashboard server by the port
+each listens on: `Get-Process` `WorkingSet64` every 5 s
+(`perf-metrics/sbs/measure.ts` `startProcessSampler`), the peak over the
+window. Both gaps were there at the window's start, so they are measured
+offline at a start that does no scenario work, on both trees on the same
+machine in alternating runs:
+
+- **Coordinator.** The tree's own `e2e/live-coordinator.cjs` starts with a
+  stub account API on loopback (`/api/servers_and_characters` answers the
+  realm `SR_USI` and the three E2E characters), a native asset cache of
+  `data.js` and `old_common_functions.js` from `.caracal/game_files/17083`,
+  every character disabled and a fresh data directory, so no journal, metrics
+  history or ring holds anything. After the `ready` message the runner reads
+  the working set every 5 s for 45 s and the peak counts. A `--require`
+  preload answers `process.memoryUsage()` and `v8.getHeapSpaceStatistics()`
+  over IPC and writes a heap snapshot after two forced collections.
+- **Dashboard server.** `tools/dashboard/node-server.mts` serves a fresh
+  `tools/dashboard/build.mts` output (`AL_DASHBOARD_OUT_DIR`) with
+  `NODE_ENV=production`. The runner loads `/` once and every script and
+  stylesheet the page names, as the browser's first visit does, then reads the
+  working set four times over 10 s; the series is flat, as in the side by side.
+- **Snapshots.** A script reads each snapshot's self size by node type and
+  name, its biggest nodes, and the retained size of each node on the strong
+  graph (dominator tree, weak edges left out). Module and bundle sizes come
+  from `require.cache` with each file's size, and an esbuild metafile
+  (coordinator) or rolldown's chunk modules and importers (dashboard).
+
+The runners and the snapshot reader are in
+`F:/CodingProjects/cleanup/perf-metrics/mem/` (`idle.mjs`, `dash.mjs`,
+`preload.cjs`, `analyze.mjs`, `dash-graph.mjs`, `graph-read.cjs`, `rd.mjs`, `meta.mjs`);
+they take the tree as an argument and need no game stack.
+
+### The source map stays on disk
+
+At an idle start the coordinator's working set was 286-290 MB against
+v1.5.0's 274-277 MB, its heap 69.2 MB against 65.7 MB. The two biggest nodes
+of its heap snapshot were the application bundle's source, 22.95 MB for
+12.03 million characters, and a second string of 8.73 MB that starts
+`data:application/json;base64`: V8 holds a loaded script's whole source for
+the life of the process, and keeps its `sourceMappingURL` again on the script.
+v1.5.0's are 12.08 MB and 4.51 MB. The bundle was 2,878,192 bytes of code and
+9,155,515 bytes of inline map (v1.5.0: 1,605,012 and 4,726,015). The map holds
+each source file's whole text, comments included, so the owners' sources
+doubled it. Nothing else the start holds is ours alone: the deconstruction
+catalog check (7 MB), the two movement geometries (5 MB each) and `G` (5.3 MB)
+are in both, and v1.5.0's start also loads the pathfinder's 3.6 MB bundle
+and its 3 MB of WebAssembly in the main thread.
+
+`tools/build-runtime.mts` writes the map as `coordinator-application.cjs.map`
+beside the bundle (`sourcemap: "linked"`), and the bundle's last line names
+it. The inspector and `--enable-source-maps` read the file when they need it,
+and `module.findSourceMap` maps a bundle position to its TypeScript line as it
+did with the inline map. `tools/console-build/builder.ts` takes every file
+under `.build/runtime/` into the coordinator part, so the map ships with the
+bundle. `coordinator-application-launcher.test.cjs` "the coordinator bundle
+links its source map from a file beside it" was red before the change.
+
+Idle start, three alternating rounds, peak working set / heap used, MB:
+
+| Build | Round 1 | Round 2 | Round 3 |
+|---|---|---|---|
+| v1.5.0 (`aac30d45e`) | 274.1 / 65.6 | 276.6 / 65.8 | 277.0 / 65.6 |
+| `367447e73`, inline map | 286.2 / 69.2 | 289.8 / 69.2 | 290.3 / 69.3 |
+| this change, linked map | 257.2 / 60.8 | 256.2 / 60.9 | 256.5 / 60.4 |
+
+The change takes 33 MB of working set and 8.5 MB of heap off the start, so
+the coordinator goes from 12-13 MB over v1.5.0 to 18-21 MB under it. With
+each bundle's map stripped, the map was 38 MB of our start and 13 MB of
+v1.5.0's, 25 MB of difference, against the side by side's 23-24 MB gap.
+
+### The dashboard reads targeting's values through the add-on API
+
+The dashboard server's heap snapshot after one visit was 34.07 MB against
+v1.5.0's 31.35 MB; strings were 1.5 MB of the difference, most of it the page
+chunk's source (2.00 MB against 1.17 MB). The page chunk was 1,050,254 bytes
+against v1.5.0's 614,736, and 430 KB of it was the targeting owner's character
+runtime and the whole hook table: `monster-focus-picker.tsx` took
+`MONSTER_PRIORITY` (since the owners build) and `combat-settings-section.tsx`
+took `defaultLists` and `reflectChoices` (since the settings menu) from
+`runtime/characters/targeting/api.ts`. An import of that door evaluates every
+module it re-exports, its installs among them, and through them
+`runtime/hooks/index.ts`, the registry and every owner's row file, whose
+top-level calls a bundler keeps. Rolldown builds 430,580 bytes from
+`import {defaultLists, reflectChoices}` of the door.
+
+The two files take the three values through `runtime/hooks/addon-api.ts`, as
+`use-panel-model.ts` takes `marketListingFresh` (S-12l).
+`runtime/hooks/api/04-targeting.ts` re-exports them from the files that hold
+them, which the published reads `targeting.monsterPriority`,
+`targeting.defaultReflectLists` and `targeting.reflectChoices` name.
+`defaultLists` moves from `gates.ts` to `reflect.ts`, which then imports no
+module at run time. The same import builds 2,465 bytes.
+`dashboard-bundle-reach.test.cjs` (removed in the test rebuild, U15: no failure id) "the dashboard page bundle lands no hook
+table and no character targeting runtime" was red with the door imports.
+
+Bytes of the dashboard build:
+
+| Build | Page chunk | Server output | Client output |
+|---|---|---|---|
+| v1.5.0 | 614,736 | 2,562,942 | 2,364,346 |
+| before | 1,050,254 | 3,063,574 | 2,865,890 |
+| after | 657,011 | 2,655,474 | 2,457,765 |
+
+One visit, three alternating rounds, working set in MB: v1.5.0 115.7, 114.8,
+115.1; before 115.2, 115.6, 115.4; after 111.3, 112.0, 109.8. The heap
+snapshot after the change is 32.22 MB. The 0.87 MB left over v1.5.0 is the
+add-on slots chunk (`slots-*.js`, 328,834 bytes, 0.63 MB of heap), which holds
+`runtime/hooks/dashboard/slots.tsx` and the five add-ons' dashboard pieces,
+and 42 KB more page code for the owners' and the settings menu's UI.
+
+### What is left
+
+- The coordinator bundle's code is 2.88 MB against v1.5.0's 1.60 MB. The
+  biggest folders are `runtime/items/coordinator` (407 KB), the hook rows
+  (321 KB), `runtime/hunting/coordinator` (226 KB) and
+  `runtime/movement/coordinator` (208 KB). 172 KB is the character targeting
+  runtime, which `runtime/coordinator/targeting/` reaches through the
+  targeting owner's character door; at two bytes a character it is about 0.35 MB of the
+  coordinator's heap.
+- The side by side after the live suite confirms both changes under load:
+  the coordinator's peak on farm and merchant and the dashboard server's on
+  all three scenarios.
 
 ## Character threads
 
@@ -1506,7 +1878,7 @@ Top 15 self-time functions, fighter (priest), farming:
 |---:|---|---:|---|---:|
 | 1 | garbage collector | 11.5% | `combatContext` monster copy (`shared.js`) | 7.9% |
 | 2 | `USVString` (webidl-conversions, via jsdom XHR `send`) | 8.3% | game `update_sprite` | 4.0% |
-| 3 | `geometryFingerprint` (`runtime/navigation/contracts.ts`) | 4.6% | game vm line 2815 `get` | 3.6% |
+| 3 | `geometryFingerprint` (`runtime/movement/geometry/contracts.ts`) | 4.6% | game vm line 2815 `get` | 3.6% |
 | 4 | `combatContext` monster copy (`shared.js`) | 3.6% | `request()` promise executor (`shared.js`) | 3.3% |
 | 5 | game `update_sprite` | 2.4% | game `in_arr` | 3.1% |
 | 6 | game `draw` | 2.2% | `isPassingEncounter` (`shared.js`) | 3.1% |
@@ -1516,7 +1888,7 @@ Top 15 self-time functions, fighter (priest), farming:
 | 10 | `isPassingEncounter` (`shared.js`) | 2.0% | `writeUtf8String` (Node HTTP write) | 1.9% |
 | 11 | game vm line 2815 `get` | 2.0% | `passingKey` (`shared.js`) | 1.9% |
 | 12 | `eventMonsterTypes` filter callback (`shared.js`) | 1.9% | game vm line 2834 | 1.8% |
-| 13 | game vm line 2834 | 1.5% | facade `get` (`runtime/lifecycle/runner-scope.ts`) | 1.7% |
+| 13 | game vm line 2834 | 1.5% | facade `get` (`runtime/lifecycle/character/run.ts`) | 1.7% |
 | 14 | `eventMonsterTypes` (`shared.js`) | 1.3% | garbage collector | 1.7% |
 | 15 | `reunionRealm` (`shared.js`) | 1.2% | `departureTargetEngaged` (`shared.js`) | 1.4% |
 
@@ -1528,7 +1900,8 @@ is 2.4%. The merchant's v1.4.0 top entry is `USVString` at 21.5%.
 
 #### CT1. Queue markers skip clients without a renderer
 
-`installQueueMarkers` (`runtime/combat/markers.ts`) runs `draw` every 50 ms.
+`installQueueMarkers` (`runtime/status/character/markers.ts`) ran `draw` every 50 ms when
+measured; it now runs it on each of the game's draw frames.
 It built `shared.queueMarkers()` before it checked for a renderer. Headless
 clients set `no_graphics` (`.caracal/html_vars.js`), and the game then loads
 a stub `pixi.min.js` whose `Graphics` draws nothing, so every headless
@@ -1555,7 +1928,7 @@ second, combat reports up to every 100 ms, the combat wait poll, map frames)
 went through jsdom's `XMLHttpRequest`. jsdom builds a new keep-alive agent,
 and so a new TCP connection, for every request, and runs webidl's
 `USVString` conversion, a JavaScript loop over every character, on each
-body. `runtime/lifecycle/native-ajax.ts` registers a jQuery transport in
+body. `runtime/lifecycle/character/host.ts` registers a jQuery transport in
 each headless CODE window (`createRunnerHost`). It takes asynchronous `http:`
 requests to `127.0.0.1`, `localhost` or `[::1]` with a string or empty body
 and sends the same method, headers and UTF-8 bytes through `node:http` over
@@ -1612,7 +1985,7 @@ Test: `scripts/tests/event-monster-types.test.cjs`. Case 4 fails on v1.4.0
 Movement checks the game geometry identity on every `move()` and every
 shared route import. `geometryFingerprint` serializes the collision lines of
 every map and hashes the string. `cachedGeometryFingerprint`
-(`runtime/navigation/contracts.ts`) keeps the value per `G` object together
+(`runtime/movement/geometry/contracts.ts`) keeps the value per `G` object together
 with the objects, arrays and array lengths `geometryFingerprint` reads, and
 serializes again when the game replaces any of them or an array grows. That covers new
 game data, a replaced map geometry and additions like `process_game_data`'s
@@ -1807,7 +2180,7 @@ In combat the same priest spends 11.1 s in the draw loop (`tint_logic`
 The game client's draw loop calls `tint_logic` every 16 ms. It restyles the
 skill bar, potion, Town and progress tints with jQuery. A headless
 (`no_graphics`) client has no renderer, and nothing reads that DOM.
-`installGameRendering` (`runtime/characters/game-rendering.ts`), which caracAL
+`installGameRendering` (`runtime/status/character/telemetry.ts`), which caracAL
 already runs in the game context before the first draw, replaces `tint_logic`
 on `no_graphics` clients. The replacement keeps the native list work: it
 removes ended tints with the game's `delete_indices`, turns an ended fill tint
@@ -1817,7 +2190,7 @@ Clients with graphics keep the native function.
 The rest of the draw loop stays. `draw()` also merges entity updates
 (`process_entities`), moves entities, removes dead and out-of-range ones in
 `draw_entities` and runs draw timeouts. `update_sprite` also stays: the map
-telemetry reads the textures it sets (`capturePartyMapLayers` in `shared.js`),
+telemetry reads the textures it sets (`captureNativeLayers` in `runtime/status/character/telemetry.ts`),
 and it keeps a merchant's stand speed and gravestone dimensions.
 
 Failure inventory:
@@ -1896,7 +2269,7 @@ the previous tree (40 reads for 20 checks).
 
 jQuery decides `crossDomain` for each request by assigning the URL to a jsdom
 anchor element and reading its protocol and host back; jsdom parses the URL
-in JavaScript. `installNativeAjax` (`runtime/lifecycle/native-ajax.ts`) now
+in JavaScript. `installNativeAjax` (`runtime/lifecycle/character/host.ts`) now
 wraps `$.ajax` in headless CODE windows. For an absolute http(s) URL the
 wrapper compares protocol and host with Node's URL parser against the origin
 jQuery captured at load (`ajaxSettings.url`) and passes the result as the
@@ -1925,7 +2298,7 @@ fails on the previous tree (20 anchors for 20 requests). The CT2 tests in
 
 #### H3. The dashboard stream compares fields by walking them
 
-`difference()` (`runtime/coordinator/telemetry/dashboard-stream.ts`) decided
+`difference()` (`runtime/status/coordinator/streams.ts`) decided
 which vitals, items and slots changed with `JSON.stringify` on both sides of
 every field, on every publish, so a fast sample with one changed vital
 serialized the whole record twice. It now walks both values and stops at the
@@ -2133,8 +2506,8 @@ only the ChronAL gameplay project runs.
 | P6 crash recovery | none | torn and corrupt file states and SIGKILL timing (`coordinator-crash-recovery.test.cjs`) |
 | P13 offline snapshots | `console-persistence`: every character's 30 s refresh appends no roster record; an inventory change saves at once | none |
 | P10 metrics journal | none | torn tails and compaction limits far below 128 MB (`metrics-journal.test.cjs`) |
-| P12 metrics group commit | `console-persistence`: a POST answers in under 500 ms; each frame is on disk within one commit; frames share bucket writes; a restart returns all of them | none |
-| P14 mail read marks | `console-persistence`: opening the mail keeps the newest 2000 marks, every listed mail among them | none |
+| P12 metrics group commit | `console-persistence`: a POST answers in under 500 ms with its frames on disk; the bucket start leaves one part per span; a restart returns all of them | none |
+| P14 mail read marks | `console-persistence`: opening the mail keeps a mark for each listed mail only | none |
 | A1 field registry | `console-field-registry`: enforced fast sends only whitelisted fields, the full request keeps the debug fields, and the dashboard reads gold from fast polling; shadow fast is the v1.4.0 omit-list output | the catalog completeness parse (state-field-registry.md, Checks), which no section output shows |
 | C1p per-copy item meta | every console journey: `e2e/game-fixture.cjs` sends per-copy meta after its first report | the stack limits in `bank-stack-routing.cjs` and `merchant-inventory-stacks.cjs` need storage worker and merge states that the console fixture never reaches |
 | C3p snapshot meta join | `console-reports`: a saved per-copy snapshot shows the catalog's item name offline | none |
@@ -2171,7 +2544,9 @@ commands (docs/testing.md), after `tools/caracal/setup.mts` in each tree:
 
 The 16 unit failures fail on 1.5 the same way. Two are 1.5's own
 (`passive-hunting-ui.test.cjs` and `tracktrix-refresh.test.cjs`, whose
-extracted `trackerCatalogListener` misses `trackerCatalogSignature`). The
+extracted `trackerCatalogListener` misses `trackerCatalogSignature`; the call
+budget owner later removed both Tracktrix tests of that file, whose goals its
+row A checks). The
 other 14 failed on the `c691d60e` tip in this runner too, among them the real
 Caddy HTTPS test and the launcher restart test, which need a Caddy binary and
 a service launcher. `steam-bridge.test.cjs` fails three tests

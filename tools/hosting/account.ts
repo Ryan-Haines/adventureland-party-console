@@ -1,3 +1,5 @@
+import { bounded } from './http.ts';
+import { GAME_SITE } from './realms.ts';
 interface Character {
   name: string;
   type?: string;
@@ -38,12 +40,12 @@ export function accountPayload(payload: unknown): Account {
 }
 export async function accountConfig(session: string, realm: string, request: typeof fetch = fetch) {
   if (!realm) throw new Error("Choose a realm");
-  const response = await request("https://adventure.land/api/servers_and_characters", {
+  const response = await bounded(GAME_SITE, 'the game account request', signal => request("https://adventure.land/api/servers_and_characters", {
     method: "POST",
     headers: { Cookie: "auth=" + session, "Content-Type": "application/json" },
     body: "{}",
-    signal: AbortSignal.timeout(15000),
-  });
+    signal,
+  }));
   if (!response.ok) throw new Error("Game account service unavailable");
   const account = accountPayload(await response.json());
   if (!account.servers.some((server) => server.key === realm))

@@ -1,8 +1,10 @@
-import { mkdir, rm, readFile } from 'node:fs/promises';
+import { mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run } from '../update/process.ts';
-import { contained, atomic, exists } from '../update/files.ts';
+import { contained, exists } from '../update/files.ts';
+import { atomicJson } from '../build-store.ts';
+import { PUBLIC_PATHS, privatePath } from './rules.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const revision = process.argv[2], message = process.argv[3];
@@ -22,20 +24,16 @@ try { await run('git', ['remote', 'add', 'origin', remote], publicRoot); } catch
   if ((await run('git', ['remote', 'get-url', 'origin'], publicRoot)).trim() !== remote) throw new Error('Unexpected public remote');
 }
 const exported = (await run('git', ['ls-tree', '-r', '--name-only', commit], root)).trim().split('\n').filter(file => !/^\.(gitea|agents|codex)\//.test(file));
-const allow = /^(README\.md|LICENSE|THIRD_PARTY_NOTICES\.md|AGENTS\.md|Dockerfile|compose\.yaml|distribution\.json|release\.config\.mjs|package(-lock)?\.json|\.gitignore|\.gitattributes|\.dockerignore|\.github\/|characters\/|dashboard\/|docs\/|patches\/|runtime\/|scripts\/|tools\/|distribution\/)/;
-const files = exported.filter(file => allow.test(file) && !file.endsWith('.tmp'));
+const files = exported.filter(file => PUBLIC_PATHS.test(file) && !file.endsWith('.tmp'));
 const old = (await run('git', ['ls-files', '-z'], publicRoot)).split('\0').filter(Boolean);
 for (const file of old) if (!files.includes(file)) await rm(contained(publicRoot, file), { force: true });
-for (const file of files) {
-  if (/(^|\/)(\.env[^/]*|config\.js|session\.[^/]*|secrets)(\/|$)/.test(file)) throw new Error(`Private file in release tree: ${file}`);
-  const target = contained(publicRoot, file);
-  await mkdir(path.dirname(target), { recursive: true });
-  // Git archive preserves binary fixtures and exact committed bytes.
-}
-const archive = path.join(root, '.build/public-release.tar');
+for (const file of files) if (privatePath(file)) throw new Error(`Private file in release tree: ${file}`);
+// Git archive preserves binary fixtures and exact committed bytes; tar extracts only the checked list.
+const archive = path.join(root, '.build/public-release.tar'), list = path.join(root, '.build/public-release.list');
 await run('git', ['archive', '--format=tar', `--output=${archive}`, commit, '--', ...new Set(files.map(file => file.split('/')[0]))], root);
-await run(process.platform === 'win32' ? 'tar.exe' : 'tar', ['-xf', archive, '-C', publicRoot], root);
-await atomic(path.join(root, '.build/public-source.json'), { commit, message });
+await writeFile(list, files.join('\n') + '\n');
+await run(process.platform === 'win32' ? 'tar.exe' : 'tar', ['-xf', archive, '-C', publicRoot, '-T', list], root);
+await atomicJson(path.join(root, '.build/public-source.json'), { commit, message });
 await run('git', ['add', '--all'], publicRoot);
 console.log(await run('git', ['diff', '--cached', '--stat'], publicRoot));
 if (process.argv.includes('--push')) {

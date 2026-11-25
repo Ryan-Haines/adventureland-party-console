@@ -1,14 +1,20 @@
+const { targetingContext } = require('./helpers/targeting-module.cjs');
+const {productionFunctions} = require('./helpers/production-functions.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
-const {retainNominations}=require('../../runtime/combat/nomination-retention.ts');
-const {reconcileQueue}=require('../../runtime/combat/queue.ts');
+const {retainNominations}=require('../../runtime/coordinator/targeting/queue.ts');
+const {reconcileQueue}=require('../../runtime/coordinator/targeting/queue.ts');
+// Targeting's stand-ins for the sliced contexts.
 test('client retains a visible admitted fringe target when an inside-zone monster appears',()=>{
- const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync('characters/shared.js','utf8');
- const entity={id:'A',mtype:'wolfie',x:450,y:0,visible:true};
- const c=vm.createContext({root:{__partyEntitiesObservedAt:1000,__partyNomination:{}},character:{map:'winterland',in:'winterland'},
-  groupedCombat:{queue:[{...target}]},get_entity:()=>entity,reunionRealm:()=> 'USII',isExternallyClaimedMonster:()=>false,
-  farmApproach:{failed:{}},passiveRareCandidate:()=>false,monsterFocus:['wolfie'],partyLocation:{map:'winterland',x:0,y:0},monsterSearchRadius:400,
-  inFarmArea:()=>false,groupedEntityReport:e=>({...e,map:'winterland',in:'winterland'})});
- vm.runInContext(source.slice(source.indexOf('  function queueRetentions('),source.indexOf('  function queueReport(')),c);
+ const fs=require('node:fs'),vm=require('node:vm');
+ const entity={id:'A',mtype:'wolfie',x:450,y:0,visible:true},area={map:'winterland',x:0,y:0};
+ // The target scope is the tasks owner's hold, and the wolfie focus, an area that holds no target and the
+ // 400-wide radius are the hunting owner's farm.
+ const c=targetingContext({root:{__partyEntitiesObservedAt:1000,__partyNomination:{}},character:{map:'winterland',in:'winterland'},
+  groupedCombat:{queue:[{...target}]},get_entity:()=>entity,isExternallyClaimedMonster:()=>false,partyLocation:area,
+  groupedEntityReport:e=>({...e,map:'winterland',in:'winterland'})},undefined,
+ {tasks:{holds:{targetScope:()=>area}},walks:{reunionRealm:()=>'USII'},
+  hunting:{facts:{focus:{focus:['wolfie'],contains:()=>false}},farm:{radius:()=>400}}});
+ vm.runInContext(productionFunctions(['queueRetentions', 'targetingUnreachableReport']),c);
  assert.equal(c.queueRetentions()[0].eligible,true);entity.x=551;
  assert.equal(c.queueRetentions()[0].reason,'retention boundary');entity.visible=false;
  assert.equal(c.queueRetentions()[0].reason,'not visible');
@@ -38,7 +44,9 @@ test('neutral visibility retirement requires every party member; stale observer 
 test('explicit retention rejection removes the neutral; positive sighting wins over another missing observer',()=>{
  for(const reason of ['retention boundary','failed approach','focus changed','external claim','confirmed death']){
   const m=members();m[0].status.groupedCombat.retentions[0].reason=reason;
-  assert.equal(retainNominations([target],m,1000).length,0);
+  assert.equal(retainNominations([target],m,1000).length,0,reason);
+  // The selected neutral is invalidated by the same reasons while it is unseen.
+  const result=reconcileQueue({queue:[target],target,fights:[]},m,'W',1000,'key');assert.equal(result.target,null,reason);
  }
  const m=members();m[0].status.groupedCombat.retentions[0].eligible=true;
  assert.equal(retainNominations([target],m,1000).length,1);
@@ -62,10 +70,4 @@ test('selected neutral reacquisition resets absence without granting an attack',
  m[1].status.groupedCombat.sightings=[target];
  result=reconcileQueue(result,m,'W',1100,'key');
  assert.equal(result.target.id,'A');assert.deepEqual(result.searches,{});assert.equal(result.target.state,'planned');
-});
-test('selected neutral still respects explicit invalidation while unseen',()=>{
- for(const reason of ['retention boundary','failed approach','focus changed','external claim','confirmed death']){
-  const m=members();m[0].status.groupedCombat.retentions[0].reason=reason;
-  const result=reconcileQueue({queue:[target],target,fights:[]},m,'W',1000,'key');assert.equal(result.target,null,reason);
- }
 });

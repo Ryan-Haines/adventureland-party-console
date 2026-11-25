@@ -1,6 +1,6 @@
 # Class combat skills
 
-The class policies in `runtime/characters/skills/` use the installed `G.skills`
+The class policies in `runtime/characters/turns/skills/` use the installed `G.skills`
 catalog for unlocks, costs, cooldown families, stat requirements and equipment.
 They extend typed-adventureland 0.0.57 only for the verified September 2026
 Paladin/Fan of Knives fields. Review those extensions when upgrading the package.
@@ -19,11 +19,16 @@ weapon range. Queue observations no longer let a warrior replace the leader as
 the designated fighter. Healing coverage still uses an available priest;
 compositions without one use the existing leader anchor.
 
-The attack controller chooses between basic attacks and attack-cooldown skills.
-Skill requests are sent once, with per-family pending locks and a 2.5-second
-acknowledgement deadline. Independent skills use the role support loop. Every
-cast rechecks eligibility, activity ownership, range and MP. Multi-target skills
-receive explicit target IDs and settle queue evidence per accepted target.
+The turns owner (`runtime/characters/turns/`) makes every cast. Its attack source
+chooses between the basic attack and the attack-cooldown skills; the engine's
+choices and the class decisions are requests too. Once per pass the owner reads
+its hold table (`rules.ts`), sends the highest request of each ready cooldown
+family, and books the reply; a reply that never comes counts lost after the
+cooldown and the largest recent round trip. The role loop runs a pass on each
+game event that can change a need (`turns/loop.ts`), not on a timer. Every cast
+rechecks eligibility, targeting's gates, range and MP. Multi-target skills
+receive explicit target IDs and settle queue evidence per accepted target; a
+skill whose game data names no target, such as Cleave, is sent with none.
 
 ## Mana and damage
 
@@ -31,21 +36,51 @@ Optional damage preserves survival MP: paladins retain the greater of 30% or two
 Self-Heals plus Guardian's Oath; priests retain the greater of 35% or two heals
 plus Party Heal; rogues/rangers retain 20%. Only unlocked, equipped skills count
 toward the reserve. Warrior leader reservations include Taunt and usable emergency
-defenses. Emergency healing/protection can spend below the optional reserve.
+defenses. Emergency healing/protection can spend below the optional reserve, and
+so can a cast the server centres on the caster (Cleave) while it hits two or more
+monsters that attack the party in Default or an event, or at Franky (Ryan's 1.5
+Cleave).
 
-Farming replenishes damage credit from positive observed MP recovery over 30
-seconds plus surplus MP divided by 30 per second. Credit starts and caps at one
-affordable optional cast. Cast acknowledgements and expected Mental Burst refunds
-never manufacture recovery credit. This deliberately underestimates recovery when
-spending and regeneration arrive in the same update.
+One damage ranking (`skills/ranking.ts`, REVIEW-QUEUE TRN-Q-DPS) chooses every
+class's damage casts at each action edge, from that edge's reports; it keeps no
+plan between edges. It has no class or skill branch: each skill joins by its game
+data and the server's handling of it (`skills/server.ts`, read from the pinned
+server). An
+option's worth is the party's useful damage over a horizon as long as the longest
+cooldown among the character's options: damage on every target it hits that
+targeting's gates allow, capped by each target's remaining HP and the party's hits
+in flight, plus what a damage-taken condition (Curse, Hunter's Mark) adds, less
+what it strips (Purify) and less the Energize casts it silences by leaving the
+mage at its reserve. The MP over the horizon (MP above the reserve, observed
+income over the last 30 seconds, and an MP potion only where survival's potion
+table drinks one) goes to the options by damage per MP, each up to the casts its
+cooldown allows; an option still waiting for MP holds cheaper spends behind it.
+Mana Burst spends the whole pool, so it goes only when income, the potion and an
+Energize coming to the caster bring the reserve back within the horizon. An
+Energize is coming when an ally's status report shows one set on this character,
+from within Energize's range and ready within the horizon (the game's
+`next_skill`); it counts at its ready time, and one set on another member counts
+nothing. Each report also carries the damage per MP of the best option its
+ranking left short of MP, and an Energize a cast would silence counts the MP it
+moves at that ally's figure. Controlled Mana Burst sends `[id, mp]` pairs: each
+target gets the MP whose lowest roll covers its remaining HP, from the MP above
+the reserve. A hit whose skill has `procs` counts the splash of the attacker's
+`explosion` or `blast` on monsters near its target, and a cast whose splash would
+reach a refused monster is refused as an area cast is. A class that heals spends nothing on damage
+while a member reads below the healthy share. For a caster-centred cast the
+ranking may ask movement's combat step for a spot on an allowed monster where the
+cast hits only monsters it may hit, when the gain pays for the travel and
+survival's danger reading passes; an unengaged monster there counts only when the
+cast kills it for certain (the server's lowest roll, no miss chance) and
+targeting refuses it only because nobody engaged it. A monster that respawns as
+another on death (game data `respawn_as`) never counts that way. Targeting's
+group lock and Franky rows let through the victims of any skill whose damage the
+server lands around the caster (Cleave, Shadow Strike).
 
-Events remove the farming spending-rate limit, retaining survival reserves.
 Damage comparisons account for armor/resistance, piercing, critical eligibility,
-Rogue Stack, fortitude and reported incoming-damage amplification. Remaining HP
-and observed allied projectiles cap useful damage. Uncertain item side effects
-are not treated as guaranteed damage. Conservative executes exclude criticals
-and use the low damage roll.
-
+Rogue Stack, fortitude and reported incoming-damage amplification. Pure damage is
+exact: no roll, crit or defence. Conservative executes exclude criticals and use
+the low damage roll.
 ## Skill decisions
 
 | Class | Skill | Policy |
@@ -54,12 +89,12 @@ and use the low damage roll.
 | Priest | Dark Blessing | Maintain when its own effect is absent and cooldown is ready; aggro rescue and healing take priority and healing MP is reserved. |
 | Ranger | 3-Shot (60), 5-Shot (75) | Choose useful damage across authorized targets; five-shot is not automatically better against three targets. |
 | Ranger | Piercing Shot (72) | Replace a basic shot only when the armor-piercing result is better. |
-| Ranger | Supershot | Independent burst; avoid negligible remaining HP. |
-| Ranger | Hunter's Mark | Durable targets, no existing mark; deterministic ranger ownership. |
+| Ranger | Supershot | Ranked like any skill; remaining HP caps its damage. |
+| Ranger | Hunter's Mark | Ranked by the damage its `marked` condition adds; none while a mark holds. |
 | Ranger | Poison Arrow | Disabled: consumes poison. |
 | Ranger | Track, 4 Fingers (64) | Player detection/control; no automatic PvE use. |
 | Rogue | Fan of Knives (65) | Equipped Knife Belt required; up to five explicit targets, compared with basic attack. |
-| Rogue | Mental Burst (64 INT) | Prefer conservative executes; otherwise evaluate magic damage per MP or cooldown. |
+| Rogue | Mental Burst (64 INT) | Ranked like any skill, magical damage through resistance. |
 | Rogue | Quick Stab, Quick Punch | Require dagger/fist respectively; share one cooldown lock. |
 | Rogue | Invisibility | Unengaged opener; never drop active tank responsibility. |
 | Rogue | Swiftness (40) | Maintain self/party buffs; one rogue owns refreshes. |
@@ -73,8 +108,8 @@ and use the low damage roll.
 | Paladin | Guardian's Oath (50) | Endangered ally only, safe projected shared damage, no duplicate links. |
 | Paladin | Beacon of Resolve (70) | Multiple allies under attack or a leader facing imminent danger; no redundant refresh. |
 | Paladin | Aura (60) | Leader-first defensive coverage; followers prefer complementary auras. Ten-second change hold. |
-| Paladin | Purify (60) | Preserve party debuffs unless conservatively lethal; count only removable conditions. |
-| Paladin | Shield Slam (60) | Equipped shield; armor-scaled burst subject to optional MP budget. |
+| Paladin | Purify (60) | Ranked by its pure damage less the damage-taken debuffs it strips. |
+| Paladin | Shield Slam (60) | Equipped shield; armor-scaled damage, ranked like any skill. |
 | Paladin | Smash (10) | Equipped mace; independent damage filler. |
 
 Ordinary grouped combat includes only the committed target and already engaged

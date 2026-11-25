@@ -9,13 +9,19 @@ test('explicit restart waits for a real valid gateway state after503 without sen
  });
  assert.equal(count,2);assert.equal(observations[0].status,503);assert.match(observations[0].body,/Service is starting/);assert.equal(observations.at(-1).ready,true);
 });
-for(const [status,body]of [[401,{error:'denied'}],[200,{characters:{}}]])test('restart readiness rejects invalid state '+status+' immediately',async()=>{
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const rejectsAtOnce=async({status,body})=>{
  let count=0;
  await server((req,res)=>{count++;res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(body));},async url=>assert.rejects(waitForLiveRestartState(url,()=>{},500)));
  assert.equal(count,1);
-});
+};
+scenarioTable('the restart readiness read rejects a state server answer it cannot use on the first read',(status,body)=>({status,body}),[
+ ['restart readiness rejects invalid state 401 immediately',rejectsAtOnce,401,{error:'denied'}],
+ ['restart readiness rejects invalid state 200 immediately',rejectsAtOnce,200,{characters:{}}],
+]);
 test('persistent503 cannot extend the bounded restart state-read budget',async()=>{
- let count=0;const start=Date.now();
- await server((req,res)=>{count++;res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'still starting'}));},async url=>assert.rejects(waitForLiveRestartState(url,()=>{},120),/ready/));
- assert.ok(count>=1);assert.ok(Date.now()-start<1000);
+ // Every read the helper starts is inside the budget it was given, by its own elapsed reading.
+ let count=0;const budget=120,rows=[];
+ await server((req,res)=>{count++;res.writeHead(503,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'still starting'}));},async url=>assert.rejects(waitForLiveRestartState(url,row=>rows.push(row),budget),/ready/));
+ assert.ok(count>=1);assert.ok(rows.length>=1&&rows.every(row=>row.elapsedMs<budget),JSON.stringify(rows.map(row=>row.elapsedMs)));
 });

@@ -1,7 +1,9 @@
+import { itemGrade } from "../../../runtime/items/api.ts";
 import type { Item } from "./item";
 import type { ItemMeta } from "./item-meta";
 import { STAT_COLORS as S } from "./stat-colors";
 import { titleNote } from "./item-title";
+import { durationIsHours } from "./format-duration";
 
 // A port of the game's item card (render_item in the game's js/html.js): its line
 // order, English labels (languages/en/interface.js) and colors (colors in
@@ -48,18 +50,10 @@ const GRADES = [null, { name: "High", color: "#696354" }, { name: "Rare", color:
 
 // to_pretty_float and to_pretty_num in the game's js/old_common_functions.js.
 export const prettyFloat = (value: number) => (0 + Math.trunc((value || 0) * 100) / 100).toLocaleString("en-US");
-export const prettyNum = (value: number) => (Math.floor(value || 0) + 0).toLocaleString("en-US");
+const prettyNum = (value: number) => (Math.floor(value || 0) + 0).toLocaleString("en-US");
 const hundredths = (value: number) => (Math.round(value * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const signed = (value: number, text = String(value)) => (value > 0 ? "+" : "") + text;
 export const titleCase = (value: string) => value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-
-// calculate_item_grade in the game's js/old_common_functions.js.
-export function itemGrade(definition: Values, level: number): number {
-  if (!(definition.upgrade || definition.compound)) return 0;
-  const grades = Array.isArray(definition.grades) ? definition.grades.map(Number) : [9, 10, 11, 12];
-  for (let grade = 4; grade >= 1; grade--) if (level >= grades[grade - 1]) return grade;
-  return 0;
-}
 
 function fill(template: string, values: { value?: unknown; value2?: unknown }) {
   return template.replace("{value2}", text(values.value2)).replace("{value}", text(values.value));
@@ -170,6 +164,12 @@ export function statSummary(stats: Values): string {
     .map((line) => line.kind === "prop" ? `${line.label} ${/^[+-]/.test(line.value) ? line.value : "+" + line.value}` : "").join(" · ");
 }
 
+// The game's definition flags, each a colored text line on both the item and the monster card.
+const FLAG_LINES = [["poisonous", "Poisonous", COLORS.poison], ["cooperative", "Cooperative", "#aeaeae"],
+  ["peaceful", "Peaceful", "#54B25F"], ["supporter", "Supporter", "#CA5931"]] as const;
+const flagLines = (definition: Values): ItemCardLine[] =>
+  FLAG_LINES.filter(([key]) => definition[key]).map(([key, label, color]) => ({ kind: "text", key, text: label, color }));
+
 export function itemCardLines({ meta, item, level, properties, setName, usable, skillName = () => undefined }: {
   meta: ItemMeta | null | undefined;
   item: Item;
@@ -186,17 +186,17 @@ export function itemCardLines({ meta, item, level, properties, setName, usable, 
   // A stat scroll folds the base stat into the scrolled stat (calculate_item_properties sets prop.stat=0).
   if (item.stat_type) prop.stat = 0;
   const lines: ItemCardLine[] = [...statLines(prop, definition)];
-  const grade = GRADES[itemGrade(definition, level)];
+  // The catalog's definition drops the `upgrade` and `compound` objects (bag.ts safeItemDefinition),
+  // so the grade reads the meta's flags for them, as the game's calculate_item_grade reads the
+  // objects (old_common_functions.js:722-730): cdragon carries grades and no upgrade, and shows none.
+  const grade = GRADES[itemGrade({ upgrade: meta?.upgradeable, compound: meta?.compoundable, grades: definition.grades }, level)];
   if (grade && definition.type !== "booster") lines.push({ kind: "prop", key: "grade", label: "Grade", value: grade.name, color: grade.color });
-  if (definition.poisonous) lines.push({ kind: "text", key: "poisonous", text: "Poisonous", color: COLORS.poison });
-  if (definition.cooperative) lines.push({ kind: "text", key: "cooperative", text: "Cooperative", color: "#aeaeae" });
-  if (definition.peaceful) lines.push({ kind: "text", key: "peaceful", text: "Peaceful", color: "#54B25F" });
-  if (definition.supporter) lines.push({ kind: "text", key: "supporter", text: "Supporter", color: "#CA5931" });
+  lines.push(...flagLines(definition));
   for (const bonus of meta?.bonuses || [])
     lines.push({ kind: "prop", key: `bonus_${bonus.id}`, label: "Bonus", value: `${bonus.name} [Only] ${statSummary(bonus.stats)}`.trim(), color: "#7738E8" });
   const classes = Array.isArray(definition.class) ? definition.class : definition.class ? [definition.class] : [];
   if (classes.length) lines.push({ kind: "prop", key: "class", label: "Class", value: classes.map((name) => titleCase(text(name))).join(", "), color: COLORS.gray });
-  if (definition.type === "elixir" && Number(definition.duration)) lines.push(hoursLine(Number(definition.duration)));
+  if (durationIsHours(definition) && Number(definition.duration)) lines.push(hoursLine(Number(definition.duration)));
   lines.push(...abilityLines(prop, definition, skillName));
   if (definition.explanation) lines.push({ kind: "text", key: "explanation", text: text(definition.explanation), color: COLORS.text });
   else if (definition.type === "material") lines.push({ kind: "text", key: "unknown_material", text: "An unknown material, as in, you have no idea what to do with it!", color: COLORS.text });
@@ -209,7 +209,6 @@ export function itemCardLines({ meta, item, level, properties, setName, usable, 
     lines.push({ kind: "prop", key: "weapon_type", label: "Type", value: `T${prettyFloat(Number(definition.tier) || 0)} ${WEAPON_TYPES[wtype] || titleCase(wtype)}`, color: COLORS.gray,
       valueColor: usable ? "#56A244" : "#CC3837" });
   lines.push({ kind: "prop", key: "info", label: "[i]", value: infoPhrase(meta, level), color: COLORS.gray });
-  if (item.name === 'cxjar') lines.push({kind:'prop',key:'filled_with',label:'Filled with',value:typeof item.data === 'string' && item.data.trim() ? item.data : 'nothing',color:COLORS.gray});
   return lines;
 }
 
@@ -230,9 +229,7 @@ function infoPhrase(meta: ItemMeta | null | undefined, level: number): string {
 export function monsterCardLines(definition: Values, skillName: (id: string) => string | undefined,
   monsterName: (id: string) => string | undefined): ItemCardLine[] {
   const lines = statLines(definition, definition, true);
-  for (const [key, label, color] of [["poisonous", "Poisonous", COLORS.poison], ["cooperative", "Cooperative", "#aeaeae"],
-    ["peaceful", "Peaceful", "#54B25F"], ["supporter", "Supporter", "#CA5931"]] as const)
-    if (definition[key]) lines.push({ kind: "text", key, text: label, color });
+  lines.push(...flagLines(definition));
   for (const [id, ability] of Object.entries(monsterAbilities(definition))) {
     const name = skillName(id);
     // The game lists only abilities that are skills; monsterExtras keeps the rest.
@@ -248,13 +245,15 @@ export function monsterCardLines(definition: Values, skillName: (id: string) => 
   return lines;
 }
 
+// The level a monster's damage, speed and attack speed stop growing at (calculate_monster_stats).
+export const MONSTER_GROWTH_LEVEL = 12;
 // A monster's stats at a level: level_monster adds half the base HP and one base XP per
 // level, and calculate_monster_stats (both in the game's node/server.js) raises attack
-// 12.5%, speed 0.24 and frequency 0.034 per level up to level 12. docs/monster-card.md.
+// 12.5%, speed 0.24 and frequency 0.034 per level up to MONSTER_GROWTH_LEVEL. docs/monster-card.md.
 export function monsterAtLevel(definition: Values, level: number): Values {
   if (level <= 1) return definition;
   const base = (key: string) => Number(definition[key]) || 0;
-  const combat = Math.min(level, 12);
+  const combat = Math.min(level, MONSTER_GROWTH_LEVEL);
   return {
     ...definition,
     hp: base("hp") + (level - 1) * Math.floor(base("hp") / 2),
@@ -297,6 +296,9 @@ function stateLines(item: Item): ItemCardLine[] {
   else if (item.l) lines.push({ kind: "text", key: "lock", text: "Locked", color: "#8C8C8C" });
   if (item.acl) lines.push({ kind: "text", key: "acl", text: "Account Bound", color: "#ADA68E" });
   if (item.expires) lines.push({ kind: "prop", key: "expires", label: "Expires", value: new Date(item.expires).toLocaleString(), color: COLORS.gray });
+  // A CX Jar holds one appearance, the item's own `data`; the game prints an empty jar's
+  // line when it holds none (html.js render_item_info).
+  if (item.name === "cxjar") lines.push({ kind: "prop", key: "filled_with", label: "Filled with", value: typeof item.data === "string" && item.data.trim() ? item.data : "nothing", color: COLORS.gray });
   return lines;
 }
 
@@ -316,7 +318,7 @@ export function onItemCard(key: string, definition: Values): boolean {
 }
 
 // Definition fields the card already shows, or that only drive other sections.
-export const CARD_KEYS = new Set([
+const CARD_KEYS = new Set([
   "name", "skin", "skin_a", "skin_c", "skin_r", "explanation", "type", "g", "s", "grades", "upgrade", "compound",
   "level", "set", "wtype", "damage_type", "class", "ability", "aura", "attr0", "attr1", "gives", "debuff",
   "goldsteal", "wspeed", "duration", "multiplier", "poisonous", "cooperative", "peaceful", "supporter", "e",

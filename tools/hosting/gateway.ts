@@ -7,13 +7,12 @@ import { websocket } from "./websocket.ts";
 import { acceptTransfer } from './setup-transfer.ts';
 import { steamAction, isSteamAction } from '../steam/routes.ts';
 import { startupRealms } from './realms.ts';
+import { coordinatorPath, coordinatorPort } from './defaults.ts';
 export { loaderCode } from "./setup-routes.ts";
 async function health(res: ServerResponse, options: Options) {
   const ready = options.healthy ? await options.healthy() : true;
-  json(res, ready ? 200 : 503, { ready, configured: options.configured() });
-}
-function upstreamPort(url: string, options: Options) {
-  return /^\/(party-api|CODE)\//.test(url) ? options.apiPort || 924 : options.dashboardPort;
+  const failed = options.startFailed ? await options.startFailed() : null;
+  json(res, ready ? 200 : 503, { ready, configured: options.configured(), failed });
 }
 async function continueSetup(req: import('node:http').IncomingMessage, res: ServerResponse, url: URL, options: Options) {
   if (url.pathname.startsWith('/console-control/')) {
@@ -32,8 +31,8 @@ async function continueSetup(req: import('node:http').IncomingMessage, res: Serv
 async function forward(req: import('node:http').IncomingMessage, res: ServerResponse, url: URL, match: RegExpExecArray | null, options: Options) {
   if(options.code&&await options.code.route(req,res,new URL(req.url||'/','http://localhost').pathname))return;
   if (isSteamAction(url, req, match)) { await steamAction(req, res, options); return; }
-  const route = req.url || '';
-  proxy(req, res, upstreamPort(route, options), !/^\/(party-api|CODE)\//.test(route));
+  const coordinator = coordinatorPath(req.url || '');
+  proxy(req, res, coordinator ? coordinatorPort(options) : options.dashboardPort, !coordinator);
 }
 export function gateway(options: Options) {
   // TLS is installed after the HTTP listener starts. Keep the shared options so

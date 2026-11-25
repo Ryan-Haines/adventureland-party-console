@@ -1,10 +1,11 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createTransferCommands}=require('../../runtime/coordinator/inventory/transfer-commands.ts');
-const {createMarkCommands}=require('../../runtime/coordinator/inventory/mark-commands.ts');
-const identity=require('../../runtime/coordinator/inventory/item-identity.ts');
+const {settingsWriter}=require('./helpers/settings-writer.cjs');
+const {createTransferCommands}=require('../../runtime/items/coordinator/fates.ts');
+const {createMarkCommands}=require('../../runtime/items/coordinator/fates.ts');
+const identity=require('../../runtime/items/identity.ts');
 function fixture(){const item={name:'leather',q:8},state={merchantCharacter:'M',merchantWeapon:{item:{name:'sword'}},merchantDeliveries:{},withdrawals:{},bankSnapshot:{packs:{items0:[{slot:2,item}]}},bankbois:{B:{name:'B',items:[{slot:4,item}]}},commands:{},marked:{},merchantMarked:{},autoItemMarks:{},statuses:{F:{map:"main",server:"US I",x:0,y:0,seenAt:Date.now()},P:{map:"main",server:"US I",x:10,y:0,seenAt:Date.now()}}},calls=[];
- const transfers=createTransferCommands(state,{managed:n=>['M','F','P'].includes(n),nextCommand:()=>1,removeReservations:(...args)=>calls.push(['remove',...args]),clearIncoming:(...args)=>calls.push(['incoming',...args]),sameItem:identity.sameMarkedItem,identity:item=>item?.name||'',persist:()=>calls.push('persist'),persistBank:()=>calls.push('bank'),bankboi:async()=>calls.push('bankboi'),log(){}});
- const marks=createMarkCommands(state,{key:identity.autoItemRuleKey,mode:identity.autoItemRuleMode,reconcile:(...args)=>calls.push(['reconcile',...args]),persist:()=>calls.push('persist')});
+ const transfers=createTransferCommands(state,{managed:n=>['M','F','P'].includes(n),nextCommand:()=>1,removeReservations:(...args)=>calls.push(['remove',...args]),clearIncoming:(...args)=>calls.push(['incoming',...args]),sameItem:identity.markMatches,identity:item=>item?.name||'',persist:()=>calls.push('persist'),persistBank:()=>calls.push('bank'),bankboi:async()=>calls.push('bankboi'),log(){},write:settingsWriter(state).write});
+ const marks=createMarkCommands(state,{key:identity.ruleKey,mode:identity.ruleMode,reconcile:(...args)=>calls.push(['reconcile',...args]),persist:()=>calls.push('persist'),write:settingsWriter(state).write});
  return {state,item,calls,send:body=>transfers.handle({character:'M',item,...body}),mark:body=>marks.handle({character:'F',item,...body})};}
 test('merchant delivery is a toggleable reservation, transferable between recipients without dispatch',()=>{
  const f=fixture();f.send({type:'give',slot:2,target:'F',equipOnDelivery:true});assert.equal(f.state.merchantDeliveries.F[0].equipOnDelivery,true);assert.deepEqual(f.state.commands,{});
@@ -27,7 +28,9 @@ test('withdraw-all covers normal bank and BankBoi once, while individual request
  f.send({...body,markAll:false});assert.equal(f.state.withdrawals.M.length,1);assert.equal(f.state.withdrawals.M[0].pack,'bankboi:B');
 });
 test('unequipping the chosen merchant mainhand clears its saved weapon',()=>{
- const f=fixture();f.send({type:'unequip',slot:'mainhand',item:{name:'sword'}});assert.equal(f.state.merchantWeapon,null);assert.equal(f.state.commands.M.type,'unequip');assert.equal(f.calls[0],'persist');
+ const f=fixture();f.send({type:'unequip',slot:'mainhand',item:{name:'sword'}});assert.equal(f.state.merchantWeapon,null);assert.equal(f.state.commands.M.type,'unequip');
+ // The weapon is a setting the writer saves, with its audit line.
+ assert.deepEqual(f.state.settingsChanges.map(l=>[l.field,l.new,l.by]),[['merchantWeapon',null,'dashboard:command']]);
 });
 test('bank and merchant marks remain mutually exclusive and support legacy item-only marks',()=>{
  const f=fixture();f.mark({type:'mark',slot:2});f.mark({type:'merchant-mark',slot:2});assert.deepEqual(f.state.marked.F,[]);assert.equal(f.state.merchantMarked.F.length,1);
@@ -75,4 +78,23 @@ test('merchant collection rules and other levels do not require bank confirmatio
 test('out-of-range fighter delivery preserves item marks and commands',()=>{
  const f=fixture();f.state.statuses.P.x=500;f.state.marked.F=[{slot:2,item:f.item}];const before=JSON.stringify(f.state);
  assert.equal(f.send({character:'F',type:'give',slot:2,target:'P'}).status,409);assert.equal(JSON.stringify(f.state),before);assert.deepEqual(f.calls,[]);
+});
+
+// items.fateChanged (10 design 6, "a copy's fate changes"): a rule that gives the item a new action
+// is one record even when the selection removes no other mark; painting the same rule again is none.
+test('a new bank rule records the fate change once, and painting it again records none',()=>{
+ const {partyHooks}=require('../../runtime/hooks/index.ts');
+ const {replaceAutomaticAction}=require('../../runtime/items/coordinator/fates.ts');
+ const {settingsDraft}=require('../../runtime/settings/api.ts');
+ const heard=[];
+ partyHooks().publish({name:'test:fate-changed',folder:'core',author:'test',summary:'Hears the fate changes.',hooks:{'items.fateChanged':p=>heard.push(p)}});
+ const f=fixture(),state=f.state;
+ const marks=createMarkCommands(state,{reconcile(){},persist(){},write:settingsWriter(state).write,
+  selectAction:(item,name,action,draft,added)=>replaceAutomaticAction(state,name,item,action,draft,added)});
+ marks.handle({character:'F',item:f.item,type:'auto-item-mark',mode:'bank',action:'set'});
+ assert.deepEqual(heard.map(h=>[h.subject,h.item,h.fate]),[['F','leather','bank']]);
+ marks.handle({character:'F',item:f.item,type:'auto-item-mark',mode:'bank',action:'set'});
+ assert.equal(heard.length,1,'the same rule again changes no fate');
+ const draft=settingsDraft(state);replaceAutomaticAction(state,'F',f.item,'bank',draft);
+ assert.equal(heard.length,1,'a selection that removes nothing and adds no rule records none');
 });

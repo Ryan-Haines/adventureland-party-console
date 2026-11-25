@@ -1,4 +1,5 @@
 'use client';
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { useState } from 'react';
 import { useClock } from '@/hooks/use-clock';
 import { dungeonCountdown, useDungeons } from './dungeon-query';
@@ -7,11 +8,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import type { PartyConsoleModel } from './use-party-console';
 import type { SelectedItem } from './selected-item';
 import { PartyItemDetails } from './party-item-details';
-import { ItemSprite } from './item-sprite';
+import { SpriteCrop } from './sprite-crop';
 import {CaveMap} from './cave-map';
-
-// A merchant room is done once its encounter resolves; its item can still be bought.
-const merchantRoom = (room?: string) => !!room && /^\d+:shop$/.test(room);
+import { caveFloorMap } from '../../../runtime/hunting/api.ts';
+import type { CavePoint } from '../../../runtime/hunting/api';
 
 export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
   const query = useDungeons(),
@@ -28,6 +28,8 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
   const [requestedRoom, setRequestedRoom] = useState<string | null>(null);
   const [exitConfirm, setExitConfirm] = useState(false);
   const [itemInspection, setItemInspection] = useState<SelectedItem | null>(null);
+  // The open map belongs to one run and floor, so a new floor closes it.
+  const [mapOpenFloor, setMapOpenFloor] = useState<string | null>(null);
   if (!view || ['idle', 'held'].includes(view.state.phase)) return null;
   const sameRun = view.members.filter(member => member.observation?.cave?.run === view.state.run);
   const cave = sameRun.find(member => member.fresh)?.observation?.cave;
@@ -35,11 +37,8 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
   const reopened = requestedRoom ? sameRun.map(member => member.observation?.cave?.choice).find(c => c?.shop?.room === requestedRoom) : undefined;
   const choice = cave ? reopened || cave.choice : undefined;
   const mapCave = cave || (view.state.phase === 'active' ? sameRun[0]?.observation?.cave : undefined);
-  const mapActionsReady = !!mapCave && view.state.participants.every(name => {
-    const member = view.members.find(candidate => candidate.name === name);
-    return member?.fresh && member.observation?.alive && member.observation.cave?.run === mapCave.run &&
-      member.observation.cave.floor === mapCave.floor && !member.observation.cave.paused;
-  });
+  const mapFloor = mapCave ? mapCave.run + ':' + mapCave.floor : null;
+  const mapOpen = !!mapFloor && mapOpenFloor === mapFloor;
   const mapWaitingForReports = !!mapCave && view.state.participants.every(name => {
     const member = view.members.find(candidate => candidate.name === name);
     return member?.observation?.alive && member.observation.cave?.run === mapCave.run &&
@@ -74,9 +73,34 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
   const action = (body: Record<string, unknown>) =>
     query.action({ run: view.state.run, ...body });
   const shopItem = model.state.merchantCatalog?.allItems?.find(item => item.id === choice?.shop?.name);
-  const travelling = view.state.progress?.enabled || !!view.state.travel || Object.values(view.state.commands).some(command => command.action === 'move');
+  const selectable = (p: CavePoint) => !!cave && !query.busy && !cave.paused && !p.locked &&
+    !(p.done && !view.reopenable.includes(p.id)) && view.state.phase === 'active';
+  // The list buttons and the map pins pick a room through this one action.
+  const selectPoint = (p: CavePoint) => {
+    if (!selectable(p)) return;
+    setRequestedRoom(p.room || null);
+    if (choice?.shop?.nearby && p.room === choice.shop.room) setInspectedChoice(choice.id);
+    else void action({ action: 'move', target: p.id });
+  };
+  // One list: in the panel while the map is closed, beside or under the map while it is open.
+  const destinations = (
+    <div className={mapOpen ? 'grid grid-cols-2 gap-2 lg:grid-cols-1' : 'mt-3 grid grid-cols-2 gap-2'}>
+      {cave?.points.filter((p) => !p.exit).map((p) => (
+        <button
+          className={dungeonButton + (p.done ? ' !border-2 !border-green-500 disabled:!opacity-80' : p.required ? ' !border-2 !border-orange-500' : '')}
+          key={p.id}
+          disabled={!selectable(p)}
+          onClick={() => selectPoint(p)}
+        >
+          {p.label}
+          {p.map !== caveFloorMap(cave.run, cave.floor) ? ' — different floor' : ''}
+          {p.locked ? ' — locked' : view.reopenable.includes(p.id) ? ' - reopen shop' : p.done ? ' — complete' : ''}
+        </button>
+      ))}
+    </div>
+  );
   return (
-    <section
+    <section data-area="cave-panel"
       aria-label="Cave of Many Dreams controls"
       className="mb-5 rounded border border-slate-500 bg-[#101c1a] p-3 text-emerald-50"
     >
@@ -86,7 +110,7 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
         onClick={() => setExitConfirm(true)}
       >Exit dungeon</button></div>
       <Dialog open={exitConfirm} onOpenChange={setExitConfirm}>
-        <DialogContent className="border-slate-500 bg-[#101c1a] text-emerald-50" showCloseButton={false}>
+        <DialogContent data-area="cave-exit" className="border-slate-500 bg-[#101c1a] text-emerald-50" showCloseButton={false}>
           <DialogHeader><DialogTitle>Exit the dungeon?</DialogTitle>
             <DialogDescription className="text-slate-300">The whole party will leave the cave and stop outside. Leave now?</DialogDescription></DialogHeader>
           <div className="flex justify-end gap-2">
@@ -127,15 +151,16 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
           .map((m) => m.name + (m.fresh ? '' : ' — awaiting connection'))
           .join(' · ')}
       </p>
-      {mapCave && <CaveMap key={mapCave.run+':'+mapCave.floor} view={view} cave={mapCave} action={action} actionsReady={mapActionsReady} waitingForReports={mapWaitingForReports} error={query.actionError}/>}
+      {mapCave && <CaveMap key={mapFloor} view={view} cave={mapCave} action={action} actionsReady={view.actionsReady} waitingForReports={mapWaitingForReports} error={query.actionError}
+        open={mapOpen} onOpenChange={(open) => setMapOpenFloor(open ? mapFloor : null)} destinations={destinations} onSelectPoint={selectPoint}/>}
       {view.state.phase === 'active' && (
         <div className="mt-3">
           <p className="text-sm text-slate-200">
             {view.state.progress?.message || 'Continue through the cave toward the next floor.'}
           </p>
           <button className={dungeonButton} disabled={query.busy || cave?.paused}
-            onClick={() => void action({action: 'progress', enabled: !travelling})}>
-            {travelling ? 'Stop travel' : 'Start automatic exploration'}
+            onClick={() => void action({action: 'progress', enabled: !view.travelling})}>
+            {view.travelling ? 'Stop travel' : 'Start automatic exploration'}
           </button>
           <p className="mt-1 text-xs text-slate-300">Choose a room below to travel there. Automatic exploration visits required rooms and stairs. Stopping travel still allows defensive combat and healing.</p>
         </div>
@@ -167,37 +192,15 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
           Call Nera — revival choices
         </button>
       )}
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {cave?.points.filter((p) => !p.exit).map((p) => (
-          <button
-            className={dungeonButton + (p.done ? ' !border-2 !border-green-500 disabled:!opacity-80' : p.required ? ' !border-2 !border-orange-500' : '')}
-            key={p.id}
-            disabled={
-              query.busy ||
-              cave.paused ||
-              p.locked ||
-              p.done && !merchantRoom(p.room) ||
-              view.state.phase !== 'active'
-            }
-            onClick={() => {
-              setRequestedRoom(p.room || null);
-              if (choice?.shop?.nearby && p.room === choice.shop.room) setInspectedChoice(choice.id);
-              else void action({ action: 'move', target: p.id });
-            }}
-          >
-            {p.label}
-            {p.map !== 'zone_'+cave.run+'_'+cave.floor ? ' — different floor' : ''}
-            {p.locked ? ' — locked' : p.done && merchantRoom(p.room) ? ' - reopen shop' : p.done ? ' — complete' : ''}
-          </button>
-        ))}
-      </div>
+      {!mapOpen && destinations}
+      <AddonSlot name="page-section" part="cave" state={model.state} />
       {choice?.resolved && <button className={dungeonButton + ' mt-3'} onClick={() => setInspectedChoice(choice.id)}>
         View encounter — {choice.title}
       </button>}
       {choice && cave && (
         <Dialog open={!choice.resolved || inspectedChoice === choice.id || !!(choice.shop?.nearby && requestedRoom === choice.shop.room)}
           onOpenChange={(open) => { if (!open && choice.resolved) { setInspectedChoice(null); setRequestedRoom(null); } }}>
-        <DialogContent aria-label="Cave choice" showCloseButton={choice.resolved}
+        <DialogContent data-area="cave-choice" aria-label="Cave choice" showCloseButton={choice.resolved}
           className="max-h-[85vh] overflow-auto border-slate-500 bg-[#101c1a] text-emerald-50 [&_[data-slot=dialog-close]]:border [&_[data-slot=dialog-close]]:border-slate-500 [&_[data-slot=dialog-close]]:bg-slate-950 [&_[data-slot=dialog-close]]:text-emerald-50 [&_[data-slot=dialog-close]]:hover:bg-slate-800"
           >
           <DialogHeader>
@@ -287,7 +290,7 @@ export function DungeonPanel({ model }: { model: PartyConsoleModel }) {
               </p>
               <button className={dungeonButton + ' my-2 flex items-center gap-3'} aria-label="Inspect cave shop item"
                 onClick={() => setItemInspection({character: view.members[0]?.name || '', entry:{slot:-1,item:{name:choice.shop!.name,level:0},meta:shopItem?.meta}})}>
-                <span className="relative h-12 w-12 bg-black">{shopItem?.sprite && <ItemSprite sprite={shopItem.sprite} />}</span>
+                <span className="relative h-12 w-12 bg-black">{shopItem?.sprite && <SpriteCrop sprite={shopItem.sprite} />}</span>
                 {shopItem?.name || choice.shop.name} — view details
               </button>
               <PartyItemDetails model={{...model, selected:itemInspection, setSelected:setItemInspection}} />

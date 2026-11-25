@@ -1,14 +1,7 @@
-const { BASE } = require("./native.cjs");
-const fs = require("node:fs");
-const path = require("node:path");
-function merchantStand() {
-  const source = fs.readFileSync(path.resolve(__dirname, "../../../characters/shared.js"), "utf8");
-  const match = source.match(
-    /var merchantMarketLocation = \{ map: "([^"]+)", x: (-?[\d.]+), y: (-?[\d.]+) \}/,
-  );
-  if (!match) throw Error("Cannot locate configured merchant stand in characters/shared.js");
-  return { map: match[1], x: Number(match[2]), y: Number(match[3]) };
-}
+const { BASE, seededRandom } = require("./native.cjs");
+const { legacyStandLocation } = require("../../../runtime/merchant-jobs/rules.ts");
+// The plotted routes carry `plot: true`, which report.cjs's route plots read.
+const plot = { plot: true };
 function corpus(native, snapshot = {}) {
   const G = native.game,
     routes = [];
@@ -16,8 +9,10 @@ function corpus(native, snapshot = {}) {
   const spawn = (map) => point(map, ...G.maps[map].spawns[0]);
   const add = (id, category, from, to, extra = {}) =>
     routes.push({ id, category, from, to, town: false, ...extra });
+  // The merchant stand is the snapshot console's saved `merchantStandLocation`, or the merchant jobs owner's default
+  // with none saved, as merchant-jobs/coordinator/owner.ts answers it.
   const main = spawn("main"),
-    stand = merchantStand();
+    stand = snapshot.merchantStandLocation || legacyStandLocation;
   const npc = (id) => {
     for (const [map, def] of Object.entries(G.maps)) {
       if (def.ignore || def.instance) continue;
@@ -26,23 +21,23 @@ function corpus(native, snapshot = {}) {
     }
     throw Error(`Missing NPC ${id}`);
   };
-  add("stand-bank", "merchant", stand, spawn("bank"));
+  add("stand-bank", "merchant", stand, spawn("bank"), plot);
   add("bank-scrolls", "merchant", spawn("bank"), point("main", -465, -71));
-  add("scrolls-upgrade", "merchant", point("main", -465, -71), point("main", -204, -129));
-  add("upgrade-craftsman", "merchant", point("main", -204, -129), npc("craftsman"));
+  add("scrolls-upgrade", "merchant", point("main", -465, -71), point("main", -204, -129), plot);
+  add("upgrade-craftsman", "merchant", point("main", -204, -129), npc("craftsman"), plot);
   add("stand-potions", "merchant", stand, point("main", 56, -122));
   add("craftsman-stand", "merchant", npc("craftsman"), stand);
   if (snapshot.partyLocation?.map) {
     const p = snapshot.partyLocation;
-    add("configured-party-farm", "configured", main, point(p.map, p.x, p.y));
+    add("configured-party-farm", "configured", main, point(p.map, p.x, p.y), plot);
     add("configured-party-return", "configured", point(p.map, p.x, p.y), main, { town: true });
   }
   for (const map of ["halloween", "winterland", "desertland", "spookytown"])
-    add(`main-${map}`, "cross-map", main, spawn(map));
+    add(`main-${map}`, "cross-map", main, spawn(map), map === "halloween" ? plot : {});
   add("winterland-return", "cross-map", point("winterland", -160, -660), main, { town: true });
   seededRoutes(native, spawn, point, add);
-  add("fence-detour", "obstacle", point("main", -95, 229), point("main", -137, 248));
-  add("cave-bridge", "obstacle", point("cave", 121, -1051), point("cave", 23, -1075));
+  add("fence-detour", "obstacle", point("main", -95, 229), point("main", -137, 248), plot);
+  add("cave-bridge", "obstacle", point("cave", 121, -1051), point("cave", 23, -1075), plot);
   add("short-straight", "control", main, point("main", main.x + 20, main.y));
   const geometry = G.geometry.main;
   const line = geometry.x_lines[0];
@@ -70,8 +65,7 @@ function corpus(native, snapshot = {}) {
   return { seed: 42, base: BASE, speed: 60, merchantStand: stand, routes };
 }
 function seededRoutes(native, spawn, point, add) {
-  let seed = 42;
-  const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const random = seededRandom(42);
   for (const map of ["main", "halloween", "winterland", "cave", "tunnel", "desertland"]) {
     const center = spawn(map),
       points = [];

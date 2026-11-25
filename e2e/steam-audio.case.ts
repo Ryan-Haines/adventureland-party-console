@@ -5,10 +5,12 @@ import { build } from 'esbuild';
 // native persistence bypassed; external settings go stale; roster operations
 // disable audio; minimize/restore loses state; disposing leaves controls alive.
 // Native audio functions are the declared boundary; real switcher DOM executes.
+// The three tests mount the same switcher bundle, built once per worker.
+let switcher='';
+test.beforeAll(async()=>{switcher=(await build({entryPoints:['runtime/lifecycle/roster/switcher.ts'],bundle:true,write:false,platform:'browser',format:'iife',globalName:'Switcher'})).outputFiles[0].text;});
 test('Steam Characters bar independently toggles native sounds and music', async ({page},info)=>{
-  const bundle=await build({entryPoints:['runtime/steam/switcher.ts'],bundle:true,write:false,platform:'browser',format:'iife',globalName:'Switcher'});
   await page.route('http://audio.test/**', (route) =>route.fulfill({contentType:'text/html',body:'<!doctype html><body style="background:#163127"></body>'}));
-  await page.goto('http://audio.test/');await page.addScriptTag({content:bundle.outputFiles[0].text});
+  await page.goto('http://audio.test/');await page.addScriptTag({content:switcher});
   await page.evaluate(()=>{
     const host=window as any;host.sound_sfx='1';host.sound_music='';host.audioCalls=[];
     for(const [name,flag,value] of [['sfx_on','sound_sfx','1'],['sfx_off','sound_sfx',''],['sound_on','sound_music','1'],['sound_off','sound_music','']]){
@@ -41,14 +43,6 @@ test('Steam Characters bar independently toggles native sounds and music', async
 test("Steam pointer toggle blocks movement surface clicks and preserves UI controls", async ({
   page,
 }, info) => {
-  const bundle = await build({
-    entryPoints: ["runtime/steam/switcher.ts"],
-    bundle: true,
-    write: false,
-    platform: "browser",
-    format: "iife",
-    globalName: "Switcher",
-  });
   await page.route("http://pointer.test/**", (r) =>
     r.fulfill({
       contentType: "text/html",
@@ -56,7 +50,7 @@ test("Steam pointer toggle blocks movement surface clicks and preserves UI contr
     }),
   );
   await page.goto("http://pointer.test/");
-  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await page.addScriptTag({ content: switcher });
   await page.evaluate(() => {
     const h = window as any;
     h.moves = 0;
@@ -98,9 +92,8 @@ test("Steam pointer toggle blocks movement surface clicks and preserves UI contr
 // Native score and controls are declared DOM boundaries; layout and clicks run
 // in Chromium. Changing expansion must never change the toggle's screen anchor.
 test('Steam character controls fit beside native score and keep a fixed minimize anchor',async({page},info)=>{
- const bundle=await build({entryPoints:['runtime/steam/switcher.ts'],bundle:true,write:false,platform:'browser',format:'iife',globalName:'Switcher'});
  await page.setViewportSize({width:1600,height:900});await page.route('http://layout.test/**',route=>route.fulfill({contentType:'text/html',body:'<body><div id="topmid" style="position:fixed;left:550px;top:0;width:200px;height:40px;background:#222;color:white">PVP score 15:3</div><div id="toprightcorner" style="position:fixed;right:0;top:0"><div class="game-controls" style="width:360px;height:40px;background:#444;color:white">X CODE COM Skills Guide</div></div></body>'}));
- async function mount(){await page.goto('http://layout.test/');await page.addScriptTag({content:bundle.outputFiles[0].text});await page.evaluate(()=>{const h=window as any;h.switcher=h.Switcher.createSwitcher(window,async()=>{});h.switcher.render({members:['Warrior','Mage','Merchant','Priest'].map(name=>({name,online:true,hosting:'steam'})),realm:'SR_USI'});});}
+ async function mount(){await page.goto('http://layout.test/');await page.addScriptTag({content:switcher});await page.evaluate(()=>{const h=window as any;h.switcher=h.Switcher.createSwitcher(window,async()=>{});h.switcher.render({members:['Warrior','Mage','Merchant','Priest'].map(name=>({name,online:true,hosting:'steam'})),realm:'SR_USI'});});}
  await mount();const minimize=()=>page.getByRole('button',{name:'Minimize Steam character controls',exact:true}),restore=()=>page.getByRole('button',{name:'Restore Steam character controls',exact:true});
  const initial=await minimize().boundingBox();expect(initial).not.toBeNull();const bounds=await page.locator('#party-console-switcher').boundingBox();expect(bounds!.x).toBeGreaterThanOrEqual(758);expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(1232);
  for(let i=0;i<3;i++){await minimize().click();expect(await restore().boundingBox()).toEqual(initial);await restore().click();expect(await minimize().boundingBox()).toEqual(initial);}

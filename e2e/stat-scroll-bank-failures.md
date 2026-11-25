@@ -3,7 +3,8 @@
 Written before the change. `preloadStatScrolls` (characters/shared.js) prepares the
 scrolls a stat-scroll visit needs. It called `retrieveFromBankUntil(names[n], needs[n])`
 with a list index instead of the scroll name, so the required count was `undefined`
-and nothing was ever withdrawn. Live journey: `e2e/live-stat-scroll-bank.spec.ts`.
+and nothing was ever withdrawn. Live journeys: W52's M58 and M60 round
+(`e2e/merchant-day-session-rows.ts`) and W03's M59 delivery.
 
 1. **Bank stock ignored for purchasable scrolls.** A STR/INT/DEX/VIT scroll held in
    the bank is bought again from the NPC; the bank copy stays and gold is spent.

@@ -41,8 +41,14 @@ function inventory(native: boolean) {
 }
 const native = inventory(true),
   accelerated = inventory(false);
-const keys = (rows: typeof native) => rows.map((row) => row.key).sort();
-if (JSON.stringify(keys(native)) !== JSON.stringify(keys(accelerated)))
+// Each backend lists each scenario once per project, and both list the same scenarios.
+const keys = (rows: typeof native) => rows.map((row) => `${row.project} ${row.key}`).sort();
+for (const rows of [native, accelerated]) {
+  const listed = keys(rows), twice = listed.filter((key, index) => listed[index - 1] === key);
+  if (twice.length) throw Error("Default selection lists a scenario twice: " + twice.join(", "));
+}
+const scenarios = (rows: typeof native) => rows.map((row) => row.key).sort();
+if (JSON.stringify(scenarios(native)) !== JSON.stringify(scenarios(accelerated)))
   throw Error("Default selection lost or duplicated existing scenarios");
 const out = path.join(root, ".build/sim-validation/selection.json");
 mkdirSync(path.dirname(out), { recursive: true });

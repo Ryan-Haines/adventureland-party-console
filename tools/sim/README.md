@@ -29,7 +29,7 @@ clock:
   characters.
 - `host/character.cjs` stands in for the process the coordinator forks per character
   (caracAL's `CharacterThread`): same IPC, but it logs a ChronAL client in and runs the
-  CODE through the repository's own runner host (`runtime/lifecycle/runner-host.ts`).
+  CODE through the repository's own runner host (`runtime/lifecycle/character/host.ts`).
 - `host/transport.cjs` carries CODE's `$.ajax` and `fetch` to the coordinator, with
   one-way latency on the virtual clock. The captured Express app is dispatched
   synchronously, so a request takes no virtual time inside the coordinator and long polls
@@ -93,14 +93,26 @@ death's minute and its spawn-to-death time), and `expect` makes a scenario a tes
 `{ "minKills": { "<type>": n }, "maxCycleMinutes": n, "maxDeaths": n, "maxErrors": n }`.
 A run that misses an expectation lists it in `report.expect` and exits 1.
 
+- `boot.json`: five minutes in which a warrior and a priest boot through the whole party
+  console stack and report status.
+- `farm-goo.json`: two virtual hours in which a warrior leads a following priest to Mainland
+  goos and farms (the Use section runs it).
+- `benchmark-goo.json`: five native minutes of two-character farming for the paced,
+  accelerated and traced replay comparison (the benchmark section runs it).
 - `phoenix-farm.json`: three hours of Phoenix farming by a level-80 warrior and priest
   with mid-tier gear; fails on no kill, any death or any coordinator error.
 
 ## Pins and maintenance
 
-`setup.mts` pins ChronAL **0.10.0** (`e858d3f4cc941cc5ab87b94d2e471c0fb9dfd785`)
-and its three game repositories to exact commits in `pins.json`. The game revision
-is shared with the native Docker E2E stack (`90052162eb3ebda36c893e1eb4af643913c8f984`). No upstream patches are required.
+`setup.mts` pins ChronAL **0.10.0** (``)
+and its three game repositories to exact commits in `pins.json`, the one source of the
+simulation's game revision. The native Docker E2E stack builds the same revisions:
+`e2e/game/manage.mjs` passes them to `compose.yml`, which requires them, and the run manifest
+records them (`e2e/game/bootstrap.cjs`). The
+simulator runs ChronAL unpatched. The E2E browser clock bundle (`build-browser-clock.mts`) makes
+one patch: its copy of `sim/vclock.js` returns `true` where the pin reads
+`if (each || promiseActivity) return true;`, so the browser drains microtasks after every timer.
+The build fails when the pin holds that text other than once.
 Setup refuses tracked dependency edits and unexpected origins, and uses shallow pinned
 fetches. `install.cjs` confines upstream configuration to this checkout; on Windows it
 adapts the installer's Bash copy to Node file copying and directory links to junctions.
@@ -109,7 +121,7 @@ CODE use copies. The game dependency installer still needs npm and network acces
 Each run rebuilds shared/runtime bundles and stages CODE from the working tree.
 
 The host integration is adapted from [Thefonze74065's implementation](https://github.com/Thefonze74065/adventureland-party-console/tree/e67f6c702dcc8055b6e65573a282e26c63360459/tools/sim)
-for [issue #58](https://github.com/Ryan-Haines/adventureland-party-console/issues/58).
+for issue #58 in this repository.
 Move simulator/game pins together and rerun the benchmark when upgrading.
 
 ## Local speed and replay validation

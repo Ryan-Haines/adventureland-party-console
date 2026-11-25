@@ -1,6 +1,6 @@
 import {test,expect} from './fixtures';
 import { fetchFullState } from './state-route';
-import {automaticCommerceRuleKey} from '../runtime/coordinator/inventory/item-identity';
+import {commerceRuleKey} from '../runtime/items/identity';
 
 test('bank tiles show every automatic action and distinguish manual NPC sales',async({page,app},info)=>{
   const initial=await app.state();
@@ -11,10 +11,10 @@ test('bank tiles show every automatic action and distinguish manual NPC sales',a
   await page.route('**/party-api/state*',async route=>{
     const response=await fetchFullState(route),state=await response.json();
     await route.fulfill({response,json:{...state,bank:{gold:0,packs:{items0:entries}},
-      autoItemMarks:{M:{'helmet@+0':'bank'}},autoNpcSales:{[automaticCommerceRuleKey(entries[1].item)]:{item:entries[1].item}},
-      autoDeconstruction:{M:{[automaticCommerceRuleKey(entries[2].item)]:{item:entries[2].item}}},
+      autoItemMarks:{M:{'helmet@+0':'bank'}},autoNpcSales:{[commerceRuleKey(entries[1].item)]:{item:entries[1].item}},
+      autoDeconstruction:{M:{[commerceRuleKey(entries[2].item)]:{item:entries[2].item}}},
       autoUpgradeMarks:{M:{'staff@+0':{tiers:2,quantity:-1}}},autoCompounds:{M:[{name:'strring',targetTier:2,quantity:-1}]},
-      autoStandMarks:{[automaticCommerceRuleKey(entries[5].item)]:{item:entries[5].item,price:1000}},
+      autoStandMarks:{[commerceRuleKey(entries[5].item)]:{item:entries[5].item,price:1000}},
       npcSaleMarks:[{id:'manual-npc',source:'bank',pack:'items0',slot:6,item:entries[6].item,state:'queued'}]}});
   });
   await page.goto('/');

@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { untilRunning } from './debug-running';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const execute = promisify(execFile);
@@ -6,12 +7,13 @@ const execute = promisify(execFile);
 test('Settings launches a disposable god party, repeats Cave entry and destroys its stack', async ({ page, app, context }, info) => {
   test.setTimeout(1_800_000);
   page.setDefaultTimeout(30000);
-  const settings = page.getByRole('dialog', { name: 'Interface settings' });
+  const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
   const openSettings = async () => {
     await expect(async () => {
       if (!await settings.isVisible()) await page.getByRole('button', { name: 'Interface settings', exact: true }).click();
       await expect(settings).toBeVisible({ timeout: 1000 });
     }).toPass({ timeout: 30000 });
+    await settings.getByRole('tab', { name: 'Console', exact: true }).click();
   };
   await page.goto(app.url);
   await expect(page.getByRole('heading', { name: 'W', exact: true })).toBeVisible();
@@ -27,11 +29,7 @@ test('Settings launches a disposable god party, repeats Cave entry and destroys 
     const starting = await state();
     await context.request.post(app.url + '/console-debug/start', { headers: { Origin: app.url }, data: {} });
     expect((await state()).project).toBe(starting.project);
-    await expect.poll(async () => {
-      const current = await state();
-      if (current.phase === 'error') throw Error(current.error);
-      return current.phase;
-    }, { timeout: 1_500_000, intervals: [2000] }).toBe('running');
+    await untilRunning(state);
     const running = await state(); project = running.project;
     const link = page.getByRole('link', { name: 'Open debug console' });
     const url = await link.getAttribute('href');

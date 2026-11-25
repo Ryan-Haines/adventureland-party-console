@@ -1,12 +1,13 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {previewUpgrade}=require('../../runtime/characters/upgrade-preview.ts');
-const {createUpgradePreviews}=require('../../runtime/coordinator/merchant/upgrade-preview.ts');
-const {unavailablePreview}=require('../../runtime/upgrade-preview.ts');
+const {previewUpgrade}=require('../../runtime/items/character/production.ts');
+const {createUpgradePreviews}=require('../../runtime/items/coordinator/routes/production.ts');
+const {unavailablePreview}=require('../../runtime/items/rules.ts');
 
 function fixture() {
  const item={name:'sword',level:8,rid:'exact'},items=[item,{name:'scroll1',q:4},{name:'offeringp'},{name:'offering'},{name:'offeringx'}],calls=[];
  const request={id:'r',executor:'M',session:'s',slot:0,item:{...item},expiresAt:11000};
- const ports={items:()=>items,grade:()=>1,current:()=>true,now:()=>1000,preview:async(...args)=>{
+ const ports={items:()=>items,grade:()=>1,current:()=>true,now:()=>1000,searched:'merchant inventory or accessible bank',preview:async(...args)=>{
   calls.push(args);return {calculate:true,chance:0.15321,item:{...item},scroll:'scroll1',...(args[2]===null?{}:{offering:items[args[2]].name}),grace:2};
  }};
  return {items,calls,request,ports};
@@ -22,13 +23,17 @@ test('missing scrolls and offerings never issue fake substitute attempts',async(
  assert.equal(f.calls.length,1);assert.match(result.options.offeringp.reason,/Offering not/);
  f.items.splice(1);f.calls.length=0;const missing=await previewUpgrade(f.request,f.ports);
  assert.equal(f.calls.length,0);assert.match(missing.options.none.reason,/Missing scroll1/);
+ // The merchant's preview borrows from the bank first, so the refusal names both places it looked.
+ assert.equal(missing.options.none.reason,'Missing scroll1 in merchant inventory or accessible bank');
+ assert.equal(result.options.offeringp.reason,'Offering not in merchant inventory or accessible bank');
 });
 test('slot replacement, session changes and expiry discard previews',async()=>{
  const f=fixture();f.items[0]={name:'sword',level:8,rid:'different'};
  assert.match((await previewUpgrade(f.request,f.ports)).options.none.reason,/Item changed/);assert.equal(f.calls.length,0);
  const g=fixture(),run=g.ports.preview;g.ports.preview=async(...args)=>{const result=await run(...args);g.items[0]={name:'sword',level:9};return result;};
  assert.match((await previewUpgrade(g.request,g.ports)).options.none.reason,/changed/);assert.equal(g.calls.length,1);
- const h=fixture();h.ports.now=()=>12000;await previewUpgrade(h.request,h.ports);assert.equal(h.calls.length,0);
+ // The preview runs while its command is current, past the request's expiresAt too.
+ const h=fixture();h.ports.now=()=>12000;await previewUpgrade(h.request,h.ports);assert.equal(h.calls.length,4);
 });
 test('server rejections and mismatched response identities are unavailable',async()=>{
  const f=fixture();f.ports.preview=async()=>{throw {reason:'cant_in_bank'};};
@@ -39,7 +44,7 @@ test('server rejections and mismatched response identities are unavailable',asyn
 
 function coordinator(saved) {
  const item={name:'sword',level:8},state=saved||{merchantCharacter:'M',merchantCurrent:null,merchantQueue:[],statuses:{M:{seenAt:1000,upgradePreviewSession:'session',upgradePreviewRevision:'0',items:[{slot:0,item}]}}};
- const routes={},service=createUpgradePreviews(state,{persist(){},dispatch(){},stamp:j=>({...j,priority:70})},()=>1000);
+ const routes={},service=createUpgradePreviews(state,withDoor(state,{persist(){},dispatch(){},stamp:j=>({...j,priority:70})}),()=>1000);
  service.install({post:(path,handler)=>routes[path]=handler});
  function send(path,body) {const res={statusCode:200,status(code){this.statusCode=code;return this;},json(value){this.value=value;}};routes['/party-api/upgrade-preview'+path]({body},res);return res;}
  const body={character:'M',slot:0,item};
@@ -66,77 +71,80 @@ test('changed or foreign items cannot create jobs',()=>{
  const f=coordinator();assert.equal(f.send('',{...f.body,character:'F',refresh:true}).statusCode,400);
  assert.equal(f.send('',{...f.body,item:{name:'sword',level:9},refresh:true}).statusCode,409);assert.equal(f.state.merchantQueue.length,0);
 });
-function bankFixture() {
- const fs=require('node:fs'),vm=require('node:vm'),{namedFunction}=require('./helpers/named-function.cjs');
- const source=fs.readFileSync('characters/shared.js','utf8'),store=new Map(),calls=[];
+// The items owner's merchantUpgradePreview and restoreUpgradePreviewSupplies (runtime/items/character/production.ts)
+// on the items harness. bank.ts's waitForBankPack runs over the same character; the vault's lookup,
+// withdrawal and return are planted. The game's chance reply answers each option and changes nothing.
+function bankFixture({character:extra={}}={}) {
+ const {productionHarness,bankHarness}=require('./helpers/items-character.cjs');
+ const calls=[],state={waits:0,bank:null,reply:null};
  const items=[{name:'sword',level:8},{name:'scroll1',q:3},null,null,null],bank={items0:[{name:'offeringp',q:2},{name:'offeringx'},null]};
- const c=vm.createContext({root:{localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)}},
-  character:{name:'M',map:'main',items,bank},parent:{},bank_packs:{items0:['bank']},item_grade:()=>1,freeInventorySlots:()=>items.filter(x=>!x).length,
-  waitForBankPack:async pack=>{if(!bank[pack])throw Error('bank not loaded');},
-  smart_move:async d=>{calls.push(['move',d]);c.character.map=d;},
+ const character={name:'M',ctype:'merchant',map:'main',items,bank,...extra};
+ const vault={
+  waitForBankPack:pack=>bankHarness({character,tick:()=>{state.waits++;if(state.bank)character.bank=state.bank;}}).bank.waitForBankPack(pack),
   findBankItem:w=>{const slot=bank.items0.findIndex(i=>i?.name===w.name);return slot>=0?{pack:'items0',slot}:null;},
   bankRetrieveConfirmed:async(pack,slot)=>{calls.push(['withdraw',bank[pack][slot].name]);items[items.indexOf(null)]=bank[pack][slot];bank[pack][slot]=null;},
-  bankStageConfirmed:async(slot,pack,target)=>{calls.push(['return',items[slot].name]);bank[pack][target]=items[slot];items[slot]=null;}
- });
- vm.runInContext(['previewSuppliesKey','previewTravel','borrowUpgradePreviewSupplies','restoreUpgradePreviewSupplies'].map(n=>namedFunction(source,n)).join('\n'),c);
- return {c,items,bank,store,calls};
+  bankStageConfirmed:async(slot,pack,target)=>{calls.push(['return',items[slot].name]);bank[pack][target]=items[slot];items[slot]=null;},
+ };
+ const h=productionHarness({character,bank:vault,ports:{
+  grade:()=>1,bankPacks:()=>({items0:['bank']}),job:()=>({commandId:7}),upgradeSettling:()=>false,
+  move:async d=>{calls.push(['move',d]);character.map=d;},
+  upgrade:async(slot,scroll,offering,calculate)=>{assert.equal(calculate,true);await state.reply;
+   return {calculate:true,chance:0.15,item:{...items[slot]},scroll:items[scroll].name,...(offering==null?{}:{offering:items[offering].name})};},
+  request:async path=>{calls.push([path]);return {};},
+ }});
+ const preview=()=>h.production.merchantUpgradePreview({id:7,jobId:'job',upgradePreview:{slot:0,item:{...items[0]}}});
+ return {h,c:vault,character,items,bank,state,calls,preview,supplies:()=>h.stored['party-preview-supplies']};
 }
 test('bank supplies are borrowed without buying or consuming, then returned without touching owned scrolls',async()=>{
  const f=bankFixture(),before=JSON.stringify({items:f.items,bank:f.bank});
- await f.c.borrowUpgradePreviewSupplies({item:f.items[0]});assert.equal(f.calls.filter(c=>c[0]==='withdraw').length,2);
- await f.c.restoreUpgradePreviewSupplies();assert.equal(JSON.stringify({items:f.items,bank:f.bank}),before);assert.equal(f.store.size,0);
+ await f.preview();assert.equal(f.calls.filter(c=>c[0]==='withdraw').length,2);
+ assert.equal(JSON.stringify({items:f.items,bank:f.bank}),before);assert.equal(f.supplies(),null);
 });
 test('lost withdrawal acknowledgement keeps recovery journal and safely returns borrowed supplies',async()=>{
  const f=bankFixture(),withdraw=f.c.bankRetrieveConfirmed;
  f.c.bankRetrieveConfirmed=async(...args)=>{await withdraw(...args);throw Error('lost reply');};
- await assert.rejects(f.c.borrowUpgradePreviewSupplies({item:f.items[0]}),/lost reply/);
- await f.c.restoreUpgradePreviewSupplies();assert.equal(f.bank.items0[0].name,'offeringp');assert.equal(f.store.size,0);
+ await f.preview();
+ assert.equal(f.calls.filter(c=>c[0]==='withdraw').length,1);assert.equal(f.bank.items0[0].name,'offeringp');assert.equal(f.supplies(),null);
 });
 test('lost deposit acknowledgement is reconciled without another withdrawal or duplicate return',async()=>{
- const f=bankFixture();await f.c.borrowUpgradePreviewSupplies({item:f.items[0]});const deposit=f.c.bankStageConfirmed;
+ const f=bankFixture(),deposit=f.c.bankStageConfirmed;
  f.c.bankStageConfirmed=async(...args)=>{await deposit(...args);throw Error('lost reply');};
- await assert.rejects(f.c.restoreUpgradePreviewSupplies(),/lost reply/);f.c.bankStageConfirmed=deposit;
- await f.c.restoreUpgradePreviewSupplies();assert.equal(f.calls.filter(c=>c[0]==='return').length,2);assert.equal(f.store.size,0);
+ await assert.rejects(f.preview(),/lost reply/);f.c.bankStageConfirmed=deposit;
+ await f.h.production.restoreUpgradePreviewSupplies();
+ assert.equal(f.calls.filter(c=>c[0]==='withdraw').length,2);assert.equal(f.calls.filter(c=>c[0]==='return').length,2);assert.equal(f.supplies(),null);
 });
 
 
 test('preview job retains the upgrade guard until calculation settles and returns supplies before publishing',async()=>{
- const fs=require('node:fs'),vm=require('node:vm'),{namedFunction}=require('./helpers/named-function.cjs');
- const source=fs.readFileSync('characters/shared.js','utf8'),events=[];
- let finish;const pending=new Promise(resolve=>{finish=resolve;});
- const item={name:'sword',level:8};
- const c=vm.createContext({root:{localStorage:{getItem:()=>null},__merchantActiveJob:{commandId:7},previewPartyUpgrade:()=>pending},
-  character:{name:'M',items:[item],q:{}},parent:{},upgradePreviewSession:'session',coordinatorClockOffset:0,
-  sameItem:()=>true,runtimeCurrent:()=>true,item_grade:()=>1,upgrade(){throw Error('unexpected real upgrade');},
-  borrowUpgradePreviewSupplies:async()=>events.push('borrow'),previewTravel:async()=>events.push('travel'),
-  restoreUpgradePreviewSupplies:async()=>events.push('return'),request:async path=>events.push(path)});
- vm.runInContext(namedFunction(source,'merchantUpgradePreview'),c);
- const job=c.merchantUpgradePreview({id:7,jobId:'job',upgradePreview:{slot:0,item}});
+ const f=bankFixture();let finish;f.state.reply=new Promise(resolve=>{finish=resolve;});
+ const job=f.preview();
  await new Promise(resolve=>setImmediate(resolve));
- assert.ok(c.root.__partyUpgradePreviewInFlight);assert.equal(c.upgrading,true);assert.deepEqual(events,['borrow','travel']);
- finish({executor:'M',item,options:{}});await job;
- assert.equal(c.root.__partyUpgradePreviewInFlight,null);assert.equal(c.upgrading,false);
- assert.deepEqual(events,['borrow','travel','return','/upgrade-preview/result','/merchant/complete']);
+ assert.equal(f.h.bag.facts().previewing,true);assert.equal(f.h.bag.facts().upgrading,true);
+ const step=c=>c[0]==='move'?c[1]:c[0];
+ assert.deepEqual(f.calls.map(step),['bank','withdraw','withdraw','newupgrade']);
+ finish();await job;
+ assert.equal(f.h.bag.facts().holder,null);
+ assert.deepEqual(f.calls.map(step).slice(4),['bank','return','return','/upgrade-preview/result','/merchant/complete']);
 });
 
 test('only a real upgrade packet invalidates saved previews',()=>{
- const fs=require('node:fs'),vm=require('node:vm'),{namedFunction}=require('./helpers/named-function.cjs'),writes=[];
- const c=vm.createContext({character:{name:'M'},root:{localStorage:{setItem:(...args)=>writes.push(args)}},runtimeCurrent:()=>true,luckySlotTracking:()=>({observe(){}})});
- vm.runInContext(namedFunction(fs.readFileSync('characters/shared.js','utf8'),'luckySlotRollListener'),c);
- c.luckySlotRollListener({calculate:true,chance:0.2});c.luckySlotRollListener({q:{compound:{}}});assert.equal(writes.length,0);
- c.luckySlotRollListener({q:{upgrade:{ms:100}}});assert.equal(writes.length,1);assert.equal(writes[0][0],'party-upgrade-preview-revision:M');
+ const {productionHarness}=require('./helpers/items-character.cjs');
+ // The items owner's observe handle (lifecycle `scope`) hands the listener to the test, not a socket.
+ const game=globalThis.parent??={},before=game.__partyRunScope;let listener=null;
+ game.__partyRunScope={scope:()=>({on:(socket,name,run)=>{assert.equal(name,'q_data');listener=run;}}),dispose(){}};
+ try{
+  const h=productionHarness({character:{name:'M',items:[]}});
+  h.production.listen({});
+  listener({calculate:true,chance:0.2});listener({q:{compound:{}}});assert.equal(h.stored['party-upgrade-preview-revision'],undefined);
+  listener({q:{upgrade:{ms:100}}});assert.equal(h.stored['party-upgrade-preview-revision'],0);
+ }finally{game.__partyRunScope=before;}
 });
 
 
 test('borrowing waits for bank data after arrival instead of reporting an empty bank',async()=>{
- const fs=require('node:fs'),vm=require('node:vm'),{namedFunction}=require('./helpers/named-function.cjs');
- const f=bankFixture();let waits=0;
- f.c.character.bank=null;
- f.c.sleep=async()=>{waits++;f.c.character.bank=f.bank;};
- vm.runInContext(namedFunction(fs.readFileSync('characters/shared.js','utf8'),'waitForBankPack'),f.c);
- await f.c.borrowUpgradePreviewSupplies({item:f.items[0]});assert.equal(waits,1);
- assert.equal(f.calls.filter(c=>c[0]==='withdraw').length,2);
- await f.c.restoreUpgradePreviewSupplies();assert.equal(f.store.size,0);
+ const f=bankFixture({character:{bank:null}});f.state.bank=f.bank;
+ await f.preview();assert.equal(f.state.waits,1);
+ assert.equal(f.calls.filter(c=>c[0]==='withdraw').length,2);assert.equal(f.supplies(),null);
 });
 
 test('one calculated option is a partial preview, never an all-options success',()=>{
@@ -145,4 +153,36 @@ test('one calculated option is a partial preview, never an all-options success',
  result.options.none={preview:{calculate:true,chance:0.15,item:f.item,scroll:'scroll1'},observedAt:1000};
  f.send('/result',{character:'M',id:f.state.merchantCurrent.id,commandId:7,session:'session',revision:'0',result});f.state.merchantCurrent=null;
  assert.equal(f.send('',f.body).value.status,'partial');assert.equal(f.send('',f.body).value.result.options.none.preview.chance,0.15);
+});
+
+// The open panel used to read the stored preview every 2 s, so a result showed up to 2 s after the
+// merchant stored it and the panel read on every tick while nothing changed. It now reads when the
+// core read's preview signal changes: the stored results, the preview job's start, a queued job, or
+// the executor's bag.
+test('the open preview panel reads on the store write and the job start, and not while nothing changes',async()=>{
+ const {load,queryRoot}=require('./helpers/dashboard-query-module.cjs');
+ const React=require('../../dashboard/node_modules/react'),{create,act}=require('../../dashboard/node_modules/react-test-renderer');
+ global.IS_REACT_ACT_ENVIRONMENT=true;
+ const oldDocument=global.document;global.document={hidden:false,addEventListener(){},removeEventListener(){}};
+ const reads=[],answer={status:'queued'};
+ const {UpgradePreviewPanel}=load('upgrade-preview-panel.tsx',{'@/components/ui/*':new Proxy({},{get:(_,name)=>String(name)}),
+  './query-actions':{performAction:async(_client,path,body)=>{reads.push(body.refresh);return answer;}},
+  './upgrade-offering-controls':{useUpgradeOfferings:()=>({character:'M',executor:'M'})}});
+ const {key}=load('query-cache.tsx'),{characterKey}=load('character-cache.ts');
+ const {client,wrap}=queryRoot(),settle=()=>act(()=>new Promise(resolve=>setTimeout(resolve,0)));
+ const core=fields=>client.setQueryData(key('core'),{merchantCurrent:null,merchantQueue:[],upgradePreviewResults:{},...fields});
+ try {
+  core({merchantQueue:[{id:'p1',reason:'upgrade preview'}]});
+  let tree;await act(async()=>{tree=create(wrap(React.createElement(UpgradePreviewPanel,{item:{name:'sword',level:8},source:{slot:0}})));});
+  await settle();assert.deepEqual(reads,[false]);
+  core({merchantQueue:[{id:'p1',reason:'upgrade preview'}],gold:5});await settle();
+  assert.deepEqual(reads,[false],'a core read that changes nothing the preview reads');
+  core({merchantCurrent:{id:'p1',reason:'upgrade preview'}});await settle();
+  assert.deepEqual(reads,[false,false],'the preview job starts');
+  core({merchantCurrent:{id:'p1',reason:'upgrade preview'},upgradePreviewResults:{k:{at:1}}});await settle();
+  assert.deepEqual(reads,[false,false,false],'the estimate writes its result to the store');
+  await act(async()=>client.setQueryData(characterKey('M','inventory'),{items:[]}));await settle();
+  assert.equal(reads.length,4,'the executor bag changes');
+  await act(async()=>tree.unmount());
+ } finally { global.document=oldDocument; }
 });

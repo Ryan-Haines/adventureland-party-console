@@ -27,7 +27,7 @@ export function MonsterAchievementProgress({
   const unlocked =
     kills === null ? 0 : achievements.filter((entry) => kills >= Number(entry[0] || 0)).length;
   return (
-    <section className="mb-4 rounded border border-violet-900/80 bg-violet-950/15 p-3">
+    <section data-area="monster-achievement" className="mb-4 rounded border border-violet-900/80 bg-violet-950/15 p-3">
       <div className="mb-2 flex items-center justify-between gap-3">
         <h4 className="font-mono text-xs uppercase text-violet-300">Monster achievements</h4>
         <span className="font-mono text-[10px] text-emerald-200/75">

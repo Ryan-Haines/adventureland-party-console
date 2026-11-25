@@ -1,20 +1,27 @@
 import type { PartyState } from "./party-state";
+import { scopeOwner } from "../../../runtime/tasks/api.ts";
+import { slotPair } from "../../../runtime/hunting/api.ts";
 
 export function farmingContext(state: PartyState, name: string) {
-  const followingLeader = state.leader && state.leader !== name && state.followers?.[name]
-    ? state.leader : undefined;
-  const owner = followingLeader || name;
+  // The tasks owner's scope owner: the merchant farms in its own scope even with a saved follower mark.
+  const owner = scopeOwner(state, name), followingLeader = owner !== name ? owner : undefined;
   const personal = state.farmingProfiles?.[name];
-  const effective = state.farmingProfiles?.[owner];
+  const effective = state.farmingProfiles?.[owner], live = state.farmingLive?.[owner];
   const legacy = owner === state.leader;
+  // The hunting owner's two slot fields, resolved by its slotPair: the character's own for the pressed
+  // buttons and the summary, the scope's for its status. The config's single `farmingPolicy` is
+  // the apps' interface v1.
+  const own = slotPair(personal, name === state.leader ? state : undefined), scope = slotPair(effective, legacy ? state : undefined);
   return {
-    farmArea: effective?.farmAreaState || (legacy ? state.farmAreaState : undefined),
+    farmArea: live?.farmAreaState || (legacy ? state.farmAreaState : undefined),
     owner,
     followingLeader,
-    savedMode: personal?.farmingPolicy || (name === state.leader ? state.farmingPolicy : undefined) || "auto",
-    effectiveMode: effective?.farmingPolicy || (legacy ? state.farmingPolicy : undefined) || "auto",
+    combatMode: own.combatMode,
+    targetMode: own.targetMode,
+    effectiveCombat: scope.combatMode,
+    effectiveTarget: scope.targetMode,
     blacklist: effective?.huntBlacklist || (legacy ? state.huntBlacklist : undefined) || {},
     settings: effective?.huntSettings || (legacy ? state.huntSettings : undefined),
-    hunt: effective?.monsterHunt ?? (legacy ? state.monsterHunt : null),
+    hunt: live?.monsterHunt ?? (legacy ? state.monsterHunt : null),
   };
 }

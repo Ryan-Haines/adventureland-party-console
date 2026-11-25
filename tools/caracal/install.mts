@@ -26,8 +26,8 @@ async function nativeFiles(directory:string,relative=''):Promise<string[]>{
   const result:string[]=[];
   for(const entry of await readdir(path.join(directory,relative),{withFileTypes:true})){
     const name=relative?relative+'/'+entry.name:entry.name;
-    // Dependency junctions are verified by the artifact store and are not copied
-    // as native executables. Keep rejecting links inside the executable tree.
+    // The artifact store verifies the dependency junctions, so nativeFiles skips node_modules and
+    // refuses any link inside the executable tree.
     if(!relative && entry.name==='node_modules')continue;
     if(entry.isSymbolicLink())throw new Error('Native artifact contains a redirected executable: '+name);
     if(!nativeIncluded(relative,entry.name,entry.isDirectory()))continue;
@@ -36,7 +36,7 @@ async function nativeFiles(directory:string,relative=''):Promise<string[]>{
   }
   return result;
 }
-// A prepared marker covers the entire native executable tree, not only hooks.
+// The prepared marker lists every native executable file of the artifact or the target.
 for(const file of await nativeFiles(artifactNative||target))if(!files.includes(file))files.push(file);
 const originals = new Map<string, string|null>();
 async function cleanupStage():Promise<void>{
@@ -78,14 +78,14 @@ const launcher = await readFile(path.join(root, "tools/caracal/CharacterCoordina
 if (!isCoordinatorApplicationLauncher(launcher)) throw new Error("Invalid coordinator launcher template");
 await writeFile(path.join(stage, "standalones/CharacterCoordinator.js"), launcher);
 await writeFile(path.join(stage, "game_files.js"),
-  'module.exports = require(process.env.AL_CONSOLE_ARTIFACT ? require("node:path").join(process.env.AL_CONSOLE_ARTIFACT, "scripts/client-files.cjs") : "../scripts/client-files.cjs");\n');
+  'module.exports = require(process.env.AL_CONSOLE_ARTIFACT ? require("node:path").join(process.env.AL_CONSOLE_ARTIFACT, "runtime/lifecycle/coordinator/client-files.cjs") : "../runtime/lifecycle/coordinator/client-files.cjs");\n');
 if(!preparedNative)for (const file of files) if(/\.[cm]?js$/.test(file))await run(["--check", path.join(stage, file)]);
 for (const file of files)
   if ((await readFile(path.join(target, file), "utf8").catch((error:NodeJS.ErrnoException)=>{if(error.code==='ENOENT')return null;throw error;})) !== originals.get(file))
     throw new Error("caracAL changed while preparing the upgrade; no hooks installed");
 
-// The launcher calls this only after stopping the old supervisor. All files
-// have been transformed and syntax checked before any is replaced.
+// The launcher calls this only after stopping the old supervisor. install.mts transforms and
+// syntax-checks every staged file before it replaces any.
 for (const file of files) {
   const content = await readFile(path.join(stage, file), "utf8");
   if (content === originals.get(file)) continue;

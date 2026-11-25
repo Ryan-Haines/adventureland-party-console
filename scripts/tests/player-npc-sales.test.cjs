@@ -1,15 +1,17 @@
 const test = require('node:test');
+const {settingsWriter,merchantViewNames}=require('./helpers/settings-writer.cjs');
 const assert = require('node:assert/strict');
-const {createNpcSaleRoute} = require('../../runtime/coordinator/http/npc-sale.ts');
-const {createAutomaticSaleRoutes} = require('../../runtime/coordinator/http/automatic-sales.ts');
-const {createAutomaticMerchantSales} = require('../../runtime/coordinator/merchant/automatic-sales.ts');
-const {receivePlayerSales, npcSaleRuleKey} = require('../../runtime/coordinator/merchant/player-npc-sales.ts');
-const {readyNpcSales} = require('../../runtime/coordinator/merchant/npc-sales.ts');
-const {reconcileNpcSales} = require('../../runtime/coordinator/merchant/npc-sales.ts');
-const {automaticCommerceRuleKey} = require('../../runtime/coordinator/inventory/item-identity.ts');
+const {createNpcSaleRoute} = require('../../runtime/items/coordinator/routes/market.ts');
+const {createAutomaticSaleRoutes} = require('../../runtime/items/coordinator/routes/market.ts');
+const {createAutomaticMerchantSales} = require('../../runtime/items/coordinator/market.ts');
+const {receivePlayerSales} = require('../../runtime/items/coordinator/fates.ts');
+const {npcSaleRuleKey} = require('../../runtime/items/rules.ts');
+const {readyNpcSales} = require('../../runtime/items/coordinator/market.ts');
+const {reconcileNpcSales} = require('../../runtime/items/coordinator/market.ts');
+const {commerceRuleKey} = require('../../runtime/items/identity.ts');
 const item = {name:'ring',level:2,stat_type:'int',q:5};
 test('stale deconstruction slots cannot suppress NPC pickups for replacement items',()=>{
- const {reconcilePlayerSales,playerSaleReserved}=require('../../runtime/coordinator/merchant/player-npc-sales.ts');
+ const {reconcilePlayerSales,playerSaleReserved}=require('../../runtime/items/coordinator/fates.ts');
  const f=fixture(),s=f.state;
  s.autoNpcSales[npcSaleRuleKey(item,'P')]={item,createdAt:1};
  s.deconstructionMarks=[{owner:'P',slot:1,item:{name:'firebow',level:0},state:'blocked'}];
@@ -28,7 +30,7 @@ function fixture() {
     persist(){},publish(){},syncStand:()=>false,idle(){},persistBank(){},bankService(){},stamp:job=>job,log(){}};
   const sales=createAutomaticMerchantSales(state,ports);
   const route=createNpcSaleRoute(state,ports);
-  const auto=createAutomaticSaleRoutes(state,{...ports,key:automaticCommerceRuleKey,
+  const auto=createAutomaticSaleRoutes(state,{...ports,key:commerceRuleKey,write:settingsWriter(state).write,
     reconcile:()=>Object.values(state.statuses).forEach(status=>sales.reconcile(status))});
   const invoke=(handler,body)=>{const res={code:200,status(code){this.code=code;return this},json(body){this.body=body;return this}};handler({body},res);return res;};
   const mark=()=>invoke(route,{source:'character',character:'P',slot:1,item,quantity:2,acknowledged:true});
@@ -41,7 +43,7 @@ test('player sale waits for its receipt, preserves quantity, then queues merchan
   assert.equal(f.state.merchantMarked.P[0].quantity,2);
   assert.equal(f.queues[0].reason,'npc sale pickup');
   f.state.statuses.M.items=[{slot:8,item}];f.sales.reconcile(f.state.statuses.M);
-  assert.equal(readyNpcSales(f.state.npcSaleMarks,20000).length,0);
+  assert.equal(readyNpcSales(f.state.npcSaleMarks).length,0);
   receivePlayerSales(f.state,'Other',[{npcSaleId:mark.id,quantity:2}],20000);
   assert.equal(mark.source,'character');
   receivePlayerSales(f.state,'P',[{npcSaleId:mark.id,quantity:2}],20000);
@@ -60,7 +62,8 @@ test('automatic player rules are scoped, exact, sort-safe, and suppress stale pi
   assert.equal(f.state.npcSaleMarks.length,1);assert.equal(f.state.merchantMarked.P[0].slot,7);
   const mark=f.state.npcSaleMarks[0];receivePlayerSales(f.state,'P',[{npcSaleId:mark.id,quantity:5}],20000);
   f.sales.reconcile(f.state.statuses.P);assert.equal(f.state.npcSaleMarks.length,1);
-  f.advance(11000);f.state.statuses.P.items=[{slot:9,item}];f.sales.reconcile(f.state.statuses.P);
+  // The recipient's first report newer than the receipt frees the pickup.
+  Object.assign(f.state.statuses.P,{seenAt:mark.receivedAt+1,items:[{slot:9,item}]});f.sales.reconcile(f.state.statuses.P);
   assert.equal(f.state.npcSaleMarks.length,2);
 });
 test('missing, locked and competing items never become sale pickup work',()=>{
@@ -90,10 +93,10 @@ test('manual removal releases pickup reservations and requires matching characte
 });
 test('sales from separate players survive merging into one merchant stack',()=>{
   const marks=['P','Q'].map(character=>({id:character,character,source:'merchant',slot:-1,item,quantity:2,state:'queued'}));
-  const result=reconcileNpcSales(marks,[{slot:4,item:{...item,q:4}}],false,20000);
+  const result=reconcileNpcSales(marks,[{slot:4,item:{...item,q:4}}],false);
   assert.equal(result.marks.length,2);assert.ok(result.marks.every(mark=>mark.slot===4 && mark.state==='queued'));
-  const stale=reconcileNpcSales(marks,[{slot:4,item:{...item,q:2}}],false,20000);
+  const stale=reconcileNpcSales(marks,[{slot:4,item:{...item,q:2}}],false);
   assert.equal(stale.marks.length,2);assert.equal(stale.marks[1].state,'blocked');
-  const fresh=reconcileNpcSales(stale.marks,[{slot:4,item:{...item,q:4}}],false,21000);
-  assert.equal(readyNpcSales(fresh.marks,21000).length,2);
+  const fresh=reconcileNpcSales(stale.marks,[{slot:4,item:{...item,q:4}}],false);
+  assert.equal(readyNpcSales(fresh.marks).length,2);
 });

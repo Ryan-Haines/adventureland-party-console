@@ -1,13 +1,14 @@
+const {productionFunction} = require('./helpers/production-functions.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {collectionPickups}=require('../../runtime/coordinator/merchant/collection-pickups.ts');
-const {mergePickupJobs}=require('../../runtime/coordinator/merchant/pickup-jobs.ts');
-const {createMerchantQueue}=require('../../runtime/coordinator/merchant/queue.ts');
-const {coordinatorCollectionSlots,coordinatorCollectionReady}=require('../../runtime/coordinator/merchant/queue-selection.ts');
-const {coordinatorMerchantTransferBlocked}=require('../../runtime/coordinator/merchant/job-policy.ts');
-const {merchantJobPriority}=require('../../runtime/coordinator/merchant/priority.ts');
-const {partyMerchantCommand}=require('../../runtime/coordinator/merchant/commands.ts');
-const {createMerchantHandoffRoutes}=require('../../runtime/coordinator/http/merchant-handoff.ts');
-const {plannedOperationStage}=require('../../runtime/coordinator/merchant/activity.ts');
+const {collectionPickups}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
+const { mergePickupJobs } = require('../../runtime/merchant-jobs/rules.ts');
+const {createMerchantQueue}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
+const {coordinatorCollectionSlots,coordinatorCollectionReady}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
+const {coordinatorMerchantTransferBlocked}=require('../../runtime/merchant-jobs/rules.ts');
+const {merchantJobPriority,routineEnabled}=require('../../runtime/merchant-jobs/rules.ts');
+const {partyMerchantCommand}=require('../../runtime/merchant-jobs/coordinator/commands.ts');
+const {createMerchantHandoffRoutes}=require('../../runtime/merchant-jobs/coordinator/routes.ts');
+const {plannedOperationStage}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
 const item=(slot,name,extra={})=>({slot,item:{name,level:0,...extra}});
 function fixture(){
  const entries=[item(0,'coat'),item(1,'ring'),item(2,'junk',{q:8}),item(3,'gem')];
@@ -16,7 +17,7 @@ function fixture(){
 test('automatic upgrade, compound and sale pickups merge at collection priority and capacity',()=>{
  const s=fixture(),state={queue:[],current:null,blocks:{}};
  const priority=j=>merchantJobPriority(j,{routines:{'party collection':85,'auto upgrade':91,'auto compound':93,'auto npc sales':98},bids:{},completesStorageHandoff:()=>false});let next=0;
- const q=createMerchantQueue(state,{merchant:()=> 'M',bankboi:()=>false,enabled:r=>s.merchantAutomations[r==='marked items'?'party collection':r]!==false,collectionReady:j=>coordinatorCollectionReady(s,j,()=>1000),capacitySignature:()=>'',gold:()=>({bank:0,merchant:0}),nextId:()=>String(++next),now:()=>1000,routinePriority:()=>85,priority,stamp:j=>({...j,priority:priority(j)}),hasPendingStandInventory:()=>false,persist(){},dispatch(){},log(){}});
+ const q=createMerchantQueue(state,{merchant:()=> 'M',bankboi:()=>false,enabled:reason=>routineEnabled({reason},s.merchantAutomations),collectionReady:j=>coordinatorCollectionReady(s,j,()=>1000),capacitySignature:()=>'',gold:()=>({bank:0,merchant:0}),nextId:()=>String(++next),now:()=>1000,routinePriority:()=>85,priority,stamp:j=>({...j,priority:priority(j)}),hasPendingStandInventory:()=>false,persist(){},dispatch(){},log(){}});
  for(const r of ['auto upgrade','auto compound','auto npc sale pickup','marked items'])q.queue(['F'],r);
  assert.equal(state.queue.length,1);assert.equal(state.queue[0].reason,'marked items');assert.equal(state.queue[0].priority,85);
  assert.equal(coordinatorCollectionSlots(s,'F'),4);
@@ -43,7 +44,7 @@ test('pending migration preserves earliest age and unrelated work without touchi
 });
 test('collection handoff uses keep receipts and sends no processing instructions',()=>{
  const s=fixture();s.merchantCurrent={id:'job',reason:'marked items',target:'F'};
- const routes=createMerchantHandoffRoutes(s,{nextCommand:()=>7,persist(){},owned:()=>true,queue(){},log(){},now:()=>1000});
+ const routes=createMerchantHandoffRoutes(s,{offline:()=>false,nextCommand:()=>7,persist(){},owned:()=>true,queue(){},log(){},now:()=>1000,visitAllowed:()=>true});
  const response={status(){return this},json(v){return v}};
  routes.handoff({body:{jobId:'job',target:'F',capacity:4}},response);
  const command=s.commands.F;
@@ -53,7 +54,7 @@ test('collection handoff uses keep receipts and sends no processing instructions
  routes.complete({body:{jobId:'job',character:'F',commandId:7,kept:[{...sale,quantity:3}]}},response);
  assert.equal(s.npcSaleMarks[0].source,'merchant');assert.equal(s.npcSaleMarks[0].quantity,3);
  const work={marked:[],upgrades:[1],compounds:[2],autoCompounds:[{name:'ring'}],statScrolls:[],withdrawals:[],deliveries:[],purchases:[]};
- const service=partyMerchantCommand(1,s.merchantCurrent,{seenAt:1000,items:[]},{merchant:'M',work:()=>work,npcSales:[{auto:true}],statScrolls:{},restock:()=>({}),gatheringModes:[]});
+ const service=partyMerchantCommand(1,s.merchantCurrent,{seenAt:1000,items:[]},{merchant:'M',work:()=>work,npcSales:[{auto:true}],statScrolls:{},restock:()=>({}),gatheringModes:[],workingGold:0,visitWithdrawals:()=>[]});
  for(const field of ['upgrades','compounds','autoCompounds','npcSales'])assert.deepEqual(service[field],[]);
 });
 test('planned activity separates bank retrieval from merchant inventory processing',()=>{
@@ -64,43 +65,51 @@ test('planned activity separates bank retrieval from merchant inventory processi
 
 
 test('Hunt movement blocks dispatch without pruning work and defers a raced handoff',()=>{
- const s=fixture();s.activeConvoy={phase:'failed',nonPreemptible:true,participants:['F']};
+ // The allows('merchant-visit') check refuses F, as a Hunt turn-in's return convoy does.
+ const s=fixture();s.activeConvoy={phase:'failed',nonPreemptible:true,participants:['F']};let held=['F'];
  s.merchantCurrent={id:'job',reason:'marked items',target:'F'};
- const {coordinatorCollectionReady,pruneIneligibleCollections}=require('../../runtime/coordinator/merchant/queue-selection.ts');
- const {merchantMovementBlocked}=require('../../runtime/coordinator/merchant/movement-block.ts');
+ const {coordinatorReadyFacts}=require('../../runtime/merchant-jobs/coordinator/dispatch.ts'),{pruneIneligibleCollections,merchantVisitRefused}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
+ const allowed=name=>!held.includes(name),facts=coordinatorReadyFacts(s,{now:()=>1000,visitAllowed:allowed});
  s.merchantQueue=[s.merchantCurrent];
- assert.equal(coordinatorCollectionReady(s,s.merchantCurrent,()=>1000),false);
- assert.equal(pruneIneligibleCollections(s,()=>1000),false);assert.equal(s.merchantQueue.length,1);
- assert.equal(merchantMovementBlocked(s,{target:'M',reason:'auto upgrade'}),false);
- assert.equal(merchantMovementBlocked(s,{target:'M',reason:'merchant commerce',order:{sources:{F:[]}}}),true);
- assert.equal(merchantMovementBlocked(s,{target:'M',reason:'merchant commerce',order:{sources:{F:[]}},resumeState:{phase:'leveling'}}),false);
- const routes=createMerchantHandoffRoutes(s,{nextCommand:()=>7,persist(){},owned:()=>true,queue(){},log(){},now:()=>1000});
+ assert.equal(facts.waits(s.merchantCurrent),true);
+ assert.equal(pruneIneligibleCollections(s,()=>1000,facts),false);assert.equal(s.merchantQueue.length,1);
+ assert.equal(merchantVisitRefused({target:'M',reason:'auto upgrade'},allowed),false);
+ assert.equal(merchantVisitRefused({target:'M',reason:'merchant commerce',order:{sources:{F:[]}}},allowed),true);
+ assert.equal(merchantVisitRefused({target:'M',reason:'merchant commerce',order:{sources:{F:[]}},resumeState:{phase:'leveling'}},allowed),false);
+ const routes=createMerchantHandoffRoutes(s,{offline:()=>false,nextCommand:()=>7,persist(){},owned:()=>true,queue(){},log(){},now:()=>1000,visitAllowed:allowed});
  const before={...s.commands};const response={status(){return this},json(v){return v}};
  assert.deepEqual(routes.handoff({body:{jobId:'job',target:'F'}},response),{deferred:true,reason:'hunt_movement_owned'});
  assert.deepEqual(s.commands,before);
  s.merchantCurrent={id:'commerce',reason:'merchant commerce',target:'M',order:{sources:{F:[]}}};
  assert.deepEqual(routes.order({body:{jobId:'commerce',target:'F'}},response),{deferred:true,reason:'hunt_movement_owned'});
- s.activeConvoy=null;assert.equal(merchantMovementBlocked(s,s.merchantQueue[0]),false);
+ held=[];assert.equal(merchantVisitRefused(s.merchantQueue[0],allowed),false);
 });
 
 
 test('protected work does not prevent unrelated merchant selection and becomes eligible on release',()=>{
- const s=fixture();s.activeConvoy={nonPreemptible:true,participants:['F']};
+ const s=fixture();let held=['F'];
  s.merchantRoutinePriorities={};s.withdrawals={};
  const blocked={id:'blocked',reason:'service',target:'F',priorityOverride:99,queuedAt:1};
  s.merchantQueue=[blocked,{id:'other',reason:'auto upgrade',target:'M',queuedAt:2}];
- const {takeCoordinatorMerchantJob}=require('../../runtime/coordinator/merchant/queue-selection.ts');
- assert.equal(takeCoordinatorMerchantJob(s,()=>1000).id,'other');
+ const {takeCoordinatorMerchantJob,coordinatorCollectionReady}=require('../../runtime/merchant-jobs/coordinator/owner.ts'),{coordinatorReadyFacts}=require('../../runtime/merchant-jobs/coordinator/dispatch.ts');
+ const {coordinatorMerchantTransferBlocked}=require('../../runtime/merchant-jobs/rules.ts');
+ const {partyHooks}=require('../../runtime/hooks/index.ts');
+ // The pick reads the dispatch pass's facts; the other owners' answers hold nothing here.
+ partyHooks().publish({name:'core:automatic-collection-reads',folder:'core',author:'test',summary:'Nothing holds a job.',
+  hooks:{'cave.state':()=>({owned:false}),'items.needs':()=>({gold:0,withdrawals:[],slots:0,postage:0})}});
+ const pass=()=>coordinatorReadyFacts(s,{now:()=>1000,visitAllowed:name=>!held.includes(name),capacityBlocked:job=>coordinatorMerchantTransferBlocked(s,job),
+  collectionReady:job=>coordinatorCollectionReady(s,job,()=>1000)});
+ assert.equal(takeCoordinatorMerchantJob(s,pass()).id,'other');
  assert.equal(s.merchantQueue[0],blocked);
- s.activeConvoy=null;assert.equal(takeCoordinatorMerchantJob(s,()=>1000).id,'blocked');
+ held=[];assert.equal(takeCoordinatorMerchantJob(s,pass()).id,'blocked');
 });
 
 test('character handoff helper yields immediately for Hunt ownership instead of polling or proceeding',async()=>{
  const fs=require('node:fs'),vm=require('node:vm');
- const {namedFunction}=require('./helpers/named-function.cjs');
  let requests=0;
  const c=vm.createContext({request:async()=>{requests++;return {deferred:true,reason:'hunt_movement_owned'};},sleep:()=>{throw Error('must not poll');}});
- vm.runInContext(namedFunction(fs.readFileSync('characters/shared.js','utf8'),'requestMerchantHandoff'),c);
+ // The convoy pause ask is the job owner's visit module.
+ require('./helpers/merchant-visits.cjs').installVisits(c);
  await assert.rejects(c.requestMerchantHandoff('/merchant/handoff',{}),e=>e.reason==='hunt_movement_owned');
  assert.equal(requests,1);
 });

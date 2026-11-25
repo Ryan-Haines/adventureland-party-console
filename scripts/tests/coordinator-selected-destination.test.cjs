@@ -1,5 +1,5 @@
 const test = require('node:test'), assert = require('node:assert/strict');
-const { selectCoordinatorMonsterDestination: select } = require('../../runtime/coordinator/navigation/selected-destination.ts');
+const { selectCoordinatorMonsterDestination: select } = require('../../runtime/hunting/coordinator/farm.ts');
 function fixture() {
   return { leader: 'L', followers: { F: true }, statuses: Object.fromEntries(['L','F','I'].map(name => [name, { map: 'main', x: 0, y: 0 }])),
     monsterFocus: ['goo'], monsterFocusByCharacter: {}, monsterPrioritiesByCharacter: {},

@@ -8,10 +8,10 @@
 const http = require("node:http");
 const { Socket } = require("node:net");
 
-/** Dispatch one request into an Express app; `done` gets { statusCode, statusMessage, headers, body } once. */
 const hasBody = (body) => body !== undefined && body !== "";
 const isCallback = (value) => typeof value === "function";
 
+/** Dispatch one request into an Express app; `done` gets { statusCode, statusMessage, headers, body } once. */
 function dispatch(app, { method, path, headers, body }, done) {
   const socket = new Socket();
   Object.defineProperty(socket, "remoteAddress", { value: "127.0.0.1" }); // the coordinator's loopback checks
@@ -75,6 +75,28 @@ function dispatch(app, { method, path, headers, body }, done) {
   }
 }
 
+// The request accounting every sim transport keeps: this file's lockstep transport and the threaded
+// host's HTTP server (threaded.cjs) count each request and response here.
+function recordRequest(stats, parsed, body) {
+  const kind =
+    body && /"combatWait":true/.test(body)
+      ? " [combatWait]"
+      : body && /"combatOnly":true/.test(body)
+        ? " [combatOnly]"
+        : "";
+  stats.requests++;
+  stats.byPath.set(parsed.pathname + kind, (stats.byPath.get(parsed.pathname + kind) || 0) + 1);
+  if (body) stats.largestBody = Math.max(stats.largestBody, body.length);
+  if (stats.observe) stats.observe(parsed.pathname, body);
+}
+function recordResponse(stats, parsed, body, result) {
+  const tag = parsed.pathname + " " + result.statusCode;
+  stats.byStatus.set(tag, (stats.byStatus.get(tag) || 0) + 1);
+  if (result.statusCode >= 400 && !stats.firstFailure.has(tag))
+    stats.firstFailure.set(tag, result.body.slice(0, 300));
+  if (stats.observeResponse) stats.observeResponse(parsed.pathname, body, result.body);
+}
+
 function createTransport({ clock, apps, latency }) {
   const stats = {
     observe: null,
@@ -90,17 +112,8 @@ function createTransport({ clock, apps, latency }) {
 
   /** One request; `done` receives { statusCode, headers, body } or an Error, on the virtual clock. */
   function request({ method = "GET", url, headers = {}, body }, done) {
-    stats.requests++;
     const parsed = new URL(url, "http://127.0.0.1:924");
-    const kind =
-      body && /"combatWait":true/.test(body)
-        ? " [combatWait]"
-        : body && /"combatOnly":true/.test(body)
-          ? " [combatOnly]"
-          : "";
-    stats.byPath.set(parsed.pathname + kind, (stats.byPath.get(parsed.pathname + kind) || 0) + 1);
-    if (body) stats.largestBody = Math.max(stats.largestBody, body.length);
-    if (stats.observe) stats.observe(parsed.pathname, body);
+    recordRequest(stats, parsed, body);
     clock.at(
       clock.now + latency(),
       () => {
@@ -119,11 +132,7 @@ function createTransport({ clock, apps, latency }) {
           { method, path: parsed.pathname + parsed.search, headers, body },
           (result) => {
             open--;
-            const tag = parsed.pathname + " " + result.statusCode;
-            stats.byStatus.set(tag, (stats.byStatus.get(tag) || 0) + 1);
-            if (result.statusCode >= 400 && !stats.firstFailure.has(tag))
-              stats.firstFailure.set(tag, result.body.slice(0, 300));
-            if (stats.observeResponse) stats.observeResponse(parsed.pathname, body, result.body);
+            recordResponse(stats, parsed, body, result);
             clock.at(clock.now + latency(), () => done(result), "sim http response");
           },
         );
@@ -256,4 +265,4 @@ function clientTransport(request) {
   return { xhrClass, fetchFunction };
 }
 
-module.exports = { createTransport, clientTransport, dispatch };
+module.exports = { createTransport, clientTransport, dispatch, recordRequest, recordResponse };

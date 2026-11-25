@@ -1,12 +1,14 @@
 'use client';
+import { AddonSlot } from '../../../runtime/hooks/dashboard/slots';
 import { memo, useEffect, useMemo, useState } from 'react';
+import { useClock } from '@/hooks/use-clock';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pause, Play, RotateCcw, Users } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import type { MetricsResponse, MetricResetKind, MetricResets } from '../../../runtime/metrics/contracts.ts';
-import { read, useDomain, useVisible } from './query-cache';
+import type { MetricsResponse, MetricResetKind, MetricResets } from '../../../runtime/status/api.ts';
+import { pollOf, read, useDomain, useVisible } from './query-cache';
 import { MetricsChart } from './metrics-chart';
-import { MetricsSelect, metricsControl, metricsIconControl, metricsMenu } from './metrics-controls';
+import { MetricsSelect, metricsControl, metricsIconControl } from './metrics-controls';
+import { MetricsFilter } from './metrics-filter';
 import { applyAcknowledgedResets, applyTemporaryResets, pingGraph, type TemporaryMetricReset } from './metrics-series';
 import { MetricsDropEstimator } from './metrics-drop-estimator';
 import { MetricsKills } from './metrics-kills';
@@ -14,6 +16,7 @@ import { MetricsMeasurements } from './metrics-measurements';
 import { MetricsGold } from './metrics-gold';
 import { MetricsAccountGold } from './metrics-account-gold';
 import { MetricsLoot } from './metrics-loot';
+import { validMetricRange } from './metrics-days';
 import { useMetricsReset } from './metrics-reset';
 
 const ranges = [{ value: 900_000, label: '15 minutes' }, { value: 3_600_000, label: '1 hour' }, { value: 21_600_000, label: '6 hours' }, { value: 86_400_000, label: '24 hours' }, { value: 604_800_000, label: '7 days' }];
@@ -33,6 +36,13 @@ function useGoldReset(account: string, metric: string) {
   const at = saved.key === key ? saved.at : savedReset(key);
   return [at, (value: number) => { saveReset(key, value); setSaved({ key, at: value }); }] as const;
 }
+// The view's clock while it is live: use-clock.ts, the dashboard's one display clock. It mounts only
+// while the view is live, so a paused or hidden view keeps its last time and no tick re-renders it.
+function ClockFeed({ onTick }: { onTick(at: number): void }) {
+  const now = useClock();
+  useEffect(() => { if (now) onTick(now); }, [now, onTick]);
+  return null;
+}
 function MetricsView({ active }: { active: boolean }) {
   const client = useQueryClient(), visible = useVisible(), catalog = useDomain('catalog', active), core = useDomain('core', active);
   const resetMutation = useMetricsReset();
@@ -45,18 +55,12 @@ function MetricsView({ active }: { active: boolean }) {
   const [customFrom, setCustomFrom] = useState(() => localDate(Date.now() - 3_600_000)), [customTo, setCustomTo] = useState(() => localDate(Date.now()));
   const [characters, setCharacters] = useState<string[]>([]), [server, setServer] = useState('');
   const [killFiltersVersion, setKillFiltersVersion] = useState(0);
-  useEffect(() => {
-    if (!active || !live || !visible) return;
-    setClock(Date.now());
-    const timer = setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [active, live, visible, duration]);
   const from = duration ? clock - duration : new Date(customFrom).getTime(), to = duration ? clock : new Date(customTo).getTime();
-  const valid = Number.isFinite(from) && Number.isFinite(to) && from < to && to - from <= 180 * 86_400_000;
+  const valid = validMetricRange(from, to);
   const query = useQuery({
     queryKey: ['party', 'metrics', from, to],
     queryFn: ({ signal }) => read<MetricsResponse>(client, '/metrics?from=' + from + '&to=' + to, signal),
-    enabled: active && visible && valid && !resetMutation.isPending, staleTime: live ? 500 : Infinity, gcTime: 10_000,
+    enabled: active && visible && valid && !resetMutation.isPending, staleTime: live ? pollOf('metrics').staleTime : Infinity, gcTime: pollOf('metrics').gcTime,
     placeholderData: keepPreviousData, retry: false,
   });
   const rawData = query.data;
@@ -96,7 +100,8 @@ function MetricsView({ active }: { active: boolean }) {
     setGoldResetAt(0); setAccountResetAt(0);
     setDuration(3_600_000); setLive(true); setClock(Date.now());
   }
-  return <section className="mx-auto max-w-[1760px] px-4 py-7 md:px-6 md:py-8" aria-label="Game metrics">
+  return <section data-area="metrics" className="mx-auto max-w-[1760px] px-4 py-7 md:px-6 md:py-8" aria-label="Game metrics">
+    {active && live && visible && <ClockFeed onTick={setClock} />}
     <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
       <h2 className="flex items-center gap-3 text-[30px] font-semibold tracking-[-0.03em] text-[#e8f3ed]">
         Metrics<span className={'size-2 rounded-full ' + (query.isError ? 'bg-rose-400' : data?.incomplete ? 'bg-amber-400' : live ? 'bg-emerald-400' : 'bg-slate-500')}
@@ -105,14 +110,7 @@ function MetricsView({ active }: { active: boolean }) {
       <div className="flex flex-wrap items-center gap-2">
         {select('Time range', String(duration), value => { setDuration(Number(value)); setClock(Date.now()); }, [...ranges.map(range => ({ value: String(range.value), label: range.label })), { value: '0', label: 'Custom' }])}
         {duration === 0 && <><input aria-label="Range start" type="datetime-local" className={metricsControl} value={customFrom} onChange={event => setCustomFrom(event.target.value)} /><input aria-label="Range end" type="datetime-local" className={metricsControl} value={customTo} onChange={event => setCustomTo(event.target.value)} /></>}
-        <Popover><PopoverTrigger className={metricsControl} aria-label="Filter characters"><Users size={14} />{characters.length ? characters.length + ' selected' : 'All characters'}</PopoverTrigger>
-          <PopoverContent align="end" positionerClassName="z-[130]" className={metricsMenu + ' w-60'}>
-            <button className={metricsControl + ' mb-2 w-full'} onClick={() => setCharacters([])}>All characters</button>
-            <div className="max-h-64 overflow-auto">{data?.characters.map(name => <label key={name} className="flex cursor-pointer gap-3 rounded-lg px-2 py-2 text-base hover:bg-[#1a3228]">
-              <input className="accent-emerald-400" type="checkbox" checked={characters.includes(name)} onChange={() => setCharacters(characters.includes(name) ? characters.filter(value => value !== name) : [...characters, name])} />{name}
-            </label>)}</div>
-          </PopoverContent>
-        </Popover>
+        <MetricsFilter label="Filter characters" allLabel="All characters" icon={<Users size={14} />} selected={characters} options={(data?.characters || []).map(name => ({ id: name, label: name }))} onChange={setCharacters} />
         {select('Server', server, setServer, [{ value: '', label: 'All servers' }, ...(data?.servers || []).map(server => ({ value: server, label: server }))])}
         <div className="mx-1 h-5 w-px bg-[#30433f]" />
         <button className={metricsControl} aria-pressed={live} onClick={() => setLive(!live)}>{live ? <Pause size={18} /> : <Play size={18} />}{live ? 'Live' : 'Paused'}</button>
@@ -146,6 +144,7 @@ function MetricsView({ active }: { active: boolean }) {
       </div>
       <MetricsDropEstimator key={estimateVersion} data={data} catalog={catalog.data?.merchantCatalog} characters={characters} server={server} live={live && duration !== 0} />
       <MetricsChart {...resetControls('ping')} title="Ping history" data={graphs.ping} series={graphs.series} yLabel="Ping (ms)" empty={pingCharacters.length ? 'No recorded ping' : 'No logged-in characters'} />
+      <AddonSlot name="page-section" part="metrics" />
     </div>}
   </section>;
 }

@@ -27,6 +27,24 @@ test('existing browser setup migrates without changing unrelated action data',()
  assert.deepEqual(steamClientSetup(body,{getItem:()=>JSON.stringify(saved)}),{...body,clientSetup:{placement:'remote',client:'linux-steam'}});
  assert.equal(steamClientSetup(body,{getItem:()=>'{bad'}),body);
 });
+// The saved preferences, the setup page and the dashboard's first-use carry read
+// tools/steam/clients.ts, the dashboard through runtime/lifecycle/api.ts, so a client added there is
+// accepted by all three.
+test('a Steam client added to the one client list is accepted by every setup reader',async()=>{
+ const {STEAM_CLIENTS}=require('../../tools/steam/clients.ts'),{parsePreferences}=require('../../tools/steam/preferences.ts');
+ STEAM_CLIENTS.push({value:'test-client',label:'Test client'});
+ let dom;
+ try{
+  assert.deepEqual(parsePreferences({placement:'same',client:'test-client'}),{placement:'same',client:'test-client'});
+  assert.deepEqual(steamClientSetup({action:'primary'},{getItem:()=>JSON.stringify({placement:'same',client:'test-client'})}),{action:'primary',clientSetup:{placement:'same',client:'test-client'}});
+  // A fresh instance of page.ts builds its page from the list as it is now.
+  const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{pathToFileURL}=require('node:url');
+  const {setupPage}=await import(pathToFileURL(require.resolve('../../tools/hosting/page.ts')).href+'?client=test-client');
+  dom=new JSDOM(setupPage,{url:'http://lan:3010/setup?placement=same&client=test-client',runScripts:'dangerously',beforeParse(w){w.fetch=async()=>({ok:true,json:async()=>({configured:true})});}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(dom.window.document.getElementById('client').value,'test-client');
+ }finally{dom?.window.close();STEAM_CLIENTS.pop();}
+});
 test('platform launches enable loopback-only inspectors without changing global environment',()=>{
  const env={PATH:'test'};assert.match(automationEnvironment('win32',env).WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS,/address=127.0.0.1/);
  assert.equal(automationEnvironment('linux',env).WEBKIT_INSPECTOR_HTTP_SERVER,'127.0.0.1:19245');assert.deepEqual(env,{PATH:'test'});
@@ -40,21 +58,36 @@ test('Windows and native Linux discovery select only game pages on local inspect
  assert.deepEqual(linuxTargets(html.replace('https://adventure.land/','https://example.com/')),[]);
 });
 function fixture(overrides={}) {
- let now=0,ready=false,pages=[],launched=0,attached=0;
+ let now=0,ready=false,pages=[],launched=0,attached=0,bridge=null;
  const calls=[];
  const preferences={read:async()=>({placement:'same',client:'windows-steam'})};
  const target={url:'https://adventure.land/',socket:'ws://127.0.0.1:19245/game'};
  const ports={platform:'win32',targets:async()=>pages,executable:async()=>'/game',running:async()=>false,
-  launch:async()=>{launched++;pages=[target];},connect:async()=>({evaluate:async expression=>{calls.push(expression);attached++;ready=true;return true;},close(){}}),
+  launch:async()=>{launched++;pages=[target];},connect:async()=>({evaluate:async expression=>{calls.push(expression);if(expression.includes('X.characters')){if(bridge)ready=true;return{bridge};}attached++;ready=true;return true;},close(){}}),
   bridgeReady:async()=>ready,server:async()=>'http://127.0.0.1:3010/bridge/test',source:async()=>'/* bridge */',now:()=>now,sleep:async ms=>{now+=ms},...overrides};
  const service=new LocalSteam(preferences,ports);
- return {service,ports,preferences,calls,target,setPages:value=>pages=value,setReady:value=>ready=value,counts:()=>({launched,attached})};
+ return {service,ports,preferences,calls,target,setPages:value=>pages=value,setReady:value=>ready=value,setBridge:value=>bridge=value,counts:()=>({launched,attached})};
 }
 test('cold launch attaches before reporting ready and never performs a game login itself',async()=>{
- const f=fixture();try{await f.service.ensure('QwenTina');assert.deepEqual(f.counts(),{launched:1,attached:1});assert.match(f.calls[0],/X\.characters\.some/);assert.doesNotMatch(f.calls[0],/location.href\s*=/);}finally{f.service.stop();}
+ const f=fixture();try{await f.service.ensure('QwenTina');assert.deepEqual(f.counts(),{launched:1,attached:1});
+  // Each expression the service sent runs on a signed-in game page, which stays where it was.
+  const navigated=[],page={__TAURI_INTERNALS__:{},X:{characters:[{name:'QwenTina'}]},api_call(){},storage_get(){},storage_set(){},
+   location:{get href(){return 'https://adventure.land/';},set href(value){navigated.push(value);}}};
+  page.window=page.top=page;
+  for(const expression of f.calls)require('node:vm').runInNewContext(expression,page);
+  assert.deepEqual(navigated,[]);}finally{f.service.stop();}
 });
 test('already running inspectable client attaches without launching again',async()=>{
  const f=fixture();f.setPages([f.target]);try{await f.service.ensure('QwenTina');assert.deepEqual(f.counts(),{launched:0,attached:1});}finally{f.service.stop();}
+});
+// The desktop asks roster/connection.ts's rule, so a current bridge the CODE loader put in place
+// stays, and a bridge of another server is replaced.
+test('the desktop keeps a current bridge and replaces one of another server',async()=>{
+ const {steamBridgeVersion}=require('../../runtime/lifecycle/roster/connection.ts');
+ const f=fixture();f.setPages([f.target]);f.setBridge({version:steamBridgeVersion,server:'http://127.0.0.1:3010/bridge/test'});
+ try{await f.service.ensure('QwenTina');assert.deepEqual(f.counts(),{launched:0,attached:0});}finally{f.service.stop();}
+ const g=fixture();g.setPages([g.target]);g.setBridge({version:steamBridgeVersion,server:'http://127.0.0.1:924'});
+ try{await g.service.ensure('QwenTina');assert.deepEqual(g.counts(),{launched:0,attached:1});}finally{g.service.stop();}
 });
 test('already running ordinary client returns actionable error without duplicate launch',async()=>{
  const f=fixture({running:async()=>true});try{await assert.rejects(f.service.ensure('QwenTina'),/Close it once/);assert.deepEqual(f.counts(),{launched:0,attached:0});}finally{f.service.stop();}
@@ -72,7 +105,11 @@ test('concurrent desktop requests cannot launch two clients',async()=>{
  let finish;const f=fixture({bridgeReady:()=>new Promise(resolve=>finish=resolve)});
  const first=f.service.ensure('QwenTina');assert.throws(()=>f.service.ensure('Other'),/in progress/);finish(true);await first;f.service.stop();
 });
-for(const nested of [false,true])test(`inspector evaluates through ${nested?'WebKit target messages':'CDP'} and closes pending requests`,async()=>{
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const evaluatesAndCloses=async server=>{
+ let connection;try{connection=await Inspector.connect({url:'https://adventure.land/',socket:`ws://127.0.0.1:${server.address().port}`});await new Promise(resolve=>setImmediate(resolve));assert.equal(await connection.evaluate('21*2'),42);}finally{connection?.close();await new Promise(resolve=>server.close(resolve));}
+};
+scenarioTable('the inspector evaluates over a local debugger socket that speaks CDP directly or through WebKit targets',async nested=>{
  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await new Promise(resolve=>server.once('listening',resolve));
  server.on('connection',socket=>{
   if(nested)socket.send(JSON.stringify({method:'Target.targetCreated',params:{targetInfo:{targetId:'page-1'}}}));
@@ -84,8 +121,11 @@ for(const nested of [false,true])test(`inspector evaluates through ${nested?'Web
    }else socket.send(JSON.stringify({id:message.id,result:{result:{value:42}}}));
   });
  });
- let connection;try{connection=await Inspector.connect({url:'https://adventure.land/',socket:`ws://127.0.0.1:${server.address().port}`});await new Promise(resolve=>setImmediate(resolve));assert.equal(await connection.evaluate('21*2'),42);}finally{connection?.close();await new Promise(resolve=>server.close(resolve));}
-});
+ return server;
+},[
+ ['inspector evaluates through CDP and closes pending requests',evaluatesAndCloses,false],
+ ['inspector evaluates through WebKit target messages and closes pending requests',evaluatesAndCloses,true],
+]);
 
 test('authorized gateway forwards ownership mutation only after desktop readiness and rejects remote launch',async()=>{
  const events=[];let fail=false;

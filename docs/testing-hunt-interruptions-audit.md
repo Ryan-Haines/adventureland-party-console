@@ -113,7 +113,7 @@ The merchant restart scenario caught a **program bug**: manual `/bank-party` req
 | verified Hunt farming releases local and peer passing ownership without changing outbound travel | Retain: named condition not isolated | Native Goo kills establish the ordinary travel-combat path only. The candidate/priority, evidence, species or ownership variant named in this row is not asserted by that path. |
 | farming Hunt queue accepts a target with cached and freshly reported travel passing marks | Retain: named condition not isolated | Native Goo kills establish the ordinary travel-combat path only. The candidate/priority, evidence, species or ownership variant named in this row is not asserted by that path. |
 | passing attacks yield to Town from reservation through settled transition | Retain: named condition not isolated | Native Goo kills establish the ordinary travel-combat path only. The candidate/priority, evidence, species or ownership variant named in this row is not asserted by that path. |
-| ordinary protocol 4 passing attacks require the current travelling signal | Retain: different interaction | Browser or deployment interaction has a different boundary from the route-driven native Hunt scenarios. |
+| ordinary protocol 4 passing attacks require the current travelling signal | Retain: different interaction | Browser or deployment interaction has a different boundary from the route-driven native Hunt scenarios. Since the movement rewrite every group walk is the one walk, and the `routeProtocol` marker is gone; passing-admission keeps the travelling signal row. |
 | an unreserved monster attacking first stays a genuine defensive target | Retain: different interaction | Browser or deployment interaction has a different boundary from the route-driven native Hunt scenarios. |
 | Phoenix patrol permits in-range passing attacks but encounters and recovery still take precedence | Retain: distinct death/kill ordering | MH-DEATH injects fighter death only. It does not establish monster predecessor/successor death accounting or the separate ordering named here. |
 | field-generator preference governs passing Fairy use without moving | Retain: named condition not isolated | Native Goo kills establish the ordinary travel-combat path only. The candidate/priority, evidence, species or ownership variant named in this row is not asserted by that path. |
@@ -130,7 +130,7 @@ The merchant restart scenario caught a **program bug**: manual `/bank-party` req
 
 | Named case / generated family | Disposition | Specific gap |
 | --- | --- | --- |
-| 'regular healing continues during ' + flag — loop ['anniversaryStaging', 'anniversaryBusy', 'convoyTraveling', 'eventTraveling', 'followingLeader', 'partyTownActive'] | Retain: healing-specific branch | Healing resource selection, priority or overlapping cast is not asserted by death/respawn alone. |
+| 'regular healing continues during ' + flag — loop ['anniversaryStaging', 'anniversaryBusy', 'convoyTraveling', 'eventTraveling', 'followingLeader', 'partyTownActive'] | Retain: healing-specific branch | Healing resource selection, priority or overlapping cast is not asserted by death/respawn alone. The `convoyTraveling` flag is gone since the movement rewrite: walk-client.ts reads a running group walk's travel (`groupWalk.travel`). |
 | movement allows regular heals and priest regeneration in the same pulse | Retain: ordering fault | Delayed, stale or overlapping ownership/evidence variant needs the exact ordering injected. Normal native handback is insufficient. |
 | only an acknowledged heal publishes success telemetry | Retain: healing-specific branch | Healing resource selection, priority or overlapping cast is not asserted by death/respawn alone. |
 | passive pulse never uses partyheal even for multiple critical members | Retain: healing-specific branch | Healing resource selection, priority or overlapping cast is not asserted by death/respawn alone. |
@@ -252,9 +252,9 @@ The merchant restart scenario caught a **program bug**: manual `/bank-party` req
 
 | Named case / generated family | Disposition | Specific gap |
 | --- | --- | --- |
-| 'defense interrupts '+phase+' and rebuilds a fresh convoy after confirmed death' — loop ['assemble','plan-return','scheduled','travel','failed'] | Retain: different interaction | Browser or deployment interaction has a different boundary from the route-driven native Hunt scenarios. |
+| 'defense interrupts '+phase+' and rebuilds a fresh convoy after confirmed death' — loop ['assemble','plan-return','scheduled','travel','failed'] | Retain: different interaction | Browser or deployment interaction has a different boundary from the route-driven native Hunt scenarios. No walk has a `plan-return` phase: the movement rewrite removed it with the Hunt return's legs as unreachable code, since every Hunt return is a continuous return. |
 | follower aggressor pauses the convoy; a planned neutral does not | Retain: named condition not isolated | Native Goo kills establish the ordinary travel-combat path only. The candidate/priority, evidence, species or ownership variant named in this row is not asserted by that path. |
-| 'anniversary return defends during '+phase+' and resumes after loot' — loop ['assemble','plan-return','scheduled','travel'] | Retain: separate event scenario | Event-specific round, reward or return authority; these merchant/passing journeys do not inject that event transition. |
+| 'anniversary return defends during '+phase+' and resumes after loot' — loop ['assemble','plan-return','scheduled','travel'] | Retain: separate event scenario | Event-specific round, reward or return authority; these merchant/passing journeys do not inject that event transition. No walk has a `plan-return` phase: the movement rewrite removed it with the Hunt return's legs as unreachable code, since every Hunt return is a continuous return. |
 | escape and event convoys retain their travel policy | Retain: distinct death/kill ordering | MH-DEATH injects fighter death only. It does not establish monster predecessor/successor death accounting or the separate ordering named here. |
 | lost death-return assembly command is reissued without losing destination or accepting old acknowledgements | Retain: ordering fault | Delayed, stale or overlapping ownership/evidence variant needs the exact ordering injected. Normal native handback is insufficient. |
 | Hunt mode does not authorize a new destination while fighting, and convoy startup waits | Retain: named condition not isolated | Native Goo kills establish the ordinary travel-combat path only. The candidate/priority, evidence, species or ownership variant named in this row is not asserted by that path. |
@@ -283,6 +283,9 @@ The merchant restart scenario caught a **program bug**: manual `/bank-party` req
 | failed return convoy retries with delay, survives reload and completes only at the farm | Retain: boundary/capacity fault | Deadline, numeric or capacity boundary needs its stated condition; native success does not exercise both sides. |
 
 ### combat-movement.test.cjs
+
+The reflection row below keeps its test's title; the block it names reads each character's
+reflect lists.
 
 | Named case / generated family | Disposition | Specific gap |
 | --- | --- | --- |
@@ -385,6 +388,10 @@ The merchant restart scenario caught a **program bug**: manual `/bank-party` req
 | removed grant recipient cannot be acknowledged by a replacement runtime | Retain: ordering fault | Delayed, stale or overlapping ownership/evidence variant needs the exact ordering injected. Normal native handback is insufficient. |
 
 ### monster-attack-policy.test.cjs
+
+The rows keep the tests' titles. The block reads each character's two
+reflect lists, "Don't hit with magic" and "Don't hit with physical", with today's monsters as their
+defaults, not a fixed set of reflecting monsters.
 
 | Named case / generated family | Disposition | Specific gap |
 | --- | --- | --- |
@@ -546,7 +553,7 @@ Keep geometry mismatches, runtime/version/identity matrices, exact arrival bound
 | 34 | 'geometry reload wait retains its deadline through coordinator restoration' | Retain exact named condition; no equivalent passing artifact yet |
 | 46 | 'geometry repair never replaces a newer character command' | Retain exact named condition; no equivalent passing artifact yet |
 | 50 | 'geometry repair waits for '+blocker+' replacement reports' — loop `['stale','moving','realm','geometry']` | Retain exact named condition; no equivalent passing artifact yet |
-| 66 | 'clock-skewed matching departure reports do not consume regroup attempts' | Retain exact named condition; no equivalent passing artifact yet |
+| 66 | 'clock-skewed matching departure reports are not a route failure' (renamed in the movement rewrite: regroup attempts no longer exist, the walk's ladder replaced them) | Retain exact named condition; no equivalent passing artifact yet |
 | 74 | 'early departure cannot bypass '+field+' validation' — loop `['routeVersion','epoch','commandId','navigationRevision']` | Retain exact named condition; no equivalent passing artifact yet |
 | 83 | 'transient readiness withdrawal preserves deadline through repeated preparations' | Retain exact named condition; no equivalent passing artifact yet |
 | 93 | 'repeated walking stalls change planner before bounded exhaustion' | Retain exact named condition; no equivalent passing artifact yet |
@@ -554,7 +561,7 @@ Keep geometry mismatches, runtime/version/identity matrices, exact arrival bound
 | 116 | 'expired client readiness is bounded even when the reason contains an origin failure' | Retain exact named condition; no equivalent passing artifact yet |
 | 121 | 'Phoenix planning origin is captured only after matching stopped assembly reports' | Retain exact named condition; no equivalent passing artifact yet |
 | 129 | 'regrouping preserves ALClient unless the route failure identifies geometry' | Retain exact named condition; no equivalent passing artifact yet |
-| 137 | 'convoy failure history identifies a merchant command takeover without overwriting it' | Retain exact named condition; no equivalent passing artifact yet |
+| 137 | 'convoy failure history identifies a merchant command takeover without overwriting it' | Retired in the movement rewrite as a duplicate: 'new manual navigation is not overwritten by regroup recovery' checks the same outcome; the rest was log text |
 | 150 | 'shared walking leaves passive targets, stops for a follower attack, loots and replans the same destination' | Retain exact named condition; no equivalent passing artifact yet |
 | 168 | 'passing bees and reordered retaliation reports never interrupt the Hunt route' | Retain exact named condition; no equivalent passing artifact yet |
 | 189 | 'a return rebuilds after runtime replacement with fresh epoch and bounded retries' | Retain exact named condition; no equivalent passing artifact yet |

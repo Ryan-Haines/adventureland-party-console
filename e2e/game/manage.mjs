@@ -9,9 +9,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const pins=JSON.parse(readFileSync(resolve(root,'tools/sim/pins.json'),'utf8'));
 const args = pool => ['compose', '--project-name', pool.project || 'al-e2e-pr21', '-f', 'e2e/game/compose.yml'];
 const started = new Map();
+// Compose reads the pinned revisions and the pool's host for every command, logs included, so
+// each docker call gets the same environment.
+const composeEnv = pool => ({...process.env,E2E_GAME_REV:pins.game,E2E_COMMON_REV:pins.common,E2E_CONFIG_REV:pins.config,...pool.environment,E2E_GAME_HOST:pool.host||'127.0.0.1'});
 function docker(command,pool={}) {
   return new Promise((resolve, reject) => {
-    const child = spawn('docker', [...args(pool), ...command], { cwd: root, stdio: ['ignore','pipe','pipe'], windowsHide: true, env:{...process.env,E2E_GAME_REV:pins.game,E2E_COMMON_REV:pins.common,E2E_CONFIG_REV:pins.config,...pool.environment,E2E_GAME_HOST:pool.host||'127.0.0.1'} });
+    const child = spawn('docker', [...args(pool), ...command], { cwd: root, stdio: ['ignore','pipe','pipe'], windowsHide: true, env:composeEnv(pool) });
     let output='';
     const retain=chunk=>{output=(output+chunk.toString()).slice(-32768);};
     child.stdout.on('data',retain).pipe(process.stdout,{end:false});
@@ -48,7 +51,7 @@ export async function logs(pool={}) {
   await mkdir(dirname(destination), { recursive: true });
   const command = ['logs', '--no-color', '--timestamps', ...(since ? ['--since', since] : [])];
   const child = spawn('docker', [...args(pool), ...command], {
-    cwd: root, stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true,
+    cwd: root, stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true, env: composeEnv(pool),
   });
   const completed = new Promise((resolve, reject) => {
     child.once('error', reject);

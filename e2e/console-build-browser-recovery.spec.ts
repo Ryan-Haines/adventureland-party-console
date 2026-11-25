@@ -13,7 +13,9 @@ test('refresh restores deployment animation and gameplay-only completion does no
   await page.reload();await expect.poll(spins).not.toBe('none');await expect(page.getByRole('complementary',{name:'Live logs'})).toBeVisible();
   const documents:any[]=[];page.on('request',request=>{if(request.isNavigationRequest()&&request.frame()===page.mainFrame())documents.push(request.url());});
   status={...status,active:next,available:undefined,pendingBuildCount:0,operation:{...status.operation,phase:'complete'}};
-  await expect(icon).toHaveCount(0);await page.waitForTimeout(1500);expect(documents).toEqual([]);
+  // The only reload runs inside the refresh that drops the icon (console-build-control.tsx), so
+  // no document request after the icon goes means none came.
+  await expect(icon).toHaveCount(0);expect(documents).toEqual([]);
   await info.attach('recovered-deployment-complete',{body:await page.screenshot(),contentType:'image/png'});
 });
 
@@ -25,4 +27,15 @@ test('Cave disables safe and Main loading without additional explanatory text',a
   await expect(page.getByRole('button',{name:'Load when safe',exact:true})).toBeDisabled();
   await expect(page.getByRole('button',{name:'Load at Main',exact:true})).toBeDisabled();
   await info.attach('cave-load-modes',{body:await page.screenshot(),contentType:'image/png'});
+  // Load now during a Cave run sends nothing until the player ticks that the run
+  // ends; the tick enables it.
+  const sent:string[]=[];page.on('request',request=>{if(request.method()==='POST'&&request.url().includes('console-build'))sent.push(request.url());});
+  await page.getByRole('button',{name:'Load now',exact:true}).click();
+  const confirm=page.getByRole('dialog',{name:'Load console build now?'});
+  const load=confirm.getByRole('button',{name:'Load now',exact:true});
+  await expect(confirm).toContainText('A Cave run is active. Loading now ends the run');
+  await expect(load).toBeDisabled();
+  await confirm.getByRole('checkbox').check();
+  await expect(load).toBeEnabled();
+  expect(sent).toEqual([]);
 });

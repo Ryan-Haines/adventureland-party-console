@@ -1,18 +1,18 @@
+const { targetingContext } = require('./helpers/targeting-module.cjs');
+const {productionFunction} = require('./helpers/production-functions.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { namedFunction } = require('./helpers/named-function.cjs');
-
 // Failure inventory: docs/efficiency.md, Character threads, CT5.
-const source = fs.readFileSync('characters/shared.js', 'utf8');
 function fixture(deaths) {
   const reads = { entries: 0 };
   const counted = list => new Proxy(list, { get(target, key) { if (typeof key === 'string' && /^\d+$/.test(key)) reads.entries++; return target[key]; } });
-  const context = vm.createContext({ String, WeakMap, Set, Map,
+  const context = targetingContext({ String, WeakMap, Set, Map,
     character: { map: 'main', in: 'main' }, root: {}, groupedCombat: { deaths: counted(deaths) },
-    reunionRealm: () => context.realm, realm: 'USI', isAttackingPartyMember: () => true, passingKey: t => String(t.id) });
-  vm.runInContext(namedFunction(source, 'departureTargetEngaged'), context);
+    realm: 'USI', isAttackingPartyMember: () => true, passingKey: t => String(t.id) }, undefined,
+    { walks: { reunionRealm: () => context.realm } });
+  vm.runInContext(productionFunction('departureTargetEngaged'), context);
   return { context, reads, counted };
 }
 const monster = id => ({ id, visible: true, hp: 100 });

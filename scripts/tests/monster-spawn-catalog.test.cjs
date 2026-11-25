@@ -68,3 +68,16 @@ test('cross-map records honor source and destination restrictions and missing ma
   assert.ok(multi.spawnRecords.every(s => s.sourceMap === 'source'));
   assert.equal(choices.find(m => m.id === 'blocked').locations.length, 0);
 });
+
+// HN46d: the game places a `random` spawn anywhere on its map's walkable grid and a `roam` spawn walks off
+// its box, so the catalog gives those locations the map's geometry bounds; a box spawn gets none.
+test('random and roaming spawns carry their map bounds; a box spawn carries none', () => {
+  const G = game({ winter_cove: { monsters: [spawn('harpy', { roam: true, random: true }), spawn('rimedjinn'), spawn('tinyp')] } });
+  G.geometry = { winter_cove: { min_x: -1032, max_x: 904, min_y: -2376, max_y: 56 } };
+  G.monsters.tinyp.roam = true;
+  const area = id => catalog(G).find(m => m.id === id).locations[0];
+  assert.deepEqual(area('harpy').roamArea, [-1032, -2376, 904, 56]);
+  assert.deepEqual(area('tinyp').roamArea, [-1032, -2376, 904, 56]);
+  assert.equal(area('rimedjinn').roamArea, undefined);
+  assert.deepEqual(area('harpy').boundary, box);
+});

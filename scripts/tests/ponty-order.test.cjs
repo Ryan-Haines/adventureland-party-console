@@ -1,12 +1,16 @@
+const {withDoor}=require('./helpers/coordinator-merchant.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const market = require('../ponty-market.cjs');
+const { pontyPrice: price } = require('../../runtime/items/rules.ts');
+const { normalizePontyListings: normalize, selectPontyLots: selectLots, prioritizePontyRealms: prioritizeRealms,
+  planPontyPurchase: planPurchase } = require('../../runtime/items/coordinator/market.ts');
+const market = { price, normalize, selectLots, prioritizeRealms, planPurchase };
 function setup(listings, reserved = []) {
   const party = { merchantCharacter: 'GoldMajesty', merchantQueue: reserved, ponty: { listings },
     statuses: { GoldMajesty: { server: 'USII' } }, nextCommandId: 1 };
-  const {createManualMarketOrderRoutes}=require('../../runtime/coordinator/http/manual-market-orders.ts');
-  const handler=createManualMarketOrderRoutes(party,{now:()=>Date.now(),nextCommand:()=>party.nextCommandId++,
-    stamp:job=>job,persist(){},dispatch(){},log(){},plan:market.planPurchase}).ponty;
+  const {createManualMarketOrderRoutes}=require('../../runtime/items/coordinator/routes/market.ts');
+  const handler=createManualMarketOrderRoutes(party,withDoor(party,{now:()=>Date.now(),nextCommand:()=>party.nextCommandId++,
+    stamp:job=>job,persist(){},dispatch(){},log(){},plan:market.planPurchase})).ponty;
   return { party, order(quantity) {
     const result = { statusCode: 200, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
     handler({ body: { keys: listings.map(row => row.key), quantity, unitPrice: 19680 } }, result);
@@ -34,10 +38,11 @@ test('manual 12-staff confirmation queues distinct fixed realm jobs totaling the
   }
   assert.equal(order(12).statusCode, 409, 'repeat confirmation cannot reserve the same listings');
 });
+// A lot is stale once the latest Ponty snapshot no longer holds it.
 test('stale stock rejects atomically without creating partial purchase jobs', () => {
   const listings = stock();
-  listings[0].seenAt = Date.now() - 180000;
   const { party, order } = setup(listings);
+  party.ponty.listings = listings.slice(1);
   assert.equal(order(12).statusCode, 409);
   assert.equal(party.merchantQueue.length, 0);
 });

@@ -1,3 +1,6 @@
+// The supervisor's manual check of its mode switch, run by hand: start the supervisor on 3020 with
+// no gateway (node tools/dashboard/supervisor.mts --port=3020), then node tools/dashboard/smoke-test.mts.
+// It edits dashboard/app/page.tsx to fail one build and restores it.
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -47,7 +50,7 @@ try {
   await healthy();
   const failed = await settled();
   assert.equal(failed.mode, "production");
-  assert.ok(failed.error, "Failed builds must be visible in Settings");
+  assert.ok(failed.error, "The supervisor's state (/__dashboard/state) must carry the failed build's error");
   await healthy();
 } finally {
   assert.equal(

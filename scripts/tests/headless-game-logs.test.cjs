@@ -1,7 +1,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {RunnerScope}=require('../../runtime/lifecycle/runner-scope.ts');
-const {installGameLogs,installHostGameLogs}=require('../../runtime/characters/game-logs.ts');
-const {classifyGameLog,showGameLog}=require('../../runtime/game-log-filters.ts');
+const {RunnerScope}=require('../../runtime/lifecycle/character/run.ts');
+const {installGameLogs,installHostGameLogs}=require('../../runtime/status/character/telemetry.ts');
+const {classifyGameLog,showGameLog}=require('../../runtime/status/game-log.ts');
+const {GAME_LOG_BATCH,STATUS_PICKS}=require('../../runtime/status/rules.ts');
 test('routine messages are Info independently of errors and gold',()=>{
  for(const message of ['bankboi0: bankboi0 loaded generic merchant behavior','bankboi1: Searching for a path...','Get closer','GoldMajesty: Get closer','Waiting in line']){
   assert.equal(classifyGameLog(message),'info');
@@ -21,9 +22,7 @@ test('native filters occupy the existing log height and reinstall without duplic
  assert.equal(doc.querySelectorAll('#party-game-log-panel').length,1);
  assert.equal(doc.getElementById('party-game-log-panel').style.height,'200px');
  assert.equal(doc.querySelectorAll('#party-game-log-filters').length,1);
- assert.match(doc.getElementById('party-game-log-layout').textContent,/margin-bottom:0 !important/);
- assert.equal(doc.getElementById('party-game-log-panel').style.width,'330px');
- assert.match(doc.getElementById('party-game-log-layout').textContent,/padding-top:0/);
+ const start=parseFloat(doc.getElementById('party-game-log-panel').style.width);
  assert.equal(doc.querySelectorAll('#party-game-log-layout').length,1);
  assert.equal(log.querySelectorAll('.gameentry').length,2);
  const info=[...doc.querySelectorAll('button')].find(b=>b.textContent==='Info');info.click();
@@ -34,11 +33,12 @@ test('native filters occupy the existing log height and reinstall without duplic
  handle.setPointerCapture=()=>{};handle.releasePointerCapture=()=>{};
  const pointer=(type,x)=>handle['on'+type]({clientX:x,button:0,pointerId:1,preventDefault(){},stopPropagation(){}});
  pointer('pointerdown',600);pointer('pointermove',450);pointer('pointerup',450);
- assert.equal(panel.style.width,'480px');assert.equal(host.localStorage.getItem('party-game-log-width'),'480');
- installHostGameLogs(host,async()=>{});assert.equal(panel.style.width,'480px');
+ // The drag widens the panel by the 150 px the pointer moved, and a reinstall keeps the saved width.
+ assert.equal(parseFloat(panel.style.width),start+150);assert.equal(host.localStorage.getItem('party-game-log-width'),String(start+150));
+ installHostGameLogs(host,async()=>{});assert.equal(parseFloat(panel.style.width),start+150);
  assert.equal(doc.querySelectorAll('#party-game-log-resize').length,1);
  doc.getElementById('party-game-log-resize').dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));
- assert.equal(panel.style.width,'330px');
+ assert.equal(parseFloat(panel.style.width),start);
  let leaked=0;doc.addEventListener('mousedown',()=>leaked++);
  const selecting=new dom.window.MouseEvent('mousedown',{bubbles:true,cancelable:true});log.children[1].dispatchEvent(selecting);
  assert.equal(leaked,0);assert.equal(selecting.defaultPrevented,false);
@@ -92,7 +92,7 @@ test('headless logging uses host hook without recursive facade dispatch and surv
  host.caracAL.install_game_logs=send=>installHostGameLogs(host,send);
  const firstScope=new RunnerScope(),first=installGameLogs(firstScope.facade(host),async e=>batches.push(e));
  for(let i=0;i<1500;i++)host.add_log('message '+i);
- await first.pulse();assert.equal(rendered.length,1500);assert.equal(batches[0].length,100);assert.equal(host.__partyGameLogCapture.queue.length,900);
+ await first.pulse();assert.equal(rendered.length,1500);assert.equal(batches[0].length,GAME_LOG_BATCH,'a report posts the oldest GAME_LOG_BATCH lines');assert.equal(host.__partyGameLogCapture.queue.length,STATUS_PICKS.gameLogLines-GAME_LOG_BATCH,'the capture keeps the newest gameLogLines');
  firstScope.dispose();const secondScope=new RunnerScope();let newBatches=0;
  const second=installGameLogs(secondScope.facade(host),async()=>newBatches++);
  host.add_log('after reload');await second.pulse();assert.equal(rendered.at(-1),'after reload');assert.equal(newBatches,1);

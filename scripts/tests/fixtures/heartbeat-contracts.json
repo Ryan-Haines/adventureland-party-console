@@ -5,6 +5,7 @@
     "command": null,
     "rareControl": null,
     "passiveRareHunts": {},
+    "errandTargetReportMs": 15000,
     "escape": null,
     "convoySignal": null,
     "partyLocation": null,
@@ -16,8 +17,11 @@
     "partyTownActive": false,
     "eventReturnCycleId": null,
     "partyConvoyActive": false,
-    "huntTurnInPriority": false,
     "mapTelemetry": false,
+    "movementStuckNoticeMs": null,
+    "movementClickWaitMs": 5000,
+    "diagnosticsRings": [],
+    "movementPlanningMs": 30000,
     "bankQueued": false,
     "bankStackHomes": {},
     "bankboiStorage": false,
@@ -48,6 +52,9 @@
       "anniversary"
     ],
     "partyEventHint": null,
+    "eventAdmission": null,
+    "eventRejoin": null,
+    "eventLeads": {},
     "abtestingStrategy": null,
     "anniversary": {
       "slices": [
@@ -105,7 +112,8 @@
       "craftReady": false,
       "handoffTargets": [],
       "merchant": "GoldMajesty",
-      "pendingReturns": []
+      "pendingReturns": [],
+      "featuredVisitsPending": false
     },
     "leaderTarget": null,
     "leaderCombatSelection": null,
@@ -131,22 +139,77 @@
     "scatterEpoch": 1900000000000,
     "partyFarmingMode": "default",
     "partyFarmingMonsterType": null,
-    "farmingPolicy": "auto",
+    "combatMode": "auto",
+    "targetMode": "farming",
     "monsterHunt": null,
-    "farmAreaState": {
-      "recoveryVersion": 2,
-      "paused": false,
-      "failures": {},
-      "pending": null,
-      "message": null
-    },
+    "farmAreaState": {},
     "scatterBreakTarget": null,
     "passiveHunting": {
       "version": 1,
       "useFieldGenerators": true,
       "rules": {}
     },
-    "passingEncounters": []
+    "passingEncounters": [],
+    "restockPolicies": {},
+    "addons": {},
+    "task": {
+      "kind": "farming",
+      "owner": "farm:farming:P",
+      "tier": "farming",
+      "phase": "farm",
+      "reunion": "alone"
+    },
+    "gatheringAutoCraft": {
+      "fishing": false,
+      "mining": false
+    },
+    "eventSettings": {},
+    "cipherMerchant": "GoldMajesty",
+    "cipherGathering": {
+      "owner": "P",
+      "ready": false,
+      "stock": {
+        "verdantspore": 0,
+        "frostscale": 0,
+        "embercoal": 0,
+        "gloomfeather": 0
+      }
+    },
+    "addonStores": {
+      "keys": {
+        "character": "character:P",
+        "scope": "scope:P",
+        "party": "party"
+      },
+      "stores": {}
+    },
+    "handControl": null,
+    "healFirstBelow": {},
+    "hpPotionBelow": {},
+    "mpPotionBelow": {},
+    "reflectMagicByCharacter": {},
+    "reflectPhysicalByCharacter": {},
+    "reportFreshMs": 3000,
+    "followMe": null,
+    "routines": {},
+    "setAsideMs": 10000,
+    "targetPassMs": 1000,
+    "crabReplyMs": 2000,
+    "attackStallMs": 5000,
+    "snapshotGapMs": 10000,
+    "successorGrantMs": 3000,
+    "passingMemoryMs": 60000,
+    "queueTickMs": 100,
+    "protectedSlots": 3,
+    "slotEntries": {
+      "target-mode": "farming"
+    },
+    "addonScope": {
+      "owner": "P",
+      "settings": {}
+    },
+    "addonActions": [],
+    "addonInbox": []
   },
   {
     "serverNow": 1900000000000,
@@ -154,6 +217,7 @@
     "command": null,
     "rareControl": null,
     "passiveRareHunts": {},
+    "errandTargetReportMs": 15000,
     "escape": null,
     "convoySignal": null,
     "partyLocation": null,
@@ -165,8 +229,11 @@
     "partyTownActive": false,
     "eventReturnCycleId": null,
     "partyConvoyActive": false,
-    "huntTurnInPriority": false,
     "mapTelemetry": false,
+    "movementStuckNoticeMs": null,
+    "movementClickWaitMs": 5000,
+    "diagnosticsRings": [],
+    "movementPlanningMs": 30000,
     "bankQueued": false,
     "bankStackHomes": {},
     "bankboiStorage": false,
@@ -197,6 +264,9 @@
       "anniversary"
     ],
     "partyEventHint": null,
+    "eventAdmission": null,
+    "eventRejoin": null,
+    "eventLeads": {},
     "abtestingStrategy": null,
     "anniversary": {
       "slices": [
@@ -254,7 +324,8 @@
       "craftReady": false,
       "handoffTargets": [],
       "merchant": "GoldMajesty",
-      "pendingReturns": []
+      "pendingReturns": [],
+      "featuredVisitsPending": false
     },
     "leaderTarget": null,
     "leaderCombatSelection": null,
@@ -282,21 +353,76 @@
     "scatterEpoch": 1900000000000,
     "partyFarmingMode": "scatter",
     "partyFarmingMonsterType": "goo",
-    "farmingPolicy": "auto",
+    "combatMode": "auto",
+    "targetMode": "farming",
     "monsterHunt": null,
-    "farmAreaState": {
-      "recoveryVersion": 2,
-      "paused": false,
-      "failures": {},
-      "pending": null,
-      "message": null
-    },
+    "farmAreaState": {},
     "scatterBreakTarget": null,
     "passiveHunting": {
       "version": 1,
       "useFieldGenerators": true,
       "rules": {}
     },
-    "passingEncounters": []
+    "passingEncounters": [],
+    "restockPolicies": {},
+    "addons": {},
+    "task": {
+      "kind": "farming",
+      "owner": "farm:farming:P",
+      "tier": "farming",
+      "phase": "farm",
+      "reunion": "alone"
+    },
+    "gatheringAutoCraft": {
+      "fishing": false,
+      "mining": false
+    },
+    "eventSettings": {},
+    "cipherMerchant": "GoldMajesty",
+    "cipherGathering": {
+      "owner": "P",
+      "ready": false,
+      "stock": {
+        "verdantspore": 0,
+        "frostscale": 0,
+        "embercoal": 0,
+        "gloomfeather": 0
+      }
+    },
+    "addonStores": {
+      "keys": {
+        "character": "character:P",
+        "scope": "scope:P",
+        "party": "party"
+      },
+      "stores": {}
+    },
+    "handControl": null,
+    "healFirstBelow": {},
+    "hpPotionBelow": {},
+    "mpPotionBelow": {},
+    "reflectMagicByCharacter": {},
+    "reflectPhysicalByCharacter": {},
+    "reportFreshMs": 3000,
+    "followMe": null,
+    "routines": {},
+    "setAsideMs": 10000,
+    "targetPassMs": 1000,
+    "crabReplyMs": 2000,
+    "attackStallMs": 5000,
+    "snapshotGapMs": 10000,
+    "successorGrantMs": 3000,
+    "passingMemoryMs": 60000,
+    "queueTickMs": 100,
+    "protectedSlots": 3,
+    "slotEntries": {
+      "target-mode": "farming"
+    },
+    "addonScope": {
+      "owner": "P",
+      "settings": {}
+    },
+    "addonActions": [],
+    "addonInbox": []
   }
 ]

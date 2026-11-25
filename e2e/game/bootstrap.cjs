@@ -2,6 +2,10 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const nativePerformance = require('node:perf_hooks').performance;
 const {gameHosts} = require('./addresses.cjs');
+// The game stack builds these revisions (compose.yml from tools/sim/pins.json), so the manifest
+// records the same ones.
+const pins = require('../../tools/sim/pins.json');
+const revisions = { game: pins.game, common: pins.common, config: pins.config };
 function createGame({host='127.0.0.1',manifestFile}={}) {
 if(!gameHosts.includes(host))throw Error('Disposable game host must be an assigned loopback address');
 const webUrl = process.env.AL_DEBUG_INSTANCE === '1' ? 'http://127.0.0.1:8090' : `http://${host}:8083`;
@@ -79,7 +83,7 @@ async function bootstrap() {
   })()`, { owner: account._id });
   const manifest = {
     webUrl, gameUrl, auth, region: 'US', server: 'I',
-    revisions: { game: '90052162eb3ebda36c893e1eb4af643913c8f984', common: 'fa74fabf5d3782503712621e037bfb934ecb8439', config: '6b3493be30abe367cfaf879a2d5ad370742e0866' },
+    revisions,
     initialState: { level: 80, gold: 10000000, map: 'main', x: 0, y: 0, home: 'USI', accountVerified: true, localEntitlement: 'e2e-local-entitlement', legacyWebAccess: true },
     characters: account.info.characters.map(({ id, name, type }) => ({ id, name, type })),
   };
@@ -130,8 +134,15 @@ async function reset() {
     }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  // Wait for upstream disconnection persistence before restoring initial records.
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  // Native disconnect saves each character record with online false last, so the restore below
+  // waits until every roster record reads offline; a late save would overwrite the restored record.
+  const rosterNames = JSON.stringify(roster.map(({ name }) => name));
+  for (;;) {
+    const online = await admin(`output=(async()=>(await db.collection('character').find({'info.name':{$in:${rosterNames}},online:true}).toArray()).map(c=>c.info.name))()`);
+    if (!online.length) break;
+    if (nativePerformance.now() >= disconnectDeadline) throw new Error('Character records still online after native disconnect: ' + JSON.stringify(online));
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
   const codeReset=await resetCodeInventory(manifest);
   const worldReset=await Promise.all(realms.map(realm=>admin(`output=(async()=>{
     // Initial realm/account state, only after all previous clients disconnected.
@@ -162,9 +173,17 @@ async function reset() {
       }
     for(const type of seasonal){timers[type]=new Date(Date.now()+86400000);delete E[type];}
     events.horseman=false;
+    // witch_cipher_finish publishes the board, and a row's planted clue without a mix throws there
+    // before the round clears; the reset drops such clues so the next scenario starts with no round.
+    if(witch_cipher)witch_cipher.history=(witch_cipher.history||[]).filter(entry=>Array.isArray(entry?.mix));
     witch_cipher_finish();
     delete witch_cipher_claims[data.owner];
     await db.collection('WitchCipher').deleteMany({owner:data.owner});
+    // Trick or Treat counts an account's knocks per UTC day in Mongo (14 a day), which outlives the
+    // character reset too. A scenario that knocked earlier the same day left a later door tour
+    // trickortreat_limit on its first door while character.trickortreat still read 7 doors left.
+    await db.collection('TrickOrTreat').deleteMany({_id:{$regex:'^knocks:'+data.owner+':'}});
+    delete trick_or_treat_accounts[data.owner];
     await db.collection('mail').updateMany({owner:data.owner},{$pull:{owner:data.owner}});
     if(!globalThis.__e2eAmbientRemovalJournal){
       const journal=globalThis.__e2eAmbientRemovalJournal={entries:new Map(),construct:new_monster,remove:remove_monster};
@@ -191,6 +210,41 @@ async function reset() {
     journal.entries.clear();return {realm:region+server_name,restored,present,seasonalRemoved,populationAccountingPreserved:true,
       scheduledEventAutomation:globalThis.__e2eAllowScheduledEvents?'native':'explicit-fixture-opt-in'};
   })()`,{owner:manifest.auth.split('-')[0],isolateCalendar:process.env.AL_DEBUG_INSTANCE!=='1'},realm)));
+  // The pinned server's Halloween season (design/event_flags.js, on until 2026-11-03) spawns
+  // Mr. Pumpkin, Mr. Green and Slenderman 120 s after start and keeps each live until it dies, so
+  // later scenarios met a boss they never declared: "Expected clean native encounter", and seeds
+  // whose E entry and attackers the season's boss shared. Reset holds those season timers and
+  // removes the season's bosses with their adds, so each scenario fights only what it declares.
+  const seasonReset=await Promise.all(realms.map(realm=>admin(`output=(()=>{
+    const bosses=['mrpumpkin','mrgreen','slenderman'],ids=new Set(),removed=[];
+    for(const type of bosses){timers[type]=new Date(8.64e15);delete E[type];}
+    const monsters=()=>Object.values(instances).flatMap(instance=>Object.values(instance.monsters||{}));
+    for(const monster of monsters())if(bosses.includes(monster.type))ids.add(String(monster.id));
+    for(const monster of monsters())if(ids.has(String(monster.id))||monster.master!=null&&ids.has(String(monster.master))){
+      removed.push({id:String(monster.id),type:monster.type,map:monster.map,master:monster.master??null});
+      remove_monster(monster,{silent:true});}
+    broadcast_e();return {realm:region+server_name,held:bosses,removed};
+  })()`,{},realm)));
+  // Native realm fatigue (server_functions.js realmfatigue_logic) withholds Anniversary kiss rewards
+  // for 30 minutes after another fighter of the account stood on a different realm. Each server reads
+  // that history from its peers' info.recent_characters, which outlives the character reset above, so
+  // a scenario whose party visits US II fatigued the next scenario's party on US I. Reset forgets the
+  // visits on every realm first, then has each realm pull its peers again and proves none remain.
+  const owner=manifest.auth.split('-')[0];
+  for (const realm of realms) await admin(`output=(async()=>{server_information.restore({});Server.info.recent_characters={};
+    await db.collection('server').updateOne({_id:'SR_'+region+server_name},{$set:{'info.recent_characters':{}}});return true;})()`,{},realm);
+  const realmHistory=await Promise.all(realms.map(realm=>admin(`output=(async()=>{server_information.next_pull=0;await pull_server_information();
+    return {realm:region+server_name,foreign:server_information.foreign_activity(data.owner,'')};})()`,{owner},realm)));
+  if (realmHistory.some(entry=>entry.foreign)) throw new Error('Previous scenario realm visits survived reset: ' + JSON.stringify(realmHistory));
+  // open_generated_zone claims a 30 minute GeneratedZone lock per member in the database, and
+  // destroy_generated_run releases it only for a run the realm still holds in memory. A kept game
+  // stack recreates the game container between runs, so a run that ended inside the Cave left its
+  // members locked and the next entry failed with "character_already_entering". Each realm releases
+  // this account's locks that no run of its own holds.
+  await Promise.all(realms.map(realm=>admin(`output=(async()=>{
+    var ids=(await db.collection('character').find({owner:data.owner}).toArray()).map(c=>'member:'+c._id);
+    var released=await db.collection('GeneratedZone').updateMany({_id:{$in:ids},active:true,server:server_id,run:{$nin:Object.keys(generated_runs)}},{$set:{active:false}});
+    return released.modifiedCount;})()`,{owner},realm)));
   await admin(`output=(async()=>{
     // Disconnected Cave runs retain a resumable visit. Retire only this
     // disposable account's runs through native teardown before restoring it.
@@ -238,10 +292,10 @@ async function reset() {
     await db.collection('user').updateOne({_id:data.owner},{$set:{server:'','info.gold':1000000,'info.items0':[],'info.items1':[]}});
     return true;
   })()`, { owner: manifest.auth.split('-')[0] });
-  return {...manifest,codeReset,worldReset};
+  return {...manifest,codeReset,worldReset,seasonReset,realmHistory};
 }
 return {bootstrap,reset,admin,webUrl,gameUrl,seedPreviousBootstrapCodes};
 }
 const defaultGame=createGame();
-module.exports = {...defaultGame,createGame};
+module.exports = {...defaultGame,createGame,revisions};
 if (require.main === module) defaultGame.bootstrap().then(value => console.log(JSON.stringify(value, null, 2))).catch(error => { console.error(error); process.exitCode = 1; });

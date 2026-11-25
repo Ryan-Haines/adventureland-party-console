@@ -1,65 +1,22 @@
-const fs = require('node:fs');
-const vm = require('node:vm');
-const {namedFunction} = require('./named-function.cjs');
-const source = fs.readFileSync('characters/shared.js', 'utf8');
-function functions(context, names) {
-  vm.runInContext(names.map(name => namedFunction(source, name)).join('\n'), context);
-}
-
-// Ordinary combat scenarios start without passing encounters. Use the real
-// predicates so a fixture can also introduce passing ownership explicitly.
-exports.passingContext = values => {
+// Ordinary combat scenarios start without passing encounters. The passing and passive predicates
+// are targeting module functions (targeting-module.cjs `targetingModule` builds them over this
+// context over the test's `doors`), and the Hunt travel reads are huntClient members, which a sliced
+// context answers absent. Movement's walks door is the context's walk client (helpers/walk-reports.cjs)
+// under the members the test's `doors.walks` names, and its realm is the context's `reunionRealm`,
+// which the walk client reads too.
+exports.passingContext = (values, doors) => {
+  const walks = { reunionRealm: () => context.reunionRealm(), ...doors?.walks };
   const context = require('./shared-context.cjs').createSharedContext({
     passingEncounters: {}, peerPassingEncounters: [], coordinatorClockOffset: 0,
-    groupedCombat: null, passiveHunting: {rules: {}, useFieldGenerators: true},
+    groupedCombat: null,
     navigationIntent: {}, partyTownActive: false, banking: false, stocking: false,
     upgrading: false, gatheringActive: false, forceTraveling: false, townTraveling: false,
-    eventTraveling: false, joinedEvent: false, anniversaryStaging: false, anniversaryBusy: false, root: {},
-    escapeOwns: () => false, combatRecoveryActive: () => false,
-    activeCombatEvent: () => false, rareActive: () => false, unfinishedFight: () => false,
+    eventAnniversary: { staging: () => false, busy: () => false }, root: {},
+    escapeOwns: () => false, combatRecoveryHolds: () => false, eventReturnHolds: () => false, taskKind: () => null,
+    eventAttend: { active: () => false, joined: () => null, traveling: () => null }, rareActive: () => false, unfinishedFight: () => false,
     reunionRealm: () => 'USII', ...values,
-  });
-  functions(context, ['passiveLevelAllowed', 'passiveStopRequired','passiveTravelInterruptible','travelStopCandidates','outboundHuntTravel', 'huntTravelDefense', 'huntTravelControl', 'huntTravelExtraAggro', 'returnDepartureDefense', 'committedHuntEncounter', 'passingKey', 'isPassingEncounter', 'convoyDiagnosticClock','convoySignalExpired','passingTravelAllowed', 'walkingPassiveTarget','passingTarget']);
-  return context;
-};
-
-exports.productionJournalContext = context => {
-  context.root ||= {};
-  const storage = new Map();
-  context.root.localStorage ||= {
-    getItem: key => storage.get(key) ?? null,
-    setItem: (key, value) => storage.set(key, value),
-    removeItem: key => storage.delete(key),
-  };
-  context.productionJournalLoaded ??= false;
-  context.productionJournal ??= null;
-  functions(context,['productionJournalKey','readProductionJournal','writeProductionJournal']);
-  return context;
-};
-
-exports.merchantGuards = (context, {stock = false, journal = false} = {}) => {
-  context.root ||= {};
-  // Inventory compression has its own native E2E. These fixtures isolate
-  // production/stand ownership and start without a pending stack journal.
-  context.bankStacks ??= null;
-  context.compressMerchantInventory ??= async () => {};
-  functions(context, ['verifyMerchantItemMarks']);
-  if (stock) {
-    context.partyAvailableCraftStock = require('../../../runtime/coordinator/merchant/craft-reservations.ts').availableCraftStock;
-    functions(context, ['compoundAvailableStock']);
-  }
-  if (journal) {
-    const storage = new Map();
-    context.root.localStorage ||= {
-      getItem: key => storage.get(key) ?? null,
-      setItem: (key, value) => storage.set(key, value),
-      removeItem: key => storage.delete(key),
-    };
-    context.luckyUpgradeService ??= null;
-    context.productionJournalLoaded ??= false;
-    context.productionJournal ??= null;
-    functions(context, ['productionJournalKey', 'readProductionJournal', 'writeProductionJournal', 'rememberCommerceProduction', 'replayCompletedCommerce', 'rememberReviewedCommerce', 'saveProductionJournal', 'finishProductionJournal', 'recoverProductionJournal', 'recoverProductionJournalWork',
-      'verifyProductionProtection', 'trackedProduction', 'trackedProductionWork']);
-  }
+  }, { ...doors, walks });
+  // The walk client needs the context, so it joins the door once the context exists.
+  Object.setPrototypeOf(walks, require('./walk-reports.cjs').installWalkReports(context).__walkClient);
   return context;
 };

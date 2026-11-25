@@ -6,8 +6,7 @@ const {LocalTLS}=require('../../tools/hosting/tls.ts');
 const {tlsHost,certificateProbes}=require('../../tools/hosting/tls-config.ts');
 const {Access}=require('../../tools/hosting/access.ts');
 const {gateway}=require('../../tools/hosting/gateway.ts');
-const listen=s=>new Promise(r=>s.listen(0,'127.0.0.1',()=>r(s.address().port)));
-const close=s=>new Promise(r=>{s.closeAllConnections();s.close(r)});
+const {listen,close,setupDom}=require('./fixtures/hosting-scenario.cjs');
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 test('certificate readiness probes preserve DNS SNI and verify the current no-SNI LAN fallback',()=>{
  const probes=certificateProbes(['127.0.0.1','localhost','192.168.1.20','127.0.0.2','192.168.1.30']);
@@ -24,19 +23,17 @@ test('HTTPS address validation rejects public addresses, credentials, paths, and
  for(const host of ['127.0.0.1','192.168.1.239','localhost','[::1]'])assert.equal(await tlsHost('http://'+host+':3010'),host.replace(/^\[|\]$/g,''));
 });
 test('setup matrix uses localhost only for supported same-machine clients and keeps headless bypass',async()=>{
- const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  for(const placement of ['same','remote'])for(const client of ['windows-steam','windows-browser','linux-steam','linux-browser']){
-  const dom=new JSDOM(setupPage,{url:'http://lan:3010/setup',runScripts:'dangerously',beforeParse(w){w.fetch=async()=>({ok:true,json:async()=>({configured:true,serverAddress:'http://lan:3010',httpPort:3010,tls:{ready:true}})})}});
-  try{await delay(0);const el=id=>dom.window.document.getElementById(id);el('placement').value=placement;el('client').value=client;el('client').onchange();
+  const {dom,el}=setupDom(w=>{w.fetch=async()=>({ok:true,json:async()=>({configured:true,serverAddress:'http://lan:3010',httpPort:3010,tls:{ready:true}})})});
+  try{await delay(0);el('placement').value=placement;el('client').value=client;el('client').onchange();
    const secure=placement==='remote'||client==='linux-steam';assert.equal(el('tlsSteps').hidden,!secure);assert.equal(el('loaderArea').hidden,secure);
    assert.equal(el('continue').getAttribute('href'),'/');if(!secure){assert.equal(el('address').textContent,'http://127.0.0.1:3010');el('fallback').click();assert.equal(el('tlsSteps').hidden,false)}
   }finally{dom.window.close()}
  }
 });
 test('HTTPS check stays on setup and shows inline success or certificate troubleshooting',async()=>{
- const {JSDOM}=require('../../.caracal/node_modules/jsdom'),{setupPage}=require('../../tools/hosting/page.ts');
  let fail=false;const secure='https://192.168.1.239:3443';
- const dom=new JSDOM(setupPage,{url:'http://192.168.1.239:3010/setup',runScripts:'dangerously',beforeParse(w){
+ const {dom,el}=setupDom(w=>{
   w.AbortSignal.timeout=()=>undefined;
   w.fetch=async(url,options)=>{
    if(String(url).startsWith(secure)){if(fail)throw Error('certificate error');assert.equal(options.credentials,'omit');assert.equal(options.body.get('ticket'),'one-time');return {ok:true,json:async()=>({ok:true,origin:secure})}}
@@ -44,9 +41,9 @@ test('HTTPS check stays on setup and shows inline success or certificate trouble
    const values={'/setup/state':{configured:true,serverAddress:'http://192.168.1.239:3010',tls:{ready:true}},'/setup/https':{origin:secure,fingerprint:'test'},'/setup/transfer':{action:secure+'/setup/check-https',ticket:'one-time'},'/party-api/steam/connection':{connected:false}};
    return {ok:true,json:async()=>values[url]};
   };
- }});
+ },'http://192.168.1.239:3010/setup');
  try{
-  await delay(0);const el=id=>dom.window.document.getElementById(id);
+  await delay(0);
   el('placement').value='remote';el('client').value='windows-steam';el('client').onchange();
   await el('prepare').onclick();await el('checkHttps').onclick();
   assert.match(el('httpsStatus').textContent,/connection verified/);assert.equal(el('loaderArea').hidden,false);

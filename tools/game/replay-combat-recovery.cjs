@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {performance}=require('node:perf_hooks');
-const {recoveryRoute}=require('../../runtime/combat/recovery-route.ts');
+const {recoveryRoute}=require('../../runtime/movement/character/formation.ts');
 const {createNative}=require('./pathfinder-benchmark/native.cjs');
 const {directory,version}=require('../../scripts/tests/helpers/installed-game.cjs');
 const native=createNative(directory),base={h:8,v:7,vn:2},results=[];

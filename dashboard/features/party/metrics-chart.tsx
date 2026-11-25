@@ -6,6 +6,10 @@ import type { GraphPoint, GraphSeries } from './metrics-series';
 import { MetricsMenu, MetricsSelect, metricsControl } from './metrics-controls';
 
 export const metricFormat = (value: number) => new Intl.NumberFormat(undefined, { ...(Math.abs(value) > 0 && Math.abs(value) < 1 ? { maximumSignificantDigits: 3 } : { maximumFractionDigits: 2 }), notation: Math.abs(value) >= 10000 ? 'compact' : 'standard' }).format(value);
+// The rate units the kills, items and DPS views offer, and the one format of a rate.
+export const RATE_UNITS = [{ value: 900_000, label: '/ 15 min', suffix: '/15m' }, { value: 1_800_000, label: '/ 30 min', suffix: '/30m' },
+  { value: 3_600_000, label: '/ hour', suffix: '/h' }, { value: 86_400_000, label: '/ day', suffix: '/day' }];
+export const rateLabel = (rate: number) => new Intl.NumberFormat(undefined, { maximumSignificantDigits: 3, notation: rate >= 10000 ? 'compact' : 'standard' }).format(rate);
 interface Props {
   title: string;
   data: GraphPoint[];
@@ -48,7 +52,7 @@ export function MetricsChart(props: Props) {
   const timeTick = (at: number) => props.data.length > 1 && props.data[props.data.length - 1].at - props.data[0].at >= 86_400_000
     ? new Date(at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : timeLabel(at);
   const axisColor = '#789087', labelColor = '#aabfb6';
-  return <section aria-labelledby={id} className="flex h-[460px] min-h-0 min-w-0 flex-col rounded-2xl border border-[#263d33] bg-[#0b1914] p-5 text-slate-100 shadow-[0_8px_28px_rgba(0,0,0,0.12)]">
+  return <section data-area="metrics-chart" aria-labelledby={id} className="flex h-[460px] min-h-0 min-w-0 flex-col rounded-2xl border border-[#263d33] bg-[#0b1914] p-5 text-slate-100 shadow-[0_8px_28px_rgba(0,0,0,0.12)]">
     <div className="mb-4 flex min-h-11 shrink-0 items-center gap-3">
       <h3 id={id} className="min-w-0 flex-1 truncate text-xl font-semibold tracking-tight text-[#e8f3ed]" title={props.title}>{props.title}</h3>
       {props.currentValue && <div className="flex shrink-0 flex-col text-right tabular-nums" aria-label={props.currentValue.label || 'Current ' + props.title}>

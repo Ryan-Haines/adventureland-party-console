@@ -1,8 +1,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const {rememberCharacterAppearance}=require('../../runtime/coordinator/status/character-appearance.ts');
-const {initialSteamRoster}=require('../../runtime/coordinator/characters/initial-roster.ts');
-const {selectSnapshot,rosterFields}=require('../../runtime/coordinator/persistence/snapshots.ts');
-const {createStatusIngestion}=require('../../runtime/coordinator/status/ingestion.ts');
+const {rememberCharacterAppearance}=require('../../runtime/status/coordinator/intake.ts');
+const {initialSteamRoster}=require('../../runtime/lifecycle/roster/initial-roster.ts');
+const {selectSnapshot}=require('../../runtime/settings/coordinator/persistence/snapshots.ts');
+const {rosterFields}=require('../../runtime/settings/coordinator/table.ts').coordinatorSettings().lists;
+const {createStatusIntake}=require('../../runtime/status/coordinator/intake.ts');
 const image={url:'https://adventure.land/images/character.png',tileSize:24,columns:4,rows:4,x:0,y:0};
 const report={name:'Offline',skin:'actual-skin',characterSprite:image,characterDollHtml:'<img src="https://adventure.land/images/character.png">'};
 
@@ -28,9 +29,9 @@ test('missing appearance does not erase a doll; changes refresh it without mixin
  assert.equal(state.characterAppearances.NeverSeen,undefined);
 });
 test('full authenticated heartbeats persist appearance once and unknown reporters cannot populate the cache',()=>{
- const state={statuses:{},headlessSlots:[],steamMembers:[],steamSwitch:null,nativeOwner:null,merchantCharacter:null};let saves=0;
- const ports=new Proxy({now:()=>100,known:n=>n==='Offline',persistRoster:()=>saves++,oneShots:()=>[],huntSnapshot:()=>'',response:()=>({ok:true})},{get:(o,k)=>o[k]||(()=>{})});
- const api=createStatusIngestion(state,ports),res={status(){return this;},json(){}};
+ const state={statuses:{},headlessSlots:[],steamMembers:[],steamSwitch:null,nativeOwner:null,merchantCharacter:null,scatterMonsterTypes:[],scatterEpoch:1};let saves=0;
+ const ports=new Proxy({hunting:{reportTick:(name,taskTick)=>taskTick(),oneShots:()=>[],scatterReport(){}},now:()=>100,owned:()=>false,persistRoster:()=>saves++,items:{lucky(){},observe(){},marketReport(){}},reply:{read:()=>({ok:true}),send:()=>({ok:true})}},{get:(o,k)=>o[k]||(()=>{})});
+ const api=createStatusIntake(state,{Offline:{}},ports),res={status(){return this;},json(){}};
  api.handle({body:{...report}},res);assert.equal(saves,1);assert.ok(state.characterAppearances.Offline);
  api.handle({body:{...report}},res);assert.equal(saves,1);
  api.handle({body:{...report,name:'Stranger'}},res);assert.equal(state.characterAppearances.Stranger,undefined);

@@ -28,7 +28,7 @@ export interface AutomaticItemActionsProps {
 export function AutomaticItemActions({ section, entry, bank, stand, npc, exchange, exchangeable, merchant, upgradeTiers, compoundTier, buyable, onCommand, onStand, onNpc }: AutomaticItemActionsProps) {
   const show = (action: AutomaticItemActionsProps['section']) => !section || section === action;
   const level = Number(entry.item.level) || 0;
-  const max = Math.min(7, itemMaximumLevel(entry.meta));
+  const max = itemMaximumLevel(entry.meta);
   return <>
     {show('bank') && <ContextMenuItem disabled={bank} onClick={() => onCommand('auto-item-mark', { mode: 'bank' })}>
       <AutoActionIcon><Landmark /></AutoActionIcon>Auto mark for bank

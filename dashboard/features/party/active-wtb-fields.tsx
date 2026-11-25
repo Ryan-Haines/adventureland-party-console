@@ -23,10 +23,8 @@ export function ActiveWTBFields({name, bid, disabled, onEditPrice, onSave}: {
   async function save() {
     const field = current.current;
     if (!field || pending.current) return;
+    // The items owner's bid route checks each field's bound and answers its refusal, which the catch shows.
     const value = field === "priority" && draft === "" ? null : Number(draft);
-    if (value !== null && (!Number.isSafeInteger(value) || value < (field === "priority" ? 0 : 1) || (field === "priority" && value > 100))) {
-      setError(field === "priority" ? "Priority must be 0–100 or blank." : `${labels[field]} must be a positive whole number.`); return;
-    }
     pending.current = true; setSaving(true); setError("");
     try { await onSave(field, value); current.current = null; setEditing(null); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }

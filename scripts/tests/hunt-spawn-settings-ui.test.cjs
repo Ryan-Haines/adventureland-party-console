@@ -10,8 +10,8 @@ test('spawn popup lists multiple zones, saves radio preferences and reports fail
   vm.runInNewContext(code,{exports,Error,require(id){
     if(id==='react')return React;
     if(id==='react/jsx-runtime')return require('../../dashboard/node_modules/react/jsx-runtime');
-    if(id.endsWith('farming-zones'))return require('../../dashboard/lib/farming-zones.ts');
-    if(id.endsWith('spawn-preferences'))return require('../../runtime/coordinator/hunt/spawn-preferences.ts');
+    // The dashboard reads 07 through its door (owner:check), so the test loads that door.
+    if(id.endsWith('hunting/api.ts'))return require('../../runtime/hunting/api.ts');
     return new Proxy({},{get:(_,name)=>name});
   }});
   const a={map:'main',x:0,y:0},b={map:'arena',x:384,y:-420};

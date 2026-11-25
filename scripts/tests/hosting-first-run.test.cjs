@@ -4,8 +4,7 @@ const {Access}=require('../../tools/hosting/access.ts');
 const {gateway}=require('../../tools/hosting/gateway.ts');
 const {verifyFirstRun}=require('../../tools/release/verify-startup.ts');
 const {protectInternalServer,gatewayHeaders,dashboardReadyMessage}=require('../../tools/dashboard/gateway-access.ts');
-const listen=s=>new Promise(r=>s.listen(0,'127.0.0.1',()=>r(s.address().port)));
-const close=s=>new Promise(r=>{s.closeAllConnections();s.close(r);});
+const {listen,close}=require('./fixtures/hosting-scenario.cjs');
 
 test('fresh packaged installation redirects internal ports through public setup, then serves the configured dashboard',async()=>{
  const saved={url:process.env.AL_DASHBOARD_GATEWAY_URL,token:process.env.AL_DASHBOARD_GATEWAY_TOKEN};
@@ -36,7 +35,7 @@ test('fresh packaged installation redirects internal ports through public setup,
   assert.equal(new URL(forged.headers.get('location')).origin,base);
   const health=await fetch(internal+'/',{headers:gatewayHeaders()});assert.equal(await health.text(),'dashboard');
   configured=true;
-  await assert.rejects(verifyFirstRun(base,internal), /true !== false/);
+  await assert.rejects(verifyFirstRun(base,internal), /Console already configured/);
   const ready=await fetch(internal+'/');assert.equal(ready.url,base+'/');assert.equal(await ready.text(),'dashboard');
   assert.equal(dashboardReadyMessage('production',appPort),'Party Console ready. Open '+base+' (first-time installations continue to setup).');
  }finally{

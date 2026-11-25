@@ -52,7 +52,7 @@ if (process.platform === "win32") {
   const symlinkSync = fs.symlinkSync;
   fs.symlinkSync = (from, to) => symlinkSync(from, to, "junction");
 }
-// Use the exact native E2E game revision while leaving ChronAL's checkout clean.
+// Use the game revision pins.json names while leaving ChronAL's checkout clean.
 const pins = require("./pins.json"),
   upstreamFile = path.join(target, "upstream.json");
 const readFileSync = fs.readFileSync;

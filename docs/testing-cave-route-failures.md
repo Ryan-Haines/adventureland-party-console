@@ -56,8 +56,11 @@ owned gather ID only for a completed current gather that drifted beyond the
 assembly tolerance. Require fresh, living, combat/loot-ready observations on the
 same run and floor; reject stale receipts, different commands and coordinates,
 wrong maps/runs, pending combat, and in-flight gathers. Keep the original target
-and arrival conditions. Bound repeated regroup attempts explicitly instead of
-silently looping; old receipts must not authorize departure or overwrite a
+and arrival conditions. A repeated regroup climbs the Cave ladder
+(`runtime/hunting/coordinator/cave.ts`): the same repair, the other strategy,
+then the next report, with no count; a repair after which no member got closer
+changes strategy, and the travel's `trying` names the members and the strategy, so
+nothing loops silently. Old receipts must not authorize departure or overwrite a
 newer command. The native journey still proves both actual boss arrivals.
 
 The deterministic native assembly case uses actual collision-checked walking

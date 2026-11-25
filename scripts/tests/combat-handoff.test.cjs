@@ -1,62 +1,57 @@
+const {settle}=require('./helpers/settle.cjs');
 const test=require('node:test'),assert=require('node:assert/strict');
-const {installQueueClient}=require('../../runtime/combat/client.ts');
-const {createHandoffTiming}=require('../../runtime/combat/handoff-timing.ts');
-const settle=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
-async function fixture(run){
- const keys=['parent','character','get_entity','setInterval','clearInterval'];
- const saved=Object.fromEntries(keys.map(k=>[k,global[k]])),dateNow=Date.now;
- let now=1000,group=null,sequence=0,enabled=true,ready=null;const listeners=new Map();
- const pending=[],root={},deaths=[];
- Object.assign(global,{parent:{socket:{on:(e,f)=>listeners.set(e,f),off:(e,f)=>{if(listeners.get(e)===f)listeners.delete(e);}}},character:{name:'W',map:'cave',in:'cave'},get_entity:()=>null,setInterval:()=>1,clearInterval(){}});
- Date.now=()=>now;
- const shared={usesGroupedCombat:()=>enabled,queueMembers:()=>enabled?['W']:[],sharedTargetId:()=>null,queueClockOffset:()=>0,
-  acceptQueue:g=>{group=g;root.__partyGroupedCombat=g;},
-  queueAcknowledgement:()=>({groupedCombat:{independentReady:ready,ack:group?.selection,queueAck:group?.queueRevision}}),
-  queueReport:()=>({server:'USII',travelSample:{sequence:++sequence},groupedCombat:{independentReady:ready,ack:group?.selection,queueAck:group?.queueRevision,deaths:[...deaths]}}),
-  queueRequest:body=>new Promise((resolve,reject)=>pending.push({body,resolve,reject}))};
- const client=installQueueClient(root,shared);
- const response=(g=group)=>({groupedCombat:g,combatRevision:g?.selection||'empty'});
- try{await run({client,root,deaths,pending,response,reports:()=>pending.filter(r=>r.body.combatOnly),waits:()=>pending.filter(r=>r.body.combatWait),now:v=>now=v,readiness:v=>ready=v,listeners,disable:()=>enabled=false});}
- finally{client.stop();Date.now=dateNow;Object.assign(global,saved);}
-}
-test('death while report is in flight flushes the newest state immediately and coalesces changes',()=>fixture(async f=>{
- f.client.tick();assert.equal(f.reports().length,1);
- f.deaths.push({id:'A',at:1000});f.client.flush();f.deaths.push({id:'B',at:1000});f.client.flush();
- assert.equal(f.reports().length,1);
- f.reports()[0].resolve(f.response());await settle();
- assert.equal(f.reports().length,2);assert.deepEqual(f.reports()[1].body.groupedCombat.deaths.map(d=>d.id),['A','B']);
- f.reports()[1].resolve(f.response());await settle();assert.equal(f.reports().length,2,'no response echo loop');
-}));
-test('new queue acknowledgement is sent immediately and successful long poll is rearmed',()=>fixture(async f=>{
+const {createHandoffTiming}=require('../../runtime/status/character/rings.ts');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {fixture}=require('./fixtures/queue-client-scenario.cjs');
+const {update}=require('./helpers/run-scope.cjs');
+scenarioTable('the queue client sends reports and long polls at once, backs off on errors and never echoes', ()=>fixture, [
+ ['new queue acknowledgement is sent immediately and successful long poll is rearmed', fixture=>fixture(async f=>{
  f.client.tick();f.reports()[0].resolve(f.response());await settle();
  const g={selection:'B',queueRevision:'B,C,D',target:{id:'B'},committed:true};
  f.waits()[0].resolve(f.response(g));await settle();
  assert.equal(f.reports().length,2);assert.equal(f.reports()[1].body.groupedCombat.ack,'B');
  assert.equal(f.reports()[1].body.groupedCombat.queueAck,'B,C,D');
  assert.equal(f.waits().length,2);assert.equal(f.waits()[1].body.combatRevision,'B');
- f.reports()[1].resolve(f.response(g));await settle();assert.equal(f.reports().length,2);
-}));
-test('acknowledgement received during an in-flight report follows it without another poll tick',()=>fixture(async f=>{
- f.client.tick();const g={selection:'B',queueRevision:'B,C',target:{id:'B'},committed:false};
- f.waits()[0].resolve(f.response(g));await settle();assert.equal(f.reports().length,1);
- f.reports()[0].resolve(f.response(g));await settle();
- assert.equal(f.reports().length,2);assert.equal(f.reports()[1].body.groupedCombat.ack,'B');
- assert.equal(f.root.__partyHandoffTrace.find(e=>e.stage==='report').sequence,1);
-}));
-test('report and long poll errors retain backoff despite dirty events',()=>fixture(async f=>{
+ f.reports()[1].resolve(f.response(g));await settle();assert.equal(f.reports().length,2);})],
+ ['report and long poll errors retain backoff despite dirty events', fixture=>fixture(async f=>{
  f.client.tick();f.client.flush();f.reports()[0].reject(Error('offline'));f.waits()[0].reject(Error('offline'));await settle();
  f.now(1999);f.client.flush();assert.equal(f.pending.length,2);
- f.now(2000);f.client.tick();assert.equal(f.reports().length,2);assert.equal(f.waits().length,2);
-}));
-test('stopped or disabled clients do not restart transport from a late response',()=>fixture(async f=>{
- f.client.tick();f.client.flush();f.client.stop();
- f.reports()[0].resolve(f.response());f.waits()[0].resolve(f.response());await settle();assert.equal(f.pending.length,2);
-}));
-test('leaving combat does not rearm a completed long poll',()=>fixture(async f=>{
- f.client.tick();f.disable();f.waits()[0].resolve(f.response());await settle();assert.equal(f.waits().length,1);
-}));
+ f.now(2000);f.client.tick();assert.equal(f.reports().length,2);assert.equal(f.waits().length,2);})],
+ // A native position event's report follows the game's update it lands in (run.ts, the cadence).
+ ['native position events send changed range readiness once their update lands, without timestamp echo loops', fixture=>fixture(async f=>{
+ f.client.tick();f.reports()[0].resolve(f.response());await settle();
+ f.readiness({target:'A',selection:'s',at:1000,ready:true,confirmation:'c1'});
+ f.listeners.get('player')?.({});await update();await settle();assert.equal(f.reports().length,2);
+ f.reports()[1].resolve(f.response());await settle();
+ f.readiness({target:'A',selection:'s',at:1001,ready:true,confirmation:'c1'});f.listeners.get('entities')?.({});await update();await settle();assert.equal(f.reports().length,2);
+ f.readiness({target:'A',selection:'s',at:1001,ready:false});f.listeners.get('entities')?.({});await update();await settle();assert.equal(f.reports().length,3);
+ f.client.stop();assert.equal(f.listeners.size,0);})],
+ // Observed on the live console 2026-11-18: re-ticking on the reply sent one report per round trip.
+ ['a change during an open report sends with the next update, not on the reply', fixture=>fixture(async f=>{
+ f.client.tick();assert.equal(f.reports().length,1);
+ f.readiness({target:'A',selection:'s',at:1000,ready:true,confirmation:'c1'});
+ f.listeners.get('player')?.({});await update();await settle();assert.equal(f.reports().length,1,'the open report holds the change');
+ f.reports()[0].resolve(f.response());await settle();assert.equal(f.reports().length,1,'the reply sends nothing');
+ await update();await settle();assert.equal(f.reports().length,2,'the next update sends the change');})],
+ // Positions ride with the interval's report; other changes send at once.
+ ['a position-only change waits for the interval, a state change does not', fixture=>fixture(async f=>{
+ f.client.tick();f.reports()[0].resolve(f.response());await settle();
+ f.move({x:50,y:-20});f.listeners.get('player')?.({});await update();await settle();
+ assert.equal(f.reports().length,1,'the character and its threat moved; nothing else changed');
+ f.readiness({target:'A',selection:'s',at:1000,ready:true,confirmation:'c1'});f.listeners.get('player')?.({});await update();await settle();
+ assert.equal(f.reports().length,2,'readiness sends at once');assert.equal(f.reports()[1].body.x,50,'the report carries the newest position');
+ f.reports()[1].resolve(f.response());await settle();
+ f.move({x:90,y:-20});f.now(1000000);f.client.tick();await settle();
+ assert.equal(f.reports().length,3,'the interval sends the moved position');assert.equal(f.reports()[2].body.x,90);})],
+ ['an unrelated death waits for the interval, a threat\'s death sends at once', fixture=>fixture(async f=>{
+ f.client.tick();f.reports()[0].resolve(f.response());await settle();
+ f.deaths.push({id:'other-player-kill',map:'cave',in:'cave',server:'USII',at:1000});f.listeners.get('player')?.({});await update();await settle();
+ assert.equal(f.reports().length,1,'a death the party has no stake in');
+ f.deaths.push({id:'M',map:'cave',in:'cave',server:'USII',at:1000});f.listeners.get('player')?.({});await update();await settle();
+ assert.equal(f.reports().length,2,'the threat M died');})],
+]);
 test('handoff timing preserves local times, ignores old-target results, and stays bounded',()=>{
- let now=100;const entries=[],t=createHandoffTiming(entries,()=>now);
+ let now=100;const entries=[],t=createHandoffTiming(entries,()=>true,()=>now);
  t.death('A');t.death('A');now=120;t.selection({selection:'B:1',target:{id:'B'},committed:true,handoffTiming:{selectedAt:99999}});
  t.attack('blocked','B',{reason:'cooldown'});t.attack('blocked','B',{reason:'cooldown'});
  now=180;t.attack('attempt','B',{cooldownReadyAt:180});t.attack('attempt','B',{});
@@ -64,20 +59,67 @@ test('handoff timing preserves local times, ignores old-target results, and stay
  assert.deepEqual(entries.map(e=>e.stage),['death','selection','committed','blocked','attempt','accepted']);
  assert.equal(entries[4].at-entries[0].at,80);
  for(let i=0;i<300;i++)t.event('timer',{sequence:i});assert.equal(entries.length,256);
+ // The ring records only while a diagnostics lease names it; the same calls leave nothing with no lease.
+ const idle=[];let leased=false;const g=createHandoffTiming(idle,()=>leased,()=>now);
+ g.death('A');g.attack('attempt','B',{});assert.equal(idle.length,0);
+ leased=true;g.death('C');assert.deepEqual(idle.map(e=>e.stage),['death']);
 });
 
-test('native position events immediately send changed range readiness without timestamp echo loops',()=>fixture(async f=>{
- f.client.tick();f.reports()[0].resolve(f.response());await settle();
- f.readiness({target:'A',selection:'s',at:1000,ready:true,confirmation:'c1'});
- f.listeners.get('player')?.({});await settle();assert.equal(f.reports().length,2);
- f.reports()[1].resolve(f.response());await settle();
- f.readiness({target:'A',selection:'s',at:1001,ready:true,confirmation:'c1'});f.listeners.get('entities')?.({});await settle();assert.equal(f.reports().length,2);
- f.readiness({target:'A',selection:'s',at:1001,ready:false});f.listeners.get('entities')?.({});await settle();assert.equal(f.reports().length,3);
- f.client.stop();assert.equal(f.listeners.size,0);
-}));
+// Table A on one fake character, each row a port that records its call. The heartbeat
+// half and the channel half share this setup, so they are rows of one test.
+test('table A: the farming mode applies before the grouped lock, the report acts on nothing, and a held reply runs no acting row', async () => {
+  const {createApply} = require('../../runtime/status/character/apply.ts');
+  const {boundFired, boundsPending, boundsSent} = require('../../runtime/status/api.ts');
+  const {TABLE_A} = require('../../runtime/status/rules.ts');
+  let calls = [], held = false;
+  const rows = Object.fromEntries(TABLE_A.map(({row}) => [row, () => { calls.push(row); return row === 'held' ? held : undefined; }]));
+  const before = [];
+  const apply = createApply({ farmingMode: () => before.push('farming'), deathSeen: () => before.push('death'), telemetry: () => before.push('telemetry'),
+    gatheringCooldown: skill => before.push(skill), rows, snapshot: () => ({ boundsFired: boundsPending() }), request: async () => ({}) });
+  // The heartbeat half: the hunting owner's farming section before targeting's lock, and the wake
+  // after both.
+  await apply.reply({});
+  assert.ok(calls.indexOf('farming') < calls.indexOf('combat'), 'the farming mode applies before the grouped lock');
+  assert.ok(calls.indexOf('combat') < calls.indexOf('party-walks'));
+  // The channel half: only the channel rows run, farming first. The queue client's own combat
+  // apply stands in for the combat row, and the targeting owner's priorities and the survival owner's recovery rows run around it.
+  calls = [];
+  let combat = 0;
+  await apply.channel({}, () => { calls.push('queue-client'); combat++; });
+  assert.deepEqual(calls, ['farming', 'priorities', 'queue-client', 'recovery']);
+  assert.equal(combat, 1);
+  // The rows before the report read and record; none of table A's acting rows runs there. The
+  // bound path (bigcheck/bounds.md): a firing queued before the report rides it and leaves the
+  // queue once the coordinator took the report.
+  calls = [];
+  boundsSent(boundsPending().length); boundFired({ bound: 'callMargin', owner: '06', state: {} });
+  await apply.publish();
+  assert.deepEqual(boundsPending(), [], 'the report took the queued firing');
+  // The publish's reply runs the lifecycle owner's command row, since the command row drops a one-shot on that
+  // delivery.
+  assert.deepEqual(calls, ['command']);
+  calls = [];
+  // Two posts at once carry each queued firing once, in order, and leave the queue empty.
+  const carried = [];
+  const ordered = createApply({ farmingMode() {}, deathSeen() {}, telemetry() {}, gatheringCooldown() {}, rows,
+    snapshot: () => ({ boundsFired: boundsPending() }), request: async (_path, { body }) => { carried.push(body.boundsFired.map(f => f.seq)); return {}; } });
+  boundFired({ bound: 'callMargin', owner: '06', state: {} });
+  const first = ordered.publish();
+  boundFired({ bound: 'callMargin', owner: '06', state: {} });
+  await Promise.all([first, ordered.publish()]);
+  assert.equal(carried[0].length, 2, 'the first post takes its snapshot when it runs');
+  assert.deepEqual(carried[1], [], 'the second post carries none of the firings the first took');
+  assert.deepEqual(boundsPending(), []);
+  assert.deepEqual(calls, ['command', 'command']);
+  assert.deepEqual(before, ['farming', 'death', 'telemetry', 'fishing', 'mining']);
+  // A held reply ends the apply at the lifecycle owner's row; only the kept rows (the status
+  // owner's dashboard lease and movement's heartbeat) run after it.
+  held = true;
+  calls = [];
+  await apply.reply({});
+  const rowsTo = TABLE_A.findIndex(({row}) => row === 'held') + 1;
+  assert.deepEqual(calls, [...TABLE_A.slice(0, rowsTo), ...TABLE_A.filter(row => 'kept' in row)].map(({row}) => row));
+  for (const acting of ['stand-sync', 'convoy', 'navigation', 'combat', 'elixir', 'command', 'tidy', 'stock-up'])
+    assert.equal(calls.includes(acting), false, `${acting} acts while held`);
+});
 
-test('range confirmation commit receipt is traced once per actual challenge',()=>fixture(async f=>{
- f.client.tick();const first={selection:'s',target:{id:'A',state:'planned'},committed:true,independentConfirmation:{id:'c1'}};f.reports()[0].resolve(f.response(first));await settle();
- const next={...first,independentConfirmation:{id:'c2'}};f.waits()[0].resolve(f.response(next));await settle();
- assert.deepEqual(f.root.__partyHandoffTrace.filter(e=>e.stage==='range-commit-received').map(e=>e.confirmation),['c1','c2']);
-}));

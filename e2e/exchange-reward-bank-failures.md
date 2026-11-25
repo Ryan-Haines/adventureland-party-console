@@ -6,20 +6,21 @@ inventory instead of being deposited to the bank"). `merchantExchange`
 returns. The server clears the placeholder and then calls `add_item`, so a stackable
 reward (boxes, scrolls, offerings) merges into a carried stack; the placeholder slot is
 empty, `exchange()` returns no `num`, and the reward is never routed. Live journey:
-`e2e/live-exchange-reward-bank.spec.ts`.
+W57's M18 round (`e2e/exchange-session-rows.ts`, from `e2e/live-exchange-reward-bank.spec.ts` at
+21fe30a2b).
 
 1. **Merged reward stranded.** A reward that merges into a carried stack of the same
    item stays in inventory although no merchant rule claims it.
 2. **New-slot reward lost.** A reward that lands in a new slot (non-stacking item, or the
    first copy) is no longer recorded. Covered by the default-bank case in
-   `live-economy.spec.ts`.
+   `live-economy.spec.ts` at 21fe30a2b, which W57 plays as A47.
 3. **Non-rewards banked.** Carried items the exchange did not add to (other stock, the
    shrinking input stack) are deposited.
 4. **Locked stock banked.** A locked stack is deposited even if a reward of that name
    arrived.
 5. **Rules bypassed.** A reward with an exchange, NPC-sale, stand, upgrade, compound or
    deconstruction rule is banked instead of staying carried. Covered by
-   `live-economy.spec.ts`.
+   `live-economy.spec.ts` at 21fe30a2b, which W57 plays as A47.
 6. **Restart loses rewards.** Rewards recorded before a coordinator restart are dropped
    from the resumed job's checkpoint.
 

@@ -12,8 +12,8 @@ if (artifact && installed) {
   const original = Module._resolveFilename;
   const load = Module._load;
   const config = path.join(source, 'config.js');
-  // Legacy account files can retain development watchers. Managed generations
-  // are selected only by explicit console activation, never native file changes.
+  // The console activation picks a managed generation, so a legacy config.js loads with its
+  // development watchers (watch_CODE, enable_TYPECODE) off.
   Module._load = function (request, parent, ...options) {
     const value = load.call(this, request, parent, ...options);
     if (parent?.filename && inside(source, parent.filename) &&
@@ -32,8 +32,8 @@ if (artifact && installed) {
     if (absolute && inside(modules, absolute))
       return original.call(this, path.join(target, path.relative(source, absolute)), parent, ...options);
     if (absolute) return original.call(this, request, parent, ...options);
-    // Preserve nested dependency lookup order by translating the actual parent's
-    // path, rather than resolving every package from one flat artifact root.
+    // A bare package resolves from the artifact path of the file that requires it, so nested
+    // node_modules keep their lookup order.
     const filename = path.join(target, path.relative(source, parent.filename));
     const pinnedParent = Object.create(parent);
     pinnedParent.filename = filename;

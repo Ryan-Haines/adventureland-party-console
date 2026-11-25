@@ -1,3 +1,3 @@
 "use client";
 
-export type { RestockPolicy } from '../../../runtime/restock-policy';
+export type { RestockPolicy } from '../../../runtime/items/api.ts';

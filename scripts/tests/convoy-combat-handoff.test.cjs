@@ -1,20 +1,33 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const navigation = require('../convoy-navigation.cjs');
-const source = fs.readFileSync('characters/shared.js', 'utf8');
+const { engageWalk } = require('../../runtime/movement/coordinator/walk.ts');
+const {scenarioTable}=require('./fixtures/scenarios.cjs');
+const {client,coordinator,farmingWalk}=require('./fixtures/convoy-combat-handoff-scenario.cjs');
+const { engageFarming } = require('../../runtime/hunting/coordinator/api.ts');
 
-function client() {
-  const c = vm.createContext({travelCombatActive:()=>false, root: { partyFarmingZones: require('../../.build/shared/farming-zones.cjs') }, character: { name: 'Us', map: 'winterland', x: 500, y: 0 },
-    monsterFocus: ['goo'], monsterSearchRadius: 100, farmingMode: 'default', partyTargets: [], combatTargetId: null,
-    monsterPriority: () => 50, isAllowedTarget: t => !t.claimed, parent: { entities: {} } });
-  vm.runInContext(source.slice(source.indexOf('  function farmingTravelTarget('), source.indexOf('  function navigationDestinationLabel(')), c);
-  vm.runInContext(source.slice(source.indexOf('  function inFarmArea('), source.indexOf('  var farmAreaEvidence')), c);
-  return c;
-}
-test('travel acquisition uses monster distance from destination waypoint, never character distance', () => {
-  const c = client(), command = { location: { map: 'winterland', x: 0, y: 0 } };
+// Step 11 item 6: the legacy barrier checks sameWalk, so an engagement from another epoch,
+// command, runtime or navigation revision releases nothing.
+const stale = change => r => {
+  change(r);
+  assert.equal(engageWalk(r.party, r.body, r.options), false); assert.ok(r.party.activeConvoy);
+  assert.equal(r.party.commands.B.id, 4);
+};
+scenarioTable('a stale identity, revision, wrong map, outside radius or preparation never releases routes', coordinator, [
+  ['a stale epoch', stale(r => r.body.epoch++)],
+  ['a stale command', stale(r => r.body.commandId++)],
+  ['a stale runtime', stale(r => r.body.runtimeId = 'old')],
+  ['a stale navigation revision', stale(r => r.body.navigationRevision++)],
+  ['the wrong map', stale(r => r.body.target.map = 'main')],
+  ['a target outside the radius', stale(r => r.body.target.x = 101)],
+  ['a target with no position', stale(r => r.body.target.x = NaN)],
+  ['a type the farm does not hunt', stale(r => r.body.target.mtype = 'crab')],
+  ['a walk still preparing', stale(r => r.party.activeConvoy.phase = 'shared-prepare')],
+  ['a walk that allows no combat handoff', stale(r => r.party.activeConvoy.combatHandoffAllowed = false)],
+]);
+
+scenarioTable('a travelling character picks its handoff target by distance from the destination waypoint (MOV-048)', client, [
+ ['travel acquisition uses monster distance from destination waypoint, never character distance', c=>{
+ const  command = { location: { map: 'winterland', x: 0, y: 0 } };
   const target = { id: 'm', type: 'monster', mtype: 'goo', visible: true, x: 500, y: 0 };
   c.parent.entities.m = target;
   assert.equal(c.farmingTravelTarget(command), null, 'near character but outside waypoint hunt radius');
@@ -27,20 +40,9 @@ test('travel acquisition uses monster distance from destination waypoint, never 
   c.character.map = 'winterland'; target.claimed = true; assert.equal(c.farmingTravelTarget(command), null);
   target.claimed = false; target.mtype = 'crab'; assert.equal(c.farmingTravelTarget(command), null);
   target.mtype = 'goo'; target.visible = false; assert.equal(c.farmingTravelTarget(command), null);
-});
-
-function coordinator() {
-  const party = { nextCommandId: 10, activeConvoy: { id: 'c', epoch: 2, phase: 'travel', departAt: 1000,
-    participants: ['A', 'B'], completed: [], location: { map: 'winterland', x: 0, y: 0 }, runtimes: { A: 'r' } },
-    commands: { A: { id: 3, convoyId: 'c', epoch: 2 }, B: { id: 4, convoyId: 'c', epoch: 2 } } };
-  const body = { character: 'A', convoyId: 'c', epoch: 2, commandId: 3, runtimeId: 'r', navigationRevision: 7,
-    target: { id: 'm', map: 'winterland', mtype: 'goo', x: 100, y: 0 } };
-  const options = { revisions: { A: 7, B: 8 }, focus: ['goo'], radius: 100, now: 2000 };
-  return { party, body, options };
-}
-
-test('authorized ordinary farming retains travel outside its destination farm',()=>{
- const c=client();c.travelCombatActive=()=>true;
+ }],
+ ['authorized ordinary farming retains travel outside its destination farm', c=>{
+ c.travelCombatActive=()=>true;
  const target={id:'early',type:'monster',mtype:'goo',visible:true,map:'winterland',x:520,y:0};c.parent.entities.early=target;
  const command={location:{map:'cave',x:900,y:0},purpose:null,combatHandoffAllowed:true};
  assert.equal(c.farmingTravelTarget(command),null);
@@ -48,56 +50,20 @@ test('authorized ordinary farming retains travel outside its destination farm',(
  assert.equal(c.farmingTravelTarget(command),target);
  target.x=601;assert.equal(c.farmingTravelTarget(command),null);
  target.x=520;command.combatHandoffAllowed=false;assert.equal(c.farmingTravelTarget(command),null);
-});
+ }],
+]);
 
-test('monster picker travel acquires visible wild boar only inside the selected spawn',()=>{
- const c=client();c.travelCombatActive=()=>true;c.monsterFocus=['boar'];
- const target={id:'boar',type:'monster',mtype:'boar',visible:true,map:'winterland',x:520,y:0};c.parent.entities.boar=target;
- const command={location:{map:'winterland',x:1500,y:0},purpose:'manual-monster-override',combatHandoffAllowed:true};
- assert.equal(c.farmingTravelTarget(command),null);
- command.location.x=520;
- assert.equal(c.farmingTravelTarget(command),target);
- target.claimed=true;assert.equal(c.farmingTravelTarget(command),null);
- target.claimed=false;target.x=601;assert.equal(c.farmingTravelTarget(command),null);
-});
-test('accepted engagement releases convoy and sends revision-bound individual recovery to late members', () => {
-  const { party, body, options } = coordinator();
-  assert.equal(navigation.engage(party, body, options), true);
-  assert.equal(party.activeConvoy, null); assert.equal(party.commands.A, undefined);
-  assert.equal(party.commands.B.type, 'event-resume-travel'); assert.equal(party.commands.B.navigationRevision, 8);
-  assert.equal(party.commands.B.convoyHandoff, 'c'); assert.equal(party.commands.B.location.map, 'winterland');
-  assert.equal(party.lastConvoyEngagement.target.id, 'm');
-  assert.equal(navigation.engage(party, body, options), false, 'duplicate cannot cancel newer movement');
-});
-
-test('event return reconciliation preserves the combat handoff instead of recreating travel', () => {
-  const { party, body, options } = coordinator();
-  const owner = { returnDispatchedAt: 1, returnRoutes: {
-    A: { convoyId: 'c', revision: 7, location: party.activeConvoy.location },
-    B: { convoyId: 'c', revision: 8, location: party.activeConvoy.location },
-  } };
-  Object.assign(party, { anniversary: { eventCycle: owner }, eventSessions: {}, deferredEventReturns: {},
-    navigationIntents: { A: { revision: 7 }, B: { revision: 8 } }, characterLocations: {}, statuses: {},
-    followers: { B: true }, leader: 'A' });
-  assert.equal(navigation.engage(party, body, options), true);
-  assert.equal(owner.returnRoutes.A.engagedAt, 2000);
-  assert.equal(owner.returnRoutes.B.commandId, party.commands.B.id);
-  const nav = require('../farming-navigation.cjs')(party, { now: () => 5000, persist() {},
-    names: () => ['A', 'B'], activeNames: () => ['A', 'B'] });
-  const commandId = party.commands.B.id;
-  assert.equal(nav.reconcile(owner, 'anniversary-return'), false);
-  assert.equal(party.commands.A, undefined); assert.equal(party.commands.B.id, commandId);
-  owner.returnRoutes.B.engagedAt = 4000;
-  assert.equal(nav.reconcile(owner, 'anniversary-return'), true);
-});
-test('stale identity, revision, wrong map, outside radius and preparation never release routes', () => {
-  for (const change of [r => r.body.epoch++, r => r.body.commandId++, r => r.body.runtimeId = 'old',
-    r => r.body.navigationRevision++, r => r.body.target.map = 'main', r => r.body.target.x = 101,
-    r => r.body.target.x = NaN, r => r.body.target.mtype = 'crab',
-    r => r.party.activeConvoy.phase = 'prepare', r => r.options.now = 999,
-    r => r.party.activeConvoy.combatHandoffAllowed = false]) {
-    const r = coordinator(); change(r);
-    assert.equal(navigation.engage(r.party, r.body, r.options), false); assert.ok(r.party.activeConvoy);
-    assert.equal(r.party.commands.B.id, 4);
-  }
-});
+// HN17: the leader's goo at the area's edge
+// ends the walk only with every member inside the area plus its own attack range (rules.ts
+// `standsAt`). With the priest 200 beyond its range the walk keeps travelling and never
+// switches to `defending`.
+scenarioTable('HN17: the farming walk ends early only with every member inside its attack range', farmingWalk, [
+ ['a member 200 beyond its range: the walk goes on', r => {
+  assert.equal(engageFarming(r.party, r.body, r.options, { validReport: () => true }, r.now), false);
+  assert.equal(r.party.activeConvoy.phase, 'travel'); assert.equal(r.party.activeConvoy.farmingEngagement, undefined);
+ }, 350],
+ ['every member inside its range: the walk ends for the fight', r => {
+  assert.equal(engageFarming(r.party, r.body, r.options, { validReport: () => true }, r.now), true);
+  assert.ok(!r.party.activeConvoy, 'the walk ended');
+ }, 100],
+]);

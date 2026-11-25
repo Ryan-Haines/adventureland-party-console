@@ -1,8 +1,8 @@
 "use client";
 import { ItemMeta } from "./item-meta";
+import { maximumItemLevel } from "../../../runtime/items/api.ts";
 
+// The highest level the dashboard offers for an item: the items owner's maximum for its kind.
 export function itemMaximumLevel(meta?: ItemMeta | null) {
-  if (Number.isFinite(Number(meta?.maxLevel)) && Number(meta?.maxLevel) > 0)
-    return Number(meta?.maxLevel);
-  return meta?.compoundable ? 7 : meta?.upgradeable ? 13 : 0;
+  return maximumItemLevel({ compound: meta?.compoundable, upgrade: meta?.upgradeable });
 }

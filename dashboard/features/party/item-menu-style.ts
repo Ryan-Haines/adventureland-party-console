@@ -1,1 +1,3 @@
-export const itemMenuClass = "item-action-menu max-h-[calc(100vh-1rem)] min-w-56 overflow-y-auto pb-0 border border-slate-300 bg-white text-black [&_[data-slot=context-menu-item]]:text-black [&_[data-slot=context-menu-item]_*]:text-inherit [&_[data-slot=context-menu-sub-trigger]]:text-black [&_[data-slot=context-menu-item]]:data-highlighted:bg-slate-100 [&_[data-slot=context-menu-item]]:data-highlighted:text-black [&_[data-slot=context-menu-item][data-disabled]]:bg-white [&_[data-slot=context-menu-item][data-disabled]]:text-slate-400 [&_[data-slot=context-menu-item][data-disabled]]:opacity-100 [&_[data-slot=context-menu-separator]]:bg-slate-100 [&_[data-slot=context-menu-label]]:text-black";
+// The item menu's marker (globals.css places its icons) and size. context-menu.tsx holds the colours
+// every context menu shares.
+export const itemMenuClass = "item-action-menu max-h-[calc(100vh-1rem)] min-w-56 overflow-y-auto pb-0";
