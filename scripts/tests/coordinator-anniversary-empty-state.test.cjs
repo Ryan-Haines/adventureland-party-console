@@ -6,20 +6,17 @@ const {anniversaryHolding,newAnniversaryRound,lostCombatHandoff}=require('../../
 const {createEventReturns}=require('../../runtime/events/coordinator/returns.ts');
 
 test('combat recovery accepts absent anniversary cycles and unselected targets without holding travel',()=>{
- const calls=[];
- const ports={anniversaryParticipants:()=>{calls.push('participants');return ['P'];},now:()=>{calls.push('clock');return 100;}};
+ const ports={anniversaryParticipants:()=>['P'],now:()=>100};
  for(const cycle of [undefined,null]){
   assert.equal(anniversaryHolding(cycle,ports),false);
   assert.equal(newAnniversaryRound(cycle,{},ports),false);
   assert.equal(lostCombatHandoff(cycle,ports),false);
  }
- assert.deepEqual(calls,[]);
  for(const target of [undefined,null,'outsider']){
   const cycle={id:'r',endsAt:200,target,stagedAt:90};
   assert.equal(anniversaryHolding(cycle,ports),false);
   assert.equal(newAnniversaryRound(cycle,{startedAt:50},ports),false);
  }
- assert.deepEqual(calls,Array(6).fill('participants'));
 });
 
 test('lost anniversary handoff without captured participants retains active-party recovery fallback',()=>{

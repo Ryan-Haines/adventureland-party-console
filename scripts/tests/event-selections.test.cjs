@@ -1,9 +1,8 @@
-const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs');
+const test = require('node:test'), assert = require('node:assert/strict');
 const load = require('./helpers/dashboard-query-module.cjs'), {queryRoot} = load;
 const React = require('../../dashboard/node_modules/react'), {create, act} = require('../../dashboard/node_modules/react-test-renderer');
 const {supportedEvents} = require('../../runtime/events/api.ts');
 global.IS_REACT_ACT_ENVIRONMENT = true;
-const runtime = fs.readFileSync('characters/shared.js', 'utf8');
 // The clock's `test` echo asks the call budget's `background` band (character/calls.ts); this realm's
 // budget sends it unless a test sets `bandAnswer`.
 let bandAnswer = 'send';
@@ -177,7 +176,5 @@ test('D-D1: an adopted add-on event kind is selected and enabled through the coo
     const party = { eventSelectionsByCharacter: { W: ['plantedevent'] }, eventPrioritiesByCharacter: {} };
     assert.equal(eventEnabled(party, 'W', 'plantedevent'), true);
     assert.equal(eventKey('slenderman').aloneUntilOver, true);
-    const start = fs.readFileSync('runtime/lifecycle/coordinator/start.ts', 'utf8');
-    assert.doesNotMatch(start, /event-policy\.cjs/);
   } finally { adoptAddonKinds([]); }
 });

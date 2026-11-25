@@ -24,6 +24,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {createMetricsService}=require('../../runtime/status/coordinator/metrics/service.ts');
 const {METRIC_BUCKET_MS}=require('../../runtime/status/rules.ts');
+const {settle}=require('./helpers/settle.cjs');
 
 function service(t,ports={}){
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'metrics-service-'));
@@ -46,13 +47,17 @@ test('(1): the metrics come back once the store writes again after one storage e
   if(failing)throw Object.assign(new Error('EACCES: the store refuses writes'),{code:'EACCES'});
   return write.apply(this,args);
  });
- const {call,warnings}=service(t);
+ // The bucket timer runs on the row's clock (clockService below): each tick is the next bucket start.
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'metrics-service-')),clock={now:Date.UTC(2026,10,20,12)};
+ const {metrics,call,tick,warnings}=clockService(t,path.join(directory,'party.metrics.jsonl'),clock);
+ t.after(async()=>{await metrics.close();fs.rmSync(directory,{recursive:true,force:true});});
+ const nextBucket=async()=>{clock.now+=METRIC_BUCKET_MS;tick();await settle();};
  failing=true;
- await new Promise(resolve=>setTimeout(resolve,METRIC_BUCKET_MS+500));
+ await nextBucket();
  assert.ok(warnings.length>0,'the failed bucket write warned once');
  assert.equal((await call('GET /party-api/metrics',undefined)).status,503,'off while the store refuses writes');
  failing=false;
- await new Promise(resolve=>setTimeout(resolve,METRIC_BUCKET_MS+500));
+ await nextBucket();
  assert.notEqual((await call('GET /party-api/metrics',undefined)).status,503,'back at the next bucket the store writes');
 });
 

@@ -56,8 +56,9 @@ test('a folder with no index.ts or README.md, a bad name or a loose file stops t
     ['a loose file',dir=>fs.writeFileSync(path.join(dir,'runtime/addons/notes.ts'),''),/runtime\/addons\/ holds only add-on folders/],
   ]){
     const scratch=scratchRoot({ok:{'index.ts':true,'README.md':'# ok\n'}});
+    // One case also runs the CLI, which stops on the same message.
     try{set(scratch.dir);assert.throws(()=>installedFolders(scratch.dir),message,what);
-      const built=run('map','--root',scratch.dir);assert.equal(built.status,1,what);assert.match(built.stderr,message,what);}
+      if(what==='no index.ts'){const built=run('map','--root',scratch.dir);assert.equal(built.status,1,what);assert.match(built.stderr,message,what);}}
     finally{scratch.cleanup();}
   }
 });
@@ -103,10 +104,6 @@ test('the naming check reads imports and exact string ids, not words',()=>{
     ['runtime/coordinator/application.ts:2 "boss-zones"','runtime/coordinator/wired.ts:1 imports ../addons/boss-zones/index.ts',
       'runtime/coordinator/wired.ts:2 "addon:boss-zones"','runtime/coordinator/wired.ts:2 "boss-zones.seen"',
       'dashboard/features/party/card.tsx:1 "bossZoneMessage"','scripts/tests/zones.test.cjs:2 imports ../../runtime/addons/boss-zones/index.ts']);
-  // The four outside builds' names stand in core as words and fixture names, and none of them counts.
-  const tree=new Map(spawnSync('git',['ls-files','--cached','--others','--exclude-standard'],{cwd:root,encoding:'utf8'}).stdout.split('\n')
-    .filter(f=>/\.(ts|tsx|mts|cjs|mjs|js)$/.test(f)&&!f.startsWith('runtime/addons/')).map(f=>[f,fs.readFileSync(path.join(root,f),'utf8')]));
-  assert.deepEqual(namingFindings(tree,['cosmetics','tank-hold','market-filters','npc-orders'].map(name=>({name}))),[]);
 });
 
 // The installed list builds itself: a command entry imports only build/installed.mts statically,
@@ -125,7 +122,7 @@ test('C6: the add-on command entries reach no .build/ file before they write the
 // Rule 9 (slot-coverage.md "The standing check"): an unmarked dialog, an unmarked outer section, a
 // repeated id, an id with no row, a row whose file lacks it, a reason off the list or with no cite, a
 // slotted area with no draw and a slot nothing draws each fail; a section inside a marked area takes its
-// decision, and the console's own dashboard passes.
+// decision. addon:check runs the rule over the console's own dashboard (run/check.mts main).
 test('rule 9: the slot coverage check names each unmarked, undecided or undrawn area and each undrawn slot',async()=>{
   const {areaFindings}=await import(require('node:url').pathToFileURL(path.join(root,'runtime/hooks/rules/areas.mts')).href);
   const a='dashboard/features/party/a.tsx',b='runtime/hooks/dashboard/b.tsx';
@@ -143,16 +140,12 @@ test('rule 9: the slot coverage check names each unmarked, undecided or undrawn 
     `${at} kept: "taste" is not a core-only reason (security, frame)`,`${at} kept: its core-only reason cites nothing`,
     `${at} gone: ${a} draws no data-area="gone"`,`${at} inner: ${b} draws no data-area="inner"`,
     'card-section is declared but no dashboard area draws it','rare-list is declared but no dashboard area draws it']);
-  const {SLOTS}=require('../../runtime/hooks/registry.ts'),status=require('../../runtime/hooks/rows/12-status.ts');
-  const tree=new Map(spawnSync('git',['ls-files','--cached','--others','--exclude-standard','dashboard','runtime/hooks/dashboard'],{cwd:root,encoding:'utf8'}).stdout.split('\n')
-    .filter(f=>f.endsWith('.tsx')).map(f=>[f,fs.readFileSync(path.join(root,f),'utf8')]));
-  assert.deepEqual(areaFindings(status,SLOTS,tree),[],'every dashboard area is marked and decided, and every slot is drawn');
 });
 
 // Rule 8 (hook-coverage.md "The standing check"): a rule file's export in neither DECISIONS nor PLAIN,
 // a stale or outside entry, a notice or core hook, a reason off the list or with no cite, a PLAIN kind
-// off the list, a rows file with no coverage block and a request no decision names each fail; the
-// console's own rows pass.
+// off the list, a rows file with no coverage block and a request no decision names each fail.
+// addon:check runs the rule over the console's own rows.
 test('rule 8: the coverage check names each unlisted, stale or bad entry and each orphan hook',async()=>{
   const {coverageFindings}=await import(require('node:url').pathToFileURL(path.join(root,'runtime/hooks/rules/coverage.mts')).href);
   const rules='runtime/x/rules.ts',sources=new Map([[rules,"export function decided() {}\nexport const shown = () => '';\nexport function unlisted() {}\nexport const BOUND = 3;\n"]]);
@@ -171,15 +164,11 @@ test('rule 8: the coverage check names each unlisted, stale or bad entry and eac
     `${at} PLAIN decided: kind "helper" is not one of label, read, validator, migration, format`,
     `${rules} exports unlisted, a decision with no hook and no core-only reason`,'runtime/hooks/rows/02-movement.ts exports no RULE_FILES, DECISIONS and PLAIN',
     'the hook b.req is named by no decision of its owner\'s DECISIONS']);
-  const {ROW_FILES,HOOKS}=require('../../runtime/hooks/registry.ts');
-  const tree=new Map(spawnSync('git',['ls-files','--cached','--others','--exclude-standard','runtime'],{cwd:root,encoding:'utf8'}).stdout.split('\n').filter(Boolean)
-    .map(f=>[f,fs.readFileSync(path.join(root,f),'utf8')]));
-  assert.deepEqual(coverageFindings(ROW_FILES,HOOKS,tree),[],"every owner's decision has a hook or a core-only reason");
 });
 
 // and: addon:check fails a row with no fixture, a fixture
-// row its file lacks, or a request with no addonMayAsk, in every owner's row file, and the
-// console's own movement rows pass.
+// row its file lacks, or a request with no addonMayAsk, in every owner's row file. addon:check runs the
+// rule over every owner's own rows.
 test('the contract rule names a row with no fixture, a missing fixture row or no addonMayAsk',async()=>{
   const {contractFindings}=await import(require('node:url').pathToFileURL(path.join(root,'runtime/hooks/cli/run/check.mts')).href);
   const sources=new Map([['e2e/table.spec.ts',"const rows=[\n['a.hook: fires once',async()=>{}],\n['b.hook: the row\\'s title',async()=>{}],\n];\n"]]);
@@ -204,10 +193,6 @@ test('the contract rule names a row with no fixture, a missing fixture row or no
     ['e2e/helpers/here.cjs','']]);
   assert.deepEqual(contractFindings({'rows/02-movement.ts':{HOOKS:{'a.hook':files['rows/02-movement.ts'].HOOKS['a.hook']},SLOTS:{}}},loads),
     [`${at}02-movement.ts hook a.hook: its fixture file e2e/table.spec.ts requires ./helpers/gone.cjs, which is not in the tree, so none of its rows runs`]);
-  const {ROW_FILES}=require('../../runtime/hooks/registry.ts');
-  const tree=new Map(spawnSync('git',['ls-files','--cached','--others','--exclude-standard','e2e','scripts','runtime'],{cwd:root,encoding:'utf8'}).stdout.split('\n').filter(Boolean)
-    .map(f=>[f,fs.readFileSync(path.join(root,f),'utf8')]));
-  assert.deepEqual(contractFindings({'rows/02-movement.ts':ROW_FILES['rows/02-movement.ts']},tree),[],'every movement row names a row that exists');
   // A table that builds its titles at run time from a template and its own strings
   // holds each title it can spell; a word the file lacks spells none.
   const built=new Map([['scripts/tests/reads.test.cjs',"const FILE='scripts/tests/reads.test.cjs';\nconst READS=[['r.hook','oldRead']];\n"+
@@ -344,11 +329,6 @@ test('rule 12: a hook with no side, an answer with no AddonContext and a signatu
     'runtime/hooks/registry.ts:9: a hook signature names the type Hidden, which runtime/hooks/addon-api.ts does not export',
     'runtime/hooks/registry.ts:13: a hook signature names the type OwnHook, which runtime/hooks/addon-api.ts does not export',
     'runtime/hooks/registry.ts:4: a hook signature names the type Entity, which runtime/hooks/addon-api.ts does not export']);
-  // The console's own signatures name only types addon-api.ts exports.
-  const {HOOKS}=require('../../runtime/hooks/registry.ts');
-  const tree=new Map(spawnSync('git',['ls-files','--cached','--others','--exclude-standard','runtime'],{cwd:root,encoding:'utf8'}).stdout.split('\n')
-    .filter(f=>/\.tsx?$/.test(f)).map(f=>[f,fs.readFileSync(path.join(root,f),'utf8')]));
-  assert.deepEqual(viewFindings(HOOKS,tree).filter(f=>f.includes('does not export')),[]);
 });
 test('rule 13: a piece without the base, a list-view part with no row type and a setting kind the manager does not draw are findings',async()=>{
   const {pieceFindings}=await load('runtime/hooks/rules/pieces.mts');

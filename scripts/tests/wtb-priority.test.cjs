@@ -1,9 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const path = require('node:path');
-const source = require('./helpers/coordinator-source.cjs').coordinatorSource();
+const {merchantStateReads}=require('../../runtime/merchant-jobs/coordinator/api.ts');
 const {coordinatorReadyFacts}=require('../../runtime/merchant-jobs/coordinator/dispatch.ts');
 const {partyHooks}=require('../../runtime/hooks/index.ts');
 // The pick reads the dispatch pass's job facts; the hunting owner's and the items owner's answers hold
@@ -11,14 +8,16 @@ const {partyHooks}=require('../../runtime/hooks/index.ts');
 partyHooks().publish({name:'core:wtb-priority-reads',folder:'core',author:'test',summary:'Nothing holds a job.',
   hooks:{'cave.state':()=>({owned:false}),'items.needs':()=>({gold:0,withdrawals:[],slots:0,postage:0})}});
 const pick=r=>r.pickJobByPriority(coordinatorReadyFacts(r.party,{now:Date.now,capacityBlocked:job=>r.merchantTransferCapacityBlocked(job)}));
+// The job owner's reads under the names the composition gives them (coordinator/application.ts).
+const composed = reads => ({ merchantRoutinePriority: reads.routinePriority, merchantJobPriority: reads.priority, stampMerchantJob: reads.stamp,
+  merchantTransferCapacityBlocked: reads.capacityBlocked, collectionSlotCount: reads.collectionSlots, merchantCollectionNearby: reads.collectionNearby,
+  markedCollectionReady: reads.collectionReady, pickJobByPriority: reads.pick, merchantCapacitySignature: reads.capacitySignature });
 function runtime() {
   const party = { standBids: { cheap: { priorityOverride: 0 }, urgent: { priorityOverride: 100 }, normal: {} }, standListings: [],
     merchantRoutinePriorities: { 'stand bid purchases': 40, 'ALData marketplace purchases': 60,
       'party collection': 90, 'inventory cleanout': 95 }, merchantQueue: [], merchantCharacter: 'M',
     merchantJobBlocks: {}, statuses: {}, bankbois: {}, nextCommandId: 1 };
-  const r = vm.createContext(require('./helpers/coordinator-source.cjs').withCoordinatorImports({ party, persistSettings() {}, dispatchMerchant() {}, merchantLog() {} }));
-  vm.runInContext(source.slice(source.indexOf('  function merchantRoutinePriority('), source.indexOf('  function merchantCapacitySignature(')), r);
-  vm.runInContext(source.slice(source.indexOf('  function merchantCapacitySignature('), source.indexOf('  function scheduleNearbyGiveaways(')), r);
+  const r = { party, persistSettings() {}, dispatchMerchant() {}, merchantLog() {}, ...composed(merchantStateReads(party)) };
   require('./helpers/coordinator-merchant.cjs').merchantQueueRuntime(r);
   return { r, party };
 }

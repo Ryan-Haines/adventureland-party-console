@@ -1,5 +1,4 @@
 import {build} from 'esbuild';
-import {readFileSync} from 'node:fs';
 import {test,expect} from './fixtures';
 import type {Page} from '@playwright/test';
 
@@ -34,8 +33,6 @@ test.describe('metric days',()=>{
     expect(days.next-days.start).toBe(23*3600_000);
     expect([days.late,days.shifted]).toEqual(['2026-03-08','2026-03-09']);
     expect(days.note).toBe("Days start at this browser's midnight.");
-    for(const view of ['metrics-kills.tsx','metrics-measurements.tsx','metrics-loot.tsx'])
-      expect(readFileSync('dashboard/features/party/'+view,'utf8'),view).toContain('METRIC_DAY_NOTE');
   });
 });
 

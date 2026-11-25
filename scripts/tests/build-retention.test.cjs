@@ -88,21 +88,20 @@ test('dashboard retains RETAIN_BUILDS releases plus live older versions, removes
  await assert.rejects(fs.access(path.join(root,'.build/releases',ids[2])),/ENOENT/);
  await fs.access(path.join(root,'.build/releases',ids[0]));
 }));
+// The supervisor's mode change (tools/dashboard/supervision.ts) on planted servers: a rollback starts the
+// requested release, and a failed start puts the earlier pin back and frees the claim.
 test('dashboard rollback selects the requested release and restores pin on startup failure',async()=>{
- const source=await fs.readFile('tools/dashboard/supervisor.mts','utf8');
- const start=source.indexOf('class Busy extends Error'),end=source.indexOf('// The gate of the routes that change the supervisor',start);
- const ts=require('typescript'),vm=require('node:vm');
- const code=ts.transpileModule(source.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+ const {createModeChange}=require('../../tools/dashboard/supervision.ts');
  for(const fail of [false,true]) {
   let selected,activated=false,rejected=false;
-  const context=vm.createContext({busy:false,failure:null,rollbackSelection:'old',active:{mode:'production'},
-   restoreDevelopment:async()=>false,createCandidate:async(_mode,id)=>{selected=id;return {generation:id};},
+  const modes=createModeChange({activeMode:()=>'production',restoreDevelopment:async()=>false,
+   createCandidate:async(_mode,id)=>{selected=id;return {generation:id};},
    activate:async()=>{if(fail)throw Error('unhealthy');activated=true;},
    rejectCandidate:async()=>{rejected=true;},saveMode:async()=>{},pin:async()=>{}});
-  vm.runInContext(code,context);
-  if(fail)await assert.rejects(context.changeMode('production','chosen'),/unhealthy/);
-  else await context.changeMode('production','chosen');
+  modes.state.rollbackSelection='old';
+  if(fail)await assert.rejects(modes.changeMode('production','chosen'),/unhealthy/);
+  else await modes.changeMode('production','chosen');
   assert.equal(selected,'chosen');assert.equal(activated,!fail);assert.equal(rejected,fail);
-  assert.equal(context.rollbackSelection,fail?'old':'chosen');assert.equal(context.busy,false);
+  assert.equal(modes.state.rollbackSelection,fail?'old':'chosen');assert.equal(modes.state.busy,false);
  }
 });

@@ -5,7 +5,7 @@ export { collectionPickups, exchangePickup, merchantAdoption, merchantHeartbeat,
 export { createCoordinatorMerchantAutomation } from './sources.ts';
 export { createCoordinatorMerchantServices, gatheringCastActive, merchantVisibility } from './dispatch.ts';
 export { migrateMerchantSettings, installStandLocationRoute } from './stand.ts';
-export { endMerchantJob, merchantSlotCommand, pauseCurrentJob, reviseQueuedJobs } from './owner.ts';
+export { endMerchantJob, merchantSlotCommand, pauseCurrentJob, reviseQueuedJobs, merchantStateReads } from './owner.ts';
 export { createMerchantPartyRoutes } from './routes.ts';
 export { createCoordinatorMerchantConfiguration, createCoordinatorMerchantJobActions, createMerchantCompletionRoute, createMerchantHandoffRoutes, createMerchantIdleRoute } from './routes.ts';
 export { createMerchantScheduling, pruneLuckCasts } from './sources.ts';

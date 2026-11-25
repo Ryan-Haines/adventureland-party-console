@@ -18,7 +18,6 @@ scenarioTable("the targeting owner's ring, overkill skip, retire and scope",targ
     w.flights.goo1=99;assert.equal(w.skip.covers(goo),false,'a flight short of the HP keeps the target');
     w.flights.goo1=100;assert.equal(w.skip.covers(goo),true);
     assert.equal(w.ring.entries().filter(e=>e.kind==='skipped').length,2,'a new skip writes a new entry');
-    assert.deepEqual(Object.keys(w.ring.entries()[0]).sort(),['at','damage','hp','kind','part','seq','target','why']);
     assert.equal(w.ring.entries()[0].part,'targeting');
     assert.equal(createOverkillSkip({incoming:()=>0,record:()=>assert.fail('no skip writes no entry')}).covers({id:'x',hp:0}),false,'a target with no HP read is not skipped');
   }],

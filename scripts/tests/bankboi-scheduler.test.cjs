@@ -1,15 +1,11 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const vm=require('node:vm');
-const fs=require('node:fs');
 const routing=require('../../runtime/items/coordinator/storage.ts');
-const {coordinatorSource,withCoordinatorImports}=require('./helpers/coordinator-source.cjs');
 const {partyHooks}=require('../../runtime/hooks/index.ts');
 // The group and event answers a transaction's start reads (merchantEventReserved, merchantSlotCommand):
 // no group holds the merchant and no event return is deferred.
 require('../../runtime/tasks/api.ts').publishTasks({groupOf:()=>null,live:()=>null});
 require('../../runtime/events/api.ts').publishEventAnswers({deferredReturn:()=>false});
-const source=coordinatorSource();
 // A free BankBoi cell reads null, as a worker's report keeps every bag cell (bank.ts `items`).
 const bag=(...filled)=>Object.assign(Array(42).fill(null),filled);
 function fixture(){
@@ -18,7 +14,7 @@ function fixture(){
  bankbois:{B:{name:'B',state:'ready',items:bag()}},withdrawals:{M:[]},bankSnapshot:{packs:{}},
  bankboiQueue:[{id:'a',pack:'items1',slot:35,state:'staged',item:{name:'leather',q:2}}],bankboiTransaction:null};
  const swaps=[];
- const c=vm.createContext(withCoordinatorImports({party,Date,Number,Math,character_manage:{M:{}},softkill_block:async()=>{}}));
+ const c={character_manage:{M:{}},softkill_block:async()=>{}};
  // The roster's slot answer starts the named character in the slot.
  partyHooks().publish({name:'core:roster-fixture',folder:'core',author:'test',summary:'Starts a character in a slot.',
   hooks:{'roster.assign':(slot,name)=>{party.headlessSlots[slot-1]=name;swaps.push(name);},'roster.offline':async()=>true}});
@@ -130,7 +126,5 @@ test('outbound staging is left for the merchant before retrieving another batch'
 
 test('merchant pickup of outbound staging outranks optional gathering',()=>{
  const {party,c}=fixture();party.withdrawals.M=[{pack:'items1',slot:35}];party.bankSnapshot.packs.items1=Array(42).fill(null);party.bankSnapshot.packs.items1[35]={item:{name:'ring'}};
- c.merchantRoutinePriority=()=>88;
- vm.runInContext(source.slice(source.indexOf('  function merchantJobPriority('),source.indexOf('  function prioritizedStandBids(')),c);
- assert.equal(c.merchantJobPriority({target:'M',reason:'manual bank exchange'}),101);
+ assert.equal(require('../../runtime/merchant-jobs/coordinator/api.ts').merchantStateReads(party).priority({target:'M',reason:'manual bank exchange'}),101);
 });

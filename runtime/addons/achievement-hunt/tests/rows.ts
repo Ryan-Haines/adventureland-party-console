@@ -205,10 +205,17 @@ async function consoleJourney({ page, app }: { page: Page; app: App }, testInfo:
   // The add-on's entry joins row 2 after its switch turns on, with its declared data.
   const card = page.locator('article').filter({ has: page.getByRole('heading', { name: 'W', exact: true }) });
   const targetRow = card.getByRole('group', { name: 'Target mode' });
-  await page.reload();
-  await card.locator('button[aria-expanded]').filter({ hasText: 'Farming settings' }).click();
+  // The journey's writes go through the API, as an app's do. The page refreshes the farming profile
+  // (config) at once only after its own writes (query-actions.ts actionDomains); an outside write
+  // shows at its next config poll (status/rules.ts dashboardPolls.config, 15 s), which equals the
+  // expect bound. So the card is read from a new page load after each outside write.
+  const openCard = async () => {
+    await page.reload();
+    await card.locator('button[aria-expanded]').filter({ hasText: 'Farming settings' }).click();
+  };
+  await openCard();
   await expect(targetRow.getByRole('button')).toHaveText(['Farming', 'Hunt', 'Achievements']);
-  await expect(targetRow.getByRole('button', { name: 'Achievements', exact: true })).toHaveClass(/border-rose-600 bg-rose-950/);
+  await expect(targetRow.getByRole('button', { name: 'Achievements', exact: true })).toHaveAttribute('data-color', 'rose');
   // Nothing selected: the coordinator refuses the mode with the add-on's reason.
   const refused = await post('/farming-mode', { character: 'W', mode: 'achievements' });
   expect(refused.status()).toBe(409);
@@ -264,15 +271,18 @@ async function consoleJourney({ page, app }: { page: Page; app: App }, testInfo:
   expect(farming.farmingProfiles.W).toMatchObject({ targetMode: 'achievements', combatMode: 'auto', farmingPolicy: 'achievements', monsterFocus: ['goo'] });
   expect(farming.farmingProfiles.P.targetMode).not.toBe('achievements');
   expect(store(farming, 'P')?.achievementTarget ?? null).toBeNull();
+  // The task tick and the entry's tick run once per status report (tasks/coordinator/install.ts
+  // `taskTick`), so each poll below waits on the fixture's next reports, inside the suite's expect bound.
   // Achievements is a target mode entry, so its task is `farming`, named by the entry, and the
   // group's status line carries it.
-  await expect.poll(async () => { const g = await tasksOf(); return g && [g.live.kind, g.live.owner]; }, { timeout: 30_000 }).toEqual(['farming', 'farm:achievements:W']);
+  await expect.poll(async () => { const g = await tasksOf(); return g && [g.live.kind, g.live.owner]; }).toEqual(['farming', 'farm:achievements:W']);
   const status = /^Farming Goo: 0 \/ [\d,]+ kills \(step 1\)$/;
   await expect.poll(async () => store(await app.state(), 'W')?.achievementMessage).toMatch(status);
   // The status block shows the declared title and the store's field, in the entry's colour.
+  await openCard();
   const block = card.locator('div').filter({ has: page.getByText('Achievement Hunt status', { exact: true }) }).last();
   await expect(block.locator('p').last()).toHaveText(status);
-  await expect(block).toHaveClass(/border-rose-900\/70/);
+  await expect(block).toHaveAttribute('data-color', 'rose');
   expect((await tasksOf()).status?.phase ?? '').toMatch(/^farming/);
   await app.restartCoordinator();
   const restored = await app.state();
@@ -281,14 +291,12 @@ async function consoleJourney({ page, app }: { page: Page; app: App }, testInfo:
   // A target mode change ends the old entry's task `replaced:farming`.
   expect((await post('/farming-mode', { character: 'W', mode: 'default' })).status()).toBe(200);
   // Choosing Default ends the entry's task and the add-on lets go of its target.
-  await expect.poll(async () => store(await app.state(), 'W')?.achievementTarget ?? null, { timeout: 30_000 }).toBeNull();
-  await expect.poll(async () => (await tasksOf())?.ring.some((e: any) => e.decision === 'ended' && e.owner === 'farm:achievements:W' && e.code === 'replaced:farming'),
-    { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => store(await app.state(), 'W')?.achievementTarget ?? null).toBeNull();
+  await expect.poll(async () => (await tasksOf())?.ring.some((e: any) => e.decision === 'ended' && e.owner === 'farm:achievements:W' && e.code === 'replaced:farming')).toBe(true);
   expect(store(await app.state(), 'W')?.achievementHunt?.monsters).toEqual(['goo']);
   // After Default no add-on mode stays pressed; row 2 presses Farming. A press of the add-on's
   // button on the card sends `targetMode` alone.
-  await page.reload();
-  await card.locator('button[aria-expanded]').filter({ hasText: 'Farming settings' }).click();
+  await openCard();
   await expect.poll(() => targetRow.locator('[aria-pressed="true"]').allTextContents()).toEqual(['Farming']);
   const press = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/party-api/farming-mode'));
   await targetRow.getByRole('button', { name: 'Achievements', exact: true }).click();
@@ -296,35 +304,36 @@ async function consoleJourney({ page, app }: { page: Page; app: App }, testInfo:
   await expect.poll(async () => (await app.state()).farmingProfiles.W.targetMode).toBe('achievements');
   await expect.poll(() => targetRow.locator('[aria-pressed="true"]').allTextContents()).toEqual(['Achievements']);
   expect((await post('/farming-mode', { character: 'W', mode: 'default' })).status()).toBe(200);
+  await openCard();
   await expect.poll(() => targetRow.locator('[aria-pressed="true"]').allTextContents()).toEqual(['Farming']);
   // Achievement Hunt's end, here a monster focus changed by hand, switches the target to Farming,
   // leaves the Scatter the player chose and writes one line naming the add-on.
   expect((await post('/farming-mode', { character: 'W', combatMode: 'scatter' })).status()).toBe(200);
   expect((await post('/farming-mode', { character: 'W', mode: 'achievements' })).status()).toBe(200);
-  await expect.poll(async () => store(await app.state(), 'W')?.achievementTarget?.id, { timeout: 30_000 }).toBe('goo');
+  await expect.poll(async () => store(await app.state(), 'W')?.achievementTarget?.id).toBe('goo');
   const linesBefore = (await app.state()).settingsChanges.length;
   expect((await post('/focus', { character: 'W', monsterFocus: ['bee'] })).status()).toBe(200);
-  await expect.poll(async () => (await app.state()).farmingProfiles.W.targetMode, { timeout: 30_000, message: 'Achievement Hunt ends to Farming' }).toBe('farming');
+  await expect.poll(async () => (await app.state()).farmingProfiles.W.targetMode, { message: 'Achievement Hunt ends to Farming' }).toBe('farming');
   const ended = await app.state();
   expect(ended.farmingProfiles.W.combatMode, 'the combat mode stays Scatter').toBe('scatter');
   expect(ended.settingsChanges.slice(linesBefore).filter((l: any) => l.field === 'targetMode' || l.field === 'combatMode').map((l: any) => [l.field, l.character, l.old, l.new, l.by]))
     .toEqual([['targetMode', 'W', 'achievements', 'farming', 'addon:achievement-hunt']]);
   // addon.off: with the entry live again, switching the add-on off ends its task.
   expect((await post('/farming-mode', { character: 'W', mode: 'achievements' })).status()).toBe(200);
-  await expect.poll(async () => (await tasksOf())?.live?.owner, { timeout: 30_000 }).toBe('farm:achievements:W');
+  await expect.poll(async () => (await tasksOf())?.live?.owner).toBe('farm:achievements:W');
   // A follower's section gets no save: with W leading and P following, P's section is read only.
   expect((await post('/settings', { changes: [{ field: 'leader', value: 'W' }, { field: 'followers', character: 'P', value: true }] })).status()).toBe(200);
   const follower = page.locator('article').filter({ has: page.getByRole('heading', { name: 'P', exact: true }) });
+  await page.reload();
   await follower.getByRole('button', { name: 'Farming settings', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Settings', exact: true }).getByRole('region', { name: 'Achievement Hunt settings' })
     .getByRole('checkbox', { name: 'Leave the target when a boss attacks' })).toBeDisabled();
   await page.keyboard.press('Escape');
   expect((await post('/settings', { changes: [{ field: 'leader', value: null }, { field: 'followers', character: 'P', value: false }] })).status()).toBe(200);
   expect((await addon(page, app.url, 'achievement-hunt', false)).ok()).toBe(true);
-  await expect.poll(async () => (await tasksOf())?.live?.owner, { timeout: 30_000 }).not.toBe('farm:achievements:W');
+  await expect.poll(async () => (await tasksOf())?.live?.owner).not.toBe('farm:achievements:W');
   // The entry leaves row 2 after the switch-off.
-  await page.reload();
-  await card.locator('button[aria-expanded]').filter({ hasText: 'Farming settings' }).click();
+  await openCard();
   await expect(targetRow.getByRole('button')).toHaveText(['Farming', 'Hunt']);
   expect(errors, 'The browser must not crash during Achievement Hunt controls').toEqual([]);
   await testInfo.attach('achievement-hunt-state', { body: Buffer.from(JSON.stringify({ farming, restored }, null, 2)), contentType: 'application/json' });

@@ -14,7 +14,8 @@ async function mount(Component,props){
   let view;await act(async()=>{view=create(React.createElement(Component,props));});
   return {root:()=>view.root,unmount:()=>act(async()=>view.unmount())};
 }
-const badge=button=>button.find(n=>n.type==='span'&&n.props.className?.includes('absolute')).props.children;
+// The order badge is the button's one span whose text is a number.
+const badge=button=>button.find(n=>n.type==='span'&&typeof n.props.children==='number').props.children;
 const start=view=>view.root().find(n=>n.type==='Button'&&text(n).includes('Start Phoenix patrol'));
 
 test('Phoenix picker preselects screenshot order and preserves a valid saved custom order',async()=>{

@@ -6570,7 +6570,7 @@
   };
   var DOOR_ONLY8 = {
     ...doorOnly(JOBS, "write", ["migrateExchangeAutomations", "migrateRoutinePriorities"]),
-    ...doorOnly(JOBS_COORDINATOR, "port", ["createCoordinatorMerchantAutomation", "createCoordinatorMerchantServices", "installStandLocationRoute", "createMerchantPartyRoutes", "createCoordinatorMerchantConfiguration", "createCoordinatorMerchantJobActions", "createMerchantCompletionRoute", "createMerchantHandoffRoutes", "createMerchantIdleRoute", "createMerchantScheduling", "merchantJobSource", "createCoordinatorMerchantQueue", "createCoordinatorMerchantRecovery", "createCoordinatorMerchantActions"]),
+    ...doorOnly(JOBS_COORDINATOR, "port", ["createCoordinatorMerchantAutomation", "createCoordinatorMerchantServices", "installStandLocationRoute", "createMerchantPartyRoutes", "createCoordinatorMerchantConfiguration", "createCoordinatorMerchantJobActions", "createMerchantCompletionRoute", "createMerchantHandoffRoutes", "createMerchantIdleRoute", "createMerchantScheduling", "merchantJobSource", "createCoordinatorMerchantQueue", "createCoordinatorMerchantRecovery", "createCoordinatorMerchantActions", "merchantStateReads"]),
     ...doorOnly(JOBS_COORDINATOR, "write", ["migrateMerchantSettings", "reviseQueuedJobs", "pruneLuckCasts", "recoverMerchantQueue", "stampMerchantJob"]),
     ...doorOnly(JOBS_COORDINATOR, "command", ["endMerchantJob", "merchantSlotCommand", "pauseCurrentJob", "takeCoordinatorMerchantJob"])
   };
@@ -35402,7 +35402,7 @@ ${hook}`, was = errors.get(key3);
           cipher: row4?.view === "cipher" ? {
             board: feed[id2] || null,
             runtime: ports.october(),
-            ingredients: ports.ingredients().map((name2) => ({ id: name2, name: game2.items?.[name2]?.name || name2, sprite: ports.sprite(game2.items?.[name2]?.skin || name2) })),
+            ingredients: cipherIngredients.map((name2) => ({ id: name2, name: game2.items?.[name2]?.name || name2, sprite: ports.sprite(game2.items?.[name2]?.skin || name2) })),
             gathering: witch.ingredients,
             merchant: cipher.merchant,
             stock: cipher.gathering && cipher.gathering.stock,

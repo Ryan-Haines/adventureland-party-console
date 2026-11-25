@@ -29,7 +29,8 @@ test('manual party travel resets recovery but keeps an event return deferred', (
   const t = fixture(), destination = {map: 'cave', x: 4, y: 8}; t.state.statuses.P.joinedEvent = 'franky';
   const result = t.service.handle({type: 'party-monster-travel', character: 'W', location: destination, resumeAfterEvent: true});
   assert.deepEqual(result, {status: 200, body: {ok: true, deferredUntilEventEnd: true}});
-  assert.deepEqual(t.calls, [['release'], ['authorize', ['W', 'P'], destination, true]]);
+  assert.deepEqual(t.calls.filter(call => call[0] === 'release'), [['release']]);
+  assert.deepEqual(t.calls.filter(call => call[0] === 'authorize'), [['authorize', ['W', 'P'], destination, true]]);
   assert.deepEqual(t.state.farmAreaState, {paused: false, failures: {}, pending: null, message: null, recoveryVersion: 2});
   assert.equal(t.state.characterLocations.P, destination);
 });

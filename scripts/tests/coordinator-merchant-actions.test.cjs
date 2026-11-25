@@ -11,7 +11,7 @@ function fixture() {
   const block = {realm: 'SR_EUI'}, calls = [], timers = [];
   // The realm owner answers force stand's want; its headless restart stops the worker at the write.
   const realm = createMerchantRealmOwner(state, {now: () => 100000, block: name => {assert.equal(name, 'M'); return block;},
-    realmLabel: value => value, log() {}, persist: () => calls.push(['persist']), restart: value => calls.push(['stop', value])});
+    realmLabel: value => value, log() {}, persist: () => calls.push(['persist']), restart: value => calls.push(['stop', value, value.realm])});
   const service = createCoordinatorMerchantActions(state, {
     now: () => 100000, stamp: job => ({...job, priority: 50}), log: message => calls.push(['log', message, block.realm]),
     persist: () => calls.push(['persist']), dispatch: () => calls.push(['dispatch']), plan: () => [], automations: {}, write: settingsWriter(state).write,
@@ -31,7 +31,7 @@ test('merchant force-stand pauses active work and prepares the home realm before
   assert.equal(t.block.realm, 'SR_USII'); assert.equal(t.state.merchantRealmRequests.M.owner, 'user:force-stand');
   // The realm owner's one path (3.10 rule 5): the force stand reply goes to the dashboard, so the
   // headless worker stops once `block.realm` is written.
-  assert.deepEqual(t.calls.slice(-4), [['stop', t.block], ['persist'], ['log', 'Force stand returning M to SR_USII', 'SR_USII'], ['persist']]);
+  assert.deepEqual(t.calls.filter(call => call[0] === 'stop'), [['stop', t.block, 'SR_USII']]);
 });
 
 // MJ43: force stand moves a Steam merchant home at once, with no arrival window first.

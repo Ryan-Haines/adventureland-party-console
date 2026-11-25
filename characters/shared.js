@@ -292,7 +292,6 @@
     activity: function (name) { return octoberRuntime().activity(name); }, october: function () { return octoberRuntime().snapshot(); },
     doors: function () { return octoberRuntime().doorStatus(); },
     cipher: eventReply.cipher,
-    ingredients: function () { return characterEvents.cipherIngredients; },
     sprite: function (skin) { return statusReport.sprite(skin); }, monsterSprite: function (skin) { return statusReport.monsterSprite(skin); },
     leads: eventReply.leads,
     destination: function (name, state) { return eventAttend.destination(name, state); },

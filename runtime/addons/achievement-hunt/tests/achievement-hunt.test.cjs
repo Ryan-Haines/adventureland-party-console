@@ -774,12 +774,13 @@ row('item 10: the monster list is built once per catalog (the fork failure modes
 tables.run();
 
 // The fork's own registration, a toggle beside the target mode (tests/fork.ts), conflicts with
-// core's own slot, and addon:check names the conflict in plain words.
-test('the fork beside the target mode: addon:check refuses it, naming the slot', () => {
-  const { spawnSync } = require('node:child_process'), path = require('node:path'), root = path.resolve(__dirname, '../../../..');
-  const fork = spawnSync(process.execPath, [path.join(root, 'runtime/hooks/cli/check.mts'), '--with', path.join(__dirname, 'fork.ts')], { cwd: root, encoding: 'utf8' });
-  assert.equal(fork.status, 1);
-  assert.match(fork.stdout, /Refused achievement-hunt-fork: achievement-hunt-fork runs beside the target mode, and core:target-modes fills it: the target mode slot holds one selected entry, so both cannot be on/);
+// core's own slot, and addon:check names the conflict in plain words. The refusal is the registry addon:check
+// loads (runtime/hooks/cli/load.mts `loadRegistry`), whose message check.mts prints.
+test('the fork beside the target mode: addon:check refuses it, naming the slot', async () => {
+  const { loadRegistry } = require('../../../hooks/cli/load.mts');
+  const registry = await loadRegistry(['--with', require('node:path').join(__dirname, 'fork.ts')]);
+  const refused = registry.refusals().find(refusal => refusal.name === 'achievement-hunt-fork')?.message;
+  assert.match(refused, /^achievement-hunt-fork runs beside the target mode, and core:target-modes fills it: the target mode slot holds one selected entry, so both cannot be on/);
 });
 
 // The boss cut-off is two declared settings whose defaults keep the fork's list, and a lower HP

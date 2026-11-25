@@ -122,6 +122,7 @@ export const FarmingModeControl = memo(function FarmingModeControl({
                   type="button"
                   title={entry.button.description}
                   aria-pressed={row.pressed === entry.mode}
+                  data-color={entry.button.color}
                   onClick={() => onSelect(row.choose(entry.mode))}
                   className={`rounded border px-2.5 py-1 font-mono text-[10px] uppercase transition-colors ${SLOT_CLASSES[entry.button.color].button} ${row.pressed === entry.mode ? "ring-2 ring-white/70" : "opacity-80"}`}
                 >
@@ -136,7 +137,7 @@ export const FarmingModeControl = memo(function FarmingModeControl({
             {farmArea.message && <p className="mt-1 text-amber-100">{farmArea.message}</p>}
           </div>}
           {addonLine ? (
-            <div data-addon-slot="status-line" className={`mt-2 border-t pt-2 font-mono text-[10px] ${SLOT_CLASSES[addonLine.color].block}`}>
+            <div data-addon-slot="status-line" data-color={addonLine.color} className={`mt-2 border-t pt-2 font-mono text-[10px] ${SLOT_CLASSES[addonLine.color].block}`}>
               <p className={`font-semibold ${SLOT_CLASSES[addonLine.color].title}`}>{addonLine.title}</p>
               <p>{addonLine.message}</p>
             </div>

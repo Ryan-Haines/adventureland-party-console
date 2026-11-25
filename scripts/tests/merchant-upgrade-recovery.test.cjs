@@ -111,19 +111,12 @@ test('relocating a pass does not steal a survivor already owned by another pass'
   assert.deepEqual(party.upgrades.M,[existing]);
 });
 
+// The items owner's per-report upgrade mark pass and its resolved clear, over the coordinator state.
+const { reconcileCoordinatorUpgradeMarks, clearCoordinatorResolvedUpgrades } = require('../../runtime/items/coordinator/production.ts');
 function marksRuntime() {
   const party = { autoUpgradeMarks: { M: { 'wcap@+0': { tiers: 8, quantity: -1 } } }, upgrades: { M: [] } };
-  const policies = require('../../runtime/items/coordinator/production.ts');
-  const r = {
-    reconcileAutoUpgradeMarks(name, status) {
-      const result = policies.reconcileUpgradeMarks(party.upgrades[name] || [], party.autoUpgradeMarks[name] || {}, status.items);
-      party.upgrades[name] = result.marks;
-      return result.changed;
-    },
-    clearResolvedUpgradeMarks(name, resolved) {
-      party.upgrades[name] = policies.clearResolvedUpgradeMarks(party.upgrades[name] || [], resolved);
-    },
-  };
+  const r = { reconcileAutoUpgradeMarks: (name, status) => reconcileCoordinatorUpgradeMarks(party, name, status),
+    clearResolvedUpgradeMarks: (name, resolved) => clearCoordinatorResolvedUpgrades(party, name, resolved) };
   return { party, r, status: level => ({ items: [
     { slot: 19, item: { name: 'wcap', level }, meta: { upgradeable: true } },
   ] }) };

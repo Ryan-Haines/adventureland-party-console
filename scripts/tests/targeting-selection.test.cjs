@@ -203,15 +203,12 @@ scenarioTable('the drain row picks its own targets',drain,[
     p.invalidateTarget('dead');await p.selectTarget();assert.equal(p.selected(),'raider');}],
 ]);
 
-// Table A, M's membership rows and M's priority rows answer as v1.5.0's
-// `isAllowedTarget` and `monsterPriority` did, reason and all, on one world per row. The old
-// functions run from their source text over the world's names (fixtures/targeting-.cjs); the new ones
-// run in the module with the same world planted as its functions and shared.js's ports, and the events owner's
+// Tables A and M answer `isAllowedTarget` and `monsterPriority`, reason and all, on one world per row.
+// The module runs with the world planted as its functions and shared.js's ports, and the events owner's
 // facts over the world's attendance and types (helpers/character-events.cjs), with the Franky fight,
-// the A/B opponent and the Graveyard pick planted as the world says. A row that answers otherwise
-// names the decision behind it (`decided`).
-const oldB9 = require('./fixtures/targeting-b9b5c91e.cjs');
-const old9855 = require('./fixtures/targeting-9855e8c9.cjs');
+// the A/B opponent and the Graveyard pick planted as the world says. Each expected answer is the
+// owner rule's, written out: b9b5c91e's isAllowedTarget gave the same answer, except the rows that name
+// the decision or the relabel behind theirs.
 const BASE = () => ({ graveyard: false, drainAllows: true, cave: false, dungeonOwns: false, dungeonAllowed: false, returnActive: false,
   returnAttacker: false, franky: false, frankyAllowed: false, travel: false, departureEngaged: false, huntPending: false, passiveRules: {},
   levelAllowed: true, passing: false, recovery: false, dead: false, unfinished: false, lock: true, rare: null, abOpponent: false,
@@ -221,28 +218,6 @@ const BASE = () => ({ graveyard: false, drainAllows: true, cave: false, dungeonO
   eventTypes: [], focus: ['goo'], mode: 'default', scatterType: null, followLeader: false, leaderTarget: null, map: 'main',
   priorities: {}, rareActive: false, target: { id: 'g1', type: 'monster', mtype: 'goo', x: 10, y: 0 }, command: undefined });
 const characterOf = w => ({ name: 'W', map: w.map, in: w.map, x: 0, y: 0, cave: w.cave });
-function oldRules(w) {
-  // v1.5.0's death recovery refuses every target while it runs and is not finishing,
-  // so a running recovery is the world's `recovery` flag.
-  const env = {
-    character: characterOf(w), excludedGraveyardTarget: () => w.graveyard, consoleDrainAllows: () => w.drainAllows,
-    dungeonTargetAllowed: () => w.dungeonAllowed, returnCombatActive: () => w.returnActive, returnAttacker: () => w.returnAttacker,
-    frankyCombatActive: () => w.franky, frankyTargetAllowed: () => w.frankyAllowed, travelCombatActive: () => w.travel,
-    departureTargetEngaged: () => w.departureEngaged, isAttackingPartyMember: () => w.attacking, passiveHunting: { rules: w.passiveRules },
-    passiveLevelAllowed: () => w.levelAllowed, unfinishedFight: () => w.unfinished, eventTargetTypes: w.eventTypes, monsterFocus: w.focus,
-    isPassingEncounter: () => w.passing, combatRecoveryActive: () => w.recovery,
-    root: { partyRoleRunner: { isKnownDead: () => w.dead }, __partyFarmingEngagement: w.engagement, partyLootClient: { huntPending: () => w.huntPending },
-      __partyDungeonRuntime: { owns: () => w.dungeonOwns }, __partyCombatRecovery: { phase: 'running', targets: [] } },
-    leaderLockAllows: () => w.lock, rareTarget: () => w.rare, validAbtestingOpponent: () => w.abOpponent, isExternallyClaimedMonster: () => w.claimed,
-    joinedEvent: w.joined, farmApproach: { failed: w.setAside }, passiveRareCandidate: () => w.passiveRare, inFarmArea: () => w.inArea,
-    inFarmRadius: () => w.inRadius, partyLocation: null, groupedCombat: w.grouped, reunionRealm: () => w.realm, huntCombatTarget: w.huntType,
-    monsterSearchRadius: w.radius, activeCombatEvent: () => w.active, isPartyThreat: () => w.threat, queueRetentions: () => w.retentions,
-    combatTargetId: w.combatTargetId, lastAttackTarget: w.lastAttackTarget, lastAttackAt: w.lastAttackAt, convoyTraveling: !!w.groupWalk.travel,
-    partyThreats: w.partyThreats, scatterBreakTarget: w.scatterBreak, farmingMode: w.mode, partyFarmingMonsterType: w.scatterType,
-    followLeader: w.followLeader, leaderTarget: w.leaderTarget, monsterPriorities: w.priorities, rareActive: () => w.rareActive };
-  const load = source => new Function('env', `with (env) { return (${source}); }`)(env);
-  return { isAllowedTarget: load(oldB9.isAllowedTarget), monsterPriority: load(oldB9.monsterPriority) };
-}
 // The hunting owner's farming facts as facts.ts holds them, the hunting door's
 // `facts`.
 const huntingOf = w => ({ cave: { owned: w.dungeonOwns }, focus: { contains: () => w.inArea, inRadius: () => w.inRadius, focus: w.focus,
@@ -279,102 +254,73 @@ function newRules(w) {
 }
 const goo = (extra = {}) => ({ id: 'g1', type: 'monster', mtype: 'goo', x: 10, y: 0, ...extra });
 const hunt = { purpose: 'monster-hunt', combatHandoffAllowed: true, huntTarget: 'goo' };
-const same = over => () => {
-  const w = { ...BASE(), ...over };
-  const oldDiag = {}, newDiag = {};
-  const was = oldRules(w).isAllowedTarget(w.target, w.command, oldDiag), now = newRules(w).isAllowedTarget(w.target, w.command, newDiag);
-  assert.deepEqual([now, newDiag.reason], [was, oldDiag.reason]);
+// `allowed` and `reason` are the module's answer and its refusal label; an allowed row has no label.
+const answers = (over, allowed, reason) => () => {
+  const w = { ...BASE(), ...over }, diagnostic = {};
+  assert.deepEqual([newRules(w).isAllowedTarget(w.target, w.command, diagnostic), diagnostic.reason], [allowed, reason]);
 };
-// A row whose refusal label changed since an earlier build answers as it did, under the
-// new label.
-const relabelled = (over, reason) => () => {
-  const w = { ...BASE(), ...over };
-  const oldDiag = {}, newDiag = {};
-  const was = oldRules(w).isAllowedTarget(w.target, w.command, oldDiag), now = newRules(w).isAllowedTarget(w.target, w.command, newDiag);
-  assert.equal(now, was);
-  assert.ok(oldDiag.reason, 'the old rule refused with a label');
-  assert.equal(newDiag.reason, reason);
-};
-// A row whose answer a decision changed since an earlier build: v1.5.0 answered
-// `was`, and the module answers `now` with the decision's reason.
-const decided = (over, was, now) => () => {
-  const w = { ...BASE(), ...over };
-  const oldDiag = {}, newDiag = {};
-  assert.deepEqual([oldRules(w).isAllowedTarget(w.target, w.command, oldDiag), oldDiag.reason], was);
-  assert.deepEqual([newRules(w).isAllowedTarget(w.target, w.command, newDiag), newDiag.reason], now);
-};
-scenarioTable("tables A and M answer as the earlier console's isAllowedTarget did", () => null, [
-  ['A1 the Graveyard exclusion', same({ graveyard: true })],
-  ['A2 the drain gate', same({ drainAllows: false })],
-  ['A3 Cave answers by the dungeon rule', same({ cave: true, dungeonAllowed: true })],
-  ['A3 Cave refuses by the dungeon rule', same({ dungeonOwns: true, dungeonAllowed: false })],
-  ['A4 return defence', same({ returnActive: true, returnAttacker: true })],
-  // The label is v1.5.0's, which names the attackers the row now allows.
-  ['A5 Franky only', relabelled({ franky: true, frankyAllowed: false }, 'Franky attendance permits Franky and mummies targeting this character')],
-  ['A6 travel owns combat', same({ travel: true })],
-  ['A6 a Hunt hand-off passes travel', same({ travel: true, command: hunt })],
-  ['A7 Hunt loot pending', same({ huntPending: true })],
-  ['A8 missing target', same({ target: null })],
-  ['A9 passive max level', same({ passiveRules: { goo: { enabled: true, priority: 60 } }, levelAllowed: false, focus: [] })],
-  ['A10 passing owns it', same({ passing: true })],
-  ['A11 death recovery', same({ recovery: true })],
-  ['A12 known dead', same({ dead: true })],
-  ['A13 Franky allows', same({ franky: true, frankyAllowed: true })],
-  ['A14 field generator', same({ target: goo({ mtype: 'fieldgen0' }) })],
-  ['A15 unfinished fight on a Hunt hand-off', same({ command: hunt, unfinished: true })],
-  ['A16 the group lock', same({ lock: false })],
-  ['A17 tinyp', same({ target: goo({ mtype: 'tinyp' }) })],
-  ['A18 the rare target', same({ rare: goo(), lock: true })],
-  ['A19 a character', same({ target: goo({ type: 'character' }), abOpponent: true })],
-  ['A20 claimed elsewhere', same({ claimed: true })],
-  // v1.5.0 had no add-on hook adds `targeting.candidates`.
-  ['A21 an add-on refuses', decided({ narrows: true, keep: false }, [true, undefined], [false, 'refused by an add-on'])],
-  ['A22 an event boss outside its event', same({ target: goo({ mtype: 'horseman' }) })],
-  ['A23 set aside on a Hunt hand-off', same({ command: hunt, setAside: { g1: Date.now() + 60_000 } })],
-  ['A24 passive rare', same({ passiveRare: true, focus: [] })],
-  ['A25 attacks the party', same({ attacking: true, focus: [] })],
-  ['A26 the farming engagement inside its area', same({ engagement: { target: { id: 'g1' } }, focus: [] })],
-  ['A26 the farming engagement outside its area', same({ engagement: { target: { id: 'g1' } }, inArea: false })],
-  ['A27 the unfinished target', same({ unfinished: true, grouped: { target: { id: 'g1', map: 'main', in: 'main', server: 'USII' } }, focus: [], inArea: false, inRadius: false })],
-  ['A28 outside the farm area', same({ inArea: false, inRadius: false })],
-  ['A28 the Goo Brawl map is no farm area', same({ map: 'goobrawl', inArea: false, inRadius: false, focus: [] })],
-  ['A28 a retained queue target', same({ inArea: false, inRadius: false, retentions: [{ id: 'g1', eligible: true }] })],
-  ['M2 the current target', same({ focus: [], combatTargetId: 'g1' })],
-  ['M3 a convoy threat', same({ focus: [], groupWalk: { travel: { phase: 'walk' } }, partyThreats: [{ id: 'g1' }] })],
-  ['M4 a party threat', same({ focus: [], threat: true })],
-  ['M5 the scatter break target', same({ focus: [], scatterBreak: { id: 'g1' } })],
-  ['M6 an event target type', same({ focus: [], eventTypes: ['goo'] })],
-  ['M7 the scatter type in scatter mode', same({ focus: [], mode: 'scatter', scatterType: 'goo' })],
-  ["M8 the leader's target under Follow", same({ focus: [], followLeader: true, leaderTarget: { id: 'g1' } })],
-  ['M9 focus all', same({ focus: ['all'] })],
-  ['M10 the focus types', same({})],
-  ['no M row holds', same({ focus: [] })],
-  ...[['P1 the passive rule', { passiveRules: { goo: { enabled: true, priority: 70 } } }], ['P2 tinyp', { target: goo({ mtype: 'tinyp' }) }],
-    ['P3 a rare type while a rare runs', { target: goo({ mtype: 'phoenix' }), rareActive: true }],
-    ['P4 the saved priorities', { priorities: { goo: 80 } }], ['P5 every other monster', {}]].map(([name, over]) => [`${name} ranks as monsterPriority did`, () => {
+scenarioTable('tables A and M answer by the owner rule', () => null, [
+  ['A1 the Graveyard exclusion', answers({ graveyard: true }, false, 'excluded Graveyard monster')],
+  ['A2 the drain gate', answers({ drainAllows: false }, false, 'waiting for safe console reload')],
+  ['A3 Cave answers by the dungeon rule', answers({ cave: true, dungeonAllowed: true }, true)],
+  ['A3 Cave refuses by the dungeon rule', answers({ dungeonOwns: true, dungeonAllowed: false }, false)],
+  ['A4 return defence', answers({ returnActive: true, returnAttacker: true }, true)],
+  // b9b5c91e refused with 'Franky attendance only permits the Franky monster'; the label now names the
+  // attackers the row allows.
+  ['A5 Franky only', answers({ franky: true, frankyAllowed: false }, false, 'Franky attendance permits Franky and mummies targeting this character')],
+  ['A6 travel owns combat', answers({ travel: true }, false, 'travel owns combat')],
+  ['A6 a Hunt hand-off passes travel', answers({ travel: true, command: hunt }, true)],
+  ['A7 Hunt loot pending', answers({ huntPending: true }, false, 'hunt loot pending')],
+  ['A8 missing target', answers({ target: null }, false, 'missing target')],
+  ['A9 passive max level', answers({ passiveRules: { goo: { enabled: true, priority: 60 } }, levelAllowed: false, focus: [] }, false, 'passive max level')],
+  ['A10 passing owns it', answers({ passing: true }, false, 'passing attack owns this encounter')],
+  ['A11 death recovery', answers({ recovery: true }, false, 'combat recovery owns target')],
+  ['A12 known dead', answers({ dead: true }, false, 'confirmed death')],
+  ['A13 Franky allows', answers({ franky: true, frankyAllowed: true }, true)],
+  ['A14 field generator', answers({ target: goo({ mtype: 'fieldgen0' }) }, false, 'excluded monster')],
+  ['A15 unfinished fight on a Hunt hand-off', answers({ command: hunt, unfinished: true }, false, 'unfinished group fight')],
+  ['A16 the group lock', answers({ lock: false }, false, 'group target lock')],
+  ['A17 tinyp', answers({ target: goo({ mtype: 'tinyp' }) }, false, 'rare target policy')],
+  ['A18 the rare target', answers({ rare: goo(), lock: true }, true)],
+  ['A19 a character', answers({ target: goo({ type: 'character' }), abOpponent: true }, true)],
+  ['A20 claimed elsewhere', answers({ claimed: true }, false, 'external claim or invalid entity')],
+  // b9b5c91e allowed it: it had no add-on hook, and the add-on system adds `targeting.candidates`.
+  ['A21 an add-on refuses', answers({ narrows: true, keep: false }, false, 'refused by an add-on')],
+  ['A22 an event boss outside its event', answers({ target: goo({ mtype: 'horseman' }) }, false, 'event boss outside its event')],
+  ['A23 set aside on a Hunt hand-off', answers({ command: hunt, setAside: { g1: Date.now() + 60_000 } }, false, 'failed approach cooldown')],
+  ['A24 passive rare', answers({ passiveRare: true, focus: [] }, true)],
+  ['A25 attacks the party', answers({ attacking: true, focus: [] }, true)],
+  ['A26 the farming engagement inside its area', answers({ engagement: { target: { id: 'g1' } }, focus: [] }, true)],
+  ['A26 the farming engagement outside its area', answers({ engagement: { target: { id: 'g1' } }, inArea: false }, false, 'farming engagement left selected area')],
+  ['A27 the unfinished target', answers({ unfinished: true, grouped: { target: { id: 'g1', map: 'main', in: 'main', server: 'USII' } }, focus: [], inArea: false, inRadius: false }, true)],
+  ['A28 outside the farm area', answers({ inArea: false, inRadius: false }, false)],
+  ['A28 the Goo Brawl map is no farm area', answers({ map: 'goobrawl', inArea: false, inRadius: false, focus: [] }, true)],
+  ['A28 a retained queue target', answers({ inArea: false, inRadius: false, retentions: [{ id: 'g1', eligible: true }] }, true)],
+  ['M2 the current target', answers({ focus: [], combatTargetId: 'g1' }, true)],
+  ['M3 a convoy threat', answers({ focus: [], groupWalk: { travel: { phase: 'walk' } }, partyThreats: [{ id: 'g1' }] }, true)],
+  ['M4 a party threat', answers({ focus: [], threat: true }, true)],
+  ['M5 the scatter break target', answers({ focus: [], scatterBreak: { id: 'g1' } }, true)],
+  ['M6 an event target type', answers({ focus: [], eventTypes: ['goo'] }, true)],
+  ['M7 the scatter type in scatter mode', answers({ focus: [], mode: 'scatter', scatterType: 'goo' }, true)],
+  ["M8 the leader's target under Follow", answers({ focus: [], followLeader: true, leaderTarget: { id: 'g1' } }, true)],
+  ['M9 focus all', answers({ focus: ['all'] }, true)],
+  ['M10 the focus types', answers({}, true)],
+  ['no M row holds', answers({ focus: [] }, false)],
+  ...[['P1 the passive rule', { passiveRules: { goo: { enabled: true, priority: 70 } } }, 70], ['P2 tinyp', { target: goo({ mtype: 'tinyp' }) }, 101],
+    ['P3 a rare type while a rare runs', { target: goo({ mtype: 'phoenix' }), rareActive: true }, 100],
+    ['P4 the saved priorities', { priorities: { goo: 80 } }, 80], ['P5 every other monster', {}, 50]].map(([name, over, rank]) => [`${name} ranks ${rank}`, () => {
     const w = { ...BASE(), ...over };
-    assert.equal(newRules(w).monsterPriority(w.target), oldRules(w).monsterPriority(w.target));
+    assert.equal(newRules(w).monsterPriority(w.target), rank);
   }]),
 ]);
 
-// and: table S supplies the target v1.5.0's role runner chose (`chooseTarget`, its S
-// functions, fixtures/targeting-.cjs) on one world per row, and with nothing registered on
-// `targeting.prefers` the class finder's order is today's. The new pass runs in the module with every
-// finder planted; the old functions run over the same world as the routine. v1.5.0's
-// runner had no Manual branch, so the S1 rows that differ name the decision.
+// Table S supplies the target the selection pass chooses on one world per row, and with nothing registered on
+// `targeting.prefers` the class finder's order is today's. The pass runs in the module with every
+// finder planted. Each expected target is the owner rule's; b9b5c91e's role runner (`chooseTarget`) chose the
+// same except the S1 rows that name the Manual rule, which it had no branch for.
 const S_BASE = () => ({ manual: false, own: null, inRange: true, priorityEvent: null, dungeon: false, dungeonTarget: null, returnActive: false,
   returnTarget: null, franky: false, eventTarget: null, merchant: false, grouped: false, groupedTarget: null, rare: null, classTarget: null });
 const entity = id => id && { id, type: 'monster', visible: true, dead: false };
-function oldChoice(w) {
-  const sharedRoutine = { usesLeaderTarget: () => w.grouped, getGroupedTarget: () => entity(w.groupedTarget),
-    getPriorityEventTarget: () => entity(w.priorityEvent), dungeonOwned: () => w.dungeon, getDungeonTarget: () => entity(w.dungeonTarget),
-    returnCombatActive: () => w.returnActive, returnDefenseTarget: () => entity(w.returnTarget), frankyCombatActive: () => w.franky,
-    getEventTarget: () => entity(w.eventTarget), getRareTarget: () => entity(w.rare) };
-  const env = { sharedRoutine, character: { ctype: w.merchant ? 'merchant' : 'warrior', target: w.own },
-    resolvedRole: () => ({ chooseTarget: () => entity(w.classTarget) }) };
-  const source = require('esbuild').transformSync(oldB9.chooseTarget, { loader: 'ts' }).code;
-  return new Function('env', `with (env) { ${source}\nreturn chooseTarget(); }`)(env)?.id ?? null;
-}
 async function newChoice(w) {
   const c = targetingContext({ character: { ctype: w.merchant ? 'merchant' : 'warrior', target: w.own, map: 'main', in: 'main' }, parent: { entities: {} },
     get_entity: entity, is_in_range: () => w.inRange, partyCombatState: {}, isAllowedTarget: () => true, setCombatTarget() {}, sharedTargetId: () => null,
@@ -389,28 +335,22 @@ async function newChoice(w) {
   await p.selectTarget();
   return p.selected();
 }
-const sameChoice = over => async () => { const w = { ...S_BASE(), ...over }; assert.equal(await newChoice(w), oldChoice(w)); };
-// v1.5.0 chose `was`; the module chooses `now` under the user's Manual rule (the tasks owner's hand
-// control).
-const manualChoice = (over, was, now) => async () => {
-  const w = { ...S_BASE(), ...over };
-  assert.deepEqual([oldChoice(w), await newChoice(w)], [was, now]);
-};
-scenarioTable("table S supplies the target the earlier console's chooseTarget did", () => null, [
-  ["S1 Manual takes the player's own target (N2: the Manual rule)", manualChoice({ manual: true, own: 'mine', classTarget: 'role' }, 'role', 'mine')],
-  ['S1 Manual takes its own pick in range', sameChoice({ manual: true, classTarget: 'role' })],
-  ['S1 Manual takes no pick out of range (N2: the Manual rule)', manualChoice({ manual: true, classTarget: 'role', inRange: false }, 'role', null)],
-  ['S2 the priority event', sameChoice({ priorityEvent: 'pumpkin', classTarget: 'role' })],
-  ['S2 gives way to an exclusive row', sameChoice({ priorityEvent: 'pumpkin', dungeon: true, dungeonTarget: 'cave1' })],
-  ['S3 Cave', sameChoice({ dungeon: true, dungeonTarget: 'cave1', classTarget: 'role' })],
-  ['S3 Cave with no target stands', sameChoice({ dungeon: true, classTarget: 'role' })],
-  ['S4 return defence', sameChoice({ returnActive: true, returnTarget: 'ret', classTarget: 'role' })],
-  ['S5 Franky', sameChoice({ franky: true, eventTarget: 'franky', classTarget: 'role' })],
-  ['S6 merchant', sameChoice({ merchant: true, classTarget: 'event', grouped: true, groupedTarget: 'lock' })],
-  ['S7 grouped', sameChoice({ grouped: true, groupedTarget: 'lock', rare: 'phoenix', classTarget: 'role' })],
-  ['S8 rare', sameChoice({ rare: 'phoenix', classTarget: 'role' })],
-  ['S9 the class role', sameChoice({ classTarget: 'role' })],
-  ['no row supplies a target', sameChoice({})],
+const chooses = (over, id) => async () => assert.equal(await newChoice({ ...S_BASE(), ...over }), id);
+scenarioTable('table S supplies the target by the owner rule', () => null, [
+  ["S1 Manual takes the player's own target (N2: the Manual rule)", chooses({ manual: true, own: 'mine', classTarget: 'role' }, 'mine')], // b9b5c91e chose 'role'
+  ['S1 Manual takes its own pick in range', chooses({ manual: true, classTarget: 'role' }, 'role')],
+  ['S1 Manual takes no pick out of range (N2: the Manual rule)', chooses({ manual: true, classTarget: 'role', inRange: false }, null)], // b9b5c91e chose 'role'
+  ['S2 the priority event', chooses({ priorityEvent: 'pumpkin', classTarget: 'role' }, 'pumpkin')],
+  ['S2 gives way to an exclusive row', chooses({ priorityEvent: 'pumpkin', dungeon: true, dungeonTarget: 'cave1' }, 'cave1')],
+  ['S3 Cave', chooses({ dungeon: true, dungeonTarget: 'cave1', classTarget: 'role' }, 'cave1')],
+  ['S3 Cave with no target stands', chooses({ dungeon: true, classTarget: 'role' }, null)],
+  ['S4 return defence', chooses({ returnActive: true, returnTarget: 'ret', classTarget: 'role' }, 'ret')],
+  ['S5 Franky', chooses({ franky: true, eventTarget: 'franky', classTarget: 'role' }, 'franky')],
+  ['S6 merchant', chooses({ merchant: true, classTarget: 'event', grouped: true, groupedTarget: 'lock' }, 'event')],
+  ['S7 grouped', chooses({ grouped: true, groupedTarget: 'lock', rare: 'phoenix', classTarget: 'role' }, 'lock')],
+  ['S8 rare', chooses({ rare: 'phoenix', classTarget: 'role' }, 'phoenix')],
+  ['S9 the class role', chooses({ classTarget: 'role' }, 'role')],
+  ['no row supplies a target', chooses({}, null)],
 ]);
 // With nothing registered on `targeting.prefers` the class finder takes the nearest goo of the top
 // priority, as today; an add-on's order goes first inside that priority only.
@@ -486,11 +426,11 @@ scenarioTable("each hidden pick reads its declaration at today's value", () => n
   }],
 ]);
 
-// Table G: each row of G answers `targeting.allows` as did, reason and
-// all, on one world per row. The old module runs from its source text (fixtures/targeting-.cjs) with
-// today's `monsterAttackBlock` and `effectiveAttackDamageType`, which it imported; both read the
-// same world. G alone keeps v1.5.0 had no single answer to replay (the fixture's header
-// says why). Cleave stays out of the Franky rows: took it out of the Franky veto.
+// Table G: each row answers `targeting.allows`, reason and all, on one world per row, with today's
+// `monsterAttackBlock` and `effectiveAttackDamageType` reading the same world. Each expected answer is the
+// owner rule's refusal, or none where the row allows; console 9855e8c9's answers.ts, which gathered
+// b9b5c91e's attack controller and skill runtime checks in their order, gave the same. Cleave stays out of
+// the Franky rows: the Franky veto no longer holds it.
 const G_BASE = () => ({ allowed: true, drainAllows: true, busy: false, disabled: false, ready: true, rare: true, returnActive: false,
   returnAttacker: true, franky: false, skillAllowed: true, world: true, pullSafe: true, hostile: true, reflect: { magic: [], physical: [] },
   passing: false, damageType: 'physical', actorType: 'physical', refuses: undefined, target: { id: 'g1', type: 'monster', mtype: 'goo' }, skill: 'attack' });
@@ -506,51 +446,41 @@ function gateWorld(w) {
     G: { skills: { [w.skill]: { hostile: w.hostile } }, items: {}, classes: { warrior: {} } } };
   return { module, ports, globals };
 }
-function gateAnswer(w, which) {
-  const { module, ports, globals } = gateWorld(w);
+function gateAnswer(w) {
+  const { ports, globals } = gateWorld(w);
   const saved = Object.fromEntries(Object.keys(globals).map(k => [k, globalThis[k]]));
   Object.assign(globalThis, globals);
-  try {
-    if (which === 'new') return require('../../runtime/characters/targeting/gates.ts').createAnswers(ports).allows(w.target, w.skill);
-    const { transformSync } = require('esbuild');
-    const code = transformSync(old9855.answers, { loader: 'ts', format: 'cjs' }).code;
-    const exportsOf = {}, gates = require('../../runtime/characters/targeting/gates.ts');
-    const sharedRoutine = { allowsTarget: module.isAllowedTarget, allowsPassingTarget: module.consoleDrainAllows, groupedAttackAllowed: module.groupedAttackAllowed,
-      rareAttackAllowed: module.rareAttackAllowed, returnCombatActive: module.returnCombatActive, returnAttacker: module.returnAttacker,
-      skillTargetAllowed: module.skillTargetAllowed };
-    const loaded = { exports: exportsOf };
-    new Function('module', 'exports', 'require', 'sharedRoutine', code)(loaded, exportsOf, id => id === './gates.ts' ? gates : {}, sharedRoutine);
-    return loaded.exports.createAnswers(ports).allows(w.target, w.skill);
-  } finally { Object.assign(globalThis, saved); }
+  try { return require('../../runtime/characters/targeting/gates.ts').createAnswers(ports).allows(w.target, w.skill); }
+  finally { Object.assign(globalThis, saved); }
 }
-// `refuses` says whether the row's world refuses, so a row that both answers leave open still fails.
-const sameGate = (over, refuses = true) => () => {
-  const w = { ...G_BASE(), ...over }, now = gateAnswer(w, 'new');
-  assert.equal(now, gateAnswer(w, 'old'));
-  assert.equal(typeof now === 'string', refuses, String(now));
+// `refusal` is the answer's refusal text, or null where the row allows.
+const gate = (over, refusal) => () => {
+  const answer = gateAnswer({ ...G_BASE(), ...over });
+  if (refusal === null) assert.notEqual(typeof answer, 'string', String(answer));
+  else assert.equal(answer, refusal);
 };
-scenarioTable("table G answers as the earlier console's createAnswers did", () => null, [
-  ['G1 eligibility', sameGate({ allowed: false })],
-  ['G1 the passing check', sameGate({ passing: true, drainAllows: false })],
-  ['G2 the bow swap', sameGate({ busy: true })],
-  ["G3 the game's is_disabled", sameGate({ disabled: true })],
-  ["G4 the group's readiness", sameGate({ ready: false })],
-  ['G4 a passing target skips readiness', sameGate({ passing: true, ready: false }, false)],
-  ["G5 the reflect lists by the attack's damage type", sameGate({ reflect: { magic: ['goo'], physical: [] }, actorType: 'magical' })],
-  ['G6 the rare policy', sameGate({ rare: false })],
-  ['the attack allowed', sameGate({}, false)],
-  ['G7 the return defence veto', sameGate({ skill: 'taunt', returnActive: true })],
-  ['G8 the Franky veto', sameGate({ skill: 'charge', franky: true })],
-  ['G8 a skill that is not hostile ends the table', sameGate({ skill: 'heal', hostile: false, skillAllowed: false }, false)],
-  ["G9 the target's return veto", sameGate({ skill: 'supershot', returnActive: true, returnAttacker: false })],
-  ['G9 no skill world', sameGate({ skill: 'supershot', world: false })],
-  ["G10 the reflect lists by the skill's own damage type", sameGate({ skill: 'supershot', reflect: { magic: ['goo'], physical: [] }, damageType: 'magical' })],
-  ['G10 Taunt is excepted', sameGate({ skill: 'taunt', reflect: { magic: ['goo'], physical: [] }, damageType: 'magical' }, false)],
-  ['G11 eligibility with the skill', sameGate({ skill: 'supershot', skillAllowed: false })],
-  ['G11 the rare policy refuses the skill', sameGate({ skill: 'supershot', rare: false })],
-  ["G12 the turns owner's scatter pull check", sameGate({ skill: 'supershot', pullSafe: false })],
-  ["G13 an add-on's refusal", sameGate({ refuses: 'tank: holding' })],
-  ['the skill allowed', sameGate({ skill: 'supershot' }, false)],
+scenarioTable('table G answers by the owner rule', () => null, [
+  ['G1 eligibility', gate({ allowed: false }, 'target no longer eligible')],
+  ['G1 the passing check', gate({ passing: true, drainAllows: false }, 'target no longer eligible')],
+  ['G2 the bow swap', gate({ busy: true }, 'weapon equipment change in progress')],
+  ["G3 the game's is_disabled", gate({ disabled: true }, 'character disabled')],
+  ["G4 the group's readiness", gate({ ready: false }, 'waiting for group readiness and target commitment')],
+  ['G4 a passing target skips readiness', gate({ passing: true, ready: false }, null)],
+  ["G5 the reflect lists by the attack's damage type", gate({ reflect: { magic: ['goo'], physical: [] }, actorType: 'magical' }, 'Monster reflection: magical basic attacks disabled')],
+  ['G6 the rare policy', gate({ rare: false }, 'Fairy deployment or attack policy')],
+  ['the attack allowed', gate({}, null)],
+  ['G7 the return defence veto', gate({ skill: 'taunt', returnActive: true }, 'Skill conflicts with return movement or attacker-only policy')],
+  ['G8 the Franky veto', gate({ skill: 'charge', franky: true }, 'Skill conflicts with Franky-only combat')],
+  ['G8 a skill that is not hostile ends the table', gate({ skill: 'heal', hostile: false, skillAllowed: false }, null)],
+  ["G9 the target's return veto", gate({ skill: 'supershot', returnActive: true, returnAttacker: false }, 'unauthorized or immune target')],
+  ['G9 no skill world', gate({ skill: 'supershot', world: false }, 'unauthorized or immune target')],
+  ["G10 the reflect lists by the skill's own damage type", gate({ skill: 'supershot', reflect: { magic: ['goo'], physical: [] }, damageType: 'magical' }, 'unauthorized or immune target')],
+  ['G10 Taunt is excepted', gate({ skill: 'taunt', reflect: { magic: ['goo'], physical: [] }, damageType: 'magical' }, null)],
+  ['G11 eligibility with the skill', gate({ skill: 'supershot', skillAllowed: false }, 'unauthorized or immune target')],
+  ['G11 the rare policy refuses the skill', gate({ skill: 'supershot', rare: false }, 'unauthorized or immune target')],
+  ["G12 the turns owner's scatter pull check", gate({ skill: 'supershot', pullSafe: false }, 'unauthorized or immune target')],
+  ["G13 an add-on's refusal", gate({ refuses: 'tank: holding' }, 'tank: holding')],
+  ['the skill allowed', gate({ skill: 'supershot' }, null)],
 ]);
 
 // The unit files build the module where a test asks for it. A context the test creates itself holds

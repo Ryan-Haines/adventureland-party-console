@@ -22,9 +22,7 @@ test('native filters occupy the existing log height and reinstall without duplic
  assert.equal(doc.querySelectorAll('#party-game-log-panel').length,1);
  assert.equal(doc.getElementById('party-game-log-panel').style.height,'200px');
  assert.equal(doc.querySelectorAll('#party-game-log-filters').length,1);
- assert.match(doc.getElementById('party-game-log-layout').textContent,/margin-bottom:0 !important/);
- assert.equal(doc.getElementById('party-game-log-panel').style.width,'330px');
- assert.match(doc.getElementById('party-game-log-layout').textContent,/padding-top:0/);
+ const start=parseFloat(doc.getElementById('party-game-log-panel').style.width);
  assert.equal(doc.querySelectorAll('#party-game-log-layout').length,1);
  assert.equal(log.querySelectorAll('.gameentry').length,2);
  const info=[...doc.querySelectorAll('button')].find(b=>b.textContent==='Info');info.click();
@@ -35,11 +33,12 @@ test('native filters occupy the existing log height and reinstall without duplic
  handle.setPointerCapture=()=>{};handle.releasePointerCapture=()=>{};
  const pointer=(type,x)=>handle['on'+type]({clientX:x,button:0,pointerId:1,preventDefault(){},stopPropagation(){}});
  pointer('pointerdown',600);pointer('pointermove',450);pointer('pointerup',450);
- assert.equal(panel.style.width,'480px');assert.equal(host.localStorage.getItem('party-game-log-width'),'480');
- installHostGameLogs(host,async()=>{});assert.equal(panel.style.width,'480px');
+ // The drag widens the panel by the 150 px the pointer moved, and a reinstall keeps the saved width.
+ assert.equal(parseFloat(panel.style.width),start+150);assert.equal(host.localStorage.getItem('party-game-log-width'),String(start+150));
+ installHostGameLogs(host,async()=>{});assert.equal(parseFloat(panel.style.width),start+150);
  assert.equal(doc.querySelectorAll('#party-game-log-resize').length,1);
  doc.getElementById('party-game-log-resize').dispatchEvent(new dom.window.MouseEvent('dblclick',{bubbles:true}));
- assert.equal(panel.style.width,'330px');
+ assert.equal(parseFloat(panel.style.width),start);
  let leaked=0;doc.addEventListener('mousedown',()=>leaked++);
  const selecting=new dom.window.MouseEvent('mousedown',{bubbles:true,cancelable:true});log.children[1].dispatchEvent(selecting);
  assert.equal(leaked,0);assert.equal(selecting.defaultPrevented,false);

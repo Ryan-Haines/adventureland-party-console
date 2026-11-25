@@ -1,21 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const ts = require('typescript');
+const { until } = require('./helpers/settle.cjs');
 const { gateway } = require('../../tools/hosting/gateway.ts');
 const { createDashboardStream } = require('../../runtime/status/coordinator/streams.ts');
 async function listen(server) { await new Promise(done => server.listen(0, '127.0.0.1', done)); return server.address().port; }
 async function close(server) { server.closeAllConnections(); await new Promise(done => server.close(done)); }
-function nativeProxy() {
-  const source = fs.readFileSync('tools/dashboard/supervisor.mts', 'utf8');
-  const ast = ts.createSourceFile('supervisor.mts', source, ts.ScriptTarget.Latest, true);
-  const declaration = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'proxy');
-  const context = { request: http.request, previous: null, json: (response, code, value) => { response.writeHead(code); response.end(JSON.stringify(value)); } };
-  vm.createContext(context); vm.runInContext(ts.transpileModule(declaration.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, context);
-  return context.proxy;
-}
+// The supervisor's proxy (tools/dashboard/supervision.ts) with no previous server to fall back to.
+const nativeProxy = () => require('../../tools/dashboard/supervision.ts').createProxy({ previousPort: () => undefined });
 for (const kind of ['gateway', 'native']) test(`${kind} passes authenticated SSE snapshots and five-second heartbeats, then cleans up disconnected upstream`, { timeout: 9000 }, async () => {
   const routes = new Map(); const statuses = { A: { name: 'A', dashboardRuntime: 'r', seenAt: Date.now(), hp: 100, items: [], slots: {} } };
   // The stream's timers are recorded and fired by the row, so the row reads the interval and waits for no real 5 s.
@@ -49,7 +41,7 @@ for (const kind of ['gateway', 'native']) test(`${kind} passes authenticated SSE
     while (!text.includes('"heartbeat"')) text += decoder.decode((await reader.read()).value);
     assert.match(text, /"heartbeat"/); assert.equal(streams.count(), 1);
     controller.abort(); await reader.cancel().catch(() => {});
-    for (let index = 0; index < 20 && streams.count(); index++) await new Promise(done => setTimeout(done, 10));
+    await until(() => streams.count() === 0, 'the disconnected stream is removed');
     assert.equal(streams.count(), 0);
   } finally { await close(downstream); await close(upstream); }
 });

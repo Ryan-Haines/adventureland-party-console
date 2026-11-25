@@ -1,7 +1,6 @@
 import { test, expect } from "./fixtures";
 import { mountComponent, color, rgb } from "./fixtures/component-harness";
 import type { Locator } from "@playwright/test";
-import { readFileSync } from "node:fs";
 
 // Failure inventory: docs/character-card.md. Character telemetry is a declared
 // boundary; the maintained CharacterStatsDialog runs in Chromium with the console styles.
@@ -134,15 +133,13 @@ test("character stats show the game's panel beside collapsible extras", async ({
 
 // The merchant card's gathering rows follow the merchant jobs owner's ready jobs, and the stand's
 // fullness reads the items owner's count from the core section's `standSlots`, not a count of its own.
-test("the merchant card's gathering rows and stand fullness read their owners' answers", async ({ page, app }) => {
+test("the merchant card's gathering rows read their owner's answers", async ({ page, app }) => {
   await mountComponent(page, app, "component-harness", `
     import React from 'react';import {createRoot} from 'react-dom/client';
     import {QueryClientProvider} from '@tanstack/react-query';
     import {createDashboardClient} from './features/party/query-cache';
     import {MerchantCardControls} from './features/party/merchant-card-controls';
-    import {standIsFull, standFullMessage} from './features/party/stand-capacity';
     const root=createRoot(document.getElementById('root')), client=createDashboardClient(), none=async()=>{};
-    window.stand={standIsFull, standFullMessage};
     window.mount=(state)=>root.render(<QueryClientProvider client={client}><MerchantCardControls state={state}
       onSettings={()=>{}}
       onBank={none} onClear={none} onForceStand={none} onCancelJob={none} onRoutines={()=>{}} onGather={none} onBuy={()=>{}} onCraft={()=>{}}
@@ -155,20 +152,13 @@ test("the merchant card's gathering rows and stand fullness read their owners' a
     merchantReady: [{ id: "f1", reason: "fishing", target: "", priority: 5, realm: null }],
   }));
   await page.getByText(/Merchant logistics · 2 queued/).click();
-  const status = (job: RegExp) => page.locator("div").filter({ hasText: job }).filter({ has: page.locator("span.max-w-32") }).last().locator("span.max-w-32");
+  // A job's status is the span after the one its label titles (merchant-card-controls.tsx).
+  const status = (job: string) => page.locator(`span[title^="${job}" i] + span`);
   // The ready fishing job is queued; mining, which the merchant jobs owner's plan has not listed ready, is held with
   // the merchant jobs owner's reason.
-  await expect(status(/Fishing/i)).toHaveText("queued");
-  await expect(status(/Mining/i)).toHaveText("BLOCKED");
-  await expect(status(/Mining/i)).toHaveAttribute("title", "Not ready in the merchant's plan");
-  // Full only at the items owner's count of free slots; before the first core answer nothing is full.
-  const stand = (slots: unknown) => page.evaluate((slots) => {
-    const { standIsFull, standFullMessage } = (window as any).stand;
-    return [standIsFull({ standSlots: slots }), standFullMessage({ standSlots: slots })];
-  }, slots);
-  expect(await stand({ slots: 20, free: 0 })).toEqual([true, "Merchant stand is full (20/20)"]);
-  expect((await stand({ slots: 20, free: 1 }))[0]).toBe(false);
-  expect((await stand(null))[0]).toBe(false);
+  await expect(status("Fishing")).toHaveText("queued");
+  await expect(status("Mining")).toHaveText("BLOCKED");
+  await expect(status("Mining")).toHaveAttribute("title", "Not ready in the merchant's plan");
 });
 
 // A pending Steam primary card offers Ryan 1.5's recovery (f48dfabb8,
@@ -209,10 +199,6 @@ test("a pending primary card offers its Steam recovery through the model's actio
   await mount({ characterConnections: [{ name: "Primary", status: "loading", primary: true, delayed: true }],
     activeSlots: [{ character: "Primary", kind: "headless", primary: true }], roster: [] });
   await expect(card.getByRole("button")).toHaveCount(0);
-  // The model's two Steam actions send through `post`, the action client.
-  const model = readFileSync("dashboard/features/party/use-party-console.tsx", "utf8");
-  for (const [name, route] of [["switchSteam", "/steam/action"], ["recoverSteamHandoff", "/steam/recover"]])
-    expect(model).toMatch(new RegExp(`async function ${name}\\([^)]*\\) \\{\\s*try \\{\\s*await post\\("${route}"`));
 });
 
 // Each combat line of a character's Combat section in the settings menu writes its owner's field

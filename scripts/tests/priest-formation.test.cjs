@@ -82,8 +82,10 @@ scenarioTable('formation solver: warrior approach and arcs (MOV-085c)', formatio
   f.members.forEach((a,j)=>{if(a.x<previous[j]-0.5)reversals++;previous[j]=a.x;});
  }
  assert.ok(f.members[1].x>100,'priest advances');
- assert.ok(Math.hypot(f.members[0].x-400,f.members[0].y)<=33,'warrior reaches melee');
- assert.ok(reversals<5,'no repeated backwards corrections');
+ // Melee is the warrior inside its own range of the hound, the check the fixture's is_in_range makes.
+ assert.ok(Math.hypot(f.members[0].x-400,f.members[0].y)<=f.members[0].range,'warrior reaches melee');
+ // One backwards correction is a correction; a second is the repeated one. Both sight cases measure 1.
+ assert.ok(reversals<=1,'no repeated backwards corrections');
 }]),
 ...[null,'W'].map(aggro=>['kill promotion approaches and repeatedly attacks stationary 280-range BBPom; aggro='+aggro,async r=>{
  const {c,warrior,monster,entities}=r;

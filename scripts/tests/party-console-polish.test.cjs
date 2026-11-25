@@ -144,44 +144,123 @@ test('Steam monitor joins, promotes, ignores primary, cancels, rejects changed c
 });
 
 // DF19: the decided dashboard items whose dialog is this file's: A81, A83, A87, A88 and A74's
-// label. The gold test is above; the Tracktrix bonuses test is tracktrix-bonuses.test.cjs.
+// label. The gold test is above; the Tracktrix bonuses test is tracktrix-bonuses.test.cjs. Each item
+// renders its component under the real query client; the ui kit and the icons render as tags named
+// after their export. useStoredJson's storage reads and its refused write are dashboard-hooks.test.cjs's.
 test('DF19: the decided items A81, A83, A87, A88 and A74 hold', async () => {
-  const fs = require('node:fs'), ts = req('typescript');
-  const read = name => fs.readFileSync(path.join('dashboard/features/party', name), 'utf8');
-  // A81: the Hunt setup's focus picker offers no priority boxes; priorities are set in the card's picker.
-  const workspace = ts.createSourceFile('w.tsx', read('party-workspace.tsx'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const pickers = [];
-  ts.forEachChild(workspace, function visit(node) {
-    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(workspace) === 'MonsterFocusPicker')
-      pickers.push(node.attributes.properties.map(p => p.name?.getText(workspace)));
-    ts.forEachChild(node, visit);
-  });
-  assert.ok(pickers.length > 0);
-  for (const props of pickers) assert.ok(!props.includes('priorities') && !props.includes('onPriorityChange'), String(props));
-  // A83: the merchant card lists every character's NPC sale rule with its owner's name, and its
-  // removal names that owner.
-  const panel = read('inventory-panel.tsx');
-  assert.match(panel, /\.map\(\(\[key, rule\]\) => rule\.character \? \{\s*key,\s*item: rule\.item,\s*detail: rule\.character,\s*onRemove: \(\) => onRemoveAutomaticSale\('npc', rule\.item, rule\.character\),/);
-  assert.doesNotMatch(panel, /\? !rule\.character/);
-  assert.match(read('connected-inventory.tsx'), /send\('\/merchant\/auto-npc-sale', \{ character: owner, item, action: 'remove' \}\)/);
-  // A87: Kills starts off in a new browser, and each browser keeps the choice.
-  const { defaultLogFilters } = require('../../runtime/status/game-log.ts');
-  assert.equal(defaultLogFilters.kills, false);
-  const sidebar = read('log-sidebar.tsx');
-  // The sidebar keeps its filters through the stored-JSON hook, which reads and writes this browser's
-  // localStorage and survives a refused write.
-  assert.match(sidebar, /useStoredJson<Record<string,boolean>>\('party-log-filters',/);
-  const stored = fs.readFileSync('dashboard/hooks/use-stored-boolean.ts', 'utf8');
-  assert.match(stored, /text = localStorage\.getItem\(key\);/);
-  assert.match(stored, /try \{\s*localStorage\.setItem\(key, text\);\s*\} catch \{/);
-  // A74: the game tab says its lines live in memory.
-  assert.match(sidebar, /kept in memory; cleared on a console restart/);
-  // A88: the header shows Live, or the failed read's notice, from the core poll.
-  const { ConnectionLine } = load('party-header.tsx');
-  const { RECONNECTING_NOTICE } = load('query-cache.tsx');
-  const text = props => { let tree; act(() => { tree = create(React.createElement(ConnectionLine, props)); }); const out = tree.toJSON().children.join(''); tree.unmount(); return out; };
-  assert.equal(text({ loading: false, unavailable: false }), 'Live');
-  assert.equal(text({ loading: false, unavailable: true }), RECONNECTING_NOTICE);
-  assert.equal(text({ loading: true, unavailable: false }), 'Connecting...');
-  assert.match(read('party-header.tsx'), /<ConnectionLine loading=\{model\.coordinatorLoading\} unavailable=\{model\.coordinatorUnavailable\} \/>/);
+  const { queryRoot } = load;
+  const tags = new Proxy({}, { get: (_, key) => String(key) });
+  const installed = { '../../../.build/addons/dashboard': { dashboards: {} } };
+  const page = { hidden: false, visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  // This browser's storage, and the tab's session storage, which a new session starts empty.
+  const store = () => { const saved = new Map(); return { saved, getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, String(value)), removeItem: key => saved.delete(key) }; };
+  const storage = store(), session = store();
+  const globals = { document: globalThis.document, window: globalThis.window, localStorage: globalThis.localStorage, sessionStorage: globalThis.sessionStorage, fetch: globalThis.fetch };
+  Object.assign(globalThis, { document: page, localStorage: storage, sessionStorage: session,
+    window: Object.assign(new EventTarget(), { hidden: false, visibilityState: 'visible', localStorage: storage, sessionStorage: session, matchMedia: () => ({ matches: false, ...page }) }) });
+  const at = Date.now();
+  globalThis.fetch = async () => new Response(JSON.stringify({ gameLogs: { W: [
+    { at, session: 's', seq: 1, message: 'Killed a goo', color: '' },
+    { at, session: 's', seq: 2, message: 'Received 5 gold', color: '' }] } }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const text = node => typeof node === 'string' ? node : (node.children || []).map(text).join('');
+  const draw = async element => {
+    const { client, wrap } = queryRoot(); let view;
+    await act(async () => { view = create(wrap(element)); });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    let open = true;
+    const done = async () => { if (!open) return; open = false; await act(async () => view.unmount()); client.clear(); };
+    drawn.push(done);
+    return { view, done };
+  };
+  // A failed assert leaves its render polling; the finally below unmounts it.
+  const drawn = [];
+  try {
+    // A81: the Hunt setup's focus picker gets no priority table; priorities are set in the card's picker.
+    const { PartyWorkspacePanels } = load('party-workspace.tsx', { './*': tags, '@/components/ui/*': tags, 'lucide-react': tags,
+      '../../../runtime/hooks/dashboard/slots': tags });
+    const workspace = await draw(React.createElement(PartyWorkspacePanels, { model: { state: { characters: { W: { name: 'W' } }, leader: 'W' },
+      monsters: [], post: async () => {}, huntSetup: ['goo'], huntSetupCharacter: 'W', setHuntSetup() {}, setMonsterNavigateBusy() {}, setMonsterNavigateTarget() {},
+      setFarmAreaRequest() {}, startFarmingArea() {} } }));
+    const picker = workspace.view.root.findByType('ConnectedFarmingAreaPicker').props.preparation;
+    assert.equal(picker.type, 'MonsterFocusPicker');
+    assert.deepEqual(picker.props.selected, ['goo']);
+    assert.ok(!('priorities' in picker.props) && !('onPriorityChange' in picker.props), Object.keys(picker.props).join());
+    await workspace.done();
+
+    // A83: the merchant card lists F's NPC sale rule under F's name beside the merchant-wide rule, and its
+    // removal is sent for F.
+    const { InventoryPanel } = load('inventory-panel.tsx', { '@base-ui/react/menu': { Menu: new Proxy({}, { get: (_, key) => 'Menu' + String(key) }) },
+      './query-actions': { usePartyAction: () => ({}), performAction: async () => undefined }, './merchant-visit-control': { MerchantVisitControl: () => null },
+      '@/components/ui/*': tags });
+    const removed = [];
+    const panelProps = { character: { name: 'M', ctype: 'merchant', items: [], slots: {}, seenAt: 1 }, characters: [{ name: 'M', seenAt: 1 }, { name: 'F', seenAt: 1 }],
+      merchant: 'M', marked: [], merchantMarked: [], autoItemMarks: {}, autoUpgradeMarks: {}, allAutoUpgradeMarks: {}, merchantDeliveries: {}, standListings: [],
+      autoNpcSales: { 'F:ring': { item: { name: 'ring' }, character: 'F' }, wbook: { item: { name: 'wbook' }, keep: 2 } },
+      autoStandMarks: {}, buyable: [], catalog: [], priceHistory: {}, upgradeMarks: [], statScrollMarks: [], statScrollInventory: {}, compoundGroups: [],
+      autoCompoundMarks: [], allAutoCompoundMarks: {}, autoExchanges: {}, onRemoveAutomaticSale: (...args) => removed.push(args), onUpdateNpcReserve() {} };
+    const panel = await draw(React.createElement(InventoryPanel, panelProps));
+    const button = label => panel.view.root.find(node => node.type === 'button' && node.props['aria-label'] === label);
+    const rows = panel.view.root.findAll(node => node.type === 'div' && node.props.className?.startsWith('flex min-h-12'));
+    const rowText = rows.map(text);
+    assert.equal(rowText.length, 2, rowText.join(' | '));
+    assert.ok(rowText.some(row => row.includes('ring') && row.includes('F')), rowText.join(' | '));
+    assert.ok(rowText.some(row => row.includes('wbook') && !row.includes('F')), rowText.join(' | '));
+    await act(async () => button('Remove ring').props.onClick());
+    await act(async () => button('Really remove ring').props.onClick());
+    assert.deepEqual(removed, [['npc', { name: 'ring' }, 'F']]);
+    await panel.done();
+    let inventory;
+    const sent = [];
+    const none = () => null;
+    const { ConnectedInventory } = load('connected-inventory.tsx', { './inventory-panel': { InventoryPanel: props => { inventory = props; return null; } },
+      './use-panel-model': { usePanelModel: base => base }, './upgrade-offering-controls': { UpgradeOfferingProvider: ({ children }) => children },
+      './shared-rule-conflicts': { SharedRuleConflicts: none }, './lucky-slot-tracker': { LuckySlotDialog: none },
+      './deconstruction-confirmation': { DeconstructionConfirmation: none } });
+    const noop = () => {};
+    const connected = await draw(React.createElement(ConnectedInventory, { name: 'M', model: { state: { merchantCharacter: 'M', characters: { M: { name: 'M', items: [], slots: {} } }, marked: {} },
+      chars: [], command: noop, setActionError: noop, setStandItem: noop, setNpcSaleItem: noop, setAutoNpcSaleItem: noop, clearAutomaticSales: noop,
+      removeAutomaticSale: noop, statScrollInventory: [], setSelected: noop, detailMeta: noop, setGearComparison: noop, sendCharacter: noop, post: noop,
+      send: (...args) => sent.push(args) } }));
+    inventory.onRemoveAutomaticSale('npc', { name: 'ring' }, 'F');
+    assert.deepEqual(sent, [['/merchant/auto-npc-sale', { character: 'F', item: { name: 'ring' }, action: 'remove' }]]);
+    await connected.done();
+
+    // A87: Kills starts off in a new browser, and the choice this browser makes is the one it opens with.
+    // A74: the game tab says its lines live in memory.
+    const { LogSidebar } = load('log-sidebar.tsx', { 'lucide-react': tags, ...installed });
+    const sidebar = () => draw(React.createElement(LogSidebar, { state: { characters: { W: { name: 'W' }, P: { name: 'P' } }, bankbois: [] }, width: 400, onWidth() {}, onClose() {} }));
+    const kills = view => view.root.find(node => node.type === 'button' && text(node) === 'Kills');
+    const fresh = await sidebar();
+    assert.equal(kills(fresh.view).props['aria-pressed'], false);
+    assert.doesNotMatch(text(fresh.view.root), /Killed a goo/);
+    assert.match(text(fresh.view.root), /Received 5 gold/);
+    assert.match(text(fresh.view.root), /kept in memory; cleared on a console restart/);
+    await act(async () => kills(fresh.view).props.onClick());
+    assert.match(text(fresh.view.root), /Killed a goo/);
+    await fresh.done();
+    session.saved.clear();
+    const reopened = await sidebar();
+    assert.equal(kills(reopened.view).props['aria-pressed'], true);
+    await reopened.done();
+
+    // A88: the header shows Live, or the failed read's notice, from the core poll.
+    const { ConnectionLine, PartyHeader } = load('party-header.tsx', { '@/components/ui/*': tags, 'lucide-react': tags,
+      './console-updates': { ConsoleUpdateIndicator: tags.ConsoleUpdateIndicator, useUpdates: () => ({ state: null }) }, './console-build-control': tags,
+      './pin-top-bar': { usePinTopBar: () => [false] }, './console-controls': tags, './hand-control': tags, './mail-count': tags, './party-gold': tags, ...installed });
+    const { RECONNECTING_NOTICE } = load('query-cache.tsx');
+    const line = async props => { const drawn = await draw(React.createElement(ConnectionLine, props)); const out = text(drawn.view.root); await drawn.done(); return out; };
+    assert.equal(await line({ loading: false, unavailable: false }), 'Live');
+    assert.equal(await line({ loading: false, unavailable: true }), RECONNECTING_NOTICE);
+    assert.equal(await line({ loading: true, unavailable: false }), 'Connecting...');
+    const model = { state: { realmControl: {} }, coordinatorLoading: false, coordinatorUnavailable: true };
+    for (const setter of ['setMailOpen', 'setCatalogOpen', 'setBestiaryOpen', 'setSkillsOpen', 'setStandOpen', 'setMarketOpen', 'setBankOpen', 'openSettings', 'setRealmDestination', 'aldataAction'])
+      model[setter] = () => {};
+    const header = await draw(React.createElement(PartyHeader, { model, onLogs() {}, metricsActive: false, onMetrics() {} }));
+    assert.deepEqual(header.view.root.findByType(ConnectionLine).props, { loading: false, unavailable: true });
+    assert.match(text(header.view.root), new RegExp(RECONNECTING_NOTICE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    await header.done();
+  } finally {
+    for (const done of drawn) await done();
+    Object.assign(globalThis, globals);
+  }
 });

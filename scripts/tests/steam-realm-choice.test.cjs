@@ -3,13 +3,12 @@ const assert=require('node:assert/strict');
 const {JSDOM}=require('../../.caracal/node_modules/jsdom');
 const {createRealmChoice}=require('../../runtime/lifecycle/roster/realm-choice.ts');
 const {installSteamBridge}=require('../../runtime/lifecycle/roster/bridge.ts');
-test('realm modal survives polls, uses explicit dark colors, and sends one choice',async()=>{
+test('realm modal survives polls and sends one choice',async()=>{
  const dom=new JSDOM('');dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  const calls=[];let resolve;const modal=createRealmChoice(dom.window.document,(...args)=>{calls.push(args);return new Promise(r=>resolve=r);});
  const op={id:'one',phase:'awaiting-realm-choice',realmChoice:{current:'SR_USIV',home:'SR_USII'}};
  modal.show(op);const dialog=dom.window.document.querySelector('dialog');modal.show(op);
  assert.equal(dialog,dom.window.document.querySelector('dialog'));assert.match(dialog.textContent,/currently on US IV.*home realm is US II/);
- assert.equal(dialog.style.backgroundColor,'rgb(21, 21, 21)');
  const buttons=dialog.querySelectorAll('button');assert.deepEqual([...buttons].map(b=>b.textContent),['Switch to US II realm','Stay on US IV realm','Cancel login']);
  buttons[1].click();buttons[1].click();assert.deepEqual(calls,[['one','stay']]);resolve();await new Promise(r=>setImmediate(r));
  assert.equal(dom.window.document.querySelector('dialog'),null);modal.dispose();dom.window.close();

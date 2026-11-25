@@ -142,12 +142,21 @@ test('B174: the kills and loot views start today at the same midnight', () => {
     const keys = {};
     const query = { ...dashboardRequire('@tanstack/react-query'), useQueryClient: () => ({}),
       useQuery: options => { keys[options.queryKey[2]] = options.queryKey; return { data: undefined, isError: false }; } };
-    const { MetricsKills, MetricsLoot } = load(['metrics-kills.tsx', 'metrics-loot.tsx'], { '@tanstack/react-query': query });
+    // Each view's chart props carry the day note the metric-days console case reads from metrics-days.ts.
+    const charts = [], chart = { ...load('metrics-chart.tsx'), MetricsChart: props => { charts.push(props); return null; } };
+    const { MetricsKills, MetricsLoot, MetricsMeasurements } = load(['metrics-kills.tsx', 'metrics-loot.tsx', 'metrics-measurements.tsx'],
+      { '@tanstack/react-query': query, './metrics-chart': chart });
     // 05:00 on 17 November in Tokyo, still 16 November in Toronto.
     const clock = Date.UTC(2026, 10, 16, 20), shared = { active: true, live: true, clock, characters: [], server: '', resetDisabled: false };
     renderToStaticMarkup(React.createElement(MetricsKills, { ...shared, from: clock - 3_600_000, to: clock, resetAt: 0,
       onReset() {}, resetting: false, resetTitle: '' }));
     renderToStaticMarkup(React.createElement(MetricsLoot, { ...shared, names: new Map() }));
+    renderToStaticMarkup(React.createElement(MetricsMeasurements, { ...shared, metric: 'damage', from: clock - 3_600_000, to: clock, resetAt: 0,
+      names: new Map(), monsterNames: new Map(), skillNames: new Map() }));
+    const { METRIC_DAY_NOTE } = load('metrics-days.ts');
+    const said = props => JSON.stringify([props.currentValue?.label, renderToStaticMarkup(React.createElement(React.Fragment, null, props.optionDetails)).replaceAll('&#x27;', "'")]);
+    assert.equal(charts.length, 3);
+    for (const props of charts) assert.ok(said(props).includes(METRIC_DAY_NOTE), said(props));
     const midnight = new Date(clock).setHours(0, 0, 0, 0);
     assert.equal(keys.kills[5], midnight, 'kills: today starts at the browser\'s midnight');
     assert.equal(keys['loot-days'][3], midnight, 'loot: today starts at the same midnight');

@@ -18,9 +18,13 @@ function fixture({watchCode = true, artifact = false} = {}) {
 
 test('character startup installs hooks, prepares slots, schedules restoration and subscribes in order', async () => {
   const t = fixture(); t.run();
-  assert.deepEqual(t.calls, [['listen', 'SIGINT'], ['listen', 'SIGTERM'], ['listen', 'SIGQUIT'], ['listen', 'message'], ['prepare'],
+  // LIF-008 orders only the slot preparation before the restore timer; the other startup calls are a set.
+  const at = name => t.calls.findIndex(call => call[0] === name);
+  assert.ok(at('prepare') >= 0 && at('prepare') < at('later'), 'slots are prepared before the restore is scheduled');
+  const set = calls => calls.map(call => JSON.stringify(call)).sort();
+  assert.deepEqual(set(t.calls), set([['listen', 'SIGINT'], ['listen', 'SIGTERM'], ['listen', 'SIGQUIT'], ['listen', 'message'], ['prepare'],
     ['later', lifecycleSavedFields.settings.slotRestoreDelayMs.default], ['generations', './CODE/adventure_land', undefined], ['subscribe'],
-    ['lifecycle.started', {realm: 'USII', generation: 'g1', reason: 'start', by: 'core:lifecycle'}]]);
+    ['lifecycle.started', {realm: 'USII', generation: 'g1', reason: 'start', by: 'core:lifecycle'}]]));
   t.restore(); assert.deepEqual(t.calls.at(-1), ['restore']);
   t.listeners.account({id: 'a'}); assert.deepEqual(t.calls.at(-1), ['account', {id: 'a'}]);
   t.listeners.message({type: 'coordinator_shutdown'}); await Promise.resolve();
@@ -38,5 +42,5 @@ test('the generation watch follows watch_CODE or the activation record, and stay
 test('worker preparation failure prevents timer, generation watch and account subscription', () => {
   const t = fixture(), failure = Error('watch failed'); t.ports.workers.prepareSlots = () => {throw failure;};
   assert.throws(t.run, error => error === failure);
-  assert.equal(t.calls.length, 4);
+  assert.deepEqual(t.calls.filter(call => ['later', 'generations', 'subscribe'].includes(call[0])), []);
 });

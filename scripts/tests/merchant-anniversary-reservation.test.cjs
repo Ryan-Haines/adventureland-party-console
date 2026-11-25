@@ -4,16 +4,13 @@ const { merchantAnniversaryControl } = require('../../runtime/merchant-jobs/rule
 const { installEventMerchant } = require('../../runtime/events/character/merchant.ts');
 require('../../runtime/merchant-jobs/character/visits.ts');
 
-// shared.js's `control` port of the merchant row, run as written over the merchant jobs owner's character door
-// (`partyMerchant.jobs`) on a frame with no other global.
-const shared = require('node:fs').readFileSync('characters/shared.js', 'utf8');
-const controlPort = shared.slice(shared.indexOf('root.installEventMerchant(')).match(/control: (function \(\) \{[^}]*\})/)[1];
-const sharedControl = new Function('root', 'merchantJobs', 'return ' + controlPort)({}, globalThis.partyMerchant.jobs);
+// The merchant row's control is the merchant jobs owner's anniversary control, which its character door
+// publishes (character/visits.ts `partyMerchant.jobs.anniversaryControl`). NOW is every row's clock.
+const NOW = 1_000_000;
 
 function control(event, state = {}) {
-  const now = 1_000_000;
   return merchantAnniversaryControl('GoldMajesty',true,{anniversaryServer:event,
-    anniversaryState:state,anniversaryVisit:event.live===false?null:{round:event.round}}, {}, now);
+    anniversaryState:state,anniversaryVisit:event.live===false?null:{round:event.round}}, {}, NOW);
 }
 
 // The merchant's row on the character (character/merchant.ts) over the merchant jobs owner's anniversary control, as
@@ -21,12 +18,12 @@ function control(event, state = {}) {
 // round id, plan, completed rounds, merchant mode and the round released at the featured hold's end.
 function merchantRow(event, anniversary) {
   const character = { name: 'M', ctype: 'merchant', s: {} };
-  return installEventMerchant({ now: () => Date.now(), character: () => character,
+  return installEventMerchant({ now: () => NOW, character: () => character,
     attend: { selected: () => true, joined: () => null, traveling: () => null, active: () => null },
     exitPending: () => false, eventsEnabled: () => false, intentCancelled: () => false, coordinatorHolds: () => false,
     anniversary: { roundId: anniversary.roundId, plan: () => anniversary.plan, completed: () => anniversary.completed,
       merchantState: () => ({ busy: false, mode: anniversary.mode, retryAt: 0 }) },
-    round: () => event, epoch: x => x, releasedRound: () => anniversary.released, control: sharedControl,
+    round: () => event, epoch: x => x, releasedRound: () => anniversary.released, control: () => globalThis.partyMerchant.jobs.anniversaryControl,
     job: () => null, holder: () => null, standReturning: () => false, leaveStand: async () => undefined, errand: () => false,
     gathering: () => null, stopGathering: async () => undefined, request: async () => ({}) });
 }
@@ -57,7 +54,7 @@ test('persisted claim releases a restarted merchant only for its matching round'
 });
 
 test('client and coordinator release the same featured round after reload and retain the next round',()=>{
- const event={active:true,live:true,round:'r',target:'Party',expires:Date.now()+200000};
+ const event={active:true,live:true,round:'r',target:'Party',expires:NOW+200000};
  const anniversary={roundId:e=>e.round,plan:{abortedRounds:{}},completed:{},mode:'complete',released:'r'};
  const merchant=merchantRow(event,anniversary);
  assert.equal(merchant.anniversaryReserved(),false);
@@ -66,13 +63,13 @@ test('client and coordinator release the same featured round after reload and re
 });
 
 test('restarted client restores its recorded claim and does not release a later round',()=>{
- const event={active:true,live:true,round:123,target:'Other',expires:Date.now()+200000};
+ const event={active:true,live:true,round:123,target:'Other',expires:NOW+200000};
  const anniversary={roundId:e=>String(e.round),completed:{},mode:'idle',released:null,
-  plan:{live:{round:123},round:{claims:{M:{at:Date.now(),slice:'slice_nightberry'}}},abortedRounds:{}}};
+  plan:{live:{round:123},round:{claims:{M:{at:NOW,slice:'slice_nightberry'}}},abortedRounds:{}}};
  const merchant=merchantRow(event,anniversary);
  assert.equal(merchant.anniversaryReserved(),false);
  assert.equal(merchant.completedRound(),'123');
  event.round=124;assert.equal(merchant.anniversaryReserved(),true);
- anniversary.plan.live.round=124;anniversary.plan.round.claims={Other:{at:Date.now()}};
+ anniversary.plan.live.round=124;anniversary.plan.round.claims={Other:{at:NOW}};
  assert.equal(merchant.anniversaryReserved(),true);
 });

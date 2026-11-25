@@ -1,26 +1,23 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const source = require('./helpers/coordinator-source.cjs').coordinatorSource();
 const {coordinatorReadyFacts}=require('../../runtime/merchant-jobs/coordinator/dispatch.ts'),{coordinatorCollectionReady}=require('../../runtime/merchant-jobs/coordinator/owner.ts');
 const {coordinatorMerchantTransferBlocked}=require('../../runtime/merchant-jobs/rules.ts');
 const {partyHooks}=require('../../runtime/hooks/index.ts');
-// The slices read application.ts's imports from their doors (helpers/coordinator-source.cjs).
-const {withCoordinatorImports}=require('./helpers/coordinator-source.cjs');
+const {merchantStateReads}=require('../../runtime/merchant-jobs/coordinator/api.ts');
 const {createCoordinatorPublicOverview}=require('../../runtime/status/coordinator/api.ts');
 // The pick reads the dispatch pass's facts; the other owners' answers hold nothing here.
 partyHooks().publish({name:'core:collection-threshold-reads',folder:'core',author:'test',summary:'Nothing holds a job.',
  hooks:{'cave.state':()=>({owned:false}),'items.needs':()=>({gold:0,withdrawals:[],slots:0,postage:0})}});
 const pick=(r,party)=>r.pickJobByPriority(coordinatorReadyFacts(party,{now:Date.now,capacityBlocked:job=>coordinatorMerchantTransferBlocked(party,job),
  collectionReady:job=>coordinatorCollectionReady(party,job,Date.now)}));
+// The job owner's reads under the names the composition gives them (coordinator/application.ts).
+const composed = reads => ({ merchantRoutinePriority: reads.routinePriority, merchantJobPriority: reads.priority, stampMerchantJob: reads.stamp,
+  merchantTransferCapacityBlocked: reads.capacityBlocked, collectionSlotCount: reads.collectionSlots, merchantCollectionNearby: reads.collectionNearby,
+  markedCollectionReady: reads.collectionReady, pickJobByPriority: reads.pick, merchantCapacitySignature: reads.capacitySignature });
 function fixture(count=2) {
  const target={name:'Q',map:'main',in:'main',server:'USII',x:0,y:0,seenAt:Date.now(),items:Array.from({length:count},(_,slot)=>({slot,item:{name:'item'+slot}}))};
  const party={itemCollectionThreshold:5,merchantCharacter:'M',statuses:{Q:target,M:{...target,name:'M',x:1000,items:Array(42).fill(null)}},marked:{Q:target.items.slice()},merchantMarked:{},merchantQueue:[],merchantRoutinePriorities:{'party collection':90},standBids:{},bankbois:{},merchantJobBlocks:{},nextCommandId:1};
- const r=vm.createContext(withCoordinatorImports({party,persistSettings(){},dispatchMerchant(){},merchantLog(){}}));
- vm.runInContext(source.slice(source.indexOf('  function markedItem('),source.indexOf('  function ruleKey(')),r);
- vm.runInContext(source.slice(source.indexOf('  function merchantRoutinePriority('),source.indexOf('  function scheduleNearbyGiveaways(')),r);
- vm.runInContext(require('./helpers/named-function.cjs').namedFunction(source, 'publicMerchantJob'),r);
+ const r={party,persistSettings(){},dispatchMerchant(){},merchantLog(){},...composed(merchantStateReads(party)),publicMerchantJob:job=>r.publicOverview.job(job)};
  require('./helpers/coordinator-merchant.cjs').merchantQueueRuntime(r);
  r.publicOverview=createCoordinatorPublicOverview(party,{
   ...require('./helpers/coordinator-public-state.cjs').publicStateRuntime().ports,

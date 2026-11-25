@@ -1,5 +1,4 @@
 const { targetingContext } = require('./helpers/targeting-module.cjs');
-const {productionFunctions} = require('./helpers/production-functions.cjs');
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const {installQueueClient}=require('../../runtime/characters/targeting/queue-client.ts');
 const {reconcileQueue}=require('../../runtime/coordinator/targeting/queue.ts');
@@ -54,12 +53,16 @@ test('wrong realm or instance death preserves a real pending projectile',()=>fix
  assert.equal(f.client.events[0].state,'pending');
  f.client.reportEvidence([{...death,id:String(target.id)}]);assert.equal(f.client.events.length,0);
 }));
-test('confirmed death hook cleans evidence before flushing even outside grouped mode',()=>{
- const calls=[],context=targetingContext({root:{},queueClient:{reportEvidence:deaths=>calls.push(['cleanup',deaths.length]),flush:()=>calls.push(['flush'])},
-  groupedCombat:null,fightDeaths:[],character:{map:'mansion',in:'mansion'},reunionRealm:()=> 'USII',coordinatorClockOffset:0,Date});
- vm.runInContext(productionFunctions(['reportFightDeath']),context);context.reportFightDeath('rat');
- assert.deepEqual(calls,[['cleanup',1],['flush']]);
-});
+// A confirmed death outside grouped mode cleans the queue client's evidence of the dead monster before the
+// client reports, so the report after it carries none.
+test('confirmed death hook cleans evidence before flushing even outside grouped mode',()=>fixture(f=>{
+ f.client.evidence(target,'pending');f.scatter();
+ const context=targetingContext({root:{},queueClient:f.client,groupedCombat:null,fightDeaths:[],character:{map:'mansion',in:'mansion'},
+  coordinatorClockOffset:0,Date},{},{walks:{reunionRealm:()=>'USII'}});
+ context.reportFightDeath('rat');
+ assert.deepEqual(f.client.events,[]);
+ assert.deepEqual(f.client.reportEvidence().filter(e=>e.id==='rat'),[]);
+}));
 test('death and rejection both promote the visible successor instead of restoring the invisible head',()=>{
  for(const outcome of ['death','rejected'])fixture(f=>{
   const action=f.client.evidence(target,'pending');f.scatter();

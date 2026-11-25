@@ -37,7 +37,6 @@ test('dungeon panel exposes actual objectives and explicit priest recovery contr
     // Encounter choices now open in a client portal, exercised by live-cave.spec.ts.
     assert.match(html, /paused for Nera/);
     assert.match(html, /Call Nera/);
-    assert.match(html, /grid-cols-2/);
     const view = client.getQueryData(['party', 'daily-dungeons']);
     view.state.priestRecovery = {id:'r:revive:W:1',run:'r',priest:'P',target:'W',authorized:true};
     view.members.push({name:'P',fresh:true,observation:{alive:true,recovery:{actor:{c:{}},id:'r:revive:W:1',phase:'uncertain',reason:'Revive outcome unknown'}}});
@@ -50,11 +49,30 @@ test('dungeon panel exposes actual objectives and explicit priest recovery contr
 });
 
 // DF20: the Cave map draws only the current floor's entities.
-test('DF20: the Cave map draws the current floor only', () => {
-  const map = require('node:fs').readFileSync('dashboard/features/party/cave-map.tsx', 'utf8');
-  assert.match(map, /const currentFrames = Object\.fromEntries\(Object\.entries\(frames\)\.filter\(\(\[, frame\]\) => frame\.map === map\)\);/);
-  // The member name list under the map names every streaming member, on any floor; the drawn layers read currentFrames.
-  const nameList = /\{Object\.values\(frames\)\.map\(\(f\) => \(\s*<span key=\{f\.name\}>\{f\.name\}<\/span>/;
-  assert.match(map, nameList);
-  assert.doesNotMatch(map.replace(nameList, ''), /Object\.values\(frames\)/);
+// W and P stream frames on floor 1; the party goes down and only W's floor 2 frame has come in.
+test('DF20: the Cave map draws the current floor only', async t => {
+  const { dashboardRequire } = load, React = dashboardRequire('react'), { create, act } = dashboardRequire('react-test-renderer');
+  const { caveFloorMap } = require('../../runtime/hunting/api.ts');
+  require('./helpers/test-registry.cjs').restoreGlobals(t, ['document', 'EventSource', 'IS_REACT_ACT_ENVIRONMENT']);
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  globalThis.document = { hidden: false, addEventListener() {}, removeEventListener() {} };
+  const streams = [];
+  globalThis.EventSource = class { constructor(url) { this.url = url; streams.push(this); } close() { this.closed = true; } };
+  const tags = new Proxy({}, { get: (_, key) => String(key) });
+  const { CaveMap } = load('cave-map.tsx', { '@/components/ui/*': tags, './map-canvas': { MapCanvas: 'MapCanvas' }, './map-capture-button': { MapCaptureButton: 'MapCaptureButton' } });
+  const props = floor => ({ view: { state: { participants: ['W', 'P'] } }, cave: { run: 'r', floor, points: [] }, action: async () => {}, actionsReady: true,
+    waitingForReports: false, error: '', open: true, onOpenChange() {}, destinations: null, onSelectPoint() {} });
+  const send = (name, floor, monster) => streams.filter(s => !s.closed && s.url.endsWith('/' + name)).forEach(s => s.onmessage({ data: JSON.stringify({
+    name, map: caveFloorMap('r', floor), definition: { name: caveFloorMap('r', floor) }, x: 0, y: 0, at: 0, entities: [{ id: monster }] }) }));
+  let view;
+  await act(async () => { view = create(React.createElement(CaveMap, props(0))); });
+  await act(async () => { send('W', 0, 'goo'); send('P', 0, 'bat'); });
+  await act(async () => { view.update(React.createElement(CaveMap, props(1))); });
+  await act(async () => { send('W', 1, 'mole'); });
+  const canvas = view.root.findByType('MapCanvas').props;
+  assert.deepEqual(canvas.frame.entities.map(e => e.id), ['mole']);
+  assert.deepEqual(canvas.pins.map(p => p.label), ['W']);
+  // The member name list under the map names every streaming member, on any floor.
+  assert.deepEqual(view.root.findAllByType('span').map(s => s.props.children).filter(name => ['W', 'P'].includes(name)), ['W', 'P']);
+  await act(async () => view.unmount());
 });

@@ -7,7 +7,7 @@
 import { compoundRunnable, craftProtection, offeringCollectionReady, offeringSupplyReady, pendingOfferingCollection, upgradeRecoverySignature, type BankUpgradeRule, type CompoundRule, type CraftReservationState, type createStatScrollCommands, type ExchangeLine, bankCollectionReason, type BankCollectionState } from '../../items/coordinator/api.ts';
 import { availableCraftStock, markedItem, markMatches, stackQuantity, itemRuleConflicts, ruleOwner, sharedMember, inventoryPack, exchangeKey, isPersonalItem, type ConflictState, type CraftProtection } from '../../items/api.ts';
 import type { InventoryEntry, ItemMark, Item } from '../../coordinator/contracts/item.ts';
-import { type MerchantEventState, type PrioritizedJob, selectMerchantJob, jobReady, stampMerchantJob, coordinatorMerchantPriority, routineEnabled, merchantKind, RUN_FIELDS, ladderFrom, type ReadyFacts, pickupReason, mergePickupJobs, mergeTiming, NEARBY_RADIUS, type JobReason } from '../rules.ts';
+import { type MerchantEventState, type PrioritizedJob, selectMerchantJob, jobReady, stampMerchantJob, coordinatorMerchantPriority, coordinatorMerchantTransferBlocked, coordinatorMerchantCapacitySignature, merchantRoutinePriority, routineEnabled, merchantKind, RUN_FIELDS, ladderFrom, type ReadyFacts, pickupReason, mergePickupJobs, mergeTiming, NEARBY_RADIUS, type JobReason } from '../rules.ts';
 import type { ObservedPosition } from '../../coordinator/contracts/position.ts';
 import { requestObject } from '../../lifecycle/api.ts';
 import { played, type SettingsWrite, type SettingsWriteResult } from '../../settings/api.ts';
@@ -562,6 +562,26 @@ export function takeCoordinatorMerchantJob<Job extends PrioritizedJob>(state: Se
   return index === null
     ? null
     : stampMerchantJob(state.merchantQueue.splice(index, 1)[0]!, priority, facts.now);
+}
+
+// The job owner's reads over one coordinator state, bound once. The composition hands them to the
+// queue, the dispatcher and the routes as their ports (coordinator/application.ts), and the unit tests
+// call the same functions.
+type ReadState<Job extends PrioritizedJob> = CollectionState & SelectionQueueState<Job> & Parameters<typeof coordinatorMerchantTransferBlocked>[0] &
+  Parameters<typeof coordinatorMerchantCapacitySignature>[0] & { merchantRoutinePriorities: Readonly<Record<string, number>> };
+export function merchantStateReads<Job extends PrioritizedJob>(state: ReadState<Job>, now: () => number = () => Date.now()) {
+  const priority = (job: PrioritizedJob) => coordinatorMerchantPriority(state, job);
+  return {
+    routinePriority: (reason: JobReason) => merchantRoutinePriority(state.merchantRoutinePriorities, reason),
+    priority,
+    stamp: <T extends PrioritizedJob>(job: T) => stampMerchantJob(job, priority, now()),
+    capacityBlocked: (job?: PrioritizedJob | null) => coordinatorMerchantTransferBlocked(state, job),
+    collectionSlots: (name: string | null | undefined) => coordinatorCollectionSlots(state, name),
+    collectionNearby: (name: string | null | undefined) => coordinatorCollectionNearby(state, name, now),
+    collectionReady: (job: PrioritizedJob) => coordinatorCollectionReady(state, job, now),
+    pick: (facts: ReadyFacts, run?: string) => takeCoordinatorMerchantJob(state, facts, run),
+    capacitySignature: (name: string | null) => coordinatorMerchantCapacitySignature(state, name),
+  };
 }
 
 // The queue on the coordinator's records: its ports read the live state.

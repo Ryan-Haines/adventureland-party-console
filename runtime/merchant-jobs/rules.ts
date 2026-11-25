@@ -291,9 +291,9 @@ export const NEARBY_RADIUS = 200;
 // The commerce report fence's version: a job stamped with it answers only reports of its own
 // command (runtime/coordinator/merchant/commands.ts:202).
 export const COMMERCE_PROGRESS_VERSION = 2;
-// The visit handoff's two values (v1.5.0's): the send reach 400, which
-// saved-fields.ts declares, and the order handoff's 45 s wait for the merchant, which the
-// character's visits.ts reads.
+// The visit handoff's two values (v1.5.0's), both read by the character's visits.ts: the send reach
+// 400, the game's send range (the send handler refuses past `B.dist`, 400; server.js:224, 8454 at the
+// pin), and the order handoff's 45 s wait for the merchant.
 export const HANDOFF = { sendDistance: 400, playerWaitMs: 45_000 } as const;
 // How long a group walk stays paused for the merchant's visit to a member; movement's gives the
 // pause's deadline to its asker. names it here, a pick no screen shows.

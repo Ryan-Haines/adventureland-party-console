@@ -125,7 +125,7 @@ export const READS = {
 } as const satisfies Record<string, ReadRow>;
 export const DOOR_ONLY = {
   ...doorOnly(JOBS, 'write', ['migrateExchangeAutomations', 'migrateRoutinePriorities']),
-  ...doorOnly(JOBS_COORDINATOR, 'port', ['createCoordinatorMerchantAutomation', 'createCoordinatorMerchantServices', 'installStandLocationRoute', 'createMerchantPartyRoutes', 'createCoordinatorMerchantConfiguration', 'createCoordinatorMerchantJobActions', 'createMerchantCompletionRoute', 'createMerchantHandoffRoutes', 'createMerchantIdleRoute', 'createMerchantScheduling', 'merchantJobSource', 'createCoordinatorMerchantQueue', 'createCoordinatorMerchantRecovery', 'createCoordinatorMerchantActions']),
+  ...doorOnly(JOBS_COORDINATOR, 'port', ['createCoordinatorMerchantAutomation', 'createCoordinatorMerchantServices', 'installStandLocationRoute', 'createMerchantPartyRoutes', 'createCoordinatorMerchantConfiguration', 'createCoordinatorMerchantJobActions', 'createMerchantCompletionRoute', 'createMerchantHandoffRoutes', 'createMerchantIdleRoute', 'createMerchantScheduling', 'merchantJobSource', 'createCoordinatorMerchantQueue', 'createCoordinatorMerchantRecovery', 'createCoordinatorMerchantActions', 'merchantStateReads']),
   ...doorOnly(JOBS_COORDINATOR, 'write', ['migrateMerchantSettings', 'reviseQueuedJobs', 'pruneLuckCasts', 'recoverMerchantQueue', 'stampMerchantJob']),
   ...doorOnly(JOBS_COORDINATOR, 'command', ['endMerchantJob', 'merchantSlotCommand', 'pauseCurrentJob', 'takeCoordinatorMerchantJob']),
 };

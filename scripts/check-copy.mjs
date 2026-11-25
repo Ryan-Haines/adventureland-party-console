@@ -63,9 +63,10 @@ for (const file of files) {
     if (code) {
       const comment = commentOf(line, inBlock);
       if (/[–—]/.test(comment)) hits.push(`${file}:${i + 1}: em or en dash in a comment`);
-      const open = line.lastIndexOf('/*'), close = line.lastIndexOf('*/');
-      if (open > close && !/^\s*\/\//.test(line)) inBlock = true;
-      else if (close >= 0) inBlock = false;
+      // A block comment opens only outside a string, so an import id such as '@/components/ui/*'
+      // opens none.
+      if (inBlock) inBlock = !line.includes('*/');
+      else inBlock = comment.startsWith('/*') && !comment.includes('*/');
     }
   });
 }

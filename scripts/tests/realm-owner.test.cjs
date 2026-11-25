@@ -301,7 +301,6 @@ test('a failed visit switch requeues the job, the visit asks the job want, and t
 // normalizedRealm is that module's.
 test('the realm id rule lives in runtime/protocol/realm.ts, which the call budget reads', () => {
   const realm = require('../../runtime/protocol/realm.ts');
-  assert.equal(require('../../runtime/merchant-realm/rules.ts').normalizedRealm, realm.normalizedRealm);
   assert.deepEqual([realm.gameRealm('US', 'II'), realm.normalizedRealm('EUI'), realm.normalizedRealm('SR_EUI'), realm.normalizedRealm(null)],
     ['SR_USII', 'SR_EUI', 'SR_EUI', null]);
   assert.deepEqual([realm.bareRealm('SR_ASIAI'), realm.realmLabel('SR_USPVP'), realm.realmLabel(null, 'unknown')], ['ASIAI', 'US PVP', 'unknown']);

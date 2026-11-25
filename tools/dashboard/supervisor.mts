@@ -1,4 +1,4 @@
-import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
 import { redirectInternal, fromGateway, dashboardReadyMessage, DASHBOARD_PORT } from './gateway-access.ts';
@@ -10,6 +10,7 @@ import { fingerprint } from "./fingerprint.ts";
 import { completed, launch, stop, waitForHealthy } from "./process.ts";
 import { readJson, withBuildLock } from '../hosting/api.ts';
 import { dashboardHistory, rememberDashboard, releasePath, cleanDashboard, pinDashboard } from './history.ts';
+import { Busy, createModeChange, createProxy, json, type Mode } from './supervision.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dashboard");
 const vinext = path.join(root, "node_modules/vinext/dist/cli.js");
@@ -23,15 +24,15 @@ const stateFile = path.join(
   process.env.AL_DASHBOARD_MODE_FILE || (publicPort === DASHBOARD_PORT ? ".build/mode.json" : `.build/mode-${publicPort}.json`),
 );
 const localOrigins = [`http://localhost:${publicPort}`, `http://127.0.0.1:${publicPort}`];
-type Mode = "development" | "production";
 type Running = { mode: Mode; port: number; process: ChildProcess; generation?: string; id: string };
 let active: Running | undefined;
 let previous: Running | undefined;
 let pending: ChildProcess | undefined;
-let busy = false;
-let failure: string | null = null;
 let nextPort = publicPort + 1;
-let rollbackSelection: string | undefined;
+// The mode change and the proxy (supervision.ts) over this file's functions and servers.
+const modes = createModeChange<Running>({ activeMode: () => active?.mode, restoreDevelopment, createCandidate, activate, rejectCandidate, saveMode, pin: () => pin() });
+const change = modes.state;
+const proxy = createProxy({ previousPort: () => previous?.port });
 async function pin(extra?: string) {
   if (process.env.AL_DASHBOARD_PREBUILT) return;
   await pinDashboard(root, publicPort, [active?.generation, previous?.generation, extra].filter((id): id is string => !!id));
@@ -70,7 +71,7 @@ async function productionBuild(): Promise<string> {
 
 async function saveMode(mode: Mode): Promise<void> {
   await mkdir(path.dirname(stateFile), { recursive: true });
-  await writeFile(stateFile + ".tmp", JSON.stringify({ mode, rollback: rollbackSelection }));
+  await writeFile(stateFile + ".tmp", JSON.stringify({ mode, rollback: change.rollbackSelection }));
   await rename(stateFile + ".tmp", stateFile);
 }
 async function restoreDevelopment(mode: Mode): Promise<boolean> {
@@ -104,10 +105,10 @@ async function activate(candidate: Running): Promise<void> {
   active = candidate;
   child.once("exit", () => {
     if (active?.process !== child) return;
-    failure = "Dashboard stopped unexpectedly";
+    change.failure = "Dashboard stopped unexpectedly";
     active = previous?.process.exitCode === null ? previous : undefined;
     previous = undefined;
-    rollbackSelection = active?.generation;
+    change.rollbackSelection = active?.generation;
     void saveMode(active?.mode || 'production').then(() => pin()).catch(error => console.error('Could not persist dashboard fallback:', error));
   });
   pending = undefined;
@@ -122,38 +123,9 @@ async function activate(candidate: Running): Promise<void> {
 async function rejectCandidate(candidate: Running | undefined, error: unknown): Promise<void> {
   await stop(candidate?.process || pending);
   pending = undefined;
-  failure = error instanceof Error ? error.message : String(error);
+  change.failure = error instanceof Error ? error.message : String(error);
   await pin();
 }
-// One operation at a time: claim() refuses while one runs, and the routes answer that refusal 409.
-class Busy extends Error {}
-function claim(): void {
-  if (busy) throw new Busy("A dashboard operation is in progress");
-  busy = true;
-}
-// The claim is taken before the first await, so a route knows at once whether its change runs.
-function changeMode(mode: Mode, selected?: string): Promise<void> {
-  claim();
-  return switchMode(mode, selected).finally(() => { busy = false; });
-}
-async function switchMode(mode: Mode, selected?: string): Promise<void> {
-  if (active?.mode === mode && mode === "development") return;
-  failure = null;
-  let candidate: Running | undefined;
-  const priorSelection = rollbackSelection;
-  try {
-    rollbackSelection = selected;
-    if (await restoreDevelopment(mode)) return;
-    candidate = await createCandidate(mode, selected);
-    if (candidate) await activate(candidate);
-    else { await saveMode(mode); await pin(); }
-  } catch (error) {
-    rollbackSelection = priorSelection;
-    await rejectCandidate(candidate, error);
-    throw error;
-  }
-}
-
 // The gate of the routes that change the supervisor: a container build is immutable, a change comes
 // from this dashboard's own origin, and its body is read under the route's cap. It answers the
 // refusal and returns undefined, or returns the parsed body.
@@ -189,61 +161,21 @@ async function handleBuilds(req: IncomingMessage, res: ServerResponse): Promise<
 }
 async function buildList() {
   return {active: active?.generation, previous: previous?.generation,
-    pinned: rollbackSelection, builds: await dashboardHistory(root)};
+    pinned: change.rollbackSelection, builds: await dashboardHistory(root)};
 }
 interface BuildRequest {action: string; id?: string; apply?: boolean}
 async function performBuildAction(input: BuildRequest, res: ServerResponse): Promise<void> {
     if (input.action === 'clean') {
-      claim();
-      try { json(res, 200, await cleanup(input.apply === true)); } finally { busy = false; }
+      modes.claim();
+      try { json(res, 200, await cleanup(input.apply === true)); } finally { change.busy = false; }
       return;
     }
     if (input.action === 'rollback') {
       if (!(await dashboardHistory(root)).some(entry => entry.id === input.id)) throw new Error('Unknown dashboard build');
-      await changeMode('production', input.id);
-    } else if (input.action === 'resume') await changeMode('production');
+      await modes.changeMode('production', input.id);
+    } else if (input.action === 'resume') await modes.changeMode('production');
     else throw new Error('Unknown build action');
-    json(res, 200, {active: active?.generation, pinned: rollbackSelection});
-}
-
-function json(response: ServerResponse, status: number, value: unknown): void {
-  response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-  response.end(JSON.stringify(value));
-}
-
-function proxy(req: IncomingMessage, res: ServerResponse, port: number, fallback = true): void {
-  const upstream = request(
-    {
-      hostname: "127.0.0.1",
-      port,
-      method: req.method,
-      path: req.url,
-      headers: { ...req.headers, host: `127.0.0.1:${port}` },
-    },
-    (response) => {
-      if (
-        response.statusCode === 404 &&
-        fallback &&
-        previous &&
-        req.method === "GET" &&
-        /\.(js|css|woff2?)(\?|$)/.test(req.url || "")
-      ) {
-        response.resume();
-        proxy(req, res, previous.port, false);
-        return;
-      }
-      res.writeHead(response.statusCode || 502, response.headers);
-      res.flushHeaders();
-      response.pipe(res);
-    },
-  );
-  upstream.on("error", () => {
-    if (!res.headersSent) json(res, 502, { error: "Dashboard temporarily unavailable" });
-    else res.end();
-  });
-  res.on("close", () => upstream.destroy());
-  if (fallback) req.pipe(upstream);
-  else upstream.end();
+    json(res, 200, {active: active?.generation, pinned: change.rollbackSelection});
 }
 
 async function handleMode(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -251,17 +183,17 @@ async function handleMode(req: IncomingMessage, res: ServerResponse): Promise<vo
       const input = await changingRequest(req, res, 128) as { mode?: Mode } | undefined;
       if (!input) return;
       if (input.mode !== "development" && input.mode !== "production") throw new Error("Invalid dashboard mode");
-      const change = changeMode(input.mode);
+      const switching = modes.changeMode(input.mode);
       json(res, 202, { pending: true });
-      void change.catch((error) => console.error(error.message));
+      void switching.catch((error) => console.error(error.message));
     } catch (error) {
       refused(res, error);
     }
 }
 
 function supervisorState() {
-  return {mode: active?.mode || null, busy, error: failure, immutable: !!process.env.AL_DASHBOARD_PREBUILT,
-    instance: active?.id || null, ready: !!active && active.process.exitCode === null && !busy && !failure};
+  return {mode: active?.mode || null, busy: change.busy, error: change.failure, immutable: !!process.env.AL_DASHBOARD_PREBUILT,
+    instance: active?.id || null, ready: !!active && active.process.exitCode === null && !change.busy && !change.failure};
 }
 const server = createServer(async (req, res) => {
   if (req.url !== '/__dashboard/state' && redirectInternal(req, res)) return;
@@ -279,7 +211,7 @@ const server = createServer(async (req, res) => {
     return;
   }
   if (!active) {
-    json(res, 503, { error: failure || "Dashboard is starting" });
+    json(res, 503, { error: change.failure || "Dashboard is starting" });
     return;
   }
   proxy(req, res, active.port);
@@ -322,6 +254,6 @@ server.listen(publicPort, "127.0.0.1", async () => {
   catch (error) { console.error(`Could not read the dashboard mode file ${stateFile}:`, error); }
   if (!process.argv.includes("--development") && !process.argv.includes("--production") && saved?.mode === "production") mode = "production";
   // A pinned rollback survives ordinary restarts, including --production.
-  rollbackSelection = saved?.rollback;
-  await changeMode(mode, rollbackSelection).catch((error) => console.error(error.message));
+  change.rollbackSelection = saved?.rollback;
+  await modes.changeMode(mode, change.rollbackSelection).catch((error) => console.error(error.message));
 });

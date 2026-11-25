@@ -74,7 +74,7 @@ async function farmingLine(pieces, props = {}) {
   await act(async () => view.root.find(node => node.type === 'button' && node.props['aria-expanded'] === false).props.onClick());
   return view;
 }
-const line = (view) => view.root.find(node => node.type === 'div' && typeof node.props.className === 'string' && node.props.className.startsWith('mt-2 rounded border'));
+const line = (view) => view.root.find(node => node.type === 'div' && node.props['data-addon-slot'] === 'mode-row combat-mode target-mode');
 
 test("card-section: the add-on's block shows after the mode rows of the Farming settings line, with its own report", async () => {
   const bare = await farmingLine(null);
@@ -189,7 +189,8 @@ test("map-layer: the add-on's marker shows on the card map above the core layers
 // "Today's slots": hunt-status, rare-list, merchant-routines and item-rules).
 test("hunt-status: the add-on's line shows under the Hunt status, with the hunt view", async () => {
   const hunting = { effectiveTarget: 'hunt', targetMode: 'hunt', hunt: { stage: 'questing', target: 'bee' } };
-  const block = (view) => view.root.find(node => node.type === 'div' && typeof node.props.className === 'string' && node.props.className.includes('border-amber-900/70'));
+  // The Hunt block is the one its "Hunt status" heading opens.
+  const block = (view) => view.root.find(node => node.type === 'div' && node.children[0]?.type === 'p' && node.children[0].children[0] === 'Hunt status');
   const bare = await farmingLine(null, hunting);
   assert.deepEqual(fixtures(bare), []);
   const view = await farmingLine({ 'hunt-status': { hunt: piece('hunt-status') } }, hunting);

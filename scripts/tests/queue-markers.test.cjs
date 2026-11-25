@@ -1,21 +1,14 @@
 const {productionFunction, productionFunctions} = require('./helpers/production-functions.cjs');
 const {markerStyle}=require('../../runtime/status/character/marker-style.ts');
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
 const {installQueueMarkers}=require('../../runtime/status/character/markers.ts');
 const {evaluateGroup}=require('../../runtime/coordinator/targeting/queue.ts');
 const {createRares}=require('../../runtime/hunting/coordinator/rares.ts');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
 // The coordinator's core answers the queue asks (movement's formation recovery, the events owner's event cycle).
 require('./fixtures/coordinator-core.cjs');
-// The dashboard's ring block (map-canvas.tsx, from `const targeted =` to `const recentAttack =`)
-// with its TypeScript non-null marks dropped, so a row runs it in a plain context.
-function canvasBlock(){
- const source=fs.readFileSync('dashboard/features/party/map-canvas.tsx','utf8');
- const start=source.indexOf('            const targeted ='),end=source.indexOf('            const recentAttack =');
- // A renamed marker makes indexOf answer -1, which would slice the wrong text and pass a row that draws nothing.
- assert.ok(start>=0&&end>start,'map-canvas.tsx still holds the targeted and recentAttack markers');
- return source.slice(start,end).replaceAll('!.','.').replaceAll('![','[');
-}
+// The dashboard's ring under one map entity, which map-canvas.tsx draws for each entity.
+const {drawMapRing}=require('./helpers/dashboard-query-module.cjs')('draw-map-ring.ts');
 // The Steam overlay's game: `host` as `parent` with the lifecycle owner's run scope and PIXI Graphics that record
 // their calls, the game's draw frame as `draw` (each call runs the callbacks `draw_trigger` queued,
 // as the game's draw loop does), and the globals put back after `run`.
@@ -71,10 +64,9 @@ test('snake Hunt to Phoenix cancellation resumes one queue and both marker displ
  const c=require('./helpers/client-dependencies.cjs').passingContext({groupedCombat:party.groupedCombat,navigationIntent:{},character:{map:'main',in:'main'},reunionRealm:()=> 'USII',get_entity:id=>({...snake(id),visible:true})},{hunting:{farm:{grouped:()=>true}}});
  require('./helpers/queue-markers.cjs').installQueueMarkers(c);
  const queue=c.queueMarkers();assert.deepEqual(Array.from(queue,t=>[t.id,t.visible]),[['A',true],['B',true],['C',true]]);
- const block=canvasBlock();
  for(const [i,t]of Array.from(queue).entries()){
   let circles=0;const ctx={beginPath(){},moveTo(){},arc(){circles++;},stroke(){}};
-  vm.runInNewContext(block,{markerStyle,ctx,p:{scale:1,frame:{map:'main',grouped:true,queue}},entity:snake(t.id),x:20,y:0});
+  drawMapRing(ctx,{map:'main',grouped:true,queue},snake(t.id),20,0,1);
   assert.equal(ctx.strokeStyle,i===0?'#ef4444':'#facc15');assert.equal(circles,i===2?2:1);
  }
 });
@@ -155,10 +147,9 @@ scenarioTable('the Steam overlay draws the queue on its own layer', ()=>steamOve
  }],
 ]);
 test('dashboard draws red current, yellow next and double yellow third; no ring for hidden entry',()=>{
- const block=canvasBlock();
  for(const [id,visible,count,color] of [['A',true,1,'#ef4444'],['B',true,1,'#facc15'],['C',true,2,'#facc15'],['B',false,0,undefined]]){
  const calls=[],ctx={beginPath(){},moveTo(){},arc(...a){calls.push(a);},stroke(){}};
- vm.runInNewContext(block,{markerStyle,ctx,p:{scale:2,frame:{grouped:true,map:'cave',queue:['A','B','C'].map(id=>({id,map:'cave',radius:18,visible}))}},entity:{id},x:10,y:20});
+ drawMapRing(ctx,{grouped:true,map:'cave',queue:['A','B','C'].map(id=>({id,map:'cave',radius:18,visible}))},{id},10,20,2);
  assert.equal(calls.length,count);if(count)assert.equal(ctx.strokeStyle,color);if(count===2)assert.equal(calls[1][2]-calls[0][2],3);
  }
 });
@@ -173,7 +164,7 @@ test('selected cooperative event boss stays attackable and yields a single red m
   vm.runInContext(productionFunctions(['isExternallyClaimedMonster', 'returnDepartureDefense', 'isAllowedTarget']), c);require('./helpers/queue-markers.cjs').installQueueMarkers(c);require('./helpers/walk-reports.cjs').installWalkDefense(c);
   assert.equal(c.isAllowedTarget(e),true);const markers=c.queueMarkers();assert.equal(markers.length,1);assert.equal(markers[0].state,'event');
   const calls=[],ctx={beginPath(){},moveTo(){},arc(...a){calls.push(a);},stroke(){}};
-  vm.runInNewContext(canvasBlock(),{markerStyle,ctx,p:{scale:1,frame:{grouped:false,map:'main',queue:markers,target:'boss'}},entity:e,x:10,y:20});
+  drawMapRing(ctx,{grouped:false,map:'main',queue:markers,target:'boss'},e,10,20,1);
   assert.equal(ctx.strokeStyle,'#ef4444');assert.equal(calls.length,1);
   e.visible=false;assert.equal(c.queueMarkers().length,0);e.visible=true;e.dead=true;assert.equal(c.queueMarkers().length,0);
   e.dead=false;c.combatTargetId=null;assert.equal(c.queueMarkers().length,0);
@@ -186,9 +177,9 @@ test('selected cooperative event boss stays attackable and yields a single red m
 
 test('dashboard event with no selected marker does not resurrect the old game target ring',()=>{
  let reads=0;
- const frame={map:'main',eventCombat:true,grouped:false,target:'old',queue:[]};
- vm.runInNewContext(canvasBlock(),{markerStyle,ctx:{arc(){assert.fail('stale event ring');}},p:{scale:1,get frame(){reads++;return frame;}},entity:{id:'old'},x:0,y:0});
- assert.ok(reads>0,'the block read the frame, so the absent ring is a decision it made');
+ const frame=new Proxy({map:'main',eventCombat:true,grouped:false,target:'old',queue:[]},{get(target,key){reads++;return target[key];}});
+ drawMapRing({arc(){assert.fail('stale event ring');}},frame,{id:'old'},0,0,1);
+ assert.ok(reads>0,'the ring read the frame, so the absent ring is a decision it made');
 });
 
 test('scatter publishes every fresh visible party target as red and drops stale or wrong-instance reports',()=>{

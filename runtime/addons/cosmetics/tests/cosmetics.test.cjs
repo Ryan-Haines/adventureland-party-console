@@ -84,7 +84,8 @@ test('F9: the panel draws the report, and an empty line for no report or a broke
 
 test('F10: the registration answers the report, the press and its outcome', () => {
   assert.equal(registration.name, 'cosmetics');
-  assert.deepEqual(Object.keys(registration.hooks), ['status.report', 'addon.command', 'addon.acted']);
+  const answer = require('../../../hooks/registry.ts').createRegistry().register(registration);
+  assert.equal(answer.ok, true, JSON.stringify(answer));
 });
 
 test('F11: an owned look carries the slot its sprite type files it in, and none for a type with no slot', () => {

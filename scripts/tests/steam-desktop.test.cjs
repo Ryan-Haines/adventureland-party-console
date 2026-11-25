@@ -69,7 +69,13 @@ function fixture(overrides={}) {
  return {service,ports,preferences,calls,target,setPages:value=>pages=value,setReady:value=>ready=value,setBridge:value=>bridge=value,counts:()=>({launched,attached})};
 }
 test('cold launch attaches before reporting ready and never performs a game login itself',async()=>{
- const f=fixture();try{await f.service.ensure('QwenTina');assert.deepEqual(f.counts(),{launched:1,attached:1});assert.match(f.calls[0],/X\.characters\.some/);assert.doesNotMatch(f.calls[0],/location.href\s*=/);}finally{f.service.stop();}
+ const f=fixture();try{await f.service.ensure('QwenTina');assert.deepEqual(f.counts(),{launched:1,attached:1});
+  // Each expression the service sent runs on a signed-in game page, which stays where it was.
+  const navigated=[],page={__TAURI_INTERNALS__:{},X:{characters:[{name:'QwenTina'}]},api_call(){},storage_get(){},storage_set(){},
+   location:{get href(){return 'https://adventure.land/';},set href(value){navigated.push(value);}}};
+  page.window=page.top=page;
+  for(const expression of f.calls)require('node:vm').runInNewContext(expression,page);
+  assert.deepEqual(navigated,[]);}finally{f.service.stop();}
 });
 test('already running inspectable client attaches without launching again',async()=>{
  const f=fixture();f.setPages([f.target]);try{await f.service.ensure('QwenTina');assert.deepEqual(f.counts(),{launched:0,attached:1});}finally{f.service.stop();}

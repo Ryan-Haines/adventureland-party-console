@@ -1,6 +1,5 @@
 const {withRunner}=require('./helpers/merchant-runner.cjs');
 const {scenarioTable}=require('./fixtures/scenarios.cjs');
-const {productionFunctions} = require('./helpers/production-functions.cjs');
 const test=require('node:test');const assert=require('node:assert/strict');const vm=require('node:vm');
 const {createMerchantObservation}=require('../../runtime/items/coordinator/market.ts');
 const {createMerchantIdleRoute}=require('../../runtime/merchant-jobs/coordinator/routes.ts');

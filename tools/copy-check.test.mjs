@@ -38,3 +38,25 @@ test("L3.3: a wait's time literal fails read as one expression, across lines and
   assert.ok(waitLiterals(readTree(root, "bf7dd8b30")).some((finding) => finding.startsWith(`${roster}:`)));
   assert.deepEqual(waitLiterals(readTree(root)).filter((finding) => finding.startsWith(`${roster}:`)), []);
 });
+
+// U1: the source rules that were unit tests. Each planted tree breaks one rule; the working tree's
+// pass is owner:check's.
+test("U1: an unread hidden setting, a literal Pause log or cache size, a second dashboard id, a dashboard write and a table R state read fail", async () => {
+  const { hiddenReaders, dashboardWrites, statusSections, LIFECYCLE_RULES } = await import("./copy-check.mjs");
+  const lifecycle = (line, file) => LIFECYCLE_RULES.filter((rule) => rule.step === "U1" && rule.test(line, file)).length;
+  assert.equal(lifecycle("if (lines.length > 20) lines.shift();", "runtime/lifecycle/coordinator/control.ts"), 1);
+  assert.equal(lifecycle("const kept = 32;", "runtime/lifecycle/coordinator/code.ts"), 1);
+  assert.equal(lifecycle("if (lines.length > MOVEMENT_RING_SIZE) lines.shift();", "runtime/lifecycle/coordinator/control.ts"), 0);
+  const fields = "runtime/lifecycle/fields.ts";
+  const declared = `export const f = { settings: {\n  waitMs: { label: 'Wait', kind: 'number', default: 500, hidden: true },\n} };`;
+  assert.deepEqual(hiddenReaders(new Map([[fields, declared]])), [`${fields}:2: the hidden setting waitMs has no reader (copy check, U1)`]);
+  assert.deepEqual(hiddenReaders(new Map([[fields, declared], ["runtime/lifecycle/coordinator/run.ts", "sleep(fields.waitMs.default);"]])), []);
+  const card = "dashboard/features/party/card.tsx";
+  assert.deepEqual(dashboardWrites(new Map([[card, "const id = crypto.randomUUID();\nawait fetch('/party-api/a', { method: 'POST', body });\nawait fetch('/party-api/b');"]])),
+    [`${card}:1: an id outside dashboard/lib/request-id.ts (randomUUID) came back (copy check, DF43)`, `${card}:2: a dashboard write outside the action client (copy check, DF3)`]);
+  assert.deepEqual(dashboardWrites(new Map([["dashboard/lib/request-id.ts", "crypto.randomUUID?.()"], [card, "await fetch(url, { method: 'GET' });"]])), []);
+  const reply = "runtime/status/coordinator/reply.ts";
+  assert.deepEqual(statusSections(new Map([[reply, "x\n  const sections: Sections = {\n    leader: () => state.leader,\n  };"]])),
+    [`${reply}:2: a table R section reads state.leader itself (copy check, D9)`]);
+  assert.deepEqual(statusSections(new Map([[reply, "x\n  const sections: Sections = {\n    leader: () => tasks.leader(state),\n  };"]])), []);
+});

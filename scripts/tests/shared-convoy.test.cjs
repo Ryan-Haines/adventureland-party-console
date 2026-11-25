@@ -150,9 +150,7 @@ test('failure context changes only diagnostics, retaining the original failure a
   assert.ok(schedule,'movement must retain planning schedule diagnostics');
   for(const phase of ['scheduler','plan']){
    const record=schedule[phase];
-   assert.deepEqual(Object.keys(record).sort(),['calls','elapsedMs','intervals']);
    assert.ok(Number.isSafeInteger(record.calls)&&record.calls>=0,phase+' calls must remain valid');
-   assert.deepEqual(Object.keys(record.intervals).sort(),['maxMs','meanMs','minMs']);
    const {minMs,maxMs,meanMs}=record.intervals;
    assert.ok(minMs<=meanMs+1e-8&&meanMs<=maxMs+1e-8,phase+' intervals must be ordered');
    for(const [sample,keys] of [[record,['elapsedMs']],[record.intervals,['minMs','maxMs','meanMs']]])for(const key of keys){

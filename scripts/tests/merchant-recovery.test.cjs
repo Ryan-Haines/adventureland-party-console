@@ -1,36 +1,27 @@
-const fs = require('node:fs');
-const vm = require('node:vm');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {createMerchantRealmOwner:createMerchantHomeRecovery}=require('../../runtime/merchant-realm/coordinator/owner.ts');
-const {merchantKind}=require('../../runtime/merchant-jobs/rules.ts');
+const {createMerchantRealmOwner}=require('../../runtime/merchant-realm/coordinator/owner.ts');
 const {merchantSlotCommand}=require('../../runtime/merchant-jobs/coordinator/api.ts');
 
 function runtime() {
   const party = { merchantCharacter: 'M', activeRealm: 'SR_USII', statuses: { M: { server: 'USIII' } }, commands: {} };
   const block = { realm: 'SR_USIII' }, logs = [], restarts = [];
   let now = Date.now();
-  const r = vm.createContext({ party, ensureCharacterBlock: () => block, merchantLog: message => logs.push(message),
-    realmLabel: value => value, persistSettings() {}, softkill_block: worker => restarts.push(worker) });
-  const recovery=createMerchantHomeRecovery(party,{now:()=>now,block:r.ensureCharacterBlock,
-    realmLabel:r.realmLabel,log:r.merchantLog,persist:r.persistSettings,restart:block=>r.softkill_block(block)});
-  Object.assign(r,{ensureMerchantHome:recovery.ensureHome,recoverStalledMerchantSale:recovery.recoverStalledSale});
+  const r = createMerchantRealmOwner(party, { now: () => now, block: () => block, realmLabel: value => value,
+    log: message => logs.push(message), persist() {}, restart: worker => restarts.push(worker) });
   return { r, party, block, logs, restarts, setNow:value=>{now=value;} };
 }
 
 test('local work waits for actual home arrival and restarts only once', () => {
   const { r, party, block, restarts, setNow } = runtime();
-  assert.equal(r.ensureMerchantHome('compounding'), false);
+  assert.equal(r.ensureHome('compounding'), false);
   assert.equal(block.realm, 'SR_USII');
-  assert.equal(r.ensureMerchantHome('compounding'), false);
+  assert.equal(r.ensureHome('compounding'), false);
   assert.equal(restarts.length, 1);
   party.statuses.M.server = 'USII';
   party.statuses.M.seenAt = party.merchantRealmRequests.M.requestedAt + 1;
   setNow(party.statuses.M.seenAt);
-  assert.equal(r.ensureMerchantHome('compounding'), true);
-  // The kind record's realm answers what merchantRoutineNeedsHome's list answered.
-  assert.equal(merchantKind('upgrades and compounds').realm, 'home');
-  assert.equal(merchantKind('ALData marketplace sales').realm, 'listing');
+  assert.equal(r.ensureHome('compounding'), true);
 });
 
 // The merchant job owner's recovery asks this once the lifecycle owner's roster holds the merchant
@@ -40,7 +31,7 @@ test("an offline merchant's WTB sale ends without a requeue", () => {
   party.merchantCurrent = { id: 'sale', reason: 'ALData marketplace sales', startedAt: Date.now(),
     heartbeatAt: Date.now(), buyOrder: { buyer: 'Buyer', item: { name: 'leather' } } };
   party.commands.M = {};
-  assert.equal(r.recoverStalledMerchantSale(), true);
+  assert.equal(r.recoverStalledSale(), true);
   assert.equal(party.merchantCurrent, null);
   assert.equal(party.commands.M, undefined);
   assert.equal(block.realm, 'SR_USII');
@@ -54,20 +45,20 @@ test('the WTB sale end releases a manual command held for it', () => {
   party.merchantCurrent = { id: 'sale', reason: 'ALData marketplace sales', startedAt: Date.now() };
   const command = { id: 7, type: 'equip' };
   assert.equal(merchantSlotCommand(party, 'manual:equip', command), 'held');
-  assert.equal(r.recoverStalledMerchantSale(), true);
+  assert.equal(r.recoverStalledSale(), true);
   assert.equal(party.commands.M, command);
 });
 
 test('the WTB sale end leaves every other job', () => {
   const { r, party } = runtime();
   party.merchantCurrent = { reason: 'upgrades and compounds', startedAt: Date.now() - 999999 };
-  assert.equal(r.recoverStalledMerchantSale(), false);
+  assert.equal(r.recoverStalledSale(), false);
 });
 
 test('home restart preserves sixty second arrival window and requires fresh matching worker realm',()=>{
   let now=20000;const restarts=[],block={realm:'SR_USIII'};
   const state={merchantCharacter:'M',activeRealm:'SR_USII',statuses:{M:{server:'SR_USII'}},commands:{M:{}}};
-  const service=createMerchantHomeRecovery(state,{now:()=>now,block:()=>block,realmLabel:x=>x,
+  const service=createMerchantRealmOwner(state,{now:()=>now,block:()=>block,realmLabel:x=>x,
     log(){},persist(){},restart:()=>restarts.push(now)});
   assert.equal(service.ensureHome('bank'),false);assert.deepEqual(restarts,[20000]);assert.equal(state.commands.M,undefined);
   state.statuses.M.server='USIII';now=35000;service.ensureHome('bank');assert.deepEqual(restarts,[20000]);
@@ -77,24 +68,34 @@ test('home restart preserves sixty second arrival window and requires fresh matc
   assert.equal(service.ensureHome('bank'),true);
 });
 
-test('activity log keeps the visible entry anchored when newer entries arrive', () => {
-  const ts = require('../../dashboard/node_modules/typescript');
-  const code = ts.transpileModule(fs.readFileSync('dashboard/components/merchant-activity.tsx', 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText;
-  const r = vm.createContext({ exports: {}, require: name => require(require.resolve(name, { paths: [require('node:path').resolve('dashboard')] })) });
-  vm.runInContext(code, r);
-  const component = new r.exports.MerchantActivityLog({ entries: [] });
-  let position = 90;
-  const child = { getAttribute: () => 'entry', getBoundingClientRect: () => ({ top: position, bottom: position + 30 }) };
-  const box = { scrollTop: 100, children: [child], getBoundingClientRect: () => ({ top: 100 }) };
-  component.container.current = box;
-  const snapshot = component.getSnapshotBeforeUpdate();
-  position += 40;
-  component.componentDidUpdate({}, {}, snapshot);
-  assert.equal(box.scrollTop, 140);
-  box.scrollTop = 0;
-  assert.equal(component.getSnapshotBeforeUpdate(), null);
+// The merchant card's activity log (dashboard/components/merchant-activity.tsx) rendered on the real loader.
+// The log is scrolled down to an entry; a newer entry arriving above it keeps that entry where it was,
+// and a log at the top stays at the top.
+test('activity log keeps the visible entry anchored when newer entries arrive', async t => {
+  const React = require('../../dashboard/node_modules/react');
+  const { create, act } = require('../../dashboard/node_modules/react-test-renderer');
+  const { restoreGlobals } = require('./helpers/test-registry.cjs');
+  const { MerchantActivityLog } = require('./helpers/dashboard-query-module.cjs')('../../components/merchant-activity.tsx');
+  restoreGlobals(t, ['IS_REACT_ACT_ENVIRONMENT']); global.IS_REACT_ACT_ENVIRONMENT = true;
+  // The log box is 100 from the top of the page; each entry it renders is 30 px tall, newest first.
+  let view;
+  const box = { scrollTop: 30, getBoundingClientRect: () => ({ top: 100 }),
+    get children() { return view.root.findAllByType('p').map(p => p.props['data-log-key']).map((key, i) => ({ getAttribute: () => key,
+      getBoundingClientRect: () => ({ top: 100 + 30 * i - box.scrollTop, bottom: 130 + 30 * i - box.scrollTop }) })); } };
+  const entry = (at, message) => ({ at, level: 'info', message });
+  try {
+    const first = [entry(1, 'a'), entry(2, 'b'), entry(3, 'c')];
+    await act(async () => { view = create(React.createElement(MerchantActivityLog, { entries: first }), { createNodeMock: () => box }); });
+    const next = [...first, entry(4, 'd')];
+    const before = box.children.find(child => child.getBoundingClientRect().bottom > 100).getAttribute();
+    await act(async () => { view.update(React.createElement(MerchantActivityLog, { entries: next })); });
+    assert.equal(box.scrollTop, 60, 'the entry in view stays in view');
+    assert.equal(box.children.find(child => child.getBoundingClientRect().bottom > 100).getAttribute(), before);
+    box.scrollTop = 0;
+    const last = [...next, entry(5, 'e')];
+    await act(async () => { view.update(React.createElement(MerchantActivityLog, { entries: last })); });
+    assert.equal(box.scrollTop, 0, 'a log at its top stays at its top');
+  } finally { await act(async () => view?.unmount()); }
 });
 
 // The realm owner's one path (3.10 rule 5): a Steam merchant's move is its native-realm-switch
@@ -105,7 +106,7 @@ function homeReportGap(runtime='headless') {
  const commands=new Proxy({M:{id:1,type:'merchant-gather'}},{set(target,key,value){if(value?.type==='native-realm-switch')restarts.push(now);target[key]=value;return true;}});
  const state={merchantCharacter:'M',activeRealm:'SR_USI',steamMembers:runtime==='native'?['M']:[],nextCommandId:2,
   statuses:{M:{server:'USI',seenAt:6000,hp:100,rip:false,runtime,travelSample:{connected:true}}},commands};
- const recovery=createMerchantHomeRecovery(state,{now:()=>now,block:()=>block,realmLabel:x=>x,log(){},persist(){},restart:()=>restarts.push(now)});
+ const recovery=createMerchantRealmOwner(state,{now:()=>now,block:()=>block,realmLabel:x=>x,log(){},persist(){},restart:()=>restarts.push(now)});
  return {state,block,restarts,recovery,setNow:value=>{now=value;}};
 }
 for(const runtime of ['headless','native'])test('same-home live '+runtime+' heartbeat gap holds work without reconnect and resumes on a fresh report',()=>{

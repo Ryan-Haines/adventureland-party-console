@@ -82,13 +82,14 @@ scenarioTable("the role runner's tick attacks, supports and moves one character 
  ['a re-pick that lands on the target the read refuses is not re-picked again', async runner=>{
   const r=runner();await flush();await r.run(250);
   let reads=0;const picked=[];
-  // The finder takes the target, and the rejection rule refuses it, as two views of one pass can.
-  r.routine.isAllowedTarget=()=>!/targetRejection/.test(String(Error().stack));
+  // The selected target moves to another map: the rejection rule refuses it (selection.ts
+  // targetRejection), and the finder, whose check reads no map, takes it again.
+  r.target.map='elsewhere';r.routine.getPreferredTarget=()=>r.target;
   const read=()=>{if(++reads<=50)r.c.__partyHooks.turns.target(null);};
   r.routine.setCombatTarget=t=>{picked.push(t?t.id:null);read();};
   r.routine.publishCombatSelection=()=>read();
   read();for(let i=0;i<10;i++)await flush();
-  assert.ok(reads<=4,`the read re-picked ${reads} times: ${picked}`);
+  assert.deepEqual(picked,['m'],`the refused target is re-picked once: ${reads} reads`);
   r.c.partyRoleRunner.stop();}],
  ['eligible passing and active attacks share priority without passing movement', async runner=>{
   for (const passivePriority of [40,100]) {

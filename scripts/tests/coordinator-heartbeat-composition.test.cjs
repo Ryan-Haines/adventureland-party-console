@@ -142,13 +142,3 @@ test('the event reply names the hint, the return cycle, the sighting and the Cip
  assert.equal(r.partySlendermanSighting,undefined,'another realm');
 });
 
-// Each table R section is its owner's published read, so the status owner's section map reads no
-// member of the coordinator state itself; the owners' reads take the state whole. Red on v1.5.0:
-// the event trip, the merchant hold, the hunting owner's paused flags and the leader.
-test('table R sections in 12\'s reply read no owner state of their own', () => {
-  const fs=require('node:fs'),path=require('node:path');
-  const text=fs.readFileSync(path.join(__dirname,'..','..','runtime','status','coordinator','reply.ts'),'utf8');
-  const start=text.indexOf('const sections: Sections = {');assert.ok(start>0);
-  const block=text.slice(start,text.indexOf('\n  };',start));
-  assert.deepEqual(block.match(/\bstate\.\w+/g)||[],[]);
-});

@@ -1,7 +1,6 @@
 import { test, expect } from "./fixtures";
 import { mountComponent, color, rgb } from "./fixtures/component-harness";
 import type { Locator } from "@playwright/test";
-import { readFileSync } from "node:fs";
 
 // Failure inventory: docs/item-card.md. Game metadata is a declared boundary;
 // the maintained ItemDetails dialog runs in Chromium with the console styles.
@@ -415,7 +414,4 @@ test("item details show stats as the game card beside a matching extras box", as
     const reward = cap.locator("section").filter({ has: page.getByRole("heading", { name: "Exchange reward", exact: true }) });
     await expect(reward, `level ${level}`).toContainText("Gem Fragment");
   }
-  // The inventory menu's Exchange entry carries its icon, as the other entries do.
-  const panel = readFileSync("dashboard/features/party/inventory-panel.tsx", "utf8");
-  expect(panel).toMatch(/<ArrowRightLeft className="mr-2 h-4 w-4" \/>\s*Exchange\s*<\/ContextMenuItem>/);
 });

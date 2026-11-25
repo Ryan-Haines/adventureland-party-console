@@ -25,7 +25,9 @@ test('candidate preparation keeps gameplay unpaused and failure preserves the se
   for(const failed of [true,false]){
     fail=failed;preparing=false;const request=await controller.deploy(b.manifest.id,'safe');
     await expect.poll(()=>preparing).toBe(true);
-    for(let i=0;i<5;i++){await new Promise(resolve=>setTimeout(resolve,100));const lease=await readJson(pause);expect(lease).toBeUndefined();expect((await store.references()).active).toBe(a.manifest.id);samples.push({id:request.id,at:Date.now(),lease:lease||null,failed});}
+    // The controller begins the lease only after prepare returns (controller.ts `run`), so one read
+    // while prepare holds shows gameplay unpaused and the selected build kept.
+    const lease=await readJson(pause);expect(lease).toBeUndefined();expect((await store.references()).active).toBe(a.manifest.id);samples.push({id:request.id,at:Date.now(),lease:lease||null,failed});
     finish();await expect.poll(async()=>(await store.journal())?.phase).toBe(failed?'failed':'complete');
     expect(await readJson(pause)).toBeUndefined();expect((await store.references()).active).toBe(failed?a.manifest.id:b.manifest.id);
   }

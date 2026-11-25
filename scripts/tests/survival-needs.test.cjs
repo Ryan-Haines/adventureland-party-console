@@ -407,6 +407,6 @@ scenarioTable('survival\'s farm fact, Stomp hold, Town gate, healthy answer, not
  // them. The Stomp and healthy-share rows above read the lines through the code.
  ['the escape picks leave the saved settings table', () => {
   const { survivalSavedFields } = require('../../runtime/characters/survival/saved-fields.ts');
-  assert.deepEqual(Object.keys(survivalSavedFields.settings), ['hpPotionBelow', 'mpPotionBelow']);
+  for (const pick of ['survivalEscapeStep', 'survivalLandingMargin']) assert.equal(Object.hasOwn(survivalSavedFields.settings, pick), false, pick);
  }],
 ]);

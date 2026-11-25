@@ -159,7 +159,7 @@ test('dispatch removes persisted bankboi jobs even while merchant is busy', () =
   const party = { bankbois: { bankboi0: {} }, merchantCurrent: {},
     merchantQueue: [{ target: 'bankboi0', reason: 'restock' }, { target: 'Warrior', reason: 'restock' }] };
   const r = require('./helpers/coordinator-dispatch.cjs').dispatchRuntime(party);
-  r.dispatchMerchant();
+  r.dispatch();
   assert.equal(r.party.merchantQueue.length, 1);
   assert.equal(r.party.merchantQueue[0].target, 'Warrior');
 });

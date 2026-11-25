@@ -2,7 +2,7 @@
 import { defaultSearchRadius, type FarmingArea } from '../../../runtime/hunting/api.ts';
 import {drawMapProjectile} from "./draw-map-projectile";
 import {drawMapSprites, endMapSpriteFrame} from "./draw-map-sprites";
-import {markerRadius, markerStyle} from "../../../runtime/status/character/marker-style";
+import {drawMapRing} from "./draw-map-ring";
 import { useEffect, useRef, type RefObject } from "react";
 import { cachedMapImage } from "./cached-map-image";
 import { croppedTile } from "./cropped-tile";
@@ -213,20 +213,7 @@ export function MapCanvas({
           y,
           draw: () => {
             const targeted = p.frame!.target === entity.id;
-            const threatening = entity.target === p.frame!.name;
-            const eventMarker=p.frame!.eventCombat || (p.frame!.queue||[]).some(t=>t.state==='event'||t.state==='scatter');
-            const rank=p.frame!.grouped || eventMarker ? (p.frame!.queue||[]).findIndex(t=>t.id===entity.id&&t.map===p.frame!.map&&t.visible!==false) : -1;
-            if (rank>=0 || !p.frame!.grouped && !eventMarker && (targeted || threatening)) {
-              const style=rank>=0 ? markerStyle(p.frame!.queue![rank],rank) : markerStyle({role:"current"});
-              ctx.strokeStyle = style.css;
-              ctx.lineWidth = 3 / p.scale;
-              ctx.beginPath();
-              // The frame's entity carries no awidth, so a ring with no queue radius takes markerRadius's floor.
-              const radius=(rank>=0 && p.frame!.queue![rank].radius) || markerRadius({});
-              ctx.arc(x, y, radius, 0, Math.PI * 2);
-              if(style.double){ctx.moveTo(x+radius+6/p.scale,y);ctx.arc(x,y,radius+6/p.scale,0,Math.PI*2);}
-              ctx.stroke();
-            }
+            drawMapRing(ctx, p.frame!, entity, x, y, p.scale);
             const recentAttack = (p.frame!.events || [])
               .slice()
               .reverse()

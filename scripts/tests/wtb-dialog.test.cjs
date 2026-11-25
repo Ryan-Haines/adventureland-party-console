@@ -106,12 +106,41 @@ test('new dialog sessions use their selected level and retain only matching exis
 // DF19, A82: a WTB made from a market listing opens with the listing's price, still
 // editable; a bid already at the dialog's level keeps its own price. stand-sheet.tsx's Add hands the
 // draft price on through onEditBuy.
-test('A82: the listing price fills the dialog unless a bid at that level holds one', () => {
+test('A82: the listing price fills the dialog unless a bid at that level holds one', async t => {
   const tree = setup().render({ ...props(3), item: { ...cap(3), price: 4321 } });
   assert.equal(nodes(tree).find(node => node.type === 'Input').props.value, '4321');
   const held = setup().render({ ...props(3), item: { ...cap(3), price: 4321 }, existing: { minimumQuality: 3, price: 99, quantity: 1 } });
   assert.equal(nodes(held).find(node => node.type === 'Input').props.value, '99');
   assert.equal(nodes(setup().render(props(3))).find(node => node.type === 'Input').props.value, '');
-  const sheet = fs.readFileSync('dashboard/features/party/stand-sheet.tsx', 'utf8');
-  assert.match(sheet, /onEditBuy\(\{name: item\.id, level: Number\(draftFor\(item\.id\)\.minimumQuality\) \|\| 0\}, item\.meta, Number\(draftFor\(item\.id\)\.price\) \|\| undefined\)/);
+  await standSheetAdd(t);
 });
+
+// The WTB picker's Add in the rendered StandSheet hands the cap's draft price and level to onEditBuy.
+async function standSheetAdd(t) {
+  const React = require('../../dashboard/node_modules/react'), { create, act } = require('../../dashboard/node_modules/react-test-renderer');
+  const { load, queryRoot } = require('./helpers/dashboard-query-module.cjs');
+  require('./helpers/test-registry.cjs').restoreGlobals(t, ['IS_REACT_ACT_ENVIRONMENT', 'fetch', 'document', 'window', 'EventSource']);
+  global.IS_REACT_ACT_ENVIRONMENT = true;
+  // The sheet's add-on slots read /addons, its open market holds a watch stream, and its stored
+  // preferences and clock listen on window and document. A hidden page keeps the clock stopped.
+  const addons = { slots: {}, rings: [], reads: {}, addons: [], refusals: [], overlays: {} };
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => addons, text: async () => JSON.stringify(addons) });
+  const listeners = { addEventListener() {}, removeEventListener() {} };
+  global.document = { hidden: true, ...listeners }; global.window = { ...listeners, dispatchEvent() {} };
+  global.EventSource = class { close() {} };
+  const tags = new Proxy({}, { get: (_, key) => String(key) });
+  const { StandSheet } = load('stand-sheet.tsx', { '@/components/ui/*': tags, 'lucide-react': tags });
+  const bid = { price: 4321, quantity: 2, minimumQuality: 3, useStandSlot: false }, opened = [];
+  const sheet = { open: true, marketOpen: true, stand: { slots: 16, used: 0, free: 16 }, merchant: { standOpen: true, slots: {} }, onOpenChange() {}, onMarketOpenChange() {},
+    catalog: [{ id: 'wcap', name: "Wanderer's Cap" }], buyable: [], bids: { wcap: bid }, listings: [], priceHistory: {}, blacklist: {}, marketIgnoredItems: [],
+    onBid: async () => {}, onInspect() {}, onEditBuy: (...args) => opened.push(args) };
+  const { client, wrap } = queryRoot();
+  let view;
+  try {
+    await act(async () => { view = create(wrap(React.createElement(StandSheet, sheet))); });
+    const picker = view.root.findAll(node => node.props['data-area'] === 'wtb-orders')[0];
+    const add = picker.findAllByType('Button').find(node => node.children.includes('Add'));
+    await act(async () => add.props.onClick());
+    assert.deepEqual(opened.map(([item, , price]) => [item.name, item.level, price]), [['wcap', 3, 4321]]);
+  } finally { await act(async () => view?.unmount()); client.clear(); }
+}

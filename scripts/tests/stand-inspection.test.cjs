@@ -123,8 +123,8 @@ test('both cancellation views require two clicks, reset on close/order removal, 
  let calls=0;const p=props();p.onBid=async()=>{calls++;throw Error('Request failed')};let root;
  await renderer.act(async()=>{root=renderer.create(React.createElement(context.exports.StandSheet,p))});
  const buttons=()=>root.root.findAll(n=>n.type==='Button' && n.children.some(c=>c==='Cancel'||c==='Really cancel?'));
- // The picker only adds orders; stand and active-order cancellation share a handler.
- const orderButtons=()=>buttons().filter(n=>n.props.className?.includes('border-rose-700'));
+ // The picker only adds orders; stand and active-order cancellation share one control (stand-sheet.tsx cancelControl).
+ const orderButtons=()=>buttons().filter(n=>n.props['data-cancel-order']);
  assert.equal(orderButtons().length,2);
  for(let i=0;i<2;i++){
   await renderer.act(async()=>{root.update(React.createElement(context.exports.StandSheet,{...p,open:false}))});
@@ -143,7 +143,7 @@ test('both cancellation views require two clicks, reset on close/order removal, 
 test('selecting another order resets confirmation; successful submission locks all cancellation controls', async()=>{
  let calls=[];let finish;const p=props();p.bids={cap:bid,other:bid};p.merchant.slots.trade2=entry('other',true);p.onBid=(...args)=>{calls.push(args);return new Promise(resolve=>{finish=resolve})};let root;
  await renderer.act(async()=>{root=renderer.create(React.createElement(context.exports.StandSheet,p))});
- const controls=()=>root.root.findAll(n=>n.type==='Button' && n.props.className?.includes('border-rose-700'));
+ const controls=()=>root.root.findAll(n=>n.type==='Button' && n.props['data-cancel-order']);
  await renderer.act(async()=>{controls()[0].props.onClick()});
  await renderer.act(async()=>{controls()[1].props.onClick()});
  assert.equal(calls.length,0);assert.ok(controls()[0].children.includes('Cancel'));assert.ok(controls()[1].children.includes('Really cancel?'));
@@ -175,7 +175,7 @@ test('sale removal requires two clicks and resets when a buy cancellation is sel
  await renderer.act(async()=>root=renderer.create(React.createElement(context.exports.StandSheet,p)));
  const remove=()=>root.root.findAllByType('Button').find(n=>String(n.props['aria-label']).startsWith('Remove '));
  await renderer.act(async()=>remove().props.onClick());assert.equal(removed,0);assert.ok(remove().children.includes('Really remove?'));
- const cancel=root.root.findAllByType('Button').find(n=>n.children.includes('Cancel')&&n.props.className?.includes('border-rose-700'));
+ const cancel=root.root.findAllByType('Button').find(n=>n.props['data-cancel-order']);
  await renderer.act(async()=>cancel.props.onClick());assert.ok(remove().children.includes('Remove'));
  await renderer.act(async()=>remove().props.onClick());await renderer.act(async()=>remove().props.onClick());assert.equal(removed,1);
  await renderer.act(async()=>root.unmount());

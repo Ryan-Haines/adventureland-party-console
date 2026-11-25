@@ -238,20 +238,23 @@ scenarioTable('the October runtime steps', octoberRuntime, [
  }],
 ]);
 
-// The clock's Cipher report reads the ingredients from the events owner's character facts. shared.js's
-// `ingredients` port runs as written over the installed facts, on a frame with no other global.
-test("the clock's ingredients port reads the events owner's character facts", () => {
+// The clock's Cipher view lists the Witch's ingredients from the events owner's october.ts, with the
+// game's item names and skins.
+test("the clock's Cipher view lists the events owner's ingredients", () => {
   const { cipherIngredients } = require('../../runtime/events/api.ts');
-  const facts = require('./helpers/character-events.cjs').installCharacterEvents({});
-  const shared = require('node:fs').readFileSync('characters/shared.js', 'utf8');
-  const port = shared.slice(shared.indexOf('root.installEventClock(')).match(/ingredients: (function \(\) \{[^}]*\})/)[1];
-  assert.deepEqual(new Function('root', 'characterEvents', 'return ' + port)({}, facts)(), cipherIngredients);
+  const { installEventClock } = require('../../runtime/events/character/clock.ts');
+  const items = Object.fromEntries(cipherIngredients.map(id => [id, { name: id.toUpperCase(), skin: id + '-skin' }]));
+  const clock = installEventClock({ now: () => 0, reportOffset: () => 0, names: () => ['witchcipher'], feed: () => ({}),
+    game: () => ({ items, events: {}, monsters: {} }), doors: () => null, october: () => null, sprite: skin => skin,
+    cipher: () => ({ merchant: null, gathering: null }) });
+  assert.deepEqual(clock.schedule().find(entry => entry.id === 'witchcipher').cipher.ingredients,
+    cipherIngredients.map(id => ({ id, name: id.toUpperCase(), sprite: id + '-skin' })));
 });
 
 // B66: v1.5.0's Cipher gathering walk took
 // `eventDestination(type)`, whose scan returned the first map in G.maps with the type's spawn
 // (shared.js eventDestination, `findSpawn`), so goo could route to the dungeon0 instance, which has
-// no route. (v1.5.0 shared.js:479-482) and the build take the catalog's first
+// no route (v1.5.0 shared.js:479-482). The build takes the catalog's first
 // location, which keeps instance, ignore and irregular maps out (areas.ts FLAGS).
 test('B66: the Cipher walk to goo takes the first farm location, never an instance map', () => {
   const { spawnCatalog } = require('../../runtime/hunting/areas.ts');
@@ -260,7 +263,4 @@ test('B66: the Cipher walk to goo takes the first farm location, never an instan
     dungeon0: { name: 'Dungeon', instance: true, monsters: [{ type: 'goo', count: 4, boundary: [0, 0, 100, 100] }] },
     main: { name: 'Mainland', monsters: [{ type: 'goo', count: 6, boundary: [-200, 600, 200, 800] }] } } };
   assert.equal(firstSpawn(spawnCatalog(game, undefined, 'goo'), 'goo').map, 'main');
-  // v1.5.0's scan over the same maps.
-  const ryan = Object.keys(game.maps).find(map => (game.maps[map].monsters || []).some(entry => entry && entry.type === 'goo'));
-  assert.equal(ryan, 'dungeon0');
 });

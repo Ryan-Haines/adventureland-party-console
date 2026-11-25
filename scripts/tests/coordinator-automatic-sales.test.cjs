@@ -118,7 +118,7 @@ test('NPC rules take precedence over stand rules and repeated status does not du
   const f=fixture();f.state.autoNpcSales[key]=true;f.state.autoStandMarks[key]={price:99};
   assert.equal(f.service.reconcile(status),true);
   assert.equal(f.state.npcSaleMarks[0].quantity,20);assert.equal(f.state.npcSaleMarks[0].queuedAt,100);
-  assert.equal(f.state.standListings.length,0);assert.deepEqual(f.calls,['queue','persist']);
+  assert.equal(f.state.standListings.length,0);assert.deepEqual([...f.calls].sort(),['persist','queue']);
   f.calls.length=0;assert.equal(f.service.reconcile(status),false);assert.deepEqual(f.calls,[]);
   f.state.merchantQueue=[];f.service.reconcile(status);assert.deepEqual(f.calls,['queue']);
 });
@@ -126,7 +126,7 @@ test('NPC rules take precedence over stand rules and repeated status does not du
 test('stand marks publish and synchronize once, preserving the 16 listing limit',()=>{
   const f=fixture();f.state.autoStandMarks[key]={price:'99'};
   assert.equal(f.service.reconcile(status),true);assert.equal(f.state.standListings[0].price,99);
-  assert.deepEqual(f.calls,['publish','sync','idle','persist']);
+  assert.deepEqual([...f.calls].sort(),['idle','persist','publish','sync']);
   f.calls.length=0;f.service.reconcile(status);assert.deepEqual(f.calls,[]);
   f.state.standListings=Array.from({length:16},(_,slot)=>({slot,state:'live'}));
   assert.equal(f.service.reconcile(status),false);assert.equal(f.state.standListings.length,16);

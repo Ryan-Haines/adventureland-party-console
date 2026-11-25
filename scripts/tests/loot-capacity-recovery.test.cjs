@@ -3,16 +3,16 @@ const {dispatchRuntime}=require('./helpers/coordinator-dispatch.cjs');
 const {installLootClient}=require('../../runtime/hunting/character/loot.ts');
 test('full merchant banks authorized deposits before optional purchases and leaves party cleanout queued',()=>{
  const r=dispatchRuntime();r.party.merchantQueue=[{id:'collect',target:'Q',reason:'inventory cleanout'},{id:'buy',target:'M',reason:'Ponty purchases'}];
- r.merchantTransferCapacityBlocked=j=>j.reason==='inventory cleanout';r.dispatchMerchant();
+ r.ports.capacityBlocked=j=>j.reason==='inventory cleanout';r.dispatch();
  assert.equal(r.party.commands.M.type,'merchant-self-bank');assert.equal(r.party.commands.M.capacityRecovery,true);
  assert.deepEqual(r.party.commands.M.merchantBankMarked,r.party.marked.M);
  assert.deepEqual(r.party.commands.M.merchantWithdrawals,[]);assert.deepEqual(r.party.commands.M.withdrawals,[]);
  assert.equal(r.party.merchantQueue[0].id,'collect');
- r.party.merchantCurrent=null;r.pickJobByPriority=()=>r.party.merchantQueue.pop();r.dispatchMerchant();assert.notEqual(r.party.commands.M.type,'merchant-self-bank','capacity attempts are bounded');
+ r.party.merchantCurrent=null;r.ports.pick=()=>r.party.merchantQueue.pop();r.dispatch();assert.notEqual(r.party.commands.M.type,'merchant-self-bank','capacity attempts are bounded');
 });
 test('capacity recovery does not invent bank permissions for unmarked inventory',()=>{
  const r=dispatchRuntime();r.party.marked.M=[];r.party.merchantQueue=[{id:'collect',target:'Q',reason:'inventory cleanout'}];
- r.merchantTransferCapacityBlocked=()=>true;r.dispatchMerchant();assert.equal(r.party.merchantCurrent,null);
+ r.ports.capacityBlocked=()=>true;r.dispatch();assert.equal(r.party.merchantCurrent,null);
 });
 // The loot client as loot.ts installs it: under the hunting owner's run scope, with its game ports and the
 // character's socket, and the merchant cleanout's capacity block where loot.ts reads it

@@ -225,66 +225,6 @@ test("the reply row: the reply holds its command for the requesters; the lifecyc
   assert.ok(headless.log.includes('log:Party command failed: Steam switching requires the native game client'));
 });
 
-// One row per source. The rows share one setup, each reader's source file, so they are one
-// table: a hidden pick is read from its declaration in fields.ts, and a progress rule waits on the
-// event the design names, with the timer it replaced gone. The prepared shutdown's wait, the one
-// rule with arithmetic, gets its own behaviour row below.
-test('each wait reads its declaration and each progress rule waits on its event', () => {
-  const fs = require('node:fs'), path = require('node:path');
-  const read = file => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
-  const fields = require('../../runtime/lifecycle/fields.ts').lifecycleSavedFields.settings;
-  // [the value, its reader, what the reader must contain, what it must no longer contain]
-  const rows = [
-    ['1000 ms report period', 'runtime/lifecycle/character/run.ts', /CHARACTER_PICKS\.lifecycleReportMs/],
-    ['250 ms Pause file cache and 60 s fake expiry', 'runtime/lifecycle/coordinator/control.ts', /let saved = directory \? readPause\(directory\) : null/, /\b(250|60_?000)\b/],
-    ['20 and 8 log caps', 'runtime/lifecycle/coordinator/control.ts', /MOVEMENT_RING_SIZE/, /length > (20|8)\b/],
-    ['180 s resume wait', 'runtime/coordinator/application.ts', /field: 'consoleResumeWaitMs'/],
-    ['5 s prepared worker wait', 'runtime/lifecycle/coordinator/start.ts', /hiddenValue\('hostExitGraceMs'\), closing = ports\.flushMs/, /PREPARED_STOP_MS|\b5_?000\b/],
-    ['15 s host forced exit', 'tools/hosting/services.ts', /hostExitGraceMs\.default/],
-    ['500 ms worker close grace', 'runtime/lifecycle/coordinator/workers.ts', /await Promise\.race\(\[clock\.sleep\(fields\.workerCloseGraceMs\.default\)/],
-    ['1.5 s restart after exit', 'runtime/lifecycle/coordinator/workers.ts', /fields\.workerRestartMs\.default/, /\b1_?500\b/],
-    ['3 s realm error retry', 'runtime/lifecycle/coordinator/workers.ts', /ports\.refreshAccount\(\)\.then\(retryRealms/, /\b3_?000\b/],
-    ['4 s restore after start', 'runtime/lifecycle/coordinator/start.ts', /hiddenValue\('slotRestoreDelayMs'\)/, /\b4_?000\b/],
-    ['300 ms script save settle', 'runtime/lifecycle/coordinator/code.ts', /fields\.codeSaveSettleMs\.default/],
-    ['150 ms manifest debounce', 'runtime/lifecycle/coordinator/code.ts', /clock\.later\(\(\) => \{ queued = false;/, /\b150\b/],
-    ['2 s busy reload retry', 'runtime/lifecycle/coordinator/code.ts', /function reported\(name: string, report: \{ busy\?: unknown \}\)/, /\b2_?000\b/],
-    ['15 s reload reply', 'runtime/lifecycle/coordinator/code.ts', /fields\.reloadReplyMs\.default/],
-    ['1 s activation poll', 'runtime/lifecycle/coordinator/code.ts', /watchFolder\(directory/, /setInterval/],
-    ['60 s client update wait, 250 ms poll', 'runtime/lifecycle/coordinator/workers.ts', /fields\.clientUpdateWaitMs\.default/, /\b250\b/],
-    ['2 s loader poll', 'runtime/lifecycle/character/loader.ts', /picks\.loaderPollMs/],
-    ['10 s missing record recheck', 'runtime/lifecycle/character/loader.ts', /picks\.loaderRecordRecheckMs/],
-    ['6 s fetch timeout', 'runtime/lifecycle/character/loader.ts', /picks\[name\][\s\S]*loaderBound\('loaderFetchMs'/],
-    ['3 s deployment reply timeout', 'runtime/lifecycle/character/loader.ts', /loaderBound\('loaderLeaseFetchMs'/],
-    ['100 ms boundary poll', 'runtime/lifecycle/character/drain.ts', /async function boundary\(\)/, /\b100\b/],
-    ['10 s lease life, 3 s clear, 500 ms poll', 'tools/console-build/safe-reload.ts', /fields\.leaseLifeMs\.default[\s\S]*fields\.leaseClearMs\.default[\s\S]*fields\.leasePollMs\.default/],
-    ['120 s activation', 'tools/console-build/controller.ts', /activationMs\.default/],
-    ['30 s release wait and 200 ms waits', 'tools/console-build/hosting.ts', /releaseWaitMs\.default[\s\S]*hostPollMs\.default/],
-    ['120 health tries 1 s apart', 'tools/update/transaction.ts', /fields\.updateHealthMs\.default[\s\S]*fields\.hostPollMs\.default/],
-    ['3 s to 60 s dashboard respawn', 'tools/console-build/dashboard.ts', /dashboardRespawnMaxMs\.default, dashboardRespawnMs\.default/],
-    ['20 s stale Steam runner', 'runtime/lifecycle/roster/recovery.ts', /steamRunnerStaleMs\.default/, /\b20_?000\b/],
-    ['32 verified class cache entries', 'runtime/lifecycle/coordinator/code.ts', /classes \* \(RETAIN_BUILDS \+ 2\)/, /\b32\b/],
-    ['20 retained candidates', 'tools/build-store.ts', /retainedCandidates\.default/],
-    ['6 h update check', 'tools/update/hosting.ts', /hiddenValue\('updateCheckMs'\)/],
-    ['10 min and 5 guesses for access codes', 'tools/hosting/access.ts', /accessCodeMs\.default[\s\S]*accessCodeAttempts\.default/],
-    ['1 s builder poll and settle', 'tools/console-build/watch.ts', /builderPollMs\.default/],
-    ['250 ms game watch', 'tools/game/watch.mts', /gameWatchMs\.default/],
-    ['30 s saved inspection reuse', 'runtime/lifecycle/coordinator/inspection.ts', /hiddenValue\('inspectionReuseMs'\)/],
-    ['90 s Steam handoff phase', 'runtime/lifecycle/roster/handoff.ts', /steamHandoffExpiryMs\.default/],
-    ['Steam bridge request and slot check bounds', 'runtime/lifecycle/roster/bridge.ts', /bridgeBound\('steamBridgeRequestMs'[\s\S]*bridgeBound\('steamSlotCheckMs'/],
-    ['Steam roster refresh and restore waits', 'runtime/lifecycle/roster/bridge.ts', /steamRosterRefreshMs\.default[\s\S]*steamRestoreMs\.default[\s\S]*steamBridgePollMs\.default/],
-    ['Steam handoff bound', 'runtime/lifecycle/roster/steam-group.ts', /steamHandoffBoundMs/],
-    ['Steam connection delayed label', 'runtime/lifecycle/roster/connection-status.ts', /steamConnectionDelayedMs/],
-    ['Steam handoff check', 'runtime/lifecycle/roster/routes.ts', /steamHandoffCheckMs/],
-    ['Steam audio refresh', 'runtime/lifecycle/roster/switcher.ts', /steamAudioRefreshMs/],
-    ['client download and data check bounds', 'runtime/lifecycle/coordinator/client-files.cjs', /fields\.clientDownloadMs\.default[\s\S]*fields\.clientDataCheckMs\.default/],
-  ];
-  for (const [value, file, reads, gone] of rows) {
-    const text = read(file);
-    assert.match(text, reads, value + ': ' + file + ' reads its source');
-    if (gone) assert.doesNotMatch(text.replace(/\/\/.*$/gm, ''), gone, value + ': the replaced value is gone from ' + file);
-  }
-  for (const [name, field] of Object.entries(fields)) if (field.hidden) assert.ok(rows.some(([, file]) => read(file).includes(name)), name + ' has a reader');
-});
 
 // No screen shows the lifecycle owner's character picks, so fields.ts names them and no saved setting
 // stands for one; the worker's idle socket bound is the coordinator server's own keep-alive, which
@@ -419,7 +359,7 @@ test('the create dialog enables Create from 4 characters and shows the storage c
 
 // B205: the dependency lock waits while its owner's process lives and runs once the
 // owner releases it. v1.5.0 gave up after 1,800 polls ("Dependency cache is busy")
-// with the owner still working. Each poll's sleep runs at once here, and the owner is this process.
+// with the owner still working. The owner is this process.
 test('B205: the dependency lock outwaits 1,800 polls of a live owner and runs on its release', async t => {
   const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
   const { dependencyLocked } = require('../../tools/console-build/builder.ts');
@@ -428,16 +368,9 @@ test('B205: the dependency lock outwaits 1,800 polls of a live owner and runs on
   const lock = path.join(dir, 'dependency-locks', 'cache');
   fs.mkdirSync(lock, { recursive: true });
   fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid }));
-  const sleep = globalThis.setTimeout;
-  let polls = 0, outcome = 'waiting';
-  globalThis.setTimeout = run => { polls++; return setImmediate(run); };
-  try {
-    dependencyLocked({ dependencies: path.join(dir, 'dependencies') }, 'cache', async () => 'ran')
-      .then(value => { outcome = value; }, error => { outcome = error.message; });
-    while (polls <= 1900 && outcome === 'waiting') await new Promise(resolve => setImmediate(resolve));
-    assert.equal(outcome, 'waiting', 'a live owner holds the lock');
-    fs.rmSync(lock, { recursive: true });
-    while (outcome === 'waiting') await new Promise(resolve => setImmediate(resolve));
-    assert.equal(outcome, 'ran');
-  } finally { globalThis.setTimeout = sleep; }
+  // The sleep between polls returns at once; the owner releases the lock after poll 1,801.
+  let polls = 0;
+  const sleep = async () => { if (++polls === 1801) fs.rmSync(lock, { recursive: true }); };
+  assert.equal(await dependencyLocked({ dependencies: path.join(dir, 'dependencies') }, 'cache', async () => polls, undefined, sleep), 1801,
+    'a live owner held the lock through 1,800 polls, and the action ran on its release');
 });

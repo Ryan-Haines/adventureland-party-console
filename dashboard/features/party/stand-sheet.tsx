@@ -1079,7 +1079,7 @@ export const StandSheet = memo(function StandSheet({
 
   const cancelControl = (id: string) => (
 
-    <Button size="sm" variant="outline" disabled={Boolean(savingBid) || removing}
+    <Button size="sm" variant="outline" disabled={Boolean(savingBid) || removing} data-cancel-order={id}
 
       onClick={() => void cancelBid(id)}
 

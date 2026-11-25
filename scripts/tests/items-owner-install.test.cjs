@@ -36,9 +36,10 @@ test('installItems answers the item reads and the blacklist from its state', () 
 });
 
 test('reconcileReport reconciles a report once, deconstruction first, and reports a change from the sales', () => {
-  const order = [], bag = Array(42).fill(null);
-  const {owner} = install(bag, {deconstruct: name => (order.push(['deconstruct', name]), false),
-    automaticSales: report => (order.push(['sales', report.name]), true)});
+  // One copy both claim: the deconstruction takes it out of the bag, and the sales sell what the bag holds.
+  const sold = [], bag = Array(42).fill(null); bag[0] = {name: 'wbook0', q: 1};
+  const {owner} = install(bag, {deconstruct: () => (bag[0] = null, false),
+    automaticSales: report => (sold.push(...report.items.filter(Boolean).map(item => item.name)), true)});
   assert.equal(owner.reconcileReport({name: 'F', items: bag, seenAt: Date.now()}), true, 'the automatic sales changed state');
-  assert.deepEqual(order, [['deconstruct', 'F'], ['sales', 'F']]);
+  assert.deepEqual(sold, [], 'the copy the deconstruction took is not sold');
 });

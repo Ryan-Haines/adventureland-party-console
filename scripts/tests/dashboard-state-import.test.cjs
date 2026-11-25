@@ -1,5 +1,4 @@
-const {settle}=require('./helpers/settle.cjs');
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const {test}=require('node:test'),assert=require('node:assert/strict');
 const policy=require('../../runtime/settings/coordinator/persistence/dashboard-import.ts');
 const {stateKeys}=require('../../runtime/settings/coordinator/persistence/snapshots.ts');
 const {settingsWriter}=require('./helpers/settings-writer.cjs');
@@ -134,51 +133,61 @@ test('legacy blacklist-only import is ignored without changing runtime state',()
  assert.deepEqual(f.party.anniversary,{blacklist:[],round:7});assert.deepEqual(f.party.merchantQueue,[{id:'keep'}]);
 });
 
-for(const metadataFailure of [false,true])test(metadataFailure ? 'loading import settings cannot claim a file import failed' : 'Settings import previews a file before confirmation and shows its canonical path and backup',async t=>{
- const ts=require('../../node_modules/typescript');
- // The view sends through the real query-actions.ts performAction on a dashboard query client, which
- // calls the process fetch; the row plants its fetch there.
- const {load,queryRoot}=require('./helpers/dashboard-query-module.cjs'),{performAction}=load('query-actions.ts'),{client}=queryRoot();
- const code=ts.transpileModule(fs.readFileSync('dashboard/features/party/dashboard-state-import.tsx','utf8')
-  .replace(/^import .*;\r?\n/gm,'').replace('export function','function'),
-  {compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText;
- const slots=[],effects=[],requests=[];let cursor=0;
- const c=vm.createContext({Button:'Button',StateExportButton:'StateExportButton',AbortController,useQueryClient:()=>client,performAction,
-  useState:v=>{const i=cursor++;if(!(i in slots))slots[i]=v;return[slots[i],v=>slots[i]=v];},
-  useRef:v=>{const i=cursor++;return slots[i] ||= {current:v};},useEffect:fn=>{const i=cursor++;if(!slots[i]){slots[i]=true;effects.push(fn);}},
-  React:{createElement:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)})},
-  fetch:async(url,options)=>{requests.push({url,options});if(metadataFailure)return {ok:false,text:async()=>JSON.stringify({error:'Service unavailable'})};const data=url.endsWith('/preview')?
-   {fields:['marked'],characters:['W'],digest:'hash'}:url.endsWith('/import')?
-   {fields:['marked'],characters:['W'],digest:'hash',backupPath:'/data/localStorage/backup.jsonl'}:
-   {canonicalPath:'/data/localStorage/caraGarage.jsonl',maxBytes:128*1024*1024};return {ok:true,json:async()=>data,text:async()=>JSON.stringify(data)};}});
- const processFetch=globalThis.fetch;globalThis.fetch=c.fetch;t.after(()=>{globalThis.fetch=processFetch;});
- vm.runInContext(code,c);const render=()=>{cursor=0;return c.DashboardStateImport();};
- const nodes=t=>t&&typeof t==='object'?[t,...t.children.flatMap(nodes)]:[];
- const flush=settle;
- let tree=render();effects.forEach(fn=>fn());await flush();tree=render();
- if(metadataFailure){
-  const alert=nodes(tree).find(n=>n.props.role==='alert');assert.ok(alert);
-  assert.match(alert.children.join(''),/Could not load import\/export settings: Service unavailable/);
-  assert.doesNotMatch(alert.children.join(''),/Error importing state file/);return;
- }
- assert.ok(nodes(tree).some(n=>n.children.includes('/data/localStorage/caraGarage.jsonl')));
- const input=nodes(tree).find(n=>n.type==='input');input.props.ref.current={value:''};
- input.props.onChange({target:{files:[{name:'caraGarage.jsonl',size:10,text:async()=>source({marked:{W:[]}})}]}});
- await flush();tree=render();assert.equal(requests.filter(r=>r.url.endsWith('/import')).length,0);
- const confirm=nodes(tree).find(n=>n.type==='Button'&&n.children.includes('Import dashboard state'));assert.ok(confirm);
- confirm.props.onClick();await flush();tree=render();
- assert.equal(requests.at(-1).options.headers['X-State-Preview'],'hash');
- assert.ok(nodes(tree).some(n=>n.type==='output'));
+// The import view on the real dashboard loader and react-test-renderer. It sends through the real
+// query-actions.ts performAction on a dashboard query client, which calls the process fetch; each
+// row plants its fetch there. `limits` answers the route's GET, and a row that holds it open leaves
+// the limits unread.
+async function importView(t,{limits,failure}={}){
+ const {load,queryRoot,dashboardRequire}=require('./helpers/dashboard-query-module.cjs');
+ const React=dashboardRequire('react'),{create,act}=dashboardRequire('react-test-renderer');
+ require('./helpers/test-registry.cjs').restoreGlobals(t,['fetch','IS_REACT_ACT_ENVIRONMENT']);globalThis.IS_REACT_ACT_ENVIRONMENT=true;
+ const requests=[],reply=(ok,data)=>({ok,status:ok?200:503,redirected:false,json:async()=>data,text:async()=>JSON.stringify(data)});
+ globalThis.fetch=async(url,options)=>{requests.push({url:String(url),options});
+  if(String(url).endsWith('/preview'))return reply(true,{fields:['marked'],characters:['W'],digest:'hash'});
+  if(String(url).endsWith('/import'))return reply(true,{fields:['marked'],characters:['W'],digest:'hash',backupPath:'/data/localStorage/backup.jsonl'});
+  if(failure)return reply(false,{error:'Service unavailable'});
+  return limits?reply(true,limits):new Promise(()=>{});};
+ const tags=new Proxy({},{get:(_,key)=>String(key)});
+ const {DashboardStateImport}=load('dashboard-state-import.tsx',{'@/components/ui/*':tags,'./state-export-button':{StateExportButton:'StateExportButton'}});
+ const {wrap}=queryRoot();let view;
+ await act(async()=>{view=create(wrap(React.createElement(DashboardStateImport)));});
+ t.after(()=>act(async()=>view.unmount()));
+ const text=node=>typeof node==='string'?node:(node.children||[]).map(text).join('');
+ const choose=file=>act(async()=>view.root.findByProps({'aria-label':'Import state file'}).props.onChange({target:{files:[file]}}));
+ return {requests,act,root:view.root,text:()=>text(view.root),alert:()=>view.root.findAll(n=>n.props.role==='alert').map(text).join(''),choose};
+}
+const limits={canonicalPath:'/data/localStorage/caraGarage.jsonl',localPath:'/install/caraGarage.jsonl',dockerPath:'/volume/caraGarage.jsonl',maxBytes:1024*1024};
+const stateFile=(size=10)=>({name:'caraGarage.jsonl',size,text:async()=>source({marked:{W:[]}})});
+
+test('loading import settings cannot claim a file import failed',async t=>{
+ const v=await importView(t,{failure:true});
+ assert.match(v.alert(),/Could not load import\/export settings: Service unavailable/);
+ assert.doesNotMatch(v.alert(),/Error importing state file/);
 });
 
-// The import shows the server's Docker path and checks the server's size limit, and
-// waits for them.
-test('the import reads the route\'s path and size limit', () => {
-  const view = require('node:fs').readFileSync('dashboard/features/party/dashboard-state-import.tsx', 'utf8');
-  assert.match(view, /if \(!info\) \{ setError\("Waiting for the server's import limits\."\); return; \}/);
-  assert.match(view, /if \(file\.size > info\.maxBytes\)/);
-  assert.match(view, /\{info\?\.dockerPath \|\| "Loading…"\}/);
-  assert.doesNotMatch(view, /128 \* 1024 \* 1024|\/data\/localStorage\/caraGarage\.jsonl/);
+test('Settings import previews a file before confirmation and shows its canonical path and backup',async t=>{
+ const v=await importView(t,{limits});
+ assert.ok(v.text().includes('/data/localStorage/caraGarage.jsonl'));
+ await v.choose(stateFile());
+ assert.equal(v.requests.filter(r=>r.url.endsWith('/import')).length,0);
+ const confirm=v.root.find(n=>n.type==='Button'&&n.props.children==='Import dashboard state');
+ await v.act(async()=>confirm.props.onClick());
+ assert.equal(v.requests.at(-1).options.headers['X-State-Preview'],'hash');
+ assert.ok(v.root.findAllByType('output').length);
+});
+
+// The import shows the server's Docker path, checks the server's size limit, and waits for them.
+test('the import reads the route\'s path and size limit',async t=>{
+ const waiting=await importView(t);
+ await waiting.choose(stateFile());
+ assert.match(waiting.alert(),/Waiting for the server's import limits\./);
+ assert.ok(waiting.text().includes('Loading…'),'the Docker path waits for the route');
+ const v=await importView(t,{limits});
+ assert.ok(v.text().includes('/volume/caraGarage.jsonl'));
+ await v.choose(stateFile(limits.maxBytes+1));
+ assert.match(v.alert(),/Choose a state file smaller than 1 MB\./);
+ assert.equal(v.requests.filter(r=>r.url.endsWith('/preview')).length,0,'an oversized file is not previewed');
+ assert.equal(waiting.requests.filter(r=>r.url.endsWith('/preview')).length,0);
 });
 
 // The preferences route answers a refused value with its declaration's refusal line,

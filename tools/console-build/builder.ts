@@ -111,8 +111,8 @@ async function npmCli():Promise<string>{
   for(const file of candidates)if(file&&await stat(file).catch(()=>undefined))return file;
   throw new Error('Cannot locate npm CLI for isolated dependency installation');
 }
-/** The build's dependency cache lock, which lifecycle-rules.test.cjs drives with a live owner. */
-export async function dependencyLocked<T>(store:ConsoleBuildStore,id:string,action:()=>Promise<T>,signal?:AbortSignal):Promise<T>{
+/** The build's dependency cache lock, which lifecycle-rules.test.cjs drives with a live owner through `sleep`, the wait between polls. */
+export async function dependencyLocked<T>(store:ConsoleBuildStore,id:string,action:()=>Promise<T>,signal?:AbortSignal,sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))):Promise<T>{
   const parent=path.join(path.dirname(store.dependencies),'dependency-locks');await mkdir(parent,{recursive:true});
   const lock=path.join(parent,id),token=randomUUID();
   // The lock is held while its owner's process lives: the wait ends when the owner releases it, or
@@ -122,7 +122,7 @@ export async function dependencyLocked<T>(store:ConsoleBuildStore,id:string,acti
     try{await mkdir(lock);break;}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
     const owner=await readFile(path.join(lock,'owner.json'),'utf8').then(value=>JSON.parse(value) as {pid:number}).catch(()=>undefined);
     if(owner){try{process.kill(owner.pid,0);}catch(error){if((error as NodeJS.ErrnoException).code==='ESRCH'){await rename(lock,lock+'.abandoned-'+token).catch(()=>{});continue;}}}
-    await new Promise(resolve=>setTimeout(resolve,pollMs));
+    await sleep(pollMs);
   }
   await writeFile(path.join(lock,'owner.json'),JSON.stringify({pid:process.pid,token}));
   try{return await action();}finally{

@@ -1,6 +1,5 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs'), path = require('node:path');
 const { load, queryRoot } = require('./helpers/dashboard-query-module.cjs');
 const React = require('../../dashboard/node_modules/react');
 const { create, act } = require('../../dashboard/node_modules/react-test-renderer');
@@ -127,8 +126,8 @@ test('travel renders validation and server feedback once, preserves coordinates,
 });
 
 // Every dashboard write and host request goes through the action client, so a lost
-// session ends the page's session and a success refreshes the sections the write changed. The scan
-// is the row per former plain fetch: no dashboard file but the action client sends a write.
+// session ends the page's session and a success refreshes the sections the write changed. The copy
+// check's DF3 rule (tools/copy-check.mjs `dashboardWrites`) holds that no other dashboard file sends a write.
 function actionClient(lost) {
   return load('query-actions.ts', { './api': { API: '/party-api' },
     './query-cache': { authenticationLost: client => lost.push(client), key: domain => ['party', domain] },
@@ -151,27 +150,6 @@ test('a write and a host request end the session on 401, 403 or a pairing redire
   assert.ok(invalidated.length > 0, 'a write refreshes the sections it changed');
   // The add-on manager's switch has its cache row; its list is its own cache (slots.tsx).
   await performAction(client, '/addons', { name: 'a', enabled: true });
-  // The row per former plain fetch: no other dashboard file sends a write itself.
-  const files = [];
-  const walk = dir => { for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const file = path.join(dir, entry.name);
-    if (entry.isDirectory() && !['node_modules', '.next', '.build'].includes(entry.name)) walk(file);
-    else if (/\.tsx?$/.test(entry.name)) files.push(file);
-  } };
-  // The add-on system's own pages and the add-on dashboards write through the kit's action client too.
-  for (const dir of ['dashboard/features', 'dashboard/app', 'dashboard/lib', 'dashboard/components', 'runtime/hooks/dashboard', 'runtime/addons']) if (fs.existsSync(dir)) walk(dir);
-  // A fetch call is a read when it has no options or an inline literal with no spread and no method
-  // but GET. Options held in a variable, spread in, or built by a helper may carry a write method.
-  const fetchCalls = text => { const calls = [], pattern = /(?<![\w.])fetch\(/g; let match;
-    while ((match = pattern.exec(text))) { let depth = 1, index = pattern.lastIndex, comma = -1;
-      for (; index < text.length && depth; index++) { const char = text[index];
-        if ('([{'.includes(char)) depth++; else if (')]}'.includes(char)) depth--; else if (char === ',' && depth === 1 && comma < 0) comma = index; }
-      calls.push(comma < 0 ? '' : text.slice(comma + 1, index - 1).trim()); }
-    return calls; };
-  const isRead = options => !options || (options.startsWith('{') && !options.includes('...') && !/method:\s*(?!['"]GET['"])/.test(options));
-  const writes = files.filter(file => !/(query-actions|api)\.ts$/.test(file))
-    .filter(file => fetchCalls(fs.readFileSync(file, 'utf8')).some(options => !isRead(options)));
-  assert.deepEqual(writes, []);
 });
 
 // v1.5.0's agent tools effect listed `state.characters` among its

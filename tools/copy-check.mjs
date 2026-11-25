@@ -176,6 +176,12 @@ export const LIFECYCLE_RULES = [
   // slot migration compares whole, and no wait this console runs.
   { step: "L3.3", what: "a time literal in runtime/lifecycle/ outside fields.ts", test: (line, file, saved) =>
     LIFECYCLE(file) && file !== "runtime/lifecycle/fields.ts" && !saved && TIME.test(line.replace(CSS_COLOR, "")) && TIME_CONTEXT.test(line) },
+  // The Pause log keeps MOVEMENT_RING_SIZE lines, and the verified class cache holds
+  // `classes * (RETAIN_BUILDS + 2)` entries; neither is a time, so L3.3 does not read them.
+  { step: "U1", what: "a literal Pause log cap (length > 20 or 8) in place of MOVEMENT_RING_SIZE", test: (line, file) =>
+    file === "runtime/lifecycle/coordinator/control.ts" && /length > (20|8)\b/.test(line) },
+  { step: "U1", what: "a literal class cache size (32) in place of classes * (RETAIN_BUILDS + 2)", test: (line, file) =>
+    file === "runtime/lifecycle/coordinator/code.ts" && /\b32\b/.test(line) },
 ];
 export const TASK_RULES = [
   // O2: T1 `dueYields` answers the hand-in's yield to a due event.
@@ -494,8 +500,80 @@ export function copyFindings(sources) {
   // owner's door, so an older tree is judged by the rules of its time.
   const tree = new Map(sources);
   if (lifecycleBuilt) findings.push(...nodeFloor(tree));
-  if (tree.has("runtime/status/api.ts")) findings.push(...dashboardCopies(tree));
+  // The source rules that were unit tests (hidden readers, DF3, DF43, D9) hold from the status owner's tree too.
+  if (tree.has("runtime/status/api.ts")) findings.push(...dashboardCopies(tree), ...dashboardWrites(tree), ...statusSections(tree), ...hiddenReaders(tree));
   return findings;
+}
+
+// A hidden setting is a wait or bound no screen shows (the declarer's `hidden: true`), so the code that
+// waits on it is its only reader. A hidden key that no other source file names is a declaration the
+// code stopped reading, with its value back as a literal.
+const HIDDEN_DECLARERS = (file) => /(^|\/)saved-fields\.ts$|^runtime\/(lifecycle|status)\/fields\.ts$/.test(file);
+const HIDDEN_READERS = (file) => /^(runtime|tools|dashboard)\/.+\.(ts|tsx|mts|cts|cjs|mjs|js)$|^characters\/shared\.js$/.test(file) &&
+  !/(^|\/)(node_modules|\.build)\/|\.test\./.test(file);
+export function hiddenReaders(sources) {
+  const findings = [];
+  for (const [file, text] of sources) {
+    if (!HIDDEN_DECLARERS(file)) continue;
+    text.split("\n").forEach((line, i) => {
+      const key = /^\s*([A-Za-z_$][\w$]*)\s*:\s*\{.*\bhidden:\s*true\b/.exec(line)?.[1];
+      if (!key) return;
+      const name = new RegExp(`\\b${key}\\b`);
+      if (![...sources].some(([other, body]) => other !== file && HIDDEN_READERS(other) && name.test(body)))
+        findings.push(`${file}:${i + 1}: the hidden setting ${key} has no reader (copy check, U1)`);
+    });
+  }
+  return findings;
+}
+
+// The dashboard's one id helper is dashboard/lib/request-id.ts, which a plain-HTTP origin's missing
+// crypto.randomUUID cannot break (DF43).
+const DASHBOARD_IDS = "dashboard/lib/request-id.ts";
+// The dashboard writes through the action client (query-actions.ts and the add-on kit's api.ts), which
+// refreshes the sections a write changes and shows its refusal. A fetch call is a read when it has no
+// options, or an inline literal with no spread and no method but GET; options held in a variable,
+// spread in, or built by a helper may carry a write method.
+const DASHBOARD_WRITERS = (file) => /^(dashboard\/(features|app|lib|components)|runtime\/hooks\/dashboard|runtime\/addons)\/.+\.tsx?$/.test(file) &&
+  !/\.test\.|(query-actions|api)\.ts$/.test(file);
+function fetchOptions(text) {
+  const calls = [], pattern = /(?<![\w.])fetch\(/g;
+  let match;
+  while ((match = pattern.exec(text))) {
+    let depth = 1, index = pattern.lastIndex, comma = -1;
+    for (; index < text.length && depth; index++) {
+      const char = text[index];
+      if ("([{".includes(char)) depth++;
+      else if (")]}".includes(char)) depth--;
+      else if (char === "," && depth === 1 && comma < 0) comma = index;
+    }
+    calls.push({ at: match.index, options: comma < 0 ? "" : text.slice(comma + 1, index - 1).trim() });
+  }
+  return calls;
+}
+const fetchReads = (options) => !options || options.startsWith("{") && !options.includes("...") && !/method:\s*(?!\s|['"]GET['"])/.test(options);
+export function dashboardWrites(sources) {
+  const findings = [];
+  for (const [file, text] of sources) {
+    if (DASHBOARD(file) && file !== DASHBOARD_IDS) text.split("\n").forEach((line, i) => {
+      if (!/^\s*(\/\/|\*|\/\*)/.test(line) && /\brandomUUID\b/.test(line))
+        findings.push(`${file}:${i + 1}: an id outside ${DASHBOARD_IDS} (randomUUID) came back (copy check, DF43)`);
+    });
+    if (!DASHBOARD_WRITERS(file)) continue;
+    for (const call of fetchOptions(text)) if (!fetchReads(call.options))
+      findings.push(`${file}:${text.slice(0, call.at).split("\n").length}: a dashboard write outside the action client (copy check, DF3)`);
+  }
+  return findings;
+}
+
+// Table R: each section of the status owner's reply is its owner's published read, which takes the
+// coordinator state whole, so the section map reads no member of the state itself.
+const STATUS_REPLY = "runtime/status/coordinator/reply.ts";
+export function statusSections(sources) {
+  const text = sources.get(STATUS_REPLY);
+  const start = text?.indexOf("const sections: Sections = {") ?? -1;
+  if (start < 0) return [];
+  const block = text.slice(start, text.indexOf("\n  };", start)), line = text.slice(0, start).split("\n").length;
+  return (block.match(/\bstate\.\w+/g) || []).map((read) => `${STATUS_REPLY}:${line}: a table R section reads ${read} itself (copy check, D9)`);
 }
 
 //, a dashboard copy of an owner's rule came back: a name D2 deleted, the stand's `>= 16`, a

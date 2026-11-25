@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures';
 import { setHidden } from './fixtures/component-harness';
+import { STATUS_PICKS } from '../runtime/status/rules';
 
 // Request efficiency (docs/efficiency.md § Requests and logs) against the real
 // coordinator behind the hosting gateway.
@@ -43,33 +44,10 @@ test('unknown state sections answer 400 and the dashboard requests only known se
   }
 });
 
-// Waits in the page for `selector` (inside the open Bank dialog) to satisfy
-// `state`, timed from the moment before `act` runs.
-async function timed(page: import('@playwright/test').Page, selector: string, state: string, act: () => Promise<unknown>) {
-  await page.evaluate(([selector, state]) => {
-    const test = () => {
-      const element = document.querySelector(selector);
-      if (state === 'present') return !!element;
-      if (!element) return false;
-      if (state.startsWith('class:')) return element.className.includes(state.slice(6));
-      if (state.startsWith('!class:')) return !element.className.includes(state.slice(7));
-      if (state.startsWith('text:')) return (element.textContent || '').includes(state.slice(5));
-      if (state.startsWith('!text:')) return !(element.textContent || '').includes(state.slice(6));
-      return false;
-    };
-    const started = performance.now();
-    (window as any).__partyTimed = new Promise<number>(resolve => {
-      const check = () => { if (test()) { observer.disconnect(); resolve(performance.now() - started); } };
-      const observer = new MutationObserver(check);
-      observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
-      check();
-    });
-  }, [selector, state]);
-  await act();
-  return Math.round(await page.evaluate(() => (window as any).__partyTimed));
-}
-
-test('bank tab shows marks, unmarks, withdrawals, rules and bank changes as fast as before', async ({ page, app }, info) => {
+// The bank tab's marks, rules and bank changes reach the open Bank dialog, and an unchanged bank poll
+// answers 304. Their latencies are console-speed.spec.ts "the bank tab and the first render: latency"
+// (QUESTIONS U8).
+test('bank tab shows marks, unmarks, withdrawals, rules and bank changes', async ({ page, app }) => {
   const initial = await app.state();
   const sword = initial.characters.M.items.find((entry: any) => entry?.item?.name === 'sword');
   const catalog = (name: string) => initial.merchantCatalog.allItems.find((entry: any) => entry.id === name);
@@ -77,53 +55,40 @@ test('bank tab shows marks, unmarks, withdrawals, rules and bank changes as fast
     ...extra.map((name, index) => ({ slot: index + 1, item: { name, q: 1 }, meta: catalog(name).meta }))] } });
   const checkpoint = (extra: string[]) => page.request.post(`${app.url}/party-api/bankboi/checkpoint`, { headers: { Origin: app.url }, data: { character: 'M', bank: bank(extra) } });
   expect((await checkpoint([])).ok()).toBe(true);
-  const sections: { section: string | null; status: number }[] = [];
+  const bankReads: number[] = [];
   page.on('response', response => {
     const url = new URL(response.url());
-    if (url.pathname.endsWith('/party-api/state')) sections.push({ section: url.searchParams.get('section'), status: response.status() });
+    if (url.pathname.endsWith('/party-api/state') && url.searchParams.get('section') === 'bank') bankReads.push(response.status());
   });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'M', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Bank', exact: true }).click();
   const pane = page.getByRole('dialog', { name: 'Bank', exact: true });
   const label = sword.meta.definition.name || 'sword';
-  await expect(pane.getByLabel(label, { exact: true })).toBeVisible();
-  const tile = `[role="dialog"] [aria-label="${label}"]`;
+  const tile = pane.getByLabel(label, { exact: true });
+  await expect(tile).toBeVisible();
   const menu = page.locator('[data-slot="context-menu-content"]');
-  const choose = async (name: string) => {
-    await pane.getByLabel(label, { exact: true }).click({ button: 'right' });
-    await menu.getByRole('menuitem', { name, exact: true }).click();
-  };
-  const confirm = (name: string) => page.getByRole('dialog').last().getByRole('button', { name, exact: true }).click();
-  const latency: Record<string, number[]> = { markWithdrawal: [], unmarkWithdrawal: [], markNpcSale: [], clearMarks: [], bankChange: [] };
-  for (let round = 0; round < 3; round++) {
-    latency.markWithdrawal.push(await timed(page, tile, 'class:border-amber-400', () => choose('Mark for withdrawal')));
-    latency.unmarkWithdrawal.push(await timed(page, tile, '!class:border-amber-400', () => choose('Unmark withdrawal')));
-    await choose('Sell to NPC…');
-    latency.markNpcSale.push(await timed(page, tile, 'text:NPC sale', () => confirm('Sell to NPC')));
-    latency.clearMarks.push(await timed(page, tile, '!text:NPC sale', () => choose('Clear all marks')));
-  }
-  // Each change lands at a different point of the 2 s bank poll.
-  const extras = ['coat', 'helmet', 'shoes', 'gloves', 'pants'];
-  for (let index = 0; index < extras.length; index++) {
-    await page.waitForTimeout(index * 400);
-    const name = catalog(extras[index]).meta.definition.name || extras[index];
-    latency.bankChange.push(await timed(page, `[role="dialog"] [aria-label="${name}"]`, 'present', () => checkpoint(extras.slice(0, index + 1))));
-  }
+  const open = () => tile.click({ button: 'right' });
+  const choose = async (name: string) => { await open(); await menu.getByRole('menuitem', { name, exact: true }).click(); };
+  // The tile's menu names the mark it shows: Unmark once the withdrawal mark is shown, Mark once it is gone.
+  await choose('Mark for withdrawal');
+  await choose('Unmark withdrawal');
+  await open();
+  await expect(menu.getByRole('menuitem', { name: 'Mark for withdrawal', exact: true })).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Sell to NPC…', exact: true }).click();
+  await page.getByRole('dialog').last().getByRole('button', { name: 'Sell to NPC', exact: true }).click();
+  await expect(tile).toContainText('NPC sale');
+  await choose('Clear all marks');
+  await expect(tile).not.toContainText('NPC sale');
+  // A bank checkpoint shows its new item at the next bank poll.
+  expect((await checkpoint(['coat'])).ok()).toBe(true);
+  await expect(pane.getByLabel(catalog('coat').meta.definition.name || 'coat', { exact: true })).toBeVisible();
   await choose('Auto sell to NPC…');
-  const rule = page.getByRole('dialog').last();
-  await info.attach('auto-npc-dialog', { body: await rule.innerText(), contentType: 'text/plain' });
-  const enable = rule.getByRole('button').filter({ hasNotText: /^(Cancel|Close)$/ }).last();
-  latency.autoNpcRule = [await timed(page, tile, 'text:Auto NPC', () => enable.click())];
-  const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
-  const summary = Object.fromEntries(Object.entries(latency).map(([name, values]) => [name, { median: median(values), max: Math.max(...values), values }]));
-  const bankReads = sections.filter(entry => entry.section === 'bank');
-  await info.attach('bank-tab-latency', { body: JSON.stringify({ summary, bankReads: { total: bankReads.length, notModified: bankReads.filter(entry => entry.status === 304).length } }, null, 1), contentType: 'application/json' });
-  console.log('bank-tab-latency', JSON.stringify({ summary, bankReads: { total: bankReads.length, notModified: bankReads.filter(entry => entry.status === 304).length } }));
+  await page.getByRole('dialog').last().getByRole('button').filter({ hasNotText: /^(Cancel|Close)$/ }).last().click();
+  await expect(tile).toContainText('Auto NPC');
   // Unchanged polls answer 304 and keep the shown bank.
-  expect(bankReads.filter(entry => entry.status === 304).length).toBeGreaterThan(0);
-  // The bank section polls every 2 s; a change shows within one poll plus the request.
-  for (const value of latency.bankChange) expect(value).toBeLessThan(4000);
+  await expect.poll(() => bankReads.filter(status => status === 304).length).toBeGreaterThan(0);
+  expect(bankReads.every(status => status === 200 || status === 304)).toBe(true);
 });
 
 test('console deployment reports the missing activation record the loader would get a 404 for', async ({ app }, info) => {
@@ -145,65 +110,48 @@ test('display-only dashboard timers pause while the tab is hidden and read at on
     if (['/console-update', '/console-build', '/console-debug'].includes(path) || path.endsWith('/upgrade-preview')) requests.push({ path: path.replace(/^.*\/upgrade-preview$/, '/upgrade-preview'), at: Date.now() });
   });
   const count = (path: string) => requests.filter(entry => entry.path === path).length;
+  // The page runs on Playwright's clock, so the row steps the dashboard's poll timers instead of
+  // sleeping through them. The longest display poll is the update service's (dashboardPolls).
+  const longest = Math.max(...['updates', 'build', 'debug'].map(name => STATUS_PICKS.dashboardPolls[name].interval!));
+  await page.clock.install();
   await page.goto('/');
   const merchant = page.locator('article').filter({ has: page.getByRole('heading', { name: 'M', exact: true }) });
   await merchant.getByText('sword', { exact: true }).click({ button: 'right' });
   await page.locator('[data-slot="context-menu-content"]').getByRole('menuitem', { name: 'Mark for upgrade', exact: true }).hover();
   await expect(page.getByRole('region', { name: 'Upgrade chances' })).toBeVisible();
-  await page.waitForTimeout(4500);
-  const visible = { update: count('/console-update'), preview: count('/upgrade-preview'), build: count('/console-build') };
-  expect(visible.update).toBeGreaterThan(0);
+  await page.clock.runFor(longest);
+  await expect.poll(() => count('/console-update')).toBeGreaterThan(0);
   // The open panel reads the stored preview once, then again only when the core read's preview
   // signal or the merchant's bag changes (upgrade-preview-panel.tsx `previewSignal`).
-  expect(visible.preview).toBeGreaterThan(0);
+  await expect.poll(() => count('/upgrade-preview')).toBeGreaterThan(0);
+  const visible = { update: count('/console-update'), preview: count('/upgrade-preview'), build: count('/console-build') };
   await setHidden(page,true);
-  await page.waitForTimeout(500);
   const hiddenAt = { update: count('/console-update'), preview: count('/upgrade-preview'), build: count('/console-build') };
-  await page.waitForTimeout(7000);
+  // Three of the longest intervals hidden, each display timer firing at least three times if it ran.
+  // The last one ends with the clock paused, so once the tab returns no interval can fire: a read
+  // then is the return's own.
+  await page.clock.runFor(2 * longest);
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()) + longest);
   const hidden = { update: count('/console-update') - hiddenAt.update, preview: count('/upgrade-preview') - hiddenAt.preview, build: count('/console-build') - hiddenAt.build };
-  const shownAt = Date.now();
   await setHidden(page,false);
-  await expect.poll(() => count('/console-update') > hiddenAt.update + hidden.update && count('/upgrade-preview') > hiddenAt.preview + hidden.preview, { timeout: 5000 }).toBe(true);
-  const firstAfter = (path: string) => requests.find(entry => entry.path === path && entry.at >= shownAt)!.at - shownAt;
-  const returned = { update: firstAfter('/console-update'), preview: firstAfter('/upgrade-preview') };
-  await info.attach('hidden-tab-timers', { body: JSON.stringify({ visible, hidden, returned }, null, 1), contentType: 'application/json' });
-  console.log('hidden-tab-timers', JSON.stringify({ visible, hidden, returned }));
+  await expect.poll(() => count('/console-update') > hiddenAt.update + hidden.update && count('/upgrade-preview') > hiddenAt.preview + hidden.preview).toBe(true);
+  await info.attach('hidden-tab-timers', { body: JSON.stringify({ visible, hidden }, null, 1), contentType: 'application/json' });
   expect(hidden).toEqual({ update: 0, preview: 0, build: 0 });
-  expect(returned.update).toBeLessThan(500);
-  expect(returned.preview).toBeLessThan(500);
   // Returning to the tab reads the stored preview; it never queues one.
   for (const body of previews) expect(body).toMatchObject({ refresh: false });
 });
 
-test('first render and game log capture reach the dashboard as fast as before', async ({ page, app }, info) => {
-  // The first load also compiles the dev dashboard; time the warm reloads.
+// A game log line reaches the open log sidebar. Its latency and the first render's are
+// console-speed.spec.ts "the bank tab and the first render: latency" (QUESTIONS U8).
+test('game log capture reaches the open log sidebar', async ({ page, app }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'M', exact: true })).toBeVisible();
-  const renders: number[] = [];
-  for (let index = 0; index < 3; index++) {
-    const started = Date.now();
-    await page.reload();
-    await expect(page.getByRole('heading', { name: 'M', exact: true })).toBeVisible();
-    renders.push(Date.now() - started);
-  }
-  const firstRender = [...renders].sort((a, b) => a - b)[1];
-  const opened = Date.now();
   await page.getByRole('button', { name: 'Show logs', exact: true }).click();
   const sidebar = page.getByRole('complementary', { name: 'Live logs' });
   await expect(sidebar).toBeVisible();
-  const logsOpen = Date.now() - opened;
-  // Each line lands at a different point of the 1 s logs poll.
-  const capture: number[] = [];
-  for (let index = 0; index < 6; index++) {
-    await page.waitForTimeout(index * 170);
-    const message = `Latency probe ${index}`;
-    capture.push(await timed(page, '[aria-label="Live logs"]', `text:${message}`, () =>
-      fetch(`${app.url}/party-api/game-logs`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: app.url },
-        body: JSON.stringify({ character: 'W', events: [{ session: 'latency', seq: index + 1, at: Date.now(), message, color: "white" }] }) })));
-  }
-  const median = [...capture].sort((a, b) => a - b)[Math.floor(capture.length / 2)];
-  const result = { firstRender, logsOpen, capture: { median, max: Math.max(...capture), values: capture } };
-  await info.attach('dashboard-latency', { body: JSON.stringify(result, null, 1), contentType: 'application/json' });
-  console.log('dashboard-latency', JSON.stringify(result));
-  for (const value of capture) expect(value).toBeLessThan(2500);
+  const message = 'Capture probe';
+  const sent = await fetch(`${app.url}/party-api/game-logs`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: app.url },
+    body: JSON.stringify({ character: 'W', events: [{ session: 'capture', seq: 1, at: Date.now(), message, color: 'white' }] }) });
+  expect(sent.ok).toBe(true);
+  await expect(sidebar).toContainText(message);
 });

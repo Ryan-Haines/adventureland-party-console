@@ -5,7 +5,7 @@
 // `installEventClock` once in the routine's install.
 import { backgroundCall, callMargin } from './calls.ts';
 import { eventKey, eventKinds, leadFor } from '../rules.ts';
-import { cipherDropRate, nextPublishedEvent, scheduledOccurrences } from '../october.ts';
+import { cipherDropRate, cipherIngredients, nextPublishedEvent, scheduledOccurrences } from '../october.ts';
 import { boundFired } from '../../status/api.ts';
 import type { ScopeHandle } from '../../lifecycle/api.ts';
 
@@ -46,7 +46,6 @@ export interface EventClockPorts {
   october(): unknown;
   doors(): { doors?: unknown; doors_left?: unknown } | null | undefined;
   cipher(): { merchant: string | null; gathering: { stock?: unknown; plan?: unknown } | null };
-  ingredients(): readonly string[];
   sprite(skin: string): unknown;
   monsterSprite(skin: string | undefined): unknown;
   // The schedule's `due` leads of this member's group, which the last reply carried (`eventLeads`).
@@ -248,7 +247,7 @@ export function installEventClock(ports: EventClockPorts) {
           characterLimit: (events[id]?.doors || []).length, accountLimit: events[id]?.knocks,
         } : undefined,
         cipher: row?.view === 'cipher' ? { board: feed[id] || null, runtime: ports.october(),
-          ingredients: ports.ingredients().map(name => ({ id: name, name: game.items?.[name]?.name || name, sprite: ports.sprite(game.items?.[name]?.skin || name) })),
+          ingredients: cipherIngredients.map(name => ({ id: name, name: game.items?.[name]?.name || name, sprite: ports.sprite(game.items?.[name]?.skin || name) })),
           gathering: witch.ingredients, merchant: cipher.merchant, stock: cipher.gathering && cipher.gathering.stock, gatheringPlan: cipher.gathering && cipher.gathering.plan,
           sources: (witch.ingredients || []).flatMap(entry => entry[1].map(monsterId => {
             const monster = game.monsters?.[monsterId] || {};

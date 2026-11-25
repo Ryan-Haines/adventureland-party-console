@@ -1,10 +1,9 @@
 require('./fixtures/coordinator-core.cjs');
 // No member of these fixtures is at an event: The tasks owner's `presence` answers none.
 require('./helpers/requesters.cjs').publishPresence();
-const {productionFunction} = require('./helpers/production-functions.cjs');
 const {targetingModule,walksDoor,drivePositions}=require('./helpers/targeting-module.cjs');
 const {testScope}=require('./helpers/run-scope.cjs');
-const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const test=require('node:test'),assert=require('node:assert/strict');
 const { createMovementContext } = require('./fixtures/movement-owner-callers.cjs');
 const {createPassingAdmission}=require('../../runtime/characters/targeting/queue-client.ts');
 const {passingControl}=require('../../runtime/coordinator/targeting/queue.ts');
@@ -12,11 +11,8 @@ const {collectPassing}=require('../../runtime/characters/targeting/api.ts');
 const {installQueueClient}=require('../../runtime/characters/targeting/queue-client.ts');
 const {createCombatChannel}=require('../../runtime/status/coordinator/channel.ts');
 const {step}=require('../../runtime/movement/coordinator/defense.ts');
-const {namedFunction}=require('./helpers/named-function.cjs');
 // The walk asks survival's verdict for a fight on the way; the coordinator's answer reads this party.
 const {installCoordinatorAnswers}=require('./helpers/survival-answers.cjs');
-const functions=['committedHuntEncounter','passingKey','passingEncounterReport','isPassingEncounter','beginPassingAttack',
- 'groupedEntityReport','returnDepartureDefense','isAttackingPartyMember','defendPartyHit'].map(n=>productionFunction(n)).join('\n');
 
 function fixture() {
  let now=10000,stops=0;
@@ -38,7 +34,7 @@ function fixture() {
   // 04 reads the walk client's group walk on movement's walks door and the passive rules on the hunting owner's rare client.
   targetingModule(c,{},{walks:walksDoor(c,{reunionRealm:realm}),tasks:{partyList:party},
    hunting:{rares:{passive:()=>passive}}});
-  drivePositions(c,[{name:'W',map:'main'},{name:'P',map:'main'}]);vm.runInContext(functions,c);require('./helpers/walk-reports.cjs').installWalkDefense(c);});
+  drivePositions(c,[{name:'W',map:'main'},{name:'P',map:'main'}]);require('./helpers/walk-reports.cjs').installWalkDefense(c);});
  // Each client's report interval, the default 1 s.
  const clients=contexts.map(c=>createPassingAdmission({now:()=>now,interval:()=>1000,reserve:(t,a)=>c.beginPassingAttack(t,a,true)}));
  function report(i) {
@@ -109,13 +105,11 @@ test('stale approval, dead target, and reused identity cannot use an old grant',
 });
 
 test('three real convoy executors reach the endpoint through successive passing retaliations',async()=>{
- const {runtime,settle}=require('./helpers/native-convoy-runtime.cjs');
+ const {settle}=require('./helpers/native-convoy-runtime.cjs');
  const {createSharedConvoyNavigation}=require('../../runtime/movement/coordinator/walk.ts');
- const {publishSharedRoute,sharedRoute}=require('../../runtime/movement/coordinator/route-store.ts');
  const engine=()=>createSharedConvoyNavigation(step);
- const helpers=createMovementContext({runtime,settle,publishSharedRoute,sharedRoute,engine,copy:x=>JSON.parse(JSON.stringify(x))});
- const fixtures=fs.readFileSync('scripts/tests/fixtures/shared-convoy-scenario.cjs','utf8');
- vm.runInContext(['party','report','publication','client'].map(n=>namedFunction(fixtures,n)).join('\n'),helpers);
+ // The shared convoy scenario's party, member reports and executors (fixtures/shared-convoy-scenario.cjs).
+ const helpers=require('./fixtures/shared-convoy-scenario.cjs');
  const p=helpers.party(),e=engine(),names=['L','F','P'];
  p.activeConvoy.purpose='anniversary-return';p.activeConvoy.navigationExempt=true;
  require('./helpers/travel-observations.cjs').observeTravel(p.statuses);
@@ -140,7 +134,6 @@ test('three real convoy executors reach the endpoint through successive passing 
    targetingModule(r.context,{},{walks:walksDoor(r.context,{reunionRealm:()=>'USII'}),tasks:{partyList:()=>names},
     hunting:{rares:{passive:()=>({rules:{},useFieldGenerators:false})}}});
    drivePositions(r.context,names.map(name=>({name,map:'main'})));
-   vm.runInContext(functions,r.context);
    r.context.groupWalk.signal={...e.signal(p,names[i],1600),validUntil:9000};r.tick();r.setNow(5550);
   });
   const admissions=runners.map(r=>createPassingAdmission({now:()=>5600,interval:()=>1000,reserve:(t,a)=>r.context.beginPassingAttack(t,a,true)}));

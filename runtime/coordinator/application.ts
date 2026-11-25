@@ -19,16 +19,14 @@ import { createSettingsRoutes, installCoordinatorSettings, readLegacyStorage, in
 import { createPlannerService, createPartyTravelRoutes, createCoordinatorManualNavigation, createCoordinatorTravelClock,
   installSharedConvoyRoute, installMovementRoutes, installMovementRecordRoutes, createCoordinatorPartyConvoys,
   createCoordinatorNavigationActions } from "../movement/api/coordinator.ts";
-import { defaultMerchantRoutinePriorities, defaultMerchantAutomations, merchantRoutinePriority as routinePriorityOf,
-  coordinatorMerchantPriority, coordinatorMerchantTransferBlocked } from "../merchant-jobs/api.ts";
+import { defaultMerchantRoutinePriorities, defaultMerchantAutomations } from "../merchant-jobs/api.ts";
 import { createCoordinatorActivity, createDashboardStream, createStatusIntake, createReply, createCardLines,
   createCoordinatorPublicOverview, createCoordinatorTelemetry, installStatusNotices, online as reportOnline, createHeartbeatReply,
   openMetricsService, createDiagnostics, installStatusRoutes, createApps, requestCaller, accountGoldSnapshot } from "../status/coordinator/api.ts";
 import { recoverMerchantQueue, coordinatorPrioritizedBids, createCoordinatorMerchantQueue, createCoordinatorMerchantServices,
   createCoordinatorMerchantRecovery, createMerchantScheduling, createMerchantPartyRoutes, createCoordinatorMerchantJobActions,
   createCoordinatorMerchantActions, createCoordinatorMerchantAutomation, createCoordinatorMerchantConfiguration,
-  stampMerchantJob as stampJob, coordinatorCollectionSlots, coordinatorCollectionNearby, coordinatorCollectionReady,
-  takeCoordinatorMerchantJob, coordinatorMerchantCapacitySignature, hasStrongMluck as strongMluck, mluckTravelLead as mluckLead, createMerchantCompletionRoute } from "../merchant-jobs/coordinator/api.ts";
+  merchantStateReads, hasStrongMluck as strongMluck, mluckTravelLead as mluckLead, createMerchantCompletionRoute } from "../merchant-jobs/coordinator/api.ts";
 import { createCoordinatorRealmActions } from "../merchant-realm/api.ts";
 import { createCoordinatorAnniversaryReturns, createCoordinatorAnniversarySnapshot, createCoordinatorAnniversaryActions,
   anniversaryTradeIdentity, createAnniversarySupplies, coordinatorEventCheckpoint, createCoordinatorEventReturns,
@@ -188,6 +186,13 @@ export function startCoordinatorApplication(
     // settings, once the settings are loaded; the core registration keeps them current on each
     // change (hooks/core.ts).
     setReadings(party);
+    // The merchant job owner's reads over this state (merchant-jobs/coordinator/owner.ts
+    // `merchantStateReads`), which the queue, the dispatcher and the routes take as ports.
+    const {
+      routinePriority: merchantRoutinePriority, priority: merchantJobPriority, stamp: stampMerchantJob,
+      capacityBlocked: merchantTransferCapacityBlocked, collectionSlots: collectionSlotCount, collectionNearby: merchantCollectionNearby,
+      collectionReady: markedCollectionReady, pick: pickJobByPriority, capacitySignature: merchantCapacitySignature,
+    } = merchantStateReads(party);
     // The lifecycle owner's roster projection reads only the party state and the account. The
     // metrics service reads it for the first account gold point as it opens, so the projection
     // stands before that service.
@@ -1638,8 +1643,8 @@ export function startCoordinatorApplication(
       return realmOperationOwnsCharacter(party.realmSwitch, party.merchantCharacter);
     }
 
-    // The merchant job owner's merchant jobs: the activity log, the job's priority and stamp, the
-    // collection and capacity reads, the queue, the giveaways and the luck.
+    // The merchant job owner's merchant jobs: the activity log, the public job, the queue, the
+    // giveaways and the luck.
     function merchantLog(
       message: Parameters<typeof activity.merchant>[0],
       level: Parameters<typeof activity.merchant>[1] = "info",
@@ -1650,58 +1655,6 @@ export function startCoordinatorApplication(
 
     function publicMerchantJob(job?: Parameters<typeof publicOverview.job>[0]) {
       return publicOverview.job(job);
-    }
-
-    function merchantRoutinePriority(
-      reason: Parameters<typeof routinePriorityOf>[1],
-    ) {
-      return routinePriorityOf(party.merchantRoutinePriorities, reason);
-    }
-
-    function stampMerchantJob<T extends Parameters<typeof stampJob>[0]>(
-      job: T,
-    ) {
-      return stampJob(job, merchantJobPriority, Date.now());
-    }
-
-    function merchantJobPriority(
-      job: Parameters<typeof coordinatorMerchantPriority>[1],
-    ) {
-      return coordinatorMerchantPriority(party, job);
-    }
-
-    function merchantTransferCapacityBlocked(
-      job?: Parameters<typeof coordinatorMerchantTransferBlocked>[1],
-    ) {
-      return coordinatorMerchantTransferBlocked(party, job);
-    }
-
-    function collectionSlotCount(
-      name: Parameters<typeof coordinatorCollectionSlots>[1],
-    ) {
-      return coordinatorCollectionSlots(party, name);
-    }
-
-    function merchantCollectionNearby(
-      name: Parameters<typeof coordinatorCollectionNearby>[1],
-    ) {
-      return coordinatorCollectionNearby(party, name, () => Date.now());
-    }
-
-    function markedCollectionReady(
-      job: Parameters<typeof coordinatorCollectionReady>[1],
-    ) {
-      return coordinatorCollectionReady(party, job, () => Date.now());
-    }
-
-    function pickJobByPriority(facts: Parameters<typeof takeCoordinatorMerchantJob>[1], run?: string) {
-      return takeCoordinatorMerchantJob(party, facts, run);
-    }
-
-    function merchantCapacitySignature(
-      name: Parameters<typeof coordinatorMerchantCapacitySignature>[1],
-    ) {
-      return coordinatorMerchantCapacitySignature(party, name);
     }
 
     function queueMerchant(

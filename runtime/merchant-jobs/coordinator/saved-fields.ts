@@ -1,7 +1,7 @@
 // The saved fields of merchant jobs (08), its declarations for the settings owner (11), which
 // builds its table from them at load.
 import { object, number, boolean, mapOf, listOf, item, wholeFrom, type Declarations } from '../../settings/api.ts';
-import { defaultMerchantAutomations, defaultMerchantRoutinePriorities, migrateRoutinePriorities, validStandLocation, isGatheringMode, ROUTINE_PRIORITY, HANDOFF } from '../rules.ts';
+import { defaultMerchantAutomations, defaultMerchantRoutinePriorities, migrateRoutinePriorities, validStandLocation, isGatheringMode, ROUTINE_PRIORITY } from '../rules.ts';
 
 export const merchantJobsSavedFields = {
   name: 'core:merchant-jobs',
@@ -25,10 +25,6 @@ export const merchantJobsSavedFields = {
       check: value => value === null || validStandLocation(value), deliver: ['characters', 'dashboard'] },
     gatheringModes: { label: 'Gathering', kind: 'value', default: [], importable: true, check: listOf(isGatheringMode), deliver: ['dashboard-core'] },
     goldTargets: { label: 'Gold to keep', kind: 'value', default: {}, scope: 'character', importable: true, check: mapOf(number), deliver: ['dashboard'] },
-    // The distance within which a fighter's visit (character/visits.ts) sends to the merchant, today's
-    // 400 (shared.js `waitForHandoffSendWindow`), the game's send range: the send handler refuses past `B.dist`, 400
-    // (server.js:224, 8454 at the pin).
-    handoffSendDistance: { label: 'Merchant handoff send distance', kind: 'value', check: wholeFrom(1, Infinity), default: HANDOFF.sendDistance, hidden: true },
   },
   records: {
     // A record: the merchant's report of a missing tool sets it (routes.ts `gatherStatus`), and

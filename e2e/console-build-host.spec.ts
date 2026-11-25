@@ -281,7 +281,7 @@ test('interrupted console deployment recovers prior executable and retention pro
 test('managed launcher ignores legacy coordinator watchers after executable changes',async({},info)=>{
   const root=path.resolve('.build/p79',randomUUID().slice(0,8)),store=new ConsoleBuildStore(root);
   const dependency=await dependencyCache(store,'watcher-isolation'),candidate=await stage(store,root,'watcher-policy',1,false,dependency.id);
-  const observations=[];
+  const observations=[];let restartMs=0;
   for(const managed of [false,true]){
     const installed=path.join(root,managed?'managed':'unmanaged');await mkdir(path.join(installed,'src'),{recursive:true});
     await writeFile(path.join(installed,'main.js'),await readFile('.caracal/main.js','utf8'));
@@ -296,13 +296,16 @@ test('managed launcher ignores legacy coordinator watchers after executable chan
     const pids=async()=>readFile(receipt,'utf8').then(s=>s.trim().split('\n').map(s=>JSON.parse(s).pid)).catch(()=>[]);
     try{
       await expect.poll(async()=>(await pids()).length).toBe(1);
+      const changed=Date.now();
       await writeFile(executable,(await readFile(executable,'utf8'))+'\n// rebuilt executable\n');
-      if(!managed)await expect.poll(async()=>(await pids()).length).toBe(2);
-      else {await new Promise(r=>setTimeout(r,1800));expect(await pids()).toHaveLength(1);}
+      // .caracal/main.js watches the coordinator only with watch_CODE, which pinned-native.cjs turns
+      // off for a managed launch. The managed case also waits the unmanaged restart's measured time.
+      if(!managed){await expect.poll(async()=>(await pids()).length).toBe(2);restartMs=Date.now()-changed;expect(output).toContain('for coordinator changes');}
+      else {await new Promise(r=>setTimeout(r,restartMs));expect(await pids()).toHaveLength(1);expect(output).not.toContain('for coordinator changes');}
       observations.push({managed,pids:await pids(),output});
     }finally{await stopChild(child);}
   }
-  await info.attach('native-launcher-watcher-isolation',{body:JSON.stringify(observations),contentType:'application/json'});
+  await info.attach('native-launcher-watcher-isolation',{body:JSON.stringify({restartMs,observations}),contentType:'application/json'});
 });
 
 test('managed native preload pins external packages while preserving installed state imports', async ({}, info) => {
@@ -362,22 +365,25 @@ test('managed headless generations require explicit activation and retain the se
   const host=createCode({blocks:{W:liveWorker},clock:coordinatorClock(run.scope('13','act')),log:{log:report,warn:report,error:report},watching:false,hash:()=>createHash('sha256'),read:()=>new Uint8Array(),watch:()=>{throw Error('Unexpected script watch');},className:()=>'warrior',stop:async()=>{throw Error('Unexpected native restart');},notify:()=>{}});
   const activator=host.watchGenerations(code,activationFile);
   try{
+    // A manifest write alone activates nothing: the watcher reads only the activation record
+    // (code.ts watchGenerations `watched`). One folder watcher delivers its events in order, so once
+    // the activation below reloads, the manifest's event came first and left no reload and no warning.
     await writeFile(manifestFile,JSON.stringify(b));
-    await new Promise(resolve=>setTimeout(resolve,2500));
-    expect(ledger).toHaveLength(0);
     const {atomicJson}=await import('../tools/build-store');
     await atomicJson(activationFile,{id:'explicit-B',manifest:b});
-    await expect.poll(()=>ledger.some(e=>e.status==='busy'),{timeout:5000}).toBe(true);
-    await expect.poll(()=>liveWorker.codeReloadBusy,{timeout:5000}).toBe(true);
+    await expect.poll(()=>ledger.some(e=>e.status==='busy')).toBe(true);
+    expect(ledger[0]).toMatchObject({status:'busy',generation:b.classes.warrior.sha256});
+    expect(reports.filter(entry=>/Invalid game generation/.test(entry.message))).toEqual([]);
+    await expect.poll(()=>liveWorker.codeReloadBusy).toBe(true);
     await writeFile(manifestFile,JSON.stringify(c));
     // Table W's busy row retries on the worker's first report that reads not busy (code.ts `reported`).
     host.reported('W',{busy:false});
-    await expect.poll(()=>ledger.some(e=>e.executed==='B:warrior'),{timeout:8000}).toBe(true);
+    await expect.poll(()=>ledger.some(e=>e.executed==='B:warrior')).toBe(true);
     expect(liveWorker.script).toBe('adventure_land/'+b.classes.warrior.file);
     expect(classScript(code,'warrior'),'Worker recovery must use the explicitly selected generation').toBe(liveWorker.script);
     expect(ledger.some(e=>e.generation===c.classes.warrior.sha256)).toBe(false);
     await atomicJson(activationFile,{id:'explicit-rollback',manifest:a});
-    await expect.poll(()=>ledger.some(e=>e.executed==='A:warrior'),{timeout:5000}).toBe(true);
+    await expect.poll(()=>ledger.some(e=>e.executed==='A:warrior')).toBe(true);
     await info.attach('explicit-headless-activation-and-busy-retry',{body:JSON.stringify({a,b,c,ledger,reports}),contentType:'application/json'});
   }finally{activator.dispose();run.stop();await stopChild(worker);}
 });

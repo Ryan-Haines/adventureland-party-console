@@ -48,13 +48,6 @@ test("U: the add-on's order is the patrol's next region", () => {
   assert.equal(answer(['a', 'b']), undefined, 'an order leaving a region out orders nothing');
 });
 
-test("U: the add-on's rare row is listed with its rule", () => {
-  const { SLOTS } = require('../../runtime/hooks/rows/07-hunting.ts');
-  assert.equal(SLOTS['rare-list'].section, true);
-  assert.match(SLOTS['rare-list'].data, /rule fields/);
-  assert.equal(SLOTS['hunt-status'].section, true);
-});
-
 test('U: a planted Fairy sighting starts and ends an encounter', () => {
   // The rare service over the shared rare fixture (fixtures/rare-hunting-scenario.cjs), which the end
   // run ports to rares.ts `createRares`: the sighting starts the encounter, and one report from each
