@@ -63,11 +63,14 @@ test('calls hooks: one fixture add-on registers every hook and event', async ({ 
       expect(waited.map(n => [n.payload.band, n.payload.method])).toEqual([['job', 'players']]);
     });
     await test.step('calls.raised: a background read waits one window and goes in the job band', async () => {
-      // A figure of 150 refuses a 16-cost background read (limit 148) and admits it in the job band
-      // (the setup for the background band row).
-      await planted(150);
+      // A figure of 130 fits a 16-cost background read under the shared limit of 188 and refuses a
+      // job `cm` of 64 (20 x 4 x 0.8, server.js:4996-5016). The job question asks on every pass, so
+      // its wait holds the read until the read has waited one window and goes in the job band.
+      await planted(130);
+      const jobWait = () => page.run(`__partyHooks.calls.band({band:'job',method:'cm',data:{to:['A','B','C','D'],message:'x'.repeat(50001)}})`);
+      expect(await jobWait(), 'the job question waits').toBe('not-now');
       expect(await ask('background', 'secondhands', true)).toBe('not-now');
-      await expect.poll(async () => { await packet(); return ask('background', 'secondhands', true); },
+      await expect.poll(async () => { await packet(); await jobWait(); return ask('background', 'secondhands', true); },
         { timeout: WINDOW_MS * 4, intervals: [250] }).toBe('send');
       const raised = of(await heard(from), 'calls.raised');
       rows.raised = raised;

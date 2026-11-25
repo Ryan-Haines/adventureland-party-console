@@ -36,9 +36,10 @@ test('native collection sends wait while the call-cost window is held, then all 
   await expect.poll(async()=>(await hits()).length,{timeout:45000}).toBeGreaterThan(0);
   // Declared observation fault: hold only the fighter's call-cost reading, the `cc` of each player
   // packet, which the call budget reads (runtime/characters/call-budget.ts `onPlayer`). Native
-  // attack/send handlers and server call-cost accounting remain active. The held reading sits past
-  // the job band's limit, which is at most the call limit less the 12 survival room
-  // (call-budget-limits.ts `bandLimits`), and under the survival band's, so sends wait and attacks go.
+  // attack/send handlers and server call-cost accounting remain active. The job band's limit is
+  // the call limit less the potion floor survival keeps beyond its spend (call-budget-limits.ts
+  // `bandLimits`), 188, so the held reading of 190 leaves no room for a send (4) and room for an
+  // attack (2): sends wait and attacks go.
   const receipts:any[]=[];
   const receiptRoute=async(route:import('@playwright/test').Route)=>{
     receipts.push(route.request().postDataJSON());await route.continue();

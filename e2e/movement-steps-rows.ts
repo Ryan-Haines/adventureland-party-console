@@ -208,7 +208,7 @@ async function gooWindows(live:LiveGame,info:TestInfo){
     const budget=Object.fromEntries(fighters.map(n=>{const a=budgetFrom[n]!,b=budgetTo[n]!;return [n,{
       combatSteps:(b.owner.steps?.sent??0)-(a.owner.steps?.sent??0),heldSteps:(b.owner.steps?.budget??0)-(a.owner.steps?.budget??0),
       survivalMove:answered(a.bands,b.bands,'survival','move'),jobMove:answered(a.bands,b.bands,'job','move'),survivalWaits:survivalWaits(a.bands,b.bands),
-      room:b.bands.view?.room,peak:b.bands.view?.peak,p95:calls[n]?.p95??null,meter:meterOf(b.bands)}];}));
+      spent:b.bands.view?.spent,limits:b.bands.view?.limits,p95:calls[n]?.p95??null,meter:meterOf(b.bands)}];}));
     await info.attach('steps-call-bands',{body:JSON.stringify({budget,views:Object.fromEntries(fighters.map(n=>[n,budgetTo[n]!.bands]))}),contentType:'application/json'});
     console.log('CALL-BUDGET-STEPS '+JSON.stringify(budget));
     for(const n of fighters){

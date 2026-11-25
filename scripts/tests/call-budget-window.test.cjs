@@ -102,6 +102,9 @@ test('a party chest books every member the server resends, merchants included',(
   assert.equal(Math.round(booked*10)/10,1.1,'0.1 and 0.5 for each of the two other members, the largest charge');
 });
 
+// A job `cm` to four players of over 50000 characters: 20 x 4 x 0.8 = 64 (server.js:4996-5016).
+const BIG_CM={band:'job',method:'cm',data:{to:['A','B','C','D'],message:'x'.repeat(50001)}};
+
 // The rework's planted install: a fake game socket on a test clock. The reads' timers are the
 // test's: each delay is kept with its run, so a row reads the wait a read set and runs it.
 function plantedInstall({items=[],pings=[99],fields={},render,handle=scope}={}){
@@ -198,15 +201,15 @@ test('the reads wait their named picks, and a sample keeps the largest used sinc
 });
 
 // A lost tracker reply is asked again one margin after the request, once; each `kill_credit`
-// raises its monster's count by 1 on the reply every reader holds; and a tracker read that waited a window rises
-// to the job band like the other background reads.
-test('the tracker retries one margin after a lost reply, kill credits raise the reply, and the read rises after a window',()=>{
+// raises its monster's count by 1 on the reply every reader holds; and a tracker read stays in the
+// background band behind a job question that waits, past the window after which the other reads rise.
+test('the tracker retries one margin after a lost reply, kill credits raise the reply, and the read never rises',()=>{
   const p=plantedInstall({items:[{name:'tracker'}],pings:[99]});
   try{
     assert.equal(p.emitted.filter(m=>m==='tracker').length,1,'the install reads the tracker');
     const retry=p.timers.at(-1);
     assert.equal(retry.ms,p.budget.view().margin,'a reply not back one margin after the request is asked again');
-    p.run(retry);
+    p.advance(retry.ms);p.run(retry);
     assert.equal(p.emitted.filter(m=>m==='tracker').length,2,'asked again once');
     assert.equal(p.timers.at(-1).ms,30_000,'then the refresh');
     const reply={monsters:{goo:3}};
@@ -215,33 +218,90 @@ test('the tracker retries one margin after a lost reply, kill credits raise the 
     assert.deepEqual(reply.monsters,{goo:4,bee:1},'each credit raises its count by 1');
     assert.equal(p.replies.at(-1),reply,'on the object the catalog holds');
   }finally{p.stop();}
-  // A figure of 100: a tracker read (50) is over the background limit and under the job limit.
-  const b=plantedInstall();
+  // A figure of 130: a tracker read (50) fits the shared limit of 188, and a job `cm` of 64 does
+  // not, so the job question waits and its wait holds the read. The question is the read's own,
+  // which declares that it does not rise (call-budget-reads.ts `READS`).
+  const b=plantedInstall(),read={band:'background',method:'tracker',rises:false};
   try{
-    const plant=()=>b.fire('player',{cc:100});
+    const plant=()=>b.fire('player',{cc:130});
     plant();
-    assert.equal(b.ask({band:'background',method:'tracker'}),'not-now');
-    // The asker asks again each pass, which keeps its wait open.
-    let answer='not-now';
-    for(let waited=0;waited<=CALL_WINDOW_MS+1000&&answer==='not-now';waited+=250){b.advance(250);plant();answer=b.ask({band:'background',method:'tracker'});}
-    assert.equal(answer,'send','a tracker read that waited a window is judged in the job band');
-    assert.equal(b.budget.records().filter(r=>r.decision==='read-job'&&r.method==='tracker').length,1);
+    assert.equal(b.ask(BIG_CM),'not-now','the job call waits');
+    assert.equal(b.ask(read),'not-now','the job wait holds the read');
+    for(let waited=0;waited<=2*CALL_WINDOW_MS;waited+=250){
+      b.advance(250);plant();b.ask(BIG_CM);
+      assert.equal(b.ask(read),'not-now','the read stays behind the waiting job call');
+    }
+    assert.equal(b.budget.records().filter(r=>r.decision==='read-job').length,0,'it never rises');
+    // The job asker stops; its wait ends one window and the margin after its last ask.
+    b.advance(CALL_WINDOW_MS+b.budget.view().margin+1);plant();
+    assert.equal(b.ask(read),'send','then the read goes in the background band');
   }finally{b.stop();}
 });
 
-// A fight keeps the background band full: the figure stays above the background limit, so the
-// tracker read it asks waits, and it goes out as a job-band read within two windows.
-test('in a fight that keeps the background band full, a waiting tracker read goes out within two windows',()=>{
+// The shares follow the window (post-pr/budget-design.md 3.2). The warrior's 122 fight set the
+// lifetime peak, so its room sat at the cap of 110 for good, and the limits on `used` counted the
+// fight's own spend twice: the job limit of 90 sat under the fight alone and the background limit
+// of 50 let a Tracktrix read go only with nothing else in the window. Survival keeps the share it
+// spends in the window and the potion floor beyond it, job and background share the rest, and one
+// window after the fight the reserve is the floor alone. Live row B's CB6 saw job reads fill `used`
+// to 200 once survival had spent its floor, and survival's steps waited.
+test('the shares follow the window: a fight keeps the share it spends and the floor beyond it, and gives the share back a window later',()=>{
   const p=plantedInstall();
   try{
-    const {limits}=p.budget.view(),fight=100,startedAt=p.at();
-    p.fire('player',{cc:fight});
-    assert.equal(p.ask({band:'background',method:'tracker'}),'not-now','the fight leaves no background room');
-    let sent=false;
-    while(!sent&&p.at()-startedAt<=2*CALL_WINDOW_MS){p.advance(250);p.fire('player',{cc:fight});sent=p.ask({band:'background',method:'tracker'})==='send';}
-    assert.ok(sent,'the read went out');
-    assert.ok(p.at()-startedAt<=2*CALL_WINDOW_MS,'within two windows');
-    assert.equal(p.budget.records().filter(r=>r.decision==='read-job'&&r.method==='tracker').length,1);
+    // The install's player list read went in the background band: 12.
+    for(let i=0;i<10;i++){assert.equal(p.ask({band:'survival',method:'send_updates'}),'send');p.emit('send_updates');}
+    assert.equal(p.ask({band:'survival',method:'attack'}),'send');p.emit('attack');
+    assert.equal(p.budget.view().used,134,'a fight of 122 and the player list');
+    // Each step comes one margin after the last, as calls spread over a fight, so a figure counts
+    // only that step's call again ("a job burst leaves survival its floor").
+    const step=()=>p.advance(p.budget.view().margin+1);
+    step();
+    assert.equal(p.ask({band:'job',method:'transport',data:{to:'halloween'}}),'send','a crossing (10) fits beside the fight, counted once');p.emit('transport',{to:'halloween'});
+    step();
+    assert.equal(p.ask({band:'job',method:'secondhands'}),'send','and a Ponty read (16)');p.emit('secondhands');
+    step();
+    assert.equal(p.ask({band:'job',method:'secondhands'}),'not-now','a second read would take the floor survival keeps beyond its spend');
+    assert.equal(p.ask({band:'background',method:'tracker'}),'not-now','and a Tracktrix read (50) waits for the fight');
+    assert.equal(p.ask({band:'survival',method:'attack'}),'send','while survival has the floor');p.emit('attack');
+    assert.equal(p.budget.records().filter(r=>r.decision==='read-job').length,0,'with no rise');
+    const fight=p.budget.view();
+    assert.deepEqual([fight.spent.survival,fight.limits.reserve,fight.limits.job,fight.limits.background],[124,136,188,188]);
+    p.advance(CALL_WINDOW_MS+fight.margin+1);
+    const after=p.budget.view();
+    assert.deepEqual([after.spent.survival,after.limits.reserve,after.limits.job,after.limits.background],[0,12,188,188],'one window on, the potion floor alone');
+  }finally{p.stop();}
+});
+
+// `used` counts each entry booked within the margin once more on top of a server figure, since
+// it cannot tell whether the figure holds it (design 3.3). Live row B's CB6 (fix3 rows 40-41) saw
+// job reads admitted under 188 and a figure 2 ms old then put `used` at 213.5 over a ledger of
+// 178.7, so four survival questions waited. Job and background keep the floor free of the used the
+// next figure can give.
+test('a job burst leaves survival its floor when the next figure counts it again',()=>{
+  const p=plantedInstall();
+  try{
+    let sent=0;
+    while(p.ask({band:'job',method:'players',data:{}})==='send'){p.emit('players',{});sent++;}
+    p.advance(50);
+    const own=p.budget.view().used;
+    p.fire('player',{cc:own});
+    assert.ok(p.budget.view().used>own,'the fresh figure counts the burst once more');
+    assert.equal(p.ask({band:'survival',method:'attack'}),'send',`survival goes after ${sent} job reads and the figure`);
+  }finally{p.stop();}
+});
+
+// A live wait holds every band below its own, so the room that frees goes to the waiting band
+// first: a survival call that did not fit goes before a job call or a read, though they fit.
+test('a waiting survival call holds the job and background bands',()=>{
+  const p=plantedInstall();
+  try{
+    p.fire('player',{cc:199});
+    assert.equal(p.ask({band:'survival',method:'attack'}),'not-now','199 + 2 passes the limit');
+    p.fire('player',{cc:150});
+    assert.equal(p.ask({band:'job',method:'transport',data:{to:'halloween'}}),'not-now','the survival wait holds the job band');
+    assert.equal(p.ask({band:'background',method:'players',data:{}}),'not-now','and the background band');
+    assert.equal(p.ask({band:'survival',method:'attack'}),'send');p.emit('attack');
+    assert.equal(p.ask({band:'job',method:'transport',data:{to:'halloween'}}),'send','the job call goes once the survival call went');
   }finally{p.stop();}
 });
 
@@ -272,13 +332,15 @@ test('the budget sends one notice at each change it records',async()=>{
     p.fire('player',{cc:0});p.advance(CALL_WINDOW_MS);p.fire('player',{cc:0});
     assert.equal(p.ask({band:'job',method:'equip_batch',data:[1]}),'send');p.emit('equip_batch',[1]);
     assert.deepEqual(of('calls.waited').map(n=>[n.band,n.method]),[['job','equip_batch']]);
-    // A background read that waited one window goes in the job band.
+    // A background read that waited one window behind a job question that keeps waiting goes in
+    // the job band: a figure of 130 fits the read (16) and not the job `cm` (64).
     p.advance(CALL_WINDOW_MS+500);
-    p.fire('player',{cc:150});
+    p.fire('player',{cc:130});
+    assert.equal(p.ask(BIG_CM),'not-now');
     assert.equal(p.ask({band:'background',method:'secondhands'}),'not-now');
-    // The reader asks on each pass; once it has waited one window it goes in the job band.
+    // Both askers ask on each pass; once the read has waited one window it goes in the job band.
     let answer='not-now',waited=0;
-    while(answer==='not-now'){p.advance(250);waited+=250;p.fire('player',{cc:150});answer=p.ask({band:'background',method:'secondhands'});}
+    while(answer==='not-now'){p.advance(250);waited+=250;p.fire('player',{cc:130});p.ask(BIG_CM);answer=p.ask({band:'background',method:'secondhands'});}
     assert.ok(waited>=CALL_WINDOW_MS,'it went after one window');p.emit('secondhands');
     assert.deepEqual(of('calls.raised').map(n=>n.method),['secondhands']);
     // A question with no emit after it.

@@ -47,11 +47,16 @@ interface BudgetPorts { now(): number; cpu?(): number; tracker?(data: unknown): 
   // Table P on this character (the lifecycle owner's `lifecycle.held`): the band's held row reads it.
   held(): boolean }
 export type Band = 'survival' | 'job' | 'background';
-export interface Question { band: Band; method: string; data?: unknown }
+// The bands in their order: a live wait holds every band after its own.
+const BANDS: readonly Band[] = ['survival', 'job', 'background'];
+// `rises: false` keeps a background question in its band however long it waits; every other
+// background question rises to the job band after one window (`band`).
+export interface Question { band: Band; method: string; data?: unknown; rises?: boolean }
 
 // One ledger entry: what the character sent, when and at what cost on its socket. `seq` orders
-// the entries and the server's figures in one sequence (3.3).
-interface LedgerEntry { at: number; method: string; cost: number; seq: number }
+// the entries and the server's figures in one sequence (3.3). `band` names the band whose
+// question booked it; an untagged emit has none.
+interface LedgerEntry { at: number; method: string; cost: number; seq: number; band?: Band }
 // A ring entry (design 3.9), in the shared ring shape with `part: 'calls'`.
 interface CallRecord { part: 'calls'; decision: string; method: string; band?: string; cost: number; used: number; limit?: number; waitedMs?: number;
   // A held emit's entry keeps the margin at its hold and at its send, and the server's figure when
@@ -108,16 +113,13 @@ interface BudgetRecord {
   held: Held[];
   // Questions answered `send` whose emit has not come yet (3.5).
   admissions: Admission[];
-  // The survival admissions of the last window, and the largest sum they reached (3.4).
-  survival: LedgerEntry[];
-  peak: number;
   // Per band, the largest `used + cost - limit` of any admission; null before the first.
   excess: Record<Band, number | null>;
   // The realm's players and their maps from the last `players` reply (3.7), for Warcry's reach.
   roster: RosterEntry[];
   // Each band and method still waiting, by `band|method`: its first `not-now` and its asker's last
   // ask. A wait whose asker has not asked for one window and the margin has stopped, and prune drops
-  // it. A live job wait holds the background band (3.4).
+  // it. A live wait holds every band below its own (`band`).
   waits: Map<string, { since: number; last: number }>;
   // Cancels the drain timer that is set.
   drain?: () => void;
@@ -153,7 +155,7 @@ interface Meter { n: number; totalUs: number; maxUs: number }
 
 interface CallSample { from: number; to: number; at: number; used: number; margin: number }
 interface CallView { used: number; ledger: LedgerEntry[]; cc: number | null; ccAge: number | null; ccSeq: number | null; ccFrom: number | null; margin: number; latest: number; limit: number;
-  room: number; limits: BandLimits; peak: number; held: number; heldHead: string | null; waiting: { band: string; method: string; ms: number }[];
+  spent: Record<Band, number>; limits: BandLimits; held: number; heldHead: string | null; waiting: { band: string; method: string; ms: number }[];
   excess: Record<Band, number | null>; meter: { questions: Meter; emits: Meter }; answers: BudgetRecord['answers'] }
 export interface CallBudget {
   view(): CallView; records(): CallEntry[];
@@ -197,9 +199,12 @@ export function price(method: string, data: unknown, character: BudgetCharacter,
     // The `attack` and `heal` handlers run the unwrapped `skill` handler under their own method,
     // so the modifier stays 1 (11012-11017), and the attack's `u+cid` resend adds 2 (3520, 4535).
     case 'attack': return at(2);
-    // A heal on another player also resends that player, and its resend's two charges go on the
-    // caster's socket too (server.js:4632-4650 `resend`, its `add_call_cost`): 4, measured by
-    // TC15. A heal on the caster resends the caster once: 2.
+    // A heal on another player also resends that player (server.js:4632-4650 `resend`, its
+    // `add_call_cost`), and that resend's two charges go where the heal lands. A heal that lands
+    // in its handler charges them to the caster's socket: 4, the largest charge. A heal that
+    // lands in the projectile tick charges them to no player, since the socket dispatch resets
+    // current_socket after each handler (server.js:5054), and the caster's entry reads 2. TC15
+    // reads both paths. A heal on the caster resends the caster once: 2.
     case 'heal': { const id = (data as { id?: unknown } | null)?.id; return at(id !== undefined && id !== character.name ? 4 : 2); }
     // Modifier 0.05 (4982). A skill on a target resends the target and the caster, 0.1 each
     // (10240-10241 and the other target branches); each further id or target adds one resend.
@@ -412,7 +417,7 @@ function newRecord(win: BudgetWindow, socket: BudgetSocket, ports: BudgetPorts):
     : (run: () => void, ms: number) => { const id = setTimeout(run, ms); return () => clearTimeout(id); };
   const began = clock();
   return { socket, emit: own<Emit>(socket, 'emit')!, ledger: [], doors: [], seq: 0, clock, later,
-    ring: { seq: 0, start: 0, entries: [] }, held: [], admissions: [], survival: [], peak: 0,
+    ring: { seq: 0, start: 0, entries: [] }, held: [], admissions: [],
     excess: { survival: null, job: null, background: null }, roster: [], waits: new Map(), reported: { from: began, at: began, used: 0 }, pings: [], arrivals: [],
     answers: { survival: {}, job: {}, background: {} }, meter: { questions: meter(), emits: meter() } };
 }
@@ -448,14 +453,14 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
     const from = at - CALL_WINDOW_MS - marginAt(at);
     while (current.ledger.length && current.ledger[0]!.at < from) current.ledger.shift();
     while (current.doors.length && current.doors[0]! <= from) current.doors.shift();
-    while (current.survival.length && current.survival[0]!.at <= at - CALL_WINDOW_MS) current.survival.shift();
     for (const [key, wait] of current.waits) if (!(wait.last >= from)) current.waits.delete(key);
   };
-  // The moment the live job waits stop holding the background band: one window and the margin after
-  // their askers' last asks, unless a job call goes first. 0 with no job wait.
-  const jobWaitEnds = (at: number): number => {
+  // The moment the live waits of the bands above `band` stop holding it: one window and the margin
+  // after their askers' last asks, unless their calls go first. 0 with no such wait.
+  const waitsEnd = (band: Band, at: number): number => {
+    const above = BANDS.slice(0, BANDS.indexOf(band));
     let end = 0;
-    for (const [key, wait] of current.waits) if (key.startsWith('job|')) end = Math.max(end, wait.last + CALL_WINDOW_MS + marginAt(at) + 1);
+    for (const [key, wait] of current.waits) if (above.includes(key.slice(0, key.indexOf('|')) as Band)) end = Math.max(end, wait.last + CALL_WINDOW_MS + marginAt(at) + 1);
     return end;
   };
   // The server dates a call when its handler runs, which a burst-slowed server does up to the
@@ -463,14 +468,30 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
   // and the figure's `from` do: the window and that round trip, not only the latest one
   // (layer 5 step 3's close).
   const usedAt = (at: number) => used(current, at, marginAt(at));
+  // Each band's spend in the window: its questions' ledger entries that `usedAt` still counts.
+  const spentAt = (at: number): Record<Band, number> => {
+    const from = at - CALL_WINDOW_MS - marginAt(at), spent: Record<Band, number> = { survival: 0, job: 0, background: 0 };
+    for (const entry of current.ledger) if (entry.band && entry.at >= from) spent[entry.band] += entry.cost;
+    return spent;
+  };
+  // The `used` a server figure arriving now gives with `cost` booked (3.3): the figure holds the
+  // ledger, and `used` counts each entry booked within the margin once more, since it cannot tell
+  // whether the figure holds it. Job and background are judged on it too, so a figure that comes
+  // after their calls leaves survival its floor.
+  const nextFigureAt = (at: number, cost: number): number => {
+    const rtt = marginAt(at), from = at - CALL_WINDOW_MS - rtt;
+    let own = cost, recent = cost;
+    for (const entry of current.ledger) if (entry.at >= from) { own += entry.cost; if (entry.at > at - rtt) recent += entry.cost; }
+    return own + recent;
+  };
   // The largest `used` since the last status sample, for the next one.
   const note = (at: number) => {
     const value = Math.round(usedAt(at) * 100) / 100, reported = current.reported;
     if (value >= reported.used) { reported.used = value; reported.at = at; }
   };
-  const book = (method: string, cost: number, at: number): LedgerEntry[] => {
+  const book = (method: string, cost: number, at: number, band?: Band): LedgerEntry[] => {
     if (cost <= 0) return [];
-    const entry = { at, method, cost, seq: ++current.seq };
+    const entry: LedgerEntry = { at, method, cost, seq: ++current.seq, ...band ? { band } : {} };
     current.ledger.push(entry);
     return [entry];
   };
@@ -478,11 +499,11 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
   // the `new_map` that follows books nothing. A door that lands after its call (Blink, a Magiport
   // accept) is booked with the call, dated at its landing, and the `new_map` that may follow books
   // nothing either.
-  const bookPrice = (method: string, charge: Price, at: number): { entries: LedgerEntry[]; door?: number } => {
-    const entries = book(method, charge.cost, at);
+  const bookPrice = (method: string, charge: Price, at: number, band?: Band): { entries: LedgerEntry[]; door?: number } => {
+    const entries = book(method, charge.cost, at, band);
     if (charge.landsMs !== undefined) {
       const lands = at + charge.landsMs;
-      entries.push(...book('transport', DOOR, lands));
+      entries.push(...book('transport', DOOR, lands, band));
       current.doors.push(lands);
       return { entries, door: lands };
     }
@@ -602,18 +623,19 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
       const at = now(), cost = charge(question.method, question.data), key = question.band + '|' + question.method;
       prune(at);
       // A background question that has waited one window is judged in the job band (3.7): one
-      // window frees every ledger entry, so a wait past it runs under a load that does not end,
-      // and its readers count on the reply's age. It never rises above job. The Tracktrix read rises
-      // the same way: in a fight the room sits at its cap and the background limit is 50, one read's
-      // cost, so the read goes out only in a window where nothing else was sent, and a fight has none.
-      const asked = current.waits.get(key)?.since, raised = question.band === 'background' && asked !== undefined && at - asked >= CALL_WINDOW_MS + marginAt(at);
+      // window frees every ledger entry, so a wait past it runs under a job asker that keeps
+      // waiting, and its readers count on the reply's age. It never rises above job, and a
+      // question that declares `rises: false` stays in its band.
+      const asked = current.waits.get(key)?.since, raised = question.band === 'background' && question.rises !== false && asked !== undefined && at - asked >= CALL_WINDOW_MS + marginAt(at);
       const judged: Band = raised ? 'job' : question.band;
-      const limit = bandLimits(current.peak)[judged], before = usedAt(at);
+      const limit = bandLimits(spentAt(at).survival)[judged], before = usedAt(at);
       const count = current.answers[question.band][question.method] ??= { send: 0, notNow: 0 };
       // The held row: while table P holds the character, every tagged question but the
       // background band's waits for Play. The asker's next pass is a held timer, so it asks again then.
       if (question.band !== 'background' && ports.held()) { count.notNow++; return 'not-now'; }
-      if (current.held.length || before + cost.cost > limit || judged === 'background' && jobWaitEnds(at) > at) {
+      // A live wait of a band above holds this one, so the room that frees goes to that band first.
+      const over = before + cost.cost > limit || judged !== 'survival' && nextFigureAt(at, cost.cost) > limit;
+      if (current.held.length || over || waitsEnd(judged, at) > at) {
         count.notNow++;
         const wait = current.waits.get(key);
         if (wait) wait.last = at;
@@ -623,11 +645,7 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
       count.send++;
       const was = current.excess[judged];
       current.excess[judged] = Math.max(was ?? -Infinity, before + cost.cost - limit);
-      const booked = bookPrice(question.method, cost, at), admission: Admission = { method: question.method, ...booked };
-      if (question.band === 'survival' && cost.cost > 0) {
-        current.survival.push({ at, method: question.method, cost: cost.cost, seq: current.seq });
-        current.peak = Math.max(current.peak, current.survival.reduce((sum, entry) => sum + entry.cost, 0));
-      }
+      const booked = bookPrice(question.method, cost, at, question.band), admission: Admission = { method: question.method, ...booked };
       const waited = current.waits.get(key)?.since;
       if (waited !== undefined) {
         current.waits.delete(key);
@@ -648,10 +666,11 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
   }
   const budget: CallBudget = {
     view() {
-      const at = now(), rtt = marginAt(at), limits = bandLimits(current.peak), cc = current.cc;
+      const at = now(), rtt = marginAt(at), cc = current.cc;
       prune(at);
+      const spent = spentAt(at);
       return { used: usedAt(at), ledger: current.ledger.map(entry => ({ ...entry })), cc: cc?.value ?? null,
-        ccAge: cc ? at - cc.at : null, ccSeq: cc?.seq ?? null, ccFrom: cc?.from ?? null, margin: rtt, latest: margin(win), limit: CALL_LIMIT, room: limits.room, limits, peak: current.peak,
+        ccAge: cc ? at - cc.at : null, ccSeq: cc?.seq ?? null, ccFrom: cc?.from ?? null, margin: rtt, latest: margin(win), limit: CALL_LIMIT, spent, limits: bandLimits(spent.survival),
         held: current.held.length, heldHead: current.held[0]?.method ?? null, waiting: [...current.waits].map(([key, wait]) => ({ band: key.split('|')[0]!, method: key.slice(key.indexOf('|') + 1), ms: at - wait.since })),
         excess: { ...current.excess }, meter: structuredClone(current.meter), answers: structuredClone(current.answers) };
     },
@@ -702,7 +721,7 @@ export function installCallBudget(host: BudgetHost, ports: BudgetPorts): CallBud
   // The two background reads (3.7) start on this install and stop with it.
   installBudgetReads({ calls: budget, socket, win, scope: ports.scope, items: () => host.character.items, listen: (event, listener) => install.listeners.push([event, listener]),
     onStop: stop => install.stops.push(stop), onUntagged: seen => install.untagged.push(seen),
-    nextFree: () => Math.max(nextFree(), jobWaitEnds(now())), margin: () => marginAt(now()),
+    nextFree: () => Math.max(nextFree(), waitsEnd('background', now())), margin: () => marginAt(now()),
     forget: (band, method) => current.waits.delete(band + '|' + method), roster: players => { current.roster = players; } }, ports);
   return budget;
 }

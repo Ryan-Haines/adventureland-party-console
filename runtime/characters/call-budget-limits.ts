@@ -1,7 +1,7 @@
-// The call budget's limits: the game server's window and call limit, the costs the bands are sized
-// from, and the band limits. The file imports nothing, so the dashboard can read the limit and where
-// a job call starts to wait. The server's window and limit (server_functions.js:5481-5483;
-// server.js:262).
+// The call budget's limits: the game server's window and call limit, the crossing costs the cost
+// table reads, the survival floor, and the band limits. The file imports nothing, so the
+// dashboard can read the limit and where a job call starts to wait. The server's window and
+// limit (server_functions.js:5481-5483; server.js:262).
 export const CALL_WINDOW_MS = 4000;
 export const CALL_LIMIT = 200;
 // Every `transport_player_to` charges the moved player's socket 8 (server.js:4808) and ends with a
@@ -18,21 +18,22 @@ export const BLINK_LANDS_MS = 200;
 export const MAGIPORT_LANDS_MS = 400;
 // A bank floor's door charges 32 at the call (server.js:5978); its door's 8 follows on `new_map`.
 export const BANK_FLOOR = 32;
-// The band limits (3.4) come from the cost table. A potion use costs 4 (3.2), and the 2000 ms
-// potion cooldown (server.js:7816) lets three into one window, so the survival room never falls
-// below 12. The largest job call of this layer is the bank floor with its door, 40; a later
-// owner whose job call costs more raises it. The largest background call is the tracker's 50
-// (server.js:258).
-export const ROOM_FLOOR = 3 * 4;
-export const JOB_MAX = BANK_FLOOR + DOOR;
-export const BACKGROUND_MAX = 50;
+// A potion use costs 4 (3.2), and the 2000 ms potion cooldown (server.js:7816) lets three into
+// one window, so survival keeps 12 free beyond what it has spent.
+export const SURVIVAL_FLOOR = 3 * 4;
 
-export interface BandLimits { room: number; survival: number; job: number; background: number }
-// The room and the three limits (3.4): the room follows the survival band's own peak per
-// window, from the potion floor up to what leaves the largest job call and one tracker read.
-export function bandLimits(peak: number): BandLimits {
-  const room = Math.min(Math.max(ROOM_FLOOR, peak), CALL_LIMIT - JOB_MAX - BACKGROUND_MAX);
-  return { room, survival: CALL_LIMIT, job: CALL_LIMIT - room, background: CALL_LIMIT - room - JOB_MAX };
+export interface BandLimits { reserve: number; survival: number; job: number; background: number }
+// The survival reserve and the three limits on `used`. Survival's reserve is what it spent in the
+// current window and the potion floor beyond it, and job and background share the rest of the
+// server's limit. `used` holds the survival spend, so the job and background limit on `used` is
+// the server's limit less the floor, whatever survival has spent. Once survival spends into the
+// floor, job and background wait until the window frees the floor again, so the room that frees
+// goes to survival first. The window forgets each spend as the server does, so a fight's share
+// ends one window after the fight. A band's live wait holds every band below it (call-budget.ts
+// `band`).
+export function bandLimits(survivalSpent: number): BandLimits {
+  const reserve = survivalSpent + SURVIVAL_FLOOR, shared = CALL_LIMIT - reserve + survivalSpent;
+  return { reserve, survival: CALL_LIMIT, job: shared, background: shared };
 }
 
 // The two background reads' picks (call-budget-reads.ts). No screen shows them and no player

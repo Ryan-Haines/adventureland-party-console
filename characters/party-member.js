@@ -15,12 +15,10 @@
   var BLINK_LANDS_MS = 200;
   var MAGIPORT_LANDS_MS = 400;
   var BANK_FLOOR = 32;
-  var ROOM_FLOOR = 3 * 4;
-  var JOB_MAX = BANK_FLOOR + DOOR;
-  var BACKGROUND_MAX = 50;
-  function bandLimits(peak) {
-    const room = Math.min(Math.max(ROOM_FLOOR, peak), CALL_LIMIT - JOB_MAX - BACKGROUND_MAX);
-    return { room, survival: CALL_LIMIT, job: CALL_LIMIT - room, background: CALL_LIMIT - room - JOB_MAX };
+  var SURVIVAL_FLOOR = 3 * 4;
+  function bandLimits(survivalSpent) {
+    const reserve2 = survivalSpent + SURVIVAL_FLOOR, shared = CALL_LIMIT - reserve2 + survivalSpent;
+    return { reserve: reserve2, survival: CALL_LIMIT, job: shared, background: shared };
   }
   var READ_PICKS = {
     // The Tracktrix fields a `kill_credit` does not carry (`monsters_diff`, the exchanges, the drop
@@ -69,7 +67,8 @@
       automaticUntil = now() + quietMs;
     } };
   }
-  function read(install, method, now, sent2) {
+  var READS = { tracker: { method: "tracker", rises: false }, players: { method: "players", rises: true } };
+  function read(install, { method, rises }, now, sent2) {
     const scope2 = install.scope;
     let due = false, timer, waiting3;
     const clearWaiting = () => {
@@ -86,7 +85,7 @@
         clearWaiting();
         if (!due) return;
         const calls = install.calls, data = method === "players" ? {} : void 0;
-        if (calls.band({ band: "background", method, data }) === "send") {
+        if (calls.band({ band: "background", method, data, rises }) === "send") {
           due = false;
           if (data === void 0) install.socket.emit("tracker");
           else install.socket.emit("players", data);
@@ -127,12 +126,12 @@
     const refreshMs = READ_PICKS.callTrackerRefreshMs, playersMs = READ_PICKS.callPlayersEveryMs;
     const now = ports.now, render = quietRender(install, now, READ_PICKS.callTrackerQuietMs, READ_PICKS.callTrackerManualMs);
     let held = carriesTracktrix(install.items()), retried = false, last = null;
-    const tracker = read(install, "tracker", now, () => {
+    const tracker = read(install, READS.tracker, now, () => {
       render.automatic();
       tracker.at(retried ? refreshMs : install.margin());
       retried = true;
     });
-    const players = read(install, "players", now, () => {
+    const players = read(install, READS.players, now, () => {
     });
     const onPlayer = (data) => {
       if (data && Array.isArray(data.items)) {
@@ -862,7 +861,7 @@
     DOOR_ONLY: () => DOOR_ONLY,
     HOOKS: () => HOOKS,
     PLAIN: () => PLAIN,
-    READS: () => READS,
+    READS: () => READS2,
     RULE_FILES: () => RULE_FILES,
     SLOTS: () => SLOTS,
     dispatch: () => dispatch
@@ -1505,7 +1504,7 @@
   };
   var TASKS = "runtime/tasks/api.ts";
   var TASKS_COORDINATOR = "runtime/tasks/coordinator/api.ts";
-  var READS = {
+  var READS2 = {
     // 01's party: leader, members, followers and scopes, by group.
     "party.view": { side: "both", type: "GroupStatus", door: `${TASKS}#tasks` },
     ...readsOf("tasks", "both", TASKS, { GROUPS: "the group kinds in order", priority: "number", dueYields: "boolean", above: "boolean", taskTier: "number", GROUP_KINDS: "string[]", SOURCE_ORDER: "string[]", scopeGroups: "the scope's groups", scopeOwner: "string", HAND_CONTROL_DEFAULT: "HandControl", savedManual: "boolean" }),
@@ -1605,7 +1604,7 @@
     DOOR_ONLY: () => DOOR_ONLY2,
     HOOKS: () => HOOKS2,
     PLAIN: () => PLAIN2,
-    READS: () => READS2,
+    READS: () => READS3,
     RULE_FILES: () => RULE_FILES2,
     SLOTS: () => SLOTS2,
     dispatch: () => dispatch2
@@ -2386,7 +2385,7 @@
   var CHARACTER_DOOR = "runtime/movement/api/character.ts";
   var COORDINATOR_DOOR = "runtime/movement/api/coordinator.ts";
   var RULES = "runtime/movement/rules.ts";
-  var READS2 = {
+  var READS3 = {
     "movement.isSafeAt": { side: "both", type: "boolean", door: `${CHARACTER_DOOR}#isSafeAt` },
     "movement.handsCombatOver": { side: "both", type: "boolean", door: `${CHARACTER_DOOR}#handsCombatOver` },
     "movement.gameItems": { side: "both", type: "the game's item table, or null before it loads", door: `${CHARACTER_DOOR}#gameItems` },
@@ -2484,7 +2483,7 @@
     DOOR_ONLY: () => DOOR_ONLY3,
     HOOKS: () => HOOKS3,
     PLAIN: () => PLAIN3,
-    READS: () => READS3,
+    READS: () => READS4,
     RULE_FILES: () => RULE_FILES3,
     SLOTS: () => SLOTS3,
     dispatch: () => dispatch3
@@ -2806,7 +2805,7 @@
     }
   };
   var DOOR2 = "runtime/characters/turns/api.ts";
-  var READS3 = {
+  var READS4 = {
     "turns.health": { side: "character", type: "a combatant's HP share", door: `${DOOR2}#health` },
     "turns.hitsAroundCaster": { side: "character", type: "the monsters an area cast would hit", door: `${DOOR2}#hitsAroundCaster` },
     "turns.healFirstBelow": { side: "character", type: "number", door: `${DOOR2}#healFirstBelowOf` },
@@ -2839,7 +2838,7 @@
     DOOR_ONLY: () => DOOR_ONLY4,
     HOOKS: () => HOOKS4,
     PLAIN: () => PLAIN4,
-    READS: () => READS4,
+    READS: () => READS5,
     RULE_FILES: () => RULE_FILES4,
     SLOTS: () => SLOTS4,
     dispatch: () => dispatch4
@@ -3278,7 +3277,7 @@
   };
   var CHARACTER_DOOR2 = "runtime/characters/targeting/api.ts";
   var COORDINATOR_DOOR2 = "runtime/coordinator/targeting/api.ts";
-  var READS4 = {
+  var READS5 = {
     "members.view": { side: "both", type: "MemberView", door: "runtime/protocol/reports.ts#memberView" },
     "targeting.passiveStopRequired": { side: "both", type: "boolean", door: `${CHARACTER_DOOR2}#passiveStopRequired` },
     "targeting.huntSwitchAllows": { side: "both", type: "boolean", door: `${CHARACTER_DOOR2}#huntSwitchAllows` },
@@ -3312,7 +3311,7 @@
     DOOR_ONLY: () => DOOR_ONLY5,
     HOOKS: () => HOOKS5,
     PLAIN: () => PLAIN5,
-    READS: () => READS5,
+    READS: () => READS6,
     RULE_FILES: () => RULE_FILES5,
     SLOTS: () => SLOTS5,
     dispatch: () => dispatch5
@@ -3711,7 +3710,7 @@
   };
   var CHARACTER_DOOR3 = "runtime/characters/survival/api.ts";
   var COORDINATOR_DOOR3 = "runtime/coordinator/survival/api.ts";
-  var READS5 = {
+  var READS6 = {
     "survival.endangered": { side: "character", type: "boolean", door: `${CHARACTER_DOOR3}#endangered` },
     "survival.incomingDps": { side: "character", type: "number", door: `${CHARACTER_DOOR3}#incomingDps` },
     "survival.safeTransfer": { side: "character", type: "boolean", door: `${CHARACTER_DOOR3}#safeTransfer` },
@@ -3746,7 +3745,7 @@
     DOOR_ONLY: () => DOOR_ONLY6,
     HOOKS: () => HOOKS6,
     PLAIN: () => PLAIN6,
-    READS: () => READS6,
+    READS: () => READS7,
     RULE_FILES: () => RULE_FILES6,
     SLOTS: () => SLOTS6,
     dispatch: () => dispatch6
@@ -4370,7 +4369,7 @@
     // `emote` that the game's menu uses as a skill (functions.js:1958), so 03's spend action carries it.
     "emote": { events: ["emotion"], functions: [], closed: "FW", cite: "server.js at 16881a27 handles no emotion event; emotes are G.skills spends, 03's spend action" }
   };
-  var READS6 = {
+  var READS7 = {
     // C3's completeness rule: every other door export that reads, by the export's own type. The
     // table is made from the door exports by kind (a function of state or rules, a constant).
     "door.events.eventPresence": { side: "both", type: "typeof eventPresence", door: "runtime/events/api.ts#eventPresence" },
@@ -4531,7 +4530,7 @@
     DOOR_ONLY: () => DOOR_ONLY7,
     HOOKS: () => HOOKS7,
     PLAIN: () => PLAIN7,
-    READS: () => READS7,
+    READS: () => READS8,
     RULE_FILES: () => RULE_FILES7,
     SLOTS: () => SLOTS7,
     dispatch: () => dispatch7
@@ -4767,7 +4766,7 @@
       bound: "the Cave's enter action for the party leader (cave.ts begin): the entry checks, and a visit in progress refuses"
     }
   };
-  var READS7 = {
+  var READS8 = {
     // C3's completeness rule: every other door export that reads, by the export's own type. The
     // table is made from the door exports by kind (a function of state or rules, a constant).
     "door.hunting.defaultHuntSettings": { side: "both", type: "typeof defaultHuntSettings", door: "runtime/hunting/api.ts#defaultHuntSettings" },
@@ -4968,7 +4967,7 @@
     DOOR_ONLY: () => DOOR_ONLY8,
     HOOKS: () => HOOKS8,
     PLAIN: () => PLAIN8,
-    READS: () => READS8,
+    READS: () => READS9,
     RULE_FILES: () => RULE_FILES8,
     SLOTS: () => SLOTS8,
     dispatch: () => dispatch8
@@ -5243,7 +5242,7 @@
   };
   var JOBS = "runtime/merchant-jobs/api.ts";
   var JOBS_COORDINATOR = "runtime/merchant-jobs/coordinator/api.ts";
-  var READS8 = {
+  var READS9 = {
     ...readsOf("merchant", "both", JOBS, { merchantKind: "JobKind", jobCommandRetained: "boolean", merchantLine: "string", realmRetry: "the realm retry ladder", routineEnabled: "boolean", manualVisitReason: "string", merchantRoutinePriority: "number", autoUpgradeEnabled: "boolean", defaultMerchantAutomations: "the default automations", defaultMerchantRoutinePriorities: "the default routine priorities", routineFor: "the routine entry", validStandLocation: "boolean", legacyStandLocation: "MerchantStandLocation", AT_STAND: "number", ROUTINE_PRIORITY: "the routine priority table", NEARBY_RADIUS: "number", COMMERCE_PROGRESS_VERSION: "number", typedRoutinePriority: "the typed routine priorities", movedRoutinePriorities: "the routine priorities after a move", coordinatorMerchantPriority: "number", merchantAnniversaryControl: "AnniversaryControl", automaticRoutine: "boolean", coordinatorMerchantTransferBlocked: "boolean", pickupReason: "string", routineLabel: "string", ROUTINE_DIALOG_LABELS: "the routine dialog labels", merchantJobLabel: "string" }),
     ...readsOf("merchant", "coordinator", JOBS_COORDINATOR, { collectionPickups: "the pickups a collection holds", exchangePickup: "the exchange pickup", merchantAdoption: "the adoption answer", merchantHeartbeat: "the merchant's heartbeat section", plannedOperationStage: "string", gatheringCastActive: "boolean", merchantVisibility: "the visibility window", merchantEventRecoveryReserved: "boolean", merchantEventReserved: "boolean", coordinatorCollectionSlots: "number", coordinatorCollectionNearby: "boolean", coordinatorCollectionReady: "boolean", coordinatorMerchantCapacitySignature: "string", coordinatorPrioritizedBids: "the bids in priority order", hasStrongMluck: "boolean", mluckTravelLead: "number" }),
     ...readsOf("merchant", "both", "runtime/merchant-jobs/rules.ts", { jobEnded: "boolean", isGatheringMode: "boolean", mergeTiming: "the merged timing" })
@@ -5371,7 +5370,7 @@
     DOOR_ONLY: () => DOOR_ONLY9,
     HOOKS: () => HOOKS9,
     PLAIN: () => PLAIN9,
-    READS: () => READS9,
+    READS: () => READS10,
     RULE_FILES: () => RULE_FILES9,
     SLOTS: () => SLOTS9,
     dispatch: () => dispatch9
@@ -8051,7 +8050,7 @@
   };
   var REALM_DOOR = "runtime/merchant-realm/api.ts";
   var HANDS_DOOR = "runtime/merchant-hands/api.ts";
-  var READS9 = {
+  var READS10 = {
     ...readsOf("hands", "both", HANDS_DOOR, { DASHBOARD_EQUIPMENT_TYPES: "string[]" }),
     // The game server's call limit per window, which the dashboard's CC meter fills to.
     ...readsOf("calls", "both", HANDS_DOOR, { CALL_LIMIT: "number" }),
@@ -8156,7 +8155,7 @@
     DOOR_ONLY: () => DOOR_ONLY10,
     HOOKS: () => HOOKS10,
     PLAIN: () => PLAIN10,
-    READS: () => READS10,
+    READS: () => READS11,
     RULE_FILES: () => RULE_FILES10,
     SLOTS: () => SLOTS10,
     dispatch: () => dispatch10
@@ -8551,7 +8550,7 @@
       cite: "rows/08-merchant.ts ACTIONS stand.open and stand.close, 08's stand holder"
     }
   };
-  var READS10 = {
+  var READS11 = {
     "items.grade": { side: "both", type: "number | null", door: "runtime/items/api.ts#itemGradeOf" },
     "items.data": { side: "both", type: "Readonly<Record<string, unknown>> | undefined", door: "runtime/items/api.ts#itemData" },
     "npc.stock": { side: "character", type: "readonly string[]", door: "runtime/items/api.ts#npcStock" },
@@ -8827,7 +8826,7 @@
     DOOR_ONLY: () => DOOR_ONLY11,
     HOOKS: () => HOOKS11,
     PLAIN: () => PLAIN11,
-    READS: () => READS11,
+    READS: () => READS12,
     RULE_FILES: () => RULE_FILES11,
     SLOTS: () => SLOTS11,
     dispatch: () => dispatch11
@@ -8951,7 +8950,7 @@
   };
   var SETTINGS = "runtime/settings/api.ts";
   var SETTINGS_COORDINATOR = "runtime/settings/coordinator/api.ts";
-  var READS11 = {
+  var READS12 = {
     ...readsOf("settings", "both", SETTINGS, { ADDON_KINDS: "string[]", SETTING_KINDS: "string[]", SETTING_SCOPES: "string[]", SETTING_DOCUMENTS: "string[]", DELIVERIES: "string[]", object: "boolean", addonSettingProblem: "string | undefined", valueProblem: "string | undefined", list: "boolean", text: "boolean", number: "boolean", boolean: "boolean", mapOf: "a value check", listOf: "a value check", item: "boolean", mark: "boolean", positive: "boolean", wholeFrom: "a value check", settingsDraft: "the dashboard's settings draft", addonValues: "the add-on's values for a scope", played: "the field's value as played", playedIn: "the record's value as played" }),
     ...readsOf("settings", "coordinator", SETTINGS_COORDINATOR, { coordinatorSettings: "the settings table", hiddenValue: "boolean", modeSlot: "the mode slot's entry", snapshotSaveDue: "boolean", selectSnapshot: "the snapshot to restore", initialMerchantRuntime: "the merchant's initial state", initialGatheringState: "gathering's initial state", initialEventState: "the events' initial state", initialCommandState: "the commands' initial state", initialRecoveryState: "recovery's initial state", createInitialCoordinatorState: "the coordinator's initial state", initialMerchantSales: "the merchant sales' initial state" }),
     // `settings.declared` is the hook name, so the read of the export behind it takes its own.
@@ -9023,7 +9022,7 @@
     DOOR_ONLY: () => DOOR_ONLY12,
     HOOKS: () => HOOKS12,
     PLAIN: () => PLAIN12,
-    READS: () => READS12,
+    READS: () => READS13,
     RULE_FILES: () => RULE_FILES12,
     SLOTS: () => SLOTS12
   });
@@ -9089,7 +9088,7 @@
   };
   var STATUS = "runtime/status/api.ts";
   var STATUS_COORDINATOR = "runtime/status/coordinator/api.ts";
-  var READS12 = {
+  var READS13 = {
     ...readsOf("status", "both", STATUS, { statusSavedFields: "string[]", CATALOG_VERSIONS: "the catalog versions", catalogValue: "the catalog value", characterFields: "table F's report fields", sectionFields: "table R's reply sections", streamFields: "the stream's fields", reportedStats: "string[]", TABLE_G: "table G's rings", navigational: "boolean", classifyGameLog: "GameLog", defaultLogFilters: "the default log filters", logFilters: "the log filters", showGameLog: "boolean", boundsPending: "boolean", METRIC_BUCKET_MS: "number", HISTORY_KEPT_MS: "number", METRIC_RESET_KINDS: "string[]", metricOutboxOwner: "string", metricNumber: "number | undefined", metricText: "string | undefined", parseMetricResets: "the metric resets", parseMetricSample: "the metric sample", parseMetricFrame: "the metric frame", encouragementLuck: "number", projectDirectDrop: "number", inventoryCounts: "the account inventory counts" }),
     ...readsOf("status", "coordinator", STATUS_COORDINATOR, { transportTiming: "the reply's transport timing", initialCoordinatorHistory: "the coordinator's initial history", boundFirings: "the bounds' firings", online: "boolean", accountGoldSnapshot: "the account's gold", requestCaller: "the request's caller" }),
     ...readsOf("status", "both", "runtime/status/rules.ts", { retained: "boolean", secretField: "boolean" })
@@ -9341,7 +9340,7 @@
     DOOR_ONLY: () => DOOR_ONLY13,
     HOOKS: () => HOOKS13,
     PLAIN: () => PLAIN13,
-    READS: () => READS13,
+    READS: () => READS14,
     RULE_FILES: () => RULE_FILES13,
     SLOTS: () => SLOTS13,
     dispatch: () => dispatch12
@@ -9570,7 +9569,7 @@
     code: { events: ["code", "eval"], functions: [], closed: "AS", cite: "addon-capabilities.md C1, the add-on never calls the game" }
   };
   var LIFECYCLE = "runtime/lifecycle/api.ts";
-  var READS13 = {
+  var READS14 = {
     // 13's roster: names, classes, slots and whether each is online.
     "roster.members": { side: "coordinator", type: "CharacterConnection[]", door: `${LIFECYCLE}#characterConnections` },
     ...readsOf("lifecycle", "both", LIFECYCLE, { CHARACTER_PICKS: "string[]", caveMap: "string", characterNameAllowed: "boolean", CHARACTER_NAME_MAX: "number", CHARACTER_NAME_MIN: "number", CHARACTER_NAME_REFUSAL: "string", nameCharacters: "string[]", isRequestObject: "boolean", requestObject: "the request body", requestText: "string", holdLabel: "string", orderCharacters: "the characters in order", deploymentPending: "boolean" }),
@@ -9827,7 +9826,7 @@
   };
   var tableOf = (key3) => Object.assign({}, ...Object.values(ROW_FILES).map((m) => m[key3] ?? {}));
   var ACTIONS13 = tableOf("ACTIONS");
-  var READS14 = tableOf("READS");
+  var READS15 = tableOf("READS");
   var ACTION_OWNERS = Object.fromEntries(Object.entries(ROW_FILES).flatMap(([file, m]) => Object.keys(m.ACTIONS ?? {}).map((action) => [action, file.slice("rows/".length, "rows/".length + 2)])));
   var pendingOwner = (hook) => HOOKS15[hook].pending;
   var coreOnly = (hook) => HOOKS15[hook].core === true;
@@ -9976,7 +9975,7 @@ ${hook}`, was = errors.get(key3);
       return reads2[hook];
     }
     function askRow(name2, question) {
-      const row4 = HOOKS15[name2] ?? READS14[name2];
+      const row4 = HOOKS15[name2] ?? READS15[name2];
       if (!row4) throw Error(`${name2} is neither a hook row nor a READS row`);
       if (row4.side && row4.side !== "both" && side && row4.side !== side) throw Error(`${name2} answers on the ${row4.side}; this is the ${side}`);
       if (row4.kind === "notice") throw Error(`${name2} is a notice; a read asks a request row`);
@@ -10470,7 +10469,7 @@ ${hook}`, was = errors.get(key3);
       },
       // C3: an owner's `READS` answers on this side, by row name.
       publishReads(given2) {
-        const stranger = Object.keys(given2).find((name2) => !(name2 in READS14));
+        const stranger = Object.keys(given2).find((name2) => !(name2 in READS15));
         if (stranger) return { ok: false, message: `${JSON.stringify(stranger)} is not a READS row` };
         for (const [name2, answer] of Object.entries(given2)) reads.set(name2, answer);
         return { ok: true };
@@ -14976,6 +14975,7 @@ ${hook}`, was = errors.get(key3);
   }
 
   // runtime/characters/call-budget.ts
+  var BANDS = ["survival", "job", "background"];
   function ringPush(record3, entry) {
     const ring = record3.ring, kept = { ...entry, seq: ++ring.seq, at: record3.clock() };
     if (ring.entries.length < MOVEMENT_RING_SIZE) {
@@ -15006,9 +15006,12 @@ ${hook}`, was = errors.get(key3);
       // so the modifier stays 1 (11012-11017), and the attack's `u+cid` resend adds 2 (3520, 4535).
       case "attack":
         return at(2);
-      // A heal on another player also resends that player, and its resend's two charges go on the
-      // caster's socket too (server.js:4632-4650 `resend`, its `add_call_cost`): 4, measured by
-      // TC15. A heal on the caster resends the caster once: 2.
+      // A heal on another player also resends that player (server.js:4632-4650 `resend`, its
+      // `add_call_cost`), and that resend's two charges go where the heal lands. A heal that lands
+      // in its handler charges them to the caster's socket: 4, the largest charge. A heal that
+      // lands in the projectile tick charges them to no player, since the socket dispatch resets
+      // current_socket after each handler (server.js:5054), and the caster's entry reads 2. TC15
+      // reads both paths. A heal on the caster resends the caster once: 2.
       case "heal": {
         const id2 = data?.id;
         return at(id2 !== void 0 && id2 !== character2.name ? 4 : 2);
@@ -15281,8 +15284,6 @@ ${hook}`, was = errors.get(key3);
       ring: { seq: 0, start: 0, entries: [] },
       held: [],
       admissions: [],
-      survival: [],
-      peak: 0,
       excess: { survival: null, job: null, background: null },
       roster: [],
       waits: /* @__PURE__ */ new Map(),
@@ -15314,15 +15315,29 @@ ${hook}`, was = errors.get(key3);
       const from = at4 - CALL_WINDOW_MS - marginAt(at4);
       while (current.ledger.length && current.ledger[0].at < from) current.ledger.shift();
       while (current.doors.length && current.doors[0] <= from) current.doors.shift();
-      while (current.survival.length && current.survival[0].at <= at4 - CALL_WINDOW_MS) current.survival.shift();
       for (const [key3, wait] of current.waits) if (!(wait.last >= from)) current.waits.delete(key3);
     };
-    const jobWaitEnds = (at4) => {
+    const waitsEnd = (band2, at4) => {
+      const above2 = BANDS.slice(0, BANDS.indexOf(band2));
       let end = 0;
-      for (const [key3, wait] of current.waits) if (key3.startsWith("job|")) end = Math.max(end, wait.last + CALL_WINDOW_MS + marginAt(at4) + 1);
+      for (const [key3, wait] of current.waits) if (above2.includes(key3.slice(0, key3.indexOf("|")))) end = Math.max(end, wait.last + CALL_WINDOW_MS + marginAt(at4) + 1);
       return end;
     };
     const usedAt = (at4) => used(current, at4, marginAt(at4));
+    const spentAt = (at4) => {
+      const from = at4 - CALL_WINDOW_MS - marginAt(at4), spent = { survival: 0, job: 0, background: 0 };
+      for (const entry of current.ledger) if (entry.band && entry.at >= from) spent[entry.band] += entry.cost;
+      return spent;
+    };
+    const nextFigureAt = (at4, cost2) => {
+      const rtt = marginAt(at4), from = at4 - CALL_WINDOW_MS - rtt;
+      let own3 = cost2, recent2 = cost2;
+      for (const entry of current.ledger) if (entry.at >= from) {
+        own3 += entry.cost;
+        if (entry.at > at4 - rtt) recent2 += entry.cost;
+      }
+      return own3 + recent2;
+    };
     const note = (at4) => {
       const value = Math.round(usedAt(at4) * 100) / 100, reported = current.reported;
       if (value >= reported.used) {
@@ -15330,17 +15345,17 @@ ${hook}`, was = errors.get(key3);
         reported.at = at4;
       }
     };
-    const book = (method, cost2, at4) => {
+    const book = (method, cost2, at4, band2) => {
       if (cost2 <= 0) return [];
-      const entry = { at: at4, method, cost: cost2, seq: ++current.seq };
+      const entry = { at: at4, method, cost: cost2, seq: ++current.seq, ...band2 ? { band: band2 } : {} };
       current.ledger.push(entry);
       return [entry];
     };
-    const bookPrice = (method, charge2, at4) => {
-      const entries2 = book(method, charge2.cost, at4);
+    const bookPrice = (method, charge2, at4, band2) => {
+      const entries2 = book(method, charge2.cost, at4, band2);
       if (charge2.landsMs !== void 0) {
         const lands = at4 + charge2.landsMs;
-        entries2.push(...book("transport", DOOR, lands));
+        entries2.push(...book("transport", DOOR, lands, band2));
         current.doors.push(lands);
         return { entries: entries2, door: lands };
       }
@@ -15466,15 +15481,16 @@ ${hook}`, was = errors.get(key3);
       try {
         const at4 = now(), cost2 = charge(question.method, question.data), key3 = question.band + "|" + question.method;
         prune(at4);
-        const asked = current.waits.get(key3)?.since, raised = question.band === "background" && asked !== void 0 && at4 - asked >= CALL_WINDOW_MS + marginAt(at4);
+        const asked = current.waits.get(key3)?.since, raised = question.band === "background" && question.rises !== false && asked !== void 0 && at4 - asked >= CALL_WINDOW_MS + marginAt(at4);
         const judged = raised ? "job" : question.band;
-        const limit = bandLimits(current.peak)[judged], before = usedAt(at4);
+        const limit = bandLimits(spentAt(at4).survival)[judged], before = usedAt(at4);
         const count = current.answers[question.band][question.method] ??= { send: 0, notNow: 0 };
         if (question.band !== "background" && ports.held()) {
           count.notNow++;
           return "not-now";
         }
-        if (current.held.length || before + cost2.cost > limit || judged === "background" && jobWaitEnds(at4) > at4) {
+        const over = before + cost2.cost > limit || judged !== "survival" && nextFigureAt(at4, cost2.cost) > limit;
+        if (current.held.length || over || waitsEnd(judged, at4) > at4) {
           count.notNow++;
           const wait = current.waits.get(key3);
           if (wait) wait.last = at4;
@@ -15484,11 +15500,7 @@ ${hook}`, was = errors.get(key3);
         count.send++;
         const was = current.excess[judged];
         current.excess[judged] = Math.max(was ?? -Infinity, before + cost2.cost - limit);
-        const booked = bookPrice(question.method, cost2, at4), admission = { method: question.method, ...booked };
-        if (question.band === "survival" && cost2.cost > 0) {
-          current.survival.push({ at: at4, method: question.method, cost: cost2.cost, seq: current.seq });
-          current.peak = Math.max(current.peak, current.survival.reduce((sum, entry) => sum + entry.cost, 0));
-        }
+        const booked = bookPrice(question.method, cost2, at4, question.band), admission = { method: question.method, ...booked };
         const waited = current.waits.get(key3)?.since;
         if (waited !== void 0) {
           current.waits.delete(key3);
@@ -15514,8 +15526,9 @@ ${hook}`, was = errors.get(key3);
     }
     const budget = {
       view() {
-        const at4 = now(), rtt = marginAt(at4), limits = bandLimits(current.peak), cc = current.cc;
+        const at4 = now(), rtt = marginAt(at4), cc = current.cc;
         prune(at4);
+        const spent = spentAt(at4);
         return {
           used: usedAt(at4),
           ledger: current.ledger.map((entry) => ({ ...entry })),
@@ -15526,9 +15539,8 @@ ${hook}`, was = errors.get(key3);
           margin: rtt,
           latest: margin(win),
           limit: CALL_LIMIT,
-          room: limits.room,
-          limits,
-          peak: current.peak,
+          spent,
+          limits: bandLimits(spent.survival),
           held: current.held.length,
           heldHead: current.held[0]?.method ?? null,
           waiting: [...current.waits].map(([key3, wait]) => ({ band: key3.split("|")[0], method: key3.slice(key3.indexOf("|") + 1), ms: at4 - wait.since })),
@@ -15587,7 +15599,7 @@ ${hook}`, was = errors.get(key3);
       listen: (event, listener) => install.listeners.push([event, listener]),
       onStop: (stop) => install.stops.push(stop),
       onUntagged: (seen3) => install.untagged.push(seen3),
-      nextFree: () => Math.max(nextFree(), jobWaitEnds(now())),
+      nextFree: () => Math.max(nextFree(), waitsEnd("background", now())),
       margin: () => marginAt(now()),
       forget: (band2, method) => current.waits.delete(band2 + "|" + method),
       roster: (players) => {
@@ -47058,7 +47070,7 @@ ${hook}`, was = errors.get(key3);
   // runtime/hooks/read-answers.ts
   function readAnswers(side, modules, via = {}) {
     const answers = {}, missing = [];
-    for (const [name2, row4] of Object.entries(READS14)) {
+    for (const [name2, row4] of Object.entries(READS15)) {
       if (row4.side !== "both" && row4.side !== side) continue;
       const [file, exported] = row4.door.split("#");
       const module = modules[via[file] ?? file];

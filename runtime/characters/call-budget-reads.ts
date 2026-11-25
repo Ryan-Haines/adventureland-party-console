@@ -1,10 +1,11 @@
 // The call budget's two background reads ("Rework to the owner bar" B3.3): the Tracktrix request
 // and the realm player list. Each asks the budget in the background band when it is due and waits
-// for room instead of dropping. Each read is judged in the job band once it has waited one
-// window (call-budget.ts `band`), so its readers get data no older than its refresh plus two
-// windows, fights included. The Tracktrix read rises too: its cost of 50 never fits the background
-// limit while a fight holds the room at its cap. The replies go to characters/shared.js through the install's ports,
-// where the tracker catalog and the status report read them.
+// for room instead of dropping. Background shares the job band's limit and waits while a job
+// question waits. The player list is judged in the job band once it has waited one window
+// (call-budget.ts `band`), so its readers get data no older than its refresh plus two windows,
+// fights included. The Tracktrix read stays in the background band: its kill counts come from
+// each `kill_credit`. The replies go to characters/shared.js through the install's ports, where
+// the tracker catalog and the status report read them.
 import type { ServerToClient_player } from 'typed-adventureland';
 import type { Band, BudgetSocket, CallBudget } from './call-budget.ts';
 import { READ_PICKS } from './call-budget-limits.ts';
@@ -34,8 +35,8 @@ interface ReadsInstall {
   onStop(stop: () => void): void;
   // Each untagged emit's method: the player's own tracker click is one.
   onUntagged(seen: (method: string) => void): void;
-  // When a refused background read asks again: the window's next free moment, or the end of the job
-  // waits that hold the band, whichever is later.
+  // When a refused background read asks again: the window's next free moment, or the end of the
+  // survival and job waits that hold the band, whichever is later.
   nextFree(): number;
   // The largest round trip of the last window (call-budget.ts `marginAt`).
   margin(): number;
@@ -84,7 +85,11 @@ function quietRender(install: ReadsInstall, now: () => number, quietMs: number, 
 // One read: due or not, its timer, and its question. A due read asks on each pump until the
 // budget answers `send`; the pump runs on its timer, on every player packet and when the window
 // next frees room.
-function read(install: ReadsInstall, method: 'tracker' | 'players', now: () => number, sent: () => void) {
+// Each read's row: its method, and whether its wait rises to the job band after one window. The
+// player list's wait rises and the Tracktrix read's does not, for the reasons the file's header gives.
+type ReadRow = { method: 'tracker' | 'players'; rises: boolean };
+const READS = { tracker: { method: 'tracker', rises: false }, players: { method: 'players', rises: true } } as const satisfies Record<string, ReadRow>;
+function read(install: ReadsInstall, { method, rises }: ReadRow, now: () => number, sent: () => void) {
   const scope = install.scope;
   let due = false, timer: number | undefined, waiting: number | undefined;
   const clearWaiting = () => { if (waiting !== undefined) { scope.clearTimeout(waiting); waiting = undefined; } };
@@ -94,7 +99,7 @@ function read(install: ReadsInstall, method: 'tracker' | 'players', now: () => n
       clearWaiting();
       if (!due) return;
       const calls = install.calls, data = method === 'players' ? {} : undefined;
-      if (calls.band({ band: 'background', method, data }) === 'send') {
+      if (calls.band({ band: 'background', method, data, rises }) === 'send') {
         due = false;
         if (data === undefined) install.socket.emit('tracker');
         else install.socket.emit('players', data);
@@ -134,12 +139,12 @@ export function installBudgetReads(install: ReadsInstall, ports: ReadsPorts): vo
   // reply not back one margin after the request is lost. The read asks again then, once, and every
   // later request waits the refresh. A reply resets it.
   let held = carriesTracktrix(install.items()), retried = false, last: TrackerReply | null = null;
-  const tracker = read(install, 'tracker', now, () => {
+  const tracker = read(install, READS.tracker, now, () => {
     render.automatic();
     tracker.at(retried ? refreshMs : install.margin());
     retried = true;
   });
-  const players = read(install, 'players', now, () => {});
+  const players = read(install, READS.players, now, () => {});
   // Read the packet, not character.items: the game may apply it after this listener.
   const onPlayer = (data: Partial<Pick<ServerToClient_player, 'items'>> | null) => {
     if (data && Array.isArray(data.items)) {

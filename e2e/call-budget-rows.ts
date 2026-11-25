@@ -343,7 +343,7 @@ export function chargesHold(results:any[]){
 
 // The bands' own checks on one character's budget: CB7 no band
 // admitted above its limit; CB8 the hold queue empty and each held emit gone within the window and
-// the margin; CB10 the room at max(12, peak), capped at 110, and the limits from it; CB22 no
+// the margin; CB10 the limits from the survival band's spend in the window; CB22 no
 // unmatched admission or emit. `answers` counts each band's answers by method since the record
 // began; `meter` is the budget's own cost (7.3).
 export async function bandsRead(live:LiveGame,name:string){
@@ -368,8 +368,7 @@ export function bandsHold(name:string,{view,ring}:BandsRead,from=0,heldFrom=from
   // `secondhands` held 4998 ms with a margin of 449 at its
   // hold, while the round trips of the merchant's burst raised it to 948 by the row's stop.
   expect(held.filter(r=>r.waitedMs>WINDOW_MS+Math.max(r.margin,r.sentMargin??r.margin)+1+2*STEP_MS),`CB8: ${name}'s held emits went within the window and the margin`).toEqual([]);
-  expect(view.room,`CB10: ${name}'s room follows its survival peak ${view.peak}`).toBe(bandLimits(view.peak).room);
-  expect(view.limits,`CB10: ${name}'s limits follow the room`).toEqual(bandLimits(view.peak));
+  expect(view.limits,`CB10: ${name}'s limits follow its survival spend ${view.spent.survival} in the window`).toEqual(bandLimits(view.spent.survival));
   const left={...dropped};
   expect(ring.filter(r=>r.at>=from&&r.decision==='unmatched'&&!((left[r.method]??0)>0&&left[r.method]--)),`CB22: ${name}'s unmatched admissions and emits`).toEqual([]);
 }
@@ -569,7 +568,7 @@ export async function burstsRow(live:LiveGame,info:TestInfo){
   result.measures=measures;result.limitdcs=limitdcs;result.bands={view:bands.view,ring:bands.ring,meter:meterOf(bands)};
   await attach(info,'call-budget-row-a',result);
   console.log('CALL-BUDGET-ROW-A '+JSON.stringify({merchant:{peak:measures[M]!.peak,p95:measures[M]!.p95},limitdc:limitdcs.filter((e:any)=>e.event==='limitdcreport').length,
-    besideAt:result.besideAt,held:bands.ring.filter((r:any)=>r.decision==='held').length,room:bands.view?.room,peak:bands.view?.peak,meter:meterOf(bands)}));
+    besideAt:result.besideAt,held:bands.ring.filter((r:any)=>r.decision==='held').length,spent:bands.view?.spent,limits:bands.view?.limits,meter:meterOf(bands)}));
   boundHolds(measures,names.filter(n=>live.clients[n]));
   costsHold(costs!);
   trackerHolds(result.tracker);
@@ -812,11 +811,11 @@ export async function survivalRow(live:LiveGame,info:TestInfo){
         out.first??=Date.now();await new Promise(r=>setTimeout(r,100));}out.ring=__partyCalls.records().filter(r=>r.decision==='read-job'&&r.method==='secondhands'&&r.at>=(out.first??0));out.done=true;})();return true;})()`);
     await expect.poll(async()=>{await packet();return live.clients[W]!.run(`(()=>{const r=globalThis.__e2eRise;return !!r.first&&Date.now()-r.first>=${WINDOW_MS}+__partyCalls.view().margin+500;})()`);},
       {timeout:30_000,intervals:[250],message:'CB24: the background question waits one window under the figure'}).toBe(true);
-    // The figure drops to 45 under the job limit: room for the Ponty read, the player list's own
-    // read that rose to the job band under the same figure (12), and the fight's own calls in
-    // flight, while the background limit sits the largest job call (40) below the job limit, so
-    // only the job band can take the question, whichever margin the budget holds when it asks; each
-    // poll keeps the figure fresh. At 30 under, the list's read took the room in the gate run.
+    // The figure drops to 45 under the job limit, which background shares: room for the Ponty
+    // read, the player list's own read that rose to the job band under the same figure (12), and
+    // the fight's own calls in flight. The question has waited one window, so it goes judged in
+    // the job band, whichever margin the budget holds when it asks; each poll keeps the figure
+    // fresh. At 30 under, the list's read took the room in the gate run.
     const held=await budgetView(live,W),lower=Math.max(0,Math.round(held.limits.job-45-(held.used-199)));
     await live.plantCallCost(W,lower);
     await expect.poll(async()=>{await packet();return live.clients[W]!.run('!!globalThis.__e2eRise.done');},{timeout:30_000,intervals:[250],message:'CB24: the risen question ends'}).toBe(true);
@@ -867,7 +866,7 @@ export async function survivalRow(live:LiveGame,info:TestInfo){
   await attach(info,'call-budget-row-b-unmatched',{unmatched,lone,around:lone.map(x=>sends.filter(e=>e.seq>=x.seq-3&&e.seq<=x.seq+6))});
   result.measures=measures;result.bands={view:end.view,ring:end.ring,meter:meterOf(end)};
   await attach(info,'call-budget-row-b',result);
-  console.log('CALL-BUDGET-ROW-B '+JSON.stringify({asked:result.asked,cb5:{survival:result.cb5?.survival},cb9:{queued:result.cb9?.queued},room:end.view?.room,peak:end.view?.peak,meter:meterOf(end)}));
+  console.log('CALL-BUDGET-ROW-B '+JSON.stringify({asked:result.asked,cb5:{survival:result.cb5?.survival},cb9:{queued:result.cb9?.queued},spent:end.view?.spent,limits:end.view?.limits,meter:meterOf(end)}));
   boundHolds(measures,names);
   bandsHold(W,end,from,unplanted);
 }
