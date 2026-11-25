@@ -105,6 +105,12 @@ scenarioTable("farm area control relocates on competition and keeps failed convo
  t.advance();t.c.farmAreaTick();assert.equal(t.starts.length,0);
  t.party.statuses.W.target=null;t.party.statuses.W.groupedCombat.currentAttackers=[];t.advance();t.c.farmAreaTick();assert.equal(t.starts[0].x,350);assert.deepEqual(t.party.monsterFocus,['bee']);
  t.party.activeConvoy=null;t.advance();t.c.farmAreaTick();assert.equal(t.starts.length,1);}],
+ // A fight the party cannot win (a self-healing pinkgoblin, live 2026-11-22) does not hold the move:
+ // the walk would walk on from it.
+ ['competition relocates past a fight the party cannot win', controlFixture=>{
+ const t=controlFixture();t.answer.verdict='leave';t.party.statuses.W.farmAreaEvidence=[{key:'kill',actor:'Other',mtype:'bee',map:'main',x:50,y:50,at:t.now(),kill:true}];
+ t.party.statuses.W.groupedCombat.currentAttackers=[{id:'428',mtype:'pinkgoblin',map:'main',target:'W',hp:1890000}];t.party.statuses.W.target={hp:1890000};t.party.statuses.W.combat={inRange:true};t.c.farmAreaTick();
+ t.advance();t.c.farmAreaTick();assert.equal(t.starts.length,1);assert.equal(t.starts[0].x,350);}],
  ['a failed farm convoy retries a transient failure without marking the zone unreachable, and a geometry mismatch re-plans', ()=>{
   {const t=controlFixture();
    for(let i=0;i<3;i++){

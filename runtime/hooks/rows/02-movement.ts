@@ -431,6 +431,7 @@ export const READS = {
   'movement.tierOf': { side: 'both', type: '{tier: Tier}', door: `${CHARACTER_DOOR}#tierOf` },
   'movement.convoyRestored': { side: 'coordinator', type: 'PartyConvoy | null', door: `${COORDINATOR_DOOR}#restoredConvoy` },
   'movement.travelDefense': { side: 'coordinator', type: "the walk's defence: its attackers and whether it pauses", door: `${COORDINATOR_DOOR}#classifyTravelDefense` },
+  'movement.defenseHolds': { side: 'coordinator', type: 'boolean: a defence the walk does not walk on from holds its start', door: `${COORDINATOR_DOOR}#defenseHolds` },
   'movement.communicationReason': { side: 'coordinator', type: 'boolean', door: `${COORDINATOR_DOOR}#communicationReason` },
   'movement.targetIdentity': { side: 'coordinator', type: 'string', door: `${COORDINATOR_DOOR}#identity` },
   'movement.travelCombat': { side: 'coordinator', type: "the member's walk fight, or null", door: `${COORDINATOR_DOOR}#travelCombatFor` },

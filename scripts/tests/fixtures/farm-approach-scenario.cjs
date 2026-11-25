@@ -41,6 +41,11 @@ function controlFixture() {
  require('../helpers/travel-observations.cjs').observeTravel(party.statuses);
  for(const [name,s] of Object.entries(party.statuses))Object.assign(s,{map:'main',in:'main',server:'USII',combatSelection:{runtimeId:name},farmCompetition:{at:now,runtimeId:name,revision:1,areaId:areas[0].id,map:'main',in:'main',server:'USII',radius:require('../../../runtime/hunting/zones.ts').defaultSearchRadius,monsters:{},players:['Other']}});
  Object.assign(c,require('../helpers/coordinator-farm-areas.cjs').farmAreaService(c));
- return {c,party,areas,starts,advance(ms=1100){now+=ms;for(const s of Object.values(party.statuses)){s.seenAt=now;if(s.farmCompetition)s.farmCompetition.at=now;}},now:()=>now};
+ // 05's walk verdict, which a farm move asks of a fight before it starts (defense.ts `defenseHolds`):
+ // the party wins the fight unless a row sets `verdict` to 'leave'.
+ const answer={verdict:'fight'};
+ require('../../../runtime/hooks/index.ts').partyHooks().publish({name:'core:test-verdict',folder:'core',author:'test',
+   summary:"05's walk verdict as the row sets it.",hooks:{'survival.verdict':()=>answer.verdict}});
+ return {c,party,areas,starts,answer,advance(ms=1100){now+=ms;for(const s of Object.values(party.statuses)){s.seenAt=now;if(s.farmCompetition)s.farmCompetition.at=now;}},now:()=>now};
 }
 module.exports={movement,controlFixture};

@@ -146,3 +146,31 @@ test('resumed mission travel labels the mission on the status line',()=>{
  r.service.tick();
  assert.equal(huntMessage(h),'Travelling to rat');
 });
+
+// Live 2026-11-22: the Hunt's return waited two hours on level2e beside a level 8 pinkgoblin that
+// heals 96000 every 4 s (G.monsters.pinkgoblin.abilities.self_healing) while it kept W in its
+// fight. Survival's walk verdict runs here over the game data, as core:survival answers it.
+test('a Hunt return walks on from a fight the party cannot win and waits for one it can', () => {
+  require('./fixtures/coordinator-core.cjs');
+  const {partyHooks} = require('../../runtime/hooks/index.ts');
+  const {createVerdicts} = require('../../runtime/coordinator/survival/verdict.ts');
+  const goblin = {attack: 2400, frequency: 0.4, damage_type: 'magical'};
+  const monsters = {pinkgoblin: {...goblin, abilities: {self_healing: {heal: 96000, cooldown: 4000}}}, goblin};
+  for (const heals of [true, false]) {
+    const {state, service, calls, farm} = fixture();
+    const verdicts = createVerdicts({now: () => 100000, monsters: () => monsters});
+    partyHooks().publish({name: 'core:test-verdict', folder: 'core', author: 'test', summary: "05's walk verdict over the game data.",
+      hooks: {'survival.verdict': q => verdicts.walk(q.members.map(name => ({name, ...state.statuses[name]})), q.attackers)}});
+    service.begin();
+    const hunt = state.monsterHunt;
+    Object.assign(hunt, {stage: 'returning', turnIn: {owner: 'W', phase: 'returning'}, convoyId: null});
+    state.activeConvoy = null; state.commands = {}; calls.length = 0;
+    Object.assign(state.statuses.W, {map: farm.map, x: farm.x, y: farm.y, ctype: 'warrior', hp: 10699, attack: 1289, frequency: 0.821, resistance: 313});
+    Object.assign(state.statuses.P, {map: farm.map, x: farm.x, y: farm.y, ctype: 'priest', hp: 7708, attack: 1056, frequency: 1.225});
+    state.statuses.W.groupedCombat.currentAttackers = [{id: '428', mtype: heals ? 'pinkgoblin' : 'goblin', hp: 1890000, map: farm.map, target: 'W', x: farm.x, y: farm.y}];
+    service.tick();
+    const started = calls.some(call => Array.isArray(call) && call[0] === 'start' && call[2] === 'Monster Hunt turn-in');
+    assert.equal(started, heals, heals ? 'the self-healing goblin never dies, so the return walks on' : 'the fight the priest wins holds the return');
+    if (!heals) assert.match(huntMessage(hunt), /Defending W from goblin 428/);
+  }
+});

@@ -164,7 +164,10 @@ The regroup hold (`shared-hold`) ends when every member's report acknowledges th
 still, or a holder says the member is not coming. A walk that stopped for monsters it walked into
 fights them, runs its loot pass, and goes on as the same walk: in the phase it stopped in, or
 planning again from where the leader stands. A fight the party cannot win
-(`runtime/protocol/hold-check.ts`) is not the walk's; survival decides any escape.
+(`runtime/protocol/hold-check.ts`) is not the walk's; survival decides any escape. The party
+cannot win against attackers whose self heal (`G.monsters[mtype].abilities.self_healing`)
+matches its damage, since they never die. Such a fight does not hold a walk that has not
+started either (`defense.ts` `defenseHolds`): the Hunt's walks and the farm move start through it.
 
 Report freshness has one rule (`runtime/protocol/reports.ts`). A walking member's report stays
 fresh for two of its own report intervals while no attacker is known on it, so the walk keeps

@@ -3,7 +3,7 @@
 // relocation, failed farm travel and its ladder, the farming walk's combat arrival, and the empty
 // spawn return's decision.
 import type { ConvoyNavigationPlatform } from '../../movement/api/coordinator.ts';
-import { classifyTravelDefense, farmRecovers, handsCombatOver, samePlace, walkEnds,
+import { classifyTravelDefense, defenseHolds, farmRecovers, handsCombatOver, samePlace, walkEnds,
   type SharedConvoy, type SharedState } from '../../movement/api/coordinator.ts';
 import { type EventAttendance, type ReturnLocation } from '../../events/api.ts';
 import { playerMoved } from '../../events/coordinator/api.ts';
@@ -350,7 +350,7 @@ export function createFarm(party: FarmState, workers: Record<string, unknown>, p
     const round = !next.retry || names.every(name => Number(party.statuses[name]?.seenAt) > next.at);
     if (!round || (next.afterReport && ports.ladder?.rung() === 'wait')) return;
     const defense = classifyTravelDefense(party, names, now);
-    if (defense.state !== 'clear') {
+    if (defenseHolds(defense, names)) {
       state.message = defense.message;
       return;
     }

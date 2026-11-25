@@ -5,7 +5,7 @@
 // this door (owner-check's door rule).
 export { restoredConvoy } from '../coordinator/arrivals.ts';
 export type { CommandOutcome, ReturnTownPolicy, SavedCommands } from '../coordinator/arrivals.ts';
-export { admitMerchantInterruption, attachMerchantInterruption, classifyTravelDefense, communicationReason, finishMerchantInterruption,
+export { admitMerchantInterruption, attachMerchantInterruption, classifyTravelDefense, communicationReason, defenseHolds, finishMerchantInterruption,
   identity, releaseMerchantInterruption, travelCombatFor } from '../coordinator/defense.ts';
 // The coordinator's convoy defense step and the Hunt entry's fight read (b9b5c91e convoy-defense.ts `step`, `fighting`).
 export { step as convoyDefenseStep, fighting as convoyFighting } from '../coordinator/defense.ts';

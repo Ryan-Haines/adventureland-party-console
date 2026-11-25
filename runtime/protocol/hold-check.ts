@@ -101,7 +101,8 @@ export function holdCheck(input: HoldInput): HoldResult {
 
 export interface FightMember { name: string; ctype?: string; hp?: number; attack?: number; frequency?: number; armor?: number; resistance?: number; rip?: boolean }
 export interface FightAttacker { mtype?: string; hp?: number; target?: string }
-export interface FightMonster { attack?: number; frequency?: number; damage_type?: string }
+// `abilities.self_healing` heals the monster `heal` HP every `cooldown` ms (the game server's monster abilities).
+export interface FightMonster { attack?: number; frequency?: number; damage_type?: string; abilities?: { self_healing?: { heal?: number; cooldown?: number } } }
 
 // The game's damage multiplier for a defense value (js/old_common_functions.js damage_multiplier).
 export function damageMultiplier(defense: number): number {
@@ -116,7 +117,8 @@ export function damageMultiplier(defense: number): number {
 // fight, unless the fight is one the party cannot win; that fight is its own task, so the walk
 // goes on and survival's rules decide any escape. "Cannot win" is the hold check's judgement on
 // game data and the fight as it stands, never a count: a member the attackers target cannot last
-// until the party kills them at its own damage per second.
+// until the party kills them at its own damage per second, or the attackers' self heal matches
+// that damage, so they never die.
 export function fightWinnable(members: readonly FightMember[], attackers: readonly FightAttacker[],
   monsters: Readonly<Record<string, FightMonster | undefined>> | null): boolean {
   if (!monsters || !attackers.length) return true;
@@ -127,6 +129,12 @@ export function fightWinnable(members: readonly FightMember[], attackers: readon
   const targeted = alive.filter(m => attackers.some(a => a.target === m.name)).length;
   const partyDps = alive.reduce((sum, m) => m === healer && targeted ? sum : sum + Number(m.attack ?? 0) * Number(m.frequency ?? 0), 0);
   const left = attackers.reduce((sum, a) => sum + Number(a.hp ?? 0), 0);
+  const selfHeal = attackers.reduce((sum, a) => {
+    const heal = monsters[a.mtype ?? '']?.abilities?.self_healing;
+    return sum + (Number(heal?.cooldown) > 0 ? Number(heal!.heal ?? 0) * 1000 / Number(heal!.cooldown) : 0);
+  }, 0);
+  const killRate = partyDps - selfHeal;
+  if (selfHeal > 0 && killRate <= 0) return false;
   return alive.every(m => {
     const on = attackers.filter(a => a.target === m.name);
     if (!on.length) return true;
@@ -137,7 +145,7 @@ export function fightWinnable(members: readonly FightMember[], attackers: readon
     }, 0);
     const check = holdCheck({ hp: Number(m.hp), mp: 0, priest: false,
       heal: healer ? { amount: Number(healer.attack ?? 0), perSecond: Number(healer.frequency ?? 0) / targeted, mpPerHeal: 0 } : null,
-      attackers: [{ dps, hp: left }], killRate: partyDps > 0 ? partyDps : null, stepSeconds: 0, healCycleSeconds: 0,
+      attackers: [{ dps, hp: left }], killRate: killRate > 0 ? killRate : null, stepSeconds: 0, healCycleSeconds: 0,
       potions: { hp: { count: 0, gives: 0 }, mp: { count: 0, gives: 0 }, cooldownSeconds: 0, regenMp: { output: 0, cooldownSeconds: 1 } }, energizeMp: 0 });
     return check.recovered;
   });

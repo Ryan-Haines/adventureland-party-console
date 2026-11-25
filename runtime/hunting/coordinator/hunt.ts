@@ -5,7 +5,7 @@
 import { priority, type LadderPort } from '../../tasks/api.ts';
 import { coordinatorHuntParticipants } from '../../tasks/coordinator/api.ts';
 import { partyHooks } from '../../hooks/index.ts';
-import { classifyTravelDefense, preparationChanged } from '../../movement/api/coordinator.ts';
+import { classifyTravelDefense, defenseHolds, preparationChanged } from '../../movement/api/coordinator.ts';
 import { anniversaryYields, supersedeAnniversary } from '../../events/coordinator/api.ts';
 import type { ReturnLocation } from '../../events/api.ts';
 import type { RouteConvoy, SharedConvoy } from '../../movement/api/coordinator.ts';
@@ -733,7 +733,7 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
 
   /**
    * Asks the Hunt's walk for a stage. It waits on a hold reason, a live walk, a user hold or an
-   * escape, and on travel defense except a mission walk while defending. A return with every
+   * escape, and on travel defense the walk would stay for, except a mission walk while defending. A return with every
    * member already at Daisy goes straight to the Daisy step.
    */
   function start(hunt: HuntCycle, location: ReturnLocation | null | undefined, label: string, stage: HuntWalkStage): boolean {
@@ -743,7 +743,7 @@ export function createHunt(state: HuntState, ports: HuntPorts) {
     if (held(hunt)) { labelHunt(hunt, 'held'); return false; }
     if (escaping()) { labelHunt(hunt, 'escape'); return false; }
     const defense = classifyTravelDefense(state, hunt.participants, ports.now());
-    if (defense.state !== 'clear' && !(stage === 'mission-travel' && defense.state === 'defending')) {
+    if (defenseHolds(defense, hunt.participants) && !(stage === 'mission-travel' && defense.state === 'defending')) {
       huntStep(hunt, stage, { convoyId: null, ...stage === 'mission-travel' ? { originArrivedAt: undefined } : {} });
       labelHunt(hunt, 'defense', { text: defense.message });
       return false;

@@ -85,5 +85,18 @@ row("the priest's attack leaves the kill rate while it heals the one targeted me
   // The heal alone keeps W up: 100/s of loss heals back in full against one goo.
   assert.equal(fightWinnable(party,[goo('W')],goos),true);
 });
+row('a monster whose self heal outheals the party never dies, so the fight is not winnable',()=>{
+  // Live 2026-11-22, level2e: a level 8 pinkgoblin (G.monsters.pinkgoblin: 2400 magical attack at
+  // 0.4, self_healing 96000 per 4000 ms) on Sadokunn, with Recharged's heals and Sqweeks' attacks.
+  // The priest's 1294/s heal outlasts the goblin's damage, and the party's 1651/s kill rate read a
+  // 1144 s fight, but the goblin heals 24000/s and stayed at full HP for two hours.
+  const goblins={pinkgoblin:{attack:2400,frequency:0.4,damage_type:'magical',abilities:{self_healing:{heal:96000,cooldown:4000}}}};
+  const party=[{name:'Sadokunn',ctype:'warrior',hp:10699,attack:1289,frequency:0.821,armor:531,resistance:313},
+    {name:'Recharged',ctype:'priest',hp:7708,attack:1056,frequency:1.225},{name:'Sqweeks',ctype:'rogue',hp:7998,attack:392,frequency:1.513}];
+  const goblin={mtype:'pinkgoblin',hp:1890000,target:'Sadokunn'};
+  assert.equal(fightWinnable(party,[goblin],goblins),false);
+  // The same goblin without its self heal is a long fight the priest's heals win.
+  assert.equal(fightWinnable(party,[goblin],{pinkgoblin:{...goblins.pinkgoblin,abilities:{}}}),true);
+});
 
 tables.run();

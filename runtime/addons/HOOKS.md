@@ -747,6 +747,7 @@ An add-on reads one with `ctx.read(name, ...args)` or `read(name, ...args)` (REA
 | `movement.tierOf` | 02 | both | {tier: Tier} |
 | `movement.convoyRestored` | 02 | coordinator | PartyConvoy \| null |
 | `movement.travelDefense` | 02 | coordinator | the walk's defence: its attackers and whether it pauses |
+| `movement.defenseHolds` | 02 | coordinator | boolean: a defence the walk does not walk on from holds its start |
 | `movement.communicationReason` | 02 | coordinator | boolean |
 | `movement.targetIdentity` | 02 | coordinator | string |
 | `movement.travelCombat` | 02 | coordinator | the member's walk fight, or null |

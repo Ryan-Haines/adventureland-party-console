@@ -526,14 +526,22 @@ function farmingTargetLeftArea(p: Party, c: Convoy, now: number): boolean {
   });
 }
 
-// A4: a fight the party cannot win is not the walk's to stay for.
+// A4: a fight the party cannot win is not the walk's to stay for. Survival's walk verdict
+// (`survival.verdict({walk})`) answers with `fightWinnable`, so A4's rule stays one model.
+function cannotWin(members:string[],attackers:{mtype?:string;hp?:number;target:string}[]):boolean {
+  return attackers.length>0 && partyHooks().survival.verdict({walk:true,members,attackers})!=='fight';
+}
 function walkOn(c:Convoy,attackers:{mtype?:string;hp?:number;target:string}[]):boolean {
-  if(!attackers.length)return false;
-  // Survival's walk verdict (`survival.verdict({walk})`,) answers with
-  // today's `fightWinnable`, unchanged, so A4's rule stays one model.
-  if(partyHooks().survival.verdict({walk:true,members:c.participants,attackers})==='fight')return false;
+  if(!cannotWin(c.participants,attackers))return false;
   c.defenseReason='Walking on: the party cannot win this fight';
   return true;
+}
+// Whether the defense holds a walk that has not started yet. A walk walks on through a fight it
+// cannot win once it walks, so that fight does not hold its start either. Live 2026-11-22: a Hunt
+// return waited two hours beside a self-healing pinkgoblin the party kept hitting, which kept the
+// goblin on Sadokunn.
+export function defenseHolds(defense:DefenseResult,names:string[]):boolean {
+  return defense.state==='waiting-for-observations' || defense.state==='defending' && !cannotWin(names,defense.attackers);
 }
 function needsDefense(p:Party,c:Convoy,state:string):boolean {
   return state==='defending' || c.phase!=='defending' && localDefense(p,c);
