@@ -53,6 +53,47 @@ test('a monster attacking a party member blocks the farm reunion',()=>{
  assert.equal(r.reunionBlocked(),true);
 });
 
+// The drain parks journeys and resumes their continuations when the lease clears
+// (lifecycle/character/drain.ts `maintenanceReply`), so no new reunion starts under it.
+test('no farm reunion starts while the drain holds the character, and one starts once it lets go', async () => {
+ const {r}=runtime();
+ r.lastCommand=1;r.drainHeld=true;
+ await r.farmReunionTick();
+ assert.equal(r.reunion,null);
+ r.drainHeld=false;
+ await r.farmReunionTick();
+ assert.ok(r.reunion);
+});
+
+// W21 H7 (final-gate-closing5): the play saved a Main spot under the drain and put the party on
+// Main; 271 ms after the release the warrior began a reunion to M19's Upper Hills spot. Table R's
+// `lifecycle` section rides the combat channel too, so that reply let go of the drain, while the
+// spot rides only the heartbeat, whose drained replies ended at the maintenance row before
+// `party-walks`. The `farm-spot` row applies the spot on every heartbeat reply before any row ends
+// it, so the release finds the spot saved during the drain.
+test('a spot saved under the drain is the one the reunion reads when the combat channel lets go', async () => {
+ const {createApply}=require('../../runtime/status/character/apply.ts');
+ const {TABLE_A}=require('../../runtime/status/rules.ts');
+ const {statusApply}=require('./fixtures/movement-status-scenario.cjs');
+ const {r}=runtime(),s=statusApply();
+ Object.defineProperty(r,'partyLocation',{get:()=>s.state.partyLocation,configurable:true});
+ r.lastCommand=1;r.character.map='winterland';s.state.partyLocation={map:'winterland',x:20,y:-1109};
+ // The lease rides both replies; the maintenance row ends a heartbeat apply while it holds.
+ let lease=null;
+ const rows=Object.fromEntries(TABLE_A.map(({row})=>[row,()=>undefined]));
+ Object.assign(rows,{lease:reply=>{lease=reply.consoleMaintenance||null;},maintenance:()=>!!lease,
+  'farm-spot':reply=>s.character.farmSpotReply(reply),'party-walks':reply=>s.character.partyWalksReply(reply)});
+ const apply=createApply({farmingMode(){},deathSeen(){},telemetry(){},gatheringCooldown(){},rows});
+ await apply.reply({consoleMaintenance:{id:'drain',mode:'draining'}});
+ // Under the drain the player saves a Main spot and the party is put on Main.
+ await apply.reply({consoleMaintenance:{id:'drain',mode:'draining'},partyLocation:{map:'main',x:1280,y:300},farmTravelPaused:false});
+ r.character.map='main';
+ await apply.channel({consoleMaintenance:null},reply=>{lease=reply.consoleMaintenance||null;});
+ r.drainHeld=!!lease;
+ await r.farmReunionTick();
+ assert.equal(r.reunion,null);
+ assert.deepEqual(s.state.partyLocation,{map:'main',x:1280,y:300});
+});
 
 scenarioTable('a farm reunion yields to a holder, climbs the round of a failed walk and accepts only the Magiport it asked for', runtime, [
  // Another live walk at a rank the farm walk does not take over holds the reunion, in place of the

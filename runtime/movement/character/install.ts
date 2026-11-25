@@ -244,15 +244,19 @@ export function installMovementCharacter(root: Host, movement: Movement, hooks: 
     realm.__partyTownCycleId = reply.partyTownCycleId || null;
     navigation.keepReturnProgress(reply.returnProgress || null);
   }
-  // Table A's `party-walks` row: the party's farm spot and the farm travel pause, then the convoy
-  // signal's geometry, the end of a walk whose signal failed, the release of a convoy the coordinator
+  // Table A's `farm-spot` row: the party's farm spot and the farm travel pause, which ride the
+  // heartbeat's `movement` section. A reply without that section (the lease alone) keeps them.
+  function farmSpotReply(reply: Record<string, any>): void {
+    if (!('partyLocation' in reply)) return;
+    state.partyLocation = reply.partyLocation || null;
+    state.farmTravelPaused = !!reply.farmTravelPaused;
+  }
+  // Table A's `party-walks` row: the convoy signal's geometry, the end of a walk whose signal failed, the release of a convoy the coordinator
   // no longer runs, and the party Town while it lasts. The row reads the signal and the convoy
   // activity after the awaited rows and before its own awaited stop, so a convoy a newer
   // fast-channel signal renewed keeps walking.
   async function partyWalksReply(reply: Record<string, any>): Promise<void> {
     readConvoyActivity(reply);
-    state.partyLocation = reply.partyLocation || null;
-    state.farmTravelPaused = !!reply.farmTravelPaused;
     const walk = walkClient.groupWalk as { travel: any; signal: any }, signal = walk.signal;
     walkClient.reloadConvoyGeometry(signal);
     if (walk.travel && signal && signal.id === walk.travel.id && Number(signal.epoch) === walk.travel.epoch && signal.phase === 'failed' && walk.travel.fail)
@@ -281,7 +285,7 @@ export function installMovementCharacter(root: Host, movement: Movement, hooks: 
     // telemetry and queue markers stamp with it).
     coordinatorNow: () => Date.now() + state.clockOffset,
     convoyReply, navigationReply: (reply: { navigationIntent?: Parameters<typeof navigation.applyNavigationIntent>[0] }) => navigation.applyNavigationIntent(reply.navigationIntent),
-    endLeaderFollow, partyWalksReply,
+    endLeaderFollow, farmSpotReply, partyWalksReply,
     // The role runner's movement tick, which the movers build beside `follow` (movers.ts).
     startMovementTick: follow.startMovementTick };
   // Movement's character door on the frame: the role runner's tick and reset, the queue client's

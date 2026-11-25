@@ -6978,6 +6978,12 @@
     { row: "task", owner: "01", phase: "request status" },
     { row: "hand", owner: "01", phase: "request status" },
     { row: "replied", owner: "13", phase: "request status" },
+    // Movement's copy of the party's farm spot and the farm travel pause, before any row that ends
+    // the apply, so a held, drained or Cave reply still brings the spot. The lease also rides the
+    // combat channel (table R `lifecycle`), which does not carry the spot, so a drain released there
+    // finds the spot of the last heartbeat. In W21 H7 (final-gate-closing5) the drained replies ended
+    // before `party-walks`, and the warrior began a farm reunion to the spot from before the drain.
+    { row: "farm-spot", owner: "02", phase: "request status" },
     { row: "held", owner: "13", phase: "request status", ends: true },
     { row: "game-party", owner: "01", phase: "request status" },
     { row: "catalog", owner: "12", phase: "request status" },
@@ -34753,7 +34759,7 @@ ${hook}`, was = errors.get(key3);
         return;
       }
       const location = ports.partyLocation();
-      if (ports.current() && !reunion && location && !reunionBlocked() && (c.map !== location.map || death && death.at > Math.max(ports.root.__partyRecoveredDeathAt || 0, ports.parent.__partyRecoveredDeathAt || 0))) {
+      if (ports.current() && !reunion && location && !ports.drainHeld() && !reunionBlocked() && (c.map !== location.map || death && death.at > Math.max(ports.root.__partyRecoveredDeathAt || 0, ports.parent.__partyRecoveredDeathAt || 0))) {
         beginFarmReunion();
         if (death) recovered(death.at);
       }
@@ -44034,10 +44040,13 @@ ${hook}`, was = errors.get(key3);
       realm4.__partyTownCycleId = reply2.partyTownCycleId || null;
       navigation.keepReturnProgress(reply2.returnProgress || null);
     }
-    async function partyWalksReply(reply2) {
-      readConvoyActivity(reply2);
+    function farmSpotReply(reply2) {
+      if (!("partyLocation" in reply2)) return;
       state.partyLocation = reply2.partyLocation || null;
       state.farmTravelPaused = !!reply2.farmTravelPaused;
+    }
+    async function partyWalksReply(reply2) {
+      readConvoyActivity(reply2);
       const walk3 = walkClient.groupWalk, signal = walk3.signal;
       walkClient.reloadConvoyGeometry(signal);
       if (walk3.travel && signal && signal.id === walk3.travel.id && Number(signal.epoch) === walk3.travel.epoch && signal.phase === "failed" && walk3.travel.fail)
@@ -44083,6 +44092,7 @@ ${hook}`, was = errors.get(key3);
       convoyReply,
       navigationReply: (reply2) => navigation.applyNavigationIntent(reply2.navigationIntent),
       endLeaderFollow,
+      farmSpotReply,
       partyWalksReply,
       // The role runner's movement tick, which the movers build beside `follow` (movers.ts).
       startMovementTick: follow.startMovementTick

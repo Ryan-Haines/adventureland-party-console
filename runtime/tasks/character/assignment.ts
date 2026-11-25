@@ -112,6 +112,8 @@ export interface ReunionPorts {
   setCombatTarget(id: string | null): void;
   eventRecovery(): Value;
   partyLocation(): Value;
+  // The lifecycle owner's drain holds the character (drain.ts `holds`).
+  drainHeld(): boolean;
   partyPositions(): Value[];
   desiredPartyMembers(): string[];
   leader(): string | null;
@@ -231,8 +233,12 @@ export function installFarmReunion(ports: ReunionPorts, assignment: Assignment) 
     }
     // Respawn can finish after its promise times out, or before a reloaded runner observes rip.
     // Recover authorized displacement independently.
+    // No reunion starts while the drain holds the character: the drain parks journeys and resumes
+    // their continuations when the lease clears (drain.ts `maintenanceReply`), and the tick decides
+    // from where the character stands then. The spot it reads is current at the release, since table
+    // A's `farm-spot` row applies it on every heartbeat reply, drained ones included.
     const location = ports.partyLocation();
-    if (ports.current() && !reunion && location && !reunionBlocked() && (c.map !== location.map || death &&
+    if (ports.current() && !reunion && location && !ports.drainHeld() && !reunionBlocked() && (c.map !== location.map || death &&
         death.at > Math.max(ports.root.__partyRecoveredDeathAt || 0, ports.parent.__partyRecoveredDeathAt || 0))) {
       beginFarmReunion();
       if (death) recovered(death.at);

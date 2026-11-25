@@ -184,6 +184,12 @@ export const TABLE_A = [
   { row: 'task', owner: '01', phase: 'request status' },
   { row: 'hand', owner: '01', phase: 'request status' },
   { row: 'replied', owner: '13', phase: 'request status' },
+  // Movement's copy of the party's farm spot and the farm travel pause, before any row that ends
+  // the apply, so a held, drained or Cave reply still brings the spot. The lease also rides the
+  // combat channel (table R `lifecycle`), which does not carry the spot, so a drain released there
+  // finds the spot of the last heartbeat. In W21 H7 (final-gate-closing5) the drained replies ended
+  // before `party-walks`, and the warrior began a farm reunion to the spot from before the drain.
+  { row: 'farm-spot', owner: '02', phase: 'request status' },
   { row: 'held', owner: '13', phase: 'request status', ends: true },
   { row: 'game-party', owner: '01', phase: 'request status' },
   { row: 'catalog', owner: '12', phase: 'request status' },

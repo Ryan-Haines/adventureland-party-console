@@ -50,7 +50,7 @@ function installReunion(context) {
     character: () => context.character, current: () => call('runtimeCurrent'), dungeonOwned: () => call('dungeonOwned'),
     lastDeath: () => context.lastDeathInfo, deathRecoveryRequest: () => call('deathRecoveryRequest'), farmTravel: () => context.farmingTravelToken,
     setCombatTarget: id => { context.combatTargetId = id; }, eventRecovery: () => context.eventRecoveryState,
-    partyLocation: () => context.partyLocation, partyPositions: () => context.targeting.positions(),
+    partyLocation: () => context.partyLocation, drainHeld: () => !!context.drainHeld, partyPositions: () => context.targeting.positions(),
     desiredPartyMembers: () => context.desiredPartyMembers, leader: () => context.leader,
     // The targeting owner's attacker rule (shared.js `isAttackingPartyMember`), from the context's targeting module.
     attacking: entity => call('isAttackingPartyMember', entity),

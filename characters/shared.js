@@ -386,7 +386,8 @@
     walks: function () { return movementParts.reunion; }, character: function () { return character; }, current: run.current, dungeonOwned: function () { return hunting.cave.owned; },
     lastDeath: function () { return telemetry.lastDeath(); }, deathRecoveryRequest: survivalCharacter.recovery.request, farmTravel: function () { return walkCommands.farmTravel(); },
     setCombatTarget: function (id) { targeting.setTargetId(id); }, eventRecovery: function () { return eventExit.recovery(); },
-    partyLocation: function () { return walkState.partyLocation; }, partyPositions: function () { return targeting.positions(); },
+    partyLocation: function () { return walkState.partyLocation; }, drainHeld: function () { return drain.holds(); },
+    partyPositions: function () { return targeting.positions(); },
     desiredPartyMembers: function () { return partyMembership.members(); }, leader: function () { return partyMembership.leader(); },
     attacking: function (target) { return isAttackingPartyMember(target); }, request: request, farmingTravelTarget: function (command) { return farmingTravelTarget(command); }, farmingEntryPoint: farm.entryPoint,
     bagBusy: function () { return bag.errandFor('hunt'); },
@@ -873,6 +874,7 @@
       hand: holds.handReply,
 
       replied: run.replied,
+      "farm-spot": movementParts.farmSpotReply,
       held: drain.heldReply,
       // The game party acts once per change of the pair, on each reply and each `party_update`
       // (01 design RF2, runtime/tasks/character/membership.ts).
