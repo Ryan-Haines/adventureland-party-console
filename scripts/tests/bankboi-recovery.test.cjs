@@ -112,3 +112,21 @@ test("items.storage: a transaction's start and end",async()=>{
  assert.deepEqual(since().map(e=>[e.decision,e.phase,e.code??null]),[['storage','started',null],['storage','ended','complete']]);
  assert.deepEqual(assigned,[[1,'B'],[1,'M']]);
 });
+
+// A coordinator restart between a transaction's write and the slot's handover leaves it saved in
+// `switching` with the merchant's slot empty (liveb-step11-run1.log, W55's handoff restart: the
+// BankBoi never started and the slot stayed empty for the start bound). The next start finishes
+// the handover.
+test('a switching transaction saved across a coordinator restart hands the slot to its BankBoi',async()=>{
+ const assigned=[];rosterFixture((slot,name)=>assigned.push([slot,name]));
+ const now=100000,state={bankboiTransaction:{id:'t',bankboi:'B',mode:'retrieve',phase:'switching',slot:1,requestIds:[],retrievals:[],startedAt:now-1000},
+  merchantCharacter:'M',headlessSlots:[null],statuses:{},merchantCurrent:null,bankbois:{B:{name:'B',items:[],state:'ready'}},lifecycle:{B:'offline'},
+  commands:{},withdrawals:{},bankboiQueue:[],nextCommandId:1,bankSnapshot:null};
+ const stopped=[],ports={now:()=>now,stop:async name=>stopped.push(name),persistRoster(){},persistBank(){},collect(){},log(){},merchantHeld:()=>false};
+ const service=createBankboiService(state,{B:{enabled:true},M:{enabled:true}},ports);
+ await service.start();
+ assert.deepEqual(assigned,[[1,'B']]);
+ assert.equal(state.bankboiTransaction?.id,'t');
+ assert.equal(state.bankboiTransaction.phase,'waiting-for-bankboi');
+ assert.equal(stopped.length,1,'the merchant stops once');
+});

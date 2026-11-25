@@ -747,20 +747,26 @@ export function createBankboiStorage<R extends WithdrawalRequest, Block extends 
     state.bankboiTransaction = active;
     ports.persistBank();
     recordItems({ decision: 'storage', subject: active.bankboi, by: 'T4', phase: 'started', mode: active.mode, id: active.id });
+    await handOver(active, merchant);
+  }
+  // The merchant's slot goes to the BankBoi. A coordinator restart inside it leaves the
+  // transaction saved in `switching` with no handover running, and start() runs it again.
+  async function handOver(active: StorageTransaction<R>, merchant: string): Promise<void> {
+    const index = active.slot - 1;
     try {
       state.headlessSlots[index] = null;
       ports.persistRoster();
       await stop(merchant);
-      partyHooks().roster.assign(index + 1, plan.candidate.name);
+      partyHooks().roster.assign(active.slot, active.bankboi);
       active.phase = 'waiting-for-bankboi';
       ports.persistBank();
-      ports.log('Switched merchant slot to ' + plan.candidate.name + ' for overflow storage', 'info');
+      ports.log('Switched merchant slot to ' + active.bankboi + ' for overflow storage', 'info');
     } catch (error) {
       switching = false;
       state.bankboiTransaction = null;
       ports.persistBank();
       recordItems({ decision: 'storage', subject: active.bankboi, by: 'T4', phase: 'ended', code: 'start_failed', id: active.id });
-      if (!state.headlessSlots[index]) partyHooks().roster.assign(index + 1, merchant);
+      if (!state.headlessSlots[index]) partyHooks().roster.assign(active.slot, merchant);
       ports.log('Could not start bankboi storage cycle', 'error', error instanceof Error ? error.message : String(error));
     }
   }
@@ -814,6 +820,11 @@ export function createBankboiStorage<R extends WithdrawalRequest, Block extends 
       ports.log('Recovering abandoned BankBoi transaction', 'error', { bankboi: active.bankboi });
       recordItems({ decision: 'storage', subject: active.bankboi, by: 'T4', phase: 'ended', code: 'abandoned', id: active.id });
       await restore(active);
+      return;
+    }
+    if (active?.phase === 'switching' && !switching && state.merchantCharacter) {
+      switching = true;
+      await (starting = handOver(active, state.merchantCharacter).finally(() => { starting = null; }));
       return;
     }
     if (ports.merchantHeld()) return;
