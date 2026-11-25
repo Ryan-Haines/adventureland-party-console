@@ -127,9 +127,34 @@ export const BASE_INVENTORY_SIZE = 42;
 // reports it as `standSlots`; merchantStandSlots reads the base 16 when a report names none.
 // Planners plan to the latest report, so a count that grew between two reports is read at the next one.
 export const BASE_STAND_SLOTS = 16;
-// The Tracktrix and its upgrade (G items `tracker`, `supercomputer`): the bag pins either in its
-// last cell, a cleanout never sends one, and its holder's card shows the Tracktrix bonuses.
+// The Tracktrix and its upgrade (G items `tracker`, `supercomputer`): either in the bag sets the
+// server's `player.tracker` (G node/server.js:1491-1496), so the call budget reads the tracker for
+// its holder, the bag pins either in its last cell, and its holder's card shows the Tracktrix bonuses.
 export const TRACKER_ITEMS: readonly string[] = ['tracker', 'supercomputer'];
+// The Ancient Computer and the Super Computer (G items `computer`, `supercomputer`, type
+// `computer`). The server sets `player.computer` while either sits in the bag (G node/server.js:
+// 1488-1497); an equipped slot never counts.
+export const COMPUTER_ITEMS: readonly string[] = ['computer', 'supercomputer'];
+// The items a character keeps on itself, so a collection or a cleanout never sends one: the
+// TRACKER_ITEMS and COMPUTER_ITEMS, each of which works only from its carrier's bag.
+const PERSONAL_ITEMS: ReadonlySet<string> = new Set([...TRACKER_ITEMS, ...COMPUTER_ITEMS]);
+export function isPersonalItem(item: { name?: unknown } | null | undefined): boolean {
+  return !!item && PERSONAL_ITEMS.has(String(item.name));
+}
+// The calls the console sends whose NPC distance check the server skips for a computer carrier
+// (G node/server.js: buy 8411, sell 8052, upgrade 7096, compound 6838, exchange 6591,
+// exchange_buy 6649, craft 6518 and 6525, dismantle 6395). Ponty, the Lost and Found, the Monster
+// Hunter's hunt and the bank have no such clause, so their walks stay.
+export const NETWORKED_CALLS = ['buy', 'sell', 'upgrade', 'compound', 'exchange', 'exchange_buy', 'craft', 'dismantle'] as const;
+export type NetworkedCall = (typeof NETWORKED_CALLS)[number];
+type Reacher = { map?: string; items?: readonly ({ name?: string } | null | undefined)[] };
+// Whether a character reaches the NPC of a networked call without walking: it carries a computer
+// and stands off the `mount` maps. Every networked call refuses with `cant_in_bank` on a mount map
+// (G node/server.js:5929, 5984 set `player.user` there), so a carrier in the bank still walks out.
+export function reachesWithoutWalking(character: Reacher, G: { maps?: Record<string, { mount?: boolean }> }, call: NetworkedCall): boolean {
+  return !G.maps?.[String(character.map)]?.mount &&
+    (character.items || []).some(item => !!item && COMPUTER_ITEMS.includes(String(item.name)));
+}
 // The steps a drop's acquisition path names before its item: a world table (G `drops.maps.global`
 // scales by the monster's HP), and a monster's chest (`open <table>`), each a step of the same
 // drop. The bag's catalog and the report's bestiary write them; the dashboard's drop rate reads them.

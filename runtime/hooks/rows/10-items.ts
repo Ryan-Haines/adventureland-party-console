@@ -234,6 +234,7 @@ export const READS = {
   'door.items.ACQUISITION': { side: 'both', type: 'typeof ACQUISITION', door: 'runtime/items/api.ts#ACQUISITION' },
   'door.items.marketListingFresh': { side: 'both', type: 'typeof marketListingFresh', door: 'runtime/items/api.ts#marketListingFresh' },
   'door.items.TRACKER_ITEMS': { side: 'both', type: 'typeof TRACKER_ITEMS', door: 'runtime/items/api.ts#TRACKER_ITEMS' },
+  'door.items.isPersonalItem': { side: 'both', type: 'typeof isPersonalItem', door: 'runtime/items/api.ts#isPersonalItem' },
   'door.items.catalogItemMeta': { side: 'both', type: 'typeof catalogItemMeta', door: 'runtime/items/api.ts#catalogItemMeta' },
   'door.items.joinItemMeta': { side: 'both', type: 'typeof joinItemMeta', door: 'runtime/items/api.ts#joinItemMeta' },
   'door.items.commerceRuleKey': { side: 'both', type: 'typeof commerceRuleKey', door: 'runtime/items/api.ts#commerceRuleKey' },
@@ -394,6 +395,8 @@ export const DECISIONS = {
   'lucky slot': { at: 'runtime/items/rules.ts#luckySlotSearch', core: 'game', cite: 'runtime/items/rules.ts:819, roll statistics' },
   'upgrade offering': { at: 'runtime/items/rules.ts#resolveUpgradeOffering', hook: 'settings.overlay' },
   'automatic NPC retrieval': { at: 'runtime/items/rules.ts#automaticNpcRetrieval', hook: 'settings.overlay' },
+  'NPC reach without walking': { at: 'runtime/items/rules.ts#reachesWithoutWalking', core: 'game', cite: 'runtime/items/rules.ts:148, game node/server.js computer clauses' },
+  'personal item': { at: 'runtime/items/rules.ts#isPersonalItem', core: 'game', cite: 'runtime/items/rules.ts:141, game node/server.js:1488-1497 tracker and computer clauses' },
 } satisfies Record<string, DecisionRow>;
 export const PLAIN = {
   // Facts the game fixes, which the console reads; an add-on's answer cannot change them.

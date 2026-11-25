@@ -6,9 +6,10 @@ import { copyKey, fingerprint, inventoryPack, isVaultPack, ruleKey, sameItem, sa
 import { aggregateSlotTracking, availableCraftStock, COMPOUND_INPUTS, emptyRolls, failureClass, freeSlots, itemFailure, luckySlotOf, luckySlotSearch, mergeSlotStream,
   normalizeSlotTracking, previewOptions, resolveUpgradeOffering, statScrollsNeeded, unavailablePreview, UPGRADE_LEVEL_MAX, LUCKY_HIGH_ROLL, LUCKY_ROLL_DIGITS,
   type ItemFailure, type LuckySlotStreams, type LuckySlotTracking, type PreviewOption, type PreviewResult, type UpgradePreviewRequest,
-  TRACKER_ITEMS, type UpgradePreviewResult, type UpgradeServerPreview } from '../rules.ts';
+  TRACKER_ITEMS, type NetworkedCall, type UpgradePreviewResult, type UpgradeServerPreview } from '../rules.ts';
 import type { ServerToClient_q_data } from 'typed-adventureland';
 import { itemQuantity, settles, type BagAnswers, type BagPorts } from './bag.ts';
+import { npcTrip } from './npc-trip.ts';
 import type { BankAnswers, LeftoverPorts } from './bank.ts';
 import type { createBag } from './owner.ts';
 import { scope } from '../../lifecycle/api.ts';
@@ -25,7 +26,7 @@ type CommerceMarks = { commerceCycle?: boolean; commerceJournalKey?: string; com
 // live activity line.
 interface CommerceServices {
   checkpoint(state: any, cycleBoundary: boolean): Promise<void>;
-  move(destination: unknown): Promise<void>;
+  move(destination: unknown, call: NetworkedCall): Promise<void>;
   fund(amount: number): Promise<void>;
   activity(entry: { level: string; message: string; details?: unknown }): Promise<void>;
 }
@@ -120,6 +121,8 @@ export function createProduction(p: ProductionPorts) {
   const me = () => p.character();
   const G = () => p.G();
   const bag = () => p.bag;
+  // Production's NPC trips: every buy, upgrade, compound and craft walks through it.
+  const toNpc = npcTrip(p, destination => p.move(destination));
   // The dashboard's activity line is a copy of the log line written before it, so a failed post is logged.
   const activityFailed = (error: unknown) => p.log('Merchant activity report failed: ' + message(error), 'red');
   // A refused failure report is logged; the merchant job owner's runner posts the job's end
@@ -708,7 +711,7 @@ export function createProduction(p: ProductionPorts) {
         await p.bank.merchantVisitBank(command, activity);
         await p.bank.withdrawMerchantCash(Math.min(price - me().gold, Number(me().bank?.gold) || 0), command);
       }
-      await p.move(p.findNpc(seller));
+      await toNpc(p.findNpc(seller), 'buy');
       await p.buyConfirmed(purchase.name, 1);
       const bought = me().items.findIndex((item: ItemCopy | null, index: number) => !used[index] && !!item && item.name === purchase.name && (item.level || 0) === 0);
       if (bought >= 0) { used[bought] = true; returns.push(bought); }
@@ -737,7 +740,7 @@ export function createProduction(p: ProductionPorts) {
           await prepareManualImprovementScrolls(command, activity, { upgrades: remaining, compounds: command.compounds });
           scrollSlot = p.reads.findInventoryItemByName(scrollName);
         }
-        await p.move(p.findNpc('newupgrade'));
+        await toNpc(p.findNpc('newupgrade'), 'upgrade');
         // Scroll buying and travel can outlive a rule edit.
         offeringAttempt = await prepareUpgradeOffering(command, mark, slot, activity);
         if (offeringAttempt?.waiting) break;
@@ -793,7 +796,7 @@ export function createProduction(p: ProductionPorts) {
         await prepareManualImprovementScrolls(command, activity, { compounds: groups.slice(groupIndex) });
         cscrollSlot = p.reads.findInventoryItemByName(cscroll);
       }
-      await p.move(p.findNpc('newupgrade'));
+      await toNpc(p.findNpc('newupgrade'), 'compound');
       try {
         await compoundConfirmed(slots[0], slots[1], slots[2], cscrollSlot);
         const first = group.items[0].item, next = (first.level || 0) + 1;
@@ -842,7 +845,7 @@ export function createProduction(p: ProductionPorts) {
           const scrollName = 'cscroll' + p.grade(me().items[candidates[0]]);
           if (p.reads.findInventoryItemByName(scrollName) < 0) await ensureOwnedItemQuantity(scrollName, 1, command, activity);
           await p.operationStage(command, 'processing');
-          await p.move(p.findNpc('newupgrade'));
+          await toNpc(p.findNpc('newupgrade'), 'compound');
           await refreshCompoundProtection(command);
           candidates = compoundInventorySlots(command, autoMark.name, level);
           if (candidates.length < COMPOUND_INPUTS) continue;
@@ -978,7 +981,7 @@ export function createProduction(p: ProductionPorts) {
       if ((Number(me().bank?.gold) || 0) < shortfall) throw itemFailure('short_gold', 'Insufficient bank gold for ' + missing + ' × ' + name);
       await p.bank.withdrawMerchantCash(shortfall, command);
     }
-    await p.move(p.findNpc('scrolls'));
+    await toNpc(p.findNpc('scrolls'), 'buy');
     await p.buyConfirmed(name, missing);
     return p.reads.itemAvailability(name);
   }
@@ -1012,7 +1015,7 @@ export function createProduction(p: ProductionPorts) {
       await p.bank.withdrawMerchantCash(neededGold, command);
     }
     if (names.some(name => missing[name] > 0)) {
-      await p.move(p.findNpc('scrolls'));
+      await toNpc(p.findNpc('scrolls'), 'buy');
       for (const name of names) if (missing[name] > 0) await p.buyConfirmed(name, missing[name]);
     }
     return needs;
@@ -1056,7 +1059,7 @@ export function createProduction(p: ProductionPorts) {
     for (const name of names) {
       const count = toBuy(name);
       if (!count) continue;
-      await p.move(p.findNpc(p.reads.itemSeller(name)!));
+      await toNpc(p.findNpc(p.reads.itemSeller(name)!), 'buy');
       await p.buyConfirmed(name, count);
     }
     activity.push({ level: 'info', message: 'Prepared stat scrolls before the party visit' });
@@ -1080,7 +1083,7 @@ export function createProduction(p: ProductionPorts) {
         continue;
       }
       try {
-        await p.move(p.findNpc('newupgrade'));
+        await toNpc(p.findNpc('newupgrade'), 'upgrade');
         await upgradeAtSlot(itemSlot, scrollSlot);
         const completed = fingerprint(me().items[itemSlot]);
         command._statScrollsApplied.push({ mark, slot: itemSlot, item: completed });
@@ -1115,8 +1118,10 @@ export function createProduction(p: ProductionPorts) {
     const activity: any[] = [], resolved: any[] = [];
     let failure: unknown = null;
     const origin = { map: me().map, x: me().x, y: me().y };
+    // A trip that failed on its way returns too.
+    let walked = true;
     try {
-      await p.move(p.findNpc('newupgrade'));
+      walked = await toNpc(p.findNpc('newupgrade'), 'upgrade');
       for (const mark of command.items || []) {
         if (!mark || typeof mark.slot !== 'string' || !sameItemState(me().slots[mark.slot], mark.item)) {
           activity.push({ level: 'error', message: 'Skipped stale stat-scroll request for ' + (mark?.item?.name || 'equipment') });
@@ -1144,7 +1149,7 @@ export function createProduction(p: ProductionPorts) {
       activity.push({ level: 'error', message: 'Stat-scroll application failed', details: message(error) });
       failure = error;
     }
-    try {
+    if (walked) try {
       // The leader may have moved while the scrolls applied, so the return reads it now.
       const leader = p.leaderLocation();
       await p.move(leader || origin);
@@ -1386,7 +1391,7 @@ export function createProduction(p: ProductionPorts) {
       if (!pending) return;
       if (stock(pending.name) < pending.before + pending.quantity) {
         await services.fund(pending.cost);
-        await services.move(p.reads.itemSeller(pending.name));
+        await services.move(p.reads.itemSeller(pending.name), 'buy');
         await p.buyConfirmed(pending.name, pending.quantity);
       }
       if (pending.base) {
@@ -1409,7 +1414,7 @@ export function createProduction(p: ProductionPorts) {
       if (Number.isFinite(Number(purchase.budget)) && progress.spent + cost > Number(purchase.budget)) throw Error(exhausted());
       // The walk and the funding come first, so a failed walk spends none of the order's allowance.
       await services.fund(cost);
-      await services.move(p.reads.itemSeller(name));
+      await services.move(p.reads.itemSeller(name), 'buy');
       progress.spent += cost;
       if (base && progress.batchRemaining) progress.attempts += 1;
       progress.pendingPurchase = { name, quantity, cost, before: stock(name), base, batch: base && progress.batchRemaining > 0,
@@ -1508,7 +1513,7 @@ export function createProduction(p: ProductionPorts) {
       while (progress.activeItem && (Number(progress.activeItem.level) || 0) < target) {
         const nextLevel = (Number(progress.activeItem.level) || 0) + 1, scroll = 'scroll' + p.grade(progress.activeItem);
         if (!stock(scroll)) await purchaseStock(scroll, 1, false);
-        await services.move('newupgrade');
+        await services.move('newupgrade', 'upgrade');
         const slot = ownedSlot();
         if (slot < 0) throw Error('Owned upgrade item missing; order requires inventory review');
         progress.pendingUpgrade = { level: nextLevel };
@@ -1547,9 +1552,9 @@ export function createProduction(p: ProductionPorts) {
     command._commerceState = resumeState;
     p.commerce(command.id, { commerceCycle: versioned });
     const prepared = resumeState.phase === 'leveling' || resumeState.phase === 'crafting';
-    async function commerceMove(destination: unknown) {
+    async function commerceMove(destination: unknown, call: NetworkedCall) {
       if (versioned && p.job()?.commandId !== command.id) throw itemFailure('interrupted');
-      try { await p.move(destination); }
+      try { await toNpc(destination, call); }
       catch (error: any) { error.commerceMovement = true; throw error; }
       command._commerceMovementSucceeded = true;
     }
@@ -1701,7 +1706,7 @@ export function createProduction(p: ProductionPorts) {
         await p.bank.withdrawMerchantCash(shortage, command);
       }
       for (const material of materialBuys) {
-        await commerceMove(p.reads.itemSeller(material.id));
+        await commerceMove(p.reads.itemSeller(material.id), 'buy');
         await p.buyConfirmed(material.id, material.quantity);
         activity.push({ level: 'success', message: 'Bought ' + material.quantity + ' × ' + material.id + ' for crafting' });
       }
@@ -1733,7 +1738,7 @@ export function createProduction(p: ProductionPorts) {
         if (Number.isFinite(Number(purchase.budget)) && cost > Number(purchase.budget))
           throw Error((purchase.estimateUnavailable ? 'Gold cap for unavailable estimate exhausted' : '90% estimated budget exhausted') + ' for ' + purchase.id +
             ' (spent 0 of ' + Number(purchase.budget).toLocaleString() + ' gold)');
-        await commerceMove(p.reads.itemSeller(purchase.id));
+        await commerceMove(p.reads.itemSeller(purchase.id), 'buy');
         await p.buyConfirmed(purchase.id, purchase.quantity);
         activity.push({ level: 'success', message: 'Bought ' + purchase.quantity + ' × ' + purchase.id });
         await checkpoint({ phase: 'leveling', buyIndex: buyIndex + 1, attempts: 0, spent: 0 }, true);
@@ -1754,7 +1759,7 @@ export function createProduction(p: ProductionPorts) {
         for (const need of materials)
           if (exactInventoryQuantity(need.id, need.level) < need.quantity) throw Error('Crafting material is unavailable: ' + need.id + ' +' + need.level);
         await checkpoint({ phase: 'crafting', craftIndex, crafted: startingCraft }, true);
-        await commerceMove(npc);
+        await commerceMove(npc, 'craft');
         if (recipe.quest) activity.push({ level: 'info', message: 'Visited ' + (G().npcs[provider]?.name || provider) + ' for required recipe ' + line.id });
         for (let count = startingCraft; count < line.quantity; count += 1) {
           await p.craft(line.id);
@@ -1882,6 +1887,13 @@ export function createProduction(p: ProductionPorts) {
     const held = bag().facts();
     if (held.upgrading || held.banking || !await bag().acquire('upgrading')) return;
     const origin = { map: me().map, x: me().x, y: me().y };
+    // The run returns after a walk, a failed walk included, or to a caller's return location.
+    let walked = !!returnLocation;
+    const trip = async (destination: unknown, call: NetworkedCall) => {
+      const before = walked;
+      walked = true;
+      walked = await toNpc(destination, call) || before;
+    };
     const completed: any[] = [], purchased: any[] = [], compounded: unknown[] = [];
     const r = p.reads;
     // A group's three copies: the named cell first, then the first unused match.
@@ -1925,6 +1937,7 @@ export function createProduction(p: ProductionPorts) {
         total + Math.max(0, required[scroll] - r.inventoryQuantity(scroll)) * G().items[scroll].g, 0);
       for (const purchase of purchases || []) if (G().items[purchase.name] && r.itemSeller(purchase.name)) goldNeeded += G().items[purchase.name].g;
       if (me().gold < goldNeeded) {
+        walked = true;
         await p.move('bank');
         const shortfall = goldNeeded - me().gold;
         if (!me().bank || me().bank.gold < shortfall) throw itemFailure('short_gold', 'not enough gold in character and bank for upgrade scrolls');
@@ -1937,18 +1950,18 @@ export function createProduction(p: ProductionPorts) {
           purchased.push(purchase);
           continue;
         }
-        await p.move(p.findNpc(seller));
+        await trip(p.findNpc(seller), 'buy');
         await p.buy(purchase.name, 1);
         purchased.push(purchase);
       }
       if (goldNeeded) {
-        await p.move(p.findNpc('scrolls'));
+        await trip(p.findNpc('scrolls'), 'buy');
         for (const scroll of Object.keys(required)) {
           const missing = Math.max(0, required[scroll] - r.inventoryQuantity(scroll));
           if (missing) await p.buy(scroll, missing);
         }
       }
-      await p.move(p.findNpc('newupgrade'));
+      await trip(p.findNpc('newupgrade'), 'upgrade');
       for (const entry of work) {
         const itemSlot = r.findMarkedItem(entry.mark);
         for (let step = 0; step < entry.tiers; step += 1) {
@@ -1985,7 +1998,7 @@ export function createProduction(p: ProductionPorts) {
     } catch (error) {
       p.log('Upgrade run failed: ' + message(error), 'red');
     } finally {
-      try { await p.move(returnLocation || p.partyLocation() || origin); }
+      try { if (walked) await p.move(returnLocation || p.partyLocation() || origin); }
       catch (error) { p.log('Return from upgrades failed: ' + message(error), 'red'); }
       bag().release('upgrading');
       try {
@@ -2058,7 +2071,7 @@ export function createProduction(p: ProductionPorts) {
         throw Error('Upgrade operation still settling; refresh again');
       if (!sameItem(me().items[previewRequest.slot], previewRequest.item)) throw Error('Item changed; reopen the menu');
       await borrowUpgradePreviewSupplies(previewRequest);
-      await previewTravel('newupgrade');
+      await toNpc('newupgrade', 'upgrade');
       if (!await bag().acquire('previewing')) throw Error('Upgrade preview already running');
       // The bag stays held until the game's shared upgrade promise settles, so a real upgrade never
       // receives a late preview.

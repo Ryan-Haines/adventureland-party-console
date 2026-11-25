@@ -1059,6 +1059,7 @@ An add-on reads one with `ctx.read(name, ...args)` or `read(name, ...args)` (REA
 | `door.items.ACQUISITION` | 10 | both | typeof ACQUISITION |
 | `door.items.marketListingFresh` | 10 | both | typeof marketListingFresh |
 | `door.items.TRACKER_ITEMS` | 10 | both | typeof TRACKER_ITEMS |
+| `door.items.isPersonalItem` | 10 | both | typeof isPersonalItem |
 | `door.items.catalogItemMeta` | 10 | both | typeof catalogItemMeta |
 | `door.items.joinItemMeta` | 10 | both | typeof joinItemMeta |
 | `door.items.commerceRuleKey` | 10 | both | typeof commerceRuleKey |

@@ -10,6 +10,7 @@ import { RESTOCK_DEFAULT } from '../saved-fields.ts';
 import type { InventoryEntry } from '../../coordinator/contracts/item.ts';
 import type { CompoundRule } from '../coordinator/production.ts';
 import { settles, type BagAnswers, type BagPorts } from './bag.ts';
+import { npcTrip } from './npc-trip.ts';
 import type { createBag } from './owner.ts';
 import { boundFired } from '../../status/api.ts';
 
@@ -751,6 +752,8 @@ export function createBank(p: BankPorts) {
   let stockFailed: string | null = null;
   const stockSeen = () => JSON.stringify([me().gold, me().items]);
   const stockDue = () => p.reads.inventoryQuantity(hpSupply().item) === 0 && stockFailed !== stockSeen();
+  // The bank's NPC trips: the stock-up's buy and a provision's sale.
+  const toNpc = npcTrip(p, destination => bankSortMove(destination));
   // The bag stays still while a holder holds it or another owner's work holds the merchant there; the
   // stock-up, the elixir and the merchant's tidy all ask this one read (12 table A's acting rows).
   // A BankBoi's storage holds it too.
@@ -781,10 +784,12 @@ export function createBank(p: BankPorts) {
     if (!potion || me().gold < potion.g * (supply.max - carried)) { stockFailed = stockSeen(); return false; }
     if (p.bag.take('stocking') !== 'taken') return false;
     const start = { map: me().map, x: me().x, y: me().y };
+    // A trip that failed on its way returns too.
+    let walked = true;
     try {
       const vendor = p.findNpc('fancypots');
       if (!vendor) throw Error('fancypots vendor not found');
-      await bankSortMove(vendor);
+      walked = await toNpc(vendor, 'buy');
       carried = p.reads.inventoryQuantity(supply.item);
       const needed = Math.max(0, supply.max - carried);
       if (needed && me().gold >= potion.g * needed) {
@@ -798,7 +803,7 @@ export function createBank(p: BankPorts) {
       stockFailed = stockSeen();
       throw error;
     } finally {
-      try { await bankSortMove(p.partyLocation() || start); }
+      try { if (walked) await bankSortMove(p.partyLocation() || start); }
       catch (error: any) { p.log('Return from potion vendor failed: ' + (error?.reason || error?.message || error), 'red'); }
       p.bag.release('stocking');
     }
@@ -1036,7 +1041,7 @@ export function createBank(p: BankPorts) {
       items: me().items.map((item: ItemCopy | null, slot: number) => item ? { slot, item: p.reads.fingerprint(item), meta: p.reads.itemDefinition(item) } : null) });
     try {
       if (command.provision) {
-        await walk('potions');
+        await toNpc('potions', 'sell');
         for (const slot of Object.keys(me().slots || {})) if (me().slots[slot]) await p.unequip(slot);
         for (let slot = 0; slot < me().items.length; slot += 1) if (me().items[slot]) await p.sell(slot, stackQuantity(me().items[slot]));
       }

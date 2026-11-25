@@ -1156,6 +1156,8 @@
   }
 
   function visitPorts() {
+    var npcWalk = itemsOwner.npcTrip({ character: function () { return character; }, G: function () { return G; } },
+      function (destination) { return smart_move(destination, undefined, { request: errandRequest }); });
     return {
       character: function () { return character; }, player: function (name) { return get_player(name); },
       protectedSlots: function () { return bag.protectedSlots(); }, current: run.current, lastCommand: function () { return intake.last(); }, walkState: function () { return walkState; },
@@ -1191,7 +1193,8 @@
       itemSeller: function (name) { return itemSeller(name); },
       restockElixirEntries: function (command, name, needed) { return market.restockElixirEntries(command, name, needed); },
       inventoryQuantity: function (name) { return inventoryQuantity(name); },
-      walkToNpc: function (npc) { return smart_move(find_npc(npc), undefined, { request: errandRequest }); },
+      // The items owner's NPC trip (runtime/items/character/npc-trip.ts) over the errand walk.
+      walkToNpc: function (npc, call) { return npcWalk(find_npc(npc), call); },
       buy: function (name, quantity) { return buyConfirmed(name, quantity); },
       root: function () { return root; }, sameItemState: function (item, wanted) { return sameItemState(item, wanted); },
       isEquipment: function (item) { return merchantHandsOwner.isDashboardEquipment(item); },

@@ -219,6 +219,10 @@ test('the tracker retries one margin after a lost reply, kill credits raise the 
     assert.deepEqual(reply.monsters,{goo:4,bee:1},'each credit raises its count by 1');
     assert.equal(p.replies.at(-1),reply,'on the object the catalog holds');
   }finally{p.stop();}
+  // A Super Computer in the bag sets the server's `player.tracker` (node/server.js:1491-1492).
+  const computer=plantedInstall({items:[{name:'supercomputer'}]});
+  try{assert.equal(computer.emitted.filter(m=>m==='tracker').length,1,'a Super Computer carrier reads the tracker');}
+  finally{computer.stop();}
   // A figure of 130: a tracker read (50) fits the shared limit of 188, and a job `cm` of 64 does
   // not, so the job question waits and its wait holds the read. The question is the read's own,
   // which declares that it does not rise (call-budget-reads.ts `READS`).

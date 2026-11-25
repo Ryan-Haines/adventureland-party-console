@@ -671,7 +671,8 @@ and voluntary event evacuation. These coordinator and character changes require
 the supported ordinary full restart; building alone does not activate both.
 
 Personal Tracktrix items use the native item ID `tracker`, not `tracktrix`.
-Merchant collection and emergency cleanout retain trackers and supercomputers.
+Merchant collection and emergency cleanout retain the personal items: trackers, supercomputers and
+Ancient Computers (`isPersonalItem` in runtime/items/rules.ts), since each works only from its carrier's bag.
 Character inventory maintenance pins one to the final inventory slot when no
 inventory command is running; merchant lucky-slot tidying preserves that slot.
 Use the native `isize` capacity for this destination, since item arrays can extend

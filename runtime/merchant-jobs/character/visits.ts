@@ -9,7 +9,7 @@
 // The send window waits for the merchant's distance and the command's state only. Its own `cc <= 120` went in
 // layer 8 part 4 (3.13): the call budget's bands keep combat's room, and the sends pass the budget's emit layer
 // as the items owner's rows under.
-import { fateReachesMerchant, ruleKeyParts, TRACKER_ITEMS, type Fate } from '../../items/api.ts';
+import { fateReachesMerchant, isPersonalItem, ruleKeyParts, TRACKER_ITEMS, type Fate } from '../../items/api.ts';
 import { jobEnded, HANDOFF, VISIBILITY_RANGE, merchantAnniversaryControl, BACKGROUND_REFUSED, type MerchantDoorAnswer, type MerchantDoorBand, type MerchantDoors } from '../rules.ts';
 import { boundFired } from '../../status/api.ts';
 import { partyHooks } from '../../hooks/index.ts';
@@ -69,12 +69,13 @@ const relocateMs = (me: any): number => {
   const left = Number(me.c?.town?.ms);
   return left > 0 ? left + ageOf('report') : RELOCATE_MS;
 };
-// The supplies and the personal tracker a cleanout never sends.
-const CLEANOUT_KEEPS = [...TRACKER_ITEMS, 'hpot0', 'mpot0', 'hpot1', 'mpot1'];
+// The supplies a cleanout never sends.
+const CLEANOUT_SUPPLIES = ['hpot0', 'mpot0', 'hpot1', 'mpot1'];
 
 export function cleanoutProtected(item: any): boolean {
-  return !!(item.l || item.b || CLEANOUT_KEEPS.indexOf(item.name) >= 0);
+  return !!(item.l || item.b || isPersonalItem(item) || CLEANOUT_SUPPLIES.indexOf(item.name) >= 0);
 }
+// The Tracktrix copy the items owner pins in the bag's last cell.
 export function isPersonalTracker(item: any): boolean {
   return !!item && TRACKER_ITEMS.includes(item.name);
 }
@@ -268,7 +269,7 @@ export function createMerchantVisits(p: VisitPorts) {
       requests = requests.filter(entry => !cleanoutProtected(entry.item));
       requests.sort((a, b) => cleanoutPriority(a) - cleanoutPriority(b));
     }
-    requests = requests.filter(entry => !isPersonalTracker(entry.item));
+    requests = requests.filter(entry => !isPersonalItem(entry.item));
     let capacity = Math.max(0, Number(command.capacity) || 0);
     // A cleanout is an emergency while the bag is down to the items owner's protected free slots.
     const cleanoutEmergency = p.freeInventorySlots() <= p.protectedSlots();
@@ -317,7 +318,7 @@ export function createMerchantVisits(p: VisitPorts) {
         if (slot < 0) continue;
         // A copy that moved slots while the window opened is asked again at its new slot.
         if (slot !== checkedSlot) { i -= 1; continue; }
-        if (isPersonalTracker(me.items[slot]) || command.cleanout && cleanoutProtected(me.items[slot])) continue;
+        if (isPersonalItem(me.items[slot]) || command.cleanout && cleanoutProtected(me.items[slot])) continue;
         const sendQuantity = Math.min(Number(requests[i].quantity) || p.itemQuantity(me.items[slot]), p.itemQuantity(me.items[slot]));
         if (requests[i].mark && (requests[i].mark.deconstructionId || requests[i].mark.npcSaleId) && (me.items[slot].l || me.items[slot].b)) continue;
         await p.sendItem(command.merchant, slot, sendQuantity);
@@ -669,7 +670,7 @@ export function createMerchantVisits(p: VisitPorts) {
           const buyQuantity = Math.max(0, needed - p.inventoryQuantity(supply.item));
           if (me.gold >= (G as any).items[supply.item].g * buyQuantity) {
             if (buyQuantity) {
-              await p.walkToNpc(seller);
+              await p.walkToNpc(seller, 'buy');
               await p.buy(supply.item, buyQuantity);
             }
             deliveries.push({ name: supply.item, quantity: needed });

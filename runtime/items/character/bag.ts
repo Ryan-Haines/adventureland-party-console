@@ -160,13 +160,17 @@ export function createBagReads(p: BagPorts) {
   // the last stand cell, runner_functions.js:1538-1545 at pin).
   function standSlots(): number {
     const character = me();
-    return tradeSlots({ ctype: character.ctype, level: character.level, stand: standItem() ?? undefined });
+    // The open stand names its kind; a bag item's kind is its G item's `stand`, a computer's `cstand`.
+    const item = standItem();
+    return tradeSlots({ ctype: character.ctype, level: character.level, stand: character.stand || (item ? p.G().items[item]?.stand : undefined) });
   }
   // The stand the merchant has open, else the bag's stand that open_stand() opens, else null: the
   // game opens a stand only from a stand item, so the coordinator sends no stand return without one.
+  // open_stand() takes the last bag item whose G item names a `stand` (js/runner_functions.js:
+  // 1603-1609), a computer's `cstand` included.
   function standItem(): string | null {
     const G = p.G(), character = me();
-    return character.stand || items().findLast(item => item && G.items[item.name!]?.type === 'stand')?.name || null;
+    return character.stand || items().findLast(item => item && G.items[item.name!]?.stand)?.name || null;
   }
 
   // The item catalog and item details.

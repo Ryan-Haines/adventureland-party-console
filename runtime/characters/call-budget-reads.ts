@@ -10,6 +10,7 @@ import type { ServerToClient_player } from 'typed-adventureland';
 import type { Band, BudgetSocket, CallBudget } from './call-budget.ts';
 import { READ_PICKS } from './call-budget-limits.ts';
 import type { ScopeHandle } from '../lifecycle/api.ts';
+import { TRACKER_ITEMS } from '../items/api.ts';
 
 type Item = { name?: string } | null;
 // The game window's tracker render: the native client draws the tracker window with it on every
@@ -45,7 +46,8 @@ interface ReadsInstall {
   roster?(players: RosterEntry[]): void;
 }
 
-const carriesTracktrix = (items: Item[] | undefined) => (items || []).some(item => item?.name === 'tracker');
+// The server answers `tracker` while either Tracktrix item sits in the bag (the items owner's TRACKER_ITEMS).
+const carriesTracktrix = (items: Item[] | undefined) => (items || []).some(item => TRACKER_ITEMS.includes(String(item?.name)));
 
 // The realm's player names, as the status report shows them.
 function playerNames(data: unknown): string[] {

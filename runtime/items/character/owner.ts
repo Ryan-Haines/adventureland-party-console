@@ -6,6 +6,7 @@ import { createBagReads, type BagPorts } from './bag.ts';
 import { createBank, storeCompoundLeftovers, type BankAnswers, type BankPorts } from './bank.ts';
 import { createProduction, type ProductionPorts } from './production.ts';
 import { createMarket, exchangeRewards, type MarketAnswers, type MarketPorts } from './market.ts';
+import { npcTrip } from './npc-trip.ts';
 import { bankGame, marketGame, productionGame, sendGold } from './calls.ts';
 import { partyHooks } from '../../hooks/index.ts';
 import type { Registration } from '../../hooks/registry.ts';
@@ -199,6 +200,8 @@ function marketOf(ports: Omit<MarketPorts, 'margin' | 'game'>): MarketAnswers {
 }
 const partyItems: { loot?: MarketAnswers['loot'] } & Record<string, unknown> = { bag, bagReads, bank: bankOf,
   production: productionOf, market: marketOf, failure: itemFailure,
+  // The NPC trip the merchant jobs owner's restock walks through (shared.js `visitPorts`).
+  npcTrip,
   // The game calls other owners' ports take from the items owner (calls.ts): the merchant jobs owner's visit unequips, equips, deposits
   // and sends gold, the merchant jobs owner's gathering splits a catch; the hunting owner's rare deploys its item.
   game: { unequip: bankGame.unequip, equip: productionGame.equip, bankDeposit: bankGame.bankDeposit, sendGold, split: bankGame.split } };

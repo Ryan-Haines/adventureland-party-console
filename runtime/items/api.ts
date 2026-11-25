@@ -32,7 +32,7 @@ export { UPGRADE_CHANCES, highestUpgradeLevel, estimateUpgradeBatch, upgradeOffe
 export type { UpgradeChoice, UpgradeEstimate, UpgradeOffering, UpgradeOfferingRule, UpgradePreviewResult, LuckySlotTracking,
   LuckySlotHistory, MarketIgnoredItem, MarketItemIdentity, RestockPolicy } from './rules.ts';
 export { marketItemKey, ownedStockKey } from './identity.ts';
-export { ACQUISITION, marketListingFresh, TRACKER_ITEMS } from './rules.ts';
+export { ACQUISITION, isPersonalItem, marketListingFresh, TRACKER_ITEMS } from './rules.ts';
 // The item meta join the coordinator and the dashboard both read a copy's meta through.
 export { catalogItemMeta, joinItemMeta } from './catalog-meta.ts';
 // The rule keys the dashboard's item tiles look rules up by, and the dismantle rule and its

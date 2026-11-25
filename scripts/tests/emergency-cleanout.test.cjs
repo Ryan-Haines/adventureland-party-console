@@ -29,12 +29,12 @@ function fixture(items, capacity = 42, extra = {}, fates = {}) {
 }
 const bag=(front, size=42)=>[...front,...Array.from({length:size-front.length},()=>({name:'locked',l:true}))];
 scenarioTable('the emergency cleanout sends the right copies in order and reports what remains',fixture,[
- ['emergency cleanout protects supplies and tracktrix and orders remaining categories',async f=>{
+ ['emergency cleanout protects supplies, the tracktrix and both computers and orders remaining categories',async f=>{
   const receipt=await f.run();
   assert.deepEqual(f.sent,['ingredient','ring','armor','weapon']);
   assert.equal(receipt.cleanoutRemaining,false);
  },
-  bag(['weapon','armor','ring','ingredient','tracker','hpot0','mpot0','hpot1','mpot1'].map(name=>({name})))],
+  bag(['weapon','armor','ring','ingredient','tracker','computer','supercomputer','hpot0','mpot0','hpot1','mpot1'].map(name=>({name})))],
  ['manual and automatic marks precede extras; spare capacity cleans beyond emergency relief',async f=>{
   const receipt=await f.run();
   assert.deepEqual(f.sent,['weapon','armor','ingredient','ingredient','ring']);
@@ -63,8 +63,8 @@ scenarioTable('the emergency cleanout sends the right copies in order and report
  ['cleanout protects explicitly marked supplies and live locked items too',async f=>{
   await f.run();
   assert.deepEqual(f.sent,['ingredient']);
- },bag([{name:'tracker'},{name:'hpot0'},{name:'mpot0'},{name:'weapon',l:true},{name:'ingredient'}]),42,{
-   marked:['tracker','hpot0','mpot0','weapon'].map((name,slot)=>({slot,item:{name}}))}],
+ },bag([{name:'tracker'},{name:'hpot0'},{name:'mpot0'},{name:'weapon',l:true},{name:'computer'},{name:'ingredient'}]),42,{
+   marked:['tracker','hpot0','mpot0','weapon','computer'].map((name,slot)=>({slot,item:{name}}))}],
  ["MJ90: each copy's fate decides every send, so a claimed or held copy stays through the cleanout and an auto rule",async f=>{
   await f.run();
   assert.deepEqual(f.sent,['ingredient','ring']);

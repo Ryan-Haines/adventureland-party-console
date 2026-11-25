@@ -6,6 +6,7 @@ import { ALDATA_AUTH_MAIL, ALDATA_RATE_WINDOW_MS, DISMANTLE_FREE_SLOTS, LOOT_RAD
 import { sameItem, type ItemCopy } from '../identity.ts';
 import { SEND_REACH } from '../../protocol/reports.ts';
 import { settles, type BagAnswers, type BagPorts } from './bag.ts';
+import { npcTrip } from './npc-trip.ts';
 import type { BankAnswers } from './bank.ts';
 import type { createBag } from './owner.ts';
 import { gameRealm } from '../../protocol/realm.ts';
@@ -201,6 +202,8 @@ export function createMarket(p: MarketPorts) {
     await p.bank.withdrawMerchantCash(shortage, command);
   }
   const walk = (destination: unknown) => p.walk(destination);
+  // The market's NPC trips: the exchange, the restock buy, the dismantle and the NPC sale.
+  const toNpc = npcTrip(p, walk);
 
   // An NPC purchase counts once the bag holds it. The game's reply comes first; past it, the bag
   // shows the purchase within two measured round trips. The game sells equipment one copy
@@ -318,7 +321,7 @@ export function createMarket(p: MarketPorts) {
         // Every remaining line is checked again before another NPC walk.
         for (const pending of supplies(lines.slice(lineIndex)))
           if (carried(pending.id, pending.level) < pending.quantity) throw Error('Exchange inventory changed before travel: ' + pending.id);
-        await walk(p.findNpc(line.reward ? definition.npc || line.id + 's' : exchangeNpc(line.id)));
+        await toNpc(p.findNpc(line.reward ? definition.npc || line.id + 's' : exchangeNpc(line.id)), line.reward ? 'exchange_buy' : 'exchange');
         for (let count = 0; count < line.quantity; count += 1) {
           // Each exchange step starts with the bag merge.
           await p.bank.mergeBag();
@@ -701,7 +704,7 @@ export function createMarket(p: MarketPorts) {
       for (const need of needs) {
         const seller = reads.itemSeller(need.supply.item);
         if (!seller) throw Error('Could not find potion seller for ' + need.supply.item);
-        await walk(p.findNpc(seller));
+        await toNpc(p.findNpc(seller), 'buy');
         await buyConfirmed(need.supply.item, need.quantity);
         activity.push({ level: 'success', message: 'Restocked ' + need.quantity + ' × ' + (G().items[need.supply.item]?.name || need.supply.item) + ' to ' + need.supply.max });
       }
@@ -725,7 +728,7 @@ export function createMarket(p: MarketPorts) {
     const activity: Activity = [];
     try {
       await closeStand();
-      await walk('craftsman');
+      await toNpc('craftsman', 'dismantle');
       for (const mark of command.deconstructionMarks || []) {
         for (let unit = 0; unit < mark.quantity; unit += 1) {
           p.merchant.continues(command);
@@ -742,7 +745,7 @@ export function createMarket(p: MarketPorts) {
               p.merchant.continues(command);
               await p.bank.withdrawMerchantCash(definition.cost - me().gold, command);
               if (me().gold < definition.cost) throw itemFailure('short_gold', 'Insufficient gold: deconstruction needs ' + definition.cost);
-              await walk('craftsman');
+              await toNpc('craftsman', 'dismantle');
               p.merchant.continues(command);
               slot = reads.findItem(mark.item);
               item = me().items[slot];
@@ -796,7 +799,7 @@ export function createMarket(p: MarketPorts) {
         if (me().items[slot].l) { blocked.push({ id: mark.id, error: 'Item is locked' }); continue; }
         let quantity = Math.min(Number(mark.quantity) || 1, quantityOf(me().items[slot]));
         // Named NPC destinations include the walkable interaction offset.
-        await walk('fancypots');
+        await toNpc('fancypots', 'sell');
         slot = reads.findItem(mark.item);
         if (slot < 0 || !sameItem(me().items[slot], mark.item)) throw Error('NPC-sale item moved before confirmation: ' + mark.item.name);
         if (me().items[slot].l) { blocked.push({ id: mark.id, error: 'Item is locked' }); continue; }

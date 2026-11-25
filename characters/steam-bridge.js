@@ -1085,6 +1085,9 @@ globalThis.__partyServer=${JSON.stringify(base)};parent.__partyServer=globalThis
   var UPGRADE_LEVEL_MAX = 12;
   var UPGRADE_TARGET_ACCEPTED = UPGRADE_LEVEL_MAX + 1;
   var BASE_INVENTORY_SIZE = 42;
+  var TRACKER_ITEMS = ["tracker", "supercomputer"];
+  var COMPUTER_ITEMS = ["computer", "supercomputer"];
+  var PERSONAL_ITEMS = /* @__PURE__ */ new Set([...TRACKER_ITEMS, ...COMPUTER_ITEMS]);
   var PROTECTED_FREE_SLOTS_DEFAULT = 3;
   var AUTOMATIC_ORDER = ["exchange", "npc", "stand", "upgrade", "compound", "deconstruction"];
   var ACTION_PLACES = [...AUTOMATIC_ORDER, "bank", "merchant"];

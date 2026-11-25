@@ -5,7 +5,7 @@
 // (stand.ts) and the deliveries (deliveries.ts) read and write the queue through what this file
 // exports.
 import { compoundRunnable, craftProtection, offeringCollectionReady, offeringSupplyReady, pendingOfferingCollection, upgradeRecoverySignature, type BankUpgradeRule, type CompoundRule, type CraftReservationState, type createStatScrollCommands, type ExchangeLine, bankCollectionReason, type BankCollectionState } from '../../items/coordinator/api.ts';
-import { availableCraftStock, markedItem, markMatches, stackQuantity, itemRuleConflicts, ruleOwner, sharedMember, inventoryPack, exchangeKey, TRACKER_ITEMS, type ConflictState, type CraftProtection } from '../../items/api.ts';
+import { availableCraftStock, markedItem, markMatches, stackQuantity, itemRuleConflicts, ruleOwner, sharedMember, inventoryPack, exchangeKey, isPersonalItem, type ConflictState, type CraftProtection } from '../../items/api.ts';
 import type { InventoryEntry, ItemMark, Item } from '../../coordinator/contracts/item.ts';
 import { type MerchantEventState, type PrioritizedJob, selectMerchantJob, jobReady, stampMerchantJob, coordinatorMerchantPriority, routineEnabled, merchantKind, RUN_FIELDS, ladderFrom, type ReadyFacts, pickupReason, mergePickupJobs, mergeTiming, NEARBY_RADIUS, type JobReason } from '../rules.ts';
 import type { ObservedPosition } from '../../coordinator/contracts/position.ts';
@@ -741,10 +741,10 @@ function upgradeMarks(state: PickupState, name: string): ItemMark[] {
   }).map(mark);
 }
 function protectedEntry(state: PickupState, name: string, entry: InventoryEntry | null): boolean {
-  return !entry?.item || personalTracker(entry.item) || !!entry.item.l || !!entry.item.b || manuallyReserved(state, name, entry) || itemRuleConflicts(state, entry.item).length > 0;
+  return !entry?.item || isPersonalItem(entry.item) || !!entry.item.l || !!entry.item.b || manuallyReserved(state, name, entry) || itemRuleConflicts(state, entry.item).length > 0;
 }
-function personalTracker(item: Item | null | undefined): boolean { return TRACKER_ITEMS.includes(String(item?.name)); }
-function collectable(value: ItemMark): boolean { return !personalTracker(markedItem(value)); }
+// No pickup takes a personal item (the items owner's isPersonalItem).
+function collectable(value: ItemMark): boolean { return !isPersonalItem(markedItem(value)); }
 function processing(state: PickupState, name: string): ItemMark[] {
   if (name === state.merchantCharacter || !sharedMember(state, name)) return [];
   const rules = enabled(state, 'auto compound') ? state.autoCompounds?.[ruleOwner(state, name)] || [] : [];

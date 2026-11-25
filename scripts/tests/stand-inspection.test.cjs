@@ -267,12 +267,13 @@ test('the stand counts 24 at level 70 and 30 at level 80, and plans to the repor
  const {planted}=require('./helpers/items-character.cjs');
  const {createBagReads}=require('../../runtime/items/character/bag.ts');
  const {standSlotUse}=require('../../runtime/items/rules.ts');
- const G={items:{stand0:{type:'stand'},cstand:{type:'stand'}}};
+ // A computer opens the `cstand` (G items `computer`, `supercomputer`).
+ const G={items:{stand0:{type:'stand',stand:'stand0'},computer:{type:'computer',stand:'cstand'}}};
  const slotsAt=(level,stand='stand0')=>{
   const character={ctype:'merchant',level,items:[{name:stand}]};
   return createBagReads(planted({character:()=>character,G:()=>G,margin:()=>100,now:()=>0})).standSlots();
  };
- assert.deepEqual([slotsAt(60),slotsAt(60,'cstand'),slotsAt(70),slotsAt(80)],[16,24,24,30]);
+ assert.deepEqual([slotsAt(60),slotsAt(60,'computer'),slotsAt(70),slotsAt(80)],[16,24,24,30]);
  const listings=n=>Array.from({length:n},(_,i)=>({tradeSlot:'trade'+(i+1),state:'live'}));
  for(const slots of [24,30]){
   const state={merchantCharacter:'M',statuses:{M:{standSlots:slots}},standListings:listings(slots+2)};

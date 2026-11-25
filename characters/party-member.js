@@ -33,8 +33,1563 @@
     callTrackerManualMs: 15e3
   };
 
+  // runtime/items/api.ts
+  var api_exports2 = {};
+  __export(api_exports2, {
+    ACQUISITION: () => ACQUISITION,
+    ALDATA_AUTH_MAIL: () => ALDATA_AUTH_MAIL,
+    BANK_PACK_CELLS: () => BANK_PACK_CELLS,
+    BASE_INVENTORY_SIZE: () => BASE_INVENTORY_SIZE,
+    COMPOUND_TARGET_MAX: () => COMPOUND_TARGET_MAX,
+    ESTIMATE_QUANTILE: () => ESTIMATE_QUANTILE,
+    LUCKY_CONFIDENCE: () => LUCKY_CONFIDENCE,
+    LUCKY_EVIDENCE_ROLLS: () => LUCKY_EVIDENCE_ROLLS,
+    MAIL_MESSAGE_MAX: () => MAIL_MESSAGE_MAX,
+    MAIL_SUBJECT_MAX: () => MAIL_SUBJECT_MAX,
+    RESTOCK_DEFAULT: () => RESTOCK_DEFAULT,
+    RESTOCK_ELIXIR_DEFAULT: () => RESTOCK_ELIXIR_DEFAULT,
+    STACK_SIZE_MAX: () => STACK_SIZE_MAX,
+    STAGING_FIRST: () => STAGING_FIRST,
+    TRACKER_ITEMS: () => TRACKER_ITEMS,
+    UPGRADE_CHANCES: () => UPGRADE_CHANCES,
+    UPGRADE_LEVEL_MAX: () => UPGRADE_LEVEL_MAX,
+    activeRules: () => activeRules,
+    aggregateSlotTracking: () => aggregateSlotTracking,
+    automaticNpcRetrieval: () => automaticNpcRetrieval,
+    availableCraftStock: () => availableCraftStock,
+    bagKey: () => bagKey,
+    bagSize: () => bagSize,
+    bankDeposit: () => bankDeposit,
+    bankRetrieve: () => bankRetrieve,
+    bankStagingReserved: () => bankStagingReserved,
+    bankStore: () => bankStore,
+    bankSwap: () => bankSwap,
+    bankWithdraw: () => bankWithdraw,
+    bankboiName: () => bankboiName,
+    bankboiPack: () => bankboiPack,
+    bidAcceptsLevel: () => bidAcceptsLevel,
+    boost: () => boost,
+    buy: () => buy2,
+    buyLostAndFound: () => buyLostAndFound,
+    buySecondhand: () => buySecondhand,
+    catalogItemMeta: () => catalogItemMeta,
+    commerceRuleKey: () => commerceRuleKey,
+    compound: () => compound3,
+    compoundStorageLeftovers: () => compoundStorageLeftovers,
+    consume: () => consume2,
+    consumeReceipts: () => consumeReceipts,
+    copyKey: () => copyKey,
+    craft: () => craft,
+    deconstructable: () => deconstructable,
+    deconstructionRewards: () => deconstructionRewards,
+    defaultStandPrice: () => defaultStandPrice,
+    deleteWaitMs: () => deleteWaitMs,
+    destat: () => destat,
+    destroy: () => destroy,
+    dismantle: () => dismantle2,
+    donate: () => donate,
+    donationXpPerGold: () => donationXpPerGold,
+    emptyRolls: () => emptyRolls,
+    equip: () => equip2,
+    estimateUpgradeBatch: () => estimateUpgradeBatch,
+    exchange: () => exchange2,
+    exchangeBuy: () => exchangeBuy,
+    exchangeKey: () => exchangeKey,
+    exchangeResultIsItem: () => exchangeResultIsItem,
+    failureClass: () => failureClass,
+    fateReachesMerchant: () => fateReachesMerchant,
+    fingerprint: () => fingerprint,
+    freeSlots: () => freeSlots,
+    hasMarkedWithdrawals: () => hasMarkedWithdrawals,
+    highestUpgradeLevel: () => highestUpgradeLevel,
+    incompatibleRuleRows: () => incompatibleRuleRows,
+    initialMailbox: () => initialMailbox,
+    inventoryPack: () => inventoryPack,
+    isBankboiPack: () => isBankboiPack,
+    isInventoryPack: () => isInventoryPack,
+    isPersonalItem: () => isPersonalItem,
+    isUpgradeOffering: () => isUpgradeOffering,
+    itemData: () => itemData,
+    itemFailure: () => itemFailure,
+    itemGrade: () => itemGrade,
+    itemGradeOf: () => itemGradeOf,
+    itemRuleConflicts: () => itemRuleConflicts,
+    itemValue: () => itemValue,
+    joinItemMeta: () => joinItemMeta,
+    keyHeld: () => keyHeld,
+    list: () => list2,
+    locksmith: () => locksmith,
+    loot: () => loot,
+    lostAndFound: () => lostAndFound,
+    lostAndFoundInfo: () => lostAndFoundInfo,
+    lostAndFoundList: () => lostAndFoundList,
+    luckySlotAnswer: () => luckySlotAnswer,
+    luckySlotOf: () => luckySlotOf,
+    luckySlotSearch: () => luckySlotSearch,
+    markMatches: () => markMatches,
+    markedItem: () => markedItem,
+    marketItemKey: () => marketItemKey,
+    marketListingFresh: () => marketListingFresh,
+    maximumItemLevel: () => maximumItemLevel,
+    merchantStandSlots: () => merchantStandSlots,
+    mergeSlotStream: () => mergeSlotStream,
+    move: () => move,
+    npcSaleRuleKey: () => npcSaleRuleKey,
+    npcStock: () => npcStock,
+    offeringProblem: () => offeringProblem,
+    offeringRule: () => offeringRule,
+    openChest: () => openChest,
+    ownedStockKey: () => ownedStockKey,
+    pontyPrice: () => pontyPrice,
+    previewOptions: () => previewOptions,
+    processingPending: () => processingPending,
+    protectedSlotsOf: () => protectedSlotsOf,
+    publishItemData: () => publishItemData,
+    receiptList: () => receiptList,
+    resolveUpgradeOffering: () => resolveUpgradeOffering,
+    ruleKey: () => ruleKey,
+    ruleKeyParts: () => ruleKeyParts,
+    ruleMembers: () => ruleMembers,
+    ruleMode: () => ruleMode,
+    ruleOwner: () => ruleOwner,
+    sameStack: () => sameStack,
+    sell: () => sell2,
+    sendGold: () => sendGold,
+    sendItem: () => sendItem,
+    sendMail: () => sendMail,
+    sharedMember: () => sharedMember,
+    slotLogEvidence: () => slotLogEvidence,
+    split: () => split2,
+    stackLocations: () => stackLocations,
+    stackProtected: () => stackProtected,
+    stackQuantity: () => stackQuantity,
+    stagingCell: () => stagingCell,
+    standSlotUse: () => standSlotUse,
+    standSlots: () => standSlots,
+    standSlotsUsed: () => standSlotsUsed,
+    statScrollsNeeded: () => statScrollsNeeded,
+    takeMail: () => takeMail,
+    tradeBuy: () => tradeBuy,
+    tradeHistory: () => tradeHistory,
+    tradeSell: () => tradeSell,
+    tradeSwap: () => tradeSwap,
+    tripLabel: () => tripLabel,
+    unequip: () => unequip2,
+    upgrade: () => upgrade3,
+    upgradeOfferings: () => upgradeOfferings,
+    usableCopy: () => usableCopy,
+    validLuckySlot: () => validLuckySlot,
+    vaultAccess: () => vaultAccess,
+    wearLook: () => wearLook,
+    wishlist: () => wishlist2,
+    withoutDeliveryStock: () => withoutDeliveryStock
+  });
+
+  // runtime/settings/api.ts
+  var api_exports = {};
+  __export(api_exports, {
+    ADDON_KINDS: () => ADDON_KINDS,
+    DELIVERIES: () => DELIVERIES,
+    SETTING_DOCUMENTS: () => SETTING_DOCUMENTS,
+    SETTING_KINDS: () => SETTING_KINDS,
+    SETTING_SCOPES: () => SETTING_SCOPES,
+    addonSettingProblem: () => addonSettingProblem,
+    addonValues: () => addonValues,
+    boolean: () => boolean,
+    item: () => item,
+    list: () => list,
+    listOf: () => listOf,
+    mapOf: () => mapOf,
+    mark: () => mark,
+    number: () => number,
+    object: () => object,
+    played: () => played,
+    playedIn: () => playedIn,
+    positive: () => positive,
+    readOverlaysWith: () => readOverlaysWith,
+    settingsDraft: () => settingsDraft,
+    text: () => text,
+    valueProblem: () => valueProblem,
+    wholeFrom: () => wholeFrom
+  });
+
+  // runtime/settings/rules.ts
+  var rules_exports = {};
+  __export(rules_exports, {
+    ADDON_KINDS: () => ADDON_KINDS,
+    ADDON_SETTING_FIELDS: () => ADDON_SETTING_FIELDS,
+    DELIVERIES: () => DELIVERIES,
+    LOCK_HELPER_TIMEOUT_MS: () => LOCK_HELPER_TIMEOUT_MS,
+    RECORD_FIELD_KINDS: () => RECORD_FIELD_KINDS,
+    SETTING_DOCUMENTS: () => SETTING_DOCUMENTS,
+    SETTING_KINDS: () => SETTING_KINDS,
+    SETTING_SCOPES: () => SETTING_SCOPES,
+    accepts: () => accepts,
+    addonSettingProblem: () => addonSettingProblem,
+    buildSettingsTable: () => buildSettingsTable,
+    declarationProblem: () => declarationProblem,
+    object: () => object,
+    overlayFieldProblem: () => overlayFieldProblem,
+    overlayProblem: () => overlayProblem,
+    rangeOf: () => rangeOf
+  });
+  var ADDON_KINDS = ["character", "boolean", "choice", "number", "per-character", "text", "monsters", "items", "records"];
+  var RECORD_FIELD_KINDS = ["boolean", "choice", "number", "text", "character", "monsters", "items"];
+  var SETTING_KINDS = [...ADDON_KINDS, "value"];
+  var SETTING_SCOPES = ["account", "scope", "character"];
+  var SETTING_DOCUMENTS = ["settings", "selections", "roster", "bank", "history", "aldata"];
+  var DELIVERIES = ["characters", "dashboard", "dashboard-core"];
+  var LOCK_HELPER_TIMEOUT_MS = 5e3;
+  var object = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+  var ADDON_SETTING_FIELDS = ["label", "kind", "default", "choices", "min", "max", "fields", "importable", "scope", "check", "fit"];
+  function declarationProblem(owner, name2, d, record3, own3) {
+    const setting = record3 ? void 0 : d;
+    if (setting && !SETTING_KINDS.includes(setting.kind)) return `${owner} declares the setting ${name2} of kind "${setting.kind}", which the settings do not have`;
+    if (d.scope !== void 0 && !SETTING_SCOPES.includes(d.scope)) return `${owner} declares ${name2} with the scope "${d.scope}", which the settings do not have`;
+    if (d.document !== void 0 && (!SETTING_DOCUMENTS.includes(d.document) || setting && d.document === "history"))
+      return `${owner} declares ${name2} in the document "${d.document}", which the ${record3 ? "records" : "settings"} do not have`;
+    for (const to of d.deliver ?? []) if (!DELIVERIES.includes(to)) return `${owner} declares ${name2} delivered to "${to}", which the settings do not deliver to`;
+    if (setting && (setting.kind === "choice" || setting.kind === "per-character") && !setting.choices?.length && !(setting.kind === "choice" && setting.slot))
+      return `${owner} declares the setting ${name2} with no choices`;
+    if (setting?.kind === "value" && !setting.check) return `${owner} declares the setting ${name2} of kind "value" with no check`;
+    if (setting?.kind === "records") {
+      const fields = Object.entries(setting.fields ?? {});
+      if (!fields.length) return `${owner} declares the setting ${name2} of kind "records" with no fields`;
+      for (const [key3, field] of fields) {
+        if (!RECORD_FIELD_KINDS.includes(field.kind)) return `${owner} declares the field ${key3} of ${name2} with the kind "${field.kind}", which a record does not have`;
+        if (field.kind === "choice" && !field.choices?.length) return `${owner} declares the field ${key3} of ${name2} with no choices`;
+      }
+    }
+    if (record3 && d.derive && (d.scope !== "scope" || d.profileOnly || d.importable))
+      return `${owner} declares ${name2} derived, which only a farming scope's record with a top-level copy and no import is`;
+    if (d.document === "aldata" && !(setting?.secret && setting.path?.[0] === "aldata"))
+      return `${owner} declares ${name2} in the credentials document, which holds only a secret setting under party.aldata`;
+    if (!accepts(d, setting, d.default, own3)) return `${owner} declares ${name2} with a default its own check refuses`;
+    return void 0;
+  }
+  function rangeOf(setting) {
+    const { min, max } = setting.kind === "number" ? setting : setting.check?.range ?? {};
+    return { ...Number.isFinite(min) ? { min } : {}, ...Number.isFinite(max) ? { max } : {} };
+  }
+  function accepts(d, setting, value, own3, game2) {
+    switch (setting?.kind) {
+      case "boolean":
+        if (typeof value !== "boolean") return false;
+        break;
+      case "number":
+        if (typeof value !== "number" || !Number.isFinite(value) || value < (setting.min ?? -Infinity) || value > (setting.max ?? Infinity)) return false;
+        break;
+      // A slot's entries come from the registry at each write; with none given, the kind takes a name.
+      case "choice":
+        if (setting.slot && !setting.choices ? typeof value !== "string" : !setting.choices.includes(value)) return false;
+        break;
+      case "character":
+        if (value !== null && typeof value !== "string") return false;
+        break;
+      case "text":
+        if (typeof value !== "string") return false;
+        break;
+      // The ids' membership in game data is the writer's check, which holds the data.
+      // An `items` setting names game items the same way, for the items owner's add-on claims.
+      case "monsters":
+      case "items":
+        if (!Array.isArray(value) || !value.every((id2) => typeof id2 === "string") || new Set(value).size !== value.length) return false;
+        break;
+      case "per-character":
+        if (!object(value) || !Object.values(value).every((v) => setting.choices.includes(v))) return false;
+        break;
+      // Each record names only declared fields, and each value passes its field's kind check. A
+      // field a record leaves out stays unset.
+      case "records":
+        if (!Array.isArray(value) || !value.every((record3) => object(record3) && Object.entries(record3).every(([key3, field]) => {
+          const declared = setting.fields?.[key3] && { ...setting.fields[key3], default: void 0 };
+          return !!declared && accepts(declared, declared, field);
+        }))) return false;
+        break;
+    }
+    return !d.check || d.check(value, own3, game2);
+  }
+  function addonSettingProblem(r) {
+    const defaults = Object.fromEntries(Object.entries(r.settings ?? {}).map(([key3, setting]) => [key3, setting.default]));
+    for (const [key3, setting] of Object.entries(r.settings ?? {})) {
+      if (r.folder === "addons" && setting.scope !== void 0 && setting.scope !== "scope")
+        return `${r.name} declares its setting ${key3} with the scope "${setting.scope}"; an add-on setting is one value or one per farming scope (scope: 'scope')`;
+      if (r.folder === "addons" && !ADDON_KINDS.includes(setting.kind))
+        return `${r.name} declares the setting ${key3} of kind "${setting.kind}", which the settings do not have`;
+      const placed = r.folder === "addons" && Object.keys(setting).find((field) => !ADDON_SETTING_FIELDS.includes(field));
+      if (placed) return `${r.name} declares ${placed} on its setting ${key3}; an add-on setting saves with the add-on's switch and takes only ${ADDON_SETTING_FIELDS.join(", ")}`;
+      const problem = declarationProblem(r.name, key3, setting, false, defaults);
+      if (problem) return problem;
+    }
+    if (r.folder === "addons" && Object.keys(r.records ?? {}).length)
+      return `${r.name} declares the record ${Object.keys(r.records)[0]}; an add-on keeps its own state in its store`;
+    return void 0;
+  }
+  function overlayProblem(table, field, value, game2) {
+    const problem = overlayFieldProblem(table, field);
+    if (problem) return problem;
+    const setting = table.members?.get(field) ?? table.fields.get(field).setting;
+    return accepts(setting, setting, value, void 0, game2) ? void 0 : `${setting.label} refuses this value`;
+  }
+  function overlayFieldProblem(table, field) {
+    const member2 = table.members?.get(field);
+    if (member2) return member2.noOverlay || member2.secret ? `${member2.label} takes no add-on value` : void 0;
+    const d = table.fields.get(field);
+    if (!d) return `${field} is not a declared setting`;
+    if (d.record) return `${field} is a record play writes, not a player's setting`;
+    if (d.setting.noOverlay || d.setting.secret || d.setting.path) return `${d.setting.label} takes no add-on value`;
+    return void 0;
+  }
+  var replyName = (field, d) => d.reply ?? field;
+  function buildSettingsTable(declarers) {
+    const refusals = [];
+    const owners = /* @__PURE__ */ new Map();
+    const fields = /* @__PURE__ */ new Map(), members = /* @__PURE__ */ new Map();
+    for (const declarer of declarers) {
+      if (declarer.folder === "addons") continue;
+      const entries2 = [
+        ...Object.entries(declarer.settings ?? {}).map(([field, s]) => [field, s, false]),
+        ...Object.entries(declarer.records ?? {}).map(([field, r]) => [field, r, true])
+      ];
+      for (const [field, d, record3] of entries2) {
+        (owners.get(field) ?? owners.set(field, []).get(field)).push({ owner: declarer.name, record: record3 });
+        const problem = declarationProblem(declarer.name, field, d, record3);
+        if (problem) refusals.push(problem);
+        fields.set(field, record3 ? { field, owner: declarer.name, record: record3, setting: d } : { field, owner: declarer.name, record: record3, setting: d });
+        for (const [key3, member2] of Object.entries(record3 ? d.members ?? {} : {})) {
+          const memberProblem = declarationProblem(declarer.name, `${field}.${key3}`, member2, false);
+          if (memberProblem) refusals.push(memberProblem);
+          members.set(`${field}.${key3}`, member2);
+        }
+      }
+    }
+    for (const [field, by] of owners) if (by.length > 1) {
+      const both = by.some((b) => b.record) && by.some((b) => !b.record);
+      refusals.push(`${field} is declared ${both ? "as a setting and a record" : "twice"}, by ${by.map((b) => `${b.owner} (${b.record ? "record" : "setting"})`).join(" and ")}`);
+    }
+    const replies = /* @__PURE__ */ new Map();
+    for (const d of fields.values()) if (d.setting.deliver?.includes("characters"))
+      (replies.get(replyName(d.field, d.setting)) ?? replies.set(replyName(d.field, d.setting), []).get(replyName(d.field, d.setting))).push(`${d.field} (${d.owner})`);
+    for (const [reply2, by] of replies) if (by.length > 1) refusals.push(`${by.join(" and ")} reach the characters under one reply name, ${reply2}`);
+    return refusals.length ? { ok: false, refusals } : { ok: true, table: { fields, members } };
+  }
+
+  // runtime/settings/api.ts
+  function valueProblem(setting, value, own3, game2) {
+    if (accepts(setting, setting, value, own3, game2)) return void 0;
+    if (setting.refusal) return setting.refusal;
+    if (setting.check && accepts({ ...setting, check: void 0 }, setting, value)) return `${setting.label} refuses this value`;
+    switch (setting.kind) {
+      case "boolean":
+        return `${setting.label} takes true or false`;
+      case "number":
+        return `${setting.label} takes a number from ${setting.min ?? "any"} to ${setting.max ?? "any"}`;
+      case "choice":
+        return `${setting.label} takes one of ${setting.choices.join(", ")}`;
+      case "per-character":
+        return `${setting.label} takes one of ${setting.choices.join(", ")} for each character`;
+      case "character":
+        return `${setting.label} takes a character's name`;
+      default:
+        return `${setting.label} refuses this value`;
+    }
+  }
+  var list = (value) => Array.isArray(value);
+  var text = (value) => typeof value === "string";
+  var number = (value) => typeof value === "number" && Number.isFinite(value);
+  var boolean = (value) => typeof value === "boolean";
+  var mapOf = (check) => (value) => object(value) && Object.values(value).every(check);
+  var listOf = (check) => (value) => list(value) && value.every(check);
+  var item = (value) => object(value) && text(value.name);
+  var mark = (value) => object(value) && (item(value.item) || item(value));
+  var positive = (value) => number(value) && Number(value) > 0;
+  var wholeFrom = (min, max) => Object.assign(
+    (value) => Number.isSafeInteger(value) && Number(value) >= min && Number(value) <= max,
+    { range: { min, max } }
+  );
+  function settingsDraft(state) {
+    const current = state, copies = /* @__PURE__ */ new Map();
+    function edit(field) {
+      if (!copies.has(field)) copies.set(field, structuredClone(current[field]));
+      return copies.get(field);
+    }
+    return {
+      edit,
+      set(field, value) {
+        copies.set(field, value);
+      },
+      changes() {
+        return [...copies].filter(([field, value]) => JSON.stringify(value) !== JSON.stringify(current[field])).map(([field, value]) => ({ field, value }));
+      }
+    };
+  }
+  function addonValues(name2, scope2, account) {
+    const own3 = scope2?.addonSettings?.[name2];
+    return { ...account, ...own3 };
+  }
+  var overlayReader;
+  function readOverlaysWith(reader) {
+    overlayReader = reader;
+  }
+  function played(state, field, character2) {
+    const value = state[field];
+    return overlayReader ? overlayReader(field, value, character2) : value;
+  }
+  function playedIn(record3, state, key3) {
+    const value = state[key3];
+    return overlayReader ? overlayReader(`${record3}.${key3}`, value) : value;
+  }
+
+  // runtime/items/identity.ts
+  var COPY_FIELDS = ["name", "level", "q", "p", "stat_type", "data", "price", "rid", "b", "m", "l", "v"];
+  function fingerprint(item2) {
+    if (!item2) return null;
+    const copy2 = {};
+    for (const key3 of COPY_FIELDS) if (item2[key3] != null) copy2[key3] = item2[key3];
+    if (item2.expires != null) copy2.expires = typeof item2.expires === "number" ? item2.expires : new Date(String(item2.expires)).getTime();
+    return copy2;
+  }
+  function copyKey(item2) {
+    const copy2 = fingerprint(item2);
+    if (copy2) delete copy2.q;
+    return JSON.stringify(copy2);
+  }
+  var ownedStockKey = (item2) => `${item2.name}@${item2.level || 0}@${item2.p || ""}`;
+  function bagKey(items2) {
+    return JSON.stringify(items2.map((item2) => fingerprint(item2)));
+  }
+  var sameItemState = (item2, wanted) => !!item2 && !!wanted && copyKey(item2) === copyKey(wanted);
+  function sameItem(item2, wanted) {
+    return !!item2 && !!wanted && Object.keys(wanted).filter((key3) => key3 !== "q").every((key3) => JSON.stringify(item2[key3]) === JSON.stringify(wanted[key3]));
+  }
+  var MARK_TRANSIENT = /* @__PURE__ */ new Set(["q", "price", "rid", "b", "giveaway"]);
+  function markedItem(entry) {
+    const marked = entry;
+    return marked?.item ? marked.item : entry;
+  }
+  function markMatches(first, second) {
+    if (!first || !second) return false;
+    return Object.keys(second).filter((key3) => !MARK_TRANSIENT.has(key3)).every((key3) => JSON.stringify(first[key3]) === JSON.stringify(second[key3]));
+  }
+  var level = (item2) => Math.max(0, Number(item2?.level) || 0);
+  var ruleKey = (item2) => typeof item2?.name === "string" ? item2.name + "@+" + level(item2) : "";
+  function ruleKeyParts(key3) {
+    const match = /^(.*)@\+(\d+)$/.exec(key3);
+    return match ? { name: match[1], level: Number(match[2]) } : null;
+  }
+  function ruleMode(rules, item2) {
+    if (!item2) return void 0;
+    const explicit = rules[ruleKey(item2)];
+    if (explicit) return explicit;
+    return level(item2) === 0 ? rules[String(item2.name)] : void 0;
+  }
+  function commerceRuleKey(item2) {
+    return JSON.stringify({ name: item2?.name || "", level: level(item2), p: item2?.p || null, stat_type: item2?.stat_type || null });
+  }
+  var exchangeKey = (name2, itemLevel) => String(name2) + "@" + (Number(itemLevel) || 0);
+  function stackKey(item2) {
+    return JSON.stringify([
+      item2?.name ?? null,
+      item2?.p ?? null,
+      item2?.name === "cxjar" ? item2.data ?? null : null,
+      !!item2?.v,
+      item2?.l ?? null,
+      item2?.b ?? null
+    ]);
+  }
+  var stackQuantity = (item2) => item2 ? Number(item2.q) || 1 : 0;
+  var BANKBOI_PACK = "bankboi:";
+  var INVENTORY_PACK = "inventory:";
+  var bankboiPack = (name2) => BANKBOI_PACK + String(name2);
+  var inventoryPack = (name2) => INVENTORY_PACK + String(name2);
+  var isBankboiPack = (pack2) => typeof pack2 === "string" && pack2.startsWith(BANKBOI_PACK);
+  var bankboiName = (pack2) => isBankboiPack(pack2) ? pack2.slice(BANKBOI_PACK.length) : null;
+  var isInventoryPack = (pack2) => typeof pack2 === "string" && pack2.startsWith(INVENTORY_PACK);
+  var isVaultPack = (pack2) => typeof pack2 === "string" && /^items\d+$/.test(pack2);
+  var marketItemKey = (item2) => `${item2.name}|${item2.level ?? 0}`;
+
+  // runtime/items/rules.ts
+  var ITEM_FAILURES = {
+    bankboi_pending: "storage",
+    bank_full: "space",
+    inventory_full: "space",
+    short_gold: "gold",
+    upgrade_ambiguous: "ambiguous",
+    upgrade_uncertain: "uncertain",
+    lucky_unavailable: "interrupted",
+    lucky_swap_unconfirmed: "space",
+    lucky_interrupted: "space",
+    lucky_busy: "space",
+    lucky_source_changed: "space",
+    lucky_scroll_changed: "space",
+    item_missing: "failed",
+    marked_missing: "failed",
+    deconstruct_space: "failed",
+    not_confirmed: "failed",
+    interrupted: "interrupted",
+    movement_plan: "interrupted"
+  };
+  function itemFailure(code, message3 = code) {
+    return Object.assign(new Error(message3), { reason: message3, code });
+  }
+  function failureClass(code) {
+    return typeof code === "string" && Object.hasOwn(ITEM_FAILURES, code) ? ITEM_FAILURES[code] : null;
+  }
+  var UPGRADE_LEVEL_MAX = 12;
+  var UPGRADE_TARGET_ACCEPTED = UPGRADE_LEVEL_MAX + 1;
+  function bidAcceptsLevel(bid, item2) {
+    const level3 = Number(item2?.level) || 0, requested = Number(bid.minimumQuality) || 0;
+    return bid.acceptHigherLevels === false ? level3 === requested : level3 >= requested;
+  }
+  var DISMANTLE_FREE_SLOTS = 2;
+  function deconstructable(item2, catalog2) {
+    const definition = catalog2[String(item2.name)];
+    return !!definition && !item2.l && !item2.b && (!definition.compound || Number(item2.level) > 0);
+  }
+  function deconstructionRewards(item2, catalog2) {
+    const definition = catalog2[String(item2.name)];
+    if (!definition) return null;
+    if (definition.compound && Number(item2.level) > 0)
+      return [{ name: String(item2.name), level: Number(item2.level) - 1, quantity: 3, chance: 1 }];
+    return definition.rewards?.map((reward) => ({ ...reward, level: 0 })) || null;
+  }
+  var STACK_SIZE_MAX = 9999;
+  var EXCHANGE_NON_ITEMS = /* @__PURE__ */ new Set(["empty", "gold", "shells", "cx", "cxbundle", "open"]);
+  var exchangeResultIsItem = (kind) => !!kind && !EXCHANGE_NON_ITEMS.has(String(kind));
+  var MAIL_SUBJECT_MAX = 74;
+  var MAIL_MESSAGE_MAX = 1e3;
+  var ALDATA_AUTH_MAIL = { recipient: "earthiverse", subject: "aldata_auth" };
+  var MAIL_POSTAGE = { letter: 48e3, item: 36e4 };
+  function donationXpPerGold(serverGold) {
+    return serverGold < 5e8 ? 4.8 : serverGold <= 1e9 ? 4 : 3.2;
+  }
+  var PONTY_RANGE = 500;
+  var LOOT_RADIUS = 400;
+  var COMPOUND_TARGET_MAX = 7;
+  function maximumItemLevel(definition) {
+    return definition?.compound ? COMPOUND_TARGET_MAX : definition?.upgrade ? UPGRADE_LEVEL_MAX : 0;
+  }
+  var COMPOUND_INPUTS = 3;
+  var BASE_INVENTORY_SIZE = 42;
+  var BASE_STAND_SLOTS = 16;
+  var TRACKER_ITEMS = ["tracker", "supercomputer"];
+  var COMPUTER_ITEMS = ["computer", "supercomputer"];
+  var PERSONAL_ITEMS = /* @__PURE__ */ new Set([...TRACKER_ITEMS, ...COMPUTER_ITEMS]);
+  function isPersonalItem(item2) {
+    return !!item2 && PERSONAL_ITEMS.has(String(item2.name));
+  }
+  function reachesWithoutWalking(character2, G2, call) {
+    return !G2.maps?.[String(character2.map)]?.mount && (character2.items || []).some((item2) => !!item2 && COMPUTER_ITEMS.includes(String(item2.name)));
+  }
+  var ACQUISITION = { worldDrop: "World drop", scaledWorldDrop: "HP-scaled world drop", open: "open " };
+  function deleteWaitMs(reason4) {
+    const minutes = /^wait_(\d+)_minutes$/.exec(reason4)?.[1];
+    return minutes === void 0 ? null : Number(minutes) * 6e4;
+  }
+  function standSlots(merchant7) {
+    const level3 = Number(merchant7.level) || 0;
+    if (merchant7.ctype === "merchant" && level3 >= 80) return 30;
+    if (merchant7.ctype === "merchant" && (level3 >= 70 || merchant7.stand === "cstand")) return 24;
+    return BASE_STAND_SLOTS;
+  }
+  function merchantStandSlots(state) {
+    const slots = Number(state.statuses?.[String(state.merchantCharacter)]?.standSlots);
+    return Number.isSafeInteger(slots) && slots > 0 ? slots : BASE_STAND_SLOTS;
+  }
+  var STAND_CELL = /^trade[1-9]\d*$/;
+  function standSlotUse(state) {
+    const report = state.statuses?.[String(state.merchantCharacter)];
+    const listings = state.standListings || [];
+    const cells = new Set(Object.entries(report?.slots || {}).filter(([slot, entry]) => STAND_CELL.test(slot) && !!entry).map(([slot]) => slot));
+    if (report?.standOpen !== true) {
+      const offers2 = state.nativeStand?.offers;
+      for (const offer of Object.values(offers2 || {}))
+        if (typeof offer.slot === "string" && STAND_CELL.test(offer.slot) && (offer.phase === "live" || offer.phase === "removing")) cells.add(offer.slot);
+      for (const listing2 of listings)
+        if (typeof listing2.tradeSlot === "string" && STAND_CELL.test(listing2.tradeSlot) && listing2.state === "live") cells.add(listing2.tradeSlot);
+    }
+    const slots = merchantStandSlots(state);
+    return { slots, used: Math.min(slots, cells.size), free: Math.max(0, slots - standSlotsUsed({
+      standListings: listings,
+      standBids: state.standBids
+    })) };
+  }
+  function standSlotsUsed(state) {
+    return state.standListings.filter((listing2) => listing2.state !== "paused").length + Object.values(state.standBids || {}).filter((bid) => bid?.useStandSlot).length;
+  }
+  function bagSize(report) {
+    const size = Number(report?.inventorySize);
+    return Number.isSafeInteger(size) && size > 0 ? size : BASE_INVENTORY_SIZE;
+  }
+  function validLuckySlot(slot) {
+    return Number.isInteger(slot) && Number(slot) >= 0 && Number(slot) < BASE_INVENTORY_SIZE;
+  }
+  function defaultStandPrice(definition) {
+    return Math.max(1, Number(definition?.g) || 1);
+  }
+  var ALDATA_RATE_WINDOW_MS = 6e4;
+  var SORT_SWAPS_PER_CELL = 3;
+  var SEND_MEET_MS = 1e4;
+  var PROTECTED_FREE_SLOTS_DEFAULT = 3;
+  function protectedSlotsOf(state, name2) {
+    const value = played(state, "protectedFreeSlots", name2);
+    const slots = Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : PROTECTED_FREE_SLOTS_DEFAULT;
+    return Math.min(slots, bagSize(state.statuses?.[name2]));
+  }
+  var SCROLL_PRICES = [1e3, 4e4, 16e5];
+  var COMPOUND_SCROLL_PRICES = [6400, 24e4, 92e5];
+  function itemValue(item2, meta, scrollPrices = {}) {
+    const d = meta?.definition || {};
+    if (!Number.isFinite(Number(d.g))) return null;
+    let value = Number(d.g) * (d.cash ? 1 : 0.6);
+    if (d.markup) value /= Number(d.markup);
+    const grades = Array.isArray(d.grades) ? d.grades : [11, 12], level3 = Number(item2.level) || 0;
+    if (d.compound || meta?.compoundable) for (let tier = 1; tier <= level3; tier++) {
+      const grade = tier > grades[1] ? 2 : tier > grades[0] ? 1 : 0;
+      value *= d.cash ? 1.5 : 3.2;
+      if (d.type !== "booster") value += (scrollPrices["cscroll" + grade] ?? COMPOUND_SCROLL_PRICES[grade]) / 2.4;
+      else value *= 0.75;
+    }
+    if (d.upgrade || meta?.upgradeable) {
+      let scroll = 0;
+      for (let tier = 1; tier <= level3; tier++) {
+        const grade = tier > grades[1] ? 2 : tier > grades[0] ? 1 : 0;
+        scroll += (scrollPrices["scroll" + grade] ?? SCROLL_PRICES[grade]) / 2;
+        if (tier >= 7) {
+          value *= 3;
+          scroll *= 1.32;
+        } else if (tier === 6) value *= 2.4;
+        else if (tier >= 4) value *= 2;
+        if (tier === 9) {
+          value *= 2.64;
+          value += 4e5;
+        }
+        if (tier === 10) value *= 5;
+        if (tier === 12) value *= 0.8;
+      }
+      value += scroll;
+    }
+    if (item2.expires) value /= 8;
+    if (item2.gift) value = 1;
+    return value;
+  }
+  function pontyPrice(item2, meta, scrollPrices = {}) {
+    const value = itemValue(item2, meta, scrollPrices);
+    return value === null ? null : Math.max(1, Math.round(value) * (meta?.definition?.cash ? 3 : 2));
+  }
+  function luckySlotOf(state, name2) {
+    return luckySlotAnswer(state, name2).slot;
+  }
+  function luckySlotAnswer(state, name2) {
+    const locked = state.luckySlotLocks?.[name2] ?? null, resume = state.luckySlotResume?.[name2]?.slot ?? null;
+    const verified = state.luckyUpgradeSlots?.[name2] ?? null;
+    return { slot: locked ?? resume ?? verified, locked, resuming: locked == null && state.luckySlotResume?.[name2] != null, verified };
+  }
+  function itemGrade(definition, level3) {
+    if (!definition.upgrade && !definition.compound) return 0;
+    const grades = Array.isArray(definition.grades) ? definition.grades : [9, 10, 11, 12];
+    for (let grade = 4; grade >= 1; grade -= 1) if (level3 >= grades[grade - 1]) return grade;
+    return 0;
+  }
+  var STAT_SCROLLS_BY_GRADE = [1, 10, 100, 1e3, 9999];
+  function statScrollsNeeded(definition, level3) {
+    return STAT_SCROLLS_BY_GRADE[itemGrade(definition, level3)];
+  }
+  var AUTOMATIC_ORDER = ["exchange", "npc", "stand", "upgrade", "compound", "deconstruction"];
+  var record = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  var ACTION_PLACES = [...AUTOMATIC_ORDER, "bank", "merchant"];
+  function ruleOwner(state, name2) {
+    return state.merchantRules?.version === 1 ? String(state.merchantCharacter) : name2;
+  }
+  function sharedMember(state, name2) {
+    return !state.merchantRules || name2 === state.merchantCharacter || !state.bankbois?.[name2];
+  }
+  function ruleMembers(state, name2) {
+    if (!state.merchantRules) return [name2];
+    const reporting = Object.keys(state.statuses || {}).filter((member2) => sharedMember(state, member2));
+    return [.../* @__PURE__ */ new Set([String(state.merchantCharacter), ...reporting])];
+  }
+  function upgradeRuleActive(value) {
+    return !!value && (typeof value !== "object" || Number(value.quantity) !== 0);
+  }
+  var npcSaleRuleKey = (item2, character2) => character2 ? JSON.stringify([character2, commerceRuleKey(item2)]) : commerceRuleKey(item2);
+  function ruleActive(state, action, item2, owner = ruleOwner(state, String(state.merchantCharacter))) {
+    const commerce = commerceRuleKey(item2), merchant7 = owner === ruleOwner(state, String(state.merchantCharacter));
+    switch (action) {
+      case "exchange":
+        return !!state.autoExchanges?.[exchangeKey(item2.name, item2.level)];
+      case "npc":
+        return !!state.autoNpcSales?.[merchant7 ? commerce : npcSaleRuleKey(item2, owner)];
+      case "stand":
+        return merchant7 && !!state.autoStandMarks?.[commerce];
+      case "upgrade":
+        return upgradeRuleActive(state.autoUpgradeMarks?.[owner]?.[ruleKey(item2)]);
+      case "compound":
+        return !!state.autoCompounds?.[owner]?.some((rule) => rule.name === item2.name && Number(rule.quantity) !== 0 && (Number(item2.level) || 0) < Number(rule.targetTier || 1));
+      case "deconstruction":
+        return !!state.autoDeconstruction?.[owner]?.[commerce];
+    }
+  }
+  function activeRules(state, item2, owners = [ruleOwner(state, String(state.merchantCharacter))]) {
+    const level3 = Number(item2.level) || 0;
+    return AUTOMATIC_ORDER.flatMap((action) => {
+      const holding = owners.filter((owner) => ruleActive(state, action, item2, owner));
+      if (!holding.length) return [];
+      if (action === "upgrade") return [{ action, tiers: Math.max(...holding.map((owner) => {
+        const rule = state.autoUpgradeMarks?.[owner]?.[ruleKey(item2)];
+        return Number(rule && typeof rule === "object" ? rule.tiers : rule) || 0;
+      })) }];
+      if (action === "compound") return [{ action, targetTier: Math.max(...holding.flatMap((owner) => (state.autoCompounds?.[owner] || []).filter((rule) => rule.name === item2.name && Number(rule.quantity) !== 0 && level3 < Number(rule.targetTier || 1)).map((rule) => Number(rule.targetTier || 1)))) }];
+      return [{ action }];
+    });
+  }
+  function fateReachesMerchant(fate) {
+    return !!fate && !["keep", "held", "bank"].includes(fate.fate);
+  }
+  function offeringUpgradePending(state, item2) {
+    return Object.values(state.upgrades || {}).flatMap((marks) => marks || []).some((raw) => {
+      const mark3 = record(raw), waiting3 = record(mark3.waitingOffering), original = record(mark3.item);
+      if (!mark3.auto || original.name !== item2.name) return false;
+      if (waiting3.level === (Number(item2.level) || 0)) return true;
+      const start = Number(original.level) || 0, level3 = Number(item2.level) || 0;
+      return !!mark3.passId && level3 >= start && level3 < start + Number(mark3.tiers) && markMatches({ ...item2, level: start }, { ...original, level: start });
+    });
+  }
+  function processingPending(state, item2) {
+    return offeringUpgradePending(state, item2) || ruleActive(state, "upgrade", item2) || ruleActive(state, "compound", item2);
+  }
+  function itemRuleConflicts(state, item2) {
+    if (!state.merchantRules) return [];
+    const actions = [
+      ["Processing", processingPending(state, item2)],
+      ["NPC sale", ruleActive(state, "npc", item2)],
+      ["Stand sale", ruleActive(state, "stand", item2)],
+      ["Deconstruction", ruleActive(state, "deconstruction", item2)]
+    ].filter(([, active]) => active).map(([label]) => label);
+    return actions.length > 1 ? actions : [];
+  }
+  function incompatibleRuleRows(state) {
+    const merchant7 = String(state.merchantCharacter);
+    const rules = [
+      ...Object.values(state.autoNpcSales || {}),
+      ...Object.values(state.autoStandMarks || {}),
+      ...Object.values(state.autoDeconstruction?.[merchant7] || {})
+    ];
+    const items2 = /* @__PURE__ */ new Map();
+    for (const rule of rules) if (rule?.item) items2.set(`${rule.item.name}:${rule.item.level || 0}`, rule.item);
+    return [...items2.values()].map((item2) => ({ item: item2, actions: itemRuleConflicts(state, item2) })).filter((row4) => row4.actions.length);
+  }
+  function hasMarkedWithdrawals(requests = []) {
+    return requests.some((value) => {
+      const request = record(value);
+      return typeof request.pack === "string" && !isBankboiPack(request.pack) && !["improvement", "standListingId", "deconstructionId", "craftJobId", "mailJobId"].some((key3) => request[key3]);
+    });
+  }
+  function automaticNpcRetrieval(state) {
+    return played(state, "merchantAutomations")?.["auto npc sales"] !== false && (state.withdrawals?.[String(state.merchantCharacter)] || []).some((value) => record(value).autoNpcRuleKey && hasMarkedWithdrawals([value]));
+  }
+  var BANK_PACK_CELLS = 42;
+  var BANK_ROW_CELLS = 7;
+  var STAGING_PACK = "items1";
+  var STAGING_FIRST = BANK_PACK_CELLS - BANK_ROW_CELLS;
+  function vaultAccess(vaults, packs, floor) {
+    return floor === "bank" || vaults.some((vault) => vault.floor === floor && vault.gold === 0 && Object.hasOwn(packs, vault.pack));
+  }
+  function keyHeld(bag2, packs, key3) {
+    return [bag2, ...Object.values(packs)].flatMap((entries2) => entries2 || []).reduce((sum, entry) => sum + (entry?.item?.name === key3 ? Number(entry.item.q || 1) : 0), 0);
+  }
+  var stagingCell = (pack2, slot) => pack2 === STAGING_PACK && Number(slot) >= STAGING_FIRST;
+  function bankStagingReserved(state) {
+    return Object.keys(state.bankbois || {}).length > 0;
+  }
+  function usableCopy(item2) {
+    return !!item2 && !item2.l && !item2.b;
+  }
+  function freeSlots(items2, luckyLock, reserve2) {
+    if (!Array.isArray(items2)) return 0;
+    const held = typeof luckyLock === "number" && !items2[luckyLock] ? 1 : 0;
+    return Math.max(0, items2.filter((entry) => !entry).length - held - reserve2);
+  }
+  function receiptList(value) {
+    return Array.isArray(value) ? value : [];
+  }
+  function consumeReceipts(pending, receipts) {
+    for (const receipt of receipts) {
+      const encoded = JSON.stringify(receipt);
+      const index = (pending || []).findIndex((entry) => JSON.stringify(entry) === encoded);
+      if (index >= 0) pending.splice(index, 1);
+    }
+  }
+  function stackProtected(location, protection) {
+    return !!protection.error || protection.staging !== false && stagingCell(location.pack, location.slot) || !!location.item?.b || !!location.item?.l || location.item?.name === "placeholder" || protection.locations.some((mark3) => mark3.pack === location.pack && (mark3.slot === void 0 || mark3.slot === location.slot)) || protection.items.some((item2) => item2.name === location.item?.name && (item2.level || 0) === (location.item?.level || 0));
+  }
+  function stackLocations(bank, protection) {
+    return Object.keys(bank).filter((pack2) => isVaultPack(pack2) && Array.isArray(bank[pack2])).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).flatMap((pack2) => Array.from({ length: BANK_PACK_CELLS }, (_, slot) => ({ pack: pack2, slot, item: bank[pack2][slot] }))).filter((location) => !stackProtected(location, protection));
+  }
+  var sameStack = (a, b) => stackKey(a) === stackKey(b) && !!a.acl === !!b.acl && JSON.stringify(a.ps || []) === JSON.stringify(b.ps || []);
+  function stackDepositPlan(item2, limit, locations, compatible = sameStack) {
+    let remaining = stackQuantity(item2);
+    const moves = [];
+    const partials = locations.filter((location) => location.item && limit > 1 && compatible(location.item, item2) && stackQuantity(location.item) < limit);
+    for (const location of [...partials, ...locations.filter((location2) => !location2.item)]) {
+      const quantity2 = Math.min(remaining, Math.max(0, limit - stackQuantity(location.item)));
+      if (quantity2) moves.push({ ...location, quantity: quantity2 });
+      remaining -= quantity2;
+      if (!remaining) break;
+    }
+    return { moves, remaining };
+  }
+  function nextStackMerge(locations, limitOf, compatible = sameStack) {
+    for (let a = 0; a < locations.length; a++) {
+      const target = locations[a], limit = target.item ? limitOf(target.item) : 1;
+      if (!target.item || limit <= stackQuantity(target.item)) continue;
+      for (let b = locations.length - 1; b > a; b--) {
+        const source2 = locations[b];
+        if (source2.item && compatible(target.item, source2.item))
+          return { source: source2, target, quantity: Math.min(stackQuantity(source2.item), limit - stackQuantity(target.item)) };
+      }
+    }
+    return null;
+  }
+  function compoundStorageLeftovers(rules, inventory, stock) {
+    const eligible3 = (entry, rule) => !!entry?.item && !entry.item.l && entry.item.name === rule.name && Number(entry.item.level || 0) < Number(rule.targetTier || 1);
+    const retained2 = /* @__PURE__ */ new Set(), pending = /* @__PURE__ */ new Set();
+    for (const rule of rules.filter((value) => Number(value.quantity) !== 0)) {
+      for (let level3 = 0; level3 < Number(rule.targetTier || 1); level3++) {
+        const matches = (entry) => eligible3(entry, rule) && Number(entry.item.level || 0) === level3;
+        const local2 = inventory.filter(matches), complete = Math.floor(stock.filter(matches).length / COMPOUND_INPUTS) * COMPOUND_INPUTS;
+        local2.forEach((entry) => pending.add(entry));
+        local2.slice(0, complete).forEach((entry) => retained2.add(entry));
+      }
+    }
+    return [...pending].filter((entry) => !retained2.has(entry));
+  }
+  function availableCraftStock(entries2, protection) {
+    if (protection.error) return entries2.map(() => null);
+    entries2 = withoutDeliveryStock(entries2, protection.deliveries || []);
+    const remaining = /* @__PURE__ */ new Map();
+    for (const need of protection.requirements) {
+      const key3 = exchangeKey(need.id, need.level);
+      remaining.set(key3, (remaining.get(key3) || 0) + need.quantity);
+    }
+    const amounts = entries2.map((entry) => entry?.item ? Number(entry.item.q) || 1 : 0);
+    function reserve2(index, requested) {
+      const item2 = entries2[index]?.item;
+      if (!item2) return 0;
+      const key3 = exchangeKey(item2.name, item2.level);
+      const reserved = Math.min(remaining.get(key3) || 0, amounts[index], requested);
+      remaining.set(key3, (remaining.get(key3) || 0) - reserved);
+      amounts[index] -= reserved;
+      return reserved;
+    }
+    for (const allocation of protection.allocations || []) {
+      let needed = allocation.quantity;
+      entries2.forEach((entry, index) => {
+        if (entry?.craftLocation === allocation.location && entry.item?.name === allocation.id && (entry.item.level || 0) === (allocation.level || 0)) needed -= reserve2(index, needed);
+      });
+    }
+    entries2.forEach((_entry, index) => reserve2(index, Infinity));
+    return entries2.map((entry, index) => {
+      if (!entry?.item) return entry || null;
+      const item2 = entry.item, quantity2 = amounts[index];
+      const reserved = (Number(item2.q) || 1) - quantity2;
+      if (!reserved) return entry;
+      return quantity2 ? { ...entry, item: { ...item2, q: quantity2 } } : null;
+    });
+  }
+  function withoutDeliveryStock(entries2, marks) {
+    const used2 = /* @__PURE__ */ new Set(), assigned = /* @__PURE__ */ new Set();
+    const matches = (entry, mark3) => entry?.craftLocation === mark3.location && markMatches(entry.item, mark3.item);
+    function reserve2(mark3, exact) {
+      const index = entries2.findIndex((entry, i) => !used2.has(i) && matches(entry, mark3) && (!exact || entry?.slot === mark3.slot));
+      if (index >= 0) {
+        used2.add(index);
+        assigned.add(mark3);
+      }
+    }
+    for (const mark3 of marks) if (mark3.slot !== void 0) reserve2(mark3, true);
+    for (const mark3 of marks) if (!assigned.has(mark3)) reserve2(mark3, false);
+    return entries2.map((entry, index) => used2.has(index) ? null : entry || null);
+  }
+  var LUCKY_CONFIDENCE = 0.999;
+  var LUCKY_EVIDENCE_ROLLS = 100;
+  function mergeSlotStream(previous, incoming) {
+    let changed = false;
+    for (const [slot, stats] of Object.entries(incoming.slots)) {
+      const old = previous.slots[slot];
+      if (old && (stats.totalRolls <= old.totalRolls || !["sumRolls", "rollsAbove96_3", "perfectRolls"].every((key3) => stats[key3] >= old[key3]))) continue;
+      previous.slots[slot] = { ...stats };
+      changed = true;
+    }
+    if (incoming.cursor && (!previous.cursor || incoming.cursor.rolls > previous.cursor.rolls)) {
+      previous.cursor = { ...incoming.cursor };
+      changed = true;
+    }
+    return changed;
+  }
+  var emptyRolls = () => ({ totalRolls: 0, sumRolls: 0, rollsAbove96_3: 0, perfectRolls: 0 });
+  function validSlotStatistics(value) {
+    if (!value || typeof value !== "object") return false;
+    const stats = value;
+    return Number.isSafeInteger(stats.totalRolls) && stats.totalRolls > 0 && Number.isFinite(stats.sumRolls) && stats.sumRolls >= 0 && stats.sumRolls < stats.totalRolls && [stats.rollsAbove96_3, stats.perfectRolls].every((n) => Number.isSafeInteger(n) && n >= 0 && n <= stats.totalRolls) && stats.rollsAbove96_3 + stats.perfectRolls <= stats.totalRolls;
+  }
+  function normalizeSlotTracking(raw) {
+    const result = { version: 1, slots: {} };
+    if (!raw || typeof raw !== "object" || !("slots" in raw) || !raw.slots || typeof raw.slots !== "object") return result;
+    result.streamId = readStreamId(raw);
+    for (const [slot, stats] of Object.entries(raw.slots)) {
+      if (/^(?:0|[1-9]\d*)$/.test(slot) && Number(slot) < BASE_INVENTORY_SIZE && validSlotStatistics(stats)) result.slots[slot] = { ...stats };
+    }
+    restoreCursor(result, raw);
+    return result;
+  }
+  function restoreCursor(result, raw) {
+    if ("cursor" in raw && validCursor(raw.cursor, result)) result.cursor = { ...raw.cursor };
+  }
+  function validCursor(value, tracking) {
+    if (!value || typeof value !== "object") return false;
+    const cursor = value;
+    const rolls = Object.values(tracking.slots).reduce((sum, stats) => sum + stats.totalRolls, 0);
+    return Number.isInteger(cursor.slot) && cursor.slot >= 0 && cursor.slot < BASE_INVENTORY_SIZE && Number.isFinite(cursor.at) && cursor.at >= 0 && Number.isSafeInteger(cursor.rolls) && cursor.rolls > 0 && cursor.rolls <= rolls;
+  }
+  function readStreamId(raw) {
+    return "streamId" in raw && typeof raw.streamId === "string" && /^[a-z0-9]{1,30}-[a-z0-9-]{1,60}$/.test(raw.streamId) ? raw.streamId : void 0;
+  }
+  function aggregateSlotTracking(streams = {}, local2) {
+    const combined = { ...streams };
+    if (local2?.streamId) {
+      const merged = normalizeSlotTracking(combined[local2.streamId]);
+      mergeSlotStream(merged, local2);
+      combined[local2.streamId] = merged;
+    }
+    const slots = {};
+    for (const stream of Object.values(combined)) for (const [slot, stats] of Object.entries(stream.slots)) {
+      const total = slots[slot] ??= emptyRolls();
+      for (const key3 of ["totalRolls", "sumRolls", "rollsAbove96_3", "perfectRolls"]) total[key3] += stats[key3];
+    }
+    const cursor = Object.values(combined).flatMap((stream) => stream.cursor ? [stream.cursor] : []).sort((a, b) => b.at - a.at || b.rolls - a.rolls || a.slot - b.slot)[0];
+    return { version: 1, slots, ...cursor ? { cursor: { ...cursor } } : {} };
+  }
+  var LUCKY_ROLL_DIGITS = 4;
+  var LUCKY_SCALE = 0.975;
+  var LUCKY_SHIFT = 0.012;
+  var LUCKY_HIGH_ROLL = LUCKY_SCALE - LUCKY_SHIFT;
+  var normal = [1e-4, 0.0369, LUCKY_HIGH_ROLL];
+  var luckyZero = 0.4 * 1e-4 + 0.6 * (0.0121 / 0.975);
+  var luckyHigh = 0.4 * 0.0369;
+  var lucky = [luckyZero, luckyHigh, 1 - luckyZero - luckyHigh];
+  function slotLogEvidence(stats) {
+    if (!stats) return 0;
+    const counts = [stats.perfectRolls, stats.rollsAbove96_3, stats.totalRolls - stats.perfectRolls - stats.rollsAbove96_3];
+    return counts.reduce((sum, count, index) => sum + count * Math.log(lucky[index] / normal[index]), 0);
+  }
+  function slotPosterior(tracking) {
+    const ranked = Array.from({ length: BASE_INVENTORY_SIZE }, (_, slot) => ({ slot, score: slotLogEvidence(tracking.slots[slot]), samples: tracking.slots[slot]?.totalRolls || 0 })).sort((a, b) => b.score - a.score || a.samples - b.samples || a.slot - b.slot);
+    const best2 = ranked[0];
+    const denominator = ranked.reduce((sum, entry) => sum + Math.exp(entry.score - best2.score), 0);
+    return ranked.map((entry) => {
+      const probability = Math.exp(entry.score - best2.score) / denominator;
+      const eliminationConfidence = 1 - probability;
+      return {
+        ...entry,
+        probability,
+        eliminationConfidence,
+        ruledOut: entry.samples >= LUCKY_EVIDENCE_ROLLS && eliminationConfidence >= LUCKY_CONFIDENCE
+      };
+    });
+  }
+  function luckySlotSearch(tracking) {
+    const ranked = slotPosterior(tracking);
+    const best2 = ranked[0];
+    const confidence = best2.probability;
+    const total = ranked.reduce((sum, entry) => sum + entry.samples, 0);
+    const inferred = confidence >= LUCKY_CONFIDENCE && best2.samples >= LUCKY_EVIDENCE_ROLLS;
+    let nextSlot = tracking.cursor?.slot ?? 0;
+    if (inferred) nextSlot = best2.slot;
+    else {
+      const ruledOut = new Set(ranked.filter((entry) => entry.ruledOut).map((entry) => entry.slot));
+      for (let offset = 0; offset < BASE_INVENTORY_SIZE; offset++) {
+        const candidate = ((tracking.cursor?.slot ?? 0) + offset) % BASE_INVENTORY_SIZE;
+        if (!ruledOut.has(candidate)) {
+          nextSlot = candidate;
+          break;
+        }
+      }
+    }
+    return {
+      slot: total ? best2.slot : null,
+      confidence,
+      samples: best2.samples,
+      total,
+      inferred,
+      nextSlot,
+      slots: Object.fromEntries(ranked.map((entry) => [entry.slot, entry])),
+      ruledOutCount: ranked.filter((entry) => entry.ruledOut).length
+    };
+  }
+  var MARKET_LISTING_FRESH_MS = 12e4;
+  function marketListingFresh(seenAt, now) {
+    return typeof seenAt === "number" && Number.isFinite(seenAt) && seenAt >= now - MARKET_LISTING_FRESH_MS;
+  }
+  var { max: mathMax, min: mathMin, floor: mathFloor, imul: mathImul, ceil: mathCeil } = Math;
+  var UPGRADE_CHANCES = [
+    [1, 0.9999999, 0.98, 0.95, 0.7, 0.6, 0.4, 0.25, 0.15, 0.07, 0.024, 0.14, 0.11],
+    [1, 0.99998, 0.97, 0.94, 0.68, 0.58, 0.38, 0.24, 0.14, 0.066, 0.018, 0.13, 0.1],
+    [1, 0.97, 0.94, 0.92, 0.64, 0.52, 0.32, 0.232, 0.13, 0.062, 0.015, 0.12, 0.09]
+  ];
+  function highestUpgradeLevel(choice) {
+    if (!choice.upgradeable) return 0;
+    const chances = choice.upgradeChances || UPGRADE_CHANCES[mathMax(0, mathMin(2, mathFloor(choice.upgradeGrade || 0)))];
+    let level3 = 0;
+    while (level3 + 1 < chances.length && Number(chances[level3 + 1]) > 0) level3++;
+    return level3;
+  }
+  function upgradeEstimateKey(choice, quantity2, target) {
+    return JSON.stringify([
+      choice.id,
+      choice.cost,
+      choice.upgradeable,
+      choice.upgradeGrade,
+      choice.upgradeChances,
+      choice.grades,
+      choice.scrollCosts,
+      quantity2,
+      target
+    ]);
+  }
+  var ESTIMATE_RUNS = 3e3;
+  var ESTIMATE_RUNS_MIN = 30;
+  var ESTIMATE_QUANTILE = 0.9;
+  var ESTIMATE_ROLL_BUDGET = 6e7;
+  var ESTIMATE_YIELD_ROLLS = 32768;
+  var ESTIMATE_CACHE_BATCHES = 256;
+  var cache = /* @__PURE__ */ new Map();
+  var scheduler = Promise.resolve();
+  function estimateUpgradeBatch(lines, signal, yieldToIO, cut) {
+    const sorted = lines.map((line, index) => ({
+      line,
+      index,
+      key: upgradeEstimateKey(line.choice, line.quantity, line.target)
+    })).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+    const key3 = JSON.stringify(sorted.map((entry) => entry.key));
+    const task = scheduler.then(async () => {
+      signal?.throwIfAborted();
+      let results = cache.get(key3);
+      if (!results) {
+        const budget = { remaining: ESTIMATE_ROLL_BUDGET, signal, yieldToIO, yields: 0 };
+        results = [];
+        for (const entry of sorted) {
+          signal?.throwIfAborted();
+          results.push(
+            await simulate(entry.line.choice, entry.line.quantity, entry.line.target, budget)
+          );
+        }
+        if (budget.yields) cut?.("ESTIMATE_YIELD_ROLLS", "10", budget.yields);
+        if (!budget.remaining) cut?.("ESTIMATE_ROLL_BUDGET", "10", 1);
+        if (cache.size >= ESTIMATE_CACHE_BATCHES) {
+          cache.delete(cache.keys().next().value);
+          cut?.("ESTIMATE_CACHE_BATCHES", "10", 1);
+        }
+        cache.set(key3, results);
+      }
+      const output = [];
+      sorted.forEach((entry, index) => {
+        output[entry.index] = results[index];
+      });
+      return output;
+    });
+    scheduler = task.catch(() => {
+    });
+    return task;
+  }
+  async function simulate(choice, quantity2, target, budget) {
+    if (!target || !choice.upgradeable)
+      return {
+        status: "available",
+        attempts: quantity2,
+        gold: choice.cost * quantity2,
+        scrolls: [],
+        completed: ESTIMATE_RUNS,
+        rolls: 0
+      };
+    if (target > highestUpgradeLevel(choice))
+      return { status: "unavailable", completed: 0, rolls: 0 };
+    const policy = simulationPolicy(choice, target);
+    let seed = 2166136261;
+    for (const char of `${choice.id}:${quantity2}:${target}`)
+      seed = mathImul(seed ^ char.charCodeAt(0), 16777619);
+    function random() {
+      seed += 1831565813;
+      let value = seed;
+      value = mathImul(value ^ value >>> 15, value | 1);
+      value ^= value + mathImul(value ^ value >>> 7, value | 61);
+      return ((value ^ value >>> 14) >>> 0) / 4294967296;
+    }
+    const runs = [];
+    const startBudget = budget.remaining;
+    simulation: for (let run = 0; run < ESTIMATE_RUNS; run++) {
+      const grace = Array(20).fill(0), scrolls = [0, 0, 0, 0];
+      let attempts = 0, successes = 0;
+      while (successes < quantity2) {
+        attempts++;
+        const attempt = upgradeOne(policy, grace, scrolls, random, budget);
+        const survived = attempt === null || typeof attempt === "boolean" ? attempt : await attempt;
+        if (survived === null) break simulation;
+        if (survived) successes++;
+      }
+      runs.push({
+        attempts,
+        gold: attempts * choice.cost + scrolls.reduce((sum, count, grade) => sum + count * (policy.costs[grade] || 0), 0),
+        scrolls
+      });
+    }
+    const rolls = startBudget - budget.remaining;
+    if (runs.length < ESTIMATE_RUNS_MIN) return { status: "unavailable", completed: runs.length, rolls };
+    runs.sort((a, b) => a.gold - b.gold);
+    return {
+      status: "available",
+      ...runs[mathCeil(runs.length * ESTIMATE_QUANTILE) - 1],
+      completed: runs.length,
+      rolls
+    };
+  }
+  function simulationPolicy(choice, target) {
+    const grade = mathMax(0, mathMin(2, mathFloor(choice.upgradeGrade || 0)));
+    const igrace = [1, -1, -2][grade], chances = choice.upgradeChances || UPGRADE_CHANCES[grade];
+    return {
+      target,
+      // Grace changes only in integer steps and its chance bonus saturates at 14.
+      // Evaluate the original formula once for each reachable input, exactly.
+      rollChances: Array.from({ length: target + 1 }, (_, level3) => level3 === 0 ? [] : Array.from({ length: 15 }, (_2, grace) => rollChance(chances[level3] || 0, level3, grace, igrace))),
+      grades: choice.grades || [9, 10, 11, 12],
+      costs: choice.scrollCosts || [1e3, 4e4, 16e5, 64e6]
+    };
+  }
+  function scrollGrade(level3, grades) {
+    if (level3 >= (grades[2] ?? 11)) return 3;
+    if (level3 >= (grades[1] ?? 10)) return 2;
+    return level3 >= (grades[0] ?? 9) ? 1 : 0;
+  }
+  function rollChance(base, level3, grace, igrace) {
+    const count = mathMax(0, mathMin(level3 + 1, mathMin(3, grace / 4.5) + igrace));
+    let bonus = base * count / level3 + count / 1e3;
+    bonus = mathMax(0, bonus / 4.8 - 0.4 / (level3 - 0.999) ** 2);
+    return mathMin(base + bonus, mathMin(base + 0.24, base * 2));
+  }
+  function failedGrace(grace, level3) {
+    grace[level3 - 1]++;
+    grace[level3]++;
+    if (level3 >= 8 && level3 <= 15) {
+      grace[level3 - 1]++;
+      grace[level3 - 2] += 2;
+      grace[level3 - 3] += 2;
+    }
+  }
+  function upgradeOne(policy, grace, scrolls, random, budget, level3 = 1, resumed = false) {
+    for (; level3 <= policy.target; level3++) {
+      if (!budget.remaining) return null;
+      if (!resumed && budget.remaining % ESTIMATE_YIELD_ROLLS === 0) {
+        budget.yields++;
+        return budget.yieldToIO().then(() => {
+          budget.signal?.throwIfAborted();
+          return upgradeOne(policy, grace, scrolls, random, budget, level3, true);
+        });
+      }
+      resumed = false;
+      budget.remaining--;
+      scrolls[scrollGrade(level3 - 1, policy.grades)]++;
+      const graceCount = grace[level3];
+      if (random() <= policy.rollChances[level3][graceCount >= 14 ? 14 : graceCount])
+        grace[level3] = 0;
+      else {
+        failedGrace(grace, level3);
+        return false;
+      }
+    }
+    return true;
+  }
+  var upgradeOfferings = {
+    offeringp: "Primling",
+    offering: "Primordial Essence",
+    offeringx: "Primordial X"
+  };
+  function isUpgradeOffering(value) {
+    return typeof value === "string" && Object.hasOwn(upgradeOfferings, value);
+  }
+  function offeringRule(rules, name2, level3) {
+    return rules.find((rule) => rule.name === name2 && rule.floor <= level3 && level3 < rule.ceiling);
+  }
+  function resolveUpgradeOffering(rules, name2, level3, explicit) {
+    return explicit ? { offering: explicit, required: true } : offeringRule(rules, name2, level3);
+  }
+  function offeringOverlap(rules, next) {
+    return rules.find((rule) => rule.id !== next.id && rule.name === next.name && rule.floor < next.ceiling && next.floor < rule.ceiling);
+  }
+  function offeringProblem(rules, rule, maximum) {
+    const overlap2 = offeringOverlap(rules, rule);
+    if (overlap2) return { error: `There is already a rule that covers +${overlap2.floor} to +${overlap2.ceiling}.`, conflict: true };
+    return rule.floor >= rule.ceiling || rule.ceiling > maximum ? { error: "Choose a higher destination level.", conflict: false } : null;
+  }
+  function validOfferingRule(value) {
+    if (!value || typeof value !== "object") return false;
+    const rule = value;
+    return typeof rule.id === "string" && !!rule.id && typeof rule.name === "string" && !!rule.name && isUpgradeOffering(rule.offering) && typeof rule.required === "boolean" && validOfferingRange(rule);
+  }
+  function validOfferingRange(rule) {
+    return Number.isSafeInteger(rule.floor) && Number.isSafeInteger(rule.ceiling) && Number(rule.floor) >= 0 && Number(rule.floor) < Number(rule.ceiling) && Number(rule.ceiling) <= UPGRADE_LEVEL_MAX;
+  }
+  function fitOfferingRules(value) {
+    if (!Array.isArray(value)) return value;
+    return value.flatMap((rule) => {
+      if (!rule || typeof rule !== "object" || !Number.isSafeInteger(rule.ceiling) || rule.ceiling <= UPGRADE_LEVEL_MAX) return [rule];
+      const fitted = { ...rule, ceiling: UPGRADE_LEVEL_MAX };
+      return Number(fitted.floor) < UPGRADE_LEVEL_MAX ? [fitted] : [];
+    });
+  }
+  function validOfferingRules(value) {
+    if (!Array.isArray(value) || !value.every(validOfferingRule)) return false;
+    return new Set(value.map((rule) => rule.id)).size === value.length && !value.some((rule) => offeringOverlap(value, rule));
+  }
+  var previewOptions = ["none", "offeringp", "offering", "offeringx"];
+  function unavailablePreview(executor, item2, reason4) {
+    return { executor, item: item2, options: Object.fromEntries(previewOptions.map((option) => [option, { reason: reason4 }])) };
+  }
+  function tripLabel(stocking, atBank) {
+    return atBank ? stocking ? "Stocking up" : "Banking" : "Travelling to bank";
+  }
+  var ERRAND_ROWS = {
+    // The hunting client's busy, the farm walk's bagBusy and the event attendance's errand.
+    hunt: ["banking", "bankQueued", "stocking", "upgrading"],
+    // The anniversary's merchant errand and the October event's merchantBusy.
+    merchantEvent: ["banking", "upgrading"],
+    // The event merchant's errand.
+    eventMerchant: ["tidying", "banking", "stocking", "upgrading", "previewing", "lucky"],
+    // bank.ts bagStill: the stock-up, the elixir and the merchant's tidy.
+    bankStill: ["banking", "bankQueued", "stocking", "upgrading", "tidying", "lucky"],
+    // bank.ts keepTracktrixLast: the Tracktrix pin.
+    trackerPin: ["inventoryCommand", "bankQueued", "tidying", "lucky"],
+    // Movement's formation spread step (formation.ts separateFromParty).
+    formation: ["banking", "bankQueued", "stocking"]
+  };
+
+  // runtime/items/catalog-meta.ts
+  var metaIndexes = /* @__PURE__ */ new WeakMap();
+  var metaJoins = /* @__PURE__ */ new WeakMap();
+  function catalogIndex(catalog2) {
+    if (!catalog2 || typeof catalog2 !== "object") return null;
+    let index = metaIndexes.get(catalog2);
+    if (index) return index;
+    index = /* @__PURE__ */ new Map();
+    const items2 = catalog2.allItems;
+    for (const raw of Array.isArray(items2) ? items2 : []) {
+      const entry = raw;
+      if (entry && typeof entry.id === "string" && entry.meta && typeof entry.meta === "object") index.set(entry.id, entry.meta);
+    }
+    metaIndexes.set(catalog2, index);
+    return index;
+  }
+  function catalogItemMeta(catalog2, name2) {
+    return typeof name2 === "string" ? catalogIndex(catalog2)?.get(name2) : void 0;
+  }
+  function joinItemMeta(catalog2, name2, live2) {
+    const known2 = catalogItemMeta(catalog2, name2), own3 = live2 && typeof live2 === "object" ? live2 : null;
+    if (!known2 || !own3) return own3 || known2 || null;
+    const cached = metaJoins.get(own3);
+    if (cached?.known === known2) return cached.joined;
+    const joined = { ...known2, ...own3 };
+    metaJoins.set(own3, { known: known2, joined });
+    return joined;
+  }
+
+  // runtime/items/saved-fields.ts
+  var RESTOCK_DEFAULT = { hp: { item: "hpot1", min: 5, max: 20 }, mp: { item: "mpot1", min: 0, max: 0 } };
+  var RESTOCK_ELIXIR_DEFAULT = { min: 1, max: 2 };
+  function validMarketIgnoredItem(value) {
+    if (!object(value)) return false;
+    return typeof value.name === "string" && /^[a-z0-9_]{1,80}$/i.test(value.name) && typeof value.level === "number" && Number.isSafeInteger(value.level) && value.level >= 0 && value.level <= 100;
+  }
+  var upgrade2 = (value) => object(value) && item(value.item) && positive(value.tiers);
+  var upgradeRule = (value) => positive(Number(value)) || object(value) && positive(value.tiers);
+  var compound2 = (value) => object(value) && text(value.id) && listOf(mark)(value.items);
+  var autoCompound = (value) => item(value) && object(value) && positive(value.targetTier);
+  var itemsSavedFields = {
+    name: "core:items",
+    settings: {
+      // How often the inbox is read: the game sends no unread mail count in play, so the player sets
+      // the period; 30 s is the previous release's. A send or a collect also reads it when it ends.
+      mailCheckSeconds: { label: "Check mail every (seconds)", kind: "number", min: 1, default: 30, importable: true },
+      // Kept safety bounds (the numbers rule, 2026-11-13; bigcheck/bounds.md). Each guards against a
+      // server outside the console that never answers, ends the wait and tells the status owner's bound
+      // record. None has game data or a measurement, so each keeps the previous release's value.
+      // An ALData request that never answers.
+      aldataRequestBoundMs: { label: "ALData request bound (ms)", kind: "number", min: 1, default: 2e4, hidden: true, check: wholeFrom(1, Infinity) },
+      // A game mail API request that never answers.
+      mailRequestBoundMs: { label: "Mail request bound (ms)", kind: "number", min: 1, default: 2e4, hidden: true, check: wholeFrom(1, Infinity) },
+      // A BankBoi whose worker never reports working: the game never logs it in, or its realm stays
+      // unresolved (the transaction's 600 s).
+      bankboiStartBoundMs: { label: "BankBoi start bound (ms)", kind: "number", min: 1, default: 6e5, hidden: true, check: wholeFrom(1, Infinity) },
+      // The free cells every bag keeps for a visit's logistics (the player asked for a setting
+      // for the number of protected free slots; one party-wide value). A whole
+      // number from 0; rules.ts `protectedSlotsOf` bounds it by the bag the character's report gives, and each
+      // character reads its own count from its reply.
+      protectedFreeSlots: {
+        label: "Protected free slots",
+        kind: "number",
+        min: 0,
+        default: PROTECTED_FREE_SLOTS_DEFAULT,
+        importable: true,
+        check: wholeFrom(0, Number.MAX_SAFE_INTEGER),
+        refusal: "enter a whole number of free slots from 0 up to the bag size"
+      },
+      // An automatic purchase spends only the merchant's and the bank's gold above it.
+      goldReserve: { label: "Gold reserve", kind: "number", min: 0, default: 0, importable: true },
+      threshold: {
+        label: "Gold collection threshold",
+        kind: "number",
+        default: 1e5,
+        importable: true,
+        check: wholeFrom(0, 1e12),
+        refusal: "invalid threshold",
+        deliver: ["characters", "dashboard"]
+      },
+      // A count of bag copies, so the game's base bag bounds it (G node/server.js:1483). An imported
+      // count past the bag reads as the bag, as initialCollectionState's load holds a saved one (the
+      // earlier console's import took any positive count); the route still refuses it.
+      itemCollectionThreshold: {
+        label: "Item collection threshold",
+        kind: "value",
+        default: 1,
+        importable: true,
+        check: wholeFrom(1, BASE_INVENTORY_SIZE),
+        fit: (value) => Number.isSafeInteger(value) && Number(value) > BASE_INVENTORY_SIZE ? BASE_INVENTORY_SIZE : value,
+        refusal: "invalid item collection threshold",
+        deliver: ["dashboard"]
+      },
+      buyUpgradeBatchSize: {
+        label: "Buy and upgrade batch size",
+        kind: "value",
+        default: 1,
+        importable: true,
+        check: wholeFrom(1, BASE_INVENTORY_SIZE),
+        refusal: `invalid upgrade batch size (1\u2013${BASE_INVENTORY_SIZE})`,
+        deliver: ["dashboard"]
+      },
+      upgradeOfferingRules: { label: "Upgrade offering rules", kind: "value", default: [], importable: true, check: validOfferingRules, fit: fitOfferingRules },
+      // The shared rules before the per-character rules; coordinator/fates.ts migrates them at load.
+      merchantRules: {
+        label: "Shared item rules (older layout)",
+        kind: "value",
+        default: null,
+        check: (value) => value === null || object(value),
+        deliver: ["dashboard"]
+      },
+      autoDeconstruction: { label: "Automatic deconstruction", kind: "value", default: {}, scope: "character", importable: true, check: mapOf(mapOf((value) => object(value) && item(value.item))), deliver: ["dashboard"] },
+      autoNpcSales: { label: "Automatic NPC sales", kind: "value", default: {}, importable: true, check: mapOf((value) => object(value) && item(value.item)), characterKey: "character", deliver: ["dashboard"] },
+      autoStandMarks: { label: "Automatic stand listings", kind: "value", default: {}, importable: true, check: mapOf((value) => object(value) && item(value.item) && positive(value.price)), deliver: ["dashboard"] },
+      autoExchanges: { label: "Automatic exchanges", kind: "value", default: {}, importable: true, check: mapOf(item), deliver: ["dashboard"] },
+      autoItemMarks: {
+        label: "Automatic item marks",
+        kind: "value",
+        default: {},
+        scope: "character",
+        document: "selections",
+        importable: true,
+        check: mapOf(mapOf((value) => value === "bank" || value === "merchant")),
+        deliver: ["dashboard"]
+      },
+      autoStandBuys: { label: "Buy from stands automatically", kind: "boolean", default: false, deliver: ["dashboard"] },
+      autoBlacklistMerchants: {
+        label: "Block failed merchants automatically",
+        kind: "boolean",
+        default: true,
+        deliver: ["dashboard"]
+      },
+      marketIgnoredItems: {
+        label: "Ignored market items",
+        kind: "value",
+        default: [],
+        importable: true,
+        check: listOf(validMarketIgnoredItem),
+        refusal: "Provide an item name and nonnegative whole item level",
+        deliver: ["dashboard"]
+      },
+      restockPolicies: {
+        label: "Restock",
+        kind: "value",
+        default: {},
+        scope: "character",
+        importable: true,
+        check: mapOf((value) => object(value) && (!value.elixir || object(value.elixir) && text(value.elixir.item) && number(value.elixir.min) && number(value.elixir.max) && boolean(value.elixir.autoConsume) && boolean(value.elixir.autoAcquire)) && [value.hp, value.mp].every((p) => object(p) && number(p.min) && number(p.max) && text(p.item))),
+        deliver: ["characters", "dashboard"]
+      },
+      // The weapon the merchant equips between jobs, saved when the player equips one by hand.
+      merchantWeapon: {
+        label: "Merchant weapon",
+        kind: "value",
+        default: null,
+        check: (value) => value === null || object(value) && object(value.item),
+        deliver: ["characters", "dashboard"]
+      },
+      // The ALData key, a credential in `party.aldata` that the credentials document saves with its
+      // authentication (`secret`). An empty key means none was generated yet.
+      aldataKey: { label: "ALData key", kind: "text", default: "", secret: true, document: "aldata", path: ["aldata", "key"] },
+      bankSortMode: {
+        label: "Bank sorting",
+        kind: "choice",
+        choices: ["automatic", "request"],
+        default: "automatic",
+        importable: true,
+        check: (value) => value === "automatic" || value === "request",
+        deliver: ["dashboard-core"]
+      }
+    },
+    records: {
+      // A record: each production receipt consumes a rule's quantity (production.ts
+      // `consumeQuotas`), and the player's commands edit it through the items owner's code.
+      autoUpgradeMarks: {
+        default: {},
+        scope: "character",
+        document: "selections",
+        importable: true,
+        check: mapOf(mapOf(upgradeRule)),
+        deliver: ["dashboard"]
+      },
+      production: { default: { attempts: {} } },
+      // The stored upgrade previews ride in the dashboard's core read, so an open preview panel reads
+      // the preview again when a result lands (upgrade-preview-panel.tsx).
+      upgradePreviewResults: { default: {}, deliver: ["dashboard-core"] },
+      // The mail inbox and sent list; the items owner holds the inbox (coordinator/mail.ts), so it
+      // declares the record. The declaration sat in the status owner's fields.ts, whose import of
+      // initialMailbox through items/api.ts closed a bundle cycle that left statusSavedFields
+      // undefined.
+      mailbox: { default: initialMailbox(void 0) },
+      merchantDeliveries: { default: {}, deliver: ["dashboard"] },
+      standListings: { default: [], importable: true, check: listOf((value) => object(value) && item(value.item) && positive(value.price)), deliver: ["characters", "dashboard"] },
+      npcSaleMarks: { default: [], importable: true, check: listOf((value) => object(value) && item(value.item) && text(value.id)), characterKey: "character", deliver: ["dashboard"] },
+      deconstructionMarks: { default: [], importable: true, check: listOf((value) => object(value) && item(value.item) && text(value.id) && text(value.owner) && text(value.origin) && number(value.quantity)), characterKey: "owner", deliver: ["dashboard"] },
+      // Part 4: the bag copies an add-on's claim or action holds, by character and slot, which the
+      // item-rules slot reads (coordinator/fates.ts `publishAddonFates`).
+      addonItemFates: { default: {}, deliver: ["dashboard"] },
+      standBids: { default: {}, importable: true, check: mapOf((value) => object(value) && positive(value.price) && positive(value.quantity)), deliver: ["dashboard"] },
+      nativeStand: { default: { sequence: 0, offers: {}, problems: {} }, deliver: ["dashboard-core"] },
+      standPriceHistory: { default: {}, liveness: true, deliver: ["dashboard-core"] },
+      merchantBlacklist: { default: {}, importable: true, check: mapOf(object), deliver: ["dashboard"] },
+      upgrades: { default: {}, scope: "character", importable: true, check: mapOf(listOf(upgrade2)), deliver: ["dashboard"] },
+      compounds: { default: {}, scope: "character", importable: true, check: mapOf(listOf(compound2)), deliver: ["dashboard"] },
+      autoCompounds: { default: {}, scope: "character", importable: true, check: mapOf(listOf(autoCompound)), deliver: ["dashboard"] },
+      luckyUpgradeSlots: { default: {}, deliver: ["characters", "dashboard-core"] },
+      luckySlotResume: { default: {}, deliver: ["characters", "dashboard-core"] },
+      luckySlotTracking: { default: {}, deliver: ["characters", "dashboard-core"] },
+      luckySlotCharacterIds: { default: {}, deliver: ["characters"] },
+      bankSortRequest: { default: null, deliver: ["dashboard-core"] },
+      marked: { default: {}, scope: "character", document: "selections", importable: true, check: mapOf(listOf(mark)), deliver: ["dashboard"] },
+      merchantMarked: { default: {}, scope: "character", document: "selections", importable: true, check: mapOf(listOf(mark)), deliver: ["dashboard"] },
+      bankSnapshot: { default: null, document: "bank" },
+      withdrawals: { default: {}, document: "bank", deliver: ["dashboard-core"] },
+      // The copies the player banked by hand while a merchant claim of their item lived; the claim
+      // leaves them in the bank across a restart.
+      claimBanked: { default: {}, document: "bank" },
+      bankbois: { default: {}, document: "bank" },
+      bankboiQueue: { default: [], document: "bank" },
+      bankboiTransaction: { default: null, document: "bank" },
+      bankboiReservedMigrated: { default: false, document: "bank" }
+    }
+  };
+  function initialMailbox(value) {
+    const saved = object(value) ? value : {}, settings = object(saved.settings) ? saved.settings : {};
+    return {
+      settings: { autoCollect: settings.autoCollect === true, autoDelete: settings.autoDelete === true },
+      seenIds: Array.isArray(saved.seenIds) ? saved.seenIds.filter((id2) => typeof id2 === "string") : [],
+      outbox: Array.isArray(saved.outbox) ? saved.outbox.flatMap((raw) => {
+        const m = object(raw) ? raw : {};
+        return typeof m.id === "string" && typeof m.recipient === "string" && typeof m.subject === "string" && typeof m.message === "string" && typeof m.sent === "string" ? [{ id: m.id, recipient: m.recipient, subject: m.subject, message: m.message, sent: m.sent, ...m.item ? { item: m.item } : {}, ...typeof m.quantity === "number" ? { quantity: m.quantity } : {} }] : [];
+      }) : []
+    };
+  }
+
+  // runtime/items/api.ts
+  function loot() {
+    const items2 = globalThis.partyItems;
+    if (!items2) throw Error("The items owner is not installed on this character");
+    return items2.loot.pass();
+  }
+  function itemDoors() {
+    const doors = globalThis.__partyItemDoors;
+    if (!doors) throw Error("The items owner is not installed on this character");
+    return doors;
+  }
+  var finite = (n) => typeof n === "number" && Number.isFinite(n);
+  function itemDoorFacts(facts = {}) {
+    const { floor, held, ponty } = facts;
+    return {
+      ...finite(floor) ? { floor } : {},
+      ...Array.isArray(held) && held.every(finite) ? { held } : {},
+      ...ponty && typeof ponty === "object" ? { ponty: Object.fromEntries(Object.entries(ponty).filter(([, price2]) => finite(price2))) } : {}
+    };
+  }
+  var door = (name2) => (args, ask3) => itemDoors().door(name2, args, ask3.band, itemDoorFacts(ask3.facts));
+  var wearLook = door("wearLook");
+  var donate = door("donate");
+  var sendGold = door("sendGold");
+  var sendItem = door("sendItem");
+  var sendMail = door("sendMail");
+  var takeMail = door("takeMail");
+  var buy2 = door("buy");
+  var sell2 = door("sell");
+  var exchange2 = door("exchange");
+  var exchangeBuy = door("exchangeBuy");
+  var split2 = door("split");
+  var move = door("move");
+  var equip2 = door("equip");
+  var unequip2 = door("unequip");
+  var consume2 = door("consume");
+  var dismantle2 = door("dismantle");
+  var destroy = door("destroy");
+  var boost = door("boost");
+  var upgrade3 = door("upgrade");
+  var compound3 = door("compound");
+  var craft = door("craft");
+  var locksmith = door("locksmith");
+  var destat = door("destat");
+  var list2 = door("list");
+  var wishlist2 = door("wishlist");
+  var tradeBuy = door("tradeBuy");
+  var tradeSell = door("tradeSell");
+  var tradeSwap = door("tradeSwap");
+  var tradeHistory = door("tradeHistory");
+  var buySecondhand = door("buySecondhand");
+  var lostAndFoundInfo = door("lostAndFoundInfo");
+  var lostAndFound = door("lostAndFound");
+  var buyLostAndFound = door("buyLostAndFound");
+  var openChest = door("openChest");
+  var bankRetrieve = door("bankRetrieve");
+  var bankStore = door("bankStore");
+  var bankSwap = door("bankSwap");
+  var bankDeposit = door("bankDeposit");
+  var bankWithdraw = door("bankWithdraw");
+  function itemData(name2) {
+    const root2 = globalThis;
+    const definition = root2.G?.items ? root2.G.items[name2] : root2.__partyItemData?.(name2);
+    return definition;
+  }
+  function itemGradeOf(name2, level3) {
+    const definition = itemData(name2);
+    return definition ? itemGrade(definition, Number(level3) || 0) : null;
+  }
+  function npcStock(npc) {
+    if (npc === "lostandfound") return lostAndFoundList().map((lot) => lot.name);
+    const items2 = globalThis.G?.npcs?.[npc]?.items;
+    return (items2 ?? []).filter((name2) => typeof name2 === "string");
+  }
+  function lostAndFoundList() {
+    return globalThis.__partyItemDoors?.lostAndFound() ?? [];
+  }
+  function publishItemData(source2) {
+    globalThis.__partyItemData = source2;
+  }
+
   // runtime/characters/call-budget-reads.ts
-  var carriesTracktrix = (items2) => (items2 || []).some((item2) => item2?.name === "tracker");
+  var carriesTracktrix = (items2) => (items2 || []).some((item2) => TRACKER_ITEMS.includes(String(item2?.name)));
   function playerNames(data) {
     if (!Array.isArray(data)) return [];
     return data.map((entry) => entry?.name).filter((name2) => typeof name2 === "string" && !!name2 && name2 !== "Hidden").filter((name2, index, all2) => all2.indexOf(name2) === index).sort((a, b) => a.localeCompare(b));
@@ -598,261 +2153,6 @@
     }
   }
 
-  // runtime/settings/api.ts
-  var api_exports = {};
-  __export(api_exports, {
-    ADDON_KINDS: () => ADDON_KINDS,
-    DELIVERIES: () => DELIVERIES,
-    SETTING_DOCUMENTS: () => SETTING_DOCUMENTS,
-    SETTING_KINDS: () => SETTING_KINDS,
-    SETTING_SCOPES: () => SETTING_SCOPES,
-    addonSettingProblem: () => addonSettingProblem,
-    addonValues: () => addonValues,
-    boolean: () => boolean,
-    item: () => item,
-    list: () => list,
-    listOf: () => listOf,
-    mapOf: () => mapOf,
-    mark: () => mark,
-    number: () => number,
-    object: () => object,
-    played: () => played,
-    playedIn: () => playedIn,
-    positive: () => positive,
-    readOverlaysWith: () => readOverlaysWith,
-    settingsDraft: () => settingsDraft,
-    text: () => text,
-    valueProblem: () => valueProblem,
-    wholeFrom: () => wholeFrom
-  });
-
-  // runtime/settings/rules.ts
-  var rules_exports = {};
-  __export(rules_exports, {
-    ADDON_KINDS: () => ADDON_KINDS,
-    ADDON_SETTING_FIELDS: () => ADDON_SETTING_FIELDS,
-    DELIVERIES: () => DELIVERIES,
-    LOCK_HELPER_TIMEOUT_MS: () => LOCK_HELPER_TIMEOUT_MS,
-    RECORD_FIELD_KINDS: () => RECORD_FIELD_KINDS,
-    SETTING_DOCUMENTS: () => SETTING_DOCUMENTS,
-    SETTING_KINDS: () => SETTING_KINDS,
-    SETTING_SCOPES: () => SETTING_SCOPES,
-    accepts: () => accepts,
-    addonSettingProblem: () => addonSettingProblem,
-    buildSettingsTable: () => buildSettingsTable,
-    declarationProblem: () => declarationProblem,
-    object: () => object,
-    overlayFieldProblem: () => overlayFieldProblem,
-    overlayProblem: () => overlayProblem,
-    rangeOf: () => rangeOf
-  });
-  var ADDON_KINDS = ["character", "boolean", "choice", "number", "per-character", "text", "monsters", "items", "records"];
-  var RECORD_FIELD_KINDS = ["boolean", "choice", "number", "text", "character", "monsters", "items"];
-  var SETTING_KINDS = [...ADDON_KINDS, "value"];
-  var SETTING_SCOPES = ["account", "scope", "character"];
-  var SETTING_DOCUMENTS = ["settings", "selections", "roster", "bank", "history", "aldata"];
-  var DELIVERIES = ["characters", "dashboard", "dashboard-core"];
-  var LOCK_HELPER_TIMEOUT_MS = 5e3;
-  var object = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-  var ADDON_SETTING_FIELDS = ["label", "kind", "default", "choices", "min", "max", "fields", "importable", "scope", "check", "fit"];
-  function declarationProblem(owner, name2, d, record3, own3) {
-    const setting = record3 ? void 0 : d;
-    if (setting && !SETTING_KINDS.includes(setting.kind)) return `${owner} declares the setting ${name2} of kind "${setting.kind}", which the settings do not have`;
-    if (d.scope !== void 0 && !SETTING_SCOPES.includes(d.scope)) return `${owner} declares ${name2} with the scope "${d.scope}", which the settings do not have`;
-    if (d.document !== void 0 && (!SETTING_DOCUMENTS.includes(d.document) || setting && d.document === "history"))
-      return `${owner} declares ${name2} in the document "${d.document}", which the ${record3 ? "records" : "settings"} do not have`;
-    for (const to of d.deliver ?? []) if (!DELIVERIES.includes(to)) return `${owner} declares ${name2} delivered to "${to}", which the settings do not deliver to`;
-    if (setting && (setting.kind === "choice" || setting.kind === "per-character") && !setting.choices?.length && !(setting.kind === "choice" && setting.slot))
-      return `${owner} declares the setting ${name2} with no choices`;
-    if (setting?.kind === "value" && !setting.check) return `${owner} declares the setting ${name2} of kind "value" with no check`;
-    if (setting?.kind === "records") {
-      const fields = Object.entries(setting.fields ?? {});
-      if (!fields.length) return `${owner} declares the setting ${name2} of kind "records" with no fields`;
-      for (const [key3, field] of fields) {
-        if (!RECORD_FIELD_KINDS.includes(field.kind)) return `${owner} declares the field ${key3} of ${name2} with the kind "${field.kind}", which a record does not have`;
-        if (field.kind === "choice" && !field.choices?.length) return `${owner} declares the field ${key3} of ${name2} with no choices`;
-      }
-    }
-    if (record3 && d.derive && (d.scope !== "scope" || d.profileOnly || d.importable))
-      return `${owner} declares ${name2} derived, which only a farming scope's record with a top-level copy and no import is`;
-    if (d.document === "aldata" && !(setting?.secret && setting.path?.[0] === "aldata"))
-      return `${owner} declares ${name2} in the credentials document, which holds only a secret setting under party.aldata`;
-    if (!accepts(d, setting, d.default, own3)) return `${owner} declares ${name2} with a default its own check refuses`;
-    return void 0;
-  }
-  function rangeOf(setting) {
-    const { min, max } = setting.kind === "number" ? setting : setting.check?.range ?? {};
-    return { ...Number.isFinite(min) ? { min } : {}, ...Number.isFinite(max) ? { max } : {} };
-  }
-  function accepts(d, setting, value, own3, game2) {
-    switch (setting?.kind) {
-      case "boolean":
-        if (typeof value !== "boolean") return false;
-        break;
-      case "number":
-        if (typeof value !== "number" || !Number.isFinite(value) || value < (setting.min ?? -Infinity) || value > (setting.max ?? Infinity)) return false;
-        break;
-      // A slot's entries come from the registry at each write; with none given, the kind takes a name.
-      case "choice":
-        if (setting.slot && !setting.choices ? typeof value !== "string" : !setting.choices.includes(value)) return false;
-        break;
-      case "character":
-        if (value !== null && typeof value !== "string") return false;
-        break;
-      case "text":
-        if (typeof value !== "string") return false;
-        break;
-      // The ids' membership in game data is the writer's check, which holds the data.
-      // An `items` setting names game items the same way, for the items owner's add-on claims.
-      case "monsters":
-      case "items":
-        if (!Array.isArray(value) || !value.every((id2) => typeof id2 === "string") || new Set(value).size !== value.length) return false;
-        break;
-      case "per-character":
-        if (!object(value) || !Object.values(value).every((v) => setting.choices.includes(v))) return false;
-        break;
-      // Each record names only declared fields, and each value passes its field's kind check. A
-      // field a record leaves out stays unset.
-      case "records":
-        if (!Array.isArray(value) || !value.every((record3) => object(record3) && Object.entries(record3).every(([key3, field]) => {
-          const declared = setting.fields?.[key3] && { ...setting.fields[key3], default: void 0 };
-          return !!declared && accepts(declared, declared, field);
-        }))) return false;
-        break;
-    }
-    return !d.check || d.check(value, own3, game2);
-  }
-  function addonSettingProblem(r) {
-    const defaults = Object.fromEntries(Object.entries(r.settings ?? {}).map(([key3, setting]) => [key3, setting.default]));
-    for (const [key3, setting] of Object.entries(r.settings ?? {})) {
-      if (r.folder === "addons" && setting.scope !== void 0 && setting.scope !== "scope")
-        return `${r.name} declares its setting ${key3} with the scope "${setting.scope}"; an add-on setting is one value or one per farming scope (scope: 'scope')`;
-      if (r.folder === "addons" && !ADDON_KINDS.includes(setting.kind))
-        return `${r.name} declares the setting ${key3} of kind "${setting.kind}", which the settings do not have`;
-      const placed = r.folder === "addons" && Object.keys(setting).find((field) => !ADDON_SETTING_FIELDS.includes(field));
-      if (placed) return `${r.name} declares ${placed} on its setting ${key3}; an add-on setting saves with the add-on's switch and takes only ${ADDON_SETTING_FIELDS.join(", ")}`;
-      const problem = declarationProblem(r.name, key3, setting, false, defaults);
-      if (problem) return problem;
-    }
-    if (r.folder === "addons" && Object.keys(r.records ?? {}).length)
-      return `${r.name} declares the record ${Object.keys(r.records)[0]}; an add-on keeps its own state in its store`;
-    return void 0;
-  }
-  function overlayProblem(table, field, value, game2) {
-    const problem = overlayFieldProblem(table, field);
-    if (problem) return problem;
-    const setting = table.members?.get(field) ?? table.fields.get(field).setting;
-    return accepts(setting, setting, value, void 0, game2) ? void 0 : `${setting.label} refuses this value`;
-  }
-  function overlayFieldProblem(table, field) {
-    const member2 = table.members?.get(field);
-    if (member2) return member2.noOverlay || member2.secret ? `${member2.label} takes no add-on value` : void 0;
-    const d = table.fields.get(field);
-    if (!d) return `${field} is not a declared setting`;
-    if (d.record) return `${field} is a record play writes, not a player's setting`;
-    if (d.setting.noOverlay || d.setting.secret || d.setting.path) return `${d.setting.label} takes no add-on value`;
-    return void 0;
-  }
-  var replyName = (field, d) => d.reply ?? field;
-  function buildSettingsTable(declarers) {
-    const refusals = [];
-    const owners = /* @__PURE__ */ new Map();
-    const fields = /* @__PURE__ */ new Map(), members = /* @__PURE__ */ new Map();
-    for (const declarer of declarers) {
-      if (declarer.folder === "addons") continue;
-      const entries2 = [
-        ...Object.entries(declarer.settings ?? {}).map(([field, s]) => [field, s, false]),
-        ...Object.entries(declarer.records ?? {}).map(([field, r]) => [field, r, true])
-      ];
-      for (const [field, d, record3] of entries2) {
-        (owners.get(field) ?? owners.set(field, []).get(field)).push({ owner: declarer.name, record: record3 });
-        const problem = declarationProblem(declarer.name, field, d, record3);
-        if (problem) refusals.push(problem);
-        fields.set(field, record3 ? { field, owner: declarer.name, record: record3, setting: d } : { field, owner: declarer.name, record: record3, setting: d });
-        for (const [key3, member2] of Object.entries(record3 ? d.members ?? {} : {})) {
-          const memberProblem = declarationProblem(declarer.name, `${field}.${key3}`, member2, false);
-          if (memberProblem) refusals.push(memberProblem);
-          members.set(`${field}.${key3}`, member2);
-        }
-      }
-    }
-    for (const [field, by] of owners) if (by.length > 1) {
-      const both = by.some((b) => b.record) && by.some((b) => !b.record);
-      refusals.push(`${field} is declared ${both ? "as a setting and a record" : "twice"}, by ${by.map((b) => `${b.owner} (${b.record ? "record" : "setting"})`).join(" and ")}`);
-    }
-    const replies = /* @__PURE__ */ new Map();
-    for (const d of fields.values()) if (d.setting.deliver?.includes("characters"))
-      (replies.get(replyName(d.field, d.setting)) ?? replies.set(replyName(d.field, d.setting), []).get(replyName(d.field, d.setting))).push(`${d.field} (${d.owner})`);
-    for (const [reply2, by] of replies) if (by.length > 1) refusals.push(`${by.join(" and ")} reach the characters under one reply name, ${reply2}`);
-    return refusals.length ? { ok: false, refusals } : { ok: true, table: { fields, members } };
-  }
-
-  // runtime/settings/api.ts
-  function valueProblem(setting, value, own3, game2) {
-    if (accepts(setting, setting, value, own3, game2)) return void 0;
-    if (setting.refusal) return setting.refusal;
-    if (setting.check && accepts({ ...setting, check: void 0 }, setting, value)) return `${setting.label} refuses this value`;
-    switch (setting.kind) {
-      case "boolean":
-        return `${setting.label} takes true or false`;
-      case "number":
-        return `${setting.label} takes a number from ${setting.min ?? "any"} to ${setting.max ?? "any"}`;
-      case "choice":
-        return `${setting.label} takes one of ${setting.choices.join(", ")}`;
-      case "per-character":
-        return `${setting.label} takes one of ${setting.choices.join(", ")} for each character`;
-      case "character":
-        return `${setting.label} takes a character's name`;
-      default:
-        return `${setting.label} refuses this value`;
-    }
-  }
-  var list = (value) => Array.isArray(value);
-  var text = (value) => typeof value === "string";
-  var number = (value) => typeof value === "number" && Number.isFinite(value);
-  var boolean = (value) => typeof value === "boolean";
-  var mapOf = (check) => (value) => object(value) && Object.values(value).every(check);
-  var listOf = (check) => (value) => list(value) && value.every(check);
-  var item = (value) => object(value) && text(value.name);
-  var mark = (value) => object(value) && (item(value.item) || item(value));
-  var positive = (value) => number(value) && Number(value) > 0;
-  var wholeFrom = (min, max) => Object.assign(
-    (value) => Number.isSafeInteger(value) && Number(value) >= min && Number(value) <= max,
-    { range: { min, max } }
-  );
-  function settingsDraft(state) {
-    const current = state, copies = /* @__PURE__ */ new Map();
-    function edit(field) {
-      if (!copies.has(field)) copies.set(field, structuredClone(current[field]));
-      return copies.get(field);
-    }
-    return {
-      edit,
-      set(field, value) {
-        copies.set(field, value);
-      },
-      changes() {
-        return [...copies].filter(([field, value]) => JSON.stringify(value) !== JSON.stringify(current[field])).map(([field, value]) => ({ field, value }));
-      }
-    };
-  }
-  function addonValues(name2, scope2, account) {
-    const own3 = scope2?.addonSettings?.[name2];
-    return { ...account, ...own3 };
-  }
-  var overlayReader;
-  function readOverlaysWith(reader) {
-    overlayReader = reader;
-  }
-  function played(state, field, character2) {
-    const value = state[field];
-    return overlayReader ? overlayReader(field, value, character2) : value;
-  }
-  function playedIn(record3, state, key3) {
-    const value = state[key3];
-    return overlayReader ? overlayReader(`${record3}.${key3}`, value) : value;
-  }
-
   // runtime/hooks/rows/01-tasks.ts
   var tasks_exports = {};
   __export(tasks_exports, {
@@ -883,8 +2183,8 @@
   }
 
   // runtime/tasks/api.ts
-  var api_exports2 = {};
-  __export(api_exports2, {
+  var api_exports3 = {};
+  __export(api_exports3, {
     GROUPS: () => GROUPS,
     GROUP_KINDS: () => GROUP_KINDS,
     HAND_CONTROL_DEFAULT: () => HAND_CONTROL_DEFAULT,
@@ -3755,8 +5055,8 @@
   });
 
   // runtime/events/api.ts
-  var api_exports3 = {};
-  __export(api_exports3, {
+  var api_exports4 = {};
+  __export(api_exports4, {
     CIPHER_DAILY_MIXES: () => CIPHER_DAILY_MIXES,
     CIPHER_GATHERING_MINUTES: () => CIPHER_GATHERING_MINUTES,
     CIPHER_MIX_LENGTH: () => CIPHER_MIX_LENGTH,
@@ -6380,12 +7680,12 @@
     if (!row4 || !metricText(row4.id, METRIC_ID_CHARS) || !metricNumber(row4.at) || !metricText(row4.monster) || !metricText(row4.actor)) return null;
     return { id: row4.id, at: row4.at, monster: row4.monster, actor: row4.actor };
   }
-  function loot(value) {
+  function loot2(value) {
     const row4 = object2(value);
     if (!row4 || !metricText(row4.id, METRIC_ID_CHARS) || !metricNumber(row4.at) || !metricText(row4.item) || !metricText(row4.variant, METRIC_ID_CHARS) || !metricNumber(row4.quantity, 1)) return null;
     return { id: row4.id, at: row4.at, item: row4.item, variant: row4.variant, quantity: row4.quantity };
   }
-  function list2(value, parse) {
+  function list3(value, parse) {
     if (!Array.isArray(value)) return null;
     const result = [];
     for (const row4 of value) {
@@ -6399,7 +7699,7 @@
     const row4 = object2(value);
     if (!row4 || !metricNumber(row4.at) || !metricNumber(row4.sequence, 1) || !Number.isSafeInteger(row4.sequence) || !metricNumber(row4.observedMs, 0, METRIC_BUCKET_MS) || typeof row4.partial !== "boolean") return null;
     const at4 = row4.at;
-    const first = parseMetricSample(row4.first), last = parseMetricSample(row4.last), hits = list2(row4.damage, damage), credits = list2(row4.credits, credit), kills = list2(row4.kills, kill), items2 = list2(row4.loot, loot);
+    const first = parseMetricSample(row4.first), last = parseMetricSample(row4.last), hits = list3(row4.damage, damage), credits = list3(row4.credits, credit), kills = list3(row4.kills, kill), items2 = list3(row4.loot, loot2);
     if (!first || !last || !hits || !credits || !kills || !items2 || first.at < at4 || last.at < first.at || last.at > at4 + METRIC_BUCKET_MS || kills.some((value2) => value2.at < at4 || value2.at >= at4 + METRIC_BUCKET_MS) || items2.some((value2) => value2.at < at4 || value2.at >= at4 + METRIC_BUCKET_MS)) return null;
     return {
       at: at4,
@@ -6475,1297 +7775,6 @@
   }
   function boundsSent(count) {
     queue().firings.splice(0, count);
-  }
-
-  // runtime/items/api.ts
-  var api_exports4 = {};
-  __export(api_exports4, {
-    ACQUISITION: () => ACQUISITION,
-    ALDATA_AUTH_MAIL: () => ALDATA_AUTH_MAIL,
-    BANK_PACK_CELLS: () => BANK_PACK_CELLS,
-    BASE_INVENTORY_SIZE: () => BASE_INVENTORY_SIZE,
-    COMPOUND_TARGET_MAX: () => COMPOUND_TARGET_MAX,
-    ESTIMATE_QUANTILE: () => ESTIMATE_QUANTILE,
-    LUCKY_CONFIDENCE: () => LUCKY_CONFIDENCE,
-    LUCKY_EVIDENCE_ROLLS: () => LUCKY_EVIDENCE_ROLLS,
-    MAIL_MESSAGE_MAX: () => MAIL_MESSAGE_MAX,
-    MAIL_SUBJECT_MAX: () => MAIL_SUBJECT_MAX,
-    RESTOCK_DEFAULT: () => RESTOCK_DEFAULT,
-    RESTOCK_ELIXIR_DEFAULT: () => RESTOCK_ELIXIR_DEFAULT,
-    STACK_SIZE_MAX: () => STACK_SIZE_MAX,
-    STAGING_FIRST: () => STAGING_FIRST,
-    TRACKER_ITEMS: () => TRACKER_ITEMS,
-    UPGRADE_CHANCES: () => UPGRADE_CHANCES,
-    UPGRADE_LEVEL_MAX: () => UPGRADE_LEVEL_MAX,
-    activeRules: () => activeRules,
-    aggregateSlotTracking: () => aggregateSlotTracking,
-    automaticNpcRetrieval: () => automaticNpcRetrieval,
-    availableCraftStock: () => availableCraftStock,
-    bagKey: () => bagKey,
-    bagSize: () => bagSize,
-    bankDeposit: () => bankDeposit,
-    bankRetrieve: () => bankRetrieve,
-    bankStagingReserved: () => bankStagingReserved,
-    bankStore: () => bankStore,
-    bankSwap: () => bankSwap,
-    bankWithdraw: () => bankWithdraw,
-    bankboiName: () => bankboiName,
-    bankboiPack: () => bankboiPack,
-    bidAcceptsLevel: () => bidAcceptsLevel,
-    boost: () => boost,
-    buy: () => buy2,
-    buyLostAndFound: () => buyLostAndFound,
-    buySecondhand: () => buySecondhand,
-    catalogItemMeta: () => catalogItemMeta,
-    commerceRuleKey: () => commerceRuleKey,
-    compound: () => compound3,
-    compoundStorageLeftovers: () => compoundStorageLeftovers,
-    consume: () => consume2,
-    consumeReceipts: () => consumeReceipts,
-    copyKey: () => copyKey,
-    craft: () => craft,
-    deconstructable: () => deconstructable,
-    deconstructionRewards: () => deconstructionRewards,
-    defaultStandPrice: () => defaultStandPrice,
-    deleteWaitMs: () => deleteWaitMs,
-    destat: () => destat,
-    destroy: () => destroy,
-    dismantle: () => dismantle2,
-    donate: () => donate,
-    donationXpPerGold: () => donationXpPerGold,
-    emptyRolls: () => emptyRolls,
-    equip: () => equip2,
-    estimateUpgradeBatch: () => estimateUpgradeBatch,
-    exchange: () => exchange2,
-    exchangeBuy: () => exchangeBuy,
-    exchangeKey: () => exchangeKey,
-    exchangeResultIsItem: () => exchangeResultIsItem,
-    failureClass: () => failureClass,
-    fateReachesMerchant: () => fateReachesMerchant,
-    fingerprint: () => fingerprint,
-    freeSlots: () => freeSlots,
-    hasMarkedWithdrawals: () => hasMarkedWithdrawals,
-    highestUpgradeLevel: () => highestUpgradeLevel,
-    incompatibleRuleRows: () => incompatibleRuleRows,
-    initialMailbox: () => initialMailbox,
-    inventoryPack: () => inventoryPack,
-    isBankboiPack: () => isBankboiPack,
-    isInventoryPack: () => isInventoryPack,
-    isUpgradeOffering: () => isUpgradeOffering,
-    itemData: () => itemData,
-    itemFailure: () => itemFailure,
-    itemGrade: () => itemGrade,
-    itemGradeOf: () => itemGradeOf,
-    itemRuleConflicts: () => itemRuleConflicts,
-    itemValue: () => itemValue,
-    joinItemMeta: () => joinItemMeta,
-    keyHeld: () => keyHeld,
-    list: () => list3,
-    locksmith: () => locksmith,
-    loot: () => loot2,
-    lostAndFound: () => lostAndFound,
-    lostAndFoundInfo: () => lostAndFoundInfo,
-    lostAndFoundList: () => lostAndFoundList,
-    luckySlotAnswer: () => luckySlotAnswer,
-    luckySlotOf: () => luckySlotOf,
-    luckySlotSearch: () => luckySlotSearch,
-    markMatches: () => markMatches,
-    markedItem: () => markedItem,
-    marketItemKey: () => marketItemKey,
-    marketListingFresh: () => marketListingFresh,
-    maximumItemLevel: () => maximumItemLevel,
-    merchantStandSlots: () => merchantStandSlots,
-    mergeSlotStream: () => mergeSlotStream,
-    move: () => move,
-    npcSaleRuleKey: () => npcSaleRuleKey,
-    npcStock: () => npcStock,
-    offeringProblem: () => offeringProblem,
-    offeringRule: () => offeringRule,
-    openChest: () => openChest,
-    ownedStockKey: () => ownedStockKey,
-    pontyPrice: () => pontyPrice,
-    previewOptions: () => previewOptions,
-    processingPending: () => processingPending,
-    protectedSlotsOf: () => protectedSlotsOf,
-    publishItemData: () => publishItemData,
-    receiptList: () => receiptList,
-    resolveUpgradeOffering: () => resolveUpgradeOffering,
-    ruleKey: () => ruleKey,
-    ruleKeyParts: () => ruleKeyParts,
-    ruleMembers: () => ruleMembers,
-    ruleMode: () => ruleMode,
-    ruleOwner: () => ruleOwner,
-    sameStack: () => sameStack,
-    sell: () => sell2,
-    sendGold: () => sendGold,
-    sendItem: () => sendItem,
-    sendMail: () => sendMail,
-    sharedMember: () => sharedMember,
-    slotLogEvidence: () => slotLogEvidence,
-    split: () => split2,
-    stackLocations: () => stackLocations,
-    stackProtected: () => stackProtected,
-    stackQuantity: () => stackQuantity,
-    stagingCell: () => stagingCell,
-    standSlotUse: () => standSlotUse,
-    standSlots: () => standSlots,
-    standSlotsUsed: () => standSlotsUsed,
-    statScrollsNeeded: () => statScrollsNeeded,
-    takeMail: () => takeMail,
-    tradeBuy: () => tradeBuy,
-    tradeHistory: () => tradeHistory,
-    tradeSell: () => tradeSell,
-    tradeSwap: () => tradeSwap,
-    tripLabel: () => tripLabel,
-    unequip: () => unequip2,
-    upgrade: () => upgrade3,
-    upgradeOfferings: () => upgradeOfferings,
-    usableCopy: () => usableCopy,
-    validLuckySlot: () => validLuckySlot,
-    vaultAccess: () => vaultAccess,
-    wearLook: () => wearLook,
-    wishlist: () => wishlist2,
-    withoutDeliveryStock: () => withoutDeliveryStock
-  });
-
-  // runtime/items/identity.ts
-  var COPY_FIELDS = ["name", "level", "q", "p", "stat_type", "data", "price", "rid", "b", "m", "l", "v"];
-  function fingerprint(item2) {
-    if (!item2) return null;
-    const copy2 = {};
-    for (const key3 of COPY_FIELDS) if (item2[key3] != null) copy2[key3] = item2[key3];
-    if (item2.expires != null) copy2.expires = typeof item2.expires === "number" ? item2.expires : new Date(String(item2.expires)).getTime();
-    return copy2;
-  }
-  function copyKey(item2) {
-    const copy2 = fingerprint(item2);
-    if (copy2) delete copy2.q;
-    return JSON.stringify(copy2);
-  }
-  var ownedStockKey = (item2) => `${item2.name}@${item2.level || 0}@${item2.p || ""}`;
-  function bagKey(items2) {
-    return JSON.stringify(items2.map((item2) => fingerprint(item2)));
-  }
-  var sameItemState = (item2, wanted) => !!item2 && !!wanted && copyKey(item2) === copyKey(wanted);
-  function sameItem(item2, wanted) {
-    return !!item2 && !!wanted && Object.keys(wanted).filter((key3) => key3 !== "q").every((key3) => JSON.stringify(item2[key3]) === JSON.stringify(wanted[key3]));
-  }
-  var MARK_TRANSIENT = /* @__PURE__ */ new Set(["q", "price", "rid", "b", "giveaway"]);
-  function markedItem(entry) {
-    const marked = entry;
-    return marked?.item ? marked.item : entry;
-  }
-  function markMatches(first, second) {
-    if (!first || !second) return false;
-    return Object.keys(second).filter((key3) => !MARK_TRANSIENT.has(key3)).every((key3) => JSON.stringify(first[key3]) === JSON.stringify(second[key3]));
-  }
-  var level = (item2) => Math.max(0, Number(item2?.level) || 0);
-  var ruleKey = (item2) => typeof item2?.name === "string" ? item2.name + "@+" + level(item2) : "";
-  function ruleKeyParts(key3) {
-    const match = /^(.*)@\+(\d+)$/.exec(key3);
-    return match ? { name: match[1], level: Number(match[2]) } : null;
-  }
-  function ruleMode(rules, item2) {
-    if (!item2) return void 0;
-    const explicit = rules[ruleKey(item2)];
-    if (explicit) return explicit;
-    return level(item2) === 0 ? rules[String(item2.name)] : void 0;
-  }
-  function commerceRuleKey(item2) {
-    return JSON.stringify({ name: item2?.name || "", level: level(item2), p: item2?.p || null, stat_type: item2?.stat_type || null });
-  }
-  var exchangeKey = (name2, itemLevel) => String(name2) + "@" + (Number(itemLevel) || 0);
-  function stackKey(item2) {
-    return JSON.stringify([
-      item2?.name ?? null,
-      item2?.p ?? null,
-      item2?.name === "cxjar" ? item2.data ?? null : null,
-      !!item2?.v,
-      item2?.l ?? null,
-      item2?.b ?? null
-    ]);
-  }
-  var stackQuantity = (item2) => item2 ? Number(item2.q) || 1 : 0;
-  var BANKBOI_PACK = "bankboi:";
-  var INVENTORY_PACK = "inventory:";
-  var bankboiPack = (name2) => BANKBOI_PACK + String(name2);
-  var inventoryPack = (name2) => INVENTORY_PACK + String(name2);
-  var isBankboiPack = (pack2) => typeof pack2 === "string" && pack2.startsWith(BANKBOI_PACK);
-  var bankboiName = (pack2) => isBankboiPack(pack2) ? pack2.slice(BANKBOI_PACK.length) : null;
-  var isInventoryPack = (pack2) => typeof pack2 === "string" && pack2.startsWith(INVENTORY_PACK);
-  var isVaultPack = (pack2) => typeof pack2 === "string" && /^items\d+$/.test(pack2);
-  var marketItemKey = (item2) => `${item2.name}|${item2.level ?? 0}`;
-
-  // runtime/items/rules.ts
-  var ITEM_FAILURES = {
-    bankboi_pending: "storage",
-    bank_full: "space",
-    inventory_full: "space",
-    short_gold: "gold",
-    upgrade_ambiguous: "ambiguous",
-    upgrade_uncertain: "uncertain",
-    lucky_unavailable: "interrupted",
-    lucky_swap_unconfirmed: "space",
-    lucky_interrupted: "space",
-    lucky_busy: "space",
-    lucky_source_changed: "space",
-    lucky_scroll_changed: "space",
-    item_missing: "failed",
-    marked_missing: "failed",
-    deconstruct_space: "failed",
-    not_confirmed: "failed",
-    interrupted: "interrupted",
-    movement_plan: "interrupted"
-  };
-  function itemFailure(code, message3 = code) {
-    return Object.assign(new Error(message3), { reason: message3, code });
-  }
-  function failureClass(code) {
-    return typeof code === "string" && Object.hasOwn(ITEM_FAILURES, code) ? ITEM_FAILURES[code] : null;
-  }
-  var UPGRADE_LEVEL_MAX = 12;
-  var UPGRADE_TARGET_ACCEPTED = UPGRADE_LEVEL_MAX + 1;
-  function bidAcceptsLevel(bid, item2) {
-    const level3 = Number(item2?.level) || 0, requested = Number(bid.minimumQuality) || 0;
-    return bid.acceptHigherLevels === false ? level3 === requested : level3 >= requested;
-  }
-  var DISMANTLE_FREE_SLOTS = 2;
-  function deconstructable(item2, catalog2) {
-    const definition = catalog2[String(item2.name)];
-    return !!definition && !item2.l && !item2.b && (!definition.compound || Number(item2.level) > 0);
-  }
-  function deconstructionRewards(item2, catalog2) {
-    const definition = catalog2[String(item2.name)];
-    if (!definition) return null;
-    if (definition.compound && Number(item2.level) > 0)
-      return [{ name: String(item2.name), level: Number(item2.level) - 1, quantity: 3, chance: 1 }];
-    return definition.rewards?.map((reward) => ({ ...reward, level: 0 })) || null;
-  }
-  var STACK_SIZE_MAX = 9999;
-  var EXCHANGE_NON_ITEMS = /* @__PURE__ */ new Set(["empty", "gold", "shells", "cx", "cxbundle", "open"]);
-  var exchangeResultIsItem = (kind) => !!kind && !EXCHANGE_NON_ITEMS.has(String(kind));
-  var MAIL_SUBJECT_MAX = 74;
-  var MAIL_MESSAGE_MAX = 1e3;
-  var ALDATA_AUTH_MAIL = { recipient: "earthiverse", subject: "aldata_auth" };
-  var MAIL_POSTAGE = { letter: 48e3, item: 36e4 };
-  function donationXpPerGold(serverGold) {
-    return serverGold < 5e8 ? 4.8 : serverGold <= 1e9 ? 4 : 3.2;
-  }
-  var PONTY_RANGE = 500;
-  var LOOT_RADIUS = 400;
-  var COMPOUND_TARGET_MAX = 7;
-  function maximumItemLevel(definition) {
-    return definition?.compound ? COMPOUND_TARGET_MAX : definition?.upgrade ? UPGRADE_LEVEL_MAX : 0;
-  }
-  var COMPOUND_INPUTS = 3;
-  var BASE_INVENTORY_SIZE = 42;
-  var BASE_STAND_SLOTS = 16;
-  var TRACKER_ITEMS = ["tracker", "supercomputer"];
-  var ACQUISITION = { worldDrop: "World drop", scaledWorldDrop: "HP-scaled world drop", open: "open " };
-  function deleteWaitMs(reason4) {
-    const minutes = /^wait_(\d+)_minutes$/.exec(reason4)?.[1];
-    return minutes === void 0 ? null : Number(minutes) * 6e4;
-  }
-  function standSlots(merchant7) {
-    const level3 = Number(merchant7.level) || 0;
-    if (merchant7.ctype === "merchant" && level3 >= 80) return 30;
-    if (merchant7.ctype === "merchant" && (level3 >= 70 || merchant7.stand === "cstand")) return 24;
-    return BASE_STAND_SLOTS;
-  }
-  function merchantStandSlots(state) {
-    const slots = Number(state.statuses?.[String(state.merchantCharacter)]?.standSlots);
-    return Number.isSafeInteger(slots) && slots > 0 ? slots : BASE_STAND_SLOTS;
-  }
-  var STAND_CELL = /^trade[1-9]\d*$/;
-  function standSlotUse(state) {
-    const report = state.statuses?.[String(state.merchantCharacter)];
-    const listings = state.standListings || [];
-    const cells = new Set(Object.entries(report?.slots || {}).filter(([slot, entry]) => STAND_CELL.test(slot) && !!entry).map(([slot]) => slot));
-    if (report?.standOpen !== true) {
-      const offers2 = state.nativeStand?.offers;
-      for (const offer of Object.values(offers2 || {}))
-        if (typeof offer.slot === "string" && STAND_CELL.test(offer.slot) && (offer.phase === "live" || offer.phase === "removing")) cells.add(offer.slot);
-      for (const listing2 of listings)
-        if (typeof listing2.tradeSlot === "string" && STAND_CELL.test(listing2.tradeSlot) && listing2.state === "live") cells.add(listing2.tradeSlot);
-    }
-    const slots = merchantStandSlots(state);
-    return { slots, used: Math.min(slots, cells.size), free: Math.max(0, slots - standSlotsUsed({
-      standListings: listings,
-      standBids: state.standBids
-    })) };
-  }
-  function standSlotsUsed(state) {
-    return state.standListings.filter((listing2) => listing2.state !== "paused").length + Object.values(state.standBids || {}).filter((bid) => bid?.useStandSlot).length;
-  }
-  function bagSize(report) {
-    const size = Number(report?.inventorySize);
-    return Number.isSafeInteger(size) && size > 0 ? size : BASE_INVENTORY_SIZE;
-  }
-  function validLuckySlot(slot) {
-    return Number.isInteger(slot) && Number(slot) >= 0 && Number(slot) < BASE_INVENTORY_SIZE;
-  }
-  function defaultStandPrice(definition) {
-    return Math.max(1, Number(definition?.g) || 1);
-  }
-  var ALDATA_RATE_WINDOW_MS = 6e4;
-  var SORT_SWAPS_PER_CELL = 3;
-  var SEND_MEET_MS = 1e4;
-  var PROTECTED_FREE_SLOTS_DEFAULT = 3;
-  function protectedSlotsOf(state, name2) {
-    const value = played(state, "protectedFreeSlots", name2);
-    const slots = Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : PROTECTED_FREE_SLOTS_DEFAULT;
-    return Math.min(slots, bagSize(state.statuses?.[name2]));
-  }
-  var SCROLL_PRICES = [1e3, 4e4, 16e5];
-  var COMPOUND_SCROLL_PRICES = [6400, 24e4, 92e5];
-  function itemValue(item2, meta, scrollPrices = {}) {
-    const d = meta?.definition || {};
-    if (!Number.isFinite(Number(d.g))) return null;
-    let value = Number(d.g) * (d.cash ? 1 : 0.6);
-    if (d.markup) value /= Number(d.markup);
-    const grades = Array.isArray(d.grades) ? d.grades : [11, 12], level3 = Number(item2.level) || 0;
-    if (d.compound || meta?.compoundable) for (let tier = 1; tier <= level3; tier++) {
-      const grade = tier > grades[1] ? 2 : tier > grades[0] ? 1 : 0;
-      value *= d.cash ? 1.5 : 3.2;
-      if (d.type !== "booster") value += (scrollPrices["cscroll" + grade] ?? COMPOUND_SCROLL_PRICES[grade]) / 2.4;
-      else value *= 0.75;
-    }
-    if (d.upgrade || meta?.upgradeable) {
-      let scroll = 0;
-      for (let tier = 1; tier <= level3; tier++) {
-        const grade = tier > grades[1] ? 2 : tier > grades[0] ? 1 : 0;
-        scroll += (scrollPrices["scroll" + grade] ?? SCROLL_PRICES[grade]) / 2;
-        if (tier >= 7) {
-          value *= 3;
-          scroll *= 1.32;
-        } else if (tier === 6) value *= 2.4;
-        else if (tier >= 4) value *= 2;
-        if (tier === 9) {
-          value *= 2.64;
-          value += 4e5;
-        }
-        if (tier === 10) value *= 5;
-        if (tier === 12) value *= 0.8;
-      }
-      value += scroll;
-    }
-    if (item2.expires) value /= 8;
-    if (item2.gift) value = 1;
-    return value;
-  }
-  function pontyPrice(item2, meta, scrollPrices = {}) {
-    const value = itemValue(item2, meta, scrollPrices);
-    return value === null ? null : Math.max(1, Math.round(value) * (meta?.definition?.cash ? 3 : 2));
-  }
-  function luckySlotOf(state, name2) {
-    return luckySlotAnswer(state, name2).slot;
-  }
-  function luckySlotAnswer(state, name2) {
-    const locked = state.luckySlotLocks?.[name2] ?? null, resume = state.luckySlotResume?.[name2]?.slot ?? null;
-    const verified = state.luckyUpgradeSlots?.[name2] ?? null;
-    return { slot: locked ?? resume ?? verified, locked, resuming: locked == null && state.luckySlotResume?.[name2] != null, verified };
-  }
-  function itemGrade(definition, level3) {
-    if (!definition.upgrade && !definition.compound) return 0;
-    const grades = Array.isArray(definition.grades) ? definition.grades : [9, 10, 11, 12];
-    for (let grade = 4; grade >= 1; grade -= 1) if (level3 >= grades[grade - 1]) return grade;
-    return 0;
-  }
-  var STAT_SCROLLS_BY_GRADE = [1, 10, 100, 1e3, 9999];
-  function statScrollsNeeded(definition, level3) {
-    return STAT_SCROLLS_BY_GRADE[itemGrade(definition, level3)];
-  }
-  var AUTOMATIC_ORDER = ["exchange", "npc", "stand", "upgrade", "compound", "deconstruction"];
-  var record = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  var ACTION_PLACES = [...AUTOMATIC_ORDER, "bank", "merchant"];
-  function ruleOwner(state, name2) {
-    return state.merchantRules?.version === 1 ? String(state.merchantCharacter) : name2;
-  }
-  function sharedMember(state, name2) {
-    return !state.merchantRules || name2 === state.merchantCharacter || !state.bankbois?.[name2];
-  }
-  function ruleMembers(state, name2) {
-    if (!state.merchantRules) return [name2];
-    const reporting = Object.keys(state.statuses || {}).filter((member2) => sharedMember(state, member2));
-    return [.../* @__PURE__ */ new Set([String(state.merchantCharacter), ...reporting])];
-  }
-  function upgradeRuleActive(value) {
-    return !!value && (typeof value !== "object" || Number(value.quantity) !== 0);
-  }
-  var npcSaleRuleKey = (item2, character2) => character2 ? JSON.stringify([character2, commerceRuleKey(item2)]) : commerceRuleKey(item2);
-  function ruleActive(state, action, item2, owner = ruleOwner(state, String(state.merchantCharacter))) {
-    const commerce = commerceRuleKey(item2), merchant7 = owner === ruleOwner(state, String(state.merchantCharacter));
-    switch (action) {
-      case "exchange":
-        return !!state.autoExchanges?.[exchangeKey(item2.name, item2.level)];
-      case "npc":
-        return !!state.autoNpcSales?.[merchant7 ? commerce : npcSaleRuleKey(item2, owner)];
-      case "stand":
-        return merchant7 && !!state.autoStandMarks?.[commerce];
-      case "upgrade":
-        return upgradeRuleActive(state.autoUpgradeMarks?.[owner]?.[ruleKey(item2)]);
-      case "compound":
-        return !!state.autoCompounds?.[owner]?.some((rule) => rule.name === item2.name && Number(rule.quantity) !== 0 && (Number(item2.level) || 0) < Number(rule.targetTier || 1));
-      case "deconstruction":
-        return !!state.autoDeconstruction?.[owner]?.[commerce];
-    }
-  }
-  function activeRules(state, item2, owners = [ruleOwner(state, String(state.merchantCharacter))]) {
-    const level3 = Number(item2.level) || 0;
-    return AUTOMATIC_ORDER.flatMap((action) => {
-      const holding = owners.filter((owner) => ruleActive(state, action, item2, owner));
-      if (!holding.length) return [];
-      if (action === "upgrade") return [{ action, tiers: Math.max(...holding.map((owner) => {
-        const rule = state.autoUpgradeMarks?.[owner]?.[ruleKey(item2)];
-        return Number(rule && typeof rule === "object" ? rule.tiers : rule) || 0;
-      })) }];
-      if (action === "compound") return [{ action, targetTier: Math.max(...holding.flatMap((owner) => (state.autoCompounds?.[owner] || []).filter((rule) => rule.name === item2.name && Number(rule.quantity) !== 0 && level3 < Number(rule.targetTier || 1)).map((rule) => Number(rule.targetTier || 1)))) }];
-      return [{ action }];
-    });
-  }
-  function fateReachesMerchant(fate) {
-    return !!fate && !["keep", "held", "bank"].includes(fate.fate);
-  }
-  function offeringUpgradePending(state, item2) {
-    return Object.values(state.upgrades || {}).flatMap((marks) => marks || []).some((raw) => {
-      const mark3 = record(raw), waiting3 = record(mark3.waitingOffering), original = record(mark3.item);
-      if (!mark3.auto || original.name !== item2.name) return false;
-      if (waiting3.level === (Number(item2.level) || 0)) return true;
-      const start = Number(original.level) || 0, level3 = Number(item2.level) || 0;
-      return !!mark3.passId && level3 >= start && level3 < start + Number(mark3.tiers) && markMatches({ ...item2, level: start }, { ...original, level: start });
-    });
-  }
-  function processingPending(state, item2) {
-    return offeringUpgradePending(state, item2) || ruleActive(state, "upgrade", item2) || ruleActive(state, "compound", item2);
-  }
-  function itemRuleConflicts(state, item2) {
-    if (!state.merchantRules) return [];
-    const actions = [
-      ["Processing", processingPending(state, item2)],
-      ["NPC sale", ruleActive(state, "npc", item2)],
-      ["Stand sale", ruleActive(state, "stand", item2)],
-      ["Deconstruction", ruleActive(state, "deconstruction", item2)]
-    ].filter(([, active]) => active).map(([label]) => label);
-    return actions.length > 1 ? actions : [];
-  }
-  function incompatibleRuleRows(state) {
-    const merchant7 = String(state.merchantCharacter);
-    const rules = [
-      ...Object.values(state.autoNpcSales || {}),
-      ...Object.values(state.autoStandMarks || {}),
-      ...Object.values(state.autoDeconstruction?.[merchant7] || {})
-    ];
-    const items2 = /* @__PURE__ */ new Map();
-    for (const rule of rules) if (rule?.item) items2.set(`${rule.item.name}:${rule.item.level || 0}`, rule.item);
-    return [...items2.values()].map((item2) => ({ item: item2, actions: itemRuleConflicts(state, item2) })).filter((row4) => row4.actions.length);
-  }
-  function hasMarkedWithdrawals(requests = []) {
-    return requests.some((value) => {
-      const request = record(value);
-      return typeof request.pack === "string" && !isBankboiPack(request.pack) && !["improvement", "standListingId", "deconstructionId", "craftJobId", "mailJobId"].some((key3) => request[key3]);
-    });
-  }
-  function automaticNpcRetrieval(state) {
-    return played(state, "merchantAutomations")?.["auto npc sales"] !== false && (state.withdrawals?.[String(state.merchantCharacter)] || []).some((value) => record(value).autoNpcRuleKey && hasMarkedWithdrawals([value]));
-  }
-  var BANK_PACK_CELLS = 42;
-  var BANK_ROW_CELLS = 7;
-  var STAGING_PACK = "items1";
-  var STAGING_FIRST = BANK_PACK_CELLS - BANK_ROW_CELLS;
-  function vaultAccess(vaults, packs, floor) {
-    return floor === "bank" || vaults.some((vault) => vault.floor === floor && vault.gold === 0 && Object.hasOwn(packs, vault.pack));
-  }
-  function keyHeld(bag2, packs, key3) {
-    return [bag2, ...Object.values(packs)].flatMap((entries2) => entries2 || []).reduce((sum, entry) => sum + (entry?.item?.name === key3 ? Number(entry.item.q || 1) : 0), 0);
-  }
-  var stagingCell = (pack2, slot) => pack2 === STAGING_PACK && Number(slot) >= STAGING_FIRST;
-  function bankStagingReserved(state) {
-    return Object.keys(state.bankbois || {}).length > 0;
-  }
-  function usableCopy(item2) {
-    return !!item2 && !item2.l && !item2.b;
-  }
-  function freeSlots(items2, luckyLock, reserve2) {
-    if (!Array.isArray(items2)) return 0;
-    const held = typeof luckyLock === "number" && !items2[luckyLock] ? 1 : 0;
-    return Math.max(0, items2.filter((entry) => !entry).length - held - reserve2);
-  }
-  function receiptList(value) {
-    return Array.isArray(value) ? value : [];
-  }
-  function consumeReceipts(pending, receipts) {
-    for (const receipt of receipts) {
-      const encoded = JSON.stringify(receipt);
-      const index = (pending || []).findIndex((entry) => JSON.stringify(entry) === encoded);
-      if (index >= 0) pending.splice(index, 1);
-    }
-  }
-  function stackProtected(location, protection) {
-    return !!protection.error || protection.staging !== false && stagingCell(location.pack, location.slot) || !!location.item?.b || !!location.item?.l || location.item?.name === "placeholder" || protection.locations.some((mark3) => mark3.pack === location.pack && (mark3.slot === void 0 || mark3.slot === location.slot)) || protection.items.some((item2) => item2.name === location.item?.name && (item2.level || 0) === (location.item?.level || 0));
-  }
-  function stackLocations(bank, protection) {
-    return Object.keys(bank).filter((pack2) => isVaultPack(pack2) && Array.isArray(bank[pack2])).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).flatMap((pack2) => Array.from({ length: BANK_PACK_CELLS }, (_, slot) => ({ pack: pack2, slot, item: bank[pack2][slot] }))).filter((location) => !stackProtected(location, protection));
-  }
-  var sameStack = (a, b) => stackKey(a) === stackKey(b) && !!a.acl === !!b.acl && JSON.stringify(a.ps || []) === JSON.stringify(b.ps || []);
-  function stackDepositPlan(item2, limit, locations, compatible = sameStack) {
-    let remaining = stackQuantity(item2);
-    const moves = [];
-    const partials = locations.filter((location) => location.item && limit > 1 && compatible(location.item, item2) && stackQuantity(location.item) < limit);
-    for (const location of [...partials, ...locations.filter((location2) => !location2.item)]) {
-      const quantity2 = Math.min(remaining, Math.max(0, limit - stackQuantity(location.item)));
-      if (quantity2) moves.push({ ...location, quantity: quantity2 });
-      remaining -= quantity2;
-      if (!remaining) break;
-    }
-    return { moves, remaining };
-  }
-  function nextStackMerge(locations, limitOf, compatible = sameStack) {
-    for (let a = 0; a < locations.length; a++) {
-      const target = locations[a], limit = target.item ? limitOf(target.item) : 1;
-      if (!target.item || limit <= stackQuantity(target.item)) continue;
-      for (let b = locations.length - 1; b > a; b--) {
-        const source2 = locations[b];
-        if (source2.item && compatible(target.item, source2.item))
-          return { source: source2, target, quantity: Math.min(stackQuantity(source2.item), limit - stackQuantity(target.item)) };
-      }
-    }
-    return null;
-  }
-  function compoundStorageLeftovers(rules, inventory, stock) {
-    const eligible3 = (entry, rule) => !!entry?.item && !entry.item.l && entry.item.name === rule.name && Number(entry.item.level || 0) < Number(rule.targetTier || 1);
-    const retained2 = /* @__PURE__ */ new Set(), pending = /* @__PURE__ */ new Set();
-    for (const rule of rules.filter((value) => Number(value.quantity) !== 0)) {
-      for (let level3 = 0; level3 < Number(rule.targetTier || 1); level3++) {
-        const matches = (entry) => eligible3(entry, rule) && Number(entry.item.level || 0) === level3;
-        const local2 = inventory.filter(matches), complete = Math.floor(stock.filter(matches).length / COMPOUND_INPUTS) * COMPOUND_INPUTS;
-        local2.forEach((entry) => pending.add(entry));
-        local2.slice(0, complete).forEach((entry) => retained2.add(entry));
-      }
-    }
-    return [...pending].filter((entry) => !retained2.has(entry));
-  }
-  function availableCraftStock(entries2, protection) {
-    if (protection.error) return entries2.map(() => null);
-    entries2 = withoutDeliveryStock(entries2, protection.deliveries || []);
-    const remaining = /* @__PURE__ */ new Map();
-    for (const need of protection.requirements) {
-      const key3 = exchangeKey(need.id, need.level);
-      remaining.set(key3, (remaining.get(key3) || 0) + need.quantity);
-    }
-    const amounts = entries2.map((entry) => entry?.item ? Number(entry.item.q) || 1 : 0);
-    function reserve2(index, requested) {
-      const item2 = entries2[index]?.item;
-      if (!item2) return 0;
-      const key3 = exchangeKey(item2.name, item2.level);
-      const reserved = Math.min(remaining.get(key3) || 0, amounts[index], requested);
-      remaining.set(key3, (remaining.get(key3) || 0) - reserved);
-      amounts[index] -= reserved;
-      return reserved;
-    }
-    for (const allocation of protection.allocations || []) {
-      let needed = allocation.quantity;
-      entries2.forEach((entry, index) => {
-        if (entry?.craftLocation === allocation.location && entry.item?.name === allocation.id && (entry.item.level || 0) === (allocation.level || 0)) needed -= reserve2(index, needed);
-      });
-    }
-    entries2.forEach((_entry, index) => reserve2(index, Infinity));
-    return entries2.map((entry, index) => {
-      if (!entry?.item) return entry || null;
-      const item2 = entry.item, quantity2 = amounts[index];
-      const reserved = (Number(item2.q) || 1) - quantity2;
-      if (!reserved) return entry;
-      return quantity2 ? { ...entry, item: { ...item2, q: quantity2 } } : null;
-    });
-  }
-  function withoutDeliveryStock(entries2, marks) {
-    const used2 = /* @__PURE__ */ new Set(), assigned = /* @__PURE__ */ new Set();
-    const matches = (entry, mark3) => entry?.craftLocation === mark3.location && markMatches(entry.item, mark3.item);
-    function reserve2(mark3, exact) {
-      const index = entries2.findIndex((entry, i) => !used2.has(i) && matches(entry, mark3) && (!exact || entry?.slot === mark3.slot));
-      if (index >= 0) {
-        used2.add(index);
-        assigned.add(mark3);
-      }
-    }
-    for (const mark3 of marks) if (mark3.slot !== void 0) reserve2(mark3, true);
-    for (const mark3 of marks) if (!assigned.has(mark3)) reserve2(mark3, false);
-    return entries2.map((entry, index) => used2.has(index) ? null : entry || null);
-  }
-  var LUCKY_CONFIDENCE = 0.999;
-  var LUCKY_EVIDENCE_ROLLS = 100;
-  function mergeSlotStream(previous, incoming) {
-    let changed = false;
-    for (const [slot, stats] of Object.entries(incoming.slots)) {
-      const old = previous.slots[slot];
-      if (old && (stats.totalRolls <= old.totalRolls || !["sumRolls", "rollsAbove96_3", "perfectRolls"].every((key3) => stats[key3] >= old[key3]))) continue;
-      previous.slots[slot] = { ...stats };
-      changed = true;
-    }
-    if (incoming.cursor && (!previous.cursor || incoming.cursor.rolls > previous.cursor.rolls)) {
-      previous.cursor = { ...incoming.cursor };
-      changed = true;
-    }
-    return changed;
-  }
-  var emptyRolls = () => ({ totalRolls: 0, sumRolls: 0, rollsAbove96_3: 0, perfectRolls: 0 });
-  function validSlotStatistics(value) {
-    if (!value || typeof value !== "object") return false;
-    const stats = value;
-    return Number.isSafeInteger(stats.totalRolls) && stats.totalRolls > 0 && Number.isFinite(stats.sumRolls) && stats.sumRolls >= 0 && stats.sumRolls < stats.totalRolls && [stats.rollsAbove96_3, stats.perfectRolls].every((n) => Number.isSafeInteger(n) && n >= 0 && n <= stats.totalRolls) && stats.rollsAbove96_3 + stats.perfectRolls <= stats.totalRolls;
-  }
-  function normalizeSlotTracking(raw) {
-    const result = { version: 1, slots: {} };
-    if (!raw || typeof raw !== "object" || !("slots" in raw) || !raw.slots || typeof raw.slots !== "object") return result;
-    result.streamId = readStreamId(raw);
-    for (const [slot, stats] of Object.entries(raw.slots)) {
-      if (/^(?:0|[1-9]\d*)$/.test(slot) && Number(slot) < BASE_INVENTORY_SIZE && validSlotStatistics(stats)) result.slots[slot] = { ...stats };
-    }
-    restoreCursor(result, raw);
-    return result;
-  }
-  function restoreCursor(result, raw) {
-    if ("cursor" in raw && validCursor(raw.cursor, result)) result.cursor = { ...raw.cursor };
-  }
-  function validCursor(value, tracking) {
-    if (!value || typeof value !== "object") return false;
-    const cursor = value;
-    const rolls = Object.values(tracking.slots).reduce((sum, stats) => sum + stats.totalRolls, 0);
-    return Number.isInteger(cursor.slot) && cursor.slot >= 0 && cursor.slot < BASE_INVENTORY_SIZE && Number.isFinite(cursor.at) && cursor.at >= 0 && Number.isSafeInteger(cursor.rolls) && cursor.rolls > 0 && cursor.rolls <= rolls;
-  }
-  function readStreamId(raw) {
-    return "streamId" in raw && typeof raw.streamId === "string" && /^[a-z0-9]{1,30}-[a-z0-9-]{1,60}$/.test(raw.streamId) ? raw.streamId : void 0;
-  }
-  function aggregateSlotTracking(streams = {}, local2) {
-    const combined = { ...streams };
-    if (local2?.streamId) {
-      const merged = normalizeSlotTracking(combined[local2.streamId]);
-      mergeSlotStream(merged, local2);
-      combined[local2.streamId] = merged;
-    }
-    const slots = {};
-    for (const stream of Object.values(combined)) for (const [slot, stats] of Object.entries(stream.slots)) {
-      const total = slots[slot] ??= emptyRolls();
-      for (const key3 of ["totalRolls", "sumRolls", "rollsAbove96_3", "perfectRolls"]) total[key3] += stats[key3];
-    }
-    const cursor = Object.values(combined).flatMap((stream) => stream.cursor ? [stream.cursor] : []).sort((a, b) => b.at - a.at || b.rolls - a.rolls || a.slot - b.slot)[0];
-    return { version: 1, slots, ...cursor ? { cursor: { ...cursor } } : {} };
-  }
-  var LUCKY_ROLL_DIGITS = 4;
-  var LUCKY_SCALE = 0.975;
-  var LUCKY_SHIFT = 0.012;
-  var LUCKY_HIGH_ROLL = LUCKY_SCALE - LUCKY_SHIFT;
-  var normal = [1e-4, 0.0369, LUCKY_HIGH_ROLL];
-  var luckyZero = 0.4 * 1e-4 + 0.6 * (0.0121 / 0.975);
-  var luckyHigh = 0.4 * 0.0369;
-  var lucky = [luckyZero, luckyHigh, 1 - luckyZero - luckyHigh];
-  function slotLogEvidence(stats) {
-    if (!stats) return 0;
-    const counts = [stats.perfectRolls, stats.rollsAbove96_3, stats.totalRolls - stats.perfectRolls - stats.rollsAbove96_3];
-    return counts.reduce((sum, count, index) => sum + count * Math.log(lucky[index] / normal[index]), 0);
-  }
-  function slotPosterior(tracking) {
-    const ranked = Array.from({ length: BASE_INVENTORY_SIZE }, (_, slot) => ({ slot, score: slotLogEvidence(tracking.slots[slot]), samples: tracking.slots[slot]?.totalRolls || 0 })).sort((a, b) => b.score - a.score || a.samples - b.samples || a.slot - b.slot);
-    const best2 = ranked[0];
-    const denominator = ranked.reduce((sum, entry) => sum + Math.exp(entry.score - best2.score), 0);
-    return ranked.map((entry) => {
-      const probability = Math.exp(entry.score - best2.score) / denominator;
-      const eliminationConfidence = 1 - probability;
-      return {
-        ...entry,
-        probability,
-        eliminationConfidence,
-        ruledOut: entry.samples >= LUCKY_EVIDENCE_ROLLS && eliminationConfidence >= LUCKY_CONFIDENCE
-      };
-    });
-  }
-  function luckySlotSearch(tracking) {
-    const ranked = slotPosterior(tracking);
-    const best2 = ranked[0];
-    const confidence = best2.probability;
-    const total = ranked.reduce((sum, entry) => sum + entry.samples, 0);
-    const inferred = confidence >= LUCKY_CONFIDENCE && best2.samples >= LUCKY_EVIDENCE_ROLLS;
-    let nextSlot = tracking.cursor?.slot ?? 0;
-    if (inferred) nextSlot = best2.slot;
-    else {
-      const ruledOut = new Set(ranked.filter((entry) => entry.ruledOut).map((entry) => entry.slot));
-      for (let offset = 0; offset < BASE_INVENTORY_SIZE; offset++) {
-        const candidate = ((tracking.cursor?.slot ?? 0) + offset) % BASE_INVENTORY_SIZE;
-        if (!ruledOut.has(candidate)) {
-          nextSlot = candidate;
-          break;
-        }
-      }
-    }
-    return {
-      slot: total ? best2.slot : null,
-      confidence,
-      samples: best2.samples,
-      total,
-      inferred,
-      nextSlot,
-      slots: Object.fromEntries(ranked.map((entry) => [entry.slot, entry])),
-      ruledOutCount: ranked.filter((entry) => entry.ruledOut).length
-    };
-  }
-  var MARKET_LISTING_FRESH_MS = 12e4;
-  function marketListingFresh(seenAt, now) {
-    return typeof seenAt === "number" && Number.isFinite(seenAt) && seenAt >= now - MARKET_LISTING_FRESH_MS;
-  }
-  var { max: mathMax, min: mathMin, floor: mathFloor, imul: mathImul, ceil: mathCeil } = Math;
-  var UPGRADE_CHANCES = [
-    [1, 0.9999999, 0.98, 0.95, 0.7, 0.6, 0.4, 0.25, 0.15, 0.07, 0.024, 0.14, 0.11],
-    [1, 0.99998, 0.97, 0.94, 0.68, 0.58, 0.38, 0.24, 0.14, 0.066, 0.018, 0.13, 0.1],
-    [1, 0.97, 0.94, 0.92, 0.64, 0.52, 0.32, 0.232, 0.13, 0.062, 0.015, 0.12, 0.09]
-  ];
-  function highestUpgradeLevel(choice) {
-    if (!choice.upgradeable) return 0;
-    const chances = choice.upgradeChances || UPGRADE_CHANCES[mathMax(0, mathMin(2, mathFloor(choice.upgradeGrade || 0)))];
-    let level3 = 0;
-    while (level3 + 1 < chances.length && Number(chances[level3 + 1]) > 0) level3++;
-    return level3;
-  }
-  function upgradeEstimateKey(choice, quantity2, target) {
-    return JSON.stringify([
-      choice.id,
-      choice.cost,
-      choice.upgradeable,
-      choice.upgradeGrade,
-      choice.upgradeChances,
-      choice.grades,
-      choice.scrollCosts,
-      quantity2,
-      target
-    ]);
-  }
-  var ESTIMATE_RUNS = 3e3;
-  var ESTIMATE_RUNS_MIN = 30;
-  var ESTIMATE_QUANTILE = 0.9;
-  var ESTIMATE_ROLL_BUDGET = 6e7;
-  var ESTIMATE_YIELD_ROLLS = 32768;
-  var ESTIMATE_CACHE_BATCHES = 256;
-  var cache = /* @__PURE__ */ new Map();
-  var scheduler = Promise.resolve();
-  function estimateUpgradeBatch(lines, signal, yieldToIO, cut) {
-    const sorted = lines.map((line, index) => ({
-      line,
-      index,
-      key: upgradeEstimateKey(line.choice, line.quantity, line.target)
-    })).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
-    const key3 = JSON.stringify(sorted.map((entry) => entry.key));
-    const task = scheduler.then(async () => {
-      signal?.throwIfAborted();
-      let results = cache.get(key3);
-      if (!results) {
-        const budget = { remaining: ESTIMATE_ROLL_BUDGET, signal, yieldToIO, yields: 0 };
-        results = [];
-        for (const entry of sorted) {
-          signal?.throwIfAborted();
-          results.push(
-            await simulate(entry.line.choice, entry.line.quantity, entry.line.target, budget)
-          );
-        }
-        if (budget.yields) cut?.("ESTIMATE_YIELD_ROLLS", "10", budget.yields);
-        if (!budget.remaining) cut?.("ESTIMATE_ROLL_BUDGET", "10", 1);
-        if (cache.size >= ESTIMATE_CACHE_BATCHES) {
-          cache.delete(cache.keys().next().value);
-          cut?.("ESTIMATE_CACHE_BATCHES", "10", 1);
-        }
-        cache.set(key3, results);
-      }
-      const output = [];
-      sorted.forEach((entry, index) => {
-        output[entry.index] = results[index];
-      });
-      return output;
-    });
-    scheduler = task.catch(() => {
-    });
-    return task;
-  }
-  async function simulate(choice, quantity2, target, budget) {
-    if (!target || !choice.upgradeable)
-      return {
-        status: "available",
-        attempts: quantity2,
-        gold: choice.cost * quantity2,
-        scrolls: [],
-        completed: ESTIMATE_RUNS,
-        rolls: 0
-      };
-    if (target > highestUpgradeLevel(choice))
-      return { status: "unavailable", completed: 0, rolls: 0 };
-    const policy = simulationPolicy(choice, target);
-    let seed = 2166136261;
-    for (const char of `${choice.id}:${quantity2}:${target}`)
-      seed = mathImul(seed ^ char.charCodeAt(0), 16777619);
-    function random() {
-      seed += 1831565813;
-      let value = seed;
-      value = mathImul(value ^ value >>> 15, value | 1);
-      value ^= value + mathImul(value ^ value >>> 7, value | 61);
-      return ((value ^ value >>> 14) >>> 0) / 4294967296;
-    }
-    const runs = [];
-    const startBudget = budget.remaining;
-    simulation: for (let run = 0; run < ESTIMATE_RUNS; run++) {
-      const grace = Array(20).fill(0), scrolls = [0, 0, 0, 0];
-      let attempts = 0, successes = 0;
-      while (successes < quantity2) {
-        attempts++;
-        const attempt = upgradeOne(policy, grace, scrolls, random, budget);
-        const survived = attempt === null || typeof attempt === "boolean" ? attempt : await attempt;
-        if (survived === null) break simulation;
-        if (survived) successes++;
-      }
-      runs.push({
-        attempts,
-        gold: attempts * choice.cost + scrolls.reduce((sum, count, grade) => sum + count * (policy.costs[grade] || 0), 0),
-        scrolls
-      });
-    }
-    const rolls = startBudget - budget.remaining;
-    if (runs.length < ESTIMATE_RUNS_MIN) return { status: "unavailable", completed: runs.length, rolls };
-    runs.sort((a, b) => a.gold - b.gold);
-    return {
-      status: "available",
-      ...runs[mathCeil(runs.length * ESTIMATE_QUANTILE) - 1],
-      completed: runs.length,
-      rolls
-    };
-  }
-  function simulationPolicy(choice, target) {
-    const grade = mathMax(0, mathMin(2, mathFloor(choice.upgradeGrade || 0)));
-    const igrace = [1, -1, -2][grade], chances = choice.upgradeChances || UPGRADE_CHANCES[grade];
-    return {
-      target,
-      // Grace changes only in integer steps and its chance bonus saturates at 14.
-      // Evaluate the original formula once for each reachable input, exactly.
-      rollChances: Array.from({ length: target + 1 }, (_, level3) => level3 === 0 ? [] : Array.from({ length: 15 }, (_2, grace) => rollChance(chances[level3] || 0, level3, grace, igrace))),
-      grades: choice.grades || [9, 10, 11, 12],
-      costs: choice.scrollCosts || [1e3, 4e4, 16e5, 64e6]
-    };
-  }
-  function scrollGrade(level3, grades) {
-    if (level3 >= (grades[2] ?? 11)) return 3;
-    if (level3 >= (grades[1] ?? 10)) return 2;
-    return level3 >= (grades[0] ?? 9) ? 1 : 0;
-  }
-  function rollChance(base, level3, grace, igrace) {
-    const count = mathMax(0, mathMin(level3 + 1, mathMin(3, grace / 4.5) + igrace));
-    let bonus = base * count / level3 + count / 1e3;
-    bonus = mathMax(0, bonus / 4.8 - 0.4 / (level3 - 0.999) ** 2);
-    return mathMin(base + bonus, mathMin(base + 0.24, base * 2));
-  }
-  function failedGrace(grace, level3) {
-    grace[level3 - 1]++;
-    grace[level3]++;
-    if (level3 >= 8 && level3 <= 15) {
-      grace[level3 - 1]++;
-      grace[level3 - 2] += 2;
-      grace[level3 - 3] += 2;
-    }
-  }
-  function upgradeOne(policy, grace, scrolls, random, budget, level3 = 1, resumed = false) {
-    for (; level3 <= policy.target; level3++) {
-      if (!budget.remaining) return null;
-      if (!resumed && budget.remaining % ESTIMATE_YIELD_ROLLS === 0) {
-        budget.yields++;
-        return budget.yieldToIO().then(() => {
-          budget.signal?.throwIfAborted();
-          return upgradeOne(policy, grace, scrolls, random, budget, level3, true);
-        });
-      }
-      resumed = false;
-      budget.remaining--;
-      scrolls[scrollGrade(level3 - 1, policy.grades)]++;
-      const graceCount = grace[level3];
-      if (random() <= policy.rollChances[level3][graceCount >= 14 ? 14 : graceCount])
-        grace[level3] = 0;
-      else {
-        failedGrace(grace, level3);
-        return false;
-      }
-    }
-    return true;
-  }
-  var upgradeOfferings = {
-    offeringp: "Primling",
-    offering: "Primordial Essence",
-    offeringx: "Primordial X"
-  };
-  function isUpgradeOffering(value) {
-    return typeof value === "string" && Object.hasOwn(upgradeOfferings, value);
-  }
-  function offeringRule(rules, name2, level3) {
-    return rules.find((rule) => rule.name === name2 && rule.floor <= level3 && level3 < rule.ceiling);
-  }
-  function resolveUpgradeOffering(rules, name2, level3, explicit) {
-    return explicit ? { offering: explicit, required: true } : offeringRule(rules, name2, level3);
-  }
-  function offeringOverlap(rules, next) {
-    return rules.find((rule) => rule.id !== next.id && rule.name === next.name && rule.floor < next.ceiling && next.floor < rule.ceiling);
-  }
-  function offeringProblem(rules, rule, maximum) {
-    const overlap2 = offeringOverlap(rules, rule);
-    if (overlap2) return { error: `There is already a rule that covers +${overlap2.floor} to +${overlap2.ceiling}.`, conflict: true };
-    return rule.floor >= rule.ceiling || rule.ceiling > maximum ? { error: "Choose a higher destination level.", conflict: false } : null;
-  }
-  function validOfferingRule(value) {
-    if (!value || typeof value !== "object") return false;
-    const rule = value;
-    return typeof rule.id === "string" && !!rule.id && typeof rule.name === "string" && !!rule.name && isUpgradeOffering(rule.offering) && typeof rule.required === "boolean" && validOfferingRange(rule);
-  }
-  function validOfferingRange(rule) {
-    return Number.isSafeInteger(rule.floor) && Number.isSafeInteger(rule.ceiling) && Number(rule.floor) >= 0 && Number(rule.floor) < Number(rule.ceiling) && Number(rule.ceiling) <= UPGRADE_LEVEL_MAX;
-  }
-  function fitOfferingRules(value) {
-    if (!Array.isArray(value)) return value;
-    return value.flatMap((rule) => {
-      if (!rule || typeof rule !== "object" || !Number.isSafeInteger(rule.ceiling) || rule.ceiling <= UPGRADE_LEVEL_MAX) return [rule];
-      const fitted = { ...rule, ceiling: UPGRADE_LEVEL_MAX };
-      return Number(fitted.floor) < UPGRADE_LEVEL_MAX ? [fitted] : [];
-    });
-  }
-  function validOfferingRules(value) {
-    if (!Array.isArray(value) || !value.every(validOfferingRule)) return false;
-    return new Set(value.map((rule) => rule.id)).size === value.length && !value.some((rule) => offeringOverlap(value, rule));
-  }
-  var previewOptions = ["none", "offeringp", "offering", "offeringx"];
-  function unavailablePreview(executor, item2, reason4) {
-    return { executor, item: item2, options: Object.fromEntries(previewOptions.map((option) => [option, { reason: reason4 }])) };
-  }
-  function tripLabel(stocking, atBank) {
-    return atBank ? stocking ? "Stocking up" : "Banking" : "Travelling to bank";
-  }
-  var ERRAND_ROWS = {
-    // The hunting client's busy, the farm walk's bagBusy and the event attendance's errand.
-    hunt: ["banking", "bankQueued", "stocking", "upgrading"],
-    // The anniversary's merchant errand and the October event's merchantBusy.
-    merchantEvent: ["banking", "upgrading"],
-    // The event merchant's errand.
-    eventMerchant: ["tidying", "banking", "stocking", "upgrading", "previewing", "lucky"],
-    // bank.ts bagStill: the stock-up, the elixir and the merchant's tidy.
-    bankStill: ["banking", "bankQueued", "stocking", "upgrading", "tidying", "lucky"],
-    // bank.ts keepTracktrixLast: the Tracktrix pin.
-    trackerPin: ["inventoryCommand", "bankQueued", "tidying", "lucky"],
-    // Movement's formation spread step (formation.ts separateFromParty).
-    formation: ["banking", "bankQueued", "stocking"]
-  };
-
-  // runtime/items/catalog-meta.ts
-  var metaIndexes = /* @__PURE__ */ new WeakMap();
-  var metaJoins = /* @__PURE__ */ new WeakMap();
-  function catalogIndex(catalog2) {
-    if (!catalog2 || typeof catalog2 !== "object") return null;
-    let index = metaIndexes.get(catalog2);
-    if (index) return index;
-    index = /* @__PURE__ */ new Map();
-    const items2 = catalog2.allItems;
-    for (const raw of Array.isArray(items2) ? items2 : []) {
-      const entry = raw;
-      if (entry && typeof entry.id === "string" && entry.meta && typeof entry.meta === "object") index.set(entry.id, entry.meta);
-    }
-    metaIndexes.set(catalog2, index);
-    return index;
-  }
-  function catalogItemMeta(catalog2, name2) {
-    return typeof name2 === "string" ? catalogIndex(catalog2)?.get(name2) : void 0;
-  }
-  function joinItemMeta(catalog2, name2, live2) {
-    const known2 = catalogItemMeta(catalog2, name2), own3 = live2 && typeof live2 === "object" ? live2 : null;
-    if (!known2 || !own3) return own3 || known2 || null;
-    const cached = metaJoins.get(own3);
-    if (cached?.known === known2) return cached.joined;
-    const joined = { ...known2, ...own3 };
-    metaJoins.set(own3, { known: known2, joined });
-    return joined;
-  }
-
-  // runtime/items/saved-fields.ts
-  var RESTOCK_DEFAULT = { hp: { item: "hpot1", min: 5, max: 20 }, mp: { item: "mpot1", min: 0, max: 0 } };
-  var RESTOCK_ELIXIR_DEFAULT = { min: 1, max: 2 };
-  function validMarketIgnoredItem(value) {
-    if (!object(value)) return false;
-    return typeof value.name === "string" && /^[a-z0-9_]{1,80}$/i.test(value.name) && typeof value.level === "number" && Number.isSafeInteger(value.level) && value.level >= 0 && value.level <= 100;
-  }
-  var upgrade2 = (value) => object(value) && item(value.item) && positive(value.tiers);
-  var upgradeRule = (value) => positive(Number(value)) || object(value) && positive(value.tiers);
-  var compound2 = (value) => object(value) && text(value.id) && listOf(mark)(value.items);
-  var autoCompound = (value) => item(value) && object(value) && positive(value.targetTier);
-  var itemsSavedFields = {
-    name: "core:items",
-    settings: {
-      // How often the inbox is read: the game sends no unread mail count in play, so the player sets
-      // the period; 30 s is the previous release's. A send or a collect also reads it when it ends.
-      mailCheckSeconds: { label: "Check mail every (seconds)", kind: "number", min: 1, default: 30, importable: true },
-      // Kept safety bounds (the numbers rule, 2026-11-13; bigcheck/bounds.md). Each guards against a
-      // server outside the console that never answers, ends the wait and tells the status owner's bound
-      // record. None has game data or a measurement, so each keeps the previous release's value.
-      // An ALData request that never answers.
-      aldataRequestBoundMs: { label: "ALData request bound (ms)", kind: "number", min: 1, default: 2e4, hidden: true, check: wholeFrom(1, Infinity) },
-      // A game mail API request that never answers.
-      mailRequestBoundMs: { label: "Mail request bound (ms)", kind: "number", min: 1, default: 2e4, hidden: true, check: wholeFrom(1, Infinity) },
-      // A BankBoi whose worker never reports working: the game never logs it in, or its realm stays
-      // unresolved (the transaction's 600 s).
-      bankboiStartBoundMs: { label: "BankBoi start bound (ms)", kind: "number", min: 1, default: 6e5, hidden: true, check: wholeFrom(1, Infinity) },
-      // The free cells every bag keeps for a visit's logistics (the player asked for a setting
-      // for the number of protected free slots; one party-wide value). A whole
-      // number from 0; rules.ts `protectedSlotsOf` bounds it by the bag the character's report gives, and each
-      // character reads its own count from its reply.
-      protectedFreeSlots: {
-        label: "Protected free slots",
-        kind: "number",
-        min: 0,
-        default: PROTECTED_FREE_SLOTS_DEFAULT,
-        importable: true,
-        check: wholeFrom(0, Number.MAX_SAFE_INTEGER),
-        refusal: "enter a whole number of free slots from 0 up to the bag size"
-      },
-      // An automatic purchase spends only the merchant's and the bank's gold above it.
-      goldReserve: { label: "Gold reserve", kind: "number", min: 0, default: 0, importable: true },
-      threshold: {
-        label: "Gold collection threshold",
-        kind: "number",
-        default: 1e5,
-        importable: true,
-        check: wholeFrom(0, 1e12),
-        refusal: "invalid threshold",
-        deliver: ["characters", "dashboard"]
-      },
-      // A count of bag copies, so the game's base bag bounds it (G node/server.js:1483). An imported
-      // count past the bag reads as the bag, as initialCollectionState's load holds a saved one (the
-      // earlier console's import took any positive count); the route still refuses it.
-      itemCollectionThreshold: {
-        label: "Item collection threshold",
-        kind: "value",
-        default: 1,
-        importable: true,
-        check: wholeFrom(1, BASE_INVENTORY_SIZE),
-        fit: (value) => Number.isSafeInteger(value) && Number(value) > BASE_INVENTORY_SIZE ? BASE_INVENTORY_SIZE : value,
-        refusal: "invalid item collection threshold",
-        deliver: ["dashboard"]
-      },
-      buyUpgradeBatchSize: {
-        label: "Buy and upgrade batch size",
-        kind: "value",
-        default: 1,
-        importable: true,
-        check: wholeFrom(1, BASE_INVENTORY_SIZE),
-        refusal: `invalid upgrade batch size (1\u2013${BASE_INVENTORY_SIZE})`,
-        deliver: ["dashboard"]
-      },
-      upgradeOfferingRules: { label: "Upgrade offering rules", kind: "value", default: [], importable: true, check: validOfferingRules, fit: fitOfferingRules },
-      // The shared rules before the per-character rules; coordinator/fates.ts migrates them at load.
-      merchantRules: {
-        label: "Shared item rules (older layout)",
-        kind: "value",
-        default: null,
-        check: (value) => value === null || object(value),
-        deliver: ["dashboard"]
-      },
-      autoDeconstruction: { label: "Automatic deconstruction", kind: "value", default: {}, scope: "character", importable: true, check: mapOf(mapOf((value) => object(value) && item(value.item))), deliver: ["dashboard"] },
-      autoNpcSales: { label: "Automatic NPC sales", kind: "value", default: {}, importable: true, check: mapOf((value) => object(value) && item(value.item)), characterKey: "character", deliver: ["dashboard"] },
-      autoStandMarks: { label: "Automatic stand listings", kind: "value", default: {}, importable: true, check: mapOf((value) => object(value) && item(value.item) && positive(value.price)), deliver: ["dashboard"] },
-      autoExchanges: { label: "Automatic exchanges", kind: "value", default: {}, importable: true, check: mapOf(item), deliver: ["dashboard"] },
-      autoItemMarks: {
-        label: "Automatic item marks",
-        kind: "value",
-        default: {},
-        scope: "character",
-        document: "selections",
-        importable: true,
-        check: mapOf(mapOf((value) => value === "bank" || value === "merchant")),
-        deliver: ["dashboard"]
-      },
-      autoStandBuys: { label: "Buy from stands automatically", kind: "boolean", default: false, deliver: ["dashboard"] },
-      autoBlacklistMerchants: {
-        label: "Block failed merchants automatically",
-        kind: "boolean",
-        default: true,
-        deliver: ["dashboard"]
-      },
-      marketIgnoredItems: {
-        label: "Ignored market items",
-        kind: "value",
-        default: [],
-        importable: true,
-        check: listOf(validMarketIgnoredItem),
-        refusal: "Provide an item name and nonnegative whole item level",
-        deliver: ["dashboard"]
-      },
-      restockPolicies: {
-        label: "Restock",
-        kind: "value",
-        default: {},
-        scope: "character",
-        importable: true,
-        check: mapOf((value) => object(value) && (!value.elixir || object(value.elixir) && text(value.elixir.item) && number(value.elixir.min) && number(value.elixir.max) && boolean(value.elixir.autoConsume) && boolean(value.elixir.autoAcquire)) && [value.hp, value.mp].every((p) => object(p) && number(p.min) && number(p.max) && text(p.item))),
-        deliver: ["characters", "dashboard"]
-      },
-      // The weapon the merchant equips between jobs, saved when the player equips one by hand.
-      merchantWeapon: {
-        label: "Merchant weapon",
-        kind: "value",
-        default: null,
-        check: (value) => value === null || object(value) && object(value.item),
-        deliver: ["characters", "dashboard"]
-      },
-      // The ALData key, a credential in `party.aldata` that the credentials document saves with its
-      // authentication (`secret`). An empty key means none was generated yet.
-      aldataKey: { label: "ALData key", kind: "text", default: "", secret: true, document: "aldata", path: ["aldata", "key"] },
-      bankSortMode: {
-        label: "Bank sorting",
-        kind: "choice",
-        choices: ["automatic", "request"],
-        default: "automatic",
-        importable: true,
-        check: (value) => value === "automatic" || value === "request",
-        deliver: ["dashboard-core"]
-      }
-    },
-    records: {
-      // A record: each production receipt consumes a rule's quantity (production.ts
-      // `consumeQuotas`), and the player's commands edit it through the items owner's code.
-      autoUpgradeMarks: {
-        default: {},
-        scope: "character",
-        document: "selections",
-        importable: true,
-        check: mapOf(mapOf(upgradeRule)),
-        deliver: ["dashboard"]
-      },
-      production: { default: { attempts: {} } },
-      // The stored upgrade previews ride in the dashboard's core read, so an open preview panel reads
-      // the preview again when a result lands (upgrade-preview-panel.tsx).
-      upgradePreviewResults: { default: {}, deliver: ["dashboard-core"] },
-      // The mail inbox and sent list; the items owner holds the inbox (coordinator/mail.ts), so it
-      // declares the record. The declaration sat in the status owner's fields.ts, whose import of
-      // initialMailbox through items/api.ts closed a bundle cycle that left statusSavedFields
-      // undefined.
-      mailbox: { default: initialMailbox(void 0) },
-      merchantDeliveries: { default: {}, deliver: ["dashboard"] },
-      standListings: { default: [], importable: true, check: listOf((value) => object(value) && item(value.item) && positive(value.price)), deliver: ["characters", "dashboard"] },
-      npcSaleMarks: { default: [], importable: true, check: listOf((value) => object(value) && item(value.item) && text(value.id)), characterKey: "character", deliver: ["dashboard"] },
-      deconstructionMarks: { default: [], importable: true, check: listOf((value) => object(value) && item(value.item) && text(value.id) && text(value.owner) && text(value.origin) && number(value.quantity)), characterKey: "owner", deliver: ["dashboard"] },
-      // Part 4: the bag copies an add-on's claim or action holds, by character and slot, which the
-      // item-rules slot reads (coordinator/fates.ts `publishAddonFates`).
-      addonItemFates: { default: {}, deliver: ["dashboard"] },
-      standBids: { default: {}, importable: true, check: mapOf((value) => object(value) && positive(value.price) && positive(value.quantity)), deliver: ["dashboard"] },
-      nativeStand: { default: { sequence: 0, offers: {}, problems: {} }, deliver: ["dashboard-core"] },
-      standPriceHistory: { default: {}, liveness: true, deliver: ["dashboard-core"] },
-      merchantBlacklist: { default: {}, importable: true, check: mapOf(object), deliver: ["dashboard"] },
-      upgrades: { default: {}, scope: "character", importable: true, check: mapOf(listOf(upgrade2)), deliver: ["dashboard"] },
-      compounds: { default: {}, scope: "character", importable: true, check: mapOf(listOf(compound2)), deliver: ["dashboard"] },
-      autoCompounds: { default: {}, scope: "character", importable: true, check: mapOf(listOf(autoCompound)), deliver: ["dashboard"] },
-      luckyUpgradeSlots: { default: {}, deliver: ["characters", "dashboard-core"] },
-      luckySlotResume: { default: {}, deliver: ["characters", "dashboard-core"] },
-      luckySlotTracking: { default: {}, deliver: ["characters", "dashboard-core"] },
-      luckySlotCharacterIds: { default: {}, deliver: ["characters"] },
-      bankSortRequest: { default: null, deliver: ["dashboard-core"] },
-      marked: { default: {}, scope: "character", document: "selections", importable: true, check: mapOf(listOf(mark)), deliver: ["dashboard"] },
-      merchantMarked: { default: {}, scope: "character", document: "selections", importable: true, check: mapOf(listOf(mark)), deliver: ["dashboard"] },
-      bankSnapshot: { default: null, document: "bank" },
-      withdrawals: { default: {}, document: "bank", deliver: ["dashboard-core"] },
-      // The copies the player banked by hand while a merchant claim of their item lived; the claim
-      // leaves them in the bank across a restart.
-      claimBanked: { default: {}, document: "bank" },
-      bankbois: { default: {}, document: "bank" },
-      bankboiQueue: { default: [], document: "bank" },
-      bankboiTransaction: { default: null, document: "bank" },
-      bankboiReservedMigrated: { default: false, document: "bank" }
-    }
-  };
-  function initialMailbox(value) {
-    const saved = object(value) ? value : {}, settings = object(saved.settings) ? saved.settings : {};
-    return {
-      settings: { autoCollect: settings.autoCollect === true, autoDelete: settings.autoDelete === true },
-      seenIds: Array.isArray(saved.seenIds) ? saved.seenIds.filter((id2) => typeof id2 === "string") : [],
-      outbox: Array.isArray(saved.outbox) ? saved.outbox.flatMap((raw) => {
-        const m = object(raw) ? raw : {};
-        return typeof m.id === "string" && typeof m.recipient === "string" && typeof m.subject === "string" && typeof m.message === "string" && typeof m.sent === "string" ? [{ id: m.id, recipient: m.recipient, subject: m.subject, message: m.message, sent: m.sent, ...m.item ? { item: m.item } : {}, ...typeof m.quantity === "number" ? { quantity: m.quantity } : {} }] : [];
-      }) : []
-    };
-  }
-
-  // runtime/items/api.ts
-  function loot2() {
-    const items2 = globalThis.partyItems;
-    if (!items2) throw Error("The items owner is not installed on this character");
-    return items2.loot.pass();
-  }
-  function itemDoors() {
-    const doors = globalThis.__partyItemDoors;
-    if (!doors) throw Error("The items owner is not installed on this character");
-    return doors;
-  }
-  var finite = (n) => typeof n === "number" && Number.isFinite(n);
-  function itemDoorFacts(facts = {}) {
-    const { floor, held, ponty } = facts;
-    return {
-      ...finite(floor) ? { floor } : {},
-      ...Array.isArray(held) && held.every(finite) ? { held } : {},
-      ...ponty && typeof ponty === "object" ? { ponty: Object.fromEntries(Object.entries(ponty).filter(([, price2]) => finite(price2))) } : {}
-    };
-  }
-  var door = (name2) => (args, ask3) => itemDoors().door(name2, args, ask3.band, itemDoorFacts(ask3.facts));
-  var wearLook = door("wearLook");
-  var donate = door("donate");
-  var sendGold = door("sendGold");
-  var sendItem = door("sendItem");
-  var sendMail = door("sendMail");
-  var takeMail = door("takeMail");
-  var buy2 = door("buy");
-  var sell2 = door("sell");
-  var exchange2 = door("exchange");
-  var exchangeBuy = door("exchangeBuy");
-  var split2 = door("split");
-  var move = door("move");
-  var equip2 = door("equip");
-  var unequip2 = door("unequip");
-  var consume2 = door("consume");
-  var dismantle2 = door("dismantle");
-  var destroy = door("destroy");
-  var boost = door("boost");
-  var upgrade3 = door("upgrade");
-  var compound3 = door("compound");
-  var craft = door("craft");
-  var locksmith = door("locksmith");
-  var destat = door("destat");
-  var list3 = door("list");
-  var wishlist2 = door("wishlist");
-  var tradeBuy = door("tradeBuy");
-  var tradeSell = door("tradeSell");
-  var tradeSwap = door("tradeSwap");
-  var tradeHistory = door("tradeHistory");
-  var buySecondhand = door("buySecondhand");
-  var lostAndFoundInfo = door("lostAndFoundInfo");
-  var lostAndFound = door("lostAndFound");
-  var buyLostAndFound = door("buyLostAndFound");
-  var openChest = door("openChest");
-  var bankRetrieve = door("bankRetrieve");
-  var bankStore = door("bankStore");
-  var bankSwap = door("bankSwap");
-  var bankDeposit = door("bankDeposit");
-  var bankWithdraw = door("bankWithdraw");
-  function itemData(name2) {
-    const root2 = globalThis;
-    const definition = root2.G?.items ? root2.G.items[name2] : root2.__partyItemData?.(name2);
-    return definition;
-  }
-  function itemGradeOf(name2, level3) {
-    const definition = itemData(name2);
-    return definition ? itemGrade(definition, Number(level3) || 0) : null;
-  }
-  function npcStock(npc) {
-    if (npc === "lostandfound") return lostAndFoundList().map((lot) => lot.name);
-    const items2 = globalThis.G?.npcs?.[npc]?.items;
-    return (items2 ?? []).filter((name2) => typeof name2 === "string");
-  }
-  function lostAndFoundList() {
-    return globalThis.__partyItemDoors?.lostAndFound() ?? [];
-  }
-  function publishItemData(source2) {
-    globalThis.__partyItemData = source2;
   }
 
   // dashboard/lib/account-inventory.ts
@@ -8602,6 +8611,7 @@
     "door.items.ACQUISITION": { side: "both", type: "typeof ACQUISITION", door: "runtime/items/api.ts#ACQUISITION" },
     "door.items.marketListingFresh": { side: "both", type: "typeof marketListingFresh", door: "runtime/items/api.ts#marketListingFresh" },
     "door.items.TRACKER_ITEMS": { side: "both", type: "typeof TRACKER_ITEMS", door: "runtime/items/api.ts#TRACKER_ITEMS" },
+    "door.items.isPersonalItem": { side: "both", type: "typeof isPersonalItem", door: "runtime/items/api.ts#isPersonalItem" },
     "door.items.catalogItemMeta": { side: "both", type: "typeof catalogItemMeta", door: "runtime/items/api.ts#catalogItemMeta" },
     "door.items.joinItemMeta": { side: "both", type: "typeof joinItemMeta", door: "runtime/items/api.ts#joinItemMeta" },
     "door.items.commerceRuleKey": { side: "both", type: "typeof commerceRuleKey", door: "runtime/items/api.ts#commerceRuleKey" },
@@ -8751,7 +8761,9 @@
     "protected free slots": { at: "runtime/items/rules.ts#protectedSlotsOf", hook: "settings.overlay" },
     "lucky slot": { at: "runtime/items/rules.ts#luckySlotSearch", core: "game", cite: "runtime/items/rules.ts:819, roll statistics" },
     "upgrade offering": { at: "runtime/items/rules.ts#resolveUpgradeOffering", hook: "settings.overlay" },
-    "automatic NPC retrieval": { at: "runtime/items/rules.ts#automaticNpcRetrieval", hook: "settings.overlay" }
+    "automatic NPC retrieval": { at: "runtime/items/rules.ts#automaticNpcRetrieval", hook: "settings.overlay" },
+    "NPC reach without walking": { at: "runtime/items/rules.ts#reachesWithoutWalking", core: "game", cite: "runtime/items/rules.ts:148, game node/server.js computer clauses" },
+    "personal item": { at: "runtime/items/rules.ts#isPersonalItem", core: "game", cite: "runtime/items/rules.ts:141, game node/server.js:1488-1497 tracker and computer clauses" }
   };
   var PLAIN10 = {
     // Facts the game fixes, which the console reads; an add-on's answer cannot change them.
@@ -12046,7 +12058,7 @@ ${hook}`, was = errors.get(key3);
       if (!valid(c) || pending || ports.defending() || progress?.id === c.id && progress.complete) return;
       pending = true;
       try {
-        const result = await loot2();
+        const result = await loot();
         if (control !== c || !valid(c) || ports.defending()) return;
         await ports.nextObservation();
         if (control !== c || !valid(c) || ports.defending()) return;
@@ -21255,11 +21267,12 @@ ${hook}`, was = errors.get(key3);
     }
     function standSlots2() {
       const character2 = me();
-      return standSlots({ ctype: character2.ctype, level: character2.level, stand: standItem() ?? void 0 });
+      const item2 = standItem();
+      return standSlots({ ctype: character2.ctype, level: character2.level, stand: character2.stand || (item2 ? p.G().items[item2]?.stand : void 0) });
     }
     function standItem() {
       const G2 = p.G(), character2 = me();
-      return character2.stand || items2().findLast((item2) => item2 && G2.items[item2.name]?.type === "stand")?.name || null;
+      return character2.stand || items2().findLast((item2) => item2 && G2.items[item2.name]?.stand)?.name || null;
     }
     function itemSeller(itemName) {
       const npcs = p.G().npcs || {};
@@ -21794,6 +21807,15 @@ ${hook}`, was = errors.get(key3);
       characterItemProperties,
       cachedWorld: (name2) => worldCache[name2],
       catalogVersion: CATALOG_VERSION
+    };
+  }
+
+  // runtime/items/character/npc-trip.ts
+  function npcTrip(ports, walk2) {
+    return async (destination, call) => {
+      if (reachesWithoutWalking(ports.character(), ports.G(), call)) return false;
+      await walk2(destination);
+      return true;
     };
   }
 
@@ -22427,6 +22449,7 @@ ${hook}`, was = errors.get(key3);
     let stockFailed = null;
     const stockSeen = () => JSON.stringify([me().gold, me().items]);
     const stockDue = () => p.reads.inventoryQuantity(hpSupply().item) === 0 && stockFailed !== stockSeen();
+    const toNpc = npcTrip(p, (destination) => bankSortMove(destination));
     function bagStill() {
       return p.bag.bankboiStorage() || p.bag.errandFor("bankStill") || p.departing() || p.escaping() || p.othersBusy();
     }
@@ -22451,10 +22474,11 @@ ${hook}`, was = errors.get(key3);
       }
       if (p.bag.take("stocking") !== "taken") return false;
       const start = { map: me().map, x: me().x, y: me().y };
+      let walked = true;
       try {
         const vendor = p.findNpc("fancypots");
         if (!vendor) throw Error("fancypots vendor not found");
-        await bankSortMove(vendor);
+        walked = await toNpc(vendor, "buy");
         carried = p.reads.inventoryQuantity(supply.item);
         const needed = Math.max(0, supply.max - carried);
         if (needed && me().gold >= potion.g * needed) {
@@ -22469,7 +22493,7 @@ ${hook}`, was = errors.get(key3);
         throw error;
       } finally {
         try {
-          await bankSortMove(p.partyLocation() || start);
+          if (walked) await bankSortMove(p.partyLocation() || start);
         } catch (error) {
           p.log("Return from potion vendor failed: " + (error?.reason || error?.message || error), "red");
         }
@@ -22698,7 +22722,7 @@ ${hook}`, was = errors.get(key3);
       });
       try {
         if (command.provision) {
-          await walk2("potions");
+          await toNpc("potions", "sell");
           for (const slot of Object.keys(me().slots || {})) if (me().slots[slot]) await p.unequip(slot);
           for (let slot = 0; slot < me().items.length; slot += 1) if (me().items[slot]) await p.sell(slot, stackQuantity(me().items[slot]));
         }
@@ -23981,6 +24005,7 @@ ${hook}`, was = errors.get(key3);
     const me = () => p.character();
     const G2 = () => p.G();
     const bag2 = () => p.bag;
+    const toNpc = npcTrip(p, (destination) => p.move(destination));
     const activityFailed = (error) => p.log("Merchant activity report failed: " + message(error), "red");
     const reportFailed = (error) => p.log("Merchant job failure report failed: " + message(error), "red");
     let journalCache, journalLoaded = false, recovering = null;
@@ -24542,7 +24567,7 @@ ${hook}`, was = errors.get(key3);
           await p.bank.merchantVisitBank(command, activity);
           await p.bank.withdrawMerchantCash(Math.min(price2 - me().gold, Number(me().bank?.gold) || 0), command);
         }
-        await p.move(p.findNpc(seller));
+        await toNpc(p.findNpc(seller), "buy");
         await p.buyConfirmed(purchase.name, 1);
         const bought = me().items.findIndex((item2, index) => !used2[index] && !!item2 && item2.name === purchase.name && (item2.level || 0) === 0);
         if (bought >= 0) {
@@ -24572,7 +24597,7 @@ ${hook}`, was = errors.get(key3);
             await prepareManualImprovementScrolls(command, activity, { upgrades: remaining, compounds: command.compounds });
             scrollSlot = p.reads.findInventoryItemByName(scrollName);
           }
-          await p.move(p.findNpc("newupgrade"));
+          await toNpc(p.findNpc("newupgrade"), "upgrade");
           offeringAttempt = await prepareUpgradeOffering(command, mark3, slot, activity);
           if (offeringAttempt?.waiting) break;
           try {
@@ -24634,7 +24659,7 @@ ${hook}`, was = errors.get(key3);
           await prepareManualImprovementScrolls(command, activity, { compounds: groups.slice(groupIndex) });
           cscrollSlot = p.reads.findInventoryItemByName(cscroll);
         }
-        await p.move(p.findNpc("newupgrade"));
+        await toNpc(p.findNpc("newupgrade"), "compound");
         try {
           await compoundConfirmed(slots[0], slots[1], slots[2], cscrollSlot);
           const first = group.items[0].item, next = (first.level || 0) + 1;
@@ -24681,7 +24706,7 @@ ${hook}`, was = errors.get(key3);
             const scrollName = "cscroll" + p.grade(me().items[candidates2[0]]);
             if (p.reads.findInventoryItemByName(scrollName) < 0) await ensureOwnedItemQuantity(scrollName, 1, command, activity);
             await p.operationStage(command, "processing");
-            await p.move(p.findNpc("newupgrade"));
+            await toNpc(p.findNpc("newupgrade"), "compound");
             await refreshCompoundProtection(command);
             candidates2 = compoundInventorySlots(command, autoMark.name, level3);
             if (candidates2.length < COMPOUND_INPUTS) continue;
@@ -24804,7 +24829,7 @@ ${hook}`, was = errors.get(key3);
         if ((Number(me().bank?.gold) || 0) < shortfall) throw itemFailure("short_gold", "Insufficient bank gold for " + missing + " \xD7 " + name2);
         await p.bank.withdrawMerchantCash(shortfall, command);
       }
-      await p.move(p.findNpc("scrolls"));
+      await toNpc(p.findNpc("scrolls"), "buy");
       await p.buyConfirmed(name2, missing);
       return p.reads.itemAvailability(name2);
     }
@@ -24836,7 +24861,7 @@ ${hook}`, was = errors.get(key3);
         await p.bank.withdrawMerchantCash(neededGold, command);
       }
       if (names2.some((name2) => missing[name2] > 0)) {
-        await p.move(p.findNpc("scrolls"));
+        await toNpc(p.findNpc("scrolls"), "buy");
         for (const name2 of names2) if (missing[name2] > 0) await p.buyConfirmed(name2, missing[name2]);
       }
       return needs;
@@ -24877,7 +24902,7 @@ ${hook}`, was = errors.get(key3);
       for (const name2 of names2) {
         const count = toBuy(name2);
         if (!count) continue;
-        await p.move(p.findNpc(p.reads.itemSeller(name2)));
+        await toNpc(p.findNpc(p.reads.itemSeller(name2)), "buy");
         await p.buyConfirmed(name2, count);
       }
       activity.push({ level: "info", message: "Prepared stat scrolls before the party visit" });
@@ -24902,7 +24927,7 @@ ${hook}`, was = errors.get(key3);
           continue;
         }
         try {
-          await p.move(p.findNpc("newupgrade"));
+          await toNpc(p.findNpc("newupgrade"), "upgrade");
           await upgradeAtSlot(itemSlot, scrollSlot);
           const completed = fingerprint(me().items[itemSlot]);
           command._statScrollsApplied.push({ mark: mark3, slot: itemSlot, item: completed });
@@ -24935,8 +24960,9 @@ ${hook}`, was = errors.get(key3);
       const activity = [], resolved = [];
       let failure2 = null;
       const origin = { map: me().map, x: me().x, y: me().y };
+      let walked = true;
       try {
-        await p.move(p.findNpc("newupgrade"));
+        walked = await toNpc(p.findNpc("newupgrade"), "upgrade");
         for (const mark3 of command.items || []) {
           if (!mark3 || typeof mark3.slot !== "string" || !sameItemState(me().slots[mark3.slot], mark3.item)) {
             activity.push({ level: "error", message: "Skipped stale stat-scroll request for " + (mark3?.item?.name || "equipment") });
@@ -24962,7 +24988,7 @@ ${hook}`, was = errors.get(key3);
         activity.push({ level: "error", message: "Stat-scroll application failed", details: message(error) });
         failure2 = error;
       }
-      try {
+      if (walked) try {
         const leader = p.leaderLocation();
         await p.move(leader || origin);
         activity.push({ level: "success", message: leader ? "Returned " + me().name + " to the party leader after stat scrolling" : "Returned " + me().name + " to its farming location after stat scrolling" });
@@ -25202,7 +25228,7 @@ ${hook}`, was = errors.get(key3);
         if (!pending) return;
         if (stock(pending.name) < pending.before + pending.quantity) {
           await services.fund(pending.cost);
-          await services.move(p.reads.itemSeller(pending.name));
+          await services.move(p.reads.itemSeller(pending.name), "buy");
           await p.buyConfirmed(pending.name, pending.quantity);
         }
         if (pending.base) {
@@ -25223,7 +25249,7 @@ ${hook}`, was = errors.get(key3);
         const cost2 = Number(G2().items[name2].g) * quantity2;
         if (Number.isFinite(Number(purchase.budget)) && progress.spent + cost2 > Number(purchase.budget)) throw Error(exhausted());
         await services.fund(cost2);
-        await services.move(p.reads.itemSeller(name2));
+        await services.move(p.reads.itemSeller(name2), "buy");
         progress.spent += cost2;
         if (base && progress.batchRemaining) progress.attempts += 1;
         progress.pendingPurchase = {
@@ -25312,7 +25338,7 @@ ${hook}`, was = errors.get(key3);
         while (progress.activeItem && (Number(progress.activeItem.level) || 0) < target) {
           const nextLevel = (Number(progress.activeItem.level) || 0) + 1, scroll = "scroll" + p.grade(progress.activeItem);
           if (!stock(scroll)) await purchaseStock(scroll, 1, false);
-          await services.move("newupgrade");
+          await services.move("newupgrade", "upgrade");
           const slot = ownedSlot();
           if (slot < 0) throw Error("Owned upgrade item missing; order requires inventory review");
           progress.pendingUpgrade = { level: nextLevel };
@@ -25354,10 +25380,10 @@ ${hook}`, was = errors.get(key3);
       command._commerceState = resumeState;
       p.commerce(command.id, { commerceCycle: versioned });
       const prepared = resumeState.phase === "leveling" || resumeState.phase === "crafting";
-      async function commerceMove(destination) {
+      async function commerceMove(destination, call) {
         if (versioned && p.job()?.commandId !== command.id) throw itemFailure("interrupted");
         try {
-          await p.move(destination);
+          await toNpc(destination, call);
         } catch (error) {
           error.commerceMovement = true;
           throw error;
@@ -25509,7 +25535,7 @@ ${hook}`, was = errors.get(key3);
           await p.bank.withdrawMerchantCash(shortage, command);
         }
         for (const material of materialBuys) {
-          await commerceMove(p.reads.itemSeller(material.id));
+          await commerceMove(p.reads.itemSeller(material.id), "buy");
           await p.buyConfirmed(material.id, material.quantity);
           activity.push({ level: "success", message: "Bought " + material.quantity + " \xD7 " + material.id + " for crafting" });
         }
@@ -25540,7 +25566,7 @@ ${hook}`, was = errors.get(key3);
           const cost2 = (G2().items[purchase.id]?.g || 0) * purchase.quantity;
           if (Number.isFinite(Number(purchase.budget)) && cost2 > Number(purchase.budget))
             throw Error((purchase.estimateUnavailable ? "Gold cap for unavailable estimate exhausted" : "90% estimated budget exhausted") + " for " + purchase.id + " (spent 0 of " + Number(purchase.budget).toLocaleString() + " gold)");
-          await commerceMove(p.reads.itemSeller(purchase.id));
+          await commerceMove(p.reads.itemSeller(purchase.id), "buy");
           await p.buyConfirmed(purchase.id, purchase.quantity);
           activity.push({ level: "success", message: "Bought " + purchase.quantity + " \xD7 " + purchase.id });
           await checkpoint({ phase: "leveling", buyIndex: buyIndex + 1, attempts: 0, spent: 0 }, true);
@@ -25562,7 +25588,7 @@ ${hook}`, was = errors.get(key3);
           for (const need of materials)
             if (exactInventoryQuantity(need.id, need.level) < need.quantity) throw Error("Crafting material is unavailable: " + need.id + " +" + need.level);
           await checkpoint({ phase: "crafting", craftIndex, crafted: startingCraft }, true);
-          await commerceMove(npc);
+          await commerceMove(npc, "craft");
           if (recipe.quest) activity.push({ level: "info", message: "Visited " + (G2().npcs[provider]?.name || provider) + " for required recipe " + line.id });
           for (let count = startingCraft; count < line.quantity; count += 1) {
             await p.craft(line.id);
@@ -25713,6 +25739,12 @@ ${hook}`, was = errors.get(key3);
       const held = bag2().facts();
       if (held.upgrading || held.banking || !await bag2().acquire("upgrading")) return;
       const origin = { map: me().map, x: me().x, y: me().y };
+      let walked = !!returnLocation;
+      const trip = async (destination, call) => {
+        const before = walked;
+        walked = true;
+        walked = await toNpc(destination, call) || before;
+      };
       const completed = [], purchased = [], compounded = [];
       const r = p.reads;
       const groupSlots = (group) => {
@@ -25761,6 +25793,7 @@ ${hook}`, was = errors.get(key3);
         let goldNeeded = Object.keys(required).reduce((total, scroll) => total + Math.max(0, required[scroll] - r.inventoryQuantity(scroll)) * G2().items[scroll].g, 0);
         for (const purchase of purchases2 || []) if (G2().items[purchase.name] && r.itemSeller(purchase.name)) goldNeeded += G2().items[purchase.name].g;
         if (me().gold < goldNeeded) {
+          walked = true;
           await p.move("bank");
           const shortfall = goldNeeded - me().gold;
           if (!me().bank || me().bank.gold < shortfall) throw itemFailure("short_gold", "not enough gold in character and bank for upgrade scrolls");
@@ -25773,18 +25806,18 @@ ${hook}`, was = errors.get(key3);
             purchased.push(purchase);
             continue;
           }
-          await p.move(p.findNpc(seller));
+          await trip(p.findNpc(seller), "buy");
           await p.buy(purchase.name, 1);
           purchased.push(purchase);
         }
         if (goldNeeded) {
-          await p.move(p.findNpc("scrolls"));
+          await trip(p.findNpc("scrolls"), "buy");
           for (const scroll of Object.keys(required)) {
             const missing = Math.max(0, required[scroll] - r.inventoryQuantity(scroll));
             if (missing) await p.buy(scroll, missing);
           }
         }
-        await p.move(p.findNpc("newupgrade"));
+        await trip(p.findNpc("newupgrade"), "upgrade");
         for (const entry of work) {
           const itemSlot = r.findMarkedItem(entry.mark);
           for (let step2 = 0; step2 < entry.tiers; step2 += 1) {
@@ -25820,7 +25853,7 @@ ${hook}`, was = errors.get(key3);
         p.log("Upgrade run failed: " + message(error), "red");
       } finally {
         try {
-          await p.move(returnLocation || p.partyLocation() || origin);
+          if (walked) await p.move(returnLocation || p.partyLocation() || origin);
         } catch (error) {
           p.log("Return from upgrades failed: " + message(error), "red");
         }
@@ -25892,7 +25925,7 @@ ${hook}`, was = errors.get(key3);
           throw Error("Upgrade operation still settling; refresh again");
         if (!sameItem(me().items[previewRequest.slot], previewRequest.item)) throw Error("Item changed; reopen the menu");
         await borrowUpgradePreviewSupplies(previewRequest);
-        await previewTravel("newupgrade");
+        await toNpc("newupgrade", "upgrade");
         if (!await bag2().acquire("previewing")) throw Error("Upgrade preview already running");
         result = await previewUpgrade(previewRequest, {
           items: () => me().items,
@@ -26432,6 +26465,7 @@ ${hook}`, was = errors.get(key3);
       await p.bank.withdrawMerchantCash(shortage, command);
     }
     const walk2 = (destination) => p.walk(destination);
+    const toNpc = npcTrip(p, walk2);
     async function buyConfirmed(name2, amount) {
       amount = Math.max(1, Number(amount) || 1);
       if (!G2().items[name2]?.s && amount > 1) {
@@ -26539,7 +26573,7 @@ ${hook}`, was = errors.get(key3);
           const line = lines[lineIndex], definition = G2().items[line.id] || {}, required = cost2(line);
           for (const pending of supplies(lines.slice(lineIndex)))
             if (carried(pending.id, pending.level) < pending.quantity) throw Error("Exchange inventory changed before travel: " + pending.id);
-          await walk2(p.findNpc(line.reward ? definition.npc || line.id + "s" : exchangeNpc(line.id)));
+          await toNpc(p.findNpc(line.reward ? definition.npc || line.id + "s" : exchangeNpc(line.id)), line.reward ? "exchange_buy" : "exchange");
           for (let count = 0; count < line.quantity; count += 1) {
             await p.bank.mergeBag();
             let slot = me().items.findIndex((item2) => item2 && item2.name === line.id && level2(item2.level) === line.level && !item2.l && reads.itemQuantity(item2) >= required);
@@ -26947,7 +26981,7 @@ ${hook}`, was = errors.get(key3);
         for (const need of needs) {
           const seller = reads.itemSeller(need.supply.item);
           if (!seller) throw Error("Could not find potion seller for " + need.supply.item);
-          await walk2(p.findNpc(seller));
+          await toNpc(p.findNpc(seller), "buy");
           await buyConfirmed(need.supply.item, need.quantity);
           activity.push({ level: "success", message: "Restocked " + need.quantity + " \xD7 " + (G2().items[need.supply.item]?.name || need.supply.item) + " to " + need.supply.max });
         }
@@ -26968,7 +27002,7 @@ ${hook}`, was = errors.get(key3);
       const activity = [];
       try {
         await closeStand();
-        await walk2("craftsman");
+        await toNpc("craftsman", "dismantle");
         for (const mark3 of command.deconstructionMarks || []) {
           for (let unit = 0; unit < mark3.quantity; unit += 1) {
             p.merchant.continues(command);
@@ -26985,7 +27019,7 @@ ${hook}`, was = errors.get(key3);
                 p.merchant.continues(command);
                 await p.bank.withdrawMerchantCash(definition.cost - me().gold, command);
                 if (me().gold < definition.cost) throw itemFailure("short_gold", "Insufficient gold: deconstruction needs " + definition.cost);
-                await walk2("craftsman");
+                await toNpc("craftsman", "dismantle");
                 p.merchant.continues(command);
                 slot = reads.findItem(mark3.item);
                 item2 = me().items[slot];
@@ -27043,7 +27077,7 @@ ${hook}`, was = errors.get(key3);
             continue;
           }
           let quantity2 = Math.min(Number(mark3.quantity) || 1, quantityOf(me().items[slot]));
-          await walk2("fancypots");
+          await toNpc("fancypots", "sell");
           slot = reads.findItem(mark3.item);
           if (slot < 0 || !sameItem(me().items[slot], mark3.item)) throw Error("NPC-sale item moved before confirmation: " + mark3.item.name);
           if (me().items[slot].l) {
@@ -28154,6 +28188,8 @@ ${hook}`, was = errors.get(key3);
     production: productionOf,
     market: marketOf,
     failure: itemFailure,
+    // The NPC trip the merchant jobs owner's restock walks through (shared.js `visitPorts`).
+    npcTrip,
     // The game calls other owners' ports take from the items owner (calls.ts): the merchant jobs owner's visit unequips, equips, deposits
     // and sends gold, the merchant jobs owner's gathering splits a catch; the hunting owner's rare deploys its item.
     game: { unequip: bankGame.unequip, equip: productionGame.equip, bankDeposit: bankGame.bankDeposit, sendGold: sendGold2, split: bankGame.split }
@@ -44174,9 +44210,9 @@ ${hook}`, was = errors.get(key3);
     const left = Number(me.c?.town?.ms);
     return left > 0 ? left + ageOf("report") : RELOCATE_MS;
   };
-  var CLEANOUT_KEEPS = [...TRACKER_ITEMS, "hpot0", "mpot0", "hpot1", "mpot1"];
+  var CLEANOUT_SUPPLIES = ["hpot0", "mpot0", "hpot1", "mpot1"];
   function cleanoutProtected(item2) {
-    return !!(item2.l || item2.b || CLEANOUT_KEEPS.indexOf(item2.name) >= 0);
+    return !!(item2.l || item2.b || isPersonalItem(item2) || CLEANOUT_SUPPLIES.indexOf(item2.name) >= 0);
   }
   function isPersonalTracker(item2) {
     return !!item2 && TRACKER_ITEMS.includes(item2.name);
@@ -44356,7 +44392,7 @@ ${hook}`, was = errors.get(key3);
         requests = requests.filter((entry) => !cleanoutProtected(entry.item));
         requests.sort((a, b) => cleanoutPriority(a) - cleanoutPriority(b));
       }
-      requests = requests.filter((entry) => !isPersonalTracker(entry.item));
+      requests = requests.filter((entry) => !isPersonalItem(entry.item));
       let capacity = Math.max(0, Number(command.capacity) || 0);
       const cleanoutEmergency = p.freeInventorySlots() <= p.protectedSlots();
       try {
@@ -44393,7 +44429,7 @@ ${hook}`, was = errors.get(key3);
             i -= 1;
             continue;
           }
-          if (isPersonalTracker(me.items[slot]) || command.cleanout && cleanoutProtected(me.items[slot])) continue;
+          if (isPersonalItem(me.items[slot]) || command.cleanout && cleanoutProtected(me.items[slot])) continue;
           const sendQuantity = Math.min(Number(requests[i].quantity) || p.itemQuantity(me.items[slot]), p.itemQuantity(me.items[slot]));
           if (requests[i].mark && (requests[i].mark.deconstructionId || requests[i].mark.npcSaleId) && (me.items[slot].l || me.items[slot].b)) continue;
           await p.sendItem(command.merchant, slot, sendQuantity);
@@ -44752,7 +44788,7 @@ ${hook}`, was = errors.get(key3);
             const buyQuantity = Math.max(0, needed - p.inventoryQuantity(supply.item));
             if (me.gold >= G.items[supply.item].g * buyQuantity) {
               if (buyQuantity) {
-                await p.walkToNpc(seller);
+                await p.walkToNpc(seller, "buy");
                 await p.buy(supply.item, buyQuantity);
               }
               deliveries.push({ name: supply.item, quantity: needed });
@@ -47080,7 +47116,7 @@ ${hook}`, was = errors.get(key3);
       equip: equip2,
       exchange: exchange2,
       exchangeBuy,
-      list: list3,
+      list: list2,
       locksmith,
       lostAndFound,
       lostAndFoundInfo,
@@ -47183,9 +47219,9 @@ ${hook}`, was = errors.get(key3);
     "runtime/characters/targeting/rules.ts": rules_exports8,
     "runtime/characters/turns/api.ts": api_exports9,
     "runtime/characters/turns/rules.ts": rules_exports6,
-    "runtime/events/api.ts": api_exports3,
+    "runtime/events/api.ts": api_exports4,
     "runtime/hunting/api.ts": api_exports7,
-    "runtime/items/api.ts": api_exports4,
+    "runtime/items/api.ts": api_exports2,
     "runtime/lifecycle/api.ts": api_exports6,
     "runtime/lifecycle/rules.ts": rules_exports4,
     "runtime/merchant-hands/api.ts": api_exports12,
@@ -47200,7 +47236,7 @@ ${hook}`, was = errors.get(key3);
     "runtime/settings/rules.ts": rules_exports,
     "runtime/status/api.ts": api_exports5,
     "runtime/status/rules.ts": rules_exports3,
-    "runtime/tasks/api.ts": api_exports2,
+    "runtime/tasks/api.ts": api_exports3,
     "runtime/tasks/rules.ts": rules_exports2
   };
   var VIA = {
