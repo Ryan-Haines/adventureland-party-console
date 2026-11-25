@@ -409,19 +409,26 @@ export function routeIdentityOwned(state: SharedState, body: Record<string, unkn
 function intentMatches(intent: {revision:number;cancelled?:boolean}|undefined, command: SharedCommand, c: SharedConvoy): boolean {
   return !intent || intent.revision===command.navigationRevision && !cancelEnds(c, intent);
 }
-function validPublication(state: SharedState, c: SharedConvoy, route: SharedRoute | null): route is SharedRoute {
+// The clause a leader's route publication breaks, or null when it holds. The refusal names it, so a
+// failed walk's log says which one (W18 H25 in the final gate's closing run had two refusals and no
+// clause).
+function publicationFault(state: SharedState, c: SharedConvoy, route: SharedRoute): string | null {
   const leader = state.statuses[c.leader];
-  if (!route || route.version !== c.routeVersion || !leader || leader.moving) return false;
+  if (route.version !== c.routeVersion) return 'route version changed';
+  if (!leader || leader.moving) return 'leader moving or unreported';
   // Queue A27: the leader plans from where it stands, anywhere inside the rendezvous range
   // (walk-client.ts sharedConvoyRendezvous), so the route starts at the leader.
-  return distance(route.origin, leader) <= 1 && distance(route.origin, c.rally) <= RENDEZVOUS_RANGE &&
-    contains(c.location, route.destination, 0, 1) && samePlace(route.origin, c.rally);
+  if (distance(route.origin, leader) > 1) return 'origin is not the leader';
+  if (distance(route.origin, c.rally) > RENDEZVOUS_RANGE || !samePlace(route.origin, c.rally)) return 'origin outside the rally';
+  if (!contains(c.location, route.destination, 0, 1)) return "destination outside the walk's area";
+  return null;
 }
 export function publishSharedRoute(state: SharedState, body: Record<string, unknown>, now: number): string | null {
   const c = state.activeConvoy;
   if (!routeOwner(state, body, now) || body.character !== c!.leader || c!.phase !== "shared-prepare") return "stale route publisher";
   const route = parseRoute(body.route);
-  if (!validPublication(state, c!, route)) return "invalid route or changed origin/destination";
+  const fault = route ? publicationFault(state, c!, route) : 'unreadable route';
+  if (!route || fault) return "invalid route or changed origin/destination: " + fault;
   // A farming-zone destination can resolve to a different entry point. The client
   // retains its authorized area; only the current leader may resolve that point.
   const old = sharedRoute(c!);
