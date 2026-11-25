@@ -13,6 +13,14 @@ scenarioTable('a merchant rendezvous reaches a moving recipient and fails on the
  assert.ok(Math.hypot(t.r.character.x-t.player.x,t.r.character.y-t.player.y)<=180);
  assert.ok(t.calls.some(c=>c.kind==='stop'&&c.type==='smart'));
 }],
+// Live 2026-11-22 (Patinder, winterland): re-aiming the route at a recipient that walked on
+// stopped the errand's own journey, its release came back as a failed try, and the meet climbed
+// its ladder and flagged stuck about every 3 s. The re-aim is the errand's own and climbs nothing.
+['re-aiming the route at a walking recipient climbs no rung of the errand round', async make => {
+ const t=make({wall:true,released:true,tick:(_,p,n)=>{if(n<=40&&n%5===0)p.y+=250;}});await t.r.rendezvous('job','F');
+ assert.ok(t.calls.filter(c=>c.kind==='smart').length>2,'the route re-aims as the recipient walks');
+ assert.equal(t.calls.some(c=>c.kind==='smart'&&c.native),false,'no other-route rung: no try failed');
+}],
 ['walls keep the merchant on navigation rather than issuing unsafe direct moves', async make => {
  const t=make({wall:true});await t.r.rendezvous('job','F');assert.equal(t.calls.filter(c=>c.kind==='move').length,0);
 }],

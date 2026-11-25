@@ -22,7 +22,9 @@ function runtime(options={}) {
    const key=JSON.stringify([destination.map,destination.x,destination.y]);
    if(!live||live.key!==key){const next={key,since:ticks};next.promise=new Promise((_,reject)=>{next.reject=reject;});next.promise.catch(()=>{});live=next;}
    return live.promise;},
-  stop:async kind=>{calls.push({kind:'stop',type:kind});if(kind==='smart'&&smart||kind==='move'){goal=null;live=null;}smart=false;},
+  // `released` ends the live journey as the owner's release does: its promise rejects to the requester.
+  stop:async kind=>{calls.push({kind:'stop',type:kind});if(kind==='smart'&&smart||kind==='move'){const ended=live;goal=null;live=null;
+   if(options.released&&ended)ended.reject(Object.assign(Error('Movement released by its holder'),{reason:'released'}));}smart=false;},
   request:async()=>({targetStatus:{...player,seenAt:now,server:'USII'}}),anniversaryWithTimeout:async promise=>promise,
   send_item:async(name,slot,q)=>calls.push({kind:'send',name,slot,q}),
   // The owner's pass is one 200 ms tick of this clock.

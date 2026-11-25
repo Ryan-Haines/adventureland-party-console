@@ -116,6 +116,13 @@ export function installErrands(host: ErrandHost, ports: ErrandPorts) {
     const climbOwner = "errand:meet:" + name, pass = () => ports.nextPass(climbOwner), ladder = ports.movement().climb(climbOwner, errandRound(name), "Meeting " + name);
     let ladderOptions = {};
     function here() { return { map: character().map, in: character().in, x: character().x, y: character().y }; }
+    // The meet ends its own live try: `route` and `direct` clear before the stop, so the stopped
+    // try's release is not read as a failed try that climbs the errand round.
+    async function endTry(): Promise<void> {
+      route = null; routePending = false; direct = null;
+      await ports.stop("smart", errandRequest); if (!current()) throw interrupted();
+      await ports.stop("move", errandRequest); if (!current()) throw interrupted();
+    }
     try {
       while (ports.now() < deadline) {
         if (!current()) throw interrupted();
@@ -143,10 +150,9 @@ export function installErrands(host: ErrandHost, ports: ErrandPorts) {
         if (searching) phase = "pathfinding";
         if (failed) {
           ladder.result({ arrived: false, at: here() });
-          routeError = failed; failed = null; route = null; direct = null;
-          await ports.stop("smart", errandRequest); if (!current()) throw interrupted();
-          await ports.stop("move", errandRequest); if (!current()) throw interrupted();
-          recoveries++; routePending = false; moving = false;
+          routeError = failed; failed = null;
+          await endTry();
+          recoveries++; moving = false;
           let attempt = ladder.next(here(), {});
           if (attempt.rung === "wait") {
             phase = "waiting-for-report";
@@ -178,9 +184,7 @@ export function installErrands(host: ErrandHost, ports: ErrandPorts) {
           // stands (1.5 row 22); a doorway once the walk arrived at the door's spawn.
           if (nextRoute.to && (nextRoute.transporterPoint ? ports.movement().transportAllowed(nextRoute.to, nextRoute.spawn!) :
               Math.hypot(character().x - nextRoute.x!, character().y - nextRoute.y!) <= ARRIVAL_TOLERANCE)) {
-            route = null; routePending = false; direct = null;
-            await ports.stop("smart", errandRequest); if (!current()) throw interrupted();
-            await ports.stop("move", errandRequest); if (!current()) throw interrupted();
+            await endTry();
             phase = "transport"; moving = true;
             await ports.withTimeout(ports.transport(errandRequest, nextRoute.to, nextRoute.spawn!), Math.max(1, deadline - ports.now()), "Merchant doorway transport");
             if (!current()) throw interrupted();
@@ -193,8 +197,7 @@ export function installErrands(host: ErrandHost, ports: ErrandPorts) {
           }
           if (!route || !routePending || route.map !== nextRoute.map || route.to !== nextRoute.to || !crossMap && !searching &&
               (route.x == null || Math.hypot(route.x - nextRoute.x!, route.y! - nextRoute.y!) > 160)) {
-            direct = null;
-            if (route || moving) { await ports.stop("smart", errandRequest); if (!current()) throw interrupted(); await ports.stop("move", errandRequest); if (!current()) throw interrupted(); }
+            if (route || moving) await endTry(); else direct = null;
             phase = "smart"; route = nextRoute; routeTargetMap = destination.map; routePending = true;
             const started = route;
             // A transporter leg's walk ends inside the transport's reach of its point.

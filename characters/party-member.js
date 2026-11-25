@@ -41374,6 +41374,15 @@ ${hook}`, was = errors.get(key3);
       function here() {
         return { map: character2().map, in: character2().in, x: character2().x, y: character2().y };
       }
+      async function endTry() {
+        route = null;
+        routePending = false;
+        direct = null;
+        await ports.stop("smart", errandRequest);
+        if (!current()) throw interrupted();
+        await ports.stop("move", errandRequest);
+        if (!current()) throw interrupted();
+      }
       try {
         while (ports.now() < deadline) {
           if (!current()) throw interrupted();
@@ -41402,14 +41411,8 @@ ${hook}`, was = errors.get(key3);
             ladder.result({ arrived: false, at: here() });
             routeError = failed;
             failed = null;
-            route = null;
-            direct = null;
-            await ports.stop("smart", errandRequest);
-            if (!current()) throw interrupted();
-            await ports.stop("move", errandRequest);
-            if (!current()) throw interrupted();
+            await endTry();
             recoveries++;
-            routePending = false;
             moving = false;
             let attempt = ladder.next(here(), {});
             if (attempt.rung === "wait") {
@@ -41443,13 +41446,7 @@ ${hook}`, was = errors.get(key3);
             const crossMap = destination.map !== character2().map;
             const nextRoute = crossMap ? travelLeg(destination) : { map: destination.map, x: destination.x, y: destination.y };
             if (nextRoute.to && (nextRoute.transporterPoint ? ports.movement().transportAllowed(nextRoute.to, nextRoute.spawn) : Math.hypot(character2().x - nextRoute.x, character2().y - nextRoute.y) <= ARRIVAL_TOLERANCE)) {
-              route = null;
-              routePending = false;
-              direct = null;
-              await ports.stop("smart", errandRequest);
-              if (!current()) throw interrupted();
-              await ports.stop("move", errandRequest);
-              if (!current()) throw interrupted();
+              await endTry();
               phase = "transport";
               moving = true;
               await ports.withTimeout(ports.transport(errandRequest, nextRoute.to, nextRoute.spawn), Math.max(1, deadline - ports.now()), "Merchant doorway transport");
@@ -41462,13 +41459,8 @@ ${hook}`, was = errors.get(key3);
               continue;
             }
             if (!route || !routePending || route.map !== nextRoute.map || route.to !== nextRoute.to || !crossMap && !searching && (route.x == null || Math.hypot(route.x - nextRoute.x, route.y - nextRoute.y) > 160)) {
-              direct = null;
-              if (route || moving) {
-                await ports.stop("smart", errandRequest);
-                if (!current()) throw interrupted();
-                await ports.stop("move", errandRequest);
-                if (!current()) throw interrupted();
-              }
+              if (route || moving) await endTry();
+              else direct = null;
               phase = "smart";
               route = nextRoute;
               routeTargetMap = destination.map;
